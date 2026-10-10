@@ -172,6 +172,7 @@ from ..native_policy_bundle import (
     PolicyBundleNativeUnavailableError,
     native_rejection_code,
 )
+from ..native_resident_watchdog import start_native_resident_watchdog
 from ..native_runtime_request_scope import native_status_request_scope
 from ..package_firewall_action_rate_limit import PackageFirewallActionRateLimiter
 from ..package_firewall_entitlement import (
@@ -8110,6 +8111,7 @@ class GuardDaemonServer:
             self._start_command_activity_maintenance()
             self._start_onefile_extraction_reclaim()
             self._start_repair_self_check()
+            self._start_native_resident_watchdog()
             self._record_lifecycle("ready")
             self._owned_service_ready = True
             self._diagnostics.record("daemon_ready")
@@ -8305,6 +8307,13 @@ class GuardDaemonServer:
         repair_self_check.start_self_check(
             self._server.store,
             publish=publish,
+            stop=self._shutdown_started,
+            on_error=self._diagnostics.record_exception,
+        )
+
+    def _start_native_resident_watchdog(self) -> None:
+        start_native_resident_watchdog(
+            self._server.store.guard_home,
             stop=self._shutdown_started,
             on_error=self._diagnostics.record_exception,
         )

@@ -267,6 +267,10 @@ def bridge_review_response(
         )
         if response is None and not launch_integrity_failed and daemon_provably_dead(state_path):
             record_start_failure(state_path)
+            # The failed start is now recorded and the daemon is provably dead, so
+            # this first denial names the same fix as every later fast-path denial.
+            if failure_causes is not None:
+                failure_causes.append({"stage": "daemon_dead_fast", "reason_code": DEAD_DAEMON_REASON_CODE})
     return response, daemon_overloaded, launch_integrity_failed
 
 

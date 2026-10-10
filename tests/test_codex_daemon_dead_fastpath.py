@@ -124,6 +124,10 @@ def test_second_hook_after_failed_start_denies_fast_with_repair_message(
     first = json.loads(capsys.readouterr().out)
     assert first["hookSpecificOutput"]["permissionDecision"] == "deny"
     assert (guard_home / fastpath.FAILED_START_MARKER).exists()
+    first_reason = first["hookSpecificOutput"]["permissionDecisionReason"]
+    assert "hol-guard repair" in first_reason
+    assert "hol-guard daemon repair" not in first_reason
+    assert first_reason == bridge._DAEMON_DEAD_REASON
 
     calls.clear()
     started = time.monotonic()
