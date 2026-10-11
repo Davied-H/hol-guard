@@ -141,6 +141,9 @@ pub mod secret_path_probe;
 mod sfrs_agent_guidance;
 mod sfrs_benign_reads;
 mod sfrs_constants;
+mod sfrs_developer_graph;
+#[cfg(all(test, unix))]
+mod sfrs_developer_graph_vectors;
 mod sfrs_developer_inspection;
 #[cfg(test)]
 mod sfrs_developer_vectors;

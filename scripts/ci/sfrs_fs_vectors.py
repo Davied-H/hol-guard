@@ -18,6 +18,8 @@ from pathlib import Path
 
 from codex_plugin_scanner.guard.runtime.secret_file_request_services import source_edit_context
 
+from sfrs_graph_cases import graph_cases
+
 TOKEN = "{ROOT}"
 
 TREE = {
@@ -120,6 +122,8 @@ def _text(root: Path, value: object) -> object:
         return value.replace(str(root), TOKEN)
     if isinstance(value, list):
         return [_text(root, item) for item in value]
+    if isinstance(value, dict):
+        return {key: _text(root, item) for key, item in value.items()}
     return value
 
 
@@ -221,6 +225,7 @@ def _cases(root: Path) -> list[dict[str, object]]:
                 [left, right, str(proj)],
                 source_edit_context._same_workspace_file(left, right, cwd=proj),
             )
+    graph_cases(root, add)
     return cases
 
 

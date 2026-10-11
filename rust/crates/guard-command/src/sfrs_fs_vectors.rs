@@ -59,6 +59,11 @@ fn bind(root: &Path, value: &Value) -> Value {
     match value {
         Value::String(text) => Value::String(text.replace(TOKEN, &root.to_string_lossy())),
         Value::Array(items) => items.iter().map(|item| bind(root, item)).collect(),
+        Value::Object(map) => Value::Object(
+            map.iter()
+                .map(|(key, item)| (key.clone(), bind(root, item)))
+                .collect(),
+        ),
         other => other.clone(),
     }
 }
@@ -106,6 +111,7 @@ fn run(function: &str, args: &[Value]) -> Option<Value> {
         "same_workspace_file" => {
             same_workspace_file(text(&args[0]), text(&args[1]), Path::new(text(&args[2]))).into()
         }
+        "compound_developer_effect_graph" => crate::sfrs_developer_graph_vectors::run(args),
         _ => return None,
     })
 }
