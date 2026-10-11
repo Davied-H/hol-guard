@@ -107,7 +107,7 @@ class StoreWorkflowCapabilitiesMixin:
                 # would see an unresolved pending sequence and lock authority.
                 baseline = original if original is not None else (plan["writes"][0] if plan["writes"] else None)
                 if baseline is not None and not self._store_workflow_capability_control(baseline):
-                    raise WorkflowCapabilityError("capability_control_unavailable")
+                    raise WorkflowCapabilityError("capability_control_unavailable") from error
                 continue
             self._persist_workflow_capability_controls(committed["post_writes"])
             return committed["result"]
