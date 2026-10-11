@@ -51,11 +51,15 @@ _TRANSPORT_IDENTITY_PATHS: Final = frozenset(
         # Extracted binary identity validation; no command or policy semantics.
         "src/codex_plugin_scanner/guard/native_binary_identity.py",
         "src/codex_plugin_scanner/guard/native_context.py",
+        # Bounded non-secret reason code for resident prerequisite failures.
+        "src/codex_plugin_scanner/guard/native_resident_prerequisite_reason.py",
         "src/codex_plugin_scanner/guard/native_resident_client.py",
         "src/codex_plugin_scanner/guard/native_runtime_resilience.py",
         "src/codex_plugin_scanner/guard/codex_hook_launch_runtime.py",
         "src/codex_plugin_scanner/guard/daemon/discovery.py",
         "src/codex_plugin_scanner/guard/daemon/manager.py",
+        "src/codex_plugin_scanner/guard/daemon/manager_ephemeral_reap.py",
+        "src/codex_plugin_scanner/guard/daemon/manager_process_query.py",
         # Interpreter bootstrap identity only; no policy or command decisions.
         "src/codex_plugin_scanner/guard/daemon/pipx_import_paths.py",
         # Resident request transport; the observed git path is a fact, never a verdict.
@@ -130,6 +134,7 @@ _TRANSPORT_DECODE_PATHS: Final = frozenset(
         "src/codex_plugin_scanner/guard/native_package_approval_hash.py",
         "src/codex_plugin_scanner/guard/native_package_policy_resolve.py",
         "src/codex_plugin_scanner/guard/native_supply_chain_posture.py",
+        "src/codex_plugin_scanner/guard/native_workspace_inventory.py",
         # Decodes the bounded resident command-effect result envelope and binds
         # it to the request; the decision itself is computed in Rust.
         "src/codex_plugin_scanner/guard/native_command_effect.py",
@@ -262,6 +267,8 @@ _SERVICE_PATHS: Final = frozenset(
         "src/codex_plugin_scanner/guard/daemon/discovery.py",
         "src/codex_plugin_scanner/guard/daemon/lifecycle_journal.py",
         "src/codex_plugin_scanner/guard/daemon/manager.py",
+        "src/codex_plugin_scanner/guard/daemon/manager_ephemeral_reap.py",
+        "src/codex_plugin_scanner/guard/daemon/manager_process_query.py",
         "src/codex_plugin_scanner/guard/daemon/runtime_peer.py",
         "src/codex_plugin_scanner/guard/daemon/start_classification.py",
         "src/codex_plugin_scanner/guard/frozen_daemon_runtime.py",
@@ -337,7 +344,6 @@ _PENDING_AUTHORITY_PATHS: Final = frozenset(
         "src/codex_plugin_scanner/guard/runtime/local_cli_identity.py",
         "src/codex_plugin_scanner/guard/runtime/local_cli_runner.py",
         "src/codex_plugin_scanner/guard/runtime/local_package_script_evidence.py",
-        "src/codex_plugin_scanner/guard/runtime/lockfile_parse_result.py",
         "src/codex_plugin_scanner/guard/runtime/mcp_protection.py",
         "src/codex_plugin_scanner/guard/runtime/mcp_server_contribution.py",
         "src/codex_plugin_scanner/guard/runtime/mcp_skill_firewall.py",
@@ -346,7 +352,6 @@ _PENDING_AUTHORITY_PATHS: Final = frozenset(
         "src/codex_plugin_scanner/guard/runtime/package_intent_common.py",
         "src/codex_plugin_scanner/guard/runtime/package_intent_parser.py",
         "src/codex_plugin_scanner/guard/runtime/package_json_scripts.py",
-        "src/codex_plugin_scanner/guard/runtime/package_manifest_diff.py",
         "src/codex_plugin_scanner/guard/runtime/prompt_injection.py",
         "src/codex_plugin_scanner/guard/runtime/read_only_git_audit.py",
         "src/codex_plugin_scanner/guard/runtime/restricted_archive_destination.py",
