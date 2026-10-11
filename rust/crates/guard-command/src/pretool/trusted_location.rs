@@ -106,9 +106,11 @@ fn trusted_loader_entry(entry: &Path, home: &Path, cwd: &Path) -> bool {
 
 /// A canonical directory strictly below home, outside the working directory,
 /// that only the home owner (or root) can write from the directory up to home.
-/// A temporary directory counts only when home itself is one, as for sandboxed
-/// and CI homes. Above home, a sticky world-writable ancestor such as `/tmp`
-/// is accepted because other users cannot rename entries they do not own.
+/// Group write at or below home is another user's write even when the home
+/// owner owns the directory or shares its group. A temporary directory counts
+/// only when home itself is one, as for sandboxed and CI homes. Above home, a
+/// sticky world-writable ancestor such as `/tmp` is accepted because other
+/// users cannot rename entries they do not own.
 #[cfg(unix)]
 fn home_loader_directory(directory: &Path, home: &Path, cwd: &Path) -> bool {
     use std::os::unix::fs::MetadataExt;
@@ -133,11 +135,14 @@ fn home_loader_directory(directory: &Path, home: &Path, cwd: &Path) -> bool {
     directory.ancestors().all(|ancestor| {
         fs::metadata(ancestor).is_ok_and(|metadata| {
             let mode = metadata.mode();
-            let sticky_above_home = !ancestor.starts_with(&home) && mode & 0o1000 != 0;
+            let at_or_below_home = ancestor.starts_with(&home);
+            let sticky_above_home = !at_or_below_home && mode & 0o1000 != 0;
+            // Below home, the group-write bit is enough. Owning the directory
+            // does not stop another member of its group from planting a library.
             let foreign_writable = mode & 0o002 != 0
                 || (mode & 0o020 != 0
-                    && metadata.uid() != owner
-                    && metadata.gid() != home_metadata.gid());
+                    && (at_or_below_home
+                        || (metadata.uid() != owner && metadata.gid() != home_metadata.gid())));
             (sticky_above_home || !foreign_writable)
                 && (metadata.uid() == 0 || metadata.uid() == owner)
         })
@@ -281,6 +286,15 @@ mod tests {
         assert!(!entry(&cwd));
         assert!(!entry(&home));
         assert!(!entry(&shared.join("lib")));
+        let group_leaf = home.join(".conda/lib");
+        fs::create_dir_all(&group_leaf).unwrap();
+        fs::set_permissions(&group_leaf, fs::Permissions::from_mode(0o775)).unwrap();
+        assert!(!entry(&group_leaf));
+        let group_prefix = home.join("toolchains");
+        let planted = group_prefix.join("lib");
+        fs::create_dir_all(&planted).unwrap();
+        fs::set_permissions(&group_prefix, fs::Permissions::from_mode(0o775)).unwrap();
+        assert!(!entry(&planted));
         let _ = fs::remove_dir_all(&root);
     }
 }
