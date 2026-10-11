@@ -143,10 +143,8 @@ pub(crate) fn capabilities() -> RuntimeCapabilitiesV1 {
     }
     if cfg!(unix) {
         features.push("authenticated-unix-resident-v1".into());
-        // Capability flags must reflect dispatch reality: features gated
-        // cfg(unix) in resident_ops::evaluate_resident_bytes must not be
-        // advertised on other platforms, or callers route work the binary
-        // cannot honor.
+        // Features gated cfg(unix) in resident_ops::evaluate_resident_bytes must
+        // not be advertised elsewhere, or callers route work the binary cannot honor.
         features.push(guard_contracts::CONTAINED_EXECUTION_FEATURE.into());
         features.push(guard_contracts::MCP_STDIO_SESSION_FEATURE.into());
         features.push(guard_contracts::SKILL_DIRECTORY_IDENTITY_FEATURE.into());
