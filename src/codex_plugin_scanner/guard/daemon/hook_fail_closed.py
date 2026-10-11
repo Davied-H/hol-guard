@@ -146,6 +146,7 @@ def fail_closed_response(
     *,
     reason: str = RENDER_UNAVAILABLE_REASON,
     reason_code: str = RENDER_UNAVAILABLE_REASON_CODE,
+    prompt_reason: str | None = None,
 ) -> dict[str, object]:
     """Fixed response when the resident cannot answer a hook.
 
@@ -158,18 +159,19 @@ def fail_closed_response(
     canonical = canonical_harness(harness)
     compact = _compact(event_name)
     if compact in _PROMPT_EVENTS:
+        prompt_text = prompt_reason or PROMPT_UNAVAILABLE_REASON
         if canonical == "copilot":
             return {
                 "behavior": "deny",
-                "message": PROMPT_UNAVAILABLE_REASON,
+                "message": prompt_text,
                 "interrupt": False,
                 "policy_action": "block",
                 "reason_code": PROMPT_UNAVAILABLE_REASON_CODE,
             }
         return {
             "decision": "block",
-            "reason": PROMPT_UNAVAILABLE_REASON,
-            "systemMessage": PROMPT_UNAVAILABLE_REASON,
+            "reason": prompt_text,
+            "systemMessage": prompt_text,
             "policy_action": "block",
             "reason_code": PROMPT_UNAVAILABLE_REASON_CODE,
             "hookSpecificOutput": {"hookEventName": "UserPromptSubmit"},

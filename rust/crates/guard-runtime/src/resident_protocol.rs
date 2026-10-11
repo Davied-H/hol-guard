@@ -7,9 +7,9 @@ use guard_contracts::{
     ApprovalReuseDiagnosticRequestV1, ApprovalReuseRequestV1, ApprovalScopeRequestV1,
     ApprovalValidateRequestV3, ApprovalValidateRequestV4, CiscoPreflightRequestV1,
     ClaimApprovalReuseDecisionsRequestV1, CodexToolOutputRequestV1, CommandEffectBatchRequestV1,
-    CommandEffectRequestV1, CompoundGitInspectionRequestV1, ContainedExecuteRequestV1,
-    ContainedNodeExecuteRequestV1, ContainedPackageScriptExecuteRequestV1,
-    ContainedTestHookRequestV1, ContainedTypescriptExecuteRequestV1,
+    CommandEffectRequestV1, CompoundGitInspectionRequestV1, ConsumerArtifactComposeRequestV1,
+    ContainedExecuteRequestV1, ContainedNodeExecuteRequestV1,
+    ContainedPackageScriptExecuteRequestV1, ContainedTypescriptExecuteRequestV1,
     ContainedWorkspaceWriteExecuteRequestV1, ContextDigestRequestV1,
     ContributedMcpDecisionRequestV1, CursorObserverProofRequestV1, DaemonHandlerRequestV1,
     DaemonLifecycleDecisionRequestV1, DaemonRouteRequestV1, DataFlowAnalyzeRequestV1,
@@ -85,6 +85,7 @@ pub(crate) fn capabilities() -> RuntimeCapabilitiesV1 {
         "native-resident-client-v1".into(),
         "native-resident-lifecycle-v1".into(),
         guard_contracts::ARCHIVE_INSPECTION_FEATURE.into(),
+        guard_contracts::ARCHIVE_ACQUISITION_FEATURE.into(),
         guard_contracts::CONTEXT_DIGEST_FEATURE.into(),
         guard_contracts::COMMAND_EFFECT_FEATURE.into(),
         guard_contracts::COMMAND_EFFECT_BATCH_FEATURE.into(),
@@ -126,6 +127,7 @@ pub(crate) fn capabilities() -> RuntimeCapabilitiesV1 {
         guard_contracts::DAEMON_ROUTE_FEATURE.into(),
         guard_contracts::DAEMON_HANDLER_FEATURE.into(),
         guard_contracts::HOOK_ARTIFACT_COMPOSE_FEATURE.into(),
+        guard_contracts::CONSUMER_ARTIFACT_COMPOSE_FEATURE.into(),
         guard_contracts::HOOK_ADAPTER_FEATURE.into(),
         guard_contracts::MCP_TOOL_EVIDENCE_FEATURE.into(),
         guard_contracts::LOCAL_MCP_GRANT_FEATURE.into(),
@@ -167,6 +169,7 @@ pub(crate) fn capabilities() -> RuntimeCapabilitiesV1 {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "operation", content = "request", rename_all = "snake_case")]
 pub(crate) enum ResidentOperationV1 {
+    ArchiveAcquisition(guard_contracts::ArchiveAcquisitionRequestV1),
     CommandModel(CommandModelRequestV1),
     PreToolUse(CommandModelRequestV1),
     PolicySnapshotPush(Value),
@@ -209,8 +212,6 @@ pub(crate) enum ResidentOperationV1 {
     ContainedWorkspaceWriteExecute(ContainedWorkspaceWriteExecuteRequestV1),
     #[allow(dead_code)]
     ContainedExecute(ContainedExecuteRequestV1),
-    #[allow(dead_code)]
-    ContainedTestHook(ContainedTestHookRequestV1),
     ShimAdmin(ShimAdminRequestV1),
     McpStdioProbe(McpStdioProbeRequestV1),
     McpStdioCancel(McpStdioCancelRequest),
@@ -240,6 +241,7 @@ pub(crate) enum ResidentOperationV1 {
     DaemonHandler(DaemonHandlerRequestV1),
     HookAdapter(HookAdapterRequestV1),
     HookArtifactCompose(HookArtifactComposeRequestV1),
+    ConsumerArtifactCompose(ConsumerArtifactComposeRequestV1),
     McpToolEvidence(McpToolEvidenceRequestV1),
     LocalMcpGrantDecide(LocalMcpGrantRequestV1),
     McpProxyDecide(McpProxyDecisionRequestV1),

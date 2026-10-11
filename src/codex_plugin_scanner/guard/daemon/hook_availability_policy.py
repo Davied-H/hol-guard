@@ -135,6 +135,7 @@ def availability_harness_response(
     home_dir: Path | None = None,
     guard_home: Path | None = None,
     recording_only: bool = False,
+    prompt_reason: str | None = None,
 ) -> dict[str, object]:
     """Fixed fail-closed harness result when native review is unavailable.
 
@@ -143,7 +144,9 @@ def availability_harness_response(
     """
 
     del payload, workspace, home_dir, guard_home, recording_only
-    return fail_closed_response(harness, event_name, reason=reason, reason_code=reason_code)
+    return fail_closed_response(
+        harness, event_name, reason=reason, reason_code=reason_code, prompt_reason=prompt_reason
+    )
 
 
 def cursor_fallback_permission(
