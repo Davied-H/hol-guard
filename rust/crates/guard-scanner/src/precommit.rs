@@ -139,13 +139,21 @@ fn errno_io(error: Errno) -> io::Error {
 /// `stat.S_ISDIR(entry.st_mode)`.
 #[cfg(unix)]
 fn is_directory(entry: &FileStat) -> bool {
-    SFlag::from_bits_truncate(entry.st_mode as nix::libc::mode_t).contains(SFlag::S_IFDIR)
+    file_type(entry) == SFlag::S_IFDIR
 }
 
 /// `stat.S_ISREG(entry.st_mode)`.
 #[cfg(unix)]
 fn is_regular(entry: &FileStat) -> bool {
-    SFlag::from_bits_truncate(entry.st_mode as nix::libc::mode_t).contains(SFlag::S_IFREG)
+    file_type(entry) == SFlag::S_IFREG
+}
+
+/// The `S_IFMT` field. File types share bits (`S_IFLNK` contains `S_IFREG`,
+/// `S_IFSOCK` contains `S_IFDIR`), so a type test must compare the whole
+/// field rather than check for one type's bits.
+#[cfg(unix)]
+fn file_type(entry: &FileStat) -> SFlag {
+    SFlag::from_bits_truncate(entry.st_mode as nix::libc::mode_t) & SFlag::S_IFMT
 }
 
 /// Python `_git_common_dir`: refuse `core.hooksPath`, then resolve
@@ -444,6 +452,28 @@ pub fn uninstall_precommit_hook(root: &Path) -> Result<SecretsHookResult, Precom
         });
     };
 
+    // `_require_regular_entry` for both names: a symlinked or special hook
+    // entry is refused before anything is read through it.
+    require_regular_entry(&directory, hook)?;
+    require_regular_entry(&directory, backup)?;
+    if entry_stat(&directory, hook)?.is_none() {
+        if entry_stat(&directory, backup)?.is_some() {
+            renameat(directory.as_fd(), backup, directory.as_fd(), hook).map_err(|_| {
+                PrecommitError::value("could not restore the preserved pre-commit hook")
+            })?;
+            return Ok(SecretsHookResult {
+                status: "restored",
+                hook: display,
+                chained_existing: true,
+            });
+        }
+        return Ok(SecretsHookResult {
+            status: "not_installed",
+            hook: display,
+            chained_existing: false,
+        });
+    }
+
     // Python wraps the mutation block in `except OSError` →
     // `ValueError("could not uninstall ...")`; the non-managed + no-backup
     // early return and the `ValueError` refusal bypass that wrapper.
@@ -602,6 +632,52 @@ mod tests {
         assert!(removed.chained_existing);
         assert_eq!(fs::read_to_string(&user_hook).unwrap(), user_body);
         assert!(!backup.exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn symlinked_hook_is_refused_and_left_in_place() {
+        let dir = temp_root("symlink");
+        git_init(&dir);
+        fs::write(dir.join("elsewhere.sh"), "#!/bin/sh\n").unwrap();
+        let hook_path = dir.join(".git/hooks/pre-commit");
+        std::os::unix::fs::symlink("../../elsewhere.sh", &hook_path).unwrap();
+
+        for outcome in [install_precommit_hook(&dir), uninstall_precommit_hook(&dir)] {
+            let error = outcome.unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                "refusing to modify a non-regular Git hook entry"
+            );
+        }
+        assert_eq!(
+            fs::read_link(&hook_path).unwrap(),
+            PathBuf::from("../../elsewhere.sh")
+        );
+        assert!(!dir.join(".git/hooks").join(BACKUP_NAME).exists());
+        assert_eq!(
+            fs::read_to_string(dir.join("elsewhere.sh")).unwrap(),
+            "#!/bin/sh\n"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn uninstall_restores_backup_when_hook_is_missing() {
+        let dir = temp_root("orphan-backup");
+        git_init(&dir);
+        let hooks = dir.join(".git/hooks");
+        fs::write(hooks.join(BACKUP_NAME), "#!/bin/sh\necho user\n").unwrap();
+
+        let result = uninstall_precommit_hook(&dir).unwrap();
+
+        assert_eq!(result.status, "restored");
+        assert!(result.chained_existing);
+        assert_eq!(
+            fs::read_to_string(hooks.join("pre-commit")).unwrap(),
+            "#!/bin/sh\necho user\n"
+        );
+        assert!(!hooks.join(BACKUP_NAME).exists());
         let _ = fs::remove_dir_all(&dir);
     }
 
