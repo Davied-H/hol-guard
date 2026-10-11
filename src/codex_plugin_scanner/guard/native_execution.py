@@ -8,6 +8,7 @@ unavailable authority, not permission to substitute Python decisions.
 from __future__ import annotations
 
 import json
+import math
 import os
 import threading
 import uuid
@@ -139,6 +140,7 @@ def _resident_request(
         "contained_node_execute": "guard-contained-node-execute-result.v1",
         "contained_typescript_execute": "guard-contained-typescript-execute-result.v1",
         "contained_package_script_execute": "guard-contained-package-script-execute-result.v1",
+        "contained_workspace_write_execute": "guard-contained-workspace-write-execute-result.v1",
     }.get(operation)
     if result_schema is not None:
         # These versioned Rust replies have no status field. Do not discard
@@ -376,6 +378,8 @@ def contained_workspace_write_execute_native(
     target: str | None = None,
     environment: Mapping[str, str] | None = None,
 ) -> ContainedWorkspaceWriteResult | None:
+    if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+        return None
     request: dict[str, object] = {
         "schema": "guard-contained-workspace-write-execute-request.v1",
         "request_id": _request_id("contained_workspace_write_execute"),
@@ -385,7 +389,7 @@ def contained_workspace_write_execute_native(
         "source": source,
         "target": target,
         "environment": dict(environment) if environment else None,
-        "timeout_seconds": int(timeout_seconds),
+        "timeout_seconds": max(1, math.ceil(timeout_seconds)),
         "guard_home": str(guard_home),
     }
     decoded = _resident_request(

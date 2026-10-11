@@ -185,7 +185,7 @@ def test_mcp_probe_accepts_native_result_without_outer_status(transport, tmp_pat
     )
 
 
-@pytest.mark.parametrize("runner", ["node", "typescript", "package_script"])
+@pytest.mark.parametrize("runner", ["node", "typescript", "package_script", "workspace_write"])
 def test_contained_runner_replies_are_accepted_without_outer_status(transport, tmp_path, runner):
     reply = {"schema": f"guard-contained-{runner.replace('_', '-')}-execute-result.v1", "result": {"stdout": ""}}
     transport.client.return_value = json.dumps(reply).encode()
