@@ -206,3 +206,18 @@ fn skill_content_risk_returns_the_detector_signals() {
         Err(ERR_INVALID)
     );
 }
+
+#[test]
+fn skill_content_risk_refuses_oversized_content() {
+    let limit = detector::SKILL_CONTENT_MAX_BYTES;
+    let at_limit = "a".repeat(limit);
+    assert_eq!(
+        dispatch("skill_content_risk", &json!({ "content": at_limit })),
+        Ok(json!({ "signals": [] }))
+    );
+    let over = "a".repeat(limit + 1);
+    assert_eq!(
+        dispatch("skill_content_risk", &json!({ "content": over })),
+        Err(ERR_TOO_LARGE)
+    );
+}

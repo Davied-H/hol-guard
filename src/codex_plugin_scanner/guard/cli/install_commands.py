@@ -388,7 +388,8 @@ def scan_workspace_skills(
                     {
                         "skill_path": str(skill_path.relative_to(workspace_dir)),
                         "identity_hash": identity.identity_hash,
-                        "risk_count": 0,
+                        "status": "unscanned",
+                        "risk_count": None,
                         "severities": [],
                         "signal_ids": [],
                         "scan_error": str(error),
@@ -412,6 +413,7 @@ def scan_workspace_skills(
                     {
                         "skill_path": str(skill_path.relative_to(workspace_dir)),
                         "identity_hash": identity.identity_hash,
+                        "status": "scanned",
                         "risk_count": len(signals),
                         "severities": sorted({s.severity for s in signals}),
                         "signal_ids": [s.signal_id for s in signals],

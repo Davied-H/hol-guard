@@ -419,7 +419,37 @@ def test_scan_workspace_skills_reports_unscanned_skill_when_the_resident_fails(
 
     assert len(result) == 1
     assert result[0]["scan_error"] == "native_runner_authority_unavailable"
-    assert result[0]["risk_count"] == 0
+    assert result[0]["status"] == "unscanned"
+    assert result[0]["risk_count"] is None
     assert ".codex/skills/docs/SKILL.md" in str(result[0]["skill_path"])
     artifact_id = f"skill-path:{skills_dir / 'SKILL.md'}"
     assert store.get_snapshot("skill_scan", artifact_id) is None
+
+
+def test_skill_scan_panel_shows_unscanned_skills_apart_from_risky_ones() -> None:
+    from codex_plugin_scanner.guard.cli.render_skill_scan import skill_scan_rows, skill_scan_title
+
+    entries: list[dict[str, object]] = [
+        {
+            "skill_path": "a/SKILL.md",
+            "status": "scanned",
+            "risk_count": 2,
+            "severities": ["high"],
+            "signal_ids": ["x", "y"],
+        },
+        {
+            "skill_path": "b/SKILL.md",
+            "status": "unscanned",
+            "risk_count": None,
+            "severities": [],
+            "signal_ids": [],
+            "scan_error": "native_runner_authority_unavailable",
+        },
+    ]
+
+    assert skill_scan_rows(entries) == [
+        ("a/SKILL.md", "2", "high", "x y"),
+        ("b/SKILL.md", "—", "", "not scanned: native_runner_authority_unavailable"),
+    ]
+    assert skill_scan_title(entries) == "Skill security scan — 1 file(s) with risks, 1 file(s) not scanned"
+    assert skill_scan_title(entries[1:]) == "Skill security scan — 1 file(s) not scanned"

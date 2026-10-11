@@ -29,7 +29,7 @@ use super::{
 
 pub(crate) const ERR_INVALID: &str = "native_runner_authority_invalid";
 const ERR_SCHEMA: &str = "native_runner_authority_schema_mismatch";
-const ERR_TOO_LARGE: &str = "native_runner_authority_request_too_large";
+pub(crate) const ERR_TOO_LARGE: &str = "native_runner_authority_request_too_large";
 const ERR_RESPONSE_TOO_LARGE: &str = "native_runner_authority_response_too_large";
 const ERR_KIND: &str = "native_runner_authority_unknown_kind";
 
