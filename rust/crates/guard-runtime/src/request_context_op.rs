@@ -296,9 +296,12 @@ fn decide(
 ) -> Result<Value, &'static str> {
     let budget = admit(request)?;
     let payload = match &request.action {
-        RequestContextKindV1::ContentSensitivity(body) => {
-            crate::content_sensitivity_op::evaluate(body, &budget, store)?
-        }
+        RequestContextKindV1::ContentSensitivity(body) => crate::content_sensitivity_op::evaluate(
+            body,
+            &budget,
+            store,
+            Path::new(&request.guard_home),
+        )?,
         RequestContextKindV1::CriticalFloor(body) => {
             crate::critical_floor_op::evaluate(body, &budget)?
         }

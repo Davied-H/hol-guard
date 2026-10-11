@@ -96,6 +96,82 @@ fn python_allow_and_unsigned_receipt_cannot_authorize_forwarding() {
     assert!(result["payload"].is_null());
     assert_eq!(
         result["code"],
-        "native_request_context_content_receipt_unavailable"
+        "native_request_context_content_receipt_invalid"
     );
+}
+
+#[test]
+fn authenticated_forwarding_works_with_and_without_a_loaded_policy_store() {
+    use std::io::Write;
+    let suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let home = std::env::temp_dir().join(format!(
+        "guard-content-receipt-{}-{suffix}",
+        std::process::id()
+    ));
+    let home = crate::resident_state::ensure_private_directory(&home, true).unwrap();
+    let state = crate::resident_state::ensure_private_directory(&home.join("native-runtime"), true)
+        .unwrap();
+    let key = [23u8; 32];
+    let mut file =
+        crate::resident_state::private_file(&state.join("policy-verifier.key"), false, &home)
+            .unwrap();
+    file.write_all(&key).unwrap();
+    drop(file);
+    let corpus: Value = serde_json::from_str(include_str!(
+        "../../../../tests/fixtures/content_sensitivity_parity.json"
+    ))
+    .unwrap();
+    let mut input = corpus["vectors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|vector| {
+            vector["query"] == "mediate" && vector["expected"]["ok"]["action"] == "forward"
+        })
+        .unwrap()["body"]
+        .clone();
+    input.as_object_mut().unwrap().remove("recheck");
+    input["refreshed_binding"] = input["binding"].clone();
+    input["recheck_available"] = json!(true);
+    input["recheck_error"] = json!(false);
+    input["cancelled"] = json!(false);
+    input["allow_observe_mode"] = json!(false);
+    input["required_reason_code"] = Value::Null;
+    let mut receipt: guard_contracts::NativeHookDecisionReceiptV1 = serde_json::from_value(json!({
+        "schema":"guard-native-hook-decision-receipt.v1","version":1,"authority":"rust",
+        "decision_id":"a".repeat(64),"request_id":"content-fixture","request_digest":"b".repeat(64),
+        "harness":"pi","event_name":"PostToolUse","payload_kind":"inline","policy_generation":7,
+        "policy_digest":"c".repeat(64),"rule_digest":"d".repeat(64),"runtime_identity":"e".repeat(64),
+        "decision":"allow","model_output_action":"allow_original","policy_action":"allow",
+        "observed_policy_action":null,"reason_code":"native_fixture","workspace_bound":true,
+        "source_ref_external_allowed":false,"reviewed_output_sha256":null,"observe_mode":false,"deadline_budget_ms":100
+    })).unwrap();
+    let store = crate::policy_store::PolicySnapshotStore::new(&state, &"e".repeat(64)).unwrap();
+    crate::policy_store::native_review_origin::authenticate(&store, &mut receipt).unwrap();
+    input["validated_receipt"] = serde_json::to_value(&receipt).unwrap();
+    let mut request = request("mediate_finish", input);
+    request.guard_home = home.to_string_lossy().into_owned();
+    for authority in [None, Some(&store)] {
+        let response: Value = serde_json::from_slice(
+            &crate::request_context_op::evaluate_request_context_request_with_store(
+                &request, authority,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(response["status"], "ok", "{response}");
+        assert_eq!(response["payload"]["result"]["ok"]["action"], "forward");
+    }
+    if let RequestContextKindV1::ContentSensitivity(body) = &mut request.action {
+        body.input["validated_receipt"]["decision_id"] = json!("0".repeat(64));
+    }
+    assert_eq!(
+        run(&request)["code"],
+        "native_request_context_content_receipt_invalid"
+    );
+    drop(store);
+    std::fs::remove_dir_all(home).unwrap();
 }

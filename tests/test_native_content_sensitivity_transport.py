@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import gzip
 import json
 import time
 from pathlib import Path
@@ -40,7 +42,7 @@ def _resident(monkeypatch: pytest.MonkeyPatch, mutation: str | None = None) -> l
             "payload": {
                 "kind": "content_sensitivity",
                 "query": request["action"]["body"]["query"],
-                "result": {"ok": "b" * 64},
+                "result": {"ok": [] if request["action"]["body"]["query"] == "content" else "b" * 64},
             },
         }
         if mutation == "request":
@@ -55,6 +57,8 @@ def _resident(monkeypatch: pytest.MonkeyPatch, mutation: str | None = None) -> l
             response["payload"]["allow"] = True
         elif mutation == "error":
             response["status"] = "error"
+        elif mutation == "rejected":
+            response.update(status="error", code="native_request_context_content_input_invalid", payload=None)
         elif mutation == "missing":
             return None
         elif mutation == "duplicates":
@@ -97,6 +101,118 @@ def test_sensitivity_outage_obeys_existing_value_error_rejection_contract(monkey
     _resident(monkeypatch, "missing")
     with pytest.raises(ValueError):
         client.content_query("content_version", {})
+
+
+@pytest.mark.parametrize("case", ["oversize", "nonfinite", "rejected", "expired_reply"])
+def test_caller_rejections_do_not_quarantine_the_shared_resident(monkeypatch, case):
+    calls = _resident(monkeypatch, "rejected" if case == "rejected" else None)
+    failures = []
+    monkeypatch.setattr(client, "native_record_resident_failure", lambda *args, **kwargs: failures.append(kwargs))
+    body = {"unused": "x" * (12 * 1024 * 1024)} if case == "oversize" else {}
+    if case == "nonfinite":
+        body = {"unused": float("nan")}
+    if case == "expired_reply":
+        now = time.monotonic()
+        monkeypatch.setattr(client.time, "monotonic", lambda: now + (1 if calls else 0))
+    with pytest.raises(client.NativeContentSensitivityError):
+        client.content_query("content_version", body)
+    assert not failures
+    if case in {"oversize", "nonfinite"}:
+        assert not calls
+
+
+@pytest.mark.parametrize("mutation", ["request", "digest", "missing", "duplicates"])
+def test_resident_faults_still_update_shared_health(monkeypatch, mutation):
+    _resident(monkeypatch, mutation)
+    failures = []
+    monkeypatch.setattr(client, "native_record_resident_failure", lambda *args, **kwargs: failures.append(kwargs))
+    with pytest.raises(client.NativeContentSensitivityError):
+        client.content_query("content_version", {})
+    assert len(failures) == 1
+
+
+def test_state_only_snapshot_never_requires_native_classification(monkeypatch, tmp_path):
+    from codex_plugin_scanner.guard.runtime import workspace_snapshot_inputs as snapshots
+
+    entries = [SimpleNamespace(name=".git"), SimpleNamespace(name=".guard")]
+
+    def bounded(*args):
+        yield from entries
+
+    def unavailable(*args, **kwargs):
+        raise client.NativeContentSensitivityError("offline")
+
+    monkeypatch.setattr(snapshots, "_bounded_entries", bounded)
+    monkeypatch.setattr(snapshots, "classify_secret_paths_batch", unavailable)
+    monkeypatch.setattr(snapshots, "_check_discovery_budget", lambda *args: None)
+    assert list(snapshots._classified_entries(tmp_path, (0, 0), tmp_path, time.monotonic(), [0])) == [
+        (entry, False) for entry in entries
+    ]
+
+
+def test_mixed_snapshot_classifies_only_eligible_entries_in_original_order(monkeypatch, tmp_path):
+    from codex_plugin_scanner.guard.runtime import workspace_snapshot_inputs as snapshots
+
+    entries = [SimpleNamespace(name=name) for name in [".GIT", "ordinary", ".env", ".guard"]]
+
+    def bounded(*args):
+        yield from entries
+
+    calls = []
+
+    def classify(paths, **kwargs):
+        calls.append(paths)
+        return [None, object()]
+
+    monkeypatch.setattr(snapshots, "_bounded_entries", bounded)
+    monkeypatch.setattr(snapshots, "classify_secret_paths_batch", classify)
+    monkeypatch.setattr(snapshots, "_check_discovery_budget", lambda *args: None)
+    assert list(snapshots._classified_entries(tmp_path, (0, 0), tmp_path, time.monotonic(), [0])) == list(
+        zip(entries, [False, False, True, False], strict=True)
+    )
+    assert calls == [["ordinary", ".env"]]
+
+
+@pytest.mark.parametrize("text", ["x" * (5 * 1024 * 1024), '\\"' * (5 * 512 * 1024), "界" * (5 * 1024 * 1024 // 3)])
+def test_large_output_wire_encoding_is_lossless_and_keeps_the_callers_deadline(monkeypatch, text):
+    calls = _resident(monkeypatch)
+    body = {"text": text, "suppress_samples": True, "documentation_sample_context": False}
+    deadline = time.monotonic() + 30
+    assert client.content_query("content", body, deadline_monotonic=deadline) == []
+    assert len(calls) == 1
+    assert calls[0]["deadline_monotonic"] == deadline
+    assert len(calls[0]["payload"]) <= 6 * 1024 * 1024
+    packed = json.loads(calls[0]["payload"])["request"]["action"]["body"]["input"]
+    decoded = gzip.decompress(base64.b64decode(packed["packed_json_gzip_v1"]))
+    assert len(decoded) == packed["decoded_bytes"]
+    assert json.loads(decoded) == body
+
+
+def test_unexpected_binding_recheck_logs_only_exception_class(monkeypatch, caplog):
+    from codex_plugin_scanner.guard.runtime import structured_output_mediation as mediation
+
+    calls = []
+
+    def query(query, body, **kwargs):
+        calls.append((query, body.copy()))
+        return {"recheck_required": True} if query == "mediate_prepare" else None
+
+    def recheck():
+        raise LookupError("private payload must never be logged")
+
+    monkeypatch.setattr(mediation, "content_query", query)
+    mediation.mediate_native_post_tool_content(
+        harness="pi",
+        event_name="PostToolUse",
+        native_result={},
+        validated_receipt=None,
+        structured_output_json=None,
+        binding=None,
+        recheck_binding=recheck,
+    )
+    assert calls[-1][1]["recheck_error"] is True
+    assert "LookupError" in caplog.text
+    assert "private payload" not in caplog.text
 
 
 def test_harness_presentation_is_available_without_native_runtime(monkeypatch):

@@ -13,32 +13,40 @@ pub(crate) fn evaluate(
     body: &RequestContextContentSensitivityV1,
     budget: &Budget,
     store: Option<&crate::policy_store::PolicySnapshotStore>,
+    guard_home: &std::path::Path,
 ) -> Result<Value, &'static str> {
     budget.check()?;
     let encoded = serde_json::to_vec(&body.input)
         .map_err(|_| "native_request_context_content_input_invalid")?;
-    if encoded.len() > 262_144 || body.query.len() > 32 {
+    if encoded.len() > 6 * 1024 * 1024 || body.query.len() > 32 {
         return Err("native_request_context_content_input_invalid");
     }
+    let input = guard_command::content_sensitivity::decode_input(&body.input)
+        .map_err(|_| "native_request_context_content_input_invalid")?;
+    budget.check()?;
     let result =
-        guard_command::content_sensitivity::evaluate(&body.query, &body.input, budget.deadline())
+        guard_command::content_sensitivity::evaluate(&body.query, &input, budget.deadline())
             .map_err(|_| "native_request_context_content_unavailable")?;
     if result["ok"]["action"] == "forward" {
         // A Python-provided allow field is never a native forwarding grant.
-        let store = store.ok_or("native_request_context_content_receipt_unavailable")?;
         let receipt: guard_contracts::NativeHookDecisionReceiptV1 =
-            serde_json::from_value(body.input["validated_receipt"].clone())
+            serde_json::from_value(input["validated_receipt"].clone())
                 .map_err(|_| "native_request_context_content_receipt_invalid")?;
-        crate::policy_store::native_review_origin::verify(store, &receipt)
-            .map_err(|_| "native_request_context_content_receipt_invalid")?;
-        let harness = body.input["binding"]["harness"]
+        match store {
+            Some(store) => crate::policy_store::native_review_origin::verify(store, &receipt),
+            None => crate::policy_store::native_review_origin::verify_at_guard_home(
+                guard_home, &receipt,
+            ),
+        }
+        .map_err(|_| "native_request_context_content_receipt_invalid")?;
+        let harness = input["binding"]["harness"]
             .as_str()
             .ok_or("native_request_context_content_receipt_invalid")?;
         if receipt.harness != harness
             || receipt.event_name != "PostToolUse"
             || receipt.decision != "allow"
             || receipt.model_output_action != "allow_original"
-            || receipt.observe_mode && body.input["allow_observe_mode"] != Value::Bool(true)
+            || receipt.observe_mode && input["allow_observe_mode"] != Value::Bool(true)
         {
             return Err("native_request_context_content_receipt_invalid");
         }

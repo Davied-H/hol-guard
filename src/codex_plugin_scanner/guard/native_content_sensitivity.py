@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import gzip
 import json
 import os
 import sys
@@ -30,6 +32,10 @@ class NativeContentSensitivityError(RuntimeError, ValueError):
     """Missing, expired or unbound native authority; callers must fail closed."""
 
 
+class _CallerRejectedError(NativeContentSensitivityError):
+    """Bound native rejection or exhausted caller budget, not a resident fault."""
+
+
 def _binary_signature(status: NativeRuntimeStatus) -> tuple[int, ...] | None:
     if status.identity is None:
         return None
@@ -37,15 +43,9 @@ def _binary_signature(status: NativeRuntimeStatus) -> tuple[int, ...] | None:
         info = status.identity.path.stat()
     except OSError:
         return None
-    return (
-        info.st_dev,
-        info.st_ino,
-        info.st_mode,
-        info.st_uid,
-        info.st_gid,
-        info.st_size,
-        info.st_mtime_ns,
-        info.st_ctime_ns,
+    return tuple(
+        getattr(info, field)
+        for field in ("st_dev", "st_ino", "st_mode", "st_uid", "st_gid", "st_size", "st_mtime_ns", "st_ctime_ns")
     )
 
 
@@ -72,7 +72,23 @@ def _status(deadline: float) -> NativeRuntimeStatus:
 
 
 def content_query(query: str, body: dict[str, Any], *, deadline_monotonic: float | None = None) -> Any:
-    deadline = min(time.monotonic() + 0.5, deadline_monotonic if deadline_monotonic is not None else float("inf"))
+    started = time.monotonic()
+    try:
+        body_bytes = json.dumps(body, ensure_ascii=False, allow_nan=False).encode("utf-8")
+    except (TypeError, ValueError, UnicodeError) as exc:
+        raise NativeContentSensitivityError("native_content_sensitivity_request_invalid") from exc
+    if len(body_bytes) > 12 * 1024 * 1024:
+        raise NativeContentSensitivityError("native_content_sensitivity_request_invalid")
+    deadline = (
+        deadline_monotonic if deadline_monotonic is not None else started + (30 if len(body_bytes) > 65536 else 0.5)
+    )
+    if len(body_bytes) > 128 * 1024:
+        body = {
+            "packed_json_gzip_v1": base64.b64encode(gzip.compress(body_bytes, compresslevel=1, mtime=0)).decode(
+                "ascii"
+            ),
+            "decoded_bytes": len(body_bytes),
+        }
     status = _status(deadline)
     if (
         time.monotonic() >= deadline
@@ -96,10 +112,15 @@ def content_query(query: str, body: dict[str, Any], *, deadline_monotonic: float
     try:
         digest = "sha256:" + _canonical_request_sha256(request)
         encoded = json.dumps(
-            {"operation": "request_context_build", "request": request, "deadline_budget_ms": request["budget_ms"]}
+            {"operation": "request_context_build", "request": request, "deadline_budget_ms": request["budget_ms"]},
+            ensure_ascii=False,
+            allow_nan=False,
         ).encode("utf-8")
-        if len(encoded) > 256 * 1024 or time.monotonic() >= deadline:
-            raise NativeContentSensitivityError("native_content_sensitivity_request_invalid")
+    except (TypeError, ValueError, UnicodeError) as exc:
+        raise NativeContentSensitivityError("native_content_sensitivity_request_invalid") from exc
+    if len(encoded) > 6 * 1024 * 1024 or time.monotonic() >= deadline:
+        raise NativeContentSensitivityError("native_content_sensitivity_request_invalid")
+    try:
         raw = native_resident_client_request(
             executable=status.identity.path,
             guard_home=home,
@@ -107,6 +128,8 @@ def content_query(query: str, body: dict[str, Any], *, deadline_monotonic: float
             payload=encoded,
             deadline_monotonic=deadline,
         )
+        if time.monotonic() >= deadline:
+            raise _CallerRejectedError("native_content_sensitivity_deadline_exceeded")
         if raw is None or len(raw) > 256 * 1024:
             raise NativeContentSensitivityError("native_content_sensitivity_unavailable")
         response = json.loads(raw, object_pairs_hook=unique_json_object)
@@ -120,13 +143,20 @@ def content_query(query: str, body: dict[str, Any], *, deadline_monotonic: float
             raise NativeContentSensitivityError("native_content_sensitivity_unbound")
         payload = response["payload"]
         if (
+            response["status"] == "error"
+            and isinstance(response["code"], str)
+            and 0 < len(response["code"]) <= 128
+            and payload is None
+        ):
+            raise _CallerRejectedError("native_content_sensitivity_request_rejected")
+        if (
             response["status"] != "ok"
             or response["code"] != "ok"
             or not isinstance(payload, dict)
             or set(payload) != {"kind", "query", "result"}
         ):
             raise NativeContentSensitivityError("native_content_sensitivity_unavailable")
-        if payload["kind"] != "content_sensitivity" or payload["query"] != query or time.monotonic() >= deadline:
+        if payload["kind"] != "content_sensitivity" or payload["query"] != query:
             raise NativeContentSensitivityError("native_content_sensitivity_unbound")
         result = payload["result"]
         if not isinstance(result, dict) or set(result) not in ({"ok"}, {"error", "type"}):
@@ -137,7 +167,11 @@ def content_query(query: str, body: dict[str, Any], *, deadline_monotonic: float
             raise NativeContentSensitivityError("native_content_sensitivity_malformed")
         if "ok" in result and not _dto_shape(query, result["ok"]):
             raise NativeContentSensitivityError("native_content_sensitivity_malformed")
+    except _CallerRejectedError:
+        raise
     except (KeyError, OSError, RuntimeError, TypeError, ValueError) as exc:
+        if time.monotonic() >= deadline:
+            raise _CallerRejectedError("native_content_sensitivity_deadline_exceeded") from exc
         native_record_resident_failure(status.identity.sha256, home, reason="native_content_sensitivity_unavailable")
         raise NativeContentSensitivityError("native_content_sensitivity_unavailable") from exc
     native_record_resident_success(status.identity.sha256, home)

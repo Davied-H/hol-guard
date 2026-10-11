@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass
 from typing import Any, Literal
 
 from ..native_content_sensitivity import NativeContentSensitivityError, content_query
 from .structured_data_sensitivity import DeclaredField, DeclaredSchema
+
+_LOG = logging.getLogger(__name__)
 
 STRUCTURED_OUTPUT_SETTING_PATH = "data_control.structured_output"
 STRUCTURED_OUTPUT_POLICY_VERSION = "hol-guard-structured-output-policy.v1"
@@ -181,7 +184,8 @@ def mediate_native_post_tool_content(
                 refreshed = recheck_binding() if recheck_binding is not None else None
             except (AttributeError, TypeError, ValueError):
                 pass
-            except Exception:
+            except Exception as exc:
+                _LOG.warning("Structured output binding recheck failed (%s)", type(exc).__name__)
                 error = True
             body.update(refreshed_binding=asdict(refreshed) if refreshed is not None else None, recheck_error=error)
             result = content_query("mediate_finish", body, deadline_monotonic=deadline_monotonic)

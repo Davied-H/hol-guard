@@ -1,5 +1,6 @@
 //! Bounded sensitivity requests; Python receives DTOs rather than verdict logic.
 
+use std::borrow::Cow;
 use std::path::Path;
 use std::time::Instant;
 
@@ -19,6 +20,41 @@ mod structured;
 #[cfg(test)]
 #[path = "content_sensitivity_tests.rs"]
 mod tests;
+#[allow(dead_code)]
+#[path = "safe_decode/inflate.rs"]
+mod transport_inflate;
+
+/// Lossless wire encoding for large output; native code bounds and decodes it.
+pub fn decode_input(body: &Value) -> Result<Cow<'_, Value>, &'static str> {
+    if body.get("packed_json_gzip_v1").is_none() {
+        return Ok(Cow::Borrowed(body));
+    }
+    keys(body, &["packed_json_gzip_v1", "decoded_bytes"])?;
+    let length = body["decoded_bytes"]
+        .as_u64()
+        .ok_or("content_input_invalid")?;
+    if length > 12 * 1024 * 1024 {
+        return Err("content_input_invalid");
+    }
+    let packed = body["packed_json_gzip_v1"]
+        .as_str()
+        .ok_or("content_input_invalid")?;
+    if packed.len() > 6 * 1024 * 1024 {
+        return Err("content_input_invalid");
+    }
+    let compressed = STANDARD
+        .decode(packed)
+        .map_err(|_| "content_input_invalid")?;
+    let decoded = transport_inflate::gzip_read(&compressed, length as usize + 1)
+        .map_err(|_| "content_input_invalid")?;
+    if decoded.len() != length as usize {
+        return Err("content_input_invalid");
+    }
+    let text = std::str::from_utf8(&decoded).map_err(|_| "content_input_invalid")?;
+    json_tree::parse(text).map_err(|_| "content_input_invalid")?;
+    let input = serde_json::from_str(text).map_err(|_| "content_input_invalid")?;
+    Ok(Cow::Owned(input))
+}
 
 pub fn evaluate(query: &str, body: &Value, deadline: Instant) -> Result<Value, &'static str> {
     if Instant::now() >= deadline {

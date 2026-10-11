@@ -128,11 +128,20 @@ pub(super) fn scan(
         let chunk = chunk.iter().collect::<String>();
         scan.bytes += chunk.len();
         let window = tail + &chunk;
-        let suppressed = patterns::content(Some(&window), true, false, deadline)?;
-        let found = if suppressed.as_array().is_some_and(Vec::is_empty) {
-            patterns::content(Some(&window), false, false, deadline)?
-        } else {
-            suppressed
+        let found =
+            patterns::content(Some(&window), true, false, deadline).and_then(|suppressed| {
+                if suppressed.as_array().is_some_and(Vec::is_empty) {
+                    patterns::content(Some(&window), false, false, deadline)
+                } else {
+                    Ok(suppressed)
+                }
+            });
+        let found = match found {
+            Ok(found) => found,
+            Err("content_scan_deadline_exceeded") => {
+                return Ok(scan.result("unsupported", "scan_budget_exhausted", false));
+            }
+            Err(error) => return Err(error),
         };
         for found in found.as_array().ok_or("content_scan_unavailable")? {
             let classifier = found["classifier"]

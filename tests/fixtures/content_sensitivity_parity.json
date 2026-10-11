@@ -3989,6 +3989,42 @@
     {
       "query": "declared",
       "body": {
+        "content": "{\"employee\":{\"id\":1208925819614629174706176}}",
+        "schema": null
+      },
+      "expected": {
+        "ok": {
+          "status": "no_declared_match",
+          "matches": [],
+          "complete": true,
+          "reason_code": "credential_scan",
+          "bytes_scanned": 45,
+          "fields_scanned": 0,
+          "rule_version": "a9135e47a76adc32614c084aa3e6e1220f3a452793f4078f8877b6b2488055d3"
+        }
+      }
+    },
+    {
+      "query": "declared",
+      "body": {
+        "content": "{\"employee\":{\"id\":-1208925819614629174706176}}",
+        "schema": null
+      },
+      "expected": {
+        "ok": {
+          "status": "no_declared_match",
+          "matches": [],
+          "complete": true,
+          "reason_code": "credential_scan",
+          "bytes_scanned": 46,
+          "fields_scanned": 0,
+          "rule_version": "a9135e47a76adc32614c084aa3e6e1220f3a452793f4078f8877b6b2488055d3"
+        }
+      }
+    },
+    {
+      "query": "declared",
+      "body": {
         "content": "ghp_AAAAAAAAAAAAAAAAAAAAAAAA",
         "schema": null
       },
@@ -5095,6 +5131,116 @@
           "complete": true,
           "reason_code": "declared_schema_scan",
           "bytes_scanned": 36,
+          "fields_scanned": 1,
+          "rule_version": "f312f84f9bca35af859a0aedc8d764342696129e97876de8a75ead981dafe35b"
+        }
+      }
+    },
+    {
+      "query": "declared",
+      "body": {
+        "content": "{\"employee\":{\"id\":1208925819614629174706176}}",
+        "schema": [
+          {
+            "path": [
+              "employee",
+              "email"
+            ],
+            "role": "protected_personal",
+            "value_type": "string",
+            "category": "email_address"
+          },
+          {
+            "path": [
+              "employee",
+              "id"
+            ],
+            "role": "protected_personal",
+            "value_type": "integer",
+            "category": "employee_id"
+          },
+          {
+            "path": [
+              "note"
+            ],
+            "role": "ordinary",
+            "value_type": "string",
+            "category": null
+          }
+        ]
+      },
+      "expected": {
+        "ok": {
+          "status": "matched",
+          "matches": [
+            {
+              "category": "personal.employee_id",
+              "sensitivity": "high",
+              "field_path": [
+                "employee",
+                "id"
+              ],
+              "reason": "declared_protected_field_present"
+            }
+          ],
+          "complete": true,
+          "reason_code": "declared_schema_scan",
+          "bytes_scanned": 45,
+          "fields_scanned": 1,
+          "rule_version": "f312f84f9bca35af859a0aedc8d764342696129e97876de8a75ead981dafe35b"
+        }
+      }
+    },
+    {
+      "query": "declared",
+      "body": {
+        "content": "{\"employee\":{\"id\":-1208925819614629174706176}}",
+        "schema": [
+          {
+            "path": [
+              "employee",
+              "email"
+            ],
+            "role": "protected_personal",
+            "value_type": "string",
+            "category": "email_address"
+          },
+          {
+            "path": [
+              "employee",
+              "id"
+            ],
+            "role": "protected_personal",
+            "value_type": "integer",
+            "category": "employee_id"
+          },
+          {
+            "path": [
+              "note"
+            ],
+            "role": "ordinary",
+            "value_type": "string",
+            "category": null
+          }
+        ]
+      },
+      "expected": {
+        "ok": {
+          "status": "matched",
+          "matches": [
+            {
+              "category": "personal.employee_id",
+              "sensitivity": "high",
+              "field_path": [
+                "employee",
+                "id"
+              ],
+              "reason": "declared_protected_field_present"
+            }
+          ],
+          "complete": true,
+          "reason_code": "declared_schema_scan",
+          "bytes_scanned": 46,
           "fields_scanned": 1,
           "rule_version": "f312f84f9bca35af859a0aedc8d764342696129e97876de8a75ead981dafe35b"
         }

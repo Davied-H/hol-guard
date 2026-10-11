@@ -189,6 +189,8 @@ def record(repo: Path, base: str, destination: Path) -> None:
             '{"note":"é"}',
             '{"note":""}',
             '{"employee":{"id":9007199254740993}}',
+            '{"employee":{"id":1208925819614629174706176}}',
+            '{"employee":{"id":-1208925819614629174706176}}',
             "ghp_" + "A" * 24,
             "token=fixture-only",
             "token=get_secret(value)",

@@ -216,10 +216,23 @@ def _classified_entries(
     entries = _bounded_entries(directory, expected_identity, started_at, visited_entries)
     try:
         while batch := list(islice(entries, 128)):
-            paths = [(directory / entry.name).relative_to(workspace).as_posix() for entry in batch]
-            matches = classify_secret_paths_batch(paths, deadline_monotonic=started_at + _DISCOVERY_TIMEOUT_SECONDS)
+            relatives = [(directory / entry.name).relative_to(workspace) for entry in batch]
+            eligible = [
+                index
+                for index, relative in enumerate(relatives)
+                if not any(part.lower() in _SKIPPED_STATE_NAMES for part in relative.parts)
+            ]
+            matches = (
+                classify_secret_paths_batch(
+                    [relatives[index].as_posix() for index in eligible],
+                    deadline_monotonic=started_at + _DISCOVERY_TIMEOUT_SECONDS,
+                )
+                if eligible
+                else []
+            )
+            protected = dict(zip(eligible, (match is not None for match in matches), strict=True))
             _check_discovery_budget(started_at, visited_entries[0])
-            yield from ((entry, match is not None) for entry, match in zip(batch, matches, strict=True))
+            yield from ((entry, protected.get(index, False)) for index, entry in enumerate(batch))
     finally:
         entries.close()
 
