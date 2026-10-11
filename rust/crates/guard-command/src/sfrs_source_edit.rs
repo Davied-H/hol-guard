@@ -161,12 +161,12 @@ pub(crate) fn sed_replacement_is_literal(replacement: &str, delimiter: char) -> 
     !escaped
 }
 
-fn py_path(path: &Path) -> PyPath {
+pub(crate) fn py_path(path: &Path) -> PyPath {
     PyPath::new(&path.to_string_lossy())
 }
 
 /// `Path.resolve(strict=True)`; `None` is the `OSError`/`RuntimeError`.
-fn resolve_strict(path: &PyPath) -> Option<PyPath> {
+pub(crate) fn resolve_strict(path: &PyPath) -> Option<PyPath> {
     let resolved = pyfs::resolve(path)?;
     (pyfs::exists(&resolved) == Ok(true)).then_some(resolved)
 }

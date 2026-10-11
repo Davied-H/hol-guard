@@ -172,7 +172,10 @@ mod sfrs_jq;
 mod sfrs_json;
 mod sfrs_patterns;
 mod sfrs_python_imports;
+mod sfrs_quote_parsing;
 mod sfrs_quote_tokens;
+#[cfg(all(test, unix))]
+mod sfrs_quote_vectors;
 mod sfrs_read_only_filters;
 pub mod sfrs_replay;
 mod sfrs_request_data;

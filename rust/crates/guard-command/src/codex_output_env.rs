@@ -72,6 +72,14 @@ pub trait InspectionHost {
     ) -> bool {
         false
     }
+    /// `_trusted_path_command`: a trusted executable on the search path.
+    fn trusted_path_command(&self, _command: &str, _cwd: &str, _home_dir: &str) -> bool {
+        false
+    }
+    /// `build_local_package_script_evidence("bun", args, workspace)` is complete.
+    fn bun_script_evidence_complete(&self, _script_args: &[String], _workspace: &str) -> bool {
+        false
+    }
 }
 
 /// Per-request context.

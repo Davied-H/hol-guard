@@ -20,6 +20,7 @@ from codex_plugin_scanner.guard.runtime.secret_file_request_services import sour
 
 from sfrs_graph_cases import graph_cases
 from sfrs_index_cases import index_cases
+from sfrs_quote_cases import quote_cases
 from sfrs_source_edit_cases import source_edit_cases
 
 TOKEN = "{ROOT}"
@@ -34,6 +35,8 @@ TREE = {
         "home/cargo",
         "home/gomod",
         "home/pyproj",
+        "home/node/src",
+        "home/node/node_modules/.bin",
         "elsewhere",
     ],
     "files": {
@@ -46,6 +49,9 @@ TREE = {
         "home/cargo/Cargo.toml": "",
         "home/gomod/go.mod": "",
         "home/pyproj/pyproject.toml": "",
+        "home/node/package.json": "{}",
+        "home/node/node_modules/.bin/eslint": "#!/bin/sh\n",
+        "home/node/node_modules/.bin/jest": "#!/bin/sh\n",
         "elsewhere/out.txt": "out\n",
     },
     "links": {
@@ -53,6 +59,7 @@ TREE = {
         "home/proj/dirlink": "src",
         "home/proj/outside.txt": "../../elsewhere/out.txt",
         "home/proj/dangling.txt": "src/missing.txt",
+        "home/node/node_modules/.bin/vitest": "../../../../elsewhere/out.txt",
         "home/proj/loop1": "loop2",
         "home/proj/loop2": "loop1",
     },
@@ -230,6 +237,7 @@ def _cases(root: Path) -> list[dict[str, object]]:
     graph_cases(root, add)
     index_cases(root, add)
     source_edit_cases(root, add)
+    quote_cases(root, add)
     return cases
 
 
