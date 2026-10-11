@@ -12,6 +12,7 @@ from pathlib import Path
 from urllib.parse import parse_qs
 
 if __package__:
+    from ..approval_wait_limits import MAX_APPROVAL_WAIT_TIMEOUT_SECONDS
     from ..codex_binding_capture import record_bridge_ingress
     from ..codex_hook_bridge_runtime import BridgeConfig
     from ..codex_hook_bridge_runtime import bounded_hook_input as _hook_input
@@ -21,7 +22,6 @@ if __package__:
         isolated_hook_environment,
         run_isolated_hook_process,
     )
-    from ..config import MAX_APPROVAL_WAIT_TIMEOUT_SECONDS
     from ..daemon.hook_availability_policy import hook_event_is_permission_request
     from ..daemon.hook_request_parsing import runtime_hook_event_name
     from ..hook_execution_environment import stamp_hook_input_text
@@ -53,6 +53,7 @@ else:  # pragma: no cover - exercised by subprocess integration tests
     from codex_plugin_scanner.guard.adapters.codex_hook_response import (
         codex_hook_response as _codex_hook_response,
     )
+    from codex_plugin_scanner.guard.approval_wait_limits import MAX_APPROVAL_WAIT_TIMEOUT_SECONDS
     from codex_plugin_scanner.guard.codex_binding_capture import record_bridge_ingress
     from codex_plugin_scanner.guard.codex_hook_bridge_runtime import (
         BridgeConfig,
@@ -68,7 +69,6 @@ else:  # pragma: no cover - exercised by subprocess integration tests
         isolated_hook_environment,
         run_isolated_hook_process,
     )
-    from codex_plugin_scanner.guard.config import MAX_APPROVAL_WAIT_TIMEOUT_SECONDS
     from codex_plugin_scanner.guard.daemon.hook_availability_policy import (
         hook_event_is_permission_request,
     )
