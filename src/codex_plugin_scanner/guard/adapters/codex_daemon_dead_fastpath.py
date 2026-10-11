@@ -38,6 +38,7 @@ DAEMON_START_MARKERS = (
 )
 DAEMON_START_MARKER_WINDOW_SECONDS = 180.0
 _DAEMON_START_MARKER_MAX_BYTES = 4096
+_DAEMON_STATE_MAX_BYTES = 65536
 NATIVE_RUNTIME_DEAD_REASON_CODE = "native_resident_restart_circuit_open"
 # The one copy of this denial: the bridge, the daemon hook worker and the pool all use it.
 NATIVE_RUNTIME_DEAD_REASON = (
@@ -95,6 +96,18 @@ def daemon_provably_dead(state_path: str | Path) -> bool:
     return False
 
 
+def _live_state_written_at(state_path: Path) -> float | None:
+    """When the daemon last wrote nonempty state; ``None`` for absent or ``{}``."""
+
+    try:
+        modified = state_path.stat().st_mtime
+        with state_path.open("rb") as handle:
+            payload = json.loads(handle.read(_DAEMON_STATE_MAX_BYTES + 1))
+    except (OSError, ValueError):
+        return None
+    return modified if isinstance(payload, dict) and payload else None
+
+
 def daemon_start_in_progress(state_path: str | Path, *, now: float | None = None) -> bool:
     """True when a recent launch marker says a daemon start has not settled.
 
@@ -103,10 +116,16 @@ def daemon_start_in_progress(state_path: str | Path, *, now: float | None = None
     """
 
     current = time.time() if now is None else now
+    # A daemon that wrote live state after the marker came up from that
+    # launch; a marker its worker never reset must not keep later hooks waiting.
+    settled_at = _live_state_written_at(Path(state_path))
     for name in DAEMON_START_MARKERS:
         path = Path(state_path).parent / name
         try:
-            if not 0 <= current - path.stat().st_mtime < DAEMON_START_MARKER_WINDOW_SECONDS:
+            modified = path.stat().st_mtime
+            if not 0 <= current - modified < DAEMON_START_MARKER_WINDOW_SECONDS:
+                continue
+            if settled_at is not None and modified <= settled_at:
                 continue
             with path.open("rb") as handle:
                 payload = json.loads(handle.read(_DAEMON_START_MARKER_MAX_BYTES + 1))
@@ -142,24 +161,6 @@ def record_start_failure(state_path: str | Path) -> None:
 def clear_start_failure(state_path: str | Path) -> None:
     with suppress(OSError):
         _marker_path(state_path).unlink()
-
-
-def settle_daemon_start_markers(state_path: str | Path) -> None:
-    """An authenticated daemon answer means the launch settled.
-
-    A nonempty marker left behind would keep later hooks polling for the
-    whole start window after that daemon has already come up and gone.
-    """
-
-    parent = Path(state_path).parent
-    for name in DAEMON_START_MARKERS:
-        path = parent / name
-        try:
-            descriptor = os.open(path, os.O_WRONLY | os.O_TRUNC)
-        except OSError:
-            continue
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            handle.write("{}")
 
 
 def native_runtime_refused(error: BaseException) -> bool:

@@ -37,40 +37,55 @@ def await_started_daemon(
     *,
     state_path: str | Path,
     stop_at: float,
+    first_request: Callable[[], dict[str, object] | None],
     request: Callable[[], dict[str, object] | None],
     started: bool,
     failure_reason: Callable[[BaseException], str],
 ) -> dict[str, object] | None:
     """Ask the daemon until it answers, the start settles or ``stop_at`` passes.
 
-    ``started`` means the start command succeeded, so one request is made even
-    without a launch marker. A failed request is retried only for a retryable
-    reason while a marker is fresh; any other failure, including an
-    authenticated refusal, is raised unchanged.
+    ``started`` means the start command succeeded, so ``first_request`` is made
+    once even without a launch marker, as before the wait existed. Later polls
+    use ``request``, which must stay inside ``stop_at`` so the local fallback
+    keeps its slice. A failed request is retried only for a retryable reason
+    while a marker is fresh; any other failure, including an authenticated
+    refusal, is raised unchanged.
     """
 
     poll = FIRST_POLL_SECONDS
-    attempt_now = started
+    if started:
+        try:
+            return first_request()
+        except _REQUEST_ERRORS as error:
+            if not _keep_waiting(error, state_path, stop_at, poll, failure_reason):
+                raise
+    elif time.monotonic() + poll >= stop_at or not daemon_start_in_progress(state_path):
+        return None
     while True:
-        if time.monotonic() >= stop_at:
-            # A request started with no time left would run against the hook
-            # deadline and spend the slice reserved for the local fallback.
-            return None
-        if attempt_now:
-            try:
-                return request()
-            except (OSError, ValueError, http.client.HTTPException, urllib.error.URLError) as error:
-                if (
-                    failure_reason(error) not in RETRYABLE_REASONS
-                    or time.monotonic() + poll >= stop_at
-                    or not daemon_start_in_progress(state_path)
-                ):
-                    raise
-        elif time.monotonic() + poll >= stop_at or not daemon_start_in_progress(state_path):
-            return None
         time.sleep(poll)
         poll = min(poll * 2, MAX_POLL_SECONDS)
-        attempt_now = True
+        try:
+            return request()
+        except _REQUEST_ERRORS as error:
+            if not _keep_waiting(error, state_path, stop_at, poll, failure_reason):
+                raise
+
+
+_REQUEST_ERRORS = (OSError, ValueError, http.client.HTTPException, urllib.error.URLError)
+
+
+def _keep_waiting(
+    error: BaseException,
+    state_path: str | Path,
+    stop_at: float,
+    poll: float,
+    failure_reason: Callable[[BaseException], str],
+) -> bool:
+    return (
+        failure_reason(error) in RETRYABLE_REASONS
+        and time.monotonic() + poll < stop_at
+        and daemon_start_in_progress(state_path)
+    )
 
 
 __all__ = ["await_started_daemon"]

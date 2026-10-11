@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import sys
@@ -237,29 +238,34 @@ def test_unparseable_or_empty_markers_do_not_count(tmp_path: Path) -> None:
     assert fastpath.daemon_start_in_progress(state_path)
 
 
-def test_a_wait_does_not_start_once_the_fallback_slice_has_begun() -> None:
-    calls = 0
+def test_only_the_post_start_retry_runs_once_the_fallback_slice_has_begun(tmp_path: Path) -> None:
+    guard_home = _guard_home(tmp_path)
+    _mark_start(guard_home)
+    calls: list[str] = []
 
-    def request() -> dict[str, object]:
-        nonlocal calls
-        calls += 1
-        return dict(_ALLOW)
+    def request(kind: str):
+        def call() -> dict[str, object]:
+            calls.append(kind)
+            raise ConnectionRefusedError("down")
 
-    result = start_wait.await_started_daemon(
-        state_path="unused",
-        stop_at=time.monotonic() - 1,
-        request=request,
-        started=True,
-        failure_reason=lambda _error: "daemon_connection_refused",
-    )
+        return call
 
-    assert result is None
-    assert calls == 0
+    for started in (True, False):
+        with pytest.raises(ConnectionRefusedError) if started else contextlib.nullcontext():
+            result = start_wait.await_started_daemon(
+                state_path=guard_home / "daemon-state.json",
+                stop_at=time.monotonic() - 1,
+                first_request=request("first"),
+                request=request("poll"),
+                started=started,
+                failure_reason=lambda _error: "daemon_connection_refused",
+            )
+            assert result is None
+
+    assert calls == ["first"]
 
 
-def test_a_wait_request_cannot_spend_the_fallback_window(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_a_wait_request_cannot_spend_the_fallback_window(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     guard_home = _guard_home(tmp_path)
     _mark_start(guard_home)
     timeouts: list[float] = []
@@ -271,8 +277,8 @@ def test_a_wait_request_cannot_spend_the_fallback_window(
             timeouts.append(float(timeout))
             return super().__call__(**kwargs)
 
-    budget = 0.2
-    daemon = _Recording([ConnectionRefusedError("down")])
+    budget = 0.6
+    daemon = _Recording([ConnectionRefusedError("down"), ConnectionRefusedError("down")])
     (response, _, _), fallbacks, _causes = _review(
         guard_home,
         monkeypatch,
@@ -283,10 +289,11 @@ def test_a_wait_request_cannot_spend_the_fallback_window(
 
     assert response == _ALLOW
     assert fallbacks == []
-    assert len(timeouts) == 2
-    assert timeouts[0] > budget
-    assert timeouts[1] <= budget
-    assert timeouts[1] < bridge_flow._DAEMON_RPC_TIMEOUT_SECONDS
+    assert len(timeouts) == 3
+    # The first ask and the post-start retry keep the full hook deadline;
+    # the poll that follows stays inside the window before the fallback.
+    assert timeouts[1] > budget
+    assert timeouts[2] <= budget
 
 
 @pytest.mark.skipif(os.name == "nt", reason="the dead-daemon fast path is POSIX-only")
@@ -307,14 +314,21 @@ def test_a_fresh_launch_is_not_denied_by_an_older_start_failure(
     assert not any(cause["stage"] == "daemon_dead_fast" for cause in causes)
 
 
-def test_a_daemon_answer_settles_the_launch_marker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_marker_older_than_live_daemon_state_does_not_extend_the_wait(tmp_path: Path) -> None:
     guard_home = _guard_home(tmp_path)
-    marker = _mark_start(guard_home)
     state_path = guard_home / "daemon-state.json"
-    daemon = _Daemon([])
+    marker = _mark_start(guard_home, "daemon-start-progress.json", age=10)
+    state_path.write_text('{"pid": 1}', encoding="utf-8")
 
-    (response, _, _), _fallbacks, _causes = _review(guard_home, monkeypatch, daemon, started=True)
-
-    assert response == _ALLOW
-    assert marker.read_text(encoding="utf-8") == "{}"
     assert not fastpath.daemon_start_in_progress(state_path)
+
+    # A stopped daemon's tombstone is not a live start, so the marker counts.
+    state_path.write_text("{}", encoding="utf-8")
+    assert fastpath.daemon_start_in_progress(state_path)
+
+    # A launch newer than the live state is still in progress.
+    state_path.write_text('{"pid": 1}', encoding="utf-8")
+    stamp = time.time() - 20
+    os.utime(state_path, (stamp, stamp))
+    os.utime(marker, None)
+    assert fastpath.daemon_start_in_progress(state_path)

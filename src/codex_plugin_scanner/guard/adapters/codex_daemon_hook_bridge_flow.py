@@ -21,7 +21,6 @@ from .codex_daemon_dead_fastpath import (
     daemon_start_in_progress,
     native_runtime_refused,
     record_start_failure,
-    settle_daemon_start_markers,
     should_fail_fast,
 )
 from .codex_daemon_hook_auth import _DaemonResponseError
@@ -276,6 +275,7 @@ def bridge_review_response(
                 response = await_started_daemon(
                     state_path=state_path,
                     stop_at=wait_stop_at,
+                    first_request=daemon_request,
                     request=wait_daemon_request,
                     started=started,
                     failure_reason=_daemon_failure_reason,
@@ -286,7 +286,6 @@ def bridge_review_response(
                     return None, False, False
     if response is not None:
         clear_start_failure(state_path)
-        settle_daemon_start_markers(state_path)
     if response is not None and _daemon_process_failed(response):
         _record_failure(failure_causes, "daemon_worker", "daemon_worker_failed")
         response = None
