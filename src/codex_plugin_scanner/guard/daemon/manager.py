@@ -247,8 +247,6 @@ def _daemon_launcher_env(
         env["USERPROFILE"] = str(trusted_home)
     if guard_home is not None and not _guard_home_is_ephemeral(guard_home):
         env["GUARD_DAEMON_IDLE_TIMEOUT_SECONDS"] = "0"
-    if guard_home is not None:
-        env[START_HEARTBEAT_ENV] = str(start_heartbeat_path(guard_home))
     _bind_native_runtime_override(env)
     return env
 
@@ -700,6 +698,7 @@ def _ensure_guard_daemon_body(
             if time.monotonic() >= start_deadline:
                 break
             clear_start_heartbeat(guard_home)
+            launcher_env = {**launcher_env, START_HEARTBEAT_ENV: str(start_heartbeat_path(guard_home))}
             spawned_at_ns = time.time_ns()
             if os.name == "nt":
                 process = subprocess.Popen(

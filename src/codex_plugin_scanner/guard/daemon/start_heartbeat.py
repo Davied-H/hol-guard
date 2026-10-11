@@ -13,34 +13,36 @@ process tree, and is never read as proof that the daemon is ready or trusted.
 
 from __future__ import annotations
 
-import json
 import time
 from pathlib import Path
 
 from ..private_file_io import read_private_regular_text
 
 START_HEARTBEAT_ENV = "HOL_GUARD_DAEMON_START_HEARTBEAT"
-START_HEARTBEAT_FILE = "daemon-start-heartbeat.json"
+START_HEARTBEAT_FILE = "daemon-start-heartbeat"
 START_HEARTBEAT_MAX_BYTES = 256
 # Hard ceiling on how long a child that has only emitted this heartbeat is
 # treated as starting. Past it the child is classified like any silent one.
 SLOW_START_MAX_SECONDS = 180.0
 
 # Run by the child before it imports Guard. Stdlib only, never raises.
-START_HEARTBEAT_CODE = f"""\
-try:
-    import os, time
-    _path = os.environ.pop({START_HEARTBEAT_ENV!r}, "")
-    if _path:
-        _flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
-        _fd = os.open(_path, _flags, 0o600)
-        try:
-            os.write(_fd, ('{{"pid":%d,"ns":%d}}' % (os.getpid(), time.time_ns())).encode())
-        finally:
-            os.close(_fd)
-except BaseException:
-    pass
-"""
+#
+# It is embedded in the daemon's ``-c`` bootstrap, so it is deliberately one
+# line with only single quotes and no backslashes: process inventory splits the
+# command line shell-style and must still recognise the daemon. The record is
+# ``<pid> <time_ns>``, written to a private temp file (no symlink following)
+# and renamed into place so a reader never sees an empty or partial record.
+START_HEARTBEAT_CODE = (
+    "with __import__('contextlib').suppress(BaseException): "
+    + "import os,time; "
+    + f"p=os.environ.pop('{START_HEARTBEAT_ENV}',''); "
+    + "p[0]; "
+    + "t='%s.%d.tmp'%(p,os.getpid()); "
+    + "fd=os.open(t,os.O_WRONLY|os.O_CREAT|os.O_EXCL|getattr(os,'O_NOFOLLOW',0),384); "
+    + "os.write(fd,('%d %d'%(os.getpid(),time.time_ns())).encode()); "
+    + "os.close(fd); "
+    + "os.replace(t,p)"
+)
 
 
 def start_heartbeat_path(guard_home: Path) -> Path:
@@ -56,14 +58,13 @@ def load_start_heartbeat(guard_home: Path) -> tuple[int, int] | None:
             max_bytes=START_HEARTBEAT_MAX_BYTES,
             require_private_parent=True,
         )
-        payload = json.loads(raw) if raw else None
+        fields = raw.split() if raw else []
+        if len(fields) != 2 or not all(field.isascii() and field.isdigit() for field in fields):
+            return None
+        pid, recorded_at_ns = int(fields[0]), int(fields[1])
     except (OSError, ValueError):
         return None
-    if not isinstance(payload, dict):
-        return None
-    pid = payload.get("pid")
-    recorded_at_ns = payload.get("ns")
-    if type(pid) is not int or pid <= 0 or type(recorded_at_ns) is not int or recorded_at_ns <= 0:
+    if pid <= 0 or recorded_at_ns <= 0:
         return None
     return pid, recorded_at_ns
 
