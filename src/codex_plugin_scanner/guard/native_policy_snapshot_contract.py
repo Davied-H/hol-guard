@@ -104,6 +104,10 @@ def build_policy_snapshot_v3(
         raise NativePolicySnapshotError("native_policy_snapshot_identity_invalid")
     if not isinstance(verifier_key, bytes) or len(verifier_key) != _VERIFIER_KEY_BYTES:
         raise NativePolicySnapshotError("native_policy_verifier_key_invalid")
+    from .native_policy_snapshot_business_bridge import require_native_snapshot_runtime
+
+    # Select the resident (keeping its specific refusal reason) before any composer spawn.
+    require_native_snapshot_runtime(business=business_policy is not None)
     effective_policy = effective_native_policy_v3(config)
     binding = capture_native_command_control_binding(command_extensions) if command_extensions is not None else None
     raw_mode = _config_value(config, "mode", "prompt")

@@ -120,6 +120,11 @@ def _snapshot_inputs_v3(
     business_policy: Mapping[str, object] | None = None,
     deadline_monotonic: float | None = None,
 ) -> tuple[dict[str, object], str, str, str, str]:
+    from .native_policy_snapshot_business_bridge import require_native_snapshot_runtime
+
+    # Refuse on the selected resident's availability and deadline before any
+    # composer spawn, so a missing consumer keeps its specific reason.
+    require_native_snapshot_runtime(business=business_policy is not None)
     effective_policy = effective_native_policy_v3(config)
     raw_mode = _config_value(config, "mode", "prompt")
     if not isinstance(raw_mode, str) or raw_mode not in _VALID_INPUT_MODES:
@@ -129,8 +134,6 @@ def _snapshot_inputs_v3(
     # A synthetic, non-installed constructor value supplies Rust's semantic
     # identity. Generation/times/key do not participate in policy identity, so
     # the pure result is memoized per runtime and input digest.
-    from .native_policy_snapshot_business_bridge import require_native_snapshot_runtime
-
     # A memoized result never outlives the resident's availability: fail closed
     # before consulting it.
     require_native_snapshot_runtime(business=business_policy is not None)
