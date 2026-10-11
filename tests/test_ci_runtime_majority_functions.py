@@ -312,3 +312,26 @@ def test_type_checking_else_branch_still_rejects_an_excluded_import(tmp_path: Pa
     )
     with pytest.raises(ScopeError, match="imports excluded"):
         build_report(repo, scope)
+
+
+def test_unrelated_type_checking_attribute_does_not_hide_an_excluded_import(tmp_path: Path) -> None:
+    render = RENDER.replace('\n\n_TABLE["x"] = _human\n', "\n")
+    repo, scope = _repo(
+        tmp_path,
+        entries=[_entry()],
+        render=render,
+        root_extra=("import settings\n\nif settings.TYPE_CHECKING:\n    from pkg.render import _human\n"),
+    )
+    with pytest.raises(ScopeError, match="imports excluded"):
+        build_report(repo, scope)
+
+
+def test_typing_module_attribute_is_the_type_checking_sentinel(tmp_path: Path) -> None:
+    render = RENDER.replace('\n\n_TABLE["x"] = _human\n', "\n")
+    repo, scope = _repo(
+        tmp_path,
+        entries=[_entry()],
+        render=render,
+        root_extra="import typing\n\nif typing.TYPE_CHECKING:\n    from pkg.render import _human\n",
+    )
+    build_report(repo, scope)
