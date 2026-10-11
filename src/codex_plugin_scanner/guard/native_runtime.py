@@ -361,9 +361,34 @@ def _scoped_manifest_still_valid(status: NativeRuntimeStatus) -> bool:
     return error is None and current == manifest
 
 
+def _status_request_key(candidates: tuple[Path, ...]) -> tuple[str, tuple[str, ...]]:
+    return native_mode(), tuple(str(candidate) for candidate in candidates)
+
+
+def share_verified_runtime_status(status: NativeRuntimeStatus) -> None:
+    """Let the rest of this hook request reuse a status the caller already verified.
+
+    The daemon decides a hook against the runtime status bound to its acknowledged
+    policy snapshot, but a review that needs approval then asks
+    ``native_runtime_status`` again and re-hashes the whole binary. Sharing the
+    verified status skips that second hash. Each reuse still rechecks the binary's
+    size, mtime and bundled manifest, and nothing outlives the request.
+    """
+
+    identity = status.identity
+    if identity is None or not status.available or not status.compatible or status.mode != native_mode():
+        return
+    candidates = _runtime_candidates()
+    if identity.path not in {_resolved_candidate_path(candidate) for candidate in candidates}:
+        return
+    key = _status_request_key(candidates)
+    if scoped_status(key) is None:
+        remember_scoped_status(key, status)
+
+
 def native_runtime_status(*, deadline_monotonic: float | None = None) -> NativeRuntimeStatus:
     candidates = _runtime_candidates()
-    key = (native_mode(), tuple(str(candidate) for candidate in candidates))
+    key = _status_request_key(candidates)
     if (cached := scoped_status(key)) is not None:
         identity = cached.identity
         resolved = {_resolved_candidate_path(candidate) for candidate in candidates}
