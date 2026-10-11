@@ -18,7 +18,6 @@ from codex_plugin_scanner.guard.config import GuardConfig
 from codex_plugin_scanner.guard.consumer import evaluate_detection
 from codex_plugin_scanner.guard.edge_events import build_runtime_session_event
 from codex_plugin_scanner.guard.models import GuardArtifact, HarnessDetection
-from codex_plugin_scanner.guard.native_policy_snapshot_publisher import provision_native_verifier_key_for_store
 from codex_plugin_scanner.guard.policy_bundle_parser import (
     computed_policy_bundle_hash,
     payload_hash_for_policy_bundle,
@@ -489,7 +488,6 @@ def test_build_runtime_snapshot_calls_oauth_health_once(tmp_path: Path, monkeypa
 
 def test_runtime_snapshot_reuses_one_store_connection(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     store = GuardStore(tmp_path / "guard-home")
-    provision_native_verifier_key_for_store(store)
     opened = 0
     original = sqlite3.connect
 
@@ -523,7 +521,6 @@ def test_runtime_snapshot_exposes_safe_trust_status(tmp_path: Path) -> None:
 
 def test_runtime_snapshot_trust_status_does_not_refresh_integrity_state(tmp_path: Path) -> None:
     store = GuardStore(tmp_path / "guard-home")
-    provision_native_verifier_key_for_store(store)
     cached_state = {
         "backend": "cached-backend",
         "mode": "degraded",
