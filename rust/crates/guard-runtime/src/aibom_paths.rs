@@ -89,7 +89,12 @@ pub(crate) fn resolves_within_root(root: &Path, candidate: &Path, require_exists
     let (Ok(resolved_root), Ok(resolved)) = (resolve(root), resolve(candidate)) else {
         return false;
     };
-    resolved.starts_with(&resolved_root) && !(require_exists && !exists(&resolved))
+    // Containment first: `exists` stats the resolved path, so it runs only for
+    // a candidate already inside the workspace.
+    if !resolved.starts_with(&resolved_root) {
+        return false;
+    }
+    !require_exists || exists(&resolved)
 }
 
 /// `is_safe_relative_path(root, value, require_exists=False)`.
