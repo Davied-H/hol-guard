@@ -7,7 +7,7 @@ from pathlib import Path
 
 import yaml
 
-from scripts.ci.prune_superseded_caches import cache_family, main, superseded
+from scripts.ci.prune_superseded_caches import cache_family, idle_compiler_entries, main, superseded
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -99,6 +99,65 @@ def test_cli_rejects_non_list(tmp_path: Path) -> None:
     listing = tmp_path / "caches.json"
     listing.write_text("{}")
     assert main([str(listing)]) == 2
+
+
+def _object(entry_id: int, accessed: str | None, ref: str = "refs/heads/main") -> dict[str, object]:
+    entry = _entry(entry_id, f"sccache/a/b/{entry_id}/{entry_id:064x}", "2026-10-08T00:00:00Z", ref)
+    if accessed is not None:
+        entry["lastAccessedAt"] = accessed
+    return entry
+
+
+def test_compiler_objects_idle_before_newest_read_are_selected() -> None:
+    entries = [
+        _object(1, "2026-10-11T13:20:00.104384Z"),
+        _object(2, "2026-10-11T11:30:00Z"),
+        _object(3, "2026-10-11T11:10:00Z"),
+        _object(4, "2026-10-11T03:00:00Z"),
+        _object(5, "2026-10-11T03:00:00Z", "refs/pull/7/merge"),
+        _object(6, None),
+        _object(7, "not-a-time"),
+        _object(8, "2026-10-11T03:00:00"),
+        _entry(9, "v0-rust-sonar-Linux-x64-923da8c6-a", "2026-10-01T00:00:00Z")
+        | {"lastAccessedAt": "2026-10-01T00:00:00Z"},
+    ]
+    assert idle_compiler_entries(entries) == [3, 4]
+    assert idle_compiler_entries(entries, idle_hours=12) == []
+
+
+def test_quiet_period_keeps_the_last_warm_set() -> None:
+    # Nothing has built for days; the newest read anchors the cutoff, not the clock.
+    entries = [
+        _object(1, "2026-10-01T10:00:00Z"),
+        _object(2, "2026-10-01T09:30:00Z"),
+        _object(3, "2026-09-30T00:00:00Z"),
+    ]
+    assert idle_compiler_entries(entries) == [3]
+    assert idle_compiler_entries([]) == []
+
+
+def test_cli_combines_superseded_and_idle_entries(tmp_path: Path, capsys) -> None:
+    listing = tmp_path / "caches.json"
+    listing.write_text(
+        json.dumps(
+            [
+                _entry(1, "v0-rust-sonar-Linux-x64-923da8c6-a", "2026-10-09T00:00:00Z"),
+                _entry(2, "v0-rust-sonar-Linux-x64-923da8c6-b", "2026-10-10T00:00:00Z"),
+                _object(3, "2026-10-11T13:00:00Z"),
+                _object(4, "2026-10-11T08:00:00Z"),
+            ]
+        )
+    )
+    assert main([str(listing)]) == 0
+    assert capsys.readouterr().out == "1\n4\n"
+    assert main([str(listing), "--idle-hours", "6"]) == 0
+    assert capsys.readouterr().out == "1\n"
+    assert main([str(listing), "--idle-hours", "0"]) == 2
+
+
+def test_workflow_lists_last_access_for_idle_pruning() -> None:
+    text = (ROOT / ".github/workflows/cache-cleanup.yml").read_text()
+    assert "--json id,key,ref,createdAt,lastAccessedAt" in text
 
 
 def test_workflow_runs_trusted_main_code_with_least_privilege() -> None:
