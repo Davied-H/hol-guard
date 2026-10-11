@@ -751,12 +751,18 @@ jobs:
       (github.event_name != 'pull_request' ||
        (needs.plan.result == 'success' && needs.plan.outputs.data_only != 'true'))
     runs-on: windows-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        opt-level: ["s", "1", "0"]
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
           persist-credentials: false
       - uses: ./.github/actions/ci-job-windows-native-runtime
+        with:
+          opt-level: ${{ matrix.opt-level }}
 
   windows-packaged-daemon:
     needs: [plan, native-command-evaluators, windows-native-runtime]
@@ -772,6 +778,7 @@ jobs:
       fail-fast: false
       matrix:
         native-diagnostics: ["0", "1"]
+        opt-level: ["s", "1", "0"]
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
@@ -780,6 +787,7 @@ jobs:
         with:
           python-version: "3.12"
           native-diagnostics: ${{ matrix.native-diagnostics }}
+          opt-level: ${{ matrix.opt-level }}
 
   macos-native-runtime:
     needs: [plan]
@@ -788,12 +796,18 @@ jobs:
       (github.event_name != 'pull_request' ||
        (needs.plan.result == 'success' && needs.plan.outputs.data_only != 'true'))
     runs-on: macos-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        opt-level: ["s", "1", "0"]
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
           persist-credentials: false
       - uses: ./.github/actions/ci-job-macos-native-runtime
+        with:
+          opt-level: ${{ matrix.opt-level }}
 
   macos-skill-identity:
     needs: [plan, native-command-evaluators, macos-native-runtime]
@@ -805,6 +819,10 @@ jobs:
        (needs.plan.result == 'success' && needs.plan.outputs.data_only != 'true'))
     runs-on: macos-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        opt-level: ["s", "1", "0"]
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
@@ -812,6 +830,7 @@ jobs:
       - uses: ./.github/actions/ci-job-macos-skill-identity
         with:
           python-version: "3.12"
+          opt-level: ${{ matrix.opt-level }}
 
   # Shadow aggregate: reports the merged required-result contract. In shadow mode
   # it needs the full required set and evaluates the planner's lane choice so the

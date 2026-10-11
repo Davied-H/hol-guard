@@ -1,6 +1,9 @@
 name: CI macOS skill identity
 description: Run the skill-directory identity regressions against the CI-built macOS runtime.
 inputs:
+  opt-level:
+    description: Experiment-only release opt-level for the runtime build.
+    required: true
   python-version:
     description: Explicit python-version from the calling job.
     required: true
@@ -15,7 +18,7 @@ runs:
     - name: Download the CI-built macOS native runtime
       uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
       with:
-        name: macos-native-runtime
+        name: macos-native-runtime-${{ inputs.opt-level }}
         path: ${{ runner.temp }}/hol-guard-native-runtime
     - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
       with:
