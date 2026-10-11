@@ -52,6 +52,8 @@ mod cloud_request_text;
 #[cfg(test)]
 mod cloud_request_vectors_tests;
 mod cloud_sync_privacy;
+mod codex_app_server_socket;
+mod codex_thread_continue_op;
 mod codex_tool_output_git;
 mod codex_tool_output_op;
 #[cfg(all(test, unix))]
@@ -186,6 +188,7 @@ mod hardening;
 mod hook_adapter_op;
 mod hook_artifact_compose_op;
 mod hook_artifact_compose_reuse;
+mod hook_authority_state_op;
 mod hook_decision_compose;
 mod hook_decision_directive;
 mod hook_decision_finalize;
@@ -272,6 +275,7 @@ mod policy_bundle_v1_rules;
 mod policy_bundle_v2;
 mod policy_bundle_v2_ack;
 mod policy_decision_lookup_op;
+mod policy_effective;
 mod policy_enforcement;
 mod policy_integrity_resolver;
 mod policy_snapshot_build;
