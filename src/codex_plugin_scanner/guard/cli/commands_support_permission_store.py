@@ -16,7 +16,6 @@ if TYPE_CHECKING:
         _claude_pending_permission_state_key,
         _cursor_after_shell_observed,
         _cursor_conversation_id,
-        _cursor_pending_shell_is_fresh,
         _cursor_pending_shell_state_key,
         _cursor_shell_command_fingerprint,
         _cursor_shell_command_from_payload,
@@ -312,8 +311,6 @@ def _persist_cursor_native_permission_after_shell(
         return False
     now = _now()
     if not _cursor_after_shell_observed(prepared):
-        return False
-    if not _cursor_pending_shell_is_fresh(pending, now=now):
         return False
     if not cursor_after_observer_trusted(
         guard_home=guard_home,
