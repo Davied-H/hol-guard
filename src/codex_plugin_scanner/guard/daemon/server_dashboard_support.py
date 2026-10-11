@@ -14,20 +14,7 @@ from ..cli.install_commands import list_harness_setup_items
 from ..native_daemon_handler import NativeDaemonHandlerError, native_detection_app_statuses, native_requests_list
 from ..store_approvals import InvalidApprovalCursorError
 from .manager import GUARD_DAEMON_COMPATIBILITY_VERSION
-from .server_common import _NATIVE_HANDLER_UNAVAILABLE, _is_string_object_dict
-
-
-class _ServerProxy:
-    """Late-bound view of ``server`` that avoids an import cycle.
-
-    Collaborators stay owned by ``server`` so existing patches keep working.
-    """
-
-    def __getattr__(self, name: str):
-        from . import server
-
-        return getattr(server, name)
-
+from .server_common import _NATIVE_HANDLER_UNAVAILABLE, _is_string_object_dict, _ServerProxy
 
 m = _ServerProxy()
 

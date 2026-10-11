@@ -21,19 +21,7 @@ from .command_activity_api import (
     handle_command_extensions,
 )
 from .managed_controls_api import managed_policy_rows
-
-
-class _ServerProxy:
-    """Late-bound view of ``server`` that avoids an import cycle.
-
-    Collaborators stay owned by ``server`` so existing patches keep working.
-    """
-
-    def __getattr__(self, name: str):
-        from . import server
-
-        return getattr(server, name)
-
+from .server_common import _ServerProxy
 
 m = _ServerProxy()
 

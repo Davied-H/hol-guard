@@ -18,21 +18,8 @@ from ..store import GuardStore
 from .dashboard_update import merge_dashboard_update_progress
 from .extension_control_api import ExtensionControlApiError
 from .local_cli_http import handle_local_cli_list
-from .server_common import _now
+from .server_common import _now, _ServerProxy
 from .server_control_cloud_sync import _managed_controls_publish_for, _maybe_queue_first_cloud_sync
-
-
-class _ServerProxy:
-    """Late-bound view of ``server`` that avoids an import cycle.
-
-    Collaborators stay owned by ``server`` so existing patches keep working.
-    """
-
-    def __getattr__(self, name: str):
-        from . import server
-
-        return getattr(server, name)
-
 
 m = _ServerProxy()
 
