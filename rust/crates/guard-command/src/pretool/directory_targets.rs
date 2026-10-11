@@ -146,6 +146,22 @@ pub(crate) fn home_targets_unquoted(segment: &crate::CommandSegmentV1) -> bool {
         || !shell_keeps_tilde_literal(&segment.text)
 }
 
+/// Search reads also accept a quoted `~` when the working directory has no
+/// `~` entry: the literal relative path then names nothing, so the search
+/// reads nothing, and the home spelling has already cleared the read screens.
+pub(crate) fn search_home_targets_safe(
+    segment: &crate::CommandSegmentV1,
+    cwd: Option<&str>,
+) -> bool {
+    home_targets_unquoted(segment)
+        || cwd.is_some_and(|cwd| {
+            matches!(
+                std::fs::symlink_metadata(std::path::Path::new(cwd).join("~")),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound
+            )
+        })
+}
+
 fn shell_keeps_tilde_literal(text: &str) -> bool {
     let mut quote = None;
     let mut escaped = false;

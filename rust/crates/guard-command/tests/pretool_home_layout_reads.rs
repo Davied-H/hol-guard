@@ -217,10 +217,16 @@ fn git_inspection_of_linked_worktree_below_home_is_allowed_unless_forged() {
 fn quoted_home_or_variable_roots_are_reviewed_and_rootless_fd_matches_dot() {
     let layout = layout("quoted-roots");
     let cwd = layout.org.join("app-portal");
-    for command in [
+    let literal_home = [
         "rg -n fixture '~/Code/org/app-portal'",
         "rg -n fixture \\~/Code/org/app-portal",
         "fd -e rs main '~/Code/org/app-portal'",
+    ];
+    // With no `~` entry in the cwd the literal path names nothing.
+    for command in literal_home {
+        assert_decision(&cwd, &layout.home, command, true);
+    }
+    for command in [
         "fd -e rs main --search-path=~/Code/org/app-portal",
         "fd . \"$HOME\"",
         "fd . $HOME/Code/org",
@@ -242,5 +248,10 @@ fn quoted_home_or_variable_roots_are_reviewed_and_rootless_fd_matches_dot() {
         "fd -e rs main --search-path ~/Code/org",
     ] {
         assert_decision(&cwd, &layout.home, command, true);
+    }
+    // Once the cwd holds a `~` entry, the literal path reads something else.
+    std::fs::create_dir(cwd.join("~")).unwrap();
+    for command in literal_home {
+        assert_decision(&cwd, &layout.home, command, false);
     }
 }
