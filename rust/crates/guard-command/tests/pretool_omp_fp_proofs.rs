@@ -424,3 +424,107 @@ fn eval_helpers_keep_their_review_when_they_reach_outside_the_workspace() {
         );
     }
 }
+
+#[test]
+fn content_searches_of_agent_state_trees_stay_reviewed() {
+    let f = fixture();
+    let h = f.home.to_str().unwrap().to_owned();
+    for dir in [
+        format!("{h}/.agent/artifacts"),
+        format!("{h}/.agent/skills"),
+    ] {
+        for (harness, tool) in [("omp", "grep"), ("omp", "search"), ("claude-code", "Grep")] {
+            assert!(
+                !allowed(
+                    &f,
+                    harness,
+                    tool,
+                    json!({"pattern": "synthetic", "path": dir.clone()})
+                ),
+                "{harness} {tool} {dir}"
+            );
+        }
+    }
+    // Shell content searches over the same trees stay reviewed too.
+    for cmd in [
+        format!("grep -r synthetic {h}/.agent/artifacts"),
+        format!("rg synthetic {h}/.agent/artifacts"),
+        format!("grep -r synthetic {h}/.agent/skills"),
+        format!("rg synthetic {h}/.agent/artifacts/*"),
+        format!("rg synthetic {h}/.agent/*/report.md"),
+    ] {
+        let r = run(&f, "omp", "bash", json!({"command": cmd.clone()}));
+        assert_ne!(r.minimum_action, "allow", "{cmd}: {}", r.reason_code);
+    }
+    // Names-only listings stay silent.
+    assert!(allowed(
+        &f,
+        "omp",
+        "glob",
+        json!({"pattern": "*", "path": format!("{h}/.agent/artifacts")})
+    ));
+}
+
+#[test]
+fn bracketed_paths_are_literal_only_for_host_read_tools() {
+    let f = fixture();
+    let page = f.project.join("app/registry/[slug]/page.tsx");
+    let page = page.to_str().unwrap();
+    for (harness, tool) in [
+        ("omp", "read_many_files"),
+        ("claude-code", "read_many_files"),
+        ("zcode", "some_unknown_reader"),
+    ] {
+        let r = run(&f, harness, tool, json!({"path": page}));
+        assert_ne!(
+            r.minimum_action, "allow",
+            "{harness} {tool}: {}",
+            r.reason_code
+        );
+    }
+    // The same tool still reads an ordinary bracket-free file silently.
+    let plain = f.project.join("src/one.ts");
+    assert!(allowed(
+        &f,
+        "claude-code",
+        "read_many_files",
+        json!({"path": plain.to_str().unwrap()})
+    ));
+}
+
+#[test]
+fn stdin_operand_and_double_dash_disqualify_source_read_exemption() {
+    let f = fixture();
+    for cmd in [
+        "cat src/password.rs -",
+        "cat src/password.rs -- -",
+        "cat -- - src/password.rs",
+        "cat -n",
+    ] {
+        let r = run(&f, "codex", "Bash", json!({"command": cmd}));
+        assert_ne!(r.minimum_action, "allow", "{cmd}: {}", r.reason_code);
+    }
+    for cmd in [
+        "cat src/password-reset-email.tsx",
+        "cat -n -- src/password-reset-email.tsx",
+    ] {
+        assert!(
+            allowed(&f, "codex", "Bash", json!({"command": cmd})),
+            "{cmd}"
+        );
+    }
+}
+
+#[test]
+fn python_print_with_carriage_return_is_not_a_constant_eval() {
+    let f = fixture();
+    for code in ["print(1)\rprint(2)", "print(1)\r__import__('os')"] {
+        let r = run(
+            &f,
+            "omp",
+            "eval",
+            json!({"language": "python", "code": code}),
+        );
+        assert_ne!(r.reason_code, "native_pure_constant_eval", "{code:?}");
+    }
+}

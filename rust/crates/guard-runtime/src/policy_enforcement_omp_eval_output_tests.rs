@@ -135,6 +135,17 @@ fn constant_eval_proof_carries_no_execution_risk() {
         &[]
     )
     .is_empty());
+    assert!(risk_classes(
+        PreToolActionTypeV1::McpTool,
+        false,
+        "native_pure_constant_eval",
+        &[]
+    )
+    .is_empty());
+    assert_eq!(
+        risk_classes(PreToolActionTypeV1::McpTool, false, "native_mcp_other", &[]),
+        vec!["mcp_dangerous_tool"]
+    );
     assert_eq!(
         risk_classes(
             PreToolActionTypeV1::Harness,

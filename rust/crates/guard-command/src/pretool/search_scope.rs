@@ -56,7 +56,8 @@ pub(super) fn claude_grep_directory_scope_proven(
     let Some(root) = verified_directory_root(target, home_dir, cwd) else {
         return false;
     };
-    walk_scope(&root, &filter, true).is_ok()
+    !super::read_paths::inside_agent_state_tree(&root, home_dir)
+        && walk_scope(&root, &filter, true).is_ok()
 }
 
 /// True when a Claude `Glob` returns only names under a verified directory
@@ -104,6 +105,19 @@ pub(super) fn claude_glob_scope_proven(
         Some(_) => return false,
     };
     unfiltered_directory_scope_proven(target, home_dir, cwd)
+}
+
+/// Content search (`grep`) variant of the unfiltered proof. Agent-state trees
+/// (`~/.agent/skills`, `~/.agent/artifacts`) are excluded: the per-file rules
+/// that deny direct reads there do not apply to a directory walk.
+pub(super) fn content_search_scope_proven(
+    target: &str,
+    home_dir: Option<&str>,
+    cwd: Option<&str>,
+) -> bool {
+    !verified_directory_root(target, home_dir, cwd)
+        .is_some_and(|root| super::read_paths::inside_agent_state_tree(&root, home_dir))
+        && unfiltered_directory_scope_proven(target, home_dir, cwd)
 }
 
 /// Host-neutral variant for hosts whose search semantics are not modeled

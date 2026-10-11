@@ -188,6 +188,7 @@ pub(crate) fn risk_classes(
         }
         PreToolActionTypeV1::FileWrite => {}
         PreToolActionTypeV1::Package => risks.push("package_script"),
+        PreToolActionTypeV1::McpTool if reason_code == "native_pure_constant_eval" => {}
         PreToolActionTypeV1::McpTool => risks.push("mcp_dangerous_tool"),
         PreToolActionTypeV1::Network => risks.push("network_egress"),
         PreToolActionTypeV1::ProcessService => risks.push("persistence"),

@@ -147,6 +147,10 @@ fn call_argument<'a>(statement: &'a str, callee: &str) -> Option<&'a str> {
 
 /// Python `print(<number expression | plain string>)` lines and comments only.
 pub(super) fn python_print_program(code: &str) -> bool {
+    // Python treats a lone CR as a line break that `lines()` does not split on.
+    if code.contains('\r') {
+        return false;
+    }
     let lines: Vec<&str> = code
         .lines()
         .map(str::trim)

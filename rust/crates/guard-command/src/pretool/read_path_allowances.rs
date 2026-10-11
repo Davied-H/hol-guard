@@ -165,6 +165,23 @@ pub(in crate::pretool) fn agent_home_state(
     })
 }
 
+/// True when `canonical` is, or lies inside, an Oh My Pi agent-state tree
+/// (`~/.agent/skills`, `~/.agent/artifacts`). Content searches must not walk
+/// these trees: the per-file exclusions that deny direct reads of non-document
+/// files there (for example `artifacts/data.json`) do not apply to a walk.
+pub(in crate::pretool) fn inside_agent_state_tree(
+    canonical: &std::path::Path,
+    home_dir: Option<&str>,
+) -> bool {
+    let Some(home) = home_dir.and_then(|root| std::fs::canonicalize(root).ok()) else {
+        return false;
+    };
+    let agent = home.join(".agent");
+    ["skills", "artifacts"]
+        .into_iter()
+        .any(|name| canonical.starts_with(agent.join(name)))
+}
+
 /// `~/.hol-support/SAFETY.md` is the harness-facing safety guide that agents
 /// are instructed to read before acting; it gets the same explicit allowance
 /// the Python source-path classifier grants.

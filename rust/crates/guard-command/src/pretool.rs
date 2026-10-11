@@ -32,6 +32,8 @@ pub(crate) use git_routes::git_route_within_workspace;
 mod apply_patch_writes;
 mod pure_expression;
 mod read_paths;
+mod source_reads;
+use source_reads::{plain_source_code_path, sensitive_command_input, source_file_read_segment};
 mod restricted_tests;
 mod safe_reads;
 mod safe_scalar;
@@ -95,45 +97,6 @@ fn pretool_decision(
 
 pub(super) fn normalized_haystack(value: &str) -> String {
     value.to_ascii_lowercase().replace('\\', "/")
-}
-
-/// A single plain relative-or-absolute path token naming a source-code file.
-/// Words such as "password" in its name describe code, not a credential store.
-pub(super) fn plain_source_code_path(value: &str) -> bool {
-    let trimmed = value.trim();
-    if trimmed.is_empty()
-        || trimmed.contains(|character: char| {
-            character.is_whitespace()
-                || matches!(
-                    character,
-                    '$' | '`'
-                        | ';'
-                        | '|'
-                        | '&'
-                        | '<'
-                        | '>'
-                        | '('
-                        | ')'
-                        | '{'
-                        | '}'
-                        | '*'
-                        | '?'
-                        | '"'
-                        | '\''
-                        | '='
-                        | ':'
-                        | '\\'
-                        | '~'
-                        | '!'
-                )
-        })
-    {
-        return false;
-    }
-    Path::new(trimmed)
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(guard_secure_fs::is_source_code_extension)
 }
 
 pub(super) fn sensitive_command(value: &str) -> bool {
@@ -290,62 +253,6 @@ fn exact_safe_command_with_context(
             context,
         )
     })
-}
-
-fn exact_safe_search_command(model: &CanonicalCommandV1) -> bool {
-    exact_safe_command(model, false)
-        && model.segments.iter().all(|segment| {
-            segment
-                .executable
-                .as_deref()
-                .is_some_and(|executable| matches!(executable_basename(executable), "rg" | "grep"))
-        })
-}
-
-pub(super) fn sensitive_command_input(value: &str) -> bool {
-    if !sensitive_command(value) {
-        return false;
-    }
-    let request = CommandModelRequestV1 {
-        command: value.to_owned(),
-        dialect: "posix".to_owned(),
-        transport: "shell_string".to_owned(),
-        extraction_provenance: "guard-shell".to_owned(),
-    };
-    // Only parsed, bounded search data may shed the raw keyword signal.
-    // Structured paths, prompts, URLs and arbitrary executable text keep it.
-    !parse_command(&request)
-        .is_ok_and(|model| exact_safe_search_command(&model) || exact_source_file_read(&model))
-}
-
-/// `cat`/`head`/`tail`/`wc` over plain source-code file tokens only. Each
-/// argument is rechecked on its own, so credential-family paths still match.
-fn exact_source_file_read(model: &CanonicalCommandV1) -> bool {
-    if model.confidence != "exact"
-        || model.path_overridden
-        || model.segments.len() != 1
-        || !model.wrapper_chain.is_empty()
-    {
-        return false;
-    }
-    source_file_read_segment(&model.segments[0])
-}
-
-pub(super) fn source_file_read_segment(segment: &crate::CommandSegmentV1) -> bool {
-    let Some(executable) = segment.executable.as_deref() else {
-        return false;
-    };
-    matches!(
-        executable_basename(executable),
-        "cat" | "head" | "tail" | "wc" | "nl"
-    ) && !segment.arguments.is_empty()
-        && segment.arguments.iter().all(|argument| {
-            if argument.starts_with('-') {
-                argument.len() <= 3 && !argument.contains(|c: char| c.is_alphabetic() && c != 'n')
-            } else {
-                plain_source_code_path(argument) && !sensitive_command(argument)
-            }
-        })
 }
 
 fn exact_destructive_tool_introspection(model: &CanonicalCommandV1) -> bool {
