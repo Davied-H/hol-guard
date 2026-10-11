@@ -65,10 +65,13 @@ def test_refused_respawn_fails_fast_without_spawning_a_client_per_call(
     deadline = time.monotonic() + 5
 
     assert pool.request(b"first", deadline_monotonic=deadline) == _BLOCKED
+    assert client_module.native_resident_client_failure_code() == revival.RESTART_BLOCKED_CODE
     assert len(clients) == 1
+    client_module.record_native_resident_client_failure_code(None)
     started = time.monotonic()
     for _ in range(20):
         assert pool.request(b"again", deadline_monotonic=deadline) == _BLOCKED
+    assert client_module.native_resident_client_failure_code() == revival.RESTART_BLOCKED_CODE
     assert time.monotonic() - started < 0.5
     assert len(clients) == 1, "a held refusal must not spawn another stream"
 

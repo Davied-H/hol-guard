@@ -195,6 +195,7 @@ class _PersistentNativeClientPool:
         if restart_hold_active(self._state_dir) and not self.has_idle_client():
             # The Rust client just refused to respawn a crash-looping resident.
             # Answer the same bounded refusal instead of spawning a client per call.
+            _LAST_FAILURE_CODE.set(RESTART_BLOCKED_CODE)
             return restart_blocked_frame()
         client = self._lease(deadline_monotonic=deadline_monotonic)
         if client is None:
@@ -206,6 +207,7 @@ class _PersistentNativeClientPool:
             if response is not None:
                 if _is_restart_blocked(response):
                     arm_restart_hold(self._state_dir)
+                    _LAST_FAILURE_CODE.set(RESTART_BLOCKED_CODE)
                 else:
                     clear_restart_hold(self._state_dir)
             return response
