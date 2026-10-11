@@ -152,14 +152,21 @@ pub(crate) fn home_targets_unquoted(segment: &crate::CommandSegmentV1) -> bool {
 pub(crate) fn search_home_targets_safe(
     segment: &crate::CommandSegmentV1,
     cwd: Option<&str>,
+    home_dir: Option<&str>,
 ) -> bool {
     home_targets_unquoted(segment)
-        || cwd.is_some_and(|cwd| {
-            matches!(
-                std::fs::symlink_metadata(std::path::Path::new(cwd).join("~")),
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound
-            )
-        })
+        || cwd
+            .map(|cwd| {
+                super::read_paths::expand_home_read_path(cwd, home_dir)
+                    .unwrap_or_else(|| cwd.to_owned())
+            })
+            .filter(|cwd| std::path::Path::new(cwd).is_absolute())
+            .is_some_and(|cwd| {
+                matches!(
+                    std::fs::symlink_metadata(std::path::Path::new(&cwd).join("~")),
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound
+                )
+            })
 }
 
 fn shell_keeps_tilde_literal(text: &str) -> bool {

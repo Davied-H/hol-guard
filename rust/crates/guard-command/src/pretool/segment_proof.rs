@@ -371,7 +371,11 @@ pub(super) fn exact_safe_segment_with_context(
         }
         "rg" | "grep" | "fd" => {
             search::safe_search_arguments_with_context(basename, &segment.arguments, context)
-                && super::directory_targets::search_home_targets_safe(segment, context.cwd)
+                && super::directory_targets::search_home_targets_safe(
+                    segment,
+                    context.cwd,
+                    context.home_dir,
+                )
         }
         "sed" => {
             safe_reads::safe_sed_arguments(&segment.arguments, segment.pipeline_index > 0, context)

@@ -253,5 +253,12 @@ fn quoted_home_or_variable_roots_are_reviewed_and_rootless_fd_matches_dot() {
     std::fs::create_dir(cwd.join("~")).unwrap();
     for command in literal_home {
         assert_decision(&cwd, &layout.home, command, false);
+        // The same cwd spelled from home still sees its `~` entry.
+        let spelled = Path::new("~/Code/org/app-portal");
+        assert_ne!(
+            decide(spelled, &layout.home, command).decision,
+            "allow",
+            "{command}"
+        );
     }
 }
