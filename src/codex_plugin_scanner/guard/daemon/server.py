@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Any, BinaryIO, ClassVar, TypeAlias, TypedDict, cast
-from urllib.parse import parse_qs, parse_qsl, urlencode, urlparse, urlunparse
+from urllib.parse import parse_qs, parse_qsl, urlparse
 
 from ...version import __version__
 from ..adapters import get_adapter
@@ -32,32 +32,14 @@ from ..adapters.base import HarnessContext
 from ..aibom_cli import _AIBOM_AUTO_SYNC_INTERVAL_SECONDS, sync_aibom_snapshots_if_due
 from ..approval_gate import (
     ApprovalGateError,
-    begin_totp_enrollment,
-    confirm_totp_enrollment,
-    disable_totp,
     require_high_risk,
 )
 from ..approval_gate import input_from_mapping as approval_gate_input_from_mapping
-from ..approval_gate import public_config as approval_gate_public_config
-from ..approval_gate import (
-    revoke_cooldown as revoke_approval_gate_cooldown,
-)
-from ..approval_scope_support import (
-    IneligibleApprovalScopeError,
-    StaleApprovalScopeContractError,
-)
-from ..approvals import (
-    build_approval_browser_url,
-    bulk_allow_read_only_once,
-)
 from ..browser_opener import open_browser_url
 from ..codex_binding_capture_writer import start_codex_binding_capture_writer
 from ..codex_live_decision import complete_codex_live_decision, resolve_codex_live_allow_authority
 from ..codex_live_decision_revalidation import revalidate_codex_live_allow
-from ..codex_resume import get_request_resume_status, retry_request_resume
 from ..config import (
-    VALID_RECEIPT_REDACTION_LEVELS,
-    editable_guard_settings,
     load_guard_config,
 )
 from ..directory_path_authority import (
@@ -76,15 +58,12 @@ from ..local_dashboard_session import (
     PROTECTION_REPAIR_DASHBOARD_SURFACE,
     build_local_dashboard_session_token,
 )
-from ..managed_controls_policy_fields import ParsedManagedControlsPolicy
 from ..models import (
     GuardRuntimeRegistration,
-    PolicyDecision,
 )
 from ..native_daemon_handler import (
     HandlerDecision,
     NativeDaemonHandlerError,
-    native_body_handler,
     native_events_cursor,
 )
 from ..native_daemon_route import (
@@ -95,28 +74,12 @@ from ..native_daemon_route import (
     native_strict_loopback_origin,
 )
 from ..native_guard_store import NativeGuardStoreUnavailable
-from ..native_policy_bundle import (
-    NATIVE_UNAVAILABLE_REJECTION,
-    PolicyBundleNativeError,
-    PolicyBundleNativeUnavailableError,
-    native_rejection_code,
-)
 from ..native_runtime_request_scope import native_status_request_scope
 from ..package_firewall_action_rate_limit import PackageFirewallActionRateLimiter
 from ..path_resolution_cache import cached_realpath
-from ..policy_bundle_activation import activate_with_reason
-from ..policy_bundle_delivery import policy_bundle_acknowledgement_payload
-from ..policy_bundle_parser import policy_bundle_is_enforceable, policy_bundle_rejection_message
-from ..policy_bundle_trusted_keys import (
-    MANAGED_POLICY_BUNDLE_KEYRING_PROVENANCE_STATE_KEY,
-    policy_bundle_keyring_payload,
-    validate_synced_policy_bundle,
-)
-from ..policy_bundle_v2 import POLICY_BUNDLE_V2_CONTRACT
 from ..runtime.approval_attention import ApprovalAttentionCoordinator
 from ..runtime.cloud_review_sync import CloudReviewSyncWorker, start_cloud_sync_sync_worker, stop_cloud_sync_sync_worker
 from ..runtime.command_extensions import BUILT_IN_COMMAND_EXTENSION_REGISTRY
-from ..runtime.extension_control_authority import ExtensionControlAuthorityError
 from ..runtime.extension_control_runtime import (
     ExtensionControlRuntime,
     ExtensionControlRuntimeSnapshot,
@@ -128,17 +91,7 @@ from ..runtime.network_supervisor import NetworkSupervisor
 from ..runtime.runner import (
     GuardSyncAuthorizationExpiredError,
     GuardSyncNotConfiguredError,
-    _build_policy_bundle_decisions,
-    _daemon_version_supported,
-    _guard_device_metadata,
-    _persist_cloud_receipt_redaction_level,
-    _policy_bundle_acceptance_checkpoint,
-    _policy_bundle_cloud_exception_items,
-    _policy_bundle_downgrade_reference,
-    _policy_bundle_is_version_downgrade,
-    _reset_cloud_receipt_redaction_authority,
     _resolve_guard_sync_auth_context,
-    _validate_cached_policy_bundle,
     sync_supply_chain_bundle,
 )
 from ..runtime.surface_server import GuardSurfaceRuntime
@@ -185,7 +138,6 @@ from .hook_worker import WORKSPACE_POLICY_READINESS_TIMEOUT_SECONDS
 from .hook_worker_responses import _hook_harness_is_unmanaged, prepare_native_hook_policy
 from .lifecycle_journal import record_daemon_lifecycle_event
 from .local_cli_api import LocalCliApiService
-from .managed_policy_delivery import daemon_managed_controls_candidate
 from .manager import (
     GUARD_DAEMON_COMPATIBILITY_VERSION,
     clear_guard_daemon_state_if_current,
@@ -203,9 +155,7 @@ from .runtime_hook_scheduler import RuntimeHookAdmissionReason, RuntimeHookLane,
 from .server_common import (
     _LOGGER,
     _build_local_url,
-    _is_string_object_dict,
     _now,
-    _settings_response_payload,
 )
 from .server_control_cloud_connect import _CloudConnectRoutes
 from .server_control_cloud_sync import (
@@ -215,10 +165,14 @@ from .server_control_cloud_sync import (
 from .server_control_headless import (
     _HeadlessRoutes,
 )
+from .server_control_health import _ControlHealthRoutes
 from .server_control_misc import _ControlMiscRoutes
+from .server_control_operations import _ControlOperationRoutes
+from .server_control_policy import _ControlPolicyRoutes
 from .server_control_repair import _RepairSettingsRoutes
 from .server_control_routes_post import _ControlPostRoutes
 from .server_control_supply_chain import _SupplyChainRoutes
+from .server_control_sync import _ControlSyncRoutes
 from .server_dashboard_records_read import _DashboardRecordsReadRoutes
 from .server_dashboard_runtime_read import _DashboardRuntimeReadRoutes
 from .server_dashboard_support import _DashboardSupportRoutes
@@ -255,14 +209,6 @@ def _build_snapshot_payload(context: HarnessContext) -> dict[str, object]:
             "unsupported_managers": [],
         }
     }
-
-
-def _safe_int(value: object) -> int:
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, int):
-        return value if value >= 0 else 0
-    return 0
 
 
 _MAX_CONCURRENT_DAEMON_REQUESTS = 32
@@ -1180,86 +1126,9 @@ _DEFAULT_SUPPLY_CHAIN_REFRESH_BACKOFF_SECONDS = 60.0
 _DEFAULT_SUPPLY_CHAIN_REFRESH_INTERVAL_SECONDS = 15 * 60.0
 _EPHEMERAL_GUARD_DAEMON_IDLE_TIMEOUT_SECONDS = 5
 _GUARD_DAEMON_IDLE_POLL_INTERVAL_SECONDS = 0.5
-_HEADLESS_OPERATIONS = ("install", "repair", "remove", "status", "scan", "policy_sync")
-
-
-def _headless_safe_failure_reasons() -> dict[str, str]:
-    return {
-        "offline": "Local Guard daemon is unavailable.",
-        "timeout": "Local Guard daemon did not answer before the browser timeout.",
-        "unauthorized": "Dashboard session is missing or stale.",
-        "unsupported": "Harness is not supported by this daemon.",
-        "confirmation_required": "Remove actions need the harness confirmation phrase.",
-    }
 
 
 _GuardDaemonHttpServer = _GuardDaemonHTTPServer
-
-_CONTAINMENT_HEALTH_CACHE_SECONDS = 10.0
-
-
-def cached_containment_health(
-    server: _GuardDaemonHttpServer,
-    *,
-    force_refresh: bool,
-    probe: Callable[[], dict[str, object]],
-) -> dict[str, object] | None:
-    """Return containment health without holding the cache lock across the probe.
-
-    A fresh cache is shared. When the cache is due, one caller runs the probe
-    and everyone else keeps the previous payload. Callers only wait together
-    when no payload exists yet.
-    """
-
-    arrived_generation: int | None = None
-    probe_generation = 0
-    while True:
-        with server.containment_health_cache_lock:
-            if arrived_generation is None:
-                arrived_generation = server.containment_health_generation
-            cached = server.containment_health_cache
-            age = time.monotonic() - server.containment_health_cache_monotonic
-            if cached is not None and age <= _CONTAINMENT_HEALTH_CACHE_SECONDS and not force_refresh:
-                return dict(cached)
-            if server.containment_health_refreshing:
-                if cached is not None and not force_refresh:
-                    return dict(cached)
-                event = server.containment_health_refresh_event
-                run_probe = False
-            else:
-                event = threading.Event()
-                server.containment_health_refresh_event = event
-                server.containment_health_refreshing = True
-                server.containment_health_generation += 1
-                probe_generation = server.containment_health_generation
-                run_probe = True
-        if not run_probe:
-            event.wait()
-            with server.containment_health_cache_lock:
-                done = server.containment_health_completed_generation
-                if force_refresh and arrived_generation is not None and done <= arrived_generation:
-                    continue
-                return None if server.containment_health_cache is None else dict(server.containment_health_cache)
-        break
-    payload: dict[str, object] | None = None
-    failed = False
-    try:
-        payload = probe()
-    except (OSError, RuntimeError, TypeError, ValueError):
-        payload = None
-        failed = True
-    except BaseException:
-        failed = True
-        raise
-    finally:
-        with server.containment_health_cache_lock:
-            if failed or payload is not None:
-                server.containment_health_cache = None if payload is None else dict(payload)
-                server.containment_health_cache_monotonic = time.monotonic()
-            server.containment_health_refreshing = False
-            server.containment_health_completed_generation = probe_generation
-            event.set()
-    return None if payload is None else dict(payload)
 
 
 class _GuardDaemonHandler(
@@ -1272,6 +1141,10 @@ class _GuardDaemonHandler(
     _HeadlessRoutes,
     _ControlMiscRoutes,
     _RepairSettingsRoutes,
+    _ControlPolicyRoutes,
+    _ControlSyncRoutes,
+    _ControlOperationRoutes,
+    _ControlHealthRoutes,
     BaseHTTPRequestHandler,
 ):
     _MAX_BODY_BYTES = 1_000_000
@@ -1582,11 +1455,6 @@ class _GuardDaemonHandler(
     def log_message(self, format: str, *args: object) -> None:  # noqa: A002
         return
 
-    def _local_queue_url(self) -> str:
-        host = self._daemon_server().daemon_host()
-        port = self._daemon_server().daemon_port()
-        return _build_local_url(host, port, "/#/inbox")
-
     def _load_request_body(self) -> tuple[dict[str, object], str | None]:
         if self.headers.get("Transfer-Encoding") is not None:
             return {}, "unsupported_transfer_encoding"
@@ -1642,668 +1510,11 @@ class _GuardDaemonHandler(
             remaining -= len(chunk)
         return b"".join(chunks), None
 
-    def _handle_headless_policy_sync(self, payload: dict[str, object]) -> None:
-        try:
-            self._handle_headless_policy_sync_checked(payload)
-        except PolicyBundleNativeUnavailableError:
-            # The resident owns policy bundle authority. Without its verdict
-            # nothing is accepted, activated, or acknowledged, and the caller
-            # gets an explicit retryable outage rather than a policy verdict.
-            self._write_native_policy_bundle_unavailable()
-        except PolicyBundleNativeError as error:
-            # A native verdict or input rejection is final for this bundle;
-            # report its code instead of a retryable outage.
-            self._write_native_policy_bundle_rejection(native_rejection_code(error))
-
-    def _write_native_policy_bundle_rejection(self, code: str) -> None:
-        error_payload: dict[str, object] = {"error": code}
-        remediation = policy_bundle_rejection_message(code)
-        if remediation is not None:
-            error_payload["message"] = remediation
-        self._write_json(error_payload, status=400)
-
-    def _write_native_policy_bundle_unavailable(self) -> None:
-        self._write_json(
-            {
-                "error": NATIVE_UNAVAILABLE_REJECTION,
-                "message": policy_bundle_rejection_message(NATIVE_UNAVAILABLE_REJECTION),
-            },
-            status=503,
-        )
-
-    def _handle_headless_policy_sync_checked(self, payload: dict[str, object]) -> None:
-        harness = self._optional_string(payload.get("harness"))
-        if harness is None:
-            self._write_json({"error": "missing_harness"}, status=400)
-            return
-        try:
-            adapter = get_adapter(harness)
-        except ValueError:
-            self._write_json({"error": "unknown_harness"}, status=404)
-            return
-        try:
-            approval_gate_grant = require_high_risk(
-                self.server.store.guard_home,  # type: ignore[attr-defined]
-                purpose="policy_write",
-                approval_gate_input=approval_gate_input_from_mapping(payload),
-            )
-        except ApprovalGateError as error:
-            self._write_approval_gate_error(error)
-            return
-        policy_memory = self._policy_memory_payload(payload.get("policy_memory"))
-        policy_bundle = self._policy_memory_payload(payload.get("policy_bundle") or payload.get("policyBundle"))
-        validated_policy_bundle: dict[str, object] | None = None
-        validated_policy_bundle_delivery: dict[str, object] | None = None
-        managed_controls_policy: ParsedManagedControlsPolicy | None = None
-        managed_controls_capabilities = frozenset[str]()
-        applied_bundle_hash = applied_bundle_version = cast(str | None, None)
-        if not policy_memory and not policy_bundle:
-            self._write_json({"error": "missing_policy_memory"}, status=400)
-            return
-        if policy_memory:
-            self._write_json({"error": "unsupported_policy_memory_contract"}, status=400)
-            return
-        if policy_bundle:
-            validated_policy_bundle, rejection_reason, trusted_policy_bundle_keys = validate_synced_policy_bundle(
-                policy_bundle,
-                stored_keyring=self.server.store.get_sync_payload("policy_bundle_keyring"),  # type: ignore[attr-defined]
-                sync_payload=payload if isinstance(payload, dict) else None,
-                supply_chain_keyring=self.server.store.get_sync_payload("supply_chain_bundle_keyring"),  # type: ignore[attr-defined]
-                managed_keyring_provenance=self.server.store.get_sync_payload(  # type: ignore[attr-defined]
-                    MANAGED_POLICY_BUNDLE_KEYRING_PROVENANCE_STATE_KEY
-                ),
-                expected_workspace_id=self.server.store.get_cloud_workspace_id(),  # type: ignore[attr-defined]
-            )
-            existing_policy_bundle, _existing_bundle_error = _validate_cached_policy_bundle(
-                self.server.store,  # type: ignore[attr-defined]
-                self.server.store.get_sync_payload("policy_bundle"),  # type: ignore[attr-defined]
-            )
-            if (
-                rejection_reason == NATIVE_UNAVAILABLE_REJECTION
-                or _existing_bundle_error == NATIVE_UNAVAILABLE_REJECTION
-            ):
-                self._write_native_policy_bundle_unavailable()
-                return
-            if validated_policy_bundle is None:
-                resolved_reason = rejection_reason or "invalid_policy_bundle"
-                error_payload: dict[str, object] = {"error": resolved_reason}
-                remediation = policy_bundle_rejection_message(resolved_reason)
-                if remediation is not None:
-                    error_payload["message"] = remediation
-                self._write_json(error_payload, status=400)
-                return
-            if not _daemon_version_supported(validated_policy_bundle):
-                self._write_json({"error": "unsupported_daemon_version"}, status=400)
-                return
-            if not policy_bundle_is_enforceable(validated_policy_bundle):
-                self._write_json(
-                    {
-                        "error": "inactive_rollout_state",
-                        "message": policy_bundle_rejection_message("inactive_rollout_state"),
-                    },
-                    status=400,
-                )
-                return
-            if _policy_bundle_is_version_downgrade(
-                _policy_bundle_downgrade_reference(self.server.store, existing_policy_bundle),  # type: ignore[attr-defined]
-                validated_policy_bundle,
-            ):
-                self._write_json({"error": "bundle_version_downgrade"}, status=400)
-                return
-            device_id, device_name = _guard_device_metadata(self.server.store)  # type: ignore[attr-defined]
-            if validated_policy_bundle.get("contractVersion") == POLICY_BUNDLE_V2_CONTRACT:
-                (
-                    managed_controls_policy,
-                    managed_controls_capabilities,
-                    validated_policy_bundle_delivery,
-                    managed_error,
-                ) = daemon_managed_controls_candidate(
-                    store=self.server.store,  # type: ignore[attr-defined]
-                    payload=payload,
-                    policy_bundle=validated_policy_bundle,
-                    device_id=device_id,
-                )
-                if managed_error is not None:
-                    self._write_json({"error": managed_error}, status=400)
-                    return
-            applied_at = _now()
-            signed_remote_decisions = _build_policy_bundle_decisions(
-                validated_policy_bundle,
-                device_id=device_id,
-                device_name=device_name,
-            )
-            policy_bundle_ack = policy_bundle_acknowledgement_payload(
-                device_id=device_id,
-                device_name=device_name,
-                policy_bundle=validated_policy_bundle,
-                synced_at=applied_at,
-                delivery=validated_policy_bundle_delivery,
-            )
-            cloud_exception_items = _policy_bundle_cloud_exception_items(
-                self.server.store,  # type: ignore[attr-defined]
-                sync_exceptions=[],
-                policy_bundle=validated_policy_bundle,
-                policy_bundle_ack=policy_bundle_ack,
-                device_id=device_id,
-            )
-            try:
-                activated, activation_rejection_reason = activate_with_reason(
-                    self.server.store.apply_policy_bundle_authority,  # type: ignore[attr-defined]
-                    signed_remote_decisions,
-                    applied_at,
-                    policy_bundle=validated_policy_bundle,
-                    policy_bundle_keyring=policy_bundle_keyring_payload(
-                        trusted_policy_bundle_keys,
-                        workspace_id=self.server.store.get_cloud_workspace_id(),  # type: ignore[attr-defined]
-                    ),
-                    cloud_exceptions=cloud_exception_items,
-                    policy_bundle_ack=policy_bundle_ack,
-                    policy_bundle_checkpoint=_policy_bundle_acceptance_checkpoint(validated_policy_bundle),
-                    update_last_good=True,
-                    policy_bundle_last_error={},
-                    managed_controls_policy=managed_controls_policy,
-                    managed_controls_negotiated_capabilities=managed_controls_capabilities,
-                    managed_controls_delivery=validated_policy_bundle_delivery,
-                    managed_controls_publish=_managed_controls_publish_for(self.server),
-                    approval_gate_grant=approval_gate_grant,
-                    remote_write_authorized=True,
-                )
-            except PolicyBundleNativeError:
-                raise
-            except (ExtensionControlAuthorityError, ValueError):
-                self._write_json({"error": "managed_runtime_publish_failed"}, status=503)
-                return
-            if activated is None:
-                self._write_json({"error": activation_rejection_reason}, status=400)
-                return
-            receipt_redaction_level = validated_policy_bundle.get("receiptRedactionLevel")
-            if isinstance(receipt_redaction_level, str) and receipt_redaction_level in VALID_RECEIPT_REDACTION_LEVELS:
-                _persist_cloud_receipt_redaction_level(
-                    self.server.store,  # type: ignore[attr-defined]
-                    level=receipt_redaction_level,
-                    synced_at=applied_at,
-                )
-            else:
-                _reset_cloud_receipt_redaction_authority(  # type: ignore[arg-type]
-                    self.server.store,  # type: ignore[attr-defined]
-                    synced_at=applied_at,
-                )
-            applied_bundle_hash = str(validated_policy_bundle["bundleHash"])
-            applied_bundle_version = str(validated_policy_bundle["bundleVersion"])
-        self._write_json(
-            {
-                "bundle_hash": applied_bundle_hash,
-                "bundle_version": applied_bundle_version,
-                "harness": adapter.harness,
-                "operation": "policy_sync",
-                "status": "completed",
-            }
-        )
-
-    @staticmethod
-    def _policy_memory_payload(value: object) -> dict[str, object]:
-        if isinstance(value, dict):
-            return dict(value)
-        if isinstance(value, str) and value.strip():
-            try:
-                parsed = json.loads(value)
-            except json.JSONDecodeError:
-                return {}
-            return parsed if isinstance(parsed, dict) else {}
-        return {}
-
-    def _handle_policy_clear(self, payload: dict[str, object]) -> None:
-        guard_home = self.server.store.guard_home  # type: ignore[attr-defined]
-        verdict = self._native_handler_decision(
-            lambda: native_body_handler("policy_clear", payload, guard_home=guard_home)
-        )
-        if verdict is None:
-            return
-        fields = verdict.fields
-        try:
-            approval_gate_grant = require_high_risk(
-                guard_home,
-                purpose="policy_clear",
-                approval_gate_input=approval_gate_input_from_mapping(payload),
-            )
-            cleared = self.server.store.clear_policy_decisions(  # type: ignore[attr-defined]
-                fields["harness"],
-                fields["source"],
-                scope=fields["scope"],
-                artifact_id=fields["artifact_id"],
-                artifact_hash=fields["artifact_hash"],
-                artifact_id_is_null=fields["artifact_id_is_null"],
-                artifact_hash_is_null=fields["artifact_hash_is_null"],
-                workspace=fields["workspace"],
-                publisher=fields["publisher"],
-                approval_gate_grant=approval_gate_grant,
-            )
-        except ApprovalGateError as error:
-            payload = error.to_payload()
-            payload["cleared"] = 0
-            self._write_json(payload, status=error.status)
-            return
-        self._write_json({"cleared": cleared, **verdict.body})
-
-    def _handle_requests_clear(self, payload: dict[str, object]) -> None:
-        guard_home = self.server.store.guard_home  # type: ignore[attr-defined]
-        verdict = self._native_handler_decision(
-            lambda: native_body_handler("requests_clear", payload, guard_home=guard_home)
-        )
-        if verdict is None:
-            return
-        status = verdict.fields["status"]
-        try:
-            require_high_risk(
-                guard_home,
-                purpose="queue_clear",
-                approval_gate_input=approval_gate_input_from_mapping(payload),
-            )
-            cleared = self.server.store.clear_approval_requests(  # type: ignore[attr-defined]
-                harness=verdict.fields["harness"],
-                status=status,
-            )
-        except ApprovalGateError as error:
-            payload = error.to_payload()
-            payload["cleared"] = 0
-            payload["status"] = status
-            self._write_json(payload, status=error.status)
-            return
-        self._write_json({"cleared": cleared, **verdict.body})
-
-    def _handle_bulk_allow_read_once(self, payload: dict[str, object]) -> None:
-        guard_home = self.server.store.guard_home  # type: ignore[attr-defined]
-        verdict = self._native_handler_decision(
-            lambda: native_body_handler("bulk_allow", payload, guard_home=guard_home)
-        )
-        if verdict is None:
-            return
-        normalized_ids = verdict.fields["request_ids"]
-        try:
-            result = bulk_allow_read_only_once(
-                store=self.server.store,  # type: ignore[attr-defined]
-                request_ids=normalized_ids,
-                approval_gate_input=approval_gate_input_from_mapping(payload),
-            )
-        except ValueError as error:
-            if str(error) == "bulk_approve_gate_required":
-                self._write_json(
-                    {"error": str(error), "resolved_count": 0, "failed": []},
-                    status=403,
-                )
-                return
-            self._write_json(
-                {"error": str(error), "resolved_count": 0, "failed": []},
-                status=400,
-            )
-            return
-        except ApprovalGateError as error:
-            error_payload = error.to_payload()
-            error_payload.setdefault("resolved_count", 0)
-            error_payload.setdefault("failed", [])
-            self._write_json(error_payload, status=error.status)
-            return
-        self._write_json(result)
-
-    @staticmethod
-    def _optional_bool(value: object, *, default: bool) -> bool:
-        if value is None:
-            return default
-        if isinstance(value, bool):
-            return value
-        if isinstance(value, str):
-            normalized = value.strip().lower()
-            if normalized in {"true", "1", "yes", "on"}:
-                return True
-            if normalized in {"false", "0", "no", "off", ""}:
-                return False
-        raise ValueError("invalid boolean value")
-
-    def _approval_persist_policy(self, payload: dict[str, object]) -> bool | None:
-        if "persist_policy" in payload:
-            return True if self._optional_bool(payload.get("persist_policy"), default=False) else None
-        if "remember" in payload:
-            return True if self._optional_bool(payload.get("remember"), default=False) else None
-        return None
-
-    def _write_stale_approval_scope_error(self, error: StaleApprovalScopeContractError) -> None:
-        self._write_json(
-            {"resolved": False, "error": str(error), **error.contract.to_dict()},
-            status=409,
-        )
-
-    def _write_ineligible_approval_scope_error(self, error: IneligibleApprovalScopeError) -> None:
-        self._write_json(
-            {
-                "resolved": False,
-                "error": str(error),
-                "action": error.action,
-                "requested_scope": error.requested_scope,
-                **error.contract.to_dict(),
-            },
-            status=422,
-        )
-
     def _write_approval_gate_error(self, error: ApprovalGateError, *, resolved: bool | None = None) -> None:
         payload = error.to_payload()
         if resolved is not None:
             payload["resolved"] = resolved
         self._write_json(payload, status=error.status)
-
-    def _handle_approval_gate_cooldown_revoke(self, payload: dict[str, object]) -> None:
-        guard_home = self.server.store.guard_home  # type: ignore[attr-defined]
-        try:
-            require_high_risk(
-                guard_home,
-                purpose="settings_write",
-                approval_gate_input=approval_gate_input_from_mapping(payload),
-            )
-        except ApprovalGateError as error:
-            self._write_approval_gate_error(error)
-            return
-        gate = revoke_approval_gate_cooldown(guard_home).to_dict()
-        config = load_guard_config(guard_home)
-        settings = editable_guard_settings(config)
-        settings["approval_gate"] = gate
-        self._write_json(_settings_response_payload(guard_home, settings))
-
-    def _handle_approval_gate_totp_enroll(self, payload: dict[str, object]) -> None:
-        guard_home = self.server.store.guard_home  # type: ignore[attr-defined]
-        device_label = self._optional_string(payload.get("device_label")) or "local-device"
-        try:
-            enrollment = begin_totp_enrollment(
-                guard_home,
-                approval_gate_input=approval_gate_input_from_mapping(payload),
-                device_label=device_label,
-            )
-        except ApprovalGateError as error:
-            self._write_approval_gate_error(error)
-            return
-        config = load_guard_config(guard_home)
-        settings = editable_guard_settings(config)
-        settings["approval_gate"] = approval_gate_public_config(guard_home).to_dict()
-        response = _settings_response_payload(guard_home, settings)
-        response["enrollment"] = enrollment
-        self._write_json(response)
-
-    def _handle_approval_gate_totp_verify(self, payload: dict[str, object]) -> None:
-        guard_home = self.server.store.guard_home  # type: ignore[attr-defined]
-        try:
-            gate = confirm_totp_enrollment(
-                guard_home,
-                approval_gate_input=approval_gate_input_from_mapping(payload),
-            )
-        except ApprovalGateError as error:
-            self._write_approval_gate_error(error)
-            return
-        config = load_guard_config(guard_home)
-        settings = editable_guard_settings(config)
-        settings["approval_gate"] = gate.to_dict()
-        self._write_json(_settings_response_payload(guard_home, settings))
-
-    def _handle_approval_gate_totp_disable(self, payload: dict[str, object]) -> None:
-        guard_home = self.server.store.guard_home  # type: ignore[attr-defined]
-        try:
-            gate = disable_totp(
-                guard_home,
-                approval_gate_input=approval_gate_input_from_mapping(payload),
-            )
-        except ApprovalGateError as error:
-            self._write_approval_gate_error(error)
-            return
-        config = load_guard_config(guard_home)
-        settings = editable_guard_settings(config)
-        settings["approval_gate"] = gate.to_dict()
-        self._write_json(_settings_response_payload(guard_home, settings))
-
-    def _handle_mcp_policy_decision(self, request_id: str, payload: dict[str, object]) -> None:
-        from .mcp_policy_decisions import handle_mcp_policy_decision
-
-        handle_mcp_policy_decision(self, request_id, payload)
-
-    def _handle_initialize(self, payload: dict[str, object]) -> None:
-        client_name = self._optional_string(payload.get("client_name")) or "guard-client"
-        surface = self._optional_string(payload.get("surface")) or "cli"
-        capabilities = payload.get("capabilities")
-        capability_items = (
-            tuple(str(item) for item in capabilities if isinstance(item, str)) if isinstance(capabilities, list) else ()
-        )
-        supported_versions = payload.get("supported_protocol_versions")
-        try:
-            response = self.server.runtime.initialize_client(  # type: ignore[attr-defined]
-                client_name=client_name,
-                client_title=self._optional_string(payload.get("client_title")),
-                version=self._optional_string(payload.get("version")),
-                surface=surface,
-                capabilities=capability_items,
-                supported_protocol_versions=tuple(str(item) for item in supported_versions if isinstance(item, str))
-                if isinstance(supported_versions, list)
-                else (),
-                include_sessions=self._header_token_is_valid(payload=payload),
-            )
-        except ValueError as error:
-            self._write_json({"error": str(error)}, status=400)
-            return
-        refreshed_session_token = self._refresh_dashboard_session_token(surface=surface)
-        if refreshed_session_token is not None:
-            response["dashboard_session_token"] = refreshed_session_token
-        self._write_json(response)
-
-    def _handle_client_attach(self, payload: dict[str, object]) -> None:
-        client_id = self._optional_string(payload.get("client_id"))
-        surface = self._optional_string(payload.get("surface"))
-        if client_id is None or surface is None:
-            self._write_json({"attached": False, "error": "missing_required_fields"}, status=400)
-            return
-        try:
-            attachment = self.server.runtime.attach_client(  # type: ignore[attr-defined]
-                client_id=client_id,
-                surface=surface,
-                session_id=self._optional_string(payload.get("session_id")),
-                metadata={"title": self._optional_string(payload.get("client_title")) or surface},
-                lease_seconds=self._optional_int(payload.get("lease_seconds")) or 60,
-            )
-        except ValueError as error:
-            self._write_json({"attached": False, "error": str(error)}, status=400)
-            return
-        self._write_json({"attached": True, "item": attachment})
-
-    def _handle_client_heartbeat(self, payload: dict[str, object]) -> None:
-        client_id = self._optional_string(payload.get("client_id"))
-        lease_id = self._optional_string(payload.get("lease_id"))
-        if client_id is None or lease_id is None:
-            self._write_json({"renewed": False, "error": "missing_required_fields"}, status=400)
-            return
-        try:
-            attachment = self.server.runtime.renew_client(  # type: ignore[attr-defined]
-                client_id=client_id,
-                lease_id=lease_id,
-                lease_seconds=self._optional_int(payload.get("lease_seconds")) or 60,
-            )
-        except ValueError as error:
-            self._write_json({"renewed": False, "error": str(error)}, status=404)
-            return
-        self._write_json({"renewed": True, "item": attachment})
-
-    def _handle_session_start(self, payload: dict[str, object]) -> None:
-        harness = self._optional_string(payload.get("harness"))
-        surface = self._optional_string(payload.get("surface"))
-        client_name = self._optional_string(payload.get("client_name"))
-        if harness is None or surface is None or client_name is None:
-            self._write_json({"error": "missing_required_fields"}, status=400)
-            return
-        capabilities = payload.get("capabilities")
-        session = self.server.runtime.start_session(  # type: ignore[attr-defined]
-            harness=harness,
-            surface=surface,
-            workspace=self._optional_string(payload.get("workspace")),
-            client_name=client_name,
-            client_title=self._optional_string(payload.get("client_title")),
-            client_version=self._optional_string(payload.get("client_version")),
-            capabilities=tuple(str(item) for item in capabilities if isinstance(item, str))
-            if isinstance(capabilities, list)
-            else (),
-        )
-        self._write_json(session)
-
-    def _handle_operation_start(self, payload: dict[str, object]) -> None:
-        session_id = self._optional_string(payload.get("session_id"))
-        operation_type = self._optional_string(payload.get("operation_type"))
-        harness = self._optional_string(payload.get("harness"))
-        if session_id is None or operation_type is None or harness is None:
-            self._write_json({"error": "missing_required_fields"}, status=400)
-            return
-        metadata = payload.get("metadata")
-        try:
-            operation = self.server.runtime.start_operation(  # type: ignore[attr-defined]
-                session_id=session_id,
-                operation_type=operation_type,
-                harness=harness,
-                metadata=metadata if isinstance(metadata, dict) else {},
-            )
-        except ValueError as error:
-            self._write_json({"error": str(error)}, status=400)
-            return
-        self._write_json(operation)
-
-    def _handle_operation_block(self, payload: dict[str, object]) -> None:
-        session_id = self._optional_string(payload.get("session_id"))
-        operation_type = self._optional_string(payload.get("operation_type"))
-        harness = self._optional_string(payload.get("harness"))
-        approval_center_url = self._optional_string(payload.get("approval_center_url"))
-        approval_surface_policy = self._optional_string(payload.get("approval_surface_policy"))
-        detection = payload.get("detection")
-        evaluation = payload.get("evaluation")
-        if (
-            session_id is None
-            or operation_type is None
-            or harness is None
-            or approval_center_url is None
-            or approval_surface_policy is None
-            or not _is_string_object_dict(detection)
-            or not _is_string_object_dict(evaluation)
-        ):
-            self._write_json({"error": "missing_required_fields"}, status=400)
-            return
-        metadata = payload.get("metadata")
-        try:
-            redaction_level = self._optional_string(payload.get("redaction_level")) or "full"
-            response = self.server.runtime.queue_blocked_operation(  # type: ignore[attr-defined]
-                session_id=session_id,
-                operation_type=operation_type,
-                harness=harness,
-                metadata=metadata if _is_string_object_dict(metadata) else {},
-                detection=detection,
-                evaluation=evaluation,
-                approval_center_url=approval_center_url,
-                browser_url=_approval_center_browser_url(approval_center_url, self.server.auth_token),  # type: ignore[attr-defined]
-                approval_surface_policy=approval_surface_policy,
-                open_key=self._optional_string(payload.get("open_key")),
-                opener=open_browser_url,
-                redaction_level=redaction_level,
-            )
-        except ValueError as error:
-            self._write_json({"error": str(error)}, status=400)
-            return
-        surface = response.get("surface")
-        operation = response.get("operation")
-        requests = response.get("approval_requests")
-        if (
-            isinstance(surface, dict)
-            and surface.get("reason") == "attention-deferred"
-            and isinstance(operation, dict)
-            and isinstance(operation.get("operation_id"), str)
-            and isinstance(requests, list)
-        ):
-            typed_requests = [request for request in requests if _is_string_object_dict(request)]
-            first_url: str | None = None
-            for request in typed_requests:
-                candidate_url = request.get("approval_url")
-                if isinstance(candidate_url, str):
-                    first_url = candidate_url
-                    break
-            browser_url = build_approval_browser_url(first_url, auth_token=self.server.auth_token)  # type: ignore[attr-defined]
-            if browser_url is not None:
-                self.server.approval_attention.schedule(  # type: ignore[attr-defined]
-                    operation_id=str(operation["operation_id"]),
-                    requests=typed_requests,
-                    browser_url=browser_url,
-                )
-        self._write_json(response)
-
-    def _handle_operation_item(self, operation_id: str, payload: dict[str, object]) -> None:
-        item_type = self._optional_string(payload.get("item_type"))
-        item_payload = payload.get("payload")
-        if item_type is None or not isinstance(item_payload, dict):
-            self._write_json({"error": "missing_required_fields"}, status=400)
-            return
-        try:
-            item = self.server.runtime.add_item(  # type: ignore[attr-defined]
-                operation_id=operation_id,
-                item_type=item_type,
-                payload=item_payload,
-            )
-        except ValueError as error:
-            self._write_json({"error": str(error)}, status=400)
-            return
-        self._write_json({"item": item})
-
-    def _handle_operation_status(self, operation_id: str, payload: dict[str, object]) -> None:
-        status = self._optional_string(payload.get("status"))
-        if status is None:
-            self._write_json({"error": "missing_required_fields"}, status=400)
-            return
-        request_ids = payload.get("approval_request_ids")
-        try:
-            operation = self.server.runtime.update_operation_status(  # type: ignore[attr-defined]
-                operation_id=operation_id,
-                status=status,
-                approval_request_ids=[str(item) for item in request_ids if isinstance(item, str)]
-                if isinstance(request_ids, list)
-                else [],
-            )
-        except ValueError as error:
-            self._write_json({"error": str(error)}, status=400)
-            return
-        self._write_json({"operation": operation})
-
-    def _handle_session_resume(self, session_id: str) -> None:
-        try:
-            payload = self.server.runtime.resume_session(session_id)  # type: ignore[attr-defined]
-        except ValueError:
-            self._write_json({"error": "not_found"}, status=404)
-            return
-        self._write_json(payload)
-
-    def _handle_request_resume_read(self, request_id: str) -> None:
-        if self.server.store.get_approval_request(request_id) is None:  # type: ignore[attr-defined]
-            self._write_json({"error": "not_found"}, status=404)
-            return
-        payload = get_request_resume_status(self.server.store, request_id=request_id, now=_now())  # type: ignore[attr-defined]
-        if payload is None:
-            self._write_json({"error": "not_found"}, status=404)
-            return
-        self._write_json(payload)
-
-    def _handle_request_resume_retry(self, request_id: str) -> None:
-        try:
-            payload = retry_request_resume(self.server.store, request_id=request_id, now=_now(), force=False)  # type: ignore[attr-defined]
-        except ValueError as error:
-            error_code = str(error)
-            if error_code == "not_found":
-                self._write_json({"error": "not_found"}, status=404)
-                return
-            if error_code == "not_resolved":
-                self._write_json({"error": "not_resolved"}, status=409)
-                return
-            self._write_json({"error": "resume_not_supported"}, status=400)
-            return
-        self.server.store.add_event(  # type: ignore[attr-defined]
-            "codex/thread_resume",
-            {"request_id": request_id, "action": payload.get("resolution_action"), **payload},
-            _now(),
-        )
-        self._write_json(payload)
 
     def _handle_codex_live_decision(self, request_id: str, payload: Mapping[str, object]) -> None:
         request = self.server.store.get_approval_request(request_id)  # type: ignore[attr-defined]
@@ -2371,15 +1582,6 @@ class _GuardDaemonHandler(
         self._write_json(
             {
                 "error": "legacy_pairing_disabled",
-                "message": "Use hol-guard connect for browser OAuth.",
-            },
-            status=410,
-        )
-
-    def _write_legacy_cloud_handoff_disabled(self) -> None:
-        self._write_json(
-            {
-                "error": "legacy_cloud_handoff_disabled",
                 "message": "Use hol-guard connect for browser OAuth.",
             },
             status=410,
@@ -3262,32 +2464,11 @@ class _GuardDaemonHandler(
         with self.server.active_stream_clients_lock:  # type: ignore[attr-defined]
             self.server.active_stream_clients = max(0, self.server.active_stream_clients - 1)  # type: ignore[attr-defined]
 
-    @staticmethod
-    def _optional_int(value: object) -> int | None:
-        if isinstance(value, int):
-            return value
-        if isinstance(value, str) and value.strip():
-            try:
-                return int(value.strip())
-            except ValueError:
-                return None
-        return None
-
     def _public_healthz_payload(self) -> dict[str, object]:
         return {
             "ok": True,
             "compatibility_version": GUARD_DAEMON_COMPATIBILITY_VERSION,
         }
-
-    def _containment_health_payload(self, *, force_refresh: bool = False) -> dict[str, object] | None:
-        from ..runtime.containment_health import probe_containment_health
-
-        def probe() -> dict[str, object]:
-            return probe_containment_health(
-                daemon_fingerprint=current_guard_daemon_runtime_fingerprint(),
-            ).to_dict()
-
-        return cached_containment_health(self._daemon_server(), force_refresh=force_refresh, probe=probe)
 
     def _detailed_healthz_payload(self) -> dict[str, object]:
         uptime = round(time.monotonic() - self.server.start_monotonic, 1)  # type: ignore[attr-defined]
@@ -3456,87 +2637,11 @@ class _GuardDaemonHandler(
             return None
         return decision
 
-    def _handle_policy_upsert(self, payload: dict[str, object]) -> None:
-        guard_home = self.server.store.guard_home  # type: ignore[attr-defined]
-        verdict = self._native_handler_decision(
-            lambda: native_body_handler("policy_upsert", payload, guard_home=guard_home)
-        )
-        if verdict is None:
-            return
-        store = self.server.store  # type: ignore[attr-defined]
-        decision = PolicyDecision(**verdict.fields)
-        try:
-            approval_gate_grant = require_high_risk(
-                store.guard_home,
-                purpose="policy_write",
-                approval_gate_input=approval_gate_input_from_mapping(payload),
-            )
-            store.upsert_policy(
-                decision,
-                _now(),
-                approval_gate_grant=approval_gate_grant,
-            )
-        except ApprovalGateError as error:
-            payload = error.to_payload()
-            payload["saved"] = False
-            self._write_json(payload, status=error.status)
-            return
-        except ValueError as error:
-            self._write_json({"saved": False, "error": str(error)}, status=400)
-            return
-        self._write_json(verdict.body)
-
-    def _handle_policy_resolve(self, payload: dict[str, object]) -> None:
-        from .policy_authority_api import PolicyAuthorityApiError, resolve_policy_decision
-
-        try:
-            result = resolve_policy_decision(self.server.store, payload, now=_now())  # type: ignore[attr-defined]
-        except PolicyAuthorityApiError as error:
-            self._write_json({"error": str(error)}, status=400)
-            return
-        self._write_json(result, extra_headers={"Cache-Control": "no-store"})
-
-    def _handle_policy_claim(self, payload: dict[str, object]) -> None:
-        from .policy_authority_api import PolicyAuthorityApiError, claim_policy_decision
-
-        try:
-            result = claim_policy_decision(self.server.store, payload, now=_now())  # type: ignore[attr-defined]
-        except PolicyAuthorityApiError as error:
-            self._write_json({"error": str(error)}, status=400)
-            return
-        self._write_json(result, status=200 if result["claimed"] else 409)
-
     @staticmethod
     def _optional_string(value: object) -> str | None:
         if isinstance(value, str) and value.strip():
             return value.strip()
         return None
-
-    def _coalesce_string(self, mapping: dict[str, object], *keys: str) -> str | None:
-        for key in keys:
-            value = self._optional_string(mapping.get(key))
-            if value is not None:
-                return value
-        return None
-
-    @staticmethod
-    def _query_string(query_string: str, key: str) -> str | None:
-        value = parse_qs(query_string).get(key, [None])[-1]
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-        return None
-
-    @staticmethod
-    def _query_bool(query_string: str, key: str, *, default: bool) -> bool:
-        value = parse_qs(query_string).get(key, [None])[-1]
-        if not isinstance(value, str):
-            return default
-        normalized = value.strip().lower()
-        if normalized in {"1", "true", "yes", "on"}:
-            return True
-        if normalized in {"0", "false", "no", "off"}:
-            return False
-        return default
 
     def _validated_hook_directory_string(
         self,
@@ -3670,16 +2775,6 @@ class _GuardDaemonHandler(
             self.wfile.write(body)
         except _PEER_DISCONNECT_ERRORS:
             self.close_connection = True
-
-    def write_catalog_v2_body(self, body: bytes, *, status: int, headers: dict[str, str]) -> None:
-        self._write_json_bytes(body, status=status, extra_headers=headers)
-
-    def write_catalog_v2_empty(self, *, status: int, headers: dict[str, str]) -> None:
-        cors_headers = self._cors_headers_for_request(allow_methods="GET, POST, OPTIONS") or {}
-        self._write_empty(status=status, extra_headers={**cors_headers, **headers})
-
-    def write_catalog_v2_error(self, error_code: str, *, status: int) -> None:
-        self._write_json({"error": error_code}, status=status, extra_headers={"Cache-Control": "no-store"})
 
     def _write_empty(
         self,
@@ -4758,20 +3853,6 @@ class GuardDaemonServer:
                 wait_seconds = backoff_seconds
             if self._shutdown_started.wait(wait_seconds):
                 return
-
-
-def _approval_center_browser_url(approval_center_url: str, auth_token: str) -> str:
-    parsed = urlparse(approval_center_url)
-    fragment_pairs = [
-        (key, value) for key, value in parse_qsl(parsed.fragment, keep_blank_values=True) if key != "guard-token"
-    ]
-    fragment_pairs.append(
-        (
-            "guard-token",
-            build_local_dashboard_session_token(auth_token=auth_token, surface="approval-center"),
-        )
-    )
-    return urlunparse(parsed._replace(fragment=urlencode(fragment_pairs)))
 
 
 def _dashboard_session_signature(payload: str, auth_token: str) -> str:
