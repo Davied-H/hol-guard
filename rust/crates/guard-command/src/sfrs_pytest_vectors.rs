@@ -47,8 +47,13 @@ fn hex_bytes(text: &str) -> Vec<u8> {
 }
 
 fn build_tree(document: &Value) -> Scratch {
+    build_tree_in(document, "sfrs-pytest")
+}
+
+/// Rebuild the recorded tree under a fresh root named after `prefix`.
+pub(crate) fn build_tree_in(document: &Value, prefix: &str) -> Scratch {
     let base = fs::canonicalize(std::env::temp_dir()).expect("temp dir");
-    let root = base.join(format!("sfrs-pytest-{}", std::process::id()));
+    let root = base.join(format!("{prefix}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&root);
     fs::create_dir_all(&root).expect("root");
     let tree = &document["tree"];
@@ -82,7 +87,7 @@ fn build_tree(document: &Value) -> Scratch {
     Scratch(root)
 }
 
-fn bind(root: &Path, value: &Value) -> Value {
+pub(crate) fn bind(root: &Path, value: &Value) -> Value {
     match value {
         Value::String(text) => Value::String(text.replace(TOKEN, &root.to_string_lossy())),
         Value::Array(items) => items.iter().map(|item| bind(root, item)).collect(),
@@ -95,11 +100,11 @@ fn bind(root: &Path, value: &Value) -> Value {
     }
 }
 
-fn text(value: &Value) -> &str {
+pub(crate) fn text(value: &Value) -> &str {
     value.as_str().expect("string argument")
 }
 
-fn strings(value: &Value) -> Vec<String> {
+pub(crate) fn strings(value: &Value) -> Vec<String> {
     value
         .as_array()
         .expect("list argument")
@@ -141,7 +146,7 @@ fn result_json(result: &PytestConfigParseResult) -> Value {
     })
 }
 
-fn assessment_json(assessment: &PytestConfigAssessment) -> Value {
+pub(crate) fn assessment_json(assessment: &PytestConfigAssessment) -> Value {
     json!({
         "results": assessment.results.iter().map(result_json).collect::<Vec<_>>(),
         "complete": assessment.complete,
@@ -152,7 +157,7 @@ fn assessment_json(assessment: &PytestConfigAssessment) -> Value {
 }
 
 /// Sort the `execution_options` pair lists of a recorded result the same way.
-fn normalize(value: &mut Value) {
+pub(crate) fn normalize(value: &mut Value) {
     match value {
         Value::Object(map) => {
             for (key, item) in map.iter_mut() {

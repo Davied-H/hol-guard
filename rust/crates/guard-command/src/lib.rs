@@ -182,7 +182,14 @@ mod sfrs_github_body_vectors;
 mod sfrs_github_vectors;
 #[cfg(all(test, unix))]
 mod sfrs_index_vectors;
+mod sfrs_interpreter_heredoc;
+mod sfrs_interpreter_identity;
+mod sfrs_interpreter_launch;
+mod sfrs_interpreter_observers;
 mod sfrs_interpreter_scripts;
+mod sfrs_interpreter_trust;
+#[cfg(all(test, unix))]
+mod sfrs_interpreter_vectors;
 mod sfrs_jq;
 mod sfrs_json;
 mod sfrs_kubernetes_commands;
