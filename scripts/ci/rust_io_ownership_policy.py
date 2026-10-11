@@ -236,6 +236,9 @@ _ASYNC_POLICY_PATHS: Final = frozenset(
         "src/codex_plugin_scanner/guard/native_business_source_store.py",
         "src/codex_plugin_scanner/guard/native_business_source_retention.py",
         "src/codex_plugin_scanner/guard/config.py",
+        # Stat-keyed memo inputs for the native Guard-config loader; Rust owns
+        # the parse, trust checks and every resulting value.
+        "src/codex_plugin_scanner/guard/native_guard_config.py",
         "src/codex_plugin_scanner/guard/config_file_io.py",
         "src/codex_plugin_scanner/guard/directory_path_authority.py",
         "src/codex_plugin_scanner/guard/path_resolution_cache.py",
@@ -262,7 +265,6 @@ _PRESENTATION_PATHS: Final = frozenset(
         "src/codex_plugin_scanner/guard/approval_scope_support.py",
         "src/codex_plugin_scanner/guard/approvals.py",
         "src/codex_plugin_scanner/guard/codex_app_server.py",
-        "src/codex_plugin_scanner/guard/daemon/hook_pretool_rendering.py",
         "src/codex_plugin_scanner/guard/continuation_runtime.py",
         "src/codex_plugin_scanner/guard/edge_events.py",
         "src/codex_plugin_scanner/guard/harness_usage.py",
