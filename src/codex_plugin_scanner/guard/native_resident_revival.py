@@ -13,36 +13,34 @@ caller fails closed.
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 from collections.abc import Mapping
 from pathlib import Path
 
+from .adapters.codex_daemon_dead_fastpath import NATIVE_RUNTIME_DEAD_REASON, NATIVE_RUNTIME_DEAD_REASON_CODE
 from .codex_hook_launch_runtime import run_isolated_hook_process
 from .fork_safety import forget_in_child
 
-RESTART_BLOCKED_CODE = "native_resident_restart_circuit_open"
+RESTART_BLOCKED_CODE = NATIVE_RUNTIME_DEAD_REASON_CODE
+DEAD_RUNTIME_REASON = NATIVE_RUNTIME_DEAD_REASON
 # Longer than a refused spawn attempt (a few hundred milliseconds) and shorter
 # than the first backoff step, so the pool re-probes about as soon as the Rust
 # pacing would allow a respawn.
 RESTART_HOLD_SECONDS = 1.5
 _REVIVE_TIMEOUT_SECONDS = 3.0
-_RESTART_BLOCKED_FRAME = b'{"error":"native_resident_restart_circuit_open","retryable":false}'
-DEAD_RUNTIME_REASON = (
-    "HOL Guard's native runtime is not running and could not be restarted. "
-    "Run `hol-guard repair` in a terminal, then retry."
+_RESTART_BLOCKED_FRAME = json.dumps({"error": RESTART_BLOCKED_CODE, "retryable": False}, separators=(",", ":")).encode(
+    "ascii"
 )
 
+# A hold is keyed by the pool's own (runtime path, pinned state dir) pair, the
+# same scope as the Rust restart budget, so a refusal for one runtime never
+# answers for another runtime selected for the same Guard home.
+HoldKey = tuple[str, str]
 _HOLD_LOCK = threading.Lock()
-_HOLDS: dict[str, float] = {}
+_HOLDS: dict[HoldKey, float] = {}
 forget_in_child(_HOLDS)
-
-
-def _hold_key(state_dir: Path) -> str:
-    try:
-        return str(state_dir.expanduser().resolve())
-    except (OSError, RuntimeError):
-        return str(state_dir)
 
 
 def restart_blocked_frame() -> bytes:
@@ -52,19 +50,26 @@ def restart_blocked_frame() -> bytes:
 
 
 def is_restart_blocked_frame(response: bytes) -> bool:
-    return response == _RESTART_BLOCKED_FRAME
+    if not response.startswith(b'{"error":"' + RESTART_BLOCKED_CODE.encode("ascii") + b'"'):
+        return False
+    try:
+        decoded = json.loads(response)
+    except ValueError:
+        return False
+    return isinstance(decoded, dict) and set(decoded) == {"error", "retryable"} and decoded["retryable"] is False
 
 
-def arm_restart_hold(state_dir: Path, *, now: float | None = None) -> None:
+def arm_restart_hold(key: HoldKey, *, now: float | None = None) -> None:
     current = time.monotonic() if now is None else now
     with _HOLD_LOCK:
-        _HOLDS[_hold_key(state_dir)] = current + RESTART_HOLD_SECONDS
+        _HOLDS[key] = current + RESTART_HOLD_SECONDS
 
 
-def restart_hold_active(state_dir: Path, *, now: float | None = None) -> bool:
+def restart_hold_active(key: HoldKey, *, now: float | None = None) -> bool:
+    if not _HOLDS:
+        return False  # The usual case: no lock and no lookup on the request path.
     current = time.monotonic() if now is None else now
     with _HOLD_LOCK:
-        key = _hold_key(state_dir)
         until = _HOLDS.get(key)
         if until is None:
             return False
@@ -74,9 +79,21 @@ def restart_hold_active(state_dir: Path, *, now: float | None = None) -> bool:
         return True
 
 
-def clear_restart_hold(state_dir: Path) -> None:
+def clear_restart_hold(key: HoldKey) -> None:
+    if not _HOLDS:
+        return
     with _HOLD_LOCK:
-        _HOLDS.pop(_hold_key(state_dir), None)
+        _HOLDS.pop(key, None)
+
+
+def _clear_state_dir_holds(state_dir: Path) -> None:
+    try:
+        resolved = str(state_dir.expanduser().resolve())
+    except (OSError, RuntimeError):
+        resolved = str(state_dir)
+    with _HOLD_LOCK:
+        for key in [key for key in _HOLDS if key[1] in {resolved, str(state_dir)}]:
+            del _HOLDS[key]
 
 
 def native_unavailable_reason(failure_code: str | None, default: str) -> str:
@@ -111,7 +128,7 @@ def reset_native_resident_restart_pacing(
     """
 
     state_dir = guard_home / "native-runtime"
-    clear_restart_hold(state_dir)
+    _clear_state_dir_holds(state_dir)
     try:
         result = run_isolated_hook_process(
             (str(executable), "resident-reset-restart-budget", "--state-dir", str(state_dir)),
@@ -149,6 +166,7 @@ __all__ = [
     "DEAD_RUNTIME_REASON",
     "RESTART_BLOCKED_CODE",
     "RESTART_HOLD_SECONDS",
+    "HoldKey",
     "arm_restart_hold",
     "clear_restart_hold",
     "is_restart_blocked_frame",

@@ -29,6 +29,11 @@ FAILED_START_WINDOW_SECONDS = 120.0
 FAILED_START_MARKER = "daemon-start-failed.json"
 DEAD_DAEMON_REASON_CODE = "daemon_dead_repair_needed"
 NATIVE_RUNTIME_DEAD_REASON_CODE = "native_resident_restart_circuit_open"
+# The one copy of this denial: the bridge, the daemon hook worker and the pool all use it.
+NATIVE_RUNTIME_DEAD_REASON = (
+    "HOL Guard's native runtime is not running and could not be restarted. "
+    "Run `hol-guard repair` in a terminal, then retry."
+)
 
 
 def _marker_path(state_path: str | Path) -> Path:
@@ -128,6 +133,7 @@ def native_runtime_refused(error: BaseException) -> bool:
 __all__ = [
     "DEAD_DAEMON_REASON_CODE",
     "FAILED_START_WINDOW_SECONDS",
+    "NATIVE_RUNTIME_DEAD_REASON",
     "NATIVE_RUNTIME_DEAD_REASON_CODE",
     "clear_start_failure",
     "daemon_provably_dead",

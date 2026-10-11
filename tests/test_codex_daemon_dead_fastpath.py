@@ -268,3 +268,46 @@ def test_successful_daemon_response_clears_marker(tmp_path: Path, monkeypatch: p
     assert response is not None
     assert (overloaded, integrity_failed) == (False, False)
     assert not (guard_home / fastpath.FAILED_START_MARKER).exists()
+
+
+def test_refusal_on_the_post_start_retry_denies_fast_without_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    guard_home = tmp_path / "guard-home"
+    guard_home.mkdir()
+    refusal = json.dumps(
+        {"error": "native_route_policy_unavailable", "reason_code": "native_resident_restart_circuit_open"}
+    )
+    errors: list[Exception] = [
+        ConnectionRefusedError("daemon down"),
+        bridge_flow._DaemonResponseError(503, refusal, authenticated=False),
+    ]
+
+    def daemon(**kwargs: object) -> dict[str, object]:
+        del kwargs
+        raise errors.pop(0)
+
+    def no_fallback(*args: object, **kwargs: object) -> None:
+        raise AssertionError("the local fallback must not run")
+
+    monkeypatch.setattr(bridge_flow, "_daemon_response", daemon)
+    monkeypatch.setattr(bridge_flow, "_trusted_launch_for_fallback", lambda **_: (None, False))
+    monkeypatch.setattr(bridge_flow, "_daemon_start_succeeded", lambda **_: True)
+    monkeypatch.setattr(bridge_flow, "_fallback_response", no_fallback)
+    causes: list[bridge_flow.BridgeFailureCause] = []
+
+    result = bridge_flow.bridge_review_response(
+        state_path=guard_home / "daemon-state.json",
+        fallback_command=[sys.executable, "-c", "pass"],
+        start_command=[sys.executable, "-c", "pass"],
+        query="",
+        data="{}",
+        deadline=time.monotonic() + 5,
+        manifest_path=None,
+        config_json=None,
+        failure_causes=causes,
+    )
+
+    assert result == (None, False, False)
+    assert errors == []
+    assert any(cause.get("reason_code") == fastpath.NATIVE_RUNTIME_DEAD_REASON_CODE for cause in causes)

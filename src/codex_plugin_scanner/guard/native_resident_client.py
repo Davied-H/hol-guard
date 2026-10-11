@@ -29,6 +29,7 @@ from .native_resident_revival import (
     RESTART_BLOCKED_CODE,
     arm_restart_hold,
     clear_restart_hold,
+    is_restart_blocked_frame,
     restart_blocked_frame,
     restart_hold_active,
 )
@@ -131,12 +132,6 @@ def _is_resident_startup_error(response: bytes) -> bool:
     return isinstance(decoded, dict) and set(decoded) == {"error", "retryable"}
 
 
-def _is_restart_blocked(response: bytes) -> bool:
-    return response.startswith(b'{"error":"' + RESTART_BLOCKED_CODE.encode("ascii") + b'"') and (
-        _is_resident_startup_error(response)
-    )
-
-
 class _PersistentNativeClientPool:
     """Bounded lazy pool of streams for one executable and Guard state root.
 
@@ -148,6 +143,7 @@ class _PersistentNativeClientPool:
     def __init__(self, *, executable: Path, state_dir: Path, environment: Mapping[str, str]) -> None:
         self._executable = executable
         self._state_dir = state_dir
+        self._hold_key = (str(executable), str(state_dir))
         self._environment = environment
         self._clients: set[_PersistentNativeClient] = set()
         self._retiring: set[_PersistentNativeClient] = set()
@@ -192,7 +188,7 @@ class _PersistentNativeClientPool:
         return None
 
     def request(self, payload: bytes, *, deadline_monotonic: float) -> bytes | None:
-        if restart_hold_active(self._state_dir) and not self.has_idle_client():
+        if restart_hold_active(self._hold_key) and not self.has_idle_client():
             # The Rust client just refused to respawn a crash-looping resident.
             # Answer the same bounded refusal instead of spawning a client per call.
             _LAST_FAILURE_CODE.set(RESTART_BLOCKED_CODE)
@@ -205,11 +201,11 @@ class _PersistentNativeClientPool:
             _record_resident_request()
             response = client.request(payload, deadline_monotonic=deadline_monotonic)
             if response is not None:
-                if _is_restart_blocked(response):
-                    arm_restart_hold(self._state_dir)
+                if is_restart_blocked_frame(response):
+                    arm_restart_hold(self._hold_key)
                     _LAST_FAILURE_CODE.set(RESTART_BLOCKED_CODE)
                 else:
-                    clear_restart_hold(self._state_dir)
+                    clear_restart_hold(self._hold_key)
             return response
         finally:
             close_client = False

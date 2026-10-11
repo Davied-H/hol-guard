@@ -456,6 +456,8 @@ _DAEMON_CONNECTION_ADMISSION_WAIT_SECONDS = 0.05
 _DAEMON_CONTROL_ADMISSION_WAIT_SECONDS = 1.0
 _DAEMON_UNCLASSIFIED_WATCHDOG_POLL_SECONDS = 0.025
 _AIBOM_REFRESH_STOP_JOIN_TIMEOUT_SECONDS = 5.0
+# A watchdog tick may be inside a cold-start resident request (5s plus a 10s spawn allowance).
+_NATIVE_RESIDENT_WATCHDOG_STOP_JOIN_TIMEOUT_SECONDS = 16.0
 _DAEMON_CONTROL_PATHS = frozenset(
     {
         "/v1/healthz/details",
@@ -7930,6 +7932,7 @@ class GuardDaemonServer:
         self._thread: threading.Thread | None = None
         self._serve_loop_started = threading.Event()
         self._watchdog_thread: threading.Thread | None = None
+        self._native_resident_watchdog_thread: threading.Thread | None = None
 
     def start(self) -> None:
         if self._thread is not None and self._thread.is_alive():
@@ -8313,7 +8316,7 @@ class GuardDaemonServer:
         )
 
     def _start_native_resident_watchdog(self) -> None:
-        start_native_resident_watchdog(
+        self._native_resident_watchdog_thread = start_native_resident_watchdog(
             self._server.store.guard_home,
             stop=self._shutdown_started,
             on_error=self._diagnostics.record_exception,
@@ -8527,7 +8530,8 @@ class GuardDaemonServer:
         return thread if thread.is_alive() else None
 
     def _join_service_background_threads(self) -> bool:
-        deadline = time.monotonic() + _AIBOM_REFRESH_STOP_JOIN_TIMEOUT_SECONDS
+        started = time.monotonic()
+        deadline = started + _AIBOM_REFRESH_STOP_JOIN_TIMEOUT_SECONDS
         self._watchdog_thread = self._join_service_thread(
             getattr(self, "_watchdog_thread", None),
             deadline=deadline,
@@ -8556,6 +8560,10 @@ class GuardDaemonServer:
             getattr(self, "_onefile_extraction_reclaim_thread", None),
             deadline=deadline,
         )
+        self._native_resident_watchdog_thread = self._join_service_thread(
+            getattr(self, "_native_resident_watchdog_thread", None),
+            deadline=started + _NATIVE_RESIDENT_WATCHDOG_STOP_JOIN_TIMEOUT_SECONDS,
+        )
         return all(
             thread is None
             for thread in (
@@ -8566,6 +8574,7 @@ class GuardDaemonServer:
                 self._headless_cloud_sync_thread,
                 self._command_activity_maintenance_thread,
                 self._onefile_extraction_reclaim_thread,
+                self._native_resident_watchdog_thread,
             )
         )
 

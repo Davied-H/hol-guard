@@ -82,11 +82,28 @@ def test_hold_expires_so_the_pool_probes_the_respawn_again(tmp_path: Path, monke
     deadline = time.monotonic() + 5
     assert pool.request(b"first", deadline_monotonic=deadline) == _BLOCKED
 
-    revival._HOLDS[revival._hold_key(tmp_path / "native-runtime")] = time.monotonic() - 1
+    revival._HOLDS[pool._hold_key] = time.monotonic() - 1
 
     assert pool.request(b"probe", deadline_monotonic=deadline) == b'{"schema":"ok"}'
     assert len(clients) == 2
-    assert not revival.restart_hold_active(tmp_path / "native-runtime")
+    assert not revival.restart_hold_active(pool._hold_key)
+
+
+def test_a_refused_runtime_does_not_hold_another_runtime_for_the_same_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clients = _fake_clients(monkeypatch, [_BLOCKED, b'{"schema":"ok"}'])
+    deadline = time.monotonic() + 5
+    assert _pool(tmp_path).request(b"first", deadline_monotonic=deadline) == _BLOCKED
+
+    updated = _PersistentNativeClientPool(
+        executable=tmp_path / "runtime-updated",
+        state_dir=tmp_path / "native-runtime",
+        environment={},
+    )
+
+    assert updated.request(b"first", deadline_monotonic=deadline) == b'{"schema":"ok"}'
+    assert len(clients) == 2
 
 
 def test_other_startup_failures_do_not_arm_the_hold(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -100,14 +117,20 @@ def test_other_startup_failures_do_not_arm_the_hold(tmp_path: Path, monkeypatch:
 
 
 def test_hold_helpers_arm_expire_and_clear(tmp_path: Path) -> None:
-    state_dir = tmp_path / "native-runtime"
-    assert not revival.restart_hold_active(state_dir)
-    revival.arm_restart_hold(state_dir, now=100.0)
-    assert revival.restart_hold_active(state_dir, now=100.0 + revival.RESTART_HOLD_SECONDS - 0.1)
-    assert not revival.restart_hold_active(state_dir, now=100.0 + revival.RESTART_HOLD_SECONDS + 0.1)
-    revival.arm_restart_hold(state_dir)
-    revival.clear_restart_hold(state_dir)
-    assert not revival.restart_hold_active(state_dir)
+    key = (str(tmp_path / "runtime"), str(tmp_path / "native-runtime"))
+    assert not revival.restart_hold_active(key)
+    revival.arm_restart_hold(key, now=100.0)
+    assert revival.restart_hold_active(key, now=100.0 + revival.RESTART_HOLD_SECONDS - 0.1)
+    assert not revival.restart_hold_active(key, now=100.0 + revival.RESTART_HOLD_SECONDS + 0.1)
+    revival.arm_restart_hold(key)
+    revival.clear_restart_hold(key)
+    assert not revival.restart_hold_active(key)
+
+
+def test_restart_blocked_frame_matches_only_the_exact_refusal() -> None:
+    assert revival.is_restart_blocked_frame(_BLOCKED)
+    assert not revival.is_restart_blocked_frame(b'{"error":"native_resident_restart_circuit_open","retryable":true}')
+    assert not revival.is_restart_blocked_frame(b'{"error":"native_resident_start_timeout","retryable":false}')
 
 
 def test_unavailable_reason_names_repair_only_when_respawn_is_refused() -> None:
@@ -125,7 +148,8 @@ def test_reset_runs_the_native_command_and_clears_the_hold(tmp_path: Path, monke
         return SimpleNamespace(returncode=0, timed_out=False, containment_failed=False)
 
     monkeypatch.setattr(revival, "run_isolated_hook_process", run)
-    revival.arm_restart_hold(tmp_path / "native-runtime")
+    key = (str(tmp_path / "runtime"), str(tmp_path / "native-runtime"))
+    revival.arm_restart_hold(key)
 
     assert revival.reset_native_resident_restart_pacing(
         executable=tmp_path / "runtime", guard_home=tmp_path, environment={}
@@ -134,7 +158,7 @@ def test_reset_runs_the_native_command_and_clears_the_hold(tmp_path: Path, monke
     assert seen == [
         (str(tmp_path / "runtime"), "resident-reset-restart-budget", "--state-dir", str(tmp_path / "native-runtime"))
     ]
-    assert not revival.restart_hold_active(tmp_path / "native-runtime")
+    assert not revival.restart_hold_active(key)
 
 
 def test_reset_reports_failure_when_the_command_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -201,10 +225,13 @@ def _dead_pid() -> int:
     return process.pid
 
 
-def _publish(state_dir: Path, pid: int) -> None:
+def _publish(state_dir: Path, pid: int, marker: str | None = None) -> None:
     generation = state_dir / "resident-v3-abc" / "generation-1.json"
     generation.parent.mkdir(parents=True)
-    generation.write_text(json.dumps({"process_id": pid}), encoding="utf-8")
+    state: dict[str, object] = {"process_id": pid}
+    if marker is not None:
+        state["process_start_marker"] = marker
+    generation.write_text(json.dumps(state), encoding="utf-8")
 
 
 @pytest.mark.skipif(os.name == "nt", reason="pid probing is POSIX only")
@@ -213,6 +240,22 @@ def test_watchdog_detects_published_state_with_a_dead_process(tmp_path: Path) ->
     assert not watchdog.resident_provably_dead(state_dir)
     _publish(state_dir, _dead_pid())
     assert watchdog.resident_provably_dead(state_dir)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="pid probing is POSIX only")
+def test_watchdog_treats_a_reused_linux_pid_as_dead(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(watchdog, "process_start_token", lambda _pid: "linux:200")
+    reused = tmp_path / "reused"
+    _publish(reused, os.getpid(), "linux:100")
+    assert watchdog.resident_provably_dead(reused)
+    same = tmp_path / "same"
+    _publish(same, os.getpid(), "linux:200")
+    assert not watchdog.resident_provably_dead(same)
+    darwin = tmp_path / "darwin"
+    _publish(darwin, os.getpid(), "darwin:1:2")
+    assert not watchdog.resident_provably_dead(darwin)
+    monkeypatch.setattr(watchdog, "process_start_token", lambda _pid: None)
+    assert not watchdog.resident_provably_dead(reused), "an unreadable marker stays conservative"
 
 
 @pytest.mark.skipif(os.name == "nt", reason="pid probing is POSIX only")
@@ -297,7 +340,7 @@ def test_watchdog_thread_respawns_repeatedly_and_survives_errors(tmp_path: Path)
     assert attempts >= 2
 
 
-def _unavailable_denial(tmp_path: Path, failure_code: str | None) -> str:
+def _unavailable_denial(tmp_path: Path, failure_code: str | None, event_name: str = "PreToolUse") -> str:
     from codex_plugin_scanner.guard.daemon.hook_worker_native import _record_unavailable_native
     from codex_plugin_scanner.guard.native_resident_client import record_native_resident_client_failure_code
 
@@ -306,9 +349,9 @@ def _unavailable_denial(tmp_path: Path, failure_code: str | None) -> str:
     try:
         response = _record_unavailable_native(
             cast(Any, host),
-            {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "ls"}},
+            {"hook_event_name": event_name, "tool_name": "Bash", "tool_input": {"command": "ls"}, "prompt": "hi"},
             harness="codex",
-            event_name="PreToolUse",
+            event_name=event_name,
             reason_code="native_pre_tool_unavailable",
             workspace=None,
             home_dir=tmp_path,
@@ -323,3 +366,11 @@ def _unavailable_denial(tmp_path: Path, failure_code: str | None) -> str:
 def test_pre_tool_denial_names_repair_when_the_runtime_will_not_restart(tmp_path: Path) -> None:
     assert "hol-guard repair" in _unavailable_denial(tmp_path, "native_resident_restart_circuit_open")
     assert "hol-guard repair" not in _unavailable_denial(tmp_path, "native_client_timed_out")
+
+
+def test_prompt_denial_names_repair_when_the_runtime_will_not_restart(tmp_path: Path) -> None:
+    refused = _unavailable_denial(tmp_path, "native_resident_restart_circuit_open", "UserPromptSubmit")
+    assert "hol-guard repair" in refused
+    timed_out = _unavailable_denial(tmp_path, "native_client_timed_out", "UserPromptSubmit")
+    assert "hol-guard repair" not in timed_out
+    assert "could not complete native prompt review safely" in timed_out

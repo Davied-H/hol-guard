@@ -20,13 +20,15 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 
+from .live_process_identity import process_start_token
 from .native_resident_client import resident_state_files, tracked_native_resident_state_dirs
 
 WATCHDOG_INTERVAL_SECONDS = 5.0
 _MAX_STATE_BYTES = 64 * 1024
+_LINUX_MARKER_PREFIX = "linux:"
 
 
-def _state_process_id(path: Path) -> int | None:
+def _state_process(path: Path) -> tuple[int, str | None] | None:
     try:
         with path.open("rb") as handle:
             payload = json.loads(handle.read(_MAX_STATE_BYTES + 1)[:_MAX_STATE_BYTES])
@@ -35,7 +37,10 @@ def _state_process_id(path: Path) -> int | None:
     if not isinstance(payload, dict):
         return None
     pid = payload.get("process_id")
-    return pid if isinstance(pid, int) and not isinstance(pid, bool) and pid > 0 else None
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+        return None
+    marker = payload.get("process_start_marker")
+    return pid, marker if isinstance(marker, str) and marker else None
 
 
 def _pid_alive(pid: int) -> bool:
@@ -48,8 +53,22 @@ def _pid_alive(pid: int) -> bool:
     return True
 
 
+def _published_process_alive(pid: int, marker: str | None) -> bool:
+    if not _pid_alive(pid):
+        return False
+    # Only Linux markers share one format between the runtime and Python, so
+    # a reused pid is detected there; elsewhere a live pid counts as alive.
+    if marker is None or not marker.startswith(_LINUX_MARKER_PREFIX):
+        return True
+    current = process_start_token(pid)
+    return current is None or current == marker
+
+
 def resident_provably_dead(state_dir: Path) -> bool:
     """True when this state root still publishes residents and none of their processes exist.
+
+    A published pid now owned by a different process (a Linux start-marker
+    mismatch) counts as gone.
 
     A clean stop or an update retirement removes the published state, so a root
     with no state is never treated as a crash and is left for the next request.
@@ -61,8 +80,8 @@ def resident_provably_dead(state_dir: Path) -> bool:
     if not files:
         return False
     for path in files:
-        pid = _state_process_id(path)
-        if pid is None or _pid_alive(pid):
+        published = _state_process(path)
+        if published is None or _published_process_alive(*published):
             return False
     return True
 

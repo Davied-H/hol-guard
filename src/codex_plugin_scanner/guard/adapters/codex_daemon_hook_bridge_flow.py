@@ -207,14 +207,19 @@ def bridge_review_response(
             timeout_seconds=min(_remaining_seconds(deadline), rpc_cap),
         )
 
+    def native_refused(error: BaseException) -> bool:
+        # Daemon is up, native runtime refused a restart: fallback would fail too.
+        if not native_runtime_refused(error):
+            return False
+        _record_failure(failure_causes, "daemon_dead_fast", NATIVE_RUNTIME_DEAD_REASON_CODE)
+        return True
+
     try:
         response = daemon_request()
     except (OSError, ValueError, http.client.HTTPException, urllib.error.URLError) as error:
         _record_failure(failure_causes, "daemon_request", _daemon_failure_reason(error))
         daemon_overloaded = _authenticated_daemon_overload(error)
-        if native_runtime_refused(error):
-            # Daemon is up, native runtime refused a restart: fallback would fail too.
-            _record_failure(failure_causes, "daemon_dead_fast", NATIVE_RUNTIME_DEAD_REASON_CODE)
+        if native_refused(error):
             return None, False, False
         if not daemon_overloaded and should_fail_fast(state_path):
             # A launch already failed to start the daemon: deny now, name the fix.
@@ -225,6 +230,8 @@ def bridge_review_response(
                 response = _retry_transient_overload(error, deadline=deadline, request=daemon_request)
             except (OSError, ValueError, http.client.HTTPException, urllib.error.URLError) as retry_error:
                 _record_failure(failure_causes, "daemon_retry", _daemon_failure_reason(retry_error))
+                if native_refused(retry_error):
+                    return None, False, False
         trusted_launch, launch_integrity_failed = _trusted_launch_for_fallback(
             manifest_path=manifest_path,
             state_path=state_path,
@@ -247,6 +254,8 @@ def bridge_review_response(
                 response = daemon_request()
             except (OSError, ValueError, http.client.HTTPException, urllib.error.URLError) as retry_error:
                 _record_failure(failure_causes, "daemon_retry", _daemon_failure_reason(retry_error))
+                if native_refused(retry_error):
+                    return None, False, False
     if response is not None:
         clear_start_failure(state_path)
     if response is not None and _daemon_process_failed(response):
