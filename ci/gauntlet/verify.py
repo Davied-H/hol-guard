@@ -13,7 +13,14 @@ from .catalog import load_catalog, load_catalog_data, retain_trusted_cases
 from .evidence import assess_case, reconcile
 from .fixtures import digest_file
 from .input_evidence import input_digest
-from .interruptions import summarize_interruptions
+from .interruptions import (
+    KNOWN_GAPS,
+    known_gap_report,
+    load_known_gaps,
+    observation_interruptions,
+    stale_gaps,
+    summarize_interruptions,
+)
 from .latency import summarize_hook_latency
 from .source_identity import source_identity, validate_identity
 from .transport import reconcile_rounds
@@ -54,6 +61,27 @@ def _contained_public_path(value: object) -> bool:
         value.startswith("/")
         or value.startswith(("{{fixture}}/", "{{workspace}}/", "{{home}}/", "{{contained_project}}/"))
     )
+
+
+_CONTAINMENT_REASON = "native_vitest_readonly_containment_required"
+
+
+def _contained_interruptions(observations: list[Any]) -> list[dict[str, Any]]:
+    """Recompute interruptions from raw observations; only the by-design containment deny is exempt."""
+    found: list[dict[str, Any]] = []
+    for item in observations:
+        if not isinstance(item, dict):
+            found.append({"kind": "unproven", "why": "malformed observation"})
+            continue
+        by_design = (
+            item.get("event") == "PreToolUse"
+            and item.get("decision") == "deny"
+            and item.get("reason_code") == _CONTAINMENT_REASON
+            and item.get("policy_action") == "sandbox-required"
+        )
+        if not by_design:
+            found.extend(observation_interruptions(item, "omp"))
+    return found
 
 
 def _contained_wrapper_argv(command: object, expected_workspace: str) -> tuple[list[str] | None, str | None]:
@@ -175,6 +203,8 @@ def _verify_contained_case(case: dict[str, Any], row: dict[str, Any], expected_i
         or not receipt["decision_id"]
     ):
         raise ValueError("contained native observation lacks the authoritative Rust denial")
+    if _contained_interruptions(observations):
+        raise ValueError("contained case shows Guard interrupting work beyond the by-design containment deny")
     if post[0].get("decision") != "allow" or post[0].get("input", {}).get("command") != wrapper:
         raise ValueError("contained post observation is not bound to the executed wrapper")
     result = call.get("result")
@@ -413,11 +443,22 @@ def verify_report(
     interruptions = summarize_interruptions(results)
     if report.get("interruptions") != interruptions or interruptions["benign_interruptions"]:
         raise ValueError("claimed interruption metrics do not match observed evidence or show interrupted work")
+    if not interruptions["benign_cases"]:
+        raise ValueError("no ordinary-work case was judged, so silence is unproven")
+    gap_report: list[dict[str, Any]] = []
+    if KNOWN_GAPS.is_file():
+        gap_report = known_gap_report(
+            [{"id": s.id, **r} for s, r in zip(expected, results, strict=True)], load_known_gaps()
+        )
+        stale = stale_gaps(gap_report)
+        if stale:
+            raise ValueError("known gaps now pass and must be removed: " + ", ".join(stale))
     return {
         "verified": True,
         "candidate_sha": expected_sha,
         "scenarios": len(results),
         "interruptions": interruptions,
+        "known_gaps": gap_report,
         "actual_tool_calls": sum(result["tool_calls"] for result in results),
         "merge_qualified": report["merge_qualified"],
         "hook_latency": latency,

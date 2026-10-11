@@ -12,6 +12,7 @@ from typing import Any
 from ci.native_runtime import probe_installed_pi_output as probe
 
 from .agent_prompt import fixture_authorization
+from .approval_rows import approval_rows
 from .business_policy import BUSINESS_CASES, BUSINESS_CLI_CASES, bind_business_snapshot, install_business_policy
 from .catalog import WATCH_COMMAND, WATCH_PROMPT, Scenario
 from .cleanup import cleanup_case_resources
@@ -167,6 +168,11 @@ def run_harness_case(
                 harness, daemon, home=fixture.home, guard_home=guard_home, workspace=fixture.workspace
             )
             before = worker.store.count_approval_requests(status=None)
+            approval_ids_before = {
+                str(row.get("request_id"))
+                for row in worker.store.list_approval_requests(status=None, limit=200)
+                if isinstance(row, dict) and row.get("request_id")
+            }
             environment = harness_environment(
                 spec, fixture.home, private / "agent", fixture.canary, login_environment, realistic=realistic
             )
@@ -195,6 +201,7 @@ def run_harness_case(
                 case["watch_binding_after"] = _watch_binding(worker.store)
             case["native_routes"] = worker.metrics.snapshot().get("routes", {})
             case["approval_delta"] = worker.store.count_approval_requests(status=None) - before
+            case["approval_rows"] = approval_rows(worker.store, approval_ids_before)
             case["egress_requests"] = list(collector.requests)
             case["raw_transcript_sha256"] = digest_file(raw_log)
             case["transcript"] = redact_value(read_transcript(harness, raw_log), replacements)

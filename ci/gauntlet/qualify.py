@@ -47,8 +47,15 @@ def progress(message: str) -> None:
 
 
 def retryable(failed: list[dict[str, Any]], attempt: int, attempts: int) -> bool:
-    """Retry only recoverable categories; product outcomes never earn another run."""
-    return bool(failed) and attempt < attempts and all(entry["outcome"] in RETRYABLE_OUTCOMES for entry in failed)
+    """Retry only recoverable categories; product outcomes and interruptions never earn another run.
+
+    A case that interrupted ordinary work stays failed: an intermittent warning cannot be retried away.
+    """
+    return (
+        bool(failed)
+        and attempt < attempts
+        and all(entry["outcome"] in RETRYABLE_OUTCOMES and not entry.get("interrupted") for entry in failed)
+    )
 
 
 def attempt_argv(
@@ -118,6 +125,12 @@ def attempt_work_root(parent: Path) -> Path:
     return create_numbered_dir(qualify_setup.private_dir(parent, tighten=qualify_setup.driver_owned(parent)))
 
 
+def _interrupted(case: dict[str, Any]) -> bool:
+    """Ordinary work that raised any interruption event; protection denies are expected and do not count."""
+    record = case.get("interruptions")
+    return isinstance(record, dict) and record.get("benign") is True and bool(record.get("events"))
+
+
 def summarize_attempt(
     attempt: int, evidence: Path, exit_code: int, elapsed: float, summary: dict[str, Any] | None
 ) -> dict[str, Any]:
@@ -142,7 +155,9 @@ def summarize_attempt(
             # A summary that omits the interruption metrics cannot prove a silent run.
             "pass": summary.get("pass") is True
             and interruptions is not None
-            and interruptions.get("benign_interruptions") == 0,
+            and interruptions.get("benign_interruptions") == 0
+            and isinstance(interruptions.get("benign_cases"), int)
+            and interruptions["benign_cases"] > 0,
             "interruptions": interruptions,
             "known_gaps": summary.get("known_gaps", []),
             "merge_qualified": summary.get("merge_qualified") is True,
@@ -154,6 +169,7 @@ def summarize_attempt(
                     "outcome": case.get("outcome"),
                     "reason": case.get("reason"),
                     "known_gap": case.get("id") in gaps,
+                    "interrupted": _interrupted(case),
                 }
                 for case in cases
                 if case.get("outcome") != "pass"
@@ -416,8 +432,9 @@ def main(args: Any) -> int:
             "max_load": args.max_load,
             "max_load_wait": args.max_load_wait,
             "attempts": attempts,
-            "interruptions": attempts[-1].get("interruptions") if attempts else None,
-            "known_gaps": attempts[-1].get("known_gaps", []) if attempts else [],
+            # Only what the verifier recomputed is published; a failed or missing verify publishes null.
+            "interruptions": verify_result.get("interruptions") if verify_result else None,
+            "known_gaps": verify_result.get("known_gaps") if verify_result else None,
             "verify": verify_result,
             "elapsed_seconds": round(time.monotonic() - started, 3),
             "cleanup": cleanup,

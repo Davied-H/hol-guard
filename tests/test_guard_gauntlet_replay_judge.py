@@ -2,6 +2,18 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
+
+from ci.gauntlet.catalog import Scenario, load_catalog, retain_trusted_cases
+from ci.gauntlet.interruptions import (
+    case_interruptions,
+    observation_interruptions,
+    rendered_fields,
+    summarize_interruptions,
+)
+from ci.gauntlet.qualify import retryable, summarize_attempt
 from tests.gauntlet_replay import ReplayCase, expand, judge
 
 
@@ -54,3 +66,100 @@ def test_expansion_covers_pi_and_every_harness() -> None:
     cases = expand()
     assert {c.harness for c in cases} == {"codex", "zcode", "claude-code", "omp", "pi"}
     assert next(c for c in cases if c.case_id == "omp-todo-phases@pi").tool_name == "todo"
+
+
+def test_silent_always_allow_fails_the_review_by_design_case() -> None:
+    assert judge(_case("always"), _QUIET, []) is not None
+    offered = {"tool_name": "Bash", "exact_context_token_present": True}
+    assert judge(_case("always"), {"hookSpecificOutput": {"permissionDecision": "ask"}}, [offered]) is None
+
+
+def _benign() -> Scenario:
+    return next(s for s in load_catalog() if s.expectation == "allow" and s.oracle == "native-tools")
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        {"observer_error": True, "event": "PreToolUse"},
+        {"transport_error": True, "event": "PreToolUse"},
+        {"event": "PreToolUse", "decision": "allow", "rendered_fields": [], "http_status": 500},
+        {"event": "PreToolUse", "rendered_fields": []},
+        {"decision": "allow", "rendered_fields": []},
+    ],
+)
+def test_rows_that_cannot_prove_quiet_are_unproven_on_benign_work(row: dict) -> None:
+    record = case_interruptions(_benign(), [row], [], 0, "omp")
+    assert record["benign"] and [e["kind"] for e in record["events"]] == ["unproven"]
+    assert record["quiet_decisions"] == 0
+
+
+def test_a_proven_quiet_row_is_not_an_interruption() -> None:
+    row = {"event": "PreToolUse", "decision": "allow", "rendered_fields": [], "http_status": 200}
+    assert case_interruptions(_benign(), [row], [], 0, "omp")["events"] == []
+
+
+def test_post_tool_rendered_text_counts() -> None:
+    row = {
+        "response": {"systemMessage": "note"},
+        "payload": {"tool_name": "bash", "hook_event_name": "PostToolUse"},
+    }
+    assert [e["kind"] for e in case_interruptions(_benign(), [row], [], 0, "codex")["events"]] == ["rendered"]
+
+
+def test_empty_top_level_text_does_not_shadow_nested_text() -> None:
+    response = {"additionalContext": "", "hookSpecificOutput": {"additionalContext": "warn"}}
+    assert rendered_fields(response) == ["additionalContext"]
+    assert rendered_fields({"systemMessage": "x", "hookSpecificOutput": {"systemMessage": ""}}) == ["systemMessage"]
+
+
+def test_nested_decision_wins_over_top_level() -> None:
+    nested_ask = {"permissionDecision": "allow", "hookSpecificOutput": {"permissionDecision": "ask"}}
+    nested_allow = {"permissionDecision": "ask", "hookSpecificOutput": {"permissionDecision": "allow"}}
+    assert [e["kind"] for e in observation_interruptions({"response": nested_ask, "payload": _EVENT})] == ["decision"]
+    assert observation_interruptions({"response": nested_allow, "payload": _EVENT}) == []
+
+
+_EVENT = {"tool_name": "bash", "hook_event_name": "PreToolUse"}
+
+
+def test_unknown_permission_string_is_a_decision() -> None:
+    found = observation_interruptions({"response": {"permissionDecision": "defer"}, "payload": _EVENT})
+    assert [e["kind"] for e in found] == ["decision"] and found[0]["decision"] == "defer"
+
+
+def test_exemption_comes_from_trusted_ids_not_the_supplied_oracle() -> None:
+    watch = next(s for s in load_catalog() if s.oracle == "watch-command")
+    assert not case_interruptions(watch, [], [], 0)["benign"]
+    from dataclasses import replace
+
+    forged = replace(_benign(), id="new-case", oracle="watch-command")
+    assert case_interruptions(forged, [], [], 0)["benign"]
+    with pytest.raises(ValueError, match="exempt oracle"):
+        retain_trusted_cases((*load_catalog(), forged), load_catalog())
+
+
+def _summary(benign_cases: int, interrupted: int) -> dict:
+    return {
+        "pass": True,
+        "merge_qualified": True,
+        "cases": [],
+        "interruptions": {"benign_cases": benign_cases, "benign_interruptions": interrupted},
+    }
+
+
+def test_qualify_rejects_interruptions_and_zero_benign_cases() -> None:
+    assert summarize_attempt(1, Path("e"), 0, 1.0, _summary(3, 0))["pass"] is True
+    assert summarize_attempt(1, Path("e"), 0, 1.0, _summary(3, 1))["pass"] is False
+    assert summarize_attempt(1, Path("e"), 0, 1.0, _summary(0, 0))["pass"] is False
+
+
+def test_an_interrupted_case_is_never_retried() -> None:
+    quiet = {"outcome": "harness-error", "interrupted": False}
+    assert retryable([quiet], 1, 3)
+    assert not retryable([{**quiet, "interrupted": True}], 1, 3)
+
+
+def test_summary_counts_unproven_as_benign_interruptions() -> None:
+    record = case_interruptions(_benign(), [{"observer_error": True}], [], 0, "omp")
+    assert summarize_interruptions([{"interruptions": record}])["benign_interruptions"] == 1

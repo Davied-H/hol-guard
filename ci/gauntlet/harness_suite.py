@@ -17,7 +17,7 @@ from .catalog import Scenario, catalog_digest, load_catalog
 from .fixtures import create_run_root, digest_file
 from .harness_case import run_harness_case
 from .harnesses import adapter
-from .interruptions import report_sections
+from .interruptions import KNOWN_GAPS, load_known_gaps, report_sections, stale_gaps
 from .parallel import Lease, run_scheduled, terminate_as_exit, validate_jobs
 from .source_identity import source_identity
 
@@ -42,6 +42,8 @@ def run_harness_suite(
     if re.fullmatch(r"[0-9a-f]{40}", expected_source_sha) is None:
         raise ValueError("expected source SHA must be a full Git commit")
     jobs = validate_jobs(jobs)
+    if KNOWN_GAPS.is_file():
+        load_known_gaps()  # a malformed gap file aborts before any case runs
     spec = adapter(harness)
     resolved = spec.executable(executable)
     version = spec.version(resolved)
@@ -149,6 +151,7 @@ def run_harness_suite(
         report["full_profile"]
         and all(c["outcome"] == "pass" for c in report["cases"])
         and not report["interruptions"]["benign_interruptions"]
+        and not stale_gaps(report["known_gaps"])
     )
     (output / "summary.json").write_text(json.dumps(report, indent=2) + "\n")
     return report

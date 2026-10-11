@@ -4,7 +4,9 @@ Unlike the benign false-positive gate, a warning or rendered reason text on ordi
 and every case also runs under a realistic environment (library path, git-lfs filter, gpg program and
 hooks path in the global gitconfig). Run it like the benign gate: HOL_GUARD_NATIVE_BINARY names the
 compiled native runtime. ``known_gaps`` in the case file lists cases expected to fail on the current
-product; they xfail, and on Linux CI a listed case that passes fails as stale.
+product. A gap's value is the reason code it is expected to fail with: it xfails only when the failure
+carries that code, so a new regression on a listed case still fails. On Linux CI a listed case that
+passes fails as stale.
 """
 
 from __future__ import annotations
@@ -28,6 +30,7 @@ from tests.gauntlet_replay import (
     ReplayCase,
     environment_overlay,
     expand,
+    failure_reasons,
     judge,
     payload_input,
 )
@@ -106,8 +109,10 @@ def test_replayed_payload_is_quiet_offers_always_or_blocks(
     label = f"{case.case_id}/{kind}"
     if label in _GAPS or case.case_id in _GAPS:
         reason = _GAPS.get(label) or _GAPS[case.case_id]
-        if failure:
+        if failure and reason in failure_reasons(case, result, rows):
             pytest.xfail(f"known gap ({reason}): {failure}")
+        if failure:
+            pytest.fail(f"{label}: failed differently than its known gap ({reason}): {failure}")
         if _ENFORCE_STALE:
             pytest.fail(f"stale known gap: {label} now behaves; remove it ({reason})")
         pytest.skip(f"known gap {label} behaves on this host; CI decides staleness")

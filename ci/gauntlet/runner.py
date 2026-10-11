@@ -40,7 +40,7 @@ from .input_evidence import (
     public_native_extension_evidence,
     public_native_receipt,
 )
-from .interruptions import report_sections
+from .interruptions import KNOWN_GAPS, load_known_gaps, report_sections, stale_gaps
 from .latency import summarize_hook_latency
 from .native_tools import cleanup_private_temp
 from .parallel import HostSlots, Lease, LoadGate, run_scheduled, validate_jobs
@@ -326,6 +326,8 @@ def run_suite(
     if re.fullmatch(r"[0-9a-f]{40}", expected_source_sha) is None:
         raise ValueError("expected source SHA must be a full Git commit")
     jobs = validate_jobs(jobs)
+    if KNOWN_GAPS.is_file():
+        load_known_gaps()  # a malformed gap file aborts before any case runs
     output = output.resolve()
     output.mkdir(mode=0o700, parents=True, exist_ok=False)
     executable = omp or shutil.which("omp")
@@ -467,6 +469,7 @@ def run_suite(
         and len(report["cases"]) == len(selected)
         and all(c["outcome"] == "pass" for c in report["cases"])
         and not report["interruptions"]["benign_interruptions"]
+        and not stale_gaps(report["known_gaps"])
     )
     report["source_unchanged"] = source_identity(REPO, candidate_sha) == binding and report["runner_files"] == {
         p.name: digest_file(p) for p in sorted(HERE.iterdir()) if p.is_file()

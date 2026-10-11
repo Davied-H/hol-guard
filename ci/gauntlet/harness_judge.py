@@ -160,15 +160,16 @@ def assess_harness_case(scenario: Scenario, case: dict[str, Any]) -> dict[str, A
 
 
 def _interruptions(scenario: Scenario, case: dict[str, Any]) -> dict[str, Any]:
-    """Every pre-tool and prompt answer plus approval rows, judged as interruptions."""
-    rows = [
-        row
-        for row in case.get("guard_rows", [])
-        if ((row.get("receipt") or {}).get("event_name") or (row.get("payload") or {}).get("hook_event_name"))
-        in _PRE_EVENTS | _PROMPT_EVENTS
-    ]
+    """Every hook row (pre, post, prompt and lifecycle) plus approval rows, judged as interruptions.
+
+    A row whose event cannot be resolved is unproven rather than skipped.
+    """
     return case_interruptions(
-        scenario, rows, case.get("approval_rows", []), case.get("approval_delta", 0), str(case.get("harness"))
+        scenario,
+        case.get("guard_rows", []),
+        case.get("approval_rows", []),
+        case.get("approval_delta", 0),
+        str(case.get("harness")),
     )
 
 
@@ -231,6 +232,10 @@ def _outcome(scenario: Scenario, case: dict[str, Any]) -> tuple[str, str]:
         return "fail", "ordinary work created an approval request"
     interruptions = _interruptions(scenario, case)
     if interruptions["benign"] and interruptions["events"]:
+        if any(e["kind"] == "unproven" for e in interruptions["events"]):
+            return "harness-error", "Guard evidence cannot prove ordinary work was quiet: " + describe(
+                [e for e in interruptions["events"] if e["kind"] == "unproven"]
+            )
         return "fail", "ordinary work was interrupted: " + describe(interruptions["events"])
     if scenario.oracle == "watch-command":
         watch_error = _watch_error(case, decisions)

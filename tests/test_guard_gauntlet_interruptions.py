@@ -19,7 +19,7 @@ from ci.gauntlet.interruptions import (
 
 
 def _row(response: dict, **extra: object) -> dict:
-    return {"response": response, "payload": {"tool_name": "bash"}, **extra}
+    return {"response": response, "payload": {"tool_name": "bash", "hook_event_name": "PreToolUse"}, **extra}
 
 
 def test_warn_with_text_renders_and_interrupts() -> None:
@@ -45,8 +45,8 @@ def test_any_non_allow_decision_interrupts(response: dict) -> None:
 
 def test_tap_row_without_rendered_fields_is_unproven() -> None:
     found = observation_interruptions({"decision": "allow", "tool": "bash", "event": "PreToolUse"})
-    assert found and found[0]["fields"] == ["unproven"]
-    assert observation_interruptions({"decision": "allow", "rendered_fields": []}) == []
+    assert [e["kind"] for e in found] == ["rendered"] and found[0]["fields"] == ["unproven"]
+    assert observation_interruptions({"decision": "allow", "event": "PreToolUse", "rendered_fields": []}) == []
 
 
 def test_approval_rows_count_even_when_the_hook_was_quiet() -> None:
