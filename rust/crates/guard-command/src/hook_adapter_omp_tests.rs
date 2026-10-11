@@ -62,4 +62,14 @@ fn omp_labels_do_not_apply_to_other_harnesses() {
         action_type("pi", "task", r#"{"prompt":"x"}"#),
         "config_change"
     );
+    assert_eq!(
+        action_type("pi", "eval", r#"{"code":"1"}"#),
+        "config_change"
+    );
+}
+
+#[test]
+fn pi_listing_built_ins_are_file_reads() {
+    assert_eq!(action_type("pi", "ls", r#"{"path":"."}"#), "file_read");
+    assert_eq!(action_type("pi", "find", r#"{"path":"."}"#), "file_read");
 }
