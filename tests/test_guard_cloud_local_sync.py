@@ -52,26 +52,6 @@ def _snapshot_tests_without_resident_posture(monkeypatch: pytest.MonkeyPatch) ->
     )
 
 
-def _seed_resident_verifier_key(guard_home: Path) -> None:
-    """Give a throwaway guard home the verifier key the native resident requires.
-
-    The resident serves store calls only once the home holds an owner-private
-    verifier key, and the Windows enterprise lab cannot provision one for an
-    arbitrary temporary home, so these tests seed it as the native fixtures do.
-    """
-
-    from codex_plugin_scanner.guard.native_policy_snapshot import provision_native_policy_verifier_key
-    from codex_plugin_scanner.guard.native_policy_snapshot_constants import (
-        NATIVE_POLICY_VERIFIER_KEY_NAME,
-        NATIVE_RUNTIME_STATE_DIRECTORY,
-    )
-
-    state_dir = guard_home / NATIVE_RUNTIME_STATE_DIRECTORY
-    state_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-    if not (state_dir / NATIVE_POLICY_VERIFIER_KEY_NAME).exists():
-        provision_native_policy_verifier_key(guard_home, b"p" * 32)
-
-
 def _seed_guard_cloud(store, *, workspace_id=None, sync_url=None, token="demo-token", now="2026-05-19T00:00:00Z"):
     """Seed OAuth credentials (replaces legacy set_sync_credentials scaffolding).
 
@@ -175,7 +155,6 @@ def test_evaluate_detection_queues_access_graph_snapshot_without_syncing(
     tmp_path: Path,
     native_context_digest: Path,
 ) -> None:
-    _seed_resident_verifier_key(tmp_path / "guard-home")
     store = GuardStore(tmp_path / "guard-home")
     _seed_guard_cloud(store, workspace_id="workspace-alpha")
     artifact = _artifact(tmp_path)
@@ -198,7 +177,6 @@ def test_evaluate_detection_queues_instruction_access_graph_edges(
     tmp_path: Path,
     native_context_digest: Path,
 ) -> None:
-    _seed_resident_verifier_key(tmp_path / "guard-home")
     store = GuardStore(tmp_path / "guard-home")
     _seed_guard_cloud(store, workspace_id="workspace-alpha")
     instruction_path = tmp_path / "workspace" / "AGENTS.md"
@@ -229,7 +207,6 @@ def test_evaluate_detection_queues_access_graph_snapshot_without_cloud_workspace
     tmp_path: Path,
     native_context_digest: Path,
 ) -> None:
-    _seed_resident_verifier_key(tmp_path / "guard-home")
     store = GuardStore(tmp_path / "guard-home")
     _seed_guard_cloud(store)
     # Graph queueing does not depend on the host Node installation or repo cwd.
@@ -261,7 +238,6 @@ class _FailingAccessGraphEventStore(GuardStore):
 
 @pytest.mark.usefixtures("native_context_digest")
 def test_access_graph_queue_failure_does_not_block_local_approval_decision(tmp_path: Path) -> None:
-    _seed_resident_verifier_key(tmp_path / "guard-home")
     store = _FailingAccessGraphEventStore(tmp_path / "guard-home")
     _seed_guard_cloud(store, workspace_id="workspace-alpha")
     # Exercise real native launch identity without depending on a host Node
