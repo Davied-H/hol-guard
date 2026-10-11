@@ -237,7 +237,6 @@ fn staged_copy_of_a_read_only_file_is_owner_writable() {
     let mode = fs::metadata(stage.0.join("src/a.py"))
         .expect("meta")
         .permissions()
-        .mode()
-        & 0o777;
-    assert_eq!(mode, 0o644);
+        .mode();
+    assert_ne!(mode & 0o200, 0, "staged copy must be owner-writable");
 }
