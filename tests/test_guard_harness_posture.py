@@ -25,7 +25,6 @@ from codex_plugin_scanner.guard.harness_posture import (
 )
 from codex_plugin_scanner.guard.mdm.contracts import ManagedPolicy, ManagedPolicyState
 from codex_plugin_scanner.guard.native_policy_snapshot_harness_postures import (
-    posture_risk_overlay,
     read_harness_postures_sidecar,
     recording_only_for_binding,
     write_harness_postures_sidecar,
@@ -99,6 +98,18 @@ def test_harness_watch_auto_reverts_to_inherit_after_window(tmp_path: Path) -> N
     reverted = maybe_auto_revert_watch(guard_home, now=later)
     assert not reverted.harness_postures
     assert reverted.protection_posture == "protected"
+
+
+def test_harness_watch_auto_revert_ignores_unparseable_stamp(tmp_path: Path) -> None:
+    from dataclasses import replace
+
+    from codex_plugin_scanner.guard.harness_posture import harness_watch_auto_revert_due
+
+    guard_home = tmp_path / ".hol-guard"
+    update_guard_settings(guard_home, {"harness_postures": {"codex": "watch"}})
+    config = load_guard_config(guard_home)
+    broken = replace(config, harness_watch_entered_at={"codex": "not-a-timestamp"})
+    assert harness_watch_auto_revert_due(broken, now=datetime.now(timezone.utc)) == ()
 
 
 def test_harness_watch_auto_revert_disabled_with_zero_hours(tmp_path: Path) -> None:
@@ -185,20 +196,6 @@ def test_recording_only_for_binding_semantics() -> None:
     assert recording_only_for_binding(observe_with_protected, "codex") is False
     assert recording_only_for_binding(observe_with_protected, "claude-code") is True
     assert recording_only_for_binding({"mode": "enforce", "harness_postures": {"codex": "bogus"}}, "codex") is False
-
-
-def test_posture_overlay_only_strengthens(tmp_path: Path) -> None:
-    guard_home = tmp_path / ".hol-guard"
-    watch_global = update_guard_settings(
-        guard_home, {"protection_posture": "watch", "harness_postures": {"codex": "protected", "cursor": "watch"}}
-    )
-    overlay = posture_risk_overlay({}, watch_global)
-    assert overlay["codex"]["local_secret_read"] == "require-reapproval"
-    assert "cursor" not in overlay
-    protected_global = update_guard_settings(
-        guard_home, {"protection_posture": "protected", "harness_postures": {"codex": "watch", "cursor": "protected"}}
-    )
-    assert posture_risk_overlay({}, protected_global) == {}
 
 
 def test_sidecar_is_bound_to_generation_and_digest_and_authenticated(tmp_path: Path) -> None:

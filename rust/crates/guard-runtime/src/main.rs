@@ -1,4 +1,5 @@
 #![forbid(unsafe_code)]
+#![recursion_limit = "512"]
 
 mod approval;
 mod approval_bulk_eligibility_op;
@@ -105,6 +106,10 @@ mod daemon_route_paths;
 mod daemon_route_resolve;
 mod daemon_route_session;
 mod data_flow_analyze_op;
+mod direct_tool_context_op;
+#[cfg(test)]
+mod direct_tool_context_tests;
+mod direct_tool_managed_bun;
 mod edge;
 mod encrypted_secret_store;
 mod false_positive_rules_op;
@@ -118,6 +123,11 @@ mod git_execution_safety_repo_tests;
 #[cfg(test)]
 mod git_execution_safety_tests;
 mod github_cli_classify_op;
+mod guard_config_coerce;
+mod guard_config_harness;
+mod guard_config_iso;
+mod guard_config_load;
+mod guard_config_managed;
 mod guard_store_args;
 mod guard_store_clients;
 mod guard_store_cmd_activity;
@@ -195,6 +205,7 @@ mod hook_decision_directive;
 mod hook_decision_finalize;
 mod hook_decision_op;
 mod hook_process_spawn;
+mod hook_render_op;
 mod local_cli_grant_op;
 mod local_mcp_grant_identity;
 mod local_mcp_grant_launcher;
@@ -276,6 +287,7 @@ mod policy_bundle_v1_rules;
 mod policy_bundle_v2;
 mod policy_bundle_v2_ack;
 mod policy_decision_lookup_op;
+mod policy_effective;
 mod policy_enforcement;
 mod policy_integrity_resolver;
 mod policy_snapshot_build;

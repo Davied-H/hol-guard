@@ -31,9 +31,8 @@ use guard_contracts::{
 use serde::Deserialize;
 use serde_json::Value;
 
-// Evaluation (`capabilities`/`evaluate_resident_bytes`) lives in
-// `resident_ops.rs`; re-exported so `crate::resident_protocol::` call sites
-// and the approval-contract token surface stay stable.
+// Evaluation lives in `resident_ops.rs`; re-exported so `crate::resident_protocol::`
+// call sites and the approval-contract token surface stay stable.
 pub(crate) use crate::resident_ops::evaluate_resident_bytes;
 
 pub(crate) fn capabilities() -> RuntimeCapabilitiesV1 {
@@ -76,6 +75,8 @@ pub(crate) fn capabilities() -> RuntimeCapabilitiesV1 {
         "native-policy-snapshot-inspect-v1".into(),
         "native-business-policy-retained-floor-v1".into(),
         "native-business-policy-document-compile-v1".into(),
+        "native-guard-config-load-v1".into(),
+        "native-policy-effective-v1".into(),
         "native-business-source-codec-v1".into(),
         "native-business-source-anchor-codec-v1".into(),
         "native-business-source-current-fence-v2".into(),
@@ -98,6 +99,7 @@ pub(crate) fn capabilities() -> RuntimeCapabilitiesV1 {
         guard_contracts::APPROVAL_QUEUE_IDENTITY_FEATURE.into(),
         guard_contracts::APPROVAL_RESOLUTION_PLAN_FEATURE.into(),
         guard_contracts::APPROVAL_SCOPE_FEATURE.into(),
+        guard_contracts::HOOK_RENDER_FEATURE.into(),
         guard_contracts::GUARD_STORE_FEATURE.into(),
         guard_contracts::APPROVAL_GATE_FEATURE.into(),
         guard_contracts::PACKAGE_AUTHORITY_FEATURE.into(),
@@ -196,6 +198,7 @@ pub(crate) enum ResidentOperationV1 {
     ApprovalQueueIdentity(ApprovalQueueIdentityRequestV1),
     ApprovalResolutionPlan(ApprovalResolutionPlanRequestV1),
     ApprovalScope(ApprovalScopeRequestV1),
+    HookRender(guard_contracts::HookRenderRequestV1),
     GuardStore(GuardStoreRequestV1),
     ApprovalGate(ApprovalGateRequestV1),
     PackageIntentParse(PackageIntentParseRequestV1),
