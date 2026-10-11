@@ -22,6 +22,8 @@ use super::contract::Input;
 use crate::shell_secret_read_support::classify_secret_path;
 
 const MAX_FILES: usize = 20_000;
+/// Open directory handles are bounded by depth, not breadth.
+const MAX_DEPTH: usize = 128;
 const MAX_BYTES: u64 = 256 * 1024 * 1024;
 pub(super) const MAX_ENTRIES: usize = 50_000;
 pub(super) const DISCOVERY_TIMEOUT_SECONDS: f64 = 5.0;
@@ -83,6 +85,13 @@ impl Budget {
         }
         Ok(())
     }
+}
+
+/// One directory being walked depth-first, holding its handle and unvisited names.
+struct Frame {
+    path: PathBuf,
+    handle: Dir,
+    names: std::vec::IntoIter<CString>,
 }
 
 /// Kind of a directory entry, read without following links.
@@ -213,9 +222,21 @@ pub(crate) fn complete_workspace_snapshot(
     let mut exclusions: Vec<(String, &'static str)> = Vec::new();
     let mut total_bytes: u64 = 0;
     let mut budget = Budget::new();
-    let mut directories: Vec<(PathBuf, Dir)> = vec![(canonical.clone(), open_root(&canonical)?)];
-    while let Some((directory, mut handle)) = directories.pop() {
-        for name in bounded_entries(&mut handle, &mut budget)? {
+    let mut root = open_root(&canonical)?;
+    let root_names = bounded_entries(&mut root, &mut budget)?;
+    let mut stack = vec![Frame {
+        path: canonical.clone(),
+        handle: root,
+        names: root_names.into_iter(),
+    }];
+    while let Some(frame) = stack.last_mut() {
+        let Some(name) = frame.names.next() else {
+            stack.pop();
+            continue;
+        };
+        {
+            let handle = &frame.handle;
+            let directory = frame.path.clone();
             let os_name = OsStr::from_bytes(name.to_bytes());
             let path = directory.join(os_name);
             let relative = path
@@ -263,9 +284,17 @@ pub(crate) fn complete_workspace_snapshot(
                             "workspace directory identity changed during discovery".to_owned()
                         );
                     }
-                    let sub = Dir::from_fd(OwnedFd::from(child))
+                    if stack.len() >= MAX_DEPTH {
+                        return Err("workspace discovery depth budget exceeded".to_owned());
+                    }
+                    let mut sub = Dir::from_fd(OwnedFd::from(child))
                         .map_err(|_| "workspace snapshot discovery failed".to_owned())?;
-                    directories.push((path, sub));
+                    let names = bounded_entries(&mut sub, &mut budget)?;
+                    stack.push(Frame {
+                        path,
+                        handle: sub,
+                        names: names.into_iter(),
+                    });
                     continue;
                 }
                 EntryKind::File => {}

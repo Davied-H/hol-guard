@@ -257,6 +257,9 @@ pub(crate) fn run_typescript(
     {
         return Err("compiler is not the local typescript package".to_owned());
     }
+    if package_root != workspace.join("node_modules").join("typescript") {
+        return Err("compiler is not the workspace typescript package".to_owned());
+    }
     let args = compiler_args(launch.argv).ok_or_else(|| "tsc argument missing".to_owned())?;
     let binding = evidence
         .get("binding_digest")
