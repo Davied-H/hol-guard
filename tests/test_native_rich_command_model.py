@@ -1,0 +1,77 @@
+"""Real caller replay of outcomes captured before native cutover."""
+
+from __future__ import annotations
+
+import dataclasses
+import json
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from codex_plugin_scanner.guard import native_rich_command_model as client
+from codex_plugin_scanner.guard.runtime import command_model, command_tokens, env_wrapper
+
+FIXTURE = json.loads((Path(__file__).parent / "fixtures/native_rich_command_model.json").read_text())
+
+
+def wire(value: Any) -> Any:
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        return {f.name: wire(getattr(value, f.name)) for f in dataclasses.fields(value)}
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, (tuple, list)):
+        return [wire(item) for item in value]
+    return value
+
+
+def invoke(vector: dict[str, Any]) -> Any:
+    args = dict(vector["args"])
+    action = vector["action"]
+    if action == "parse":
+        for key in ("cwd", "home_dir"):
+            if key in args:
+                args[key] = Path(args[key]) if args[key] is not None else None
+        model = command_model.parse_shell_command(**args)
+        return {
+            "raw_text": model.raw_text,
+            **model.to_dict(),
+            "embedded_commands": [{**item.to_dict(), "text": item.text} for item in model.embedded_commands],
+        }
+    if action == "tokens":
+        return command_tokens.shell_tokens(**args)
+    if action == "executable":
+        return command_tokens.executable_name(**args)
+    if action == "leading_environment":
+        return command_tokens.leading_environment(tuple(args["tokens"]))
+    if action == "env":
+        args["cwd"] = Path(args["cwd"])
+        return env_wrapper.parse_env_wrapper(**args)
+    raise AssertionError(action)
+
+
+@pytest.mark.parametrize("vector", FIXTURE["vectors"], ids=lambda v: v["action"])
+def test_original_outcomes_through_public_callers(vector: dict[str, Any]) -> None:
+    if "error" in vector:
+        with pytest.raises(ValueError, match="Command text cannot be empty"):
+            invoke(vector)
+    else:
+        assert wire(invoke(vector)) == vector["result"]
+
+
+def test_native_outage_has_no_python_parser_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(client, "ensure_resident_prerequisite", lambda _: False)
+    with pytest.raises(client.NativeCommandModelError):
+        command_model.parse_shell_command("echo hi")
+    with pytest.raises(client.NativeCommandModelError):
+        env_wrapper.parse_env_wrapper(["echo", "hi"])
+
+
+def test_identity_cache_is_bound_to_complete_structure(monkeypatch: pytest.MonkeyPatch) -> None:
+    model = command_model.parse_shell_command("echo hi")
+    identity = model.security_identity
+    assert dataclasses.replace(model).security_identity == identity
+    changed = dataclasses.replace(model, normalized_text="echo bye")
+    monkeypatch.setattr(client, "ensure_resident_prerequisite", lambda _: False)
+    with pytest.raises(client.NativeCommandModelError):
+        _ = changed.security_identity

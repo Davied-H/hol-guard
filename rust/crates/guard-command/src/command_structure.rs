@@ -4,6 +4,7 @@
 use std::sync::OnceLock;
 
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
@@ -27,7 +28,8 @@ fn redirect_pattern() -> &'static Regex {
 
 /// `CommandRedirect` (:19-33). `start`/`end` are char offsets into the
 /// normalized source.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct CommandRedirect {
     pub operator: String,
     pub target: String,
@@ -46,7 +48,8 @@ impl CommandRedirect {
 }
 
 /// `EmbeddedCommand` (:36-51).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct EmbeddedCommand {
     /// "substitution" | "heredoc".
     pub kind: String,
@@ -68,7 +71,8 @@ impl EmbeddedCommand {
 
 /// `IdentitySegment` protocol (:54-68) — the five fields the identity digest
 /// reads off a segment.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct IdentitySegment {
     pub tokens: Vec<String>,
     pub environment_names: Vec<String>,
