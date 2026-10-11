@@ -53,6 +53,8 @@ fn native_home_writes_keep_sensitive_targets_guarded() {
             (home.join("toolchain/lib/libz.dylib"), false),
             (home.join("toolchain/lib/z.dll"), false),
             (home.join("toolchain/lib/Z.framework/Z"), false),
+            (home.join("toolchain/lib/Z.framework/notes.txt"), false),
+            (home.join("project.so/notes.txt"), true),
             (other.join("lib/index.ts"), true),
             (other.join("docs/sound.md"), true),
             (other.join("notes.so.txt"), true),

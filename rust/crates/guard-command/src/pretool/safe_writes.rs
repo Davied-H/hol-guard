@@ -352,12 +352,14 @@ fn home_execution_control_target(
             _ => None,
         })
         .collect();
+    let shared_library = parts.last().is_some_and(|part| shared_library_part(part))
+        || parts.iter().any(|part| part.ends_with(".framework"));
     parts.iter().any(|part| {
         matches!(part.as_str(), "bin" | "appdata" | "site-packages" | "dist-packages")
-            || shared_library_part(part)
             || part.ends_with(".pth")
             || matches!(part.as_str(), "sitecustomize.py" | "usercustomize.py")
-    }) || parts.windows(2).any(|pair| {
+    }) || shared_library
+        || parts.windows(2).any(|pair| {
         matches!(
             pair,
             [first, second]
@@ -372,8 +374,9 @@ fn home_execution_control_target(
 /// A shared library or framework bundle the dynamic loader can pick up from
 /// an exported search path such as `LD_LIBRARY_PATH` or `DYLD_LIBRARY_PATH`:
 /// `libz.so`, `libz.so.1.3`, `libz.dylib`, `z.dll` or a `.framework` bundle.
-/// Planting one below home would load into every process that inherits the
-/// path, so the write itself is what needs review.
+/// The caller applies this to the written filename. A parent directory named
+/// `project.so` does not make an ordinary child a library. A file inside a
+/// `.framework` bundle stays a bundle member because the loader reads the bundle.
 fn shared_library_part(part: &str) -> bool {
     part.ends_with(".dylib")
         || part.ends_with(".dll")
