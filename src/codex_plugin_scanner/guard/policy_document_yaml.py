@@ -7,7 +7,6 @@ import json
 import math
 import re
 from dataclasses import dataclass
-from datetime import datetime
 from functools import lru_cache
 from importlib import resources
 from pathlib import Path
@@ -30,6 +29,7 @@ from yaml.tokens import (
     TagToken,
 )
 
+from .native_policy_document import NativePolicyDocumentError, policy_query
 from .policy_document import GuardPolicyDocument
 from .policy_document_business_bounds import oversized_business_selector_path
 from .runtime.command_expression import (
@@ -411,51 +411,18 @@ def _schema_diagnostics(text: str, value: object) -> tuple[PolicyDiagnostic, ...
     return tuple(diagnostics)
 
 
-def _validate_rule_ids(value: dict[str, object]) -> None:
-    spec = value.get("spec")
-    if not isinstance(spec, dict):
-        return
-    rules = spec.get("rules")
-    if not isinstance(rules, list):
-        return
-    seen: set[str] = set()
-    for index, rule in enumerate(rules):
-        if not isinstance(rule, dict):
-            continue
-        rule_id = rule.get("id")
-        if not isinstance(rule_id, str):
-            continue
-        if rule_id in seen:
-            raise PolicyDocumentError((PolicyDiagnostic("duplicate_rule_id", ("spec", "rules", index, "id")),))
-        seen.add(rule_id)
-
-
-def _validate_timestamps(value: dict[str, object]) -> None:
-    spec = value.get("spec")
-    if not isinstance(spec, dict):
-        return
-    rules = spec.get("rules")
-    if not isinstance(rules, list):
-        return
-    timestamp_paths: list[tuple[JsonPath, object]] = []
-    for index, rule in enumerate(rules):
-        if not isinstance(rule, dict):
-            continue
-        lifetime = rule.get("lifetime")
-        provenance = rule.get("provenance")
-        if isinstance(lifetime, dict) and lifetime.get("expiresAt") is not None:
-            timestamp_paths.append((("spec", "rules", index, "lifetime", "expiresAt"), lifetime.get("expiresAt")))
-        if isinstance(provenance, dict):
-            timestamp_paths.append((("spec", "rules", index, "provenance", "createdAt"), provenance.get("createdAt")))
-    for path, timestamp in timestamp_paths:
-        if not isinstance(timestamp, str):
-            continue
-        try:
-            # The schema validates UTC syntax and up to nine fractional digits.
-            # Validate the calendar without Python 3.10's fractional-width limit.
-            datetime.fromisoformat(timestamp[:19])
-        except ValueError as error:
-            raise PolicyDocumentError((PolicyDiagnostic("invalid_timestamp", path),)) from error
+def _validate_native_metadata(value: dict[str, object], query: str) -> None:
+    result = policy_query(query, {"value": value})
+    if result is not None:
+        if (
+            not isinstance(result, dict)
+            or set(result) != {"code", "path"}
+            or result["code"] not in {"duplicate_rule_id", "invalid_timestamp"}
+            or not isinstance(result["path"], list)
+            or not all(type(part) in (str, int) for part in result["path"])
+        ):
+            raise NativePolicyDocumentError("native_policy_document_metadata_malformed")
+        raise PolicyDocumentError((PolicyDiagnostic(result["code"], tuple(result["path"])),))
 
 
 def _validate_command_expressions(value: dict[str, object]) -> None:
@@ -501,8 +468,8 @@ def parse_policy_document_yaml(source: str | bytes) -> GuardPolicyDocument:
         raise PolicyDocumentError((PolicyDiagnostic("schema_type"),))
     if path := oversized_business_selector_path(value):
         raise PolicyDocumentError((PolicyDiagnostic("business_selector_limit_bytes", path),))
-    _validate_rule_ids(value)
-    _validate_timestamps(value)
+    _validate_native_metadata(value, "validate_ids")
+    _validate_native_metadata(value, "validate_timestamps")
     _validate_command_expressions(value)
     return GuardPolicyDocument.from_mapping(value)
 

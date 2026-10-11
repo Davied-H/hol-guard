@@ -162,6 +162,8 @@ pub struct ShellContextV1 {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "kind", content = "body", rename_all = "snake_case")]
 pub enum RequestContextKindV1 {
+    /// Compile unverified portable source and report policy-change semantics.
+    PolicyDocument(RequestContextPolicyDocumentV1),
     /// Rebuild monotonic command floors without workflow authorization grants.
     CriticalFloor(RequestContextCriticalFloorV1),
     /// Admit the request and build the whole canonical context.
@@ -180,6 +182,13 @@ pub enum RequestContextKindV1 {
         #[serde(default)]
         segment_index: Option<u64>,
     },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct RequestContextPolicyDocumentV1 {
+    pub query: String,
+    pub input: Value,
 }
 
 /// Caller observations; verdicts and file identities are rebuilt natively.
