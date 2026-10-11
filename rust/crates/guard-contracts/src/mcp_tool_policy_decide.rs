@@ -90,6 +90,21 @@ pub struct McpToolPolicyObservationV1 {
     pub result: Value,
 }
 
+/// Route inputs the resident folds into the `ok` payload so the caller does not
+/// need separate saved-allow-gate and route-selection round trips. The payload
+/// carries `proxy: {gate, route}`; a route that still needs a caller-supplied
+/// fact is repeated by the caller through `mcp_proxy_decide`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct McpToolPolicyProxyInputV1 {
+    pub catalog_state: String,
+    pub mode: String,
+    pub package_present: bool,
+    pub asks_for_approval: bool,
+    pub inline_available: bool,
+    pub tool_name: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct McpToolPolicyDecideRequestV1 {
@@ -99,6 +114,8 @@ pub struct McpToolPolicyDecideRequestV1 {
     pub claim_saved_approval: bool,
     pub subject: McpToolPolicySubjectV1,
     pub observations: Vec<McpToolPolicyObservationV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy: Option<McpToolPolicyProxyInputV1>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

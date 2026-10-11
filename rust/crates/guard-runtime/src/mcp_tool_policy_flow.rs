@@ -293,15 +293,20 @@ fn saved_evidence(
         return invalid();
     };
     if row.is_none() && !ignored {
-        let diagnosed = ctx.ask(json!({
-            "kind": "reuse_diagnostic",
-            "phase": phase.as_str(),
-            "harness": subject.harness,
-            "artifact_id": subject.artifact_id,
-            "artifact_hash": subject.artifact_hash,
-            "workspace": subject.workspace,
-            "publisher": subject.publisher,
-        }))?;
+        // The caller diagnoses a miss in the same effect when it can, saving a
+        // round trip; the stand-alone effect remains for callers that do not.
+        let diagnosed = match lookup.get("reuse_diagnostic") {
+            Some(inline) => inline,
+            None => ctx.ask(json!({
+                "kind": "reuse_diagnostic",
+                "phase": phase.as_str(),
+                "harness": subject.harness,
+                "artifact_id": subject.artifact_id,
+                "artifact_hash": subject.artifact_hash,
+                "workspace": subject.workspace,
+                "publisher": subject.publisher,
+            }))?,
+        };
         return Ok(match field(diagnosed, "reason")? {
             Value::Null => None,
             Value::String(reason) => Some(Saved {

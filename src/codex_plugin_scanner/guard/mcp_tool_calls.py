@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, MutableMapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from .action_lattice import normalize_guard_action
 from .approval_gate import ApprovalGateGrant
@@ -242,6 +243,8 @@ def evaluate_tool_call(
     arguments: object,
     claim_saved_approval: bool = True,
     fresh_authority_provider: (Callable[[], tuple[GuardConfig, GuardArtifact, str, object] | None] | None) = None,
+    proxy_input: Mapping[str, object] | None = None,
+    proxy_out: MutableMapping[str, Any] | None = None,
 ) -> ToolCallDecision:
     from .mcp_tool_call_evaluation import evaluate_tool_call as evaluate
 
@@ -253,6 +256,8 @@ def evaluate_tool_call(
         arguments=arguments,
         claim_saved_approval=claim_saved_approval,
         fresh_authority_provider=fresh_authority_provider,
+        proxy_input=proxy_input,
+        proxy_out=proxy_out,
     )
 
 

@@ -133,10 +133,15 @@ def _accepted(guard_home: Path) -> None:
 
 @dataclass(frozen=True, slots=True)
 class NativeToolPolicyResult:
-    """Rust's decision DTO plus the authority objects Python supplied."""
+    """Rust's decision DTO plus the authority objects Python supplied.
+
+    ``proxy`` is the resident's saved-allow gate and route verdict for the
+    decision when the caller supplied route inputs; it is ``None`` otherwise.
+    """
 
     payload: Mapping[str, Any]
     authority: FreshAuthority | None
+    proxy: Mapping[str, Any] | None = None
 
 
 def _subject(
@@ -171,6 +176,7 @@ def _round_trip(
     subject: dict[str, object],
     claim_saved_approval: bool,
     observations: list[dict[str, object]],
+    proxy_input: Mapping[str, object] | None = None,
 ) -> dict[str, Any]:
     request: dict[str, object] = {
         "schema": _REQUEST_SCHEMA,
@@ -179,6 +185,8 @@ def _round_trip(
         "subject": subject,
         "observations": observations,
     }
+    if proxy_input is not None:
+        request["proxy"] = dict(proxy_input)
     try:
         digest = "sha256:" + _canonical_request_sha256(request)
     except (TypeError, ValueError):
@@ -218,9 +226,17 @@ def _is_action(value: object) -> bool:
     return isinstance(value, str) and value in _ACTIONS
 
 
-def _validated_decision(payload: object) -> dict[str, Any]:
+def _validated_decision(payload: object, *, proxy_requested: bool = False) -> dict[str, Any]:
     invalid = NativeMcpToolPolicyError("payload_invalid")
-    if not isinstance(payload, dict) or set(payload) != _PAYLOAD_KEYS:
+    if not isinstance(payload, dict) or set(payload) - {"proxy"} != _PAYLOAD_KEYS:
+        raise invalid
+    proxy = payload.get("proxy")
+    if ("proxy" in payload) is not proxy_requested or (
+        proxy_requested
+        and not (
+            isinstance(proxy, dict) and isinstance(proxy.get("gate"), dict) and isinstance(proxy.get("route"), dict)
+        )
+    ):
         raise invalid
     optional_text = ("normalization_reason_code", "original_action", "approval_reuse_reason_code")
     if (
@@ -294,10 +310,15 @@ class _Effects:
             consume_one_shot=False,
         )
         decision = lookup["decision"]
-        return {
+        ignored = lookup["ignored_local_integrity"] is not None
+        observed: dict[str, object] = {
             "decision": None if decision is None else json_safe_copy(dict(decision)),
-            "ignored_local_integrity": lookup["ignored_local_integrity"] is not None,
+            "ignored_local_integrity": ignored,
         }
+        if decision is None and not ignored:
+            # A miss is diagnosed in the same effect so Rust needs no second round.
+            observed["reuse_diagnostic"] = self._need_reuse_diagnostic(need)
+        return observed
 
     def _need_reuse_diagnostic(self, need: Mapping[str, Any]) -> object:
         return {
@@ -329,6 +350,7 @@ def native_evaluate_tool_call(
     arguments: object,
     claim_saved_approval: bool,
     fresh_authority_provider: FreshAuthorityProvider | None,
+    proxy_input: Mapping[str, object] | None = None,
 ) -> NativeToolPolicyResult:
     """Drive the resident op to a decision; raise ``NativeMcpToolPolicyError`` otherwise."""
     try:
@@ -349,20 +371,23 @@ def native_evaluate_tool_call(
                 subject=subject,
                 claim_saved_approval=claim_saved_approval,
                 observations=observations,
+                proxy_input=proxy_input,
             )
             if reply["status"] == "ok":
                 try:
-                    payload = _validated_decision(reply.get("payload"))
+                    payload = _validated_decision(reply.get("payload"), proxy_requested=proxy_input is not None)
                 except NativeMcpToolPolicyError as error:
                     raise _rejected(guard_home, error.code) from None
                 if payload["post_claim_authority"] == "fresh" and authority is None:
                     raise _rejected(guard_home, "payload_invalid")
+                # One success record per decision, not per round: each record
+                # re-reads runtime status.
                 _accepted(guard_home)
-                return NativeToolPolicyResult(payload, authority)
+                proxy = payload.pop("proxy", None)
+                return NativeToolPolicyResult(payload, authority, proxy)
             need = reply.get("payload")
             if not isinstance(need, dict):
                 raise _rejected(guard_home, "need_invalid")
-            _accepted(guard_home)
             if need.get("kind") == "fresh_authority":
                 # The claim is committed. Refresh authority without a storage
                 # lease, then read policy again in a new scope.
