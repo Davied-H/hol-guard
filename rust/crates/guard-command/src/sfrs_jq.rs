@@ -102,12 +102,16 @@ fn next_nonspace(value: &str, start: usize) -> Option<char> {
         .find(|character| !crate::codex_output_py::is_py_space(*character))
 }
 
-/// `_strip_jq_strings_and_comments`.
+/// `_strip_jq_strings_and_comments`. String text is blanked, but `\( ... )`
+/// interpolation bodies are code that jq runs, so they stay visible to the
+/// `env`/`$ENV` scan.
 pub(crate) fn strip_jq_strings_and_comments(program: &str) -> String {
     let mut output = String::with_capacity(program.len());
     let mut in_string = false;
     let mut in_comment = false;
     let mut escaped = false;
+    // Open-paren depth of each interpolation currently being read as code.
+    let mut interpolations: Vec<usize> = Vec::new();
     for character in program.chars() {
         if in_comment {
             in_comment = character != '\n';
@@ -115,24 +119,45 @@ pub(crate) fn strip_jq_strings_and_comments(program: &str) -> String {
             continue;
         }
         if in_string {
-            output.push(' ');
             if escaped {
                 escaped = false;
+                if character == '(' {
+                    in_string = false;
+                    interpolations.push(1);
+                    output.push('(');
+                    continue;
+                }
             } else if character == '\\' {
                 escaped = true;
             } else if character == '"' {
                 in_string = false;
             }
+            output.push(' ');
             continue;
         }
-        if character == '"' {
-            in_string = true;
-            output.push(' ');
-        } else if character == '#' {
-            in_comment = true;
-            output.push(' ');
-        } else {
-            output.push(character);
+        match character {
+            '"' => {
+                in_string = true;
+                output.push(' ');
+            }
+            '#' => {
+                in_comment = true;
+                output.push(' ');
+            }
+            _ => {
+                if let Some(depth) = interpolations.last_mut() {
+                    if character == '(' {
+                        *depth += 1;
+                    } else if character == ')' {
+                        *depth -= 1;
+                        if *depth == 0 {
+                            interpolations.pop();
+                            in_string = true;
+                        }
+                    }
+                }
+                output.push(character);
+            }
         }
     }
     output
@@ -182,4 +207,24 @@ pub(crate) fn collapse_single_quoted_shell_argument(args: &[String]) -> Option<V
         index += 1;
     }
     Some(normalized)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::github_jq_program_is_safe;
+
+    #[test]
+    fn interpolation_bodies_are_scanned_as_code() {
+        for program in [
+            r#""\(env.GH_TOKEN)""#,
+            r#""\($ENV.X)""#,
+            r#""a\("b" + env.HOME)c""#,
+            r#""\((1) + env.HOME)""#,
+        ] {
+            assert!(!github_jq_program_is_safe(program), "{program}");
+        }
+        for program in [r#""\(.name) is env""#, r#""\(.a)-\(.b)""#, r#""env""#] {
+            assert!(github_jq_program_is_safe(program), "{program}");
+        }
+    }
 }
