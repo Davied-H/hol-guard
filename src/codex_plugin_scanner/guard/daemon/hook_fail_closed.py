@@ -126,14 +126,19 @@ def render_pre_tool_review(
 
 
 def render_recording_only_pre_tool(
-    harness: str, *, reason_code: str, reason: str, guard_home: Path | None = None
+    harness: str,
+    *,
+    reason_code: str,
+    reason: str,
+    guard_home: Path | None = None,
+    fallback: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Resident-rendered Watch continue, or a fixed deny when it cannot render."""
 
     rendered = native_render_recording_only_pre_tool(
         harness, reason_code=reason_code, reason=reason, guard_home=guard_home
     )
-    return rendered or fail_closed_pre_tool(harness)
+    return rendered or fallback or fail_closed_pre_tool(harness)
 
 
 def _compact(event_name: str) -> str:

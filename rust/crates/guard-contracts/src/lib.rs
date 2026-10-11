@@ -17,6 +17,8 @@ mod compound_git_inspection;
 pub use compound_git_inspection::*;
 mod approval_bulk_eligibility;
 pub use approval_bulk_eligibility::*;
+mod codex_thread_continue;
+pub use codex_thread_continue::*;
 mod approval_queue_identity;
 pub use approval_queue_identity::*;
 mod approval_resolution_plan;
@@ -60,8 +62,10 @@ mod hook_render;
 pub use hook_render::*;
 mod approval_proof;
 mod cursor_observer_proof;
+mod hook_authority_state;
 pub use approval_proof::*;
 pub use cursor_observer_proof::*;
+pub use hook_authority_state::*;
 mod hook_adapter;
 pub use hook_adapter::*;
 mod hook_artifact_compose;
@@ -141,6 +145,8 @@ pub use authoritative_decision::*;
 
 mod package_authority;
 pub use package_authority::*;
+mod package_audit_projection;
+pub use package_audit_projection::*;
 mod supply_chain_egress;
 pub use supply_chain_egress::*;
 

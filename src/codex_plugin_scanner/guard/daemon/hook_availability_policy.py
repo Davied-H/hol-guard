@@ -124,6 +124,32 @@ def hook_reason_continues_session(reason_code: str) -> bool:
     return code in _REVIEW_CANNOT_FINISH_REASON_CODES
 
 
+_WATCH_PRE_TOOL_HARNESSES = frozenset({"grok", "hermes", "openclaw", "pi", "omp"})
+
+
+def _watch_pre_tool_continue(harness: str, *, reason_code: str, reason: str) -> dict[str, object]:
+    """Fixed Watch continue. The tool request is not an input."""
+
+    canonical = harness.strip().lower().replace("_", "-")
+    if canonical in _WATCH_PRE_TOOL_HARNESSES:
+        return {
+            "decision": "allow",
+            "policy_action": "warn",
+            "reason_code": reason_code,
+            "reason": reason,
+        }
+    return {
+        "continue": True,
+        "policy_action": "warn",
+        "reason_code": reason_code,
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "allow",
+            "permissionDecisionReason": reason,
+        },
+    }
+
+
 def availability_harness_response(
     payload: Mapping[str, object],
     *,
@@ -137,13 +163,17 @@ def availability_harness_response(
     recording_only: bool = False,
     prompt_reason: str | None = None,
 ) -> dict[str, object]:
-    """Fixed fail-closed harness result when native review is unavailable.
+    """Fixed harness result when native review is unavailable.
 
-    The payload, posture and mode never change the answer; callers keep passing
-    them so an outage cannot be turned into an allow by request shape.
+    Enforce stays denied. An acknowledged Watch pre-tool outage keeps the
+    continuing envelope, except for an integrity failure, which still denies.
     """
 
-    del payload, workspace, home_dir, guard_home, recording_only
+    del payload, workspace, home_dir, guard_home
+    compact = _compact_hook_event_name(event_name)
+    pre_tool = compact in {"pretooluse", "pretool"} or compact.startswith("before")
+    if pre_tool and recording_only and reason_code.strip() not in _INTEGRITY_FAIL_CLOSED_REASON_CODES:
+        return _watch_pre_tool_continue(harness, reason_code=reason_code, reason=reason)
     return fail_closed_response(
         harness, event_name, reason=reason, reason_code=reason_code, prompt_reason=prompt_reason
     )
