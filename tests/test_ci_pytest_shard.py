@@ -68,7 +68,7 @@ def test_ci_workflow_cancels_stale_runs_and_uses_precomputed_affinity_shards() -
     assert "test-plan" not in jobs
     assert "tests" not in jobs
     assert jobs["coverage-plan"]["needs"] == "native-command-evaluators"
-    for name in ("coverage-plan", "compatibility", "cisco-full", "cross-platform", "windows-updater"):
+    for name in ("coverage-plan", "compatibility", "cisco-full", "cross-platform"):
         needs = jobs[name]["needs"]
         assert "native-command-evaluators" in (needs if isinstance(needs, list) else [needs])
         resources = [
@@ -192,8 +192,7 @@ def test_ci_workflow_cancels_stale_runs_and_uses_precomputed_affinity_shards() -
 
     cache_consumers = (
         ("compatibility", "ci-python-312", 1),
-        ("cross-platform", "windows-updater", 2),
-        ("windows-updater", None, 2),
+        ("cross-platform", "required", 1),
     )
     for job_name, next_job_name, expected_count in cache_consumers:
         job = _workflow_job(workflow, job_name, next_job_name)
