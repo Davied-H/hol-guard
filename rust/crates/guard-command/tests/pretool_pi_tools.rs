@@ -104,6 +104,12 @@ fn pi_keeps_review_for_secrets_escapes_and_unmodeled_input() {
         ("ls", json!({"path": ".", "follow": true})),
         ("find", json!({"pattern": "../../.ssh/*", "path": "."})),
         ("find", json!({"pattern": "*", "path": "~/.ssh"})),
+        // The root is ordinary, but the walk reaches a sensitive child.
+        (
+            "find",
+            json!({"pattern": "**/*", "path": "~", "hidden": true}),
+        ),
+        ("find", json!({"pattern": "*", "path": "~"})),
         ("grep", json!({"pattern": "x", "path": "~/secret-dir"})),
         (
             "grep",

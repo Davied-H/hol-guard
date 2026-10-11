@@ -235,6 +235,14 @@ fn listing(
     {
         return None;
     }
+    // `find` and a `pattern` walk the tree below the root and return names
+    // only, so an ordinary project root is fine even with a `.env` inside;
+    // reading that file stays gated. A walk from the home directory or above
+    // it reaches credential stores and agent state, so it stays on review.
+    let recursive = signals.tool_name.as_deref() == Some("find") || input.contains_key("pattern");
+    if recursive && walk_covers_home(target, context) {
+        return None;
+    }
     super::super::safe_reads::bounded_omp_directory_read_target(
         target,
         context.path.home_dir,
@@ -247,6 +255,25 @@ fn listing(
             "The Rust authority proved this names-only listing targets a verified ordinary directory.",
         )
     })
+}
+
+/// True when the walk root is the home directory or one of its ancestors,
+/// or when either cannot be resolved.
+fn walk_covers_home(target: &str, context: &OmpContext<'_>) -> bool {
+    let (Some(home), Some(cwd)) = (context.path.home_dir, context.path.cwd) else {
+        return true;
+    };
+    let root = if target == "~" {
+        std::path::PathBuf::from(home)
+    } else if let Some(rest) = target.strip_prefix("~/") {
+        std::path::Path::new(home).join(rest)
+    } else {
+        std::path::Path::new(cwd).join(target)
+    };
+    match (std::fs::canonicalize(root), std::fs::canonicalize(home)) {
+        (Ok(root), Ok(home)) => home.starts_with(root),
+        _ => true,
+    }
 }
 
 fn glob_directory(target: &str) -> Option<&str> {

@@ -384,6 +384,9 @@ fn adjust_pi(envelope: &mut Envelope) {
     if envelope.mcp_server.is_some() || envelope.command.is_some() {
         return;
     }
+    if envelope.event_name == "UserPromptSubmit" && envelope.prompt_excerpt.is_some() {
+        return;
+    }
     let tool = py_lower(envelope.tool_name.as_deref().unwrap_or(""));
     if matches!(tool.as_str(), "ls" | "find") {
         "file_read".clone_into(&mut envelope.action_type);
