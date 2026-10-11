@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 
 from codex_plugin_scanner.guard.adapters.bounded_cli_hook_bridge import _render_bounded_hook_script
+from codex_plugin_scanner.guard.hook_execution_environment import LIBRARY_SEARCH_PATH_NAMES
 
 
 def _load_script(tmp_path: Path, *, harness: str, timeout_seconds: float = 8) -> ModuleType:
@@ -109,6 +110,8 @@ def test_generated_client_stamps_outer_environment_before_daemon_forwarding(
     monkeypatch.setenv("PAGER", "")
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "true")
     monkeypatch.setenv("GIT_EXTERNAL_DIFF", "frozen-caller-secret-not-serialized")
+    for name in LIBRARY_SEARCH_PATH_NAMES:
+        monkeypatch.delenv(name, raising=False)
 
     forwarded = module._stamp_hook_input(
         json.dumps(
