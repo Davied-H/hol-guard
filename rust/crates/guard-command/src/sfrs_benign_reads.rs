@@ -11,7 +11,8 @@ use crate::codex_output_fs as pyfs;
 use crate::codex_output_py::{py_strip, PyPath};
 use crate::codex_output_source_paths::{py_path, source_path_is_allowed_for_request};
 use crate::hook_adapter_value::OValue;
-use crate::sfrs_requests::{normalize_tool_name, PATH_KEYS, PATH_LIST_KEYS};
+use crate::sfrs_constants::{PATH_KEYS, PATH_LIST_KEYS};
+use crate::sfrs_requests::normalize_tool_name;
 
 const SHELL_META_MARKERS: &[&str] = &["$", "`", "<", ">", "|", ";", "&", "\u{0}"];
 
