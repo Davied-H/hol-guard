@@ -9,7 +9,10 @@ from pathlib import Path
 
 _MAX_HOMES = 64
 _MAX_PART = 48
-_SAFE_CODE = re.compile(r"[a-z0-9_]{1,64}")
+# A fixed machine code: lowercase words joined by underscores. Hex digests and
+# bare tokens never match, so secret-shaped strings are not carried.
+_SAFE_CODE = re.compile(r"[a-z]{2,}(?:_[a-z0-9]{1,12}){1,6}")
+_HEX_RUN = re.compile(r"[0-9a-f]{16,}")
 _LOCK = threading.Lock()
 _FAILURES: OrderedDict[str, str] = OrderedDict()
 

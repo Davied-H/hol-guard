@@ -76,3 +76,25 @@ def test_recovered_provisioning_clears_the_recorded_reason(tmp_path: Path, monke
     assert prerequisite_failure_for_home(home) == "provision_key:OSError:e5"
     assert native_context.ensure_resident_prerequisite(home) is True
     assert prerequisite_failure_for_home(home) is None
+
+
+@pytest.mark.parametrize("detail", ["a" * 64, "deadbeef" * 8, "0123456789abcdef", "token"])
+def test_secret_shaped_error_args_are_not_carried(detail: str) -> None:
+    from codex_plugin_scanner.guard.native_resident_prerequisite_reason import prerequisite_failure_reason
+
+    assert prerequisite_failure_reason("provision_key", RuntimeError(detail)) == "provision_key:RuntimeError"
+
+
+def test_fixed_machine_code_is_carried() -> None:
+    from codex_plugin_scanner.guard.native_resident_prerequisite_reason import prerequisite_failure_reason
+
+    assert prerequisite_failure_reason("provision_key", RuntimeError("key_dir_refused")) == (
+        "provision_key:RuntimeError:key_dir_refused"
+    )
+
+
+def test_suffixed_prerequisite_reason_still_counts_dropped_events_locally() -> None:
+    from codex_plugin_scanner.guard.store_command_activity_lifecycle import _PRE_SEND_REASONS  # pyright: ignore
+
+    reason = "native_guard_store_prerequisite_unavailable:provision_key:PermissionError:e13"
+    assert reason.partition(":")[0] in _PRE_SEND_REASONS
