@@ -23,7 +23,7 @@ from collections import defaultdict
 from pathlib import Path
 
 TOKEN = "<SFRS_ROOT>"
-HOST_MARKERS = ("michaelkantor", "runner2-port", "hol-guard/.venv", "/home/runner", "/private/var/folders")
+HOST_MARKERS = ("michaelkantor", "runner2-port", "hol-guard/.venv", "/home/runner", "/var/folders")
 MAX_VECTORS_PER_ENTRY = 4000
 MAX_RESULT_BYTES = 60000
 
@@ -69,9 +69,16 @@ def _changing_digests(
     ordered = sorted(sha.items(), key=lambda item: int(item[1][0]))  # type: ignore[call-overload]
     for digest, (_order, preimage) in ordered:
         text = str(preimage)
-        if root in text or any(earlier in text for earlier in changing) or any(value in text for value in native):
+        depends_on_earlier = any(_mentions_digest(text, earlier) for earlier in changing)
+        if root in text or depends_on_earlier or any(value in text for value in native):
             changing[digest] = text
     return list(changing.items())
+
+
+def _mentions_digest(text: str, digest: str) -> bool:
+    """Whether ``text`` carries ``digest`` in full or as a shortened hex prefix."""
+
+    return any(digest.startswith(run) for run in re.findall(r"[0-9a-f]{8,64}", text))
 
 
 def _prefix_lengths(text: str, digest: str) -> list[int]:
@@ -129,7 +136,7 @@ def main(argv: list[str]) -> int:
         text = json.dumps(body, sort_keys=True)
         if test_dir is not None:
             text = text.replace(test_dir, TOKEN + "/@@DIR@@")
-        text = text.replace(root, TOKEN)
+        text = re.sub(re.escape(root) + r"(?![A-Za-z0-9_.-])", lambda _match: TOKEN, text)
         for position, value in enumerate(sorted(native)):
             text = text.replace(value, f"<NATIVE_HASH:{position}>")
         if any(marker in text for marker in HOST_MARKERS):
