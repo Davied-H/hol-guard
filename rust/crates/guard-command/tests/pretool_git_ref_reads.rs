@@ -241,6 +241,83 @@ fn linked_worktree_reads_refs_in_its_common_git_directory() {
 }
 
 #[test]
+fn a_hidden_ancestor_does_not_hide_the_common_git_directory() {
+    let (root, _) = fixture();
+    let home = root.join("home");
+    let parent = root.join(".projects/app");
+    let worktree = root.join("projects/app-feature");
+    let admin = parent.join(".git/worktrees/app-feature");
+    for (path, content) in [
+        (
+            parent.join(".git/HEAD"),
+            "ref: refs/heads/main\n".to_owned(),
+        ),
+        (
+            parent.join(".git/refs/heads/main"),
+            "0123456789abcdef0123456789abcdef01234567\n".to_owned(),
+        ),
+        (
+            parent.join(".git/refs/heads/.hidden"),
+            "0123456789abcdef0123456789abcdef01234567\n".to_owned(),
+        ),
+        (parent.join(".git/config"), "[core]\n".to_owned()),
+        (admin.join("HEAD"), "ref: refs/heads/feature\n".to_owned()),
+        (admin.join("commondir"), "../..\n".to_owned()),
+        (
+            worktree.join(".git"),
+            format!("gitdir: {}\n", admin.display()),
+        ),
+        (worktree.join("src/lib.rs"), "\n".to_owned()),
+        (home.join("README.md"), "\n".to_owned()),
+    ] {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, content).unwrap();
+    }
+    std::fs::write(
+        admin.join("gitdir"),
+        format!("{}\n", worktree.join(".git").display()),
+    )
+    .unwrap();
+    for harness in ["zcode", "claude-code", "omp"] {
+        assert_eq!(
+            read(harness, &parent.join(".git/HEAD"), &home, &worktree),
+            "allow",
+            "{harness} HEAD"
+        );
+        assert_eq!(
+            read(
+                harness,
+                &parent.join(".git/refs/heads/main"),
+                &home,
+                &worktree
+            ),
+            "allow",
+            "{harness} refs/heads/main"
+        );
+        assert_ne!(
+            read(
+                harness,
+                &parent.join(".git/refs/heads/.hidden"),
+                &home,
+                &worktree
+            ),
+            "allow",
+            "{harness} hidden ref"
+        );
+        assert_ne!(
+            read(harness, &parent.join(".git/config"), &home, &worktree),
+            "allow",
+            "{harness} config"
+        );
+        assert_ne!(
+            read(harness, &parent.join(".git/HEAD"), &home, &home),
+            "allow",
+            "{harness} unrelated cwd"
+        );
+    }
+}
+
+#[test]
 fn a_named_pipe_git_metadata_file_does_not_grant_common_dir_reads() {
     for kind in ["dot-git", "commondir", "gitdir"] {
         let (home, parent, worktree) = linked_worktree_fixture();
