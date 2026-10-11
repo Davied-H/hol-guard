@@ -143,7 +143,11 @@ def run_harness_case(
                 guard_home.mkdir(mode=0o700)
                 (guard_home / "config.toml").write_text('protection_posture = "watch"\nmode = "observe"\n')
             daemon = probe._start_installed_daemon(
-                guard_home=guard_home, home=fixture.home, workspace=fixture.workspace, identity=identity
+                guard_home=guard_home,
+                home=fixture.home,
+                workspace=fixture.workspace,
+                identity=identity,
+                register_workspace_policy=not realistic,
             )
             if scenario.oracle == "blocked-extension":
                 case["extension_control"] = configure_extension_permission_denial(
@@ -151,7 +155,10 @@ def run_harness_case(
                 )
             if scenario.id in BUSINESS_CASES:
                 case["business_policy"] = install_business_policy(daemon, guard_home)
-            policy_snapshot = probe._prepare_installed_daemon_workspace(daemon, fixture.workspace)
+            # Native-tools cases run first-contact, with no pre-bound workspace policy, like a fresh install.
+            policy_snapshot = (
+                None if realistic else probe._prepare_installed_daemon_workspace(daemon, fixture.workspace)
+            )
             if scenario.id in BUSINESS_CASES:
                 publisher = daemon._server.hook_worker.policy_snapshot_publisher
                 case["business_policy"] = bind_business_snapshot(

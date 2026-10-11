@@ -237,7 +237,7 @@ def summarize_interruptions(cases: list[dict[str, Any]], harness: str | None = N
     }
 
 
-def load_known_gaps(path: Path = KNOWN_GAPS) -> dict[str, str]:
+def load_known_gaps(path: Path = KNOWN_GAPS, scenario_ids: set[str] | None = None) -> dict[str, str]:
     """Cases expected to fail on the current product, with why. Reported, never hidden.
 
     Validated before any case runs: a malformed file or an id outside the catalog aborts the run.
@@ -246,7 +246,9 @@ def load_known_gaps(path: Path = KNOWN_GAPS) -> dict[str, str]:
     gaps = data.get("known_gaps") if isinstance(data, dict) else None
     if not isinstance(gaps, dict) or any(not isinstance(k, str) or not isinstance(v, str) for k, v in gaps.items()):
         raise ValueError("known gaps must map scenario ids to reasons")
-    unknown = sorted(set(gaps) - {scenario.id for scenario in load_catalog()})
+    unknown = sorted(
+        set(gaps) - (scenario_ids if scenario_ids is not None else {scenario.id for scenario in load_catalog()})
+    )
     if unknown:
         raise ValueError("known gaps name unknown scenarios: " + ", ".join(unknown))
     return gaps

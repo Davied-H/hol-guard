@@ -79,8 +79,11 @@ def _contained_interruptions(observations: list[Any]) -> list[dict[str, Any]]:
             and item.get("reason_code") == _CONTAINMENT_REASON
             and item.get("policy_action") == "sandbox-required"
         )
-        if not by_design:
-            found.extend(observation_interruptions(item, "omp"))
+        found.extend(
+            interruption
+            for interruption in observation_interruptions(item, "omp")
+            if not (by_design and interruption.get("kind") == "decision")
+        )
     return found
 
 
@@ -446,9 +449,13 @@ def verify_report(
     if not interruptions["benign_cases"]:
         raise ValueError("no ordinary-work case was judged, so silence is unproven")
     gap_report: list[dict[str, Any]] = []
-    if KNOWN_GAPS.is_file():
+    # Gaps bind to the candidate checkout when one is given, so a fixed gap the candidate removed is not stale.
+    # Every required scenario already had to pass, so this only enforces gap-file hygiene; it cannot excuse a failure.
+    gaps_path = repo / "ci/gauntlet/known_gaps.json" if manifest is None else KNOWN_GAPS
+    if gaps_path.is_file():
         gap_report = known_gap_report(
-            [{"id": s.id, **r} for s, r in zip(expected, results, strict=True)], load_known_gaps()
+            [{"id": s.id, **r} for s, r in zip(expected, results, strict=True)],
+            load_known_gaps(gaps_path, {s.id for s in expected}),
         )
         stale = stale_gaps(gap_report)
         if stale:

@@ -51,7 +51,12 @@ def test_ask_fails_ordinary_work() -> None:
 def test_always_needs_a_persistent_allow_in_the_contract() -> None:
     asked = {"hookSpecificOutput": {"permissionDecision": "ask"}}
     once = {"tool_name": "Bash", "always_available": False, "exact_context_token_present": True}
-    offered = {"tool_name": "Bash", "always_available": True, "exact_context_token_present": False}
+    offered = {
+        "tool_name": "Bash",
+        "always_available": True,
+        "exact_action_persistence_eligible": True,
+        "exact_context_token_present": True,
+    }
     assert judge(_case("always"), asked, [once]) is not None
     assert judge(_case("always"), asked, [offered]) is None
 
@@ -72,7 +77,12 @@ def test_expansion_covers_pi_and_every_harness() -> None:
 
 def test_silent_always_allow_fails_the_review_by_design_case() -> None:
     assert judge(_case("always"), _QUIET, []) is not None
-    offered = {"tool_name": "Bash", "always_available": True}
+    offered = {
+        "tool_name": "Bash",
+        "always_available": True,
+        "exact_action_persistence_eligible": True,
+        "exact_context_token_present": True,
+    }
     assert judge(_case("always"), {"hookSpecificOutput": {"permissionDecision": "ask"}}, [offered]) is None
 
 

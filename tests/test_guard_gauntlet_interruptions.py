@@ -82,7 +82,11 @@ def test_summary_counts_by_harness_reason_and_tool() -> None:
 
 
 def test_offers_always_only_from_the_scope_contract() -> None:
-    assert offers_always({"always_available": True})
+    exact = {"always_available": True, "exact_action_persistence_eligible": True, "exact_context_token_present": True}
+    assert offers_always(exact)
+    assert not offers_always({"always_available": True})
+    assert not offers_always({**exact, "exact_action_persistence_eligible": False})
+    assert not offers_always({**exact, "exact_context_token_present": False})
     assert not offers_always({"always_available": False, "exact_context_token_present": True})
     assert not offers_always({})
 
@@ -101,3 +105,27 @@ def test_harness_lane_counts_missing_codes_as_unknown() -> None:
     summary = summarize_interruptions([case], harness="pi")
     assert summary["by_harness"] == {"pi": 1}
     assert summary["by_reason_code"] == summary["by_tool"] == {"unknown": 1}
+
+
+def test_known_gaps_load_from_candidate_path_and_ids(tmp_path) -> None:
+    path = tmp_path / "known_gaps.json"
+    path.write_text(json.dumps({"known_gaps": {"candidate-only": "why"}}))
+    assert load_known_gaps(path, {"candidate-only"}) == {"candidate-only": "why"}
+    with pytest.raises(ValueError):
+        load_known_gaps(path)
+
+
+def test_containment_denial_row_still_checked_for_rendered_evidence() -> None:
+    from ci.gauntlet.verify import _CONTAINMENT_REASON, _contained_interruptions
+
+    denial = {
+        "event": "PreToolUse",
+        "decision": "deny",
+        "reason_code": _CONTAINMENT_REASON,
+        "policy_action": "sandbox-required",
+        "http_status": 200,
+        "rendered_fields": [],
+    }
+    assert _contained_interruptions([denial]) == []
+    rendered = _contained_interruptions([{**denial, "rendered_fields": ["warning"]}])
+    assert [e["kind"] for e in rendered] == ["rendered"]
