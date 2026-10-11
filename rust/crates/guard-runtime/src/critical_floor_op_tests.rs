@@ -43,7 +43,7 @@ fn critical_floors_match_recorded_python() {
     for command in fixture["near_misses"].as_array().unwrap() {
         let response = evaluate(wire(command.as_str().unwrap()));
         if response["status"] != "ok" || response["payload"]["action"] == "block" {
-            failures.push(format!("near miss {}: {}", command, response));
+            failures.push(format!("near miss {command}: {response}"));
         }
     }
     assert!(
