@@ -50,14 +50,21 @@ def function_calls(node: ast.AST) -> set[str]:
 
 
 def python_references(path: Path) -> set[str]:
-    """Names a module defines, imports or calls; comments and strings are ignored."""
+    """Names a module defines, imports, references or calls; comments and strings are ignored."""
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     names = function_calls(tree)
     for child in ast.walk(tree):
         if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
             names.add(child.name)
         elif isinstance(child, (ast.Import, ast.ImportFrom)):
-            names.update(alias.asname or alias.name.rsplit(".", 1)[-1] for alias in child.names)
+            for alias in child.names:
+                names.add(alias.name.rsplit(".", 1)[-1])
+                if alias.asname:
+                    names.add(alias.asname)
+        elif isinstance(child, ast.Attribute):
+            names.add(child.attr)
+        elif isinstance(child, ast.Name):
+            names.add(child.id)
     return names
 
 

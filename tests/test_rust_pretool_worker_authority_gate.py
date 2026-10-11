@@ -104,6 +104,22 @@ def test_responses_must_come_from_the_native_edge_rendering(
     assert any(expected in failure for failure in GATE["_worker_failures"](worker_checkout))
 
 
+def test_aliased_and_uncalled_post_tool_review_references_are_detected(worker_checkout: Path) -> None:
+    path = worker_checkout / WORKER_DIR / "hook_worker_native.py"
+    source = path.read_text(encoding="utf-8")
+    expected = "worker decides PostToolUse in Python instead of the native edge"
+    path.write_text(
+        source + "\n\nfrom native_edge import review_post_tool as rpt\n\ndef run(payload):\n    return rpt(payload)\n",
+        encoding="utf-8",
+    )
+    assert any(expected in failure for failure in GATE["_worker_failures"](worker_checkout))
+    path.write_text(
+        source + "\n\ndef remember(edge):\n    fn = edge.review_post_tool\n    return fn\n",
+        encoding="utf-8",
+    )
+    assert any(expected in failure for failure in GATE["_worker_failures"](worker_checkout))
+
+
 def test_python_post_tool_review_is_detected_in_code_not_comments(worker_checkout: Path) -> None:
     path = worker_checkout / WORKER_DIR / "hook_worker_native.py"
     source = path.read_text(encoding="utf-8")
