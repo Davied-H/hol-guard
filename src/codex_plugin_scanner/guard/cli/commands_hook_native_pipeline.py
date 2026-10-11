@@ -154,7 +154,7 @@ def run_native_hook_pipeline(
             worker=worker,
             recording_only=bool(edge.get("recording_only")) if isinstance(edge, Mapping) else False,
         )
-    contained = emit_native_containment_route(edge, payload, context, runtime_workspace, output_stream)
+    contained = emit_native_containment_route(edge, payload, context, runtime_workspace, output_stream, store)
     if contained is not None:
         return contained
 

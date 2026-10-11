@@ -310,7 +310,18 @@ def test_cli_fallback_applies_the_same_containment_rewrite(monkeypatch, tmp_path
         return receipt if routed is None else routed
 
     monkeypatch.setattr(cli_route, "route_zcode_containment", route)
+    recorded: list[dict[str, object]] = []
+    monkeypatch.setattr(cli_route, "record_pre_hook_command_activity_best_effort", lambda **kw: recorded.append(kw))
+    edge["receipt"] = {"decision_id": "native-receipt-1"}
     stream = io.StringIO()
     context = SimpleNamespace(guard_home=tmp_path, home_dir=tmp_path)
-    assert cli_route.emit_native_containment_route(edge, {}, context, tmp_path, stream) == expected
+    store = object()
+    assert cli_route.emit_native_containment_route(edge, {}, context, tmp_path, stream, store) == expected
     assert (json.loads(stream.getvalue()) if stream.getvalue() else None) == (routed if expected == 0 else None)
+    if expected == 0:
+        # The daemon records the routed PreToolUse; the CLI fallback must leave the same history.
+        assert len(recorded) == 1
+        assert recorded[0]["store"] is store and recorded[0]["receipt_id"] == "native-receipt-1"
+        assert recorded[0]["event"] == "PreToolUse" and recorded[0]["harness"] == "claude-code"
+    else:
+        assert recorded == []
