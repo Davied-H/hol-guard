@@ -152,8 +152,8 @@ mod sfrs_developer_vectors;
 mod sfrs_docker_args;
 #[cfg(test)]
 mod sfrs_docker_vectors;
-mod sfrs_file_identity;
 mod sfrs_environment_secret;
+mod sfrs_file_identity;
 #[cfg(all(test, unix))]
 mod sfrs_fs_vectors;
 mod sfrs_gh_actions_env;
