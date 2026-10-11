@@ -10,7 +10,16 @@
 // Consumed by the later classifier slices.
 #![allow(dead_code)]
 
+use unicode_normalization::UnicodeNormalization;
+
 const RISKY_ROOTS: [&str; 4] = ["os", "pathlib", "shutil", "subprocess"];
+
+/// Python NFKC-normalises identifiers while parsing, so a module spelled with
+/// compatibility characters names the same module as its ASCII form.
+fn is_risky_root(name: &str) -> bool {
+    let normalized: String = name.nfkc().collect();
+    RISKY_ROOTS.contains(&normalized.as_str())
+}
 
 #[derive(Debug, PartialEq, Eq)]
 enum Token {
@@ -59,7 +68,7 @@ fn tokenize(script: &str) -> Vec<Token> {
             continue;
         }
         if c == '"' || c == '\'' {
-            index = skip_string(&chars, index);
+            index = skip_string(&chars, index, false);
             continue;
         }
         if is_word_start(c) {
@@ -76,7 +85,8 @@ fn tokenize(script: &str) -> Vec<Token> {
                     .chars()
                     .all(|ch| matches!(ch.to_ascii_lowercase(), 'r' | 'b' | 'u' | 'f'))
             {
-                index = skip_string(&chars, index);
+                let formatted = word.chars().any(|ch| matches!(ch, 'f' | 'F'));
+                index = skip_string(&chars, index, formatted);
                 continue;
             }
             tokens.push(Token::Word(word));
@@ -93,8 +103,11 @@ fn tokenize(script: &str) -> Vec<Token> {
     tokens
 }
 
-/// Index just past the string literal that opens at `start`.
-fn skip_string(chars: &[char], start: usize) -> usize {
+/// Index just past the string literal that opens at `start`. In an f-string
+/// (`formatted`) the replacement fields hold expressions that may contain
+/// their own quotes (PEP 701), so they are skipped as nested code rather than
+/// as string text.
+fn skip_string(chars: &[char], start: usize, formatted: bool) -> usize {
     let quote = chars[start];
     let triple = chars.get(start + 1) == Some(&quote) && chars.get(start + 2) == Some(&quote);
     let mut index = start + if triple { 3 } else { 1 };
@@ -102,6 +115,14 @@ fn skip_string(chars: &[char], start: usize) -> usize {
         let c = chars[index];
         if c == '\\' {
             index += 2;
+            continue;
+        }
+        if formatted && c == '{' {
+            if chars.get(index + 1) == Some(&'{') {
+                index += 2;
+            } else {
+                index = skip_replacement_field(chars, index + 1);
+            }
             continue;
         }
         if triple {
@@ -115,6 +136,36 @@ fn skip_string(chars: &[char], start: usize) -> usize {
             return index + 1;
         } else if c == '\n' {
             return index;
+        }
+        index += 1;
+    }
+    chars.len()
+}
+
+/// Index just past the `}` that closes the replacement field whose body
+/// starts at `start`.
+fn skip_replacement_field(chars: &[char], start: usize) -> usize {
+    let mut depth = 0usize;
+    let mut index = start;
+    while index < chars.len() {
+        match chars[index] {
+            '"' | '\'' => {
+                let prefix = chars[start..index]
+                    .iter()
+                    .rev()
+                    .take_while(|ch| ch.is_ascii_alphabetic())
+                    .count()
+                    .min(2);
+                let formatted = chars[index - prefix..index]
+                    .iter()
+                    .any(|ch| matches!(ch, 'f' | 'F'));
+                index = skip_string(chars, index, formatted);
+                continue;
+            }
+            '{' | '(' | '[' => depth += 1,
+            '}' if depth == 0 => return index + 1,
+            '}' | ')' | ']' => depth = depth.saturating_sub(1),
+            _ => {}
         }
         index += 1;
     }
@@ -184,7 +235,7 @@ fn import_statement_aliases(statement: &[Token]) -> bool {
             cursor += 1;
         }
         let aliased = matches!(statement.get(cursor), Some(Token::Word(word)) if word == "as");
-        if aliased && root.is_some_and(|name| RISKY_ROOTS.contains(&name)) {
+        if aliased && root.is_some_and(is_risky_root) {
             return true;
         }
         while cursor < statement.len() && statement[cursor] != Token::Symbol(',') {
@@ -210,7 +261,7 @@ fn from_statement_aliases(statement: &[Token]) -> bool {
     let Some(root) = dotted_root(statement, first_name) else {
         return false;
     };
-    if !RISKY_ROOTS.contains(&root) {
+    if !is_risky_root(root) {
         return false;
     }
     statement[import_at + 1..]
@@ -232,6 +283,10 @@ mod tests {
             "if 1:\n    import shutil as s",
             "x = 1; import pathlib as pl",
             "from .os import path as p",
+            "from \u{ff4f}\u{ff53} import remove as r\nr('x')",
+            "import \u{ff53}ubprocess as sp",
+            "f\"{\"'''\"}\"\nimport os as o\n#'''",
+            "f\"{x!r:>{width}}\"\nimport os as o",
         ] {
             assert!(script_has_aliased_risky_import(script), "{script}");
         }
@@ -248,6 +303,8 @@ mod tests {
             "x = \"\"\"\nimport os as o\n\"\"\"",
             "from collections import OrderedDict as od",
             "obj.import_thing",
+            "f\"{\"import os as o\"}\"",
+            "f\"{{import os as o}}\"",
         ] {
             assert!(!script_has_aliased_risky_import(script), "{script}");
         }
