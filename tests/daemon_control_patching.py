@@ -22,6 +22,7 @@ _MODULES = (
     "codex_plugin_scanner.guard.daemon.server_control_headless",
     "codex_plugin_scanner.guard.daemon.server_control_misc",
     "codex_plugin_scanner.guard.daemon.server_control_repair",
+    "codex_plugin_scanner.guard.daemon.server_control_routes_post",
     "codex_plugin_scanner.guard.daemon.server_control_supply_chain",
     "codex_plugin_scanner.guard.daemon.server_dashboard_records_read",
     "codex_plugin_scanner.guard.daemon.server_dashboard_runtime_read",
