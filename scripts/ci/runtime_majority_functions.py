@@ -288,9 +288,22 @@ def check_external_references(
         _check_attribute_chains(nodes, module.path, bindings, {m: p for m, p in by_module.items() if p is not own})
 
 
+def _is_type_checking(test: ast.expr) -> bool:
+    if isinstance(test, ast.Name):
+        return test.id == "TYPE_CHECKING"
+    return isinstance(test, ast.Attribute) and test.attr == "TYPE_CHECKING"
+
+
 def _retained_nodes(node: ast.AST, skip: set[int]) -> Iterator[ast.AST]:
+    """Walk retained statements; ``if TYPE_CHECKING`` bodies are not runtime code."""
     for child in ast.iter_child_nodes(node):
         if isinstance(child, ast.stmt) and child.lineno in skip:
+            continue
+        if isinstance(child, ast.If) and _is_type_checking(child.test):
+            yield child
+            for orelse in child.orelse:
+                yield orelse
+                yield from _retained_nodes(orelse, skip)
             continue
         yield child
         yield from _retained_nodes(child, skip)
