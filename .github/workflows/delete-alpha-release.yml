@@ -1,0 +1,98 @@
+name: Delete alpha release
+
+# Retracts an optional test alpha cut from main. Deleting the prerelease and its
+# alpha/v<version> tag removes the Desktop Core sidecars and stops
+# `hol-guard update --alpha` and Desktop's Alpha channel from offering it.
+# PyPI never allows a version to be reused; yank it there by hand if needed.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Alpha version to delete, for example 3.43.0a1
+        type: string
+        required: true
+
+permissions: {}
+
+concurrency:
+  group: delete-alpha-release-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  delete:
+    name: Delete alpha prerelease, tag and container image
+    if: github.repository == 'hashgraph-online/hol-guard'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - name: Require an authorized maintainer and a main alpha version
+        env:
+          ACTOR_ID: ${{ github.actor_id }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "$ACTOR_ID" != "6068672" && "$ACTOR_ID" != "301892678" ]]; then
+            echo "Alpha releases may only be deleted by an authorized maintainer" >&2
+            exit 1
+          fi
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.0a[1-9][0-9]*$ ]]; then
+            echo "Only main alphas (X.Y.0aN) can be deleted here" >&2
+            exit 1
+          fi
+
+      - name: Delete the GitHub prerelease and tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          tag="alpha/v${VERSION}"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq .isPrerelease >is_prerelease 2>/dev/null; then
+            if [[ "$(cat is_prerelease)" != "true" ]]; then
+              echo "Refusing to delete ${tag}: it is not a prerelease" >&2
+              exit 1
+            fi
+            gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
+            echo "Deleted prerelease ${tag} and its tag"
+          elif gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}" >/dev/null 2>&1; then
+            gh api -X DELETE "repos/${GITHUB_REPOSITORY}/git/refs/tags/${tag}"
+            echo "Deleted orphaned tag ${tag}"
+          else
+            echo "No prerelease or tag named ${tag}"
+          fi
+
+      - name: Delete the alpha container image tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          owner="${GITHUB_REPOSITORY%%/*}"
+          package="${GITHUB_REPOSITORY#*/}"
+          ids=$(gh api --paginate "orgs/${owner}/packages/container/${package}/versions" \
+            --jq ".[] | select(.metadata.container.tags | index(\"${VERSION}\")) | .id" 2>/dev/null || true)
+          if [[ -z "$ids" ]]; then
+            echo "No container image tagged ${VERSION}"
+            exit 0
+          fi
+          for id in $ids; do
+            gh api -X DELETE "orgs/${owner}/packages/container/${package}/versions/${id}"
+            echo "Deleted container image version ${id} (${VERSION})"
+          done
+
+      - name: Explain the PyPI follow-up
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          {
+            echo "### Alpha ${VERSION} retracted"
+            echo
+            echo "GitHub prerelease, tag, Desktop Core sidecars and container image are gone."
+            echo "Guard and Desktop alpha updates no longer offer this version."
+            echo
+            echo "PyPI keeps hol-guard ${VERSION} because published versions cannot be deleted or reused."
+            echo "pip and uv already skip it unless --pre is set. To hide it from explicit pins too, yank it at"
+            echo "https://pypi.org/manage/project/hol-guard/release/${VERSION}/"
+          } >>"$GITHUB_STEP_SUMMARY"
