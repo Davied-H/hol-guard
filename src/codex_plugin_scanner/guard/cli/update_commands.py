@@ -74,6 +74,7 @@ from .update_grok_repair import append_grok_repair
 from .update_install_verify import verify_installed_distribution
 from .update_opencode import _refresh_opencode_pretool_plugin
 from .update_release_candidates import newest_pypi_version
+from .update_repair_notes import attach_repair_notes
 from .update_retirement import retire_with_retry
 from .update_subprocess import (
     InstalledDistribution,
@@ -734,7 +735,7 @@ def _run_guard_update_unlocked(
             dry_run=dry_run,
             update_context=update_context,
         )
-        _attach_repair_notes(payload, repair_notes)
+        attach_repair_notes(payload, repair_notes)
         if repaired_installs:
             payload["managed_installs"] = repaired_installs
             if len(repaired_installs) == 1:
@@ -1022,7 +1023,7 @@ def _run_guard_update_unlocked(
             dry_run=dry_run,
             update_context=update_context,
         )
-        _attach_repair_notes(payload, repair_notes)
+        attach_repair_notes(payload, repair_notes)
         if repaired_installs:
             payload["managed_installs"] = repaired_installs
             if len(repaired_installs) == 1:
@@ -1169,23 +1170,6 @@ def _string_list(value: object) -> list[str]:
 
 def _payload_notes(payload: dict[str, object]) -> list[str]:
     return _string_list(payload.get("notes"))
-
-
-_PROTECTION_REPAIR_FAILURE_PREFIXES = (
-    "Could not inspect Codex protection during update",
-    "Could not repair Codex protection during update",
-    "Could not verify repaired Codex protection during update",
-)
-
-
-def _attach_repair_notes(payload: dict[str, object], repair_notes: list[str]) -> None:
-    """Keep every repair note, and list failures that leave a harness unprotected separately."""
-    if not repair_notes:
-        return
-    payload["notes"] = [*_payload_notes(payload), *repair_notes]
-    failures = [note for note in repair_notes if note.startswith(_PROTECTION_REPAIR_FAILURE_PREFIXES)]
-    if failures:
-        payload["protection_repair_failures"] = failures
 
 
 def _append_payload_note(payload: dict[str, object], note: str | None) -> None:
