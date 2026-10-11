@@ -253,3 +253,100 @@ def test_python_incompatible_fallback_skips_retracted_alpha(monkeypatch: pytest.
     )
 
     assert update_commands._latest_compatible_release_version("3.41.0", "3.12.0", include_alpha=True) == "3.43.0a1"
+
+
+def test_live_release_candidates_drop_retracted_and_unchecked_alphas() -> None:
+    from codex_plugin_scanner.guard.cli.update_release_candidates import live_release_candidates
+
+    check = _Recorder({"3.43.0a4", "3.43.0a1"})
+
+    live = live_release_candidates(
+        ["3.43.0a1", "3.42.0", "3.43.0a2", "3.43.0a3", "bogus", "3.43.0a4", "3.43.0a5"],
+        alpha_is_live=check,
+        max_lookups=3,
+    )
+
+    assert live == ["3.43.0a4", "3.42.0"]
+    assert check.calls == ["3.43.0a5", "3.43.0a4", "3.43.0a3"]
+
+
+def test_desktop_refinement_ignores_retracted_alpha() -> None:
+    from codex_plugin_scanner.guard.cli.update_desktop_apply import refine_desktop_version_check
+
+    version_check = {
+        "source": "pypi",
+        "status": "stale",
+        "current_version": "3.43.0a1",
+        "latest_version": "3.43.0a2",
+        "update_available": True,
+    }
+    check = _Recorder({"3.43.0a2"})
+
+    refined = refine_desktop_version_check(
+        "3.43.0a1",
+        version_check,
+        candidates=["3.43.0a1", "3.43.0a2", "3.43.0a3"],
+        include_alpha=True,
+        alpha_is_live=check,
+    )
+
+    assert refined["latest_version"] == "3.43.0a2"
+    assert refined["update_available"] is True
+
+
+def test_desktop_refinement_without_live_alpha_stays_current() -> None:
+    from codex_plugin_scanner.guard.cli.update_desktop_apply import refine_desktop_version_check
+
+    refined = refine_desktop_version_check(
+        "3.43.0a1",
+        {
+            "source": "pypi",
+            "status": "current",
+            "current_version": "3.43.0a1",
+            "latest_version": "3.43.0a1",
+            "update_available": False,
+        },
+        candidates=["3.43.0a1", "3.43.0a2"],
+        include_alpha=True,
+        alpha_is_live=_Recorder(set()),
+    )
+
+    assert refined["latest_version"] == "3.43.0a1"
+    assert refined["update_available"] is False
+
+
+def test_policy_reaches_initial_and_fallback_tag_lookups(monkeypatch: pytest.MonkeyPatch) -> None:
+    from codex_plugin_scanner.guard.mdm.contracts import ManagedNetworkPolicy
+
+    policy = ManagedNetworkPolicy()
+    seen: list[tuple[str, object]] = []
+
+    def urlopen(request: urllib.request.Request, **kwargs: object) -> _Response:
+        seen.append((request.full_url, kwargs.get("policy")))
+        if "/git/ref/tags/" not in request.full_url:
+            raise urllib.error.URLError("offline")
+        version = request.full_url.rsplit("/v", 1)[1]
+        return _Response(_tag_body(version))
+
+    monkeypatch.setattr(update_commands, "_latest_version_from_pypi", lambda: "3.42.0")
+    monkeypatch.setattr(update_commands, "_runtime_python_version", lambda: "3.12.0")
+    monkeypatch.setattr(
+        update_commands,
+        "_last_pypi_payload",
+        {
+            "releases": {
+                "3.42.0": [{"yanked": False, "requires_python": ">=3.10"}],
+                "3.43.0a1": [{"yanked": False, "requires_python": ">=3.10"}],
+                "3.43.0a2": [{"yanked": False, "requires_python": ">=3.13"}],
+            }
+        },
+    )
+    monkeypatch.setattr(update_commands, "managed_urlopen", urlopen)
+
+    payload = update_commands._version_check_payload("3.41.0", network_policy=policy, include_alpha=True)
+
+    assert payload["latest_version"] == "3.43.0a1"
+    assert payload["pypi_latest_version"] == "3.43.0a2"
+    tag_lookups = [(url, used) for url, used in seen if "/git/ref/tags/" in url]
+    assert [url.rsplit("/v", 1)[1] for url, _used in tag_lookups] == ["3.43.0a2", "3.43.0a1"]
+    assert all(used is policy for _url, used in seen)

@@ -56,7 +56,7 @@ from ..runtime.extension_control_authority import AuthorityHealth
 from ..store import GuardStore
 from .install_commands import apply_managed_install
 from .managed_install_context import managed_install_context as _repair_context_from_managed_install
-from .update_alpha_tag_lookup import alpha_tag_is_live, fail_closed_alpha_checker
+from .update_alpha_tag_lookup import build_alpha_liveness_checker
 from .update_artifact import (
     TrustedWheelArtifact,
     UpdateArtifactError,
@@ -1431,6 +1431,19 @@ def _version_check_payload(
     network_policy: ManagedNetworkPolicy | None = None,
     include_alpha: bool = False,
 ) -> dict[str, object]:
+    policy_token = _version_network_policy.set(network_policy)
+    try:
+        return _version_check_payload_scoped(current_version, source_kind=source_kind, include_alpha=include_alpha)
+    finally:
+        _version_network_policy.reset(policy_token)
+
+
+def _version_check_payload_scoped(
+    current_version: str,
+    *,
+    source_kind: str,
+    include_alpha: bool,
+) -> dict[str, object]:
     if source_kind != "pypi":
         return {
             "source": source_kind,
@@ -1439,13 +1452,7 @@ def _version_check_payload(
             "latest_version": None,
             "update_available": None,
         }
-    policy_token = _version_network_policy.set(network_policy)
-    try:
-        latest_version = (
-            _latest_alpha_version_from_pypi(current_version) if include_alpha else _latest_version_from_pypi()
-        )
-    finally:
-        _version_network_policy.reset(policy_token)
+    latest_version = _latest_alpha_version_from_pypi(current_version) if include_alpha else _latest_version_from_pypi()
     if latest_version is None:
         return {
             "source": "pypi",
@@ -1581,22 +1588,15 @@ def _latest_alpha_version_from_pypi(current_version: str) -> str | None:
     return newest_live_pypi_version(_last_pypi_payload, alpha_is_live=_alpha_liveness_checker())
 
 
-def _alpha_liveness_checker() -> Callable[[str], bool]:
+def _alpha_liveness_checker(network_policy: ManagedNetworkPolicy | None = None) -> Callable[[str], bool]:
     """Build a fail-closed ``alpha/v<version>`` tag check for one selection walk."""
 
-    def lookup(version: str) -> bool | None:
-        deadline = time.monotonic() + _PYPI_TIMEOUT_SECONDS
-        return alpha_tag_is_live(
-            version,
-            opener=lambda request: managed_urlopen(
-                request,
-                timeout=_PYPI_TIMEOUT_SECONDS,
-                policy=_version_network_policy.get(),
-            ),
-            read_bounded=lambda response: _read_bounded_pypi_response(response, deadline=deadline),
-        )
-
-    return fail_closed_alpha_checker(lookup)
+    policy = network_policy if network_policy is not None else _version_network_policy.get()
+    return build_alpha_liveness_checker(
+        opener=lambda request: managed_urlopen(request, timeout=_PYPI_TIMEOUT_SECONDS, policy=policy),
+        read_bounded=_read_bounded_pypi_response,
+        timeout=_PYPI_TIMEOUT_SECONDS,
+    )
 
 
 def already_current_update_message(version_check: Mapping[str, object] | None) -> str:
@@ -3032,7 +3032,11 @@ def build_guard_update_status_payload(*, guard_home: Path | None = None) -> dict
     }
     if trusted_failure_reason is not None:
         payload["reason_code"] = trusted_failure_reason
-    return finalize_desktop_update_status(payload, pypi_payload=_last_pypi_payload)
+    return finalize_desktop_update_status(
+        payload,
+        pypi_payload=_last_pypi_payload,
+        network_policy=managed_policy.network if managed_policy is not None else ManagedNetworkPolicy(),
+    )
 
 
 def _status_installed_distribution(

@@ -78,6 +78,38 @@ def select_live_release(
     return None
 
 
+def live_release_candidates(
+    candidates: Iterable[str],
+    *,
+    alpha_is_live: Callable[[str], bool],
+    max_lookups: int = MAX_ALPHA_LIVENESS_LOOKUPS,
+) -> list[str]:
+    """Drop alphas that are retracted or unverified, keeping every stable candidate.
+
+    Alphas are checked newest first with at most ``max_lookups`` lookups; alphas
+    beyond that budget are dropped rather than offered unverified.
+    """
+
+    parsed: list[tuple[Version, str]] = []
+    for text in candidates:
+        try:
+            parsed.append((Version(text.strip()), text.strip()))
+        except InvalidVersion:
+            continue
+    live: list[str] = []
+    lookups = 0
+    for version, version_text in sorted(parsed, key=lambda candidate: candidate[0], reverse=True):
+        if not version.is_prerelease:
+            live.append(version_text)
+            continue
+        if lookups >= max_lookups:
+            continue
+        lookups += 1
+        if alpha_is_live(version_text):
+            live.append(version_text)
+    return live
+
+
 def newest_live_pypi_version(
     payload: object,
     *,
@@ -99,4 +131,10 @@ def _release_is_available(files: object) -> bool:
     )
 
 
-__all__ = ["MAX_ALPHA_LIVENESS_LOOKUPS", "newest_live_pypi_version", "newest_pypi_version", "select_live_release"]
+__all__ = [
+    "MAX_ALPHA_LIVENESS_LOOKUPS",
+    "live_release_candidates",
+    "newest_live_pypi_version",
+    "newest_pypi_version",
+    "select_live_release",
+]

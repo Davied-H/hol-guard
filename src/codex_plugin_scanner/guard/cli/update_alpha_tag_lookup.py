@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable
@@ -17,6 +18,7 @@ _ALPHA_TAG_REF_PREFIX = "refs/tags/alpha/v"
 
 Opener = Callable[[urllib.request.Request], AbstractContextManager[object]]
 BoundedReader = Callable[[object], bytes]
+DeadlineReader = Callable[..., bytes]
 
 
 def alpha_tag_is_live(version: str, *, opener: Opener, read_bounded: BoundedReader) -> bool | None:
@@ -78,4 +80,32 @@ def fail_closed_alpha_checker(
     return alpha_is_live
 
 
-__all__ = ["GITHUB_ALPHA_TAG_REF_URL", "alpha_tag_is_live", "fail_closed_alpha_checker"]
+def build_alpha_liveness_checker(
+    *,
+    opener: Opener,
+    read_bounded: DeadlineReader,
+    timeout: float,
+) -> Callable[[str], bool]:
+    """Build a fail-closed ``alpha/v<version>`` tag check for one selection walk.
+
+    ``read_bounded`` is called as ``read_bounded(response, deadline=...)`` with a
+    fresh monotonic deadline per lookup.
+    """
+
+    def lookup(version: str) -> bool | None:
+        deadline = time.monotonic() + timeout
+        return alpha_tag_is_live(
+            version,
+            opener=opener,
+            read_bounded=lambda response: read_bounded(response, deadline=deadline),
+        )
+
+    return fail_closed_alpha_checker(lookup)
+
+
+__all__ = [
+    "GITHUB_ALPHA_TAG_REF_URL",
+    "alpha_tag_is_live",
+    "build_alpha_liveness_checker",
+    "fail_closed_alpha_checker",
+]
