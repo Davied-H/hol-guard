@@ -7,7 +7,7 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-ACTION = ROOT / ".github/actions/ci-job-cross-platform/action.yml"
+ACTION = ROOT / ".github/actions/ci-job-macos-native-runtime/action.yml"
 
 
 def _steps() -> list[dict]:
@@ -22,7 +22,7 @@ def test_runtime_builds_run_after_the_compiler_cache_is_routed() -> None:
     steps = _steps()
     routed = _index(steps, "Route the runtime build through the compiler cache")
     assert _index(steps, "Install content-addressed compiler cache") < routed
-    assert routed < _index(steps, "Build the native runtime for skill-directory identity")
+    assert routed < _index(steps, "Build the macOS native runtime")
     script = steps[routed]["run"]
     assert "RUSTC_WRAPPER=sccache" in script
     assert "SCCACHE_GHA_VERSION=cross-platform-runtime" in script

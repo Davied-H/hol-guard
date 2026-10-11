@@ -143,11 +143,8 @@ def test_required_aggregate_includes_the_windows_native_lane() -> None:
     assert "windows-packaged-daemon" in gated
 
 
-def test_cross_platform_no_longer_builds_the_windows_runtime() -> None:
-    """Keep cargo off the Windows cross-platform lane and setup-rust macOS-only."""
+def test_cross_platform_builds_no_native_runtime() -> None:
+    """Keep the cross-platform lane free of Rust toolchain setup and cargo."""
     steps = _workflow()["jobs"]["cross-platform"]["steps"]
-    setup_rust = next(step for step in steps if step.get("uses") == "./.github/actions/setup-rust")
-    assert setup_rust["if"] == "runner.os == 'macOS'"
-    cargo = [step for step in steps if "cargo" in step.get("run", "")]
-    assert cargo
-    assert all("Windows" not in str(step.get("if", "")) for step in cargo)
+    assert not any(step.get("uses") == "./.github/actions/setup-rust" for step in steps)
+    assert not any("cargo" in step.get("run", "") for step in steps)
