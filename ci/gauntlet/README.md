@@ -86,7 +86,7 @@ passing is flagged `stale` so the entry is removed. They still fail `qualify`.
 ### Model-free replay lane
 
 `tests/test_guard_gauntlet_replay_gate.py` feeds recorded hook payload shapes for claude-code, codex, zcode,
-omp and pi through the native hook path with no model, once in a clean and once in a realistic environment.
+cursor, omp and pi through the native hook path with no model, once in a clean and once in a realistic environment.
 It applies the same interruption rule and also replays every ordinary case of the benign false-positive
 gate. A case passes when it is a quiet allow, or, for review-by-design actions, when its approval row offers
 an exact-action Always allow (`exact_context_token`); attack cases must not be allowed. Cases live in
