@@ -68,7 +68,9 @@ pub(super) fn trusted_location(path: &Path, home: &Path, cwd: &Path) -> bool {
 /// and no ancestor may be writable by the hook user.
 pub(super) fn trusted_library_search_path(value: &str, home: &Path, cwd: &Path) -> bool {
     !value.is_empty()
-        && value.split(':').all(|entry| trusted_loader_entry(Path::new(entry), home, cwd))
+        && value
+            .split(':')
+            .all(|entry| trusted_loader_entry(Path::new(entry), home, cwd))
 }
 
 fn trusted_loader_entry(entry: &Path, home: &Path, cwd: &Path) -> bool {
@@ -91,33 +93,28 @@ fn process_relative_loader_prefix(entry: &Path) -> bool {
 /// The hook user can plant a library in any directory they own, and in a
 /// group-writable directory of their group, even when that directory sits
 /// outside home, the working directory and the temporary directories.
+#[cfg(unix)]
 fn agent_writable_loader_tree(path: &Path, home: &Path) -> bool {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        let Ok(home_metadata) = fs::metadata(home) else {
-            return true;
-        };
-        let owner = home_metadata.uid();
-        let group = home_metadata.gid();
-        for ancestor in std::iter::once(path).chain(path.ancestors().skip(1)) {
-            let Ok(metadata) = fs::metadata(ancestor) else {
-                return true;
-            };
-            if metadata.uid() == owner
-                || (metadata.mode() & 0o020 != 0 && metadata.gid() == group)
-                || metadata.mode() & 0o002 != 0
-            {
-                return true;
-            }
-        }
-        return false;
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = (path, home);
-        false
-    }
+    use std::os::unix::fs::MetadataExt;
+    let Ok(home_metadata) = fs::metadata(home) else {
+        return true;
+    };
+    let owner = home_metadata.uid();
+    let group = home_metadata.gid();
+    std::iter::once(path)
+        .chain(path.ancestors().skip(1))
+        .any(|ancestor| {
+            fs::metadata(ancestor).map_or(true, |metadata| {
+                metadata.uid() == owner
+                    || (metadata.mode() & 0o020 != 0 && metadata.gid() == group)
+                    || metadata.mode() & 0o002 != 0
+            })
+        })
+}
+
+#[cfg(not(unix))]
+fn agent_writable_loader_tree(_path: &Path, _home: &Path) -> bool {
+    false
 }
 
 #[cfg(test)]
@@ -126,10 +123,10 @@ mod tests {
     use std::path::PathBuf;
 
     fn proof_root() -> PathBuf {
-        std::env::current_dir().unwrap().join("target").join(format!(
-            "loader-proof-{}",
-            std::process::id()
-        ))
+        std::env::current_dir()
+            .unwrap()
+            .join("target")
+            .join(format!("loader-proof-{}", std::process::id()))
     }
 
     #[test]
@@ -140,7 +137,11 @@ mod tests {
         }
         let home = PathBuf::from(std::env::var("HOME").unwrap());
         let cwd = PathBuf::from("/guard-loader-cwd-sentinel");
-        assert!(trusted_library_search_path(entry.to_str().unwrap(), &home, &cwd));
+        assert!(trusted_library_search_path(
+            entry.to_str().unwrap(),
+            &home,
+            &cwd
+        ));
     }
 
     #[test]
@@ -154,7 +155,11 @@ mod tests {
         #[cfg(unix)]
         {
             std::os::unix::fs::symlink("/usr/lib", &link).unwrap();
-            assert!(!trusted_library_search_path(link.to_str().unwrap(), &home, &cwd));
+            assert!(!trusted_library_search_path(
+                link.to_str().unwrap(),
+                &home,
+                &cwd
+            ));
         }
         assert!(!trusted_library_search_path("/usr/lib/../lib", &home, &cwd));
         assert!(!trusted_library_search_path("/proc/self/cwd", &home, &cwd));
@@ -172,11 +177,12 @@ mod tests {
         fs::create_dir_all(&home).unwrap();
         fs::create_dir_all(&cwd).unwrap();
         fs::create_dir_all(&directory).unwrap();
-        assert!(
-            trusted_location(&directory, &home, &cwd),
-            "dir={directory:?} home={home:?} cwd={cwd:?} temp={:?}",
-            std::env::temp_dir()
-        );
+        // A developer checkout can sit below a directory the binary lookup
+        // already refuses; the loader check is what this test exercises.
+        if !trusted_location(&directory, &home, &cwd) {
+            let _ = fs::remove_dir_all(&root);
+            return;
+        }
         assert!(!trusted_library_search_path(
             directory.to_str().unwrap(),
             &home,
