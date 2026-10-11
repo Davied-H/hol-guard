@@ -31,6 +31,7 @@ from codex_plugin_scanner.guard.daemon.hook_worker import HookWorker
 from codex_plugin_scanner.guard.hook_execution_environment import collect_hook_execution_environment
 from codex_plugin_scanner.guard.store import GuardStore
 from tests.benign_fp_gate_fixture import BenignFixture, build_fixture
+from tests.gauntlet_replay import cursor_hook_fields
 
 pytestmark = pytest.mark.usefixtures("native_hook_force")
 
@@ -178,7 +179,7 @@ def _review(case: GateCase, fixture: BenignFixture, worker: HookWorker) -> tuple
         "guard_execution_environment": collect_hook_execution_environment(),
     }
     if case.harness == "cursor":
-        payload.update(_cursor_hook_fields(case, payload))
+        payload.update(cursor_hook_fields(case.tool, payload))
     result = worker.review_http_payload(
         payload=payload,
         params={},
@@ -189,23 +190,6 @@ def _review(case: GateCase, fixture: BenignFixture, worker: HookWorker) -> tuple
     )
     _ROWS[case.case_id] = approval_rows(worker.store, known)
     return result, worker.store.count_approval_requests(status=None) - before
-
-
-def _cursor_hook_fields(case: GateCase, payload: dict[str, object]) -> dict[str, object]:
-    """Add the fields Cursor's installed hook script sends after it normalizes a native event.
-
-    Cursor reports shell calls as beforeShellExecution and reads as beforeReadFile.
-    The script forwards both as PreToolUse, keeping the raw command or path beside tool_input.
-    """
-    tool_input = payload["tool_input"]
-    assert isinstance(tool_input, dict)
-    if case.tool == "read":
-        return {"file_path": tool_input["file_path"]}
-    return {
-        "command": tool_input["command"],
-        "tool_input": {**tool_input, "working_directory": payload["cwd"]},
-        "cursor_source_hook_event": "beforeShellExecution",
-    }
 
 
 def _reason(result: dict[str, object]) -> str:

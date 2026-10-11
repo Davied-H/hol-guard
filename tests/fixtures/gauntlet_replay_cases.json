@@ -216,8 +216,7 @@
     {
       "id": "omp-eval-promise-all-reads",
       "harnesses": [
-        "omp",
-        "pi"
+        "omp"
       ],
       "tool": "eval",
       "tool_input": {
@@ -230,8 +229,7 @@
     {
       "id": "omp-eval-py-print-read",
       "harnesses": [
-        "omp",
-        "pi"
+        "omp"
       ],
       "tool": "eval",
       "tool_input": {
@@ -244,8 +242,7 @@
     {
       "id": "omp-todo-phases",
       "harnesses": [
-        "omp",
-        "pi"
+        "omp"
       ],
       "tool": "todo",
       "tool_input": {

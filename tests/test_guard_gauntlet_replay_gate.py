@@ -28,6 +28,7 @@ from tests.gauntlet_replay import (
     GATE_DOCUMENT,
     REPLAY_DOCUMENT,
     ReplayCase,
+    cursor_hook_fields,
     environment_overlay,
     expand,
     failure_reasons,
@@ -37,13 +38,14 @@ from tests.gauntlet_replay import (
 
 _CASES = expand()
 # The benign gate already records, per Linux CI result, which ordinary cases still warn or review.
-# Those are the same product gaps here (Pi shares omp's), so they are known gaps of this lane too.
+# Those are the same product gaps here (a mirrored Pi case shares omp's), so they are known gaps of this lane too.
+_PI_IDS = {case.case_id for case in _CASES if case.harness == "pi"}
 _GAPS: dict[str, str] = {
     **{key: reason for key, reason in GATE_DOCUMENT["pending_fix"].items()},
     **{
         key.replace("@omp", "@pi"): reason
         for key, reason in GATE_DOCUMENT["pending_fix"].items()
-        if key.endswith("@omp")
+        if key.endswith("@omp") and key.replace("@omp", "@pi") in _PI_IDS
     },
     **REPLAY_DOCUMENT["known_gaps"],
 }
@@ -57,7 +59,13 @@ def replay_environment(
     fixture = build_fixture(tmp_path_factory.mktemp(f"gauntlet-replay-{request.param}"))
     patch = pytest.MonkeyPatch()
     patch.setenv("HOME", str(fixture.home))
-    patch.setenv("GIT_CONFIG_GLOBAL", str(fixture.home / ".gitconfig"))
+    # Git finds the fixture ~/.gitconfig through HOME, as on a real host. The native Git
+    # proofs fail closed on any inherited GIT_*, LD_* or DYLD_* override, so the clean
+    # lane starts without them; the realistic overlay adds back what developer shells carry.
+    for name in list(os.environ):
+        if name.upper().startswith(("GIT_", "LD_", "DYLD_")):
+            patch.delenv(name)
+    patch.setenv("XDG_CONFIG_HOME", str(fixture.home / ".config"))
     patch.setenv("HOL_GUARD_NATIVE", "force")
     binary = os.environ.get("HOL_GUARD_NATIVE_BINARY")
     if not binary:
@@ -87,6 +95,8 @@ def _replay(case: ReplayCase, fixture: BenignFixture, worker: HookWorker) -> tup
         "cwd": str(fixture.cwd(case.cwd)),
         "guard_execution_environment": collect_hook_execution_environment(),
     }
+    if case.harness == "cursor":
+        payload.update(cursor_hook_fields(case.tool, payload))
     result = worker.review_http_payload(
         payload=payload,
         params={},
@@ -107,8 +117,10 @@ def test_replayed_payload_is_quiet_offers_always_or_blocks(
     result, rows = _replay(case, fixture, worker)
     failure = judge(case, result, rows)
     label = f"{case.case_id}/{kind}"
-    if label in _GAPS or case.case_id in _GAPS:
-        reason = _GAPS.get(label) or _GAPS[case.case_id]
+    # A gap may name one harness and environment, one harness, every harness in one environment, or the case.
+    gap_key = next((k for k in (label, case.case_id, f"{case.base_id}/{kind}", case.base_id) if k in _GAPS), None)
+    if gap_key is not None:
+        reason = _GAPS[gap_key]
         if failure and reason in failure_reasons(case, result, rows):
             pytest.xfail(f"known gap ({reason}): {failure}")
         if failure:
@@ -116,11 +128,11 @@ def test_replayed_payload_is_quiet_offers_always_or_blocks(
         if _ENFORCE_STALE:
             pytest.fail(f"stale known gap: {label} now behaves; remove it ({reason})")
         pytest.skip(f"known gap {label} behaves on this host; CI decides staleness")
-    assert failure is None, f"{label}: {failure}"
+    assert failure is None, f"{label}: {failure} reasons={sorted(failure_reasons(case, result, rows))}"
 
 
 def test_every_harness_and_attack_class_is_covered() -> None:
-    assert {case.harness for case in _CASES} == {"codex", "zcode", "claude-code", "omp", "pi"}
+    assert {case.harness for case in _CASES} == {"codex", "zcode", "claude-code", "omp", "pi", "cursor"}
     blocked = {case.base_id for case in _CASES if case.expect == "block"}
     assert {
         "neg-read-aws-credentials",
