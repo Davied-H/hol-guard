@@ -52,6 +52,10 @@ def await_started_daemon(
     poll = FIRST_POLL_SECONDS
     attempt_now = started
     while True:
+        if time.monotonic() >= stop_at:
+            # A request started with no time left would run against the hook
+            # deadline and spend the slice reserved for the local fallback.
+            return None
         if attempt_now:
             try:
                 return request()

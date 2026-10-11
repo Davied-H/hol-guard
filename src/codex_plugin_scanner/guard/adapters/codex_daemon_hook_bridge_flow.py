@@ -21,6 +21,7 @@ from .codex_daemon_dead_fastpath import (
     daemon_start_in_progress,
     native_runtime_refused,
     record_start_failure,
+    settle_daemon_start_markers,
     should_fail_fast,
 )
 from .codex_daemon_hook_auth import _DaemonResponseError
@@ -225,8 +226,13 @@ def bridge_review_response(
         daemon_overloaded = _authenticated_daemon_overload(error)
         if native_refused(error):
             return None, False, False
-        if not daemon_overloaded and should_fail_fast(state_path):
+        if (
+            not daemon_overloaded
+            and should_fail_fast(state_path)
+            and not daemon_start_in_progress(state_path)
+        ):
             # A launch already failed to start the daemon: deny now, name the fix.
+            # A newer start marker is a recovery, so the wait still gets its turn.
             _record_failure(failure_causes, "daemon_dead_fast", DEAD_DAEMON_REASON_CODE)
             return None, False, False
         if _transient_overload(error) is not None:
@@ -256,11 +262,25 @@ def bridge_review_response(
             failure_kind=_daemon_failure_kind(error),
         )
         if start_attempted and not launch_integrity_failed:
+            wait_stop_at = deadline - _FALLBACK_TIMEOUT_SECONDS
+
+            def wait_daemon_request() -> dict[str, object] | None:
+                # Cap this poll at the time left before the fallback's slice.
+                remaining = wait_stop_at - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError("daemon_start_wait_expired")
+                return _daemon_response(
+                    state_path=state_path,
+                    query=query,
+                    data=data,
+                    timeout_seconds=min(remaining, rpc_cap),
+                )
+
             try:
                 response = await_started_daemon(
                     state_path=state_path,
-                    stop_at=deadline - _FALLBACK_TIMEOUT_SECONDS,
-                    request=daemon_request,
+                    stop_at=wait_stop_at,
+                    request=wait_daemon_request,
                     started=started,
                     failure_reason=_daemon_failure_reason,
                 )
@@ -270,6 +290,7 @@ def bridge_review_response(
                     return None, False, False
     if response is not None:
         clear_start_failure(state_path)
+        settle_daemon_start_markers(state_path)
     if response is not None and _daemon_process_failed(response):
         _record_failure(failure_causes, "daemon_worker", "daemon_worker_failed")
         response = None

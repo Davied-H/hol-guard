@@ -144,6 +144,24 @@ def clear_start_failure(state_path: str | Path) -> None:
         _marker_path(state_path).unlink()
 
 
+def settle_daemon_start_markers(state_path: str | Path) -> None:
+    """An authenticated daemon answer means the launch settled.
+
+    A nonempty marker left behind would keep later hooks polling for the
+    whole start window after that daemon has already come up and gone.
+    """
+
+    parent = Path(state_path).parent
+    for name in DAEMON_START_MARKERS:
+        path = parent / name
+        try:
+            descriptor = os.open(path, os.O_WRONLY | os.O_TRUNC)
+        except OSError:
+            continue
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write("{}")
+
+
 def native_runtime_refused(error: BaseException) -> bool:
     """True when the daemon reports that the native runtime refused to restart.
 

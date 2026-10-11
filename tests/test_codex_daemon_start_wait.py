@@ -235,3 +235,86 @@ def test_unparseable_or_empty_markers_do_not_count(tmp_path: Path) -> None:
     assert not fastpath.daemon_start_in_progress(state_path)
     _mark_start(guard_home, "daemon-launch-pending.json")
     assert fastpath.daemon_start_in_progress(state_path)
+
+
+def test_a_wait_does_not_start_once_the_fallback_slice_has_begun() -> None:
+    calls = 0
+
+    def request() -> dict[str, object]:
+        nonlocal calls
+        calls += 1
+        return dict(_ALLOW)
+
+    result = start_wait.await_started_daemon(
+        state_path="unused",
+        stop_at=time.monotonic() - 1,
+        request=request,
+        started=True,
+        failure_reason=lambda _error: "daemon_connection_refused",
+    )
+
+    assert result is None
+    assert calls == 0
+
+
+def test_a_wait_request_cannot_spend_the_fallback_window(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    guard_home = _guard_home(tmp_path)
+    _mark_start(guard_home)
+    timeouts: list[float] = []
+
+    class _Recording(_Daemon):
+        def __call__(self, **kwargs: object) -> dict[str, object]:
+            timeout = kwargs.get("timeout_seconds")
+            assert isinstance(timeout, (int, float))
+            timeouts.append(float(timeout))
+            return super().__call__(**kwargs)
+
+    budget = 0.2
+    daemon = _Recording([ConnectionRefusedError("down")])
+    (response, _, _), fallbacks, _causes = _review(
+        guard_home,
+        monkeypatch,
+        daemon,
+        started=True,
+        seconds=bridge_flow._FALLBACK_TIMEOUT_SECONDS + budget,
+    )
+
+    assert response == _ALLOW
+    assert fallbacks == []
+    assert len(timeouts) == 2
+    assert timeouts[0] > budget
+    assert timeouts[1] <= budget
+    assert timeouts[1] < bridge_flow._DAEMON_RPC_TIMEOUT_SECONDS
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the dead-daemon fast path is POSIX-only")
+def test_a_fresh_launch_is_not_denied_by_an_older_start_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    guard_home = _guard_home(tmp_path)
+    state_path = guard_home / "daemon-state.json"
+    fastpath.record_start_failure(state_path)
+    _mark_start(guard_home)
+    daemon = _Daemon([ConnectionRefusedError("down")])
+
+    (response, _, _), fallbacks, causes = _review(guard_home, monkeypatch, daemon, started=True)
+
+    assert response == _ALLOW
+    assert fallbacks == []
+    assert daemon.calls == 2
+    assert not any(cause["stage"] == "daemon_dead_fast" for cause in causes)
+
+
+def test_a_daemon_answer_settles_the_launch_marker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    guard_home = _guard_home(tmp_path)
+    marker = _mark_start(guard_home)
+    state_path = guard_home / "daemon-state.json"
+    daemon = _Daemon([])
+
+    (response, _, _), _fallbacks, _causes = _review(guard_home, monkeypatch, daemon, started=True)
+
+    assert response == _ALLOW
+    assert marker.read_text(encoding="utf-8") == "{}"
+    assert not fastpath.daemon_start_in_progress(state_path)
