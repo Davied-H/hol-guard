@@ -38,7 +38,10 @@ def isolate_user_home() -> Path:
             os.environ[variable] = str(candidate)
     for variable in _HOME_OVERRIDES:
         os.environ.pop(variable, None)
-    private_home = Path(tempfile.mkdtemp(prefix="hol-guard-test-home-")).resolve()
+    # Outside the temp root: path-trust code treats the two differently, as on a real machine.
+    parent = real_home / ".cache" / "hol-guard-tests"
+    parent.mkdir(parents=True, exist_ok=True)
+    private_home = Path(tempfile.mkdtemp(prefix="home-", dir=parent)).resolve()
     atexit.register(shutil.rmtree, private_home, ignore_errors=True)
     os.environ["HOME"] = str(private_home)
     if os.name == "nt":
