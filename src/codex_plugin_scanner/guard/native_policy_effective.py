@@ -9,8 +9,11 @@ recalculates a value.
 
 from __future__ import annotations
 
+import copy
 import json
+import threading
 import time
+from collections import OrderedDict
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -27,6 +30,11 @@ POLICY_EFFECTIVE_SCHEMA = "guard-effective-policy.v1"
 POLICY_EFFECTIVE_TIMEOUT_SECONDS = 10.0
 _UNAVAILABLE = "native_policy_effective_unavailable"
 _INVALID = "native_policy_effective_invalid"
+# The composer is a pure function of its request, so an unchanged request (a
+# database heartbeat, a repeated publish) must not respawn the runtime.
+_MEMO_LIMIT = 32
+_MEMO: OrderedDict[tuple[str, str], dict[str, Any]] = OrderedDict()
+_MEMO_LOCK = threading.Lock()
 _CONFIG_FIELDS = (
     "mode",
     "protection_posture",
@@ -75,7 +83,13 @@ def _runtime_path(deadline_monotonic: float) -> Path:
     return status.identity.path
 
 
-def _call(op: str, configs: Iterable[GuardConfig | Mapping[str, object]], *, guard_config: bool) -> dict[str, Any]:
+def _call(
+    op: str,
+    configs: Iterable[GuardConfig | Mapping[str, object]],
+    *,
+    guard_config: bool,
+    deadline_monotonic: float | None = None,
+) -> dict[str, Any]:
     from .native_runtime import _run_native_process
 
     request = {
@@ -89,7 +103,18 @@ def _call(op: str, configs: Iterable[GuardConfig | Mapping[str, object]], *, gua
     except (TypeError, ValueError) as error:
         raise NativePolicySnapshotError("native_policy_snapshot_policy_invalid") from error
     deadline = time.monotonic() + POLICY_EFFECTIVE_TIMEOUT_SECONDS
+    if deadline_monotonic is not None:
+        deadline = min(deadline, deadline_monotonic)
+    if deadline - time.monotonic() <= 0:
+        # An expired caller budget must neither probe nor spawn.
+        raise NativePolicySnapshotError(_UNAVAILABLE)
     path = _runtime_path(deadline)
+    memo_key = (str(path), text)
+    with _MEMO_LOCK:
+        cached = _MEMO.get(memo_key)
+        if cached is not None:
+            _MEMO.move_to_end(memo_key)
+            return copy.deepcopy(cached)
     remaining = deadline - time.monotonic()
     if remaining <= 0:
         raise NativePolicySnapshotError(_UNAVAILABLE)
@@ -110,6 +135,10 @@ def _call(op: str, configs: Iterable[GuardConfig | Mapping[str, object]], *, gua
     policy = response.get("policy")
     if not isinstance(policy, dict):
         raise NativePolicySnapshotError(_INVALID)
+    with _MEMO_LOCK:
+        _MEMO[memo_key] = copy.deepcopy(policy)
+        while len(_MEMO) > _MEMO_LIMIT:
+            _MEMO.popitem(last=False)
     return cast("dict[str, Any]", policy)
 
 
@@ -119,17 +148,26 @@ def _json_default(value: object) -> object:
     raise TypeError("unsupported configuration value")
 
 
-def effective_native_policy_v3(config: GuardConfig | Mapping[str, object]) -> dict[str, object]:
+def effective_native_policy_v3(
+    config: GuardConfig | Mapping[str, object], *, deadline_monotonic: float | None = None
+) -> dict[str, object]:
     """Bounded effective policy consumed by native hook decisions."""
 
     return cast(
         "dict[str, object]",
-        _call("effective", (config,), guard_config=not isinstance(config, Mapping)),
+        _call(
+            "effective",
+            (config,),
+            guard_config=not isinstance(config, Mapping),
+            deadline_monotonic=deadline_monotonic,
+        ),
     )
 
 
 def compose_effective_native_policies(
     configs: tuple[GuardConfig | Mapping[str, object], ...],
+    *,
+    deadline_monotonic: float | None = None,
 ) -> dict[str, object]:
     """Compile home, workspace and managed configs into one native policy.
 
@@ -139,5 +177,12 @@ def compose_effective_native_policies(
 
     if not configs:
         raise NativePolicySnapshotError("native_policy_snapshot_policy_invalid")
-    guard_config = not any(isinstance(config, Mapping) for config in configs)
-    return cast("dict[str, object]", _call("compose", configs, guard_config=guard_config))
+    mappings = sum(isinstance(config, Mapping) for config in configs)
+    if 0 < mappings < len(configs):
+        # One request-wide derivation mode: a mixed tuple would silently drop
+        # the loaded configs' risk floors, so refuse it.
+        raise NativePolicySnapshotError("native_policy_snapshot_policy_invalid")
+    return cast(
+        "dict[str, object]",
+        _call("compose", configs, guard_config=mappings == 0, deadline_monotonic=deadline_monotonic),
+    )

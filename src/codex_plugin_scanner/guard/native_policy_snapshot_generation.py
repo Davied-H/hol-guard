@@ -125,7 +125,7 @@ def _snapshot_inputs_v3(
     # Refuse on the selected resident's availability and deadline before any
     # composer spawn, so a missing consumer keeps its specific reason.
     require_native_snapshot_runtime(business=business_policy is not None)
-    effective_policy = effective_native_policy_v3(config)
+    effective_policy = effective_native_policy_v3(config, deadline_monotonic=deadline_monotonic)
     raw_mode = _config_value(config, "mode", "prompt")
     if not isinstance(raw_mode, str) or raw_mode not in _VALID_INPUT_MODES:
         raise NativePolicySnapshotError("native_policy_snapshot_mode_invalid")

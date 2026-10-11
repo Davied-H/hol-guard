@@ -14,6 +14,12 @@ from codex_plugin_scanner.guard import native_runtime
 from codex_plugin_scanner.guard.config import GuardConfig
 from codex_plugin_scanner.guard.native_policy_snapshot_constants import NativePolicySnapshotError
 
+
+@pytest.fixture(autouse=True)
+def _clear_memo() -> None:
+    client._MEMO.clear()
+
+
 _BASE = {"protection_posture": "protected", "security_level": "balanced", "mode": "prompt"}
 
 
@@ -135,4 +141,36 @@ def test_unserializable_configuration_is_rejected_before_spawning(monkeypatch) -
     seen = _install(monkeypatch, {"ok": True, "policy": {}})
     with pytest.raises(NativePolicySnapshotError, match="native_policy_snapshot_policy_invalid"):
         client.effective_native_policy_v3({**_BASE, "risk_actions": {"a": object()}})
+    assert seen == []
+
+
+def test_unchanged_request_is_memoized_without_respawning(monkeypatch) -> None:
+    seen = _install(monkeypatch, {"ok": True, "policy": {"default_action": "warn"}})
+
+    first = client.effective_native_policy_v3(dict(_BASE))
+    first["default_action"] = "mutated"
+    second = client.effective_native_policy_v3(dict(_BASE))
+
+    assert second == {"default_action": "warn"}
+    assert len(seen) == 1
+
+
+def test_expired_caller_deadline_neither_probes_nor_spawns(monkeypatch) -> None:
+    seen = _install(monkeypatch, {"ok": True, "policy": {}})
+    monkeypatch.setattr(
+        native_runtime, "native_runtime_status", lambda **_: pytest.fail("expired deadline must not probe")
+    )
+
+    with pytest.raises(NativePolicySnapshotError, match="native_policy_effective_unavailable"):
+        client.effective_native_policy_v3(dict(_BASE), deadline_monotonic=0.0)
+
+    assert seen == []
+
+
+def test_mixed_loaded_and_mapping_configs_are_rejected(monkeypatch, tmp_path: Path) -> None:
+    seen = _install(monkeypatch, {"ok": True, "policy": {}})
+
+    with pytest.raises(NativePolicySnapshotError, match="native_policy_snapshot_policy_invalid"):
+        client.compose_effective_native_policies((GuardConfig(guard_home=tmp_path, workspace=None), dict(_BASE)))
+
     assert seen == []
