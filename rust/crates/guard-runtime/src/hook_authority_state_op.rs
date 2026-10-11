@@ -205,7 +205,7 @@ struct Env<'a> {
     now: &'a str,
 }
 
-fn required<'a>(value: &'a Option<String>) -> Result<&'a str, &'static str> {
+fn required(value: &Option<String>) -> Result<&str, &'static str> {
     value.as_deref().ok_or(ERROR_INVALID)
 }
 
