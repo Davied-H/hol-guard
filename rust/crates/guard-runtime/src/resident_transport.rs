@@ -303,37 +303,36 @@ fn is_codex_thread_continue(request: &[u8]) -> bool {
     })
 }
 
-/// `Err` returns the request so the caller can write overload. A thread that
-/// cannot be started drops the connection and releases the slot.
-fn hand_off_codex_thread_continue(
+/// The slot is already reserved. A thread that cannot be started drops the
+/// connection and releases the slot.
+fn spawn_codex_thread_continue(
     pending: PendingRequest,
     request: Vec<u8>,
     policy_store: Option<Arc<crate::policy_store::PolicySnapshotStore>>,
-) -> Result<(), PendingRequest> {
-    if !reserve_continuation_slot() {
-        return Err(pending);
-    }
-    match thread::Builder::new().spawn(move || {
-        let _slot = ContinuationSlot;
-        let response = match catch_unwind(AssertUnwindSafe(|| {
-            observe(Phase::ResidentEvaluate, || {
-                crate::resident_protocol::evaluate_resident_bytes(&request, policy_store.as_deref())
-            })
-        })) {
-            Ok(Ok(response)) => response,
-            Ok(Err(reason)) => crate::resident_protocol::safe_error_response(&reason, false),
-            Err(_panic) => {
-                crate::resident_protocol::error_response("native_runtime_panicked", false)
-            }
-        };
-        let mut pending = pending;
-        let _ = write_bound_response(&mut *pending.stream, &pending.request_id, &response);
-    }) {
-        Ok(_) => Ok(()),
-        Err(_) => {
-            CODEX_THREAD_CONTINUE_IN_FLIGHT.fetch_sub(1, Ordering::AcqRel);
-            Ok(())
-        }
+) {
+    if thread::Builder::new()
+        .spawn(move || {
+            let _slot = ContinuationSlot;
+            let response = match catch_unwind(AssertUnwindSafe(|| {
+                observe(Phase::ResidentEvaluate, || {
+                    crate::resident_protocol::evaluate_resident_bytes(
+                        &request,
+                        policy_store.as_deref(),
+                    )
+                })
+            })) {
+                Ok(Ok(response)) => response,
+                Ok(Err(reason)) => crate::resident_protocol::safe_error_response(&reason, false),
+                Err(_panic) => {
+                    crate::resident_protocol::error_response("native_runtime_panicked", false)
+                }
+            };
+            let mut pending = pending;
+            let _ = write_bound_response(&mut *pending.stream, &pending.request_id, &response);
+        })
+        .is_err()
+    {
+        CODEX_THREAD_CONTINUE_IN_FLIGHT.fetch_sub(1, Ordering::AcqRel);
     }
 }
 
@@ -370,13 +369,12 @@ fn handle_pending_request(
         if !constant_time_eq(&digest, &pending.request_digest) {
             crate::resident_protocol::error_response("native_request_digest_mismatch", false)
         } else if is_codex_thread_continue(&request) {
-            match hand_off_codex_thread_continue(pending, request, policy_store.clone()) {
-                Ok(()) => return,
-                Err(mut returned) => {
-                    write_overload(&mut returned);
-                    return;
-                }
+            if reserve_continuation_slot() {
+                spawn_codex_thread_continue(pending, request, policy_store.clone());
+            } else {
+                write_overload(&mut pending);
             }
+            return;
         } else {
             match catch_unwind(AssertUnwindSafe(|| {
                 observe(Phase::ResidentEvaluate, || {
