@@ -79,6 +79,33 @@ pub(in crate::pretool) fn rg_root_inside_cwd(value: &str, context: ReadContext<'
         .is_some_and(|cwd| root_below(value, context, &cwd, false))
 }
 
+/// `rg` skips a repository's `.git` directory and honors its ignore files,
+/// so a root inside a git working tree strictly below home is searched like
+/// the cwd's own repository. Agents in one repository spell a sibling as an
+/// absolute, `~` or `../` path. The resolved root must pass the same checks
+/// as a `git -C` route to that sibling: no hidden or sensitive component
+/// below home, no agent state, and a real `.git` directory or a registered
+/// linked worktree at the repository root.
+pub(in crate::pretool) fn rg_root_in_home_repository(
+    value: &str,
+    context: ReadContext<'_>,
+) -> bool {
+    if value.is_empty()
+        || value.len() > 4096
+        || value.contains(HAZARDS)
+        || value.contains(['*', '?', '[', ']', '{', '}'])
+        || (value.starts_with('~') && value != "~" && !value.starts_with("~/"))
+        || !super::super::safe_reads::verified_path_context(context.home_dir, context.cwd)
+    {
+        return false;
+    }
+    expanded_operand(value, context)
+        .and_then(|root| std::fs::canonicalize(root).ok())
+        .is_some_and(|root| {
+            root.is_dir() && super::super::git_routes::repository_below_home(&root, context)
+        })
+}
+
 /// `fd` prints names, never contents, and skips hidden and ignored entries
 /// without following links. A names-only listing may therefore start at any
 /// non-hidden directory strictly below home, such as the parent that holds the

@@ -262,3 +262,52 @@ fn quoted_home_or_variable_roots_are_reviewed_and_rootless_fd_matches_dot() {
         );
     }
 }
+
+#[test]
+fn search_of_sibling_repository_by_absolute_home_or_parent_path_is_allowed() {
+    let layout = layout("rg-sibling");
+    let cwd = layout.org.join("app-portal");
+    let sibling = layout.org.join("service-api");
+    for command in [
+        format!("rg -n fixture {}", sibling.display()),
+        format!("rg -n fixture {}/src", sibling.display()),
+        "rg -n fixture ~/Code/org/service-api".to_owned(),
+        "rg -n fixture ../service-api".to_owned(),
+        "rg -n fixture ../service-api/src".to_owned(),
+        "rg --files ../service-api".to_owned(),
+    ] {
+        assert_decision(&cwd, &layout.home, &command, true);
+    }
+}
+
+#[test]
+fn search_of_sibling_outside_a_real_repository_or_with_hidden_flags_is_reviewed() {
+    let layout = layout("rg-sibling-negative");
+    let cwd = layout.org.join("app-portal");
+    let plain = layout.org.join("plain-notes");
+    std::fs::create_dir_all(&plain).unwrap();
+    std::fs::write(plain.join(".env"), "TOKEN=fixture\n").unwrap();
+    let mut commands = vec![
+        "rg -n fixture ..".to_owned(),
+        "rg -n fixture ../plain-notes".to_owned(),
+        format!("rg -n fixture {}", plain.display()),
+        "rg --hidden -n fixture ../service-api".to_owned(),
+        "rg -uu -n fixture ../service-api".to_owned(),
+        "rg --no-ignore -n fixture ~/Code/org/service-api".to_owned(),
+        "rg -n fixture ../service-api/.git".to_owned(),
+        "rg -n fixture ../../..".to_owned(),
+    ];
+    #[cfg(unix)]
+    {
+        // A `.git` link to another repository does not make a repository root.
+        let forged = layout.org.join("forged");
+        std::fs::create_dir_all(&forged).unwrap();
+        std::fs::write(forged.join(".env"), "TOKEN=fixture\n").unwrap();
+        std::os::unix::fs::symlink(layout.org.join("service-api/.git"), forged.join(".git"))
+            .unwrap();
+        commands.push("rg -n fixture ../forged".to_owned());
+    }
+    for command in commands {
+        assert_decision(&cwd, &layout.home, &command, false);
+    }
+}

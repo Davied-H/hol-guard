@@ -450,6 +450,7 @@ fn safe_rg_arguments_inner(
             // or a directory below the cwd whose whole tree is ordinary.
             if unsafe_search_value(SearchValueRole::Path, argument, context)
                 && !tree::rg_root_inside_cwd(argument, context)
+                && !tree::rg_root_in_home_repository(argument, context)
                 && !tree::safe_recursive_search_target(argument, context)
                 && (!argument.contains(['*', '?', '['])
                     || !tree::safe_glob_search_operand(argument, context))
