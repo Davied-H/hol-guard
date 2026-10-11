@@ -73,3 +73,69 @@ def test_workspace_write_passes_canonical_workspace_and_scrubbed_environment(
     assert seen["workspace"] == workspace.resolve()
     assert seen["operation"] == "format-write"
     assert "GITHUB_TOKEN" not in seen["environment"]
+    assert seen["environment"]["PATH"] == "/usr/bin"
+
+
+def test_workspace_write_tool_search_path_reaches_the_resident_without_other_secrets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace, guard_home = _dirs(tmp_path)
+    seen: dict[str, Any] = {}
+    monkeypatch.setattr(
+        contained_workspace_write_execution._native_execution,
+        "contained_workspace_write_execute_native",
+        lambda canonical, **kwargs: seen.update(kwargs),
+    )
+    monkeypatch.setenv("PATH", "/usr/local/bin:/usr/bin")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "synthetic-secret")
+    monkeypatch.setenv("LANG", "C")
+    for name in ("LC_ALL", "LC_CTYPE", "NO_COLOR", "TERM"):
+        monkeypatch.delenv(name, raising=False)
+    contained_workspace_write_execution.try_execute_contained_workspace_write(
+        "patch-check", workspace=workspace, guard_home=guard_home, source="p.diff"
+    )
+    assert seen["environment"] == {"LANG": "C", "PATH": "/usr/local/bin:/usr/bin"}
+
+
+@pytest.mark.parametrize(("requested", "sent"), [(0.25, 1), (1.0, 1), (1.2, 2), (120.0, 120)])
+def test_workspace_write_timeout_is_rounded_up_never_to_zero(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, requested: float, sent: int
+) -> None:
+    from codex_plugin_scanner.guard import native_execution
+
+    workspace, guard_home = _dirs(tmp_path)
+    captured: dict[str, Any] = {}
+
+    def resident(**kwargs: Any) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr(native_execution, "_resident_request", resident)
+    assert (
+        native_execution.contained_workspace_write_execute_native(
+            workspace,
+            guard_home=guard_home,
+            operation="patch-check",
+            source="p.diff",
+            timeout_seconds=requested,
+        )
+        is None
+    )
+    assert captured["request"]["timeout_seconds"] == sent
+
+
+@pytest.mark.parametrize("requested", [0.0, -1.0, float("nan"), float("inf")])
+def test_workspace_write_invalid_timeout_never_reaches_the_resident(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, requested: float
+) -> None:
+    from codex_plugin_scanner.guard import native_execution
+
+    workspace, guard_home = _dirs(tmp_path)
+    called: list[object] = []
+    monkeypatch.setattr(native_execution, "_resident_request", lambda **kwargs: called.append(kwargs))
+    assert (
+        native_execution.contained_workspace_write_execute_native(
+            workspace, guard_home=guard_home, operation="patch-check", source="p.diff", timeout_seconds=requested
+        )
+        is None
+    )
+    assert called == []

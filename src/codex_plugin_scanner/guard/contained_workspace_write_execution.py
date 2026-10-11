@@ -46,13 +46,19 @@ def try_execute_contained_workspace_write(
         canonical_workspace = _canonical_directory(workspace)
     except (OSError, RuntimeError, TypeError, ValueError):
         return None
+    source_environment = environment or dict(os.environ)
+    # The resident only uses PATH to locate the tool; the contained child never
+    # inherits it, so the scrubbed presentation variables are all that reach it.
+    native_environment = dict(_clean_environment(source_environment))
+    if tool_path := source_environment.get("PATH"):
+        native_environment["PATH"] = tool_path
     return _native_execution.contained_workspace_write_execute_native(
         canonical_workspace,
         guard_home=guard_home,
         operation=operation,
         source=source,
         target=target,
-        environment=dict(_clean_environment(environment or dict(os.environ))),
+        environment=native_environment,
         timeout_seconds=timeout_seconds,
     )
 
