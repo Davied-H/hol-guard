@@ -30,14 +30,15 @@ def codex_hook_response(response: Mapping[str, object], *, event_name: str) -> d
             if response.get("policy_action") == "deny":
                 normalized = "deny"
             reason = hook_output.get("permissionDecisionReason")
+            updated_input = hook_output.get("updatedInput")
             if normalized in {"deny", "ask"}:
                 cleaned["permissionDecision"] = normalized
                 if isinstance(reason, str) and reason:
                     cleaned["permissionDecisionReason"] = reason
-            elif normalized == "allow" and isinstance(hook_output.get("updatedInput"), Mapping):
+            elif normalized == "allow" and isinstance(updated_input, Mapping):
                 # Only the contained-test route rewrites input: the sink rechecks native authority.
                 cleaned["permissionDecision"] = "allow"
-                cleaned["updatedInput"] = dict(hook_output["updatedInput"])
+                cleaned["updatedInput"] = {str(key): value for key, value in updated_input.items()}
             elif normalized == "allow":
                 if (
                     response.get("policy_action") == "warn"
