@@ -1,27 +1,27 @@
 {
   "client_key": [
     {
-      "key": "6e340b9cffb37a989ca544e6bb780a2c",
+      "digest": "6e340b9cffb37a989ca544e6bb780a2c",
       "payload": {},
       "workspace": null
     },
     {
-      "key": "6e340b9cffb37a989ca544e6bb780a2c",
+      "digest": "6e340b9cffb37a989ca544e6bb780a2c",
       "payload": {},
       "workspace": ""
     },
     {
-      "key": "9bfff9907d9594875cd0a1c09c0fae3d",
+      "digest": "9bfff9907d9594875cd0a1c09c0fae3d",
       "payload": {},
       "workspace": "/work/space"
     },
     {
-      "key": "e54f19a10136292296cf0f365f9ce901",
+      "digest": "e54f19a10136292296cf0f365f9ce901",
       "payload": {},
       "workspace": "/work/spaceé"
     },
     {
-      "key": "e4098525c95396d35263a052f9a6a24b",
+      "digest": "e4098525c95396d35263a052f9a6a24b",
       "payload": {
         "hook_event_name": "PreToolUse",
         "session_id": "s1",
@@ -30,7 +30,7 @@
       "workspace": null
     },
     {
-      "key": "e4098525c95396d35263a052f9a6a24b",
+      "digest": "e4098525c95396d35263a052f9a6a24b",
       "payload": {
         "hook_event_name": "PreToolUse",
         "session_id": "s1",
@@ -39,7 +39,7 @@
       "workspace": ""
     },
     {
-      "key": "66886ed456feb0ec4d451c62ba18e8af",
+      "digest": "66886ed456feb0ec4d451c62ba18e8af",
       "payload": {
         "hook_event_name": "PreToolUse",
         "session_id": "s1",
@@ -48,7 +48,7 @@
       "workspace": "/work/space"
     },
     {
-      "key": "885b3f58ae649c0e0ad954566593e851",
+      "digest": "885b3f58ae649c0e0ad954566593e851",
       "payload": {
         "hook_event_name": "PreToolUse",
         "session_id": "s1",
@@ -57,7 +57,7 @@
       "workspace": "/work/spaceé"
     },
     {
-      "key": "cd86360e178934308c1b723623d03b7e",
+      "digest": "cd86360e178934308c1b723623d03b7e",
       "payload": {
         "conversation_id": "c9",
         "hook_event_name": "pre_tool_use"
@@ -65,7 +65,7 @@
       "workspace": null
     },
     {
-      "key": "cd86360e178934308c1b723623d03b7e",
+      "digest": "cd86360e178934308c1b723623d03b7e",
       "payload": {
         "conversation_id": "c9",
         "hook_event_name": "pre_tool_use"
@@ -73,7 +73,7 @@
       "workspace": ""
     },
     {
-      "key": "9a0bd89662126e55fde820b019868e37",
+      "digest": "9a0bd89662126e55fde820b019868e37",
       "payload": {
         "conversation_id": "c9",
         "hook_event_name": "pre_tool_use"
@@ -81,7 +81,7 @@
       "workspace": "/work/space"
     },
     {
-      "key": "4f5719390d4c156296e8676e49819da9",
+      "digest": "4f5719390d4c156296e8676e49819da9",
       "payload": {
         "conversation_id": "c9",
         "hook_event_name": "pre_tool_use"
@@ -89,7 +89,7 @@
       "workspace": "/work/spaceé"
     },
     {
-      "key": "c15007fbfbc17a79e767f5111c2ecd87",
+      "digest": "c15007fbfbc17a79e767f5111c2ecd87",
       "payload": {
         "hook_event_name": "PermissionRequest",
         "thread_id": "t3"
@@ -97,7 +97,7 @@
       "workspace": null
     },
     {
-      "key": "c15007fbfbc17a79e767f5111c2ecd87",
+      "digest": "c15007fbfbc17a79e767f5111c2ecd87",
       "payload": {
         "hook_event_name": "PermissionRequest",
         "thread_id": "t3"
@@ -105,7 +105,7 @@
       "workspace": ""
     },
     {
-      "key": "3b712aed422555892dfead123b955f21",
+      "digest": "3b712aed422555892dfead123b955f21",
       "payload": {
         "hook_event_name": "PermissionRequest",
         "thread_id": "t3"
@@ -113,7 +113,7 @@
       "workspace": "/work/space"
     },
     {
-      "key": "5c95230b2162aff12db060046fc71a69",
+      "digest": "5c95230b2162aff12db060046fc71a69",
       "payload": {
         "hook_event_name": "PermissionRequest",
         "thread_id": "t3"
@@ -121,7 +121,7 @@
       "workspace": "/work/spaceé"
     },
     {
-      "key": "e4098525c95396d35263a052f9a6a24b",
+      "digest": "e4098525c95396d35263a052f9a6a24b",
       "payload": {
         "hook_event_name": "UserPromptSubmit",
         "prompt": "hi",
@@ -130,7 +130,7 @@
       "workspace": null
     },
     {
-      "key": "e4098525c95396d35263a052f9a6a24b",
+      "digest": "e4098525c95396d35263a052f9a6a24b",
       "payload": {
         "hook_event_name": "UserPromptSubmit",
         "prompt": "hi",
@@ -139,7 +139,7 @@
       "workspace": ""
     },
     {
-      "key": "66886ed456feb0ec4d451c62ba18e8af",
+      "digest": "66886ed456feb0ec4d451c62ba18e8af",
       "payload": {
         "hook_event_name": "UserPromptSubmit",
         "prompt": "hi",
@@ -148,7 +148,7 @@
       "workspace": "/work/space"
     },
     {
-      "key": "885b3f58ae649c0e0ad954566593e851",
+      "digest": "885b3f58ae649c0e0ad954566593e851",
       "payload": {
         "hook_event_name": "UserPromptSubmit",
         "prompt": "hi",
@@ -157,35 +157,35 @@
       "workspace": "/work/spaceé"
     },
     {
-      "key": "6e340b9cffb37a989ca544e6bb780a2c",
+      "digest": "6e340b9cffb37a989ca544e6bb780a2c",
       "payload": {
         "hook_event_name": "user-prompt-submitted"
       },
       "workspace": null
     },
     {
-      "key": "6e340b9cffb37a989ca544e6bb780a2c",
+      "digest": "6e340b9cffb37a989ca544e6bb780a2c",
       "payload": {
         "hook_event_name": "user-prompt-submitted"
       },
       "workspace": ""
     },
     {
-      "key": "9bfff9907d9594875cd0a1c09c0fae3d",
+      "digest": "9bfff9907d9594875cd0a1c09c0fae3d",
       "payload": {
         "hook_event_name": "user-prompt-submitted"
       },
       "workspace": "/work/space"
     },
     {
-      "key": "e54f19a10136292296cf0f365f9ce901",
+      "digest": "e54f19a10136292296cf0f365f9ce901",
       "payload": {
         "hook_event_name": "user-prompt-submitted"
       },
       "workspace": "/work/spaceé"
     },
     {
-      "key": "b3e0c1657e118b59cee014c1aa7211b6",
+      "digest": "b3e0c1657e118b59cee014c1aa7211b6",
       "payload": {
         "hook_event_name": "PostToolUse",
         "session_id": "s2",
@@ -196,7 +196,7 @@
       "workspace": null
     },
     {
-      "key": "b3e0c1657e118b59cee014c1aa7211b6",
+      "digest": "b3e0c1657e118b59cee014c1aa7211b6",
       "payload": {
         "hook_event_name": "PostToolUse",
         "session_id": "s2",
@@ -207,7 +207,7 @@
       "workspace": ""
     },
     {
-      "key": "ffc4868d0cac14defe7f2c37af8852b6",
+      "digest": "ffc4868d0cac14defe7f2c37af8852b6",
       "payload": {
         "hook_event_name": "PostToolUse",
         "session_id": "s2",
@@ -218,7 +218,7 @@
       "workspace": "/work/space"
     },
     {
-      "key": "012b56ade36f7cc685c0d693d747daa0",
+      "digest": "012b56ade36f7cc685c0d693d747daa0",
       "payload": {
         "hook_event_name": "PostToolUse",
         "session_id": "s2",
@@ -229,35 +229,35 @@
       "workspace": "/work/spaceé"
     },
     {
-      "key": "6e340b9cffb37a989ca544e6bb780a2c",
+      "digest": "6e340b9cffb37a989ca544e6bb780a2c",
       "payload": {
         "event": "SessionStart"
       },
       "workspace": null
     },
     {
-      "key": "6e340b9cffb37a989ca544e6bb780a2c",
+      "digest": "6e340b9cffb37a989ca544e6bb780a2c",
       "payload": {
         "event": "SessionStart"
       },
       "workspace": ""
     },
     {
-      "key": "9bfff9907d9594875cd0a1c09c0fae3d",
+      "digest": "9bfff9907d9594875cd0a1c09c0fae3d",
       "payload": {
         "event": "SessionStart"
       },
       "workspace": "/work/space"
     },
     {
-      "key": "e54f19a10136292296cf0f365f9ce901",
+      "digest": "e54f19a10136292296cf0f365f9ce901",
       "payload": {
         "event": "SessionStart"
       },
       "workspace": "/work/spaceé"
     },
     {
-      "key": "2f125dbbf456d3eb13b398d879103738",
+      "digest": "2f125dbbf456d3eb13b398d879103738",
       "payload": {
         "conversation_id": "c1",
         "hook_event_name": "PreToolUse",
@@ -267,7 +267,7 @@
       "workspace": null
     },
     {
-      "key": "2f125dbbf456d3eb13b398d879103738",
+      "digest": "2f125dbbf456d3eb13b398d879103738",
       "payload": {
         "conversation_id": "c1",
         "hook_event_name": "PreToolUse",
@@ -277,7 +277,7 @@
       "workspace": ""
     },
     {
-      "key": "48bc1cc2044b1bf1b8e0d6f7c4967589",
+      "digest": "48bc1cc2044b1bf1b8e0d6f7c4967589",
       "payload": {
         "conversation_id": "c1",
         "hook_event_name": "PreToolUse",
@@ -287,7 +287,7 @@
       "workspace": "/work/space"
     },
     {
-      "key": "773d20c4c15370f44639c3bf632ea718",
+      "digest": "773d20c4c15370f44639c3bf632ea718",
       "payload": {
         "conversation_id": "c1",
         "hook_event_name": "PreToolUse",
@@ -297,7 +297,7 @@
       "workspace": "/work/spaceé"
     },
     {
-      "key": "12db7da678f7ab7a154369a8fe7ccad7",
+      "digest": "12db7da678f7ab7a154369a8fe7ccad7",
       "payload": {
         "hook_event_name": "PreToolUse",
         "session_id": 7,
@@ -306,7 +306,7 @@
       "workspace": null
     },
     {
-      "key": "12db7da678f7ab7a154369a8fe7ccad7",
+      "digest": "12db7da678f7ab7a154369a8fe7ccad7",
       "payload": {
         "hook_event_name": "PreToolUse",
         "session_id": 7,
@@ -315,7 +315,7 @@
       "workspace": ""
     },
     {
-      "key": "ab0031497e9ddf6340b78204e0861bba",
+      "digest": "ab0031497e9ddf6340b78204e0861bba",
       "payload": {
         "hook_event_name": "PreToolUse",
         "session_id": 7,
@@ -324,7 +324,7 @@
       "workspace": "/work/space"
     },
     {
-      "key": "50c1dd654f480b1c218a378d433c3ab2",
+      "digest": "50c1dd654f480b1c218a378d433c3ab2",
       "payload": {
         "hook_event_name": "PreToolUse",
         "session_id": 7,
@@ -333,7 +333,7 @@
       "workspace": "/work/spaceé"
     },
     {
-      "key": "6e340b9cffb37a989ca544e6bb780a2c",
+      "digest": "6e340b9cffb37a989ca544e6bb780a2c",
       "payload": {
         "hook_event_name": "PostToolUse",
         "tool_input": {
@@ -343,7 +343,7 @@
       "workspace": null
     },
     {
-      "key": "6e340b9cffb37a989ca544e6bb780a2c",
+      "digest": "6e340b9cffb37a989ca544e6bb780a2c",
       "payload": {
         "hook_event_name": "PostToolUse",
         "tool_input": {
@@ -353,7 +353,7 @@
       "workspace": ""
     },
     {
-      "key": "9bfff9907d9594875cd0a1c09c0fae3d",
+      "digest": "9bfff9907d9594875cd0a1c09c0fae3d",
       "payload": {
         "hook_event_name": "PostToolUse",
         "tool_input": {
@@ -363,7 +363,7 @@
       "workspace": "/work/space"
     },
     {
-      "key": "e54f19a10136292296cf0f365f9ce901",
+      "digest": "e54f19a10136292296cf0f365f9ce901",
       "payload": {
         "hook_event_name": "PostToolUse",
         "tool_input": {
@@ -853,6 +853,52 @@
       "hint_missing": false,
       "prompt": true,
       "transport": 11.0
+    }
+  ],
+  "directory_authority": [
+    {
+      "candidate": "",
+      "rejected": "relative_path"
+    },
+    {
+      "candidate": "relative/dir",
+      "rejected": "relative_path"
+    },
+    {
+      "candidate": "~no-such-user-for-parity",
+      "rejected": "relative_path"
+    },
+    {
+      "accepted": ".",
+      "candidate": "{root}"
+    },
+    {
+      "accepted": ".",
+      "candidate": "{root}/"
+    },
+    {
+      "accepted": "a",
+      "candidate": "{root}/a"
+    },
+    {
+      "accepted": "a/b",
+      "candidate": "{root}/a/./b"
+    },
+    {
+      "accepted": "b",
+      "candidate": "{root}/a/../b"
+    },
+    {
+      "candidate": "{root}/../escape",
+      "rejected": "unexpected_root"
+    },
+    {
+      "candidate": "{root}-sibling",
+      "rejected": "unexpected_root"
+    },
+    {
+      "accepted": ".",
+      "candidate": "{root}/a/.."
     }
   ],
   "exec_command_workdir": [

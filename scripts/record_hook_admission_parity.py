@@ -96,7 +96,7 @@ def _vectors() -> dict[str, object]:
         for payload in PAYLOADS
     ]
     client_key = [
-        {"payload": payload, "workspace": workspace, "key": handler._runtime_hook_client_key(payload, workspace)}
+        {"payload": payload, "workspace": workspace, "digest": handler._runtime_hook_client_key(payload, workspace)}
         for payload in PAYLOADS
         for workspace in WORKSPACES
     ]
@@ -118,21 +118,8 @@ def _vectors() -> dict[str, object]:
     for payload in WORKDIR_PAYLOADS:
         provided, workdir = handler._runtime_hook_exec_command_workdir(payload)
         workdirs.append({"payload": payload, "provided": provided, "workdir": workdir})
-    deadlines = []
-    base = 100.0
-    for case in DEADLINE_CASES:
-        transport_deadline = base + float(case["transport"])  # type: ignore[arg-type]
-        admission = float(case["admission"])  # type: ignore[arg-type]
-        if case["prompt"]:
-            prompt_now = transport_deadline - admission
-            hinted = RuntimeHookDeadline.from_remaining_hint(
-                admission if case["hint_missing"] else case["hint"],
-                monotonic=lambda now=prompt_now: now,
-                maximum_budget_seconds=10.0,
-            )
-        else:
-            hinted = RuntimeHookDeadline.from_remaining_hint(case["hint"], monotonic=lambda now=base: now)
-        deadlines.append({**case, "expires_offset": round(min(hinted.expires_at, transport_deadline) - base, 6)})
+    deadlines = _deadline_vectors(server, RuntimeHookDeadline)
+    directory_authority = _directory_authority_vectors()
     return {
         "schema": "hook-admission-parity.v1",
         "lane": lane,
@@ -142,7 +129,85 @@ def _vectors() -> dict[str, object]:
         "workspace_string": workspaces,
         "exec_command_workdir": workdirs,
         "deadline": deadlines,
+        "directory_authority": directory_authority,
     }
+
+
+def _deadline_vectors(server: object, deadline_type: type) -> list[dict[str, object]]:
+    """Record the deadlines the daemon's own ``for_admission`` produces, with a pinned clock."""
+    from codex_plugin_scanner.guard.daemon.runtime_hook_deadline import PROMPT_ADMISSION_SECONDS
+
+    non_prompt_admission = server._RUNTIME_HOOK_ADMISSION_TIMEOUT_SECONDS  # type: ignore[attr-defined]
+    from_hint = deadline_type.from_remaining_hint.__func__  # type: ignore[attr-defined]
+    base = 100.0
+    original = from_hint.__kwdefaults__["monotonic"]
+    vectors: list[dict[str, object]] = []
+    try:
+        # The tool-hook path reads the default clock; pin it for the recording only.
+        from_hint.__kwdefaults__["monotonic"] = lambda: base
+        for case in DEADLINE_CASES:
+            prompt = bool(case["prompt"])
+            admission = PROMPT_ADMISSION_SECONDS if prompt else non_prompt_admission
+            transport_deadline = base + float(case["transport"])  # type: ignore[arg-type]
+            result = deadline_type.for_admission(
+                float(case["hint"]),  # type: ignore[arg-type]
+                hint_missing=bool(case["hint_missing"]),
+                prompt_event=prompt,
+                admission_seconds=admission,
+                transport_deadline=transport_deadline,
+            )
+            vectors.append(
+                {
+                    "hint": case["hint"],
+                    "hint_missing": case["hint_missing"],
+                    "prompt": prompt,
+                    "admission": admission,
+                    "transport": case["transport"],
+                    "expires_offset": round(result.expires_at - base, 6),
+                }
+            )
+    finally:
+        from_hint.__kwdefaults__["monotonic"] = original
+    return vectors
+
+
+DIRECTORY_CANDIDATES: list[str] = [
+    "",
+    "relative/dir",
+    "~no-such-user-for-parity",
+    "{root}",
+    "{root}/",
+    "{root}/a",
+    "{root}/a/./b",
+    "{root}/a/../b",
+    "{root}/../escape",
+    "{root}-sibling",
+    "{root}/a/..",
+]
+
+
+def _directory_authority_vectors() -> list[dict[str, object]]:
+    """Record accepted canonical paths and rejection reasons of the directory validator."""
+    import tempfile
+
+    from codex_plugin_scanner.guard.directory_path_authority import (
+        DirectoryPathTrustError,
+        validate_guard_directory_path,
+    )
+
+    vectors: list[dict[str, object]] = []
+    with tempfile.TemporaryDirectory() as raw_root:
+        root = Path(raw_root).resolve()
+        for template in DIRECTORY_CANDIDATES:
+            candidate = template.replace("{root}", root.as_posix())
+            try:
+                accepted = validate_guard_directory_path(candidate, (root,))
+            except DirectoryPathTrustError as error:
+                outcome: dict[str, object] = {"rejected": error.reason}
+            else:
+                outcome = {"accepted": Path(accepted).relative_to(root).as_posix()}
+            vectors.append({"candidate": template, **outcome})
+    return vectors
 
 
 def _jsonable(value: object) -> object:
