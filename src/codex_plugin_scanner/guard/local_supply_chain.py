@@ -8,13 +8,11 @@ import inspect
 import json
 import os
 import shlex
-import socket
 import stat
 import subprocess
 import threading
 import time
 import urllib.error
-import urllib.parse
 import urllib.request
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
@@ -32,12 +30,17 @@ from .cloud_audit_request import build_cloud_workspace_audit_request
 from .config import GuardConfig
 from .mdm.network import managed_urlopen
 from .models import GuardAction, GuardArtifact
-from .native_package_approval_hash import native_package_approval_hash, native_package_current_action
+from .native_package_approval_hash import native_package_approval_hash
+from .native_package_audit_projection import (
+    native_batch_url,
+    native_cloud_audit_payload,
+    native_managed_workspaces,
+)
 from .native_package_policy_resolve import native_resolve_stored_package_policy
 from .native_supply_chain_posture import native_local_supply_chain_posture
 from .native_workspace_inventory import native_workspace_inventory
 from .package_execution_context import PackageExecutionContext, build_package_execution_context
-from .redaction import redact_local_path, redact_text
+from .redaction import redact_text
 from .runtime.approval_context import (
     approval_context_tokens_validation_reason,
     build_runtime_launch_identity,
@@ -76,13 +79,7 @@ from .runtime.package_protect_projection import (
     resolve_local_supply_chain_harness as _resolve_local_supply_chain_harness,
 )
 from .runtime.restricted_archive_download import RestrictedArchiveDownload
-from .runtime.workspace_path_guard import (
-    read_bytes_within_workspace,
-    read_text_within_workspace,
-    resolve_path_within_workspace,
-)
 from .shims import package_shim_dashboard_status, package_shim_supported_managers
-from .stable_digest import stable_digest_hex
 from .store import GuardStore
 from .store_guard_home_binding import binds_store_guard_home
 
@@ -127,7 +124,6 @@ _ECOSYSTEM_BY_MANIFEST = {
     "Gemfile": "rubygems",
 }
 _CLOUD_AUDIT_TIMEOUT_SECONDS = 20
-_CLOUD_AUDIT_PAGE_SIZE = 500
 _CLOUD_AUDIT_JOB_PAGE_SIZE = 1
 _CLOUD_AUDIT_JOB_POLL_INTERVAL_SECONDS = 0.5
 _CLOUD_AUDIT_JOB_POLL_TIMEOUT_SECONDS = 20
@@ -135,16 +131,6 @@ _CLOUD_AUDIT_SYNC_PAGE_SIZE = 25
 _PACKAGE_FIREWALL_REFRESH_MIN_INTERVAL_SECONDS = 300.0
 _PACKAGE_FIREWALL_REFRESH_STATE_FILE = "package-firewall-refresh.json"
 _PACKAGE_FIREWALL_REFRESH_LOCK = threading.Lock()
-_AUDIT_SENSITIVE_BASENAMES = frozenset(
-    {
-        ".env",
-        ".env.local",
-        ".env.development",
-        ".env.production",
-        ".env.test",
-        ".envrc",
-    }
-)
 
 
 def _runtime_runner_module():
@@ -404,17 +390,6 @@ def resolve_package_firewall_entitlement_with_refresh(store: Any) -> dict[str, o
     return entitlement_module.resolve_package_firewall_entitlement(store)
 
 
-def _is_audit_sensitive_basename(name: str) -> bool:
-    lowered = name.lower()
-    return lowered in _AUDIT_SENSITIVE_BASENAMES or lowered.startswith(".env.")
-
-
-def _read_workspace_audit_text(workspace_dir: Path, relative_path: str) -> str | None:
-    if _is_audit_sensitive_basename(Path(relative_path).name):
-        return None
-    return read_text_within_workspace(workspace_dir, relative_path)
-
-
 def _workspace_has_project_markers(workspace_dir: Path) -> bool:
     try:
         resolved = workspace_dir.resolve()
@@ -424,53 +399,7 @@ def _workspace_has_project_markers(workspace_dir: Path) -> bool:
 
 
 def managed_install_audit_workspace_dirs(store: Any) -> tuple[str, ...]:
-    installs = store.list_managed_installs()
-    ordered = sorted(
-        installs,
-        key=lambda item: (
-            1 if bool(item.get("active")) else 0,
-            str(item.get("updated_at") or ""),
-        ),
-        reverse=True,
-    )
-    candidates: list[str] = []
-    seen: set[str] = set()
-    for install in ordered:
-        workspace = install.get("workspace")
-        if not isinstance(workspace, str):
-            continue
-        normalized = workspace.strip()
-        if not normalized or normalized in seen:
-            continue
-        seen.add(normalized)
-        candidates.append(normalized)
-    return tuple(candidates)
-
-
-def _managed_workspace_audit_candidates(
-    store: Any,
-    *,
-    workspace_dir: Path | None = None,
-) -> tuple[Path, ...]:
-    candidates: list[Path] = []
-    seen: set[str] = set()
-    raw_candidates: list[Path] = []
-    if workspace_dir is not None:
-        raw_candidates.append(workspace_dir)
-    raw_candidates.extend(Path(entry).expanduser() for entry in managed_install_audit_workspace_dirs(store))
-    for candidate in raw_candidates:
-        try:
-            resolved = candidate.resolve()
-        except OSError:
-            continue
-        normalized = str(resolved)
-        if normalized in seen or not resolved.exists() or not resolved.is_dir():
-            continue
-        if not _workspace_has_project_markers(resolved):
-            continue
-        seen.add(normalized)
-        candidates.append(resolved)
-    return tuple(candidates)
+    return native_managed_workspaces(store, candidates=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1526,44 +1455,6 @@ def _package_policy_workspace_candidates(
     return (runtime_workspace,) if runtime_workspace is not None else ()
 
 
-def recompute_package_protect_artifact_hash(
-    command: Sequence[str],
-    *,
-    store: Any,
-    workspace_dir: Path,
-    now: str | None = None,
-    config: GuardConfig | None = None,
-) -> str | None:
-    evaluation_timestamp = now or datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
-    authority = _build_package_protect_authority(
-        command=command,
-        store=store,
-        workspace_dir=workspace_dir,
-        now=evaluation_timestamp,
-        config=config,
-        additional_current_action=None,
-        additional_policy_context=None,
-    )
-    return authority.artifact_hash if authority is not None else None
-
-
-def compose_current_package_policy_action(
-    *,
-    artifact: GuardArtifact,
-    evaluation: Any,
-    config: GuardConfig | None,
-    additional_current_action: object | None = None,
-) -> GuardAction:
-    """Return the resident-composed feed and configuration policy action."""
-
-    return native_package_current_action(
-        artifact=artifact,
-        evaluation=evaluation,
-        config=config,
-        additional_current_action=additional_current_action,
-    )
-
-
 @binds_store_guard_home
 def package_current_action_and_hash(
     artifact: GuardArtifact,
@@ -1720,139 +1611,6 @@ def _build_package_manager_protection(store: Any) -> dict[str, object]:
     }
 
 
-def _codebase_label_from_remote(remote: str) -> str | None:
-    normalized_remote = remote.strip().rstrip("/")
-    if not normalized_remote:
-        return None
-    if "://" in normalized_remote:
-        parsed = urllib.parse.urlparse(normalized_remote)
-        path = parsed.path.lstrip("/")
-    elif ":" in normalized_remote:
-        path = normalized_remote.split(":", 1)[1]
-    else:
-        path = normalized_remote
-    label = path.strip("/")
-    if not label:
-        return None
-    return label[:-4] if label.endswith(".git") else label
-
-
-def _read_git_origin_codebase(workspace_dir: Path) -> str | None:
-    config_path = workspace_dir / ".git" / "config"
-    try:
-        config_text = config_path.read_text(encoding="utf-8")
-    except OSError:
-        return None
-    in_origin = False
-    for raw_line in config_text.splitlines():
-        line = raw_line.strip()
-        if line.startswith("[") and line.endswith("]"):
-            in_origin = line == '[remote "origin"]'
-            continue
-        if not in_origin or not line.startswith("url") or "=" not in line:
-            continue
-        _key, _sep, value = line.partition("=")
-        return _codebase_label_from_remote(value)
-    return None
-
-
-def _safe_machine_name() -> str | None:
-    try:
-        machine = socket.gethostname().strip()
-    except OSError:
-        return None
-    return machine or None
-
-
-def _redacted_workspace_folder_path(workspace_dir: Path) -> str:
-    raw_path = str(workspace_dir)
-    redacted = redact_local_path(raw_path)
-    if redacted != raw_path or not workspace_dir.is_absolute():
-        return redacted
-    parts = [part for part in workspace_dir.parts if part not in {"", "/"}]
-    if len(parts) >= 2:
-        return f"…/{parts[-2]}/{parts[-1]}"
-    return f"…/{workspace_dir.name}"
-
-
-def _build_workspace_context_payload(
-    workspace_dir: Path,
-    manifest_paths: tuple[str, ...],
-    lockfile_paths: tuple[str, ...],
-) -> dict[str, object]:
-    codebase = _read_git_origin_codebase(workspace_dir) or workspace_dir.name
-    return {
-        "agent": _LOCAL_SUPPLY_CHAIN_HARNESS,
-        "codebase": codebase,
-        "folderPath": _redacted_workspace_folder_path(workspace_dir),
-        "lockfilePaths": list(lockfile_paths),
-        "machine": _safe_machine_name(),
-        "manifestPaths": list(manifest_paths),
-        "packageManager": _package_manager_for_scan(manifest_paths),
-        "workspaceName": workspace_dir.name,
-    }
-
-
-def _build_cloud_audit_payload(
-    *,
-    workspace_dir: Path,
-    workspace_id: str,
-    store: Any,
-    manifest_paths: tuple[str, ...],
-    lockfile_paths: tuple[str, ...],
-    inventory: tuple[dict[str, object], ...],
-    mode: str = "paged",
-    page_size: int | None = None,
-) -> dict[str, object]:
-    summary = store.get_sync_payload("supply_chain_bundle_summary")
-    policy_version = "local:none"
-    if isinstance(summary, dict):
-        policy_hash = summary.get("policy_hash")
-        if isinstance(policy_hash, str) and policy_hash:
-            policy_version = policy_hash
-    workspace_fingerprint = _workspace_audit_fingerprint(
-        workspace_id=workspace_id,
-        workspace_dir=workspace_dir,
-        manifest_paths=manifest_paths,
-        lockfile_paths=lockfile_paths,
-        policy_version=policy_version,
-    )
-    payload: dict[str, object] = {
-        "commandShape": {
-            "argCount": 3,
-            "flags": [],
-            "packageManager": _package_manager_for_scan(manifest_paths),
-            "redacted": True,
-            "verb": "audit",
-        },
-        "harness": _LOCAL_SUPPLY_CHAIN_HARNESS,
-        "lockfileContext": _workspace_audit_lockfile_context(workspace_dir, manifest_paths, lockfile_paths, inventory),
-        "mode": mode,
-        "pageSize": min(_CLOUD_AUDIT_PAGE_SIZE, max(page_size or len(inventory), 1)),
-        "packages": [
-            {
-                "direct": bool(item.get("direct")),
-                "ecosystem": str(item["ecosystem"]),
-                "name": str(item["name"]),
-                "namespace": item.get("namespace"),
-                **({"version": str(item["version"])} if isinstance(item.get("version"), str) else {}),
-                **({"range": str(item["range"])} if isinstance(item.get("range"), str) else {}),
-            }
-            for item in inventory
-        ],
-        "policyVersion": policy_version,
-        "workspaceContext": _build_workspace_context_payload(
-            workspace_dir,
-            manifest_paths,
-            lockfile_paths,
-        ),
-        "workspaceFingerprint": workspace_fingerprint,
-    }
-    if payload["lockfileContext"] is None:
-        payload.pop("lockfileContext")
-    return payload
-
-
 def _execute_cloud_workspace_audit_request(
     *,
     auth_context: dict[str, object],
@@ -1890,37 +1648,15 @@ def _execute_cloud_workspace_audit_request(
     return response_payload
 
 
-def _normalized_supply_chain_batch_job_url(
-    sync_url: str,
-    workspace_id: str,
-    job_id: str,
-    *,
-    page_size: int,
-) -> str:
-    batch_url = _normalized_supply_chain_batch_url(sync_url, workspace_id)
-    parsed = urllib.parse.urlsplit(batch_url)
-    query_pairs = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
-    query_pairs = [(key, value) for key, value in query_pairs if key not in {"cursor", "pageSize"}]
-    query_pairs.append(("pageSize", str(max(page_size, 1))))
-    return urllib.parse.urlunsplit(
-        (
-            parsed.scheme,
-            parsed.netloc,
-            f"{parsed.path.rstrip('/')}/{urllib.parse.quote(job_id, safe='')}",
-            urllib.parse.urlencode(query_pairs),
-            "",
-        )
-    )
-
-
 def _enqueue_cloud_workspace_audit_job(
     *,
+    store: Any,
     auth_context: dict[str, object],
     request_payload: dict[str, object],
     workspace_id: str,
 ) -> dict[str, object]:
     sync_url = str(auth_context["sync_url"])
-    request_url = _normalized_supply_chain_batch_url(sync_url, workspace_id)
+    request_url = native_batch_url(store, sync_url, workspace_id)
     response_payload = _execute_cloud_workspace_audit_request(
         auth_context=auth_context,
         request_url=request_url,
@@ -1935,15 +1671,17 @@ def _enqueue_cloud_workspace_audit_job(
 
 def _poll_cloud_workspace_audit_job(
     *,
+    store: Any,
     auth_context: dict[str, object],
     job_id: str,
     workspace_id: str,
 ) -> dict[str, object]:
     sync_url = str(auth_context["sync_url"])
-    request_url = _normalized_supply_chain_batch_job_url(
+    request_url = native_batch_url(
+        store,
         sync_url,
         workspace_id,
-        job_id,
+        job_id=job_id,
         page_size=_CLOUD_AUDIT_JOB_PAGE_SIZE,
     )
     deadline = time.monotonic() + _CLOUD_AUDIT_JOB_POLL_TIMEOUT_SECONDS
@@ -1964,92 +1702,6 @@ def _poll_cloud_workspace_audit_job(
             return response_payload
         time.sleep(_CLOUD_AUDIT_JOB_POLL_INTERVAL_SECONDS)
     return last_response
-
-
-def _workspace_audit_lockfile_context(
-    workspace_dir: Path,
-    manifest_paths: tuple[str, ...],
-    lockfile_paths: tuple[str, ...],
-    inventory: tuple[dict[str, object], ...],
-) -> dict[str, object] | None:
-    if not lockfile_paths:
-        return None
-    lockfile_path = resolve_path_within_workspace(workspace_dir, lockfile_paths[0])
-    if lockfile_path is None or not lockfile_path.exists():
-        return None
-    lockfile_text = _read_workspace_audit_text(workspace_dir, lockfile_paths[0])
-    if lockfile_text is None:
-        return None
-    manifest_hash = None
-    if manifest_paths:
-        manifest_bytes = read_bytes_within_workspace(workspace_dir, manifest_paths[0])
-        if manifest_bytes is not None and not _is_audit_sensitive_basename(Path(manifest_paths[0]).name):
-            manifest_hash = stable_digest_hex(manifest_bytes)
-    return {
-        "dependencyCount": len(inventory),
-        "fileName": lockfile_path.name,
-        "lockfileHash": stable_digest_hex(lockfile_text.encode("utf-8")),
-        "manifestHash": manifest_hash,
-    }
-
-
-def _workspace_audit_fingerprint(
-    *,
-    workspace_id: str,
-    workspace_dir: Path,
-    manifest_paths: tuple[str, ...],
-    lockfile_paths: tuple[str, ...],
-    policy_version: str,
-) -> str:
-    manifest_hashes = _hash_existing_paths(workspace_dir, manifest_paths)
-    lockfile_hashes = _hash_existing_paths(workspace_dir, lockfile_paths)
-    return stable_digest_hex(
-        json.dumps(
-            {
-                "workspace_id": workspace_id,
-                "workspace_name": workspace_dir.name,
-                "manifest_hashes": manifest_hashes,
-                "lockfile_hashes": lockfile_hashes,
-                "policy_version": policy_version,
-            },
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode("utf-8"),
-    )
-
-
-def _hash_existing_paths(workspace_dir: Path, relative_paths: Sequence[str]) -> list[str]:
-    hashes: list[str] = []
-    for relative_path in relative_paths:
-        payload = read_bytes_within_workspace(workspace_dir, relative_path)
-        if payload is None:
-            continue
-        hashes.append(stable_digest_hex(payload))
-    return hashes
-
-
-def _normalized_supply_chain_batch_url(sync_url: str, workspace_id: str) -> str:
-    parsed = urllib.parse.urlsplit(sync_url)
-    sync_path = parsed.path.rstrip("/")
-    if sync_path.endswith("/receipts/sync"):
-        next_path = sync_path[: -len("/receipts/sync")] + "/supply-chain/evaluate/batch"
-    else:
-        next_path = sync_path + "/supply-chain/evaluate/batch"
-    query_pairs = [
-        (key, value)
-        for key, value in urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
-        if key != "workspaceId"
-    ]
-    query_pairs.append(("workspaceId", workspace_id))
-    return urllib.parse.urlunsplit(
-        (
-            parsed.scheme,
-            parsed.netloc,
-            next_path,
-            urllib.parse.urlencode(query_pairs),
-            "",
-        )
-    )
 
 
 def sync_managed_workspace_audits(
@@ -2073,7 +1725,8 @@ def sync_managed_workspace_audits(
     incomplete_jobs = 0
     queued_jobs = 0
     skipped_workspaces = 0
-    for candidate in _managed_workspace_audit_candidates(store, workspace_dir=workspace_dir):
+    for candidate_path in native_managed_workspaces(store, candidates=True, workspace_dir=workspace_dir):
+        candidate = Path(candidate_path)
         workspace_label = candidate.name or str(candidate)
         try:
             workspace_inventory = native_workspace_inventory(store, candidate)
@@ -2090,10 +1743,10 @@ def sync_managed_workspace_audits(
                     }
                 )
                 continue
-            request_payload = _build_cloud_audit_payload(
+            request_payload = native_cloud_audit_payload(
+                store,
                 workspace_dir=candidate,
                 workspace_id=workspace_id,
-                store=store,
                 manifest_paths=manifest_paths,
                 lockfile_paths=lockfile_paths,
                 inventory=inventory,
@@ -2101,12 +1754,14 @@ def sync_managed_workspace_audits(
                 page_size=min(_CLOUD_AUDIT_SYNC_PAGE_SIZE, max(len(inventory), 1)),
             )
             enqueue_response = _enqueue_cloud_workspace_audit_job(
+                store=store,
                 auth_context=resolved_auth_context,
                 request_payload=request_payload,
                 workspace_id=workspace_id,
             )
             job_id = str(enqueue_response.get("jobId") or "").strip()
             final_response = _poll_cloud_workspace_audit_job(
+                store=store,
                 auth_context=resolved_auth_context,
                 job_id=job_id,
                 workspace_id=workspace_id,

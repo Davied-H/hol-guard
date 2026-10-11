@@ -14,10 +14,8 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
-        let nonce = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
+        static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let nonce = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let home = std::env::temp_dir().join(format!(
             "hol-guard-audit-projection-{}-{nonce}",
             std::process::id()
@@ -164,4 +162,152 @@ fn rejects_malformed_requests() {
         run(&missing_store).unwrap_err(),
         "native_package_audit_projection_store_unavailable"
     );
+}
+
+const CLOUD_VECTORS: &[u8] = include_bytes!("../testdata/cloud_audit_vectors.json.gz");
+const VECTOR_MACHINE: &str = "vector-host";
+
+fn cloud_vectors() -> Vec<Value> {
+    use std::io::Read;
+    let mut text = String::new();
+    flate2::read::GzDecoder::new(CLOUD_VECTORS)
+        .read_to_string(&mut text)
+        .unwrap();
+    serde_json::from_str(&text).unwrap()
+}
+
+/// Lay a recorded workspace out under `<home>/vector-parent/vector-ws` (or use the
+/// recorded absolute path, which the vector keeps non-existent) and write the
+/// recorded bundle summary into the store.
+fn cloud_query_for(vector: &Value, fixture: &Fixture) -> Value {
+    let workspace = match vector["workspace"].as_str().unwrap() {
+        "REL" => {
+            let root = fixture.home.join("vector-parent").join("vector-ws");
+            std::fs::create_dir_all(&root).unwrap();
+            for (relative, text) in vector["files"].as_object().unwrap() {
+                let path = root.join(relative);
+                std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+                std::fs::write(path, text.as_str().unwrap()).unwrap();
+            }
+            root.to_string_lossy().into_owned()
+        }
+        absolute => absolute.strip_prefix("ABS:").unwrap().to_owned(),
+    };
+    let store = fixture.store(None, &Value::Null);
+    if !vector["summary"].is_null() {
+        rusqlite::Connection::open(&store)
+            .unwrap()
+            .execute(
+                "INSERT INTO sync_state VALUES ('supply_chain_bundle_summary', ?1)",
+                [vector["summary"].to_string()],
+            )
+            .unwrap();
+    }
+    json!({
+        "query": "cloud_payload",
+        "workspace_dir": workspace,
+        "workspace_id": vector["workspace_id"],
+        "store_path": store,
+        "manifest_paths": vector["manifest_paths"],
+        "lockfile_paths": vector["lockfile_paths"],
+        "inventory": vector["inventory"],
+        "mode": vector["mode"],
+        "page_size": vector["page_size"],
+        "machine": VECTOR_MACHINE,
+    })
+}
+
+#[test]
+fn recorded_python_cloud_audit_vectors_match() {
+    let vectors = cloud_vectors();
+    assert!(vectors.len() >= 1400);
+    for (index, vector) in vectors.iter().enumerate() {
+        let fixture = Fixture::new();
+        let kind = vector["query"].as_str().unwrap();
+        let query = match kind {
+            "cloud_payload" => cloud_query_for(vector, &fixture),
+            "batch_url" => {
+                let mut query = json!({
+                    "query": "batch_url",
+                    "sync_url": vector["sync_url"],
+                    "workspace_id": vector["workspace_id"],
+                });
+                if let Some(job_id) = vector.get("job_id") {
+                    query["job_id"] = job_id.clone();
+                    query["page_size"] = vector["page_size"].clone();
+                }
+                query
+            }
+            "cloud_normalize" => {
+                json!({"query": "cloud_normalize", "response": vector["response"]})
+            }
+            _ => json!({
+                "query": "workspace_candidates",
+                "installs": vector["installs"],
+                "candidates": false,
+            }),
+        };
+        let result = run(&request(query));
+        let expected = &vector["expected"];
+        if expected.get("error").is_some() {
+            assert_eq!(
+                result.unwrap_err(),
+                "native_package_audit_projection_invalid",
+                "vector {index}: {vector}"
+            );
+            continue;
+        }
+        let mut actual = result.unwrap_or_else(|error| panic!("vector {index}: {error}"));
+        let expected = expected["ok"].clone();
+        let expected = match kind {
+            "batch_url" => json!({"url": expected}),
+            "install_dirs" => json!({"workspaces": expected}),
+            _ => expected,
+        };
+        if kind == "cloud_payload" {
+            let machine = actual["workspaceContext"]
+                .as_object_mut()
+                .unwrap()
+                .remove("machine");
+            assert_eq!(machine, Some(json!(VECTOR_MACHINE)), "vector {index}");
+        }
+        assert_eq!(actual, expected, "vector {index}: {vector}");
+    }
+}
+
+#[test]
+fn workspace_candidates_keep_existing_project_directories_in_order() {
+    let fixture = Fixture::new();
+    let explicit = fixture.home.join("explicit");
+    let managed = fixture.home.join("managed");
+    for dir in [&explicit, &managed, &fixture.home.join("bare")] {
+        std::fs::create_dir_all(dir).unwrap();
+    }
+    std::fs::write(explicit.join("package.json"), "{}").unwrap();
+    std::fs::write(managed.join("Cargo.toml"), "").unwrap();
+    let installs = json!([
+        {"workspace": managed.to_string_lossy(), "active": true, "updated_at": "2"},
+        {"workspace": fixture.home.join("bare").to_string_lossy(), "updated_at": "9"},
+        {"workspace": fixture.home.join("missing").to_string_lossy(), "updated_at": "1"},
+    ]);
+    let result = run(&request(json!({
+        "query": "workspace_candidates",
+        "installs": installs,
+        "workspace_dir": explicit.to_string_lossy(),
+        "candidates": true,
+    })))
+    .unwrap();
+    let names: Vec<String> = result["workspaces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|path| {
+            std::path::Path::new(path.as_str().unwrap())
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+    assert_eq!(names, ["explicit", "managed"]);
 }

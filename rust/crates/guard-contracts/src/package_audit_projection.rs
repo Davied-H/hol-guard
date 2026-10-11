@@ -51,8 +51,60 @@ pub struct PackageAuditEmptyOutcomeQueryV1 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PackageAuditCloudPayloadQueryV1 {
+    pub workspace_dir: String,
+    pub workspace_id: String,
+    /// Store whose `supply_chain_bundle_summary` sync payload supplies the policy version.
+    pub store_path: String,
+    pub manifest_paths: Vec<String>,
+    pub lockfile_paths: Vec<String>,
+    pub inventory: Vec<Value>,
+    pub mode: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page_size: Option<i64>,
+    /// Host name the caller read (`socket.gethostname()`); the resident cannot read it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub machine: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PackageAuditBatchUrlQueryV1 {
+    pub sync_url: String,
+    pub workspace_id: String,
+    /// Present for the job-status URL, absent for the batch URL.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub job_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page_size: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PackageAuditCloudNormalizeQueryV1 {
+    pub response: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PackageAuditWorkspaceCandidatesQueryV1 {
+    /// `store.list_managed_installs()` exactly as listed.
+    pub installs: Vec<Value>,
+    /// Explicit workspace to audit first; absent audits managed workspaces only.
+    /// With `candidates` false only the ordered managed workspace strings return.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_dir: Option<String>,
+    pub candidates: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "query", rename_all = "snake_case")]
 pub enum PackageAuditQueryV1 {
+    CloudPayload(PackageAuditCloudPayloadQueryV1),
+    BatchUrl(PackageAuditBatchUrlQueryV1),
+    CloudNormalize(PackageAuditCloudNormalizeQueryV1),
+    WorkspaceCandidates(PackageAuditWorkspaceCandidatesQueryV1),
     Receipt(PackageAuditReceiptQueryV1),
     Aliases(PackageAuditAliasesQueryV1),
     CiGate(PackageAuditCiGateQueryV1),

@@ -51,21 +51,6 @@ def _seed_guard_cloud(store, *, workspace_id=None, sync_url=None, token="demo-to
 WORKSPACE_ID = "2de4fcb4-a5b2-447a-a67f-21c6eb4c5f3c"
 
 
-def test_normalized_supply_chain_batch_url_preserves_sync_prefix() -> None:
-    assert (
-        local_supply_chain_module._normalized_supply_chain_batch_url(
-            "https://guard.example/api/guard/receipts/sync", WORKSPACE_ID
-        )
-        == f"https://guard.example/api/guard/supply-chain/evaluate/batch?workspaceId={WORKSPACE_ID}"
-    )
-    assert (
-        local_supply_chain_module._normalized_supply_chain_batch_url(
-            "https://guard.example/registry/api/v1/guard/receipts/sync?workspaceId=old", WORKSPACE_ID
-        )
-        == f"https://guard.example/registry/api/v1/guard/supply-chain/evaluate/batch?workspaceId={WORKSPACE_ID}"
-    )
-
-
 def test_cloud_workspace_audit_renews_dpop_proof_for_each_page(monkeypatch: pytest.MonkeyPatch) -> None:
     runner = local_supply_chain_module._runtime_runner_module()
     signed_proofs: list[str] = []
@@ -804,78 +789,6 @@ def test_guard_supply_chain_audit_handles_large_workspace_and_prioritizes_findin
     assert isinstance(request_packages, list)
     assert len(request_packages) == 10_050
     assert output["evaluation"]["packages"][0]["name"] == "critical-lib"
-
-
-def test_build_cloud_audit_payload_includes_workspace_context(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    workspace_dir = tmp_path / "workspace"
-    (workspace_dir / ".git").mkdir(parents=True)
-    _write_text(
-        workspace_dir / ".git" / "config",
-        '[remote "origin"]\n\turl = git@github.com:hashgraph-online/hol-points-portal.git\n',
-    )
-    _write_text(workspace_dir / "package.json", '{"name":"demo"}\n')
-    _write_text(workspace_dir / "pnpm-lock.yaml", "lockfileVersion: '9.0'\n")
-    monkeypatch.setattr(local_supply_chain_module.socket, "gethostname", lambda: "macbook-pro")
-
-    class _Store:
-        def get_sync_payload(self, _key: str) -> dict[str, str]:
-            return {"policy_hash": "policy-hash-1"}
-
-    payload = local_supply_chain_module._build_cloud_audit_payload(
-        workspace_dir=workspace_dir,
-        workspace_id=WORKSPACE_ID,
-        store=_Store(),
-        manifest_paths=("package.json",),
-        lockfile_paths=("pnpm-lock.yaml",),
-        inventory=(
-            {
-                "direct": True,
-                "ecosystem": "npm",
-                "name": "minimist",
-                "version": "1.2.5",
-            },
-        ),
-    )
-
-    assert payload["workspaceContext"] == {
-        "agent": "guard-cli",
-        "codebase": "hashgraph-online/hol-points-portal",
-        "folderPath": local_supply_chain_module._redacted_workspace_folder_path(workspace_dir),
-        "lockfilePaths": ["pnpm-lock.yaml"],
-        "machine": "macbook-pro",
-        "manifestPaths": ["package.json"],
-        "packageManager": "npm",
-        "workspaceName": "workspace",
-    }
-
-
-def test_workspace_context_redacts_path_and_handles_hostname_failure(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    def _raise_os_error() -> str:
-        raise OSError("hostname unavailable")
-
-    monkeypatch.setattr(local_supply_chain_module.socket, "gethostname", _raise_os_error)
-
-    payload = local_supply_chain_module._build_workspace_context_payload(
-        Path("/Users/alice/projects/app"),
-        ("package.json",),
-        ("package-lock.json",),
-    )
-
-    assert payload["codebase"] == "app"
-    assert payload["folderPath"] == "~/projects/app"
-    assert payload["machine"] is None
-    assert local_supply_chain_module._redacted_workspace_folder_path(Path("/workspace/app")) == "…/workspace/app"
-    assert (
-        local_supply_chain_module._codebase_label_from_remote(
-            "git@gitlab.com:team/backend/service.git",
-        )
-        == "team/backend/service"
-    )
 
 
 def test_run_cloud_workspace_audit_falls_back_after_page_limit(monkeypatch: pytest.MonkeyPatch) -> None:
