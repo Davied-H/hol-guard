@@ -277,7 +277,10 @@ def _exercise_mode_invariants(
                 and "decision" not in response
                 and "continue" not in response
                 and "stopReason" not in response
-                and all(response.get(key) == baseline.get(key) for key in ("decision", "policy_action", "reason_code")),
+                and all(
+                    response.get(key) == baseline.get(key)
+                    for key in ("decision", "policy_action", "reason_code", "hookSpecificOutput")
+                ),
                 {"mode": mode, "response": response, "baseline": baseline},
             )
             mode_invariants[mode] = {
