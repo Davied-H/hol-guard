@@ -76,16 +76,56 @@ fn auth_window(timeout: Duration) -> Duration {
         .min(timeout)
 }
 
+/// Read the server proof, bounding the whole read (not each read call) by `deadline`.
+///
+/// A socket timeout restarts on every read, so a peer that drips the proof a few
+/// bytes at a time could otherwise hold the handshake open past its window.
+fn read_proof_within(
+    stream: &mut dyn crate::ResidentStream,
+    output: &mut [u8],
+    deadline: std::time::Instant,
+) -> Result<(), ResidentClientError> {
+    let mut filled = 0;
+    while filled < output.len() {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        if remaining.is_zero() {
+            return Err(ResidentClientError::fatal(
+                "native_client_frame_read_failed".to_owned(),
+            ));
+        }
+        stream
+            .set_resident_read_timeout(Some(remaining))
+            .map_err(|_| "native_client_auth_timeout_failed".to_owned())?;
+        match stream.read(&mut output[filled..]) {
+            Ok(0) => {
+                return Err(ResidentClientError::fatal(
+                    "native_client_frame_read_failed".to_owned(),
+                ))
+            }
+            Ok(read) => filled += read,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(_) => {
+                return Err(ResidentClientError::fatal(
+                    "native_client_frame_read_failed".to_owned(),
+                ))
+            }
+        }
+    }
+    Ok(())
+}
+
 fn authenticate(
     stream: &mut dyn crate::ResidentStream,
     token: &[u8],
     timeout: Duration,
 ) -> Result<[u8; AUTH_NONCE_BYTES], ResidentClientError> {
+    let started = std::time::Instant::now();
+    let window = auth_window(timeout);
     stream
-        .set_resident_read_timeout(Some(auth_window(timeout)))
+        .set_resident_read_timeout(Some(window))
         .map_err(|_| "native_client_auth_timeout_failed".to_owned())?;
     stream
-        .set_resident_write_timeout(Some(auth_window(timeout)))
+        .set_resident_write_timeout(Some(window))
         .map_err(|_| "native_client_auth_timeout_failed".to_owned())?;
     let _ = stream.configure_low_latency();
     let mut nonce = [0u8; AUTH_NONCE_BYTES];
@@ -100,9 +140,11 @@ fn authenticate(
     // A server-proof read happens after the client has sent its nonce.  Even
     // an EOF that looks like a transport teardown at this phase is not safe
     // to replay: the peer has not completed authentication.
-    read_exact(stream, &mut server_proof).map_err(|error| ResidentClientError {
-        code: error.code,
-        retryable_teardown: false,
+    read_proof_within(stream, &mut server_proof, started + window).map_err(|error| {
+        ResidentClientError {
+            code: error.code,
+            retryable_teardown: false,
+        }
     })?;
     let expected = hmac_sha256(token, SERVER_PROOF_LABEL, &nonce);
     if !constant_time_eq(&server_proof, &expected) {
