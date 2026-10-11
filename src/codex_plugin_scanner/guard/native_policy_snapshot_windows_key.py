@@ -6,6 +6,7 @@ import hmac
 import os
 import secrets
 import stat
+import time
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
@@ -28,6 +29,9 @@ from .native_policy_snapshot_windows_support import (
     _runtime_state_directory,
     _windows_owner_sid,
 )
+
+_PARTIAL_KEY_RETRIES = 20
+_PARTIAL_KEY_RETRY_SECONDS = 0.1
 
 
 def _windows_read_key(path: Path, expected: bytes) -> None:
@@ -145,7 +149,19 @@ def provision_native_policy_verifier_key(
         if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
             raise NativePolicySnapshotError("native_policy_verifier_key_invalid")
         if metadata.st_size != _VERIFIER_KEY_BYTES:
-            raise NativePolicySnapshotError("native_policy_verifier_key_invalid")
+            # A provisioner on a filesystem without hard links creates the final
+            # path before writing it. Give an in-flight writer a short bounded
+            # window to finish before treating the file as invalid.
+            for _ in range(_PARTIAL_KEY_RETRIES):
+                time.sleep(_PARTIAL_KEY_RETRY_SECONDS)
+                try:
+                    metadata = path.lstat()
+                except OSError as error:
+                    raise NativePolicySnapshotError("native_policy_verifier_key_stat_failed") from error
+                if metadata.st_size == _VERIFIER_KEY_BYTES:
+                    break
+            else:
+                raise NativePolicySnapshotError("native_policy_verifier_key_invalid")
         if os.name != "nt" and (metadata.st_uid != os.geteuid() or stat.S_IMODE(metadata.st_mode) & 0o077):
             raise NativePolicySnapshotError("native_policy_verifier_key_not_private")
         flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
@@ -189,6 +205,8 @@ def provision_native_policy_verifier_key(
         except OSError:
             # The state directory does not support hard links. Fall back to an
             # exclusive create of the final path, which never replaces a key.
+            # A concurrent provisioner may briefly see it partially written;
+            # validation above waits a bounded time for the writer to finish.
             pass
     finally:
         with suppress(OSError):

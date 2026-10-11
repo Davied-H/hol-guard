@@ -70,3 +70,33 @@ def test_filesystem_without_hard_links_falls_back_to_exclusive_create(
     assert key_path.read_bytes() == derive_native_policy_verifier_key(master)
     assert [entry.name for entry in key_path.parent.iterdir() if entry.name.endswith(".tmp")] == []
     assert provision_native_policy_verifier_key(guard_home, master) == key_path
+
+
+def test_provisioner_waits_for_an_in_flight_writer_without_hard_links(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    guard_home = tmp_path / "guard-home"
+    guard_home.mkdir(mode=0o700)
+    master = b"p" * 32
+    expected = derive_native_policy_verifier_key(master)
+    key_path = provision_native_policy_verifier_key(guard_home, master)
+    key_path.write_bytes(b"")
+    key_path.chmod(0o600)
+
+    def finish_write(_seconds: float) -> None:
+        key_path.write_bytes(expected)
+        key_path.chmod(0o600)
+
+    monkeypatch.setattr("codex_plugin_scanner.guard.native_policy_snapshot_windows_key.time.sleep", finish_write)
+    assert provision_native_policy_verifier_key(guard_home, master) == key_path
+
+
+def test_a_permanently_truncated_key_still_fails_closed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    guard_home = tmp_path / "guard-home"
+    guard_home.mkdir(mode=0o700)
+    key_path = provision_native_policy_verifier_key(guard_home, b"q" * 32)
+    key_path.write_bytes(b"short")
+    key_path.chmod(0o600)
+    monkeypatch.setattr("codex_plugin_scanner.guard.native_policy_snapshot_windows_key.time.sleep", lambda _s: None)
+    with pytest.raises(Exception, match="native_policy_verifier_key_invalid"):
+        provision_native_policy_verifier_key(guard_home, b"q" * 32)
