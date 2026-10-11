@@ -105,6 +105,8 @@ _GUARD_DAEMON_START_PROGRESS_MAX_BYTES = 4096
 _GUARD_DAEMON_WAKE_RESERVATION_MAX_BYTES = 4096
 _GUARD_DAEMON_RECOVERY_RESERVATION_MAX_BYTES = 4096
 _GUARD_DAEMON_RECOVERY_WORKER_TIMEOUT_SECONDS = 30.0
+_START_CLASSIFICATION_RESERVE_SECONDS = 3.0
+_START_CLASSIFICATION_RESERVE_FRACTION = 0.25
 _GUARD_DAEMON_PROCESS_QUERY_TIMEOUT_SECONDS = 5.0
 _GUARD_DAEMON_PROCESS_QUERY_OUTPUT_LIMIT_BYTES = 1024 * 1024
 _GUARD_DAEMON_PROCESS_QUERY_MONITOR_INTERVAL_SECONDS = 0.01
@@ -731,12 +733,11 @@ def _ensure_guard_daemon_body(
                     port=candidate_port,
                 )
                 _release_guard_daemon_launch_gate(process)
-                remaining_start_time = max(0.0, start_deadline - time.monotonic())
-                url = _wait_for_started_guard_daemon_url(
+                url = _wait_for_spawned_guard_daemon_url(
                     guard_home,
-                    timeout=remaining_start_time,
                     process=process,
                     executable=executable,
+                    start_deadline=start_deadline,
                 )
                 if url is not None:
                     if not _clear_spawned_guard_daemon_pending_launch(
@@ -2852,6 +2853,36 @@ def _retire_guard_daemon_pid(
     except OSError:
         return _guard_daemon_pid_is_proven_dead(pid)
     return wait_for_death()
+
+
+def _wait_for_spawned_guard_daemon_url(
+    guard_home: Path,
+    *,
+    process: subprocess.Popen[bytes],
+    executable: Path | None,
+    start_deadline: float,
+) -> str | None:
+    """Wait for a spawned daemon while keeping time to classify it afterwards.
+
+    Classification queries the spawned process tree under the same lifecycle
+    deadline. When the wait spends the whole budget those queries time out, and
+    the error path terminates a child that was still starting normally, so a
+    slow host never completes a start.
+    """
+
+    remaining = max(0.0, start_deadline - time.monotonic())
+    reserve = min(_START_CLASSIFICATION_RESERVE_SECONDS, remaining * _START_CLASSIFICATION_RESERVE_FRACTION)
+    try:
+        return _wait_for_started_guard_daemon_url(
+            guard_home,
+            timeout=max(0.0, remaining - reserve),
+            process=process,
+            executable=executable,
+        )
+    except TimeoutError:
+        # An expired poll is not evidence that the child is stuck; let the
+        # classifier decide whether it is dead, blocked, or still starting.
+        return None
 
 
 def _wait_for_started_guard_daemon_url(
