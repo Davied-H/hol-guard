@@ -464,9 +464,11 @@
       {
         "id": "embedded-hook-templates",
         "category": "generated_asset",
-        "reason": "Python string templates that emit TypeScript/JS/shell harness hook assets at install time; generated artifacts, not Python executed on the request path.",
+        "reason": "Python string templates that emit TypeScript/JS/shell harness hook assets at install time; generated artifacts, not Python executed on the request path. The current Pi extension emitters (pi_extension_source*.py: header, body, tail, shared-v1 and runtime variants, rendered by managed_extension_source for install, update and drift comparison) and pi_extension_runtime_ownership.py (which only resolves the Guard CLI command and recovery arguments embedded in that generated TypeScript) are the same kind of module as the previous-extension emitters already listed here; their only importers are the Pi adapter, its support shim and the update command (extension install, drift check and update), plus the emitters themselves.",
         "path": [
           "src/codex_plugin_scanner/guard/adapters/pi_extension_*_source*.py",
+          "src/codex_plugin_scanner/guard/adapters/pi_extension_source*.py",
+          "src/codex_plugin_scanner/guard/adapters/pi_extension_runtime_ownership.py",
           "src/codex_plugin_scanner/guard/adapters/cursor_hook_script_template_*.py",
           "src/codex_plugin_scanner/guard/adapters/opencode_*template.py",
           "src/codex_plugin_scanner/guard/adapters/grok_hook_*_template.py"
@@ -478,6 +480,15 @@
         "reason": "Cloud connect, OAuth refresh/DPoP, receipt, runtime-session, supply-chain-bundle and policy-bundle sync transport (runtime/runner.py). Every public entry point (sync_receipts, sync_runtime_session, sync_supply_chain_bundle, sync_local_guard_cloud_proof, prepare_guard_cloud_connect_authorization, repair_guard_cloud_connect_storage, the cloud-review and command-queue workers and the daemon's cloud policy-bundle and managed-controls delivery handlers that import its urlopen/auth/bundle helpers) runs from `guard connect`/`guard sync`, the cloud-review sync worker or the command-queue loop, never inside hook admission, decision or enforcement. The Rust runtime has no HTTP client, so the network, token refresh and retry loop stay in Python by design; the policy computation inside it (payload shaping, scrubbing, cursor/ack arithmetic, verdict digests, bundle verification) already runs in the resident through runner_native_sync/runner_native_authority. The only request-adjacent caller is the Hermes launch credential lookup (guard_run_launch._resolve_hermes_guard_access_token), which reads the cached token and, when it is absent or near expiry, runs the same OAuth refresh HTTP request as `guard sync` before the harness starts. That refresh is network transport the Rust runtime cannot perform; the lookup is best-effort, runs once at the execution boundary after the authority verdict, and never decides admission. The run-side lookup wrapper stays in scope.",
         "path": [
           "src/codex_plugin_scanner/guard/runtime/runner.py"
+        ]
+      },
+      {
+        "id": "cloud-memory-decision-outbox",
+        "category": "async_control_plane",
+        "reason": "Producer of the guard.memory-decision.v1 cloud outbox event that feeds Guard Cloud's Suggested Memory candidates. memory_decision_outbox.py and memory_decision_event.py are reached only through approvals._enqueue_memory_decision_for_resolution, the last step of apply_approval_resolution (daemon approval POST, CLI approval command, bulk allow-once), after the human decision is already recorded; every failure is swallowed. They are in the static closure only because approvals.py imports them eagerly, and hook modules import approvals; no hook admission, decision or run path calls them. They write a cloud_events row and a memory-decision-sourced local receipt for the async sync worker; nothing in enforcement reads either as an input to a verdict.",
+        "path": [
+          "src/codex_plugin_scanner/guard/memory_decision_outbox.py",
+          "src/codex_plugin_scanner/guard/memory_decision_event.py"
         ]
       },
       {
@@ -731,15 +742,6 @@
           "src/codex_plugin_scanner/guard/adapters/paseo_config.py",
           "src/codex_plugin_scanner/guard/adapters/paseo_install.py",
           "src/codex_plugin_scanner/guard/adapters/pi.py",
-          "src/codex_plugin_scanner/guard/adapters/pi_extension_runtime_ownership.py",
-          "src/codex_plugin_scanner/guard/adapters/pi_extension_source.py",
-          "src/codex_plugin_scanner/guard/adapters/pi_extension_source_body.py",
-          "src/codex_plugin_scanner/guard/adapters/pi_extension_source_body_shared_v1.py",
-          "src/codex_plugin_scanner/guard/adapters/pi_extension_source_header.py",
-          "src/codex_plugin_scanner/guard/adapters/pi_extension_source_header_shared_v1.py",
-          "src/codex_plugin_scanner/guard/adapters/pi_extension_source_runtime.py",
-          "src/codex_plugin_scanner/guard/adapters/pi_extension_source_tail.py",
-          "src/codex_plugin_scanner/guard/adapters/pi_extension_source_tail_shared_v1.py",
           "src/codex_plugin_scanner/guard/adapters/pi_support.py",
           "src/codex_plugin_scanner/guard/adapters/zcode.py",
           "src/codex_plugin_scanner/json_comment_stripping.py"
@@ -757,6 +759,8 @@
     "generated": {
       "path": [
         "src/codex_plugin_scanner/guard/adapters/pi_extension_*_source*.py",
+        "src/codex_plugin_scanner/guard/adapters/pi_extension_source*.py",
+        "src/codex_plugin_scanner/guard/adapters/pi_extension_runtime_ownership.py",
         "src/codex_plugin_scanner/guard/adapters/cursor_hook_script_template_*.py",
         "src/codex_plugin_scanner/guard/adapters/opencode_*template.py",
         "src/codex_plugin_scanner/guard/adapters/grok_hook_*_template.py"
