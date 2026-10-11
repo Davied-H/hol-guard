@@ -58,13 +58,11 @@ jobs:
           for i in 1 2; do
             uv run --no-sync pytest "$PI_NODE" -q --tb=line -p no:cacheprovider 2>&1 | grep -E 'p95_ms|passed|failed' || true
           done
-          before=$(ps -eo comm,cputimes | awk '$1 ~ /hol-guard-runt/ {s+=$2} END {print s+0}')
-          /usr/bin/time -f 'PYTEST_CPU user=%U sys=%S wall=%e' .venv/bin/py-spy record --rate 250 --threads --format speedscope -o profiles/pi480.speedscope.json -- \
-            .venv/bin/python -m pytest "$PI_NODE" -q --tb=line -p no:cacheprovider 2>&1 | grep -E 'p95_ms|passed|failed|PYTEST_CPU|py-spy' || true
-          ps -eo pid,ppid,comm,cputimes,etimes | awk '$3 ~ /hol-guard-runt/' || true
-          after=$(ps -eo comm,cputimes | awk '$1 ~ /hol-guard-runt/ {s+=$2} END {print s+0}')
-          echo "RESIDENT_CPU_SECONDS_LIVE before=$before after=$after"
-          /usr/bin/time -f 'PYTEST_CPU_NOPROFILE user=%U sys=%S wall=%e' .venv/bin/python -m pytest "$PI_NODE" -q --tb=line -p no:cacheprovider 2>&1 | grep -E 'p95_ms|PYTEST_CPU' || true
+          for mode in gil all; do
+            extra=(); [ "$mode" = gil ] && extra=(--gil)
+            .venv/bin/py-spy record --nonblocking --rate 100 --threads "${extra[@]}" --format speedscope -o "profiles/pi480-$mode.speedscope.json" -- \
+              .venv/bin/python -m pytest "$PI_NODE" -q --tb=line -p no:cacheprovider 2>&1 | grep -E 'p95_ms|passed|failed|py-spy' || true
+          done
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: pi480-profile-${{ matrix.n }}
