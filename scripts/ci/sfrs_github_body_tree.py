@@ -190,5 +190,3 @@ def _trust_factory(root: Path):
 
 def _env_base(root: Path) -> dict[str, str]:
     return {"PATH": str(root / "bin"), "TMPDIR": str(root / "tmp"), "HOME": str(root / "home")}
-
-

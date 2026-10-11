@@ -15,6 +15,8 @@ replay host mirrors. This script depends on the Python implementation and is
 retired with it.
 """
 
+# ruff: noqa: E501, B007, B023 - recorded case tables; recorder lambdas run synchronously inside the loop.
+
 from __future__ import annotations
 
 import gzip
@@ -89,7 +91,7 @@ TREE = {
 }
 
 AUDIT_LOOP = (
-    'for commit in abc1234 DEF5678; do git merge-base --is-ancestor $commit HEAD 2>/dev/null'
+    "for commit in abc1234 DEF5678; do git merge-base --is-ancestor $commit HEAD 2>/dev/null"
     ' && echo "$commit YES" || echo "$commit NO"; done'
 )
 AUDIT_TEXTS = [
@@ -123,28 +125,32 @@ AUDIT_TEXTS = [
     f'cd {{P}} && {AUDIT_LOOP}; echo "HEAD: $(git log -1 --oneline)"; if [ -d .x.lock.d/pid ]; then echo "LOCK: $(cat .x.lock.d/pid)"; else echo none; fi',
     f'cd {{P}} && {AUDIT_LOOP}; echo "HEAD: $(git log -1 --oneline)"; if [ -f .x.lock.d/pid ]; then echo "LOCK: $(cat .y.lock.d/pid)"; else echo none; fi',
     f'cd {{P}} && {AUDIT_LOOP}; echo "HEAD: $(git log -1 --oneline)"; if [ -f .x.lock.d/pid ]; then echo "LOCK: $(cat .x.lock.d/pid)"; else echo none; fi; echo more',
-    f"cd {{P}} && git merge-base --is-ancestor abc1234 HEAD",
-    "for commit in abc1234; do git merge-base --is-ancestor $commit HEAD 2>/dev/null && echo \"$commit YES\" || echo \"$commit NO\"; done",
+    "cd {P} && git merge-base --is-ancestor abc1234 HEAD",
+    'for commit in abc1234; do git merge-base --is-ancestor $commit HEAD 2>/dev/null && echo "$commit YES" || echo "$commit NO"; done',
     "cd {P}",
     "",
     "   ",
     "cd {P} && echo é",
-    "cd {P} && for commit in ÀÀÀÀÀÀÀ; do git merge-base --is-ancestor $commit HEAD 2>/dev/null && echo \"$commit YES\" || echo \"$commit NO\"; done",
-    "cd {P} && for ref in abc1234; do git merge-base --is-ancestor $ref HEAD 2>/dev/null && echo \"$ref YES\" || echo \"$ref NO\"; done; echo x; echo y",
-    "cd {P} && for x in abc1234; do git merge-base --is-ancestor $x HEAD 2>/dev/null && echo \"$x YES\" || echo \"$x NO\"; done; echo x; echo y",
-    "cd {P} && for sha in abc123; do git merge-base --is-ancestor $sha HEAD 2>/dev/null && echo \"$sha YES\" || echo \"$sha NO\"; done; echo x; echo y",
-    "cd {P} && for sha in " + " ".join(f"abc12{i:02d}" for i in range(33)) + "; do git merge-base --is-ancestor $sha HEAD 2>/dev/null && echo \"$sha YES\" || echo \"$sha NO\"; done; echo x; echo y",
-    "cd {P} && for sha in " + " ".join(f"abc12{i:02d}" for i in range(32)) + "; do git merge-base --is-ancestor $sha HEAD 2>/dev/null && echo \"$sha YES\" || echo \"$sha NO\"; done; echo x; echo y",
-    "cd {P} && for sha in abc1234 -c; do git merge-base --is-ancestor $sha HEAD 2>/dev/null && echo \"$sha YES\" || echo \"$sha NO\"; done; echo x; echo y",
-    "cd {P} && for sha in abc1234; do git -c core.pager=evil merge-base --is-ancestor $sha HEAD 2>/dev/null && echo \"$sha YES\" || echo \"$sha NO\"; done; echo x; echo y",
-    "cd {P} && for sha in abc1234; do git merge-base --is-ancestor $sha HEAD && echo \"$sha YES\" || echo \"$sha NO\"; done; echo x; echo y",
-    "cd {P} && for sha in abc1234; do git merge-base --is-ancestor $sha origin/main 2>/dev/null && echo \"$sha YES\" || echo \"$sha NO\"; done; echo x; echo y",
-    "cd {P} && for sha in abc1234; do git merge-base --is-ancestor $sha HEAD 2>/dev/null && echo \"$sha YES\" || echo \"$sha NO\" | sh; done; echo x; echo y",
-    "cd {P} && for sha in abc1234; do git merge-base --is-ancestor $sha HEAD 2>/dev/null && echo \"$sha MAYBE\" || echo \"$sha NO\"; done; echo x; echo y",
-    "cd {P}/src && for sha in abc1234; do git merge-base --is-ancestor $sha HEAD 2>/dev/null && echo \"$sha YES\" || echo \"$sha NO\"; done; echo x; echo y",
-    "cd {ROOT}/elsewhere && for sha in abc1234; do git merge-base --is-ancestor $sha HEAD 2>/dev/null && echo \"$sha YES\" || echo \"$sha NO\"; done; echo x; echo y",
-    "cd ~/proj && for sha in abc1234; do git merge-base --is-ancestor $sha HEAD 2>/dev/null && echo \"$sha YES\" || echo \"$sha NO\"; done; echo x; echo y",
-    "cd {P}; for sha in abc1234; do git merge-base --is-ancestor $sha HEAD 2>/dev/null && echo \"$sha YES\" || echo \"$sha NO\"; done; echo x; echo y",
+    'cd {P} && for commit in ÀÀÀÀÀÀÀ; do git merge-base --is-ancestor $commit HEAD 2>/dev/null && echo "$commit YES" || echo "$commit NO"; done',
+    'cd {P} && for ref in abc1234; do git merge-base --is-ancestor $ref HEAD 2>/dev/null && echo "$ref YES" || echo "$ref NO"; done; echo x; echo y',
+    'cd {P} && for x in abc1234; do git merge-base --is-ancestor $x HEAD 2>/dev/null && echo "$x YES" || echo "$x NO"; done; echo x; echo y',
+    'cd {P} && for sha in abc123; do git merge-base --is-ancestor $sha HEAD 2>/dev/null && echo "$sha YES" || echo "$sha NO"; done; echo x; echo y',
+    "cd {P} && for sha in "
+    + " ".join(f"abc12{i:02d}" for i in range(33))
+    + '; do git merge-base --is-ancestor $sha HEAD 2>/dev/null && echo "$sha YES" || echo "$sha NO"; done; echo x; echo y',
+    "cd {P} && for sha in "
+    + " ".join(f"abc12{i:02d}" for i in range(32))
+    + '; do git merge-base --is-ancestor $sha HEAD 2>/dev/null && echo "$sha YES" || echo "$sha NO"; done; echo x; echo y',
+    'cd {P} && for sha in abc1234 -c; do git merge-base --is-ancestor $sha HEAD 2>/dev/null && echo "$sha YES" || echo "$sha NO"; done; echo x; echo y',
+    'cd {P} && for sha in abc1234; do git -c core.pager=evil merge-base --is-ancestor $sha HEAD 2>/dev/null && echo "$sha YES" || echo "$sha NO"; done; echo x; echo y',
+    'cd {P} && for sha in abc1234; do git merge-base --is-ancestor $sha HEAD && echo "$sha YES" || echo "$sha NO"; done; echo x; echo y',
+    'cd {P} && for sha in abc1234; do git merge-base --is-ancestor $sha origin/main 2>/dev/null && echo "$sha YES" || echo "$sha NO"; done; echo x; echo y',
+    'cd {P} && for sha in abc1234; do git merge-base --is-ancestor $sha HEAD 2>/dev/null && echo "$sha YES" || echo "$sha NO" | sh; done; echo x; echo y',
+    'cd {P} && for sha in abc1234; do git merge-base --is-ancestor $sha HEAD 2>/dev/null && echo "$sha MAYBE" || echo "$sha NO"; done; echo x; echo y',
+    'cd {P}/src && for sha in abc1234; do git merge-base --is-ancestor $sha HEAD 2>/dev/null && echo "$sha YES" || echo "$sha NO"; done; echo x; echo y',
+    'cd {ROOT}/elsewhere && for sha in abc1234; do git merge-base --is-ancestor $sha HEAD 2>/dev/null && echo "$sha YES" || echo "$sha NO"; done; echo x; echo y',
+    'cd ~/proj && for sha in abc1234; do git merge-base --is-ancestor $sha HEAD 2>/dev/null && echo "$sha YES" || echo "$sha NO"; done; echo x; echo y',
+    'cd {P}; for sha in abc1234; do git merge-base --is-ancestor $sha HEAD 2>/dev/null && echo "$sha YES" || echo "$sha NO"; done; echo x; echo y',
 ]
 AUDIT_CWDS = [
     "{P}",
@@ -292,10 +298,10 @@ APPROVAL_TEXTS = [
     "é=1 hol-guard approvals approve abc",
     "X-Y=1 hol-guard approvals approve abc",
     "'' hol-guard approvals approve abc",
-    "\"hol-guard\" approvals approve abc",
+    '"hol-guard" approvals approve abc',
     "'hol-guard' 'approvals' 'approve' abc",
     "hol-guard approvals 'approve' abc",
-    "hol-guard approvals \"app\"rove abc",
+    'hol-guard approvals "app"rove abc',
     "hol-guard approvals app\\rove abc",
     "hol-guard\\ approvals approve abc",
     "echo hi; hol-guard approvals approve abc",
@@ -312,7 +318,7 @@ APPROVAL_TEXTS = [
     "echo hi # hol-guard approvals approve abc",
     "echo hi #; hol-guard approvals approve abc",
     "hol-guard approvals approve abc #",
-    "echo \"unterminated; hol-guard approvals approve abc",
+    'echo "unterminated; hol-guard approvals approve abc',
     "echo 'unterminated; hol-guard approvals approve abc",
     "hol-guard approvals approve 'abc",
     "hol-guard approvals approve abc\\",
@@ -321,7 +327,7 @@ APPROVAL_TEXTS = [
     "time hol-guard approvals approve abc",
     "nohup hol-guard approvals approve abc",
     "bash -c 'hol-guard approvals approve abc'",
-    "sh -c \"hol-guard approvals approve abc\"",
+    'sh -c "hol-guard approvals approve abc"',
     "(hol-guard approvals approve abc)",
     "{ hol-guard approvals approve abc; }",
     "$(hol-guard approvals approve abc)",
@@ -388,7 +394,7 @@ APPROVAL_TEXTS = [
     "mise exec node@20 -- hol-guard approvals approve abc",
     "mise run hol-guard approvals approve abc",
     "nix develop --command hol-guard approvals approve abc",
-    "nix develop --command=\"hol-guard approvals approve abc\"",
+    'nix develop --command="hol-guard approvals approve abc"',
     "nix develop --command 'hol-guard approvals approve abc'",
     "nix develop --command",
     "nix develop --command='unterminated",
@@ -602,7 +608,14 @@ MOVE_TEXTS = [
 MOVE_CWDS = ["{P}", "{P}/src", "{ROOT}/home", "{ROOT}/elsewhere", "{P}/missing", None, "{P}/dirlink"]
 MOVE_HOMES = ["{ROOT}/home", None]
 
-PERL_PREFIXES = ["perl -ne ", "perl -n -e ", "/usr/bin/perl -ne ", "PERL -ne ", "./perl -ne ", "{ROOT}/home/bin/perl -ne "]
+PERL_PREFIXES = [
+    "perl -ne ",
+    "perl -n -e ",
+    "/usr/bin/perl -ne ",
+    "PERL -ne ",
+    "./perl -ne ",
+    "{ROOT}/home/bin/perl -ne ",
+]
 PERL_TEXTS = [
     "perl -ne 'print if /foo/' src/a.txt",
     "perl -ne 'print if /foo/i' src/a.txt",
@@ -704,7 +717,7 @@ PERL_TEXTS = [
     "perl",
     "perl -ne",
     "perl -ne 'print if /foo/",
-    "perl -ne \"print if /foo/\" src/a.txt",
+    'perl -ne "print if /foo/" src/a.txt',
     "perl -ne print\\ if\\ /foo/ src/a.txt",
     "PERL5OPT=-Mx perl -ne 'print if /foo/' src/a.txt",
     "env perl -ne 'print if /foo/' src/a.txt",
@@ -784,7 +797,11 @@ def _stand_ins(root: Path) -> list[Callable[[], None]]:
     """Replace the resident's Git trust answers with the replay host's rules."""
 
     git = root / "home" / "bin" / "git"
-    originals = (audit.trusted_git_binary_for_cwd, audit.git_log_has_execution_free_config, perl.git_binary_path_is_trusted)
+    originals = (
+        audit.trusted_git_binary_for_cwd,
+        audit.git_log_has_execution_free_config,
+        perl.git_binary_path_is_trusted,
+    )
 
     def trusted_for_cwd(cwd: Path) -> Path | None:
         return None if "untrusted" in str(cwd) else git
@@ -800,7 +817,9 @@ def _stand_ins(root: Path) -> list[Callable[[], None]]:
     perl.git_binary_path_is_trusted = binary_trusted
 
     def restore() -> None:
-        audit.trusted_git_binary_for_cwd, audit.git_log_has_execution_free_config, perl.git_binary_path_is_trusted = originals
+        audit.trusted_git_binary_for_cwd, audit.git_log_has_execution_free_config, perl.git_binary_path_is_trusted = (
+            originals
+        )
 
     return [restore]
 
@@ -845,10 +864,14 @@ def _cases(root: Path) -> list[dict[str, object]]:
     for text in FETCH_TEXTS:
         parts = _parts(text)
         segments = tokens._iter_shell_command_segments(parts)
-        add("git_fetch_operands_text", [text], [
-            None if (operands := origin.git_fetch_operands(tuple(segment))) is None else list(operands)
-            for segment in segments
-        ])
+        add(
+            "git_fetch_operands_text",
+            [text],
+            [
+                None if (operands := origin.git_fetch_operands(tuple(segment))) is None else list(operands)
+                for segment in segments
+            ],
+        )
         add(
             "command_is_origin_shaped_git_fetch",
             [text],
@@ -867,7 +890,11 @@ def _cases(root: Path) -> list[dict[str, object]]:
         add("approval_shell_segments", [parts], segments)
         for segment in segments:
             for depth in (0, 3, 4):
-                add("approval_segment", [segment, depth], approval._segment_is_guard_approval_mutation(segment, depth=depth))
+                add(
+                    "approval_segment",
+                    [segment, depth],
+                    approval._segment_is_guard_approval_mutation(segment, depth=depth),
+                )
             add("approval_first_executable_index", [segment], approval._first_executable_index(segment))
             add("approval_python_args", [segment], approval._python_module_args_mutate_approvals(segment))
             add("approval_guard_args", [segment], approval._guard_args_mutate_approvals(segment))
@@ -875,7 +902,11 @@ def _cases(root: Path) -> list[dict[str, object]]:
             for name in ("hatch", "mise", "nix", "pipx", "poetry", "uv", "uvx", "python", "other"):
                 add("approval_runner_tail", [name, segment], approval._runner_wrapper_tail(name, segment))
             add("approval_tail_after_subcommand", [segment, ["run"]], approval._tail_after_subcommand(segment, {"run"}))
-            add("approval_tail_after_subcommand", [segment, ["exec", "run"]], approval._tail_after_subcommand(segment, {"exec", "run"}))
+            add(
+                "approval_tail_after_subcommand",
+                [segment, ["exec", "run"]],
+                approval._tail_after_subcommand(segment, {"exec", "run"}),
+            )
             add("approval_tail_after_flag", [segment, "--command"], approval._tail_after_flag(segment, "--command"))
             for token in segment[:3]:
                 add("approval_looks_env_assignment", [token], approval._looks_env_assignment(token))
@@ -890,9 +921,39 @@ def _cases(root: Path) -> list[dict[str, object]]:
         add("approval_tail_after_subcommand", [argv, ["run"]], approval._tail_after_subcommand(argv, {"run"}))
         for name in ("hatch", "mise", "nix", "pipx", "poetry", "uv", "uvx", "other"):
             add("approval_runner_tail", [name, argv], approval._runner_wrapper_tail(name, argv))
-    for token in ("", "A", "A=", "=", "A=1", "A+=1", "+=", "++=1", "_=1", "1=1", "a-b=1", "é=1", "٣=1", "a1_=x", "A B=1", "A"):
+    for token in (
+        "",
+        "A",
+        "A=",
+        "=",
+        "A=1",
+        "A+=1",
+        "+=",
+        "++=1",
+        "_=1",
+        "1=1",
+        "a-b=1",
+        "é=1",
+        "٣=1",
+        "a1_=x",
+        "A B=1",
+        "A",
+    ):
         add("approval_looks_env_assignment", [token], approval._looks_env_assignment(token))
-    for name in ("python", "py", "python3", "pythonw", "py3", "py3.11", "pyx", "pypy", "", "ipython", "pytest", "Python"):
+    for name in (
+        "python",
+        "py",
+        "python3",
+        "pythonw",
+        "py3",
+        "py3.11",
+        "pyx",
+        "pypy",
+        "",
+        "ipython",
+        "pytest",
+        "Python",
+    ):
         add("approval_is_python", [name], approval._is_python_interpreter(name))
     for env in APPROVAL_ENVS:
         add("approval_from_agent", [env], approval.approval_resolution_invoked_from_agent(env))
@@ -955,7 +1016,15 @@ def _cases(root: Path) -> list[dict[str, object]]:
                     [text, str(proj), str(home), {"PATH": path}],
                     perl._looks_like_read_only_perl_filter(text, cwd=proj, home_dir=home),
                 )
-            for command in ("perl", "./bin/perl", "bin/perl", "{ROOT}/home/bin/perl", "{ROOT}/missing/perl", "perl/", "./perl"):
+            for command in (
+                "perl",
+                "./bin/perl",
+                "bin/perl",
+                "{ROOT}/home/bin/perl",
+                "{ROOT}/missing/perl",
+                "perl/",
+                "./perl",
+            ):
                 for cwd_template in ("{P}", "{ROOT}/home/untrusted/proj", "{ROOT}/home"):
                     command_text = _bind(root, command)
                     cwd = _bind(root, cwd_template)

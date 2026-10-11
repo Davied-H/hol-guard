@@ -128,7 +128,12 @@ CONFIGS: list[tuple[str, str, str, dict[str, object]]] = [
     ("py_ini_int", "pyproject.toml", "[tool.pytest]\nini_options = 1\n", {}),
     ("py_ini_addopts_int", "pyproject.toml", "[tool.pytest.ini_options]\naddopts = 1\n", {}),
     ("py_ini_addopts_listint", "pyproject.toml", "[tool.pytest.ini_options]\naddopts = ['a', 2]\n", {}),
-    ("py_ini_scalars", "pyproject.toml", "[tool.pytest.ini_options]\na = 1\nb = 1.5\nc = true\nd = 'x'\ne = 1979-05-27\nf = 1e20\ng = 1e-7\n", {}),
+    (
+        "py_ini_scalars",
+        "pyproject.toml",
+        "[tool.pytest.ini_options]\na = 1\nb = 1.5\nc = true\nd = 'x'\ne = 1979-05-27\nf = 1e20\ng = 1e-7\n",
+        {},
+    ),
     ("py_ini_list", "pyproject.toml", "[tool.pytest.ini_options]\nmarkers = ['a', 'b']\npythonpath = ['x']\n", {}),
     ("py_ini_nested_list", "pyproject.toml", "[tool.pytest.ini_options]\nmarkers = [1, 'a', [2.5, true]]\n", {}),
     ("py_ini_log", "pyproject.toml", "[tool.pytest.ini_options]\nlog_file = ' x '\n", {}),
@@ -137,7 +142,7 @@ CONFIGS: list[tuple[str, str, str, dict[str, object]]] = [
     ("py_ini_empty_list_pythonpath", "pyproject.toml", "[tool.pytest.ini_options]\npythonpath = []\n", {}),
     ("py_ini_ws_required", "pyproject.toml", "[tool.pytest.ini_options]\nrequired_plugins = '  '\n", {}),
     ("py_ini_empty_table", "pyproject.toml", "[tool.pytest.ini_options]\n", {}),
-    ("py_ini_quote_open", "pyproject.toml", "[tool.pytest.ini_options]\naddopts = \"'-q\"\n", {}),
+    ("py_ini_quote_open", "pyproject.toml", '[tool.pytest.ini_options]\naddopts = "\'-q"\n', {}),
     ("py_ini_comment", "pyproject.toml", "[tool.pytest.ini_options]\naddopts = '-q # hi'\n", {}),
     ("py_syntax", "pyproject.toml", "[tool\n", {}),
     ("py_dup", "pyproject.toml", "[tool.pytest]\na = 1\n[tool.pytest]\nb = 2\n", {}),
@@ -255,7 +260,7 @@ TEXTS = [
     "python -c 'eval(\"1\")'",
     "python -c 'print(\"pytest\")'",
     "python -c 'import pytest; print(pytest.__version__)'",
-    "python -c 'print(\"p\" \"ytest\")'",
+    'python -c \'print("p" "ytest")\'',
     "python -c 'print(\"\\x70ytest\")'",
     "python -c 'import os\nos.popen(\"py.test\")'",
     "python script.py",
@@ -264,14 +269,14 @@ TEXTS = [
     "python",
     "python -u",
     "bash -c 'pytest'",
-    "sh -c \"pytest -q\"",
+    'sh -c "pytest -q"',
     "bash -c 'ls'",
     "bash -lc 'pytest'",
     "zsh -c 'echo $(pytest)'",
     "bash -c 'bash -c pytest'",
     "echo $(pytest)",
     "echo `pytest`",
-    "echo \"$(pytest -q)\"",
+    'echo "$(pytest -q)"',
     "echo '$(pytest)'",
     "eval pytest",
     "eval 'ls; pytest'",
@@ -569,7 +574,7 @@ TEXTS = [
     "cat <<EOF\nx\nEOF\n\n  \n",
     "cat <<'E O F'\nx\nE O F",
     "tee <<EOF\nx\nEOF",
-    "cat <<\"EOF\"\nx\nEOF",
+    'cat <<"EOF"\nx\nEOF',
     "cat <<EOF; ls\nx\nEOF",
     "cat <<EOF\n$(pytest)\nEOF",
     "cat '<<EOF'",
@@ -579,58 +584,276 @@ TEXTS = [
 ]
 
 TOKENS = [
-    "a*", "a?", "a[b]", "'a*'", '"a*"', "a\\*", "a'*'", "'a'*", "a\\", "'a", '"a', "*", "?", "[", "", "plain",
-    "\u00e9*", "a\\?b", "'x\"*\"'", '"x\'*\'"', "\\*\\?", "[a-z]", "a]", "$(*)", "'' *", "a\\\\*", "'\\*'", '"\\*"',
+    "a*",
+    "a?",
+    "a[b]",
+    "'a*'",
+    '"a*"',
+    "a\\*",
+    "a'*'",
+    "'a'*",
+    "a\\",
+    "'a",
+    '"a',
+    "*",
+    "?",
+    "[",
+    "",
+    "plain",
+    "\u00e9*",
+    "a\\?b",
+    "'x\"*\"'",
+    "\"x'*'\"",
+    "\\*\\?",
+    "[a-z]",
+    "a]",
+    "$(*)",
+    "'' *",
+    "a\\\\*",
+    "'\\*'",
+    '"\\*"',
 ]
 
 REDIRECTION_TOKENS = [
-    "|", "|&", ">", ">>", "2>", "2>&1", "1>", "0>", "&>", "&>>", ">&2", ">/dev/null", "2>/dev/null", "<", "<<", "<<<",
-    "3>", "12>", ">file", "2>file", ">&", "2>&", ">|", "x", "", "a>b", "2>a b", "2> x", "1>&2", "0>&1", "2>>x", "2>&-",
-    ">\u00e9", "<in", "<&3", "1<", "2>\t", "\u0662>", "0>&0", "|x", "||", "&", ";",
+    "|",
+    "|&",
+    ">",
+    ">>",
+    "2>",
+    "2>&1",
+    "1>",
+    "0>",
+    "&>",
+    "&>>",
+    ">&2",
+    ">/dev/null",
+    "2>/dev/null",
+    "<",
+    "<<",
+    "<<<",
+    "3>",
+    "12>",
+    ">file",
+    "2>file",
+    ">&",
+    "2>&",
+    ">|",
+    "x",
+    "",
+    "a>b",
+    "2>a b",
+    "2> x",
+    "1>&2",
+    "0>&1",
+    "2>>x",
+    "2>&-",
+    ">\u00e9",
+    "<in",
+    "<&3",
+    "1<",
+    "2>\t",
+    "\u0662>",
+    "0>&0",
+    "|x",
+    "||",
+    "&",
+    ";",
 ]
 
 ARG_LISTS = [
-    [], ["-q"], ["-m", "pytest"], ["-mpytest"], ["-m", "pytest.x"], ["-m"], ["-mruff", "check"], ["-m", "ruff", "check"],
-    ["-c", "x"], ["--command", "x"], ["--command=x"], ["-cx"], ["--"], ["--", "-m", "pytest"], ["-W", "e", "-m", "pytest"],
-    ["-Werror", "-m", "pytest"], ["-X", "dev", "-m", "pytest"], ["-Xdev", "-m", "pytest"], ["-W"], ["-W", "e"],
-    ["--check-hash-based-pycs", "always", "-m", "pytest"], ["-u", "-m", "pytest"], ["x.py"], ["-", "-m", "pytest"],
-    ["-m", "pytest", "-q"], ["-m", "pytest", ">", "out"], ["-m", "pytest", "2>&1"], ["-m", "pytest", "|", "tee"],
-    ["-m", "ruff", "format", "ruff_target.py"], ["-m", "ruff", "format"], ["-m", "ruff", "--config", "x", "format", "a"],
-    ["-m", "ruff", "--config=x", "format", "a"], ["-m", "ruff", "--cache-dir", "x"], ["-m", "ruff", "--add-noqa"],
-    ["-m", "ruff", "--add-noqa=1"], ["-m", "ruff", "--color", "x", "check"], ["-m", "mypy"], ["-m", "pytest", "--", "x"],
-    ["-m", "pytest", "-p", "x"], ["-m", "pytest", "-c", "x.ini"], ["-m", "pytest", "--basetemp=x"],
-    ["-m", "pytest", "--basetemp", "x"], ["-m", "pytest", "tests"], ["-m", "pytest", "-k", "x", "tests"],
-    ["-m", "pytest", "-qk", "x"], ["-m", "pytest", "--maxfail=1"], ["-m", "pytest", "--maxfail", "1"],
-    ["-m", "pytest", "--tb"], ["-m", "pytest", "-k"], ["-m", "pytest", "--debug=x"], ["-m", "pytest", "--junitxml"],
-    ["-m", "pytest", "--junitxml=x"], ["-m", "", "x"], ["-m", ".x"], ["-m", "pytest\u00e9"], ["-\u00e9"],
+    [],
+    ["-q"],
+    ["-m", "pytest"],
+    ["-mpytest"],
+    ["-m", "pytest.x"],
+    ["-m"],
+    ["-mruff", "check"],
+    ["-m", "ruff", "check"],
+    ["-c", "x"],
+    ["--command", "x"],
+    ["--command=x"],
+    ["-cx"],
+    ["--"],
+    ["--", "-m", "pytest"],
+    ["-W", "e", "-m", "pytest"],
+    ["-Werror", "-m", "pytest"],
+    ["-X", "dev", "-m", "pytest"],
+    ["-Xdev", "-m", "pytest"],
+    ["-W"],
+    ["-W", "e"],
+    ["--check-hash-based-pycs", "always", "-m", "pytest"],
+    ["-u", "-m", "pytest"],
+    ["x.py"],
+    ["-", "-m", "pytest"],
+    ["-m", "pytest", "-q"],
+    ["-m", "pytest", ">", "out"],
+    ["-m", "pytest", "2>&1"],
+    ["-m", "pytest", "|", "tee"],
+    ["-m", "ruff", "format", "ruff_target.py"],
+    ["-m", "ruff", "format"],
+    ["-m", "ruff", "--config", "x", "format", "a"],
+    ["-m", "ruff", "--config=x", "format", "a"],
+    ["-m", "ruff", "--cache-dir", "x"],
+    ["-m", "ruff", "--add-noqa"],
+    ["-m", "ruff", "--add-noqa=1"],
+    ["-m", "ruff", "--color", "x", "check"],
+    ["-m", "mypy"],
+    ["-m", "pytest", "--", "x"],
+    ["-m", "pytest", "-p", "x"],
+    ["-m", "pytest", "-c", "x.ini"],
+    ["-m", "pytest", "--basetemp=x"],
+    ["-m", "pytest", "--basetemp", "x"],
+    ["-m", "pytest", "tests"],
+    ["-m", "pytest", "-k", "x", "tests"],
+    ["-m", "pytest", "-qk", "x"],
+    ["-m", "pytest", "--maxfail=1"],
+    ["-m", "pytest", "--maxfail", "1"],
+    ["-m", "pytest", "--tb"],
+    ["-m", "pytest", "-k"],
+    ["-m", "pytest", "--debug=x"],
+    ["-m", "pytest", "--junitxml"],
+    ["-m", "pytest", "--junitxml=x"],
+    ["-m", "", "x"],
+    ["-m", ".x"],
+    ["-m", "pytest\u00e9"],
+    ["-\u00e9"],
 ]
 
 PYTEST_ARG_LISTS = [
-    [], ["-q"], ["tests"], ["-q", "tests", "pkg"], ["tests/test_a.py::t"], ["-k", "x"], ["-k", "x", "tests"], ["-m", "x", "t"],
-    ["--maxfail", "2", "tests"], ["--maxfail=2", "tests"], ["--tb", "short"], ["--tb=short", "x"], ["--"], ["--", "x"],
-    ["-p", "x"], ["-pxx"], ["-c", "x.ini"], ["-c"], ["-cx.ini"], ["-c=x.ini"], ["-c", "x.ini", "-c", "y.ini"],
-    ["--config-file", "x.ini"], ["--config-file=x.ini"], ["--config-file"], ["--config-file=", "tests"], ["-c", ""],
-    ["--rootdir=/x"], ["--rootdir", "x"], ["-o", "x=1"], ["--override-ini=x"], ["-v", "-s", "-x", "--quiet", "--verbose"],
-    ["--disable-warnings", "-q"], ["-qq"], ["../x"], ["tests/../x"], ["/x"], [""], ["::x"], ["pkg/sub"], ["pkg/sub/test_c.py"],
-    ["pkg/test_b.py", "tests/test_a.py"], ["pkg", "tests"], ["tests", "tests"], ["pkg", "pkg/sub"], ["pkg/sub", "pkg/test_b.py"],
-    ["nonexistent"], ["nonexistent/x.py"], ["pkgcfg"], ["pkgcfg/inner"], ["pkgcfg/inner/test_d.py"], ["pkgcfg2"],
-    ["dircfg"], ["dircfg2"], ["linkdir"], ["linkdir/test_b.py"], ["pkg/./sub"], ["./pkg"], ["pkg/"], ["pkg//sub"],
-    ["-c", "safe.ini"], ["-c", "unsafe.ini"], ["-c", "broken.ini"], ["-c", "missing.ini"], ["-c", "big.ini"],
-    ["-c", "exact.ini"], ["-c", "link_cfg.ini"], ["-c", "outside_cfg.ini"], ["-c", "../outside/pytest.ini"], ["-c", "/abs.ini"],
-    ["-c", "pkg"], ["-c", "dircfg/pytest.ini"], ["-c", "pkg/pytest.ini", "tests"], ["-csafe.ini"], ["--config-file=safe.ini"],
-    ["--config-file", "unsafe.ini", "-c", "safe.ini"], ["-c", "safe.ini", "-c", "unsafe.ini"], ["-c", "linkdir/pytest.ini"],
-    ["-c", "pyproject.toml"], ["-c", "pkgcfg2/pyproject.toml"], ["-c", "pkgcfg2/tox.ini"], ["-c", "dircfg2/setup.cfg"],
-    ["-c", "::x"], ["-c", "x::y"], ["tests::x", "pkg::y"], ["-k"], ["-m"], ["--tb"], ["x", "-c"], ["-q", "-c", "safe.ini", "tests"],
-    ["--junitxml=x", "tests"], ["-\u00e9"], ["\u00e9"], ["pkg/\u00e9"], ["a" * 300], ["pkg/" * 40 + "x"],
+    [],
+    ["-q"],
+    ["tests"],
+    ["-q", "tests", "pkg"],
+    ["tests/test_a.py::t"],
+    ["-k", "x"],
+    ["-k", "x", "tests"],
+    ["-m", "x", "t"],
+    ["--maxfail", "2", "tests"],
+    ["--maxfail=2", "tests"],
+    ["--tb", "short"],
+    ["--tb=short", "x"],
+    ["--"],
+    ["--", "x"],
+    ["-p", "x"],
+    ["-pxx"],
+    ["-c", "x.ini"],
+    ["-c"],
+    ["-cx.ini"],
+    ["-c=x.ini"],
+    ["-c", "x.ini", "-c", "y.ini"],
+    ["--config-file", "x.ini"],
+    ["--config-file=x.ini"],
+    ["--config-file"],
+    ["--config-file=", "tests"],
+    ["-c", ""],
+    ["--rootdir=/x"],
+    ["--rootdir", "x"],
+    ["-o", "x=1"],
+    ["--override-ini=x"],
+    ["-v", "-s", "-x", "--quiet", "--verbose"],
+    ["--disable-warnings", "-q"],
+    ["-qq"],
+    ["../x"],
+    ["tests/../x"],
+    ["/x"],
+    [""],
+    ["::x"],
+    ["pkg/sub"],
+    ["pkg/sub/test_c.py"],
+    ["pkg/test_b.py", "tests/test_a.py"],
+    ["pkg", "tests"],
+    ["tests", "tests"],
+    ["pkg", "pkg/sub"],
+    ["pkg/sub", "pkg/test_b.py"],
+    ["nonexistent"],
+    ["nonexistent/x.py"],
+    ["pkgcfg"],
+    ["pkgcfg/inner"],
+    ["pkgcfg/inner/test_d.py"],
+    ["pkgcfg2"],
+    ["dircfg"],
+    ["dircfg2"],
+    ["linkdir"],
+    ["linkdir/test_b.py"],
+    ["pkg/./sub"],
+    ["./pkg"],
+    ["pkg/"],
+    ["pkg//sub"],
+    ["-c", "safe.ini"],
+    ["-c", "unsafe.ini"],
+    ["-c", "broken.ini"],
+    ["-c", "missing.ini"],
+    ["-c", "big.ini"],
+    ["-c", "exact.ini"],
+    ["-c", "link_cfg.ini"],
+    ["-c", "outside_cfg.ini"],
+    ["-c", "../outside/pytest.ini"],
+    ["-c", "/abs.ini"],
+    ["-c", "pkg"],
+    ["-c", "dircfg/pytest.ini"],
+    ["-c", "pkg/pytest.ini", "tests"],
+    ["-csafe.ini"],
+    ["--config-file=safe.ini"],
+    ["--config-file", "unsafe.ini", "-c", "safe.ini"],
+    ["-c", "safe.ini", "-c", "unsafe.ini"],
+    ["-c", "linkdir/pytest.ini"],
+    ["-c", "pyproject.toml"],
+    ["-c", "pkgcfg2/pyproject.toml"],
+    ["-c", "pkgcfg2/tox.ini"],
+    ["-c", "dircfg2/setup.cfg"],
+    ["-c", "::x"],
+    ["-c", "x::y"],
+    ["tests::x", "pkg::y"],
+    ["-k"],
+    ["-m"],
+    ["--tb"],
+    ["x", "-c"],
+    ["-q", "-c", "safe.ini", "tests"],
+    ["--junitxml=x", "tests"],
+    ["-\u00e9"],
+    ["\u00e9"],
+    ["pkg/\u00e9"],
+    ["a" * 300],
+    ["pkg/" * 40 + "x"],
 ]
 
 MODULE_ROOTS = ["pytest", "ruff", "mypy", "", "pytest.x", "ruff.y", "PYTEST", "pip"]
 CWDS = [
-    None, "proj", "proj/pkg", "proj/pkg/sub", "proj/tests", "proj/pyshadow", "proj/ruffmod", "proj/dist", "proj/dist2",
-    "proj/dist3", "proj/empty", "proj/missing", "proj/script.py", "proj/linkdir", "proj/pkgcfg", "proj/pkgcfg/inner",
-    "proj/pkgcfg2", "proj/dircfg", "proj/dircfg2", "outside", "empty", "",
+    None,
+    "proj",
+    "proj/pkg",
+    "proj/pkg/sub",
+    "proj/tests",
+    "proj/pyshadow",
+    "proj/ruffmod",
+    "proj/dist",
+    "proj/dist2",
+    "proj/dist3",
+    "proj/empty",
+    "proj/missing",
+    "proj/script.py",
+    "proj/linkdir",
+    "proj/pkgcfg",
+    "proj/pkgcfg/inner",
+    "proj/pkgcfg2",
+    "proj/dircfg",
+    "proj/dircfg2",
+    "outside",
+    "empty",
+    "",
 ]
-ABS_CWDS = [None, "proj", "proj/pkg", "proj/pkgcfg", "proj/pyshadow", "proj/dist", "proj/empty", "empty", "outside", "proj/missing"]
+ABS_CWDS = [
+    None,
+    "proj",
+    "proj/pkg",
+    "proj/pkgcfg",
+    "proj/pyshadow",
+    "proj/dist",
+    "proj/empty",
+    "empty",
+    "outside",
+    "proj/missing",
+]
 
 SEGMENTS = [
     ["python", "-m", "pytest"],
@@ -741,7 +964,7 @@ def _build(root: Path) -> dict[str, object]:
         files[f"cfg/oversize_{name}/{name}"] = {"repeat": "#", "count": 1000001}
         files[f"cfg/maxsize_{name}/{name}"] = {"repeat": "#", "count": 1000000}
     files.update(TREE_FILES)
-    dirs = list(TREE_DIRS) + ["cfg/dir_ini/pytest.ini", "cfg/dir_toml/pytest.toml", "cfg/dir_link_target"]
+    dirs = [*list(TREE_DIRS), "cfg/dir_ini/pytest.ini", "cfg/dir_toml/pytest.toml", "cfg/dir_link_target"]
     links = dict(TREE_LINKS)
     links["cfg/symlink_ini/pytest.ini"] = "../ini_section/pytest.ini"
     links["cfg/symlink_dangling/pytest.ini"] = "../missing/pytest.ini"
@@ -800,33 +1023,113 @@ def _cases(root: Path) -> list[dict[str, object]]:
     for case_id, name, _content, _options in CONFIGS:
         workspace = root / "cfg" / case_id
         for relative in (name, f"./{name}"):
-            add("parse_pytest_config", [str(workspace), relative], lambda w=workspace, r=relative: _result(pc.parse_pytest_config(w, r)))
-    for case_id in list(BINARY_FILES) + ["oversize_pytest.ini", "oversize_pytest.toml", "maxsize_pytest.ini", "maxsize_pytest.toml",
-                                         "dir_ini", "dir_toml", "symlink_ini", "symlink_dangling", "symlink_dir", "symlink_dir_user"]:
+            add(
+                "parse_pytest_config",
+                [str(workspace), relative],
+                lambda w=workspace, r=relative: _result(pc.parse_pytest_config(w, r)),
+            )
+    for case_id in [
+        *list(BINARY_FILES),
+        "oversize_pytest.ini",
+        "oversize_pytest.toml",
+        "maxsize_pytest.ini",
+        "maxsize_pytest.toml",
+        "dir_ini",
+        "dir_toml",
+        "symlink_ini",
+        "symlink_dangling",
+        "symlink_dir",
+        "symlink_dir_user",
+    ]:
         workspace = root / "cfg" / case_id
         for relative in ("pytest.ini", "pytest.toml", ".pytest.ini", "missing.ini"):
-            add("parse_pytest_config", [str(workspace), relative], lambda w=workspace, r=relative: _result(pc.parse_pytest_config(w, r)))
-    for relative in ["", ".", "..", "../x", "/abs", "a/../b", "pytest.ini/", "x\x00y", "\u00e9.ini", "a" * 400, "link_cfg.ini", "linkdir/pytest.ini",
-                     "pkg/pytest.ini", "pkg/missing.ini", "missing/dir/pytest.ini", "script.py/x", "dircfg/pytest.ini", "big.ini", "exact.ini",
-                     "safe.ini", "unsafe.ini", "broken.ini", "outside_cfg.ini", "esc.py"]:
+            add(
+                "parse_pytest_config",
+                [str(workspace), relative],
+                lambda w=workspace, r=relative: _result(pc.parse_pytest_config(w, r)),
+            )
+    for relative in [
+        "",
+        ".",
+        "..",
+        "../x",
+        "/abs",
+        "a/../b",
+        "pytest.ini/",
+        "x\x00y",
+        "\u00e9.ini",
+        "a" * 400,
+        "link_cfg.ini",
+        "linkdir/pytest.ini",
+        "pkg/pytest.ini",
+        "pkg/missing.ini",
+        "missing/dir/pytest.ini",
+        "script.py/x",
+        "dircfg/pytest.ini",
+        "big.ini",
+        "exact.ini",
+        "safe.ini",
+        "unsafe.ini",
+        "broken.ini",
+        "outside_cfg.ini",
+        "esc.py",
+    ]:
         for workspace in (root / "proj", root / "missing", root / "proj" / "script.py"):
-            add("parse_pytest_config", [str(workspace), relative], lambda w=workspace, r=relative: _result(pc.parse_pytest_config(w, r)))
+            add(
+                "parse_pytest_config",
+                [str(workspace), relative],
+                lambda w=workspace, r=relative: _result(pc.parse_pytest_config(w, r)),
+            )
     rel_sets = [
-        ["pytest.ini"], ["pytest.ini", "pytest.ini"], ["pytest.toml", ".pytest.toml", "pytest.ini", ".pytest.ini", "pyproject.toml", "tox.ini", "setup.cfg"],
-        ["pyproject.toml", "tox.ini"], ["setup.cfg", "pytest.ini"], ["missing.ini"], [], ["pytest.ini", "custom.toml", "custom.ini", "custom"],
-        ["pyproject.toml", "pytest.ini"], ["tox.ini", "setup.cfg"],
+        ["pytest.ini"],
+        ["pytest.ini", "pytest.ini"],
+        ["pytest.toml", ".pytest.toml", "pytest.ini", ".pytest.ini", "pyproject.toml", "tox.ini", "setup.cfg"],
+        ["pyproject.toml", "tox.ini"],
+        ["setup.cfg", "pytest.ini"],
+        ["missing.ini"],
+        [],
+        ["pytest.ini", "custom.toml", "custom.ini", "custom"],
+        ["pyproject.toml", "pytest.ini"],
+        ["tox.ini", "setup.cfg"],
     ]
-    for case_id in config_ids + ["dir_ini", "dir_toml", "symlink_ini", "bin_utf8_invalid"]:
+    for case_id in [*config_ids, "dir_ini", "dir_toml", "symlink_ini", "bin_utf8_invalid"]:
         workspace = root / "cfg" / case_id
         for rels in rel_sets:
             for require in (False, True):
-                add("assess_pytest_configs", [str(workspace), rels, require], lambda w=workspace, r=rels, q=require: _assessment(pc.assess_pytest_configs(w, r, require_present=q)))
-            add("assess_selected_pytest_config", [str(workspace), rels], lambda w=workspace, r=rels: _assessment(pc.assess_selected_pytest_config(w, r)))
+                add(
+                    "assess_pytest_configs",
+                    [str(workspace), rels, require],
+                    lambda w=workspace, r=rels, q=require: _assessment(
+                        pc.assess_pytest_configs(w, r, require_present=q)
+                    ),
+                )
+            add(
+                "assess_selected_pytest_config",
+                [str(workspace), rels],
+                lambda w=workspace, r=rels: _assessment(pc.assess_selected_pytest_config(w, r)),
+            )
     for workspace in (root / "proj", root / "proj" / "pkg", root / "outside", root / "missing"):
-        for rels in (["safe.ini", "unsafe.ini"], ["broken.ini"], ["pyproject.toml", "tox.ini"], ["link_cfg.ini", "safe.ini"], ["pytest.ini", "pyproject.toml"], ["big.ini"]):
+        for rels in (
+            ["safe.ini", "unsafe.ini"],
+            ["broken.ini"],
+            ["pyproject.toml", "tox.ini"],
+            ["link_cfg.ini", "safe.ini"],
+            ["pytest.ini", "pyproject.toml"],
+            ["big.ini"],
+        ):
             for require in (False, True):
-                add("assess_pytest_configs", [str(workspace), rels, require], lambda w=workspace, r=rels, q=require: _assessment(pc.assess_pytest_configs(w, r, require_present=q)))
-            add("assess_selected_pytest_config", [str(workspace), rels], lambda w=workspace, r=rels: _assessment(pc.assess_selected_pytest_config(w, r)))
+                add(
+                    "assess_pytest_configs",
+                    [str(workspace), rels, require],
+                    lambda w=workspace, r=rels, q=require: _assessment(
+                        pc.assess_pytest_configs(w, r, require_present=q)
+                    ),
+                )
+            add(
+                "assess_selected_pytest_config",
+                [str(workspace), rels],
+                lambda w=workspace, r=rels: _assessment(pc.assess_selected_pytest_config(w, r)),
+            )
     sample = [
         pc.assess_pytest_configs(root / "cfg" / "ini_safe", ["pytest.ini"]),
         pc.assess_pytest_configs(root / "cfg" / "ini_plugin", ["pytest.ini"]),
@@ -836,20 +1139,70 @@ def _cases(root: Path) -> list[dict[str, object]]:
         pc.assess_selected_pytest_config(root / "cfg" / "py_none", ["pyproject.toml"]),
         pc.assess_selected_pytest_config(root / "cfg" / "py_ini", ["pyproject.toml"]),
     ]
-    sample_sets = [[0], [1], [0, 1], [2, 0], [3], [4], [3, 4], [5], [6], [5, 6], [0, 1, 2, 3, 4, 5, 6], [], [3, 3], [4, 0]]
+    sample_sets = [
+        [0],
+        [1],
+        [0, 1],
+        [2, 0],
+        [3],
+        [4],
+        [3, 4],
+        [5],
+        [6],
+        [5, 6],
+        [0, 1, 2, 3, 4, 5, 6],
+        [],
+        [3, 3],
+        [4, 0],
+    ]
     for indexes in sample_sets:
         picked = [sample[i] for i in indexes]
-        add("combine_pytest_config_assessments", [{"workspaces": [str(root / "cfg" / n) for n in ("ini_safe", "ini_plugin", "ini_garbage", "ini_empty", "ini_empty", "py_none", "py_ini")],
-                                                  "rels": [["pytest.ini"], ["pytest.ini"], ["pytest.ini"], ["missing.ini"], ["missing.ini"], ["pyproject.toml"], ["pyproject.toml"]],
-                                                  "modes": ["all", "all", "all", "all", "require", "selected", "selected"], "indexes": indexes}],
-            lambda p=picked: _assessment(pc.combine_pytest_config_assessments(p)))
+        add(
+            "combine_pytest_config_assessments",
+            [
+                {
+                    "workspaces": [
+                        str(root / "cfg" / n)
+                        for n in (
+                            "ini_safe",
+                            "ini_plugin",
+                            "ini_garbage",
+                            "ini_empty",
+                            "ini_empty",
+                            "py_none",
+                            "py_ini",
+                        )
+                    ],
+                    "rels": [
+                        ["pytest.ini"],
+                        ["pytest.ini"],
+                        ["pytest.ini"],
+                        ["missing.ini"],
+                        ["missing.ini"],
+                        ["pyproject.toml"],
+                        ["pyproject.toml"],
+                    ],
+                    "modes": ["all", "all", "all", "all", "require", "selected", "selected"],
+                    "indexes": indexes,
+                }
+            ],
+            lambda p=picked: _assessment(pc.combine_pytest_config_assessments(p)),
+        )
 
     # Config safety: pure helpers.
     for args in ARG_LISTS:
         add("python_module_root_from_args", [args], lambda a=args: pcs._python_module_root_from_args(a))
-        add("shell_args_without_trailing_redirections", [args], lambda a=args: pcs._shell_args_without_trailing_redirections(a))
-        add("python_segment_runs_safe_module_nocwd", [args], lambda a=args: pcs._python_segment_runs_safe_module(a, cwd=None))
-    for root_name in MODULE_ROOTS + [None]:
+        add(
+            "shell_args_without_trailing_redirections",
+            [args],
+            lambda a=args: pcs._shell_args_without_trailing_redirections(a),
+        )
+        add(
+            "python_segment_runs_safe_module_nocwd",
+            [args],
+            lambda a=args: pcs._python_segment_runs_safe_module(a, cwd=None),
+        )
+    for root_name in [*MODULE_ROOTS, None]:
         add("python_module_unsafe_env_keys", [root_name], lambda r=root_name: pcs._python_module_unsafe_env_keys(r))
     for token in REDIRECTION_TOKENS:
         add("is_shell_redirection_token", [token], lambda t=token: pcs._is_shell_redirection_token(t))
@@ -857,8 +1210,25 @@ def _cases(root: Path) -> list[dict[str, object]]:
         add("pytest_positional_args", [args], lambda a=args: list(pcs._pytest_positional_args(a)))
         add("pytest_module_args_are_safe", [args], lambda a=args: pcs._pytest_module_args_are_safe(a))
         for module_root in MODULE_ROOTS:
-            add("python_module_subcommand", [module_root, args], lambda m=module_root, a=args: pcs._python_module_subcommand(m, a))
-    for text in ["", ".", "a", "a/b", "a/b/c", "./a", "a/./b", "a//b", "../a", "a/..", "é/ü", "a" * 50 + "/" + "b" * 50]:
+            add(
+                "python_module_subcommand",
+                [module_root, args],
+                lambda m=module_root, a=args: pcs._python_module_subcommand(m, a),
+            )
+    for text in [
+        "",
+        ".",
+        "a",
+        "a/b",
+        "a/b/c",
+        "./a",
+        "a/./b",
+        "a//b",
+        "../a",
+        "a/..",
+        "é/ü",
+        "a" * 50 + "/" + "b" * 50,
+    ]:
         add("pytest_config_ancestor_dirs", [text], lambda t=text: list(pcs._pytest_config_ancestor_dirs(Path(t))))
 
     # Config safety: filesystem helpers.
@@ -867,69 +1237,256 @@ def _cases(root: Path) -> list[dict[str, object]]:
             if cwd is None:
                 continue
             path = Path(_rel(cwd, root))
-            add("pytest_explicit_config_paths", [args, _rel(cwd, root)], lambda a=args, p=path: pcs._pytest_explicit_config_paths(a, cwd=p) and list(pcs._pytest_explicit_config_paths(a, cwd=p)) if pcs._pytest_explicit_config_paths(a, cwd=p) is not None else None)
-            add("pytest_config_search_dirs", [args, _rel(cwd, root)], lambda a=args, p=path: None if pcs._pytest_config_search_dirs(a, cwd=p) is None else list(pcs._pytest_config_search_dirs(a, cwd=p)))
-            add("pytest_config_assessment", [_rel(cwd, root), args], lambda a=args, p=path: _assessment(pcs._pytest_config_assessment(p, a)))
+            add(
+                "pytest_explicit_config_paths",
+                [args, _rel(cwd, root)],
+                lambda a=args, p=path: (
+                    pcs._pytest_explicit_config_paths(a, cwd=p) and list(pcs._pytest_explicit_config_paths(a, cwd=p))
+                    if pcs._pytest_explicit_config_paths(a, cwd=p) is not None
+                    else None
+                ),
+            )
+            add(
+                "pytest_config_search_dirs",
+                [args, _rel(cwd, root)],
+                lambda a=args, p=path: (
+                    None
+                    if pcs._pytest_config_search_dirs(a, cwd=p) is None
+                    else list(pcs._pytest_config_search_dirs(a, cwd=p))
+                ),
+            )
+            add(
+                "pytest_config_assessment",
+                [_rel(cwd, root), args],
+                lambda a=args, p=path: _assessment(pcs._pytest_config_assessment(p, a)),
+            )
         for args in PYTEST_ARG_LISTS:
-            add("pytest_config_may_add_unsafe_options", [cwd_args(cwd), args], lambda a=args, c=cwd: pcs._pytest_config_may_add_unsafe_options(cwd_path(c), a))
-    for arg in ["", "tests", "tests::x", "::x", "/x", "../x", "a/../b", "a//b", "./a", ".", "a/", "//", str(root), str(root / "proj"), str(root / "proj" / "tests"),
-                str(root / "proj" / "tests") + "/x::y", str(root) + "/", str(root / "proj" / ".." / "x"), str(root.parent), "\u00e9", "x::y::z", "a/./b",
-                str(root / "proj") + "//pkg", str(root / "proj") + "/./pkg", str(root / "proj") + "/..", str(root) + "x", "~", "~/x"]:
+            add(
+                "pytest_config_may_add_unsafe_options",
+                [cwd_args(cwd), args],
+                lambda a=args, c=cwd: pcs._pytest_config_may_add_unsafe_options(cwd_path(c), a),
+            )
+    for arg in [
+        "",
+        "tests",
+        "tests::x",
+        "::x",
+        "/x",
+        "../x",
+        "a/../b",
+        "a//b",
+        "./a",
+        ".",
+        "a/",
+        "//",
+        str(root),
+        str(root / "proj"),
+        str(root / "proj" / "tests"),
+        str(root / "proj" / "tests") + "/x::y",
+        str(root) + "/",
+        str(root / "proj" / ".." / "x"),
+        str(root.parent),
+        "\u00e9",
+        "x::y::z",
+        "a/./b",
+        str(root / "proj") + "//pkg",
+        str(root / "proj") + "/./pkg",
+        str(root / "proj") + "/..",
+        str(root) + "x",
+        "~",
+        "~/x",
+    ]:
         for cwd in ("proj", "proj/pkg", ""):
-            add("pytest_selected_relative_path", [arg, _rel(cwd, root)], lambda a=arg, c=cwd: pcs._pytest_selected_relative_path(a, cwd=Path(_rel(c, root))))
+            add(
+                "pytest_selected_relative_path",
+                [arg, _rel(cwd, root)],
+                lambda a=arg, c=cwd: pcs._pytest_selected_relative_path(a, cwd=Path(_rel(c, root))),
+            )
 
     for module_root in ("pytest", "ruff", "mypy", "x", ""):
         for cwd in CWDS:
-            add("python_module_may_be_shadowed", [module_root, cwd_args(cwd)], lambda m=module_root, c=cwd: obs._python_module_may_be_shadowed(m, cwd_path(c)))
+            add(
+                "python_module_may_be_shadowed",
+                [module_root, cwd_args(cwd)],
+                lambda m=module_root, c=cwd: obs._python_module_may_be_shadowed(m, cwd_path(c)),
+            )
     for module in ["pytest", "pytest.x", "ruff", "mypy", "", "x", "PYTEST", "ruff.y"]:
-        for args in [[], ["-q"], ["tests"], ["-p", "x"], ["--basetemp", "x"], ["-c", "safe.ini"], ["--debug"], ["--junitxml=x"], ["format", "ruff_target.py"],
-                     ["format", "script.py"], ["check", "."], ["--add-noqa"], ["--config", "x", "format", "ruff_target.py"], ["format"], ["format", "x", "y"],
-                     ["format", "../outside/out.py"], ["format", "linkdir"], ["format", "$X"], ["--", "format", "a"], ["--cache-dir", "x", "check"], ["--color=x", "check"],
-                     ["-k"], ["pkg"], ["pkgcfg"], ["-q", "pkg/sub"], ["format", "dirpy.py"], ["format", "ok_link.py"], ["format", "esc.py"], ["format", "dangling.py"],
-                     ["format", "notpy.txt"]]:
+        for args in [
+            [],
+            ["-q"],
+            ["tests"],
+            ["-p", "x"],
+            ["--basetemp", "x"],
+            ["-c", "safe.ini"],
+            ["--debug"],
+            ["--junitxml=x"],
+            ["format", "ruff_target.py"],
+            ["format", "script.py"],
+            ["check", "."],
+            ["--add-noqa"],
+            ["--config", "x", "format", "ruff_target.py"],
+            ["format"],
+            ["format", "x", "y"],
+            ["format", "../outside/out.py"],
+            ["format", "linkdir"],
+            ["format", "$X"],
+            ["--", "format", "a"],
+            ["--cache-dir", "x", "check"],
+            ["--color=x", "check"],
+            ["-k"],
+            ["pkg"],
+            ["pkgcfg"],
+            ["-q", "pkg/sub"],
+            ["format", "dirpy.py"],
+            ["format", "ok_link.py"],
+            ["format", "esc.py"],
+            ["format", "dangling.py"],
+            ["format", "notpy.txt"],
+        ]:
             for cwd in ABS_CWDS:
-                add("python_module_args_are_safe", [module, args, cwd_args(cwd)], lambda m=module, a=args, c=cwd: pcs._python_module_args_are_safe(m, a, cwd=cwd_path(c)))
+                add(
+                    "python_module_args_are_safe",
+                    [module, args, cwd_args(cwd)],
+                    lambda m=module, a=args, c=cwd: pcs._python_module_args_are_safe(m, a, cwd=cwd_path(c)),
+                )
     for args in ARG_LISTS:
         for cwd in ABS_CWDS:
-            add("python_segment_runs_safe_module", [args, cwd_args(cwd)], lambda a=args, c=cwd: pcs._python_segment_runs_safe_module(a, cwd=cwd_path(c)))
-    for args in [[], ["format"], ["format", "ruff_target.py"], ["format", "script.py"], ["format", "a", "b"], ["check", "x"], ["format", "dirpy.py"], ["format", "linkdir"],
-                 ["format", "ok_link.py"], ["format", "esc.py"], ["format", "../outside/out.py"], ["format", "/abs.py"], ["format", "$X"], ["format", "`x`"],
-                 ["format", "."], ["format", "pkg/.."], ["format", "\u00e9.py"], ["format", ""]]:
+            add(
+                "python_segment_runs_safe_module",
+                [args, cwd_args(cwd)],
+                lambda a=args, c=cwd: pcs._python_segment_runs_safe_module(a, cwd=cwd_path(c)),
+            )
+    for args in [
+        [],
+        ["format"],
+        ["format", "ruff_target.py"],
+        ["format", "script.py"],
+        ["format", "a", "b"],
+        ["check", "x"],
+        ["format", "dirpy.py"],
+        ["format", "linkdir"],
+        ["format", "ok_link.py"],
+        ["format", "esc.py"],
+        ["format", "../outside/out.py"],
+        ["format", "/abs.py"],
+        ["format", "$X"],
+        ["format", "`x`"],
+        ["format", "."],
+        ["format", "pkg/.."],
+        ["format", "\u00e9.py"],
+        ["format", ""],
+    ]:
         for cwd in ABS_CWDS:
-            add("ruff_format_target_is_bounded", [args, cwd_args(cwd)], lambda a=args, c=cwd: pcs._ruff_format_target_is_bounded(a, cwd=cwd_path(c)))
+            add(
+                "ruff_format_target_is_bounded",
+                [args, cwd_args(cwd)],
+                lambda a=args, c=cwd: pcs._ruff_format_target_is_bounded(a, cwd=cwd_path(c)),
+            )
     for segment in SEGMENTS:
-        command_index = len(segment) - 1 if segment[-1] == "python" else next(i for i, t in enumerate(segment) if t == "python")
+        command_index = (
+            len(segment) - 1 if segment[-1] == "python" else next(i for i, t in enumerate(segment) if t == "python")
+        )
         for module_root in ("pytest", "ruff", None, "mypy"):
             for cwd in ABS_CWDS:
-                add("python_module_may_be_shadowed_from_execution_context", [module_root, cwd_args(cwd), segment, command_index],
-                    lambda m=module_root, c=cwd, s=segment, i=command_index: pcs._python_module_may_be_shadowed_from_execution_context(m, cwd=cwd_path(c), segment=s, command_index=i))
-                add("pythonpath_search_roots", [cwd_args(cwd), segment, command_index],
-                    lambda c=cwd, s=segment, i=command_index: [str(item) for item in pcs._pythonpath_search_roots_from_segment(s, command_index=i, cwd=cwd_path(c))])
+                add(
+                    "python_module_may_be_shadowed_from_execution_context",
+                    [module_root, cwd_args(cwd), segment, command_index],
+                    lambda m=module_root, c=cwd, s=segment, i=command_index: (
+                        pcs._python_module_may_be_shadowed_from_execution_context(
+                            m, cwd=cwd_path(c), segment=s, command_index=i
+                        )
+                    ),
+                )
+                add(
+                    "pythonpath_search_roots",
+                    [cwd_args(cwd), segment, command_index],
+                    lambda c=cwd, s=segment, i=command_index: [
+                        str(item)
+                        for item in pcs._pythonpath_search_roots_from_segment(s, command_index=i, cwd=cwd_path(c))
+                    ],
+                )
 
     # Environment helpers.
-    for token in ["A=1", "a=1", "A+=1", "A=b+=c", "A+=b=c", "=1", "+=1", "A", "", "=", "A==", "path=x", "\u00e9=1", "a b=1", "x+=", "PATH+=:x", "A=+=", "+==", "a+b=c"]:
+    for token in [
+        "A=1",
+        "a=1",
+        "A+=1",
+        "A=b+=c",
+        "A+=b=c",
+        "=1",
+        "+=1",
+        "A",
+        "",
+        "=",
+        "A==",
+        "path=x",
+        "\u00e9=1",
+        "a b=1",
+        "x+=",
+        "PATH+=:x",
+        "A=+=",
+        "+==",
+        "a+b=c",
+    ]:
         add("shell_env_assignment_key", [token], lambda t=token: obs._shell_env_assignment_key(t))
     env_segments = [
-        ["python"], ["PYTHONPATH=x", "python"], ["pythonpath=x", "python"], ["PYTHONPATH+=x", "python"], ["env", "PYTHONPATH=x", "python"],
-        ["env", "-i", "PYTHONPATH=x", "python"], ["env", "-u", "PYTHONPATH", "python"], ["env", "-u", "pythonpath", "PYTHONPATH=x", "python"],
-        ["env", "PYTHONPATH=x", "-u", "PYTHONPATH", "python"], ["env", "-S", "PYTHONPATH=x python"], ["env", "-S", "python"], ["env", "-C", "d", "python"],
-        ["env", "--unknown", "python"], ["env", "-", "PYTHONPATH=x", "python"], ["env", "PYTHONPATH=a", "env", "PYTHONPATH=b", "python"],
-        ["FOO=1", "env", "PYTHONPATH=x", "python"], ["PYTHONPATH=a", "env", "-i", "python"], ["PYTHONPATH=a", "env", "--ignore-environment", "python"],
-        ["env", "--", "PYTHONPATH=x", "python"], ["env", "--unset=PYTHONPATH", "python"], ["env", "--unset", "PYTHONPATH", "python"], ["env"],
-        ["env", "PYTHONPATH=x"], ["PYTHONPATH=x"], ["env", "-u"], ["sudo", "PYTHONPATH=x", "python"], ["(PYTHONPATH=x", "python"], ["PYTHONPATH=x>out", "python"],
-        ["env>x", "PYTHONPATH=y", "python"], ["PYTHONPATH=", "python"], ["PYTHONPATH=a=b", "python"], ["env", "PYTHONPATH=a=b", "python"],
-        ["env", "-S", "'A=1 python'", "python"], ["env", "-i", "-u", "X", "PYTHONPATH=1", "python"], ["env", "-0", "python"], ["env", "-Pfoo", "python"],
+        ["python"],
+        ["PYTHONPATH=x", "python"],
+        ["pythonpath=x", "python"],
+        ["PYTHONPATH+=x", "python"],
+        ["env", "PYTHONPATH=x", "python"],
+        ["env", "-i", "PYTHONPATH=x", "python"],
+        ["env", "-u", "PYTHONPATH", "python"],
+        ["env", "-u", "pythonpath", "PYTHONPATH=x", "python"],
+        ["env", "PYTHONPATH=x", "-u", "PYTHONPATH", "python"],
+        ["env", "-S", "PYTHONPATH=x python"],
+        ["env", "-S", "python"],
+        ["env", "-C", "d", "python"],
+        ["env", "--unknown", "python"],
+        ["env", "-", "PYTHONPATH=x", "python"],
+        ["env", "PYTHONPATH=a", "env", "PYTHONPATH=b", "python"],
+        ["FOO=1", "env", "PYTHONPATH=x", "python"],
+        ["PYTHONPATH=a", "env", "-i", "python"],
+        ["PYTHONPATH=a", "env", "--ignore-environment", "python"],
+        ["env", "--", "PYTHONPATH=x", "python"],
+        ["env", "--unset=PYTHONPATH", "python"],
+        ["env", "--unset", "PYTHONPATH", "python"],
+        ["env"],
+        ["env", "PYTHONPATH=x"],
+        ["PYTHONPATH=x"],
+        ["env", "-u"],
+        ["sudo", "PYTHONPATH=x", "python"],
+        ["(PYTHONPATH=x", "python"],
+        ["PYTHONPATH=x>out", "python"],
+        ["env>x", "PYTHONPATH=y", "python"],
+        ["PYTHONPATH=", "python"],
+        ["PYTHONPATH=a=b", "python"],
+        ["env", "PYTHONPATH=a=b", "python"],
+        ["env", "-S", "'A=1 python'", "python"],
+        ["env", "-i", "-u", "X", "PYTHONPATH=1", "python"],
+        ["env", "-0", "python"],
+        ["env", "-Pfoo", "python"],
     ]
     for segment in env_segments:
         indexes = sorted({len(segment) - 1, 0, len(segment)})
         for command_index in indexes:
             for key in ("PYTHONPATH", "pythonpath", "PATH", "PYTEST_ADDOPTS", "X"):
-                add("shell_segment_sets_env_key", [segment, command_index, key], lambda s=segment, i=command_index, k=key: obs._shell_segment_sets_env_key(s, i, k))
-                add("shell_segment_explicit_env_value", [segment, command_index, key], lambda s=segment, i=command_index, k=key: list(obs._shell_segment_explicit_env_value(s, i, k)))
+                add(
+                    "shell_segment_sets_env_key",
+                    [segment, command_index, key],
+                    lambda s=segment, i=command_index, k=key: obs._shell_segment_sets_env_key(s, i, k),
+                )
+                add(
+                    "shell_segment_explicit_env_value",
+                    [segment, command_index, key],
+                    lambda s=segment, i=command_index, k=key: list(obs._shell_segment_explicit_env_value(s, i, k)),
+                )
     return cases + _command_cases(root, add)
 
 
-def _command_cases(root: Path, add: Callable[[str, list[object], Callable[[], object]], None]) -> list[dict[str, object]]:
+def _command_cases(
+    root: Path, add: Callable[[str, list[object], Callable[[], object]], None]
+) -> list[dict[str, object]]:
     extra: list[dict[str, object]] = []
     cwd_args = lambda cwd: _rel(cwd, root)  # noqa: E731
     cwd_path = lambda cwd: None if cwd is None else Path(_rel(cwd, root))  # noqa: E731
@@ -939,23 +1496,53 @@ def _command_cases(root: Path, add: Callable[[str, list[object], Callable[[], ob
         parts = _split_shell_parts(text)
         add("shell_command_targets_pytest", [text], lambda t=text: ptd._shell_command_targets_pytest(t))
         add("is_literal_cat_heredoc_to_stdout", [text], lambda t=text: pbs._is_literal_cat_heredoc_to_stdout(t))
-        add("contains_pytest_process_substitution", [text], lambda t=text, p=parts: pbs._contains_pytest_process_substitution(t, p))
-        add("contains_prior_pytest_state_mutation", [text], lambda p=parts: pbs._contains_prior_pytest_state_mutation(p))
-        add("contains_unsafe_pytest_environment_wrapper", [text], lambda p=parts: pbs._contains_unsafe_pytest_environment_wrapper(p, cwd=None))
+        add(
+            "contains_pytest_process_substitution",
+            [text],
+            lambda t=text, p=parts: pbs._contains_pytest_process_substitution(t, p),
+        )
+        add(
+            "contains_prior_pytest_state_mutation", [text], lambda p=parts: pbs._contains_prior_pytest_state_mutation(p)
+        )
+        add(
+            "contains_unsafe_pytest_environment_wrapper",
+            [text],
+            lambda p=parts: pbs._contains_unsafe_pytest_environment_wrapper(p, cwd=None),
+        )
         add("python_inline_script_runs_pytest_parts", [parts], lambda p=parts: ptd._python_inline_script_runs_pytest(p))
         add("pytest_args_from_argument_sequence", [parts], lambda p=parts: ptd._pytest_args_from_argument_sequence(p))
         add("argument_sequence_targets_pytest", [parts], lambda p=parts: ptd._argument_sequence_targets_pytest(p))
         for index in range(min(len(parts), 6)):
-            add("pytest_args_from_command_position", [parts, index], lambda p=parts, i=index: ptd._pytest_args_from_command_position(p, i))
+            add(
+                "pytest_args_from_command_position",
+                [parts, index],
+                lambda p=parts, i=index: ptd._pytest_args_from_command_position(p, i),
+            )
         for name in ("uv", "poetry", "direnv", "conda", "mise", "hatch", "pipx", "unknown"):
-            add("pytest_args_from_runner_argument_sequence", [name, parts], lambda n=name, p=parts: ptd._pytest_args_from_runner_argument_sequence(n, p))
-        add("pytest_args_from_argument_sequence_ignoring", [parts, [0]], lambda p=parts: ptd._pytest_args_from_argument_sequence_ignoring(p, ignored_indices=frozenset({0})))
-        add("pytest_args_from_argument_sequence_ignoring", [parts, [1, 2]], lambda p=parts: ptd._pytest_args_from_argument_sequence_ignoring(p, ignored_indices=frozenset({1, 2})))
+            add(
+                "pytest_args_from_runner_argument_sequence",
+                [name, parts],
+                lambda n=name, p=parts: ptd._pytest_args_from_runner_argument_sequence(n, p),
+            )
+        add(
+            "pytest_args_from_argument_sequence_ignoring",
+            [parts, [0]],
+            lambda p=parts: ptd._pytest_args_from_argument_sequence_ignoring(p, ignored_indices=frozenset({0})),
+        )
+        add(
+            "pytest_args_from_argument_sequence_ignoring",
+            [parts, [1, 2]],
+            lambda p=parts: ptd._pytest_args_from_argument_sequence_ignoring(p, ignored_indices=frozenset({1, 2})),
+        )
         for segment in _iter_shell_command_segments(parts):
             name, index = _shell_segment_primary_command(segment)
             if name is None or index is None:
                 continue
-            add("segment_targets_pytest", [segment, name, index], lambda s=segment, n=name, i=index: ptd._segment_targets_pytest(s, n, i))
+            add(
+                "segment_targets_pytest",
+                [segment, name, index],
+                lambda s=segment, n=name, i=index: ptd._segment_targets_pytest(s, n, i),
+            )
             for fn_name, fn in (
                 ("shell_segment_uses_env_split_string_wrapper", pbs._shell_segment_uses_env_split_string_wrapper),
                 ("shell_segment_uses_env_chdir", pbs._shell_segment_uses_env_chdir),
@@ -963,54 +1550,232 @@ def _command_cases(root: Path, add: Callable[[str, list[object], Callable[[], ob
                 ("shell_segment_uses_cwd_changing_wrapper", pbs._shell_segment_uses_cwd_changing_wrapper),
             ):
                 add(fn_name, [segment, index], lambda f=fn, s=segment, i=index: f(s, i))
-            add("shell_directory_setup_segment_is_safe", [name, segment[index + 1 :]], lambda n=name, s=segment, i=index: pbs._shell_directory_setup_segment_is_safe(n, s[i + 1 :]))
+            add(
+                "shell_directory_setup_segment_is_safe",
+                [name, segment[index + 1 :]],
+                lambda n=name, s=segment, i=index: pbs._shell_directory_setup_segment_is_safe(n, s[i + 1 :]),
+            )
             if name in {"export", "declare", "typeset", "set"}:
                 for token in segment[index + 1 :]:
                     add("shell_declared_env_key", [token], lambda t=token: pbs._shell_declared_env_key(t))
-                add("shell_declaration_exports_env", [segment[index + 1 :]], lambda s=segment, i=index: pbs._shell_declaration_exports_env(s[i + 1 :]))
-                add("shell_set_exports_assignments", [segment[index + 1 :]], lambda s=segment, i=index: pbs._shell_set_exports_assignments(s[i + 1 :]))
+                add(
+                    "shell_declaration_exports_env",
+                    [segment[index + 1 :]],
+                    lambda s=segment, i=index: pbs._shell_declaration_exports_env(s[i + 1 :]),
+                )
+                add(
+                    "shell_set_exports_assignments",
+                    [segment[index + 1 :]],
+                    lambda s=segment, i=index: pbs._shell_set_exports_assignments(s[i + 1 :]),
+                )
         for cwd in ABS_CWDS:
-            add("looks_like_safe_python_module_invocation", [text, cwd_args(cwd)], lambda p=parts, c=cwd: pbs._looks_like_safe_python_module_invocation(p, cwd=cwd_path(c)))
-            add("looks_like_bounded_python_script_invocation", [text, cwd_args(cwd)], lambda p=parts, c=cwd: pbs._looks_like_bounded_python_script_invocation(p, cwd=cwd_path(c)))
-            add("looks_like_supported_python_invocation", [text, cwd_args(cwd)], lambda p=parts, c=cwd: pbs._looks_like_supported_python_invocation(p, cwd=cwd_path(c)))
-            add("looks_like_safe_pytest_binary_invocation", [text, cwd_args(cwd)], lambda p=parts, c=cwd: pbs._looks_like_safe_pytest_binary_invocation(p, cwd=cwd_path(c)))
+            add(
+                "looks_like_safe_python_module_invocation",
+                [text, cwd_args(cwd)],
+                lambda p=parts, c=cwd: pbs._looks_like_safe_python_module_invocation(p, cwd=cwd_path(c)),
+            )
+            add(
+                "looks_like_bounded_python_script_invocation",
+                [text, cwd_args(cwd)],
+                lambda p=parts, c=cwd: pbs._looks_like_bounded_python_script_invocation(p, cwd=cwd_path(c)),
+            )
+            add(
+                "looks_like_supported_python_invocation",
+                [text, cwd_args(cwd)],
+                lambda p=parts, c=cwd: pbs._looks_like_supported_python_invocation(p, cwd=cwd_path(c)),
+            )
+            add(
+                "looks_like_safe_pytest_binary_invocation",
+                [text, cwd_args(cwd)],
+                lambda p=parts, c=cwd: pbs._looks_like_safe_pytest_binary_invocation(p, cwd=cwd_path(c)),
+            )
     for args in ARG_LISTS + [[t] for t in TOKENS[:6]]:
         add("python_inline_script_runs_pytest", [args], lambda a=args: ptd._python_inline_script_runs_pytest(a))
         for cwd in ABS_CWDS:
             if cwd is None:
                 continue
-            add("bounded_python_script_path", [args, cwd_args(cwd)], lambda a=args, c=cwd: pbs._bounded_python_script_path(a, cwd=cwd_path(c)))
-    for operand in ["script.py", "./script.py", "bin/run.py", "../outside/out.py", "esc.py", "ok_link.py", "dangling.py", "dirpy.py", "notpy.txt", "/abs/x.py", "-",
-                    "$(x).py", "`x`.py", "ruff_target.py", "\u00e9.py", "a" * 300 + ".py", "missing.py", "linkdir/test_b.py", "pkg/test_b.py", "script.py/", ".py"]:
-        for prefix in ([], ["--"], ["-u"], ["-W", "x"], ["-Wx"], ["-X", "y"], ["-"], ["-c"], ["-m"], ["-mx"], ["--command=x"], ["-cx"], ["--check-hash-based-pycs", "z"]):
+            add(
+                "bounded_python_script_path",
+                [args, cwd_args(cwd)],
+                lambda a=args, c=cwd: pbs._bounded_python_script_path(a, cwd=cwd_path(c)),
+            )
+    for operand in [
+        "script.py",
+        "./script.py",
+        "bin/run.py",
+        "../outside/out.py",
+        "esc.py",
+        "ok_link.py",
+        "dangling.py",
+        "dirpy.py",
+        "notpy.txt",
+        "/abs/x.py",
+        "-",
+        "$(x).py",
+        "`x`.py",
+        "ruff_target.py",
+        "\u00e9.py",
+        "a" * 300 + ".py",
+        "missing.py",
+        "linkdir/test_b.py",
+        "pkg/test_b.py",
+        "script.py/",
+        ".py",
+    ]:
+        for prefix in (
+            [],
+            ["--"],
+            ["-u"],
+            ["-W", "x"],
+            ["-Wx"],
+            ["-X", "y"],
+            ["-"],
+            ["-c"],
+            ["-m"],
+            ["-mx"],
+            ["--command=x"],
+            ["-cx"],
+            ["--check-hash-based-pycs", "z"],
+        ):
             for suffix in ([], [">", "out"], ["2>&1"], ["arg"]):
-                args = prefix + [operand] + suffix
+                args = [*prefix, operand, *suffix]
                 for cwd in ("proj", "proj/bin", "outside", "empty", "proj/missing"):
-                    add("bounded_python_script_path", [args, cwd_args(cwd)], lambda a=args, c=cwd: pbs._bounded_python_script_path(a, cwd=cwd_path(c)))
-    for token_name, token in [("a", "pytest"), ("b", "/x/pytest"), ("c", "x\\pytest"), ("d", "pytest.exe"), ("e", "")]:
+                    add(
+                        "bounded_python_script_path",
+                        [args, cwd_args(cwd)],
+                        lambda a=args, c=cwd: pbs._bounded_python_script_path(a, cwd=cwd_path(c)),
+                    )
+    for _token_name, token in [("a", "pytest"), ("b", "/x/pytest"), ("c", "x\\pytest"), ("d", "pytest.exe"), ("e", "")]:
         for args in PYTEST_ARG_LISTS[:40]:
             for cwd in ABS_CWDS:
-                add("pytest_binary_segment_is_safe", [token, args, cwd_args(cwd)], lambda t=token, a=args, c=cwd: pbs._pytest_binary_segment_is_safe(t, a, cwd=cwd_path(c)))
+                add(
+                    "pytest_binary_segment_is_safe",
+                    [token, args, cwd_args(cwd)],
+                    lambda t=token, a=args, c=cwd: pbs._pytest_binary_segment_is_safe(t, a, cwd=cwd_path(c)),
+                )
     for command in ("cd", "pushd", "popd", "ls", "echo", "cat", ""):
-        for args in [[], ["-"], ["--"], ["-P"], ["x"], ["x", "y"], ["$(x)"], ["`x`"], ["x", ">", "o"], ["x", "2>&1"], ["-", "x"], ["--", "-x"], ["-n"], [">"], ["$(x)", ">o"], ["\u00e9"], ["a;b"]]:
-            add("shell_directory_setup_segment_is_safe", [command, args], lambda c=command, a=args: pbs._shell_directory_setup_segment_is_safe(c, a))
+        for args in [
+            [],
+            ["-"],
+            ["--"],
+            ["-P"],
+            ["x"],
+            ["x", "y"],
+            ["$(x)"],
+            ["`x`"],
+            ["x", ">", "o"],
+            ["x", "2>&1"],
+            ["-", "x"],
+            ["--", "-x"],
+            ["-n"],
+            [">"],
+            ["$(x)", ">o"],
+            ["\u00e9"],
+            ["a;b"],
+        ]:
+            add(
+                "shell_directory_setup_segment_is_safe",
+                [command, args],
+                lambda c=command, a=args: pbs._shell_directory_setup_segment_is_safe(c, a),
+            )
     for token in ["PATH", "path", "PATH=/x", "PATH+=x", "A=b", "", "=x", "-x", "--", "x=", "pytest_addopts"]:
         add("shell_declared_env_key", [token], lambda t=token: pbs._shell_declared_env_key(t))
-    for args in [[], ["-x"], ["-xr"], ["-rx"], ["-r"], ["--"], ["-x", "--"], ["--", "-x"], ["+x"], ["-"], ["--x"], ["-p"], ["x"], ["A=1", "-x"], ["---x"], ["-\u00e9x"]]:
+    for args in [
+        [],
+        ["-x"],
+        ["-xr"],
+        ["-rx"],
+        ["-r"],
+        ["--"],
+        ["-x", "--"],
+        ["--", "-x"],
+        ["+x"],
+        ["-"],
+        ["--x"],
+        ["-p"],
+        ["x"],
+        ["A=1", "-x"],
+        ["---x"],
+        ["-\u00e9x"],
+    ]:
         add("shell_declaration_exports_env", [args], lambda a=args: pbs._shell_declaration_exports_env(a))
-    for args in [[], ["-a"], ["-k"], ["allexport"], ["keyword"], ["-o"], ["-o", "allexport"], ["-o", "keyword"], ["-o", "x"], ["+o"], ["+o", "allexport"], ["+o", "x", "-a"],
-                 ["-ex"], ["-e"], ["-ak"], ["--"], ["--", "-a"], ["-e", "-a"], ["--ak"], ["+a"], ["-"], ["-x", "-o"], ["x", "-k"], ["--allexport"], ["-\u00e9a"]]:
+    for args in [
+        [],
+        ["-a"],
+        ["-k"],
+        ["allexport"],
+        ["keyword"],
+        ["-o"],
+        ["-o", "allexport"],
+        ["-o", "keyword"],
+        ["-o", "x"],
+        ["+o"],
+        ["+o", "allexport"],
+        ["+o", "x", "-a"],
+        ["-ex"],
+        ["-e"],
+        ["-ak"],
+        ["--"],
+        ["--", "-a"],
+        ["-e", "-a"],
+        ["--ak"],
+        ["+a"],
+        ["-"],
+        ["-x", "-o"],
+        ["x", "-k"],
+        ["--allexport"],
+        ["-\u00e9a"],
+    ]:
         add("shell_set_exports_assignments", [args], lambda a=args: pbs._shell_set_exports_assignments(a))
     # Inline payloads (lexical over-approximation); every case is approximate.
-    for payload in ["", "1", "print(1)", "import pytest", "import pytest\npytest.main()", "pytest.main()", "import pytest as p\np.main()", "from pytest import main\nmain()",
-                    "from pytest import main as m\nm()", "from pytest import console_main\nconsole_main()", "import importlib\nimportlib.import_module('pytest').main()",
-                    "from importlib import import_module\nimport_module('pytest').main()", "import runpy\nrunpy.run_module('pytest')", "from runpy import run_module\nrun_module('pytest')",
-                    "import os\nos.system('pytest')", "import os\nos.system('ls')", "from os import popen\npopen('py.test')", "import subprocess\nsubprocess.run(['pytest'])",
-                    "import subprocess\nsubprocess.run(args=['pytest'])", "import subprocess as sp\nsp.call('pytest -q', shell=True)", "from subprocess import Popen\nPopen(['python', '-m', 'pytest'])",
-                    "eval('1')", "exec('import pytest\\npytest.main()')", "exec('print(1)')", "def f(:", "print('pytest')", "x = 'pytest'", "print(\"py\" \"test\")",
-                    "print('\\x70ytest')", "pytest", "(pytest)", "\u0070ytest()", "\uff50ytest.main()", "# pytest main()", "a = pytest.main", "1 +", "\x00", "print(1)" * 100,
-                    "exec('exec(\"exec(1)\")')", "exec(" * 12 + "'pytest.main()'" + ")" * 12, "import os, subprocess\nsubprocess.check_output('py.test')",
-                    "__import__('pytest').main()", "getattr(__import__('pytest'), 'main')()", "print(1)\n" * 400, "pytest.console_main()", "import pytest; pytest.main()"]:
+    for payload in [
+        "",
+        "1",
+        "print(1)",
+        "import pytest",
+        "import pytest\npytest.main()",
+        "pytest.main()",
+        "import pytest as p\np.main()",
+        "from pytest import main\nmain()",
+        "from pytest import main as m\nm()",
+        "from pytest import console_main\nconsole_main()",
+        "import importlib\nimportlib.import_module('pytest').main()",
+        "from importlib import import_module\nimport_module('pytest').main()",
+        "import runpy\nrunpy.run_module('pytest')",
+        "from runpy import run_module\nrun_module('pytest')",
+        "import os\nos.system('pytest')",
+        "import os\nos.system('ls')",
+        "from os import popen\npopen('py.test')",
+        "import subprocess\nsubprocess.run(['pytest'])",
+        "import subprocess\nsubprocess.run(args=['pytest'])",
+        "import subprocess as sp\nsp.call('pytest -q', shell=True)",
+        "from subprocess import Popen\nPopen(['python', '-m', 'pytest'])",
+        "eval('1')",
+        "exec('import pytest\\npytest.main()')",
+        "exec('print(1)')",
+        "def f(:",
+        "print('pytest')",
+        "x = 'pytest'",
+        'print("py" "test")',
+        "print('\\x70ytest')",
+        "pytest",
+        "(pytest)",
+        "\u0070ytest()",
+        "\uff50ytest.main()",
+        "# pytest main()",
+        "a = pytest.main",
+        "1 +",
+        "\x00",
+        "print(1)" * 100,
+        "exec('exec(\"exec(1)\")')",
+        "exec(" * 12 + "'pytest.main()'" + ")" * 12,
+        "import os, subprocess\nsubprocess.check_output('py.test')",
+        "__import__('pytest').main()",
+        "getattr(__import__('pytest'), 'main')()",
+        "print(1)\n" * 400,
+        "pytest.console_main()",
+        "import pytest; pytest.main()",
+    ]:
         add("inline_python_payload_runs_pytest", [payload], lambda p=payload: ptd._inline_python_payload_runs_pytest(p))
         extra.append({"fn": "__approx_marker__", "args": [], "result": None}) if False else None
     return extra
