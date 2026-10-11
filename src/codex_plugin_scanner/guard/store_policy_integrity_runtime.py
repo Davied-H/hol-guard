@@ -424,6 +424,8 @@ class StorePolicyIntegrityAdminMixin:
                 include_items=include_items,
             )
             invalid_items = [item for item in remaining_items if item.get("integrity_status") != "valid"]
+        if include_items:
+            self._attach_policy_source_contexts(invalid_items)
         return {
             **self._policy_integrity_summary_payload(
                 generated_at=current_time,

@@ -1487,6 +1487,44 @@ def test_repair_policy_integrity_uses_reconciled_generation_before_fast_scan(
     assert store.resolve_policy("codex", "codex:project:pending", "hash-pending", now="2026-06-14T00:03:00Z") == "allow"
 
 
+def test_repair_policy_integrity_attaches_source_context_to_invalid_items(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = _store(tmp_path)
+    store.upsert_policy(
+        _decision(artifact_id="codex:project:repair-context", artifact_hash="hash-repair-context"),
+        "2026-06-14T00:00:00Z",
+    )
+    with sqlite3.connect(store.guard_home / "guard.db") as connection:
+        connection.execute(
+            "update policy_decisions set payload_mac = ? where artifact_id = ?",
+            ("deadbeef", "codex:project:repair-context"),
+        )
+    attached: list[list[dict[str, object]]] = []
+
+    def _attach(items: list[dict[str, object]]) -> None:
+        attached.append(items)
+        for item in items:
+            item["remembered_command"] = "attached"
+
+    monkeypatch.setattr(store, "_attach_policy_source_contexts", _attach)
+
+    payload = store.repair_policy_integrity(clear_invalid=False, now="2026-06-14T00:02:00Z")
+    without_items = store.repair_policy_integrity(
+        clear_invalid=False,
+        now="2026-06-14T00:03:00Z",
+        include_items=False,
+    )
+
+    items = payload["items"]
+    assert isinstance(items, list)
+    assert [item["artifact_id"] for item in items] == ["codex:project:repair-context"]
+    assert items[0]["remembered_command"] == "attached"
+    assert len(attached) == 1
+    assert "items" not in without_items
+
+
 def test_tampered_signed_row_is_ignored_and_event_emitted(tmp_path: Path) -> None:
     store = _store(tmp_path)
     store.upsert_policy(
@@ -1536,8 +1574,6 @@ def test_remote_policy_integrity_failure_does_not_emit_local_rule_event(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from codex_plugin_scanner.guard.policy_integrity import PolicyIntegrityVerificationResult
-
     store = _store(tmp_path)
     _install_signed_exact_policy(
         store,
