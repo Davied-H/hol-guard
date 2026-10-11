@@ -3,7 +3,9 @@
 use std::sync::OnceLock;
 use std::time::Instant;
 
-use fancy_regex::{Regex, RegexBuilder};
+use fancy_regex::Regex as FancyRegex;
+use fancy_regex::RegexBuilder as FancyBuilder;
+use regex::Regex;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -33,14 +35,14 @@ struct Tables {
 struct Patterns {
     tables: Tables,
     rules: Vec<Regex>,
-    sample: Regex,
-    documentation: Regex,
-    expressions: Vec<Regex>,
+    sample: FancyRegex,
+    documentation: FancyRegex,
+    expressions: Vec<FancyRegex>,
     version: String,
 }
 
-fn compile(pattern: &str) -> Result<Regex, &'static str> {
-    RegexBuilder::new(pattern)
+fn compile_fancy(pattern: &str) -> Result<FancyRegex, &'static str> {
+    FancyBuilder::new(pattern)
         .backtrack_limit(100_000)
         .build()
         .map_err(|_| "content_pattern_unavailable")
@@ -63,15 +65,17 @@ fn patterns() -> Result<&'static Patterns, &'static str> {
                     } else {
                         rule.pattern.clone()
                     };
-                    compile(&pattern)
+                    // Recorded rules have no backreferences. The linear engine
+                    // finishes on a long benign input; the backtracker overflows.
+                    Regex::new(&pattern).map_err(|_| "content_pattern_unavailable")
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            let sample = compile(&tables.sample)?;
-            let documentation = compile(&format!("(?:{})\\z", tables.documentation))?;
+            let sample = compile_fancy(&tables.sample)?;
+            let documentation = compile_fancy(&format!("(?:{})\\z", tables.documentation))?;
             let expressions = tables
                 .expressions
                 .iter()
-                .map(|pattern| compile(&format!("(?:{pattern})\\z")))
+                .map(|pattern| compile_fancy(&format!("(?:{pattern})\\z")))
                 .collect::<Result<Vec<_>, _>>()?;
             let version = digest(&tables.version_material)?;
             Ok(Patterns {
@@ -111,7 +115,7 @@ pub(super) fn legacy(text: &str) -> Result<Value, &'static str> {
     Ok(json!(families))
 }
 
-fn matches(pattern: &Regex, text: &str) -> Result<bool, &'static str> {
+fn matches(pattern: &FancyRegex, text: &str) -> Result<bool, &'static str> {
     pattern
         .is_match(text)
         .map_err(|_| "content_scan_unavailable")
@@ -188,11 +192,13 @@ pub(super) fn content(
     let p = patterns()?;
     let mut found = Vec::new();
     for (rule, pattern) in p.tables.rules.iter().zip(&p.rules) {
+        if Instant::now() >= deadline {
+            return Err("content_scan_deadline_exceeded");
+        }
         for item in pattern.find_iter(text) {
             if Instant::now() >= deadline {
                 return Err("content_scan_deadline_exceeded");
             }
-            let item = item.map_err(|_| "content_scan_unavailable")?;
             if !sample_match(p, &rule.classifier, item.as_str(), suppress, documentation)? {
                 found.push(json!({"classifier": rule.classifier, "family": rule.family,
                     "sensitivity": rule.sensitivity, "reason": rule.reason}));

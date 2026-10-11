@@ -7,6 +7,8 @@ use std::time::Instant;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::{json, Value};
 
+use crate::safe_decode::read_gzip;
+
 #[path = "content_sensitivity_json.rs"]
 mod json_tree;
 #[path = "content_sensitivity_mediation.rs"]
@@ -20,10 +22,6 @@ mod structured;
 #[cfg(test)]
 #[path = "content_sensitivity_tests.rs"]
 mod tests;
-#[allow(dead_code)]
-#[path = "safe_decode/inflate.rs"]
-mod transport_inflate;
-
 /// Lossless wire encoding for large output; native code bounds and decodes it.
 pub fn decode_input(body: &Value) -> Result<Cow<'_, Value>, &'static str> {
     if body.get("packed_json_gzip_v1").is_none() {
@@ -45,8 +43,7 @@ pub fn decode_input(body: &Value) -> Result<Cow<'_, Value>, &'static str> {
     let compressed = STANDARD
         .decode(packed)
         .map_err(|_| "content_input_invalid")?;
-    let decoded = transport_inflate::gzip_read(&compressed, length as usize + 1)
-        .map_err(|_| "content_input_invalid")?;
+    let decoded = read_gzip(&compressed, length as usize + 1)?;
     if decoded.len() != length as usize {
         return Err("content_input_invalid");
     }
