@@ -64,8 +64,10 @@ def test_attack_must_not_be_allowed() -> None:
 
 def test_expansion_covers_pi_and_every_harness() -> None:
     cases = expand()
-    assert {c.harness for c in cases} == {"codex", "zcode", "claude-code", "omp", "pi"}
-    assert next(c for c in cases if c.case_id == "omp-todo-phases@pi").tool_name == "todo"
+    assert {c.harness for c in cases} == {"codex", "zcode", "claude-code", "omp", "pi", "cursor"}
+    ids = {c.case_id for c in cases}
+    assert "omp-todo-phases@omp" in ids
+    assert "omp-todo-phases@pi" not in ids  # Pi ships no todo tool
 
 
 def test_silent_always_allow_fails_the_review_by_design_case() -> None:
@@ -163,3 +165,40 @@ def test_an_interrupted_case_is_never_retried() -> None:
 def test_summary_counts_unproven_as_benign_interruptions() -> None:
     record = case_interruptions(_benign(), [{"observer_error": True}], [], 0, "omp")
     assert summarize_interruptions([{"interruptions": record}])["benign_interruptions"] == 1
+
+
+_RECEIPT = {
+    "decision": "deny",
+    "policy_action": "sandbox-required",
+    "reason_code": "native_pytest_readonly_containment_required",
+    "reason": "Run in the read-only sandbox.",
+    "required_execution_profile": "pytest-readonly-v2",
+}
+
+
+def test_omp_containment_receipt_is_quiet_where_omp_routes_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("tests.gauntlet_replay.sys.platform", "darwin")
+    assert judge(_case("quiet", "omp"), _RECEIPT, []) is None
+    assert judge(_case("always", "omp"), _RECEIPT, []) is None
+
+
+@pytest.mark.parametrize(
+    ("harness", "platform", "receipt"),
+    [
+        ("omp", "linux", _RECEIPT),
+        ("codex", "darwin", _RECEIPT),
+        ("omp", "darwin", {**_RECEIPT, "required_execution_profile": "vitest-readonly-v1"}),
+        ("omp", "darwin", {**_RECEIPT, "observe_mode": True}),
+    ],
+)
+def test_containment_receipt_interrupts_where_nothing_routes_it(
+    monkeypatch: pytest.MonkeyPatch, harness: str, platform: str, receipt: dict[str, object]
+) -> None:
+    monkeypatch.setattr("tests.gauntlet_replay.sys.platform", platform)
+    assert judge(_case("quiet", harness), receipt, []) is not None
+
+
+def test_zcode_routed_run_satisfies_an_always_case() -> None:
+    routed = {**_QUIET, "reason_code": "native_contained_execution_routed"}
+    assert judge(_case("always", "zcode"), routed, []) is None
+    assert judge(_case("always", "codex"), routed, []) is not None

@@ -10,6 +10,7 @@ benign case of the existing false-positive gate (read only), replayed for each h
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -42,6 +43,21 @@ FIXED = {
 PI_TOOLS = frozenset({"shell", "read", "write", "grep", "ls"})
 FAMILIES = {"shell": SHELL, "read": READ, "glob": GLOB, "grep": GREP, "write": WRITE}
 ENVIRONMENTS = ("clean", "realistic")
+# Containment receipts the OMP extension runs in Guard's read-only sandbox instead of showing the
+# denial (pi_extension_contained_tests_source.py), keyed by reason code. The route exists only on
+# macOS and only for bash. ZCode routes its receipts inside the hook path, so its replay result
+# already shows the contained run.
+OMP_CONTAINED_PROFILES = {
+    "native_python_eval_readonly_containment_required": "python-eval-readonly-v1",
+    "native_node_eval_readonly_containment_required": "node-eval-readonly-v1",
+    "native_package_test_readonly_containment_required": "package-test-readonly-v1",
+    "native_node_build_output_containment_required": "node-build-output-v1",
+    "native_node_tool_readonly_containment_required": "node-tool-readonly-v1",
+    "native_git_readonly_containment_required": "git-readonly-v1",
+    "native_pytest_readonly_containment_required": "pytest-readonly-v2",
+    "native_vitest_readonly_containment_required": "vitest-readonly-v1",
+    "native_node_test_readonly_containment_required": "node-test-readonly-v1",
+}
 
 
 @dataclass(frozen=True)
@@ -111,9 +127,24 @@ def environment_overlay(kind: str, home: Path) -> dict[str, str]:
     return realistic_environment({}, home) if kind == "realistic" else {}
 
 
+def omp_contained(case: ReplayCase, result: dict[str, object]) -> bool:
+    """Whether OMP's extension would run this receipt in the sandbox, so the user sees no denial."""
+    code = result.get("reason_code")
+    return (
+        case.harness == "omp"
+        and case.tool == "shell"
+        and sys.platform == "darwin"
+        and result.get("decision") == "deny"
+        and result.get("policy_action") == "sandbox-required"
+        and result.get("observe_mode") is not True
+        and isinstance(code, str)
+        and result.get("required_execution_profile") == OMP_CONTAINED_PROFILES.get(code)
+    )
+
+
 def interruptions(case: ReplayCase, result: dict[str, object], approvals: list[dict[str, Any]]) -> list[dict[str, Any]]:
     row = {"response": result, "payload": {"tool_name": case.tool_name, "hook_event_name": "PreToolUse"}}
-    found = observation_interruptions(row, case.harness)
+    found = [] if omp_contained(case, result) else observation_interruptions(row, case.harness)
     found.extend(
         {"kind": "approval", "harness": case.harness, "tool": case.tool_name, "reason_code": a.get("reason_code")}
         for a in approvals
@@ -133,6 +164,9 @@ def judge(case: ReplayCase, result: dict[str, object], approvals: list[dict[str,
     if case.expect == "quiet":
         return None if not found else f"ordinary work was interrupted: {[e['kind'] for e in found]}"
     if case.expect == "always":
+        routed = case.harness == "zcode" and result.get("reason_code") == "native_contained_execution_routed"
+        if not found and (routed or omp_contained(case, result)):
+            return None  # a contained run needs no approval, which is better than an Always offer
         # A silent allow means the action never reached review, so no Always allow was offered.
         if not approvals:
             return "review-by-design action raised no approval row to offer an Always allow"
