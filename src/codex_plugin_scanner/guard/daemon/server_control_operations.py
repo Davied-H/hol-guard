@@ -4,32 +4,14 @@
 
 from __future__ import annotations
 
-from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
-
 from ..approvals import (
+    _append_guard_token_to_url,
     build_approval_browser_url,
 )
 from ..browser_opener import open_browser_url
-from ..local_dashboard_session import (
-    build_local_dashboard_session_token,
-)
 from .server_common import (
     _is_string_object_dict,
 )
-
-
-def _approval_center_browser_url(approval_center_url: str, auth_token: str) -> str:
-    parsed = urlparse(approval_center_url)
-    fragment_pairs = [
-        (key, value) for key, value in parse_qsl(parsed.fragment, keep_blank_values=True) if key != "guard-token"
-    ]
-    fragment_pairs.append(
-        (
-            "guard-token",
-            build_local_dashboard_session_token(auth_token=auth_token, surface="approval-center"),
-        )
-    )
-    return urlunparse(parsed._replace(fragment=urlencode(fragment_pairs)))
 
 
 class _ControlOperationRoutes:
@@ -170,7 +152,7 @@ class _ControlOperationRoutes:
                 detection=detection,
                 evaluation=evaluation,
                 approval_center_url=approval_center_url,
-                browser_url=_approval_center_browser_url(approval_center_url, self.server.auth_token),  # type: ignore[attr-defined]
+                browser_url=_append_guard_token_to_url(approval_center_url, self.server.auth_token),  # type: ignore[attr-defined]
                 approval_surface_policy=approval_surface_policy,
                 open_key=self._optional_string(payload.get("open_key")),
                 opener=open_browser_url,
