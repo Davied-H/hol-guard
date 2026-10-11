@@ -48,6 +48,10 @@ def test_loader_search_paths_are_stamped_by_value_and_injection_variables_are_no
     oversized = collect_hook_execution_environment()
     assert oversized["library_search_paths"] == {}
     assert "LD_LIBRARY_PATH" in oversized["environment_names"]
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/usr/lib/\udcff")
+    surrogate = collect_hook_execution_environment()
+    assert surrogate["library_search_paths"] == {}
+    assert "LD_LIBRARY_PATH" in surrogate["environment_names"]
 
 
 def test_execution_lookup_context_is_feature_gated_and_omits_environment_values(monkeypatch):

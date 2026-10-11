@@ -60,13 +60,128 @@ pub(super) fn trusted_location(path: &Path, home: &Path, cwd: &Path) -> bool {
 /// is a non-empty absolute path whose directory is a trusted location. An
 /// empty entry or `.` means the working directory, and a relative entry
 /// follows it, so either could load a library from the repository.
+///
+/// The dynamic loader searches the literal entry again when Git starts. A
+/// symlink, a `.` or `..` component, or a `/proc` path can canonicalize to a
+/// trusted directory for this process and still point somewhere the agent can
+/// write for the Git process. The entry therefore has to already be canonical,
+/// and no ancestor may be writable by the hook user.
 pub(super) fn trusted_library_search_path(value: &str, home: &Path, cwd: &Path) -> bool {
     !value.is_empty()
-        && value.split(':').all(|entry| {
-            let entry = Path::new(entry);
-            entry.is_absolute()
-                && fs::canonicalize(entry).is_ok_and(|directory| {
-                    directory.is_dir() && trusted_location(&directory, home, cwd)
-                })
-        })
+        && value.split(':').all(|entry| trusted_loader_entry(Path::new(entry), home, cwd))
+}
+
+fn trusted_loader_entry(entry: &Path, home: &Path, cwd: &Path) -> bool {
+    if !entry.is_absolute() || process_relative_loader_prefix(entry) {
+        return false;
+    }
+    let Ok(directory) = fs::canonicalize(entry) else {
+        return false;
+    };
+    directory == entry
+        && directory.is_dir()
+        && trusted_location(&directory, home, cwd)
+        && !agent_writable_loader_tree(&directory, home)
+}
+
+fn process_relative_loader_prefix(entry: &Path) -> bool {
+    entry.starts_with("/proc") || entry.starts_with("/dev/fd")
+}
+
+/// The hook user can plant a library in any directory they own, and in a
+/// group-writable directory of their group, even when that directory sits
+/// outside home, the working directory and the temporary directories.
+fn agent_writable_loader_tree(path: &Path, home: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let Ok(home_metadata) = fs::metadata(home) else {
+            return true;
+        };
+        let owner = home_metadata.uid();
+        let group = home_metadata.gid();
+        for ancestor in std::iter::once(path).chain(path.ancestors().skip(1)) {
+            let Ok(metadata) = fs::metadata(ancestor) else {
+                return true;
+            };
+            if metadata.uid() == owner
+                || (metadata.mode() & 0o020 != 0 && metadata.gid() == group)
+                || metadata.mode() & 0o002 != 0
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (path, home);
+        false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn proof_root() -> PathBuf {
+        std::env::current_dir().unwrap().join("target").join(format!(
+            "loader-proof-{}",
+            std::process::id()
+        ))
+    }
+
+    #[test]
+    fn system_directory_stays_a_proven_loader_entry() {
+        let entry = Path::new("/usr/lib");
+        if fs::canonicalize(entry).ok().as_deref() != Some(entry) {
+            return;
+        }
+        let home = PathBuf::from(std::env::var("HOME").unwrap());
+        let cwd = PathBuf::from("/guard-loader-cwd-sentinel");
+        assert!(trusted_library_search_path(entry.to_str().unwrap(), &home, &cwd));
+    }
+
+    #[test]
+    fn symlink_and_dotdot_entries_are_not_proven() {
+        let home = PathBuf::from(std::env::var("HOME").unwrap());
+        let cwd = PathBuf::from("/guard-loader-cwd-sentinel");
+        let root = proof_root();
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let link = root.join("lib");
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink("/usr/lib", &link).unwrap();
+            assert!(!trusted_library_search_path(link.to_str().unwrap(), &home, &cwd));
+        }
+        assert!(!trusted_library_search_path("/usr/lib/../lib", &home, &cwd));
+        assert!(!trusted_library_search_path("/proc/self/cwd", &home, &cwd));
+        assert!(!trusted_library_search_path(".", &home, &cwd));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn agent_owned_directory_outside_home_cwd_and_temp_is_not_proven() {
+        let root = proof_root();
+        let _ = fs::remove_dir_all(&root);
+        let home = root.join("home");
+        let cwd = root.join("cwd");
+        let directory = root.join("lib");
+        fs::create_dir_all(&home).unwrap();
+        fs::create_dir_all(&cwd).unwrap();
+        fs::create_dir_all(&directory).unwrap();
+        assert!(
+            trusted_location(&directory, &home, &cwd),
+            "dir={directory:?} home={home:?} cwd={cwd:?} temp={:?}",
+            std::env::temp_dir()
+        );
+        assert!(!trusted_library_search_path(
+            directory.to_str().unwrap(),
+            &home,
+            &cwd
+        ));
+        let _ = fs::remove_dir_all(&root);
+    }
 }

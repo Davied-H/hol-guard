@@ -151,6 +151,10 @@ def test_generated_client_stamps_loader_search_path_values_only(
     assert context["library_search_paths"] == {"LD_LIBRARY_PATH": "/usr/local/cuda/lib64:/usr/lib"}
     assert "LD_PRELOAD" in context["environment_names"]
     assert "preload-not-serialized" not in forwarded
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/usr/lib/\udcff")
+    surrogate = json.loads(module._stamp_hook_input(json.dumps({"hook_event_name": "PreToolUse"})))
+    assert surrogate["guard_execution_environment"]["library_search_paths"] == {}
+    assert "LD_LIBRARY_PATH" in surrogate["guard_execution_environment"]["environment_names"]
 
 
 @pytest.mark.parametrize(

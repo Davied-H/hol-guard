@@ -38,12 +38,27 @@ def pager_default_equivalent(value: str | None) -> bool:
     return value is not None and _DEFAULT_EQUIVALENT_PAGER.fullmatch(value) is not None
 
 
+def _loader_value_fits(value: str | None) -> bool:
+    """Keep a loader value only when its UTF-8 size is within the native bound.
+
+    POSIX surfaces non-UTF-8 environment bytes as surrogate escapes. Measuring
+    those with a strict encode raises, so the stamp omits the value and leaves
+    the name in the environment-name set.
+    """
+    if not value:
+        return False
+    try:
+        return len(value.encode()) <= _MAX_STAMPED_PATH_BYTES
+    except UnicodeEncodeError:
+        return False
+
+
 def library_search_paths() -> dict[str, str]:
     """Return the exported loader search paths that fit the native path bound."""
     return {
         name: value
         for name in LIBRARY_SEARCH_PATH_NAMES
-        if (value := os.environ.get(name)) and len(value.encode()) <= _MAX_STAMPED_PATH_BYTES
+        if (value := os.environ.get(name)) and _loader_value_fits(value)
     }
 
 

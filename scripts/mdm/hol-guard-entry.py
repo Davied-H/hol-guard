@@ -412,6 +412,15 @@ _CODEX_LIBRARY_SEARCH_PATH_NAMES = (
 )
 
 
+def _codex_loader_value_fits(value: str | None) -> bool:
+    if not value:
+        return False
+    try:
+        return len(value.encode()) <= 32 * 1024
+    except UnicodeEncodeError:
+        return False
+
+
 def _codex_execution_environment() -> dict[str, object]:
     """Mirror hook_execution_environment.collect_hook_execution_environment without importing Guard.
 
@@ -433,7 +442,7 @@ def _codex_execution_environment() -> dict[str, object]:
         "library_search_paths": {
             name: value
             for name in _CODEX_LIBRARY_SEARCH_PATH_NAMES
-            if (value := os.environ.get(name)) and len(value.encode()) <= 32 * 1024
+            if (value := os.environ.get(name)) and _codex_loader_value_fits(value)
         },
         "environment_digest": hashlib.sha256(
             json.dumps(active, sort_keys=True, separators=(",", ":")).encode()
