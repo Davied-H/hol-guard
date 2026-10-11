@@ -144,6 +144,8 @@ mod sfrs_constants;
 mod sfrs_docker_args;
 #[cfg(test)]
 mod sfrs_docker_vectors;
+#[cfg(all(test, unix))]
+mod sfrs_fs_vectors;
 mod sfrs_gh_bindings;
 mod sfrs_gh_control_flow;
 mod sfrs_gh_definitions;
@@ -170,6 +172,7 @@ mod sfrs_search_filters;
 mod sfrs_selectors;
 mod sfrs_shell_tokens;
 mod sfrs_shlex;
+mod sfrs_source_edit;
 mod sfrs_static_safety;
 #[cfg(test)]
 mod sfrs_static_vectors;
