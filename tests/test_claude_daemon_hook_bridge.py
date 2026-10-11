@@ -658,3 +658,32 @@ def test_hook_post_tells_the_daemon_how_long_the_bridge_will_wait(tmp_path: Path
     body = json.loads(_AuthenticatedDaemonHandler.captured_hook_body)
     assert body["tool_name"] == "Bash"
     assert 0 < body["guard_remaining_ms"] <= bridge._DAEMON_IO_TIMEOUT_SECONDS * 1000
+
+
+def test_remaining_hint_preserves_unicode_and_omits_itself_when_it_will_not_fit() -> None:
+    from codex_plugin_scanner.guard.adapters.codex_daemon_hook_transport import (
+        _MAX_HOOK_REQUEST_BYTES,
+        _with_remaining_hint,
+    )
+
+    prompt = "é" * 200_000
+    original = json.dumps(
+        {"hook_event_name": "PreToolUse", "prompt": prompt},
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    ascii_form = json.dumps(json.loads(original), ensure_ascii=True, separators=(",", ":"))
+    assert len(original.encode("utf-8")) < _MAX_HOOK_REQUEST_BYTES < len(ascii_form.encode("utf-8"))
+    hinted = _with_remaining_hint(original, time.monotonic() + 5)
+    parsed = json.loads(hinted)
+    assert parsed["prompt"] == prompt
+    assert "guard_remaining_ms" in parsed
+    assert "\\u00e9" not in hinted
+    assert len(hinted.encode("utf-8")) <= _MAX_HOOK_REQUEST_BYTES
+
+    prefix = '{"hook_event_name":"PreToolUse","blob":"'
+    suffix = '"}'
+    room = _MAX_HOOK_REQUEST_BYTES - len(prefix.encode("utf-8")) - len(suffix.encode("utf-8"))
+    packed = prefix + ("a" * room) + suffix
+    assert len(packed.encode("utf-8")) == _MAX_HOOK_REQUEST_BYTES
+    assert _with_remaining_hint(packed, time.monotonic() + 5) == packed
