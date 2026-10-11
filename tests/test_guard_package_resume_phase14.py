@@ -88,7 +88,7 @@ def test_phase14_package_approval_resume_targets_only_matching_request(
 ) -> None:
     captured_payloads: list[dict[str, object]] = []
 
-    def _fake_continue(wire, home):
+    def _fake_continue(wire, home, timeout_ms):
         captured_payloads.append(wire)
         return {"result": _SENT}
 

@@ -161,7 +161,7 @@ def test_codex_block_does_not_resume_codex_thread(
 ) -> None:
     captured_payloads: list[dict[str, object]] = []
 
-    def _fake_continue(wire, home):
+    def _fake_continue(wire, home, timeout_ms):
         captured_payloads.append(wire)
         return {"result": _SENT}
 
@@ -462,7 +462,7 @@ def test_codex_allow_resume_prompt_includes_exact_command_when_metadata_is_prese
 ) -> None:
     captured_payloads: list[dict[str, object]] = []
 
-    def _fake_continue(wire, home):
+    def _fake_continue(wire, home, timeout_ms):
         captured_payloads.append(wire)
         return {"result": _SENT}
 
@@ -553,7 +553,7 @@ def test_request_resume_retry_is_idempotent_after_success(
 ) -> None:
     send_calls = 0
 
-    def _fake_continue(wire, home):
+    def _fake_continue(wire, home, timeout_ms):
         nonlocal send_calls
         send_calls += 1
         return {"result": _SENT}

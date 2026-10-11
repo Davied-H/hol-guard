@@ -141,6 +141,7 @@ def resume_codex_thread_for_request(
     if not isinstance(metadata, dict):
         return None
     home = getattr(store, "guard_home", None)
+    timeout_ms = max(1, min(_CONTINUE_MAX_TIMEOUT_MS, int(timeout_seconds * 1000)))
     wire: dict[str, object] = {
         "schema": _CONTINUE_REQUEST_SCHEMA,
         "request_id": f"codex-thread-continue-{uuid4().hex}",
@@ -150,9 +151,9 @@ def resume_codex_thread_for_request(
         "home_dir": str(Path.home()),
         "temp_dir": tempfile.gettempdir(),
         "cwd": os.getcwd(),
-        "timeout_ms": max(1, min(_CONTINUE_MAX_TIMEOUT_MS, int(timeout_seconds * 1000))),
+        "timeout_ms": timeout_ms,
     }
-    reply = _continue_in_resident(wire, Path(home)) if isinstance(home, (str, Path)) else None
+    reply = _continue_in_resident(wire, Path(home), timeout_ms) if isinstance(home, (str, Path)) else None
     if reply is None or "result" not in reply:
         return {"status": "failed", "reason": _CONTINUE_UNAVAILABLE}
     result = reply["result"]
@@ -163,7 +164,7 @@ def resume_codex_thread_for_request(
     return result
 
 
-def _continue_in_resident(wire: dict[str, object], home: Path) -> dict[str, object] | None:
+def _continue_in_resident(wire: dict[str, object], home: Path, timeout_ms: int) -> dict[str, object] | None:
     if not ensure_resident_prerequisite(home):
         return None
     try:
@@ -171,7 +172,7 @@ def _continue_in_resident(wire: dict[str, object], home: Path) -> dict[str, obje
             operation="codex_thread_continue",
             request=wire,
             guard_home=home,
-            timeout_seconds=int(wire["timeout_ms"]) / 1000 + _CONTINUE_TRANSPORT_GRACE_SECONDS,
+            timeout_seconds=timeout_ms / 1000 + _CONTINUE_TRANSPORT_GRACE_SECONDS,
             required_feature=_CONTINUE_FEATURE,
             response_schema=_CONTINUE_RESULT_SCHEMA,
             max_request_bytes=_CONTINUE_MAX_REQUEST_BYTES,

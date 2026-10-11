@@ -90,7 +90,7 @@ def test_guard_approvals_resume_retries_failed_codex_resume(
 ) -> None:
     send_calls = 0
 
-    def _fake_continue(wire, home):
+    def _fake_continue(wire, home, timeout_ms):
         nonlocal send_calls
         send_calls += 1
         return {"result": _SENT}
@@ -127,7 +127,7 @@ def test_guard_approvals_resume_uses_codex_home_default_socket(
 ) -> None:
     codex_homes: list[object] = []
 
-    def _fake_continue(wire, home):
+    def _fake_continue(wire, home, timeout_ms):
         codex_homes.append(wire["metadata"].get("codex_home"))
         return {"result": _SENT}
 
