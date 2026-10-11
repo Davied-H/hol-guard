@@ -297,9 +297,9 @@ def download_alpha_native_wheel(
     open_url = opener or _default_opener(network_policy)
     provenance = _read_bounded(open_url, release_url(version, provenance_name(version)), _MAX_PROVENANCE_BYTES)
     name, expected_sha256 = select_native_wheel(parse_provenance_subjects(provenance), version, tags=tags)
+    # mkdtemp creates the directory owner-only (0700).
     directory = Path(tempfile.mkdtemp(prefix="hol-guard-alpha-native-"))
     try:
-        os.chmod(directory, 0o700)
         target = directory / name
         actual = _download_to_file(open_url, release_url(version, name), target)
         if actual != expected_sha256:
