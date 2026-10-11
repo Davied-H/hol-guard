@@ -9,7 +9,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -24,7 +25,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -39,7 +41,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -54,7 +57,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -69,7 +73,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -84,7 +89,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -99,7 +105,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -114,7 +121,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -124,12 +132,29 @@
       "expect": "quiet"
     },
     {
+      "id": "vitest-local-bin",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "./node_modules/.bin/vitest run tests/sample.test.ts"
+      },
+      "cwd": "worktree",
+      "expect": "always"
+    },
+    {
       "id": "guard-status-head",
       "harnesses": [
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -144,7 +169,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -159,7 +185,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -174,7 +201,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -189,7 +217,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -204,7 +233,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -294,7 +324,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -309,7 +340,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -324,7 +356,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -339,7 +372,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -354,7 +388,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -369,7 +404,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {

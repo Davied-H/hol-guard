@@ -142,7 +142,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -511,7 +512,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -527,7 +529,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -543,7 +546,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1913,7 +1917,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1929,7 +1934,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1945,7 +1951,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
