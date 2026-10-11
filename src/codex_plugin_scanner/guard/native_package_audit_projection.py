@@ -28,7 +28,8 @@ class NativePackageAuditProjectionError(RuntimeError):
 
 
 def _guard_home(store: Any | None) -> Path:
-    return _resolve_digest_home(Path(store.guard_home) if getattr(store, "guard_home", None) else None)
+    guard_home = getattr(store, "guard_home", None)
+    return _resolve_digest_home(Path(guard_home) if guard_home else None)
 
 
 def _send(query: dict[str, object], store: Any | None) -> dict[str, Any]:
