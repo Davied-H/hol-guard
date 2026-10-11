@@ -36,10 +36,14 @@ fn home() -> PathBuf {
 }
 
 fn grep(home: &Path, path: &Path) -> String {
+    grep_spelled(home, path.to_str().unwrap())
+}
+
+fn grep_spelled(home: &Path, path: &str) -> String {
     evaluate_pre_tool_envelope_with_context(
         "omp",
         "PreToolUse",
-        &json!({"tool_name": "grep", "tool_input": {"pattern": "Inert", "path": path.to_str().unwrap()}}),
+        &json!({"tool_name": "grep", "tool_input": {"pattern": "Inert", "path": path}}),
         None,
         None,
         home.to_str(),
@@ -54,6 +58,15 @@ fn grep_over_artifact_documents_proceeds() {
     let artifacts = home.join(".agent/artifacts");
     assert_eq!(grep(&home, &artifacts), "allow");
     assert_eq!(grep(&home, &artifacts.join("runs")), "allow");
+    assert_eq!(grep_spelled(&home, "~/.agent/artifacts"), "allow");
+}
+
+#[test]
+fn tilde_spelled_grep_over_skills_still_asks() {
+    let home = home();
+    assert_ne!(grep_spelled(&home, "~/.agent/skills"), "allow");
+    assert_ne!(grep_spelled(&home, "~/.agent/skills/x"), "allow");
+    assert_ne!(grep_spelled(&home, "~/.agent"), "allow");
 }
 
 #[test]
