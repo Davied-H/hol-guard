@@ -40,7 +40,18 @@ impl Fixture {
         let repo = declared.join("repo");
         fs::create_dir_all(&repo).unwrap();
         fs::create_dir_all(root.join("shell")).unwrap();
-        let init = Command::new("git")
+        let mut init = Command::new("git");
+        for name in [
+            "GIT_DIR",
+            "GIT_WORK_TREE",
+            "GIT_COMMON_DIR",
+            "GIT_INDEX_FILE",
+            "GIT_OBJECT_DIRECTORY",
+            "GIT_NAMESPACE",
+        ] {
+            init.env_remove(name);
+        }
+        let init = init
             .arg("init")
             .current_dir(&repo)
             .env("GIT_CONFIG_NOSYSTEM", "1")
@@ -52,6 +63,7 @@ impl Fixture {
             "{}",
             String::from_utf8_lossy(&init.stderr)
         );
+        assert!(repo.join(".git").is_dir(), "git init left the repository");
         Self { root, declared }
     }
 }
