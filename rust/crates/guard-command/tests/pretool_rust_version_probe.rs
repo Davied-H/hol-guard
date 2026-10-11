@@ -33,7 +33,16 @@ fn rust_version_queries_are_allowed_unless_a_toolchain_file_selects_a_binary() {
     let nested = pinned.join("nested");
     let legacy = root.join("legacy");
     let linked = root.join("linked");
-    for directory in [&home, &plain, &channel, &nested, &legacy, &linked] {
+    let nested_plain = legacy.join("child");
+    for directory in [
+        &home,
+        &plain,
+        &channel,
+        &nested,
+        &legacy,
+        &linked,
+        &nested_plain,
+    ] {
         std::fs::create_dir_all(directory).unwrap();
     }
     std::fs::write(
@@ -53,6 +62,11 @@ fn rust_version_queries_are_allowed_unless_a_toolchain_file_selects_a_binary() {
         linked.join("rust-toolchain.toml"),
     )
     .unwrap();
+    // A symlinked working directory resolves below the pinned toolchain file,
+    // which rustup reads even though the textual path does not contain it.
+    let alias = root.join("alias");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&nested_plain, &alias).unwrap();
     // The nearest toolchain file decides, so an inert file below a pinned one
     // shadows it for rustup.
     std::fs::write(nested.join("rust-toolchain"), "stable\n").unwrap();
@@ -87,6 +101,9 @@ fn rust_version_queries_are_allowed_unless_a_toolchain_file_selects_a_binary() {
             );
         }
         #[cfg(unix)]
-        assert_ne!(decide(harness, "cargo --version", &home, &linked), "allow");
+        {
+            assert_ne!(decide(harness, "cargo --version", &home, &linked), "allow");
+            assert_ne!(decide(harness, "cargo --version", &home, &alias), "allow");
+        }
     }
 }

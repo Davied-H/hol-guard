@@ -30,6 +30,15 @@ pub(super) fn safe_version_probe(arguments: &[String], context: super::PathConte
     if !cwd.is_absolute() {
         return false;
     }
+    // rustup searches the physical working directory, so a symlinked path
+    // must not hide a toolchain file above its target.
+    let Ok(physical) = fs::canonicalize(cwd) else {
+        return false;
+    };
+    ancestors_inert(cwd) && ancestors_inert(&physical)
+}
+
+fn ancestors_inert(cwd: &Path) -> bool {
     for directory in cwd.ancestors() {
         match nearest_toolchain(directory) {
             Lookup::Absent => continue,
