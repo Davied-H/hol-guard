@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -57,12 +58,15 @@ def run_daemon_serve_cli(argv: Sequence[str] | None = None) -> int:
         print("Choose daemon --serve.", file=sys.stderr)
         return 2
 
-    from ..daemon.startup_phase import timed_phase
+    # Start the clock before any daemon import: the package initializer loads
+    # the manager and its dependencies, which is most of this phase.
+    import_started = time.monotonic()
+    from ..config import resolve_guard_home
+    from ..daemon.server import GuardDaemonServer
+    from ..daemon.startup_phase import record_phase_since, timed_phase
+    from ..store import GuardStore
 
-    with timed_phase("import_modules"):
-        from ..config import resolve_guard_home
-        from ..daemon.server import GuardDaemonServer
-        from ..store import GuardStore
+    record_phase_since("import_modules", import_started)
 
     home_override = args.home
     home_dir = Path(home_override).expanduser().resolve() if home_override else Path.home().resolve()

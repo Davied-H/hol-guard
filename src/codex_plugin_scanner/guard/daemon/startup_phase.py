@@ -73,4 +73,16 @@ def flush_pending_phases(sink: PhaseSink) -> None:
         sink("startup_phase", detail)
 
 
-__all__ = ["PhaseSink", "flush_pending_phases", "record_phase_since", "timed_phase"]
+def release_default_sink(sink: PhaseSink) -> None:
+    """Stop routing phases to ``sink`` once its diagnostics have closed.
+
+    A newer daemon's sink is left alone, so later early phases buffer for it.
+    """
+
+    global _default_sink
+    with _lock:
+        if _default_sink == sink:
+            _default_sink = None
+
+
+__all__ = ["PhaseSink", "flush_pending_phases", "record_phase_since", "release_default_sink", "timed_phase"]

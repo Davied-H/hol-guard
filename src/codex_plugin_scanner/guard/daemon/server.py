@@ -5115,8 +5115,7 @@ class GuardDaemonServer:
                 raise RuntimeError("Guard daemon stopped during startup")
             self._publish_listen_state()
             self._diagnostics.record("daemon_listen_ready")
-            with timed_phase("warm_desktop_bootstrap_cache", self._diagnostics.record_phase):
-                self._warm_desktop_bootstrap_cache()
+            self._warm_desktop_bootstrap_cache()
             if not continue_after_listen:
                 return
         self._complete_owned_service_after_listen(generation, already_locked=True)
@@ -5197,12 +5196,13 @@ class GuardDaemonServer:
             try:
                 from ..cli.commands_dispatch_desktop import desktop_bootstrap_document_for_running_daemon
 
-                desktop_bootstrap_document_for_running_daemon(
-                    store=server.store,
-                    home_dir=server.home_dir,
-                    daemon_url=f"http://127.0.0.1:{server.daemon_port()}",
-                    auth_token=server.auth_token,
-                )
+                with timed_phase("warm_desktop_bootstrap_cache", self._diagnostics.record_phase):
+                    desktop_bootstrap_document_for_running_daemon(
+                        store=server.store,
+                        home_dir=server.home_dir,
+                        daemon_url=f"http://127.0.0.1:{server.daemon_port()}",
+                        auth_token=server.auth_token,
+                    )
             except Exception:
                 self._diagnostics.record_exception("desktop_bootstrap_warmup_failed")
                 return

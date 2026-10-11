@@ -183,3 +183,28 @@ def test_startup_phase_buffer_is_bounded(clean_startup_phases) -> None:
         with startup_phase.timed_phase("x"):
             pass
     assert len(startup_phase._pending) == startup_phase._MAX_PENDING  # pyright: ignore[reportPrivateUsage]
+
+
+def test_releasing_the_default_sink_buffers_phases_for_the_next_daemon(clean_startup_phases) -> None:
+    startup_phase = clean_startup_phases
+    closed: list[tuple[str, str]] = []
+    newer: list[tuple[str, str]] = []
+
+    def closed_sink(event: str, detail: str) -> None:
+        closed.append((event, detail))
+
+    def newer_sink(event: str, detail: str) -> None:
+        newer.append((event, detail))
+
+    startup_phase.flush_pending_phases(closed_sink)
+    startup_phase.release_default_sink(closed_sink)
+    with startup_phase.timed_phase("import_modules"):
+        pass
+    assert not closed
+    assert len(startup_phase._pending) == 1  # pyright: ignore[reportPrivateUsage]
+
+    startup_phase.flush_pending_phases(newer_sink)
+    startup_phase.release_default_sink(closed_sink)
+    with startup_phase.timed_phase("store_open"):
+        pass
+    assert [detail.split()[0] for _event, detail in newer] == ["phase=import_modules", "phase=store_open"]

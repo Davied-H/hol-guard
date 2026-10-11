@@ -126,6 +126,9 @@ class DaemonDiagnostics:
         return self._enqueue(self._record(logging.ERROR, event, detail=detail, exc_info=exc_info))
 
     def close(self, *, timeout_seconds: float = 1.0) -> bool:
+        from .startup_phase import release_default_sink
+
+        release_default_sink(self.record_phase)
         with self._close_lock:
             if self._handler is None:
                 return True
