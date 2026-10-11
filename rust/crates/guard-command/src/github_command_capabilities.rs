@@ -1544,7 +1544,7 @@ fn routine_review_thread_arguments_are_static(args: &[String]) -> bool {
         let token = &args[index];
         if token == "--jq" {
             jq_count += 1;
-            if jq_count > 1 || index + 1 >= args.len() || args[index + 1] != ".data" {
+            if jq_count > 1 || index + 1 >= args.len() || !jq_is_plain_path(&args[index + 1]) {
                 return false;
             }
             index += 2;
@@ -1552,7 +1552,7 @@ fn routine_review_thread_arguments_are_static(args: &[String]) -> bool {
         }
         if let Some(v) = token.strip_prefix("--jq=") {
             jq_count += 1;
-            if jq_count > 1 || v != ".data" {
+            if jq_count > 1 || !jq_is_plain_path(v) {
                 return false;
             }
             index += 1;
@@ -1583,17 +1583,24 @@ fn routine_review_thread_arguments_are_static(args: &[String]) -> bool {
             Some(p) => (value[..p].to_string(), true, value[p + 1..].to_string()),
             None => (value.clone(), false, String::new()),
         };
-        if !field_sep || (name != "query" && name != "threadId") {
+        if !field_sep || name.is_empty() {
             return false;
         }
         field_names.push(name);
     }
-    field_names.iter().filter(|n| n.as_str() == "query").count() == 1
-        && field_names
-            .iter()
-            .filter(|n| n.as_str() == "threadId")
-            .count()
-            <= 1
+    // `is_routine_review_thread_resolution` binds the one non-query field to
+    // the document's declared variable.
+    field_names.iter().filter(|n| n.as_str() == "query").count() == 1 && field_names.len() <= 2
+}
+
+/// A `--jq` filter made only of `.field` steps selects response data and cannot
+/// call `env`, `input` or any other builtin.
+fn jq_is_plain_path(filter: &str) -> bool {
+    filter.starts_with('.')
+        && filter.len() <= 256
+        && filter.split('.').skip(1).all(|step| {
+            !step.is_empty() && step.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        })
 }
 
 // ---------------------------------------------------------------------------
@@ -1641,7 +1648,8 @@ const CONTENT_MUTATIONS: &[&str] = &[
     "updatePullRequestReviewComment",
 ];
 
-const REVIEW_THREAD_SELECTION: &str = "(?:id\\s+isResolved|isResolved\\s+id|id|isResolved)";
+const REVIEW_THREAD_SELECTION: &str =
+    "(?:id(?:\\s*,\\s*|\\s+)isResolved|isResolved(?:\\s*,\\s*|\\s+)id|id|isResolved)";
 
 fn routine_review_thread_literal_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
@@ -1656,7 +1664,7 @@ fn routine_review_thread_variable_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
         Regex::new(&format!(
-            r#"\A\s*mutation\s*\(\s*\$threadId\s*:\s*ID!\s*\)\s*\{{\s*resolveReviewThread\s*\(\s*input\s*:\s*\{{\s*threadId\s*:\s*\$threadId\s*\}}\s*\)\s*\{{\s*thread\s*\{{\s*{REVIEW_THREAD_SELECTION}\s*\}}\s*\}}\s*\}}\s*\z"#
+            r#"\A\s*mutation\s*\(\s*\$(?P<declared>[_A-Za-z][_0-9A-Za-z]*)\s*:\s*ID!\s*\)\s*\{{\s*resolveReviewThread\s*\(\s*input\s*:\s*\{{\s*threadId\s*:\s*\$(?P<used>[_A-Za-z][_0-9A-Za-z]*)\s*\}}\s*\)\s*\{{\s*thread\s*\{{\s*{REVIEW_THREAD_SELECTION}\s*\}}\s*\}}\s*\}}\s*\z"#
         ))
         .unwrap()
     })
@@ -1840,13 +1848,21 @@ pub fn is_routine_review_thread_resolution(document: &str, fields: &[(String, St
     if routine_review_thread_literal_re().is_match(document) {
         return fields.len() == 1;
     }
+    // The variable may carry any name, but it must be the one declared `ID!`
+    // variable and the only other field.
+    let Some(variable) = routine_review_thread_variable_re()
+        .captures(document)
+        .filter(|captures| captures["declared"] == captures["used"])
+        .map(|captures| captures["declared"].to_owned())
+    else {
+        return false;
+    };
     let thread_ids: Vec<&str> = fields
         .iter()
-        .filter(|(n, _)| n == "threadId")
+        .filter(|(n, _)| *n == variable)
         .map(|(_, v)| v.as_str())
         .collect();
-    routine_review_thread_variable_re().is_match(document)
-        && fields.len() == 2
+    fields.len() == 2
         && thread_ids.len() == 1
         && routine_review_thread_value_re().is_match(thread_ids[0])
 }

@@ -446,6 +446,19 @@ impl CompiledNativeCommandControls {
             }
             covered.extend(observation.effective_segment_indexes.iter().copied());
         }
+        // An enabled GitHub permission-only owner (a proven read or routine
+        // review-thread resolution) runs last so it never hides an ungranted rule.
+        let enabled = &self.explicitly_enabled_permissions;
+        for item in &batch.permission_observations {
+            let id = &item.permission_id;
+            if item.mcp_tool.is_none()
+                && item.uncertainty_reasons.is_empty()
+                && id.starts_with("command.github.permission.")
+                && enabled.contains(id)
+            {
+                covered.extend(item.matcher_evidence.iter().map(|e| e.segment_index));
+            }
+        }
         // Delegated package-firewall ownership is not execution consent. Only
         // verified rule observations or the native benign proof can cover a
         // segment; an extra unclassified command retains its own review.
