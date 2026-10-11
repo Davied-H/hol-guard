@@ -18,19 +18,21 @@ SPEC.loader.exec_module(MODULE)
 PATH_FAMILIES = ("workspace_string", "exec_command_workdir", "directory_authority")
 
 
-def _has_separator(entry: object) -> bool:
-    return "/" in json.dumps(entry)
+def _is_platform_dependent(entry: object) -> bool:
+    # Separators are recorded POSIX-style, and "~user" expands differently per platform.
+    text = json.dumps(entry)
+    return "/" in text or "~" in text
 
 
 def test_python_hook_admission_helpers_match_recorded_vectors() -> None:
     recorded = json.loads(MODULE.FIXTURE.read_text(encoding="utf-8"))
     built = MODULE.build()
     if sys.platform == "win32":
-        # Separator-dependent path vectors are recorded with POSIX separators; the
-        # separator-free ones (sentinels, non-strings, empty values) still run here.
+        # Separator- and tilde-dependent path vectors are recorded on POSIX; the
+        # platform-neutral ones (sentinels, non-strings, empty values) still run here.
         for family in PATH_FAMILIES:
-            recorded[family] = [entry for entry in recorded[family] if not _has_separator(entry)]
-            built[family] = [entry for entry in built[family] if not _has_separator(entry)]
+            recorded[family] = [entry for entry in recorded[family] if not _is_platform_dependent(entry)]
+            built[family] = [entry for entry in built[family] if not _is_platform_dependent(entry)]
 
     assert built == recorded
 
