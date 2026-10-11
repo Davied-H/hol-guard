@@ -29,8 +29,8 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-from codex_plugin_scanner.guard import blocked_request_mode, native_policy_snapshot_acked  # noqa: E402
 from codex_plugin_scanner.guard import approvals as approvals_module  # noqa: E402
+from codex_plugin_scanner.guard import blocked_request_mode, native_policy_snapshot_acked  # noqa: E402
 from codex_plugin_scanner.guard.cli import commands_hook_native_copilot as copilot  # noqa: E402
 from codex_plugin_scanner.guard.mcp_tool_calls import ToolCallDecision  # noqa: E402
 from codex_plugin_scanner.guard.models import GuardArtifact  # noqa: E402
