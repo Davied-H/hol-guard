@@ -2,9 +2,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use guard_command::{
-    command_model, command_segment_parsing, command_structure, command_tokens, env_wrapper,
-};
+use guard_command::{command_model, rich_command_model_api as model_api};
 use guard_contracts::write_canonical_json_with_limit;
 use guard_policy_snapshot::digest_bytes;
 use serde::{Deserialize, Serialize};
@@ -86,7 +84,7 @@ struct EnvArgs {
 struct SegmentArgs {
     command: String,
     source_offset: usize,
-    redirects: Vec<command_structure::CommandRedirect>,
+    redirects: Vec<model_api::CommandRedirect>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -101,7 +99,7 @@ struct HeredocInput {
     quoted: bool,
     strip_tabs: bool,
 }
-impl From<HeredocInput> for guard_command::shell_structure::ShellHeredoc {
+impl From<HeredocInput> for model_api::ShellHeredoc {
     fn from(h: HeredocInput) -> Self {
         Self {
             delimiter: h.delimiter,
@@ -129,9 +127,9 @@ struct IdentityArgs {
     dialect: String,
     transport: String,
     wrapper_chain: Vec<String>,
-    segments: Vec<command_structure::IdentitySegment>,
-    redirects: Vec<command_structure::CommandRedirect>,
-    embedded_commands: Vec<command_structure::EmbeddedCommand>,
+    segments: Vec<model_api::IdentitySegment>,
+    redirects: Vec<model_api::CommandRedirect>,
+    embedded_commands: Vec<model_api::EmbeddedCommand>,
 }
 
 fn decode<T: serde::de::DeserializeOwned>(args: &Value) -> Result<T, String> {
@@ -170,50 +168,44 @@ pub(crate) fn result(action: &str, args: &Value) -> Result<Value, String> {
         "tokens" | "windows_tokens" => {
             let a: TextArgs = decode(args)?;
             let (tokens, exact) = if action == "windows_tokens" {
-                command_tokens::windows_shell_tokens(&a.command)
+                model_api::windows_shell_tokens(&a.command)
             } else {
-                command_tokens::shell_tokens(&a.command)
+                model_api::shell_tokens(&a.command)
             };
             Ok(json!([tokens, exact]))
         }
         "executable" => {
             let a: ExecutableArgs = decode(args)?;
-            Ok(json!(command_tokens::executable_name(a.value.as_deref())))
+            Ok(json!(model_api::executable_name(a.value.as_deref())))
         }
         "leading_environment" => {
             let a: TokensArgs = decode(args)?;
-            let (names, index, wrappers) = command_tokens::leading_environment(&a.tokens);
+            let (names, index, wrappers) = model_api::leading_environment(&a.tokens);
             Ok(json!([names, index, wrappers]))
         }
         "sudo_options" => {
             let a: SudoArgs = decode(args)?;
-            Ok(json!(command_tokens::after_sudo_options(
-                &a.tokens, a.index
-            )))
+            Ok(json!(model_api::after_sudo_options(&a.tokens, a.index)))
         }
         "segment_tokens" => {
             let a: SegmentArgs = decode(args)?;
-            Ok(json!(
-                command_segment_parsing::shell_tokens_without_redirects(
-                    &a.command,
-                    a.source_offset,
-                    &a.redirects
-                )
-            ))
+            Ok(json!(model_api::shell_tokens_without_redirects(
+                &a.command,
+                a.source_offset,
+                &a.redirects
+            )))
         }
         "redirects" => {
             let a: RedirectArgs = decode(args)?;
             let heredocs: Vec<_> = a.heredocs.into_iter().map(Into::into).collect();
             Ok(
-                serde_json::to_value(command_structure::extract_command_redirects(
-                    &a.command, &heredocs,
-                ))
-                .map_err(|_| "native_rich_command_model_invalid_result")?,
+                serde_json::to_value(model_api::extract_command_redirects(&a.command, &heredocs))
+                    .map_err(|_| "native_rich_command_model_invalid_result")?,
             )
         }
         "identity" => {
             let a: IdentityArgs = decode(args)?;
-            Ok(json!(command_structure::build_command_security_identity(
+            Ok(json!(model_api::build_command_security_identity(
                 &a.normalized_text,
                 &a.dialect,
                 &a.transport,
@@ -225,7 +217,7 @@ pub(crate) fn result(action: &str, args: &Value) -> Result<Value, String> {
         }
         "env" => {
             let a: EnvArgs = decode(args)?;
-            let e = env_wrapper::parse_env_wrapper(
+            let e = model_api::parse_env_wrapper(
                 &a.tokens,
                 a.inherited_environment.as_ref(),
                 a.cwd.as_deref().map(Path::new),

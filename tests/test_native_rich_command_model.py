@@ -75,3 +75,47 @@ def test_identity_cache_is_bound_to_complete_structure(monkeypatch: pytest.Monke
     monkeypatch.setattr(client, "ensure_resident_prerequisite", lambda _: False)
     with pytest.raises(client.NativeCommandModelError):
         _ = changed.security_identity
+
+
+@pytest.mark.parametrize("damage", ["digest", "request_id", "schema", "shape", "status", "surrogate"])
+def test_transport_rejects_unbound_or_malformed_replies(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    damage: str,
+) -> None:
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(client, "_resolve_digest_home", lambda _: tmp_path)
+    monkeypatch.setattr(client, "ensure_resident_prerequisite", lambda _: True)
+    monkeypatch.setattr(
+        client,
+        "native_runtime_status",
+        lambda: SimpleNamespace(
+            available=True,
+            compatible=True,
+            identity=SimpleNamespace(path="/fixture/runtime"),
+            capabilities=SimpleNamespace(features=[client.FEATURE, "resident-protocol-v2"]),
+        ),
+    )
+
+    def respond(**kwargs: Any) -> bytes:
+        assert damage != "surrogate", "Invalid UTF-8 must be rejected before transport"
+        material = json.loads(kwargs["payload"])["request"]
+        reply = {
+            "schema": client.RESULT_SCHEMA,
+            "request_id": material["request_id"],
+            "request_sha256": client._canonical_request_sha256(material),
+            "status": "ok",
+            "error": None,
+            "result": [["echo", "hi"], True],
+        }
+        if damage == "shape":
+            reply["result"] = [[42], True]
+        else:
+            key = "request_sha256" if damage == "digest" else damage
+            reply[key] = "invalid"
+        return json.dumps(reply).encode()
+
+    monkeypatch.setattr(client, "native_resident_client_request", respond)
+    with pytest.raises(ValueError):
+        command_tokens.shell_tokens("echo \udc80" if damage == "surrogate" else "echo hi")

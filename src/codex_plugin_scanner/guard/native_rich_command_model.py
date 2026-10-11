@@ -17,8 +17,91 @@ RESULT_SCHEMA = "guard-rich-command-model-result.v1"
 _MAX_BYTES = 2 * 1024 * 1024
 
 
-class NativeCommandModelError(RuntimeError):
+class NativeCommandModelError(RuntimeError, ValueError):
     """The native parser did not return an authoritative, bound result."""
+
+
+def _shape(value: Any, spec: Any) -> bool:
+    if isinstance(spec, tuple):
+        return any(_shape(value, option) for option in spec)
+    if isinstance(spec, dict):
+        return (
+            isinstance(value, dict)
+            and set(value) == set(spec)
+            and all(_shape(value[key], kind) for key, kind in spec.items())
+        )
+    if isinstance(spec, list):
+        if not isinstance(value, list):
+            return False
+        if len(spec) == 1:
+            return all(_shape(item, spec[0]) for item in value)
+        return len(value) == len(spec) and all(_shape(item, kind) for item, kind in zip(value, spec, strict=True))
+    return type(value) is spec
+
+
+def _valid_result(action: str, value: Any) -> bool:
+    nullable = (str, type(None))
+    span = {"source": str, "start": int, "end": int}
+    redirect = {"operator": str, "target": str, "start": int, "end": int}
+    specs = {
+        "parse": {
+            "raw_text": str,
+            "normalized_text": str,
+            "dialect": str,
+            "transport": str,
+            "extraction_provenance": str,
+            "wrapper_chain": [str],
+            "confidence": str,
+            "uncertainty_reason": nullable,
+            "security_identity": str,
+            "path_overridden": bool,
+            "segments": [
+                {
+                    "text": str,
+                    "tokens": [str],
+                    "executable": nullable,
+                    "arguments": [str],
+                    "environment_names": [str],
+                    "wrapper_chain": [str],
+                    "path_overridden": bool,
+                    "execution_context": str,
+                    "pipeline_index": int,
+                    "span": span,
+                }
+            ],
+            "redirects": [{"operator": str, "target": str, "span": span}],
+            "embedded_commands": [{"kind": str, "text": str, "execution_context": str, "span": span}],
+        },
+        "tokens": [[str], bool],
+        "windows_tokens": [[str], bool],
+        "leading_environment": [[str], int, [str]],
+        "executable": nullable,
+        "sudo_options": int,
+        "segment_tokens": [str],
+        "redirects": [redirect],
+        "identity": str,
+        "env": {
+            "complete": bool,
+            "error": nullable,
+            "original_tokens": [str],
+            "expanded_tokens": [str],
+            "option_effects": {
+                "ignore_environment": bool,
+                "unset_names": [str],
+                "chdir": nullable,
+                "search_path": nullable,
+                "verbose": bool,
+                "null_output": bool,
+            },
+            "environment_delta": {"clear": bool, "unset_names": [str], "assignments": [[str, str]]},
+            "effective_environment": ([[str, str]], type(None)),
+            "effective_cwd": nullable,
+            "command_index": (int, type(None)),
+            "executable_argv": [str],
+            "split_expansions": [{"payload": str, "source_index": int, "tokens": [str]}],
+        },
+    }
+    return action in specs and _shape(value, specs[action])
 
 
 def request(action: str, args: dict[str, Any], *, timeout_seconds: float = 10.0) -> Any:
@@ -53,7 +136,8 @@ def request(action: str, args: dict[str, Any], *, timeout_seconds: float = 10.0)
                 "operation": "rich_command_model",
                 "request": material,
                 "deadline_budget_ms": max(1, int(remaining * 1000)),
-            }
+            },
+            ensure_ascii=False,
         ).encode("utf-8")
         if len(payload) > _MAX_BYTES:
             raise NativeCommandModelError("native_rich_command_model_bounds")
@@ -79,7 +163,11 @@ def request(action: str, args: dict[str, Any], *, timeout_seconds: float = 10.0)
             raise ValueError(decoded["error"])
         if decoded["status"] != "ok" or decoded["error"] is not None:
             raise NativeCommandModelError("native_rich_command_model_invalid_result")
+        if not _valid_result(action, decoded["result"]):
+            raise NativeCommandModelError("native_rich_command_model_invalid_result")
         return decoded["result"]
+    except UnicodeEncodeError as error:
+        raise NativeCommandModelError("native_rich_command_model_invalid_input") from error
     except (OSError, TypeError, UnicodeError, json.JSONDecodeError) as error:
         raise NativeCommandModelError("native_rich_command_model_unavailable") from error
 

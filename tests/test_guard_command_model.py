@@ -13,9 +13,11 @@ from codex_plugin_scanner.guard.runtime.command_rules import (
 
 
 def test_windows_parse_keeps_backslash_path_separators(monkeypatch: pytest.MonkeyPatch) -> None:
+    from types import SimpleNamespace
+
     from codex_plugin_scanner.guard.runtime import command_tokens
 
-    monkeypatch.setattr(command_tokens.os, "name", "nt")
+    monkeypatch.setattr(command_tokens, "os", SimpleNamespace(name="nt"))
     tokens, exact = command_tokens.shell_tokens(r"cmd /c echo C:\Work\file.txt")
 
     assert exact
