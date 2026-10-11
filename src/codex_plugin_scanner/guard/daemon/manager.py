@@ -733,11 +733,12 @@ def _ensure_guard_daemon_body(
                     port=candidate_port,
                 )
                 _release_guard_daemon_launch_gate(process)
+                wait_deadline = _spawned_daemon_wait_deadline(start_deadline)
                 url = _wait_for_spawned_guard_daemon_url(
                     guard_home,
                     process=process,
                     executable=executable,
-                    start_deadline=start_deadline,
+                    wait_deadline=wait_deadline,
                 )
                 if url is not None:
                     if not _clear_spawned_guard_daemon_pending_launch(
@@ -785,6 +786,11 @@ def _ensure_guard_daemon_body(
                     guard_home, process=process, creation_time=pending_creation_time
                 ):
                     raise RuntimeError("Guard daemon pending launch state could not be cleared safely.")
+                if time.monotonic() >= wait_deadline:
+                    # Only the classification reserve is left; it cannot start
+                    # another candidate, so a child that used its full wait ends
+                    # the attempt. A child that exited early still frees the loop.
+                    break
             except GuardDaemonStillStartingError:
                 raise
             except BaseException:
@@ -2855,14 +2861,8 @@ def _retire_guard_daemon_pid(
     return wait_for_death()
 
 
-def _wait_for_spawned_guard_daemon_url(
-    guard_home: Path,
-    *,
-    process: subprocess.Popen[bytes],
-    executable: Path | None,
-    start_deadline: float,
-) -> str | None:
-    """Wait for a spawned daemon while keeping time to classify it afterwards.
+def _spawned_daemon_wait_deadline(start_deadline: float) -> float:
+    """Return when the readiness wait must stop to leave time for classification.
 
     Classification queries the spawned process tree under the same lifecycle
     deadline. When the wait spends the whole budget those queries time out, and
@@ -2872,10 +2872,20 @@ def _wait_for_spawned_guard_daemon_url(
 
     remaining = max(0.0, start_deadline - time.monotonic())
     reserve = min(_START_CLASSIFICATION_RESERVE_SECONDS, remaining * _START_CLASSIFICATION_RESERVE_FRACTION)
+    return start_deadline - reserve
+
+
+def _wait_for_spawned_guard_daemon_url(
+    guard_home: Path,
+    *,
+    process: subprocess.Popen[bytes],
+    executable: Path | None,
+    wait_deadline: float,
+) -> str | None:
     try:
         return _wait_for_started_guard_daemon_url(
             guard_home,
-            timeout=max(0.0, remaining - reserve),
+            timeout=max(0.0, wait_deadline - time.monotonic()),
             process=process,
             executable=executable,
         )
