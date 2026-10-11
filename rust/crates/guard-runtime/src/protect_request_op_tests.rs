@@ -165,6 +165,58 @@ fn a_store_outside_the_guard_home_is_refused() {
 }
 
 #[test]
+fn a_non_finite_unrelated_cache_row_still_allows_the_install() {
+    let workspace = Workspace::new("nan-unrelated");
+    workspace.write_cache(&[
+        (
+            "leftpad",
+            r#"{"ecosystem":"npm","package":"leftpad","score":NaN}"#,
+            "2026-10-01",
+        ),
+        (
+            "infinite",
+            r#"{"ecosystem":"npm","package":"leftpad","score":Infinity,"alt":-Infinity,"plus":+Infinity}"#,
+            "2026-10-02",
+        ),
+        (
+            "huge",
+            r#"{"ecosystem":"npm","package":"leftpad","score":1e400}"#,
+            "2026-10-03",
+        ),
+    ]);
+    let result = run(&request(
+        &workspace,
+        Some(workspace.store()),
+        &["npm", "install", "lodash"],
+    ));
+    assert_eq!((result.status.as_str(), result.code.as_str()), ("ok", "ok"));
+    let verdict = result.verdict.unwrap();
+    assert_eq!(verdict.action, "allow");
+    assert!(verdict.matched_advisories.is_empty());
+}
+
+#[test]
+fn a_non_finite_critical_advisory_still_blocks() {
+    let workspace = Workspace::new("nan-critical");
+    let critical = r#"{"artifact_id":"install:npm:lodash","severity":"critical","headline":"Lodash score was NaN.","score":NaN}"#;
+    workspace.write_cache(&[("critical", critical, "2026-10-01")]);
+    let result = run(&request(
+        &workspace,
+        Some(workspace.store()),
+        &["npm", "install", "lodash"],
+    ));
+    assert_eq!(result.code, "ok");
+    let verdict = result.verdict.unwrap();
+    assert_eq!(verdict.action, "block");
+    assert_eq!(
+        verdict.reason,
+        "Lodash score was NaN. Guard blocked the install before the artifact landed locally."
+    );
+    assert_eq!(verdict.matched_advisories.len(), 1);
+    assert_eq!(verdict.matched_advisories[0].payload_json, critical);
+}
+
+#[test]
 fn an_unparseable_cache_row_fails_closed() {
     let workspace = Workspace::new("corrupt");
     workspace.write_cache(&[("bad", "{not json", "2026-10-01")]);

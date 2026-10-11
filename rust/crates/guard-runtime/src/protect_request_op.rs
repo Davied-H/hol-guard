@@ -20,6 +20,8 @@ use serde_json::{Map, Value};
 
 const STORE_UNAVAILABLE: &str = "native_protect_request_store_unavailable";
 const CACHE_INVALID: &str = "native_protect_request_cache_invalid";
+/// Bound on rewriting one out-of-range number per cached payload.
+const OUT_OF_RANGE_REWRITES: u8 = 8;
 
 struct Failure {
     code: &'static str,
@@ -140,9 +142,7 @@ fn cached_advisories(
             payload_json: text(1)?,
             updated_at: text(2)?,
         };
-        let Value::Object(payload) =
-            serde_json::from_str::<Value>(&raw.payload_json).map_err(|_| CACHE_INVALID)?
-        else {
+        let Value::Object(payload) = parse_cache_payload(&raw.payload_json)? else {
             continue;
         };
         let mut advisory = Map::new();
@@ -155,6 +155,159 @@ fn cached_advisories(
         advisories.push((raw, Value::Object(advisory)));
     }
     Ok(advisories)
+}
+
+/// Python `json.dumps(..., allow_nan=True)` writes bare `NaN`, `Infinity`,
+/// and `-Infinity`. Those tokens are not JSON, but one such row must not fail
+/// every protect. The token becomes null so string match fields still block a
+/// critical advisory. A number serde rejects as out of range is nulled the
+/// same way. Invalid JSON still fails the request.
+fn parse_cache_payload(raw: &str) -> Result<Value, Failure> {
+    let mut candidate = rewrite_non_finite_literals(raw);
+    for _ in 0..OUT_OF_RANGE_REWRITES {
+        match serde_json::from_str::<Value>(&candidate) {
+            Ok(value) => return Ok(value),
+            Err(error) if is_number_out_of_range(&error) => {
+                if !replace_out_of_range_number(&mut candidate, error.line(), error.column()) {
+                    return Err(CACHE_INVALID.into());
+                }
+            }
+            Err(_) => return Err(CACHE_INVALID.into()),
+        }
+    }
+    Err(CACHE_INVALID.into())
+}
+
+fn is_number_out_of_range(error: &serde_json::Error) -> bool {
+    error.to_string().contains("number out of range")
+}
+
+fn rewrite_non_finite_literals(raw: &str) -> String {
+    let bytes = raw.as_bytes();
+    let mut out = String::with_capacity(raw.len());
+    let mut index = 0;
+    let mut in_string = false;
+    let mut escaped = false;
+    while index < bytes.len() {
+        if in_string {
+            let byte = bytes[index];
+            let ch = raw[index..].chars().next().expect("index is on a char");
+            out.push(ch);
+            index += ch.len_utf8();
+            if escaped {
+                escaped = false;
+            } else if byte == b'\\' {
+                escaped = true;
+            } else if byte == b'"' {
+                in_string = false;
+            }
+            continue;
+        }
+        if bytes[index] == b'"' {
+            in_string = true;
+            out.push('"');
+            index += 1;
+            continue;
+        }
+        if let Some(length) = bare_non_finite_len(&bytes[index..]) {
+            let before = out.as_bytes().last().copied();
+            let after = index + length;
+            if ident_boundary(before) && ident_boundary(bytes.get(after).copied()) {
+                out.push_str("null");
+                index = after;
+                continue;
+            }
+        }
+        let ch = raw[index..].chars().next().expect("index is on a char");
+        out.push(ch);
+        index += ch.len_utf8();
+    }
+    out
+}
+
+fn bare_non_finite_len(rest: &[u8]) -> Option<usize> {
+    if rest.starts_with(b"+Infinity") || rest.starts_with(b"-Infinity") {
+        Some(9)
+    } else if rest.starts_with(b"Infinity") {
+        Some(8)
+    } else if rest.starts_with(b"NaN") {
+        Some(3)
+    } else {
+        None
+    }
+}
+
+fn ident_boundary(byte: Option<u8>) -> bool {
+    match byte {
+        Some(byte) => !byte.is_ascii_alphanumeric() && byte != b'_',
+        None => true,
+    }
+}
+
+fn replace_out_of_range_number(raw: &mut String, line: usize, column: usize) -> bool {
+    let Some(line_start) = line_start_index(raw, line) else {
+        return false;
+    };
+    // SliceRead reports the next unread byte. The documented column is
+    // 1-based. Either index sits in the rejected number or just after it.
+    replace_number_touching(raw, line_start + column)
+        || replace_number_touching(raw, line_start + column.saturating_sub(1))
+}
+
+fn line_start_index(raw: &str, line: usize) -> Option<usize> {
+    if line == 0 {
+        return None;
+    }
+    if line == 1 {
+        return Some(0);
+    }
+    let mut current = 1;
+    for (index, byte) in raw.bytes().enumerate() {
+        if byte == b'\n' {
+            current += 1;
+            if current == line {
+                return Some(index + 1);
+            }
+        }
+    }
+    None
+}
+
+fn replace_number_touching(raw: &mut String, anchor: usize) -> bool {
+    let (start, end) = {
+        let bytes = raw.as_bytes();
+        if bytes.is_empty() {
+            return false;
+        }
+        let mut probe = anchor.min(bytes.len());
+        if probe == bytes.len() || !is_number_byte(bytes[probe]) {
+            probe = probe.saturating_sub(1);
+            if !is_number_byte(bytes[probe]) {
+                probe = probe.saturating_sub(1);
+                if !is_number_byte(bytes[probe]) {
+                    return false;
+                }
+            }
+        }
+        let mut start = probe;
+        while start > 0 && is_number_byte(bytes[start - 1]) {
+            start -= 1;
+        }
+        let mut end = probe + 1;
+        while end < bytes.len() && is_number_byte(bytes[end]) {
+            end += 1;
+        }
+        if !bytes[start..end].iter().any(|byte| byte.is_ascii_digit()) {
+            return false;
+        }
+        (start, end)
+    };
+    raw.replace_range(start..end, "null");
+    true
+}
+
+fn is_number_byte(byte: u8) -> bool {
+    byte.is_ascii_digit() || matches!(byte, b'.' | b'e' | b'E' | b'+' | b'-')
 }
 
 fn parsed_request(request: &ProtectRequest) -> ProtectParsedRequestV1 {

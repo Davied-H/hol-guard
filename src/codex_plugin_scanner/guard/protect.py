@@ -500,10 +500,12 @@ def _native_protect(
     guard_home: Path | None,
     store: Any | None,
 ) -> tuple[ProtectRequest, ProtectVerdict]:
+    home = Path(store.guard_home) if store is not None else guard_home
+    store_path = Path(store.path) if store is not None else None
     request, verdict = native_protect_request(
         command,
-        guard_home=Path(store.guard_home) if store is not None else guard_home,
-        store_path=Path(store.path) if store is not None else None,
+        guard_home=None if home is None else home.expanduser().resolve(strict=False),
+        store_path=None if store_path is None else store_path.expanduser().resolve(strict=False),
     )
     return (
         ProtectRequest(
