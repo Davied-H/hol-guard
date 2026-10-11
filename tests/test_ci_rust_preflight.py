@@ -41,6 +41,7 @@ def test_shipped_native_size_gate_uses_cargo_release_profile() -> None:
     assert env["CARGO_PROFILE_RELEASE_CODEGEN_UNITS"] == "16"
 
     evaluators = document["jobs"]["native-command-evaluators"]
+    assert evaluators["timeout-minutes"] >= 10
     evaluator_runs = "\n".join(step.get("run", "") for step in evaluators["steps"])
     assert "check_wheel_size.py" not in evaluator_runs
     assert "unset CARGO_PROFILE_RELEASE_LTO" not in evaluator_runs

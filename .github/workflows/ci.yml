@@ -234,7 +234,9 @@ jobs:
 
   native-command-evaluators:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # A cold opt-level=s release build took about four minutes and left the
+    # pytest gates short of the previous five-minute job limit.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
@@ -299,8 +301,8 @@ jobs:
           HOL_GUARD_NATIVE_BINARY: ${{ github.workspace }}/rust/target/release/hol-guard-runtime
           HOL_GUARD_NATIVE_REGRESSION: "1"
         run: |
-          # Four workers on the 4-vCPU runner keep this required gate well under
-          # the job's five-minute budget after a cold native build.
+          # Four workers on the 4-vCPU runner keep this required gate inside the
+          # job budget after a cold native build.
           uv run --no-sync pytest -q --tb=short -n 4 --dist load --max-worker-restart 0 \
             tests/test_guard_benign_false_positive_gate.py \
             tests/test_guard_command_corpus_benign_allow.py
