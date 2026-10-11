@@ -117,7 +117,8 @@ class _StreamingDaemonHandler(_AuthenticatedDaemonHandler):
         self.send_header("Content-Type", "application/json")
         self.end_headers()
         try:
-            for _ in range(50):
+            # Keep streaming past the bridge's whole daemon IO budget.
+            for _ in range(int(bridge._DAEMON_IO_TIMEOUT_SECONDS * 10) + 20):
                 self.wfile.write(b"{")
                 self.wfile.flush()
                 time.sleep(0.1)
