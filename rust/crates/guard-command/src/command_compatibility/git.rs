@@ -188,6 +188,7 @@ pub(super) fn inspection_arguments<'a>(
                 | "log"
                 | "show"
                 | "branch"
+                | "hash-object"
                 | "rev-parse"
                 | "ls-files"
                 | "remote"
@@ -233,8 +234,14 @@ pub(super) fn observe_with_context(
         && inspection.is_some_and(|remaining| {
             crate::pretool::git_branch_listing::is_listing(&remaining[1..])
         });
+    // Printing object ids of named files writes nothing to the repository.
+    let hash_read = command == "hash-object"
+        && inspection.is_some_and(|remaining| {
+            crate::pretool::git_hash_object::read_operands(&remaining[1..]).is_some()
+        });
     if plumbing
         || branch_listing
+        || hash_read
         || (command_index == 0 && bounded_inspection(arguments))
         || inspection.is_some_and(bounded_inspection)
     {

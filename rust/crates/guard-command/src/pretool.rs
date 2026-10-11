@@ -18,6 +18,7 @@ mod base64_reads;
 mod find_reads;
 pub(crate) mod git_branch_listing;
 mod git_config;
+pub(crate) mod git_hash_object;
 mod git_helper_context;
 mod git_probe;
 mod git_routes;
@@ -177,15 +178,19 @@ fn safe_git_arguments(
     if let Some(inspected) =
         crate::command_compatibility::git_inspection_arguments(arguments, context)
     {
-        if let Some((_, rest)) = inspected
-            .split_first()
-            .filter(|(subcommand, _)| subcommand.as_str() == "branch")
-        {
-            let leading = &arguments[..arguments.len() - inspected.len()];
-            return !leading
-                .iter()
-                .any(|value| value.starts_with(':') || sensitive_read_path_argument(value))
-                && git_branch_listing::is_listing(rest);
+        let leading = &arguments[..arguments.len() - inspected.len()];
+        let leading_safe = !leading
+            .iter()
+            .any(|value| value.starts_with(':') || sensitive_read_path_argument(value));
+        match inspected.split_first() {
+            Some((subcommand, rest)) if subcommand == "branch" => {
+                return leading_safe && git_branch_listing::is_listing(rest);
+            }
+            Some((subcommand, rest)) if subcommand == "hash-object" => {
+                return leading_safe
+                    && git_hash_object::safe_read(rest, allow_helper_context, context);
+            }
+            _ => {}
         }
     }
     // Git magic pathspec semantics are not proven by this classifier; retain review.
