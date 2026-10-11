@@ -53,6 +53,10 @@ fn fixture() -> Fixture {
         "package.json",
         "node_modules/wrangler/bin/wrangler.js",
         ".ssh/id_rsa",
+        ".env",
+        "[,-0]env/page.tsx",
+        "private[[:punct:]]key/page.tsx",
+        "private-key/material.pem",
     ] {
         write(&ws, file);
     }
@@ -94,6 +98,8 @@ fn recursive_listing_and_globs_stay_inside_clean_trees() {
         "ls app/registry/[slug]",
         "ls -la app/registry/[slug]",
         "ls app/registry/[slug] src",
+        // The unmatched bracket drops out under nullglob; `src` remains.
+        "ls -R app/registry/[slug] src",
     ] {
         assert!(allowed_in(&fixture, ws, command), "{command}");
     }
@@ -126,6 +132,11 @@ fn recursive_listing_and_globs_stay_inside_clean_trees() {
         "ls app/registry/[!x]",
         "ls app/registry/[.x]",
         "ls nothing/[slug]",
+        // `[,-0]` includes `.`, so dotglob can select `.env`.
+        "ls [,-0]env",
+        // `[[:punct:]]` is not a literal directory to the shell; it selects
+        // `private-key` while a same-spelled directory looks harmless.
+        "ls private[[:punct:]]key",
         // Quoted wildcard is a literal name, and an unquoted class mixed with
         // a quoted one is ambiguous.
         "ls 'src/*'",

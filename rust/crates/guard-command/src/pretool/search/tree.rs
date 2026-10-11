@@ -187,30 +187,17 @@ pub(in crate::pretool) fn safe_glob_operand(
 /// through literally, so `ls app/[slug]` lists the Next.js route directory
 /// named `[slug]`; zsh's `nomatch` fails the command instead. The literal
 /// directory must clear the quoted-literal screens. A class that could match
-/// a leading dot under `dotglob` (`.` or a `!` negation) does not qualify,
-/// and an operand that matches anything, safe or not, is never read literally.
+/// a leading dot under `dotglob`, including through a range, does not qualify,
+/// nor does syntax this matcher would close at the wrong `]`.
 pub(in crate::pretool) fn safe_unmatched_bracket_operand(
     value: &str,
     context: ReadContext<'_>,
     recursive: bool,
 ) -> bool {
     !value.contains(['*', '?', '!'])
-        && !bracket_classes_name_dot(value)
+        && !super::glob_class::bracket_fallback_unsafe(value)
         && expand_glob_matches(value, context).is_some_and(|matches| matches.is_empty())
         && safe_literal_bracket_tree(value, context, recursive)
-}
-
-fn bracket_classes_name_dot(value: &str) -> bool {
-    let mut inside = false;
-    for character in value.chars() {
-        match character {
-            '[' => inside = true,
-            ']' => inside = false,
-            '.' if inside => return true,
-            _ => {}
-        }
-    }
-    false
 }
 
 /// Content-search glob operand: every match is walked, and matches inside an
