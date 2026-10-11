@@ -134,6 +134,7 @@ def scan_action_for_cisco_evidence(
     mode: str = "auto",
     sources: Iterable[str] = ("skill", "mcp"),
     timeout_seconds: float = _DEFAULT_SCANNER_TIMEOUT_SECONDS,
+    guard_home: Path | None = None,
 ) -> tuple[GuardRiskSignalV3, ...]:
     """Cisco preflight evidence for the skill or MCP files an action changes."""
 
@@ -160,7 +161,8 @@ def scan_action_for_cisco_evidence(
             "approved_scan_roots": [str(root) for root in approved_scan_roots],
             "target_paths": list(action.target_paths),
             "sources": sorted(requested),
-        }
+        },
+        guard_home,
     )
     steps = plan.get("steps")
     if not isinstance(steps, list) or not all(isinstance(step, dict) for step in steps):
@@ -175,7 +177,10 @@ def scan_action_for_cisco_evidence(
         kind, scan_root = step.get("kind"), step.get("scan_root")
         if kind not in _TARGET_NAMES or not isinstance(scan_root, str):
             raise NativeCiscoPreflightError
-        verdict = _query({"check": "revalidate", "kind": kind, "scan_root": scan_root, "binding": step.get("binding")})
+        verdict = _query(
+            {"check": "revalidate", "kind": kind, "scan_root": scan_root, "binding": step.get("binding")},
+            guard_home,
+        )
         if "signal" not in verdict:
             raise NativeCiscoPreflightError
         if verdict["signal"] is not None:
@@ -183,7 +188,7 @@ def scan_action_for_cisco_evidence(
             continue
         summary = _run_analyzer(kind, Path(scan_root), mode=mode, timeout_seconds=timeout_seconds)
         ran.append(_scanned(step, summary))
-    return _signals(_query({"check": "evidence", "steps": ran}), "signals")
+    return _signals(_query({"check": "evidence", "steps": ran}, guard_home), "signals")
 
 
 def policy_action_for_cisco_signals(
@@ -281,6 +286,7 @@ class _CiscoPreflightDetector:
             approved_scan_roots=getattr(context, "approved_scan_roots", ()),
             sources=(self.source,),
             timeout_seconds=budget_seconds,
+            guard_home=getattr(config, "guard_home", None),
         )
         return tuple(cisco_risk_signal_v3_to_v2(signal) for signal in signals)
 

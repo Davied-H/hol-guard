@@ -327,6 +327,53 @@ def test_cisco_preflight_changed_skill_file_produces_normalized_signal(
     assert signals[0].scanner_rule_id == "CISCO-SKILL-EXFIL"
 
 
+def test_cisco_preflight_queries_use_the_configured_guard_home(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from types import SimpleNamespace
+
+    from codex_plugin_scanner.guard import native_cisco_preflight as preflight
+
+    skill_path = tmp_path / "skills" / "demo" / "SKILL.md"
+    skill_path.parent.mkdir(parents=True)
+    skill_path.write_text("# Demo\n", encoding="utf-8")
+    custom_home = tmp_path / "custom-guard-home"
+    seen: list[tuple[str, Path | None]] = []
+
+    def fake_query(query: dict[str, object], guard_home: Path | None = None) -> dict[str, object]:
+        seen.append((str(query["check"]), guard_home))
+        if query["check"] == "plan":
+            return {"steps": [{"type": "scan", "kind": "skill", "scan_root": str(skill_path.parent), "binding": None}]}
+        if query["check"] == "revalidate":
+            return {"signal": None}
+        return {"signals": []}
+
+    monkeypatch.setattr(preflight, "_query", fake_query)
+    monkeypatch.setattr(preflight, "_run_analyzer", lambda *args, **kwargs: object())
+    monkeypatch.setattr(preflight, "_scanned", lambda step, summary: {"type": "scanned"})
+
+    action = _file_write_action(skill_path, tmp_path)
+    preflight.scan_action_for_cisco_evidence(action, workspace=tmp_path, guard_home=custom_home)
+
+    assert seen == [("plan", custom_home), ("revalidate", custom_home), ("evidence", custom_home)]
+
+    captured: dict[str, object] = {}
+
+    def fake_scan(*args: object, **kwargs: object) -> tuple[()]:
+        captured.update(kwargs)
+        return ()
+
+    monkeypatch.setattr(preflight, "scan_action_for_cisco_evidence", fake_scan)
+    context = SimpleNamespace(
+        config=SimpleNamespace(guard_home=custom_home, runtime_detector_timeout_ms=5000),
+        workspace=tmp_path,
+        approved_scan_roots=(),
+    )
+    preflight.CiscoSkillPreflightDetector().detect(action, context)
+    assert captured["guard_home"] == custom_home
+
+
 def test_cisco_preflight_rejects_skill_targets_that_resolve_outside_workspace_via_symlink(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
