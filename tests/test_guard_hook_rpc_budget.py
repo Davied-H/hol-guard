@@ -63,3 +63,33 @@ def test_pi_post_tool_hook_resident_round_trips_per_request_are_bounded(
     large = _round_trips(monkeypatch, large_root, 48)
     # The difference isolates per-request cost from daemon start-up traffic.
     assert (large - small) <= 24 * _RESIDENT_ROUND_TRIPS_PER_PI_HOOK, (small, large)
+
+
+def _measured_operations(log_path: Path) -> list[str]:
+    lines = log_path.read_bytes().splitlines()
+    return [line.decode("ascii") for line in lines[lines.index(b"W") + 1 :] if line != b"W"]
+
+
+@pytest.mark.usefixtures("native_hook_force")
+def test_pi_allow_and_deny_hooks_never_use_the_hook_render_op(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The edge result carries the harness response, so allow and deny skip hook_render.
+
+    The workload mixes allows with a deny every tenth request. ``hook_render``
+    only serves verdicts the daemon changes after the edge decision (saved
+    approvals, queued reviews, policy repair), so it must add zero resident
+    round trips to the p95 path and the per-hook budget stays unchanged.
+    """
+
+    requests = 30
+    log_path = tmp_path / "resident-requests.log"
+    monkeypatch.setenv("HOL_GUARD_RESIDENT_REQUEST_LOG", os.fspath(log_path))
+    result = run_workload(_pi_workload(requests), root=tmp_path)
+    assert result.routine_allowed > 0
+    assert result.secrets_denied > 0
+    operations = _measured_operations(log_path)
+    assert operations
+    assert "hook_render" not in operations, sorted(set(operations))
+    assert len(operations) <= requests * _RESIDENT_ROUND_TRIPS_PER_PI_HOOK + 6, len(operations)
