@@ -85,11 +85,19 @@ def test_secret_shaped_error_args_are_not_carried(detail: str) -> None:
     assert prerequisite_failure_reason("provision_key", RuntimeError(detail)) == "provision_key:RuntimeError"
 
 
-def test_fixed_machine_code_is_carried() -> None:
+def test_untrusted_exception_with_code_shaped_message_is_not_carried() -> None:
     from codex_plugin_scanner.guard.native_resident_prerequisite_reason import prerequisite_failure_reason
 
-    assert prerequisite_failure_reason("provision_key", RuntimeError("key_dir_refused")) == (
-        "provision_key:RuntimeError:key_dir_refused"
+    assert prerequisite_failure_reason("provision_key", RuntimeError("api_key_hunter2")) == "provision_key:RuntimeError"
+
+
+def test_snapshot_layer_machine_code_is_carried() -> None:
+    from codex_plugin_scanner.guard.native_policy_snapshot_constants import NativePolicySnapshotError
+    from codex_plugin_scanner.guard.native_resident_prerequisite_reason import prerequisite_failure_reason
+
+    error = NativePolicySnapshotError("native_policy_snapshot_integrity_key_unavailable")
+    assert prerequisite_failure_reason("provision_key", error) == (
+        "provision_key:NativePolicySnapshotError:native_policy_snapshot_integrity_key_unavailable"
     )
 
 

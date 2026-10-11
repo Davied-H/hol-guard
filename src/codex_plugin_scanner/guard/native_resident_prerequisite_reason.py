@@ -9,19 +9,31 @@ from pathlib import Path
 
 _MAX_HOMES = 64
 _MAX_PART = 48
-# A fixed machine code: lowercase words joined by underscores. Hex digests and
-# bare tokens never match, so secret-shaped strings are not carried.
+# A fixed machine code: lowercase words joined by underscores. Only errors raised
+# by the snapshot layer itself (whose argument is always a code literal) may
+# carry one; any other exception message is untrusted and never forwarded.
 _SAFE_CODE = re.compile(r"[a-z]{2,}(?:_[a-z0-9]{1,12}){1,6}")
 _HEX_RUN = re.compile(r"[0-9a-f]{16,}")
 _LOCK = threading.Lock()
 _FAILURES: OrderedDict[str, str] = OrderedDict()
 
 
+def _is_trusted_code(error: BaseException) -> bool:
+    from .native_policy_snapshot_constants import NativePolicySnapshotError
+
+    return (
+        isinstance(error, NativePolicySnapshotError)
+        and bool(error.args)
+        and isinstance(error.args[0], str)
+        and _SAFE_CODE.fullmatch(error.args[0]) is not None
+    )
+
+
 def _class_part(error: BaseException) -> str:
     name = re.sub(r"[^A-Za-z0-9_]", "", type(error).__name__)[:_MAX_PART] or "Error"
     detail = ""
-    # Only fixed machine codes are carried; free-form messages can hold paths.
-    if error.args and isinstance(error.args[0], str) and _SAFE_CODE.fullmatch(error.args[0]):
+    # Only trusted machine codes are carried; free-form messages can hold paths or secrets.
+    if _is_trusted_code(error):
         detail = f":{error.args[0]}"
     elif isinstance(error, OSError) and isinstance(error.errno, int):
         winerror = getattr(error, "winerror", None)
