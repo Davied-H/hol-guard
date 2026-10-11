@@ -175,6 +175,7 @@ def _resident_request(
             "daemon_route",
             "daemon_handler",
             "hook_authority_state",
+            "hook_render",
             "protect_request",
         }:
             accepted = frozenset({"ok", "error"})

@@ -150,6 +150,7 @@ pub(crate) enum ResidentOperationV1 {
     ApprovalQueueIdentity(ApprovalQueueIdentityRequestV1),
     ApprovalResolutionPlan(ApprovalResolutionPlanRequestV1),
     ApprovalScope(ApprovalScopeRequestV1),
+    HookRender(guard_contracts::HookRenderRequestV1),
     GuardStore(GuardStoreRequestV1),
     ApprovalGate(ApprovalGateRequestV1),
     PackageIntentParse(PackageIntentParseRequestV1),
