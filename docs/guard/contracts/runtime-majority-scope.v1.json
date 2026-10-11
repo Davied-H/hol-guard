@@ -768,6 +768,18 @@
           "src/codex_plugin_scanner/guard/policy_bundle_v2.py"
         ],
         "reason": "Reviewed: policy bundle v2 evidence and clock helpers. policy_bundle_trusted_keys loads the module through a literal importlib.import_module call when it builds the native verification request for a signed policy bundle, so it is runtime policy-bundle verification and stays counted."
+      },
+      {
+        "path": [
+          "src/codex_plugin_scanner/guard/codex_hook_command_line.py",
+          "src/codex_plugin_scanner/guard/codex_hook_compatibility.py",
+          "src/codex_plugin_scanner/guard/codex_hook_file_integrity.py",
+          "src/codex_plugin_scanner/guard/codex_hook_integrity.py",
+          "src/codex_plugin_scanner/guard/codex_hook_manifest.py",
+          "src/codex_plugin_scanner/guard/codex_hook_package_identity.py",
+          "src/codex_plugin_scanner/guard/codex_install_transaction.py"
+        ],
+        "reason": "Reviewed: Codex hook manifest, integrity, compatibility and install transaction modules. They are imported lazily by adapters/codex.py, frozen_codex_runtime, codex_hook_runtime_trust and shims for hook manifest rendering, integrity verification and install; they were previously reached eagerly through the Codex binding-capture modules, which now run natively. They stay counted until the codex-hook-integrity lane ports them."
       }
     ],
     "tests": {
