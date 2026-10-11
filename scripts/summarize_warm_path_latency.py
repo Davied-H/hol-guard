@@ -32,6 +32,13 @@ def _rows(document: dict[str, object], path: str, label: str) -> list[dict[str, 
     return rows
 
 
+def _optional_median(values: list[object]) -> float | None:
+    """Median of the values that were actually measured; None when the metric was not collected."""
+
+    present = [float(value) for value in values if value is not None]  # type: ignore[arg-type]
+    return median(present) if present else None
+
+
 def summarize_label(rows: list[dict[str, object]]) -> dict[str, object]:
     per_round = {q: [float(r["phase"]["stats_ms"][q]) for r in rows] for q in ("p50", "p95", "p99")}  # type: ignore[index]
     pooled = [value for r in rows for value in r["phase"]["samples_ms"]]  # type: ignore[index]
@@ -52,7 +59,7 @@ def summarize_label(rows: list[dict[str, object]]) -> dict[str, object]:
         "pooled_p99_ms": percentile(pooled, 99),
         "classes": classes,
         "non_allow": sum(int(r["phase"]["non_allow"]) for r in rows),  # type: ignore[index]
-        "client_cpu_ms_per_call": median([float(r["phase"].get("client_cpu_ms_per_call", 0.0)) for r in rows]),  # type: ignore[union-attr]
+        "client_cpu_ms_per_call": _optional_median([r["phase"].get("client_cpu_ms_per_call") for r in rows]),  # type: ignore[union-attr]
         "service_cpu_ms_per_call": median([float(r["phase"]["service_cpu_ms_per_call"]) for r in rows]),  # type: ignore[index]
         "service_rss_mb": median([float(r["phase"]["service"]["rss_mb"]) for r in rows]),  # type: ignore[index]
         "service_processes": median([float(r["phase"]["service"]["processes"]) for r in rows]),  # type: ignore[index]
@@ -66,12 +73,15 @@ def build_summary(document: dict[str, object], baseline: str, candidate: str) ->
     for path in document["config"]["paths"]:  # type: ignore[index]
         base_rows, cand_rows = _rows(document, path, baseline), _rows(document, path, candidate)
         entry: dict[str, object] = {"title": _PATH_TITLES[path]}
-        if base_rows and cand_rows:
+        shared = sorted({int(r["round"]) for r in base_rows} & {int(r["round"]) for r in cand_rows})  # type: ignore[call-overload]
+        if shared:
+            # Only rounds in which both targets produced a result enter the comparison.
+            base_rows = [r for r in base_rows if r["round"] in shared]
+            cand_rows = [r for r in cand_rows if r["round"] in shared]
             base, cand = summarize_label(base_rows), summarize_label(cand_rows)
             paired = [
                 100.0 * (float(c["phase"]["stats_ms"]["p95"]) / float(b["phase"]["stats_ms"]["p95"]) - 1.0)  # type: ignore[index]
-                for b, c in zip(base_rows, cand_rows, strict=False)
-                if b["round"] == c["round"]
+                for b, c in zip(base_rows, cand_rows, strict=True)
             ]
             delta = 100.0 * (float(cand["median_of_round_p95_ms"]) / float(base["median_of_round_p95_ms"]) - 1.0)
             noisy = max(float(base["round_p95_spread"]), float(cand["round_p95_spread"])) > NOISE_SPREAD
@@ -79,21 +89,21 @@ def build_summary(document: dict[str, object], baseline: str, candidate: str) ->
                 {
                     "baseline": base,
                     "candidate": cand,
+                    "matched_rounds": shared,
                     "p95_delta_pct": delta,
                     "paired_round_p95_delta_pct": paired,
                     "noisy": noisy,
-                    "decision_parity": base["classes"] == cand["classes"] or _dominant(base) == _dominant(cand),
+                    "decision_parity": set(base["classes"]) == set(cand["classes"]),  # type: ignore[call-overload]
                 }
             )
         else:
-            entry["error"] = "a target has no successful rounds for this path"
+            entry["error"] = "no round has a result from both targets for this path"
         summary["paths"][path] = entry  # type: ignore[index]
     return summary
 
 
-def _dominant(stats: dict[str, object]) -> str:
-    classes: dict[str, int] = stats["classes"]  # type: ignore[assignment]
-    return max(classes, key=lambda key: classes[key]) if classes else ""
+def _format_optional(value: object) -> str:
+    return "n/a" if value is None else f"{float(value):.1f}"  # type: ignore[arg-type]
 
 
 def render_markdown(document: dict[str, object], summary: dict[str, object]) -> str:
@@ -124,13 +134,17 @@ def render_markdown(document: dict[str, object], summary: dict[str, object]) -> 
             lines.append(
                 f"| {summary[role]} | {s['rounds']} | {s['samples']} | {s['median_of_round_p50_ms']:.2f} | "
                 f"{s['median_of_round_p95_ms']:.2f} | {s['median_of_round_p99_ms']:.2f} | {s['pooled_p95_ms']:.2f} | "
-                f"{100 * s['round_p95_spread']:.1f}% | {s['client_cpu_ms_per_call']:.1f} | "
+                f"{100 * s['round_p95_spread']:.1f}% | {_format_optional(s['client_cpu_ms_per_call'])} | "
                 f"{s['service_cpu_ms_per_call']:.2f} | {s['service_rss_mb']:.1f} | "
                 f"{s['service_processes']:.0f} | {s['non_allow']} |"
             )
         flags = []
         if entry["noisy"]:
             flags.append(f"round p95 spread above {int(NOISE_SPREAD * 100)}%: treat the delta as inconclusive")
+        if len(entry["matched_rounds"]) < int(config["rounds"]):  # type: ignore[arg-type]
+            flags.append(
+                f"only {len(entry['matched_rounds'])} of {config['rounds']} rounds have a result from both targets"
+            )
         if not entry["decision_parity"]:
             flags.append("decision classes differ between targets: timed cohorts are not comparable")
         paired = ", ".join(f"{value:+.1f}%" for value in entry["paired_round_p95_delta_pct"])

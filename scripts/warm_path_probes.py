@@ -81,6 +81,10 @@ def guard_pids(baseline: set[int], root: Path) -> set[int]:
             command = Path(f"/proc/{pid}/cmdline").read_bytes()
         except OSError:
             continue
+        # The canary fixture is the measured workload's upstream, not Guard: its marker-path argument
+        # contains the phase root, so keep it out of the service resource figures.
+        if b"mcp-canary-server" in command and not any(marker in command for marker in markers[:3]):
+            continue
         if any(marker in command for marker in markers):
             found.add(pid)
     return found
@@ -297,6 +301,7 @@ class _ProxySession:
             bufsize=0,
         )
         self._lines: queue.Queue[bytes] = queue.Queue()
+        self.server_requests = 0
         self._stderr_path = stderr_path
         threading.Thread(target=self._pump, daemon=True).start()
 
@@ -329,7 +334,15 @@ class _ProxySession:
             if isinstance(decoded, dict) and decoded.get("id") == message.get("id") and "method" not in decoded:
                 return elapsed, decoded
             if isinstance(decoded, dict) and "method" in decoded and "id" in decoded:
-                return elapsed, {"id": message.get("id"), "unexpected_server_request": str(decoded["method"])}
+                # A server-to-client request is not the answer to ours: decline it and keep waiting.
+                self.notify(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": decoded["id"],
+                        "error": {"code": -32601, "message": "method not supported by the probe client"},
+                    }
+                )
+                self.server_requests += 1
 
     def close(self) -> None:
         try:
@@ -341,15 +354,22 @@ class _ProxySession:
         self._stderr.close()
 
 
-def classify_mcp_response(response: dict[str, object]) -> str:
-    if "unexpected_server_request" in response:
-        return f"server_request_{response['unexpected_server_request']}"
+def classify_mcp_response(response: dict[str, object], *, expected_text: str = "safe_echo") -> str:
     error = response.get("error")
     if isinstance(error, dict):
         return f"error_{error.get('code')}"
     result = response.get("result")
     if isinstance(result, dict):
-        return "tool_error" if result.get("isError") else "ok"
+        if result.get("isError"):
+            return "tool_error"
+        content = result.get("content")
+        texts = (
+            [str(item.get("text", "")) for item in content if isinstance(item, dict)]
+            if isinstance(content, list)
+            else []
+        )
+        # The canary echoes ``<label>:<tool>``; anything else is not the requested tool's reply.
+        return "ok" if any(text.endswith(f":{expected_text}") for text in texts) else "unexpected_result"
     return "unknown"
 
 
@@ -424,9 +444,10 @@ def run_mcp_phase(
         "stats_ms": describe(latencies),
         "classes": dict(classes),
         "non_allow": sum(count for label, count in classes.items() if label != "ok"),
+        "server_requests_declined": session.server_requests if session is not None else 0,
         "warmup_ms": warmup_ms,
         "session_ready_ms": session_ready_ms,
-        "initialize_class": classify_mcp_response(init),
+        "initialize_class": "ok" if isinstance(init.get("result"), dict) else classify_mcp_response(init),
         "service_cpu_ms_per_call": (float(after_service["cpu_s"]) - float(before_service["cpu_s"]))
         * 1000
         / max(1, samples),
