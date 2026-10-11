@@ -42,6 +42,10 @@ pub(crate) trait Engines {
         env: &BTreeMap<String, String>,
     ) -> Value;
     fn launch_reusable(&self, identity: &Value) -> bool;
+    /// The machine-wide git config file git would read.
+    fn system_git_config(&self) -> String {
+        "/etc/gitconfig".to_owned()
+    }
     /// The local executions of `command`; `None` when it has no package intent.
     fn local_executions(
         &self,

@@ -55,6 +55,18 @@ fn launch_cwd(payload_cwd: Option<&str>, workspace: Option<&str>) -> Option<Stri
 
 /// `_exact_action_token`: the token, or the reason the action stays one-time.
 pub(super) fn exact_action(query: &NativeExactActionQueryV1, deadline: Instant, engines: &dyn Engines) -> Proof<String> {
+    let components = exact_action_components(query, deadline, engines)?;
+    let token = build_context_token(&components).map_err(|_| UNPROVEN_LAUNCH)?;
+    parse_context_token(&Value::String(token.clone())).ok_or(UNPROVEN_LAUNCH)?;
+    Ok(token)
+}
+
+/// The five context components the token digests, before hashing.
+pub(super) fn exact_action_components(
+    query: &NativeExactActionQueryV1,
+    deadline: Instant,
+    engines: &dyn Engines,
+) -> Proof<ContextDigestComponentsV1> {
     let NativeExactActionQueryV1::ExactAction {
         harness,
         tool_name,
@@ -99,7 +111,7 @@ pub(super) fn exact_action(query: &NativeExactActionQueryV1, deadline: Instant, 
         Some(path) => Value::String(fs_path::resolve(path).ok_or(UNPROVEN_LAUNCH)?),
         None => Value::Null,
     };
-    let components = ContextDigestComponentsV1 {
+    Ok(ContextDigestComponentsV1 {
         identity: json!({
             "harness": harness,
             "tool_name": tool_name,
@@ -121,8 +133,5 @@ pub(super) fn exact_action(query: &NativeExactActionQueryV1, deadline: Instant, 
         }),
         sandbox: json!({"required": facts.minimum_action.as_deref() == Some("sandbox-required")}),
         extension_control_digest: extension_control_digest.clone(),
-    };
-    let token = build_context_token(&components).map_err(|_| UNPROVEN_LAUNCH)?;
-    parse_context_token(&Value::String(token.clone())).ok_or(UNPROVEN_LAUNCH)?;
-    Ok(token)
+    })
 }

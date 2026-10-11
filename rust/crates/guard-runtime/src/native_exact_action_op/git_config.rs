@@ -86,7 +86,7 @@ fn candidates(root: &str, git_dir: &str, common_dir: &str, ctx: &Ctx) -> Vec<Str
         fs_path::join(common_dir, "info/attributes"),
         fs_path::join(git_dir, "info/attributes"),
         fs_path::join(root, ".gitattributes"),
-        "/etc/gitconfig".to_owned(),
+        ctx.engines.system_git_config(),
     ];
     let mut bases: Vec<String> = Vec::new();
     if let Some(xdg) = ctx.env.get("XDG_CONFIG_HOME").filter(|value| !value.is_empty()) {
