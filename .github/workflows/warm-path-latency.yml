@@ -120,6 +120,9 @@ jobs:
             label=${entry%%=*}
             sha=${entry#*=}
             args+=(--target "$label=$sha=$RUNNER_TEMP/src-$label/.venv/bin/python")
+            # The hosted toolcache interpreter is world-writable and Guard refuses to install a
+            # hook for such an interpreter; tighten it on this disposable runner for both targets.
+            chmod go-w "$(readlink -f "$RUNNER_TEMP/src-$label/.venv/bin/python")"
           done
           python3 scripts/bench_warm_path_latency.py "${args[@]}" \
             --rounds "$ROUNDS" \
