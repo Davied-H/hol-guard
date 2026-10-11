@@ -354,6 +354,7 @@ fn home_execution_control_target(
         .collect();
     parts.iter().any(|part| {
         matches!(part.as_str(), "bin" | "appdata" | "site-packages" | "dist-packages")
+            || shared_library_part(part)
             || part.ends_with(".pth")
             || matches!(part.as_str(), "sitecustomize.py" | "usercustomize.py")
     }) || parts.windows(2).any(|pair| {
@@ -366,6 +367,23 @@ fn home_execution_control_target(
                     || (first == ".github" && second == "workflows")
         )
     })
+}
+
+/// A shared library or framework bundle the dynamic loader can pick up from
+/// an exported search path such as `LD_LIBRARY_PATH` or `DYLD_LIBRARY_PATH`:
+/// `libz.so`, `libz.so.1.3`, `libz.dylib`, `z.dll` or a `.framework` bundle.
+/// Planting one below home would load into every process that inherits the
+/// path, so the write itself is what needs review.
+fn shared_library_part(part: &str) -> bool {
+    part.ends_with(".dylib")
+        || part.ends_with(".dll")
+        || part.ends_with(".framework")
+        || part.rsplit_once(".so").is_some_and(|(stem, version)| {
+            !stem.is_empty()
+                && version
+                    .split('.')
+                    .all(|piece| piece.bytes().all(|byte| byte.is_ascii_digit()))
+        })
 }
 
 fn home_spelling_matches_target(
