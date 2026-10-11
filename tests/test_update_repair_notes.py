@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from rich.console import Console
+from rich.panel import Panel
 
 from codex_plugin_scanner.guard.cli.update_repair_notes import (
     attach_repair_notes,
@@ -34,8 +35,8 @@ def test_failures_render_in_a_separate_panel():
     console = Console(record=True, width=200)
     failure = "Could not refresh Grok protection during update: settings are locked."
 
-    render_protection_repair_failures(console, {"protection_repair_failures": [failure]}, "-")
-    render_protection_repair_failures(console, {}, "-")
+    render_protection_repair_failures(console, {"protection_repair_failures": [failure]}, "-", Panel)
+    render_protection_repair_failures(console, {}, "-", Panel)
 
     text = console.export_text()
     assert "Protection not restored" in text

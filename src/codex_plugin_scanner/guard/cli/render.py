@@ -1949,7 +1949,7 @@ def _render_update(console: Console, payload: dict[str, object]) -> None:
     error = str(payload.get("error") or "").strip()
     if notes:
         console.print(Panel("\n".join(f"{_bullet()} {note}" for note in notes), title="Notes", border_style="blue"))
-    render_protection_repair_failures(console, payload, _bullet())
+    render_protection_repair_failures(console, payload, _bullet(), Panel)
     if status in {"updated", "failed"} and stdout and stdout != str(payload.get("message") or "").strip():
         console.print(Panel(stdout, title="stdout", border_style="green"))
     if status == "failed" and stderr:

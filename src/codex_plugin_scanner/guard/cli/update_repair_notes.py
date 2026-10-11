@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from rich.console import Console
+from collections.abc import Callable
+from typing import Any
 
 # Every repair step reports a harness it could not inspect, refresh, repair or
 # verify with a note in this form. Such a harness is left without protection.
@@ -24,14 +22,15 @@ def attach_repair_notes(payload: dict[str, object], repair_notes: list[str]) -> 
         payload["protection_repair_failures"] = failures
 
 
-def render_protection_repair_failures(console: Console, payload: dict[str, object], bullet: str) -> None:
-    from rich.panel import Panel
-
+def render_protection_repair_failures(
+    console: Any, payload: dict[str, object], bullet: str, panel: Callable[..., object]
+) -> None:
+    """Render with the caller's panel class, so render.py's no-rich fallback still applies."""
     value = payload.get("protection_repair_failures")
     failures = [item for item in value if isinstance(item, str) and item] if isinstance(value, list) else []
     if failures:
         console.print(
-            Panel(
+            panel(
                 "\n".join(f"{bullet} {failure}" for failure in failures),
                 title="Protection not restored",
                 border_style="red",
