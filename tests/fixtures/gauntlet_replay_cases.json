@@ -3,7 +3,8 @@
   "version": 1,
   "known_gaps": {
     "pytest-module-quiet": "native_command_review_required",
-    "python-run-test-script": "native_command_review_required"
+    "python-run-test-script": "native_command_review_required",
+    "zcode-read-git-ref-main": "native_file_read_review"
   },
   "cases": [
     {
@@ -304,9 +305,9 @@
       ],
       "tool": "read",
       "tool_input": {
-        "path": "${WORKTREE}/.git/HEAD"
+        "path": "${PARENT}/.git/HEAD"
       },
-      "cwd": "worktree",
+      "cwd": "parent",
       "expect": "quiet"
     },
     {
