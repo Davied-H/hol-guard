@@ -83,7 +83,42 @@ def test_identity_cache_is_bound_to_complete_structure(monkeypatch: pytest.Monke
         _ = changed.security_identity
 
 
+def test_shadow_native_identity_is_reused_without_another_transport(monkeypatch):
+    from codex_plugin_scanner.guard.native_command_model import _canonical_command_from_native
+    from codex_plugin_scanner.guard.runtime.command_structure import build_command_security_identity
+
+    rich = command_model.parse_shell_command("echo hi")
+    payload = {
+        "normalized_text": "echo hi",
+        "dialect": "posix",
+        "transport": "shell_string",
+        "extraction_provenance": "guard-shell",
+        "wrapper_chain": [],
+        "segments": [segment.to_dict() for segment in rich.segments],
+        "confidence": "exact",
+        "uncertainty_reason": None,
+        "path_overridden": False,
+        "parser_profile": "posix-simple-v1",
+        "security_identity": rich.security_identity,
+    }
+    projected = _canonical_command_from_native("echo hi", payload)
+    assert projected is not None
+    assert projected.security_identity == build_command_security_identity(
+        normalized_text="echo hi",
+        dialect="posix",
+        transport="shell_string",
+        wrapper_chain=(),
+        segments=projected.segments,
+        redirects=(),
+        embedded_commands=(),
+    )
+    monkeypatch.setattr(client, "ensure_resident_prerequisite", lambda _: False)
+    assert projected.to_dict()["security_identity"] == rich.security_identity
+    assert _canonical_command_from_native("echo hi", {**payload, "security_identity": "invalid"}) is None
+
+
 def test_explicit_inspection_home_identity_outage_returns_blocked_diagnostic(monkeypatch, tmp_path):
+    from codex_plugin_scanner.guard import native_context
     from codex_plugin_scanner.guard.runtime import command_inspection
 
     expected_home = tmp_path / "explicit-guard-home"
@@ -101,6 +136,9 @@ def test_explicit_inspection_home_identity_outage_returns_blocked_diagnostic(mon
         _ = manual.security_identity
 
     monkeypatch.setattr(client, "ensure_resident_prerequisite", prerequisite)
+    # The autouse fixture pins this accessor to a session home. Exercise the
+    # production ContextVar binding for this explicit-home regression.
+    monkeypatch.setattr(native_context, "context_digest_guard_home", native_context._BOUND_GUARD_HOME.get)
     monkeypatch.setattr(command_inspection, "review_command_native", review)
     result = command_inspection.inspect_command("echo hi", guard_home=expected_home, cwd=tmp_path, home_dir=tmp_path)
     assert seen == [expected_home]
@@ -115,7 +153,7 @@ def test_runtime_artifact_native_outage_does_not_reparse_or_fabricate_identity(m
     monkeypatch.setattr(artifacts, "review_command_native", lambda *args, **kwargs: None)
 
     def forbidden(*args, **kwargs):
-        pytest.fail("Native outage must not reparse the command")
+        raise client.NativeCommandModelError("native_rich_command_model_unavailable")
 
     monkeypatch.setattr(artifacts, "parse_shell_command", forbidden)
     result = artifacts._hook_runtime_artifact(
@@ -124,6 +162,7 @@ def test_runtime_artifact_native_outage_does_not_reparse_or_fabricate_identity(m
         workspace=tmp_path,
         home_dir=tmp_path,
         guard_home=tmp_path / "guard",
+        action_envelope=None,
     )
     assert result is not None
     assert result.metadata["native_command_evaluation_status"] == "unavailable"

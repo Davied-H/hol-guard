@@ -58,6 +58,24 @@ fn long_plain_and_numeric_commands_do_not_rescan_or_copy_suffixes() {
 }
 
 #[test]
+fn shadow_parser_supplies_the_existing_native_identity() {
+    let command = guard_command::parse_command(&guard_command::CommandModelRequestV1 {
+        command: "echo hi".to_owned(),
+        dialect: "posix".to_owned(),
+        transport: "shell_string".to_owned(),
+        extraction_provenance: "guard-shell".to_owned(),
+    })
+    .unwrap();
+    assert_eq!(
+        command.security_identity,
+        guard_command::canonical_command::command_security_identity(&command)
+    );
+    assert!(command
+        .security_identity
+        .starts_with("command-security-v2:"));
+}
+
+#[test]
 fn response_is_bound_to_exact_request_and_rejects_unknown_inputs() {
     let request = RichCommandModelRequest {
         schema: REQUEST_SCHEMA.into(),

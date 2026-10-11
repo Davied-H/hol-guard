@@ -696,8 +696,6 @@ def _hook_runtime_artifact_with_native(
         if raw_command_text is not None
         else None
     )
-    if raw_command_text is not None and native_review is None:
-        raise NativeCommandModelError("native_rich_command_model_unavailable")
     verified_local_runner = isinstance(raw_command_text, str) and (
         direct_local_typescript_execution_context(
             raw_command_text,

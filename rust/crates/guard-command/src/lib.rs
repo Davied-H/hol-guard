@@ -311,6 +311,12 @@ struct RawSegment {
 }
 
 pub fn parse_command(request: &CommandModelRequestV1) -> Result<CanonicalCommandV1, String> {
+    let mut command = parse_command_unbound(request)?;
+    command.security_identity = canonical_command::command_security_identity(&command);
+    Ok(command)
+}
+
+fn parse_command_unbound(request: &CommandModelRequestV1) -> Result<CanonicalCommandV1, String> {
     let raw = request.command.trim();
     if request.dialect == "powershell" && request.transport == "shell_string" && !raw.is_empty() {
         return Ok(parse_explicit_powershell(request, raw));
