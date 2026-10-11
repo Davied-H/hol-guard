@@ -1,15 +1,13 @@
 name: Nightly native qualification
 
 # Runs the native, containment, installed-wheel and extension-builder proofs that
-# no per-pull-request lane runs. The pull_request trigger is limited to this file
-# so a change to the workflow is validated before it lands.
+# no per-pull-request lane runs. Validate a change to this file with
+# workflow_dispatch on the branch after it lands, or by temporarily adding a
+# pull_request trigger to the change.
 on:
   schedule:
     - cron: "17 6 * * *"
   workflow_dispatch:
-  pull_request:
-    paths:
-      - ".github/workflows/nightly-native.yml"
 
 permissions:
   contents: read
