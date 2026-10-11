@@ -408,19 +408,14 @@ mod tests {
         .expect("schema-unsupported error is JSON");
         assert_eq!(unsupported["error"], "native_request_schema_unsupported");
 
-        let unknown_lifecycle: Value = serde_json::from_slice(&safe_error_response(
+        for code in [
             "native_resident_future_unregistered_code",
-            false,
-        ))
-        .expect("redacted lifecycle error is JSON");
-        assert_eq!(unknown_lifecycle["error"], "native_request_invalid_json");
-
-        let unknown_policy: Value = serde_json::from_slice(&safe_error_response(
             "native_policy_snapshot_future_unregistered_code",
-            false,
-        ))
-        .expect("redacted policy error is JSON");
-        assert_eq!(unknown_policy["error"], "native_request_invalid_json");
+        ] {
+            let redacted: Value = serde_json::from_slice(&safe_error_response(code, false))
+                .expect("redacted error is JSON");
+            assert_eq!(redacted["error"], "native_request_invalid_json");
+        }
         for code in [
             "native_business_policy_floor_invalid",
             "native_business_policy_removal_requires_authority",
