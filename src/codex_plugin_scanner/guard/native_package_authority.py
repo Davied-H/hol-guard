@@ -18,7 +18,6 @@ from itertools import pairwise
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from .native_context import ensure_resident_prerequisite
 from .native_resident_client import native_resident_client_request
 from .native_runtime import _isolated_environment, native_runtime_status
 from .native_runtime_resilience import (
@@ -73,8 +72,6 @@ def _resident_request(
         return None
     features = set(status.capabilities.features)
     if _RESIDENT_PROTOCOL_FEATURE not in features or any(item not in features for item in required_features):
-        return None
-    if not ensure_resident_prerequisite(guard_home):
         return None
     remaining_seconds = timeout_seconds if deadline_monotonic is None else deadline_monotonic - time.monotonic()
     if remaining_seconds <= 0:
