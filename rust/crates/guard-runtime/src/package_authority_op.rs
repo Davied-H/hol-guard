@@ -688,8 +688,7 @@ impl SupplyChainStore for ResidentSupplyChainStore {
         payload
             .get("workspace_id")
             .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
+            .filter(|value| !crate::context_digest::python_strip(value).is_empty())
             .map(str::to_owned)
     }
 
@@ -2718,7 +2717,7 @@ impl PackageEvalApi for ResidentPackageEval {
 }
 
 /// Unused-in-override path seam; the override never reads workspace files.
-struct ResidentPaths;
+pub(crate) struct ResidentPaths;
 
 impl PathSupportApi for ResidentPaths {
     fn resolve_path_within_allowed_roots(
