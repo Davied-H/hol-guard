@@ -75,10 +75,20 @@ fn probe(
     }
     let home = fs::canonicalize(declared_home).ok()?;
     let cwd = fs::canonicalize(declared_cwd).ok()?;
-    let leading = expand_home_targets(
-        &arguments[..arguments.len().checked_sub(remaining.len())?],
-        declared_home,
-    );
+    let raw_leading = &arguments[..arguments.len().checked_sub(remaining.len())?];
+    if raw_leading
+        .windows(2)
+        .any(|pair| pair[0] == "-C" && pair[1].starts_with('~'))
+    {
+        let shell_home = execution_environment
+            .and_then(|context| context.home.as_deref())
+            .map(Path::new)
+            .unwrap_or(declared_home);
+        if fs::canonicalize(shell_home).ok().as_deref() != Some(home.as_path()) {
+            return None;
+        }
+    }
+    let leading = expand_home_targets(raw_leading, declared_home);
     if !home.is_dir() || !cwd.is_dir() || !clean_environment(execution_environment, &home, &cwd) {
         return None;
     }
@@ -488,3 +498,6 @@ pub(super) fn trusted_command(
     };
     super::trusted_location::trusted_location(&path, home, cwd).then_some(path)
 }
+#[cfg(all(test, unix))]
+#[path = "git_config_home_tests.rs"]
+mod home_tests;
