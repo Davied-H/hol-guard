@@ -31,9 +31,14 @@ compiler=native-build/guard-command-source
 "$runtime" self-test --json > /dev/null
 
 # Derive the packaged command program the same way the container proof does, without the container.
-"$compiler" export-trust > contracts/extensions/build-trust-class-map.v1.json
+# Older revisions have no export-trust command and ship the trust map as a tracked file.
+trust=contracts/extensions/trust-class-map.v1.json
+if "$compiler" export-trust > native-build/trust-class-map.json 2> /dev/null; then
+  trust=native-build/trust-class-map.json
+  cp "$trust" contracts/extensions/build-trust-class-map.v1.json
+fi
 jq -n --slurpfile source rust/crates/guard-command/tests/fixtures/command-source-example.v1.json \
-  --slurpfile trust contracts/extensions/build-trust-class-map.v1.json \
+  --slurpfile trust "$trust" \
   '{schema:"guard.command-extension-build.v1",sources:$source,mcp_sources:[],trust:$trust[0],base:"packaged"}' \
   > source-build.json
 "$compiler" compile < source-build.json > source-compiled.json

@@ -21,17 +21,17 @@ on:
   workflow_dispatch:
     inputs:
       baseline_sha:
-        description: Full 40-character baseline revision (default is the frozen pre-cutover baseline)
+        description: Full 40-character baseline revision (default is the program-start revision)
         type: string
-        default: 60c6253533264731863fc3c6cecb6dc0f57c352a
+        default: 8c3dc9750789c407ca8c78508507296cda8e7d01
       candidate_sha:
         description: Full 40-character candidate revision (empty means the dispatched ref)
         type: string
         default: ""
       reference_sha:
-        description: Optional full 40-character third revision measured alongside the pair
+        description: Optional full 40-character second baseline measured alongside the pair (default is the 10-09 revision)
         type: string
-        default: ""
+        default: 60c6253533264731863fc3c6cecb6dc0f57c352a
       rounds:
         description: Alternating-order rounds per target
         type: string
@@ -58,7 +58,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
-      BASELINE_SHA: ${{ inputs.baseline_sha || '60c6253533264731863fc3c6cecb6dc0f57c352a' }}
+      BASELINE_SHA: ${{ inputs.baseline_sha || '8c3dc9750789c407ca8c78508507296cda8e7d01' }}
       CANDIDATE_SHA: ${{ inputs.candidate_sha || github.sha }}
       REFERENCE_SHA: ${{ inputs.reference_sha }}
       ROUNDS: ${{ inputs.rounds || '1' }}
@@ -137,7 +137,7 @@ jobs:
           cat warm-path-summary.md >> "$GITHUB_STEP_SUMMARY"
           if [[ -n "$REFERENCE_SHA" ]]; then
             python3 scripts/summarize_warm_path_latency.py --input warm-path-latency.json \
-              --baseline baseline --candidate reference \
+              --baseline reference --candidate candidate \
               --markdown warm-path-summary-reference.md --json warm-path-summary-reference.json
             cat warm-path-summary-reference.md >> "$GITHUB_STEP_SUMMARY"
           fi
