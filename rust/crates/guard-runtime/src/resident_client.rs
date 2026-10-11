@@ -60,16 +60,32 @@ fn read_exact(
         .map_err(|_| ResidentClientError::fatal("native_client_frame_read_failed".to_owned()))
 }
 
+/// Longest the client waits for the connect and authentication handshake.
+const AUTH_WINDOW_MAX: Duration = Duration::from_secs(2);
+
+/// Handshake window for a request with the given total budget.
+///
+/// Short budgets, such as hook decisions, keep the fixed 250 ms window.  A
+/// request that was granted a long budget (lifecycle and approval-gate calls)
+/// gets a proportionally longer handshake so a briefly slow resident does not
+/// turn into a permanent failure.  It never exceeds the request budget, and an
+/// expired window still fails closed.
+fn auth_window(timeout: Duration) -> Duration {
+    (timeout / 4)
+        .clamp(AUTH_TIMEOUT, AUTH_WINDOW_MAX)
+        .min(timeout)
+}
+
 fn authenticate(
     stream: &mut dyn crate::ResidentStream,
     token: &[u8],
     timeout: Duration,
 ) -> Result<[u8; AUTH_NONCE_BYTES], ResidentClientError> {
     stream
-        .set_resident_read_timeout(Some(timeout.min(AUTH_TIMEOUT)))
+        .set_resident_read_timeout(Some(auth_window(timeout)))
         .map_err(|_| "native_client_auth_timeout_failed".to_owned())?;
     stream
-        .set_resident_write_timeout(Some(timeout.min(AUTH_TIMEOUT)))
+        .set_resident_write_timeout(Some(auth_window(timeout)))
         .map_err(|_| "native_client_auth_timeout_failed".to_owned())?;
     let _ = stream.configure_low_latency();
     let mut nonce = [0u8; AUTH_NONCE_BYTES];
@@ -131,7 +147,7 @@ fn connect_loopback_with_digest(
         return Err("native_client_endpoint_invalid".to_owned());
     }
     validate_runtime_owner(identity)?;
-    let stream = TcpStream::connect_timeout(&address, timeout.min(AUTH_TIMEOUT))
+    let stream = TcpStream::connect_timeout(&address, auth_window(timeout))
         .map_err(|_| "native_client_connect_failed".to_owned())?;
     revalidate_runtime_owner(identity)?;
     Ok(Box::new(stream))

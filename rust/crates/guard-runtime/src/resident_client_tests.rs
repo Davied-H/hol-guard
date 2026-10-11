@@ -92,6 +92,19 @@ impl crate::ResidentStream for TestStream {
 }
 
 #[test]
+fn auth_window_keeps_hook_budgets_and_scales_long_budgets() {
+    assert_eq!(
+        auth_window(Duration::from_millis(100)),
+        Duration::from_millis(100)
+    );
+    assert_eq!(auth_window(Duration::from_millis(750)), AUTH_TIMEOUT);
+    assert_eq!(auth_window(Duration::from_secs(1)), AUTH_TIMEOUT);
+    assert_eq!(auth_window(Duration::from_secs(4)), Duration::from_secs(1));
+    assert_eq!(auth_window(Duration::from_secs(9)), Duration::from_secs(2));
+    assert_eq!(auth_window(Duration::from_secs(60)), Duration::from_secs(2));
+}
+
+#[test]
 fn rejects_non_loopback_tcp_endpoint() {
     let error = match connect_loopback_with_digest(
         "192.0.2.1:80",
