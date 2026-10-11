@@ -17,6 +17,8 @@ env:
   # Release wheels use fat LTO with one codegen unit (rust/Cargo.toml). PR test
   # builds keep the per-crate defaults so sccache and incremental link time
   # stay on the critical path budget; this does not change program behavior.
+  # native-release-size unsets both variables before it builds the binaries
+  # the wheel-size gate measures.
   CARGO_PROFILE_RELEASE_LTO: "false"
   CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
   CI_PYTEST_COVERAGE_SHARDS: "256"
@@ -260,8 +262,6 @@ jobs:
           python3 scripts/refresh_extension_artifacts.py --trust-only
           cargo build --manifest-path rust/Cargo.toml --locked --release -p guard-command -p hol-guard-runtime --bin guard-command-source --bin hol-guard-runtime
           "$SCCACHE_PATH" --show-stats
-      - name: Check sizes of the existing native build
-        run: python3 scripts/ci/check_wheel_size.py --native-dir rust/target/release --platform manylinux_2_17_x86_64
       - name: Verify generated native command catalogs before pytest fan-out
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -323,6 +323,35 @@ jobs:
             src/codex_plugin_scanner/guard/contracts/data/extensions/
           if-no-files-found: error
           retention-days: 1
+
+  native-release-size:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-rust
+      - name: Install content-addressed compiler cache
+        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba
+        with:
+          version: v0.18.0
+      - name: Measure the shipped fat-LTO release binaries
+        env:
+          RUSTC_WORKSPACE_WRAPPER: sccache
+          SCCACHE_GHA_ENABLED: 'on'
+          SCCACHE_GHA_VERSION: native-release-size
+          SCCACHE_GHA_RW_MODE: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') && 'READ_WRITE' || 'READ_ONLY' }}
+          SCCACHE_IGNORE_SERVER_IO_ERROR: '1'
+        run: |
+          unset CARGO_PROFILE_RELEASE_LTO
+          unset CARGO_PROFILE_RELEASE_CODEGEN_UNITS
+          if [ -n "${CARGO_PROFILE_RELEASE_LTO+x}" ] || [ -n "${CARGO_PROFILE_RELEASE_CODEGEN_UNITS+x}" ]; then
+            echo "Shipped size gate must use the rust/Cargo.toml release profile" >&2
+            exit 1
+          fi
+          cargo build --manifest-path rust/Cargo.toml --locked --release -p guard-command -p hol-guard-runtime --bin guard-command-source --bin hol-guard-runtime
+          python3 scripts/ci/check_wheel_size.py --native-dir rust/target/release --platform manylinux_2_17_x86_64
 
   coverage-plan:
     needs: native-command-evaluators
@@ -795,7 +824,7 @@ jobs:
   required:
     name: hol-guard / required
     if: always()
-    needs: [plan, native-workspace, native-command-evaluators, quality, coverage-plan, coverage, compatibility, scheduling-sensitive, dashboard, cisco-full, ci-python-312, pi-exact-continuation, cross-platform]
+    needs: [plan, native-workspace, native-command-evaluators, native-release-size, quality, coverage-plan, coverage, compatibility, scheduling-sensitive, dashboard, cisco-full, ci-python-312, pi-exact-continuation, cross-platform]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     permissions:
@@ -824,7 +853,7 @@ jobs:
           # skipped one, which means its `if`/needs chain broke) must not let a
           # data-only plan coast through on surviving lane-gated residue.
           always_on = ["plan","native-workspace","native-command-evaluators",
-                       "quality","coverage-plan","ci-python-312"]
+                       "native-release-size","quality","coverage-plan","ci-python-312"]
           # Lane-gated required set: skipped is acceptable only on a data-only
           # plan; failure/cancelled always fails.
           required = ["coverage","compatibility","scheduling-sensitive",

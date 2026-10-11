@@ -25,8 +25,9 @@ opt-level = "s"
 strip = "symbols"
 # Whole-program optimization keeps the shipped runtime inside the wheel size
 # budgets (about 20% smaller than per-crate codegen). Unwinding stays enabled:
-# the runtime relies on catch_unwind. Pull request CI restores the faster
-# per-crate settings through CARGO_PROFILE_RELEASE_* in ci.yml.
+# the runtime relies on catch_unwind. Pull request test builds restore the faster
+# per-crate settings through CARGO_PROFILE_RELEASE_* in ci.yml. The
+# native-release-size job unsets those overrides before it measures binaries.
 lto = "fat"
 codegen-units = 1
 
