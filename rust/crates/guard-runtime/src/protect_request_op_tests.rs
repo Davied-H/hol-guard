@@ -282,3 +282,26 @@ fn oversized_requests_have_no_digest() {
     let error = evaluate_protect_request_op(&request(&workspace, None, &["npm", &big]));
     assert_eq!(error.unwrap_err(), "native_protect_request_too_large");
 }
+
+#[test]
+fn a_response_over_the_resident_limit_is_a_typed_match_error() {
+    let workspace = Workspace::new("response-limit");
+    let name = format!("w{}", "p".repeat(200_000));
+    let headline = "h".repeat(700_000);
+    let payload = format!(
+        r#"{{"artifact_id":"install:npm:{name}","severity":"critical","headline":"{headline}"}}"#
+    );
+    workspace.write_cache(&[("wide", &payload, "2026-10-01")]);
+    let bytes = evaluate_protect_request_op(&request(
+        &workspace,
+        Some(workspace.store()),
+        &["npm", "install", &name],
+    ))
+    .expect("oversized success body becomes a typed error");
+    assert!(bytes.len() <= crate::MAX_NATIVE_RESPONSE_BYTES);
+    let result: ProtectRequestResultV1 = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(result.code, "native_protect_request_matches_too_large");
+    assert_eq!(result.status, "error");
+    assert!(result.verdict.is_none());
+    assert!(result.request.is_none());
+}

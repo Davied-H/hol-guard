@@ -68,7 +68,25 @@ pub(crate) fn evaluate_protect_request_op(
             verdict: None,
         },
     };
-    crate::encode_response(&result)
+    // A matched-row cap under 1 MiB can still leave the reason and the parsed
+    // request over the resident's 2 MiB response limit. That is a typed
+    // refusal, not an untyped transport error.
+    match crate::encode_response(&result) {
+        Ok(bytes) => Ok(bytes),
+        Err(reason) if reason == "native_response_too_large" && result.status == "ok" => {
+            crate::encode_response(&ProtectRequestResultV1 {
+                schema: result.schema.clone(),
+                request_id: result.request_id.clone(),
+                request_sha256: result.request_sha256.clone(),
+                status: "error".to_owned(),
+                code: MATCHES_TOO_LARGE.to_owned(),
+                detail: None,
+                request: None,
+                verdict: None,
+            })
+        }
+        Err(reason) => Err(reason),
+    }
 }
 
 fn evaluate(
