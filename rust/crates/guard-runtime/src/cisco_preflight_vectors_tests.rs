@@ -5,7 +5,8 @@
 use std::path::{Path, PathBuf};
 
 use guard_contracts::{
-    CiscoEvidenceQueryV1, CiscoFindingV1, CiscoPlanQueryV1, CiscoPolicyQueryV1, CiscoStepV1,
+    CiscoEvidenceQueryV1, CiscoFindingV1, CiscoPlanQueryV1, CiscoPolicyQueryV1,
+    CiscoRevalidateQueryV1, CiscoStepV1,
 };
 use serde_json::{json, Value};
 
@@ -190,8 +191,12 @@ fn layouts_match_the_retired_python() {
             .into_iter()
             .map(|step| match step {
                 CiscoStepV1::Scan {
-                    kind, scan_root, ..
+                    kind,
+                    scan_root,
+                    binding,
+                    ..
                 } => CiscoStepV1::Scan {
+                    binding,
                     status: Some(status.to_owned()),
                     findings: if status == "enabled" {
                         findings(&kind)
@@ -223,6 +228,7 @@ fn evidence_cases_match_the_retired_python() {
         let step = CiscoStepV1::Scan {
             kind: case["kind"].as_str().expect("kind").to_owned(),
             scan_root: "/scan".to_owned(),
+            binding: None,
             status: case["status"].as_str().map(str::to_owned),
             findings: found,
         };
@@ -263,6 +269,7 @@ fn an_unknown_severity_or_status_is_an_error() {
     let step = |status: &str, finding: CiscoFindingV1| CiscoStepV1::Scan {
         kind: "skill".to_owned(),
         scan_root: "/scan".to_owned(),
+        binding: None,
         status: Some(status.to_owned()),
         findings: vec![finding],
     };
@@ -291,4 +298,47 @@ fn revalidation_catches_a_target_swapped_after_validation() {
     symlink(root.0.join("outside/SKILL.md"), skill_dir.join("SKILL.md")).expect("swap");
     let error = contain::revalidate(&validated).expect_err("swap detected");
     assert_eq!(error.reason, "target_changed");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_planned_scan_is_revalidated_through_its_own_binding() {
+    use std::os::unix::fs::symlink;
+    let root = Scratch::new("bound");
+    let skill_dir = root.0.join("ws/skills/a");
+    std::fs::create_dir_all(&skill_dir).expect("dirs");
+    std::fs::write(skill_dir.join("SKILL.md"), "x").expect("skill");
+    std::fs::create_dir_all(root.0.join("outside")).expect("outside");
+    std::fs::write(root.0.join("outside/SKILL.md"), "y").expect("outside file");
+    let query = CiscoPlanQueryV1 {
+        action_type: "file_write".to_owned(),
+        workspace: Some(root.text("{root}/ws")),
+        cwd: root.text("{root}/ws"),
+        home: None,
+        approved_scan_roots: Vec::new(),
+        target_paths: vec!["skills/a/SKILL.md".to_owned()],
+        sources: vec!["skill".to_owned()],
+    };
+    let steps = cisco_plan::plan(&query);
+    let Some(CiscoStepV1::Scan {
+        kind,
+        scan_root,
+        binding: Some(binding),
+        ..
+    }) = steps.into_iter().next()
+    else {
+        panic!("expected a bound scan step");
+    };
+    let recheck = CiscoRevalidateQueryV1 {
+        kind,
+        scan_root,
+        binding,
+    };
+    assert!(cisco_plan::revalidated(&recheck).expect("valid").is_none());
+    std::fs::remove_file(skill_dir.join("SKILL.md")).expect("remove");
+    symlink(root.0.join("outside/SKILL.md"), skill_dir.join("SKILL.md")).expect("swap");
+    assert!(cisco_plan::revalidated(&recheck).expect("valid").is_some());
+    let mut unknown = recheck.clone();
+    unknown.kind = "other".to_owned();
+    assert!(cisco_plan::revalidated(&unknown).is_err());
 }

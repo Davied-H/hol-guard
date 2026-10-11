@@ -6,8 +6,9 @@ use std::path::{Path, PathBuf};
 
 use guard_command::local_supply_chain::stable_digest_hex_len;
 use guard_contracts::{
-    CiscoPlanQueryV1, CiscoStepV1, GuardRiskSignalV3, RiskConfidenceLabel, RiskRedactionLevel,
-    RiskSeverityLabel, RiskSignalCategory, RiskSignalSource, ScannerStatusLabel,
+    CiscoPlanQueryV1, CiscoRevalidateQueryV1, CiscoScanBindingV1, CiscoStepV1, GuardRiskSignalV3,
+    RiskConfidenceLabel, RiskRedactionLevel, RiskSeverityLabel, RiskSignalCategory,
+    RiskSignalSource, ScannerStatusLabel,
 };
 
 use crate::cisco_containment::{self as contain, ApprovedRoot, Contain, Validated};
@@ -69,6 +70,14 @@ impl Plan {
             self.steps.push(CiscoStepV1::Scan {
                 kind: validated.kind.to_owned(),
                 scan_root: validated.scan_root.to_string_lossy().into_owned(),
+                binding: Some(CiscoScanBindingV1 {
+                    approved_root: validated.approved_root.path.to_string_lossy().into_owned(),
+                    approved_label: validated.approved_root.label.clone(),
+                    target: validated
+                        .path
+                        .as_ref()
+                        .map(|path| path.to_string_lossy().into_owned()),
+                }),
                 status: None,
                 findings: Vec::new(),
             });
@@ -134,4 +143,26 @@ pub(crate) fn plan(query: &CiscoPlanQueryV1) -> Vec<CiscoStepV1> {
         }
     }
     plan.steps
+}
+
+/// Re-proves one planned scan root is still contained, immediately before the
+/// caller hands it to the analyzer. A failed proof is the containment signal.
+pub(crate) fn revalidated(query: &CiscoRevalidateQueryV1) -> Result<Option<GuardRiskSignalV3>, ()> {
+    let kind = match query.kind.as_str() {
+        "skill" => "skill",
+        "mcp" => "mcp",
+        _ => return Err(()),
+    };
+    let validated = Validated {
+        path: query.binding.target.as_ref().map(PathBuf::from),
+        scan_root: PathBuf::from(&query.scan_root),
+        approved_root: ApprovedRoot {
+            path: PathBuf::from(&query.binding.approved_root),
+            label: query.binding.approved_label.clone(),
+        },
+        kind,
+    };
+    Ok(contain::revalidate(&validated)
+        .err()
+        .map(|error| containment_signal(kind, &error)))
 }

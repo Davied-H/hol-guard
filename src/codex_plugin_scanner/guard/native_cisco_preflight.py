@@ -175,6 +175,12 @@ def scan_action_for_cisco_evidence(
         kind, scan_root = step.get("kind"), step.get("scan_root")
         if kind not in _TARGET_NAMES or not isinstance(scan_root, str):
             raise NativeCiscoPreflightError
+        verdict = _query({"check": "revalidate", "kind": kind, "scan_root": scan_root, "binding": step.get("binding")})
+        if "signal" not in verdict:
+            raise NativeCiscoPreflightError
+        if verdict["signal"] is not None:
+            ran.append({"type": "signal", "signal": verdict["signal"]})
+            continue
         summary = _run_analyzer(kind, Path(scan_root), mode=mode, timeout_seconds=timeout_seconds)
         ran.append(_scanned(step, summary))
     return _signals(_query({"check": "evidence", "steps": ran}), "signals")
@@ -195,7 +201,8 @@ def policy_action_for_cisco_signals(
             "configured_actions": {
                 risk_class: resolve_risk_action(config, risk_class, harness=harness) for risk_class in _RISK_CLASSES
             },
-        }
+        },
+        config.guard_home,
     )
     action = payload.get("policy_action")
     if action not in get_args(GuardAction):
@@ -221,7 +228,7 @@ def build_cisco_deep_scan_payload(
     scan_root = skills_dir if kind == "skill" and skills_dir.is_dir() else target
     summary = _run_analyzer(kind, scan_root, mode=mode, timeout_seconds=timeout_seconds)
     step = _scanned({"type": "scan", "kind": kind, "scan_root": str(scan_root)}, summary)
-    signals = _signals(_query({"check": "evidence", "steps": [step]}), "signals")
+    signals = _signals(_query({"check": "evidence", "steps": [step]}, config.guard_home), "signals")
     scanned = getattr(summary, "skills_scanned" if kind == "skill" else "targets_scanned", 0)
     return {
         "scan_type": scan_type,

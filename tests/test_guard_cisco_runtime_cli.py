@@ -15,7 +15,7 @@ from codex_plugin_scanner.guard.config import GuardConfig
 from codex_plugin_scanner.guard.models import GuardApprovalRequest
 from codex_plugin_scanner.guard.receipts import build_receipt
 from codex_plugin_scanner.guard.runtime.actions import GuardActionEnvelope
-from codex_plugin_scanner.guard.runtime.detectors import register_default_detectors
+from codex_plugin_scanner.guard.runtime.detectors import DetectorContext, DetectorRegistry, register_default_detectors
 from codex_plugin_scanner.guard.runtime.signals import GuardRiskSignalV3
 from codex_plugin_scanner.guard.store import GuardStore
 from codex_plugin_scanner.integrations import cisco_mcp_scanner, cisco_skill_scanner
@@ -649,6 +649,70 @@ def test_cisco_preflight_accepts_canonical_workspace_selected_through_symlink(
 
     assert [signal.source for signal in signals] == ["cisco_skill"]
     assert called == [real_workspace / "skills"]
+
+
+def test_cisco_preflight_revalidates_the_scan_root_right_before_the_analyzer_runs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    skill_path = tmp_path / "skills" / "demo" / "SKILL.md"
+    skill_path.parent.mkdir(parents=True)
+    skill_path.write_text("# Demo\n", encoding="utf-8")
+    outside = tmp_path.parent / f"{tmp_path.name}-outside-skill.md"
+    outside.write_text("# Outside\n", encoding="utf-8")
+    called: list[Path] = []
+
+    def fake_scan(path: Path, mode: str = "auto", timeout_seconds: float | None = None):
+        called.append(path)
+        return _skill_summary(CiscoIntegrationStatus.ENABLED, (_skill_finding(),))
+
+    monkeypatch.setattr(cisco_skill_scanner, "run_cisco_skill_scan", fake_scan)
+    real_query = cisco_preflight_module._query
+
+    def swap_after_plan(query, guard_home=None):
+        reply = real_query(query, guard_home)
+        if query.get("check") == "plan":
+            skill_path.unlink()
+            try:
+                skill_path.symlink_to(outside)
+            except OSError:
+                pytest.skip("symlinks are not supported in this environment")
+        return reply
+
+    monkeypatch.setattr(cisco_preflight_module, "_query", swap_after_plan)
+
+    signals = cisco_preflight_module.scan_action_for_cisco_evidence(
+        _relative_target_write_action("skills/demo/SKILL.md"),
+        workspace=tmp_path,
+    )
+
+    assert [signal.scanner_rule_id for signal in signals] == ["outside_approved_workspace"]
+    assert called == []
+
+
+def test_cisco_detector_registry_propagates_a_resident_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    def unavailable(*_args: object, **_kwargs: object) -> object:
+        raise cisco_preflight_module.NativeCiscoPreflightError
+
+    monkeypatch.setattr(cisco_preflight_module, "scan_action_for_cisco_evidence", unavailable)
+    registry = DetectorRegistry(register_default_detectors())
+    action = _relative_target_write_action("skills/demo/SKILL.md")
+    with pytest.raises(cisco_preflight_module.NativeCiscoPreflightError):
+        registry.run(
+            action,
+            DetectorContext(
+                config=GuardConfig(
+                    guard_home=tmp_path / "guard-home", workspace=tmp_path, runtime_detector_timeout_ms=1000
+                ),
+                workspace=tmp_path,
+                prior_decisions={},
+                threat_intel={},
+                redaction_settings={},
+            ),
+        )
 
 
 def test_cisco_policy_blocks_critical_balanced_but_not_low_confidence_info(tmp_path: Path) -> None:

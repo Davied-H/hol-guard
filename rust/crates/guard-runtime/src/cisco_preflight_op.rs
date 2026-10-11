@@ -33,6 +33,7 @@ fn within_bounds(query: &CiscoPreflightQueryV1) -> bool {
         CiscoPreflightQueryV1::Plan(plan) => {
             plan.target_paths.len() + plan.approved_scan_roots.len()
         }
+        CiscoPreflightQueryV1::Revalidate(_) => 1,
         CiscoPreflightQueryV1::Evidence(evidence) => evidence.steps.len(),
         CiscoPreflightQueryV1::PolicyAction(policy) => policy.signal_sources.len(),
     };
@@ -42,6 +43,9 @@ fn within_bounds(query: &CiscoPreflightQueryV1) -> bool {
 pub(crate) fn decide(query: &CiscoPreflightQueryV1) -> Result<Value, &'static str> {
     match query {
         CiscoPreflightQueryV1::Plan(plan) => Ok(json!({ "steps": cisco_plan::plan(plan) })),
+        CiscoPreflightQueryV1::Revalidate(query) => cisco_plan::revalidated(query)
+            .map(|signal| json!({ "signal": signal.map(|signal| signal.to_value()) }))
+            .map_err(|()| INVALID),
         CiscoPreflightQueryV1::Evidence(evidence) => cisco_evidence::evidence(&evidence.steps),
         CiscoPreflightQueryV1::PolicyAction(policy) => cisco_evidence::policy_action(policy),
     }

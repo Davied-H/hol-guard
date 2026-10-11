@@ -62,6 +62,26 @@ pub struct CiscoFindingV1 {
     pub source: String,
 }
 
+/// What the resident verified for a scan root, handed back so it can prove the
+/// same root is still contained immediately before the analyzer reads it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct CiscoScanBindingV1 {
+    pub approved_root: String,
+    pub approved_label: String,
+    #[serde(default)]
+    pub target: Option<String>,
+}
+
+/// Re-checks one planned scan root right before the analyzer runs.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct CiscoRevalidateQueryV1 {
+    pub kind: String,
+    pub scan_root: String,
+    pub binding: CiscoScanBindingV1,
+}
+
 /// One ordered step of a plan: a containment signal the resident already
 /// produced, or a scan the caller must run. A scan step comes back in the
 /// `evidence` query with the analyzer's `status` and `findings` filled in.
@@ -74,6 +94,8 @@ pub enum CiscoStepV1 {
     Scan {
         kind: String,
         scan_root: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        binding: Option<CiscoScanBindingV1>,
         #[serde(default)]
         status: Option<String>,
         #[serde(default)]
@@ -100,6 +122,7 @@ pub struct CiscoPolicyQueryV1 {
 #[serde(tag = "check", rename_all = "snake_case")]
 pub enum CiscoPreflightQueryV1 {
     Plan(CiscoPlanQueryV1),
+    Revalidate(CiscoRevalidateQueryV1),
     Evidence(CiscoEvidenceQueryV1),
     PolicyAction(CiscoPolicyQueryV1),
 }
