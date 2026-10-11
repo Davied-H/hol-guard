@@ -46,7 +46,7 @@ fn oversized_validation_error_is_a_healthy_bound_refusal() {
     let key = "unexpected_field".repeat(500);
     let payload = serde_json::json!({key: "allow"});
     let result = crate::decision_authority_op::dispatch(
-        "decision_v2_decode",
+        "decision_enforcement_decode",
         &serde_json::json!({"payload": payload}),
     );
     assert_eq!(

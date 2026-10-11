@@ -57,6 +57,10 @@ fn request_digest(request: &RunnerAuthorityRequestV1) -> Result<String, &'static
 
 pub(crate) fn dispatch(kind: &str, args: &Value) -> KindResult {
     match kind {
+        "projection_approval"
+        | "projection_receipt"
+        | "projection_surfaces"
+        | "projection_surfaces_batch" => crate::signal_projection_op::dispatch(kind, args),
         "decision_v2_decode"
         | "decision_enforcement_decode"
         | "decision_authoritative_decode"

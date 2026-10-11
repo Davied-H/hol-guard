@@ -330,6 +330,12 @@ mod runner_sync_url;
 mod runtime_cli;
 mod runtime_detector_run_op;
 mod shim_op;
+mod signal_projection_approval;
+mod signal_projection_decode;
+mod signal_projection_op;
+mod signal_projection_receipt;
+#[cfg(test)]
+mod signal_projection_vectors_tests;
 #[cfg(unix)]
 mod skill_directory_identity_op;
 #[cfg(unix)]

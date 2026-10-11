@@ -12,7 +12,11 @@ from pathlib import Path
 
 from .approval_resolution import approval_resolution_block_reason
 from .approval_scope_support import apply_scope_surfaces, request_scope_contract_payloads
-from .decision_boundaries import canonical_approval_surfaces
+from .decision_boundaries import (
+    CanonicalApprovalSurfaces,
+    canonical_approval_surfaces,
+    canonical_approval_surfaces_batch,
+)
 from .models import GuardApprovalRequest
 from .native_approval_queue_identity import (
     ApprovalQueueIdentityUnavailableError,
@@ -436,7 +440,8 @@ def _row_to_payload(row: sqlite3.Row) -> dict[str, object]:
 def _rows_to_payloads(rows: list[sqlite3.Row]) -> list[dict[str, object]]:
     """Build payloads, asking the resident for every row's scope contract in one call."""
 
-    drafts = [_row_to_draft(row) for row in rows]
+    projections = canonical_approval_surfaces_batch([_row_decision_inputs(row) for row in rows])
+    drafts = [_row_to_draft(row, projection) for row, projection in zip(rows, projections, strict=True)]
     if not drafts:
         return []
     contracts = request_scope_contract_payloads([draft for draft, _error in drafts])
@@ -450,15 +455,22 @@ def _rows_to_payloads(rows: list[sqlite3.Row]) -> list[dict[str, object]]:
     return payloads
 
 
-def _row_to_draft(row: sqlite3.Row) -> tuple[dict[str, object], str | None]:
+def _row_decision_inputs(row: sqlite3.Row) -> tuple[object, object, object]:
     parsed_decision_v2 = _optional_json_object(row["decision_v2_json"])
     parsed_action_envelope = _optional_json_object(row["action_envelope_json"])
-    canonical_decision = canonical_approval_surfaces(
+    return (
         row["policy_action"],
         parsed_decision_v2 if parsed_decision_v2 is not None else row["decision_v2_json"],
         parsed_action_envelope if parsed_action_envelope is not None else row["action_envelope_json"],
-        reject_contradiction=False,
     )
+
+
+def _row_to_draft(
+    row: sqlite3.Row,
+    canonical_decision: CanonicalApprovalSurfaces | None = None,
+) -> tuple[dict[str, object], str | None]:
+    if canonical_decision is None:
+        canonical_decision = canonical_approval_surfaces(*_row_decision_inputs(row), reject_contradiction=False)
     launch_target, browser_target = _browser_launch_target_for_display(row["launch_target"])
     risk_signals = _browser_risk_signals_for_display(_safe_json_list(row["risk_signals_json"]), browser_target)
     payload: dict[str, object] = {
@@ -637,15 +649,7 @@ def _approval_summary_where_clause(
     return where_clause, params
 
 
-def _row_to_approval_summary(row: sqlite3.Row) -> dict[str, object]:
-    parsed_decision_v2 = _optional_json_object(row["decision_v2_json"])
-    parsed_action_envelope = _optional_json_object(row["action_envelope_json"])
-    canonical_decision = canonical_approval_surfaces(
-        row["policy_action"],
-        parsed_decision_v2 if parsed_decision_v2 is not None else row["decision_v2_json"],
-        parsed_action_envelope if parsed_action_envelope is not None else row["action_envelope_json"],
-        reject_contradiction=False,
-    )
+def _row_to_approval_summary(row: sqlite3.Row, canonical_decision: CanonicalApprovalSurfaces) -> dict[str, object]:
     launch_target, _browser_target = _browser_launch_target_for_display(row["launch_target"])
     action_envelope = canonical_decision.action_envelope_json
     payload: dict[str, object] = {
@@ -712,7 +716,8 @@ def list_approval_request_summary_rows(
         rows = connection.execute(query, params).fetchall()
     else:
         rows = connection.execute(f"{query}\nlimit ?", (*params, limit)).fetchall()
-    return [_row_to_approval_summary(row) for row in rows]
+    projections = canonical_approval_surfaces_batch([_row_decision_inputs(row) for row in rows])
+    return [_row_to_approval_summary(row, projection) for row, projection in zip(rows, projections, strict=True)]
 
 
 def list_approval_request_page(
