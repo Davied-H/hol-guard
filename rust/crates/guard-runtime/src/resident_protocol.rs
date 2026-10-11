@@ -6,15 +6,15 @@ use guard_contracts::{
     ApprovalQueueIdentityRequestV1, ApprovalResolutionPlanRequestV1,
     ApprovalReuseDiagnosticRequestV1, ApprovalReuseRequestV1, ApprovalScopeRequestV1,
     ApprovalValidateRequestV3, ApprovalValidateRequestV4, CiscoPreflightRequestV1,
-    ClaimApprovalReuseDecisionsRequestV1, CodexThreadContinueRequestV1, CodexToolOutputRequestV1,
+    ClaimApprovalReuseDecisionsRequestV1, CodexRequestResumeRequestV1, CodexToolOutputRequestV1,
     CommandEffectBatchRequestV1, CommandEffectRequestV1, CompoundGitInspectionRequestV1,
     ConsumerArtifactComposeRequestV1, ContainedExecuteRequestV1, ContainedNodeExecuteRequestV1,
     ContainedPackageScriptExecuteRequestV1, ContainedTypescriptExecuteRequestV1,
     ContainedWorkspaceWriteExecuteRequestV1, ContextDigestRequestV1,
     ContributedMcpDecisionRequestV1, CursorObserverProofRequestV1, DaemonHandlerRequestV1,
     DaemonLifecycleDecisionRequestV1, DaemonRouteRequestV1, DataFlowAnalyzeRequestV1,
-    FalsePositiveRulesRequestV1, GitExecutionSafetyRequestV1, GithubCliClassifyRequestV1,
-    GuardHookEnvelopeV2, GuardStoreRequestV1, HookAdapterRequestV1, HookArtifactComposeRequestV1,
+    GitExecutionSafetyRequestV1, GithubCliClassifyRequestV1, GuardHookEnvelopeV2,
+    GuardStoreRequestV1, HookAdapterRequestV1, HookArtifactComposeRequestV1,
     HookAuthorityStateRequestV1, HookDecisionRequestV1, LocalCliGrantRequestV1,
     LocalMcpGrantRequestV1, McpProxyDecisionRequestV1, McpRuntimeEvidenceRequestV1,
     McpStdioProbeRequestV1, McpStdioSessionCloseRequestV1, McpStdioSessionOpenRequestV1,
@@ -23,10 +23,11 @@ use guard_contracts::{
     PackageApprovalHashRequestV1, PackageAuditProjectionRequestV1, PackageAuthorityDecideRequestV1,
     PackageEvaluationComposeRequestV1, PackageIntentParseRequestV1, PackagePolicyResolveRequestV1,
     PackagePostureRequestV1, PolicyBundleAuthorityRequestV1, PolicyDecisionLookupRequestV1,
-    PromptAnalyzeRequestV1, RequestContextRequestV1, RunnerAuthorityRequestV1,
-    RuntimeCapabilitiesV1, ShimAdminRequestV1, SkillDirectoryIdentityRequestV1,
-    SupplyChainEvalRequestV1, WorkspaceInventoryRequestV1, MAX_NATIVE_RESPONSE_BYTES,
-    NATIVE_APPROVAL_ERROR_CODES, NATIVE_PROTOCOL_VERSION, NATIVE_RESIDENT_LIFECYCLE_ERROR_CODES,
+    PromptAnalyzeRequestV1, ProtectRequestRequestV1, RequestContextRequestV1,
+    RunnerAuthorityRequestV1, RuntimeCapabilitiesV1, RuntimeDetectorRunRequestV1,
+    ShimAdminRequestV1, SkillDirectoryIdentityRequestV1, SupplyChainEvalRequestV1,
+    WorkspaceInventoryRequestV1, MAX_NATIVE_RESPONSE_BYTES, NATIVE_APPROVAL_ERROR_CODES,
+    NATIVE_PROTOCOL_VERSION, NATIVE_RESIDENT_LIFECYCLE_ERROR_CODES,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -85,63 +86,13 @@ pub(crate) fn capabilities() -> RuntimeCapabilitiesV1 {
         "git-execution-context-v1".into(),
         "native-resident-client-v1".into(),
         "native-resident-lifecycle-v1".into(),
-        guard_contracts::ARCHIVE_INSPECTION_FEATURE.into(),
-        guard_contracts::ARCHIVE_ACQUISITION_FEATURE.into(),
-        guard_contracts::CONTEXT_DIGEST_FEATURE.into(),
-        guard_contracts::COMMAND_EFFECT_FEATURE.into(),
-        guard_contracts::COMMAND_EFFECT_BATCH_FEATURE.into(),
-        guard_contracts::APPROVAL_REUSE_FEATURE.into(),
-        guard_contracts::GITHUB_CLI_CLASSIFY_FEATURE.into(),
-        guard_contracts::CLAIM_APPROVAL_REUSE_FEATURE.into(),
-        guard_contracts::APPROVAL_REUSE_DIAGNOSTIC_FEATURE.into(),
-        guard_contracts::APPROVAL_BULK_ELIGIBILITY_FEATURE.into(),
-        guard_contracts::CODEX_THREAD_CONTINUE_FEATURE.into(),
-        guard_contracts::APPROVAL_QUEUE_IDENTITY_FEATURE.into(),
-        guard_contracts::APPROVAL_RESOLUTION_PLAN_FEATURE.into(),
-        guard_contracts::APPROVAL_SCOPE_FEATURE.into(),
-        guard_contracts::HOOK_RENDER_FEATURE.into(),
-        guard_contracts::GUARD_STORE_FEATURE.into(),
-        guard_contracts::APPROVAL_GATE_FEATURE.into(),
-        guard_contracts::PACKAGE_AUTHORITY_FEATURE.into(),
-        guard_contracts::PACKAGE_EVALUATION_COMPOSE_FEATURE.into(),
-        guard_contracts::PACKAGE_APPROVAL_HASH_FEATURE.into(),
-        guard_contracts::PACKAGE_POLICY_RESOLVE_FEATURE.into(),
-        guard_contracts::PACKAGE_POSTURE_FEATURE.into(),
-        guard_contracts::PACKAGE_AUDIT_PROJECTION_FEATURE.into(),
-        guard_contracts::WORKSPACE_INVENTORY_FEATURE.into(),
-        guard_contracts::SUPPLY_CHAIN_EVAL_FEATURE.into(),
-        guard_contracts::SHIM_ADMIN_FEATURE.into(),
-        guard_contracts::MCP_STDIO_PROBE_FEATURE.into(),
-        guard_contracts::PROMPT_ANALYZE_FEATURE.into(),
-        guard_contracts::DATA_FLOW_ANALYZE_FEATURE.into(),
-        guard_contracts::POLICY_DECISION_LOOKUP_FEATURE.into(),
-        guard_command::catalog_read_model::CATALOG_READ_CAPABILITY.into(),
-        guard_contracts::GIT_EXECUTION_SAFETY_FEATURE.into(),
-        guard_contracts::COMPOUND_GIT_INSPECTION_FEATURE.into(),
-        guard_contracts::CODEX_TOOL_OUTPUT_FEATURE.into(),
-        guard_contracts::POLICY_BUNDLE_AUTHORITY_FEATURE.into(),
-        guard_contracts::MCP_RUNTIME_EVIDENCE_FEATURE.into(),
-        guard_contracts::FALSE_POSITIVE_RULES_FEATURE.into(),
-        guard_contracts::RUNNER_AUTHORITY_FEATURE.into(),
-        guard_contracts::LOCAL_CLI_GRANT_FEATURE.into(),
-        guard_contracts::APPROVAL_PROOF_FEATURE.into(),
-        guard_contracts::CURSOR_OBSERVER_PROOF_FEATURE.into(),
-        guard_contracts::HOOK_AUTHORITY_STATE_FEATURE.into(),
-        guard_contracts::HOOK_DECISION_FEATURE.into(),
-        guard_contracts::DAEMON_ROUTE_FEATURE.into(),
-        guard_contracts::DAEMON_HANDLER_FEATURE.into(),
-        guard_contracts::HOOK_ARTIFACT_COMPOSE_FEATURE.into(),
-        guard_contracts::CONSUMER_ARTIFACT_COMPOSE_FEATURE.into(),
-        guard_contracts::HOOK_ADAPTER_FEATURE.into(),
-        guard_contracts::MCP_TOOL_EVIDENCE_FEATURE.into(),
-        guard_contracts::LOCAL_MCP_GRANT_FEATURE.into(),
-        guard_contracts::MCP_PROXY_DECISION_FEATURE.into(),
-        guard_contracts::CISCO_PREFLIGHT_FEATURE.into(),
-        guard_contracts::DAEMON_LIFECYCLE_FEATURE.into(),
-        guard_contracts::CONTRIBUTED_MCP_DECISION_FEATURE.into(),
-        guard_contracts::REQUEST_CONTEXT_FEATURE.into(),
-        guard_contracts::MCP_TOOL_POLICY_DECIDE_FEATURE.into(),
+        "secrets-cli-v1".into(),
     ];
+    features.extend(
+        crate::resident_op_features::RESIDENT_OP_FEATURES
+            .iter()
+            .map(|feature| (*feature).into()),
+    );
     if cfg!(windows) {
         features.push("authenticated-loopback-resident-v1".into());
     }
@@ -191,10 +142,11 @@ pub(crate) enum ResidentOperationV1 {
     CommandEffectDecideBatch(CommandEffectBatchRequestV1),
     ApprovalReuseDecide(ApprovalReuseRequestV1),
     GithubCliClassify(GithubCliClassifyRequestV1),
+    ProtectRequest(ProtectRequestRequestV1),
     ClaimApprovalReuseDecisions(ClaimApprovalReuseDecisionsRequestV1),
     ApprovalReuseDiagnostic(ApprovalReuseDiagnosticRequestV1),
     ApprovalBulkEligibility(ApprovalBulkEligibilityRequestV1),
-    CodexThreadContinue(CodexThreadContinueRequestV1),
+    CodexRequestResume(CodexRequestResumeRequestV1),
     ApprovalQueueIdentity(ApprovalQueueIdentityRequestV1),
     ApprovalResolutionPlan(ApprovalResolutionPlanRequestV1),
     ApprovalScope(ApprovalScopeRequestV1),
@@ -235,7 +187,7 @@ pub(crate) enum ResidentOperationV1 {
     CodexToolOutput(CodexToolOutputRequestV1),
     PolicyBundleAuthority(PolicyBundleAuthorityRequestV1),
     McpRuntimeEvidence(McpRuntimeEvidenceRequestV1),
-    FalsePositiveRules(FalsePositiveRulesRequestV1),
+    RuntimeDetectorRun(RuntimeDetectorRunRequestV1),
     RunnerAuthority(RunnerAuthorityRequestV1),
     LocalCliGrantDecide(LocalCliGrantRequestV1),
     ApprovalProofDecide(ApprovalProofRequestV1),
@@ -339,162 +291,5 @@ pub(crate) fn safe_error_response(code: &str, retryable: bool) -> Vec<u8> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{evaluate_resident_bytes, safe_error_response};
-    use guard_contracts::NATIVE_APPROVAL_MAX_BYTES;
-    use serde_json::Value;
-    use std::fs;
-    use std::path::PathBuf;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    fn policy_store() -> (crate::policy_store::PolicySnapshotStore, PathBuf) {
-        let suffix = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let root = std::env::temp_dir().join(format!(
-            "hol-guard-resident-enrollment-test-{}-{suffix}",
-            std::process::id()
-        ));
-        #[cfg(windows)]
-        let root = crate::resident_state::ensure_private_directory(&root, true).unwrap();
-        #[cfg(not(windows))]
-        fs::create_dir(&root).unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&root, fs::Permissions::from_mode(0o700)).unwrap();
-        }
-        let key_path = root.join("policy-verifier.key");
-        #[cfg(windows)]
-        {
-            use std::io::Write;
-            let mut file = crate::resident_state::private_file(&key_path, false, &root).unwrap();
-            file.write_all(&[23u8; 32]).unwrap();
-        }
-        #[cfg(not(windows))]
-        fs::write(&key_path, [23u8; 32]).unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&key_path, fs::Permissions::from_mode(0o600)).unwrap();
-        }
-        let store = crate::policy_store::PolicySnapshotStore::new(&root, &"a".repeat(64)).unwrap();
-        (store, root)
-    }
-
-    #[test]
-    fn approval_error_transport_is_finite() {
-        let known: Value =
-            serde_json::from_slice(&safe_error_response("native_approval_replay", false))
-                .expect("known approval error is JSON");
-        assert_eq!(known["error"], "native_approval_replay");
-
-        let unknown: Value = serde_json::from_slice(&safe_error_response(
-            "native_approval_future_unregistered_code",
-            false,
-        ))
-        .expect("redacted approval error is JSON");
-        assert_eq!(unknown["error"], "native_request_invalid_json");
-
-        let lifecycle: Value = serde_json::from_slice(&safe_error_response(
-            "native_resident_start_in_progress",
-            true,
-        ))
-        .expect("known lifecycle error is JSON");
-        assert_eq!(lifecycle["error"], "native_resident_start_in_progress");
-
-        let unsupported: Value = serde_json::from_slice(&safe_error_response(
-            "native_request_schema_unsupported",
-            false,
-        ))
-        .expect("schema-unsupported error is JSON");
-        assert_eq!(unsupported["error"], "native_request_schema_unsupported");
-
-        for code in [
-            "native_resident_future_unregistered_code",
-            "native_policy_snapshot_future_unregistered_code",
-        ] {
-            let redacted: Value = serde_json::from_slice(&safe_error_response(code, false))
-                .expect("redacted error is JSON");
-            assert_eq!(redacted["error"], "native_request_invalid_json");
-        }
-        for code in [
-            "native_business_policy_floor_invalid",
-            "native_business_policy_removal_requires_authority",
-            "native_business_source_authority_missing",
-            "native_business_source_authority_invalid",
-            "native_business_source_authority_not_current",
-            "native_business_source_mutation_in_progress",
-            "native_business_source_enforce_required",
-        ] {
-            let response: Value =
-                serde_json::from_slice(&safe_error_response(code, false)).unwrap();
-            assert_eq!(response["error"], code);
-            assert_eq!(response["retryable"], false);
-        }
-        let unknown_business: Value = serde_json::from_slice(&safe_error_response(
-            "native_business_policy_future_unregistered_code",
-            false,
-        ))
-        .unwrap();
-        assert_eq!(unknown_business["error"], "native_request_invalid_json");
-    }
-
-    #[test]
-    fn approval_requests_have_a_smaller_raw_payload_bound() {
-        let padding = "x".repeat(NATIVE_APPROVAL_MAX_BYTES);
-        let request =
-            format!(r#"{{"operation":"approval_challenge","request":{{"padding":"{padding}"}}}}"#);
-        assert_eq!(
-            evaluate_resident_bytes(request.as_bytes(), None).unwrap_err(),
-            "native_approval_request_bounds_exceeded"
-        );
-    }
-
-    #[test]
-    fn resident_workspace_enrollment_requires_canonical_absolute_candidate() {
-        let (store, root) = policy_store();
-        let relative = br#"{"operation":"workspace_review_authority_enroll","request":{"record_path":"relative.json"}}"#;
-        assert_eq!(
-            evaluate_resident_bytes(relative, Some(&store)).unwrap_err(),
-            "native_workspace_review_authority_invalid"
-        );
-        let noncanonical = br#"{"request":{"record_path":"relative.json"},"operation":"workspace_review_authority_enroll"}"#;
-        assert_eq!(
-            evaluate_resident_bytes(noncanonical, Some(&store)).unwrap_err(),
-            "native_workspace_review_decision_noncanonical"
-        );
-        let absent = serde_json::json!({
-            "operation": "workspace_review_authority_enroll",
-            "request": {"record_path": root.join("absent.json").to_string_lossy()},
-        });
-        let canonical = guard_policy_snapshot::canonical_json_bytes(&absent).unwrap();
-        assert_eq!(
-            evaluate_resident_bytes(&canonical, Some(&store)).unwrap_err(),
-            "native_workspace_review_authority_missing"
-        );
-        drop(store);
-        fs::remove_dir_all(root).unwrap();
-    }
-}
-
-#[cfg(test)]
-mod capability_platform_tests {
-    #[test]
-    fn prompt_capability_is_portable_and_containment_matches_dispatch() {
-        let features = super::capabilities().features;
-        assert!(features
-            .iter()
-            .any(|feature| feature == guard_contracts::PROMPT_ANALYZE_FEATURE));
-        assert!(features
-            .iter()
-            .any(|feature| feature == guard_contracts::DATA_FLOW_ANALYZE_FEATURE));
-        assert_eq!(
-            features
-                .iter()
-                .any(|feature| feature == guard_contracts::CONTAINED_EXECUTION_FEATURE),
-            cfg!(unix)
-        );
-    }
-}
+#[path = "resident_protocol_tests.rs"]
+mod tests;

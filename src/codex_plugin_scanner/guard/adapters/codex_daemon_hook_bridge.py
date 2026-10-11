@@ -12,6 +12,7 @@ from pathlib import Path
 from urllib.parse import parse_qs
 
 if __package__:
+    from ..approval_wait_limits import MAX_APPROVAL_WAIT_TIMEOUT_SECONDS
     from ..codex_binding_capture import record_bridge_ingress
     from ..codex_hook_bridge_runtime import BridgeConfig
     from ..codex_hook_bridge_runtime import bounded_hook_input as _hook_input
@@ -21,7 +22,6 @@ if __package__:
         isolated_hook_environment,
         run_isolated_hook_process,
     )
-    from ..config import MAX_APPROVAL_WAIT_TIMEOUT_SECONDS
     from ..daemon.hook_availability_policy import hook_event_is_permission_request
     from ..daemon.hook_request_parsing import runtime_hook_event_name
     from ..hook_execution_environment import stamp_hook_input_text
@@ -30,16 +30,16 @@ if __package__:
         CODEX_BROWSER_WAIT_TIMEOUT_SECONDS_KEY,
         current_process_identity,
     )
-    from .codex_daemon_dead_fastpath import NATIVE_RUNTIME_DEAD_REASON, NATIVE_RUNTIME_DEAD_REASON_CODE
+    from .codex_daemon_bridge_failure_reason import AUTHENTICATION_FAILED_REASON, daemon_failure_reason
     from .codex_daemon_hook_bridge_flow import bridge_review_response
     from .codex_daemon_hook_resume import apply_browser_approval_wait
 else:  # pragma: no cover - exercised by subprocess integration tests
     _package_root = str(Path(__file__).resolve().parents[3])
     if _package_root not in sys.path:
         sys.path.insert(0, _package_root)
-    from codex_plugin_scanner.guard.adapters.codex_daemon_dead_fastpath import (
-        NATIVE_RUNTIME_DEAD_REASON,
-        NATIVE_RUNTIME_DEAD_REASON_CODE,
+    from codex_plugin_scanner.guard.adapters.codex_daemon_bridge_failure_reason import (
+        AUTHENTICATION_FAILED_REASON,
+        daemon_failure_reason,
     )
     from codex_plugin_scanner.guard.adapters.codex_daemon_hook_bridge_flow import (
         bridge_review_response,
@@ -47,6 +47,7 @@ else:  # pragma: no cover - exercised by subprocess integration tests
     from codex_plugin_scanner.guard.adapters.codex_daemon_hook_resume import (
         apply_browser_approval_wait,
     )
+    from codex_plugin_scanner.guard.approval_wait_limits import MAX_APPROVAL_WAIT_TIMEOUT_SECONDS
     from codex_plugin_scanner.guard.codex_binding_capture import record_bridge_ingress
     from codex_plugin_scanner.guard.codex_hook_bridge_runtime import (
         BridgeConfig,
@@ -62,7 +63,6 @@ else:  # pragma: no cover - exercised by subprocess integration tests
         isolated_hook_environment,
         run_isolated_hook_process,
     )
-    from codex_plugin_scanner.guard.config import MAX_APPROVAL_WAIT_TIMEOUT_SECONDS
     from codex_plugin_scanner.guard.daemon.hook_availability_policy import (
         hook_event_is_permission_request,
     )
@@ -78,19 +78,10 @@ _HOOK_TIMEOUT_GRACE_SECONDS = 2
 _DISCOVERY_PROTOCOL_VERSION = 1
 _MAX_HOOK_INPUT_BYTES = 1_000_000
 _BRIDGE_FAILURE_SCHEMA = "hol-guard.codex-bridge-failure.v1"
-_FAIL_CLOSED_REASON = (
-    "HOL Guard could not authenticate the local daemon. Run `hol-guard daemon repair` from a terminal, then retry."
-)
+_FAIL_CLOSED_REASON = AUTHENTICATION_FAILED_REASON
 _LAUNCH_INTEGRITY_REASON = (
     "HOL Guard could not authenticate its managed Codex hook launcher. "
     "Run `hol-guard install codex` from a terminal, then retry."
-)
-_DAEMON_DEAD_REASON = (
-    "HOL Guard's local daemon is not running and could not be restarted. "
-    "Run `hol-guard repair` in a terminal, then retry."
-)
-_OVERLOAD_REASON = (
-    "HOL Guard is temporarily saturated and kept this action blocked. No approval was requested; retry the action."
 )
 _TRANSITION_PROBE_OUTPUT_LIMIT = 64 * 1024
 
@@ -414,19 +405,10 @@ def main(
             event_name=event_name,
         )
         if response is None:
+            # Name the cause of every denial; an allowed continuation stays quiet.
+            if launch_integrity_failed or event_name == "PreToolUse" or hook_event_is_permission_request(event_name):
+                _write_failure_causes(failure_causes)
             if launch_integrity_failed:
-                # Diagnostic delivery must not interrupt the denial response.
-                with suppress(OSError, ValueError, TypeError):
-                    sys.stderr.write(
-                        json.dumps(
-                            {
-                                "schema": _BRIDGE_FAILURE_SCHEMA,
-                                "causes": failure_causes,
-                            },
-                            separators=(",", ":"),
-                        )
-                        + "\n"
-                    )
                 if any(
                     isinstance(cause, dict) and cause.get("reason_code") == "codex_hook_validation_deadline_expired"
                     for cause in failure_causes
@@ -440,16 +422,7 @@ def main(
                 else:
                     response = _launcher_integrity_response(event_name, data)
             else:
-                failure_reason = _OVERLOAD_REASON if daemon_overloaded else _FAIL_CLOSED_REASON
-                if any(
-                    isinstance(cause, dict) and cause.get("stage") == "daemon_dead_fast" for cause in failure_causes
-                ):
-                    failure_reason = _DAEMON_DEAD_REASON
-                    if any(
-                        isinstance(c, dict) and c.get("reason_code") == NATIVE_RUNTIME_DEAD_REASON_CODE
-                        for c in failure_causes
-                    ):
-                        failure_reason = NATIVE_RUNTIME_DEAD_REASON
+                failure_reason = daemon_failure_reason(failure_causes, daemon_overloaded=daemon_overloaded)
                 response = _unavailable_response(event_name, failure_reason, data)
         _write_transition_observation(data, response)
         sys.stdout.write(
@@ -462,6 +435,16 @@ def main(
             )
         )
     return 0
+
+
+def _write_failure_causes(failure_causes: list[object]) -> None:
+    """Report the fixed reason codes behind a denial without exposing details."""
+
+    # Diagnostic delivery must not interrupt the denial response.
+    with suppress(OSError, ValueError, TypeError):
+        sys.stderr.write(
+            json.dumps({"schema": _BRIDGE_FAILURE_SCHEMA, "causes": failure_causes}, separators=(",", ":")) + "\n"
+        )
 
 
 def _launcher_integrity_response(event_name: str, data: str) -> dict[str, object]:

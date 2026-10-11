@@ -134,6 +134,7 @@ mod powershell_effects;
 mod powershell_floors;
 mod powershell_parser;
 mod powershell_reads;
+pub mod protect_request;
 use parser_executables::*;
 use parser_segments::*;
 pub mod environment_secret_dump;
@@ -278,9 +279,11 @@ pub mod typescript_launch_evidence;
 
 pub mod package_context_environment;
 
+mod critical_floor_context;
 pub use command_evaluation::CompositeCommandEvaluation;
 pub use command_evaluation_compose::{evaluate_command, CommandEvaluationInput};
 pub use command_model::parse_shell_command;
+pub use critical_floor_context::critical_floor_action;
 
 use serde::{Deserialize, Serialize};
 
@@ -648,6 +651,7 @@ mod mcp_package_sources;
 #[cfg(unix)]
 pub mod mcp_stdio_session;
 pub mod pep440;
+pub mod persistence_rules;
 pub mod registry_metadata_transport;
 pub mod restricted_archive;
 mod restricted_archive_address;
@@ -659,12 +663,14 @@ mod restricted_archive_write;
 #[cfg(unix)]
 pub mod restricted_pytest;
 pub mod resume_template;
+pub mod safe_decode;
 #[cfg(unix)]
 pub mod sandbox;
 #[cfg(unix)]
 pub(crate) mod semantic_workspace;
 pub mod shims;
 pub mod signals;
+pub mod skill_content_risk;
 pub mod supply_chain_bundle;
 pub mod supply_chain_package_identity;
 pub mod supply_chain_risk;
