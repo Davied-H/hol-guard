@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 mod approval;
+mod approval_bulk_eligibility_op;
 mod approval_gate_consumers;
 mod approval_gate_enrollment;
 mod approval_gate_grants;
@@ -26,6 +27,12 @@ mod archive_verdict_seam;
 mod bundle_parse_reuse_tests;
 mod business_document_compile;
 mod business_source_codec;
+mod cisco_containment;
+mod cisco_evidence;
+mod cisco_plan;
+mod cisco_preflight_op;
+#[cfg(test)]
+mod cisco_preflight_vectors_tests;
 mod claim_approval_reuse_op;
 mod claim_reuse;
 mod claim_reuse_binding;
@@ -57,7 +64,7 @@ mod compound_git_facts_tests;
 mod compound_git_inspection_op;
 #[cfg(test)]
 mod compound_git_inspection_op_tests;
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod compound_git_inspection_vectors_tests;
 mod compound_git_paths;
 mod compound_git_segments;
@@ -122,6 +129,11 @@ mod guard_store_cmd_rollups;
 mod guard_store_cmd_vectors_tests;
 mod guard_store_cmd_wire;
 mod guard_store_db;
+mod guard_store_inventory;
+#[cfg(test)]
+mod guard_store_inventory_page_tests;
+#[cfg(test)]
+mod guard_store_inventory_vectors_tests;
 mod guard_store_json;
 mod guard_store_lineage;
 mod guard_store_op;
@@ -138,6 +150,9 @@ mod guard_store_outbox_requeue;
 mod guard_store_sessions;
 #[cfg(test)]
 mod guard_store_sessions_vectors_tests;
+mod guard_store_storage_maintenance;
+#[cfg(test)]
+mod guard_store_storage_maintenance_vectors_tests;
 #[cfg(test)]
 mod guard_store_vectors_tests;
 mod hardening;
@@ -276,6 +291,9 @@ mod supply_chain_egress;
 mod supply_chain_eval_seams;
 mod totp;
 mod workflow_capability_store;
+mod workspace_inventory_files;
+mod workspace_inventory_op;
+mod workspace_scan_targets;
 
 pub(crate) use resident_protocol::{capabilities, encode_response, strict_json_value};
 pub(crate) use resident_transport::{

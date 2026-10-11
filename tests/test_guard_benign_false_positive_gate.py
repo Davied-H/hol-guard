@@ -28,6 +28,7 @@ import pytest
 from ci.gauntlet.approval_rows import always_gap, approval_rows
 from ci.gauntlet.input_evidence import redact_value
 from codex_plugin_scanner.guard.daemon.hook_worker import HookWorker
+from codex_plugin_scanner.guard.daemon.hook_worker_responses import _SILENT_WARNING_CODES
 from codex_plugin_scanner.guard.hook_execution_environment import collect_hook_execution_environment
 from codex_plugin_scanner.guard.store import GuardStore
 from tests.benign_fp_gate_fixture import BenignFixture, build_fixture
@@ -53,7 +54,13 @@ _FIXED_TOOLS = {
     "todo_write": "todo_write",
     "ls": "ls",
 }
-_ALLOWED_PR = {"#3958", "#3959", "#3960", "#3961", "#3973", "unassigned"}
+# A pending marker names the open work that owns the case. "unassigned" still
+# prompts and has no owner yet. A merged PR is never a marker: once its fix
+# lands the case either passes or needs a new owner.
+_ALLOWED_PR = {"unassigned"}
+_PENDING_CEILING = 24
+_RENDERED_KEYS = ("reason", "notice", "message", "systemMessage", "stopReason")
+_RENDERED_SPECIFIC_KEYS = ("permissionDecisionReason", "additionalContext")
 # Pending entries are recorded against the Linux CI host. Git helper context and
 # temp-directory proofs differ on other hosts, so only CI fails a stale entry.
 # Pending markers record the Linux CI result. macOS sends some Oh My Pi and Z Code reads
@@ -129,7 +136,15 @@ def gate_environment(tmp_path_factory: pytest.TempPathFactory) -> Iterator[tuple
     fixture = build_fixture(tmp_path_factory.mktemp("benign-fp-gate"))
     patch = pytest.MonkeyPatch()
     patch.setenv("HOME", str(fixture.home))
-    patch.setenv("GIT_CONFIG_GLOBAL", str(fixture.home / ".gitconfig"))
+    # Git finds the fixture ~/.gitconfig through HOME, as on a real host. The
+    # native Git proofs fail closed on any GIT_*, LD_* or DYLD_* override in
+    # the agent environment. A test-only GIT_CONFIG_GLOBAL, and later the
+    # LD_LIBRARY_PATH that setup-python exports on CI runners, each hid every
+    # Git read case behind a review that real agents never see.
+    for name in list(os.environ):
+        if name.upper().startswith(("GIT_", "LD_", "DYLD_")):
+            patch.delenv(name)
+    patch.setenv("XDG_CONFIG_HOME", str(fixture.home / ".config"))
     patch.setenv("HOL_GUARD_NATIVE", "force")
     binary = os.environ.get("HOL_GUARD_NATIVE_BINARY")
     if not binary:
@@ -189,14 +204,26 @@ def _decision(result: dict[str, object]) -> str:
     return "allow"
 
 
+def _rendered_text(result: dict[str, object]) -> bool:
+    """True when the harness response carries text the agent or user would see."""
+    specific = result.get("hookSpecificOutput")
+    specific = specific if isinstance(specific, dict) else {}
+    return any(result.get(key) for key in _RENDERED_KEYS) or any(specific.get(key) for key in _RENDERED_SPECIFIC_KEYS)
+
+
 def _quiet_allow(result: dict[str, object], approvals: int) -> bool:
+    """Allowed with no approval row and nothing rendered.
+
+    A warn whose reason is a silent code (the policy floor on a proven action)
+    is quiet: the receipt records it, but the harness shows nothing.
+    """
     reason = _reason(result)
-    return (
-        _decision(result) == "allow"
-        and approvals == 0
-        and result.get("policy_action") in (None, "allow")
-        and not result.get("notice")
-        and not (reason.startswith("native_") and (reason.endswith("_review") or reason.endswith("_warning")))
+    if _decision(result) != "allow" or approvals != 0 or _rendered_text(result):
+        return False
+    if result.get("policy_action") == "warn" and reason in _SILENT_WARNING_CODES:
+        return True
+    return result.get("policy_action") in (None, "allow") and not (
+        reason.startswith("native_") and (reason.endswith("_review") or reason.endswith("_warning"))
     )
 
 
@@ -275,6 +302,22 @@ def test_pending_entries_are_consistent_and_name_their_fix() -> None:
     assert set(_PENDING_PR.values()) <= _ALLOWED_PR, sorted(set(_PENDING_PR.values()) - _ALLOWED_PR)
     assert set(_PENDING_ALWAYS) <= set(_PENDING_FIX)
     assert set(_PENDING_ALWAYS.values()) <= _ALLOWED_PR, sorted(set(_PENDING_ALWAYS.values()) - _ALLOWED_PR)
+    # The policy floor's warning on a proven action renders nothing, so the gate
+    # counts it as quiet. A pending entry can only name a real interruption.
+    silent = sorted(case_id for case_id, reason in _PENDING_FIX.items() if reason in _SILENT_WARNING_CODES)
+    assert not silent, silent
+    assert "advisory-warn" not in _PENDING_PR.values()
+
+
+def test_pending_backlog_only_shrinks() -> None:
+    """Every pending entry is a benign task that still interrupts the user.
+
+    Lower the ceiling when a fix lands. Raising it means shipping a known false
+    positive, which needs the reason in the PR description.
+    """
+    assert len(_PENDING_FIX) <= _PENDING_CEILING, (
+        f"{len(_PENDING_FIX)} pending benign cases exceeds the ceiling of {_PENDING_CEILING}"
+    )
 
 
 def test_every_confirmed_false_positive_class_has_a_gate_case() -> None:

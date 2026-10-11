@@ -465,3 +465,56 @@ pub struct PackagePostureRequestV1 {
     /// Package-manager shim status; carried through unchanged.
     pub package_manager_protection: Value,
 }
+
+// ---------------------------------------------------------------------------
+// WorkspaceInventory — resident op owning the workspace audit file discovery,
+// manifest/lockfile/SBOM dependency inventory, the manifest diff projection
+// and the lockfile warnings `local_supply_chain.py` used to derive in Python.
+// ---------------------------------------------------------------------------
+
+/// Capability advertised when the workspace inventory op exists.
+pub const WORKSPACE_INVENTORY_FEATURE: &str = "workspace-inventory-v1";
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct WorkspaceInventoryRequestV1 {
+    pub schema: String,
+    pub request_id: String,
+    pub guard_home: String,
+    /// Workspace to inventory; the "after" workspace for a diff.
+    pub workspace_dir: String,
+    /// Baseline workspace; present only for a diff inventory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub before_workspace_dir: Option<String>,
+    #[serde(default)]
+    pub sbom_paths: Vec<String>,
+    /// Only discover the manifest and lockfile paths.
+    #[serde(default)]
+    pub files_only: bool,
+    /// Also report the lockfile warnings for `workspace_dir`.
+    #[serde(default)]
+    pub include_lockfile_warnings: bool,
+    /// Return only the package intent targets of the inventory (an empty
+    /// `inventory`), keeping each response inside the native size cap.
+    #[serde(default)]
+    pub targets_only: bool,
+    /// Also build the package intent target for one explicit package spec.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package_spec: Option<WorkspacePackageSpecV1>,
+    /// Index of the first inventory item (or scan target in `targets_only`
+    /// mode) to return. The reply is capped, so a large result is read as
+    /// consecutive pages until `next_offset` is null.
+    #[serde(default)]
+    pub inventory_offset: usize,
+    /// Digest of the full inventory snapshot from page 1. Later pages must
+    /// echo it. A workspace that changed between pages is rejected.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inventory_digest: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct WorkspacePackageSpecV1 {
+    pub ecosystem: String,
+    pub spec: String,
+}
