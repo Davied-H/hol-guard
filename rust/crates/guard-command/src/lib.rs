@@ -135,6 +135,7 @@ mod powershell_parser;
 mod powershell_reads;
 use parser_executables::*;
 use parser_segments::*;
+pub mod environment_secret_dump;
 pub mod pretool;
 mod runtime_read_paths;
 pub mod secret_path_probe;
@@ -546,7 +547,6 @@ pub mod contained_runner;
 pub mod data_flow_rules;
 pub mod decisions;
 pub mod detectors;
-#[cfg(unix)]
 pub mod direct_vitest;
 mod egress_archive;
 pub mod egress_broker;
