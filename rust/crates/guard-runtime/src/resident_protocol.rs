@@ -186,6 +186,7 @@ pub(crate) enum ResidentOperationV1 {
     PolicyBundleAuthority(PolicyBundleAuthorityRequestV1),
     McpRuntimeEvidence(McpRuntimeEvidenceRequestV1),
     RuntimeDetectorRun(RuntimeDetectorRunRequestV1),
+    SecretsScan(guard_contracts::SecretsScanRequestV1),
     RunnerAuthority(RunnerAuthorityRequestV1),
     LocalCliGrantDecide(LocalCliGrantRequestV1),
     ApprovalProofDecide(ApprovalProofRequestV1),

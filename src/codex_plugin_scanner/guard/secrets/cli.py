@@ -6,20 +6,21 @@ import argparse
 import json
 import sys
 from collections.abc import Sequence
-from pathlib import Path
+from typing import Any
 
-from .precommit import install_precommit_hook, uninstall_precommit_hook
-from .public_rule_catalog import PUBLIC_RULES_JSON, PUBLIC_RULES_TEXT
-from .secret_repository_scanner import (
-    DEFAULT_MAX_COMMITS,
-    DEFAULT_MAX_FILE_BYTES,
-    DEFAULT_MAX_FILES,
-    DEFAULT_MAX_FINDINGS,
-    DEFAULT_MAX_TOTAL_BYTES,
-    RepositorySecretScanResult,
-    scan_repository_secrets,
+from ..native_secrets import (
+    NativeSecretsError,
+    SecretsRefusedError,
+    native_secrets_hook,
+    native_secrets_rules,
+    native_secrets_scan,
 )
-from .secret_staged_scanner import scan_staged_secrets
+
+DEFAULT_MAX_FILES = 5_000
+DEFAULT_MAX_FILE_BYTES = 2 * 1024 * 1024
+DEFAULT_MAX_TOTAL_BYTES = 128 * 1024 * 1024
+DEFAULT_MAX_FINDINGS = 500
+DEFAULT_MAX_COMMITS = 500
 
 
 def _positive_int(value: str) -> int:
@@ -72,81 +73,74 @@ def build_parser(*, program_name: str = "hol-guard-secrets") -> argparse.Argumen
     return parser
 
 
-def _write_scan(result: RepositorySecretScanResult, *, json_output: bool) -> None:
-    public = result.to_public_dict()
+def _write_scan(public: dict[str, Any], *, json_output: bool) -> None:
     if json_output:
         print(json.dumps(public, sort_keys=True))
         return
-    findings = result.findings
+    findings = public["findings"]
     print(
         f"HOL Guard Secrets: {len(findings)} finding(s), "
-        f"{result.files_scanned} file version(s), "
-        f"{result.commits_scanned} Git commit(s)."
+        f"{public['files_scanned']} file version(s), "
+        f"{public['commits_scanned']} Git commit(s)."
     )
     for finding in findings:
-        commit = f" @{finding.commit[:12]}" if finding.commit else ""
+        commit = f" @{finding['commit'][:12]}" if finding["commit"] else ""
         print(
-            f"- {finding.severity.upper()} {finding.family} at "
-            f"{finding.path}:{finding.line}{commit} [{finding.confidence} confidence]"
+            f"- {finding['severity'].upper()} {finding['family']} at "
+            f"{finding['path']}:{finding['line']}{commit} [{finding['confidence']} confidence]"
         )
-    if result.truncated:
+    if public["truncated"]:
         print(
             "Scan coverage is partial. Increase the configured bounds or resolve the "
             "reported Git error before treating it as clean."
         )
-    for error in result.errors:
+    for error in public["errors"]:
         print(f"Warning: {error}", file=sys.stderr)
     print("Raw secret values are intentionally omitted.")
 
 
 def _run_scan(args: argparse.Namespace) -> int:
-    target = Path(args.target)
+    bounds = {
+        "include_history": bool(args.history),
+        "max_commits": args.max_commits,
+        "max_files": args.max_files,
+        "max_file_bytes": args.max_file_bytes,
+        "max_total_bytes": args.max_total_bytes,
+        "max_findings": args.max_findings,
+    }
     try:
-        if bool(args.staged):
-            result = scan_staged_secrets(
-                target,
-                max_files=args.max_files,
-                max_file_bytes=args.max_file_bytes,
-                max_total_bytes=args.max_total_bytes,
-                max_findings=args.max_findings,
-            )
-        else:
-            result = scan_repository_secrets(
-                target,
-                include_history=bool(args.history),
-                max_commits=args.max_commits,
-                max_files=args.max_files,
-                max_file_bytes=args.max_file_bytes,
-                max_total_bytes=args.max_total_bytes,
-                max_findings=args.max_findings,
-            )
-    except (OSError, ValueError) as error:
+        public = native_secrets_scan(args.target, staged=bool(args.staged), bounds=bounds)
+    except (SecretsRefusedError, NativeSecretsError, OSError) as error:
         print(f"Error: {error}", file=sys.stderr)
         return 2
-    _write_scan(result, json_output=bool(args.json) or args.format == "json")
-    if result.truncated or result.errors:
+    _write_scan(public, json_output=bool(args.json) or args.format == "json")
+    if public["truncated"] or public["errors"]:
         return 2
-    return 3 if args.fail_on_findings and result.findings else 0
+    return 3 if args.fail_on_findings and public["findings"] else 0
 
 
 def _run_rules(args: argparse.Namespace) -> int:
-    sys.stdout.write(PUBLIC_RULES_JSON if args.json else PUBLIC_RULES_TEXT)
+    try:
+        json_text, plain_text = native_secrets_rules()
+    except NativeSecretsError as error:
+        print(f"Error: {error}", file=sys.stderr)
+        return 2
+    sys.stdout.write(json_text if args.json else plain_text)
     return 0
 
 
 def _run_hook(args: argparse.Namespace, *, install: bool) -> int:
     try:
-        result = install_precommit_hook(Path(args.target)) if install else uninstall_precommit_hook(Path(args.target))
-    except (OSError, ValueError) as error:
+        payload = native_secrets_hook(args.target, install=install)
+    except (SecretsRefusedError, NativeSecretsError, OSError) as error:
         print(f"Error: {error}", file=sys.stderr)
         return 2
-    payload = result.to_public_dict()
     if args.json:
         print(json.dumps(payload, sort_keys=True))
     else:
         action = "installed" if install else "uninstalled"
-        print(f"HOL Guard Secrets pre-commit hook {action}: {result.status} ({result.hook})")
-        if result.chained_existing:
+        print(f"HOL Guard Secrets pre-commit hook {action}: {payload['status']} ({payload['hook']})")
+        if payload["chained_existing"]:
             print("Existing pre-commit behavior is preserved and chained before the staged secret scan.")
     return 0
 

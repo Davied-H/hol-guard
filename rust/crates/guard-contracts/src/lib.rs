@@ -94,6 +94,8 @@ mod browser_mcp_intent;
 pub use browser_mcp_intent::*;
 mod runtime_detector_run;
 pub use runtime_detector_run::*;
+mod secrets_scan;
+pub use secrets_scan::*;
 mod runner_authority;
 pub use runner_authority::*;
 mod mcp_runtime_evidence;

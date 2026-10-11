@@ -149,27 +149,25 @@ fn run_git_blob(
 
 /// Python `_git_staged_blob`: size check via `git cat-file -s :<path>` then
 /// payload via `git cat-file blob :<path>` bounded by `max_file_bytes`.
-/// Returns `(Option<bytes>, blob_too_large)` — `too_large` only when the
-/// staged object itself exceeds `max_file_bytes`; every other failure
-/// mirrors the Python `except`/`returncode` early exits as `(None, false)`
-/// so the caller records `git_staged_blob_failed`.
+/// Returns `(Option<bytes>, incomplete)`; every failure (spawn, non-zero exit,
+/// unparsable or oversized object) is `(None, true)`, as in Python.
 fn git_staged_blob(root: &Path, path: &[u8], max_file_bytes: usize) -> (Option<Vec<u8>>, bool) {
     let spec_args = staged_blob_args(path, "-s");
     let Ok(size_result) = run_git_blob(root, &spec_args) else {
-        return (None, false);
+        return (None, true);
     };
     // `int(size_result.stdout.strip())`; invalid output mirrors `ValueError`.
     let Some(size) = std::str::from_utf8(strip_bytes(&size_result.stdout))
         .ok()
         .and_then(|text| text.parse::<i64>().ok())
     else {
-        return (None, false);
+        return (None, true);
     };
     if size < 0 || size > max_file_bytes as i64 {
         return (None, true);
     }
     let Ok(blob_result) = run_git_blob(root, &staged_blob_args(path, "blob")) else {
-        return (None, false);
+        return (None, true);
     };
     if blob_result.stdout.len() > max_file_bytes {
         return (None, true);
@@ -240,7 +238,7 @@ pub fn scan_staged_secrets(root: &Path, options: &StagedScanOptions) -> Reposito
         .canonicalize()
         .unwrap_or_else(|_| expanded_root.clone());
     let Some(git_root) = git_repository_root(&resolved_root) else {
-        return failed_result("git_repository_root_failed");
+        return failed_result("git_staged_enumeration_failed");
     };
     let Some(staged_paths) = git_staged_paths(&git_root) else {
         return failed_result("git_staged_enumeration_failed");
@@ -266,20 +264,23 @@ pub fn scan_staged_secrets(root: &Path, options: &StagedScanOptions) -> Reposito
     let mut truncated = false;
 
     for relative_path in &staged_paths {
-        if files_scanned >= max_files || bytes_scanned >= max_total_bytes {
+        if files_scanned >= max_files
+            || bytes_scanned >= max_total_bytes
+            || findings.len() >= max_findings
+        {
             truncated = true;
             break;
         }
         // Display/label strings use lossy UTF-8 (surrogateescape-parity);
         // the blob lookup itself still consumes the raw `relative_path` bytes.
         let normalized = String::from_utf8_lossy(relative_path).replace('\\', "/");
-        let (data, too_large) = git_staged_blob(&git_root, relative_path, max_file_bytes);
-        if too_large {
+        let (data, incomplete_blob) = git_staged_blob(&git_root, relative_path, max_file_bytes);
+        if incomplete_blob {
             truncated = true;
+            errors.push("git_staged_blob_unavailable_or_oversized".to_string());
             continue;
         }
         let Some(data) = data else {
-            errors.push("git_staged_blob_failed".to_string());
             continue;
         };
         if bytes_scanned + data.len() > max_total_bytes {
@@ -316,6 +317,7 @@ pub fn scan_staged_secrets(root: &Path, options: &StagedScanOptions) -> Reposito
         truncated,
         errors: {
             errors.sort();
+            errors.dedup();
             errors
         },
         truncation_reasons: Vec::new(),
@@ -366,13 +368,13 @@ mod tests {
     fn missing_root_fails_closed_like_python() {
         // Python `resolve()` is non-strict: the path resolves to itself, the
         // git root lookup fails, and the result carries
-        // `git_repository_root_failed`.
+        // `git_staged_enumeration_failed`.
         let result = scan_staged_secrets(
             Path::new("/nonexistent/rtm032-staged-root"),
             &StagedScanOptions::default(),
         );
         assert!(result.truncated);
-        assert_eq!(result.errors, ["git_repository_root_failed"]);
+        assert_eq!(result.errors, ["git_staged_enumeration_failed"]);
         assert!(result.findings.is_empty());
         assert_eq!(result.files_scanned, 0);
         assert_eq!(result.commits_scanned, 0);
@@ -388,7 +390,7 @@ mod tests {
         let result = scan_staged_secrets(&dir, &StagedScanOptions::default());
         // Working-tree files are never inspected; only index content counts.
         assert!(result.findings.is_empty());
-        assert_eq!(result.errors, ["git_repository_root_failed"]);
+        assert_eq!(result.errors, ["git_staged_enumeration_failed"]);
         assert!(result.truncated);
         let _ = fs::remove_dir_all(&dir);
     }

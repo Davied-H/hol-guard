@@ -402,6 +402,10 @@ const SKILL_SCAN_TIMEOUT_CEILING_MS: u64 = 60_000;
 /// minutes) plus a minute of transport slack for the probe and snapshot, so their budget must not be clamped to the
 /// nine-second ceiling that would abort a legitimate test run mid-flight.
 const CONTAINED_RUNNER_TIMEOUT_CEILING_MS: u64 = 670_000;
+/// A repository or history secret scan reads up to its configured byte bound
+/// (4 GiB at most) and runs bounded Git subprocesses, so it is granted two
+/// minutes instead of the nine-second ceiling.
+const SECRETS_SCAN_TIMEOUT_CEILING_MS: u64 = 120_000;
 /// A Codex resume retry waits up to a minute for the app server to accept
 /// the turn and up to its busy timeout for the store; the caller adds five
 /// seconds of transport grace.
@@ -423,6 +427,7 @@ pub(crate) fn client_timeout(payload: &[u8]) -> Duration {
             | "contained_package_script_execute",
         ) => CONTAINED_RUNNER_TIMEOUT_CEILING_MS,
         Some("codex_request_resume") => CODEX_REQUEST_RESUME_TIMEOUT_CEILING_MS,
+        Some("secrets_scan") => SECRETS_SCAN_TIMEOUT_CEILING_MS,
         _ => CLIENT_TIMEOUT_CEILING_MS,
     };
     let budget = value

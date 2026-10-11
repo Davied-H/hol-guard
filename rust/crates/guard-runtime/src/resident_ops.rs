@@ -414,6 +414,9 @@ pub(crate) fn evaluate_resident_bytes(
             ResidentOperationV1::RuntimeDetectorRun(request) => {
                 crate::runtime_detector_run_op::evaluate_runtime_detector_run(&request)
             }
+            ResidentOperationV1::SecretsScan(request) => {
+                crate::secrets_scan_op::evaluate_secrets_scan(&request)
+            }
             ResidentOperationV1::RunnerAuthority(request) => {
                 crate::runner_authority_op::evaluate_runner_authority(&request)
             }
@@ -493,6 +496,7 @@ fn operation_guard_home(operation: &ResidentOperationV1) -> Option<&str> {
         ResidentOperationV1::PromptAnalyze(request) => Some(&request.guard_home),
         ResidentOperationV1::McpRuntimeEvidence(request) => Some(&request.guard_home),
         ResidentOperationV1::RuntimeDetectorRun(request) => Some(&request.guard_home),
+        ResidentOperationV1::SecretsScan(request) => Some(&request.guard_home),
         ResidentOperationV1::RunnerAuthority(request) => Some(&request.guard_home),
         ResidentOperationV1::LocalCliGrantDecide(request) => Some(&request.guard_home),
         ResidentOperationV1::McpToolEvidence(request) => Some(&request.guard_home),

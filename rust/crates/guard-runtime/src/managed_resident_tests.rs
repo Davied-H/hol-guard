@@ -27,6 +27,10 @@ fn client_deadline_is_bounded() {
         Duration::from_secs(60)
     );
     assert_eq!(
+        client_timeout(br#"{"operation":"secrets_scan","deadline_budget_ms":999999}"#),
+        Duration::from_secs(120)
+    );
+    assert_eq!(
         client_timeout(br#"{"operation":"prompt_analyze","deadline_budget_ms":60000}"#),
         Duration::from_secs(9)
     );

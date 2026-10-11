@@ -193,6 +193,8 @@ _TRANSPORT_DECODE_PATHS: Final = frozenset(
         "src/codex_plugin_scanner/guard/native_mcp_sensitive_read.py",
         # Decodes the bounded resident MCP runtime-evidence response envelope.
         "src/codex_plugin_scanner/guard/native_mcp_runtime_evidence.py",
+        # Decodes the bounded resident secrets-scan response envelope.
+        "src/codex_plugin_scanner/guard/native_secrets.py",
         # Decodes the bounded resident runtime-detector-run response envelope.
         "src/codex_plugin_scanner/guard/native_runtime_detectors.py",
         # Transports the native environment-secret classifier; no local script reads.
