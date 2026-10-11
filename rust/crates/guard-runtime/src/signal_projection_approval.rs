@@ -1,10 +1,9 @@
 //! Canonical approval projections are computed by the native owner.
 use crate::signal_projection_decode::{decode_v2, python_trim};
-use guard_command::{
-    action_lattice::normalize_guard_action_result,
-    decisions::{self, GuardDecisionV2},
+use guard_command::decisions::{self, GuardDecisionV2};
+use guard_contracts::{
+    is_action_bearing_key, normalize_guard_action_result, GuardAction, RiskSignalV2,
 };
-use guard_contracts::{is_action_bearing_key, GuardAction, RiskSignalV2};
 use serde_json::{json, Map, Value};
 
 pub(crate) const INCONSISTENT: &str = "authoritative_decision_inconsistent";
@@ -190,4 +189,26 @@ pub(crate) fn approval(action: &Value, decision: &Value, reject: bool) -> Result
     Ok(
         json!({"policy_action":projected.as_str(),"decision_v2_json":canonical,"contract_error":if error {Some(INCONSISTENT)} else {None}}),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize;
+    use guard_contracts::GuardAction;
+    use serde_json::json;
+
+    #[test]
+    fn canonical_block_is_recognized_and_unknown_falls_back() {
+        let (action, recognized) = normalize(&json!("block"));
+        assert_eq!(action, GuardAction::Block);
+        assert!(recognized);
+
+        let (action, recognized) = normalize(&json!("ask"));
+        assert_eq!(action, GuardAction::Review);
+        assert!(recognized);
+
+        let (action, recognized) = normalize(&json!("not-an-action"));
+        assert_eq!(action, GuardAction::RequireReapproval);
+        assert!(!recognized);
+    }
 }
