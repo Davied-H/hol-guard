@@ -76,6 +76,11 @@ pub trait InspectionHost {
     ) -> bool {
         false
     }
+    /// `git_log_has_execution_free_config(cwd, git_binary=git)`: the
+    /// repository's `git log` configuration cannot execute anything.
+    fn git_log_execution_free_config(&self, _cwd: &str, _git: &str) -> bool {
+        false
+    }
     /// `is_low_risk_standalone_git_routine` over a modeled chain.
     fn standalone_git_routine(
         &self,
