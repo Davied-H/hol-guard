@@ -292,7 +292,6 @@ mod policy_integrity_resolver;
 mod policy_snapshot_build;
 mod policy_store;
 mod prompt_analyze_op;
-mod rich_command_model_op;
 #[cfg(test)]
 mod registry_vectors_tests;
 mod request_context_op;
@@ -311,6 +310,7 @@ mod resident_state_encoding;
 mod resident_transport;
 mod resident_transport_service;
 mod resident_update_lock;
+mod rich_command_model_op;
 mod runner_authority_detector;
 mod runner_authority_evaluation;
 mod runner_authority_op;
