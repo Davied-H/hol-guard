@@ -33049,26 +33049,33 @@ function dashboardErrorCopy(error) {
     body: GENERIC_ERROR_BODY
   };
 }
+function showsRetryPlaceholder(state, lastAutoRetryAt, now2) {
+  if (state.retrying) return true;
+  return !state.retryDecided && shouldAutoRetry(state.error, lastAutoRetryAt, now2);
+}
 class ErrorBoundary extends reactExports.Component {
   lastAutoRetryAt = null;
   retryTimer = null;
   constructor(props) {
     super(props);
-    this.state = { hasError: false, error: null, retrying: false };
+    this.state = { hasError: false, error: null, retrying: false, retryDecided: false };
   }
   static getDerivedStateFromError(error) {
-    return { hasError: true, error, retrying: false };
+    return { hasError: true, error, retrying: false, retryDecided: false };
   }
   componentDidCatch(error, errorInfo) {
     console.error("ErrorBoundary caught:", error, errorInfo);
     const now2 = Date.now();
-    if (!shouldAutoRetry(error, this.lastAutoRetryAt, now2)) return;
+    if (!shouldAutoRetry(error, this.lastAutoRetryAt, now2)) {
+      this.setState({ retryDecided: true });
+      return;
+    }
     this.lastAutoRetryAt = now2;
-    this.setState({ retrying: true });
+    this.setState({ retrying: true, retryDecided: true });
     this.clearRetryTimer();
     this.retryTimer = setTimeout(() => {
       this.retryTimer = null;
-      this.setState({ hasError: false, error: null, retrying: false });
+      this.setState({ hasError: false, error: null, retrying: false, retryDecided: false });
     }, AUTO_RETRY_DELAY_MS);
   }
   componentWillUnmount() {
@@ -33089,18 +33096,18 @@ class ErrorBoundary extends reactExports.Component {
   };
   handleGoHome = () => {
     this.clearRetryTimer();
-    this.setState({ hasError: false, error: null, retrying: false });
+    this.setState({ hasError: false, error: null, retrying: false, retryDecided: false });
     this.props.onReset?.();
   };
   handleTryAgain = () => {
     this.clearRetryTimer();
-    this.setState({ hasError: false, error: null, retrying: false });
+    this.setState({ hasError: false, error: null, retrying: false, retryDecided: false });
   };
   render() {
     if (!this.state.hasError) {
       return this.props.children;
     }
-    if (this.state.retrying || shouldAutoRetry(this.state.error, this.lastAutoRetryAt, Date.now())) {
+    if (showsRetryPlaceholder(this.state, this.lastAutoRetryAt, Date.now())) {
       return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "py-12", "aria-busy": "true" });
     }
     if (this.props.fallback) {

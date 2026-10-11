@@ -54,6 +54,20 @@ interface State {
   hasError: boolean;
   error: Error | null;
   retrying: boolean;
+  retryDecided: boolean;
+}
+
+// Show the placeholder while the automatic retry is pending, or for the frame
+// between catching an error and deciding whether to retry it. Once the decision
+// is made, a declined retry keeps the error screen visible even after the
+// retry window expires.
+export function showsRetryPlaceholder(
+  state: { error: Error | null; retrying: boolean; retryDecided: boolean },
+  lastAutoRetryAt: number | null,
+  now: number,
+): boolean {
+  if (state.retrying) return true;
+  return !state.retryDecided && shouldAutoRetry(state.error, lastAutoRetryAt, now);
 }
 
 export class ErrorBoundary extends Component<Props, State> {
@@ -62,23 +76,26 @@ export class ErrorBoundary extends Component<Props, State> {
 
   constructor(props: Props) {
     super(props);
-    this.state = { hasError: false, error: null, retrying: false };
+    this.state = { hasError: false, error: null, retrying: false, retryDecided: false };
   }
 
   static getDerivedStateFromError(error: Error): Partial<State> {
-    return { hasError: true, error, retrying: false };
+    return { hasError: true, error, retrying: false, retryDecided: false };
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     console.error("ErrorBoundary caught:", error, errorInfo);
     const now = Date.now();
-    if (!shouldAutoRetry(error, this.lastAutoRetryAt, now)) return;
+    if (!shouldAutoRetry(error, this.lastAutoRetryAt, now)) {
+      this.setState({ retryDecided: true });
+      return;
+    }
     this.lastAutoRetryAt = now;
-    this.setState({ retrying: true });
+    this.setState({ retrying: true, retryDecided: true });
     this.clearRetryTimer();
     this.retryTimer = setTimeout(() => {
       this.retryTimer = null;
-      this.setState({ hasError: false, error: null, retrying: false });
+      this.setState({ hasError: false, error: null, retrying: false, retryDecided: false });
     }, AUTO_RETRY_DELAY_MS);
   }
 
@@ -103,13 +120,13 @@ export class ErrorBoundary extends Component<Props, State> {
 
   private handleGoHome = () => {
     this.clearRetryTimer();
-    this.setState({ hasError: false, error: null, retrying: false });
+    this.setState({ hasError: false, error: null, retrying: false, retryDecided: false });
     this.props.onReset?.();
   };
 
   private handleTryAgain = () => {
     this.clearRetryTimer();
-    this.setState({ hasError: false, error: null, retrying: false });
+    this.setState({ hasError: false, error: null, retrying: false, retryDecided: false });
   };
 
   render() {
@@ -118,7 +135,7 @@ export class ErrorBoundary extends Component<Props, State> {
     }
     // Hold a quiet placeholder while the one automatic retry is pending, so a
     // transient failure never flashes the error screen.
-    if (this.state.retrying || shouldAutoRetry(this.state.error, this.lastAutoRetryAt, Date.now())) {
+    if (showsRetryPlaceholder(this.state, this.lastAutoRetryAt, Date.now())) {
       return <div className="py-12" aria-busy="true" />;
     }
     if (this.props.fallback) {

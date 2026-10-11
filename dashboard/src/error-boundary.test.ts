@@ -16,6 +16,7 @@ import {
   GENERIC_ERROR_HEADLINE,
   dashboardErrorCopy,
   shouldAutoRetry,
+  showsRetryPlaceholder,
 } from "./error-boundary";
 
 function assert(condition: boolean, message: string): void {
@@ -52,6 +53,22 @@ assert(
   "a later unrelated failure gets its own retry",
 );
 assert(!shouldAutoRetry(chunkError, null, 1_000), "chunk-load failures keep their reload recovery, not an in-place retry");
+assert(
+  showsRetryPlaceholder({ error: renderError, retrying: false, retryDecided: false }, null, 1_000),
+  "a fresh generic failure holds the placeholder until the retry decision",
+);
+assert(
+  !showsRetryPlaceholder(
+    { error: renderError, retrying: false, retryDecided: true },
+    1_000,
+    1_000 + AUTO_RETRY_WINDOW_MS + 60_000,
+  ),
+  "a declined retry keeps the error screen after the retry window expires",
+);
+assert(
+  showsRetryPlaceholder({ error: renderError, retrying: true, retryDecided: true }, 1_000, 1_000),
+  "a pending retry shows the placeholder",
+);
 
 const markup = renderToStaticMarkup(
   createElement(
