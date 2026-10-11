@@ -48,7 +48,6 @@ _ENTRY_POINTS: tuple[tuple[str, str, int], ...] = (
     (f"{_SERVICES}.request_artifacts", "command_list_candidate_texts", 0),
     (f"{_SERVICES}.tool_action_requests", "extract_sensitive_tool_action_request", 0),
     (f"{_SERVICES}.benign_requests", "is_explicitly_benign_native_file_read_request", 0),
-    (f"{_SERVICES}.benign_requests", "is_explicitly_benign_tool_action_request", 0),
     (f"{_SERVICES}.benign_requests", "build_tool_action_request_artifact", 0),
     (f"{_SERVICES}.github_shell_capabilities", "classify_github_shell_capabilities", 0),
     (f"{_SERVICES}.source_edit_context", "low_risk_compound_developer_execution_context", 0),
@@ -217,7 +216,15 @@ def _snapshot(directory: Path) -> dict[str, Any] | None:
 
 def _env_snapshot() -> dict[str, str | None]:
     home = os.environ.get("HOME")
-    return {"HOME": home if home is not None and _under_root(home) else None}
+    snapshot: dict[str, str | None] = {"HOME": home if home is not None and _under_root(home) else None}
+    ripgrep_config = os.environ.get("RIPGREP_CONFIG_PATH")
+    if ripgrep_config:
+        snapshot["RIPGREP_CONFIG_PATH"] = ripgrep_config
+    path_entries = os.environ.get("PATH", "").split(os.pathsep)
+    if any(entry and _under_root(entry) for entry in path_entries):
+        snapshot["PATH"] = os.pathsep.join(entry for entry in path_entries if entry and _under_root(entry))
+        snapshot["PATH"] += os.pathsep + "/usr/bin" + os.pathsep + "/bin"
+    return snapshot
 
 
 def _overridden() -> bool:

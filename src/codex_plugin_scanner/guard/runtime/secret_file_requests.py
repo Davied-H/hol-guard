@@ -56,9 +56,6 @@ from .secret_file_request_services.benign_requests import (
 from .secret_file_request_services.benign_requests import (
     is_explicitly_benign_native_file_read_request as is_explicitly_benign_native_file_read_request,
 )
-from .secret_file_request_services.benign_requests import (
-    is_explicitly_benign_tool_action_request as is_explicitly_benign_tool_action_request,
-)
 from .secret_file_request_services.constants_core import _SHELL_TOOL_NAMES as _SHELL_TOOL_NAMES
 from .secret_file_request_services.constants_core import COMMAND_CANDIDATE_LIST_KEYS as COMMAND_CANDIDATE_LIST_KEYS
 from .secret_file_request_services.constants_core import COMMAND_LIST_KEYS as COMMAND_LIST_KEYS
@@ -274,7 +271,6 @@ __all__ = [
     "extract_sensitive_file_write_request",
     "extract_sensitive_tool_action_request",
     "is_explicitly_benign_native_file_read_request",
-    "is_explicitly_benign_tool_action_request",
     "is_file_read_tool_name",
     "literal_cd_execution_context",
     "low_risk_compound_developer_execution_context",

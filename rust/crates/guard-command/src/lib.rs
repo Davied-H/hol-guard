@@ -26,7 +26,7 @@ mod command_candidate_common;
 mod command_common_cli_matchers;
 pub mod cursor_shell_command;
 pub use codex_output_entry::{review_codex_tool_output, ToolOutputOutcome};
-pub use codex_output_env::{Ctx, GitCheck, GitRun, InspectionHost};
+pub use codex_output_env::{Ctx, GitCheck, GitProbe, GitRun, InspectionHost};
 mod codex_output_fnmatch;
 mod codex_output_fs;
 mod codex_output_git_conditions;
@@ -142,6 +142,8 @@ mod runtime_read_paths;
 pub mod secret_path_probe;
 mod sfrs_agent_guidance;
 mod sfrs_benign_reads;
+#[cfg(unix)]
+mod sfrs_benign_tool_action;
 mod sfrs_constants;
 #[cfg(unix)]
 mod sfrs_developer_graph;

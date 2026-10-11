@@ -36,6 +36,7 @@ pub fn implements(entry: &str) -> bool {
                 | "build_file_read_request_artifact"
                 | "build_file_write_request_artifact"
                 | "is_explicitly_benign_native_file_read_request"
+                | "is_explicitly_benign_tool_action_request"
                 | "read_only_lookup_target_is_safe"
         )
 }
@@ -142,6 +143,30 @@ pub fn replay_entry(
                 )
             ))
         }
+        "is_explicitly_benign_tool_action_request" => {
+            let process_cwd = dir.to_string_lossy().into_owned();
+            let home = env
+                .get("HOME")
+                .and_then(Value::as_str)
+                .map_or_else(|| process_cwd.clone(), str::to_owned);
+            let host = ReplayHost::new(&home)
+                .with_recorded_env(env.as_object().unwrap_or(&serde_json::Map::new()));
+            let ctx = Ctx::new(&host, &process_cwd, &home);
+            let null = Value::Null;
+            // No control snapshot: the vectors were recorded without one.
+            let benign = crate::benign_request_api::is_benign_tool_action(
+                args.get("tool_name").unwrap_or(&null),
+                args.get("arguments").unwrap_or(&null),
+                path_arg(args, "cwd").as_deref(),
+                path_arg(args, "home_dir").as_deref(),
+                &ctx,
+                None,
+            );
+            if !benign && host.resident_requested.get() {
+                return Ok(json!({ RESIDENT_HOST_REQUIRED: true }));
+            }
+            Ok(json!(benign))
+        }
         "read_only_lookup_target_is_safe" => Ok(json!(read_only_lookup_target_is_safe(
             str_arg(args, "target").unwrap_or_default(),
             args["allow_dirs"].as_bool().unwrap_or(false),
@@ -168,13 +193,25 @@ pub fn replay_entry(
 /// Host for classifiers that never run a process.
 struct ReplayHost {
     home: String,
+    /// Recorded variables besides `HOME` (`PATH`, `RIPGREP_CONFIG_PATH`).
+    extra_env: Vec<(String, String)>,
     resident_requested: std::cell::Cell<bool>,
 }
 
 impl ReplayHost {
+    fn with_recorded_env(mut self, env: &serde_json::Map<String, Value>) -> Self {
+        self.extra_env = env
+            .iter()
+            .filter(|(key, _)| matches!(key.as_str(), "PATH" | "RIPGREP_CONFIG_PATH"))
+            .filter_map(|(key, value)| Some((key.clone(), value.as_str()?.to_owned())))
+            .collect();
+        self
+    }
+
     fn new(home: &str) -> Self {
         Self {
             home: home.to_owned(),
+            extra_env: Vec::new(),
             resident_requested: std::cell::Cell::new(false),
         }
     }
@@ -189,7 +226,13 @@ pub const RESIDENT_HOST_REQUIRED: &str = "resident_host_required";
 
 impl InspectionHost for ReplayHost {
     fn env(&self, name: &str) -> Option<String> {
-        (name == "HOME").then(|| self.home.clone())
+        if name == "HOME" {
+            return Some(self.home.clone());
+        }
+        self.extra_env
+            .iter()
+            .find(|(key, _)| key == name)
+            .map(|(_, value)| value.clone())
     }
     fn git_executable(&self) -> Option<String> {
         self.resident_requested.set(true);

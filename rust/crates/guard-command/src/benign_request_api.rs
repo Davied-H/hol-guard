@@ -2,20 +2,13 @@
 //!
 //! Python gathers the raw tool call and host facts; the resident computes the
 //! verdict here and Python never recomputes it.
-//!
-//! Planned, not implemented: `is_explicitly_benign_tool_action_request`
-//! (`runtime/secret_file_request_services/benign_requests.py`) will be exposed
-//! here with the same shape as the native-file-read entry point:
-//! `(tool_name: &Value, tool_input: &Value, cwd: Option<&Path>,
-//! home_dir: Option<&Path>, ctx: &Ctx) -> bool`. `ctx` carries the caller's
-//! environment snapshot and git executable through
-//! [`crate::InspectionHost`], exactly like the Codex tool-output review.
 
 use std::path::Path;
 
 use serde_json::Value;
 
 use crate::codex_output_env::Ctx;
+use crate::extension_control::{ExtensionControlLayer, ResolverFailureCode};
 use crate::hook_adapter_value::{OMap, OValue};
 use crate::sfrs_benign_reads::is_explicitly_benign_native_file_read_request;
 
@@ -37,6 +30,49 @@ pub fn is_benign_native_file_read(
         home_dir,
         ctx,
     )
+}
+
+/// The resident's extension-control snapshot for one decision
+/// (`current_extension_control_snapshot()`): the composed layers and the
+/// authority failure their health implies.
+pub struct ToolActionControls {
+    pub layers: Vec<ExtensionControlLayer>,
+    pub authority_failure: Option<ResolverFailureCode>,
+}
+
+/// `is_explicitly_benign_tool_action_request` over the payload's raw
+/// `tool_name` and `tool_input`: every candidate command is a recognized
+/// benign routine. `controls` is `None` when no control snapshot is active.
+/// Anything the resident cannot compute is not benign; non-unix hosts never
+/// recognize a routine.
+#[must_use]
+pub fn is_benign_tool_action(
+    tool_name: &Value,
+    tool_input: &Value,
+    cwd: Option<&Path>,
+    home_dir: Option<&Path>,
+    ctx: &Ctx,
+    controls: Option<&ToolActionControls>,
+) -> bool {
+    #[cfg(unix)]
+    {
+        let inputs = crate::sfrs_benign_tool_action::ToolActionInputs {
+            cwd,
+            home_dir,
+            ctx,
+            controls,
+        };
+        crate::sfrs_benign_tool_action::is_explicitly_benign_tool_action_request(
+            &ovalue_from_json(tool_name),
+            tool_input,
+            &inputs,
+        )
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (tool_name, tool_input, cwd, home_dir, ctx, controls);
+        false
+    }
 }
 
 /// Plain JSON to a Python-faithful value, keeping number spelling.

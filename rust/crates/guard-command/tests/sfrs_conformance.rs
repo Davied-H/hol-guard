@@ -99,13 +99,16 @@ fn check_entry(entry: &str) {
         let actual =
             if actual == json!({ guard_command::sfrs_replay::RESIDENT_HOST_REQUIRED: true }) {
                 // Replay failed closed where the resident would answer. A recorded
-                // null still has to match; any other result waits for the
-                // resident host.
-                if !vector.expected(&Value::Null).is_null() {
-                    resident_deferred += 1;
-                    continue;
+                // null or `false` still has to match; any other result waits for
+                // the resident host.
+                match vector.expected(&Value::Null) {
+                    Value::Null => Value::Null,
+                    Value::Bool(false) => json!(false),
+                    _ => {
+                        resident_deferred += 1;
+                        continue;
+                    }
                 }
-                Value::Null
             } else {
                 actual
             };

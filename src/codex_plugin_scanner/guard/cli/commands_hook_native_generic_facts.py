@@ -27,9 +27,6 @@ def hook_classifiers(
 ) -> dict[str, Callable[[str | None], bool]]:
     """Classifier verdicts keyed by the fact name the resident requests."""
 
-    tool_name = payload.get("tool_name")
-    tool_input = payload.get("tool_input", payload.get("arguments"))
-
     def prompt_clean(_event: str | None) -> bool:
         from ..native_prompt import extract_prompt_requests
         from .commands_support_codex_paths import _codex_prompt_credential_file_artifact
@@ -77,21 +74,10 @@ def hook_classifiers(
             runtime_workspace=runtime_workspace,
         )
 
-    def benign_tool_action(_event: str | None) -> bool:
-        from ..runtime.secret_file_requests import is_explicitly_benign_tool_action_request
-
-        return is_explicitly_benign_tool_action_request(
-            tool_name,
-            tool_input,
-            cwd=runtime_workspace,
-            home_dir=home_dir,
-        )
-
     return {
         "prompt_clean": prompt_clean,
         "post_tool_read_only_inspection": post_tool_read_only_inspection,
         "verified_apply_patch": verified_apply_patch,
-        "benign_tool_action": benign_tool_action,
     }
 
 
@@ -120,12 +106,30 @@ def _native_request(
         }
     except (OSError, RuntimeError):
         return None
-    return {
+    request: dict[str, object] = {
         "tool_name": payload.get("tool_name"),
         "tool_input": payload.get("tool_input", payload.get("arguments")),
         "cwd": None if runtime_workspace is None else str(runtime_workspace),
         "home_dir": None if home_dir is None else str(home_dir),
         "host": host,
+    }
+    control_snapshot = _control_snapshot()
+    if control_snapshot is not None:
+        request["control_snapshot"] = control_snapshot
+    return request
+
+
+def _control_snapshot() -> dict[str, object] | None:
+    """The active extension-control layers and health, as observed (not a verdict)."""
+
+    from ..runtime.extension_control_runtime import _layer_payload, current_extension_control_snapshot
+
+    snapshot = current_extension_control_snapshot()
+    if snapshot is None:
+        return None
+    return {
+        "health": snapshot.health.value,
+        "layers": sorted((_layer_payload(layer) for layer in snapshot.layers), key=lambda layer: str(layer["kind"])),
     }
 
 

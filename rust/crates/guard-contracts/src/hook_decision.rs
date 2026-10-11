@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use crate::CodexToolOutputFactsV1;
+use crate::{CodexToolOutputFactsV1, NativeExtensionControlLayerV1};
 
 /// Schema discriminator for the request.
 pub const HOOK_DECISION_REQUEST_SCHEMA: &str = "guard-hook-decision-request.v1";
@@ -98,10 +98,9 @@ pub struct HookCompositionInputsV1 {
 /// Raw tool call plus observed caller facts for resident-owned classifiers.
 ///
 /// Python never recomputes these verdicts: it only forwards what the payload
-/// and the host showed. `benign_native_file_read` is computed from it today.
-/// `benign_tool_action` (`is_explicitly_benign_tool_action_request`) will be
-/// computed from this same request once its Rust classifier lands; until then
-/// it stays a transport-supplied fact and the fields below are carried ready.
+/// and the host showed. `benign_native_file_read` and
+/// `benign_tool_action` (`is_explicitly_benign_tool_action_request`) are both
+/// computed from it; the composition reports the latter as `verified_benign`.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct HookNativeRequestV1 {
@@ -120,6 +119,19 @@ pub struct HookNativeRequestV1 {
     /// Observed process cwd, home, account home, groups, bounded environment
     /// snapshot and `git` executable, as the tool-output op takes them.
     pub host: CodexToolOutputFactsV1,
+    /// The extension-control snapshot active while the payload was handled.
+    /// Absent means none was active, so no control can block a command.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub control_snapshot: Option<HookControlSnapshotV1>,
+}
+
+/// Extension-control layers and authority health, as the runtime snapshot
+/// carried them. An unknown health value makes the verdict not benign.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct HookControlSnapshotV1 {
+    pub health: String,
+    pub layers: Vec<NativeExtensionControlLayerV1>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
@@ -229,6 +241,10 @@ pub struct HookCompositionV1 {
     /// The reason to write back to the payload, if any.
     pub permission_decision_reason: Option<String>,
     pub daemon_failure_reason: Option<String>,
+    /// The resident's `is_explicitly_benign_tool_action_request` verdict for
+    /// the native request; false when none was sent or it cannot be computed.
+    #[serde(default)]
+    pub verified_benign: bool,
     pub token: HookTokenCompositionV1,
 }
 

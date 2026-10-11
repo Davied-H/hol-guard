@@ -8,9 +8,6 @@ import pytest
 
 from codex_plugin_scanner.guard.native_git_execution_safety import git_execution_safety_native
 from codex_plugin_scanner.guard.runtime import git_execution_safety, routine_setup_commands
-from codex_plugin_scanner.guard.runtime.secret_file_request_services.benign_requests import (
-    is_explicitly_benign_tool_action_request,
-)
 
 
 def _git(repository: Path, *args: str) -> None:
@@ -76,42 +73,6 @@ def test_safe_git_worktree_add_requires_new_bounded_destination(
         )
     assert not routine_setup_commands.is_safe_git_worktree_add(
         f"git worktree add -b fix/routine {destination} origin/release/2.2 && sh payload.sh",
-        cwd=repository,
-        home_dir=tmp_path,
-    )
-
-
-def test_post_destination_worktree_add_with_bounded_output_is_explicitly_benign(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    repository = _repository(tmp_path)
-    destination = tmp_path / "new-worktree"
-    monkeypatch.setattr(
-        routine_setup_commands,
-        "_safe_worktree_parent",
-        lambda _destination, *, home_dir: home_dir == tmp_path,
-    )
-    monkeypatch.setattr(
-        routine_setup_commands,
-        "trusted_git_binary_for_cwd",
-        lambda _cwd: Path("/usr/bin/git"),
-    )
-    monkeypatch.setattr(
-        routine_setup_commands,
-        "git_worktree_add_has_execution_free_config",
-        lambda _cwd, *, git_binary, ref: git_binary == Path("/usr/bin/git") and ref == "origin/release/2.2",
-    )
-    monkeypatch.setattr(routine_setup_commands, "_git_ref_exists", lambda *_args: True)
-    monkeypatch.setattr(routine_setup_commands, "_git_branch_exists", lambda *_args: False)
-
-    assert is_explicitly_benign_tool_action_request(
-        "Bash",
-        {
-            "command": (
-                f"cd {repository} && git worktree add {destination} -b fix/routine origin/release/2.2 2>&1 | tail -3"
-            )
-        },
         cwd=repository,
         home_dir=tmp_path,
     )

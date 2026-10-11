@@ -1208,7 +1208,7 @@ def run_native_generic_payload(
         payload=payload_map,
         policy_action=policy_action,
         remediation=lambda: _embedded_script_remediation(command_text),
-        verified_benign=lambda: hook_event_name == "PreToolUse" and classifiers["benign_tool_action"](hook_event_name),
+        verified_benign=lambda: hook_event_name == "PreToolUse" and bool(composition["verified_benign"]),
     )
 
 

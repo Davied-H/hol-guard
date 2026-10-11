@@ -50,22 +50,15 @@ fn request(tool_name: Value, tool_input: Value, root: &str, home: &str) -> HookN
             environment: BTreeMap::from([("HOME".to_owned(), home.to_owned())]),
             git_executable: None,
         },
+        control_snapshot: None,
     }
 }
 
-/// `true` when compose relaxed the default on the native read verdict, `false`
-/// when it moved on to the (still transport-supplied) tool-action fact.
+/// `true` when compose relaxed the default on the native verdicts.
 fn native_read_verdict(inputs: &HookCompositionInputsV1) -> bool {
-    match compose(inputs) {
-        Ok(composed) => {
-            assert!(composed.relaxed);
-            true
-        }
-        Err(next) => {
-            assert_eq!(next, "benign_tool_action");
-            false
-        }
-    }
+    compose(inputs)
+        .expect("native verdicts need no transport fact")
+        .relaxed
 }
 
 #[test]
@@ -141,6 +134,11 @@ fn oversized_host_facts_are_not_benign() {
 fn non_read_tool_is_not_benign() {
     let root = std::env::temp_dir().canonicalize().unwrap();
     let root = root.to_string_lossy().into_owned();
-    let call = request(json!("Bash"), json!({"command": "ls"}), &root, &root);
+    let call = request(
+        json!("Bash"),
+        json!({"command": "touch marker"}),
+        &root,
+        &root,
+    );
     assert!(!native_read_verdict(&inputs(Some(call))));
 }
