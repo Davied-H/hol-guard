@@ -22,6 +22,12 @@ fn is_punctuation(c: char) -> bool {
     PUNCTUATION.contains(&c)
 }
 
+/// cmd and PowerShell treat backslash as a path separator, so the lexer drops
+/// its escape character on Windows.
+fn is_escape(c: char) -> bool {
+    c == '\\' && !cfg!(windows)
+}
+
 fn is_quote(c: char) -> bool {
     c == '\'' || c == '"'
 }
@@ -83,7 +89,7 @@ fn read_token(
                     }
                 } else if c == '#' {
                     skip_line(chars, position);
-                } else if c == '\\' {
+                } else if is_escape(c) {
                     escaped_state = State::Word;
                     state = State::Escape;
                 } else if is_punctuation(c) {
@@ -103,7 +109,7 @@ fn read_token(
                 };
                 if c == open {
                     state = State::Word;
-                } else if c == '\\' && open == '"' {
+                } else if is_escape(c) && open == '"' {
                     escaped_state = State::Quote(open);
                     state = State::Escape;
                 } else {
@@ -148,7 +154,7 @@ fn read_token(
                     }
                 } else if is_quote(c) {
                     state = State::Quote(c);
-                } else if c == '\\' {
+                } else if is_escape(c) {
                     escaped_state = State::Word;
                     state = State::Escape;
                 } else if !is_punctuation(c) {

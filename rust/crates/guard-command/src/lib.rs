@@ -140,11 +140,15 @@ mod runtime_read_paths;
 pub mod secret_path_probe;
 mod sfrs_benign_reads;
 mod sfrs_constants;
+mod sfrs_docker_args;
 mod sfrs_json;
 mod sfrs_patterns;
 pub mod sfrs_replay;
 mod sfrs_requests;
+mod sfrs_shell_tokens;
 mod sfrs_shlex;
+#[cfg(test)]
+mod sfrs_token_vectors;
 mod shell_command_wrappers;
 pub mod shell_execution_context;
 mod shell_execution_context_support;
