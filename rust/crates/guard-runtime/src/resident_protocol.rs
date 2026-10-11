@@ -102,6 +102,9 @@ pub(crate) fn capabilities() -> RuntimeCapabilitiesV1 {
         features.push(guard_contracts::CONTAINED_EXECUTION_FEATURE.into());
         features.push(guard_contracts::MCP_STDIO_SESSION_FEATURE.into());
         features.push(guard_contracts::SKILL_DIRECTORY_IDENTITY_FEATURE.into());
+        // The module is #[cfg(unix)]. A runtime cfg! check still type-checks
+        // this path on Windows, where the module is not compiled.
+        #[cfg(unix)]
         features.push(crate::binding_capture_op::BINDING_CAPTURE_FEATURE.into());
     }
     let (program_digest, catalog_digest, trust_digest) =
