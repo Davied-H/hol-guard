@@ -20,12 +20,49 @@ fn status(harness: &str, home: &std::path::Path, repository: &std::path::Path) -
     (result.decision, result.reason_code)
 }
 
+// An exclusive root, so a directory left by an interrupted run is never reused.
+fn unique_root() -> std::path::PathBuf {
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    for attempt in 0.. {
+        let root = std::env::temp_dir().join(format!(
+            "guard large listing {}-{nonce}-{attempt}",
+            std::process::id()
+        ));
+        match std::fs::create_dir(&root) {
+            Ok(()) => return root,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(error) => panic!("failed to create fixture root: {error}"),
+        }
+    }
+    unreachable!()
+}
+
+// Fixture Git commands ignore any repository, index or config overrides
+// inherited from the test process.
+fn git(home: &std::path::Path, repository: &std::path::Path) -> std::process::Command {
+    let mut command = std::process::Command::new("git");
+    for (name, _) in std::env::vars_os() {
+        if name.to_string_lossy().starts_with("GIT_") {
+            command.env_remove(name);
+        }
+    }
+    command
+        .arg("-C")
+        .arg(repository)
+        .env("HOME", home)
+        .env("GIT_CONFIG_NOSYSTEM", "1");
+    command
+}
+
 // A globally installed filter (Git LFS defines one) makes the probe list every
 // tracked and untracked path. A large checkout must not exceed the listing
 // limits, while a filter attached to any of its paths still needs review.
 #[test]
 fn large_repository_reads_stay_proven_with_a_global_filter() {
-    let root = std::env::temp_dir().join(format!("guard large listing {}", std::process::id()));
+    let root = unique_root();
     let _cleanup = FixtureCleanup(root.clone());
     let home = root.join("home");
     let repository = root.join("repository");
@@ -42,18 +79,13 @@ fn large_repository_reads_stay_proven_with_a_global_filter() {
         std::fs::write(files.join(format!("{index:05}-{padding}.txt")), "").unwrap();
     }
     for arguments in [&["init", "--quiet"][..], &["add", "--all"][..]] {
-        assert!(std::process::Command::new("git")
-            .arg("-C")
-            .arg(&repository)
+        assert!(git(&home, &repository)
             .args(arguments)
-            .env("HOME", &home)
             .status()
             .unwrap()
             .success());
     }
-    let staged = std::process::Command::new("git")
-        .arg("-C")
-        .arg(&repository)
+    let staged = git(&home, &repository)
         .args(["ls-files", "--stage", "-z"])
         .output()
         .unwrap();
