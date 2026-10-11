@@ -745,9 +745,7 @@
         "native_floor": "review",
         "native_reason": "native_command_review_required",
         "path_overridden": false,
-        "uncertain_rule_ids": [
-          "command.github.unknown"
-        ]
+        "uncertain_rule_ids": []
       },
       "group_id": "workflow:github-remote:resolve-thread-regression|all",
       "membership": {
