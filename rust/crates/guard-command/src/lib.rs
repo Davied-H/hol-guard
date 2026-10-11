@@ -508,6 +508,8 @@ pub mod command_operation_classification;
 pub mod composition_rules;
 #[cfg(unix)]
 pub mod contained_execution;
+#[cfg(unix)]
+pub mod contained_runner;
 pub mod data_flow_rules;
 pub mod decisions;
 pub mod detectors;
@@ -551,7 +553,12 @@ pub mod mcp_stdio_session;
 pub mod pep440;
 pub mod registry_metadata_transport;
 pub mod restricted_archive;
+mod restricted_archive_address;
+mod restricted_archive_destination;
+mod restricted_archive_peer;
+mod restricted_archive_stream;
 pub mod restricted_archive_transport;
+mod restricted_archive_write;
 #[cfg(unix)]
 pub mod restricted_pytest;
 pub mod resume_template;
