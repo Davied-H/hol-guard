@@ -55,6 +55,19 @@ pub(crate) const COMMAND_LEXER: Lexer = Lexer {
     comments: true,
 };
 
+/// `shlex.split(text, comments=True, posix=True)`: no punctuation characters
+/// and `#` comments.
+pub(crate) const COMMENT_LEXER: Lexer = Lexer {
+    punctuation: &[],
+    comments: true,
+};
+
+/// `shlex.split(text, posix=True, comments=False)`.
+pub(crate) const PLAIN_LEXER: Lexer = Lexer {
+    punctuation: &[],
+    comments: false,
+};
+
 /// The directory-creation lexer: punctuation `;&|<>()` and no comments.
 pub(crate) const STRICT_LEXER: Lexer = Lexer {
     punctuation: &[';', '&', '|', '<', '>', '(', ')'],

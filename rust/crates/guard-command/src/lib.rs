@@ -178,6 +178,19 @@ mod sfrs_json;
 mod sfrs_patterns;
 #[cfg(all(test, unix))]
 mod sfrs_pr_expansion_vectors;
+mod sfrs_pytest_binary;
+mod sfrs_pytest_config;
+mod sfrs_pytest_config_ini;
+mod sfrs_pytest_config_read;
+mod sfrs_pytest_config_safety;
+mod sfrs_pytest_config_search;
+mod sfrs_pytest_config_toml;
+mod sfrs_pytest_config_value;
+mod sfrs_pytest_env;
+mod sfrs_pytest_target;
+#[cfg(all(test, unix))]
+mod sfrs_pytest_vectors;
+mod sfrs_pytest_wrappers;
 mod sfrs_python_imports;
 #[cfg(unix)]
 mod sfrs_quote_parsing;
