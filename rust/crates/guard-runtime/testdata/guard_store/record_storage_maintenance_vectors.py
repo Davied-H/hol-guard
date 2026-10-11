@@ -34,6 +34,7 @@ if not hasattr(maintenance, "_archive_receipt_batch"):
     sys.exit("refusing to record: the original Python maintenance implementation is gone")
 
 from storage_maintenance_scenarios import NOW, SCENARIOS, SOURCE
+from vector_support import rows
 
 from codex_plugin_scanner.guard.store import GuardStore
 
@@ -70,15 +71,6 @@ def wire(params: dict[str, int]) -> dict[str, object]:
         "guard_event_limit": params["guard_event_limit"],
         "uploaded_cloud_event_limit": params["uploaded_cloud_event_limit"],
     }
-
-
-def rows(path: Path, sql: str) -> list[dict[str, object]]:
-    connection = sqlite3.connect(path)
-    connection.row_factory = sqlite3.Row
-    try:
-        return [dict(row) for row in connection.execute(sql)]
-    finally:
-        connection.close()
 
 
 def dump(path: Path) -> dict[str, list[dict[str, object]]]:
