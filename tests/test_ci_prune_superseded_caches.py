@@ -101,8 +101,12 @@ def test_cli_rejects_non_list(tmp_path: Path) -> None:
     assert main([str(listing)]) == 2
 
 
-def _object(entry_id: int, accessed: str | None, ref: str = "refs/heads/main") -> dict[str, object]:
+def _object(
+    entry_id: int, accessed: str | None, ref: str = "refs/heads/main", version: str | None = "ci"
+) -> dict[str, object]:
     entry = _entry(entry_id, f"sccache/a/b/{entry_id}/{entry_id:064x}", "2026-10-08T00:00:00Z", ref)
+    if version is not None:
+        entry["version"] = version
     if accessed is not None:
         entry["lastAccessedAt"] = accessed
     return entry
@@ -119,7 +123,9 @@ def test_compiler_objects_idle_before_newest_read_are_selected() -> None:
         _object(7, "not-a-time"),
         _object(8, "2026-10-11T03:00:00"),
         _entry(9, "v0-rust-sonar-Linux-x64-923da8c6-a", "2026-10-01T00:00:00Z")
-        | {"lastAccessedAt": "2026-10-01T00:00:00Z"},
+        | {"lastAccessedAt": "2026-10-01T00:00:00Z", "version": "ci"},
+        _object(10, "2026-10-11T03:00:00Z", version=None),
+        _object(11, "2026-10-11T03:00:00Z", version=""),
     ]
     assert idle_compiler_entries(entries) == [3, 4]
     assert idle_compiler_entries(entries, idle_hours=12) == []
@@ -134,6 +140,19 @@ def test_quiet_period_keeps_the_last_warm_set() -> None:
     ]
     assert idle_compiler_entries(entries) == [3]
     assert idle_compiler_entries([]) == []
+
+
+def test_each_compiler_cache_version_keeps_its_own_warm_set() -> None:
+    # Routine CI reads its namespace every push; the release namespace was last
+    # read hours ago and must still keep the set its newest build used.
+    entries = [
+        _object(1, "2026-10-11T13:00:00Z", version="ci"),
+        _object(2, "2026-10-11T08:00:00Z", version="ci"),
+        _object(3, "2026-10-11T04:00:00Z", version="release"),
+        _object(4, "2026-10-11T03:30:00Z", version="release"),
+        _object(5, "2026-10-10T20:00:00Z", version="release"),
+    ]
+    assert idle_compiler_entries(entries) == [2, 5]
 
 
 def test_cli_combines_superseded_and_idle_entries(tmp_path: Path, capsys) -> None:
@@ -152,12 +171,13 @@ def test_cli_combines_superseded_and_idle_entries(tmp_path: Path, capsys) -> Non
     assert capsys.readouterr().out == "1\n4\n"
     assert main([str(listing), "--idle-hours", "6"]) == 0
     assert capsys.readouterr().out == "1\n"
-    assert main([str(listing), "--idle-hours", "0"]) == 2
+    for invalid in ("0", "-1", "nan", "inf"):
+        assert main([str(listing), "--idle-hours", invalid]) == 2
 
 
 def test_workflow_lists_last_access_for_idle_pruning() -> None:
     text = (ROOT / ".github/workflows/cache-cleanup.yml").read_text()
-    assert "--json id,key,ref,createdAt,lastAccessedAt" in text
+    assert "--limit 5000 --json id,key,ref,createdAt,lastAccessedAt,version" in text
 
 
 def test_workflow_runs_trusted_main_code_with_least_privilege() -> None:

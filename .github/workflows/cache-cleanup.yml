@@ -37,7 +37,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          gh cache list --ref refs/heads/main --limit 1000 --json id,key,ref,createdAt,lastAccessedAt > "$RUNNER_TEMP/caches.json"
+          gh cache list --ref refs/heads/main --limit 5000 --json id,key,ref,createdAt,lastAccessedAt,version > "$RUNNER_TEMP/caches.json"
           python3 scripts/ci/prune_superseded_caches.py "$RUNNER_TEMP/caches.json" > "$RUNNER_TEMP/prune.txt"
           deleted=0
           failed=0

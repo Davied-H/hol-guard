@@ -12,16 +12,19 @@ kept. Any key outside the known families is never selected this way.
 
 Content-addressed sccache entries have no family: each main push writes objects
 for the workspace crates it changed, and the previous objects are never read
-again. They are pruned by idleness instead. An entry not read within
-``IDLE_HOURS`` of the newest sccache read in the listing is selected. Measuring
-from the newest read rather than the wall clock means a quiet period with no
-builds does not empty the warm cache just before the next push.
+again. They are pruned by idleness instead. Each compiler-cache namespace and
+target has its own Actions cache version, so entries are grouped by version and
+an entry not read within ``IDLE_HOURS`` of the newest read in its group is
+selected. Measuring from the newest read in the group rather than the wall clock
+means a quiet period, or a namespace that only release builds read, keeps its
+warm set until the next build reads it.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import sys
 from collections.abc import Iterable, Mapping
@@ -80,22 +83,24 @@ def _accessed(entry: Mapping[str, Any]) -> datetime | None:
 
 
 def idle_compiler_entries(entries: Iterable[Mapping[str, Any]], idle_hours: float = IDLE_HOURS) -> list[int]:
-    """Return ids of main-branch sccache entries unread for ``idle_hours`` before the newest read."""
-    readable: list[tuple[int, datetime]] = []
+    """Return ids of main-branch sccache entries unread for ``idle_hours`` before the newest read of their version."""
+    groups: dict[str, list[tuple[int, datetime]]] = {}
     for entry in entries:
-        key, ref, entry_id = entry.get("key"), entry.get("ref"), entry.get("id")
+        key, ref, entry_id, version = entry.get("key"), entry.get("ref"), entry.get("id"), entry.get("version")
         if ref != MAIN_REF or not isinstance(key, str) or not key.startswith(SCCACHE_PREFIX):
             continue
-        if type(entry_id) is not int or entry_id <= 0:
+        if type(entry_id) is not int or entry_id <= 0 or not isinstance(version, str) or not version:
             continue
         accessed = _accessed(entry)
         if accessed is None or accessed.tzinfo is None:
             continue
-        readable.append((entry_id, accessed))
-    if not readable:
-        return []
-    cutoff = max(accessed for _, accessed in readable) - timedelta(hours=idle_hours)
-    return sorted(entry_id for entry_id, accessed in readable if accessed < cutoff)
+        groups.setdefault(version, []).append((entry_id, accessed))
+    idle: list[int] = []
+    window = timedelta(hours=idle_hours)
+    for readable in groups.values():
+        cutoff = max(accessed for _, accessed in readable) - window
+        idle.extend(entry_id for entry_id, accessed in readable if accessed < cutoff)
+    return sorted(idle)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -108,8 +113,8 @@ def main(argv: list[str] | None = None) -> int:
         help="prune sccache entries unread this long before the newest sccache read",
     )
     args = parser.parse_args(argv)
-    if args.idle_hours <= 0:
-        print("--idle-hours must be positive", file=sys.stderr)
+    if not math.isfinite(args.idle_hours) or args.idle_hours <= 0:
+        print("--idle-hours must be a positive number", file=sys.stderr)
         return 2
     entries = json.loads(args.caches.read_text(encoding="utf-8"))
     if not isinstance(entries, list):
