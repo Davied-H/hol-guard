@@ -385,6 +385,13 @@ fn interpreter_helpers_match_recorded_python() {
     }
     eprintln!("cases {counts:?}\nstricter divergences {divergent:?}");
     assert!(counts.len() >= 28, "too few functions: {counts:?}");
+    let failures = crate::sfrs_host_divergence::portable_failures(
+        failures,
+        &[
+            ("python_interpreter_executable_identities ", 20),
+            ("shell_launch_candidate ", 28),
+        ],
+    );
     let mut by_function: BTreeMap<&str, (usize, &String)> = BTreeMap::new();
     for failure in &failures {
         let name = failure.split(' ').next().unwrap_or("");

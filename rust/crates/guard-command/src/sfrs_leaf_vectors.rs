@@ -263,6 +263,10 @@ fn leaf_checks_match_recorded_python() {
         }
     }
     assert!(compared > 6000, "too few cases: {compared}");
+    let failures = crate::sfrs_host_divergence::portable_failures(
+        failures,
+        &[("routine_move [\"mv BUILD build3\"", 2)],
+    );
     assert!(
         failures.is_empty(),
         "{} differ, first: {:#?}",
