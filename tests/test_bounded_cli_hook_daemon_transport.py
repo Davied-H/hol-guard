@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 import pytest
 
 from codex_plugin_scanner.guard.adapters import bounded_cli_hook_daemon as daemon
+from codex_plugin_scanner.guard.daemon import auth_token as auth_token_module
 
 
 @pytest.mark.parametrize("url", ["https://127.0.0.1:4781/hook", "http://example.com/hook"])
@@ -61,7 +62,7 @@ def test_daemon_auth_token_preserves_only_nonempty_private_text(
         seen.update(path=path, **kwargs)
         return stored
 
-    monkeypatch.setattr(daemon, "read_private_regular_text", read)
+    monkeypatch.setattr(auth_token_module, "read_private_regular_text", read)
     guard_home = tmp_path / "guard-home"
 
     assert daemon._read_daemon_auth_token(guard_home) == expected
