@@ -13,7 +13,7 @@ import time
 import uuid
 from contextlib import suppress
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from .native_context import _canonical_request_sha256, _resolve_digest_home, ensure_resident_prerequisite
 from .native_resident_client import native_resident_client_request
@@ -53,7 +53,7 @@ def _request(query: dict[str, object], *, deadline: float, guard_home: Path | No
             return None
         timeout_ms = max(1, int(remaining * 1000))
         if query["action"] == "download":
-            timeout_ms = min(timeout_ms, query["timeout_ms"])
+            timeout_ms = min(timeout_ms, cast(int, query["timeout_ms"]))
         query = {
             **query,
             "timeout_ms": timeout_ms,
