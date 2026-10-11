@@ -472,6 +472,15 @@
         ]
       },
       {
+        "id": "cloud-memory-decision-outbox",
+        "category": "async_control_plane",
+        "reason": "Producer of the guard.memory-decision.v1 cloud outbox event that feeds Guard Cloud's Suggested Memory candidates. memory_decision_outbox.py and memory_decision_event.py run only after a human approval or denial has already been recorded (approvals._enqueue_memory_decision_for_resolution, the last step of the local approval resolution) and swallow every failure. They write a cloud_events row for the async sync worker; no hook admission, decision, policy lookup or enforcement path reads their output, and the hook and run paths never import them.",
+        "path": [
+          "src/codex_plugin_scanner/guard/memory_decision_outbox.py",
+          "src/codex_plugin_scanner/guard/memory_decision_event.py"
+        ]
+      },
+      {
         "id": "repair-lifecycle",
         "category": "control_plane",
         "reason": "Explicit and periodic Guard repair: `guard repair` (cli/commands_repair), POST /v1/repair and the removal endpoint (daemon/repair_api via _handle_repair_api) and the 600 s repair self-check thread (daemon/repair_self_check started by _start_repair_self_check). None runs inside hook admission, decision or enforcement. resident_state_prune.py and daemon/runtime_repair.py are reached only from repair_engine (repair_native_runtime, repair_daemon) and the daemon package's lazy export used by the repair CLI handler.",
