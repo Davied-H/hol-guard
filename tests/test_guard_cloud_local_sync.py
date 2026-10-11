@@ -41,9 +41,10 @@ def _snapshot_tests_without_resident_posture(monkeypatch: pytest.MonkeyPatch, tm
     the Windows enterprise lab cannot provision a resident for such homes at
     all. The posture bridge has its own tests against the real resident.
 
-    Every test here also starts with the verifier key seeded: with the key
-    present the store call never provisions through a nested store open, which
-    the Windows lab cannot complete.
+    Every test here also starts with this home's own verifier key seeded. The
+    store master is minted first, and the verifier is derived from that master.
+    A later provision then sees a matching key instead of minting a second one
+    or rejecting a foreign file.
     """
 
     _seed_resident_verifier_key(tmp_path / "guard-home")
@@ -58,23 +59,19 @@ def _snapshot_tests_without_resident_posture(monkeypatch: pytest.MonkeyPatch, tm
 
 
 def _seed_resident_verifier_key(guard_home: Path) -> None:
-    """Give a throwaway guard home the verifier key the native resident requires.
+    """Key the resident for a throwaway guard home from the home's own store.
 
     The resident serves store calls only once the home holds an owner-private
-    verifier key, and the Windows enterprise lab cannot provision one for an
-    arbitrary temporary home, so these tests seed it as the native fixtures do.
+    verifier key, and the Windows enterprise lab cannot provision one through
+    the nested store open of a first call. Deriving the key from this home's
+    own policy-integrity secret keeps later store-side provisioning a no-op
+    instead of a key mismatch.
     """
 
-    from codex_plugin_scanner.guard.native_policy_snapshot import provision_native_policy_verifier_key
-    from codex_plugin_scanner.guard.native_policy_snapshot_constants import (
-        NATIVE_POLICY_VERIFIER_KEY_NAME,
-        NATIVE_RUNTIME_STATE_DIRECTORY,
-    )
+    from codex_plugin_scanner.guard.native_policy_snapshot_publisher import provision_native_verifier_key_for_store
 
-    state_dir = guard_home / NATIVE_RUNTIME_STATE_DIRECTORY
-    state_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-    if not (state_dir / NATIVE_POLICY_VERIFIER_KEY_NAME).exists():
-        provision_native_policy_verifier_key(guard_home, b"p" * 32)
+    guard_home.mkdir(mode=0o700, parents=True, exist_ok=True)
+    provision_native_verifier_key_for_store(GuardStore(guard_home))
 
 
 def _seed_guard_cloud(store, *, workspace_id=None, sync_url=None, token="demo-token", now="2026-05-19T00:00:00Z"):
