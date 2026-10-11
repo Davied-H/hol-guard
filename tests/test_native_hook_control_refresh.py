@@ -282,6 +282,7 @@ def test_superseded_watch_snapshot_requests_refresh(
     with pytest.raises(review.NativePolicyBindingRefreshError) as raised:
         _raw_rejection(worker, tmp_path, monkeypatch, review.SNAPSHOT_NOT_CURRENT_ERROR, "observe")
     assert raised.value.generation == 3
+    assert raised.value.recording_only is True
 
 
 @pytest.mark.parametrize("code", sorted(review.CONTROL_BINDING_REFRESH_ERRORS))
@@ -319,3 +320,41 @@ def test_superseded_snapshot_without_fresh_ack_stays_blocked(
     assert response["decision"] == "block"
     assert response["native_failure_code"] == review.SNAPSHOT_NOT_CURRENT_ERROR
     native.assert_called_once()
+
+
+def _pre_tool_call(worker: HookWorker, tmp_path: Path, policy_snapshot: dict[str, object]):
+    return worker._review_native_edge(
+        payload={"hook_event_name": "PreToolUse", "tool_name": "Read", "tool_input": {"file_path": "a.ts"}},
+        harness="grok",
+        event_name="PreToolUse",
+        default_harness="grok",
+        home_dir=tmp_path,
+        guard_home=tmp_path / "guard",
+        workspace=tmp_path,
+        deadline=time.monotonic() + 2,
+        policy_snapshot=policy_snapshot,
+    )
+
+
+def test_superseded_watch_snapshot_without_fresh_ack_keeps_recording(
+    worker: HookWorker, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(worker, "_native_policy_snapshot", Mock(return_value=None))
+    native = Mock(
+        side_effect=review.NativePolicyBindingRefreshError(review.SNAPSHOT_NOT_CURRENT_ERROR, 3, recording_only=True)
+    )
+    monkeypatch.setattr(worker, "_review_native_edge_with_snapshot", native)
+    response = _pre_tool_call(worker, tmp_path, {"generation": 3, "mode": "observe"})
+    assert response["policy_action"] != "block"
+    assert response["native_failure_code"] == review.SNAPSHOT_NOT_CURRENT_ERROR
+    native.assert_called_once()
+
+
+@pytest.mark.parametrize("code", sorted(review.CONTROL_BINDING_REFRESH_ERRORS))
+def test_control_binding_failure_without_fresh_ack_stays_blocked(
+    worker: HookWorker, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, code: str
+) -> None:
+    monkeypatch.setattr(worker, "_native_policy_snapshot", Mock(return_value=None))
+    native = Mock(side_effect=review.NativePolicyBindingRefreshError(code, 3, recording_only=True))
+    monkeypatch.setattr(worker, "_review_native_edge_with_snapshot", native)
+    assert _pre_tool_call(worker, tmp_path, {"generation": 3, "mode": "enforce"})["policy_action"] == "block"

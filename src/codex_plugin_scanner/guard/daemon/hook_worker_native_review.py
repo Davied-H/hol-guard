@@ -26,12 +26,15 @@ NATIVE_REVIEW_REFRESH_ERRORS = CONTROL_BINDING_REFRESH_ERRORS | {SNAPSHOT_NOT_CU
 
 
 class NativePolicyBindingRefreshError(RuntimeError):
-    def __init__(self, code: str, generation: object = None) -> None:
+    def __init__(self, code: str, generation: object = None, *, recording_only: bool = False) -> None:
         if code not in NATIVE_REVIEW_REFRESH_ERRORS:
             raise ValueError("unsupported native binding refresh")
         super().__init__(code)
         self.code = code
         self.generation = generation if isinstance(generation, int) and not isinstance(generation, bool) else None
+        # Posture of the rejected ACKed binding, so a refresh that cannot
+        # complete keeps a Watch binding recording instead of stopping.
+        self.recording_only = recording_only is True
 
 
 def review_native_edge(
@@ -102,7 +105,9 @@ def review_native_edge(
                 workspace=workspace,
                 home_dir=home_dir,
                 guard_home=guard_home,
-                recording_only=False,
+                # Control-binding failures only refresh enforce bindings and
+                # stay blocking; a superseded Watch snapshot keeps recording.
+                recording_only=error.code == SNAPSHOT_NOT_CURRENT_ERROR and error.recording_only,
             )
             response["native_failure_code"] = error.code
             return response
