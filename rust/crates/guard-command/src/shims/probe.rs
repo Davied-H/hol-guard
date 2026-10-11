@@ -20,13 +20,11 @@ use super::{
 };
 use crate::local_supply_chain::stable_digest_hex;
 
-/// `int(SQLITE_CONNECT_TIMEOUT_SECONDS) + 5` is computed by the caller; this is
-/// the ceiling on a whole probe batch.
+/// Ceiling on a whole probe batch; every manager gets an equal share of it when
+/// the requested per-probe timeouts would add up to more.
 const PROBE_BATCH_CEILING: Duration = Duration::from_secs(600);
 /// Output kept from a probe child; the rest is drained and discarded.
 const PROBE_OUTPUT_CAP: u64 = 4 * 1024 * 1024;
-/// Grace for the reader threads after the child is gone.
-const PROBE_DRAIN_GRACE: Duration = Duration::from_secs(2);
 
 /// Inputs of one probe batch.
 #[derive(Debug, Clone, Default)]
@@ -232,8 +230,16 @@ fn run_probe(
             }
         }
     };
-    let stdout = stdout.recv_timeout(PROBE_DRAIN_GRACE).unwrap_or_default();
-    let _ = stderr.recv_timeout(PROBE_DRAIN_GRACE);
+    // `communicate()` waits for EOF on both pipes within the same timeout; a
+    // descendant that keeps a pipe open past it is a timeout, and the whole
+    // group is reaped so nothing lingers in the resident.
+    let drain = |receiver: &mpsc::Receiver<Vec<u8>>| {
+        receiver.recv_timeout(deadline.saturating_duration_since(Instant::now()))
+    };
+    let (Ok(stdout), Ok(_)) = (drain(&stdout), drain(&stderr)) else {
+        kill_tree(&mut child);
+        return None;
+    };
     Some(ProbeRun {
         exit_code: exit_code(status),
         stdout,
@@ -280,11 +286,11 @@ pub fn probe_package_shim_intercepts(
         .unwrap_or_else(|| facts.cwd.clone());
     let shim_dir = context.shim_dir();
     let tested_count = u32::try_from(tested.len().max(1)).unwrap_or(u32::MAX);
-    let per_probe = Duration::from_secs(options.timeout_seconds);
-    let budget = per_probe
-        .saturating_mul(tested_count)
-        .min(PROBE_BATCH_CEILING);
-    let started = Instant::now();
+    // Each manager keeps its own allowance (as the sequential `subprocess.run`
+    // calls did); only a batch that would exceed the ceiling is scaled down, and
+    // then evenly, so a slow early probe cannot starve a later one.
+    let per_probe =
+        Duration::from_secs(options.timeout_seconds).min(PROBE_BATCH_CEILING / tested_count);
     let mut probe_env = facts.environ.clone();
     probe_env.insert(
         SHIM_PROBE_ENV_VAR.to_owned(),
@@ -317,14 +323,12 @@ pub fn probe_package_shim_intercepts(
             continue;
         }
         let probe_args = package_shim_probe_args(manager);
-        let remaining = budget.saturating_sub(started.elapsed());
-        let timeout = per_probe.min(remaining);
         let Some(run) = run_probe(
             &facts.fs_path(&shim_path),
             &probe_args,
             &facts.fs_path(&workspace),
             &probe_env,
-            timeout,
+            per_probe,
         ) else {
             results.push(skipped(manager, "probe_failed"));
             continue;

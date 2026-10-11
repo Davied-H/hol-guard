@@ -168,44 +168,7 @@ fn dump_str(text: &str, out: &mut String) {
     out.push('"');
 }
 
-/// `str.isspace` for one code point.
-pub(crate) fn py_is_space(ch: char) -> bool {
-    matches!(
-        ch,
-        '\t' | '\n' | '\u{b}' | '\u{c}' | '\r' | '\u{1c}'..='\u{20}' | '\u{85}' | '\u{a0}'
-            | '\u{1680}' | '\u{2000}'..='\u{200a}' | '\u{2028}' | '\u{2029}' | '\u{202f}'
-            | '\u{205f}' | '\u{3000}'
-    )
-}
-
-/// `str.strip()`.
-pub(crate) fn py_strip(text: &str) -> &str {
-    text.trim_matches(py_is_space)
-}
-
-/// `str.splitlines()`.
-pub(crate) fn py_splitlines(text: &str) -> Vec<String> {
-    let mut lines = Vec::new();
-    let mut current = String::new();
-    let mut chars = text.chars().peekable();
-    while let Some(ch) = chars.next() {
-        match ch {
-            '\r' => {
-                if chars.peek() == Some(&'\n') {
-                    chars.next();
-                }
-                lines.push(std::mem::take(&mut current));
-            }
-            '\n' | '\u{b}' | '\u{c}' | '\u{1c}' | '\u{1d}' | '\u{1e}' | '\u{85}' | '\u{2028}'
-            | '\u{2029}' => lines.push(std::mem::take(&mut current)),
-            other => current.push(other),
-        }
-    }
-    if !current.is_empty() {
-        lines.push(current);
-    }
-    lines
-}
+pub(crate) use crate::codex_output_py::{is_py_space as py_is_space, py_splitlines, py_strip};
 
 /// `hashlib.sha256(content).hexdigest()`.
 pub(crate) fn sha256_hex(content: &[u8]) -> String {
