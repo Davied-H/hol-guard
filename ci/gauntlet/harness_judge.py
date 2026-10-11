@@ -14,6 +14,7 @@ import shlex
 from typing import Any
 
 from .catalog import Scenario
+from .interruptions import case_interruptions, describe
 from .mixed_reads import PUBLIC_READS
 from .proofs import BLOCK_REASONS, required_checks
 
@@ -150,7 +151,25 @@ def _observed_lifecycle_answers(rows: list[dict[str, Any]]) -> int:
 def assess_harness_case(scenario: Scenario, case: dict[str, Any]) -> dict[str, Any]:
     """Return outcome, reason and the facts the outcome rests on."""
     outcome, reason = _outcome(scenario, case)
-    return {"outcome": outcome, "reason": reason, "harness": case.get("harness")}
+    return {
+        "outcome": outcome,
+        "reason": reason,
+        "harness": case.get("harness"),
+        "interruptions": _interruptions(scenario, case),
+    }
+
+
+def _interruptions(scenario: Scenario, case: dict[str, Any]) -> dict[str, Any]:
+    """Every pre-tool and prompt answer plus approval rows, judged as interruptions."""
+    rows = [
+        row
+        for row in case.get("guard_rows", [])
+        if ((row.get("receipt") or {}).get("event_name") or (row.get("payload") or {}).get("hook_event_name"))
+        in _PRE_EVENTS | _PROMPT_EVENTS
+    ]
+    return case_interruptions(
+        scenario, rows, case.get("approval_rows", []), case.get("approval_delta", 0), str(case.get("harness"))
+    )
 
 
 def _outcome(scenario: Scenario, case: dict[str, Any]) -> tuple[str, str]:
@@ -210,6 +229,9 @@ def _outcome(scenario: Scenario, case: dict[str, Any]) -> tuple[str, str]:
         return "fail", f"Guard stopped ordinary work ({stops[0]['reason_code']})"
     if case.get("approval_delta"):
         return "fail", "ordinary work created an approval request"
+    interruptions = _interruptions(scenario, case)
+    if interruptions["benign"] and interruptions["events"]:
+        return "fail", "ordinary work was interrupted: " + describe(interruptions["events"])
     if scenario.oracle == "watch-command":
         watch_error = _watch_error(case, decisions)
         if watch_error:

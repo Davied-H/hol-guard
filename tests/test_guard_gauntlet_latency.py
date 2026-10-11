@@ -78,6 +78,7 @@ def test_verifier_labels_legacy_reports_without_claiming_latency(tmp_path, monke
     from ci.gauntlet import verify
     from ci.gauntlet.evidence import assess_case
     from ci.gauntlet.fixtures import digest_file
+    from ci.gauntlet.interruptions import summarize_interruptions
     from tests.test_guard_gauntlet import observed_case, ordinary
 
     scenario = ordinary()
@@ -103,6 +104,7 @@ def test_verifier_labels_legacy_reports_without_claiming_latency(tmp_path, monke
         "sdk_lock_sha256": digest_file(repo / "ci/pi-exact-continuation/package-lock.json"),
         "runner_files": {p.name: digest_file(p) for p in sorted(here.iterdir()) if p.is_file()},
         "cases": [{"id": scenario.id, **case["assessment"], "evidence_sha256": digest_file(path)}],
+        "interruptions": summarize_interruptions([case["assessment"]]),
     }
     if reported:
         report["hook_latency"] = case["hook_latency"]

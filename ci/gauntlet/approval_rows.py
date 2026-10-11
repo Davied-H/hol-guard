@@ -38,6 +38,7 @@ def approval_rows(store: Any, known_ids: set[str]) -> list[dict[str, Any]]:
                 ),
                 "exact_action_persistence_eligible": contract.exact_action_persistence_eligible is True,
                 "allow_scopes": scopes,
+                "exact_context_token_present": bool(envelope.get("exact_context_token")),
                 "always_available": contract.exact_action_persistence_eligible is True
                 or any(scope in PERSISTENT_SCOPES for scope in scopes),
             }
@@ -48,3 +49,8 @@ def approval_rows(store: Any, known_ids: set[str]) -> list[dict[str, Any]]:
 def always_gap(rows: list[dict[str, Any]]) -> list[str]:
     """Name rows that a user could not turn into a lasting allow, a defect for read-only work."""
     return [str(row.get("tool_name") or "unknown") for row in rows if row.get("always_available") is not True]
+
+
+def offers_always(row: dict[str, Any]) -> bool:
+    """A review row a user can turn into a lasting allow: a persistent scope or an exact-action token."""
+    return row.get("always_available") is True or row.get("exact_context_token_present") is True

@@ -13,6 +13,7 @@ from .catalog import load_catalog, load_catalog_data, retain_trusted_cases
 from .evidence import assess_case, reconcile
 from .fixtures import digest_file
 from .input_evidence import input_digest
+from .interruptions import summarize_interruptions
 from .latency import summarize_hook_latency
 from .source_identity import source_identity, validate_identity
 from .transport import reconcile_rounds
@@ -409,10 +410,14 @@ def verify_report(
     latency = summarize_hook_latency(observations)
     if "hook_latency" in report and report["hook_latency"] != latency:
         raise ValueError("claimed aggregate hook latency does not match observed evidence")
+    interruptions = summarize_interruptions(results)
+    if report.get("interruptions") != interruptions or interruptions["benign_interruptions"]:
+        raise ValueError("claimed interruption metrics do not match observed evidence or show interrupted work")
     return {
         "verified": True,
         "candidate_sha": expected_sha,
         "scenarios": len(results),
+        "interruptions": interruptions,
         "actual_tool_calls": sum(result["tool_calls"] for result in results),
         "merge_qualified": report["merge_qualified"],
         "hook_latency": latency,

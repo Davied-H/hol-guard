@@ -54,6 +54,24 @@ function publicNativeObservation(body: unknown): JsonRecord | undefined {
   };
 }
 
+const TEXT_KEYS = ["systemMessage", "message", "stopReason", "additionalContext", "permissionDecisionReason"];
+
+// Names of response fields that carry text the harness would render; mirrors interruptions.py.
+// Only names are recorded, never the text.
+function renderedFields(body: unknown): string[] {
+  if (!body || typeof body !== "object") return [];
+  const response = body as JsonRecord;
+  const specific = response.hookSpecificOutput;
+  const flat: JsonRecord = { ...(specific && typeof specific === "object" ? (specific as JsonRecord) : {}), ...response };
+  const fields = TEXT_KEYS.filter(key => typeof flat[key] === "string" && (flat[key] as string).trim() !== "");
+  const loud = flat.notice === "warning" || flat.notice === "excerpt";
+  if (loud) fields.push("notice");
+  if (typeof flat.reason === "string" && flat.reason.trim() !== "" && (loud || flat.policy_action === "warn")) {
+    fields.push("reason");
+  }
+  return fields.sort();
+}
+
 function record(value: Record<string, unknown>): void {
   if (!logPath) throw new Error("Gauntlet observer log is not configured");
   appendFileSync(logPath, JSON.stringify(value) + "\n", { mode: 0o600 });
@@ -113,6 +131,7 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promis
       decision: body.decision,
       policy_action: body.policy_action,
       reason_code: body.reason_code,
+      rendered_fields: renderedFields(body),
       model_output_action: body.model_output_action,
       reviewed_output_sha256: body.reviewed_output_sha256,
       response_sha256: createHash("sha256").update(JSON.stringify(body)).digest("hex"),

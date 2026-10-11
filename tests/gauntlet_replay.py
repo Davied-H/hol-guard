@@ -1,0 +1,112 @@
+"""Model-free replay lane of the Gauntlet: recorded hook payload shapes through the native hook path.
+
+Judging is the Gauntlet's own interruption rule, not a looser one: an ordinary-work case passes only
+when Guard answers with no decision other than allow, renders no warning or reason text, and creates
+no approval row. A review-by-design action instead passes when its approval row offers an
+exact-action Always allow. Cases come from ``tests/fixtures/gauntlet_replay_cases.json`` plus every
+benign case of the existing false-positive gate (read only), replayed for each harness and for Pi.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from ci.gauntlet.approval_rows import offers_always
+from ci.gauntlet.host_process import realistic_environment
+from ci.gauntlet.interruptions import observation_interruptions
+
+FIXTURES = Path(__file__).parent / "fixtures"
+REPLAY_DOCUMENT = json.loads((FIXTURES / "gauntlet_replay_cases.json").read_text(encoding="utf-8"))
+GATE_DOCUMENT = json.loads((FIXTURES / "benign_false_positive_gate.json").read_text(encoding="utf-8"))
+
+# Tool names each harness really sends, by the case's abstract tool family. Pi shares the omp tool set.
+SHELL = {"codex": "Bash", "zcode": "Bash", "claude-code": "Bash", "omp": "bash", "pi": "bash"}
+READ = {"zcode": "Read", "claude-code": "Read", "omp": "read", "pi": "read"}
+GLOB = {"claude-code": "Glob", "omp": "glob", "pi": "glob"}
+GREP = {"claude-code": "Grep", "omp": "grep", "pi": "grep"}
+WRITE = {"zcode": "Write", "claude-code": "Write", "omp": "write", "pi": "write"}
+FIXED = {
+    "eval": "eval",
+    "task": "task",
+    "wait": "wait",
+    "mcp_js": "mcp__node_repl__js",
+    "todo": "todo",
+    "todo_write": "todo_write",
+    "ls": "ls",
+}
+FAMILIES = {"shell": SHELL, "read": READ, "glob": GLOB, "grep": GREP, "write": WRITE}
+ENVIRONMENTS = ("clean", "realistic")
+
+
+@dataclass(frozen=True)
+class ReplayCase:
+    case_id: str
+    base_id: str
+    harness: str
+    tool: str
+    tool_input: dict[str, object]
+    cwd: str
+    expect: str  # quiet | always | block
+
+    @property
+    def tool_name(self) -> str:
+        table = FAMILIES.get(self.tool)
+        return table[self.harness] if table else FIXED[self.tool]
+
+
+def _entry(entry: dict[str, Any], harness: str, expect: str) -> ReplayCase:
+    return ReplayCase(
+        f"{entry['id']}@{harness}", entry["id"], harness, entry["tool"], entry["tool_input"], entry["cwd"], expect
+    )
+
+
+def expand() -> list[ReplayCase]:
+    cases = [_entry(e, h, e["expect"]) for e in REPLAY_DOCUMENT["cases"] for h in e["harnesses"]]
+    for entry in GATE_DOCUMENT["cases"]:
+        harnesses = list(entry["harnesses"]) + (["pi"] if "omp" in entry["harnesses"] else [])
+        expect = "quiet" if entry["expect"] == "allow" else "block"
+        cases.extend(_entry(entry, h, expect) for h in harnesses)
+    return cases
+
+
+def payload_input(case: ReplayCase, resolved: dict[str, object]) -> dict[str, object]:
+    """Shape the tool input the way the harness sends it."""
+    if case.harness == "zcode" and case.tool == "shell":
+        resolved = {**resolved, "description": "Synthetic replay probe"}
+    if case.harness in {"claude-code", "zcode"} and case.tool == "read":
+        resolved = {"file_path": resolved["path"]}
+    if case.harness in {"claude-code", "zcode"} and case.tool == "write":
+        resolved = {"file_path": resolved["path"], "content": resolved["content"]}
+    return resolved
+
+
+def environment_overlay(kind: str, home: Path) -> dict[str, str]:
+    """Extra env for a replay: nothing for clean, the Gauntlet's realistic overlay otherwise."""
+    return realistic_environment({}, home) if kind == "realistic" else {}
+
+
+def interruptions(case: ReplayCase, result: dict[str, object], approvals: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    row = {"response": result, "payload": {"tool_name": case.tool_name, "hook_event_name": "PreToolUse"}}
+    found = observation_interruptions(row, case.harness)
+    found.extend(
+        {"kind": "approval", "harness": case.harness, "tool": case.tool_name, "reason_code": a.get("reason_code")}
+        for a in approvals
+    )
+    return found
+
+
+def judge(case: ReplayCase, result: dict[str, object], approvals: list[dict[str, Any]]) -> str | None:
+    """None when the case behaves as expected, otherwise a one-line failure."""
+    found = interruptions(case, result, approvals)
+    allowed = not any(e["kind"] == "decision" for e in found)
+    if case.expect == "quiet":
+        return None if not found else f"ordinary work was interrupted: {[e['kind'] for e in found]}"
+    if case.expect == "always":
+        if allowed and not approvals:
+            return None
+        bad = [a.get("tool_name") for a in approvals if not offers_always(a)]
+        return f"review row without an Always allow offer: {bad}" if bad or not approvals else None
+    return "attack was allowed" if allowed and not approvals else None

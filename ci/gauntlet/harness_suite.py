@@ -17,6 +17,7 @@ from .catalog import Scenario, catalog_digest, load_catalog
 from .fixtures import create_run_root, digest_file
 from .harness_case import run_harness_case
 from .harnesses import adapter
+from .interruptions import report_sections
 from .parallel import Lease, run_scheduled, terminate_as_exit, validate_jobs
 from .source_identity import source_identity
 
@@ -49,8 +50,9 @@ def run_harness_suite(
     _, identity, capabilities = probe._probe_native_identity()
     if capabilities.build_sha != expected_source_sha:
         raise RuntimeError("installed Guard source SHA does not match the expected build")
-    # native-tools cases drive omp-only tools (glob, grep, eval, task, wait); other lanes cannot exercise them.
-    catalog = tuple(s for s in load_catalog() if s.oracle != "native-tools")
+    # native-tools cases that drive omp-only tools (glob, grep, eval, task, wait) cannot run on other
+    # lanes; the shell-only ones can, and they exercise the realistic developer environment.
+    catalog = tuple(s for s in load_catalog() if s.oracle != "native-tools" or set(s.required_tools) <= {"bash"})
     if selected_ids and (set(selected_ids) - {scenario.id for scenario in catalog}):
         raise ValueError("unknown scenario selection")
     selected = tuple(s for s in catalog if not selected_ids or s.id in selected_ids)
@@ -142,6 +144,11 @@ def run_harness_suite(
         )
     report["finished_at"] = datetime.now(timezone.utc).isoformat()
     report["outcomes"] = dict(Counter(c["outcome"] for c in report["cases"]))
-    report["pass"] = report["full_profile"] and all(c["outcome"] == "pass" for c in report["cases"])
+    report.update(report_sections(report["cases"], harness))
+    report["pass"] = (
+        report["full_profile"]
+        and all(c["outcome"] == "pass" for c in report["cases"])
+        and not report["interruptions"]["benign_interruptions"]
+    )
     (output / "summary.json").write_text(json.dumps(report, indent=2) + "\n")
     return report

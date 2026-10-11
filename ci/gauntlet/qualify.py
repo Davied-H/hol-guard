@@ -135,14 +135,26 @@ def summarize_attempt(
         record["error"] = "runner did not write summary.json"
         return record
     cases = summary.get("cases", [])
+    interruptions = summary.get("interruptions") if isinstance(summary.get("interruptions"), dict) else None
+    gaps = {g.get("id") for g in summary.get("known_gaps", []) if isinstance(g, dict)}
     record.update(
         {
-            "pass": summary.get("pass") is True,
+            # A summary that omits the interruption metrics cannot prove a silent run.
+            "pass": summary.get("pass") is True
+            and interruptions is not None
+            and interruptions.get("benign_interruptions") == 0,
+            "interruptions": interruptions,
+            "known_gaps": summary.get("known_gaps", []),
             "merge_qualified": summary.get("merge_qualified") is True,
             "stopped_early": summary.get("stopped_early") is True,
             "outcomes": dict(Counter(case.get("outcome") for case in cases)),
             "failed": [
-                {"id": case.get("id"), "outcome": case.get("outcome"), "reason": case.get("reason")}
+                {
+                    "id": case.get("id"),
+                    "outcome": case.get("outcome"),
+                    "reason": case.get("reason"),
+                    "known_gap": case.get("id") in gaps,
+                }
                 for case in cases
                 if case.get("outcome") != "pass"
             ],
@@ -404,6 +416,8 @@ def main(args: Any) -> int:
             "max_load": args.max_load,
             "max_load_wait": args.max_load_wait,
             "attempts": attempts,
+            "interruptions": attempts[-1].get("interruptions") if attempts else None,
+            "known_gaps": attempts[-1].get("known_gaps", []) if attempts else [],
             "verify": verify_result,
             "elapsed_seconds": round(time.monotonic() - started, 3),
             "cleanup": cleanup,

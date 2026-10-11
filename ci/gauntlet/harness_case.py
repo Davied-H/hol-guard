@@ -21,7 +21,7 @@ from .fixtures import create_fixture, digest_file, filesystem_checks, scenario_f
 from .guard_tap import GuardTap, read_tap
 from .harness_judge import assess_harness_case, guard_decisions
 from .harnesses import CredentialSeed, adapter, credential_environment, read_transcript
-from .host_process import clean_environment, run_process
+from .host_process import clean_environment, realistic_environment, run_process
 from .input_evidence import redact_value
 from .provider import LoopbackCollector
 from .runner import FIXTURE_SYSTEM_CONTEXT, _fixture_replacements, _scenario_prompt, _watch_binding
@@ -70,10 +70,12 @@ def install_harness_hooks(name: str, daemon: Any, *, home: Path, guard_home: Pat
 
 
 def harness_environment(
-    spec: Any, home: Path, agent_dir: Path, canary: str, login_environment: dict[str, str]
+    spec: Any, home: Path, agent_dir: Path, canary: str, login_environment: dict[str, str], *, realistic: bool = False
 ) -> dict[str, str]:
     """The harness CLI's environment: clean, with its config home pinned inside the fixture."""
     environment = clean_environment(home, agent_dir, canary)
+    if realistic:
+        environment = realistic_environment(environment, home)
     environment.update(spec.extra_env)
     environment.update(spec.home_environment(home))
     environment.update(login_environment)
@@ -93,7 +95,8 @@ def run_harness_case(
 ) -> dict[str, Any]:
     """Exercise one scenario through a real harness CLI and its installed Guard hooks."""
     spec = adapter(harness)
-    fixture = create_fixture(root / scenario_fixture_name(scenario.id))
+    realistic = scenario.oracle == "native-tools"
+    fixture = create_fixture(root / scenario_fixture_name(scenario.id), realistic=realistic)
     private = fixture.root / "private-evidence"
     private.mkdir(mode=0o700)
     raw_log, error_log, tap_log = private / "agent.jsonl", private / "stderr.txt", private / "guard-tap.jsonl"
@@ -164,7 +167,9 @@ def run_harness_case(
                 harness, daemon, home=fixture.home, guard_home=guard_home, workspace=fixture.workspace
             )
             before = worker.store.count_approval_requests(status=None)
-            environment = harness_environment(spec, fixture.home, private / "agent", fixture.canary, login_environment)
+            environment = harness_environment(
+                spec, fixture.home, private / "agent", fixture.canary, login_environment, realistic=realistic
+            )
             if scenario.oracle == "blocked-extension" or scenario.id in BUSINESS_CLI_CASES:
                 environment["PATH"] = str(fixture.root / "bin") + os.pathsep + environment["PATH"]
             spec.prepare_context(fixture.workspace, context)
