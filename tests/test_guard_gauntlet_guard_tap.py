@@ -4,6 +4,9 @@ import threading
 import time
 from pathlib import Path
 
+import pytest
+
+from ci.gauntlet import guard_tap
 from ci.gauntlet.guard_tap import GuardTap, read_tap
 
 
@@ -84,4 +87,35 @@ def test_tap_exit_waits_for_a_running_review_to_record_its_receipt(tmp_path: Pat
 
     rows = read_tap(log)
     assert [row["receipt"]["decision_id"] for row in rows] == ["late"]
+    assert "_record_native_decision_receipt" not in worker.__dict__
+
+
+def test_review_that_outlives_the_drain_removes_the_recorder_when_it_ends(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(guard_tap, "_DRAIN_SECONDS", 0.05)
+    worker = _Worker()
+    log = tmp_path / "tap.jsonl"
+    started = threading.Event()
+    release = threading.Event()
+
+    def slow_review(*, payload: dict[str, object], **_kwargs: object) -> dict[str, object]:
+        started.set()
+        release.wait(timeout=5)
+        worker._record_native_decision_receipt({"decision_id": "late"})
+        return {"tool": payload["tool_name"]}
+
+    worker.review_http_payload = slow_review
+    tap = GuardTap(worker, log)
+    tap.__enter__()
+    thread = threading.Thread(target=lambda: worker.review_http_payload(payload={"tool_name": "Read"}))
+    thread.start()
+    assert started.wait(timeout=5)
+    tap.__exit__()
+    # The drain gave up, so the running review still needs the recorder.
+    assert "_record_native_decision_receipt" in worker.__dict__
+    release.set()
+    thread.join(timeout=10)
+
+    assert [row["receipt"]["decision_id"] for row in read_tap(log)] == ["late"]
     assert "_record_native_decision_receipt" not in worker.__dict__

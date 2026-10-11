@@ -49,7 +49,9 @@ class GuardTap:
         self._lock = threading.Lock()
         self._receipts = threading.local()
         self._in_flight = 0
+        self._exited = False
         self._drained = threading.Condition()
+        self._capture: Any = None
         self._original = worker.review_http_payload
         self._record_receipt = worker._record_native_decision_receipt
 
@@ -78,7 +80,10 @@ class GuardTap:
                 with self._drained:
                     self._in_flight -= 1
                     self._drained.notify_all()
+                    if self._exited and self._in_flight == 0:
+                        self._remove_recorder()
 
+        self._capture = capture_receipt
         self._worker._record_native_decision_receipt = capture_receipt
         self._worker.review_http_payload = review
         return self
@@ -87,10 +92,16 @@ class GuardTap:
         self._worker.__dict__.pop("review_http_payload", None)
         # A review that started before exit still needs the receipt recorder, and
         # its row belongs in the log the case reads next.
+        # A review still running after the wait removes the recorder when it ends.
         with self._drained:
-            drained = self._drained.wait_for(lambda: self._in_flight == 0, timeout=_DRAIN_SECONDS)
-        if drained:
-            self._worker.__dict__.pop("_record_native_decision_receipt", None)
+            self._exited = True
+            if self._drained.wait_for(lambda: self._in_flight == 0, timeout=_DRAIN_SECONDS):
+                self._remove_recorder()
+
+    def _remove_recorder(self) -> None:
+        # Leave a recorder that a later tap installed on the same worker.
+        if self._worker.__dict__.get("_record_native_decision_receipt") is self._capture:
+            del self._worker.__dict__["_record_native_decision_receipt"]
 
     def _record(self, kwargs: dict[str, Any], response: Any, receipt: Any, seconds: float) -> None:
         payload = kwargs.get("payload") if isinstance(kwargs.get("payload"), dict) else {}
