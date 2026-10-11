@@ -16,8 +16,8 @@ mod launcher_sets;
 mod operands;
 mod reasons;
 mod runner_bin;
-mod tool_target;
 mod token;
+mod tool_target;
 
 use std::time::{Duration, Instant};
 
@@ -36,7 +36,10 @@ pub(crate) fn evaluate_native_exact_action_request(
     evaluate_with(request, &ResidentEngines)
 }
 
-fn evaluate_with(request: &NativeExactActionRequestV1, engines: &dyn Engines) -> Result<Vec<u8>, String> {
+fn evaluate_with(
+    request: &NativeExactActionRequestV1,
+    engines: &dyn Engines,
+) -> Result<Vec<u8>, String> {
     let request_sha256 = request_digest_with_limit(request, NATIVE_EXACT_ACTION_MAX_BYTES)
         .map_err(|_| "native_exact_action_too_large".to_owned())?;
     let (status, code, payload) = match decide(request, engines) {

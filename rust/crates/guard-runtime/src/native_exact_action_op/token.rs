@@ -9,8 +9,8 @@ use super::context::{Ctx, Engines};
 use super::fs_path;
 use super::launch::launch_identity;
 use super::reasons::{
-    Proof, GUARD_CONTROL, GUARD_CONTROL_ACTION_TYPES, NON_OVERRIDABLE, NO_COMMAND_IDENTITY, PACKAGE_ACTION,
-    UNPROVEN_LAUNCH,
+    Proof, GUARD_CONTROL, GUARD_CONTROL_ACTION_TYPES, NON_OVERRIDABLE, NO_COMMAND_IDENTITY,
+    PACKAGE_ACTION, UNPROVEN_LAUNCH,
 };
 use super::tool_target::tool_target_identity;
 use crate::context_digest::{build_context_token, parse_context_token};
@@ -20,8 +20,17 @@ const POLICY_VERSION: &str = "native-exact-action-v1";
 /// A review raised for one of these signals is a risk finding, not a first-seen
 /// prompt: it never carries a persistent allow, whatever the command looks like.
 const RISK_REASON_MARKERS: [&str; 11] = [
-    "secret", "sensitive", "credential", "exfil", "injection", "destructive", "malware", "obfuscat",
-    "encoded", "poison", "dangerous",
+    "secret",
+    "sensitive",
+    "credential",
+    "exfil",
+    "injection",
+    "destructive",
+    "malware",
+    "obfuscat",
+    "encoded",
+    "poison",
+    "dangerous",
 ];
 
 fn is_review_action(action: Option<&str>) -> bool {
@@ -32,7 +41,8 @@ fn is_overridable(facts: &NativeReviewFactsV1) -> bool {
     let action_type = facts.action_type.as_deref();
     is_review_action(facts.policy_action.as_deref())
         && is_review_action(facts.minimum_action.as_deref())
-        && !action_type.is_some_and(|kind| GUARD_CONTROL_ACTION_TYPES.contains(&kind) || kind == "package")
+        && !action_type
+            .is_some_and(|kind| GUARD_CONTROL_ACTION_TYPES.contains(&kind) || kind == "package")
 }
 
 fn non_overridable_reason(facts: &NativeReviewFactsV1) -> &'static str {
@@ -45,7 +55,9 @@ fn non_overridable_reason(facts: &NativeReviewFactsV1) -> &'static str {
 
 /// `launch_cwd`: the payload cwd, else the workspace; it must be an existing absolute directory.
 fn launch_cwd(payload_cwd: Option<&str>, workspace: Option<&str>) -> Option<String> {
-    let candidate = payload_cwd.filter(|raw| !raw.trim().is_empty()).or(workspace)?;
+    let candidate = payload_cwd
+        .filter(|raw| !raw.trim().is_empty())
+        .or(workspace)?;
     if !fs_path::is_abs(candidate) {
         return None;
     }
@@ -54,7 +66,11 @@ fn launch_cwd(payload_cwd: Option<&str>, workspace: Option<&str>) -> Option<Stri
 }
 
 /// `_exact_action_token`: the token, or the reason the action stays one-time.
-pub(super) fn exact_action(query: &NativeExactActionQueryV1, deadline: Instant, engines: &dyn Engines) -> Proof<String> {
+pub(super) fn exact_action(
+    query: &NativeExactActionQueryV1,
+    deadline: Instant,
+    engines: &dyn Engines,
+) -> Proof<String> {
     let components = exact_action_components(query, deadline, engines)?;
     let token = build_context_token(&components).map_err(|_| UNPROVEN_LAUNCH)?;
     parse_context_token(&Value::String(token.clone())).ok_or(UNPROVEN_LAUNCH)?;
@@ -88,21 +104,41 @@ pub(super) fn exact_action_components(
         return Err(non_overridable_reason(facts));
     }
     let reason_code = facts.reason_code.as_deref().unwrap_or("").to_lowercase();
-    if RISK_REASON_MARKERS.iter().any(|marker| reason_code.contains(marker)) {
+    if RISK_REASON_MARKERS
+        .iter()
+        .any(|marker| reason_code.contains(marker))
+    {
         return Err(NON_OVERRIDABLE);
     }
-    let has_command = command.as_deref().is_some_and(|text| !text.trim().is_empty());
-    let without_identity = if has_command { UNPROVEN_LAUNCH } else { NO_COMMAND_IDENTITY };
+    let has_command = command
+        .as_deref()
+        .is_some_and(|text| !text.trim().is_empty());
+    let without_identity = if has_command {
+        UNPROVEN_LAUNCH
+    } else {
+        NO_COMMAND_IDENTITY
+    };
     if matches!(policy_binding, NativePolicyBindingV1::Invalid) {
         return Err(without_identity);
     }
     let cwd = launch_cwd(payload_cwd.as_deref(), workspace.as_deref()).ok_or(without_identity)?;
-    let ctx = Ctx { home: home_dir.as_deref(), env: environment, deadline, engines };
+    let ctx = Ctx {
+        home: home_dir.as_deref(),
+        env: environment,
+        deadline,
+        engines,
+    };
     let (launch, content) = if has_command {
         let text = command.as_deref().unwrap_or("");
         (launch_identity(text, &cwd, &ctx)?, json!({"command": text}))
     } else {
-        tool_target_identity(tool_name, tool_input.as_deref(), &cwd, workspace.as_deref(), &ctx)?
+        tool_target_identity(
+            tool_name,
+            tool_input.as_deref(),
+            &cwd,
+            workspace.as_deref(),
+            &ctx,
+        )?
     };
     let NativePolicyBindingV1::Bound { value: binding } = policy_binding else {
         return Err(UNPROVEN_LAUNCH);

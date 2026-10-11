@@ -89,7 +89,11 @@ fn candidates(root: &str, git_dir: &str, common_dir: &str, ctx: &Ctx) -> Vec<Str
         ctx.engines.system_git_config(),
     ];
     let mut bases: Vec<String> = Vec::new();
-    if let Some(xdg) = ctx.env.get("XDG_CONFIG_HOME").filter(|value| !value.is_empty()) {
+    if let Some(xdg) = ctx
+        .env
+        .get("XDG_CONFIG_HOME")
+        .filter(|value| !value.is_empty())
+    {
         bases.push(fs_path::norm(xdg));
     }
     if let Some(home) = ctx.home {
@@ -109,16 +113,29 @@ fn candidates(root: &str, git_dir: &str, common_dir: &str, ctx: &Ctx) -> Vec<Str
 
 /// `_git_config_digest`: fails closed when the environment or any config file
 /// selects a helper program, since a digest cannot bind what that helper does.
-pub(super) fn git_config_digest(root: &str, git_dir: &str, common_dir: &str, ctx: &Ctx) -> Proof<String> {
-    if ctx.env.iter().any(|(name, value)| injects_git_helper(name, value)) {
+pub(super) fn git_config_digest(
+    root: &str,
+    git_dir: &str,
+    common_dir: &str,
+    ctx: &Ctx,
+) -> Proof<String> {
+    if ctx
+        .env
+        .iter()
+        .any(|(name, value)| injects_git_helper(name, value))
+    {
         return Err(GIT_HELPER_CONFIG);
     }
     let candidates = candidates(root, git_dir, common_dir, ctx);
-    let configs: BTreeSet<String> =
-        candidates.iter().filter(|path| is_config_name(path)).cloned().collect();
+    let configs: BTreeSet<String> = candidates
+        .iter()
+        .filter(|path| is_config_name(path))
+        .cloned()
+        .collect();
     let mut seen: BTreeMap<String, String> = BTreeMap::new();
     let mut hook_dirs: Vec<String> = Vec::new();
-    let mut queue: VecDeque<(String, usize)> = candidates.into_iter().map(|path| (path, 0)).collect();
+    let mut queue: VecDeque<(String, usize)> =
+        candidates.into_iter().map(|path| (path, 0)).collect();
     while let Some((path, depth)) = queue.pop_front() {
         ctx.check()?;
         if seen.contains_key(&path) {
@@ -139,7 +156,12 @@ pub(super) fn git_config_digest(root: &str, git_dir: &str, common_dir: &str, ctx
         seen.insert(path.clone(), fs_path::sha256_hex(&data));
         // Included files are config whatever they are named; the rest are attributes.
         if configs.contains(&path) || depth > 0 {
-            let included = scan_config(&String::from_utf8_lossy(&data), &path, ctx.home, &mut hook_dirs)?;
+            let included = scan_config(
+                &String::from_utf8_lossy(&data),
+                &path,
+                ctx.home,
+                &mut hook_dirs,
+            )?;
             if !included.is_empty() && depth + 1 > MAX_INCLUDE_DEPTH {
                 return Err(UNPROVEN_LAUNCH);
             }
@@ -149,12 +171,18 @@ pub(super) fn git_config_digest(root: &str, git_dir: &str, common_dir: &str, ctx
     let mut hooks = vec![fs_path::join(common_dir, "hooks")];
     hooks.extend(hook_dirs);
     let mut visited_hooks = BTreeSet::new();
-    for hooks_dir in hooks.into_iter().filter(|dir| visited_hooks.insert(dir.clone())) {
+    for hooks_dir in hooks
+        .into_iter()
+        .filter(|dir| visited_hooks.insert(dir.clone()))
+    {
         seen.extend(hook_digests(&hooks_dir)?);
     }
     seen.extend(nested_attribute_digests(root, ctx)?);
     // `sorted(seen.items())` as compact JSON pairs.
-    let pairs: Vec<Value> = seen.iter().map(|(key, value)| serde_json::json!([key, value])).collect();
+    let pairs: Vec<Value> = seen
+        .iter()
+        .map(|(key, value)| serde_json::json!([key, value]))
+        .collect();
     let mut encoded = Vec::new();
     write_canonical_json(&Value::Array(pairs), &mut encoded).map_err(|_| UNPROVEN_LAUNCH)?;
     Ok(fs_path::sha256_hex(&encoded))
@@ -177,7 +205,9 @@ fn hook_digests(hooks_dir: &str) -> Proof<BTreeMap<String, String>> {
         if name.ends_with(".sample") || !fs_path::is_file(&entry) {
             continue;
         }
-        let size = std::fs::metadata(&entry).map_err(|_| UNPROVEN_LAUNCH)?.len();
+        let size = std::fs::metadata(&entry)
+            .map_err(|_| UNPROVEN_LAUNCH)?
+            .len();
         if digests.len() >= MAX_HOOK_FILES || size > MAX_CONFIG_BYTES {
             return Err(UNPROVEN_LAUNCH);
         }
@@ -201,7 +231,9 @@ fn nested_attribute_digests(root: &str, ctx: &Ctx) -> Proof<BTreeMap<String, Str
     while let Some(current) = pending.pop() {
         ctx.check()?;
         // An unreadable directory is skipped, as `os.walk` does.
-        let Ok(entries) = std::fs::read_dir(&current) else { continue };
+        let Ok(entries) = std::fs::read_dir(&current) else {
+            continue;
+        };
         let mut has_attributes = false;
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
@@ -247,7 +279,12 @@ fn selects_helper(section: &str, name: &str) -> bool {
 
 /// Include targets and hook directories of one config file; an error when a
 /// key selects a helper program.
-fn scan_config(text: &str, config_file: &str, home: Option<&str>, hook_dirs: &mut Vec<String>) -> Proof<Vec<String>> {
+fn scan_config(
+    text: &str,
+    config_file: &str,
+    home: Option<&str>,
+    hook_dirs: &mut Vec<String>,
+) -> Proof<Vec<String>> {
     let mut included = Vec::new();
     let mut section = String::new();
     let mut subsection = String::new();
@@ -264,7 +301,15 @@ fn scan_config(text: &str, config_file: &str, home: Option<&str>, hook_dirs: &mu
             // A header this parser cannot read could hide a helper: fail closed.
             return Err(GIT_HELPER_CONFIG);
         }
-        scan_key(line, &section, &subsection, config_file, home, hook_dirs, &mut included)?;
+        scan_key(
+            line,
+            &section,
+            &subsection,
+            config_file,
+            home,
+            hook_dirs,
+            &mut included,
+        )?;
     }
     Ok(included)
 }
@@ -278,9 +323,14 @@ fn scan_key(
     hook_dirs: &mut Vec<String>,
     included: &mut Vec<String>,
 ) -> Proof<()> {
-    let Some(key) = config_key().captures(line) else { return Ok(()) };
+    let Some(key) = config_key().captures(line) else {
+        return Ok(());
+    };
     let name = key[1].to_lowercase();
-    let value = key.get(2).map_or("", |value| value.as_str()).trim_matches('"');
+    let value = key
+        .get(2)
+        .map_or("", |value| value.as_str())
+        .trim_matches('"');
     if section == "filter" && subsection == "lfs" && LFS_FILTER.contains(&(name.as_str(), value)) {
         return Ok(());
     }
@@ -296,15 +346,29 @@ fn scan_key(
         return Err(GIT_HELPER_CONFIG);
     }
     if matches!(section, "include" | "includeif") && name == "path" {
-        let Some(path) = include_path().captures(line) else { return Err(GIT_HELPER_CONFIG) };
-        included.push(config_path(path[1].trim().trim_matches('"'), config_file, home));
+        let Some(path) = include_path().captures(line) else {
+            return Err(GIT_HELPER_CONFIG);
+        };
+        included.push(config_path(
+            path[1].trim().trim_matches('"'),
+            config_file,
+            home,
+        ));
     }
     Ok(())
 }
 
 /// `str.splitlines()` for the line terminators that can occur in a config file.
 fn python_splitlines(text: &str) -> Vec<&str> {
-    text.split_inclusive(['\n', '\r', '\u{b}', '\u{c}', '\u{1c}', '\u{1d}', '\u{1e}', '\u{85}', '\u{2028}', '\u{2029}'])
-        .map(|line| line.trim_end_matches(['\n', '\r', '\u{b}', '\u{c}', '\u{1c}', '\u{1d}', '\u{1e}', '\u{85}', '\u{2028}', '\u{2029}']))
-        .collect()
+    text.split_inclusive([
+        '\n', '\r', '\u{b}', '\u{c}', '\u{1c}', '\u{1d}', '\u{1e}', '\u{85}', '\u{2028}',
+        '\u{2029}',
+    ])
+    .map(|line| {
+        line.trim_end_matches([
+            '\n', '\r', '\u{b}', '\u{c}', '\u{1c}', '\u{1d}', '\u{1e}', '\u{85}', '\u{2028}',
+            '\u{2029}',
+        ])
+    })
+    .collect()
 }

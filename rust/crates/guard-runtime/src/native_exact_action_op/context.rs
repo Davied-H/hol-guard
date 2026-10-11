@@ -76,7 +76,9 @@ impl Ctx<'_> {
 /// The production engines: the resident's own launch-identity and package-intent code.
 pub(crate) struct ResidentEngines;
 
-fn evidence_file(file: &guard_command::package_intent_common::PackageExecutionFileEvidence) -> EvidenceFile {
+fn evidence_file(
+    file: &guard_command::package_intent_common::PackageExecutionFileEvidence,
+) -> EvidenceFile {
     EvidenceFile {
         path: file.path.clone(),
         resolved_path: file.resolved_path.clone(),
@@ -95,7 +97,10 @@ impl Engines for ResidentEngines {
         env: &BTreeMap<String, String>,
     ) -> Value {
         let argv: Vec<Value> = args.iter().map(|arg| json!(arg)).collect();
-        let launch_env: Value = env.iter().map(|(key, value)| (key.clone(), json!(value))).collect();
+        let launch_env: Value = env
+            .iter()
+            .map(|(key, value)| (key.clone(), json!(value)))
+            .collect();
         guard_command::launch_identity::build_runtime_launch_identity(
             &json!(executable),
             &argv,

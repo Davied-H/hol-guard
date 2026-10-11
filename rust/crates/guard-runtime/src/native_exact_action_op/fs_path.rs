@@ -26,7 +26,11 @@ pub(super) fn norm(path: &str) -> String {
         _ => "/",
     };
     if parts.is_empty() {
-        return if root.is_empty() { ".".to_owned() } else { root.to_owned() };
+        return if root.is_empty() {
+            ".".to_owned()
+        } else {
+            root.to_owned()
+        };
     }
     format!("{root}{}", parts.join("/"))
 }
@@ -98,16 +102,16 @@ pub(super) fn is_file(path: &str) -> bool {
     std::fs::metadata(path).is_ok_and(|meta| meta.is_file())
 }
 
-pub(super) fn exists(path: &str) -> bool {
-    std::fs::metadata(path).is_ok()
-}
-
 /// `Path(path).resolve(strict=True)`.
 pub(super) fn resolve_strict(path: &str) -> Option<String> {
     if !is_abs(path) {
         return None;
     }
-    std::fs::canonicalize(Path::new(path)).ok()?.into_os_string().into_string().ok()
+    std::fs::canonicalize(Path::new(path))
+        .ok()?
+        .into_os_string()
+        .into_string()
+        .ok()
 }
 
 /// `Path(path).resolve()` (`os.path.realpath`, non-strict): symlinks of the
@@ -136,7 +140,12 @@ fn split_head(path: &str) -> (String, String) {
 type Seen = HashMap<String, Option<String>>;
 
 /// `posixpath._joinrealpath(path, rest, strict=False, seen)`.
-fn join_real(mut path: String, rest: &str, seen: &mut Seen, depth: usize) -> Option<(String, bool)> {
+fn join_real(
+    mut path: String,
+    rest: &str,
+    seen: &mut Seen,
+    depth: usize,
+) -> Option<(String, bool)> {
     if depth > MAX_SYMLINK_DEPTH {
         return None;
     }
@@ -159,7 +168,11 @@ fn join_real(mut path: String, rest: &str, seen: &mut Seen, depth: usize) -> Opt
                 path = "..".to_owned();
             } else {
                 let (head, tail) = split_head(&path);
-                path = if tail == ".." { format!("{head}/../..") } else { head };
+                path = if tail == ".." {
+                    format!("{head}/../..")
+                } else {
+                    head
+                };
             }
             continue;
         }
@@ -170,7 +183,8 @@ fn join_real(mut path: String, rest: &str, seen: &mut Seen, depth: usize) -> Opt
         } else {
             format!("{path}/{component}")
         };
-        let is_link = std::fs::symlink_metadata(&candidate).is_ok_and(|meta| meta.file_type().is_symlink());
+        let is_link =
+            std::fs::symlink_metadata(&candidate).is_ok_and(|meta| meta.file_type().is_symlink());
         if !is_link {
             path = candidate;
             continue;
@@ -183,7 +197,11 @@ fn join_real(mut path: String, rest: &str, seen: &mut Seen, depth: usize) -> Opt
             return Some((format!("{candidate}/{rest}"), false));
         }
         seen.insert(candidate.clone(), None);
-        let target = std::fs::read_link(&candidate).ok()?.into_os_string().into_string().ok()?;
+        let target = std::fs::read_link(&candidate)
+            .ok()?
+            .into_os_string()
+            .into_string()
+            .ok()?;
         let (resolved, ok) = join_real(path.clone(), &target, seen, depth + 1)?;
         if !ok {
             return Some((format!("{resolved}/{rest}"), false));

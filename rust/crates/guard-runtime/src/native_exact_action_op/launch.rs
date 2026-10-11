@@ -45,7 +45,14 @@ pub(super) fn launch_identity(command: &str, cwd: &str, ctx: &Ctx) -> Proof<Valu
         return Err(UNPROVEN_LAUNCH);
     }
     let segment = &model.segments[0];
-    segment_launch(segment, &normalized_name(segment.executable.as_deref()), command, cwd, ctx, false)
+    segment_launch(
+        segment,
+        &normalized_name(segment.executable.as_deref()),
+        command,
+        cwd,
+        ctx,
+        false,
+    )
 }
 
 /// A single top-level invocation without wrappers, environment prefixes or redirects.
@@ -110,7 +117,8 @@ fn cd_target(arguments: &[String], cwd: &str) -> Proof<String> {
     if arguments.len() != 1 || arguments[0].starts_with(['-', '$', '~']) {
         return Err(COMPOUND_COMMAND);
     }
-    let resolved = fs_path::resolve_strict(&fs_path::join(cwd, &arguments[0])).ok_or(COMPOUND_COMMAND)?;
+    let resolved =
+        fs_path::resolve_strict(&fs_path::join(cwd, &arguments[0])).ok_or(COMPOUND_COMMAND)?;
     if fs_path::is_dir(&resolved) {
         Ok(resolved)
     } else {
@@ -150,12 +158,17 @@ fn segment_launch(
     if is_destructive(name) {
         return Err(DESTRUCTIVE_COMMAND);
     }
-    if arguments.iter().any(|argument| argument_is_sensitive(argument, cwd, ctx.home)) {
+    if arguments
+        .iter()
+        .any(|argument| argument_is_sensitive(argument, cwd, ctx.home))
+    {
         return Err(SENSITIVE_PATH);
     }
     let operands = file_operand_hashes(arguments, cwd, ctx).ok_or(UNPROVEN_LAUNCH)?;
     let reusable_identity = || -> Proof<Value> {
-        let identity = ctx.engines.launch_identity(executable, arguments, cwd, ctx.home, ctx.env);
+        let identity = ctx
+            .engines
+            .launch_identity(executable, arguments, cwd, ctx.home, ctx.env);
         if ctx.engines.launch_reusable(&identity) {
             Ok(identity)
         } else {
@@ -168,9 +181,15 @@ fn segment_launch(
         return Ok(json!({"kind": "direct", "identity": binary, "git": git, "operands": operands}));
     }
     if LOCAL_BIN_RUNNERS.contains(&name) {
-        let local_bin = if compound { None } else { runner_local_bin(command, name, arguments, cwd, ctx) };
+        let local_bin = if compound {
+            None
+        } else {
+            runner_local_bin(command, name, arguments, cwd, ctx)
+        };
         let local_bin = local_bin.ok_or(MUTABLE_LAUNCHER)?;
-        return Ok(json!({"kind": "runner-local-bin", "runner": name, "local_bin": local_bin, "operands": operands}));
+        return Ok(
+            json!({"kind": "runner-local-bin", "runner": name, "local_bin": local_bin, "operands": operands}),
+        );
     }
     if loads_unbound_code(name, arguments) {
         return Err(MUTABLE_LAUNCHER);

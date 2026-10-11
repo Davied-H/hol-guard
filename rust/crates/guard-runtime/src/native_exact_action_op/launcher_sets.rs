@@ -6,20 +6,67 @@ use regex::Regex;
 
 /// Interpreters, shells, task runners and package managers.
 const MUTABLE_CODE_LAUNCHERS: &[&str] = &[
-    ".", "source", "sh", "bash", "dash", "ash", "zsh", "ksh", "fish", "node", "bun", "deno", "ruby",
-    "perl", "npm", "npx", "pnpm", "pnpx", "yarn", "bunx", "make", "just", "task", "cargo", "uv",
-    "uvx", "pipx",
+    ".", "source", "sh", "bash", "dash", "ash", "zsh", "ksh", "fish", "node", "bun", "deno",
+    "ruby", "perl", "npm", "npx", "pnpm", "pnpx", "yarn", "bunx", "make", "just", "task", "cargo",
+    "uv", "uvx", "pipx",
 ];
 
 /// Further interpreters, task runners and wrappers whose launch identity does
 /// not bind the code they load or run.
 const EXTRA_MUTABLE_LAUNCHERS: &[&str] = &[
-    "nodejs", "php", "go", "tsx", "ts-node", "vite-node", "jiti", "esno", "babel-node", "nodemon",
-    "zx", "docker", "podman", "git", "awk", "gawk", "mawk", "nawk", "xargs", "parallel", "env",
-    "sudo", "doas", "nohup", "timeout", "watch", "osascript", "pwsh", "powershell", "java",
-    "dotnet", "lua", "rscript", "julia", "swift", "r", "terraform", "tofu", "terragrunt", "pulumi",
-    "ansible", "ansible-playbook", "pytest", "py.test", "tox", "nox", "jest", "vitest", "mocha",
-    "rake", "gradle", "mvn", "sed",
+    "nodejs",
+    "php",
+    "go",
+    "tsx",
+    "ts-node",
+    "vite-node",
+    "jiti",
+    "esno",
+    "babel-node",
+    "nodemon",
+    "zx",
+    "docker",
+    "podman",
+    "git",
+    "awk",
+    "gawk",
+    "mawk",
+    "nawk",
+    "xargs",
+    "parallel",
+    "env",
+    "sudo",
+    "doas",
+    "nohup",
+    "timeout",
+    "watch",
+    "osascript",
+    "pwsh",
+    "powershell",
+    "java",
+    "dotnet",
+    "lua",
+    "rscript",
+    "julia",
+    "swift",
+    "r",
+    "terraform",
+    "tofu",
+    "terragrunt",
+    "pulumi",
+    "ansible",
+    "ansible-playbook",
+    "pytest",
+    "py.test",
+    "tox",
+    "nox",
+    "jest",
+    "vitest",
+    "mocha",
+    "rake",
+    "gradle",
+    "mvn",
+    "sed",
 ];
 
 /// Commands that delete, overwrite, move or reach the network.
@@ -53,7 +100,9 @@ pub(super) fn is_code_launcher(name: &str) -> bool {
 fn is_python_launcher(name: &str) -> bool {
     static PATTERN: OnceLock<Regex> = OnceLock::new();
     PATTERN
-        .get_or_init(|| Regex::new(r"(?i)^pythonw?(?:\d+(?:\.\d+)*)?(?:\.exe)?\z").expect("static pattern"))
+        .get_or_init(|| {
+            Regex::new(r"(?i)^pythonw?(?:\d+(?:\.\d+)*)?(?:\.exe)?\z").expect("static pattern")
+        })
         .is_match(name)
 }
 
@@ -66,7 +115,11 @@ pub(super) fn loads_unbound_code(name: &str, arguments: &[String]) -> bool {
     if is_mutable_launcher(name) {
         return true;
     }
-    if name == "find" && arguments.iter().any(|argument| FIND_EXEC_OPTIONS.contains(&argument.as_str())) {
+    if name == "find"
+        && arguments
+            .iter()
+            .any(|argument| FIND_EXEC_OPTIONS.contains(&argument.as_str()))
+    {
         return true;
     }
     if FILE_BACKED_PROGRAM_COMMANDS.contains(&name) && uses_file_backed_program(arguments) {
@@ -77,7 +130,9 @@ pub(super) fn loads_unbound_code(name: &str, arguments: &[String]) -> bool {
 
 /// Whether a ripgrep launch runs a mutable preprocessor.
 pub(super) fn rg_runs_preprocessor(tokens: &[String]) -> bool {
-    tokens.iter().any(|token| token == "--pre" || token.starts_with("--pre="))
+    tokens
+        .iter()
+        .any(|token| token == "--pre" || token.starts_with("--pre="))
 }
 
 /// Whether a program or pattern is loaded from a mutable file instead of argv.
@@ -91,7 +146,8 @@ pub(super) fn uses_file_backed_program(tokens: &[String]) -> bool {
         if matches!(token.as_str(), "-f" | "--file" | "--fi" | "--fil") {
             return true;
         }
-        if token.starts_with("--file=") || token.starts_with("--fi=") || token.starts_with("--fil=") {
+        if token.starts_with("--file=") || token.starts_with("--fi=") || token.starts_with("--fil=")
+        {
             return true;
         }
         if matches!(token.as_str(), "-e" | "--expression" | "--regexp") {

@@ -18,8 +18,22 @@ const FILE_SEARCH_TOOLS: [&str; 4] = ["glob", "grep", "ls", "list_dir"];
 const PATH_KEYS: [&str; 5] = ["path", "file_path", "filePath", "directory", "dir"];
 const PATTERN_KEYS: [&str; 3] = ["pattern", "glob", "include"];
 const OPTION_KEYS: [&str; 16] = [
-    "limit", "offset", "type", "output_mode", "head_limit", "case_sensitive", "multiline", "context",
-    "-i", "-n", "-A", "-B", "-C", "line_start", "line_end", "lines",
+    "limit",
+    "offset",
+    "type",
+    "output_mode",
+    "head_limit",
+    "case_sensitive",
+    "multiline",
+    "context",
+    "-i",
+    "-n",
+    "-A",
+    "-B",
+    "-C",
+    "line_start",
+    "line_end",
+    "lines",
 ];
 
 fn non_blank(value: &Value) -> Option<&str> {
@@ -42,7 +56,11 @@ fn expand(raw: &str, ctx: &Ctx) -> Proof<String> {
     if !raw.starts_with('~') {
         return Ok(raw.to_owned());
     }
-    let home = ctx.env.get("HOME").filter(|value| !value.is_empty()).ok_or(UNPROVEN_LAUNCH)?;
+    let home = ctx
+        .env
+        .get("HOME")
+        .filter(|value| !value.is_empty())
+        .ok_or(UNPROVEN_LAUNCH)?;
     match raw.strip_prefix('~') {
         Some("") => Ok(home.clone()),
         Some(rest) if rest.starts_with('/') => Ok(fs_path::join(home, &rest[1..])),
@@ -60,7 +78,10 @@ pub(super) fn tool_target_identity(
 ) -> Proof<(Value, Value)> {
     let name = tool_name.trim().to_lowercase();
     if STATE_ONLY_TOOLS.contains(&name.as_str()) {
-        return Ok((json!({"kind": "tool-target", "tool": name, "targets": []}), json!({})));
+        return Ok((
+            json!({"kind": "tool-target", "tool": name, "targets": []}),
+            json!({}),
+        ));
     }
     let is_read = FILE_READ_TOOLS.contains(&name.as_str());
     if !is_read && !FILE_SEARCH_TOOLS.contains(&name.as_str()) {
@@ -74,8 +95,19 @@ pub(super) fn tool_target_identity(
         let key = key.as_str();
         if PATH_KEYS.contains(&key) && non_blank(value).is_some() {
             paths.push(value.as_str().unwrap_or_default().to_owned());
-        } else if key == "paths" && value.as_array().is_some_and(|items| items.iter().all(Value::is_string)) {
-            paths.extend(value.as_array().into_iter().flatten().filter_map(Value::as_str).map(str::to_owned));
+        } else if key == "paths"
+            && value
+                .as_array()
+                .is_some_and(|items| items.iter().all(Value::is_string))
+        {
+            paths.extend(
+                value
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned),
+            );
         } else if key == "pattern" && name == "grep" && non_blank(value).is_some() {
             // grep's pattern is a content regex, not a path: it never names a scope.
             regexes.push(value.as_str().unwrap_or_default().to_owned());
@@ -97,7 +129,11 @@ pub(super) fn tool_target_identity(
     for raw in &paths {
         ctx.check()?;
         let candidate = expand(raw, ctx)?;
-        let joined = if fs_path::is_abs(&candidate) { candidate } else { fs_path::join(cwd, &candidate) };
+        let joined = if fs_path::is_abs(&candidate) {
+            candidate
+        } else {
+            fs_path::join(cwd, &candidate)
+        };
         let resolved = fs_path::resolve(&joined).ok_or(UNPROVEN_LAUNCH)?;
         if sensitive(raw, cwd, ctx.home) || sensitive(&resolved, cwd, ctx.home) {
             return Err(SENSITIVE_PATH);
@@ -118,9 +154,15 @@ pub(super) fn tool_target_identity(
     targets.sort();
     patterns.sort();
     regexes.sort();
-    let options: BTreeMap<&String, &Value> =
-        input.iter().filter(|(key, _)| OPTION_KEYS.contains(&key.as_str())).map(|(key, value)| (key, value)).collect();
-    let options: Map<String, Value> = options.into_iter().map(|(key, value)| (key.clone(), value.clone())).collect();
+    let options: BTreeMap<&String, &Value> = input
+        .iter()
+        .filter(|(key, _)| OPTION_KEYS.contains(&key.as_str()))
+        .map(|(key, value)| (key, value))
+        .collect();
+    let options: Map<String, Value> = options
+        .into_iter()
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect();
     Ok((
         json!({"kind": "tool-target", "tool": name, "targets": targets}),
         json!({"patterns": patterns, "regexes": regexes, "options": Value::Object(options)}),

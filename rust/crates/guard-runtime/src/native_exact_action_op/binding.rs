@@ -39,16 +39,25 @@ fn assignment_pattern() -> &'static Regex {
 
 /// Whether retry reuse is safe: mutable local code cannot hide behind argv.
 pub(super) fn command_reuse_is_payload_bound(command: &str) -> bool {
-    if ["`", "$(", "${", "\n", "\r"].iter().any(|marker| command.contains(marker)) {
+    if ["`", "$(", "${", "\n", "\r"]
+        .iter()
+        .any(|marker| command.contains(marker))
+    {
         return false;
     }
-    let Some(tokens) = split_with(command, SHELL_PUNCTUATION, "#") else { return false };
-    let Some(executable) = tokens.first() else { return false };
+    let Some(tokens) = split_with(command, SHELL_PUNCTUATION, "#") else {
+        return false;
+    };
+    let Some(executable) = tokens.first() else {
+        return false;
+    };
     // shlex groups adjacent punctuation, so every punctuation-only token is rejected.
-    if tokens
-        .iter()
-        .any(|token| !token.is_empty() && token.chars().all(|character| SHELL_PUNCTUATION.contains(character)))
-    {
+    if tokens.iter().any(|token| {
+        !token.is_empty()
+            && token
+                .chars()
+                .all(|character| SHELL_PUNCTUATION.contains(character))
+    }) {
         return false;
     }
     // Leading environment assignments can change lookup or loader behavior.
@@ -58,7 +67,9 @@ pub(super) fn command_reuse_is_payload_bound(command: &str) -> bool {
     if executable.contains('/') || executable.contains('\\') || executable.starts_with('.') {
         return false;
     }
-    let basename = Path::new(executable).file_name().map_or(String::new(), |name| name.to_string_lossy().to_lowercase());
+    let basename = Path::new(executable)
+        .file_name()
+        .map_or(String::new(), |name| name.to_string_lossy().to_lowercase());
     if is_code_launcher(&basename) {
         return false;
     }
@@ -126,7 +137,10 @@ pub(super) fn review_binding(
         return None;
     }
     let tokens = [decision, minimum_action, policy_action, reason_code];
-    if tokens.iter().any(|value| !identity_token_pattern().is_match(value)) {
+    if tokens
+        .iter()
+        .any(|value| !identity_token_pattern().is_match(value))
+    {
         return None;
     }
     let identity = format!("native-review-v4:{request_digest}:{}", tokens.join(":"));

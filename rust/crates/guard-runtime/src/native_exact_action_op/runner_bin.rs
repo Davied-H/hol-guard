@@ -37,11 +37,15 @@ fn read_manifest(path: &str) -> Manifest {
     if !fs_path::is_file(path) {
         return Manifest::Absent;
     }
-    let Ok(meta) = std::fs::metadata(path) else { return Manifest::Unreadable };
+    let Ok(meta) = std::fs::metadata(path) else {
+        return Manifest::Unreadable;
+    };
     if meta.len() > MAX_PACKAGE_MANIFEST_BYTES {
         return Manifest::Unreadable;
     }
-    let Ok(text) = std::fs::read_to_string(path) else { return Manifest::Unreadable };
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Manifest::Unreadable;
+    };
     serde_json::from_str(&text).map_or(Manifest::Unreadable, Manifest::Data)
 }
 
@@ -70,15 +74,24 @@ fn is_bin_shim(resolved: &str) -> bool {
 }
 
 fn package_dir(node_modules: &str, package_name: &str) -> String {
-    package_name.split('/').fold(fs_path::norm(node_modules), |dir, part| fs_path::join(&dir, part))
+    package_name
+        .split('/')
+        .fold(fs_path::norm(node_modules), |dir, part| {
+            fs_path::join(&dir, part)
+        })
 }
 
 fn manifest_version(data: &Manifest, package_name: &str) -> Option<String> {
-    let Manifest::Data(Value::Object(map)) = data else { return None };
+    let Manifest::Data(Value::Object(map)) = data else {
+        return None;
+    };
     if map.get("name").and_then(Value::as_str) != Some(package_name) {
         return None;
     }
-    map.get("version").and_then(Value::as_str).filter(|version| !version.is_empty()).map(str::to_owned)
+    map.get("version")
+        .and_then(Value::as_str)
+        .filter(|version| !version.is_empty())
+        .map(str::to_owned)
 }
 
 fn shim_package_version(node_modules: &str, package_name: &str) -> Option<String> {
@@ -137,14 +150,17 @@ fn shim_bin_target(node_modules: &str, package_name: &str, executable: &str) -> 
         return None;
     }
     let dir = package_dir(node_modules, package_name);
-    let Manifest::Data(Value::Object(map)) = read_manifest(&fs_path::join(&dir, "package.json")) else {
+    let Manifest::Data(Value::Object(map)) = read_manifest(&fs_path::join(&dir, "package.json"))
+    else {
         return None;
     };
     if map.get("name").and_then(Value::as_str) != Some(package_name) {
         return None;
     }
     let entry = match map.get("bin")? {
-        Value::String(text) if executable == package_name.rsplit('/').next().unwrap_or("") => text.as_str(),
+        Value::String(text) if executable == package_name.rsplit('/').next().unwrap_or("") => {
+            text.as_str()
+        }
         Value::Object(bins) => bins.get(executable).and_then(Value::as_str)?,
         _ => return None,
     };
@@ -168,30 +184,55 @@ fn file_hashes(entries: &[EvidenceFile]) -> Vec<Value> {
 }
 
 /// `runner_local_bin`: content-hashed local-bin evidence for a runner command.
-pub(super) fn runner_local_bin(command: &str, runner: &str, arguments: &[String], cwd: &str, ctx: &Ctx) -> Option<Value> {
+pub(super) fn runner_local_bin(
+    command: &str,
+    runner: &str,
+    arguments: &[String],
+    cwd: &str,
+    ctx: &Ctx,
+) -> Option<Value> {
     ctx.check().ok()?;
-    let executions = ctx.engines.local_executions(command, cwd, ctx.home, ctx.env)?;
-    let [evidence] = executions.as_slice() else { return None };
-    let (local, manager) = (evidence.local_executable.as_ref()?, evidence.manager.as_ref()?);
+    let executions = ctx
+        .engines
+        .local_executions(command, cwd, ctx.home, ctx.env)?;
+    let [evidence] = executions.as_slice() else {
+        return None;
+    };
+    let (local, manager) = (
+        evidence.local_executable.as_ref()?,
+        evidence.manager.as_ref()?,
+    );
     if evidence.manager_is_guard_shim {
         return None;
     }
-    let resolved = local.resolved_path.as_deref().filter(|path| !path.is_empty())?;
-    let content_hash = local.content_hash.as_deref().filter(|hash| !hash.is_empty())?;
+    let resolved = local
+        .resolved_path
+        .as_deref()
+        .filter(|path| !path.is_empty())?;
+    let content_hash = local
+        .content_hash
+        .as_deref()
+        .filter(|hash| !hash.is_empty())?;
     if local.status != "available" {
         return None;
     }
     // A versioned or aliased spec can make the runner fetch a different
     // release than the local bin, so only the bare bin name binds.
     let target = runner_target(runner, arguments)?;
-    if Some(target) != evidence.executable_name.as_deref() || is_mutable_launcher(&target.to_lowercase()) {
+    if Some(target) != evidence.executable_name.as_deref()
+        || is_mutable_launcher(&target.to_lowercase())
+    {
         return None;
     }
     let package_name = evidence.package_name.as_deref().unwrap_or("");
     let version = installed_package_version(resolved, package_name)?;
     let bin_target = if is_bin_shim(resolved) {
         // A shim only launches the package's bin script: bind that script too.
-        Some(shim_bin_target(&fs_path::parent(&fs_path::parent(resolved)), package_name, target)?)
+        Some(shim_bin_target(
+            &fs_path::parent(&fs_path::parent(resolved)),
+            package_name,
+            target,
+        )?)
     } else {
         None
     };
@@ -205,8 +246,14 @@ pub(super) fn runner_local_bin(command: &str, runner: &str, arguments: &[String]
         "manager".into(),
         json!({"resolved_path": manager.resolved_path, "content_hash": manager.content_hash}),
     );
-    record.insert("manifests".into(), Value::Array(file_hashes(&evidence.manifests)));
-    record.insert("lockfiles".into(), Value::Array(file_hashes(&evidence.lockfiles)));
+    record.insert(
+        "manifests".into(),
+        Value::Array(file_hashes(&evidence.manifests)),
+    );
+    record.insert(
+        "lockfiles".into(),
+        Value::Array(file_hashes(&evidence.lockfiles)),
+    );
     if let Some(bin_target) = bin_target {
         record.insert("bin_target".into(), bin_target);
     }

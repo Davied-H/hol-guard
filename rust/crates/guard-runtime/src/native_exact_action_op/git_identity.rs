@@ -29,8 +29,19 @@ const FORBIDDEN_PREFIXES: [&str; 15] = [
 ];
 /// A `%G` placeholder in a log/show format verifies signatures with gpg.program.
 const SIGNATURE_PLACEHOLDER: &str = "%G";
-const BRANCH_FLAGS: [&str; 11] =
-    ["-a", "-r", "-v", "-vv", "--all", "--remotes", "--verbose", "--list", "--show-current", "--no-color", "--color"];
+const BRANCH_FLAGS: [&str; 11] = [
+    "-a",
+    "-r",
+    "-v",
+    "-vv",
+    "--all",
+    "--remotes",
+    "--verbose",
+    "--list",
+    "--show-current",
+    "--no-color",
+    "--color",
+];
 const WORKTREE_LIST_FLAGS: [&str; 3] = ["--porcelain", "-v", "--verbose"];
 
 /// `git_readonly_identity`.
@@ -74,7 +85,9 @@ pub(super) fn git_readonly_identity(arguments: &[String], cwd: &str, ctx: &Ctx) 
 
 fn subcommand_is_read_only(subcommand: &str, rest: &[String]) -> bool {
     let forbidden = rest.iter().any(|argument| {
-        FORBIDDEN_PREFIXES.iter().any(|prefix| argument.starts_with(prefix))
+        FORBIDDEN_PREFIXES
+            .iter()
+            .any(|prefix| argument.starts_with(prefix))
             || argument == "-c"
             || argument.contains(SIGNATURE_PLACEHOLDER)
     });
@@ -86,16 +99,25 @@ fn subcommand_is_read_only(subcommand: &str, rest: &[String]) -> bool {
     }
     match subcommand {
         "branch" => {
-            let flags: Vec<&String> = rest.iter().filter(|argument| argument.starts_with('-')).collect();
+            let flags: Vec<&String> = rest
+                .iter()
+                .filter(|argument| argument.starts_with('-'))
+                .collect();
             let has_positionals = rest.iter().any(|argument| !argument.starts_with('-'));
-            flags.iter().all(|flag| BRANCH_FLAGS.contains(&flag.as_str()))
+            flags
+                .iter()
+                .all(|flag| BRANCH_FLAGS.contains(&flag.as_str()))
                 && (!has_positionals || flags.iter().any(|flag| flag.as_str() == "--list"))
         }
-        "remote" => rest.is_empty() || (rest.len() == 1 && matches!(rest[0].as_str(), "-v" | "--verbose")),
+        "remote" => {
+            rest.is_empty() || (rest.len() == 1 && matches!(rest[0].as_str(), "-v" | "--verbose"))
+        }
         "worktree" => {
             !rest.is_empty()
                 && rest[0] == "list"
-                && rest[1..].iter().all(|flag| WORKTREE_LIST_FLAGS.contains(&flag.as_str()))
+                && rest[1..]
+                    .iter()
+                    .all(|flag| WORKTREE_LIST_FLAGS.contains(&flag.as_str()))
         }
         _ => false,
     }
@@ -125,12 +147,14 @@ fn repository(start: &str) -> Proof<(String, String, String)> {
             let bytes = std::fs::read(&marker).map_err(|_| UNPROVEN_LAUNCH)?;
             let text = String::from_utf8_lossy(&bytes);
             let rest = text.trim().strip_prefix("gitdir:").ok_or(UNPROVEN_LAUNCH)?;
-            let git_dir = fs_path::resolve_strict(&fs_path::join(&dir, rest.trim())).ok_or(UNPROVEN_LAUNCH)?;
+            let git_dir = fs_path::resolve_strict(&fs_path::join(&dir, rest.trim()))
+                .ok_or(UNPROVEN_LAUNCH)?;
             let mut common = git_dir.clone();
             let pointer = fs_path::join(&git_dir, "commondir");
             if fs_path::is_file(&pointer) {
                 let pointed = std::fs::read_to_string(&pointer).map_err(|_| UNPROVEN_LAUNCH)?;
-                common = fs_path::resolve_strict(&fs_path::join(&git_dir, pointed.trim())).ok_or(UNPROVEN_LAUNCH)?;
+                common = fs_path::resolve_strict(&fs_path::join(&git_dir, pointed.trim()))
+                    .ok_or(UNPROVEN_LAUNCH)?;
             }
             return Ok((dir, git_dir, common));
         }

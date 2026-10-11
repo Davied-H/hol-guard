@@ -35,7 +35,11 @@ pub(crate) fn split(command: &str) -> Option<Vec<String>> {
 /// `whitespace_split=True` and `commenters` as the comment characters (Python's
 /// default is `"#"`: a comment character in a word or between words discards
 /// the rest of its line).
-pub(crate) fn split_with(command: &str, punctuation: &str, commenters: &str) -> Option<Vec<String>> {
+pub(crate) fn split_with(
+    command: &str,
+    punctuation: &str,
+    commenters: &str,
+) -> Option<Vec<String>> {
     let is_punctuation = |character: char| punctuation.contains(character);
     let is_comment = |character: char| commenters.contains(character);
     let characters: Vec<char> = command.chars().collect();

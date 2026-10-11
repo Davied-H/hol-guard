@@ -111,7 +111,6 @@ mod daemon_route_op;
 mod daemon_route_paths;
 mod daemon_route_resolve;
 mod daemon_route_session;
-mod native_exact_action_op;
 mod data_flow_analyze_op;
 mod direct_tool_context_op;
 #[cfg(test)]
@@ -248,6 +247,7 @@ mod mcp_tool_policy_extension;
 mod mcp_tool_policy_flow;
 mod mcp_tool_policy_grants;
 mod mcp_tool_policy_revalidate;
+mod native_exact_action_op;
 mod native_hook_receipt;
 mod native_runtime_admission;
 mod native_runtime_resilience;
