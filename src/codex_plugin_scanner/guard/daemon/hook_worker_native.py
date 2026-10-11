@@ -610,7 +610,8 @@ class HookWorkerNativeMixin:
 
             rendered = route_zcode_containment(
                 render_pre_tool(native_harness, repaired_result, guard_home=guard_home, deadline=deadline)
-                if repaired_result and repaired_result != dict(native_result)
+                if repaired_result
+                and (repaired_result != dict(native_result) or not isinstance(edge.get("harness_response"), dict))
                 else _edge_harness_response(edge),
                 harness=native_harness,
                 payload=payload,

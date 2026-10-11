@@ -250,7 +250,7 @@ def run_workload(spec: WorkloadSpec, *, root: Path) -> WorkloadResult:
 
     def review(harness: str, client: str, index: int) -> None:
         started = time.monotonic()
-        secret_request = index % spec["secret_stride"] == 0
+        secret_request = spec["secret_stride"] > 0 and index % spec["secret_stride"] == 0
         output = (
             "token=sk-proj-FAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKE" if secret_request else "routine documentation"
         )

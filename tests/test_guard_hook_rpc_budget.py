@@ -96,15 +96,19 @@ def test_pi_allow_and_deny_hooks_never_use_the_hook_render_op(
     assert len(operations) <= requests * _RESIDENT_ROUND_TRIPS_PER_PI_HOOK + 6, len(operations)
 
 
-def test_pi_pre_tool_allow_and_deny_use_the_edge_response_not_the_hook_render_op(
+def test_pi_pre_tool_allow_uses_the_edge_response_not_the_hook_render_op(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # A queued review legitimately renders through the op, so this workload has no
+    # secret requests: every PreToolUse is a plain allow answered by the edge result.
     requests = 20
     log_path = tmp_path / "resident-requests.log"
     monkeypatch.setenv("HOL_GUARD_RESIDENT_REQUEST_LOG", os.fspath(log_path))
-    result = run_workload(_pi_workload(requests, "PreToolUse"), root=tmp_path)
+    workload = _pi_workload(requests, "PreToolUse")
+    workload["secret_stride"] = 0
+    result = run_workload(workload, root=tmp_path)
     assert result.generic_failures == 0, result
-    assert result.routine_allowed > 0
+    assert result.routine_allowed == requests, result
     operations = _measured_operations(log_path)
     assert operations
     assert "hook_render" not in operations, sorted(set(operations))
