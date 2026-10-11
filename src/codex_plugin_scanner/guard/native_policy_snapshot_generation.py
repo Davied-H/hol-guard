@@ -10,6 +10,7 @@ from threading import Lock
 from typing import TYPE_CHECKING, Any
 
 from .native_command_control_binding import capture_native_command_control_binding
+from .native_policy_effective import effective_native_policy_v3
 from .native_policy_snapshot_codec import _digest_v3, _valid_digest_v3, derive_native_policy_verifier_key
 from .native_policy_snapshot_constants import (
     _MAX_GENERATION,
@@ -22,7 +23,7 @@ from .native_policy_snapshot_constants import (
     POLICY_SNAPSHOT_MAX_EXPIRY_MS,
     NativePolicySnapshotError,
 )
-from .native_policy_snapshot_contract import _valid_u64_v3, effective_native_policy_v3
+from .native_policy_snapshot_contract import _valid_u64_v3
 from .native_policy_snapshot_policy import _config_value, _scope_digest_v3
 from .native_policy_snapshot_storage import (
     _read_v3_generation_state,

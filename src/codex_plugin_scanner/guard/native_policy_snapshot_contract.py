@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from .native_command_control_binding import capture_native_command_control_binding
+from .native_policy_effective import effective_native_policy_v3
 from .native_policy_snapshot_codec import (
     _canonical_json_bytes_v3,
     _validate_json_limits_v3,
@@ -29,11 +30,7 @@ from .native_policy_snapshot_constants import (
     POLICY_SNAPSHOT_PUSH_SCHEMA,
     NativePolicySnapshotError,
 )
-from .native_policy_snapshot_policy import (
-    _config_value,
-    _scope_digest_v3,
-    effective_native_policy_v3,
-)
+from .native_policy_snapshot_policy import _config_value, _scope_digest_v3
 
 if TYPE_CHECKING:
     from .config import GuardConfig
