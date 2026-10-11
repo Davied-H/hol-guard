@@ -259,7 +259,7 @@ from .service_lifecycle import (
     start_serve_thread,
     startup_generation_is_current,
 )
-from .startup_phase import flush_pending_phases, timed_phase
+from .startup_phase import flush_pending_phases, record_phase_since, timed_phase
 
 _AUDIT_REMEDIATION_ACTIONS = {"package_shim_path"}
 _SUPPLY_CHAIN_PACKAGE_ACTIONS = {
@@ -4912,12 +4912,15 @@ class GuardDaemonServer:
         self._diagnostics = DaemonDiagnostics(store.guard_home)
         flush_pending_phases(self._diagnostics.record_phase)
         try:
-            self._isolation_provider_registry = load_managed_provider_registry()
-            _validate_dashboard_bundle()
+            with timed_phase("init_provider_registry"):
+                self._isolation_provider_registry = load_managed_provider_registry()
+            with timed_phase("init_dashboard_bundle"):
+                _validate_dashboard_bundle()
             # Pin this process's identity before serving. Computing it lazily
             # after an in-place upgrade would advertise the replacement
             # install's fingerprint for code that is still the old generation.
-            current_guard_daemon_runtime_fingerprint()
+            with timed_phase("init_runtime_fingerprint"):
+                current_guard_daemon_runtime_fingerprint()
         except BaseException:
             self._diagnostics.record_exception("daemon_initialization_failed")
             self._diagnostics.close(timeout_seconds=0.5)
@@ -4932,6 +4935,7 @@ class GuardDaemonServer:
         self._serve_thread_error: BaseException | None = None
         self._owner_lock: BinaryIO | None = None
         try:
+            http_server_started = time.monotonic()
             self._server = _GuardDaemonHttpServer(
                 (host, port),
                 _GuardDaemonHandler,
@@ -4950,6 +4954,7 @@ class GuardDaemonServer:
                 diagnostics=self._diagnostics,
             )
             self._server.command_queue_lifecycle = self
+            record_phase_since("init_http_server", http_server_started)
         except BaseException:
             self._diagnostics.record_exception("daemon_initialization_failed")
             self._diagnostics.close(timeout_seconds=0.5)
