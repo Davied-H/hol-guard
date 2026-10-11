@@ -124,7 +124,6 @@ GUARD_HOME_METADATA_FILES = frozenset(
 )
 GUARD_DB_BACKUP_TIMEOUT_SECONDS = 5.0
 GUARD_DB_BACKUP_SLEEP_SECONDS = 0.05
-WORKSPACE_CONFIG_FILENAMES = (".ai-plugin-scanner-guard.toml", ".hol-guard.toml")
 
 VALID_GUARD_ACTIONS = frozenset(GUARD_ACTION_VALUES)
 VALID_GUARD_MODES = {"observe", "prompt", "enforce"}
