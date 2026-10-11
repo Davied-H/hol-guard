@@ -24,6 +24,29 @@ from multiprocessing import freeze_support
 from pathlib import Path
 
 _FROZEN_DAEMON_SERVE_ARG = "--_hol-guard-daemon-serve"
+_DAEMON_START_HEARTBEAT_ENV = "HOL_GUARD_DAEMON_START_HEARTBEAT"
+
+
+def _emit_daemon_start_heartbeat() -> None:
+    """Tell the launcher this daemon child is alive before any Guard import.
+
+    A cold frozen start can spend most of a minute loading the command surface.
+    The launcher only learns the child is progressing from this record, so it
+    does not terminate a slow but live start. Never raises.
+    """
+
+    try:
+        path = os.environ.pop(_DAEMON_START_HEARTBEAT_ENV, "")
+        if not path:
+            return
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(path, flags, 0o600)
+        try:
+            os.write(descriptor, f'{{"pid":{os.getpid()},"ns":{time.time_ns()}}}'.encode())
+        finally:
+            os.close(descriptor)
+    except BaseException:
+        return
 
 
 def _packaged_version() -> str:
@@ -954,6 +977,7 @@ if __name__ == "__main__":
     # Dispatch PyInstaller multiprocessing children before importing Guard.
     # Otherwise private resource-tracker argv is parsed as a public CLI command.
     freeze_support()
+    _emit_daemon_start_heartbeat()
     if len(sys.argv) > 1 and sys.argv[1] == "--version":
         print(f"{Path(sys.argv[0]).name} {_packaged_version()}")
         raise SystemExit(0)
