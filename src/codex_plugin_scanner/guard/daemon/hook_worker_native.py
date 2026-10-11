@@ -38,6 +38,7 @@ from .hook_native_review_fence import native_review_fence
 from .hook_policy_repair import apply_command_policy_repair
 from .hook_worker_native_review import (
     CONTROL_BINDING_REFRESH_ERRORS,
+    SNAPSHOT_NOT_CURRENT_ERROR,
     NativePolicyBindingRefreshError,
     review_native_edge,
 )
@@ -434,10 +435,12 @@ class HookWorkerNativeMixin:
             failure = native_resident_client_failure_code()
             if (
                 isinstance(failure, str)
-                and failure in CONTROL_BINDING_REFRESH_ERRORS
                 and event_name in {"PreToolUse", "UserPromptSubmit"}
                 and policy_snapshot is not None
-                and policy_snapshot.get("mode") == "enforce"
+                and (
+                    failure == SNAPSHOT_NOT_CURRENT_ERROR
+                    or (failure in CONTROL_BINDING_REFRESH_ERRORS and policy_snapshot.get("mode") == "enforce")
+                )
             ):
                 raise NativePolicyBindingRefreshError(failure, policy_snapshot.get("generation"))
             if event_name == "PostToolUse":
