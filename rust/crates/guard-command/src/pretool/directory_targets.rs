@@ -134,6 +134,40 @@ pub(crate) fn drive_targets_quoted(segment: &crate::CommandSegmentV1) -> bool {
         || !shell_alters_backslash(&segment.text)
 }
 
+/// Whether every argument that begins with `~` reaches the program after the
+/// shell expands it to home, as the path proofs assume. A quoted or escaped
+/// `~` stays a literal relative path that names a different directory, so a
+/// segment that spells one is refused rather than proved against home.
+pub(crate) fn home_targets_unquoted(segment: &crate::CommandSegmentV1) -> bool {
+    !segment
+        .arguments
+        .iter()
+        .any(|argument| argument.starts_with('~'))
+        || !shell_keeps_tilde_literal(&segment.text)
+}
+
+fn shell_keeps_tilde_literal(text: &str) -> bool {
+    let mut quote = None;
+    let mut escaped = false;
+    for character in text.chars() {
+        if escaped {
+            escaped = false;
+            if character == '~' {
+                return true;
+            }
+            continue;
+        }
+        match (quote, character) {
+            (Some(_), '~') => return true,
+            (None | Some('"'), '\\') => escaped = true,
+            (None, '\'' | '"') => quote = Some(character),
+            (Some(open), _) if character == open => quote = None,
+            _ => {}
+        }
+    }
+    false
+}
+
 /// A backslash the shell would remove or reinterpret: any unquoted backslash,
 /// or one inside double quotes that escapes the next character.
 fn shell_alters_backslash(text: &str) -> bool {

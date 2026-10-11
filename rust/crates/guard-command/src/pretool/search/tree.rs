@@ -90,6 +90,15 @@ pub(in crate::pretool) fn listing_root_below_home(value: &str, context: ReadCont
         .is_some_and(|home| root_below(value, context, &home, true))
 }
 
+/// `fd` with no root lists the cwd, the same names-only listing as naming the
+/// cwd explicitly, so the cwd must be a non-hidden directory strictly below
+/// home under the same screens as an explicit root.
+pub(in crate::pretool) fn implicit_listing_root_allowed(context: ReadContext<'_>) -> bool {
+    context
+        .cwd
+        .is_some_and(|cwd| cwd.starts_with('/') && listing_root_below_home(cwd, context))
+}
+
 fn root_below(value: &str, context: ReadContext<'_>, base: &Path, strict: bool) -> bool {
     if !value.starts_with(['/', '~'])
         || value.len() > 4096

@@ -176,3 +176,65 @@ fn git_route_to_hidden_home_or_helper_configured_repository_is_reviewed() {
         assert_decision(&cwd, &layout.home, &command, false);
     }
 }
+
+#[test]
+fn git_inspection_of_linked_worktree_below_home_is_allowed_unless_forged() {
+    let layout = layout("git-worktree");
+    let repository = layout.org.join("app-portal");
+    let linked = layout.org.join("app-portal-feature");
+    git(
+        &repository,
+        &[
+            "worktree",
+            "add",
+            "--quiet",
+            "-b",
+            "feature",
+            linked.to_str().unwrap(),
+        ],
+    );
+    let cwd = layout.org.join("service-api");
+    for command in [
+        "git -C ../app-portal-feature diff --stat".to_owned(),
+        format!("git -C {} log --oneline -1", linked.display()),
+    ] {
+        assert_decision(&cwd, &layout.home, &command, true);
+    }
+    // A copied `.git` file names the registry entry, but the entry's
+    // backlink still names the real worktree.
+    let forged = layout.org.join("forged-checkout");
+    std::fs::create_dir_all(&forged).unwrap();
+    std::fs::copy(linked.join(".git"), forged.join(".git")).unwrap();
+    assert_decision(
+        &cwd,
+        &layout.home,
+        "git -C ../forged-checkout status --short",
+        false,
+    );
+}
+
+#[test]
+fn quoted_home_or_variable_roots_and_home_wide_listings_are_reviewed() {
+    let layout = layout("quoted-roots");
+    let cwd = layout.org.join("app-portal");
+    for command in [
+        "rg -n fixture '~/Code/org/app-portal'",
+        "rg -n fixture \\~/Code/org/app-portal",
+        "fd -e rs main '~/Code/org/app-portal'",
+        "fd -e rs main --search-path=~/Code/org/app-portal",
+        "fd . \"$HOME\"",
+        "fd . $HOME/Code/org",
+        "git -C '~/Code/org/service-api' status --short",
+        "git -C \"~/Code/org/service-api\" diff --stat",
+    ] {
+        assert_decision(&cwd, &layout.home, command, false);
+    }
+    assert_decision(&layout.home, &layout.home, "fd -e rs main", false);
+    for command in [
+        "fd -e rs main",
+        "fd -e rs main ~/Code/org/app-portal",
+        "fd -e rs main --search-path ~/Code/org",
+    ] {
+        assert_decision(&cwd, &layout.home, command, true);
+    }
+}

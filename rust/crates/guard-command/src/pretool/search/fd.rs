@@ -45,8 +45,9 @@ fn short_value_role(option: char) -> Option<SearchValueRole> {
 }
 
 fn unsafe_root(value: &str, context: ReadContext<'_>) -> bool {
-    // fd does not expand globs in a root; the shell might, so refuse them.
-    value.contains(['*', '?', '[', ']', '{', '}'])
+    // fd does not expand globs or variables in a root; the shell might, and
+    // the proof would then describe a different directory, so refuse them.
+    value.contains(['*', '?', '[', ']', '{', '}', '$', '`'])
         || (unsafe_search_value(SearchValueRole::Path, value, context)
             && !tree::rg_root_inside_cwd(value, context)
             && !tree::listing_root_below_home(value, context)
@@ -64,6 +65,7 @@ pub(super) fn safe_fd_arguments(arguments: &[String], context: ReadContext<'_>) 
     let mut pending: Option<SearchValueRole> = None;
     let mut options_enabled = true;
     let mut pattern_seen = false;
+    let mut root_seen = false;
     for argument in arguments {
         if let Some(role) = pending.take() {
             if unsafe_value(role, argument, context) {
@@ -83,9 +85,15 @@ pub(super) fn safe_fd_arguments(arguments: &[String], context: ReadContext<'_>) 
             let Some(role) = value_role(name) else {
                 return false;
             };
+            if matches!(role, SearchValueRole::Path) {
+                root_seen = true;
+            }
+            // The shell does not expand `~` after `--search-path=`.
             if attached.is_empty() {
                 pending = Some(role);
-            } else if unsafe_value(role, attached, context) {
+            } else if (matches!(role, SearchValueRole::Path) && attached.starts_with('~'))
+                || unsafe_value(role, attached, context)
+            {
                 return false;
             }
             continue;
@@ -112,9 +120,12 @@ pub(super) fn safe_fd_arguments(arguments: &[String], context: ReadContext<'_>) 
             if unsafe_root(argument, context) {
                 return false;
             }
+            root_seen = true;
         } else {
             pattern_seen = true;
         }
     }
-    pending.is_none()
+    // Without a root fd lists the cwd, which must clear the explicit-root
+    // screens, so a listing from home itself still needs review.
+    pending.is_none() && (root_seen || tree::implicit_listing_root_allowed(context))
 }

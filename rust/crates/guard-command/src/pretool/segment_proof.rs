@@ -343,6 +343,7 @@ pub(super) fn exact_safe_segment_with_context(
         "git" => {
             safe_git_arguments(&segment.arguments, allow_git_helper_context, context)
                 && super::directory_targets::drive_targets_quoted(segment)
+                && super::directory_targets::home_targets_unquoted(segment)
         }
         "gh" => safe_gh_arguments(&segment.arguments, &segment.text),
         "wrangler" => super::wrangler_reads::safe_wrangler_arguments(&segment.arguments),
@@ -370,6 +371,7 @@ pub(super) fn exact_safe_segment_with_context(
         }
         "rg" | "grep" | "fd" => {
             search::safe_search_arguments_with_context(basename, &segment.arguments, context)
+                && super::directory_targets::home_targets_unquoted(segment)
         }
         "sed" => {
             safe_reads::safe_sed_arguments(&segment.arguments, segment.pipeline_index > 0, context)
