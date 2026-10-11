@@ -35,6 +35,7 @@ mod read_paths;
 mod source_reads;
 use source_reads::{plain_source_code_path, sensitive_command_input, source_file_read_segment};
 mod restricted_tests;
+mod rust_toolchain;
 mod safe_reads;
 mod safe_scalar;
 mod safe_writes;

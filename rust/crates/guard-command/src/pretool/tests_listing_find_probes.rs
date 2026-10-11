@@ -242,6 +242,8 @@ fn version_probes_admit_lone_flags_and_keep_npx_review() {
         "jq --version",
         "rg --version",
         "fd --version",
+        "cargo --version",
+        "rustc -V",
     ] {
         assert!(allowed_in(&fixture, ws, command), "{command}");
     }
@@ -252,8 +254,8 @@ fn version_probes_admit_lone_flags_and_keep_npx_review() {
         "pytest --version",
         "pytest --version tests",
         "go version",
-        "cargo --version",
-        "rustc -V",
+        "cargo --version --verbose",
+        "cargo +nightly --version",
         "python3 script.py",
         "node script.mjs",
         "npm test",
