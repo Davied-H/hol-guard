@@ -11,6 +11,7 @@ import tempfile
 import urllib.error
 import urllib.request
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -499,3 +500,95 @@ def test_native_wheel_install_stays_updatable_only_when_this_updater_recorded_it
     else:
         assert payload["status"] == "skipped"
         assert harness.commands == []
+
+
+def _recorded_native_install(
+    monkeypatch: pytest.MonkeyPatch, harness: UpdateHarness, version: str = VERSION, *, runtime_missing: bool = False
+) -> None:
+    digest = _sha(WHEEL_BYTES[LINUX])
+    native.record_alpha_native_install(harness.guard_home, version=version, sha256=digest)
+    monkeypatch.setattr(
+        update_commands,
+        "_direct_url_payload",
+        lambda: {
+            "url": f"file:///private/gone/{_wheel_name(LINUX)}",
+            "archive_info": {"hashes": {"sha256": digest}},
+        },
+    )
+    monkeypatch.setattr(update_commands, "bundled_native_runtime_missing", lambda: runtime_missing)
+
+
+def test_recorded_native_alpha_with_runtime_present_is_current_and_never_reinstalled(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    release = FakeRelease(_release_files())
+    harness = UpdateHarness(
+        monkeypatch, tmp_path, current=VERSION, latest_alpha=VERSION, runtime_missing=False, release=release
+    )
+    _recorded_native_install(monkeypatch, harness)
+
+    payload, exit_code = harness.run()
+
+    assert exit_code == 0
+    assert payload["status"] == "current"
+    assert harness.commands == []
+    assert release.requested == []
+
+
+def test_unavailable_repair_of_a_recorded_native_alpha_runs_no_installer(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    harness = UpdateHarness(
+        monkeypatch, tmp_path, current=VERSION, latest_alpha=VERSION, runtime_missing=True, release=FakeRelease({})
+    )
+    _recorded_native_install(monkeypatch, harness, runtime_missing=True)
+
+    payload, exit_code = harness.run()
+
+    assert exit_code == 0
+    assert payload["status"] == "current"
+    assert payload["changed"] is False
+    assert harness.commands == []
+    assert any("Could not repair the native runtime" in note for note in payload["notes"])
+
+
+def test_alpha_upgrade_on_a_platform_without_a_native_wheel_keeps_the_pypi_alpha(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    release = FakeRelease(_release_files("3.43.0a2"))
+    harness = UpdateHarness(
+        monkeypatch,
+        tmp_path,
+        current="3.43.0a1",
+        latest_alpha="3.43.0a2",
+        runtime_missing=True,
+        release=release,
+        tags=["manylinux_2_17_aarch64"],
+    )
+
+    payload, exit_code = harness.run()
+
+    assert exit_code == 0
+    assert release.requested == []
+    assert payload["upgrade_source"] != "github_alpha_release"
+    assert harness.commands[0][-1] == "hol-guard==3.43.0a2"
+    assert "native_runtime" not in payload
+
+
+def test_status_does_not_block_a_recorded_native_alpha_install(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    harness = UpdateHarness(
+        monkeypatch, tmp_path, current=VERSION, latest_alpha=VERSION, runtime_missing=False, release=FakeRelease({})
+    )
+    _recorded_native_install(monkeypatch, harness)
+    monkeypatch.setattr(update_commands, "load_guard_config", lambda _home: SimpleNamespace(update_channel="alpha"))
+
+    def status() -> dict[str, object]:
+        return update_commands.build_guard_update_status_payload(guard_home=harness.guard_home)
+
+    recorded = status()
+    (harness.guard_home / "alpha-native-wheel.json").unlink()
+    unrecorded = status()
+
+    assert recorded["auto_updatable"] is True
+    assert recorded["blocked_reason"] is None
+    assert unrecorded["auto_updatable"] is False

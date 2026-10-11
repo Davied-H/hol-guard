@@ -541,6 +541,11 @@ def _run_guard_update_unlocked(
         installed_version=current_version,
     )
     vcs_install = _vcs_install_payload(direct_url)
+    native_install_recorded = (
+        include_alpha
+        and local_archive_install is not None
+        and alpha_native_install_recorded(resolved_guard_home, archive_sha256=_direct_url_archive_sha256(direct_url))
+    )
     payload["current_version"] = current_version
     if direct_url is not None:
         payload["direct_url"] = _public_direct_url_payload(direct_url)
@@ -576,13 +581,7 @@ def _run_guard_update_unlocked(
             and str(local_archive_install.get("archive_type") or "") == "wheel"
             and not force_pypi_reinstall
             and requested_wheel_path is None
-            and not (
-                include_alpha
-                and alpha_native_install_recorded(
-                    resolved_guard_home,
-                    archive_sha256=_direct_url_archive_sha256(direct_url),
-                )
-            )
+            and not native_install_recorded
         ):
             payload["status"] = "skipped"
             payload["changed"] = False
@@ -654,8 +653,13 @@ def _run_guard_update_unlocked(
             alpha_native_failure_payload(payload, error)
             return payload, 1
         if alpha_native_download is None:
-            alpha_native_plan = None
+            # A soft repair failure leaves the install alone rather than running another installer.
             _append_payload_note(payload, alpha_native_note)
+            payload["status"] = "current"
+            payload["changed"] = False
+            payload["resulting_version"] = current_version
+            payload["message"] = already_current_update_message(version_check)
+            return payload, 0
         else:
             requested_wheel_path = alpha_native_download.path
     trusted_wheel: TrustedWheelArtifact | None = None
@@ -755,7 +759,7 @@ def _run_guard_update_unlocked(
         and version_check.get("update_available") is False
         and str(version_check.get("status") or "") == "current"
         and local_source_install is None
-        and local_archive_install is None
+        and (local_archive_install is None or native_install_recorded)
         and vcs_install is None
     )
     if dry_run:
@@ -3079,7 +3083,16 @@ def build_guard_update_status_payload(*, guard_home: Path | None = None) -> dict
             blocked_reason = (
                 "This install was set up from local source code. Re-run your usual local install command instead."
             )
-        elif local_archive_install is not None and str(local_archive_install.get("archive_type") or "") == "wheel":
+        elif (
+            local_archive_install is not None
+            and str(local_archive_install.get("archive_type") or "") == "wheel"
+            and not (
+                include_alpha
+                and alpha_native_install_recorded(
+                    resolved_guard_home, archive_sha256=_direct_url_archive_sha256(direct_url)
+                )
+            )
+        ):
             auto_updatable = False
             if bool(local_archive_install.get("path_exists")):
                 blocked_reason = (

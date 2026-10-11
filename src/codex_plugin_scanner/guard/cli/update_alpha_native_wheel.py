@@ -163,13 +163,14 @@ def plan_alpha_native_update(
 ) -> AlphaNativePlan | None:
     """Decide whether the update must install the native wheel from the prerelease."""
 
-    if not include_alpha:
+    if not include_alpha or not platform_supported:
+        # Hosts without a published native wheel keep the ordinary alpha path.
         return None
     if target_version is not None:
         if is_alpha_version(target_version):
             return AlphaNativePlan(version=target_version, reason="upgrade")
         return None
-    if is_alpha_version(current_version) and runtime_missing and platform_supported:
+    if is_alpha_version(current_version) and runtime_missing:
         return AlphaNativePlan(version=current_version.strip(), reason="repair")
     return None
 
