@@ -4,29 +4,10 @@ from __future__ import annotations
 
 import ast
 import re
-from pathlib import Path
 
-import yaml
+from tests.support.ci_workflow import composite_action_steps, load_ci_workflow, step_index
 
-from tests.support.ci_workflow import expand_ci_job_actions
-
-ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_ACTION = "ci-job-macos-native-runtime"
-
-
-def _workflow() -> dict:
-    """Load the expanded CI workflow for contract assertions."""
-    return expand_ci_job_actions(yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")))
-
-
-def _runtime_steps() -> list:
-    """Load the macOS native runtime composite's steps."""
-    action = yaml.safe_load((ROOT / ".github/actions" / RUNTIME_ACTION / "action.yml").read_text(encoding="utf-8"))
-    return action["runs"]["steps"]
-
-
-def _index(steps: list, needle: str) -> int:
-    return next(i for i, step in enumerate(steps) if needle in step.get("name", ""))
 
 
 def _pytest_files(step: dict) -> list[str]:
@@ -36,15 +17,15 @@ def _pytest_files(step: dict) -> list[str]:
 
 def test_macos_native_runtime_builds_early_and_publishes_the_binary() -> None:
     """Build the macOS runtime off the evaluator critical path and publish it."""
-    job = _workflow()["jobs"]["macos-native-runtime"]
+    job = load_ci_workflow()["jobs"]["macos-native-runtime"]
     needs = job["needs"] if isinstance(job["needs"], list) else [job["needs"]]
     assert needs == ["plan"]
     assert job["runs-on"] == "macos-latest"
-    steps = _runtime_steps()
+    steps = composite_action_steps(RUNTIME_ACTION)
     setup_rust = next(i for i, step in enumerate(steps) if step.get("uses") == "./.github/actions/setup-rust")
-    routed = _index(steps, "Route the runtime build through the compiler cache")
-    build = _index(steps, "Build the macOS native runtime")
-    assert _index(steps, "Stage trust bindings the native build embeds") < setup_rust < routed < build
+    routed = step_index(steps, "Route the runtime build through the compiler cache")
+    build = step_index(steps, "Build the macOS native runtime")
+    assert step_index(steps, "Stage trust bindings the native build embeds") < setup_rust < routed < build
     assert "cargo build --manifest-path rust/Cargo.toml --locked --release -p hol-guard-runtime" in steps[build]["run"]
     upload = next(step for step in steps if step.get("uses", "").startswith("actions/upload-artifact@"))
     assert upload["with"]["name"] == "macos-native-runtime"
@@ -53,7 +34,7 @@ def test_macos_native_runtime_builds_early_and_publishes_the_binary() -> None:
 
 def test_macos_skill_identity_consumes_the_ci_runtime() -> None:
     """Bind the identity lane to the downloaded runtime and matching test list."""
-    job = _workflow()["jobs"]["macos-skill-identity"]
+    job = load_ci_workflow()["jobs"]["macos-skill-identity"]
     needs = job["needs"] if isinstance(job["needs"], list) else [job["needs"]]
     assert "native-command-evaluators" in needs
     assert "macos-native-runtime" in needs
@@ -65,15 +46,15 @@ def test_macos_skill_identity_consumes_the_ci_runtime() -> None:
         and step.get("with", {}).get("name") == "macos-native-runtime"
     )
     assert download["with"]["path"] == "${{ runner.temp }}/hol-guard-native-runtime"
-    expose = _index(steps, "Expose the CI-built macOS runtime")
+    expose = step_index(steps, "Expose the CI-built macOS runtime")
     assert "chmod 0755" in steps[expose]["run"]
     assert "HOL_GUARD_NATIVE_BINARY=$RUNNER_TEMP/hol-guard-native-runtime/hol-guard-runtime" in steps[expose]["run"]
     assert "HOL_GUARD_NATIVE_REGRESSION=1" in steps[expose]["run"]
-    regression = _index(steps, "Run macOS skill-directory identity regressions")
+    regression = step_index(steps, "Run macOS skill-directory identity regressions")
     assert expose < regression
     windows_step = next(
         step
-        for step in _workflow()["jobs"]["cross-platform"]["steps"]
+        for step in load_ci_workflow()["jobs"]["cross-platform"]["steps"]
         if step.get("name") == "Run cross-platform skill-directory identity regressions"
     )
     assert _pytest_files(steps[regression]) == _pytest_files(windows_step) != []
@@ -81,7 +62,7 @@ def test_macos_skill_identity_consumes_the_ci_runtime() -> None:
 
 def test_required_aggregate_includes_the_macos_native_lane() -> None:
     """Require both new macOS jobs in the needs graph and the lane-gated set."""
-    workflow = _workflow()
+    workflow = load_ci_workflow()
     required = workflow["jobs"]["required"]
     assert "macos-native-runtime" in required["needs"]
     assert "macos-skill-identity" in required["needs"]
