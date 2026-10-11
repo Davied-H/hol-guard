@@ -300,6 +300,7 @@ mod policy_integrity_resolver;
 mod policy_snapshot_build;
 mod policy_store;
 mod prompt_analyze_op;
+mod protect_request_op;
 #[cfg(test)]
 mod registry_vectors_tests;
 mod request_context_op;
@@ -327,6 +328,7 @@ mod runner_sync_signals;
 mod runner_sync_url;
 mod runtime_cli;
 mod runtime_detector_run_op;
+mod secrets_cli;
 mod shim_op;
 #[cfg(unix)]
 mod skill_directory_identity_op;

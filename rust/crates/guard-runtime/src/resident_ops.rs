@@ -218,6 +218,9 @@ pub(crate) fn evaluate_resident_bytes(
             ResidentOperationV1::GithubCliClassify(request) => {
                 crate::github_cli_classify_op::evaluate_github_cli_classify_request(&request)
             }
+            ResidentOperationV1::ProtectRequest(request) => {
+                crate::protect_request_op::evaluate_protect_request_op(&request)
+            }
             ResidentOperationV1::ApprovalReuseDiagnostic(request) => {
                 crate::approval_reuse_diagnostic_op::evaluate_approval_reuse_diagnostic_request(
                     &request,
@@ -503,6 +506,7 @@ fn operation_guard_home(operation: &ResidentOperationV1) -> Option<&str> {
         ResidentOperationV1::ContributedMcpDecide(request) => Some(&request.guard_home),
         ResidentOperationV1::RequestContextBuild(request) => Some(&request.guard_home),
         ResidentOperationV1::SkillDirectoryIdentity(request) => Some(&request.guard_home),
+        ResidentOperationV1::ProtectRequest(request) => Some(&request.guard_home),
         ResidentOperationV1::CodexRequestResume(request) => Some(&request.guard_home),
         _ => None,
     }
@@ -529,6 +533,7 @@ fn operation_store_path(operation: &ResidentOperationV1) -> Option<&str> {
         ResidentOperationV1::LocalMcpGrantDecide(request) => Some(&request.store_path),
         ResidentOperationV1::ContributedMcpDecide(request) => Some(&request.store_path),
         ResidentOperationV1::HookAuthorityState(request) => Some(&request.store_path),
+        ResidentOperationV1::ProtectRequest(request) => request.store_path.as_deref(),
         ResidentOperationV1::CodexRequestResume(request) => Some(&request.store_path),
         _ => None,
     }
