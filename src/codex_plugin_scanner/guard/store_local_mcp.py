@@ -35,7 +35,9 @@ class StoreLocalMcpMixin:
 
         def _connect(self) -> AbstractContextManager[sqlite3.Connection]: ...
 
-        def _native_store_call(self, method: str, args: Mapping[str, object]) -> Any: ...
+        def _native_store_call(
+            self, method: str, args: Mapping[str, object], *, busy_timeout_seconds: float | None = None
+        ) -> Any: ...
 
     def read_mcp_provider_choices(self) -> dict[str, str]:
         from .store_mcp_provider_permissions import read_native_provider_choices
