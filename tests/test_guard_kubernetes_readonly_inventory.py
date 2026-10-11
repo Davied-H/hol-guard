@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 import pytest
 
 from codex_plugin_scanner.guard.runtime.kubernetes_commands import kubernetes_read_only_inventory_args

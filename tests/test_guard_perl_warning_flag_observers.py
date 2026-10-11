@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 from codex_plugin_scanner.guard.runtime.secret_file_requests import (
     extract_sensitive_tool_action_request,
 )

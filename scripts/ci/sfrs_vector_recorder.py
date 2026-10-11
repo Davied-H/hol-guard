@@ -57,7 +57,12 @@ _ENTRY_POINTS: tuple[tuple[str, str, int], ...] = (
     (f"{_SRC}.cli.commands_support_runtime_artifacts", "_hook_runtime_artifact", 1),
 )
 _OVERRIDE_GUARDS: tuple[tuple[str, str, str, str], ...] = (
-    (f"{_SRC}.runtime.secret_file_requests", "evaluate_command", f"{_SRC}.runtime.command_evaluation", "evaluate_command"),
+    (
+        f"{_SRC}.runtime.secret_file_requests",
+        "evaluate_command",
+        f"{_SRC}.runtime.command_evaluation",
+        "evaluate_command",
+    ),
     (
         f"{_SRC}.runtime.secret_file_requests",
         "model_shell_execution_context",
@@ -153,7 +158,9 @@ def _serialize(value: Any, *, depth: int = 0) -> Any:
     if isinstance(value, (list, tuple)):
         return [_serialize(item, depth=depth + 1) for item in value]
     if isinstance(value, (set, frozenset)):
-        return sorted((_serialize(item, depth=depth + 1) for item in value), key=lambda item: json.dumps(item, sort_keys=True))
+        return sorted(
+            (_serialize(item, depth=depth + 1) for item in value), key=lambda item: json.dumps(item, sort_keys=True)
+        )
     to_dict = getattr(value, "to_dict", None)
     if callable(to_dict):
         try:
@@ -262,7 +269,9 @@ def _relevant_sha(text: str) -> dict[str, list[Any]]:
     return selected
 
 
-def _record(entry: str, signature: inspect.Signature, args: tuple[Any, ...], kwargs: dict[str, Any], result: Any) -> None:
+def _record(
+    entry: str, signature: inspect.Signature, args: tuple[Any, ...], kwargs: dict[str, Any], result: Any
+) -> None:
     try:
         bound = signature.bind(*args, **kwargs)
     except TypeError:
@@ -313,7 +322,7 @@ def _wrap(entry: str, function: Callable[..., Any], layer: int) -> Callable[...,
         if not _overridden():
             try:
                 _record(entry, signature, args, kwargs, result)
-            except Exception as error:  # noqa: BLE001 - recording must never alter test behaviour
+            except Exception as error:
                 sys.stderr.write(f"sfrs-recorder: {entry}: {error!r}\n")
         return result
 
@@ -353,7 +362,7 @@ def install() -> None:
         _originals[f"{module_name}.{function_name}"] = original
         replacements[id(original)] = _wrap(function_name, original, layer)
     benign = importlib.import_module(f"{_SERVICES}.benign_requests")
-    evaluate = getattr(benign, "evaluate_command")
+    evaluate = benign.evaluate_command
     if getattr(evaluate, "__sfrs_original__", None) is None:
         replacements[id(evaluate)] = _wrap_evaluation(evaluate)
     hashlib.sha256 = _RecordingHash  # type: ignore[assignment]

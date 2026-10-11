@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 import pytest
 
 from codex_plugin_scanner.guard.runtime.command_extension_interaction import (
