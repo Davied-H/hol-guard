@@ -185,6 +185,31 @@ def test_mcp_probe_accepts_native_result_without_outer_status(transport, tmp_pat
     )
 
 
+def test_hook_authority_state_bound_error_is_not_a_resident_failure(transport, tmp_path):
+    transport.status.capabilities.features = (
+        "resident-protocol-v2",
+        "hook-authority-state-v1",
+    )
+    reply = {
+        "schema": "guard-hook-authority-state-result.v1",
+        "status": "error",
+        "code": "native_hook_authority_state_store_unavailable",
+    }
+    transport.client.return_value = json.dumps(reply).encode()
+    actual = bridge._resident_request(
+        operation="hook_authority_state",
+        request={"request_id": "hook-authority-state-error"},
+        guard_home=tmp_path,
+        timeout_seconds=5.0,
+        required_feature="hook-authority-state-v1",
+        response_schema="guard-hook-authority-state-result.v1",
+        record_success=False,
+    )
+    assert actual == reply
+    transport.failed.assert_not_called()
+    transport.succeeded.assert_not_called()
+
+
 @pytest.mark.parametrize(
     "frame,expected",
     [

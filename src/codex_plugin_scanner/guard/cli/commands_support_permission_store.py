@@ -285,6 +285,31 @@ def _resolve_cursor_pending_approval_requests(
             )
 
 
+_CURSOR_PENDING_MAX_AGE_SECONDS = 30 * 60
+
+
+def _cursor_pending_saved_at_is_fresh(
+    store: GuardStore,
+    pending: Mapping[str, object],
+    now: str,
+) -> bool:
+    """Whether the resident still treats ``pending`` as fresh at ``now``."""
+
+    from ..native_hook_authority_state import flag_field, hook_authority_state
+
+    saved_at = pending.get("saved_at")
+    if not isinstance(saved_at, str) or not saved_at.strip():
+        return False
+    reply = hook_authority_state(
+        store,
+        "state_is_fresh",
+        now=now,
+        saved_at=saved_at.strip(),
+        max_age_seconds=_CURSOR_PENDING_MAX_AGE_SECONDS,
+    )
+    return flag_field(reply, "fresh")
+
+
 def _persist_cursor_native_permission_after_shell(
     *,
     store: GuardStore,
@@ -310,6 +335,11 @@ def _persist_cursor_native_permission_after_shell(
     if pending is None:
         return False
     now = _now()
+    # The load checked freshness against its own earlier clock. Recheck against
+    # this clock so a pending row that expires while that load is in flight
+    # cannot become an allowance.
+    if not _cursor_pending_saved_at_is_fresh(store, pending, now):
+        return False
     if not _cursor_after_shell_observed(prepared):
         return False
     if not cursor_after_observer_trusted(

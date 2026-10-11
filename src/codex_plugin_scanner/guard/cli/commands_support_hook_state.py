@@ -351,20 +351,6 @@ def _cursor_pending_shell_state_key(conversation_id: str, command: str) -> str:
     return f"cursor_pending_shell:{conversation_id}:{_cursor_shell_command_fingerprint(command)}"
 
 
-def _cursor_shell_command_fingerprint(command: str) -> str:
-    from ..adapters.cursor_native_approval import normalize_cursor_shell_command
-
-    return hashlib.sha256(normalize_cursor_shell_command(command).encode("utf-8")).hexdigest()[:24]
-
-
-def _cursor_pending_shell_index_key(conversation_id: str) -> str:
-    return f"cursor_pending_shells:{conversation_id}"
-
-
-def _cursor_pending_shell_state_key(conversation_id: str, command: str) -> str:
-    return f"cursor_pending_shell:{conversation_id}:{_cursor_shell_command_fingerprint(command)}"
-
-
 def _append_cursor_pending_shell_key(
     store: GuardStore,
     *,
