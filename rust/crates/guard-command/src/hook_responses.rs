@@ -7,6 +7,9 @@
 use serde_json::{json, Map, Value};
 
 mod containment;
+mod prompt_risk;
+
+use prompt_risk::PROMPT_RISK_CLASSES;
 
 /// JSON object used for verdicts and rendered responses.
 pub type Object = Map<String, Value>;
@@ -20,30 +23,6 @@ const POST_WARN_REASON: &str =
     "HOL Guard raised a non-blocking warning under the installed native policy.";
 const PROMPT_UNAVAILABLE_REASON: &str = "HOL Guard could not complete native prompt review safely.";
 const SILENT_WARNING_CODES: [&str; 1] = ["native_policy_observed"];
-const PROMPT_RISK_CLASSES: [(&str, &str); 7] = [
-    ("local_env_read", "Prompt requests a local .env file."),
-    (
-        "sensitive_material",
-        "Prompt requests potentially sensitive local material.",
-    ),
-    (
-        "exfil_intent",
-        "Prompt includes exfiltration-oriented transfer intent.",
-    ),
-    (
-        "destructive_intent",
-        "Prompt includes a destructive local action.",
-    ),
-    ("subprocess_intent", "Prompt requests subprocess execution."),
-    (
-        "guard_bypass_intent",
-        "Prompt includes Guard bypass intent.",
-    ),
-    (
-        "prompt_injection_intent",
-        "Prompt asks to override trusted instructions.",
-    ),
-];
 
 /// Lower-cased, dash-normalised harness name used to select an envelope.
 pub fn canonical_hook_harness(harness: &str) -> String {
@@ -485,10 +464,24 @@ pub fn render_edge_response(
             &text_or(result, "reason_code", "watch_recording_only"),
             &text_or(result, "reason", WATCH_REASON),
         ),
+        "PreToolUse" if is_review_pause(harness, result) => {
+            pre_tool_review(harness, result, None, None)
+        }
         "PreToolUse" => pre_tool(harness, result),
         "PostToolUse" => post_tool(harness, result),
         _ => return None,
     })
+}
+
+/// Review pause; containment harnesses keep their receipt via `pre_tool`.
+fn is_review_pause(harness: &str, result: &Object) -> bool {
+    let (reason, code) = (
+        text_or(result, "reason", REVIEW_DEFAULT_REASON),
+        text_or(result, "reason_code", "native_pre_tool_review"),
+    );
+    is_str(result, "minimum_action", "review")
+        && !is_allow(result)
+        && containment::receipt(&canonical_hook_harness(harness), result, &reason, &code).is_none()
 }
 
 fn is_benign_allow(result: &Object) -> bool {

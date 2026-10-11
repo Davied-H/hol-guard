@@ -107,7 +107,7 @@ fn edge_dispatch_routes_each_event_and_watch_posture() {
     );
     assert_eq!(
         render("PreToolUse", &review, false)["policy_action"],
-        "block"
+        "review"
     );
     let watched = render("PreToolUse", &review, true);
     assert_eq!(watched["policy_action"], "warn");
