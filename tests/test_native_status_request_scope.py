@@ -27,6 +27,7 @@ from codex_plugin_scanner.guard.native_runtime_request_scope import (
     _REQUEST_STATUS,
     native_status_request_scope,
 )
+from codex_plugin_scanner.guard.native_runtime_status_share import share_verified_runtime_status
 
 
 def _capabilities() -> native_runtime_module.NativeRuntimeCapabilities:
@@ -380,7 +381,7 @@ def test_shared_verified_status_spares_the_request_a_second_hash(
     binary, calls = status_probe
     verified = _verified_status(binary)
     with native_status_request_scope():
-        native_runtime_module.share_verified_runtime_status(verified)
+        share_verified_runtime_status(verified)
         assert native_runtime_status() is verified
     assert calls == []
 
@@ -391,7 +392,7 @@ def test_shared_status_is_rechecked_against_the_binary(
     binary, calls = status_probe
     verified = _verified_status(binary)
     with native_status_request_scope():
-        native_runtime_module.share_verified_runtime_status(verified)
+        share_verified_runtime_status(verified)
         binary.write_bytes(b"request-scope-runtime-replaced")
         assert native_runtime_status() is not verified
     assert calls == [binary]
@@ -401,7 +402,7 @@ def test_sharing_a_status_outside_a_request_changes_nothing(
     status_probe: tuple[Path, list[Path]],
 ) -> None:
     binary, calls = status_probe
-    native_runtime_module.share_verified_runtime_status(_verified_status(binary))
+    share_verified_runtime_status(_verified_status(binary))
     assert native_runtime_status().reason == "native_ready"
     assert calls == [binary]
 
@@ -422,7 +423,7 @@ def test_unusable_status_is_not_shared(
     binary, calls = status_probe
     unusable = dataclasses.replace(_verified_status(binary), **change)
     with native_status_request_scope():
-        native_runtime_module.share_verified_runtime_status(unusable)
+        share_verified_runtime_status(unusable)
         assert native_runtime_status() is not unusable
     assert calls == [binary]
 
@@ -436,9 +437,25 @@ def test_status_for_a_binary_outside_the_candidates_is_not_shared(
     other.write_bytes(b"other-runtime")
     stranger = _verified_status(other)
     with native_status_request_scope():
-        native_runtime_module.share_verified_runtime_status(stranger)
+        share_verified_runtime_status(stranger)
         assert native_runtime_status().identity == _identity_for(binary)
     assert calls == [binary]
+
+
+def test_status_for_a_fallback_candidate_is_not_shared(
+    status_probe: tuple[Path, list[Path]],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    binary, calls = status_probe
+    preferred = tmp_path / "preferred-runtime"
+    preferred.write_bytes(b"preferred-runtime")
+    monkeypatch.setattr(native_runtime_module, "_runtime_candidates", lambda: (preferred, binary))
+    fallback = _verified_status(binary)
+    with native_status_request_scope():
+        share_verified_runtime_status(fallback)
+        assert native_runtime_status().identity == _identity_for(preferred)
+    assert calls == [preferred]
 
 
 def test_worker_shares_the_publisher_status_with_its_request(
