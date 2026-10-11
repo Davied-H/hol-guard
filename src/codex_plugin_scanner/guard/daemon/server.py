@@ -259,6 +259,7 @@ from .service_lifecycle import (
     start_serve_thread,
     startup_generation_is_current,
 )
+from .startup_phase import flush_pending_phases, timed_phase
 
 _AUDIT_REMEDIATION_ACTIONS = {"package_shim_path"}
 _SUPPLY_CHAIN_PACKAGE_ACTIONS = {
@@ -4909,6 +4910,7 @@ class GuardDaemonServer:
         if not type(self)._retry_quarantined_service(store.guard_home):
             raise RuntimeError("A previous Guard daemon remains quarantined after unconfirmed containment.")
         self._diagnostics = DaemonDiagnostics(store.guard_home)
+        flush_pending_phases(self._diagnostics.record_phase)
         try:
             self._isolation_provider_registry = load_managed_provider_registry()
             _validate_dashboard_bundle()
@@ -5097,9 +5099,10 @@ class GuardDaemonServer:
             # Desktop `desktop bootstrap --json` waits for the daemon state
             # file, not for hook workers or artifact reconciliation. Accept
             # HTTP and publish that file before the 60s+ cold-home work.
-            start_serve_thread(self, already_locked=True)
-            if not self._serve_loop_started.wait(timeout=_DAEMON_SERVE_THREAD_START_TIMEOUT_SECONDS):
-                raise RuntimeError("Guard daemon serve thread did not become ready")
+            with timed_phase("serve_thread_start", self._diagnostics.record_phase):
+                start_serve_thread(self, already_locked=True)
+                if not self._serve_loop_started.wait(timeout=_DAEMON_SERVE_THREAD_START_TIMEOUT_SECONDS):
+                    raise RuntimeError("Guard daemon serve thread did not become ready")
             # Re-check under _finish_service_lock: shutdown may have been
             # requested while the serve loop was coming up. Publishing or
             # registering after shutdown would resurrect a stopped daemon.
@@ -5107,7 +5110,8 @@ class GuardDaemonServer:
                 raise RuntimeError("Guard daemon stopped during startup")
             self._publish_listen_state()
             self._diagnostics.record("daemon_listen_ready")
-            self._warm_desktop_bootstrap_cache()
+            with timed_phase("warm_desktop_bootstrap_cache", self._diagnostics.record_phase):
+                self._warm_desktop_bootstrap_cache()
             if not continue_after_listen:
                 return
         self._complete_owned_service_after_listen(generation, already_locked=True)
@@ -5120,13 +5124,17 @@ class GuardDaemonServer:
     ) -> None:
         if not startup_generation_is_current(self, generation):
             raise RuntimeError("Guard daemon stopped during startup")
-        self._reconcile_runtime_artifacts_best_effort()
+        phase = self._diagnostics.record_phase
+        with timed_phase("reconcile_runtime_artifacts", phase):
+            self._reconcile_runtime_artifacts_best_effort()
         if not startup_generation_is_current(self, generation):
             raise RuntimeError("Guard daemon stopped during startup")
-        self._maintain_command_activity_best_effort()
+        with timed_phase("maintain_command_activity", phase):
+            self._maintain_command_activity_best_effort()
         if not startup_generation_is_current(self, generation):
             raise RuntimeError("Guard daemon stopped during startup")
-        self._persist_aibom_inventory_context()
+        with timed_phase("persist_aibom_context", phase):
+            self._persist_aibom_inventory_context()
 
         def start_post_listen_workers() -> None:
             # The shutdown/generation re-check and the registration publish
@@ -5136,26 +5144,31 @@ class GuardDaemonServer:
             # runtime row.
             if self._shutdown_started.is_set() or not startup_generation_is_current(self, generation):
                 raise RuntimeError("Guard daemon stopped during startup")
-            self._publish_listen_state()
-            self._server.start_unclassified_watchdog()
-            self._server.runtime_heartbeat.start()
-            approval_attention = getattr(self._server, "approval_attention", None)
-            if approval_attention is not None:
-                approval_attention.start()
-            self._start_watchdog()
-            self._start_headless_cloud_sync()
-            self._start_supply_chain_bundle_refresh()
-            self._start_aibom_inventory_refresh()
-            self._start_extension_control_refresh()
-            self._command_queue_worker = start_command_queue_worker(self._server.store, self._command_queue_worker)
-            self._cloud_review_sync_worker = start_cloud_sync_sync_worker(
-                self._server.store,
-                self._cloud_review_sync_worker,
-                on_authority_changed=self._start_command_queue_after_authority,
-            )
-            self._start_command_activity_maintenance()
-            self._start_onefile_extraction_reclaim()
-            self._start_repair_self_check()
+            with timed_phase("publish_listen_state", phase):
+                self._publish_listen_state()
+            with timed_phase("start_watchdog_and_heartbeat", phase):
+                self._server.start_unclassified_watchdog()
+                self._server.runtime_heartbeat.start()
+                approval_attention = getattr(self._server, "approval_attention", None)
+                if approval_attention is not None:
+                    approval_attention.start()
+                self._start_watchdog()
+            with timed_phase("start_sync_and_refresh_threads", phase):
+                self._start_headless_cloud_sync()
+                self._start_supply_chain_bundle_refresh()
+                self._start_aibom_inventory_refresh()
+                self._start_extension_control_refresh()
+            with timed_phase("start_queue_and_cloud_workers", phase):
+                self._command_queue_worker = start_command_queue_worker(self._server.store, self._command_queue_worker)
+                self._cloud_review_sync_worker = start_cloud_sync_sync_worker(
+                    self._server.store,
+                    self._cloud_review_sync_worker,
+                    on_authority_changed=self._start_command_queue_after_authority,
+                )
+            with timed_phase("start_maintenance_threads", phase):
+                self._start_command_activity_maintenance()
+                self._start_onefile_extraction_reclaim()
+                self._start_repair_self_check()
             self._record_lifecycle("ready")
             self._owned_service_ready = True
             self._diagnostics.record("daemon_ready")

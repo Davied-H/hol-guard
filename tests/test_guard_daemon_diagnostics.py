@@ -133,3 +133,33 @@ def test_daemon_reconciles_managed_artifacts_before_reporting_ready(
     events = [record["event"] for record in records]
     assert observed == ["reconciled", "started"]
     assert events.index("runtime_artifact_reconciliation_completed") < events.index("daemon_ready")
+
+
+def test_startup_phase_records_elapsed_milliseconds_and_buffers_until_a_sink_exists() -> None:
+    from codex_plugin_scanner.guard.daemon import startup_phase
+
+    startup_phase._pending.clear()  # pyright: ignore[reportPrivateUsage]
+    with startup_phase.timed_phase("store_open"):
+        pass
+    events: list[tuple[str, str]] = []
+    startup_phase.flush_pending_phases(lambda event, detail: events.append((event, detail)))
+    with startup_phase.timed_phase("serve_thread_start", lambda event, detail: events.append((event, detail))):
+        pass
+
+    assert [event for event, _ in events] == ["startup_phase", "startup_phase"]
+    assert events[0][1].startswith("phase=store_open elapsed_ms=")
+    assert events[1][1].startswith("phase=serve_thread_start elapsed_ms=")
+    assert "since_first_import_ms=" in events[1][1]
+    startup_phase.flush_pending_phases(lambda event, detail: events.append((event, detail)))
+    assert len(events) == 2
+
+
+def test_startup_phase_buffer_is_bounded() -> None:
+    from codex_plugin_scanner.guard.daemon import startup_phase
+
+    startup_phase._pending.clear()  # pyright: ignore[reportPrivateUsage]
+    for _ in range(startup_phase._MAX_PENDING + 10):  # pyright: ignore[reportPrivateUsage]
+        with startup_phase.timed_phase("x"):
+            pass
+    assert len(startup_phase._pending) == startup_phase._MAX_PENDING  # pyright: ignore[reportPrivateUsage]
+    startup_phase._pending.clear()  # pyright: ignore[reportPrivateUsage]

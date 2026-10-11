@@ -57,26 +57,31 @@ def run_daemon_serve_cli(argv: Sequence[str] | None = None) -> int:
         print("Choose daemon --serve.", file=sys.stderr)
         return 2
 
-    from ..config import resolve_guard_home
-    from ..daemon.server import GuardDaemonServer
-    from ..store import GuardStore
+    from ..daemon.startup_phase import timed_phase
+
+    with timed_phase("import_modules"):
+        from ..config import resolve_guard_home
+        from ..daemon.server import GuardDaemonServer
+        from ..store import GuardStore
 
     home_override = args.home
     home_dir = Path(home_override).expanduser().resolve() if home_override else Path.home().resolve()
     guard_home = resolve_guard_home(args.guard_home or home_override)
-    store = GuardStore(
-        guard_home,
-        source="default",
-        prime_policy_integrity=False,
-        allow_system_keyring=False,
-    )
+    with timed_phase("store_open"):
+        store = GuardStore(
+            guard_home,
+            source="default",
+            prime_policy_integrity=False,
+            allow_system_keyring=False,
+        )
     workspace_dir = Path(args.workspace).expanduser() if args.workspace else None
-    daemon = GuardDaemonServer(
-        store,
-        port=args.port or 0,
-        home_dir=home_dir,
-        workspace_dir=workspace_dir,
-    )
+    with timed_phase("server_init"):
+        daemon = GuardDaemonServer(
+            store,
+            port=args.port or 0,
+            home_dir=home_dir,
+            workspace_dir=workspace_dir,
+        )
     daemon.serve()
     return 0
 

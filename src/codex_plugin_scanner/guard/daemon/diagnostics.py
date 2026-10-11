@@ -107,6 +107,11 @@ class DaemonDiagnostics:
     def record(self, event: str, *, detail: str | None = None) -> bool:
         return self._enqueue(self._record(logging.INFO, event, detail=detail))
 
+    def record_phase(self, event: str, detail: str) -> bool:
+        """Positional adapter so startup phase timing can use this as a sink."""
+
+        return self.record(event, detail=detail)
+
     def record_exception(
         self,
         event: str,
