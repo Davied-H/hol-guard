@@ -136,6 +136,7 @@ mod powershell_reads;
 pub mod protect_request;
 use parser_executables::*;
 use parser_segments::*;
+pub mod environment_secret_dump;
 pub mod pretool;
 mod runtime_read_paths;
 pub mod secret_path_probe;
