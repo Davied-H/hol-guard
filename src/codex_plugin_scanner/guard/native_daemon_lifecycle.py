@@ -33,7 +33,11 @@ from uuid import uuid4
 
 from .native_context import _canonical_request_sha256, _resolve_existing_digest_home, ensure_resident_prerequisite
 from .native_execution import _resident_request
-from .native_resident_client import native_resident_client_failure_code, native_resident_client_ready
+from .native_resident_client import (
+    native_resident_client_failure_code,
+    native_resident_client_ready,
+    record_native_resident_client_failure_code,
+)
 from .native_resident_prerequisite_reason import prerequisite_unavailable_code
 from .native_runtime import native_runtime_probe_missed, native_runtime_status
 from .native_runtime_resilience import native_record_resident_failure, native_record_resident_success
@@ -61,7 +65,9 @@ _RUNTIME_PROBE_RETRY_SECONDS = 0.3
 _TRANSIENT_DEADLINE_CODES = frozenset(
     {"native_client_deadline_exceeded", "native_request_deadline_exceeded", "native_client_timed_out"}
 )
-_MAX_DEADLINE_ATTEMPTS = 3
+# Every failed attempt counts toward the shared native circuit breaker (opens at 3 consecutive failures), so a
+# single operation must not be able to open it alone: one retry at most.
+_MAX_DEADLINE_ATTEMPTS = 2
 _MIN_RETRY_BUDGET_SECONDS = 1.0
 
 FactResolver = Callable[[str], object]
@@ -268,6 +274,8 @@ def _round_trip(
     attempt = 0
     while True:
         attempt += 1
+        # A stale code from an earlier attempt must not be read as this attempt's failure.
+        record_native_resident_client_failure_code(None)
         remaining = timeout_seconds if attempt == 1 else timeout_seconds - (time.monotonic() - started)
         response = _resident_request(
             operation=_OPERATION,

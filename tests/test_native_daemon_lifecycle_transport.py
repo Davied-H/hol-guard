@@ -397,7 +397,7 @@ def test_a_lapsed_resident_deadline_is_retried_inside_the_caller_budget(monkeypa
     timeouts: list[float] = []
 
     def request(**kwargs):
-        if len(timeouts) < 2:
+        if len(timeouts) < 1:
             timeouts.append(kwargs["timeout_seconds"])
             clock[0] += 4.0
             return None
@@ -409,7 +409,7 @@ def test_a_lapsed_resident_deadline_is_retried_inside_the_caller_budget(monkeypa
     payload = transport._round_trip({"check": "live_state_gate"}, {}, Path("/home"), "posix", 30.0)
 
     assert payload == {"ephemeral": False}
-    assert timeouts == [pytest.approx(30.0), pytest.approx(26.0), pytest.approx(22.0)]
+    assert timeouts == [pytest.approx(30.0), pytest.approx(26.0)]
 
 
 def test_a_deadline_retry_stops_when_the_budget_is_spent(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -438,3 +438,26 @@ def test_a_non_deadline_outage_is_not_retried(monkeypatch: pytest.MonkeyPatch) -
     with pytest.raises(transport.NativeDaemonLifecycleError, match="native_client_connect_failed"):
         transport._round_trip({"check": "live_state_gate"}, {}, Path("/home"), "posix", 30.0)
     assert len(calls) == 1
+
+
+def test_a_stale_deadline_code_is_not_read_as_the_next_attempts_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    from codex_plugin_scanner.guard.native_resident_client import (
+        native_resident_client_failure_code,
+        record_native_resident_client_failure_code,
+    )
+
+    calls: list[int] = []
+
+    def request(**_kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            record_native_resident_client_failure_code("native_request_deadline_exceeded")
+        return None  # the second attempt never reaches the client and leaves no code
+
+    monkeypatch.setattr(transport, "_resident_request", request)
+    monkeypatch.setattr(transport, "_runtime_unavailable_detail", lambda: "runtime_unavailable:x")
+    monkeypatch.setattr(transport, "native_resident_client_failure_code", native_resident_client_failure_code)
+
+    with pytest.raises(transport.NativeDaemonLifecycleError, match="runtime_unavailable:x"):
+        transport._round_trip({"check": "live_state_gate"}, {}, Path("/home"), "posix", 30.0)
+    assert len(calls) == 2
