@@ -17,9 +17,11 @@ from collections.abc import Mapping
 from pathlib import Path
 from uuid import uuid4
 
-from .models import GUARD_ACTION_VALUES
 from .native_context import _canonical_request_sha256, _resolve_digest_home, ensure_resident_prerequisite
 from .native_execution import _resident_request
+from .native_hook_artifact_compose import _field_valid
+from .native_runtime import native_runtime_status
+from .native_runtime_resilience import native_record_resident_failure, native_record_resident_success
 
 CONSUMER_ARTIFACT_COMPOSE_FEATURE = "consumer-artifact-compose-v1"
 _REQUEST_SCHEMA = "guard-consumer-artifact-compose-request.v1"
@@ -27,6 +29,9 @@ _RESULT_SCHEMA = "guard-consumer-artifact-compose-result.v1"
 _RESIDENT_CODE = re.compile(r"^native_consumer_artifact_compose_[a-z_]{1,64}$")
 _UNAVAILABLE = "native_consumer_artifact_compose_unavailable"
 _TIMEOUT_SECONDS = 5.0
+# Scoring evidence carries artifact text such as prompt signals, which can
+# exceed the shared 256 KiB default.
+_MAX_REQUEST_BYTES = 4 * 1024 * 1024
 # Every field is sent explicitly (nulls included) so the digest bound here
 # equals the resident's digest of its decoded request.
 _FIELDS: dict[str, frozenset[str]] = {
@@ -92,23 +97,6 @@ _ANSWERS: dict[str, dict[str, str]] = {
 }
 
 
-def _field_valid(spec: str, value: object) -> bool:
-    if spec.isupper() and value is None:
-        return True
-    match spec.lower():
-        case "a":
-            return isinstance(value, str) and value in GUARD_ACTION_VALUES
-        case "b":
-            return isinstance(value, bool)
-        case "s":
-            return isinstance(value, str)
-        case "d":
-            return isinstance(value, dict)
-        case "l":
-            return isinstance(value, list)
-    return False
-
-
 def _answer_valid(kind: str, payload: dict[str, object]) -> bool:
     shape = _ANSWERS[kind]
     return set(payload) == set(shape) and all(_field_valid(spec, payload[name]) for name, spec in shape.items())
@@ -150,24 +138,39 @@ def native_consumer_compose(kind: str, fields: Mapping[str, object], *, guard_ho
         timeout_seconds=_TIMEOUT_SECONDS,
         required_feature=CONSUMER_ARTIFACT_COMPOSE_FEATURE,
         response_schema=_RESULT_SCHEMA,
+        max_request_bytes=_MAX_REQUEST_BYTES,
+        record_success=False,
     )
-    if (
-        response is None
-        or response.get("schema") != _RESULT_SCHEMA
-        or response.get("request_id") != request["request_id"]
-        or response.get("request_sha256") != digest
-    ):
+    if response is None:
         raise NativeConsumerComposeError(_UNAVAILABLE)
-    status, code = response.get("status"), response.get("code")
+    # Resident health is recorded only once the reply is bound to this request
+    # and decodes, so malformed answers keep counting toward the circuit.
+    bound = (
+        response.get("schema") == _RESULT_SCHEMA
+        and response.get("request_id") == request["request_id"]
+        and response.get("request_sha256") == digest
+    )
+    status, code, payload = response.get("status"), response.get("code"), response.get("payload")
+    usable = status == "ok" and code == "ok" and isinstance(payload, dict) and _answer_valid(kind, payload)
+    _record_health(home, healthy=bound and (usable or status == "error"))
+    if not bound:
+        raise NativeConsumerComposeError(_UNAVAILABLE)
     if status == "error":
         reason = code if isinstance(code, str) and _RESIDENT_CODE.fullmatch(code) else _UNAVAILABLE
         raise NativeConsumerComposeError(reason)
-    payload = response.get("payload")
-    if status != "ok" or code != "ok" or not isinstance(payload, dict):
-        raise NativeConsumerComposeError("native_consumer_artifact_compose_payload_invalid")
-    if not _answer_valid(kind, payload):
+    if not usable or not isinstance(payload, dict):
         raise NativeConsumerComposeError("native_consumer_artifact_compose_payload_invalid")
     return payload
+
+
+def _record_health(home: Path, *, healthy: bool) -> None:
+    identity = native_runtime_status().identity
+    if identity is None:
+        return
+    if healthy:
+        native_record_resident_success(identity.sha256, home)
+    else:
+        native_record_resident_failure(identity.sha256, home, reason="native_consumer_artifact_compose_binding")
 
 
 __all__ = ["CONSUMER_ARTIFACT_COMPOSE_FEATURE", "NativeConsumerComposeError", "native_consumer_compose"]

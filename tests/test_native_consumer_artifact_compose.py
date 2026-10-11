@@ -8,11 +8,18 @@ changed behaviour.
 from __future__ import annotations
 
 import json
+import sys
+from collections.abc import Mapping
 from pathlib import Path
+from typing import cast
 
 import pytest
 
 from codex_plugin_scanner.guard import native_consumer_artifact_compose as compose
+from codex_plugin_scanner.guard.config import GuardConfig
+from codex_plugin_scanner.guard.consumer import service as consumer_service
+from codex_plugin_scanner.guard.models import GuardArtifact, HarnessDetection
+from codex_plugin_scanner.guard.store import GuardStore
 
 _VECTORS = json.loads(
     (
@@ -28,7 +35,7 @@ _VECTORS = json.loads(
 
 
 def _fields(vector: dict[str, object]) -> tuple[str, dict[str, object]]:
-    query = dict(vector["query"])  # type: ignore[arg-type]
+    query = dict(cast(Mapping[str, object], vector["query"]))
     return str(query.pop("kind")), query
 
 
@@ -47,14 +54,20 @@ _CURRENT_FIELDS = _fields(next(vector for vector in _VECTORS if vector["query"][
 _CURRENT_ANSWER = {"current_action": "warn", "scanner_action": "allow", "verdict": {"action": "allow"}}
 
 
-def _resident_returning(monkeypatch: pytest.MonkeyPatch, reply) -> None:
+def _resident_returning(monkeypatch: pytest.MonkeyPatch, reply) -> list[object]:
+    """Stub the transport; the returned list records health verdicts and transport kwargs."""
+
+    seen: list[object] = []
     monkeypatch.setattr(compose, "_resolve_digest_home", lambda _home: Path("/tmp/consumer-compose-home"))
     monkeypatch.setattr(compose, "ensure_resident_prerequisite", lambda _home: True)
+    monkeypatch.setattr(compose, "_record_health", lambda _home, *, healthy: seen.append(healthy))
 
-    def fake(*, request, **_kwargs):
+    def fake(*, request, **kwargs):
+        seen.append(kwargs)
         return reply(request)
 
     monkeypatch.setattr(compose, "_resident_request", fake)
+    return seen
 
 
 def _good(request: dict[str, object], **overrides: object) -> dict[str, object]:
@@ -75,8 +88,29 @@ def _compose_current() -> dict[str, object]:
 
 
 def test_bound_answer_is_returned(monkeypatch: pytest.MonkeyPatch) -> None:
-    _resident_returning(monkeypatch, lambda request: _good(request))
+    seen = _resident_returning(monkeypatch, lambda request: _good(request))
     assert _compose_current() == _CURRENT_ANSWER
+    transport, healthy = seen
+    assert isinstance(transport, dict)
+    assert transport["record_success"] is False
+    assert transport["max_request_bytes"] == 4 * 1024 * 1024
+    assert healthy is True
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"request_sha256": "sha256:" + "0" * 64},
+        {"payload": {"current_action": "warn"}},
+    ],
+)
+def test_unbound_or_malformed_answers_count_as_resident_failures(
+    monkeypatch: pytest.MonkeyPatch, overrides: dict[str, object]
+) -> None:
+    seen = _resident_returning(monkeypatch, lambda request: _good(request, **overrides))
+    with pytest.raises(compose.NativeConsumerComposeError):
+        _compose_current()
+    assert seen[-1] is False
 
 
 @pytest.mark.parametrize(
@@ -164,3 +198,55 @@ def test_request_key_set_is_exact(monkeypatch: pytest.MonkeyPatch, kind: str, fi
     with pytest.raises(compose.NativeConsumerComposeError) as error:
         compose.native_consumer_compose(kind, fields, guard_home=None)
     assert error.value.code == "native_consumer_artifact_compose_request_invalid"
+
+
+@pytest.mark.usefixtures("native_prompt_runtime")
+@pytest.mark.parametrize("failing", [("current_action", "runtime_decision"), ("runtime_decision",)])
+def test_resident_failure_blocks_each_artifact_without_aborting(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failing: tuple[str, ...],
+) -> None:
+    answer = compose.native_consumer_compose
+
+    def unavailable(kind: str, fields: Mapping[str, object], *, guard_home: Path | None) -> dict[str, object]:
+        if kind in failing:
+            raise compose.NativeConsumerComposeError("native_consumer_artifact_compose_unavailable")
+        return answer(kind, fields, guard_home=guard_home)
+
+    monkeypatch.setattr(consumer_service, "native_consumer_compose", unavailable)
+    artifact = GuardArtifact(
+        artifact_id="codex:project:compose-unavailable",
+        name="compose-unavailable",
+        harness="codex",
+        artifact_type="mcp_server",
+        source_scope="project",
+        config_path=str(tmp_path / "workspace" / ".codex" / "config.toml"),
+        command=sys.executable,
+        args=("-c", "pass"),
+        transport="stdio",
+    )
+    detection = HarnessDetection(
+        harness="codex",
+        installed=True,
+        command_available=True,
+        config_paths=(artifact.config_path,),
+        artifacts=(artifact,),
+    )
+    config = GuardConfig(guard_home=tmp_path / "guard-home", workspace=tmp_path / "workspace", default_action="allow")
+
+    output = consumer_service.evaluate_detection(
+        detection,
+        GuardStore(tmp_path / "guard-home"),
+        config,
+        default_action="allow",
+        persist=False,
+    )
+
+    assert output["blocked"] is True
+    item = output["artifacts"][0]
+    assert item["policy_action"] == "block"
+    assert item["approval_reuse_reason_code"] == "consumer_artifact_compose_unavailable"
+    assert item["policy_composition"]["native_compose_error"] == "native_consumer_artifact_compose_unavailable"
+    assert item["trusted_request_override"]["applied"] is False
+    assert "approval_claim" not in item

@@ -8,6 +8,7 @@ import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from functools import partial
 from pathlib import Path
 from typing import Any, TypedDict, TypeGuard, cast
 
@@ -26,7 +27,7 @@ from ..models import (
     HarnessDetection,
     PolicyDecision,
 )
-from ..native_consumer_artifact_compose import native_consumer_compose
+from ..native_consumer_artifact_compose import NativeConsumerComposeError, native_consumer_compose
 from ..receipts import build_receipt
 from ..risk import artifact_risk_signals_typed, artifact_risk_summary, summarize_signals
 from ..runtime.approval_context import (
@@ -640,6 +641,7 @@ def _merge_risk_signals(
 
 _SAVED_DECISION_KEYS = ("action", "artifact_hash", "scope", "fresh_local_approval", "durable_exact_approval")
 _QUALIFICATION_KEYS = ("fresh_local_approval", "durable_exact_approval")
+_COMPOSE_UNAVAILABLE_REASON = "consumer_artifact_compose_unavailable"
 
 
 def _scoring_inputs(
@@ -686,25 +688,98 @@ def _native_current_action(
     skill_directory_identity_reusable: bool | None,
     scoring: Mapping[str, object],
 ) -> dict[str, object]:
-    """Ask the resident for the scoring recommendation and current action."""
+    """Ask the resident for the scoring recommendation and current action.
 
-    return native_consumer_compose(
-        "current_action",
-        {
-            "removed": removed,
-            "artifact_type": artifact_type,
-            "configured_action": configured_action,
-            "guard_default_action": guard_default_action,
-            "first_seen": first_seen,
-            "changed": changed,
-            "effective_default_action": effective_default_action,
-            "config_changed_hash_action": config.changed_hash_action,
-            "config_default_action": config.default_action,
-            "skill_directory_identity_reusable": skill_directory_identity_reusable,
-            **scoring,
+    Without an answer the artifact blocks (``compose_unavailable`` carries the
+    reason) so the evaluation still completes instead of aborting midway.
+    """
+
+    try:
+        return native_consumer_compose(
+            "current_action",
+            {
+                "removed": removed,
+                "artifact_type": artifact_type,
+                "configured_action": configured_action,
+                "guard_default_action": guard_default_action,
+                "first_seen": first_seen,
+                "changed": changed,
+                "effective_default_action": effective_default_action,
+                "config_changed_hash_action": config.changed_hash_action,
+                "config_default_action": config.default_action,
+                "skill_directory_identity_reusable": skill_directory_identity_reusable,
+                **scoring,
+            },
+            guard_home=getattr(store, "guard_home", None),
+        )
+    except NativeConsumerComposeError as error:
+        return {
+            "current_action": "block",
+            "scanner_action": None,
+            "verdict": {
+                "action": "block",
+                "confidence": 0.0,
+                "evidence_sources": [],
+                "provenance_state": "none",
+                "reasons": ["Guard could not score this artifact, so it stays blocked."],
+                "recommended_next_actions": ["open_investigation"],
+                "review_priority": "critical",
+                "severity": 9,
+                "suppressible": False,
+            },
+            "compose_unavailable": error.code,
+        }
+
+
+def _compose_unavailable_decision(
+    code: str,
+    *,
+    configured_action: str | None,
+    scanner_action: GuardAction | None,
+    raw_scoring_recommendation: object,
+) -> dict[str, object]:
+    """Fail-closed runtime answer when the resident composed nothing.
+
+    The artifact blocks, no saved approval is claimed and no override applies.
+    """
+
+    return {
+        "approval_claim": None,
+        "approval_reuse": {
+            "action": "block",
+            "current_action": "block",
+            "current_normalization_reason_code": None,
+            "original_current_action": "block",
+            "original_current_type": "str",
+            "original_saved_action": None,
+            "original_saved_type": None,
+            "reason_code": _COMPOSE_UNAVAILABLE_REASON,
+            "saved_action": None,
+            "saved_normalization_reason_code": None,
+            "should_claim": False,
+            "status": "not-applicable",
         },
-        guard_home=getattr(store, "guard_home", None),
-    )
+        "approval_source": "policy",
+        "append_pending_claim": False,
+        "authority_finalized": True,
+        "decision_reason": _COMPOSE_UNAVAILABLE_REASON,
+        "policy_action": "block",
+        "policy_composition": {
+            "configured_action": configured_action,
+            "current_action": "block",
+            "final_action": "block",
+            "native_compose_error": code,
+            "raw_scoring_recommendation": raw_scoring_recommendation,
+            "saved_action": None,
+            "saved_state_present": False,
+            "scanner_action": scanner_action,
+            "scoring_recommendation_non_authoritative": True,
+            "trusted_request_override": False,
+        },
+        "saved_state_present": False,
+        "scanner_evidence": [],
+        "trusted_request_override": False,
+    }
 
 
 @dataclass(frozen=True)
@@ -739,9 +814,21 @@ def _native_runtime_decision(
     scanner_action: GuardAction | None,
     raw_scoring_recommendation: object,
     skill_directory_identity_reusable: bool | None,
+    compose_unavailable: object = None,
 ) -> dict[str, object]:
-    """Gather saved-decision evidence; the resident composes the final authority."""
+    """Gather saved-decision evidence; the resident composes the final authority.
 
+    A failed current-action query, or no answer here, blocks the artifact.
+    """
+
+    unavailable = partial(
+        _compose_unavailable_decision,
+        configured_action=configured_action,
+        scanner_action=scanner_action,
+        raw_scoring_recommendation=raw_scoring_recommendation,
+    )
+    if isinstance(compose_unavailable, str):
+        return unavailable(compose_unavailable)
     store = inputs.store
     lookup = store.resolve_policy_decision_lookup_with_memory_pattern(
         inputs.harness,
@@ -770,32 +857,37 @@ def _native_runtime_decision(
         else None
     )
     qualification = inputs.saved_approval_qualification_overrides.get(artifact_id)
-    answer = native_consumer_compose(
-        "runtime_decision",
-        {
-            "current_action": current_action,
-            "configured_action": configured_action,
-            "scanner_action": scanner_action,
-            "raw_scoring_recommendation": raw_scoring_recommendation,
-            "skill_directory_identity_reusable": skill_directory_identity_reusable,
-            "approval_context_hash": approval_context_hash,
-            "saved_decision": (
-                None if saved_decision is None else {key: saved_decision.get(key) for key in _SAVED_DECISION_KEYS}
-            ),
-            "ignored_local_integrity": ignored_integrity,
-            "diagnosed_reason": diagnosed_reason,
-            "trusted_request_override_hash": inputs.trusted_request_overrides.get(artifact_id),
-            "claimed_saved_approval_hash": inputs.claimed_saved_approval_overrides.get(artifact_id),
-            "retained_saved_approval_hash": inputs.retained_saved_approval_overrides.get(artifact_id),
-            "saved_approval_qualification": (
-                None if qualification is None else {key: qualification.get(key) is True for key in _QUALIFICATION_KEYS}
-            ),
-            "runtime_detector_composition": inputs.runtime_detector_composition,
-            "runtime_detector_block_reason": inputs.runtime_detector_block_reason,
-            "runtime_signals": inputs.runtime_signals,
-        },
-        guard_home=getattr(store, "guard_home", None),
-    )
+    try:
+        answer = native_consumer_compose(
+            "runtime_decision",
+            {
+                "current_action": current_action,
+                "configured_action": configured_action,
+                "scanner_action": scanner_action,
+                "raw_scoring_recommendation": raw_scoring_recommendation,
+                "skill_directory_identity_reusable": skill_directory_identity_reusable,
+                "approval_context_hash": approval_context_hash,
+                "saved_decision": (
+                    None if saved_decision is None else {key: saved_decision.get(key) for key in _SAVED_DECISION_KEYS}
+                ),
+                "ignored_local_integrity": ignored_integrity,
+                "diagnosed_reason": diagnosed_reason,
+                "trusted_request_override_hash": inputs.trusted_request_overrides.get(artifact_id),
+                "claimed_saved_approval_hash": inputs.claimed_saved_approval_overrides.get(artifact_id),
+                "retained_saved_approval_hash": inputs.retained_saved_approval_overrides.get(artifact_id),
+                "saved_approval_qualification": (
+                    None
+                    if qualification is None
+                    else {key: qualification.get(key) is True for key in _QUALIFICATION_KEYS}
+                ),
+                "runtime_detector_composition": inputs.runtime_detector_composition,
+                "runtime_detector_block_reason": inputs.runtime_detector_block_reason,
+                "runtime_signals": inputs.runtime_signals,
+            },
+            guard_home=getattr(store, "guard_home", None),
+        )
+    except NativeConsumerComposeError as error:
+        return unavailable(error.code)
     pending = inputs.pending_approval_claims
     if answer["append_pending_claim"] is True and saved_decision is not None and pending is not None:
         pending.append((saved_decision, artifact_id, approval_context_hash))
@@ -990,6 +1082,7 @@ def evaluate_detection(
             scanner_action=scanner_action,
             raw_scoring_recommendation=verdict["action"],
             skill_directory_identity_reusable=skill_directory_identity_reusable,
+            compose_unavailable=current.get("compose_unavailable"),
         )
         approval_reuse = cast(dict[str, Any], runtime["approval_reuse"])
         approval_claim = runtime["approval_claim"]
@@ -1175,22 +1268,20 @@ def evaluate_detection(
             artifact_type=previous.get("artifact_type"),
             metadata=previous.get("metadata"),
         )
-        current_policy_action = cast(
-            GuardAction,
-            _native_current_action(
-                store,
-                config,
-                removed=True,
-                artifact_type=None,
-                configured_action=configured_action,
-                guard_default_action=None,
-                first_seen=False,
-                changed=True,
-                effective_default_action=effective_default_action,
-                skill_directory_identity_reusable=skill_directory_identity_reusable,
-                scoring=_scoring_inputs((), (), ProvenanceBundle(), HistoryContext()),
-            )["current_action"],
+        removed_current = _native_current_action(
+            store,
+            config,
+            removed=True,
+            artifact_type=None,
+            configured_action=configured_action,
+            guard_default_action=None,
+            first_seen=False,
+            changed=True,
+            effective_default_action=effective_default_action,
+            skill_directory_identity_reusable=skill_directory_identity_reusable,
+            scoring=_scoring_inputs((), (), ProvenanceBundle(), HistoryContext()),
         )
+        current_policy_action = cast(GuardAction, removed_current["current_action"])
         approval_context_hash = _removed_consumer_approval_context_token(
             harness=detection.harness,
             artifact_id=artifact_id,
@@ -1223,6 +1314,7 @@ def evaluate_detection(
             scanner_action=None,
             raw_scoring_recommendation="warn",
             skill_directory_identity_reusable=skill_directory_identity_reusable,
+            compose_unavailable=removed_current.get("compose_unavailable"),
         )
         approval_reuse = cast(dict[str, Any], runtime["approval_reuse"])
         approval_claim = runtime["approval_claim"]
