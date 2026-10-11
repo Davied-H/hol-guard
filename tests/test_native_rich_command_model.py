@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -50,6 +52,7 @@ def invoke(vector: dict[str, Any]) -> Any:
     raise AssertionError(action)
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Original fixture records POSIX tokenization")
 @pytest.mark.parametrize("vector", FIXTURE["vectors"], ids=lambda v: v["action"])
 def test_original_outcomes_through_public_callers(vector: dict[str, Any]) -> None:
     if "error" in vector:
@@ -100,6 +103,7 @@ def test_transport_rejects_unbound_or_malformed_replies(
 
     def respond(**kwargs: Any) -> bytes:
         assert damage != "surrogate", "Invalid UTF-8 must be rejected before transport"
+        assert 0 < kwargs["deadline_monotonic"] - time.monotonic() <= 1.0
         material = json.loads(kwargs["payload"])["request"]
         reply = {
             "schema": client.RESULT_SCHEMA,

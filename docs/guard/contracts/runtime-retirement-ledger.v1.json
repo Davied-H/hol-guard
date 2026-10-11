@@ -4047,7 +4047,7 @@
    "path": "src/codex_plugin_scanner/guard/runtime/command_tokens.py",
    "base_commit": "da723a48b221c135cbce3bade1bab3ddb4959044",
    "source_sha256": "2bb624010d3dfea8cfff5f5b16face626033b76c894e313b2221df2ecd23f358",
-   "remaining_role": "Public DTOs and request-bound resident transport; original Python parsing and identity algorithms removed.",
+   "remaining_role": "Native-backed public and compatibility APIs retained, including _windows_shell_tokens and _after_sudo_options. retired_functions names the removed Python semantic bodies, not deleted API names.",
    "native_replacements": [
     "rust/crates/guard-command/src/command_tokens.rs",
     "rust/crates/guard-runtime/src/rich_command_model_op.rs"

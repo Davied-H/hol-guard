@@ -1,5 +1,6 @@
 use super::*;
 
+#[cfg(not(windows))]
 #[test]
 fn recorded_python_model_and_helpers() {
     let fixture: Value = serde_json::from_str(include_str!(
@@ -17,6 +18,23 @@ fn recorded_python_model_and_helpers() {
         } else {
             assert_eq!(actual.unwrap(), vector["result"], "vector {index}");
         }
+    }
+}
+
+#[test]
+fn invalid_redirect_ranges_do_not_panic_or_mask_command() {
+    for (start, end) in [(2, 1), (0, 99), (99, 100), (usize::MAX, 1)] {
+        assert_eq!(
+            result(
+                "segment_tokens",
+                &json!({
+                    "command": "echo hi", "source_offset": 0,
+                    "redirects": [{"operator": ">", "target": "out", "start": start, "end": end}]
+                })
+            )
+            .unwrap(),
+            json!(["echo", "hi"])
+        );
     }
 }
 

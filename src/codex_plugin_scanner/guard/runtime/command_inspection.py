@@ -11,7 +11,7 @@ from codex_plugin_scanner.guard.runtime.command_extensions import (
     BUILT_IN_COMMAND_EXTENSION_REGISTRY,
     COMMAND_EXTENSION_SCHEMA_VERSION,
 )
-from codex_plugin_scanner.guard.runtime.command_model import CanonicalCommand, parse_shell_command
+from codex_plugin_scanner.guard.runtime.command_model import CanonicalCommand
 from codex_plugin_scanner.guard.runtime.extension_control_runtime import ExtensionControlRuntimeSnapshot
 from codex_plugin_scanner.guard.runtime.native_command_evaluation import review_command_native
 from codex_plugin_scanner.guard.runtime.secret_file_requests import (
@@ -34,7 +34,7 @@ def unavailable_command_inspection(
     if not command_text:
         raise ValueError("Command text cannot be empty")
     if canonical_command is None:
-        preview = parse_shell_command(command_text, cwd=cwd, home_dir=home_dir)
+        preview = None
         normalized_command = command_text
         wrapper_chain: list[str] = []
     else:
@@ -69,7 +69,7 @@ def unavailable_command_inspection(
         "signals": [],
         "extensions": [],
         "rules": [],
-        "command_model": preview.to_dict(),
+        "command_model": preview.to_dict() if preview is not None else None,
         "trace": [
             {
                 "step": "native-command-evidence",

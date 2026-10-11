@@ -112,7 +112,7 @@ def _valid_result(action: str, value: Any) -> bool:
 
 
 def request(action: str, args: dict[str, Any], *, timeout_seconds: float = 10.0) -> Any:
-    deadline = time.monotonic() + timeout_seconds
+    deadline = time.monotonic() + (timeout_seconds if action == "parse" else min(timeout_seconds, 1.0))
     try:
         home = _resolve_digest_home(None)
         if not ensure_resident_prerequisite(home):
