@@ -172,7 +172,7 @@ def test_policy_floor_warning_on_proven_allow_is_silent(harness: str) -> None:
         "reason_code": "native_policy_warning",
         "reason": "HOL Guard raised a non-blocking warning under the installed native policy.",
     }
-    rendered = harness_json_from_native_pre_tool(harness, result)
+    rendered = render_pre_tool(harness, result)
     assert rendered["policy_action"] == "warn"
     assert "notice" not in rendered
     assert "reason" not in rendered
@@ -196,9 +196,9 @@ def test_intrinsic_and_observed_floor_warnings_still_reach_the_harness(reason_co
         "reason_code": reason_code,
         "reason": reason,
     }
-    omp = harness_json_from_native_pre_tool("omp", result)
+    omp = render_pre_tool("omp", result)
     assert omp["notice"] == "warning"
-    codex = harness_json_from_native_pre_tool("codex", result)
+    codex = render_pre_tool("codex", result)
     hook_specific = codex["hookSpecificOutput"]
     assert isinstance(hook_specific, dict)
     assert hook_specific["permissionDecisionReason"] == reason

@@ -110,7 +110,7 @@ def test_zcode_prompt_blocks_keep_blocking_exit() -> None:
 
 def test_zcode_native_review_renderer_asks_and_exits_zero() -> None:
     # The daemon worker renders review-tier PreToolUse responses through
-    # harness_json_from_native_pre_tool_review; for zcode that envelope must
+    # the pre-tool review renderer; for zcode that envelope must
     # ask and the bridge must exit 0 so zcode opens its permission prompt.
     rendered = render_pre_tool_review(
         "zcode",
