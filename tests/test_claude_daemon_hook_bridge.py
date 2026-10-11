@@ -631,3 +631,29 @@ def test_malformed_permission_passthrough_is_denied(output):
         data=json.dumps({"hook_event_name": "PermissionRequest"}),
     )
     assert json.loads(response)["hookSpecificOutput"]["decision"]["behavior"] == "deny"
+
+
+def test_hook_post_tells_the_daemon_how_long_the_bridge_will_wait(tmp_path: Path) -> None:
+    guard_home = tmp_path / "guard-home"
+    guard_home.mkdir(mode=0o700)
+    daemon_server = HTTPServer(("127.0.0.1", 0), _AuthenticatedDaemonHandler)
+    daemon_thread = threading.Thread(target=daemon_server.serve_forever, daemon=True)
+    daemon_thread.start()
+    daemon_port = daemon_server.server_address[1]
+    _write_authenticated_daemon_files(guard_home, daemon_port)
+    _AuthenticatedDaemonHandler.captured_hook_body = None
+
+    try:
+        bridge._post_to_loopback_daemon(
+            f"http://127.0.0.1:{daemon_port}/v1/hooks/claude-code?guard-home={guard_home}",
+            '{"hook_event_name":"PreToolUse","tool_name":"Bash"}',
+            state_path=guard_home / "daemon-state.json",
+        )
+    finally:
+        daemon_server.shutdown()
+        daemon_thread.join(timeout=5)
+
+    assert _AuthenticatedDaemonHandler.captured_hook_body is not None
+    body = json.loads(_AuthenticatedDaemonHandler.captured_hook_body)
+    assert body["tool_name"] == "Bash"
+    assert 0 < body["guard_remaining_ms"] <= bridge._DAEMON_IO_TIMEOUT_SECONDS * 1000
