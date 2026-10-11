@@ -461,10 +461,14 @@ def _recover_retry_or_fallback(
 ) -> str:
     recovery_deadline = None if deadline is None else deadline - _FALLBACK_RESERVE_SECONDS
     recovery_window = _remaining_seconds(recovery_deadline, cap=_RECOVERY_TIMEOUT_SECONDS)
-    if recovery_command and recovery_window >= _MINIMUM_RECOVERY_SECONDS and _run_recovery_command(
-        recovery_command,
-        deadline=recovery_deadline,
-        failure_kind=failure_kind,
+    if (
+        recovery_command
+        and recovery_window >= _MINIMUM_RECOVERY_SECONDS
+        and _run_recovery_command(
+            recovery_command,
+            deadline=recovery_deadline,
+            failure_kind=failure_kind,
+        )
     ):
         try:
             endpoint = urljoin(_daemon_url(state_path, fallback_daemon_url), f"/v1/hooks/claude-code?{query}")
