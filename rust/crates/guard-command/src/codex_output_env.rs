@@ -37,6 +37,25 @@ pub trait InspectionHost {
     fn current_uid(&self) -> Option<u32> {
         None
     }
+    /// `build_runtime_executable_identity(command, search_path, cwd)` from the
+    /// resident. Hosts without that service defer to the in-crate resolver.
+    fn runtime_executable_identity(
+        &self,
+        _command: &str,
+        _search_path: Option<&str>,
+        _cwd: &str,
+    ) -> Option<serde_json::Value> {
+        None
+    }
+    /// `secrets.token_hex(16)`; hosts without a source defer to the OS.
+    fn reuse_nonce(&self) -> Option<String> {
+        None
+    }
+    /// `sys.executable` of the caller; hosts that cannot report one never
+    /// grant the guard-interpreter trust.
+    fn guard_executable(&self) -> Option<String> {
+        None
+    }
     /// Whether the resident secret classifier finds secret material in `text`.
     /// Hosts without that service refuse.
     fn secret_content_found(&self, _text: &str, _is_path: bool) -> bool {
