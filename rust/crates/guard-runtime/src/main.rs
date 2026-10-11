@@ -21,6 +21,7 @@ mod approval_scope_contract;
 mod approval_scope_material;
 mod approval_scope_op;
 mod archive_inspect;
+mod archive_acquisition_op;
 mod archive_inspect_containment;
 mod archive_verdict_seam;
 #[cfg(test)]

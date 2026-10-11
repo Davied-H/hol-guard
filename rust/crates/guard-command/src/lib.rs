@@ -543,6 +543,11 @@ pub mod pep440;
 pub mod registry_metadata_transport;
 pub mod restricted_archive;
 pub mod restricted_archive_transport;
+mod restricted_archive_peer;
+mod restricted_archive_destination;
+mod restricted_archive_address;
+mod restricted_archive_stream;
+mod restricted_archive_write;
 #[cfg(unix)]
 pub mod restricted_pytest;
 pub mod resume_template;
