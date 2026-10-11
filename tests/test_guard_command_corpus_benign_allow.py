@@ -33,20 +33,7 @@ _MANIFEST = json.loads(
 _READ_ONLY_FAMILIES = ("navigation-public-read", "source-search-read", "git-local")
 _READ_ONLY_EXTRA = {("shell-composition", "cd-pipeline"), ("shell-composition", "json-pipeline")}
 PENDING: dict[str, str] = {
-    "git-local/branches": "native_command_review_required",
-    "git-local/diff-check": "native_command_review_required",
-    "git-local/recent-log": "native_command_review_required",
-    "git-local/show-stat": "native_command_review_required",
-    "navigation-public-read/directory-list": "native_policy_warning",
-    "navigation-public-read/repository-root": "native_policy_warning",
-    "navigation-public-read/status": "native_policy_warning",
-    "navigation-public-read/working-directory": "native_policy_warning",
-    "shell-composition/cd-pipeline": "native_policy_warning",
-    "shell-composition/json-pipeline": "native_policy_warning",
     "source-search-read/source-files": "native_command_review_required",
-    "source-search-read/source-view": "native_policy_warning",
-    "source-search-read/symbol-search": "native_policy_warning",
-    "source-search-read/targeted-search": "native_policy_warning",
 }
 
 
