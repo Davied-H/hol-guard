@@ -173,6 +173,7 @@ def _resident_request(
             "approval_bulk_eligibility",
             "daemon_route",
             "daemon_handler",
+            "protect_request",
         }:
             accepted = frozenset({"ok", "error"})
         elif operation == "mcp_tool_policy_decide":

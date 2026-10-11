@@ -488,7 +488,7 @@ class TestGuardProtect:
         assert mcp_output["targets"][0]["artifact_id"] == "install:gemini:mcp:remote-risk"
 
     def test_guard_protect_keeps_gemini_stdio_mcp_targets_local(self) -> None:
-        request = protect.parse_protect_command(
+        request, verdict = protect._native_protect(
             [
                 "gemini",
                 "mcp",
@@ -497,11 +497,13 @@ class TestGuardProtect:
                 "https://example.invalid/not-a-remote-endpoint",
                 "--transport",
                 "stdio",
-            ]
+            ],
+            guard_home=None,
+            store=None,
         )
 
         assert request.targets[0].source_url is None
-        assert "registers a remote server endpoint" not in protect._request_risk_signals(request)
+        assert "registers a remote server endpoint" not in verdict.risk_signals
 
     def test_guard_protect_excludes_npm_prefix_destination_from_targets(self, tmp_path: Path) -> None:
         install_dir = tmp_path / "agent" / "npm"

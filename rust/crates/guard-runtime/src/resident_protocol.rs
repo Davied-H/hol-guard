@@ -23,10 +23,11 @@ use guard_contracts::{
     PackageAuditProjectionRequestV1, PackageAuthorityDecideRequestV1,
     PackageEvaluationComposeRequestV1, PackageIntentParseRequestV1, PackagePolicyResolveRequestV1,
     PackagePostureRequestV1, PolicyBundleAuthorityRequestV1, PolicyDecisionLookupRequestV1,
-    PromptAnalyzeRequestV1, RequestContextRequestV1, RunnerAuthorityRequestV1,
-    RuntimeCapabilitiesV1, ShimAdminRequestV1, SkillDirectoryIdentityRequestV1,
-    SupplyChainEvalRequestV1, WorkspaceInventoryRequestV1, MAX_NATIVE_RESPONSE_BYTES,
-    NATIVE_APPROVAL_ERROR_CODES, NATIVE_PROTOCOL_VERSION, NATIVE_RESIDENT_LIFECYCLE_ERROR_CODES,
+    PromptAnalyzeRequestV1, ProtectRequestRequestV1, RequestContextRequestV1,
+    RunnerAuthorityRequestV1, RuntimeCapabilitiesV1, ShimAdminRequestV1,
+    SkillDirectoryIdentityRequestV1, SupplyChainEvalRequestV1, WorkspaceInventoryRequestV1,
+    MAX_NATIVE_RESPONSE_BYTES, NATIVE_APPROVAL_ERROR_CODES, NATIVE_PROTOCOL_VERSION,
+    NATIVE_RESIDENT_LIFECYCLE_ERROR_CODES,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -91,6 +92,7 @@ pub(crate) fn capabilities() -> RuntimeCapabilitiesV1 {
         guard_contracts::COMMAND_EFFECT_BATCH_FEATURE.into(),
         guard_contracts::APPROVAL_REUSE_FEATURE.into(),
         guard_contracts::GITHUB_CLI_CLASSIFY_FEATURE.into(),
+        guard_contracts::PROTECT_REQUEST_FEATURE.into(),
         guard_contracts::CLAIM_APPROVAL_REUSE_FEATURE.into(),
         guard_contracts::APPROVAL_REUSE_DIAGNOSTIC_FEATURE.into(),
         guard_contracts::APPROVAL_BULK_ELIGIBILITY_FEATURE.into(),
@@ -189,6 +191,7 @@ pub(crate) enum ResidentOperationV1 {
     CommandEffectDecideBatch(CommandEffectBatchRequestV1),
     ApprovalReuseDecide(ApprovalReuseRequestV1),
     GithubCliClassify(GithubCliClassifyRequestV1),
+    ProtectRequest(ProtectRequestRequestV1),
     ClaimApprovalReuseDecisions(ClaimApprovalReuseDecisionsRequestV1),
     ApprovalReuseDiagnostic(ApprovalReuseDiagnosticRequestV1),
     ApprovalBulkEligibility(ApprovalBulkEligibilityRequestV1),
