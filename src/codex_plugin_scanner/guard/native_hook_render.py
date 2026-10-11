@@ -10,6 +10,7 @@ returns ``None``; nothing is ever rendered in Python.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Mapping
 from pathlib import Path
 from uuid import uuid4
@@ -25,7 +26,14 @@ _TIMEOUT_SECONDS = 5.0
 _MAX_REQUEST_BYTES = 256 * 1024
 
 
-def _render(request: dict[str, object], guard_home: Path | None) -> dict[str, object] | None:
+def _render(
+    request: dict[str, object], guard_home: Path | None, deadline: float | None = None
+) -> dict[str, object] | None:
+    timeout = _TIMEOUT_SECONDS
+    if deadline is not None:
+        timeout = min(timeout, deadline - time.monotonic())
+        if timeout <= 0:
+            return None
     home = Path(_resolve_digest_home(guard_home))
     if not ensure_resident_prerequisite(home):
         return None
@@ -35,7 +43,7 @@ def _render(request: dict[str, object], guard_home: Path | None) -> dict[str, ob
             operation="hook_render",
             request=wire,
             guard_home=home,
-            timeout_seconds=_TIMEOUT_SECONDS,
+            timeout_seconds=timeout,
             required_feature=HOOK_RENDER_FEATURE,
             response_schema=_RESULT_SCHEMA,
             max_request_bytes=_MAX_REQUEST_BYTES,
@@ -49,11 +57,11 @@ def _render(request: dict[str, object], guard_home: Path | None) -> dict[str, ob
 
 
 def native_render_pre_tool(
-    harness: str, verdict: Mapping[str, object], *, guard_home: Path | None = None
+    harness: str, verdict: Mapping[str, object], *, guard_home: Path | None = None, deadline: float | None = None
 ) -> dict[str, object] | None:
     """Render a PreToolUse verdict the daemon adjusted after the edge decision."""
 
-    return _render({"kind": "pre_tool", "harness": harness, "verdict": dict(verdict)}, guard_home)
+    return _render({"kind": "pre_tool", "harness": harness, "verdict": dict(verdict)}, guard_home, deadline)
 
 
 def native_render_pre_tool_review(
@@ -63,25 +71,30 @@ def native_render_pre_tool_review(
     approval: Mapping[str, object] | None,
     linked_reason: str | None,
     guard_home: Path | None = None,
+    deadline: float | None = None,
 ) -> dict[str, object] | None:
     """Render a paused review; ``linked_reason`` already carries the signed approval link."""
 
     request: dict[str, object] = {"kind": "pre_tool_review", "harness": harness, "verdict": dict(verdict)}
     if approval is not None:
-        request["approval"] = dict(approval)
+        # The renderer reads only the link and the request id; the stored row can be large.
+        request["approval"] = {
+            key: approval[key] for key in ("approval_url", "request_id") if isinstance(approval.get(key), str)
+        }
     if linked_reason is not None:
         request["linked_reason"] = linked_reason
-    return _render(request, guard_home)
+    return _render(request, guard_home, deadline)
 
 
 def native_render_recording_only_pre_tool(
-    harness: str, *, reason_code: str, reason: str, guard_home: Path | None = None
+    harness: str, *, reason_code: str, reason: str, guard_home: Path | None = None, deadline: float | None = None
 ) -> dict[str, object] | None:
     """Render a Watch-posture PreToolUse that continues instead of pausing."""
 
     return _render(
         {"kind": "recording_only_pre_tool", "harness": harness, "reason_code": reason_code, "reason": reason},
         guard_home,
+        deadline,
     )
 
 

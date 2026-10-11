@@ -13,12 +13,13 @@ from tests.guard_daemon_acceptance_fixtures import WorkloadSpec, _mark_resident_
 _RESIDENT_ROUND_TRIPS_PER_PI_HOOK = 3
 
 
-def _pi_workload(requests: int) -> WorkloadSpec:
+def _pi_workload(requests: int, event: str = "PostToolUse") -> WorkloadSpec:
     return {
         "id": f"rpc-budget-{requests}",
         "clients": [{"harness": "pi", "client": "pi-1", "requests": requests, "concurrency": 4}],
         "secret_stride": 10,
-    }  # type: ignore[return-value]
+        "event": event,
+    }
 
 
 def _measured_resident_requests(log_path: Path) -> int:
@@ -93,3 +94,17 @@ def test_pi_allow_and_deny_hooks_never_use_the_hook_render_op(
     assert operations
     assert "hook_render" not in operations, sorted(set(operations))
     assert len(operations) <= requests * _RESIDENT_ROUND_TRIPS_PER_PI_HOOK + 6, len(operations)
+
+
+def test_pi_pre_tool_allow_and_deny_use_the_edge_response_not_the_hook_render_op(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    requests = 20
+    log_path = tmp_path / "resident-requests.log"
+    monkeypatch.setenv("HOL_GUARD_RESIDENT_REQUEST_LOG", os.fspath(log_path))
+    result = run_workload(_pi_workload(requests, "PreToolUse"), root=tmp_path)
+    assert result.generic_failures == 0, result
+    assert result.routine_allowed > 0
+    operations = _measured_operations(log_path)
+    assert operations
+    assert "hook_render" not in operations, sorted(set(operations))

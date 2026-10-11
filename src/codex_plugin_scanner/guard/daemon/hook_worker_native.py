@@ -603,8 +603,8 @@ class HookWorkerNativeMixin:
             from ..adapters.zcode_contained_tests import route_zcode_containment
 
             rendered = route_zcode_containment(
-                render_pre_tool(native_harness, repaired_result, guard_home=guard_home)
-                if repaired_result
+                render_pre_tool(native_harness, repaired_result, guard_home=guard_home, deadline=deadline)
+                if repaired_result and repaired_result != dict(native_result)
                 else _edge_harness_response(edge),
                 harness=native_harness,
                 payload=payload,

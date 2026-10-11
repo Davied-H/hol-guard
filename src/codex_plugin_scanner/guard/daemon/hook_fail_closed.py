@@ -61,12 +61,34 @@ def fail_closed_pre_tool(
     }
 
 
+def _deadline_kwargs(deadline: float | None) -> dict[str, float]:
+    return {} if deadline is None else {"deadline": deadline}
+
+
 def render_pre_tool(
-    harness: str, verdict: Mapping[str, object], *, guard_home: Path | None = None
+    harness: str, verdict: Mapping[str, object], *, guard_home: Path | None = None, deadline: float | None = None
 ) -> dict[str, object]:
     """Resident-rendered PreToolUse response, or a fixed deny when it cannot render."""
 
-    return native_render_pre_tool(harness, verdict, guard_home=guard_home) or fail_closed_pre_tool(harness)
+    rendered = native_render_pre_tool(harness, verdict, guard_home=guard_home, **_deadline_kwargs(deadline))
+    return rendered or fail_closed_pre_tool(harness)
+
+
+def render_accepted_allow(
+    harness: str, allowed: Mapping[str, object], *, guard_home: Path | None = None, deadline: float | None = None
+) -> dict[str, object]:
+    """Render an allow that rests on a saved or local approval.
+
+    Only a reply the resident actually rendered is marked as an accepted reuse.
+    When the resident cannot render, the fixed deny carries no reuse status, so
+    the activity record never says an approval was accepted for a blocked action.
+    """
+
+    rendered = native_render_pre_tool(harness, allowed, guard_home=guard_home, **_deadline_kwargs(deadline))
+    if rendered is None:
+        return fail_closed_pre_tool(harness)
+    rendered["approval_reuse_status"] = "accepted"
+    return rendered
 
 
 def render_pre_tool_review(
@@ -75,8 +97,13 @@ def render_pre_tool_review(
     *,
     approval: Mapping[str, object] | None,
     guard_home: Path | None = None,
+    deadline: float | None = None,
 ) -> dict[str, object]:
-    """Resident-rendered paused review, or a fixed deny when it cannot render."""
+    """Resident-rendered paused review, or a fixed deny when it cannot render.
+
+    The fixed deny keeps the signed approval link in its reason, so a review that
+    is already queued still tells the user where to approve it.
+    """
 
     linked_reason = None
     raw_url = approval.get("approval_url") if approval is not None else None
@@ -88,9 +115,14 @@ def render_pre_tool_review(
             guard_home=guard_home,
         )
     rendered = native_render_pre_tool_review(
-        harness, verdict, approval=approval, linked_reason=linked_reason, guard_home=guard_home
+        harness,
+        verdict,
+        approval=approval,
+        linked_reason=linked_reason,
+        guard_home=guard_home,
+        **_deadline_kwargs(deadline),
     )
-    return rendered or fail_closed_pre_tool(harness)
+    return rendered or fail_closed_pre_tool(harness, reason=linked_reason or RENDER_UNAVAILABLE_REASON)
 
 
 def render_recording_only_pre_tool(
@@ -106,15 +138,6 @@ def render_recording_only_pre_tool(
 
 def _compact(event_name: str) -> str:
     return event_name.strip().lower().replace("_", "").replace("-", "")
-
-
-def _flat_deny(canonical: str, reason: str, reason_code: str) -> dict[str, object]:
-    return {
-        "decision": "block" if canonical == "hermes" else "deny",
-        "reason": reason,
-        "policy_action": "block",
-        "reason_code": reason_code,
-    }
 
 
 def fail_closed_response(
@@ -155,7 +178,7 @@ def fail_closed_response(
         if canonical == "copilot":
             return {"behavior": "deny", "message": reason, "interrupt": False, "reason_code": reason_code}
         if canonical in _FLAT_DENY_HARNESSES:
-            return _flat_deny(canonical, reason, reason_code)
+            return fail_closed_pre_tool(harness, reason=reason, reason_code=reason_code)
         return {
             "reason_code": reason_code,
             "hookSpecificOutput": {

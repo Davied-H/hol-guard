@@ -5,6 +5,7 @@ import pytest
 from codex_plugin_scanner.guard.daemon import hook_fail_closed
 from codex_plugin_scanner.guard.daemon.hook_fail_closed import (
     fail_closed_pre_tool,
+    render_accepted_allow,
     render_pre_tool,
     render_pre_tool_review,
     render_recording_only_pre_tool,
@@ -64,3 +65,25 @@ def test_review_ships_the_linked_reason_only_with_an_approval_url(monkeypatch: p
     render_pre_tool_review("pi", {"reason": "Needs review."}, approval={"approval_url": " http://x/a "})
     assert captured[0]["linked_reason"] is None
     assert captured[1]["linked_reason"] == "Needs review. http://x/a"
+
+
+def test_accepted_allow_is_marked_only_when_the_resident_rendered_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(hook_fail_closed, "native_render_pre_tool", lambda *a, **k: {"decision": "allow"})
+    assert render_accepted_allow("pi", {"decision": "allow"}) == {
+        "decision": "allow",
+        "approval_reuse_status": "accepted",
+    }
+    monkeypatch.setattr(hook_fail_closed, "native_render_pre_tool", lambda *a, **k: None)
+    failed = render_accepted_allow("pi", {"decision": "allow"})
+    assert failed["decision"] == "deny"
+    assert "approval_reuse_status" not in failed
+
+
+def test_queued_review_deny_keeps_the_approval_link_when_render_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(hook_fail_closed, "native_render_pre_tool_review", lambda *a, **k: None)
+    monkeypatch.setattr(hook_fail_closed, "native_review_reason", lambda *a, **k: "Review at http://127.0.0.1/a")
+    rendered = render_pre_tool_review(
+        "pi", {"reason": "needs review"}, approval={"approval_url": "http://127.0.0.1/a", "request_id": "r"}
+    )
+    assert rendered["decision"] == "deny"
+    assert "http://127.0.0.1/a" in str(rendered["reason"])
