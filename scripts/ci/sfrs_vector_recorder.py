@@ -75,27 +75,44 @@ _real_sha256 = hashlib.sha256
 class _RecordingHash:
     def __init__(self, data: bytes = b"", **kwargs: Any) -> None:
         self._hash = _real_sha256(data, **kwargs)
-        self._buffer = bytearray(data)
+        self._buffer = bytearray(data[:_MAX_PREIMAGE_BYTES])
+        self._truncated = len(data) > _MAX_PREIMAGE_BYTES
 
     def update(self, data: bytes) -> None:
         self._hash.update(data)
-        if len(self._buffer) < _MAX_PREIMAGE_BYTES:
-            self._buffer += data
+        if self._truncated:
+            return
+        remaining = _MAX_PREIMAGE_BYTES - len(self._buffer)
+        self._buffer += data[:remaining]
+        self._truncated = len(data) > remaining
 
     def copy(self) -> _RecordingHash:
         clone = _RecordingHash()
         clone._hash = self._hash.copy()
         clone._buffer = bytearray(self._buffer)
+        clone._truncated = self._truncated
         return clone
+
+    def _remember(self, digest: str) -> None:
+        """Keep only pre-images that are complete and valid UTF-8."""
+
+        if self._truncated:
+            return
+        preimage = bytes(self._buffer)
+        try:
+            preimage.decode("utf-8")
+        except UnicodeDecodeError:
+            return
+        _remember(digest, preimage)
 
     def hexdigest(self) -> str:
         digest = self._hash.hexdigest()
-        _remember(digest, bytes(self._buffer))
+        self._remember(digest)
         return digest
 
     def digest(self) -> bytes:
         raw = self._hash.digest()
-        _remember(raw.hex(), bytes(self._buffer))
+        self._remember(raw.hex())
         return raw
 
     def __getattr__(self, name: str) -> Any:
