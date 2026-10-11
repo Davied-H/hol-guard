@@ -27,6 +27,12 @@ mod archive_verdict_seam;
 mod bundle_parse_reuse_tests;
 mod business_document_compile;
 mod business_source_codec;
+mod cisco_containment;
+mod cisco_evidence;
+mod cisco_plan;
+mod cisco_preflight_op;
+#[cfg(test)]
+mod cisco_preflight_vectors_tests;
 mod claim_approval_reuse_op;
 mod claim_reuse;
 mod claim_reuse_binding;
@@ -141,6 +147,16 @@ mod guard_store_outbox_reads;
 mod guard_store_outbox_reads_tests;
 mod guard_store_outbox_recover;
 mod guard_store_outbox_requeue;
+mod guard_store_receipt_analytics;
+mod guard_store_receipt_approval;
+mod guard_store_receipt_decision;
+mod guard_store_receipt_envelope;
+mod guard_store_receipt_events;
+mod guard_store_receipt_reads;
+mod guard_store_receipt_rollups;
+mod guard_store_receipt_writes;
+#[cfg(test)]
+mod guard_store_receipts_vectors_tests;
 mod guard_store_sessions;
 #[cfg(test)]
 mod guard_store_sessions_vectors_tests;
