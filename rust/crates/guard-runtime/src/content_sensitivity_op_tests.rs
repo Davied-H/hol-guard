@@ -150,28 +150,34 @@ fn authenticated_forwarding_works_with_and_without_a_loaded_policy_store() {
         "source_ref_external_allowed":false,"reviewed_output_sha256":null,"observe_mode":false,"deadline_budget_ms":100
     })).unwrap();
     let store = crate::policy_store::PolicySnapshotStore::new(&state, &"e".repeat(64)).unwrap();
-    crate::policy_store::native_review_origin::authenticate(&store, &mut receipt).unwrap();
-    input["validated_receipt"] = serde_json::to_value(&receipt).unwrap();
-    let mut request = request("mediate_finish", input);
-    request.guard_home = home.to_string_lossy().into_owned();
-    for authority in [None, Some(&store)] {
-        let response: Value = serde_json::from_slice(
-            &crate::request_context_op::evaluate_request_context_request_with_store(
-                &request, authority,
+    for harness in ["pi", "omp"] {
+        input["harness"] = json!(harness);
+        input["binding"]["harness"] = json!(harness);
+        input["refreshed_binding"] = input["binding"].clone();
+        receipt.harness = harness.into();
+        crate::policy_store::native_review_origin::authenticate(&store, &mut receipt).unwrap();
+        input["validated_receipt"] = serde_json::to_value(&receipt).unwrap();
+        let mut request = request("mediate_finish", input.clone());
+        request.guard_home = home.to_string_lossy().into_owned();
+        for authority in [None, Some(&store)] {
+            let response: Value = serde_json::from_slice(
+                &crate::request_context_op::evaluate_request_context_request_with_store(
+                    &request, authority,
+                )
+                .unwrap(),
             )
-            .unwrap(),
-        )
-        .unwrap();
-        assert_eq!(response["status"], "ok", "{response}");
-        assert_eq!(response["payload"]["result"]["ok"]["action"], "forward");
+            .unwrap();
+            assert_eq!(response["status"], "ok", "{response}");
+            assert_eq!(response["payload"]["result"]["ok"]["action"], "forward");
+        }
+        if let RequestContextKindV1::ContentSensitivity(body) = &mut request.action {
+            body.input["validated_receipt"]["decision_id"] = json!("0".repeat(64));
+        }
+        assert_eq!(
+            run(&request)["code"],
+            "native_request_context_content_receipt_invalid"
+        );
     }
-    if let RequestContextKindV1::ContentSensitivity(body) = &mut request.action {
-        body.input["validated_receipt"]["decision_id"] = json!("0".repeat(64));
-    }
-    assert_eq!(
-        run(&request)["code"],
-        "native_request_context_content_receipt_invalid"
-    );
     drop(store);
     std::fs::remove_dir_all(home).unwrap();
 }

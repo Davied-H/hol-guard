@@ -4445,6 +4445,24 @@
     "rust/crates/guard-command/src/content_sensitivity_tests.rs::original_python_sensitivity_and_mediation_vectors_replay"
    ],
    "status": "native_behavior_ported_requires_ci"
+  },
+  {
+   "old_node": "tests/test_structured_output_mediation_routes.py::test_clean_forward_requires_complete_recheck_and_exposes_only_ephemeral_digest[pi]",
+   "replacement_nodes": [
+    "rust/crates/guard-runtime/src/content_sensitivity_op_tests.rs::authenticated_forwarding_works_with_and_without_a_loaded_policy_store",
+    "rust/crates/guard-command/src/content_sensitivity_tests.rs::original_python_sensitivity_and_mediation_vectors_replay"
+   ],
+   "status": "native_behavior_ported_requires_ci",
+   "rationale": "Original clean-forward and binding-recheck outcomes replay in compiled Rust; actual native signed receipts cover forwarding with and without a policy store. Unsigned route fixtures now assert fail-closed behavior."
+  },
+  {
+   "old_node": "tests/test_structured_output_mediation_routes.py::test_clean_forward_requires_complete_recheck_and_exposes_only_ephemeral_digest[omp]",
+   "replacement_nodes": [
+    "rust/crates/guard-runtime/src/content_sensitivity_op_tests.rs::authenticated_forwarding_works_with_and_without_a_loaded_policy_store",
+    "rust/crates/guard-command/src/content_sensitivity_tests.rs::original_python_sensitivity_and_mediation_vectors_replay"
+   ],
+   "status": "native_behavior_ported_requires_ci",
+   "rationale": "Original clean-forward and binding-recheck outcomes replay in compiled Rust; actual native signed receipts cover forwarding with and without a policy store. Unsigned route fixtures now assert fail-closed behavior."
   }
  ],
  "preserved_tests": [

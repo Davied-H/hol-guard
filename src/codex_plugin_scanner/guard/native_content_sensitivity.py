@@ -36,6 +36,10 @@ class _CallerRejectedError(NativeContentSensitivityError):
     """Bound native rejection or exhausted caller budget, not a resident fault."""
 
 
+class NativeContentSensitivityDeadlineError(NativeContentSensitivityError):
+    """The caller's absolute transport budget expired."""
+
+
 def _binary_signature(status: NativeRuntimeStatus) -> tuple[int, ...] | None:
     if status.identity is None:
         return None
@@ -52,7 +56,7 @@ def _binary_signature(status: NativeRuntimeStatus) -> tuple[int, ...] | None:
 def _status(deadline: float) -> NativeRuntimeStatus:
     global _status_memo
     if time.monotonic() >= deadline:
-        raise NativeContentSensitivityError("native_content_sensitivity_unavailable")
+        raise NativeContentSensitivityDeadlineError("native_content_sensitivity_deadline_exceeded")
     key = _status_request_key(_runtime_candidates())
     memo = _status_memo
     if (
@@ -90,6 +94,8 @@ def content_query(query: str, body: dict[str, Any], *, deadline_monotonic: float
             "decoded_bytes": len(body_bytes),
         }
     status = _status(deadline)
+    if time.monotonic() >= deadline:
+        raise NativeContentSensitivityDeadlineError("native_content_sensitivity_deadline_exceeded")
     if (
         time.monotonic() >= deadline
         or not status.available
@@ -118,7 +124,9 @@ def content_query(query: str, body: dict[str, Any], *, deadline_monotonic: float
         ).encode("utf-8")
     except (TypeError, ValueError, UnicodeError) as exc:
         raise NativeContentSensitivityError("native_content_sensitivity_request_invalid") from exc
-    if len(encoded) > 6 * 1024 * 1024 or time.monotonic() >= deadline:
+    if time.monotonic() >= deadline:
+        raise NativeContentSensitivityDeadlineError("native_content_sensitivity_deadline_exceeded")
+    if len(encoded) > 6 * 1024 * 1024:
         raise NativeContentSensitivityError("native_content_sensitivity_request_invalid")
     try:
         raw = native_resident_client_request(
@@ -129,7 +137,7 @@ def content_query(query: str, body: dict[str, Any], *, deadline_monotonic: float
             deadline_monotonic=deadline,
         )
         if time.monotonic() >= deadline:
-            raise _CallerRejectedError("native_content_sensitivity_deadline_exceeded")
+            raise NativeContentSensitivityDeadlineError("native_content_sensitivity_deadline_exceeded")
         if raw is None or len(raw) > 256 * 1024:
             raise NativeContentSensitivityError("native_content_sensitivity_unavailable")
         response = json.loads(raw, object_pairs_hook=unique_json_object)
@@ -167,11 +175,13 @@ def content_query(query: str, body: dict[str, Any], *, deadline_monotonic: float
             raise NativeContentSensitivityError("native_content_sensitivity_malformed")
         if "ok" in result and not _dto_shape(query, result["ok"]):
             raise NativeContentSensitivityError("native_content_sensitivity_malformed")
-    except _CallerRejectedError:
+        if time.monotonic() >= deadline:
+            raise NativeContentSensitivityDeadlineError("native_content_sensitivity_deadline_exceeded")
+    except (_CallerRejectedError, NativeContentSensitivityDeadlineError):
         raise
     except (KeyError, OSError, RuntimeError, TypeError, ValueError) as exc:
         if time.monotonic() >= deadline:
-            raise _CallerRejectedError("native_content_sensitivity_deadline_exceeded") from exc
+            raise NativeContentSensitivityDeadlineError("native_content_sensitivity_deadline_exceeded") from exc
         native_record_resident_failure(status.identity.sha256, home, reason="native_content_sensitivity_unavailable")
         raise NativeContentSensitivityError("native_content_sensitivity_unavailable") from exc
     native_record_resident_success(status.identity.sha256, home)

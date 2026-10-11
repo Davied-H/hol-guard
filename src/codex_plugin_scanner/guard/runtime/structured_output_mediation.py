@@ -7,7 +7,11 @@ from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass
 from typing import Any, Literal
 
-from ..native_content_sensitivity import NativeContentSensitivityError, content_query
+from ..native_content_sensitivity import (
+    NativeContentSensitivityDeadlineError,
+    NativeContentSensitivityError,
+    content_query,
+)
 from .structured_data_sensitivity import DeclaredField, DeclaredSchema
 
 _LOG = logging.getLogger(__name__)
@@ -190,6 +194,8 @@ def mediate_native_post_tool_content(
             body.update(refreshed_binding=asdict(refreshed) if refreshed is not None else None, recheck_error=error)
             result = content_query("mediate_finish", body, deadline_monotonic=deadline_monotonic)
         return None if result is None else StructuredContentMediation(**result)
+    except NativeContentSensitivityDeadlineError:
+        return StructuredContentMediation("withhold", "structured_review_deadline_exceeded", None)
     except NativeContentSensitivityError:
         return StructuredContentMediation("withhold", "structured_managed_authority_unavailable", None)
 

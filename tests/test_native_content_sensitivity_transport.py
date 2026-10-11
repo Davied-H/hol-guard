@@ -226,6 +226,24 @@ def test_harness_presentation_is_available_without_native_runtime(monkeypatch):
     assert mediation.canonical_harness_name("oh-my-pi") == "omp"
 
 
+def test_expired_mediation_projects_transport_failure_without_opening_a_client(monkeypatch):
+    from codex_plugin_scanner.guard.runtime import structured_output_mediation as mediation
+
+    calls = _resident(monkeypatch)
+    result = mediation.mediate_native_post_tool_content(
+        harness="pi",
+        event_name="PostToolUse",
+        native_result={"decision": "allow"},
+        validated_receipt=None,
+        structured_output_json="{}",
+        binding=None,
+        deadline_monotonic=0.0,
+    )
+    assert result.action == "withhold"
+    assert result.reason_code == "structured_review_deadline_exceeded"
+    assert not calls
+
+
 def test_path_batch_requires_exact_result_count(monkeypatch):
     from codex_plugin_scanner.guard.runtime import secret_sensitivity as sensitivity
 
