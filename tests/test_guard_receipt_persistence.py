@@ -23,7 +23,6 @@ import pytest
 
 from codex_plugin_scanner.guard.models import GuardArtifact, GuardReceipt
 from codex_plugin_scanner.guard.store import GuardStore
-from codex_plugin_scanner.guard.store_receipt_rollups import backfill_receipt_rollups
 from tests.coverage_ci import under_coverage_scale
 
 
@@ -460,7 +459,7 @@ class TestReceiptAnalytics:
         assert incremental["reviewed"] == 0
 
         with store._connect() as connection:
-            backfill_receipt_rollups(connection)
+            connection.execute("delete from receipt_aggregate_totals where totals_key = 'global'")
 
         backfilled = store.receipt_analytics(top_limit=5)
         assert backfilled["allowed"] == 1

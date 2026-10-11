@@ -81,6 +81,7 @@ The blocker requiring migration evidence for archived receipt-rollup reconstruct
 Evidence:
 
 - `store_receipt_rollups.py` — `backfill_receipt_rollups()`, byte-identical to 2.2.
+- Update: the rebuild now runs in the resident (`guard_store_receipt_rollups.rs`), replayed byte-for-byte against vectors recorded from this Python implementation before it was removed.
 - Tests: `tests/test_guard_receipt_persistence.py::test_store_upgrade_rebuilds_historical_warn_rollup_bucket`, `tests/test_guard_storage_maintenance.py` — passed.
 - Characterization tests `tests/test_guard_release_3_0_compatibility.py::TestLegacyReceiptRollupReconstruction` simulate a 2.x-era store (migrations 10 and 16 applied, stale rollup bucket) and prove `backfill_receipt_rollups` reconstructs archived rollups idempotently.
 

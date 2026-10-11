@@ -38,6 +38,8 @@ use crate::guard_store_outbox_queries as queries;
 use crate::guard_store_outbox_reads as reads;
 use crate::guard_store_outbox_recover::recover_sequences;
 use crate::guard_store_outbox_requeue::{repair_rejected_correlation, requeue_method};
+use crate::guard_store_receipt_reads as receipt_reads;
+use crate::guard_store_receipt_writes as receipt_writes;
 use crate::guard_store_sessions as sessions;
 
 const MAX_BUSY_TIMEOUT_MS: u64 = 600_000;
@@ -239,7 +241,15 @@ fn method_kind(method: &str) -> Option<Kind> {
         | "list_artifact_snapshots"
         | "list_artifact_inventory"
         | "find_artifact_inventory_item"
-        | "get_artifact_capability" => Kind::Read,
+        | "get_artifact_capability"
+        | "list_receipts"
+        | "list_receipts_since_rowid"
+        | "latest_receipt_rowid"
+        | "get_receipt"
+        | "get_receipt_for_approval_request"
+        | "get_latest_receipt"
+        | "count_receipts"
+        | "receipt_decision_counts" => Kind::Read,
         "list_command_activity_page"
         | "command_activity_analytics"
         | "list_command_activity_invalidations"
@@ -277,7 +287,15 @@ fn method_kind(method: &str) -> Option<Kind> {
         | "mark_inventory_removed"
         | "save_artifact_capability"
         | "upsert_provenance_cache"
-        | "next_aibom_trust_attestation_sequence" => Kind::Write,
+        | "next_aibom_trust_attestation_sequence"
+        | "add_receipt"
+        | "set_receipt_action_envelope"
+        | "update_receipt_policy_decision"
+        | "update_receipt_approval_context"
+        | "list_receipts_for_command_detail_backfill"
+        | "receipt_summary_between"
+        | "receipt_analytics"
+        | "reconcile_receipt_events" => Kind::Write,
         _ => return None,
     })
 }
@@ -403,6 +421,30 @@ fn dispatch(
         "next_aibom_trust_attestation_sequence" => {
             inventory::next_attestation_sequence(connection, args)
         }
+        "add_receipt" => receipt_writes::add_receipt(connection, args),
+        "set_receipt_action_envelope" => receipt_writes::set_action_envelope(connection, args),
+        "update_receipt_policy_decision" => {
+            receipt_writes::update_policy_decision(connection, args)
+        }
+        "update_receipt_approval_context" => {
+            receipt_writes::update_approval_context(connection, args)
+        }
+        "list_receipts" => receipt_reads::list_receipts(connection, args),
+        "list_receipts_since_rowid" => receipt_reads::list_since_rowid(connection, args),
+        "list_receipts_for_command_detail_backfill" => {
+            receipt_reads::list_for_command_detail_backfill(connection, args)
+        }
+        "latest_receipt_rowid" => receipt_reads::latest_rowid(connection, args),
+        "get_receipt" => receipt_reads::get_receipt(connection, args),
+        "get_receipt_for_approval_request" => {
+            receipt_reads::get_for_approval_request(connection, args)
+        }
+        "get_latest_receipt" => receipt_reads::get_latest(connection, args),
+        "count_receipts" => receipt_reads::count(connection, args),
+        "receipt_summary_between" => receipt_reads::summary_between(connection, args),
+        "receipt_analytics" => receipt_reads::analytics(connection, args),
+        "receipt_decision_counts" => receipt_reads::decision_counts(connection, args),
+        "reconcile_receipt_events" => receipt_reads::reconcile_events(connection, args),
         _ => Err(StoreError::Invalid("native_guard_store_method_unknown")),
     }
 }

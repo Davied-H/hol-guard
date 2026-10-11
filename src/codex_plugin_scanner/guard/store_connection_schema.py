@@ -1269,8 +1269,6 @@ class StoreConnectionSchemaMixin:
             for idx_stmt in receipt_rollup_index_statements():
                 connection.execute(idx_stmt)
             if not self._schema_version_applied(connection, version=6):
-                if receipt_rollups_need_backfill(connection):
-                    backfill_receipt_rollups(connection)
                 self._record_schema_version(connection, version=6)
             if not self._schema_version_applied(
                 connection,
@@ -1278,9 +1276,10 @@ class StoreConnectionSchemaMixin:
             ):
                 # P45 changes ``warn`` from the reviewed bucket to allowed.
                 # Existing v6 rollups can have the right total while retaining
-                # the old bucket semantics, so this migration must rebuild them
-                # unconditionally before incremental deltas are applied.
-                backfill_receipt_rollups(connection)
+                # the old bucket semantics, so this migration drops the totals
+                # row; the resident rebuilds every rollup before the next read
+                # or incremental delta.
+                connection.execute("delete from receipt_aggregate_totals")
                 self._record_schema_version(
                     connection,
                     version=_RECEIPT_WARN_ROLLUP_MIGRATION_VERSION,
