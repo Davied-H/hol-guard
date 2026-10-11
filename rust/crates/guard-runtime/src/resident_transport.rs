@@ -319,7 +319,7 @@ fn spawn_codex_resume_retry(
 ) {
     if thread::Builder::new()
         .spawn(move || {
-            let _slot = ContinuationSlot;
+            let slot = ContinuationSlot;
             let response = match catch_unwind(AssertUnwindSafe(|| {
                 observe(Phase::ResidentEvaluate, || {
                     crate::resident_protocol::evaluate_resident_bytes(
@@ -334,6 +334,9 @@ fn spawn_codex_resume_retry(
                     crate::resident_protocol::error_response("native_runtime_panicked", false)
                 }
             };
+            // Free the slot before replying so a caller that sends again on
+            // receipt never sees this finished continuation as in flight.
+            drop(slot);
             let mut pending = pending;
             let _ = write_bound_response(&mut *pending.stream, &pending.request_id, &response);
         })
