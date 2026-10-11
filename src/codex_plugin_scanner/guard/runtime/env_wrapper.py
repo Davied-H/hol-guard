@@ -96,6 +96,7 @@ def parse_env_wrapper(
     cwd_value = value["effective_cwd"]
     value["effective_cwd"] = None if cwd_value is None else Path(cwd_value)
     value["split_expansions"] = tuple(
-        EnvSplitExpansion(**{**item, "tokens": string_tuple(item["tokens"])}) for item in value["split_expansions"]
+        EnvSplitExpansion(item["payload"], item["source_index"], string_tuple(item["tokens"]))
+        for item in value["split_expansions"]
     )
     return EnvWrapperParseResult(**value)
