@@ -85,6 +85,7 @@ fn recursive_copies_create_new_workspace_trees_only() {
         "cp -R keys copied",
         "cp -R linked copied",
         "cp -R src-alias copied",
+        "cp -R src-alias/nested alias-copy",
         "cp -R src .git/hooks-copy",
         "cp -R src .hidden-copy",
         "cp -R src ~/outside/copy",

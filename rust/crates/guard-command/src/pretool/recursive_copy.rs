@@ -35,6 +35,9 @@ pub(super) fn safe_recursive_copy_arguments(
     ) else {
         return false;
     };
+    if guard_secure_fs::contains_symlink_component(&source_path) {
+        return false;
+    }
     let Ok(metadata) = source_path.symlink_metadata() else {
         return false;
     };
