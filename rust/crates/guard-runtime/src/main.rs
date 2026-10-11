@@ -301,6 +301,7 @@ mod runner_sync_policy;
 mod runner_sync_signals;
 mod runner_sync_url;
 mod runtime_cli;
+mod runtime_detector_run_op;
 mod shim_op;
 #[cfg(unix)]
 mod skill_directory_identity_op;
