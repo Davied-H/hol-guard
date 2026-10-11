@@ -2716,7 +2716,8 @@ impl PackageEvalApi for ResidentPackageEval {
     }
 }
 
-/// Unused-in-override path seam; the override never reads workspace files.
+/// Path seam over the real filesystem: reads manifests and lockfiles within the
+/// workspace through `read_bytes_within_workspace` (hashed for audit receipts).
 pub(crate) struct ResidentPaths;
 
 impl PathSupportApi for ResidentPaths {

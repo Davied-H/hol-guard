@@ -21,6 +21,8 @@ _FEATURE = "package-audit-projection-v1"
 _RECEIPT_KEYS = frozenset({"policy_decision", "capabilities_summary", "artifact_name", "scanner_evidence"})
 _CI_KEYS = frozenset({"matched", "matched_packages", "threshold"})
 _ACTIONS = frozenset({"allow", "warn", "review", "block"})
+# Matches PACKAGE_AUDIT_PROJECTION_MAX_BYTES; stays under the resident client frame limit.
+_MAX_REQUEST_BYTES = 5 * 1024 * 1024
 
 
 class NativePackageAuditProjectionError(RuntimeError):
@@ -39,6 +41,7 @@ def _send(query: dict[str, object], store: Any | None) -> dict[str, Any]:
         operation="package_audit_projection",
         feature=_FEATURE,
         error=NativePackageAuditProjectionError,
+        max_request_bytes=_MAX_REQUEST_BYTES,
     )
 
 
@@ -56,7 +59,15 @@ def native_audit_receipt_metadata(
     if store is not None:
         query["store_path"] = str(store.path)
     payload = _send(query, store)
-    if set(payload) != _RECEIPT_KEYS or payload.get("policy_decision") not in _ACTIONS:
+    decision = payload.get("policy_decision")
+    if (
+        set(payload) != _RECEIPT_KEYS
+        or not isinstance(decision, str)
+        or decision not in _ACTIONS
+        or not isinstance(payload.get("capabilities_summary"), str)
+        or not isinstance(payload.get("artifact_name"), str)
+        or not isinstance(payload.get("scanner_evidence"), dict)
+    ):
         raise NativePackageAuditProjectionError("Native audit receipt invalid")
     return payload
 
@@ -88,7 +99,14 @@ def native_ci_gate_result(evaluation: dict[str, object], *, threshold: str, stor
     """Return the resident's CI severity gate verdict for an audit evaluation."""
 
     payload = _send({"query": "ci_gate", "evaluation": evaluation, "threshold": threshold}, store)
-    if set(payload) != _CI_KEYS or not isinstance(payload.get("matched"), bool):
+    matched_packages = payload.get("matched_packages")
+    if (
+        set(payload) != _CI_KEYS
+        or not isinstance(payload.get("matched"), bool)
+        or not isinstance(matched_packages, list)
+        or not all(isinstance(name, str) and name for name in matched_packages)
+        or not isinstance(payload.get("threshold"), str)
+    ):
         raise NativePackageAuditProjectionError("Native CI gate invalid")
     return payload
 

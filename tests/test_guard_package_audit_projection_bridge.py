@@ -49,7 +49,15 @@ def test_receipt_without_store_or_workspace_omits_keys(monkeypatch: pytest.Monke
 
 @pytest.mark.parametrize(
     "reply",
-    [{}, {**_RECEIPT, "policy_decision": "maybe"}, {**_RECEIPT, "extra": 1}],
+    [
+        {},
+        {**_RECEIPT, "policy_decision": "maybe"},
+        {**_RECEIPT, "extra": 1},
+        {**_RECEIPT, "capabilities_summary": 3},
+        {**_RECEIPT, "artifact_name": None},
+        {**_RECEIPT, "scanner_evidence": []},
+        {**_RECEIPT, "policy_decision": ["warn"]},
+    ],
 )
 def test_receipt_rejects_malformed_reply(monkeypatch: pytest.MonkeyPatch, reply: dict[str, object]) -> None:
     _patch(monkeypatch, reply)
@@ -87,3 +95,24 @@ def test_ci_gate_and_empty_outcome_validate_shape(monkeypatch: pytest.MonkeyPatc
     _patch(monkeypatch, {"audit_outcome": 1, "message": "m"})
     with pytest.raises(bridge.NativePackageAuditProjectionError):
         bridge.native_empty_audit_outcome(manifest_paths=[], lockfile_paths=[], posture={}, store=_STORE)
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        {"matched": True, "matched_packages": "a", "threshold": "high"},
+        {"matched": True, "matched_packages": [1], "threshold": "high"},
+        {"matched": True, "matched_packages": [""], "threshold": "high"},
+        {"matched": True, "matched_packages": [], "threshold": 5},
+    ],
+)
+def test_ci_gate_rejects_bad_field_types(monkeypatch: pytest.MonkeyPatch, reply: dict[str, object]) -> None:
+    _patch(monkeypatch, reply)
+    with pytest.raises(bridge.NativePackageAuditProjectionError):
+        bridge.native_ci_gate_result({}, threshold="high", store=_STORE)
+
+
+def test_requests_use_five_mib_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen = _patch(monkeypatch, dict(_RECEIPT))
+    bridge.native_audit_receipt_metadata({}, workspace_dir=None, store=None)
+    assert seen[0]["max_request_bytes"] == 5 * 1024 * 1024
