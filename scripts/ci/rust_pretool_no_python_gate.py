@@ -51,7 +51,6 @@ def function_calls(node: ast.AST) -> set[str]:
 
 _TYPED_FAIL_SAFE = frozenset(
     {
-        "post_tool_fail_safe_response",
         "availability_harness_response",
         "_native_worker_fail_safe_result",
         "_runtime_hook_fail_safe_response",

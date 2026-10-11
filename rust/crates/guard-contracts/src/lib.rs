@@ -51,6 +51,8 @@ mod local_cli_identity;
 pub use local_cli_identity::*;
 mod approval_scope;
 pub use approval_scope::*;
+mod hook_render;
+pub use hook_render::*;
 mod approval_proof;
 mod cursor_observer_proof;
 pub use approval_proof::*;

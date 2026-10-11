@@ -10,10 +10,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..native_local_cli_identity import LocalCliIdentityUnavailableError
+from .hook_fail_closed import render_pre_tool
 from .hook_native_launch_identity import launch_cwd as _launch_cwd
 from .hook_native_saved_approval import _native_review_is_overridable, _saved_block_response
 from .hook_request_parsing import pre_tool_command
-from .hook_worker_responses import harness_json_from_native_pre_tool
 
 if TYPE_CHECKING:
     from ..models import GuardAction
@@ -109,7 +109,7 @@ def native_local_cli_grant_response(
         return None
     allowed = dict(native_result)
     allowed.update(decision="allow", minimum_action="allow", policy_action="allow")
-    response = harness_json_from_native_pre_tool(harness, allowed)
+    response = render_pre_tool(harness, allowed)
     response["approval_reuse_status"] = "accepted"
     return False, response
 

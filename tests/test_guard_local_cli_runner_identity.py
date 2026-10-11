@@ -149,8 +149,8 @@ def test_native_review_applies_custom_extension_grants(
     rendered: list[Mapping[str, object]] = []
     monkeypatch.setattr(
         hook_native_local_cli,
-        "harness_json_from_native_pre_tool",
-        lambda harness, result: rendered.append(result) or {"harness": harness},
+        "render_pre_tool",
+        lambda harness, result, **_kwargs: rendered.append(result) or {"harness": harness},
     )
     monkeypatch.setattr(
         hook_native_local_cli,

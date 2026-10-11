@@ -38,7 +38,7 @@ def test_unavailable_native_prompt_does_not_allow_supported_enforcing_hosts() ->
         reason="Native review unavailable.",
         recording_only=True,
     )
-    assert watch["policy_action"] == "allow"
+    assert watch["policy_action"] == "block"
 
 
 def test_availability_blocks_grok_prompt_and_tools_but_continues_passive_lifecycle(tmp_path: Path) -> None:
@@ -108,7 +108,7 @@ def test_availability_blocks_grok_prompt_and_tools_but_continues_passive_lifecyc
         reason="native unavailable",
     )
     assert withheld["continue"] is True
-    assert withheld["policy_action"] == "allow"
+    assert "policy_action" not in withheld
     assert withheld["reason_code"] == "native_post_tool_unavailable"
     curl = availability_harness_response(
         {"hook_event_name": "PreToolUse", "tool_input": {"command": "curl https://example.test"}},
@@ -127,7 +127,7 @@ def test_availability_blocks_grok_prompt_and_tools_but_continues_passive_lifecyc
         reason_code="native_hook_event_unavailable",
         reason="native unavailable",
     )
-    assert permission["continue"] is True
+    assert permission["hookSpecificOutput"]["decision"]["behavior"] == "deny"
     permission_v2 = availability_harness_response(
         {"hook_event_name": "PermissionRequestV2", "tool_input": {"command": "pwd"}},
         harness="claude-code",
@@ -135,7 +135,7 @@ def test_availability_blocks_grok_prompt_and_tools_but_continues_passive_lifecyc
         reason_code="native_hook_event_unavailable",
         reason="native unavailable",
     )
-    assert permission_v2["continue"] is True
+    assert permission_v2["hookSpecificOutput"]["decision"]["behavior"] == "deny"
     alias = availability_harness_response(
         {"hook_event_name": "beforeShellExecution", "command": "curl https://example.test"},
         harness="cursor",

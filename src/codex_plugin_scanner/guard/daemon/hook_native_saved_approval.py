@@ -15,6 +15,7 @@ from pathlib import Path
 
 from ..runtime.approval_context import build_approval_context_token, parse_approval_context_token
 from ..store_policy_decision import policy_decision_hash_exists
+from .hook_fail_closed import render_pre_tool
 from .hook_native_exact_identity import (
     GUARD_CONTROL,
     GUARD_CONTROL_ACTION_TYPES,
@@ -28,7 +29,6 @@ from .hook_native_exact_identity import (
 from .hook_native_launch_identity import launch_cwd, launch_identity
 from .hook_native_review_binding import native_review_policy_binding
 from .hook_request_parsing import pre_tool_command
-from .hook_worker_responses import harness_json_from_native_pre_tool
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -238,7 +238,7 @@ def native_saved_decision_response(
         return None
     allowed = dict(native_result)
     allowed.update(decision="allow", minimum_action="allow", policy_action="allow")
-    response = harness_json_from_native_pre_tool(harness, allowed)
+    response = render_pre_tool(harness, allowed)
     response["approval_reuse_status"] = "accepted"
     return response
 
@@ -296,7 +296,7 @@ def _saved_block_response(
         reason_code=reason_code,
         reason=reason,
     )
-    response = harness_json_from_native_pre_tool(harness, blocked)
+    response = render_pre_tool(harness, blocked)
     response["approval_reuse_status"] = "blocked"
     return response
 

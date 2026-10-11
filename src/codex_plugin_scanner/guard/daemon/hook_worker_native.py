@@ -24,10 +24,8 @@ from ..runtime.structured_output_mediation import (
     mediate_native_post_tool_content,
     resolve_managed_structured_output_resolution,
 )
-from .hook_availability_policy import (
-    availability_harness_response,
-    recording_only_pre_tool_response,
-)
+from .hook_availability_policy import availability_harness_response
+from .hook_fail_closed import render_pre_tool, render_recording_only_pre_tool
 from .hook_native_cli_observer import observe_native_pre_tool_cli
 from .hook_native_local_cli import native_local_cli_block_response
 from .hook_native_review_approval import (
@@ -41,7 +39,6 @@ from .hook_worker_native_review import (
     NativePolicyBindingRefreshError,
     review_native_edge,
 )
-from .hook_worker_responses import harness_json_from_native_pre_tool
 
 
 def _edge_harness_response(edge: Mapping[str, object]) -> dict[str, object]:
@@ -224,8 +221,7 @@ def _record_unavailable_native(
         guard_home=guard_home,
         recording_only=recording_only,
     )
-    route = "native_degraded" if response.get("reason_code") == "native_degraded_emergency_safe" else "native_fail_safe"
-    host.metrics.record_route(route)
+    host.metrics.record_route("native_fail_safe")
     if event_name == "PreToolUse":
         writer = host.activity_writer
         submit = getattr(writer, "submit_command_activity", None)
@@ -589,10 +585,11 @@ class HookWorkerNativeMixin:
             )
             if custom_block is not None:
                 if recording_only:
-                    custom_block = recording_only_pre_tool_response(
+                    custom_block = render_recording_only_pre_tool(
                         native_harness,
                         reason_code="local_cli_extension_blocked",
                         reason="Watch recorded this action without stopping it.",
+                        guard_home=guard_home,
                     )
                 return (
                     _record_native_pre_activity(self, native_harness, payload, custom_block, accepted_receipt),
@@ -606,7 +603,7 @@ class HookWorkerNativeMixin:
             from ..adapters.zcode_contained_tests import route_zcode_containment
 
             rendered = route_zcode_containment(
-                harness_json_from_native_pre_tool(native_harness, repaired_result)
+                render_pre_tool(native_harness, repaired_result, guard_home=guard_home)
                 if repaired_result
                 else _edge_harness_response(edge),
                 harness=native_harness,
