@@ -1055,17 +1055,25 @@ def test_inspection_and_runtime_artifact_share_canonical_wrapper_evidence(tmp_pa
 
 
 def test_inspection_parses_each_command_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from codex_plugin_scanner.guard.runtime import command_inspection as inspection_module
+    from codex_plugin_scanner.guard.runtime import command_model
+    from codex_plugin_scanner.guard.runtime.secret_file_request_services import shell_request_classifier
 
-    real_parser = inspection_module.parse_shell_command
     calls = 0
+    real_model_parser = command_model.parse_shell_command
+    real_classifier_parser = shell_request_classifier.parse_shell_command
 
-    def counting_parser(*args: object, **kwargs: object):
+    def counting_model_parser(*args: object, **kwargs: object):
         nonlocal calls
         calls += 1
-        return real_parser(*args, **kwargs)
+        return real_model_parser(*args, **kwargs)
 
-    monkeypatch.setattr(inspection_module, "parse_shell_command", counting_parser)
+    def counting_classifier_parser(*args: object, **kwargs: object):
+        nonlocal calls
+        calls += 1
+        return real_classifier_parser(*args, **kwargs)
+
+    monkeypatch.setattr(command_model, "parse_shell_command", counting_model_parser)
+    monkeypatch.setattr(shell_request_classifier, "parse_shell_command", counting_classifier_parser)
 
     payload = inspect_command("git push origin main --force", cwd=tmp_path, home_dir=tmp_path)
 
