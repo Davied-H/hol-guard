@@ -141,6 +141,30 @@ jobs:
               --markdown warm-path-summary-reference.md --json warm-path-summary-reference.json
             cat warm-path-summary-reference.md >> "$GITHUB_STEP_SUMMARY"
           fi
+      - name: Require working probes
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import sys
+
+          document = json.load(open("warm-path-latency.json"))
+          problems = []
+          for round_ in document.get("rounds", []):
+              for label, phases in round_.get("results", {}).items():
+                  for name, phase in phases.items():
+                      if isinstance(phase, dict) and "error" in phase:
+                          problems.append(f"round {round_.get('round')} {label} {name}: {phase['error']}")
+          summary = json.load(open("warm-path-summary.json"))
+          for path, entry in summary.get("paths", {}).items():
+              if "error" in entry:
+                  problems.append(f"{path}: {entry['error']}")
+          if problems:
+              print("probe failures (measurement problem, not a latency verdict):")
+              print("\n".join(problems[:20]))
+              sys.exit(1)
+          PY
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: ${{ !cancelled() }}
         with:

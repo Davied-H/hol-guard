@@ -149,7 +149,6 @@ def _run_install(cli: Path, harness: str, env: dict[str, str], home: Path, guard
     result = subprocess.run(
         [
             str(cli),
-            "guard",
             "install",
             harness,
             "--home",
