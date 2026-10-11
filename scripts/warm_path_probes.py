@@ -145,6 +145,24 @@ def stop_services(cli: Path, env: dict[str, str], home: Path, guard_home: Path, 
             continue
 
 
+def _describe_interpreter(cli: Path) -> str:
+    """Owner and mode of the target interpreter chain, to explain an install integrity refusal."""
+
+    parts = [f"uid={os.getuid()}"]
+    candidate = cli.parent / "python"
+    for _ in range(3):
+        try:
+            metadata = candidate.lstat()
+        except OSError as error:
+            parts.append(f"{candidate}: {error.__class__.__name__}")
+            break
+        parts.append(f"{candidate}: uid={metadata.st_uid} gid={metadata.st_gid} mode={oct(metadata.st_mode)}")
+        if not candidate.is_symlink():
+            break
+        candidate = candidate.parent / os.readlink(candidate)
+    return "; ".join(parts)
+
+
 def _run_install(cli: Path, harness: str, env: dict[str, str], home: Path, guard_home: Path, workspace: Path) -> None:
     result = subprocess.run(
         [
@@ -167,7 +185,10 @@ def _run_install(cli: Path, harness: str, env: dict[str, str], home: Path, guard
         check=False,
     )
     if result.returncode != 0:
-        raise RuntimeError(f"guard install {harness} failed rc={result.returncode}: {result.stderr[-1500:]}")
+        raise RuntimeError(
+            f"guard install {harness} failed rc={result.returncode}: {result.stderr[-1500:]} "
+            f"[interpreter {_describe_interpreter(cli)}]"
+        )
 
 
 def classify_hook_output(returncode: int, stdout: str) -> str:

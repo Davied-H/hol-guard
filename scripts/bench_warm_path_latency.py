@@ -107,7 +107,7 @@ def measure_target(label: str, python: Path, args: argparse.Namespace) -> dict[s
                         samples=args.mcp_samples,
                     )
             except Exception as error:  # keep the other path and later rounds measurable
-                phase = {"error": f"{type(error).__name__}: {error}"[:2000]}
+                phase = {"error": f"{type(error).__name__}: {error}"[:4000]}
                 print(f"  {label} {path} FAILED {phase['error']}", flush=True)
             else:
                 print(f"  {label} {path} p95={phase['stats_ms']['p95']:.2f} ms classes={phase['classes']}", flush=True)  # type: ignore[index]
