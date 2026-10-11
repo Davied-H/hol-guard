@@ -138,6 +138,9 @@ use parser_segments::*;
 pub mod pretool;
 mod runtime_read_paths;
 pub mod secret_path_probe;
+mod sfrs_json;
+pub mod sfrs_replay;
+mod sfrs_requests;
 mod shell_command_wrappers;
 pub mod shell_execution_context;
 mod shell_execution_context_support;
@@ -530,6 +533,8 @@ pub mod restricted_pytest;
 pub mod resume_template;
 #[cfg(unix)]
 pub mod sandbox;
+#[cfg(unix)]
+pub(crate) mod semantic_workspace;
 pub mod shims;
 pub mod signals;
 pub mod supply_chain_bundle;

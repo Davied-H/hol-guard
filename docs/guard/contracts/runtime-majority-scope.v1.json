@@ -406,6 +406,22 @@
         ]
       },
       {
+        "id": "daemon-dashboard-read-routes",
+        "category": "control_plane",
+        "reason": "Dashboard read routes and their support handlers split out of daemon/server.py: extension-control, runtime, inventory, settings, update, request-queue, receipt, policy, evidence and command-activity GET routes, plus the request list, capabilities, operator health, MCP policy request read, static asset, dashboard shell and event stream handlers. Each is reached only from an explicit /v1 GET branch (or a static dashboard path) dispatched by do_GET after the dashboard token check. Evidence: the transitive self-call closure of _handle_runtime_hook, _handle_runtime_hook_fast, _handle_hook_readiness, _execute_runtime_hook and _handle_daemon_identity_challenge contains none of the moved methods, and hook routes are POST-only so do_GET never reaches the hook path.",
+        "path": [
+          "src/codex_plugin_scanner/guard/daemon/server_dashboard_*.py"
+        ]
+      },
+      {
+        "id": "daemon-control-plane-routes",
+        "category": "control_plane",
+        "reason": "Daemon control-plane routes split out of daemon/server.py: package-firewall and supply-chain actions, Guard Cloud connect and dashboard reconnect, headless app actions and receipts, harness/notification/insights/read-state routes, protection-repair and settings routes, and the headless cloud-sync queue and connect-state machines, plus the POST control-route dispatch chain (server_control_routes_post.py: extension-control, local-CLI, settings import, package actions, policy, request-resolution and the remaining /v1 control routes), and the handler bodies behind those routes (server_control_policy.py, server_control_sync.py, server_control_operations.py and server_control_health.py: policy decisions and approval-gate routes, headless policy sync and cloud-exception sync, operation and insight routes, and runtime health, containment and catalog responses). Each is reached only from a /v1 control route dispatched by do_GET/do_POST or from the daemon's background cloud-sync loop; do_POST keeps the origin check, route-class authentication, request-body parsing, daemon identity proof and the /v1/hooks routes in server.py. Evidence: the transitive self-call closure of _handle_runtime_hook, _handle_runtime_hook_fast, _handle_hook_readiness, _execute_runtime_hook and the _runtime_hook_* helpers contains none of the moved methods, and none of the moved module-level functions is referenced from those methods. Helpers shared with the admission path or the server (server_common.py: logger, clock, local-URL builder, string-dict guard, settings response shaper) stay in scope.",
+        "path": [
+          "src/codex_plugin_scanner/guard/daemon/server_control_*.py"
+        ]
+      },
+      {
         "id": "runtime-transition-lifecycle",
         "category": "control_plane",
         "reason": "Core-owned runtime transition coordination, qualification and capture; one-shot activation lifecycle rather than per-request enforcement. runtime_transition.py (RuntimeTransition, TransitionFile, TransitionError, assert_transition_mutation_allowed) is reached only from install, uninstall, prepare, migrate and repair functions: adapters/base.py (PreparedHarnessInstall.publish, prepare_install, _owned_adapter_mutation), the adapters' prepare_install/install/uninstall/_install_owned/_uninstall_owned/prepare_codex_* methods, cursor_hooks._prepare_cursor_hooks, codex_hook_manifest.prepare_authenticated_hook_*, codex_hook_integrity._ordinary_hook_writer, shims.prepare_guard_shim/install_guard_shim/remove_guard_shim/ensure_guard_shim_path_in_shell_profile, store_cloud_events.set_managed_install (called only by install/bootstrap/paseo install), and the excluded transition coordinator modules. No hook, run, protect or MCP route calls it.",
@@ -466,11 +482,32 @@
           "src/codex_plugin_scanner/guard/daemon/repair_self_check.py",
           "src/codex_plugin_scanner/guard/daemon/runtime_repair.py"
         ]
+      },
+      {
+        "id": "third-party-analyzer-wrapper",
+        "category": "third_party_analyzer_wrapper",
+        "reason": "Thin wrappers that invoke the third-party Cisco skill and MCP analyzers in a bounded scanner subprocess and normalize their raw output into Finding records. They decide nothing: which roots may be scanned, every containment verdict, the finding-to-signal mapping and the policy action are owned by the resident cisco_preflight operation (guard-runtime cisco_plan, cisco_containment and cisco_evidence), which never spawns analyzers. Reached from guard/native_cisco_preflight.py (the analyzer step between the resident plan and evidence queries) and from the plugin-scanner product. The exclusion is whole-path rather than function-level because the in-scope transport imports the analyzer runners, which a function exclusion forbids.",
+        "path": [
+          "src/codex_plugin_scanner/integrations/__init__.py",
+          "src/codex_plugin_scanner/integrations/cisco_mcp_scanner.py",
+          "src/codex_plugin_scanner/integrations/cisco_skill_scanner.py",
+          "src/codex_plugin_scanner/integrations/scanner_subprocess.py"
+        ]
+      },
+      {
+        "id": "ephemeral-daemon-reaper",
+        "category": "control_plane",
+        "reason": "Best-effort janitor that retires guard daemons and clears daemon state leaked by ephemeral (pytest temp) guard homes. It is scheduled once per interval on a daemon thread from ensure_guard_daemon (manager._schedule_stale_ephemeral_guard_daemon_reap), never joins, never gates the caller, and acts only on other homes (the caller's own home is excluded). It runs no hook admission, decision, authorization or enforcement, and the manager reaches it through a late-bound facade.",
+        "path": [
+          "src/codex_plugin_scanner/guard/daemon/manager_ephemeral_reap.py"
+        ]
       }
     ],
     "reviewed_runtime": [
       {
         "path": [
+          "src/codex_plugin_scanner/guard/daemon/server_common.py",
+          "src/codex_plugin_scanner/guard/harness_disconnect_gate.py",
           "src/codex_plugin_scanner/guard/daemon/hook_*.py",
           "src/codex_plugin_scanner/guard/daemon/runtime_hook_*.py",
           "src/codex_plugin_scanner/guard/cli/commands_hook*.py",
@@ -603,9 +640,10 @@
           "src/codex_plugin_scanner/guard/runtime/package_json_scripts.py",
           "src/codex_plugin_scanner/guard/runtime/skill_paths.py",
           "src/codex_plugin_scanner/guard/runtime/source_paths.py",
-          "src/codex_plugin_scanner/guard/runtime/typescript_snapshot_inputs.py"
+          "src/codex_plugin_scanner/guard/runtime/typescript_snapshot_inputs.py",
+          "src/codex_plugin_scanner/guard/runtime/workspace_snapshot_inputs.py"
         ],
-        "reason": "Reviewed: runtime support modules used by supply-chain evaluation, contained execution, local-CLI/MCP grant decisions and secret-file-request services: js_semver, npm_policy_range, lockfile/manifest evaluation, package_json_scripts, source_paths/skill_paths, local_node_runner_*, typescript_snapshot_inputs, contained_test_hook/wrapper, oci isolation, extension and mcp_server contribution, embedded_script_evidence, executable_flag_contract, local_cli_compound, mcp_connection_identity, mcp_server_grants. Each is imported by an in-scope decision, parser or containment module on the hook/run path."
+        "reason": "Reviewed: runtime support modules used by supply-chain evaluation, contained execution, local-CLI/MCP grant decisions and secret-file-request services: js_semver, npm_policy_range, lockfile/manifest evaluation, package_json_scripts, source_paths/skill_paths, local_node_runner_*, typescript_snapshot_inputs, workspace_snapshot_inputs, contained_test_hook/wrapper, oci isolation, extension and mcp_server contribution, embedded_script_evidence, executable_flag_contract, local_cli_compound, mcp_connection_identity, mcp_server_grants. Each is imported by an in-scope decision, parser or containment module on the hook/run path."
       },
       {
         "path": [
