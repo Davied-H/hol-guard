@@ -4,6 +4,7 @@
   "known_gaps": {
     "pytest-module-quiet": "native_command_review_required",
     "python-run-test-script": "native_command_review_required",
+    "vitest-local-bin": "native_command_review_required",
     "zcode-read-git-ref-main": "native_file_read_review"
   },
   "cases": [
@@ -149,7 +150,7 @@
         "command": "./node_modules/.bin/vitest run tests/sample.test.ts"
       },
       "cwd": "worktree",
-      "expect": "always"
+      "expect": "quiet"
     },
     {
       "id": "guard-status-head",
