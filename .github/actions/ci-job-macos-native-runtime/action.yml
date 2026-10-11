@@ -17,8 +17,16 @@ runs:
     - name: Build the macOS native runtime
       shell: bash
       env:
-        CARGO_PROFILE_RELEASE_OPT_LEVEL: ${{ inputs.opt-level }}
-      run: cargo build --manifest-path rust/Cargo.toml --locked --release -p hol-guard-runtime --bin hol-guard-runtime --timings
+        OPT: ${{ inputs.opt-level }}
+      run: |
+        extra=()
+        if [[ "$OPT" == ws* ]]; then
+          config="$RUNNER_TEMP/opt-level.toml"
+          printf '[profile.release]\nopt-level = %s\n[profile.release.package."*"]\nopt-level = "s"\n' "${OPT#ws}" > "$config"
+          cat "$config"
+          extra=(--config "$config")
+        fi
+        cargo build --manifest-path rust/Cargo.toml --locked --release -p hol-guard-runtime --bin hol-guard-runtime --timings "${extra[@]}"
     - name: Upload the macOS native runtime
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
       with:
