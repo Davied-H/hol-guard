@@ -40,6 +40,9 @@ from codex_plugin_scanner.guard.runtime.secret_file_request_services import (
     shell_tokenization,
 )
 
+from sfrs_developer_section import EXTRAS as DEVELOPER_EXTRAS
+from sfrs_developer_section import developer_section
+
 MAX_TEXTS = 6000
 HOST_MARKERS = ("michaelkantor", "runner2-port", "hol-guard/.venv", "/home/runner", "/var/folders", "~/.codex")
 
@@ -334,10 +337,11 @@ def _corpus(fixture_dir: Path) -> list[str]:
         if path.name.startswith("intermediate_"):
             continue
         document = json.loads(gzip.decompress(path.read_bytes()))
-        for vector in document["vectors"]:
+        for vector in document.get("vectors", ()):
             _walk(vector["args"], found)
     found.update(DOCKER_EXTRAS)
     found.update(GITHUB_EXTRAS)
+    found.update(DEVELOPER_EXTRAS)
     return sorted(found)[:MAX_TEXTS]
 
 
@@ -626,6 +630,7 @@ def _record(text: str) -> dict[str, object]:
         "static": _static(text, parts, segments),
         "github": _github(text, parts, segments),
         "gh_shell": _gh_shell(text, parts, segments),
+        "developer": developer_section(segments),
     }
 
 

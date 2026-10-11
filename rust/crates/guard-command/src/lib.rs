@@ -141,6 +141,9 @@ pub mod secret_path_probe;
 mod sfrs_agent_guidance;
 mod sfrs_benign_reads;
 mod sfrs_constants;
+mod sfrs_developer_inspection;
+#[cfg(test)]
+mod sfrs_developer_vectors;
 mod sfrs_docker_args;
 #[cfg(test)]
 mod sfrs_docker_vectors;
