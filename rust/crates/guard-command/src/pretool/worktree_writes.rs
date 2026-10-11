@@ -100,11 +100,32 @@ fn repository_common_directory(workspace: &Path) -> Option<(PathBuf, PathBuf)> {
 
 fn bounded_git_metadata(path: &Path) -> Option<String> {
     use std::io::Read;
+    // A named pipe would block File::open until a writer appears and hold a
+    // resident worker past the request deadline. Open without blocking, then
+    // keep only a regular file.
+    let file = open_git_metadata(path)?;
+    if !file.metadata().ok()?.is_file() {
+        return None;
+    }
     let mut text = String::new();
-    std::fs::File::open(path)
-        .ok()?
-        .take(4097)
-        .read_to_string(&mut text)
-        .ok()?;
+    file.take(4097).read_to_string(&mut text).ok()?;
     (text.len() <= 4096).then_some(text)
+}
+
+#[cfg(unix)]
+fn open_git_metadata(path: &Path) -> Option<std::fs::File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK)
+        .open(path)
+        .ok()
+}
+
+#[cfg(not(unix))]
+fn open_git_metadata(path: &Path) -> Option<std::fs::File> {
+    if !path.symlink_metadata().ok()?.file_type().is_file() {
+        return None;
+    }
+    std::fs::File::open(path).ok()
 }

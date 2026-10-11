@@ -241,6 +241,38 @@ fn linked_worktree_reads_refs_in_its_common_git_directory() {
 }
 
 #[test]
+fn a_named_pipe_git_metadata_file_does_not_grant_common_dir_reads() {
+    for kind in ["dot-git", "commondir", "gitdir"] {
+        let (home, parent, worktree) = linked_worktree_fixture();
+        let marker = match kind {
+            "dot-git" => worktree.join(".git"),
+            "commondir" => parent.join(".git/worktrees/app-feature/commondir"),
+            "gitdir" => parent.join(".git/worktrees/app-feature/gitdir"),
+            _ => unreachable!(),
+        };
+        std::fs::remove_file(&marker).unwrap();
+        assert!(
+            std::process::Command::new("mkfifo")
+                .arg(&marker)
+                .status()
+                .unwrap()
+                .success(),
+            "{kind}"
+        );
+        let target = parent.join(".git/refs/heads/main");
+        let (send, recv) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            send.send(read("claude-code", &target, &home, &worktree))
+                .unwrap();
+        });
+        let decision = recv
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .unwrap_or_else(|_| panic!("{kind} blocked on a named pipe"));
+        assert_ne!(decision, "allow", "{kind}");
+    }
+}
+
+#[test]
 fn a_git_file_without_a_matching_backlink_grants_nothing() {
     let (home, parent, worktree) = linked_worktree_fixture();
     std::fs::write(
