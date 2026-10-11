@@ -144,6 +144,35 @@ def test_unserializable_configuration_is_rejected_before_spawning(monkeypatch) -
     assert seen == []
 
 
+def test_same_path_with_a_new_digest_recomputes(monkeypatch: pytest.MonkeyPatch) -> None:
+    digests = iter(("a" * 64, "b" * 64))
+    policies = iter(
+        (
+            {"ok": True, "policy": {"default_action": "warn"}},
+            {"ok": True, "policy": {"default_action": "block"}},
+        )
+    )
+
+    def status(**_: object) -> SimpleNamespace:
+        return SimpleNamespace(
+            available=True,
+            compatible=True,
+            identity=SimpleNamespace(path=Path("/tmp/hol-guard-runtime"), sha256=next(digests)),
+            capabilities=SimpleNamespace(features=(client.POLICY_EFFECTIVE_FEATURE,)),
+        )
+
+    def run(_path: Path, _args: tuple[str, ...], *, input_text: str, timeout_seconds: float) -> str:
+        assert input_text
+        assert timeout_seconds > 0
+        return json.dumps(next(policies))
+
+    monkeypatch.setattr(native_runtime, "native_runtime_status", status)
+    monkeypatch.setattr(native_runtime, "_run_native_process", run)
+
+    assert client.effective_native_policy_v3(dict(_BASE)) == {"default_action": "warn"}
+    assert client.effective_native_policy_v3(dict(_BASE)) == {"default_action": "block"}
+
+
 def test_unchanged_request_is_memoized_without_respawning(monkeypatch) -> None:
     seen = _install(monkeypatch, {"ok": True, "policy": {"default_action": "warn"}})
 

@@ -15,7 +15,6 @@ import threading
 import time
 from collections import OrderedDict
 from collections.abc import Iterable, Mapping
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from .native_policy_snapshot_constants import NativePolicySnapshotError
@@ -23,6 +22,7 @@ from .native_policy_snapshot_harness_postures import HARNESS_POSTURES_BINDING_KE
 
 if TYPE_CHECKING:
     from .config import GuardConfig
+    from .native_runtime_values import NativeRuntimeIdentity
 
 POLICY_EFFECTIVE_COMMAND = "policy-effective"
 POLICY_EFFECTIVE_FEATURE = "native-policy-effective-v1"
@@ -30,10 +30,10 @@ POLICY_EFFECTIVE_SCHEMA = "guard-effective-policy.v1"
 POLICY_EFFECTIVE_TIMEOUT_SECONDS = 10.0
 _UNAVAILABLE = "native_policy_effective_unavailable"
 _INVALID = "native_policy_effective_invalid"
-# The composer is a pure function of its request, so an unchanged request (a
-# database heartbeat, a repeated publish) must not respawn the runtime.
+# The composer is a pure function of one binary and its request. An unchanged
+# request against that same digest must not respawn the runtime.
 _MEMO_LIMIT = 32
-_MEMO: OrderedDict[tuple[str, str], dict[str, Any]] = OrderedDict()
+_MEMO: OrderedDict[tuple[str, str, str], dict[str, Any]] = OrderedDict()
 _MEMO_LOCK = threading.Lock()
 _CONFIG_FIELDS = (
     "mode",
@@ -68,7 +68,7 @@ def _config_fields(config: GuardConfig | Mapping[str, object]) -> dict[str, obje
     return {name: getattr(config, name) for name in _CONFIG_FIELDS if hasattr(config, name)}
 
 
-def _runtime_path(deadline_monotonic: float) -> Path:
+def _runtime_identity(deadline_monotonic: float) -> NativeRuntimeIdentity:
     from .native_runtime import native_runtime_status
 
     status = native_runtime_status(deadline_monotonic=deadline_monotonic)
@@ -80,7 +80,7 @@ def _runtime_path(deadline_monotonic: float) -> Path:
         or POLICY_EFFECTIVE_FEATURE not in status.capabilities.features
     ):
         raise NativePolicySnapshotError(_UNAVAILABLE)
-    return status.identity.path
+    return status.identity
 
 
 def _call(
@@ -108,8 +108,11 @@ def _call(
     if deadline - time.monotonic() <= 0:
         # An expired caller budget must neither probe nor spawn.
         raise NativePolicySnapshotError(_UNAVAILABLE)
-    path = _runtime_path(deadline)
-    memo_key = (str(path), text)
+    identity = _runtime_identity(deadline)
+    path = identity.path
+    # The path stays the same when a runtime is replaced in place. The digest
+    # is what says the derivation tables changed.
+    memo_key = (str(path), identity.sha256, text)
     with _MEMO_LOCK:
         cached = _MEMO.get(memo_key)
         if cached is not None:

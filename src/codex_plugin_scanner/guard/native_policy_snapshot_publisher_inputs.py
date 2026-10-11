@@ -357,11 +357,9 @@ class NativePolicySnapshotPublisherInputs:
                 cast(str, effective_policy["mode"]),
                 self._source_control_fingerprint(self._compiled_command_extensions(), source),
             )
-        except NativePolicySnapshotError as error:
-            if str(error) == "native_policy_effective_unavailable" and not force_republish:
-                # A momentary composer miss is not a policy change: keep the
-                # last observation and ACK, and re-observe on the next write.
-                return False
+        except NativePolicySnapshotError:
+            # A missing composer cannot prove the database write left the
+            # effective policy unchanged. Record unavailable and withdraw.
             current_fingerprint = ("unavailable", "", "")
         except (OSError, TypeError, ValueError, RuntimeError):
             current_fingerprint = ("unavailable", "", "")
