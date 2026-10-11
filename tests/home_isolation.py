@@ -23,7 +23,17 @@ _TOOL_HOMES = {
 _CACHE_HOMES = {"UV_CACHE_DIR": ".cache/uv"}
 
 # Inherited overrides would send writes back to the real installation.
-_HOME_OVERRIDES = ("CODEX_HOME", "HOL_GUARD_HOME", "CLAUDE_CONFIG_DIR", "XDG_CONFIG_HOME", "XDG_DATA_HOME")
+_HOME_OVERRIDES = (
+    "CODEX_HOME",
+    "HOL_GUARD_HOME",
+    "CLAUDE_CONFIG_DIR",
+    "OPENCODE_CONFIG_DIR",
+    "HERMES_HOME",
+    "HERMES_HOST_HOME",
+    "PASEO_HOME",
+    "XDG_CONFIG_HOME",
+    "XDG_DATA_HOME",
+)
 
 
 def isolate_user_home() -> Path:
@@ -50,6 +60,10 @@ def isolate_user_home() -> Path:
     os.environ["HOME"] = str(private_home)
     if os.name == "nt":
         os.environ["USERPROFILE"] = str(private_home)
+        # Some harness configuration lives in the roaming profile, not the home.
+        roaming = private_home / "AppData" / "Roaming"
+        roaming.mkdir(parents=True, exist_ok=True)
+        os.environ["APPDATA"] = str(roaming)
     os.environ["HOL_GUARD_TEST_PRIVATE_HOME"] = str(private_home)
     return private_home
 
