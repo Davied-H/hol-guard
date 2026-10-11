@@ -171,6 +171,7 @@ mod guard_store_policy_source_context;
 #[cfg(test)]
 mod guard_store_policy_source_context_vectors_tests;
 mod guard_store_policy_source_labels;
+mod guard_store_policy_source_rows;
 mod guard_store_receipt_analytics;
 mod guard_store_receipt_approval;
 mod guard_store_receipt_decision;

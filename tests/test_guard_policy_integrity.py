@@ -1525,6 +1525,50 @@ def test_repair_policy_integrity_attaches_source_context_to_invalid_items(
     assert "items" not in without_items
 
 
+@pytest.mark.parametrize(
+    "failure",
+    [
+        TimeoutError("native store timed out"),
+        sqlite3.OperationalError("database is locked"),
+        ValueError("native reply undecodable"),
+        "malformed",
+    ],
+)
+def test_repair_policy_integrity_survives_a_failed_source_context_lookup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    failure: object,
+) -> None:
+    store = _store(tmp_path)
+    store.upsert_policy(
+        _decision(artifact_id="codex:project:repair-lookup", artifact_hash="hash-repair-lookup"),
+        "2026-06-14T00:00:00Z",
+    )
+    with sqlite3.connect(store.guard_home / "guard.db") as connection:
+        connection.execute(
+            "update policy_decisions set payload_mac = ? where artifact_id = ?",
+            ("deadbeef", "codex:project:repair-lookup"),
+        )
+
+    def _native_store_call(method: str, args: dict[str, object]) -> object:
+        assert method == "policy_source_contexts"
+        if isinstance(failure, BaseException):
+            raise failure
+        return [{"unexpected_key": "value"} for _ in args["items"]]
+
+    monkeypatch.setattr(store, "_native_store_call", _native_store_call)
+
+    with caplog.at_level("WARNING"):
+        payload = store.repair_policy_integrity(clear_invalid=False, now="2026-06-14T00:02:00Z")
+
+    items = payload["items"]
+    assert isinstance(items, list)
+    assert [item["artifact_id"] for item in items] == ["codex:project:repair-lookup"]
+    assert "remembered_command" not in items[0]
+    assert "policy source context lookup failed" in caplog.text
+
+
 def test_tampered_signed_row_is_ignored_and_event_emitted(tmp_path: Path) -> None:
     store = _store(tmp_path)
     store.upsert_policy(

@@ -5,8 +5,12 @@
 from __future__ import annotations
 
 # ruff: noqa: F403,F405
+import logging
+
 from .native_guard_store import NativeGuardStoreUnavailable
 from .store_base import *
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def _set_private_mode_compat(path: Path, mode: int) -> None:
@@ -113,8 +117,10 @@ class StorePolicyIntegrityAdminMixin:
 
         Call this after the store connection is closed: the native store may need
         to provision its verifier key, which opens the store separately. When the
-        native store is unavailable the items keep their policy fields and carry no
-        remembered context; nothing is derived locally.
+        native store is unavailable, busy or answers out of contract, the items keep
+        their policy fields and carry no remembered context; nothing is derived
+        locally. The context is display-only, so a failed lookup never fails the
+        listing or a repair that has already committed.
         """
 
         if not items:
@@ -131,21 +137,19 @@ class StorePolicyIntegrityAdminMixin:
         ]
         try:
             payload = self._native_store_call("policy_source_contexts", {"items": request})
-        except NativeGuardStoreUnavailable:
+        except NativeGuardStoreUnavailable as error:
+            _LOGGER.warning("policy source context unavailable: %s", error.reason)
             return
-        if not isinstance(payload, list) or len(payload) != len(items):
-            raise ValueError("native_policy_source_context_invalid")
-        for item, context in zip(items, payload, strict=True):
-            if context is None:
-                continue
-            if (
-                not isinstance(context, dict)
-                or not context
-                or not set(context) <= _POLICY_SOURCE_CONTEXT_KEYS
-                or not all(isinstance(value, str) for value in context.values())
-            ):
-                raise ValueError("native_policy_source_context_invalid")
-            item.update(context)
+        except (sqlite3.DatabaseError, TimeoutError, ValueError) as error:
+            _LOGGER.warning("policy source context lookup failed: %s", type(error).__name__)
+            return
+        contexts = _valid_policy_source_contexts(payload, count=len(items))
+        if contexts is None:
+            _LOGGER.warning("policy source context lookup failed: native_policy_source_context_invalid")
+            return
+        for item, context in zip(items, contexts, strict=True):
+            if context is not None:
+                item.update(context)
 
     @staticmethod
     def _policy_decision_dict_from_row(row: sqlite3.Row) -> dict[str, object]:
@@ -749,3 +753,24 @@ class StorePolicyIntegrityAdminMixin:
             "current_hash": str(row["current_hash"]),
             "recorded_at": str(row["recorded_at"]),
         }
+
+
+def _valid_policy_source_contexts(payload: object, *, count: int) -> list[dict[str, str] | None] | None:
+    """Return the per-item contexts, or ``None`` when the reply is out of contract."""
+
+    if not isinstance(payload, list) or len(payload) != count:
+        return None
+    contexts: list[dict[str, str] | None] = []
+    for context in payload:
+        if context is None:
+            contexts.append(None)
+            continue
+        if (
+            not isinstance(context, dict)
+            or not context
+            or not set(context) <= _POLICY_SOURCE_CONTEXT_KEYS
+            or not all(isinstance(value, str) for value in context.values())
+        ):
+            return None
+        contexts.append(context)
+    return contexts

@@ -1,10 +1,13 @@
 //! Text helpers for policy decision source context: label classification,
 //! remembered-command cleanup, workspace labels and scope paths. Each helper
 //! keeps the exact string semantics of the Python store it replaced
-//! (`str.strip`, `str.lower`, `PurePosixPath` parent and suffix).
+//! (`str.strip`, `str.lower`, and `Path` parent and suffix on the host
+//! platform).
 
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+
+use crate::guard_store_json::py_strip;
 
 const GENERIC_POLICY_REASONS: [&str; 4] = [
     "approved in review",
@@ -40,16 +43,6 @@ pub(crate) const RUNTIME_EXACT_PREFIX: &str = "runtime-exact:";
 
 const DIRECTORY_SCOPE_SUFFIXES: [&str; 7] =
     [".json", ".toml", ".yaml", ".yml", ".lock", ".md", ".txt"];
-
-/// Python `str.isspace`: Unicode whitespace plus the ASCII separators.
-fn is_py_space(ch: char) -> bool {
-    ch.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&ch)
-}
-
-/// Python `str.strip()`.
-pub(crate) fn py_strip(value: &str) -> &str {
-    value.trim_matches(is_py_space)
-}
 
 /// Python truthiness of an optional string.
 pub(crate) fn truthy(value: Option<&str>) -> bool {
@@ -264,27 +257,55 @@ fn posix_suffix(name: &str) -> &str {
     }
 }
 
+/// `Path(path).parent` when the name has a config-file suffix, else the path.
+/// `Path` is `PureWindowsPath` on Windows, so both separators split there.
 fn directory_scope_path(path: &str) -> Option<String> {
+    directory_scope_path_for(path, cfg!(windows))
+}
+
+fn directory_scope_path_for(path: &str, windows: bool) -> Option<String> {
     let normalized = path.trim_end_matches('/');
     if normalized.is_empty() {
         return None;
     }
-    let (root, parts) = posix_parts(normalized);
+    let (root, parts, separator) = if windows {
+        let (root, parts) = windows_parts(normalized);
+        (root, parts, "\\")
+    } else {
+        let (root, parts) = posix_parts(normalized);
+        (root.to_owned(), parts, "/")
+    };
     let suffix = posix_suffix(parts.last().copied().unwrap_or("")).to_lowercase();
     if !DIRECTORY_SCOPE_SUFFIXES.contains(&suffix.as_str()) {
         return Some(normalized.to_owned());
     }
     let parent_parts = &parts[..parts.len().saturating_sub(1)];
-    let parent = if parts.is_empty() {
-        format!("{root}{}", parts.join("/"))
-    } else {
-        format!("{root}{}", parent_parts.join("/"))
-    };
+    let parent = format!("{root}{}", parent_parts.join(separator));
     if parent.is_empty() || parent == "." {
         Some(normalized.to_owned())
     } else {
         Some(parent)
     }
+}
+
+/// `PureWindowsPath(path)` reduced to its drive plus root and non-`.` parts.
+fn windows_parts(path: &str) -> (String, Vec<&str>) {
+    let bytes = path.as_bytes();
+    let (drive, rest) = if bytes.len() >= 2 && bytes[1] == b':' && bytes[0].is_ascii_alphabetic() {
+        path.split_at(2)
+    } else {
+        ("", path)
+    };
+    let root = if rest.starts_with(['/', '\\']) {
+        "\\"
+    } else {
+        ""
+    };
+    let parts = rest
+        .split(['/', '\\'])
+        .filter(|part| !part.is_empty() && *part != ".")
+        .collect();
+    (format!("{drive}{root}"), parts)
 }
 
 /// The directory named after "evaluated from " in a receipt provenance.
@@ -336,4 +357,32 @@ pub(crate) fn scanner_evidence_fields(raw: Option<&str>) -> (Option<String>, Opt
         }
     }
     (None, None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::directory_scope_path_for;
+
+    #[test]
+    fn posix_config_file_scopes_to_its_directory() {
+        let scope = directory_scope_path_for("/repo/settings.json", false);
+        assert_eq!(scope.as_deref(), Some("/repo"));
+        let scope = directory_scope_path_for("/repo/tools", false);
+        assert_eq!(scope.as_deref(), Some("/repo/tools"));
+        // Backslashes are ordinary name characters in a POSIX path.
+        let scope = directory_scope_path_for("C:\\repo\\settings.json", false);
+        assert_eq!(scope.as_deref(), Some("C:\\repo\\settings.json"));
+    }
+
+    #[test]
+    fn windows_config_file_scopes_to_its_directory() {
+        let scope = directory_scope_path_for("C:\\repo\\settings.json", true);
+        assert_eq!(scope.as_deref(), Some("C:\\repo"));
+        let scope = directory_scope_path_for("C:/repo/sub/guard.toml", true);
+        assert_eq!(scope.as_deref(), Some("C:\\repo\\sub"));
+        let scope = directory_scope_path_for("C:\\settings.json", true);
+        assert_eq!(scope.as_deref(), Some("C:\\"));
+        let scope = directory_scope_path_for("C:\\repo\\tools", true);
+        assert_eq!(scope.as_deref(), Some("C:\\repo\\tools"));
+    }
 }

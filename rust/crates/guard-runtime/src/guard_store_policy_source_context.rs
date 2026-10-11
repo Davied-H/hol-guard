@@ -10,12 +10,14 @@ use serde_json::{Map, Value};
 
 use crate::guard_store_args::Args;
 use crate::guard_store_db::{placeholders, query_all, Row, StoreError, StoreResult};
+use crate::guard_store_json::py_strip;
 use crate::guard_store_policy_source_labels::{
-    artifact_family_key, backtick_phrases, hash_match_variants, is_generic_policy_reason,
-    is_human_policy_label, is_runtime_exact_key, normalize_policy_scope_path,
-    provenance_workspace_path, py_strip, runtime_exact_family, runtime_exact_key,
-    sanitize_remembered_command, scanner_evidence_fields, truthy, workspace_display_label,
+    hash_match_variants, is_generic_policy_reason, is_human_policy_label, is_runtime_exact_key,
+    normalize_policy_scope_path, provenance_workspace_path, runtime_exact_family,
+    runtime_exact_key, sanitize_remembered_command, scanner_evidence_fields, truthy,
+    workspace_display_label,
 };
+use crate::guard_store_policy_source_rows::{approval_command, artifact_matches_candidate, cell};
 
 const INVALID: StoreError = StoreError::Invalid("native_guard_store_args_invalid");
 
@@ -72,15 +74,6 @@ fn parse_items(args: &Args) -> StoreResult<Vec<Item>> {
             })
         })
         .collect()
-}
-
-/// `str(row[name])`, or `None` for SQL null.
-fn cell(row: &Row, name: &str) -> Option<String> {
-    match row.get(name) {
-        None | Some(Value::Null) => None,
-        Some(Value::String(value)) => Some(value.clone()),
-        Some(other) => Some(other.to_string()),
-    }
 }
 
 /// Insertion-ordered `(harness, key) -> rows` buckets.
@@ -322,14 +315,6 @@ fn build_index(connection: &Connection, items: &[Item]) -> StoreResult<Index> {
     })
 }
 
-fn artifact_matches_candidate(policy_id: Option<&str>, candidate_id: Option<&str>) -> bool {
-    if !truthy(policy_id) || candidate_id == policy_id {
-        return true;
-    }
-    let policy_family = artifact_family_key(policy_id);
-    policy_family.is_some() && policy_family == artifact_family_key(candidate_id)
-}
-
 fn approval_matches(item: &Item, approvals: &Table, candidates: Vec<usize>) -> Vec<usize> {
     if !truthy(item.id()) && !truthy(item.hash()) {
         return Vec::new();
@@ -364,28 +349,6 @@ fn approval_matches(item: &Item, approvals: &Table, candidates: Vec<usize>) -> V
             seen.insert(cell(row, "request_id").unwrap_or_default())
         })
         .collect()
-}
-
-fn approval_command(row: &Row) -> Option<String> {
-    let human = |phrase: &str| {
-        Some(sanitize_remembered_command(phrase)).filter(|value| is_human_policy_label(Some(value)))
-    };
-    if let Some(trigger) = cell(row, "trigger_summary") {
-        if let Some(command) = backtick_phrases(&trigger).into_iter().find_map(human) {
-            return Some(command);
-        }
-    }
-    if let Some(target) = cell(row, "launch_target") {
-        if let Some(command) = backtick_phrases(&target).into_iter().find_map(human) {
-            return Some(command);
-        }
-        if is_human_policy_label(Some(&target)) {
-            return Some(sanitize_remembered_command(&target));
-        }
-    }
-    cell(row, "artifact_name")
-        .filter(|name| is_human_policy_label(Some(name)))
-        .map(|name| sanitize_remembered_command(&name))
 }
 
 fn context_from_rows(
