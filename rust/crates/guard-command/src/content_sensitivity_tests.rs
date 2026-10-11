@@ -1,0 +1,58 @@
+use std::time::{Duration, Instant};
+
+use serde_json::{json, Value};
+
+#[test]
+fn original_python_sensitivity_and_mediation_vectors_replay() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../../tests/fixtures/content_sensitivity_parity.json"
+    ))
+    .expect("recorded original corpus");
+    let vectors = fixture["vectors"].as_array().expect("vector list");
+    assert_eq!(vectors.len(), 721);
+    let mut failures = Vec::new();
+    for (index, vector) in vectors.iter().enumerate() {
+        let query = vector["query"].as_str().expect("query");
+        let result = super::evaluate(
+            query,
+            &vector["body"],
+            Instant::now() + Duration::from_secs(2),
+        );
+        match result {
+            Ok(actual) if actual == vector["expected"] => {}
+            other => failures.push(format!(
+                "vector {index} query {query}: {other:?}, expected {}",
+                vector["expected"]
+            )),
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn schema_order_duplicates_numeric_types_and_unknown_claims_fail_closed() {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    assert!(super::evaluate(
+        "content",
+        &json!({"text":"ordinary","suppress_samples":true,
+        "documentation_sample_context":false,"allow":true}),
+        deadline
+    )
+    .is_err());
+    assert!(super::evaluate("content_version", &json!({}), Instant::now()).is_err());
+    let schema = json!([{"path":["id"],"role":"protected_personal","value_type":"integer","category":"employee_id"}]);
+    for (text, reason) in [
+        ("{\"id\":true}", "field_type_invalid"),
+        ("{\"id\":1.0}", "field_type_invalid"),
+        ("{\"id\":0,\"id\":1}", "invalid_or_duplicate_json"),
+    ] {
+        let result = super::evaluate(
+            "declared",
+            &json!({"schema":schema,"content":text}),
+            deadline,
+        )
+        .unwrap();
+        assert_eq!(result["ok"]["status"], "unsupported");
+        assert_eq!(result["ok"]["reason_code"], reason);
+    }
+}
