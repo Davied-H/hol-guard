@@ -25,6 +25,14 @@ pub enum GitRun {
     Failed(&'static str),
 }
 
+/// Outcome of one bounded git probe (`subprocess.run(..., timeout=1)`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GitProbe {
+    pub code: i32,
+    pub stdout: String,
+    pub stderr: String,
+}
+
 /// Process-dependent services the review needs.
 pub trait InspectionHost {
     /// Value of an environment variable from the caller's snapshot.
@@ -115,6 +123,31 @@ pub trait InspectionHost {
     }
     /// `build_local_package_script_evidence("bun", args, workspace)` is complete.
     fn bun_script_evidence_complete(&self, _script_args: &[String], _workspace: &str) -> bool {
+        false
+    }
+    /// `trusted_git_binary_for_cwd`: the canonical trusted git for `cwd`.
+    fn trusted_git_binary(&self, _cwd: &str) -> Option<String> {
+        None
+    }
+    /// One bounded `git <args>` run in `cwd` that keeps the exit status and
+    /// both streams; `None` is an `OSError`, a timeout, or no process service.
+    fn git_probe(&self, _git: &str, _args: &[String], _cwd: &str) -> Option<GitProbe> {
+        None
+    }
+    /// `git_worktree_add_has_execution_free_config` for `reference`.
+    fn git_worktree_add_config(&self, _git: &str, _cwd: &str, _reference: &str) -> bool {
+        false
+    }
+    /// `shutil.which("git-lfs")` resolves to a trusted executable for `cwd`.
+    fn git_lfs_trusted(&self, _cwd: &str) -> bool {
+        false
+    }
+    /// `canonical_home_git_c_path`: an unquoted canonical home `-C` operand.
+    fn home_git_c_path(&self, _command: &str) -> Option<String> {
+        None
+    }
+    /// `is_safe_standalone_git_object_existence_query`.
+    fn git_object_existence_query(&self, _command: &str, _cwd: &str) -> bool {
         false
     }
     /// Caller facts and resident filesystem trust for direct-tool recognition.
