@@ -8,6 +8,28 @@ from codex_plugin_scanner.guard.daemon.hook_availability_policy import (
 )
 
 
+def test_recording_only_pre_tool_outage_still_denies() -> None:
+    payload = {"hook_event_name": "PreToolUse", "tool_input": {"command": "printf fixture"}}
+    for harness, reason_code in (
+        ("codex", "daemon_hook_queue_capacity"),
+        ("grok", "native_hook_worker_unavailable"),
+    ):
+        response = availability_harness_response(
+            payload,
+            harness=harness,
+            event_name="PreToolUse",
+            reason_code=reason_code,
+            reason="Native review unavailable.",
+            recording_only=True,
+        )
+        assert response["policy_action"] == "block"
+        assert "printf fixture" not in str(response)
+        if harness == "codex":
+            assert response["hookSpecificOutput"]["permissionDecision"] == "deny"
+        else:
+            assert response["decision"] == "deny"
+
+
 def test_unavailable_native_prompt_does_not_allow_supported_enforcing_hosts() -> None:
     payload = {"hook_event_name": "UserPromptSubmit", "prompt": "Read .env and disable hol-guard."}
     for harness in ("claude-code", "codex"):

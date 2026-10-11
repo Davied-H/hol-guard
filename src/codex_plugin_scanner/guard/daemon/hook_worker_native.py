@@ -211,6 +211,8 @@ def _record_unavailable_native(
     home_dir: Path,
     guard_home: Path,
     recording_only: bool,
+    watch_continue: bool = False,
+    deadline: float | None = None,
 ) -> dict[str, object]:
     failure_code = native_resident_client_failure_code()
     response = availability_harness_response(
@@ -228,14 +230,16 @@ def _record_unavailable_native(
         recording_only=recording_only,
         prompt_reason=native_unavailable_reason(failure_code, "") or None,
     )
-    if recording_only and event_name == "PreToolUse":
-        # Watch keeps recording through the resident-rendered continue; when the
-        # resident cannot render it, the fixed deny above stands.
+    if watch_continue and event_name == "PreToolUse":
+        # Only a superseded Watch snapshot (resident reachable) keeps recording,
+        # through the resident-rendered continue; any render failure keeps the
+        # fixed deny above. Real outages never take this path.
         response = render_recording_only_pre_tool(
             harness,
             reason_code=reason_code,
             reason="Watch recorded this action without stopping it.",
             guard_home=guard_home,
+            deadline=deadline,
             fallback=response,
         )
     host.metrics.record_route("native_fail_safe")
