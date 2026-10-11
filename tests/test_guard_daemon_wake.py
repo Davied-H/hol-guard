@@ -9,8 +9,17 @@ from __future__ import annotations
 import json
 import stat
 from pathlib import Path
+from types import SimpleNamespace
 
 from codex_plugin_scanner.guard.daemon import manager as daemon_manager_module
+
+
+def _patch_manager_popen(monkeypatch, popen) -> None:
+    # Patch Popen only where the manager sees it: the native runtime probe
+    # shares the subprocess module and must keep the real one.
+    scoped = SimpleNamespace(**vars(daemon_manager_module.subprocess))
+    scoped.Popen = popen
+    monkeypatch.setattr(daemon_manager_module, "subprocess", scoped)
 
 
 def _make_start_mock(guard_home: Path, port: int = 5700):
@@ -80,7 +89,7 @@ class TestNoDashboardApprovalURLWake:
         monkeypatch.setattr(daemon_manager_module, "_running_guard_daemon_processes_for_guard_home", lambda _gh: [])
         monkeypatch.setattr(daemon_manager_module, "_guard_daemon_start_in_progress", lambda _gh: False)
         monkeypatch.setattr(daemon_manager_module.time, "sleep", lambda _: None)
-        monkeypatch.setattr(daemon_manager_module.subprocess, "Popen", _make_start_mock(guard_home, port))
+        _patch_manager_popen(monkeypatch, _make_start_mock(guard_home, port))
         monkeypatch.setattr(
             daemon_manager_module,
             "_wait_for_guard_daemon_url",
@@ -116,7 +125,7 @@ class TestNoDashboardApprovalURLWake:
             spawn_calls.append("spawn")
             raise AssertionError("daemon must not be spawned when already running")
 
-        monkeypatch.setattr(daemon_manager_module.subprocess, "Popen", _boom)
+        _patch_manager_popen(monkeypatch, _boom)
 
         url = daemon_manager_module.ensure_guard_daemon(guard_home)
 
@@ -212,7 +221,7 @@ class TestNoDashboardApprovalURLWake:
         monkeypatch.setattr(daemon_manager_module, "_running_guard_daemon_processes_for_guard_home", lambda _gh: [])
         monkeypatch.setattr(daemon_manager_module, "_guard_daemon_start_in_progress", lambda _gh: False)
         monkeypatch.setattr(daemon_manager_module.time, "sleep", lambda _: None)
-        monkeypatch.setattr(daemon_manager_module.subprocess, "Popen", _make_start_mock(guard_home, port))
+        _patch_manager_popen(monkeypatch, _make_start_mock(guard_home, port))
         monkeypatch.setattr(
             daemon_manager_module,
             "_wait_for_guard_daemon_url",
@@ -445,7 +454,7 @@ class TestSpawnedDaemonStartClassification:
         monkeypatch.setattr(daemon_manager_module, "_load_state", lambda _gh: None)
         monkeypatch.setattr(daemon_manager_module, "_guard_daemon_start_in_progress", lambda _gh: False)
         monkeypatch.setattr(daemon_manager_module.time, "sleep", lambda _: None)
-        monkeypatch.setattr(daemon_manager_module.subprocess, "Popen", lambda *a, **k: process)
+        _patch_manager_popen(monkeypatch, lambda *a, **k: process)
         monkeypatch.setattr(daemon_manager_module, "process_start_token", lambda _pid: "posix:token")
         monkeypatch.setattr(
             start_classification,
@@ -549,9 +558,8 @@ class TestStillStartingAdoption:
         monkeypatch.setattr(daemon_manager_module, "_load_state", lambda _gh: None)
         monkeypatch.setattr(daemon_manager_module, "_guard_daemon_start_in_progress", lambda _gh: False)
         monkeypatch.setattr(daemon_manager_module.time, "sleep", lambda _: None)
-        monkeypatch.setattr(
-            daemon_manager_module.subprocess,
-            "Popen",
+        _patch_manager_popen(
+            monkeypatch,
             lambda *a, **k: calls["popen"].append(a[0]) or _FakeSpawnedDaemonProcess(),
         )
         monkeypatch.setattr(
