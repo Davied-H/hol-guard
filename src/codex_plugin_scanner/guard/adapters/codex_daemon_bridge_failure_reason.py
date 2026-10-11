@@ -1,8 +1,8 @@
 """Choose the denial text for a Codex hook the local daemon could not review.
 
-The bridge records one fixed reason code per failed daemon attempt. Only an
-authentication failure should tell the user to repair the daemon; a daemon that
-is restarting, slow, or briefly unreachable needs a retry, not a repair.
+The bridge records one fixed reason code per failed daemon attempt. A daemon that
+is restarting, slow, or briefly unreachable needs a retry, not a repair; any
+answer that fails authentication or validation still points to the repair.
 
 Stdlib only: the bridge imports this module before any heavy Guard code loads.
 """
@@ -29,20 +29,15 @@ OVERLOAD_REASON = (
     "HOL Guard is temporarily saturated and kept this action blocked. No approval was requested; retry the action."
 )
 
-# Codes from ``_daemon_failure_reason`` that mean the daemon's identity, state
-# or token could not be verified, rather than that it did not answer in time.
-AUTHENTICATION_FAILURE_CODES = frozenset(
+# Codes from ``_daemon_failure_reason`` that mean the daemon never answered:
+# it timed out, refused the connection, or restarted mid-request. Any other
+# code means it answered but could not be trusted, so the repair text stays.
+UNANSWERED_DAEMON_CODES = frozenset(
     {
-        "daemon_response_unauthenticated",
-        "daemon_state_unreadable",
-        "daemon_discovery_key_unreadable",
-        "daemon_token_unreadable",
-        "daemon_state_authentication_failed",
-        "daemon_challenge_authentication_failed",
-        "daemon_challenge_expired",
-        "daemon_challenge_identity_mismatch",
-        "daemon_token_binding_mismatch",
-        "daemon_state_or_response_invalid",
+        "daemon_transport_timeout",
+        "daemon_connection_refused",
+        "daemon_transport_unavailable",
+        "daemon_generation_changed",
     }
 )
 
@@ -57,6 +52,7 @@ def daemon_failure_reason(causes: Sequence[object], *, daemon_overloaded: bool) 
         return DAEMON_DEAD_REASON
     if daemon_overloaded:
         return OVERLOAD_REASON
-    if any(cause.get("reason_code") in AUTHENTICATION_FAILURE_CODES for cause in records):
-        return AUTHENTICATION_FAILED_REASON
-    return DAEMON_UNAVAILABLE_REASON
+    codes = [cause.get("reason_code") for cause in records]
+    if codes and all(code in UNANSWERED_DAEMON_CODES for code in codes):
+        return DAEMON_UNAVAILABLE_REASON
+    return AUTHENTICATION_FAILED_REASON

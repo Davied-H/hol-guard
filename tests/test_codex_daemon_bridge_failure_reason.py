@@ -21,7 +21,7 @@ from tests.codex_daemon_hook_bridge_fixtures import _bridge_config
 
 @pytest.mark.parametrize(
     "reason_code",
-    ["daemon_transport_timeout", "daemon_connection_refused", "daemon_generation_changed", "daemon_worker_failed"],
+    sorted(failure_reason.UNANSWERED_DAEMON_CODES),
 )
 def test_unanswered_daemon_asks_for_retry_not_repair(reason_code: str) -> None:
     causes = [{"stage": "daemon_request", "reason_code": reason_code}]
@@ -32,8 +32,19 @@ def test_unanswered_daemon_asks_for_retry_not_repair(reason_code: str) -> None:
     assert "authenticate" not in reason
 
 
-@pytest.mark.parametrize("reason_code", sorted(failure_reason.AUTHENTICATION_FAILURE_CODES))
-def test_authentication_failure_keeps_repair_message(reason_code: str) -> None:
+@pytest.mark.parametrize(
+    "reason_code",
+    [
+        "daemon_authenticated_http_error",
+        "daemon_response_unauthenticated",
+        "daemon_token_binding_mismatch",
+        "daemon_state_or_response_invalid",
+        "daemon_http_invalid",
+        "daemon_transport_failure",
+        "daemon_worker_failed",
+    ],
+)
+def test_answered_but_untrusted_daemon_keeps_repair_message(reason_code: str) -> None:
     causes = [
         {"stage": "daemon_request", "reason_code": "daemon_transport_timeout"},
         {"stage": "daemon_retry", "reason_code": reason_code},
@@ -42,6 +53,7 @@ def test_authentication_failure_keeps_repair_message(reason_code: str) -> None:
     reason = failure_reason.daemon_failure_reason(causes, daemon_overloaded=False)
 
     assert reason == failure_reason.AUTHENTICATION_FAILED_REASON
+    assert failure_reason.daemon_failure_reason([], daemon_overloaded=False) == reason
 
 
 def test_dead_daemon_and_overload_take_precedence() -> None:
