@@ -134,9 +134,9 @@ def _publish_snapshot_v3(
         )
         # Resident build and inspect exchanges run on the process monotonic
         # clock. A business binding keeps one shared deadline for the build and
-        # push; otherwise the build uses its own default budget and the push
-        # gets a fresh warm window.
-        build_deadline = time.monotonic() + publish_timeout if business_policy is not None else None
+        # push; otherwise the build gets a finite publication-sized budget and
+        # the push gets a fresh warm window.
+        build_deadline = time.monotonic() + publish_timeout
         snapshot = native_policy_snapshot_v3(
             config=config,
             guard_home=publisher.guard_home,
@@ -149,7 +149,7 @@ def _publish_snapshot_v3(
             command_extensions=bound_extensions,
             business_policy=business_policy,
         )
-        if build_deadline is not None:
+        if business_policy is not None:
             publication_deadline = build_deadline
             remaining_ms = int((publication_deadline - time.monotonic()) * 1_000)
             if remaining_ms <= 0:

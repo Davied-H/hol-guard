@@ -39,6 +39,10 @@ if TYPE_CHECKING:
     from .config import GuardConfig
 
 
+_INTEGRITY_ALGORITHM_V3 = "hmac-sha256"
+_INTEGRITY_FIELDS_V3 = frozenset({"algorithm", "key_id", "mac"})
+
+
 def _valid_u64_v3(value: object) -> bool:
     return type(value) is int and 0 <= value <= _MAX_U64
 
@@ -63,8 +67,14 @@ def snapshot_mac_matches_v3(snapshot: Mapping[str, object], verifier_key: bytes)
     """Constant-time MAC check that fails closed on any malformed integrity block."""
 
     integrity = snapshot.get("integrity")
-    mac = integrity.get("mac") if isinstance(integrity, Mapping) else None
-    if not _valid_digest_v3(mac):
+    if not isinstance(integrity, Mapping) or set(integrity) != _INTEGRITY_FIELDS_V3:
+        return False
+    mac = integrity.get("mac")
+    if (
+        integrity.get("algorithm") != _INTEGRITY_ALGORITHM_V3
+        or integrity.get("key_id") != native_policy_verifier_key_id(verifier_key)
+        or not _valid_digest_v3(mac)
+    ):
         return False
     return hmac.compare_digest(
         cast(str, mac).encode("ascii"), _snapshot_integrity_mac_v3(snapshot, verifier_key).encode()

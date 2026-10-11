@@ -171,3 +171,19 @@ def test_mac_check_fails_closed_on_malformed_integrity_blocks() -> None:
     key = bytes(range(32))
     for integrity in (None, {}, {"mac": 7}, {"mac": "\u00e9" * 64}, {"mac": "A" * 64}, {"mac": "0" * 63}):
         assert not snapshot_module.snapshot_mac_matches_v3({"generation": 1, "integrity": integrity}, key)
+
+
+def test_mac_check_requires_exact_integrity_metadata() -> None:
+    key = bytes(range(32))
+    unsigned = {"generation": 1}
+    mac = snapshot_module._snapshot_integrity_mac_v3(unsigned, key)
+    key_id = snapshot_module.native_policy_verifier_key_id(key)
+    good = {"algorithm": "hmac-sha256", "key_id": key_id, "mac": mac}
+    assert snapshot_module.snapshot_mac_matches_v3({**unsigned, "integrity": good}, key)
+    for forged in (
+        {**good, "algorithm": "hmac-sha512"},
+        {**good, "key_id": "0" * 64},
+        {"mac": mac},
+        {**good, "extra": "x"},
+    ):
+        assert not snapshot_module.snapshot_mac_matches_v3({**unsigned, "integrity": forged}, key)
