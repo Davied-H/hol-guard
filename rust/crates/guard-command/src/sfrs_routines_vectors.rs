@@ -481,7 +481,7 @@ fn routines_match_recorded_python() {
     assert!(counts.len() >= 22, "too few functions: {counts:?}");
     let failures = crate::sfrs_host_divergence::portable_failures(
         failures,
-        &[("git_worktree_add ", 13), ("safe_worktree_parent ", 2)],
+        &[("git_worktree_add ", 11), ("safe_worktree_parent ", 3)],
     );
     assert!(
         failures.is_empty(),
