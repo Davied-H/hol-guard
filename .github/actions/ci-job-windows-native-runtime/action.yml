@@ -44,6 +44,15 @@ runs:
           Get-Content -LiteralPath $config
           $extra = @('--config', $config)
         }
+        cargo build --manifest-path rust/Cargo.toml --locked --release -p hol-guard-runtime --bin hol-guard-runtime @extra
+        @'
+        import json, subprocess
+        m = json.loads(subprocess.check_output(["cargo", "metadata", "--manifest-path", "rust/Cargo.toml", "--no-deps", "--format-version", "1"]))
+        args = ["cargo", "clean", "--manifest-path", "rust/Cargo.toml", "--release"]
+        for p in m["packages"]:
+            args += ["-p", p["name"]]
+        print(" ".join(args)); subprocess.check_call(args)
+        '@ | python -
         cargo build --manifest-path rust/Cargo.toml --locked --release -p hol-guard-runtime --bin hol-guard-runtime --timings @extra
     - name: Save the Windows native runtime cache
       if: steps.runtime-cache.outputs.cache-hit != 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'

@@ -26,6 +26,15 @@ runs:
           cat "$config"
           extra=(--config "$config")
         fi
+        cargo build --manifest-path rust/Cargo.toml --locked --release -p hol-guard-runtime --bin hol-guard-runtime "${extra[@]}"
+        python - <<'CLEAN'
+        import json, subprocess
+        m = json.loads(subprocess.check_output(["cargo", "metadata", "--manifest-path", "rust/Cargo.toml", "--no-deps", "--format-version", "1"]))
+        args = ["cargo", "clean", "--manifest-path", "rust/Cargo.toml", "--release"]
+        for p in m["packages"]:
+            args += ["-p", p["name"]]
+        print(" ".join(args)); subprocess.check_call(args)
+        CLEAN
         cargo build --manifest-path rust/Cargo.toml --locked --release -p hol-guard-runtime --bin hol-guard-runtime --timings "${extra[@]}"
     - name: Upload the macOS native runtime
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
