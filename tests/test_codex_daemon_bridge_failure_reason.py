@@ -1,0 +1,85 @@
+from __future__ import annotations
+
+import io
+import json
+import os
+import sys
+from pathlib import Path
+
+import pytest
+
+from codex_plugin_scanner.guard.adapters import codex_daemon_bridge_failure_reason as failure_reason
+from codex_plugin_scanner.guard.adapters import codex_daemon_hook_bridge as bridge
+from codex_plugin_scanner.guard.adapters import codex_daemon_hook_bridge_flow as bridge_flow
+from codex_plugin_scanner.guard.adapters.codex_daemon_dead_fastpath import (
+    DEAD_DAEMON_REASON_CODE,
+    NATIVE_RUNTIME_DEAD_REASON,
+    NATIVE_RUNTIME_DEAD_REASON_CODE,
+)
+from tests.codex_daemon_hook_bridge_fixtures import _bridge_config
+
+
+@pytest.mark.parametrize(
+    "reason_code",
+    ["daemon_transport_timeout", "daemon_connection_refused", "daemon_generation_changed", "daemon_worker_failed"],
+)
+def test_unanswered_daemon_asks_for_retry_not_repair(reason_code: str) -> None:
+    causes = [{"stage": "daemon_request", "reason_code": reason_code}]
+
+    reason = failure_reason.daemon_failure_reason(causes, daemon_overloaded=False)
+
+    assert reason == failure_reason.DAEMON_UNAVAILABLE_REASON
+    assert "authenticate" not in reason
+
+
+@pytest.mark.parametrize("reason_code", sorted(failure_reason.AUTHENTICATION_FAILURE_CODES))
+def test_authentication_failure_keeps_repair_message(reason_code: str) -> None:
+    causes = [
+        {"stage": "daemon_request", "reason_code": "daemon_transport_timeout"},
+        {"stage": "daemon_retry", "reason_code": reason_code},
+    ]
+
+    reason = failure_reason.daemon_failure_reason(causes, daemon_overloaded=False)
+
+    assert reason == failure_reason.AUTHENTICATION_FAILED_REASON
+
+
+def test_dead_daemon_and_overload_take_precedence() -> None:
+    dead = [{"stage": "daemon_dead_fast", "reason_code": DEAD_DAEMON_REASON_CODE}]
+    native_dead = [{"stage": "daemon_dead_fast", "reason_code": NATIVE_RUNTIME_DEAD_REASON_CODE}]
+    overloaded = [{"stage": "daemon_request", "reason_code": "daemon_authenticated_http_error"}]
+
+    assert failure_reason.daemon_failure_reason(dead, daemon_overloaded=True) == failure_reason.DAEMON_DEAD_REASON
+    assert failure_reason.daemon_failure_reason(native_dead, daemon_overloaded=False) == NATIVE_RUNTIME_DEAD_REASON
+    assert failure_reason.daemon_failure_reason(overloaded, daemon_overloaded=True) == failure_reason.OVERLOAD_REASON
+
+
+def test_bridge_timeout_denies_with_retry_message_and_reports_causes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    guard_home = tmp_path / "guard-home"
+    guard_home.mkdir()
+    # A live pid keeps the dead-daemon fast path out of this slow-daemon case.
+    (guard_home / "daemon-state.json").write_text(json.dumps({"pid": os.getpid(), "port": 1}), encoding="utf-8")
+
+    def slow_daemon(**kwargs: object) -> dict[str, object]:
+        del kwargs
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr(bridge_flow, "_daemon_response", slow_daemon)
+    monkeypatch.setattr(bridge_flow, "_run_daemon_start", lambda *args, **kwargs: False)
+    config = _bridge_config(guard_home, 1)
+    config["fallback_command"] = [sys.executable, "-c", "import sys; sys.exit(3)"]
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps({"hook_event_name": "PreToolUse"})))
+
+    assert bridge.main(**config) == 0
+
+    captured = capsys.readouterr()
+    output = json.loads(captured.out)["hookSpecificOutput"]
+    assert output["permissionDecision"] == "deny"
+    assert output["permissionDecisionReason"] == failure_reason.DAEMON_UNAVAILABLE_REASON
+    diagnostic = json.loads(captured.err.strip().splitlines()[-1])
+    assert diagnostic["schema"] == "hol-guard.codex-bridge-failure.v1"
+    assert {"stage": "daemon_request", "reason_code": "daemon_transport_timeout"} in diagnostic["causes"]
