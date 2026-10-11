@@ -378,7 +378,7 @@ def scan_workspace_skills(
             )
             if stored_hash == identity.identity_hash:
                 continue
-            signals = detect_skill_content_risk(content, skill_path=str(skill_path))
+            signals = detect_skill_content_risk(content)
             store.save_snapshot(
                 "skill_scan",
                 artifact_id,

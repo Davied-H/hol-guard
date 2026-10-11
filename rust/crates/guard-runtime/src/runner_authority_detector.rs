@@ -2,6 +2,7 @@
 //! overrides and saved-claim partitioning for `RunnerAuthority`.
 
 use guard_command::decisions::parse_signals;
+use guard_command::skill_content_risk::detect_skill_content_risk;
 use guard_contracts::{
     compose_action_from_signals, is_guard_action, most_restrictive_guard_action, GuardAction,
 };
@@ -187,6 +188,20 @@ pub(crate) fn detector_composition(args: &Value) -> KindResult {
         },
         "blocks": composition.action == GuardAction::Block,
     }))
+}
+
+/// `detect_skill_content_risk(content)` for a SKILL.md file. The detector
+/// runs on the whole file, with no skill-structure gate.
+pub(crate) fn skill_content_risk(args: &Value) -> KindResult {
+    let content = args_object(args)?
+        .get("content")
+        .and_then(Value::as_str)
+        .ok_or(ERR_INVALID)?;
+    let signals: Vec<Value> = detect_skill_content_risk(content)
+        .iter()
+        .map(|signal| signal.to_value())
+        .collect();
+    Ok(json!({ "signals": signals }))
 }
 
 /// `_config_with_current_authority`: stronger of the current action and the

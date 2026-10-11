@@ -5,13 +5,16 @@ from __future__ import annotations
 import base64
 from pathlib import Path
 
+import pytest
+
 from codex_plugin_scanner.guard.cli.install_commands import scan_workspace_skills
 from codex_plugin_scanner.guard.runtime.skill_protection import (
     build_skill_identity,
     detect_skill_content_risk,
-    has_skill_structure,
 )
 from codex_plugin_scanner.guard.store import GuardStore
+
+pytestmark = pytest.mark.usefixtures("native_approval_reuse_runtime")
 
 _BENIGN_DOCS_SKILL = """\
 ---
@@ -285,33 +288,6 @@ def test_empty_skill_has_no_risk() -> None:
 def test_plain_text_skill_has_no_risk() -> None:
     content = "This skill helps you write better commit messages. No tools needed."
     assert detect_skill_content_risk(content) == ()
-
-
-def test_has_skill_structure_detects_frontmatter() -> None:
-    content = "---\nname: my-skill\ndescription: Does things.\n---\n\n# My Skill"
-    assert has_skill_structure(content) is True
-
-
-def test_has_skill_structure_detects_skill_md_mention() -> None:
-    assert has_skill_structure("This is a SKILL.md file that does something.") is True
-
-
-def test_has_skill_structure_detects_skill_colon_keyword() -> None:
-    assert has_skill_structure("skill: docs-generator\nversion: 1.0") is True
-
-
-def test_has_skill_structure_rejects_plain_chat() -> None:
-    content = "How do I add something to my ~/.bashrc file? Can you show me crontab -e?"
-    assert has_skill_structure(content) is False
-
-
-def test_has_skill_structure_rejects_markdown_separator_only() -> None:
-    content = "--- Next steps --- here is the plan: crontab -e"
-    assert has_skill_structure(content) is False
-
-
-def test_has_skill_structure_rejects_empty() -> None:
-    assert has_skill_structure("") is False
 
 
 def test_shell_in_frontmatter_detected_when_not_at_start() -> None:

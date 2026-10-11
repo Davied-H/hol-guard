@@ -59,6 +59,7 @@ pub(crate) fn dispatch(kind: &str, args: &Value) -> KindResult {
     match kind {
         "detector_authority" => detector::detector_authority(args),
         "detector_composition" => detector::detector_composition(args),
+        "skill_content_risk" => detector::skill_content_risk(args),
         "current_authority_actions" => detector::current_authority_actions(args),
         "request_overrides" => detector::request_overrides(args),
         "claim_partition" => detector::claim_partition(args),
