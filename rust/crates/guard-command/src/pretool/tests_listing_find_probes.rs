@@ -37,6 +37,8 @@ fn fixture() -> Fixture {
     let (home, ws) = (base.join("home"), base.join("ws"));
     for file in [
         "app/registry/[slug]/page.tsx",
+        "app/registry/[.x]/page.tsx",
+        "app/registry/[!x]/page.tsx",
         "app/registry/alpha/page.tsx",
         "app/password-reset-email.tsx",
         "app/secret-sandbox-x/page.tsx",
@@ -88,6 +90,10 @@ fn recursive_listing_and_globs_stay_inside_clean_trees() {
         "ls \"app/registry/[slug]\"",
         "ls -R 'app/registry/[slug]'",
         "ls src/*.ts",
+        // Bash passes an unmatched bracket word through literally.
+        "ls app/registry/[slug]",
+        "ls -la app/registry/[slug]",
+        "ls app/registry/[slug] src",
     ] {
         assert!(allowed_in(&fixture, ws, command), "{command}");
     }
@@ -114,6 +120,12 @@ fn recursive_listing_and_globs_stay_inside_clean_trees() {
         "ls ~/*",
         "ls nothing/*",
         "ls src/{a,b}",
+        // An unmatched bracket operand is read literally only when no class
+        // could match a dotfile and recursion could not fall back to the cwd.
+        "ls -R app/registry/[slug]",
+        "ls app/registry/[!x]",
+        "ls app/registry/[.x]",
+        "ls nothing/[slug]",
         // Quoted wildcard is a literal name, and an unquoted class mixed with
         // a quoted one is ambiguous.
         "ls 'src/*'",

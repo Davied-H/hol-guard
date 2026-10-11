@@ -110,6 +110,7 @@ pub(super) fn safe_listing_segment(
     // Without a trustworthy quote map every glob character counts as unquoted.
     let kinds = classify_operands(text, arguments);
     let mut operands = 0_usize;
+    let mut unmatched_brackets = false;
     for (index, argument) in arguments.iter().enumerate() {
         if argument == "-" {
             return false;
@@ -131,14 +132,21 @@ pub(super) fn safe_listing_segment(
             Operand::QuotedLiteral => {
                 search::safe_literal_bracket_tree(argument, context, recursive)
             }
-            Operand::Glob => search::safe_glob_operand(argument, context, recursive),
+            Operand::Glob if search::safe_glob_operand(argument, context, recursive) => true,
+            Operand::Glob => {
+                unmatched_brackets = true;
+                search::safe_unmatched_bracket_operand(argument, context, recursive)
+            }
         };
         if !allowed {
             return false;
         }
     }
-    // A recursive listing without an operand walks the working directory.
-    operands > 0 || !recursive || search::safe_recursive_target(".", context)
+    // A recursive listing without an operand walks the working directory, and
+    // under `nullglob` an unmatched bracket operand drops out the same way.
+    (operands > 0 && !unmatched_brackets)
+        || !recursive
+        || search::safe_recursive_target(".", context)
 }
 
 fn is_recursive_flag(argument: &str) -> bool {
