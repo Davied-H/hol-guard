@@ -57,6 +57,8 @@ TEXTS = [
     "sleep 5 && cd {P} && git diff --cached --stat",
     "sleep 5 && ls",
     "  sleep   12   &&   cd {P} && cat src/a.txt",
+    "cd {P} && sed -i '' 's/alpha/ALPHA/' missing/../src/a.txt && grep ALPHA src/a.txt",
+    "cd {ROOT}/home/missing/../proj && sed -i '' 's/alpha/ALPHA/' src/a.txt && grep ALPHA src/a.txt",
     "cd {P} && ls src",
     "cd {P} && git diff --cached --stat",
     "cd {P} && git diff --cached | rg foo",

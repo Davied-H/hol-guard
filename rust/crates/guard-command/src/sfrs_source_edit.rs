@@ -167,6 +167,15 @@ pub(crate) fn py_path(path: &Path) -> PyPath {
 
 /// `Path.resolve(strict=True)`; `None` is the `OSError`/`RuntimeError`.
 pub(crate) fn resolve_strict(path: &PyPath) -> Option<PyPath> {
+    // `realpath(strict=True)` raises at the first missing component, which the
+    // non-strict resolver would otherwise tidy away (`missing/../file`).
+    let components = path.components();
+    for end in 1..=components.len() {
+        let prefix = PyPath::new(&format!("{}{}", path.root(), components[..end].join("/")));
+        if pyfs::exists(&prefix) != Ok(true) {
+            return None;
+        }
+    }
     let resolved = pyfs::resolve(path)?;
     (pyfs::exists(&resolved) == Ok(true)).then_some(resolved)
 }

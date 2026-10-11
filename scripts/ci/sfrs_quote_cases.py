@@ -89,6 +89,10 @@ EDIT_TEXTS = [
     "ls",
     "sed -i '' 's/alpha/ALPHA/' src/a.txt > out.txt",
     "sed -n 1p src/a.txt",
+    "sed -i '' 's/alpha/ALPHA/' missing/../src/a.txt",
+    "sed -i '' 's/alpha/ALPHA/' src/../src/a.txt",
+    "sed -i '' 's/alpha/ALPHA/' src/missing/../a.txt",
+    "sed -i '' 's/alpha/ALPHA/' link.txt/../src/a.txt",
 ]
 TOKEN_TEXTS = [
     'env -S "echo $(id)" gh pr view',
