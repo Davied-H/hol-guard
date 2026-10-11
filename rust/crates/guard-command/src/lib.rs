@@ -186,6 +186,7 @@ mod sfrs_quote_tokens;
 mod sfrs_quote_vectors;
 mod sfrs_read_only_filters;
 pub mod sfrs_replay;
+mod sfrs_replay_context;
 mod sfrs_request_data;
 mod sfrs_requests;
 mod sfrs_routine_dirs;
