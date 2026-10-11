@@ -274,3 +274,43 @@ def test_cleanup_failure_does_not_interrupt_routing(monkeypatch):
 
     monkeypatch.setattr(adapter.os, "scandir", fail)
     cleanup_stale_zcode_requests()
+
+
+@pytest.mark.parametrize(
+    ("edge_patch", "routed", "expected"),
+    [
+        ({}, {"hookSpecificOutput": {"permissionDecision": "allow"}}, 0),
+        ({}, None, None),
+        ({"recording_only": True}, {"hookSpecificOutput": {}}, None),
+        ({"event_name": "PostToolUse"}, {"hookSpecificOutput": {}}, None),
+        ({"result": {"minimum_action": "review"}}, {"hookSpecificOutput": {}}, None),
+    ],
+)
+def test_cli_fallback_applies_the_same_containment_rewrite(monkeypatch, tmp_path, edge_patch, routed, expected):
+    """With the daemon down, `guard hook` must still route eligible tests to the sink."""
+    import io
+    from types import SimpleNamespace
+
+    from codex_plugin_scanner.guard.cli import commands_hook_native_containment as cli_route
+
+    edge = {
+        "event_name": "PreToolUse",
+        "harness": "claude-code",
+        "recording_only": False,
+        "result": {"minimum_action": "sandbox-required"},
+        **edge_patch,
+    }
+    receipt = {"decision": "deny"}
+    monkeypatch.setattr(cli_route, "render_pre_tool", lambda harness, result, guard_home=None: receipt)
+
+    def route(response, **kwargs):
+        assert response is receipt
+        assert kwargs["harness"] == "claude-code"
+        assert kwargs["workspace"] == tmp_path
+        return receipt if routed is None else routed
+
+    monkeypatch.setattr(cli_route, "route_zcode_containment", route)
+    stream = io.StringIO()
+    context = SimpleNamespace(guard_home=tmp_path, home_dir=tmp_path)
+    assert cli_route.emit_native_containment_route(edge, {}, context, tmp_path, stream) == expected
+    assert (json.loads(stream.getvalue()) if stream.getvalue() else None) == (routed if expected == 0 else None)

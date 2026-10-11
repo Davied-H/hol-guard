@@ -435,11 +435,8 @@ fn evaluate_envelope(
             .filter(|reason| *reason != "native_git_readonly_containment_required")
         })
     });
-    // The read-only credential-filtering backend currently exists on macOS.
-    // Other platforms retain review until they can enforce the same profile.
-    // Only harnesses whose adapter rewrites the call into the contained sink
-    // (OMP's extension, and ZCode and Claude Code through `updatedInput`) get
-    // the receipt; any other harness would see a bare deny.
+    // macOS only (the credential-filtering profile); only harnesses that rewrite
+    // into the contained sink get the receipt, others would see a bare deny.
     if cfg!(target_os = "macos")
         && event == "PreToolUse"
         && matches!(harness, "omp" | "oh-my-pi" | "zcode" | "claude-code")
