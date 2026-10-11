@@ -433,12 +433,13 @@ pub(super) fn payload_facts(
         || reason_code.contains("secret")
         || reason_code.contains("credential")
         || reason_code.contains("exfiltration");
+    // A harness code tool proven to run only a constant has no effect a
+    // publisher could make worse; a declared publisher still counts.
     let publisher_relevant = publisher.is_some()
         || artifact.is_some()
-        || matches!(
-            action_type,
-            PreToolActionTypeV1::Package | PreToolActionTypeV1::McpTool
-        );
+        || action_type == PreToolActionTypeV1::Package
+        || (action_type == PreToolActionTypeV1::McpTool
+            && reason_code != "native_pure_constant_eval");
     Ok(PolicyFacts {
         publisher,
         artifact,
