@@ -14,6 +14,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 from ..daemon.hook_request_parsing import runtime_hook_event_name
+from ..daemon.runtime_hook_deadline import RuntimeHookDeadline
 from ..native_hook_decision import NativeHookDecisionError
 from ..runtime.command_extensions import BUILT_IN_COMMAND_EXTENSION_REGISTRY
 from ..runtime.extension_control_runtime import (
@@ -133,6 +134,7 @@ def run_native_hook_pipeline(
         home_dir=context.home_dir,
         guard_home=context.guard_home,
         workspace=runtime_workspace,
+        edge_budget_seconds=RuntimeHookDeadline.for_cli_hook(payload).remaining(),
     )
     edge_result = edge.get("result") if isinstance(edge, Mapping) else None
     edge_receipt = edge.get("receipt") if isinstance(edge, Mapping) else None

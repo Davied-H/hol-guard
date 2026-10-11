@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Final
 
@@ -63,6 +63,32 @@ class RuntimeHookDeadline:
         else:
             hinted = cls.from_remaining_hint(remaining_hint)
         return cls(expires_at=min(hinted.expires_at, transport_deadline))
+
+    @classmethod
+    def for_cli_hook(
+        cls,
+        payload: object,
+        *,
+        monotonic: Callable[[], float] = time.monotonic,
+    ) -> RuntimeHookDeadline:
+        """Bound a one-shot CLI hook by the harness-stamped remaining time.
+
+        A CLI hook has no admission window of its own, so a missing hint falls
+        back to the explicit maximum rather than the daemon's short tool budget.
+        """
+        hint: object = _MAX_EXPLICIT_BUDGET_SECONDS
+        if isinstance(payload, Mapping):
+            seconds = payload.get("guard_remaining_seconds")
+            milliseconds = payload.get("guard_remaining_ms")
+            if isinstance(seconds, (int, float)) and not isinstance(seconds, bool):
+                hint = seconds
+            elif isinstance(milliseconds, (int, float)) and not isinstance(milliseconds, bool):
+                hint = float(milliseconds) / 1000.0
+        return cls.from_remaining_hint(
+            hint,
+            monotonic=monotonic,
+            maximum_budget_seconds=_MAX_EXPLICIT_BUDGET_SECONDS,
+        )
 
     @staticmethod
     def clamp_budget(remaining_seconds: object, *, maximum_budget_seconds: float = _MAX_BUDGET_SECONDS) -> float:
