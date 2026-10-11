@@ -179,10 +179,12 @@ def _bounded_process_query_stdout(
 ) -> str | None:
     """Return bounded child stdout, or ``None`` after failure, timeout, or overflow."""
 
-    if timeout_seconds is None:
-        timeout_seconds = m._GUARD_DAEMON_PROCESS_QUERY_TIMEOUT_SECONDS
-    if output_limit_bytes is None:
-        output_limit_bytes = m._GUARD_DAEMON_PROCESS_QUERY_OUTPUT_LIMIT_BYTES
+    timeout_seconds = (
+        float(m._GUARD_DAEMON_PROCESS_QUERY_TIMEOUT_SECONDS) if timeout_seconds is None else timeout_seconds
+    )
+    output_limit_bytes = (
+        int(m._GUARD_DAEMON_PROCESS_QUERY_OUTPUT_LIMIT_BYTES) if output_limit_bytes is None else output_limit_bytes
+    )
     if timeout_seconds <= 0 or output_limit_bytes < 0:
         return None
     try:
