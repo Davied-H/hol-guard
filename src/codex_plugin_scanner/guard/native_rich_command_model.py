@@ -9,9 +9,11 @@ from uuid import uuid4
 
 from .native_context import (
     _canonical_request_sha256,
-    _native_runtime_status_memo as native_runtime_status,
     _resolve_digest_home,
     ensure_resident_prerequisite,
+)
+from .native_context import (
+    _native_runtime_status_memo as native_runtime_status,
 )
 from .native_resident_client import native_resident_client_request
 from .native_runtime import _isolated_environment
