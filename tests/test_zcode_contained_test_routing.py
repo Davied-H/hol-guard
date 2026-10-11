@@ -1,4 +1,4 @@
-"""ZCode must rewrite native containment receipts, never allow the original runner."""
+"""Harnesses that apply updatedInput must rewrite native containment receipts, never allow the original runner."""
 
 import hashlib
 import json
@@ -18,16 +18,24 @@ from codex_plugin_scanner.guard.adapters.zcode_contained_tests import (
 from codex_plugin_scanner.guard.runtime.contained_test_hook import read_contained_test_request
 
 
-def test_zcode_routes_multifile_vitest_to_authenticated_sink(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    ("harness", "keys"),
+    [
+        ("zcode", ("hookEventName", "toolName", "toolInput")),
+        ("claude-code", ("hook_event_name", "tool_name", "tool_input")),
+    ],
+)
+def test_routes_multifile_vitest_to_authenticated_sink(tmp_path, monkeypatch, harness, keys):
     monkeypatch.setattr(sys, "platform", "darwin")
+    event_key, tool_key, input_key = keys
     payload = {
-        "hookEventName": "PreToolUse",
-        "toolName": "Bash",
+        event_key: "PreToolUse",
+        tool_key: "Bash",
         "cwd": str(tmp_path),
-        "toolInput": {"command": "bunx vitest run __tests__/one.test.ts __tests__/two.test.ts", "timeout": 120000},
+        input_key: {"command": "bunx vitest run __tests__/one.test.ts __tests__/two.test.ts", "timeout": 120000},
     }
     config = {
-        "harness": "zcode",
+        "harness": harness,
         "python_executable": sys.executable,
         "package_root": str(tmp_path),
         "guard_home": str(tmp_path / "guard"),
@@ -44,7 +52,7 @@ def test_zcode_routes_multifile_vitest_to_authenticated_sink(tmp_path, monkeypat
     assert updated["timeout"] == 120000
     argv = shlex.split(updated["command"])
     assert "execute-contained-test" in argv
-    assert argv[argv.index("--harness") + 1] == "zcode"
+    assert argv[argv.index("--harness") + 1] == harness
     request = Path(argv[argv.index("--request-file") + 1])
     digest = argv[argv.index("--request-sha256") + 1]
     try:
@@ -52,7 +60,7 @@ def test_zcode_routes_multifile_vitest_to_authenticated_sink(tmp_path, monkeypat
         assert request.stat().st_mode & 0o777 == 0o600
         assert hashlib.sha256(request.read_bytes()).hexdigest() == digest
         snapshot = read_contained_test_request(request, digest, workspace=tmp_path)
-        assert snapshot["tool_input"] == payload["toolInput"]
+        assert snapshot["tool_input"] == payload[input_key]
     finally:
         request.unlink()
         request.parent.rmdir()
@@ -78,6 +86,18 @@ def test_zcode_does_not_rewrite_unproven_or_denied_requests(tmp_path, monkeypatc
         **change,
     }
     assert contained_zcode_response(receipt, input_text="{}", config={"harness": "zcode"}, cli_args=[]) is None
+
+
+@pytest.mark.parametrize("harness", ["codex", "cursor", "omp", None])
+def test_harnesses_without_updated_input_are_never_rewritten(monkeypatch, harness):
+    monkeypatch.setattr(sys, "platform", "darwin")
+    receipt = {
+        "decision": "deny",
+        "policy_action": "sandbox-required",
+        "reason_code": "native_vitest_readonly_containment_required",
+        "required_execution_profile": "vitest-readonly-v1",
+    }
+    assert contained_zcode_response(receipt, input_text="{}", config={"harness": harness}, cli_args=[]) is None
 
 
 def test_execution_sink_receives_original_containment_receipt(tmp_path):

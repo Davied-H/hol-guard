@@ -437,9 +437,12 @@ fn evaluate_envelope(
     });
     // The read-only credential-filtering backend currently exists on macOS.
     // Other platforms retain review until they can enforce the same profile.
+    // Only harnesses whose adapter rewrites the call into the contained sink
+    // (OMP's extension, and ZCode and Claude Code through `updatedInput`) get
+    // the receipt; any other harness would see a bare deny.
     if cfg!(target_os = "macos")
         && event == "PreToolUse"
-        && matches!(harness, "omp" | "oh-my-pi" | "zcode")
+        && matches!(harness, "omp" | "oh-my-pi" | "zcode" | "claude-code")
         && cwd.is_some()
         && (result.action.action_type == PreToolActionTypeV1::Command
             || (matches!(
