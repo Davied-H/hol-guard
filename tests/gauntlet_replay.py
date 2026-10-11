@@ -183,6 +183,6 @@ def judge(case: ReplayCase, result: dict[str, object], approvals: list[dict[str,
         # A silent allow means the action never reached review, so no Always allow was offered.
         if not approvals:
             return "review-by-design action raised no approval row to offer an Always allow"
-        bad = [a.get("tool_name") for a in approvals if not offers_always(a)]
+        bad = [(a.get("tool_name"), a.get("once_only_reason")) for a in approvals if not offers_always(a)]
         return f"review row without an Always allow offer: {bad}" if bad else None
     return "attack was allowed" if allowed and not approvals else None
