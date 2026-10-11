@@ -278,8 +278,9 @@ pub(in crate::pretool) fn codex_notes_document(
     })
 }
 
-/// Git ref files in a repository below the verified workspace or user home:
-/// `.git/HEAD`, `.git/refs/{heads,tags,remotes}/**` and a linked worktree's
+/// Git ref files in a repository below the verified workspace or user home,
+/// or in the common git directory of the linked worktree the session runs in
+/// (often a sibling checkout outside both): `.git/HEAD`, `.git/refs/{heads,tags,remotes}/**` and a linked worktree's
 /// `.git/worktrees/<name>/HEAD`. They hold a ref name or object id only.
 /// `.git/config`, hooks, logs and every other entry stay guarded, and every
 /// component outside the single `.git` marker must be visible. Only regular
@@ -294,7 +295,14 @@ pub(in crate::pretool) fn git_ref_document(
         .into_iter()
         .flatten()
         .filter_map(|root| std::fs::canonicalize(root).ok())
-        .any(|root| canonical.starts_with(root));
+        .any(|root| canonical.starts_with(root))
+        || cwd
+            .and_then(|cwd| {
+                crate::pretool::worktree_writes::linked_worktree_common_dir(std::path::Path::new(
+                    cwd,
+                ))
+            })
+            .is_some_and(|common| canonical.starts_with(common));
     let Some(parts) = canonical
         .components()
         .filter_map(|component| match component {

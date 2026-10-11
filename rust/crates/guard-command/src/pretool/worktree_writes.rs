@@ -58,6 +58,27 @@ pub(super) fn same_repository_worktree(workspace: &Path, target: &Path) -> bool 
             .is_some_and(|backlink| backlink == root.join(".git"))
 }
 
+/// The shared git directory of the linked worktree that contains `workspace`.
+/// The worktree's admin entry must sit under `<common>/worktrees` and its
+/// `gitdir` backlink must name this checkout, so a stray `.git` file cannot
+/// nominate an unrelated directory.
+pub(in crate::pretool) fn linked_worktree_common_dir(workspace: &Path) -> Option<PathBuf> {
+    let root = workspace
+        .ancestors()
+        .find(|root| root.join(".git").symlink_metadata().is_ok())?;
+    let text = bounded_git_metadata(&root.join(".git"))?;
+    let admin = std::fs::canonicalize(root.join(text.trim().strip_prefix("gitdir: ")?)).ok()?;
+    let common = bounded_git_metadata(&admin.join("commondir"))
+        .and_then(|path| std::fs::canonicalize(admin.join(path.trim())).ok())?;
+    let backlink = bounded_git_metadata(&admin.join("gitdir"))
+        .and_then(|path| std::fs::canonicalize(admin.join(path.trim())).ok())?;
+    let root = std::fs::canonicalize(root).ok()?;
+    (common.file_name() == Some(".git".as_ref())
+        && admin.starts_with(common.join("worktrees"))
+        && backlink == root.join(".git"))
+    .then_some(common)
+}
+
 fn repository_common_directory(workspace: &Path) -> Option<(PathBuf, PathBuf)> {
     for root in workspace.ancestors() {
         let marker = root.join(".git");
