@@ -34,7 +34,7 @@ from collections.abc import Callable, Iterable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Protocol
 
 from packaging.tags import sys_tags
 from packaging.utils import InvalidWheelFilename, canonicalize_name, parse_wheel_filename
@@ -67,7 +67,12 @@ _SAFE_VERSION_RE = re.compile(r"^[A-Za-z0-9._-]{1,80}$")
 _MARKER_NAME = "alpha-native-wheel.json"
 _MARKER_SCHEMA_VERSION = 1
 
-Opener = Callable[[urllib.request.Request], AbstractContextManager[object]]
+
+class _Readable(Protocol):
+    def read(self, size: int = -1, /) -> bytes: ...
+
+
+Opener = Callable[[urllib.request.Request], AbstractContextManager[_Readable]]
 
 _FAILURE_MESSAGES = {
     "alpha_native_platform_unsupported": (
@@ -370,7 +375,7 @@ def _native_wheel_platform_tag(name: str, version: str) -> str | None:
 
 
 def _default_opener(policy: ManagedNetworkPolicy | None) -> Opener:
-    def open_url(request: urllib.request.Request) -> AbstractContextManager[object]:
+    def open_url(request: urllib.request.Request) -> AbstractContextManager[_Readable]:
         return managed_urlopen(request, timeout=_REQUEST_TIMEOUT_SECONDS, policy=policy)
 
     return open_url
@@ -397,7 +402,7 @@ def _read_bounded(open_url: Opener, url: str, limit: int) -> bytes:
             while len(payload) <= limit:
                 if time.monotonic() >= deadline:
                     raise AlphaNativeWheelError("alpha_native_download_failed")
-                chunk = response.read(min(_READ_CHUNK_BYTES, limit + 1 - len(payload)))  # type: ignore[attr-defined]
+                chunk = response.read(min(_READ_CHUNK_BYTES, limit + 1 - len(payload)))
                 if not chunk:
                     break
                 payload.extend(chunk)
@@ -419,7 +424,7 @@ def _download_to_file(open_url: Opener, url: str, target: Path) -> str:
             while True:
                 if time.monotonic() >= deadline:
                     raise AlphaNativeWheelError("alpha_native_download_failed")
-                chunk = response.read(_READ_CHUNK_BYTES)  # type: ignore[attr-defined]
+                chunk = response.read(_READ_CHUNK_BYTES)
                 if not chunk:
                     break
                 total += len(chunk)
