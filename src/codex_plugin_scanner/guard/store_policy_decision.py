@@ -27,8 +27,7 @@ def get_policy_decision_payload(
         row = connection.execute(query, (decision_id, approval_gate_policy_source)).fetchone()
         if row is None:
             return None
-        (source_context,) = store._policy_source_contexts([row])
-        payload = store._policy_decision_dict_from_row(row, source_context=source_context)
+        payload = store._policy_decision_dict_from_row(row)
         if not is_remote_policy_source(row["source"]):
             generation = state.get("generation")
             trusted_generation = (
@@ -45,7 +44,8 @@ def get_policy_decision_payload(
             payload["integrity_message"] = integrity_result.message
             payload["integrity_mode"] = state.get("mode")
             payload["integrity_enforcement"] = state.get("enforcement")
-        return payload
+    store._attach_policy_source_contexts([payload])
+    return payload
 
 
 def policy_decision_hash_exists(store, *, harness: str, artifact_id: str, artifact_hash: str) -> bool:

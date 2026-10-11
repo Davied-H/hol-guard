@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 # ruff: noqa: F403,F405
+from .native_guard_store import NativeGuardStoreUnavailable
 from .store_base import *
 
 
@@ -67,7 +68,6 @@ class StorePolicyIntegrityAdminMixin:
         query += " order by updated_at desc"
         with self._connect() as connection:
             rows = connection.execute(query, params).fetchall()
-            source_contexts = self._policy_source_contexts(rows)
             needs_local_integrity = any(not is_remote_policy_source(str(row["source"])) for row in rows)
             state: Mapping[str, object] | None = None
             key: bytes | None = None
@@ -78,8 +78,8 @@ class StorePolicyIntegrityAdminMixin:
                 key, key_id = self._policy_integrity_secret_material(create=True)
                 trusted_generation = _mapping_int(state, "generation")
             items: list[dict[str, object]] = []
-            for row, source_context in zip(rows, source_contexts, strict=True):
-                payload = self._policy_decision_dict_from_row(row, source_context=source_context)
+            for row in rows:
+                payload = self._policy_decision_dict_from_row(row)
                 if not is_remote_policy_source(str(row["source"])):
                     if state is None:
                         continue
@@ -95,7 +95,8 @@ class StorePolicyIntegrityAdminMixin:
                     payload["integrity_mode"] = state.get("mode")
                     payload["integrity_enforcement"] = state.get("enforcement")
                 items.append(payload)
-            return items
+        self._attach_policy_source_contexts(items)
+        return items
 
     def get_policy_decision(self, decision_id: int) -> dict[str, object] | None:
         from .store_policy_decision import get_policy_decision_payload
@@ -107,42 +108,47 @@ class StorePolicyIntegrityAdminMixin:
             now=_now(),
         )
 
-    def _policy_source_contexts(self, rows: Sequence[sqlite3.Row]) -> list[dict[str, str] | None]:
-        """Remembered command and workspace context per policy row, chosen by the native store."""
+    def _attach_policy_source_contexts(self, items: Sequence[dict[str, object]]) -> None:
+        """Add the remembered command and workspace context chosen by the native store.
 
-        if not rows:
-            return []
-        items = [
+        Call this after the store connection is closed: the native store may need
+        to provision its verifier key, which opens the store separately. When the
+        native store is unavailable the items keep their policy fields and carry no
+        remembered context; nothing is derived locally.
+        """
+
+        if not items:
+            return
+        request = [
             {
-                "harness": str(row["harness"]),
-                "artifact_id": _optional_text(row["artifact_id"]),
-                "artifact_hash": _optional_text(row["artifact_hash"]),
-                "workspace": _optional_text(row["workspace"]),
-                "reason": _optional_text(row["reason"]),
+                "harness": str(item["harness"]),
+                "artifact_id": _optional_text(item.get("artifact_id")),
+                "artifact_hash": _optional_text(item.get("artifact_hash")),
+                "workspace": _optional_text(item.get("workspace")),
+                "reason": _optional_text(item.get("reason")),
             }
-            for row in rows
+            for item in items
         ]
-        payload = self._native_store_call("policy_source_contexts", {"items": items})
-        if not isinstance(payload, list) or len(payload) != len(rows):
+        try:
+            payload = self._native_store_call("policy_source_contexts", {"items": request})
+        except NativeGuardStoreUnavailable:
+            return
+        if not isinstance(payload, list) or len(payload) != len(items):
             raise ValueError("native_policy_source_context_invalid")
-        contexts: list[dict[str, str] | None] = []
-        for context in payload:
-            if context is not None and (
+        for item, context in zip(items, payload, strict=True):
+            if context is None:
+                continue
+            if (
                 not isinstance(context, dict)
                 or not context
                 or not set(context) <= _POLICY_SOURCE_CONTEXT_KEYS
                 or not all(isinstance(value, str) for value in context.values())
             ):
                 raise ValueError("native_policy_source_context_invalid")
-            contexts.append(None if context is None else dict(context))
-        return contexts
+            item.update(context)
 
     @staticmethod
-    def _policy_decision_dict_from_row(
-        row: sqlite3.Row,
-        *,
-        source_context: Mapping[str, str] | None,
-    ) -> dict[str, object]:
+    def _policy_decision_dict_from_row(row: sqlite3.Row) -> dict[str, object]:
         harness = str(row["harness"])
         artifact_id = row["artifact_id"]
         artifact_hash = row["artifact_hash"]
@@ -180,8 +186,6 @@ class StorePolicyIntegrityAdminMixin:
             payload["integrity_key_id"] = str(row["integrity_key_id"])
         if row["signed_at"] is not None:
             payload["signed_at"] = str(row["signed_at"])
-        if source_context is not None:
-            payload.update(source_context)
         return payload
 
     @staticmethod
@@ -218,9 +222,7 @@ class StorePolicyIntegrityAdminMixin:
         key, key_id = self._policy_integrity_secret_material(create=create_key)
         counts = {status: 0 for status in _POLICY_INTEGRITY_STATUSES}
         items: list[dict[str, object]] = []
-        rows = self._load_local_policy_rows(connection, harness=harness)
-        source_contexts = self._policy_source_contexts(rows) if include_items else [None] * len(rows)
-        for row, source_context in zip(rows, source_contexts, strict=True):
+        for row in self._load_local_policy_rows(connection, harness=harness):
             trusted_generation = _mapping_int(state, "generation")
             integrity_result = self._policy_integrity_result_for_row(
                 row,
@@ -232,7 +234,7 @@ class StorePolicyIntegrityAdminMixin:
             counts[integrity_result.status] += 1
             if not include_items:
                 continue
-            item = self._policy_decision_dict_from_row(row, source_context=source_context)
+            item = self._policy_decision_dict_from_row(row)
             item["integrity_status"] = integrity_result.status
             item["integrity_message"] = integrity_result.message
             item["integrity_mode"] = state.get("mode")
@@ -288,6 +290,7 @@ class StorePolicyIntegrityAdminMixin:
                 create_key=False,
                 include_items=True,
             )
+        self._attach_policy_source_contexts(items)
         invalid_items = [item for item in items if item.get("integrity_status") != "valid"]
         return {
             "generated_at": now,
@@ -520,6 +523,7 @@ class StorePolicyIntegrityAdminMixin:
                 create_key=True,
                 include_items=True,
             )
+        self._attach_policy_source_contexts(items)
         return {
             "generated_at": now,
             "harness": harness,
