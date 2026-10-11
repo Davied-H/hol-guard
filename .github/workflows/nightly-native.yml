@@ -107,6 +107,11 @@ jobs:
           OWNERSHIP_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
           args=(--root . --json rust-authority-ownership.json)
+          # Scheduled and manual runs have no event base, so diff the last
+          # day of main; the schedule is daily and this overlaps by an hour.
+          if [[ -z "$OWNERSHIP_BASE_REF" ]]; then
+            OWNERSHIP_BASE_REF=$(git rev-list -1 --before="25 hours ago" HEAD)
+          fi
           if [[ -n "$OWNERSHIP_BASE_REF" ]]; then
             args+=(--base-ref "$OWNERSHIP_BASE_REF")
           fi
