@@ -202,6 +202,9 @@ mod hook_authority_state_op;
 mod hook_decision_compose;
 mod hook_decision_directive;
 mod hook_decision_finalize;
+mod hook_decision_native_facts;
+#[cfg(all(test, unix))]
+mod hook_decision_native_facts_tests;
 mod hook_decision_op;
 mod hook_process_spawn;
 mod hook_render_op;
@@ -317,6 +320,10 @@ mod runner_sync_policy;
 mod runner_sync_signals;
 mod runner_sync_url;
 mod runtime_cli;
+#[cfg(all(test, unix))]
+#[allow(dead_code, clippy::pedantic)]
+#[path = "../../guard-command/tests/sfrs_support/mod.rs"]
+mod sfrs_support;
 mod shim_op;
 #[cfg(unix)]
 mod skill_directory_identity_op;

@@ -8,6 +8,8 @@ verdict, and its boolean is a fact, not a decision.
 
 from __future__ import annotations
 
+import os
+import shutil
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
@@ -75,16 +77,6 @@ def hook_classifiers(
             runtime_workspace=runtime_workspace,
         )
 
-    def benign_native_file_read(_event: str | None) -> bool:
-        from ..runtime.secret_file_requests import is_explicitly_benign_native_file_read_request
-
-        return is_explicitly_benign_native_file_read_request(
-            tool_name,
-            tool_input,
-            cwd=runtime_workspace,
-            home_dir=home_dir,
-        )
-
     def benign_tool_action(_event: str | None) -> bool:
         from ..runtime.secret_file_requests import is_explicitly_benign_tool_action_request
 
@@ -99,8 +91,41 @@ def hook_classifiers(
         "prompt_clean": prompt_clean,
         "post_tool_read_only_inspection": post_tool_read_only_inspection,
         "verified_apply_patch": verified_apply_patch,
-        "benign_native_file_read": benign_native_file_read,
         "benign_tool_action": benign_tool_action,
+    }
+
+
+def _native_request(
+    payload: Mapping[str, object],
+    runtime_workspace: Path | None,
+    home_dir: Path | None,
+) -> dict[str, object] | None:
+    """The raw tool call and host facts the resident classifies itself.
+
+    Nothing here is a verdict. When the host cannot be observed the request is
+    omitted and the resident treats every dependent verdict as not benign.
+    """
+
+    from .. import native_git_execution_safety as git_safety
+    from ..native_codex_tool_output import _environment_snapshot
+
+    try:
+        host: dict[str, object] = {
+            "process_cwd": os.getcwd(),
+            "home": str(Path.home()),
+            "account_home": git_safety._account_home_directory(),
+            "groups": git_safety._process_groups(),
+            "environment": _environment_snapshot(),
+            "git_executable": shutil.which("git"),
+        }
+    except (OSError, RuntimeError):
+        return None
+    return {
+        "tool_name": payload.get("tool_name"),
+        "tool_input": payload.get("tool_input", payload.get("arguments")),
+        "cwd": None if runtime_workspace is None else str(runtime_workspace),
+        "home_dir": None if home_dir is None else str(home_dir),
+        "host": host,
     }
 
 
@@ -113,14 +138,17 @@ def composition_inputs(
     has_configured_override: bool,
     has_narrow_override: bool,
     harness: str,
+    home_dir: Path | None,
     native_edge_result: Mapping[str, object] | None,
     payload: Mapping[str, object],
     runtime_artifact_checked: bool,
+    runtime_workspace: Path | None,
 ) -> dict[str, object]:
     """Payload and configuration facts for the resident composition query."""
 
     prompt = payload.get("prompt")
-    return {
+    native_request = _native_request(payload, runtime_workspace, home_dir)
+    inputs: dict[str, object] = {
         "harness": harness,
         "canonical_harness": canonical_harness,
         "event_fields": {key: payload[key] for key in _EVENT_KEYS if key in payload},
@@ -143,6 +171,10 @@ def composition_inputs(
         "fail_mode": payload.get("fail_mode"),
         "permission_decision_reason": payload.get("permission_decision_reason"),
     }
+    if native_request is not None:
+        # Omitted, never null: the resident digests its canonical form of the request.
+        inputs["native_request"] = native_request
+    return inputs
 
 
 __all__ = ["composition_inputs", "hook_classifiers"]

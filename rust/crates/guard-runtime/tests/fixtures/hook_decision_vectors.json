@@ -38,43 +38,6 @@
    }
   },
   {
-   "name": "relax_asks_native_file_read_second",
-   "query": {
-    "kind": "compose_current",
-    "inputs": {
-     "harness": "codex",
-     "canonical_harness": "codex",
-     "event_fields": {
-      "hook_event_name": "PreToolUse"
-     },
-     "tool_name_text": "Bash",
-     "configured_action": "review",
-     "has_configured_override": false,
-     "has_narrow_override": false,
-     "runtime_artifact_checked": false,
-     "prompt_nonblank": false,
-     "has_command_text": true,
-     "facts": {
-      "verified_apply_patch": false
-     },
-     "cli_action": null,
-     "has_payload_action": false,
-     "payload_action": null,
-     "native_edge": null,
-     "daemon_status": null,
-     "fail_mode": null,
-     "permission_decision_reason": null
-    }
-   },
-   "expect": {
-    "needs_facts": [
-     "benign_native_file_read"
-    ],
-    "composition": null,
-    "event_name": "PreToolUse"
-   }
-  },
-  {
    "name": "relax_skips_native_file_read_for_other_harness",
    "query": {
     "kind": "compose_current",
@@ -129,8 +92,7 @@
      "prompt_nonblank": false,
      "has_command_text": true,
      "facts": {
-      "verified_apply_patch": false,
-      "benign_native_file_read": false
+      "verified_apply_patch": false
      },
      "cli_action": null,
      "has_payload_action": false,
@@ -222,7 +184,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -278,7 +239,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": true
      },
      "cli_action": null,
@@ -1630,7 +1590,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -2365,7 +2324,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -2470,7 +2428,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -2569,7 +2526,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -2671,7 +2627,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -2773,7 +2728,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -2875,7 +2829,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": "review",
@@ -2977,7 +2930,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -3076,7 +3028,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -3175,7 +3126,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -3274,7 +3224,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -3373,7 +3322,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -3472,7 +3420,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -3571,7 +3518,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -3670,7 +3616,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -3769,7 +3714,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -3868,7 +3812,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -3967,7 +3910,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -4065,7 +4007,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -4155,7 +4096,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -4250,7 +4190,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -4347,7 +4286,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -4442,7 +4380,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -4539,7 +4476,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -4631,7 +4567,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -4729,7 +4664,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -4825,7 +4759,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -4921,7 +4854,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -5020,7 +4952,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -5116,7 +5047,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -5213,7 +5143,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -5309,7 +5238,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -5405,7 +5333,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -5499,7 +5426,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -5595,7 +5521,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -5693,7 +5618,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -5791,7 +5715,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -5889,7 +5812,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -5987,7 +5909,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -6088,7 +6009,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -6187,7 +6107,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -6285,7 +6204,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -6384,7 +6302,6 @@
      "has_command_text": false,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -6481,7 +6398,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -6580,7 +6496,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -6678,7 +6593,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -6775,7 +6689,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": true
      },
      "cli_action": null,
@@ -6898,7 +6811,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -6997,7 +6909,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": "bogus",
@@ -7153,7 +7064,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,
@@ -7205,7 +7115,6 @@
      "has_command_text": true,
      "facts": {
       "verified_apply_patch": false,
-      "benign_native_file_read": false,
       "benign_tool_action": false
      },
      "cli_action": null,

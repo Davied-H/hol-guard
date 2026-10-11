@@ -11,9 +11,9 @@ use std::path::{Path, PathBuf};
 use guard_contracts::CompoundGitSegmentV1;
 use serde_json::{json, Map, Value};
 
+use crate::benign_request_api::ovalue_from_json;
 use crate::codex_output_env::{Ctx, GitCheck, GitRun, InspectionHost};
-use crate::hook_adapter_value::{OMap, OValue};
-use crate::sfrs_benign_reads::is_explicitly_benign_native_file_read_request;
+use crate::hook_adapter_value::OValue;
 use crate::sfrs_read_only_filters::read_only_lookup_target_is_safe;
 use crate::sfrs_requests::{
     build_file_read_request_artifact, build_file_write_request_artifact, classify_sensitive_path,
@@ -129,13 +129,18 @@ pub fn replay_entry(
                 .map_or_else(|| process_cwd.clone(), str::to_owned);
             let host = ReplayHost::new(&home);
             let ctx = Ctx::new(&host, &process_cwd, &home);
-            Ok(json!(is_explicitly_benign_native_file_read_request(
-                &ovalue_arg(args, "tool_name"),
-                &ovalue_arg(args, "arguments"),
-                path_arg(args, "cwd").as_deref(),
-                path_arg(args, "home_dir").as_deref(),
-                &ctx,
-            )))
+            // The public entry point the resident composes with, so the
+            // recorded Python vectors prove the exact production path.
+            let null = Value::Null;
+            Ok(json!(
+                crate::benign_request_api::is_benign_native_file_read(
+                    args.get("tool_name").unwrap_or(&null),
+                    args.get("arguments").unwrap_or(&null),
+                    path_arg(args, "cwd").as_deref(),
+                    path_arg(args, "home_dir").as_deref(),
+                    &ctx,
+                )
+            ))
         }
         "read_only_lookup_target_is_safe" => Ok(json!(read_only_lookup_target_is_safe(
             str_arg(args, "target").unwrap_or_default(),
@@ -264,31 +269,6 @@ fn protected_paths(value: &Value) -> Vec<(String, String)> {
                 .collect()
         })
         .unwrap_or_default()
-}
-
-/// Plain JSON to a Python-faithful value, keeping number spelling.
-fn ovalue_from_json(value: &Value) -> OValue {
-    match value {
-        Value::Null => OValue::Null,
-        Value::Bool(flag) => OValue::Bool(*flag),
-        Value::Number(number) => {
-            let token = number.to_string();
-            if token.bytes().any(|byte| matches!(byte, b'.' | b'e' | b'E')) {
-                OValue::Float(token)
-            } else {
-                OValue::Int(token)
-            }
-        }
-        Value::String(text) => OValue::Str(text.clone()),
-        Value::Array(items) => OValue::List(items.iter().map(ovalue_from_json).collect()),
-        Value::Object(map) => {
-            let mut converted = OMap::new();
-            for (key, item) in map {
-                converted.insert(key, ovalue_from_json(item));
-            }
-            OValue::Map(converted)
-        }
-    }
 }
 
 fn text(value: &Value, key: &str) -> String {

@@ -27,8 +27,8 @@ const MAX_COMMANDS: usize = 256;
 const MAX_ENVIRONMENT: usize = 128;
 const MAX_GROUPS: usize = 256;
 
-struct ResidentInspectionHost<'a> {
-    facts: &'a CodexToolOutputFactsV1,
+pub(crate) struct ResidentInspectionHost<'a> {
+    pub(crate) facts: &'a CodexToolOutputFactsV1,
 }
 
 impl ResidentInspectionHost<'_> {

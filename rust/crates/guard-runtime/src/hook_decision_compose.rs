@@ -13,6 +13,8 @@ use guard_contracts::{
 };
 use serde_json::Value;
 
+use crate::hook_decision_native_facts::benign_native_file_read;
+
 pub(crate) const COPILOT_BENIGN_HINT_REASON: &str =
     "untrusted_hook_payload_hint_ignored_guard_verified_benign";
 pub(crate) const BENIGN_DEFAULT_REASON: &str = "configured_default_relaxed_guard_verified_benign";
@@ -168,10 +170,7 @@ fn relax_configured_default(
         return Ok(true);
     }
     let pre = event == Some("PreToolUse");
-    if pre
-        && matches!(canonical, "claude-code" | "codex")
-        && fact(inputs, "benign_native_file_read")?
-    {
+    if pre && matches!(canonical, "claude-code" | "codex") && benign_native_file_read(inputs) {
         return Ok(true);
     }
     Ok(pre && fact(inputs, "benign_tool_action")?)

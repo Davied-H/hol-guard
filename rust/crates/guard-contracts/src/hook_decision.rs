@@ -14,6 +14,8 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
+use crate::CodexToolOutputFactsV1;
+
 /// Schema discriminator for the request.
 pub const HOOK_DECISION_REQUEST_SCHEMA: &str = "guard-hook-decision-request.v1";
 /// Schema discriminator for the result.
@@ -84,6 +86,40 @@ pub struct HookCompositionInputsV1 {
     pub fail_mode: Value,
     #[serde(default)]
     pub permission_decision_reason: Value,
+    /// The raw tool call and caller facts the resident classifies itself.
+    /// Absent means the transport could not observe them; every verdict that
+    /// depends on them then fails closed (not benign).
+    /// Omitted from the wire when absent, so the request digest the transport
+    /// binds stays identical to the canonical form it sent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_request: Option<HookNativeRequestV1>,
+}
+
+/// Raw tool call plus observed caller facts for resident-owned classifiers.
+///
+/// Python never recomputes these verdicts: it only forwards what the payload
+/// and the host showed. `benign_native_file_read` is computed from it today.
+/// `benign_tool_action` (`is_explicitly_benign_tool_action_request`) will be
+/// computed from this same request once its Rust classifier lands; until then
+/// it stays a transport-supplied fact and the fields below are carried ready.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct HookNativeRequestV1 {
+    /// `payload["tool_name"]`, untyped as received.
+    #[serde(default)]
+    pub tool_name: Value,
+    /// `payload["tool_input"]`, else `payload["arguments"]`, untyped.
+    #[serde(default)]
+    pub tool_input: Value,
+    /// The runtime workspace directory, when known.
+    #[serde(default)]
+    pub cwd: Option<String>,
+    /// The caller's home directory override, when given.
+    #[serde(default)]
+    pub home_dir: Option<String>,
+    /// Observed process cwd, home, account home, groups, bounded environment
+    /// snapshot and `git` executable, as the tool-output op takes them.
+    pub host: CodexToolOutputFactsV1,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
