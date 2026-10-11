@@ -226,11 +226,7 @@ def bridge_review_response(
         daemon_overloaded = _authenticated_daemon_overload(error)
         if native_refused(error):
             return None, False, False
-        if (
-            not daemon_overloaded
-            and should_fail_fast(state_path)
-            and not daemon_start_in_progress(state_path)
-        ):
+        if not daemon_overloaded and should_fail_fast(state_path) and not daemon_start_in_progress(state_path):
             # A launch already failed to start the daemon: deny now, name the fix.
             # A newer start marker is a recovery, so the wait still gets its turn.
             _record_failure(failure_causes, "daemon_dead_fast", DEAD_DAEMON_REASON_CODE)
