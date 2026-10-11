@@ -40,7 +40,9 @@ fn is_word_char(c: char) -> bool {
 /// Comments and string literals produce no tokens; newlines inside brackets
 /// and after a backslash do not end the statement.
 fn tokenize(script: &str) -> Vec<Token> {
-    let chars: Vec<char> = script.chars().collect();
+    // Python normalises CRLF and lone CR to LF before tokenizing.
+    let normalized = script.replace("\r\n", "\n").replace('\r', "\n");
+    let chars: Vec<char> = normalized.chars().collect();
     let mut tokens = Vec::new();
     let mut depth = 0usize;
     let mut index = 0;
@@ -165,9 +167,26 @@ fn skip_replacement_field(chars: &[char], start: usize) -> usize {
             '{' | '(' | '[' => depth += 1,
             '}' if depth == 0 => return index + 1,
             '}' | ')' | ']' => depth = depth.saturating_sub(1),
+            // A top-level colon starts the format spec, where quotes are plain
+            // text (`f"{x:'>10}"` uses `'` as the fill character).
+            ':' if depth == 0 => return skip_format_spec(chars, index + 1),
             _ => {}
         }
         index += 1;
+    }
+    chars.len()
+}
+
+/// Index just past the `}` that ends a format spec starting at `start`.
+/// Nested replacement fields inside the spec are skipped as code.
+fn skip_format_spec(chars: &[char], start: usize) -> usize {
+    let mut index = start;
+    while index < chars.len() {
+        match chars[index] {
+            '}' => return index + 1,
+            '{' => index = skip_replacement_field(chars, index + 1),
+            _ => index += 1,
+        }
     }
     chars.len()
 }
@@ -287,6 +306,9 @@ mod tests {
             "import \u{ff53}ubprocess as sp",
             "f\"{\"'''\"}\"\nimport os as o\n#'''",
             "f\"{x!r:>{width}}\"\nimport os as o",
+            "f\"{x:'>10}\" import os as o #'",
+            "# x\rfrom os import system as s\rs('id')",
+            "from os import system \\\r\n as s\r\ns('id')",
         ] {
             assert!(script_has_aliased_risky_import(script), "{script}");
         }
