@@ -27,6 +27,7 @@ use crate::guard_store_cmd_feedback as feedback;
 use crate::guard_store_cmd_lifecycle as lifecycle;
 use crate::guard_store_cmd_maintenance as maintenance;
 use crate::guard_store_cmd_privacy as privacy;
+use crate::guard_store_connect as connect;
 use crate::guard_store_db::{exec, query_all, query_one, text, StoreError, StoreResult};
 use crate::guard_store_inventory as inventory;
 use crate::guard_store_observed_mcp as observed_mcp;
@@ -315,6 +316,7 @@ fn method_kind(method: &str) -> Option<Kind> {
         | "receipt_analytics"
         | "reconcile_receipt_events"
         | "maintain_storage" => Kind::Write,
+        _ if connect::handles(method) => Kind::Write,
         _ => return None,
     })
 }
@@ -469,6 +471,7 @@ fn dispatch(
         "reconcile_receipt_events" => receipt_reads::reconcile_events(connection, args),
         "maintain_storage" => storage_maintenance::maintain(connection, args),
         "run_storage_housekeeping" => storage_maintenance::housekeeping(connection),
+        _ if connect::handles(method) => connect::dispatch(connection, method, args),
         _ => Err(StoreError::Invalid("native_guard_store_method_unknown")),
     }
 }
