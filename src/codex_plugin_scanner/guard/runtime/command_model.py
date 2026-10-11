@@ -35,7 +35,7 @@ class CommandSegment:
     end: int
 
     def to_dict(self) -> dict[str, object]:
-        value = {
+        value: dict[str, object] = {
             item.name: list(value) if isinstance(value := getattr(self, item.name), tuple) else value
             for item in fields(self)
             if item.name not in {"start", "end"}
