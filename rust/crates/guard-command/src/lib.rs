@@ -141,6 +141,7 @@ pub mod secret_path_probe;
 mod sfrs_agent_guidance;
 mod sfrs_benign_reads;
 mod sfrs_constants;
+#[cfg(unix)]
 mod sfrs_developer_graph;
 #[cfg(all(test, unix))]
 mod sfrs_developer_graph_vectors;
@@ -162,6 +163,7 @@ mod sfrs_gh_shell;
 #[cfg(test)]
 mod sfrs_gh_shell_vectors;
 mod sfrs_git_cached_diff;
+#[cfg(unix)]
 mod sfrs_git_index;
 #[cfg(test)]
 mod sfrs_github_vectors;
@@ -172,6 +174,7 @@ mod sfrs_jq;
 mod sfrs_json;
 mod sfrs_patterns;
 mod sfrs_python_imports;
+#[cfg(unix)]
 mod sfrs_quote_parsing;
 mod sfrs_quote_tokens;
 #[cfg(all(test, unix))]
@@ -186,6 +189,7 @@ mod sfrs_selectors;
 mod sfrs_shell_tokens;
 mod sfrs_shlex;
 mod sfrs_source_edit;
+#[cfg(unix)]
 mod sfrs_source_edit_context;
 mod sfrs_static_safety;
 #[cfg(test)]
