@@ -226,3 +226,18 @@ fn only_a_read_policy_may_omit_the_write_scope() {
     ))
     .is_ok());
 }
+
+#[test]
+fn staged_copy_of_a_read_only_file_is_owner_writable() {
+    let dir = workspace();
+    let root = canonical(&dir);
+    fs::set_permissions(root.join("src/a.py"), fs::Permissions::from_mode(0o444)).expect("chmod");
+    let home = Tmp::new();
+    let (stage, _capture) = stage_workspace(&root, home.path(), "run").expect("stage");
+    let mode = fs::metadata(stage.0.join("src/a.py"))
+        .expect("meta")
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(mode, 0o644);
+}

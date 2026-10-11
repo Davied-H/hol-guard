@@ -202,7 +202,7 @@ fn copy_and_hash(
             OpenOptions::new()
                 .write(true)
                 .create_new(true)
-                .mode(metadata.mode() & 0o777)
+                .mode((metadata.mode() & 0o777) | 0o200)
                 .open(path)
                 .map_err(|_| "workspace_stage_copy_failed".to_owned())?,
         ),
@@ -432,7 +432,11 @@ pub(crate) fn write_atomic(
             .map_err(|_| "write_failed".to_owned())?;
         file.sync_all().map_err(|_| "write_failed".to_owned())?;
         renameat(&directory, temp_name.as_str(), &directory, name)
-            .map_err(|_| "write_failed".to_owned())
+            .map_err(|_| "write_failed".to_owned())?;
+        // Persist the rename. The replacement is already committed, so a
+        // failed directory sync must not turn into a reported failure.
+        let _ = directory.sync_all();
+        Ok(())
     })();
     if outcome.is_err() {
         let _ = unlinkat(&directory, temp_name.as_str(), UnlinkatFlags::NoRemoveDir);
