@@ -10,10 +10,17 @@ class NativeSignalProjectionError(ValueError):
     """The native owner returned an incomplete projection."""
 
 
-def _request(kind: str, args: Mapping[str, object]) -> dict[str, Any]:
-    from .native_runner_authority import native_runner_authority
+class NativeSignalProjectionUnavailableError(RuntimeError):
+    """Projection transport failed independently of persisted decision validity."""
 
-    return native_runner_authority(kind, args)
+
+def _request(kind: str, args: Mapping[str, object]) -> dict[str, Any]:
+    from .native_runner_authority import NativeRunnerAuthorityError, native_runner_authority
+
+    try:
+        return native_runner_authority(kind, args)
+    except NativeRunnerAuthorityError as error:
+        raise NativeSignalProjectionUnavailableError(str(error)) from error
 
 
 def signal_projection(kind: str, args: Mapping[str, object]) -> Any:

@@ -147,6 +147,14 @@ def _authoritative(payload: Mapping[str, Any]) -> AuthoritativeGuardDecision:
     return AuthoritativeGuardDecision(**values)
 
 
+def project_native_authoritative_decision(payload: dict[str, Any]) -> AuthoritativeGuardDecision:
+    """Project a decision already bound by another native operation, without RPC."""
+    from ..native_decisions import _shape
+
+    _shape(payload, "authoritative")
+    return _authoritative(payload)
+
+
 def build_authoritative_decision(
     action: GuardAction,
     *,

@@ -29,7 +29,7 @@ pub(crate) fn evaluate_hook_artifact_compose_request(
         request_sha256,
         status: "ok".to_owned(),
         code: "ok".to_owned(),
-        payload: Some(compose(&request.query)),
+        payload: Some(compose(&request.query)?),
     })
 }
 
@@ -45,8 +45,8 @@ fn request_digest(request: &HookArtifactComposeRequestV1) -> Result<String, Stri
     ))
 }
 
-pub(crate) fn compose(query: &HookArtifactComposeQueryV1) -> Value {
-    match query {
+pub(crate) fn compose(query: &HookArtifactComposeQueryV1) -> Result<Value, String> {
+    Ok(match query {
         HookArtifactComposeQueryV1::PolicyStack(query) => policy_stack(query),
         HookArtifactComposeQueryV1::ToolGrantApply => json!({
             "current_policy_action": "allow",
@@ -63,7 +63,8 @@ pub(crate) fn compose(query: &HookArtifactComposeQueryV1) -> Value {
         HookArtifactComposeQueryV1::TrustedOverride(query) => reuse::trusted_override(query),
         HookArtifactComposeQueryV1::ClaimedReuse(query) => reuse::claimed_reuse(query),
         HookArtifactComposeQueryV1::DecisionCopy(query) => reuse::decision_copy(query),
-    }
+        HookArtifactComposeQueryV1::DecisionBuildCopy(query) => reuse::decision_build_copy(query)?,
+    })
 }
 
 pub(crate) fn act(value: &Value) -> GuardAction {

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from codex_plugin_scanner.guard import native_decisions
-from codex_plugin_scanner.guard.native_decisions import NativeDecisionAuthorityError
+from codex_plugin_scanner.guard import native_decisions, native_runner_authority
+from codex_plugin_scanner.guard.native_decisions import NativeDecisionAuthorityError, NativeDecisionUnavailableError
 from codex_plugin_scanner.guard.runtime.decisions import (
     AuthoritativeGuardDecision,
     GuardDecisionV2,
@@ -16,10 +16,10 @@ from codex_plugin_scanner.guard.runtime.decisions import (
 @pytest.mark.parametrize("operation", ("v2", "authoritative", "build", "artifact", "legacy"))
 def test_native_unavailability_has_no_local_decision_fallback(monkeypatch: pytest.MonkeyPatch, operation: str) -> None:
     def unavailable(*args: object, **kwargs: object) -> object:
-        raise NativeDecisionAuthorityError("native_runtime_unavailable")
+        raise native_runner_authority.NativeRunnerAuthorityError("native_runtime_unavailable")
 
-    monkeypatch.setattr(native_decisions, "_request", unavailable)
-    with pytest.raises(NativeDecisionAuthorityError, match="native_runtime_unavailable"):
+    monkeypatch.setattr(native_runner_authority, "native_runner_authority", unavailable)
+    with pytest.raises(NativeDecisionUnavailableError, match="native_runtime_unavailable") as caught:
         if operation == "v2":
             GuardDecisionV2.from_dict({"guard_action": "allow"})
         elif operation == "authoritative":
@@ -30,6 +30,8 @@ def test_native_unavailability_has_no_local_decision_fallback(monkeypatch: pytes
             authoritative_decision_from_artifact({"policy_action": "allow"})
         else:
             decision_from_legacy_policy_action("allow", reason="fixture")
+    assert not isinstance(caught.value, ValueError)
+    assert isinstance(caught.value.__cause__, native_runner_authority.NativeRunnerAuthorityError)
 
 
 @pytest.mark.parametrize("value", ({}, {"action": "allow", "launch_permitted": True}, [], None))

@@ -120,6 +120,7 @@ _FIELDS: dict[str, frozenset[str]] = {
             "remembered_rule_reason",
         }
     ),
+    "decision_build_copy": frozenset({"copy", "reason", "signals"}),
 }
 
 # The exact answer shape of each query kind. Spec letters: a action,
@@ -159,6 +160,7 @@ _ANSWERS: dict[str, dict[str, str]] = {
         "trusted_request_override_reason": "S",
     },
     "decision_copy": {"decision_overrides": "d", "risk_headline": "S"},
+    "decision_build_copy": {"decision_v2": "d", "risk_headline": "S"},
 }
 
 

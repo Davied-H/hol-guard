@@ -10,6 +10,10 @@ class NativeDecisionAuthorityError(ValueError):
     """The native owner returned an incomplete decision projection."""
 
 
+class NativeDecisionUnavailableError(RuntimeError):
+    """Decision transport failed independently of stored-data validity."""
+
+
 _ARTIFACT_FIELDS = frozenset(
     {
         "artifact_id",
@@ -39,9 +43,12 @@ def _invalid() -> NativeDecisionAuthorityError:
 
 
 def _request(kind: str, args: Mapping[str, object]) -> dict[str, Any]:
-    from .native_runner_authority import native_runner_authority
+    from .native_runner_authority import NativeRunnerAuthorityError, native_runner_authority
 
-    return native_runner_authority(kind, args)
+    try:
+        return native_runner_authority(kind, args)
+    except NativeRunnerAuthorityError as error:
+        raise NativeDecisionUnavailableError(str(error)) from error
 
 
 def _fields(payload: object, fields: Mapping[str, type], nullable: tuple[str, ...] = ()) -> dict[str, Any]:
@@ -147,10 +154,11 @@ def decision_authority(kind: str, args: Mapping[str, object]) -> dict[str, Any]:
     value = result.get("value")
     if result.get("status") != "ok" or not isinstance(value, dict):
         raise _invalid()
-    shape = (
-        "enforcement"
-        if kind == "decision_enforcement_decode"
-        else ("v2" if kind in {"decision_v2_decode", "decision_legacy"} else "authoritative")
-    )
+    if kind == "decision_enforcement_decode":
+        shape = "enforcement"
+    elif kind in {"decision_v2_decode", "decision_legacy"}:
+        shape = "v2"
+    else:
+        shape = "authoritative"
     _shape(value, shape)
     return value

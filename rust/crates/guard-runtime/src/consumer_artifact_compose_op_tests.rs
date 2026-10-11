@@ -11,8 +11,41 @@ fn matches_recorded_vectors() {
         let name = vector["name"].as_str().unwrap();
         let query: ConsumerArtifactComposeQueryV1 = serde_json::from_value(vector["query"].clone())
             .unwrap_or_else(|error| panic!("{name}: {error}"));
-        assert_eq!(compose(&query), vector["expected"], "{name}");
+        assert_eq!(compose(&query).unwrap(), vector["expected"], "{name}");
     }
+}
+
+#[test]
+fn fused_authoritative_decision_preserves_recorded_runtime_composition() {
+    let vectors: Vec<Value> = serde_json::from_str(VECTORS).unwrap();
+    let mut checked = 0;
+    for vector in vectors
+        .iter()
+        .filter(|v| v["query"]["kind"] == "runtime_decision")
+    {
+        let mut runtime = vector["query"].clone();
+        runtime.as_object_mut().unwrap().remove("kind");
+        let query = serde_json::from_value(json!({
+            "kind": "runtime_authoritative", "runtime": runtime, "signals": [],
+        }))
+        .unwrap();
+        let mut actual = compose(&query).unwrap();
+        let decision = actual
+            .as_object_mut()
+            .unwrap()
+            .remove("authoritative_decision")
+            .unwrap();
+        assert_eq!(actual, vector["expected"]);
+        assert_eq!(decision["action"], actual["policy_action"]);
+        assert_eq!(decision["reason"], actual["decision_reason"]);
+        assert_eq!(decision["composition_trace"], actual["policy_composition"]);
+        assert_eq!(
+            decision["enforcement"]["authority_finalized"],
+            actual["authority_finalized"]
+        );
+        checked += 1;
+    }
+    assert!(checked >= 500);
 }
 
 fn resident(request: Value) -> Result<Value, String> {

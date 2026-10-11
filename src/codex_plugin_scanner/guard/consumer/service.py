@@ -34,7 +34,11 @@ from ..runtime.approval_context import (
     build_approval_context_token,
     build_runtime_launch_identity,
 )
-from ..runtime.decisions import build_authoritative_decision
+from ..runtime.decisions import (
+    AuthoritativeGuardDecision,
+    build_authoritative_decision,
+    project_native_authoritative_decision,
+)
 from ..runtime.runner_native_authority import authority_error as native_authority_error
 from ..runtime.signals import RiskSignalV2
 from ..schemas import build_consumer_mode_contract
@@ -815,6 +819,7 @@ def _native_runtime_decision(
     raw_scoring_recommendation: object,
     skill_directory_identity_reusable: bool | None,
     compose_unavailable: object = None,
+    decision_signals: Sequence[RiskSignalV2] = (),
 ) -> dict[str, object]:
     """Gather saved-decision evidence; the resident composes the final authority.
 
@@ -859,30 +864,35 @@ def _native_runtime_decision(
     qualification = inputs.saved_approval_qualification_overrides.get(artifact_id)
     try:
         answer = native_consumer_compose(
-            "runtime_decision",
+            "runtime_authoritative",
             {
-                "current_action": current_action,
-                "configured_action": configured_action,
-                "scanner_action": scanner_action,
-                "raw_scoring_recommendation": raw_scoring_recommendation,
-                "skill_directory_identity_reusable": skill_directory_identity_reusable,
-                "approval_context_hash": approval_context_hash,
-                "saved_decision": (
-                    None if saved_decision is None else {key: saved_decision.get(key) for key in _SAVED_DECISION_KEYS}
-                ),
-                "ignored_local_integrity": ignored_integrity,
-                "diagnosed_reason": diagnosed_reason,
-                "trusted_request_override_hash": inputs.trusted_request_overrides.get(artifact_id),
-                "claimed_saved_approval_hash": inputs.claimed_saved_approval_overrides.get(artifact_id),
-                "retained_saved_approval_hash": inputs.retained_saved_approval_overrides.get(artifact_id),
-                "saved_approval_qualification": (
-                    None
-                    if qualification is None
-                    else {key: qualification.get(key) is True for key in _QUALIFICATION_KEYS}
-                ),
-                "runtime_detector_composition": inputs.runtime_detector_composition,
-                "runtime_detector_block_reason": inputs.runtime_detector_block_reason,
-                "runtime_signals": inputs.runtime_signals,
+                "signals": [signal.to_dict() for signal in decision_signals],
+                "runtime": {
+                    "current_action": current_action,
+                    "configured_action": configured_action,
+                    "scanner_action": scanner_action,
+                    "raw_scoring_recommendation": raw_scoring_recommendation,
+                    "skill_directory_identity_reusable": skill_directory_identity_reusable,
+                    "approval_context_hash": approval_context_hash,
+                    "saved_decision": (
+                        None
+                        if saved_decision is None
+                        else {key: saved_decision.get(key) for key in _SAVED_DECISION_KEYS}
+                    ),
+                    "ignored_local_integrity": ignored_integrity,
+                    "diagnosed_reason": diagnosed_reason,
+                    "trusted_request_override_hash": inputs.trusted_request_overrides.get(artifact_id),
+                    "claimed_saved_approval_hash": inputs.claimed_saved_approval_overrides.get(artifact_id),
+                    "retained_saved_approval_hash": inputs.retained_saved_approval_overrides.get(artifact_id),
+                    "saved_approval_qualification": (
+                        None
+                        if qualification is None
+                        else {key: qualification.get(key) is True for key in _QUALIFICATION_KEYS}
+                    ),
+                    "runtime_detector_composition": inputs.runtime_detector_composition,
+                    "runtime_detector_block_reason": inputs.runtime_detector_block_reason,
+                    "runtime_signals": inputs.runtime_signals,
+                },
             },
             guard_home=getattr(store, "guard_home", None),
         )
@@ -892,6 +902,20 @@ def _native_runtime_decision(
     if answer["append_pending_claim"] is True and saved_decision is not None and pending is not None:
         pending.append((saved_decision, artifact_id, approval_context_hash))
     return answer
+
+
+def _project_runtime_decision(
+    runtime: dict[str, object], signals: Sequence[RiskSignalV2]
+) -> AuthoritativeGuardDecision:
+    if "authoritative_decision" in runtime:
+        return project_native_authoritative_decision(cast(dict[str, Any], runtime["authoritative_decision"]))
+    return build_authoritative_decision(
+        cast(GuardAction, runtime["policy_action"]),
+        reason=cast(str, runtime["decision_reason"]),
+        composition_trace=cast(dict[str, object], runtime["policy_composition"]),
+        signals=signals,
+        authority_finalized=runtime["authority_finalized"] is True,
+    )
 
 
 def detect_all(context: HarnessContext) -> list[HarnessDetection]:
@@ -1083,19 +1107,14 @@ def evaluate_detection(
             raw_scoring_recommendation=verdict["action"],
             skill_directory_identity_reusable=skill_directory_identity_reusable,
             compose_unavailable=current.get("compose_unavailable"),
+            decision_signals=risk_signals_v2,
         )
         approval_reuse = cast(dict[str, Any], runtime["approval_reuse"])
         approval_claim = runtime["approval_claim"]
         trusted_request_override = runtime["trusted_request_override"] is True
         scanner_evidence = cast(list[dict[str, object]], runtime["scanner_evidence"])
         policy_composition = cast(dict[str, object], runtime["policy_composition"])
-        authoritative_decision = build_authoritative_decision(
-            cast(GuardAction, runtime["policy_action"]),
-            reason=cast(str, runtime["decision_reason"]),
-            composition_trace=policy_composition,
-            signals=risk_signals_v2,
-            authority_finalized=runtime["authority_finalized"] is True,
-        )
+        authoritative_decision = _project_runtime_decision(runtime, risk_signals_v2)
         policy_action = authoritative_decision.action
         if authoritative_decision.enforcement.blocking:
             blocked = True
@@ -1315,19 +1334,14 @@ def evaluate_detection(
             raw_scoring_recommendation="warn",
             skill_directory_identity_reusable=skill_directory_identity_reusable,
             compose_unavailable=removed_current.get("compose_unavailable"),
+            decision_signals=runtime_risk_signals_v2,
         )
         approval_reuse = cast(dict[str, Any], runtime["approval_reuse"])
         approval_claim = runtime["approval_claim"]
         trusted_request_override = runtime["trusted_request_override"] is True
         scanner_evidence = cast(list[dict[str, object]], runtime["scanner_evidence"])
         policy_composition = cast(dict[str, object], runtime["policy_composition"])
-        authoritative_decision = build_authoritative_decision(
-            cast(GuardAction, runtime["policy_action"]),
-            reason=cast(str, runtime["decision_reason"]),
-            composition_trace=policy_composition,
-            signals=runtime_risk_signals_v2,
-            authority_finalized=runtime["authority_finalized"] is True,
-        )
+        authoritative_decision = _project_runtime_decision(runtime, runtime_risk_signals_v2)
         policy_action = authoritative_decision.action
         if authoritative_decision.enforcement.blocking:
             blocked = True

@@ -96,6 +96,9 @@ _ANSWERS: dict[str, dict[str, str]] = {
     },
 }
 
+_FIELDS["runtime_authoritative"] = frozenset({"runtime", "signals"})
+_ANSWERS["runtime_authoritative"] = {**_ANSWERS["runtime_decision"], "authoritative_decision": "d"}
+
 
 def _answer_valid(kind: str, payload: dict[str, object]) -> bool:
     shape = _ANSWERS[kind]

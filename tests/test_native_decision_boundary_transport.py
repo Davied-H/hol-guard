@@ -4,23 +4,23 @@ from pathlib import Path
 
 import pytest
 
-from codex_plugin_scanner.guard import native_signal_projection
+from codex_plugin_scanner.guard import native_runner_authority, native_signal_projection
 from codex_plugin_scanner.guard.decision_boundaries import (
     canonical_approval_decision,
     canonical_approval_surfaces,
     canonical_approval_surfaces_batch,
     canonical_receipt_decision,
 )
-from codex_plugin_scanner.guard.native_signal_projection import NativeSignalProjectionError
+from codex_plugin_scanner.guard.native_signal_projection import NativeSignalProjectionUnavailableError
 
 
 @pytest.mark.parametrize("operation", ("approval", "receipt", "surfaces", "batch"))
 def test_boundary_native_outage_has_no_local_verdict(monkeypatch: pytest.MonkeyPatch, operation: str) -> None:
     def unavailable(*args: object) -> object:
-        raise NativeSignalProjectionError("native_runtime_unavailable")
+        raise native_runner_authority.NativeRunnerAuthorityError("native_runtime_unavailable")
 
-    monkeypatch.setattr(native_signal_projection, "_request", unavailable)
-    with pytest.raises(NativeSignalProjectionError, match="native_runtime_unavailable"):
+    monkeypatch.setattr(native_runner_authority, "native_runner_authority", unavailable)
+    with pytest.raises(NativeSignalProjectionUnavailableError, match="native_runtime_unavailable") as caught:
         if operation == "approval":
             canonical_approval_decision("allow", None, reject_contradiction=False)
         elif operation == "receipt":
@@ -29,6 +29,8 @@ def test_boundary_native_outage_has_no_local_verdict(monkeypatch: pytest.MonkeyP
             canonical_approval_surfaces("allow", None, None, reject_contradiction=False)
         else:
             canonical_approval_surfaces_batch([("allow", None, None)])
+    assert not isinstance(caught.value, ValueError)
+    assert isinstance(caught.value.__cause__, native_runner_authority.NativeRunnerAuthorityError)
 
 
 @pytest.mark.usefixtures("native_prompt_runtime")
