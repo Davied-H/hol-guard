@@ -14,12 +14,13 @@ import hashlib
 import os
 from pathlib import Path
 
-# Toolchains located under the real home keep working after HOME moves.
+# Toolchains under the real home are linked into the private one rather than
+# exported: Guard reads an inherited RUSTUP_HOME as a toolchain override.
 _TOOL_HOMES = {
     "CARGO_HOME": ".cargo",
     "RUSTUP_HOME": ".rustup",
-    "UV_CACHE_DIR": ".cache/uv",
 }
+_CACHE_HOMES = {"UV_CACHE_DIR": ".cache/uv"}
 
 # Inherited overrides would send writes back to the real installation.
 _HOME_OVERRIDES = ("CODEX_HOME", "HOL_GUARD_HOME", "CLAUDE_CONFIG_DIR", "XDG_CONFIG_HOME", "XDG_DATA_HOME")
@@ -30,7 +31,7 @@ def isolate_user_home() -> Path:
     if existing and os.environ.get("HOME") == existing:
         return Path(existing)
     real_home = Path.home()
-    for variable, relative in _TOOL_HOMES.items():
+    for variable, relative in _CACHE_HOMES.items():
         candidate = real_home / relative
         if variable not in os.environ and candidate.is_dir():
             os.environ[variable] = str(candidate)
@@ -44,8 +45,20 @@ def isolate_user_home() -> Path:
     private_home = real_home / ".cache" / "hol-guard-tests" / name
     private_home.mkdir(parents=True, exist_ok=True)
     private_home = private_home.resolve()
+    for variable, relative in _TOOL_HOMES.items():
+        _link_tool_home(variable, real_home / relative, private_home / relative)
     os.environ["HOME"] = str(private_home)
     if os.name == "nt":
         os.environ["USERPROFILE"] = str(private_home)
     os.environ["HOL_GUARD_TEST_PRIVATE_HOME"] = str(private_home)
     return private_home
+
+
+def _link_tool_home(variable: str, real: Path, private: Path) -> None:
+    if variable in os.environ or not real.is_dir() or private.is_symlink() or private.exists():
+        return
+    try:
+        private.symlink_to(real, target_is_directory=True)
+    except OSError:
+        # Windows without symlink privilege: fall back to the variable.
+        os.environ[variable] = str(real)
