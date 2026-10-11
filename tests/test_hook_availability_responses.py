@@ -108,7 +108,7 @@ def test_availability_blocks_grok_prompt_and_tools_but_continues_passive_lifecyc
         reason="native unavailable",
     )
     assert withheld["continue"] is True
-    assert "policy_action" not in withheld
+    assert withheld["policy_action"] == "allow"
     assert withheld["reason_code"] == "native_post_tool_unavailable"
     curl = availability_harness_response(
         {"hook_event_name": "PreToolUse", "tool_input": {"command": "curl https://example.test"}},

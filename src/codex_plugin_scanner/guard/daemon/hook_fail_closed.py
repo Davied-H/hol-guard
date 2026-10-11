@@ -168,8 +168,13 @@ def fail_closed_response(
     if canonical == "grok":
         return {}
     if canonical in _DECISION_HARNESSES:
-        return {"decision": "allow", "reason_code": reason_code}
-    return {"continue": True, "reason_code": reason_code}
+        return {"decision": "allow", "policy_action": "allow", "reason_code": reason_code}
+    return {
+        "continue": True,
+        "policy_action": "allow",
+        "reason_code": reason_code,
+        "hookSpecificOutput": {"hookEventName": event_name},
+    }
 
 
 def unmanaged_passthrough(harness: str) -> dict[str, object]:
