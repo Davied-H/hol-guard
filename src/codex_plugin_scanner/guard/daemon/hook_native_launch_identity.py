@@ -90,7 +90,9 @@ _MAX_BOUND_OPERANDS = 16
 _MAX_BOUND_OPERAND_BYTES = 4_194_304
 
 
-def launch_identity(command: str, *, cwd: Path, home_dir: Path | None) -> dict[str, object]:
+def launch_identity(
+    command: str, *, cwd: Path, home_dir: Path | None, guard_home: Path | None = None
+) -> dict[str, object]:
     """Return the launch identity of a command, or raise ``OnceOnlyError`` with the reason."""
 
     from ..runtime.command_model import CanonicalCommand, parse_shell_command
@@ -103,7 +105,7 @@ def launch_identity(command: str, *, cwd: Path, home_dir: Path | None) -> dict[s
         return _compound_identity(model, cwd=cwd, home_dir=home_dir)
     if not isinstance(model, CanonicalCommand):
         raise OnceOnlyError(UNPROVEN_LAUNCH)
-    return _segment_identity(model, command, cwd=cwd, home_dir=home_dir)
+    return _segment_identity(model, command, cwd=cwd, home_dir=home_dir, guard_home=guard_home)
 
 
 def _compound_identity(model: object, *, cwd: Path, home_dir: Path | None) -> dict[str, object]:
@@ -155,7 +157,9 @@ def _cd_target(arguments: tuple[str, ...], cwd: Path) -> Path:
     return resolved
 
 
-def _segment_identity(model: object, command: str, *, cwd: Path, home_dir: Path | None) -> dict[str, object]:
+def _segment_identity(
+    model: object, command: str, *, cwd: Path, home_dir: Path | None, guard_home: Path | None = None
+) -> dict[str, object]:
     from ..runtime.command_model import CanonicalCommand
     from ..runtime.local_cli_identity import unlisted_cli_invocation_is_safe
 
@@ -163,7 +167,9 @@ def _segment_identity(model: object, command: str, *, cwd: Path, home_dir: Path 
     if not unlisted_cli_invocation_is_safe(model):
         raise OnceOnlyError(UNPROVEN_LAUNCH)
     segment = model.segments[0]
-    return _segment_launch(segment, _normalized_name(segment.executable), command, cwd=cwd, home_dir=home_dir)
+    return _segment_launch(
+        segment, _normalized_name(segment.executable), command, cwd=cwd, home_dir=home_dir, guard_home=guard_home
+    )
 
 
 def _normalized_name(executable: str | None) -> str:
@@ -176,7 +182,14 @@ def _normalized_name(executable: str | None) -> str:
 
 
 def _segment_launch(
-    segment: object, name: str, command: str, *, cwd: Path, home_dir: Path | None, compound: bool = False
+    segment: object,
+    name: str,
+    command: str,
+    *,
+    cwd: Path,
+    home_dir: Path | None,
+    compound: bool = False,
+    guard_home: Path | None = None,
 ) -> dict[str, object]:
     from ..runtime.command_model import CommandSegment
 
@@ -198,7 +211,11 @@ def _segment_launch(
         git = git_readonly_identity(arguments, cwd=cwd, home_dir=home_dir)
         return {"kind": "direct", "identity": binary, "git": git, "operands": operands}
     if name in _LOCAL_BIN_RUNNERS:
-        local_bin = None if compound else _runner_local_bin(command, name, arguments, cwd=cwd, home_dir=home_dir)
+        local_bin = (
+            None
+            if compound
+            else _runner_local_bin(command, name, arguments, cwd=cwd, home_dir=home_dir, guard_home=guard_home)
+        )
         if local_bin is None:
             raise OnceOnlyError(MUTABLE_LAUNCHER)
         return {"kind": "runner-local-bin", "runner": name, "local_bin": local_bin, "operands": operands}
@@ -250,10 +267,24 @@ def _is_mutable_launcher(name: str) -> bool:
 
 
 def _runner_local_bin(
-    command: str, runner: str, arguments: list[str], *, cwd: Path, home_dir: Path | None
+    command: str,
+    runner: str,
+    arguments: list[str],
+    *,
+    cwd: Path,
+    home_dir: Path | None,
+    guard_home: Path | None,
 ) -> dict[str, object] | None:
     # A local interpreter or task runner loads code its identity does not bind.
-    return runner_local_bin(command, runner, arguments, cwd=cwd, home_dir=home_dir, reject_target=_is_mutable_launcher)
+    return runner_local_bin(
+        command,
+        runner,
+        arguments,
+        cwd=cwd,
+        home_dir=home_dir,
+        guard_home=guard_home,
+        reject_target=_is_mutable_launcher,
+    )
 
 
 def _file_operand_hashes(arguments: list[str], *, cwd: Path) -> list[dict[str, str]] | None:

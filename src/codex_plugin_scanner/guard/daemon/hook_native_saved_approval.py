@@ -69,6 +69,7 @@ def native_exact_action_token(
     native_receipt: Mapping[str, object] | None,
     workspace: Path | None,
     home_dir: Path | None,
+    guard_home: Path | None = None,
 ) -> str | None:
     """Return a persistent exact-action token, or ``None`` when only once is safe."""
 
@@ -80,6 +81,7 @@ def native_exact_action_token(
         native_receipt=native_receipt,
         workspace=workspace,
         home_dir=home_dir,
+        guard_home=guard_home,
     )[0]
 
 
@@ -92,6 +94,7 @@ def native_exact_action_decision(
     native_receipt: Mapping[str, object] | None,
     workspace: Path | None,
     home_dir: Path | None,
+    guard_home: Path | None = None,
 ) -> tuple[str | None, str | None]:
     """Return ``(token, once_only_reason)``; exactly one of them is set."""
 
@@ -104,6 +107,7 @@ def native_exact_action_decision(
             native_receipt=native_receipt,
             workspace=workspace,
             home_dir=home_dir,
+            guard_home=guard_home,
         ), None
     except OnceOnlyError as once_only:
         return None, once_only.reason
@@ -118,6 +122,7 @@ def _exact_action_token(
     native_receipt: Mapping[str, object] | None,
     workspace: Path | None,
     home_dir: Path | None,
+    guard_home: Path | None,
 ) -> str:
     if not _native_review_is_overridable(native_result):
         raise OnceOnlyError(_non_overridable_reason(native_result))
@@ -140,7 +145,7 @@ def _exact_action_token(
         if cwd is None:
             raise OnceOnlyError(UNPROVEN_LAUNCH)
         try:
-            launch = launch_identity(str(command), cwd=cwd, home_dir=home_dir)
+            launch = launch_identity(str(command), cwd=cwd, home_dir=home_dir, guard_home=guard_home)
         except (OSError, RuntimeError, TypeError, ValueError) as error:
             raise OnceOnlyError(UNPROVEN_LAUNCH) from error
         content = {"command": command}
@@ -293,6 +298,7 @@ def native_saved_review_response(
             native_receipt=native_receipt,
             workspace=workspace,
             home_dir=home_dir,
+            guard_home=store_guard_home(store),
         )
         if isinstance(precomputed_token, TokenUnset)
         else precomputed_token

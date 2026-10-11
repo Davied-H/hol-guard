@@ -34,6 +34,7 @@ from .hook_native_saved_approval import (
     TokenUnset,
     native_exact_action_decision,
     native_saved_review_response,
+    store_guard_home,
 )
 from .hook_request_parsing import pre_tool_command, pre_tool_input
 from .native_review_allow_hint import native_review_extension_allow_hint
@@ -155,6 +156,7 @@ def pause_native_pre_tool_for_approval(
         native_receipt=native_receipt,
         workspace=workspace,
         home_dir=home_dir,
+        guard_home=store_guard_home(store),
     )
     saved = native_saved_review_response(
         store,
@@ -366,6 +368,7 @@ def queue_native_pre_tool_review(
             native_receipt=native_receipt,
             workspace=workspace,
             home_dir=home_dir,
+            guard_home=store_guard_home(store),
         )
     if exact_token is not None:
         action_envelope[EXACT_ACTION_CONTEXT_TOKEN_KEY] = exact_token
