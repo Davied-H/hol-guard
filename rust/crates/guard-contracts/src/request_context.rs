@@ -155,6 +155,8 @@ pub struct ShellContextV1 {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "kind", content = "body", rename_all = "snake_case")]
 pub enum RequestContextKindV1 {
+    /// Rebuild monotonic command floors without workflow authorization grants.
+    CriticalFloor(RequestContextCriticalFloorV1),
     /// Admit the request and build the whole canonical context.
     Build(RequestContextBuildV1),
     /// Re-read the filesystem and prove one modeled segment is unchanged.
@@ -169,6 +171,14 @@ pub enum RequestContextKindV1 {
         #[serde(default)]
         segment_index: Option<u64>,
     },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct RequestContextCriticalFloorV1 {
+    pub script: String,
+    pub cwd: String,
+    pub home_dir: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

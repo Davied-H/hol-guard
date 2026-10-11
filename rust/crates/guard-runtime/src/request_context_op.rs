@@ -258,6 +258,9 @@ fn build(
 fn decide(request: &RequestContextRequestV1) -> Result<Value, &'static str> {
     let budget = admit(request)?;
     let payload = match &request.action {
+        RequestContextKindV1::CriticalFloor(body) => {
+            crate::critical_floor_op::evaluate(body, &budget)?
+        }
         RequestContextKindV1::Build(body) => build(request, body, &budget)?,
         RequestContextKindV1::ValidateSegment {
             context,

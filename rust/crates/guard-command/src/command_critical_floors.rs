@@ -8,7 +8,7 @@
 use std::collections::BTreeMap;
 
 use crate::canonical_command::CanonicalCommand;
-use crate::command_launcher_floors::{launcher_child_commands, shlex_split};
+use crate::command_launcher_floors::{launcher_child_commands, shlex_split, MAX_LAUNCHER_CHILDREN};
 use crate::effect_decision::{
     DecisionBasis, DecisionFactor, DecisionFactorSource, GuardAction, ProofRoute,
 };
@@ -80,7 +80,6 @@ const WINDOWS_EXECUTABLES: &[&str] = &[
     "timeout",
     "xargs",
 ];
-const MAX_LAUNCHER_CHILDREN: usize = 256;
 
 /// `command_critical_floor_factors` (:79). The public entry dedupes factors
 /// by `semantic_key` after the recursive walk.
@@ -179,7 +178,13 @@ fn inner(
         {
             factors.push(factor(command, index, action, reason_code));
         }
-        let launcher_children = launcher_child_commands(&executable, arguments);
+        let launcher_children = match launcher_child_commands(&executable, arguments) {
+            Ok(children) => children,
+            Err(reason) => {
+                factors.push(factor(command, index, GuardAction::Block, reason));
+                continue;
+            }
+        };
         if depth < 3 {
             for child in launcher_children {
                 if remaining_launcher_children[0] == 0 {
@@ -760,7 +765,12 @@ pub(crate) fn guard_control_block_in_command(command: &CanonicalCommand) -> bool
             if depth >= 3 {
                 continue;
             }
-            for child in launcher_child_commands(&executable_name(segment), &segment.arguments) {
+            let Ok(children) =
+                launcher_child_commands(&executable_name(segment), &segment.arguments)
+            else {
+                return true;
+            };
+            for child in children {
                 if *remaining == 0 {
                     return false;
                 }
@@ -794,7 +804,10 @@ pub(crate) fn guard_control_block_in_launcher_text(text: &str) -> bool {
         if !matches!(name.as_str(), "xargs" | "parallel" | "find") {
             continue;
         }
-        for child in launcher_child_commands(&name, &tokens[index + 1..]) {
+        let Ok(children) = launcher_child_commands(&name, &tokens[index + 1..]) else {
+            return true;
+        };
+        for child in children {
             if remaining == 0 {
                 return false;
             }
