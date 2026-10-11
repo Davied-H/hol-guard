@@ -734,8 +734,7 @@ def _run_guard_update_unlocked(
             dry_run=dry_run,
             update_context=update_context,
         )
-        if repair_notes:
-            payload["notes"] = [*_payload_notes(payload), *repair_notes]
+        _attach_repair_notes(payload, repair_notes)
         if repaired_installs:
             payload["managed_installs"] = repaired_installs
             if len(repaired_installs) == 1:
@@ -1023,8 +1022,7 @@ def _run_guard_update_unlocked(
             dry_run=dry_run,
             update_context=update_context,
         )
-        if repair_notes:
-            payload["notes"] = [*_payload_notes(payload), *repair_notes]
+        _attach_repair_notes(payload, repair_notes)
         if repaired_installs:
             payload["managed_installs"] = repaired_installs
             if len(repaired_installs) == 1:
@@ -1171,6 +1169,23 @@ def _string_list(value: object) -> list[str]:
 
 def _payload_notes(payload: dict[str, object]) -> list[str]:
     return _string_list(payload.get("notes"))
+
+
+_PROTECTION_REPAIR_FAILURE_PREFIXES = (
+    "Could not inspect Codex protection during update",
+    "Could not repair Codex protection during update",
+    "Could not verify repaired Codex protection during update",
+)
+
+
+def _attach_repair_notes(payload: dict[str, object], repair_notes: list[str]) -> None:
+    """Keep every repair note, and list failures that leave a harness unprotected separately."""
+    if not repair_notes:
+        return
+    payload["notes"] = [*_payload_notes(payload), *repair_notes]
+    failures = [note for note in repair_notes if note.startswith(_PROTECTION_REPAIR_FAILURE_PREFIXES)]
+    if failures:
+        payload["protection_repair_failures"] = failures
 
 
 def _append_payload_note(payload: dict[str, object], note: str | None) -> None:
