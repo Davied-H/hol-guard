@@ -55,6 +55,12 @@ pub(crate) const COMMAND_LEXER: Lexer = Lexer {
     comments: true,
 };
 
+/// The pipeline lexer: punctuation `|` and no comments.
+pub(crate) const PIPE_LEXER: Lexer = Lexer {
+    punctuation: &['|'],
+    comments: false,
+};
+
 /// The directory-creation lexer: punctuation `;&|<>()` and no comments.
 pub(crate) const STRICT_LEXER: Lexer = Lexer {
     punctuation: &[';', '&', '|', '<', '>', '(', ')'],

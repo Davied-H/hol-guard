@@ -29,6 +29,19 @@ pub enum GitRun {
 pub trait InspectionHost {
     /// Value of an environment variable from the caller's snapshot.
     fn env(&self, name: &str) -> Option<String>;
+    /// Every variable of the caller's snapshot (`os.environ.items()`).
+    fn environment(&self) -> Vec<(String, String)> {
+        Vec::new()
+    }
+    /// `os.getuid()` of the caller; hosts that cannot report one refuse.
+    fn current_uid(&self) -> Option<u32> {
+        None
+    }
+    /// Whether the resident secret classifier finds secret material in `text`.
+    /// Hosts without that service refuse.
+    fn secret_content_found(&self, _text: &str, _is_path: bool) -> bool {
+        true
+    }
     /// `shutil.which("git")` from the caller.
     fn git_executable(&self) -> Option<String>;
     /// One git execution safety decision.

@@ -152,14 +152,22 @@ mod sfrs_developer_vectors;
 mod sfrs_docker_args;
 #[cfg(test)]
 mod sfrs_docker_vectors;
+mod sfrs_file_identity;
 #[cfg(all(test, unix))]
 mod sfrs_fs_vectors;
+mod sfrs_gh_actions_env;
+mod sfrs_gh_actions_filters;
+mod sfrs_gh_actions_read;
 mod sfrs_gh_bindings;
+mod sfrs_gh_body_file;
+mod sfrs_gh_body_file_check;
 mod sfrs_gh_control_flow;
 mod sfrs_gh_definitions;
 mod sfrs_gh_environment;
+mod sfrs_gh_ephemeral_body;
 #[cfg(unix)]
 mod sfrs_gh_pr_expansion;
+mod sfrs_gh_pyshim;
 mod sfrs_gh_redirections;
 mod sfrs_gh_service;
 mod sfrs_gh_shell;
@@ -168,6 +176,8 @@ mod sfrs_gh_shell_vectors;
 mod sfrs_git_cached_diff;
 #[cfg(unix)]
 mod sfrs_git_index;
+#[cfg(all(test, unix))]
+mod sfrs_github_body_vectors;
 #[cfg(test)]
 mod sfrs_github_vectors;
 #[cfg(all(test, unix))]
