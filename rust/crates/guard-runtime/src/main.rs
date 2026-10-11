@@ -144,6 +144,9 @@ mod guard_store_outbox_requeue;
 mod guard_store_sessions;
 #[cfg(test)]
 mod guard_store_sessions_vectors_tests;
+mod guard_store_storage_maintenance;
+#[cfg(test)]
+mod guard_store_storage_maintenance_vectors_tests;
 #[cfg(test)]
 mod guard_store_vectors_tests;
 mod hardening;
@@ -284,6 +287,7 @@ mod totp;
 mod workflow_capability_store;
 mod workspace_inventory_files;
 mod workspace_inventory_op;
+mod workspace_scan_targets;
 
 pub(crate) use resident_protocol::{capabilities, encode_response, strict_json_value};
 pub(crate) use resident_transport::{
