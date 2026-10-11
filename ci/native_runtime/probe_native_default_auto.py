@@ -274,8 +274,8 @@ def _exercise_mode_invariants(
                 response.get("policy_action") in {"allow", "warn"}
                 and isinstance(specific, dict)
                 and specific.get("hookEventName") == "PostToolUse"
-                and response.get("decision") != "block"
-                and response.get("continue") is not False
+                and "decision" not in response
+                and "continue" not in response
                 and "stopReason" not in response
                 and all(response.get(key) == baseline.get(key) for key in ("decision", "policy_action", "reason_code")),
                 {"mode": mode, "response": response, "baseline": baseline},

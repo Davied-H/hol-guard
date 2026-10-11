@@ -49,6 +49,18 @@ def function_calls(node: ast.AST) -> set[str]:
     return calls
 
 
+def python_references(path: Path) -> set[str]:
+    """Names a module defines, imports or calls; comments and strings are ignored."""
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    names = function_calls(tree)
+    for child in ast.walk(tree):
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            names.add(child.name)
+        elif isinstance(child, (ast.Import, ast.ImportFrom)):
+            names.update(alias.asname or alias.name.rsplit(".", 1)[-1] for alias in child.names)
+    return names
+
+
 _TYPED_FAIL_SAFE = frozenset(
     {
         "post_tool_fail_safe_response",
@@ -331,7 +343,7 @@ def _worker_failures(root: Path) -> list[str]:
         )
     if "harness_json_from_native_post_tool" in edge_calls:
         failures.append("HookWorkerNativeMixin._review_native_edge_with_snapshot renders PostToolUse in Python")
-    if "review_post_tool" in read(native_hook) or "review_post_tool" in read(hook_worker):
+    if "review_post_tool" in python_references(native_hook) | python_references(hook_worker):
         failures.append("worker decides PostToolUse in Python instead of the native edge")
     raw_edge_review = function_node(hook_worker, "_review_raw_hook_native", class_name="HookWorker")
     if "review_raw_hook_native" not in function_calls(raw_edge_review):
