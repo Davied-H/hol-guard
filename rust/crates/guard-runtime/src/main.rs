@@ -1,4 +1,5 @@
 #![forbid(unsafe_code)]
+#![recursion_limit = "512"]
 
 mod approval;
 mod approval_bulk_eligibility_op;
@@ -118,6 +119,11 @@ mod git_execution_safety_repo_tests;
 #[cfg(test)]
 mod git_execution_safety_tests;
 mod github_cli_classify_op;
+mod guard_config_coerce;
+mod guard_config_harness;
+mod guard_config_iso;
+mod guard_config_load;
+mod guard_config_managed;
 mod guard_store_args;
 mod guard_store_clients;
 mod guard_store_cmd_activity;
@@ -275,6 +281,7 @@ mod policy_bundle_v1_rules;
 mod policy_bundle_v2;
 mod policy_bundle_v2_ack;
 mod policy_decision_lookup_op;
+mod policy_effective;
 mod policy_enforcement;
 mod policy_integrity_resolver;
 mod policy_snapshot_build;

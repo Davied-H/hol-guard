@@ -6,27 +6,15 @@ import ast
 import re
 from pathlib import Path
 
-import yaml
-
-from tests.support.ci_workflow import expand_ci_job_actions
+from tests.support.ci_workflow import composite_action_steps, load_ci_workflow
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_ACTION = "ci-job-windows-native-runtime"
 
 
-def _workflow() -> dict:
-    """Load the expanded CI workflow for contract assertions."""
-    return expand_ci_job_actions(yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")))
-
-
-def _runtime_steps() -> list:
-    """Load the Windows native runtime composite's steps."""
-    action = yaml.safe_load((ROOT / ".github/actions" / RUNTIME_ACTION / "action.yml").read_text(encoding="utf-8"))
-    return action["runs"]["steps"]
-
-
 def _restore_step() -> dict:
-    return next(step for step in _runtime_steps() if step.get("uses", "").startswith("actions/cache/restore@"))
+    steps = composite_action_steps(RUNTIME_ACTION)
+    return next(step for step in steps if step.get("uses", "").startswith("actions/cache/restore@"))
 
 
 def _cache_key_globs() -> list[str]:
@@ -96,7 +84,7 @@ def test_runtime_cache_key_covers_every_build_input_outside_rust() -> None:
 
 def test_runtime_cache_key_and_build_gating_bind_profile_and_trusted_writes() -> None:
     """Bind the cache key to the release profile env and keep writes on main pushes."""
-    steps = _runtime_steps()
+    steps = composite_action_steps(RUNTIME_ACTION)
     key = _restore_step()["with"]["key"]
     assert "env.CARGO_PROFILE_RELEASE_LTO" in key
     assert "env.CARGO_PROFILE_RELEASE_CODEGEN_UNITS" in key
@@ -115,7 +103,7 @@ def test_runtime_cache_key_and_build_gating_bind_profile_and_trusted_writes() ->
 
 def test_packaged_daemon_matrix_tracks_the_frozen_bootstrap_parametrization() -> None:
     """Keep the matrix aligned with the test's native_diagnostics cases."""
-    workflow = _workflow()
+    workflow = load_ci_workflow()
     job = workflow["jobs"]["windows-packaged-daemon"]
     needs = job["needs"] if isinstance(job["needs"], list) else [job["needs"]]
     assert "windows-native-runtime" in needs
@@ -131,7 +119,7 @@ def test_packaged_daemon_matrix_tracks_the_frozen_bootstrap_parametrization() ->
 
 def test_required_aggregate_includes_the_windows_native_lane() -> None:
     """Require both new Windows jobs in the needs graph and the lane-gated set."""
-    workflow = _workflow()
+    workflow = load_ci_workflow()
     required = workflow["jobs"]["required"]
     assert "windows-native-runtime" in required["needs"]
     assert "windows-packaged-daemon" in required["needs"]
@@ -145,6 +133,6 @@ def test_required_aggregate_includes_the_windows_native_lane() -> None:
 
 def test_cross_platform_builds_no_native_runtime() -> None:
     """Keep the cross-platform lane free of Rust toolchain setup and cargo."""
-    steps = _workflow()["jobs"]["cross-platform"]["steps"]
+    steps = load_ci_workflow()["jobs"]["cross-platform"]["steps"]
     assert not any(step.get("uses") == "./.github/actions/setup-rust" for step in steps)
     assert not any("cargo" in step.get("run", "") for step in steps)
