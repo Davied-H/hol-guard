@@ -240,7 +240,7 @@ def test_alpha_filename_defaults_to_the_wheel_name(tmp_path: Path, monkeypatch: 
 def test_alpha_not_ready_when_the_prerelease_asset_is_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     requested = _alpha_world(monkeypatch, native_digest=None)
     assert _alpha_ready(_native_wheel(tmp_path)) is False
-    assert not any(item.startswith("https://pypi.org") for item in requested)
+    assert requested == [f"repos/{REPOSITORY}/releases/tags/{ALPHA_TAG}"]
 
 
 def test_alpha_ignores_assets_that_are_not_uploaded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
