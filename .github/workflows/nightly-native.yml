@@ -125,8 +125,10 @@ jobs:
       - name: Enforce PreToolUse and PostToolUse source authority
         if: ${{ !cancelled() }}
         run: |
-          ! grep -q "Python remains authoritative" src/codex_plugin_scanner/guard/native_command_model.py
-          ! grep -q "Python remains authoritative" src/codex_plugin_scanner/guard/native_pretool.py
+          if grep -q "Python remains authoritative" src/codex_plugin_scanner/guard/native_command_model.py src/codex_plugin_scanner/guard/native_pretool.py; then
+            echo "::error::Python authority marker returned to the pre-tool path"
+            exit 1
+          fi
           grep -q "def review_pre_tool_native(" src/codex_plugin_scanner/guard/native_pretool.py
           grep -q 'command == "pre-tool"' rust/crates/guard-runtime/src/runtime_cli.rs
           grep -q "pub fn evaluate_pre_tool" rust/crates/guard-command/src/pretool.rs
@@ -261,6 +263,8 @@ jobs:
           enable-cache: true
       - uses: ./.github/actions/stage-command-projections
       - run: uv sync --frozen --no-dev --extra dev --python 3.12
+      - name: Install cached Rust toolchain
+        uses: ./.github/actions/setup-rust
       - name: Build the version-matched native runtime (daemon lifecycle decisions are resident-owned)
         env:
           HOL_GUARD_BUILD_SHA: ${{ github.sha }}
@@ -381,6 +385,8 @@ jobs:
           enable-cache: true
       - uses: ./.github/actions/stage-command-projections
       - run: uv sync --frozen --extra dev --python 3.12
+      - name: Install cached Rust toolchain
+        uses: ./.github/actions/setup-rust
       - name: Build the version-matched native runtime (package intent parsing is resident-owned)
         env:
           HOL_GUARD_BUILD_SHA: ${{ github.sha }}
