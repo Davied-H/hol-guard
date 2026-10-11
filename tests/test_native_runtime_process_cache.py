@@ -153,3 +153,45 @@ def test_a_swapped_manifest_recomputes_for_a_bundled_status(
     native_runtime_status()
     assert len(calls) == 3
     assert binary.exists()
+
+
+def test_a_fallback_candidate_is_never_cached(
+    probe: tuple[Path, Path, list[Path]], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    binary, _manifest, calls = probe
+    preferred = tmp_path / "missing-preferred"
+    monkeypatch.setattr(native_runtime_module, "_runtime_candidates", lambda: (preferred, binary))
+    first = native_runtime_status()
+    assert first.identity is not None and first.identity.path == binary.resolve()
+    preferred.write_bytes(b"preferred-runtime")
+    preferred.chmod(0o700)
+    second = native_runtime_status()
+    assert second.identity is not None and second.identity.path == preferred.resolve()
+    assert len(calls) == 3
+
+
+def test_an_expired_deadline_ignores_a_cached_status(probe: tuple[Path, Path, list[Path]]) -> None:
+    _binary, _manifest, calls = probe
+    assert native_runtime_status().available
+    expired = native_runtime_status(deadline_monotonic=time.monotonic() - 1.0)
+    assert not expired.available
+    assert len(calls) == 1
+
+
+def test_a_file_swapped_while_the_status_is_computed_is_not_cached(
+    probe: tuple[Path, Path, list[Path]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    binary, _manifest, calls = probe
+    real_validate = native_runtime_module._validate_binary
+
+    def swap_after_validation(candidate: Path) -> native_runtime_module.NativeRuntimeIdentity | None:
+        identity = real_validate(candidate)
+        candidate.write_bytes(b"replacement-after-validation")
+        return identity
+
+    monkeypatch.setattr(native_runtime_module, "_validate_binary", swap_after_validation)
+    native_runtime_status()
+    monkeypatch.setattr(native_runtime_module, "_validate_binary", real_validate)
+    native_runtime_status()
+    assert len(calls) == 2
+    assert binary.read_bytes() == b"replacement-after-validation"

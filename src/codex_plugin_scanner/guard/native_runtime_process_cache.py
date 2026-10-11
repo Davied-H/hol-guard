@@ -43,32 +43,49 @@ def _fingerprint(path: Path, *, follow: bool) -> _Fingerprint | None:
     return (*full_stat_identity(metadata), int(metadata.st_uid), int(metadata.st_gid))
 
 
-def _manifest_path(status: NativeRuntimeStatus) -> Path | None:
-    identity = status.identity
-    if identity is None or status.manifest is None:
+def _manifest_path(binary: Path) -> Path:
+    return binary.with_name("runtime-manifest.json")
+
+
+def process_snapshot(candidates: tuple[Path, ...]) -> tuple[Path, _Fingerprint, _Fingerprint | None] | None:
+    """Fingerprint the preferred candidate and its manifest before a status is computed."""
+
+    if not _ENABLED or not candidates:
         return None
-    return identity.path.with_name("runtime-manifest.json")
+    path = _resolved_candidate_path(candidates[0])
+    binary = None if path is None else _fingerprint(path, follow=True)
+    if path is None or binary is None:
+        return None
+    return path, binary, _fingerprint(_manifest_path(path), follow=False)
 
 
-def remember_process_status(key: _RequestKey, status: NativeRuntimeStatus) -> None:
-    """Keep a ready status that is old enough to have a stable stat identity."""
+def remember_process_status(
+    key: _RequestKey,
+    status: NativeRuntimeStatus,
+    before: tuple[Path, _Fingerprint, _Fingerprint | None] | None,
+) -> None:
+    """Keep a ready status only when it describes the preferred candidate and never changed while it was computed.
+
+    ``before`` is the snapshot taken ahead of validation. Requiring the same stat
+    identity afterwards means a file swapped during validation, or a lower-priority
+    fallback chosen while the preferred runtime was briefly unavailable, is never
+    trusted for the life of the process.
+    """
 
     identity = status.identity
-    if not _ENABLED or identity is None or not status.available or not status.compatible:
+    if before is None or identity is None or not status.available or not status.compatible:
         return
-    binary = _fingerprint(identity.path, follow=True)
-    if binary is None:
+    path, binary, manifest = before
+    if identity.path != path or _fingerprint(path, follow=True) != binary:
         return
-    manifest_path = _manifest_path(status)
-    manifest = None
-    if manifest_path is not None:
-        manifest = _fingerprint(manifest_path, follow=False)
-        if manifest is None:
-            return
+    if status.manifest is not None and (
+        manifest is None or _fingerprint(_manifest_path(path), follow=False) != manifest
+    ):
+        return
     with _LOCK:
         if key not in _STATUSES and len(_STATUSES) >= _MAX_ENTRIES:
             _STATUSES.pop(next(iter(_STATUSES)))
-        _STATUSES[key] = (status, binary, manifest)
+        _STATUSES[key] = (status, binary, manifest if status.manifest is not None else None)
 
 
 def process_status(key: _RequestKey, candidates: tuple[Path, ...]) -> NativeRuntimeStatus | None:
@@ -80,13 +97,12 @@ def process_status(key: _RequestKey, candidates: tuple[Path, ...]) -> NativeRunt
         return None
     status, binary, manifest = entry
     identity = status.identity
-    resolved = {_resolved_candidate_path(candidate) for candidate in candidates}
-    manifest_path = _manifest_path(status)
     if (
         identity is None
-        or identity.path not in resolved
+        or not candidates
+        or identity.path != _resolved_candidate_path(candidates[0])
         or _fingerprint(identity.path, follow=True) != binary
-        or (manifest_path is not None and _fingerprint(manifest_path, follow=False) != manifest)
+        or (manifest is not None and _fingerprint(_manifest_path(identity.path), follow=False) != manifest)
     ):
         forget_process_status(key)
         return None
