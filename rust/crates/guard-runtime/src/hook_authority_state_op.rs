@@ -131,6 +131,11 @@ pub(crate) fn evaluate(request: &HookAuthorityStateRequestV1) -> Result<Value, &
     connection
         .busy_timeout(Duration::from_millis(5000))
         .map_err(|_| ERROR_STORE)?;
+    // One writer at a time: every flow reads, then rewrites or consumes state,
+    // so concurrent hooks must not interleave between those steps.
+    connection
+        .execute_batch("BEGIN IMMEDIATE")
+        .map_err(|_| ERROR_STORE)?;
     let env = Env {
         connection: &connection,
         key: request
@@ -140,7 +145,18 @@ pub(crate) fn evaluate(request: &HookAuthorityStateRequestV1) -> Result<Value, &
         key_id: request.integrity_key_id.as_deref(),
         now: &request.now,
     };
-    env.dispatch(request)
+    match env.dispatch(request) {
+        Ok(value) => {
+            connection
+                .execute_batch("COMMIT")
+                .map_err(|_| ERROR_STORE)?;
+            Ok(value)
+        }
+        Err(code) => {
+            let _ = connection.execute_batch("ROLLBACK");
+            Err(code)
+        }
+    }
 }
 
 /// `_hook_authority_state_is_fresh`: `saved_at` is not in the future and no
