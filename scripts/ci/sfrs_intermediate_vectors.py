@@ -20,6 +20,7 @@ from codex_plugin_scanner.guard.runtime.secret_file_request_services import (
     local_read_operands,
     read_only_filters,
     docker_requests,
+    github_shell_capabilities as github_services,
     request_artifacts,
     shell_quote_tokens,
     shell_static_safety,
@@ -28,6 +29,69 @@ from codex_plugin_scanner.guard.runtime.secret_file_request_services import (
 
 MAX_TEXTS = 6000
 HOST_MARKERS = ("michaelkantor", "runner2-port", "hol-guard/.venv", "/home/runner", "/var/folders", "~/.codex")
+
+
+GITHUB_EXTRAS = (
+    "gh pr view 1",
+    "gh pr view $(echo 1)",
+    "gh pr view `echo 1`",
+    "gh pr view \"$(echo 1)\"",
+    "gh pr view '$(echo 1)'",
+    "gh pr view ${NUMBER}",
+    "gh pr view \"$NUMBER\"",
+    "gh pr view $((1+2))",
+    "gh pr view <(echo 1)",
+    "gh api repos/o/r/pulls/1 | jq .title",
+    "gh api repos/o/r/pulls/1 | jq -r '.[] | .title' | sort -u",
+    "gh api repos/o/r/pulls/1 | sort -nr | uniq -c",
+    "gh api repos/o/r/pulls/1 | head -n 3 | grep x",
+    "gh api repos/o/r/pulls/1 | python3 -c 'import json,sys; print(json.load(sys.stdin))'",
+    "gh api repos/o/r/pulls/1 | tee out.txt",
+    "gh api repos/o/r/pulls/1 > out.json",
+    "GH_TOKEN=x gh pr view 1",
+    "GH_HOST=ghe.example gh pr view 1",
+    "GH_HOST=github.com gh pr view 1",
+    "GH_REPO=o/r gh pr view 1",
+    "GH_REPO=../r gh pr view 1",
+    "export GH_TOKEN=abc; gh pr view 1",
+    "export GH_HOST=ghe.example && gh pr view 1",
+    "GH_HOST=ghe.example; export GH_HOST; gh pr view 1",
+    "FOO=1; gh pr view 1",
+    "export FOO=$BAR; gh pr view 1",
+    "env GH_TOKEN=x gh pr view 1",
+    "env -S 'GH_TOKEN=x gh pr view 1'",
+    "env --split-string='gh pr view 1'",
+    "env -i gh pr view 1",
+    "env -u GH_TOKEN gh pr view 1",
+    "bash -c 'gh pr view 1'",
+    "sh -lc \"GH_TOKEN=x gh pr view 1\"",
+    "zsh -c 'export GH_HOST=x; gh pr view 1'",
+    "bash -c \"gh pr view $(echo 1)\"",
+    "command -v gh",
+    "command -V gh",
+    "command -p gh",
+    "command -- gh pr view 1",
+    "type gh",
+    "which gh",
+    "alias gh=echo",
+    "function gh { echo; }",
+    "gh() { echo; }; gh pr view 1",
+    "echo ok | gh pr comment 1 --body-file -",
+    "gh pr view 1 --json title | jq .title",
+    "gh pr view 1 2>&1 | jq .",
+    "gh pr view 1 1>&2",
+    "unset GH_TOKEN; gh pr view 1",
+    "readonly GH_HOST=ghe.example; gh pr view 1",
+    "declare -x GH_REPO=o/r; gh pr view 1",
+    "GH_ENTERPRISE_TOKEN= gh pr view 1",
+    "gh pr view 1; echo $(cat /etc/passwd)",
+    "echo $(echo $(echo hi))",
+    "echo \"a $(echo \\\") b\"",
+    "echo $(unterminated",
+    "echo `unterminated",
+    "echo $(echo ')' )",
+    "echo 'a' \"b\" $(c) `d`",
+)
 
 
 DOCKER_EXTRAS = (
@@ -153,6 +217,7 @@ def _corpus(fixture_dir: Path) -> list[str]:
         for vector in document["vectors"]:
             _walk(vector["args"], found)
     found.update(DOCKER_EXTRAS)
+    found.update(GITHUB_EXTRAS)
     return sorted(found)[:MAX_TEXTS]
 
 
@@ -233,6 +298,52 @@ def _static(text: str, parts: list[str], segments: list[list[str]]) -> dict[str,
     }
 
 
+def _github(text: str, parts: list[str], segments: list[list[str]]) -> dict[str, object]:
+    gh = github_services
+    return {
+        "substitutions": list(gh._shell_command_substitution_payloads(text)),
+        "dynamic": gh._github_shell_has_dynamic_arguments(text),
+        "tokens": [
+            [gh._shell_token_has_expansion(part), gh.github_argument_token_has_untrusted_expansion(part), gh._github_environment_name(part)]
+            for part in parts
+        ],
+        "pipelines": gh._iter_shell_pipelines(parts),
+        "env_index": [gh._shell_segment_env_index(segment) for segment in segments],
+        "env_split": list(gh._env_split_string_payloads(parts)),
+        "scripts": list(gh._shell_command_scripts(parts)),
+        "persistent": gh._persistent_github_environment_requires_review(parts),
+        "builtin": [gh._shell_segment_is_command_builtin_lookup(segment) for segment in segments],
+        "companion": [
+            gh._github_pipeline_companion_is_read_only(segment, home_dir=None, command_text=text)
+            for segment in segments
+        ],
+        "script_review": gh._github_script_requires_review(text),
+    }
+
+
+ENVIRONMENT_CASES = (
+    (),
+    (("GH_TOKEN", "x"),),
+    (("GITHUB_TOKEN", ""),),
+    (("GH_CONFIG_DIR", "/tmp"),),
+    (("GH_HOST", "github.com"),),
+    (("GH_HOST", "GitHub.com"),),
+    (("GH_HOST", "ghe.example"),),
+    (("GH_HOST", "GITHUB.COM"),),
+    (("GH_REPO", "owner/repo"),),
+    (("GH_REPO", "../x"),),
+    (("GH_REPO", "https://github.com/a/b"),),
+    (("GH_REPO", "ghe.example/a/b"),),
+    (("GH_REPO", "$X"),),
+    (("OTHER", "1"), ("GH_ENTERPRISE_TOKEN", "t")),
+)
+
+
+def _environments() -> list[object]:
+    gh = github_services
+    return [[[list(item) for item in case], gh._github_environment_requires_review(case)] for case in ENVIRONMENT_CASES]
+
+
 def _parses(text: str) -> bool:
     try:
         ast.parse(text)
@@ -277,6 +388,7 @@ def _record(text: str) -> dict[str, object]:
         "operands": _operands(segments, parts),
         "quote": _quote_tokens(text),
         "static": _static(text, parts, segments),
+        "github": _github(text, parts, segments),
     }
 
 
@@ -286,7 +398,12 @@ def main() -> None:
     corpus = _corpus(fixture_dir)
     records = [_record(text) for text in corpus]
     scripts = sorted({*SCRIPT_EXTRAS, *(text for record in records for text in record["static"]["texts"])})
-    document = {"schema": "sfrs-intermediate.v1", "tokens": records, "scripts": [_script(text) for text in scripts]}
+    document = {
+        "schema": "sfrs-intermediate.v1",
+        "tokens": records,
+        "scripts": [_script(text) for text in scripts],
+        "environments": _environments(),
+    }
     out = fixture_dir / "intermediate_tokens.json.gz"
     out.write_bytes(gzip.compress(json.dumps(document, sort_keys=True).encode("utf-8"), mtime=0))
     print(f"{len(records)} records -> {out}")

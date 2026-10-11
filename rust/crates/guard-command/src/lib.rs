@@ -144,6 +144,9 @@ mod sfrs_constants;
 mod sfrs_docker_args;
 #[cfg(test)]
 mod sfrs_docker_vectors;
+mod sfrs_gh_environment;
+#[cfg(test)]
+mod sfrs_github_vectors;
 mod sfrs_interpreter_scripts;
 mod sfrs_jq;
 mod sfrs_json;
@@ -162,6 +165,7 @@ mod sfrs_shlex;
 mod sfrs_static_safety;
 #[cfg(test)]
 mod sfrs_static_vectors;
+mod sfrs_substitution;
 #[cfg(test)]
 mod sfrs_token_vectors;
 mod sfrs_tool_request;
