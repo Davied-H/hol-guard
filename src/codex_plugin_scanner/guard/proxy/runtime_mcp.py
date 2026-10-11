@@ -107,17 +107,23 @@ def _bound_external_archive_mcp_request(
     replacements = _verified_external_archive_replacements(evaluation)
     if replacements is None:
         return None
+    requires_binding = _package_evaluation_requires_external_archive_binding(evaluation)
+    if not replacements and not requires_binding:
+        return message, params
     try:
+        # With no replacements the resident does not inspect params, so keep the request small.
         bound_params = native_external_archive_bind(
-            params,
+            params if replacements else {},
             replacements,
-            requires_binding=_package_evaluation_requires_external_archive_binding(evaluation),
+            requires_binding=requires_binding,
             guard_home=guard_home,
         )
     except NativeMcpProxyDecisionError:
         return None
     if bound_params is None:
         return None
+    if not replacements:
+        return message, params
     return {**message, "params": bound_params}, bound_params
 
 

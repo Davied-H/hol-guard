@@ -1,18 +1,15 @@
 //! Risk signals projected from the reasons of a package evaluation.
 
+use guard_command::workspace_inventory::python_strip;
 use guard_contracts::McpPackageReasonSignalsQueryV1;
 use serde_json::{json, Value};
 
 const FALSE_POSITIVE_HINT: &str =
     "Review the package request or add a scoped exception only for a verified false positive.";
 
-fn is_py_space(character: char) -> bool {
-    character.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&character)
-}
-
 /// `_optional_text`: a stripped, non-empty string.
 fn optional_text(value: Option<&Value>) -> Option<String> {
-    let text = value?.as_str()?.trim_matches(is_py_space);
+    let text = python_strip(value?.as_str()?);
     (!text.is_empty()).then(|| text.to_owned())
 }
 
