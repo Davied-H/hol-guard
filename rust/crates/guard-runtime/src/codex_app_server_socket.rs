@@ -49,7 +49,7 @@ pub(crate) fn exchange(
     if !trusted(socket) {
         return Err(Failure::Error("ValueError"));
     }
-    let stream = connect(socket)?;
+    let stream = connect(socket, deadline)?;
     let mut connection = Connection {
         stream,
         pending: Vec::new(),
@@ -100,20 +100,49 @@ fn is_response_id(id: Option<&Value>) -> bool {
 }
 
 /// Connect without waiting on a full listen backlog, as a socket with a
-/// timeout does.
+/// timeout does. The descriptor is close-on-exec before connect, on every
+/// Unix. An in-progress connect finishes by the deadline or fails. `EAGAIN`
+/// is a full backlog and fails immediately.
 #[cfg(unix)]
-fn connect(socket: &Path) -> Result<std::os::unix::net::UnixStream, Failure> {
-    use nix::sys::socket::{self, AddressFamily, SockFlag, SockType, UnixAddr};
-    use std::os::fd::AsRawFd;
+fn connect(socket: &Path, deadline: Instant) -> Result<std::os::unix::net::UnixStream, Failure> {
+    use nix::errno::Errno;
+    use nix::fcntl::{fcntl, FcntlArg, FdFlag, OFlag};
+    use nix::poll::{poll, PollFd, PollFlags, PollTimeout};
+    use nix::sys::socket::{self, sockopt, AddressFamily, SockFlag, SockType, UnixAddr};
+    use std::os::fd::{AsFd, AsRawFd};
 
+    if deadline.saturating_duration_since(Instant::now()).is_zero() {
+        return Err(Failure::Timeout);
+    }
+    let address = UnixAddr::new(socket).map_err(errno_failure)?;
     #[cfg(any(target_os = "linux", target_os = "android"))]
     let flags = SockFlag::SOCK_NONBLOCK | SockFlag::SOCK_CLOEXEC;
     #[cfg(not(any(target_os = "linux", target_os = "android")))]
     let flags = SockFlag::empty();
-    let address = UnixAddr::new(socket).map_err(errno_failure)?;
     let descriptor = socket::socket(AddressFamily::Unix, SockType::Stream, flags, None)
         .map_err(errno_failure)?;
-    socket::connect(descriptor.as_raw_fd(), &address).map_err(errno_failure)?;
+    fcntl(&descriptor, FcntlArg::F_SETFD(FdFlag::FD_CLOEXEC)).map_err(errno_failure)?;
+    fcntl(&descriptor, FcntlArg::F_SETFL(OFlag::O_NONBLOCK)).map_err(errno_failure)?;
+    match socket::connect(descriptor.as_raw_fd(), &address) {
+        Ok(()) | Err(Errno::EISCONN) => {}
+        Err(Errno::EINPROGRESS) | Err(Errno::EALREADY) => {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Err(Failure::Timeout);
+            }
+            let timeout = PollTimeout::try_from(remaining).map_err(|_| Failure::Timeout)?;
+            let mut descriptors = [PollFd::new(descriptor.as_fd(), PollFlags::POLLOUT)];
+            if poll(&mut descriptors, timeout).map_err(errno_failure)? == 0 {
+                return Err(Failure::Timeout);
+            }
+            let error =
+                socket::getsockopt(&descriptor, sockopt::SocketError).map_err(errno_failure)?;
+            if error != 0 {
+                return Err(errno_name(error));
+            }
+        }
+        Err(error) => return Err(errno_failure(error)),
+    }
     let stream = std::os::unix::net::UnixStream::from(descriptor);
     stream.set_nonblocking(false).map_err(io_failure)?;
     Ok(stream)
@@ -338,4 +367,45 @@ fn errno_name(code: i32) -> Failure {
         _ => "OSError",
     };
     Failure::Error(name)
+}
+
+#[cfg(all(test, unix))]
+mod connect_tests {
+    use super::{connect, Failure};
+    use nix::fcntl::{fcntl, FcntlArg, FdFlag};
+    use std::os::fd::AsFd;
+    use std::os::unix::net::UnixListener;
+    use std::thread;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn passed_deadline_fails_before_connect() {
+        let missing = std::env::temp_dir().join(format!(
+            "hol-guard-codex-connect-missing-{}",
+            std::process::id()
+        ));
+        let deadline = Instant::now()
+            .checked_sub(Duration::from_secs(1))
+            .unwrap_or_else(Instant::now);
+        let error = connect(&missing, deadline).unwrap_err();
+        assert_eq!(error, Failure::Timeout);
+    }
+
+    #[test]
+    fn connected_socket_is_close_on_exec() {
+        let directory = std::path::PathBuf::from(format!("/tmp/hgcs{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir(&directory).unwrap();
+        let path = directory.join("c.sock");
+        let listener = UnixListener::bind(&path).unwrap();
+        let accepted = thread::spawn(move || {
+            let _ = listener.accept();
+        });
+        let stream = connect(&path, Instant::now() + Duration::from_secs(2)).unwrap();
+        let flags = fcntl(stream.as_fd(), FcntlArg::F_GETFD).unwrap();
+        assert!(FdFlag::from_bits_truncate(flags).contains(FdFlag::FD_CLOEXEC));
+        drop(stream);
+        let _ = accepted.join();
+        let _ = std::fs::remove_dir_all(directory);
+    }
 }
