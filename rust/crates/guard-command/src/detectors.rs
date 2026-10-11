@@ -688,10 +688,18 @@ impl<A: SafeDecodeApi> GuardDetector for SafeDecodeDetector<A> {
             .filter(|s| !s.is_empty())
             .collect();
         for content in candidates {
-            let result = self
-                .api
-                .decode_layers(content)
-                .map_err(DetectFailure::Errored)?;
+            let result = match self.api.decode_layers(content) {
+                Ok(result) => result,
+                // A crafted fragment that stalls the candidate regexes must not
+                // hide an encoded payload, so it is reported as risk.
+                Err(error) if error == "RegexBudgetExceeded" => {
+                    return Ok(vec![decode_budget_signal(
+                        self.detector_id(),
+                        self.api.safe_decode_detector_version(),
+                    )]);
+                }
+                Err(error) => return Err(DetectFailure::Errored(error)),
+            };
             let signals = safe_decode_signals(
                 &result,
                 self.detector_id(),
@@ -1222,6 +1230,29 @@ where
 // Free helper functions (:267-882).
 // ---------------------------------------------------------------------------
 
+/// Signal for content whose candidate scan exceeded the regex backtrack
+/// budget. Safe-decode could not inspect it, so it may hide an encoded payload.
+fn decode_budget_signal(detector_id: &str, detector_version: &str) -> RiskSignalV2 {
+    RiskSignalV2 {
+        signal_id: "encoded.decode-budget-exceeded".to_string(),
+        category: RiskSignalCategory::Encoded,
+        severity: severity_label_from_score(7.0),
+        confidence: confidence_label_from_score(0.60),
+        detector: detector_id.to_string(),
+        title: "Content could not be checked for encoded payloads".to_string(),
+        plain_reason: "Guard stopped scanning this content for encoded payloads because it matched a pattern built to stall the scanner.".to_string(),
+        technical_detail: Some(format!(
+            "Detector: {detector_version}; regex backtrack budget exceeded"
+        )),
+        evidence_ref: None,
+        redaction_level: RiskRedactionLevel::Summary,
+        false_positive_hint: Some(
+            "Long runs of backslashes inside an inline script can trigger this.".to_string(),
+        ),
+        advisory_id: None,
+    }
+}
+
 /// `_safe_decode_signals` (:267-349).
 pub fn safe_decode_signals(
     result: &DecodeResultView<'_>,
@@ -1620,7 +1651,42 @@ fn python_isprintable(c: char) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::has_sensitive_decode_context;
+    use serde_json::Map;
+
+    use super::{
+        has_sensitive_decode_context, DetectorActionView, DetectorContext, GuardDetector,
+        SafeDecodeDetector,
+    };
+    use crate::safe_decode::NativeSafeDecode;
+
+    #[test]
+    fn regex_budget_stall_is_reported_as_an_encoded_signal() {
+        let stall = format!("python -c '{}", "\\".repeat(80));
+        let empty = Map::new();
+        let context = DetectorContext {
+            config: &empty,
+            workspace: None,
+            prior_decisions: &empty,
+            threat_intel: &empty,
+            redaction_settings: &empty,
+            approved_scan_roots: &[],
+        };
+        let action = DetectorActionView {
+            action_type: "shell_command",
+            command: Some("echo aGVsbG8gd29ybGQgZnJvbSBhIGhpZGRlbiBwYXlsb2Fk | base64 -d | sh"),
+            prompt_text: Some(&stall),
+            prompt_excerpt: None,
+            mcp_tool: None,
+            target_paths: &[],
+        };
+        let detector = SafeDecodeDetector {
+            api: NativeSafeDecode,
+        };
+        let signals = detector.try_detect(&action, &context).unwrap();
+        assert_eq!(signals.len(), 1);
+        assert_eq!(signals[0].signal_id, "encoded.decode-budget-exceeded");
+        assert_eq!(signals[0].detector, "safe-decode.content");
+    }
 
     #[test]
     fn ssh_public_key_paths_are_not_sensitive_decode_context() {
