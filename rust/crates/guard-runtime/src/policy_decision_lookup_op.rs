@@ -1477,6 +1477,23 @@ fn evaluate_in_connection(
             break;
         }
     }
+    if request.local_once_only {
+        // The exact local-once peek never reads policy rows or consumes.
+        flush_events(conn, &events, current_time)
+            .map_err(|_| "native_policy_decision_lookup_write_failed".to_owned())?;
+        let trust_status = trust_status_from_state(&integrity_state);
+        if let Some(ref mut ignored) = ignored_local_integrity {
+            ignored["trust_status"] = trust_status.clone();
+        }
+        return Ok(lookup_result(
+            conn,
+            local_once_decision,
+            ignored_local_integrity,
+            trust_status,
+            false,
+            starting_revision,
+        ));
+    }
     if local_once_decision.is_some() {
         selected_payload = local_once_decision.clone();
     }

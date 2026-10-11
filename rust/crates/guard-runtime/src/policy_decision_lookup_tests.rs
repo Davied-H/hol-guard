@@ -72,6 +72,7 @@ fn base_request(store_path: &std::path::Path) -> PolicyDecisionLookupRequestV1 {
         now: "2030-01-01T00:00:00+00:00".to_owned(),
         runtime_exact_match_context: None,
         consume_one_shot: true,
+        local_once_only: false,
         // Matches `_refresh_policy_integrity_state` output shape (backend set).
         integrity_state: Some(json!({
             "backend": "encrypted-file",
@@ -408,4 +409,49 @@ fn family_scoped_row_is_eligible_for_concrete_lookup() {
         None,
         None
     ));
+}
+
+/// Vectors recorded from the retired Python
+/// `_scoped_runtime_row_requires_exact_match` test: a contextual key matches
+/// itself, a legacy-keyed row is not reachable through the contextual key's
+/// request, and a request with no exact key must not reach a scoped row.
+#[test]
+fn scoped_runtime_row_exact_match_vectors() {
+    let artifact_id = "codex:project:tool-action:shell";
+    let contextual = runtime_scoped_exact_match_key(Some(artifact_id), Some("ctx-a")).unwrap();
+    let legacy = runtime_scoped_exact_match_key(Some(artifact_id), None).unwrap();
+    assert_ne!(contextual, legacy);
+    let requires = |stored_hash: &str, requested_key: Option<&str>| {
+        scoped_runtime_row_requires_exact_match(
+            "harness",
+            Some(artifact_id),
+            Some(stored_hash),
+            "claude-native-approval",
+            Some(artifact_id),
+            None,
+            requested_key,
+            None,
+            None,
+        )
+    };
+    assert!(!requires(&contextual, Some(&contextual)));
+    // The legacy key is still derived from the artifact id alone.
+    assert!(!requires(&legacy, Some(&contextual)));
+    assert!(requires(&contextual, None));
+}
+
+/// `local_once_only` peeks the exact local-once approval and must neither read
+/// nor consume policy rows.
+#[test]
+fn local_once_only_never_touches_policy_rows() {
+    let (store, mut request) = seed_one_shot("local-once-only");
+    request.local_once_only = true;
+    request.consume_one_shot = false;
+    let result = evaluate(&request).unwrap();
+    assert!(result["decision"].is_null());
+    let conn = Connection::open(store).unwrap();
+    let remaining: i64 = conn
+        .query_row("select count(*) from policy_decisions", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(remaining, 1);
 }

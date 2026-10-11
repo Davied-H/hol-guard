@@ -1002,6 +1002,40 @@ class StorePolicyMixin:
             )
         return _most_restrictive_policy_lookup(candidate_lookups)
 
+    def peek_local_once_approval(
+        self,
+        *,
+        harness: str,
+        artifact_id: str | None,
+        artifact_hash: str | None,
+        workspace: str | None,
+        publisher: str | None,
+        now: str,
+    ) -> dict[str, object] | None:
+        """Return exact unexpired approval evidence without consuming it.
+
+        The resident owns the exact local-once match, its integrity check and
+        the legacy-provenance refusal; this only ships the request.
+        """
+
+        if not artifact_id or not artifact_hash:
+            return None
+        # Bypass the portable-workspace composition: the exact peek is bound to
+        # the caller's workspace, never a git-derived one.
+        lookup = StorePolicyMixin.resolve_policy_decision_lookup(
+            self,
+            harness,
+            artifact_id,
+            artifact_hash=artifact_hash,
+            workspace=workspace,
+            publisher=publisher,
+            now=now,
+            consume_one_shot=False,
+            local_once_only=True,
+        )
+        decision = lookup["decision"]
+        return dict(decision) if isinstance(decision, Mapping) else None
+
     def resolve_policy_decision_lookup(
         self,
         harness: str,
@@ -1012,6 +1046,7 @@ class StorePolicyMixin:
         now: str | None = None,
         runtime_exact_match_context: str | None = None,
         consume_one_shot: bool = True,
+        local_once_only: bool = False,
     ) -> PolicyDecisionLookupResult:
         """Resolve the effective policy decision via the native resident op.
 
@@ -1166,6 +1201,8 @@ class StorePolicyMixin:
             ),
             "local_once_integrity_key_id": local_once_key_id,
         }
+        if local_once_only:
+            request["local_once_only"] = True
         bundle_identities = self._cached_policy_bundle_decision_identities(
             now=_parse_utc_timestamp(current_time).timestamp(),
         )
@@ -1223,6 +1260,7 @@ class StorePolicyMixin:
         decision: Mapping[str, object],
         *,
         now: str | None = None,
+        consume_local_once: bool = False,
     ) -> bool:
         """Atomically validate and claim an accepted saved ``allow`` decision.
 
@@ -1231,7 +1269,7 @@ class StorePolicyMixin:
         then enforce the recomputed current action without saved evidence.
         """
 
-        return self.claim_approval_reuse_decisions((decision,), now=now)
+        return self.claim_approval_reuse_decisions((decision,), now=now, consume_local_once=consume_local_once)
 
     def approval_reuse_claim_disposition(
         self,
@@ -1250,6 +1288,7 @@ class StorePolicyMixin:
         decisions: Sequence[Mapping[str, object]],
         *,
         now: str | None = None,
+        consume_local_once: bool = False,
     ) -> bool:
         """Validate and claim a group of saved allows in one transaction.
 
@@ -1274,6 +1313,7 @@ class StorePolicyMixin:
             decisions=decisions,
             now=current_time,
             evidence=self._claim_integrity_evidence(decisions, current_time),
+            consume_local_once=consume_local_once,
         )
 
     def _claim_integrity_evidence(

@@ -767,7 +767,16 @@ def test_lookup_preserves_stored_block_over_local_once_allow(tmp_path, consume_o
     assert selected is not None
     assert selected["action"] == "block"
     assert selected["source"] == "policy-bundle"
-    assert store.claim_local_once_approval(approval_id, claimed_at="2026-07-17T12:03:00+00:00") is True
+    peeked = store.peek_local_once_approval(
+        harness="codex",
+        artifact_id=artifact_id,
+        artifact_hash=artifact_hash,
+        workspace="/workspace/a",
+        publisher=None,
+        now="2026-07-17T12:03:00+00:00",
+    )
+    assert peeked is not None and peeked["approval_id"] == approval_id
+    assert store.claim_approval_reuse_decision(peeked, now="2026-07-17T12:03:00+00:00", consume_local_once=True)
 
 
 def test_non_consuming_runtime_lookup_composes_specific_allow_with_broader_managed_block(
