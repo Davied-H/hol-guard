@@ -175,6 +175,14 @@ mod sfrs_index_vectors;
 mod sfrs_interpreter_scripts;
 mod sfrs_jq;
 mod sfrs_json;
+mod sfrs_kubernetes_commands;
+mod sfrs_kubernetes_cp;
+mod sfrs_kubernetes_heredoc;
+mod sfrs_kubernetes_heredoc_scan;
+mod sfrs_kubernetes_options;
+mod sfrs_kubernetes_support;
+#[cfg(test)]
+mod sfrs_kubernetes_vectors;
 mod sfrs_patterns;
 #[cfg(all(test, unix))]
 mod sfrs_pr_expansion_vectors;
