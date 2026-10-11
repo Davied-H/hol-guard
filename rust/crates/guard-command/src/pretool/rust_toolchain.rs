@@ -110,8 +110,8 @@ fn inert_toolchain(contents: &str) -> bool {
 
 /// rustup's official toolchain names: `stable`, `beta`, `nightly` or a
 /// `major.minor[.patch]` release, then an optional `-YYYY-MM-DD` archive date
-/// and an optional host triple. rustup will not link a custom toolchain under
-/// such a name, so it cannot point at a local directory.
+/// and an optional known host triple. rustup will not link a custom toolchain
+/// under such a name, so it cannot point at a local directory.
 fn official_channel(name: &str) -> bool {
     let tokens: Vec<&str> = name.split('-').collect();
     let Some((channel, mut rest)) = tokens.split_first() else {
@@ -125,14 +125,49 @@ fn official_channel(name: &str) -> bool {
             rest = tail;
         }
     }
-    rest.is_empty()
-        || ((2..=4).contains(&rest.len())
-            && rest.iter().all(|part| {
-                !part.is_empty()
-                    && part
-                        .chars()
-                        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
-            }))
+    rest.is_empty() || host_triple(&rest.join("-"))
+}
+
+/// rustup parses a name as official only when its tail is a known
+/// architecture, operating system and optional environment. Any other tail
+/// is a valid custom toolchain name, which `rustup toolchain link` can point
+/// at a local directory.
+fn host_triple(tail: &str) -> bool {
+    const ARCHS: &[&str] = &[
+        "aarch64",
+        "arm",
+        "armv7",
+        "i586",
+        "i686",
+        "loongarch64",
+        "powerpc64le",
+        "riscv64gc",
+        "s390x",
+        "x86_64",
+    ];
+    const SYSTEMS: &[&str] = &[
+        "apple-darwin",
+        "pc-windows",
+        "unknown-freebsd",
+        "unknown-illumos",
+        "unknown-linux",
+        "unknown-netbsd",
+    ];
+    const ENVIRONMENTS: &[&str] = &["gnu", "gnueabihf", "gnullvm", "msvc", "musl", "musleabihf"];
+    ARCHS.iter().any(|arch| {
+        tail.strip_prefix(arch)
+            .and_then(|rest| rest.strip_prefix('-'))
+            .is_some_and(|rest| {
+                SYSTEMS.iter().any(|system| {
+                    rest.strip_prefix(system).is_some_and(|rest| {
+                        rest.is_empty()
+                            || rest
+                                .strip_prefix('-')
+                                .is_some_and(|environment| ENVIRONMENTS.contains(&environment))
+                    })
+                })
+            })
+    })
 }
 
 fn release_version(version: &str) -> bool {
@@ -160,6 +195,8 @@ mod tests {
             "1.85",
             "stable-aarch64-apple-darwin",
             "nightly-2025-01-01-x86_64-unknown-linux-gnu",
+            "stable-x86_64-pc-windows-msvc",
+            "1.85.0-aarch64-unknown-linux-musl",
             "[toolchain]\nchannel = \"1.85.0\"\n",
             "[toolchain]\nchannel = \"stable\"\ncomponents = [\"clippy\", \"rustfmt\"]\nprofile = \"minimal\"\n",
         ] {
@@ -179,6 +216,13 @@ mod tests {
             "1",
             "1.85.0.1",
             "nightly-2025-01-01-Evil",
+            // Lowercase tails that are not known triples are valid custom
+            // names that rustup can link to a local directory.
+            "stable-evil-thing",
+            "nightly-2025-01-01-my-build",
+            "stable-x86_64-evil",
+            "stable-x86_64-unknown-linux-evil",
+            "stable-x86_64-unknown-linux-gnu-extra",
             "[toolchain]\nchannel = \"workspace-linked\"\n",
             "[toolchain]\ncomponents = [\"clippy\"]\n",
             "[toolchain]\nchannel = \"stable\"\n[other]\nkey = 1\n",

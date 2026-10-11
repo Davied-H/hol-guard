@@ -242,8 +242,6 @@ fn version_probes_admit_lone_flags_and_keep_npx_review() {
         "jq --version",
         "rg --version",
         "fd --version",
-        "cargo --version",
-        "rustc -V",
     ] {
         assert!(allowed_in(&fixture, ws, command), "{command}");
     }
