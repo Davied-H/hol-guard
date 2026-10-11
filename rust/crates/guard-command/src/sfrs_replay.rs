@@ -40,11 +40,20 @@ pub fn implements(entry: &str) -> bool {
 
 /// Run the classifier for `entry` over one recorded call.
 ///
+/// `env` is the recorded environment and `dir` the materialized test
+/// directory used as the working directory.
+///
 /// # Errors
 ///
 /// Returns a description when the recorded arguments do not decode or the
 /// entry has no implementation yet.
-pub fn replay_entry(entry: &str, args: &Value, _evaluation: &Value) -> Result<Value, String> {
+pub fn replay_entry(
+    entry: &str,
+    args: &Value,
+    _evaluation: &Value,
+    env: &Value,
+    dir: &Path,
+) -> Result<Value, String> {
     match entry {
         "classify_sensitive_path" => {
             let found = classify_sensitive_path(
@@ -109,11 +118,14 @@ pub fn replay_entry(entry: &str, args: &Value, _evaluation: &Value) -> Result<Va
             )))
         }
         "is_explicitly_benign_native_file_read_request" => {
-            let host = ReplayHost;
-            let process_cwd = std::env::current_dir()
-                .map(|path| path.to_string_lossy().into_owned())
-                .unwrap_or_else(|_| "/".to_owned());
-            let home = std::env::var("HOME").unwrap_or_else(|_| "/".to_owned());
+            // Never read the reviewer's machine: the call runs in its own
+            // materialized directory with the recorded HOME.
+            let process_cwd = dir.to_string_lossy().into_owned();
+            let home = env
+                .get("HOME")
+                .and_then(Value::as_str)
+                .map_or_else(|| process_cwd.clone(), str::to_owned);
+            let host = ReplayHost { home: home.clone() };
             let ctx = Ctx::new(&host, &process_cwd, &home);
             Ok(json!(is_explicitly_benign_native_file_read_request(
                 &ovalue_arg(args, "tool_name"),
@@ -133,11 +145,13 @@ pub fn replay_entry(entry: &str, args: &Value, _evaluation: &Value) -> Result<Va
 }
 
 /// Host for classifiers that never run a process.
-struct ReplayHost;
+struct ReplayHost {
+    home: String,
+}
 
 impl InspectionHost for ReplayHost {
     fn env(&self, name: &str) -> Option<String> {
-        std::env::var(name).ok()
+        (name == "HOME").then(|| self.home.clone())
     }
     fn git_executable(&self) -> Option<String> {
         None
