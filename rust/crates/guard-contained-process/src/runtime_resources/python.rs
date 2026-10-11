@@ -166,7 +166,7 @@ fn capture(
     capture.tree(&stdlib, &target, true)?;
     let site = target.join("site-packages");
     let site_roots = if venv {
-        vec![
+        let mut site_roots = vec![
             requested_root
                 .join("lib")
                 .join(format!("python{version}"))
@@ -175,8 +175,14 @@ fn capture(
                 .join("lib64")
                 .join(format!("python{version}"))
                 .join("site-packages"),
-            requested_root.join("Lib/site-packages"),
-        ]
+        ];
+        // `Lib` is the Windows venv layout only. Probing it on Unix would, on
+        // case-insensitive filesystems (default macOS APFS), alias the real
+        // `lib` directory and fail the canonical-path binding check.
+        if cfg!(windows) {
+            site_roots.push(requested_root.join("Lib/site-packages"));
+        }
+        site_roots
     } else {
         Vec::new()
     };
