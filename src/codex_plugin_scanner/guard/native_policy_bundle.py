@@ -20,7 +20,7 @@ import time
 from collections.abc import Iterator
 from typing import Any, cast
 
-from .native_approval_errors import FINITE_FAILURE_CODES
+from .native_approval_errors import resident_refusal_code
 from .native_context import _canonical_request_sha256, _resolve_digest_home, ensure_resident_prerequisite
 from .native_resident_client import native_resident_client_request
 from .native_runtime import _isolated_environment, _native_error, native_runtime_status
@@ -220,7 +220,7 @@ def native_policy_bundle(
         native_record_overload(status.identity.sha256, guard_home)
         raise PolicyBundleNativeUnavailableError("native_overloaded")
     envelope = cast("dict[str, object]", decoded) if isinstance(decoded, dict) else None
-    refusal = _resident_refusal_code(envelope)
+    refusal = resident_refusal_code(envelope)
     if refusal is not None:
         # A framed resident refusal (``{"error": code, "retryable": bool}``) is an outage with a
         # known cause; keep that code instead of reporting a schema mismatch.
@@ -246,13 +246,6 @@ def native_policy_bundle(
         # the resident failing to serve the op, not a verdict about the bundle.
         raise PolicyBundleNativeUnavailableError(code if isinstance(code, str) else UNAVAILABLE)
     return cast("dict[str, object]", result)
-
-
-def _resident_refusal_code(envelope: dict[str, object] | None) -> str | None:
-    if envelope is None or set(envelope) != {"error", "retryable"} or type(envelope["retryable"]) is not bool:
-        return None
-    code = envelope["error"]
-    return code if isinstance(code, str) and code in FINITE_FAILURE_CODES else None
 
 
 def policy_bundle_verdict(kind: str, request_input: dict[str, object]) -> dict[str, object]:
