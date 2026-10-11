@@ -34,6 +34,7 @@ from tests.gauntlet_replay import (
     failure_reasons,
     judge,
     payload_input,
+    write_global_gitconfig,
 )
 
 _CASES = expand()
@@ -57,6 +58,7 @@ def replay_environment(
     request: pytest.FixtureRequest, tmp_path_factory: pytest.TempPathFactory
 ) -> Iterator[tuple[str, BenignFixture, HookWorker]]:
     fixture = build_fixture(tmp_path_factory.mktemp(f"gauntlet-replay-{request.param}"))
+    write_global_gitconfig(request.param, fixture.home)
     patch = pytest.MonkeyPatch()
     patch.setenv("HOME", str(fixture.home))
     # Git finds the fixture ~/.gitconfig through HOME, as on a real host. The native Git
@@ -133,8 +135,7 @@ def test_replayed_payload_is_quiet_offers_always_or_blocks(
 
 def test_every_harness_and_attack_class_is_covered() -> None:
     assert {case.harness for case in _CASES} == {"codex", "zcode", "claude-code", "omp", "pi", "cursor"}
-    blocked = {case.base_id for case in _CASES if case.expect == "block"}
-    assert {
+    attacks = {
         "neg-read-aws-credentials",
         "neg-env-exfil-curl",
         "neg-curl-pipe-sh",
@@ -142,7 +143,10 @@ def test_every_harness_and_attack_class_is_covered() -> None:
         "neg-encoded-exec",
         "neg-injection-exfil",
         "neg-cat-ssh-key",
-    } <= blocked
+    }
+    for harness in {case.harness for case in _CASES}:
+        blocked = {case.base_id for case in _CASES if case.expect == "block" and case.harness == harness}
+        assert attacks <= blocked, f"{harness} misses attacks {sorted(attacks - blocked)}"
     assert {
         "omp-eval-promise-all-reads",
         "omp-eval-py-print-read",

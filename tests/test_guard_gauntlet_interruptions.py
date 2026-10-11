@@ -45,7 +45,8 @@ def test_any_non_allow_decision_interrupts(response: dict) -> None:
 
 def test_tap_row_without_rendered_fields_is_unproven() -> None:
     found = observation_interruptions({"decision": "allow", "tool": "bash", "event": "PreToolUse"})
-    assert [e["kind"] for e in found] == ["rendered"] and found[0]["fields"] == ["unproven"]
+    assert [e["kind"] for e in found] == ["unproven"]
+    assert found[0]["why"] == "observer row carries no rendered-text proof"
     assert observation_interruptions({"decision": "allow", "event": "PreToolUse", "rendered_fields": []}) == []
 
 
@@ -80,9 +81,9 @@ def test_summary_counts_by_harness_reason_and_tool() -> None:
     assert summary["quiet_case_rate"] == 0.5
 
 
-def test_offers_always_by_scope_or_exact_token() -> None:
+def test_offers_always_only_from_the_scope_contract() -> None:
     assert offers_always({"always_available": True})
-    assert offers_always({"exact_context_token_present": True})
+    assert not offers_always({"always_available": False, "exact_context_token_present": True})
     assert not offers_always({})
 
 
@@ -92,3 +93,11 @@ def test_known_gaps_name_catalog_scenarios_and_report_staleness() -> None:
     report = known_gap_report([{"id": next(iter(gaps)), "outcome": "pass"}], gaps)
     assert report[0]["stale"] is True
     assert json.dumps(report)
+
+
+def test_harness_lane_counts_missing_codes_as_unknown() -> None:
+    events = [{"kind": "approval", "harness": None, "reason_code": None, "tool": None}]
+    case = {"interruptions": {"benign": True, "events": events, "decisions": 1}}
+    summary = summarize_interruptions([case], harness="pi")
+    assert summary["by_harness"] == {"pi": 1}
+    assert summary["by_reason_code"] == summary["by_tool"] == {"unknown": 1}

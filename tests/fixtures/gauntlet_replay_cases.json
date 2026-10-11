@@ -329,6 +329,7 @@
         "zcode",
         "claude-code",
         "omp",
+        "pi",
         "cursor"
       ],
       "tool": "shell",
@@ -345,6 +346,7 @@
         "zcode",
         "claude-code",
         "omp",
+        "pi",
         "cursor"
       ],
       "tool": "shell",
@@ -361,6 +363,7 @@
         "zcode",
         "claude-code",
         "omp",
+        "pi",
         "cursor"
       ],
       "tool": "shell",
@@ -377,6 +380,7 @@
         "zcode",
         "claude-code",
         "omp",
+        "pi",
         "cursor"
       ],
       "tool": "shell",
@@ -393,6 +397,7 @@
         "zcode",
         "claude-code",
         "omp",
+        "pi",
         "cursor"
       ],
       "tool": "shell",
@@ -409,6 +414,7 @@
         "zcode",
         "claude-code",
         "omp",
+        "pi",
         "cursor"
       ],
       "tool": "shell",

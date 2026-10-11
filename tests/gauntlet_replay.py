@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from ci.gauntlet.approval_rows import offers_always
+from ci.gauntlet.fixtures import LFS_GITCONFIG
 from ci.gauntlet.host_process import realistic_environment
 from ci.gauntlet.interruptions import observation_interruptions
 
@@ -125,6 +126,18 @@ def cursor_hook_fields(tool: str, payload: dict[str, object]) -> dict[str, objec
 def environment_overlay(kind: str, home: Path) -> dict[str, str]:
     """Extra env for a replay: nothing for clean, the Gauntlet's realistic overlay otherwise."""
     return realistic_environment({}, home) if kind == "realistic" else {}
+
+
+_IDENTITY_GITCONFIG = "[user]\n\tname = Fixture Author\n\temail = fixture@example.invalid\n"
+
+
+def write_global_gitconfig(kind: str, home: Path) -> None:
+    """Identity only for clean; the Gauntlet's LFS, gpg and hooksPath settings for realistic."""
+    text = _IDENTITY_GITCONFIG
+    if kind == "realistic":
+        text = LFS_GITCONFIG + text
+        (home / ".config/git/hooks").mkdir(parents=True, exist_ok=True)
+    (home / ".gitconfig").write_text(text, encoding="utf-8", newline="\n")
 
 
 def omp_contained(case: ReplayCase, result: dict[str, object]) -> bool:

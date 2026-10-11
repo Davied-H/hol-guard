@@ -52,5 +52,5 @@ def always_gap(rows: list[dict[str, Any]]) -> list[str]:
 
 
 def offers_always(row: dict[str, Any]) -> bool:
-    """A review row a user can turn into a lasting allow: a persistent scope or an exact-action token."""
-    return row.get("always_available") is True or row.get("exact_context_token_present") is True
+    """A review row whose scope contract offers a lasting allow; a token alone does not."""
+    return row.get("always_available") is True

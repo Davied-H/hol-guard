@@ -432,9 +432,12 @@ def main(args: Any) -> int:
             "max_load": args.max_load,
             "max_load_wait": args.max_load_wait,
             "attempts": attempts,
-            # Only what the verifier recomputed is published; a failed or missing verify publishes null.
+            # Verified counts only; a failed or missing verify publishes null here and the
+            # last attempt's runner counts under unverified_* so failing runs still show them.
             "interruptions": verify_result.get("interruptions") if verify_result else None,
             "known_gaps": verify_result.get("known_gaps") if verify_result else None,
+            "unverified_interruptions": None if verify_result or not attempts else attempts[-1].get("interruptions"),
+            "unverified_known_gaps": None if verify_result or not attempts else attempts[-1].get("known_gaps"),
             "verify": verify_result,
             "elapsed_seconds": round(time.monotonic() - started, 3),
             "cleanup": cleanup,

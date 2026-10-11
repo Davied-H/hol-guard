@@ -141,7 +141,8 @@ def observation_interruptions(row: dict[str, Any], harness: str | None = None) -
         tool, event = row.get("tool"), row.get("event")
         if not isinstance(fields, list):
             # Without the observer's rendered-text proof a quiet answer cannot be claimed.
-            fields = ["unproven"]
+            unproven = unproven or "observer row carries no rendered-text proof"
+            fields = []
     base = {"harness": row_harness, "tool": tool, "event": event, "reason_code": reason_code}
     found = []
     if unproven or not isinstance(event, str) or not event:
@@ -218,8 +219,8 @@ def summarize_interruptions(cases: list[dict[str, Any]], harness: str | None = N
     approvals = sum(c["interruptions"].get("approval_rows", 0) for c in benign)
     interrupted_cases = sum(bool(c["interruptions"].get("events")) for c in benign)
 
-    def count(key: str) -> dict[str, int]:
-        return dict(sorted(Counter(str(e.get(key) or harness or "unknown") for e in events).items()))
+    def count(key: str, fallback: str = "unknown") -> dict[str, int]:
+        return dict(sorted(Counter(str(e.get(key) or fallback) for e in events).items()))
 
     return {
         "benign_cases": len(benign),
@@ -227,7 +228,7 @@ def summarize_interruptions(cases: list[dict[str, Any]], harness: str | None = N
         "benign_interruptions": len(events),
         "benign_interrupted_cases": interrupted_cases,
         "by_kind": count("kind"),
-        "by_harness": count("harness"),
+        "by_harness": count("harness", harness or "unknown"),
         "by_reason_code": count("reason_code"),
         "by_tool": count("tool"),
         # Share of ordinary hook answers that raised nothing; 1.0 means a silent run.
