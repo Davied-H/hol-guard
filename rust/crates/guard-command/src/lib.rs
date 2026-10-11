@@ -152,6 +152,7 @@ mod sfrs_developer_vectors;
 mod sfrs_docker_args;
 #[cfg(test)]
 mod sfrs_docker_vectors;
+mod sfrs_environment_secret;
 #[cfg(all(test, unix))]
 mod sfrs_fs_vectors;
 mod sfrs_gh_bindings;
@@ -165,7 +166,9 @@ mod sfrs_gh_service;
 mod sfrs_gh_shell;
 #[cfg(test)]
 mod sfrs_gh_shell_vectors;
+mod sfrs_git_audit;
 mod sfrs_git_cached_diff;
+mod sfrs_git_fetch;
 #[cfg(unix)]
 mod sfrs_git_index;
 #[cfg(test)]
@@ -175,7 +178,10 @@ mod sfrs_index_vectors;
 mod sfrs_interpreter_scripts;
 mod sfrs_jq;
 mod sfrs_json;
+#[cfg(all(test, unix))]
+mod sfrs_leaf_vectors;
 mod sfrs_patterns;
+mod sfrs_perl_read_only;
 #[cfg(all(test, unix))]
 mod sfrs_pr_expansion_vectors;
 mod sfrs_python_imports;
@@ -189,8 +195,10 @@ pub mod sfrs_replay;
 mod sfrs_request_data;
 mod sfrs_requests;
 mod sfrs_routine_dirs;
+mod sfrs_routine_move;
 mod sfrs_search_filters;
 mod sfrs_selectors;
+mod sfrs_self_approval;
 mod sfrs_shell_tokens;
 mod sfrs_shlex;
 mod sfrs_source_edit;
