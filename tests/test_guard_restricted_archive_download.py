@@ -99,7 +99,7 @@ def test_source_identity_comes_from_bound_native_reply(monkeypatch: pytest.Monke
 
 
 def _trust(monkeypatch: pytest.MonkeyPatch) -> None:
-    from codex_plugin_scanner.guard.mdm import network_transport
+    from codex_plugin_scanner.guard.mdm import network_transport, network_trust
 
     policy = SimpleNamespace(allow_public_registries=True)
     monkeypatch.setattr(network_transport, "resolved_network_policy", lambda _policy: (policy, False))
@@ -107,6 +107,9 @@ def _trust(monkeypatch: pytest.MonkeyPatch) -> None:
         network_transport,
         "managed_ssl_context",
         lambda _policy: SimpleNamespace(get_ca_certs=lambda **_kw: [b"synthetic public trust root"]),
+    )
+    monkeypatch.setattr(
+        network_trust, "export_managed_trust_roots", lambda context: context.get_ca_certs(binary_form=True)
     )
 
 

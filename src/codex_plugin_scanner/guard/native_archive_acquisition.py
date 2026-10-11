@@ -145,6 +145,7 @@ def download_restricted_archive(
     temp_dir: Path | None = None,
 ) -> RestrictedArchiveDownloadResult:
     from .mdm.network_transport import managed_ssl_context, resolved_network_policy
+    from .mdm.network_trust import export_managed_trust_roots
 
     unavailable = RestrictedArchiveFailure(
         "native_archive_acquisition_unavailable", "Native archive acquisition is unavailable."
@@ -155,7 +156,7 @@ def download_restricted_archive(
         policy, _managed = resolved_network_policy(None)
         # Trust selection stays in the existing platform/managed service.
         # The native TLS implementation verifies the chain and hostname.
-        roots = managed_ssl_context(policy).get_ca_certs(binary_form=True)
+        roots = export_managed_trust_roots(managed_ssl_context(policy))
         # This is transport lifetime management, not a blob verdict. Removing
         # the parent on failure prevents a late resident from publishing a file.
         spool = tempfile.TemporaryDirectory(prefix="hol-guard-acquisition-", dir=temp_dir)

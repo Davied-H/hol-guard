@@ -91,6 +91,12 @@ impl DnsResolver for PublicDns {
 
 struct TestRouting(ManagedUreqPinnedTransport);
 impl PinnedHttpsTransport for TestRouting {
+    fn validate_destination(
+        &self,
+        destination: &CanonicalDestination,
+    ) -> Result<(), RestrictedDownloadError> {
+        self.0.validate_destination(destination)
+    }
     fn open_pinned_https_response(
         &self,
         destination: &CanonicalDestination,
@@ -117,7 +123,10 @@ fn managed_https_redirects_preserve_signed_query_and_request_headers() {
         1.0,
         None,
         &PublicDns,
-        &TestRouting(ManagedUreqPinnedTransport { roots: vec![root] }),
+        &TestRouting(ManagedUreqPinnedTransport {
+            roots: vec![root],
+            allow_public_registries: true,
+        }),
     );
     let requests = server.join().unwrap();
     let download = match result {
@@ -152,7 +161,11 @@ fn trusted_certificate_for_another_hostname_is_refused_before_http() {
         "https://packages.example.com:{port}/archive.tgz"
     ))
     .unwrap();
-    let result = ManagedUreqPinnedTransport { roots: vec![root] }.open_pinned_https_response(
+    let result = ManagedUreqPinnedTransport {
+        roots: vec![root],
+        allow_public_registries: true,
+    }
+    .open_pinned_https_response(
         &destination,
         "127.0.0.1",
         Instant::now() + Duration::from_secs(1),
@@ -177,6 +190,7 @@ fn untrusted_certificate_is_refused_before_http() {
     ))
     .unwrap();
     let result = ManagedUreqPinnedTransport {
+        allow_public_registries: true,
         roots: vec![other.cert.der().to_vec()],
     }
     .open_pinned_https_response(
@@ -206,7 +220,10 @@ fn real_https_unknown_length_body_is_bounded() {
         1.0,
         None,
         &PublicDns,
-        &TestRouting(ManagedUreqPinnedTransport { roots: vec![root] }),
+        &TestRouting(ManagedUreqPinnedTransport {
+            roots: vec![root],
+            allow_public_registries: true,
+        }),
     );
     server.join().unwrap();
     let error = match result {
@@ -237,7 +254,10 @@ fn real_https_headers_and_body_share_one_absolute_deadline() {
             0.075,
             None,
             &PublicDns,
-            &TestRouting(ManagedUreqPinnedTransport { roots: vec![root] }),
+            &TestRouting(ManagedUreqPinnedTransport {
+                roots: vec![root],
+                allow_public_registries: true,
+            }),
         );
         assert!(start.elapsed() < Duration::from_millis(500));
         server.join().unwrap();
@@ -253,4 +273,37 @@ fn real_https_headers_and_body_share_one_absolute_deadline() {
             "body_delay={body_delay}"
         );
     }
+}
+
+#[test]
+fn managed_registry_redirect_is_refused_before_second_dns_or_tls() {
+    struct CountingDns(std::sync::atomic::AtomicUsize);
+    impl DnsResolver for CountingDns {
+        fn getaddrinfo(&self, _: &str) -> Result<Option<Vec<String>>, String> {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(Some(vec!["8.8.8.8".into()]))
+        }
+    }
+    let dns = CountingDns(std::sync::atomic::AtomicUsize::new(0));
+    let (port, root, server) = server("packages.example.com", vec![
+        b"HTTP/1.1 302 Found\r\nLocation: https://files.pythonhosted.org/a.tgz\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec(),
+    ]);
+    let result = download_restricted_archive(
+        &format!("https://packages.example.com:{port}/a.tgz"),
+        16,
+        4,
+        1.0,
+        None,
+        &dns,
+        &TestRouting(ManagedUreqPinnedTransport {
+            roots: vec![root],
+            allow_public_registries: false,
+        }),
+    );
+    assert!(
+        matches!(result, RestrictedArchiveDownloadResult::Failure(error)
+        if error.code == "managed_public_registry_disabled")
+    );
+    assert_eq!(server.join().unwrap().len(), 1);
+    assert_eq!(dns.0.load(std::sync::atomic::Ordering::SeqCst), 1);
 }

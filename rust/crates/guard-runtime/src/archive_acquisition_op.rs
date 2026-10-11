@@ -3,7 +3,9 @@
 use guard_command::restricted_archive::{
     canonical_destination, download_restricted_archive, RestrictedArchiveDownloadResult,
 };
-use guard_command::restricted_archive_transport::{ManagedUreqPinnedTransport, SystemDnsResolver};
+use guard_command::restricted_archive_transport::{
+    validate_managed_destination, ManagedUreqPinnedTransport, SystemDnsResolver,
+};
 use guard_contracts::*;
 use serde_json::{json, Value};
 use std::path::Path;
@@ -106,11 +108,8 @@ fn evaluate(request: &ArchiveAcquisitionRequestV1) -> Result<Value, &'static str
     }
     if !query.allow_public_registries {
         if let Ok(destination) = canonical_destination(&query.source_url) {
-            if PUBLIC_REGISTRIES.contains(&destination.hostname.as_str()) {
-                return Ok(failure(
-                    "managed_public_registry_disabled",
-                    "Managed network policy refused",
-                ));
+            if let Err(error) = validate_managed_destination(&destination, false) {
+                return Ok(failure(&error.code, &error.message));
             }
         }
     }
@@ -148,7 +147,10 @@ fn evaluate(request: &ArchiveAcquisitionRequestV1) -> Result<Value, &'static str
         timeout_ms as f64 / 1000.0,
         query.temp_dir.as_deref().map(Path::new),
         &SystemDnsResolver,
-        &ManagedUreqPinnedTransport { roots },
+        &ManagedUreqPinnedTransport {
+            roots,
+            allow_public_registries: query.allow_public_registries,
+        },
     );
     Ok(match result {
         RestrictedArchiveDownloadResult::Failure(error) => failure(&error.code, &error.message),
@@ -162,21 +164,6 @@ fn evaluate(request: &ArchiveAcquisitionRequestV1) -> Result<Value, &'static str
 fn failure(code: &str, message: &str) -> Value {
     json!({"kind": "failure", "code": code, "message": message})
 }
-
-const PUBLIC_REGISTRIES: &[&str] = &[
-    "pypi.org",
-    "files.pythonhosted.org",
-    "registry.npmjs.org",
-    "api.npmjs.org",
-    "registry.yarnpkg.com",
-    "crates.io",
-    "static.crates.io",
-    "rubygems.org",
-    "repo1.maven.org",
-    "repo.maven.apache.org",
-    "proxy.golang.org",
-    "goproxy.io",
-];
 
 #[cfg(test)]
 mod tests {

@@ -116,7 +116,10 @@ fn cleartext_peer_cannot_satisfy_https() {
 
 #[test]
 fn empty_managed_trust_fails_before_connection() {
-    let transport = ManagedUreqPinnedTransport { roots: Vec::new() };
+    let transport = ManagedUreqPinnedTransport {
+        roots: Vec::new(),
+        allow_public_registries: true,
+    };
     let destination = crate::restricted_archive::canonical_destination(
         "https://packages.example.com/archive.tgz",
     )

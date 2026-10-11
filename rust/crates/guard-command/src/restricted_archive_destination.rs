@@ -293,5 +293,7 @@ pub fn is_external_https_archive_source(source_url: &str) -> bool {
     }
     let (_, netloc, _, _) = urlsplit(normalized);
     let (_, host, _) = split_netloc(&netloc);
-    !host.trim_end_matches('.').eq_ignore_ascii_case("registry.npmjs.org")
+    !host
+        .trim_end_matches('.')
+        .eq_ignore_ascii_case("registry.npmjs.org")
 }

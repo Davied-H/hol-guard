@@ -189,6 +189,13 @@ impl Drop for DnsResolverSlot {
 /// plumbing behind [`ReadableResponse`]; this seam opens one pinned
 /// connection to a pre-validated public address.
 pub trait PinnedHttpsTransport: Send + Sync {
+    /// Enforce managed destination policy on every hop, before DNS or sockets.
+    fn validate_destination(
+        &self,
+        _destination: &CanonicalDestination,
+    ) -> Result<(), RestrictedDownloadError> {
+        Ok(())
+    }
     /// `_open_pinned_https_response(destination, address, deadline=deadline)`.
     /// Implementations MUST verify the connected peer equals `address`
     /// (`external_archive_dns_rebinding` otherwise), wrap TLS with
@@ -374,6 +381,7 @@ pub fn download_restricted_archive(
     let outcome = (|| -> Result<RestrictedArchiveDownload, RestrictedDownloadError> {
         for redirect_count in 0..=max_redirects {
             let destination = canonical_destination(&current_url)?;
+            transport.validate_destination(&destination)?;
             let addresses = resolve_public_addresses(&destination, resolver, deadline)?;
             response = Some(open_destination(
                 &destination,

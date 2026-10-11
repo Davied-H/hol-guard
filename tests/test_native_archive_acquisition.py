@@ -19,7 +19,7 @@ from codex_plugin_scanner.guard.runtime.restricted_archive_download import (
 def test_public_archive_caller_uses_owner_bound_resident(
     native_hook_force: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from codex_plugin_scanner.guard.mdm import network_transport
+    from codex_plugin_scanner.guard.mdm import network_transport, network_trust
 
     home = tmp_path / "guard-home"
     home.mkdir(mode=0o700)
@@ -35,6 +35,9 @@ def test_public_archive_caller_uses_owner_bound_resident(
         network_transport,
         "managed_ssl_context",
         lambda _policy: SimpleNamespace(get_ca_certs=lambda **_kw: [b"synthetic root"]),
+    )
+    monkeypatch.setattr(
+        network_trust, "export_managed_trust_roots", lambda context: context.get_ca_certs(binary_form=True)
     )
     try:
         with bound_context_digest_home(home):

@@ -231,15 +231,23 @@ pub struct UreqPinnedTransport;
 /// Trust material selected by the existing platform/managed policy service.
 pub struct ManagedUreqPinnedTransport {
     pub roots: Vec<Vec<u8>>,
+    pub allow_public_registries: bool,
 }
 
 impl PinnedHttpsTransport for ManagedUreqPinnedTransport {
+    fn validate_destination(
+        &self,
+        destination: &CanonicalDestination,
+    ) -> Result<(), RestrictedDownloadError> {
+        validate_managed_destination(destination, self.allow_public_registries)
+    }
     fn open_pinned_https_response(
         &self,
         destination: &CanonicalDestination,
         address: &str,
         deadline: Instant,
     ) -> Result<Box<dyn ReadableResponse>, RestrictedDownloadError> {
+        self.validate_destination(destination)?;
         if self.roots.is_empty() {
             return Err(RestrictedDownloadError::new(
                 "external_archive_tls_error",
@@ -259,6 +267,35 @@ impl PinnedHttpsTransport for ManagedUreqPinnedTransport {
         )
     }
 }
+
+/// Share the managed registry refusal across initial URLs and redirected hops.
+pub fn validate_managed_destination(
+    destination: &CanonicalDestination,
+    allow_public_registries: bool,
+) -> Result<(), RestrictedDownloadError> {
+    if !allow_public_registries && PUBLIC_REGISTRIES.contains(&destination.hostname.as_str()) {
+        return Err(RestrictedDownloadError::new(
+            "managed_public_registry_disabled",
+            "Managed network policy refused",
+        ));
+    }
+    Ok(())
+}
+
+const PUBLIC_REGISTRIES: &[&str] = &[
+    "pypi.org",
+    "files.pythonhosted.org",
+    "registry.npmjs.org",
+    "api.npmjs.org",
+    "registry.yarnpkg.com",
+    "crates.io",
+    "static.crates.io",
+    "rubygems.org",
+    "repo1.maven.org",
+    "repo.maven.apache.org",
+    "proxy.golang.org",
+    "goproxy.io",
+];
 
 impl PinnedHttpsTransport for UreqPinnedTransport {
     fn open_pinned_https_response(
