@@ -173,42 +173,69 @@ def provision_native_policy_verifier_key(
     # link it into place; link never replaces an existing key.
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
     temporary = state_dir / f"{NATIVE_POLICY_VERIFIER_KEY_NAME}.{os.getpid()}.{secrets.token_hex(8)}.tmp"
+    linked = False
     try:
-        descriptor = os.open(temporary, flags, 0o600)
-    except OSError as error:
-        raise NativePolicySnapshotError("native_policy_verifier_key_write_failed") from error
-    try:
-        try:
-            written = 0
-            while written < len(derived):
-                written += os.write(descriptor, derived[written:])
-            os.fsync(descriptor)
-        except OSError as error:
-            raise NativePolicySnapshotError("native_policy_verifier_key_write_failed") from error
-        finally:
-            os.close(descriptor)
+        _write_private_key_file(temporary, derived, flags)
         try:
             os.link(temporary, path)
+            linked = True
         except FileExistsError:
             # Another process won the race. Re-enter the validation path without
-            # replacing or weakening its key.
-            return provision_native_policy_verifier_key(guard_home, policy_integrity_key)
-        except OSError as error:
-            raise NativePolicySnapshotError("native_policy_verifier_key_write_failed") from error
+            # replacing or weakening its key, and make the winner's directory
+            # entry durable before reporting success.
+            existing = provision_native_policy_verifier_key(guard_home, policy_integrity_key)
+            _sync_directory(state_dir)
+            return existing
+        except OSError:
+            # The state directory does not support hard links. Fall back to an
+            # exclusive create of the final path, which never replaces a key.
+            pass
     finally:
         with suppress(OSError):
             temporary.unlink()
+    if not linked:
+        try:
+            _write_private_key_file(path, derived, flags)
+        except FileExistsError:
+            return provision_native_policy_verifier_key(guard_home, policy_integrity_key)
     if os.name != "nt":
         try:
             path.chmod(0o600)
-            directory_descriptor = os.open(
-                state_dir,
-                os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0),
-            )
-            try:
-                os.fsync(directory_descriptor)
-            finally:
-                os.close(directory_descriptor)
         except OSError as error:
             raise NativePolicySnapshotError("native_policy_verifier_key_sync_failed") from error
+        _sync_directory(state_dir)
     return path
+
+
+def _write_private_key_file(target: Path, derived: bytes, flags: int) -> None:
+    """Create ``target`` exclusively, write the whole key, and sync it."""
+
+    try:
+        descriptor = os.open(target, flags, 0o600)
+    except FileExistsError:
+        raise
+    except OSError as error:
+        raise NativePolicySnapshotError("native_policy_verifier_key_write_failed") from error
+    try:
+        written = 0
+        while written < len(derived):
+            written += os.write(descriptor, derived[written:])
+        os.fsync(descriptor)
+    except OSError as error:
+        raise NativePolicySnapshotError("native_policy_verifier_key_write_failed") from error
+    finally:
+        os.close(descriptor)
+
+
+def _sync_directory(state_dir: Path) -> None:
+    try:
+        directory_descriptor = os.open(
+            state_dir,
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0),
+        )
+        try:
+            os.fsync(directory_descriptor)
+        finally:
+            os.close(directory_descriptor)
+    except OSError as error:
+        raise NativePolicySnapshotError("native_policy_verifier_key_sync_failed") from error

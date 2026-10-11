@@ -54,3 +54,19 @@ def test_existing_key_is_never_replaced(tmp_path: Path) -> None:
         provision_native_policy_verifier_key(guard_home, b"b" * 32)
     assert key_path.read_bytes() == original
     assert os.stat(key_path).st_nlink == 1
+
+
+def test_filesystem_without_hard_links_falls_back_to_exclusive_create(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def refuse_link(source: object, target: object) -> None:
+        raise PermissionError("hard links unsupported")
+
+    monkeypatch.setattr(os, "link", refuse_link)
+    guard_home = tmp_path / "guard-home"
+    guard_home.mkdir(mode=0o700)
+    master = b"n" * 32
+    key_path = provision_native_policy_verifier_key(guard_home, master)
+    assert key_path.read_bytes() == derive_native_policy_verifier_key(master)
+    assert [entry.name for entry in key_path.parent.iterdir() if entry.name.endswith(".tmp")] == []
+    assert provision_native_policy_verifier_key(guard_home, master) == key_path
