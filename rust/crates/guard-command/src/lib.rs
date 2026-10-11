@@ -142,8 +142,13 @@ mod sfrs_agent_guidance;
 mod sfrs_benign_reads;
 mod sfrs_constants;
 mod sfrs_docker_args;
+#[cfg(test)]
+mod sfrs_docker_vectors;
+mod sfrs_interpreter_scripts;
+mod sfrs_jq;
 mod sfrs_json;
 mod sfrs_patterns;
+mod sfrs_python_imports;
 mod sfrs_quote_tokens;
 mod sfrs_read_only_filters;
 pub mod sfrs_replay;
@@ -154,8 +159,12 @@ mod sfrs_search_filters;
 mod sfrs_selectors;
 mod sfrs_shell_tokens;
 mod sfrs_shlex;
+mod sfrs_static_safety;
+#[cfg(test)]
+mod sfrs_static_vectors;
 #[cfg(test)]
 mod sfrs_token_vectors;
+mod sfrs_tool_request;
 mod shell_command_wrappers;
 pub mod shell_execution_context;
 mod shell_execution_context_support;
@@ -499,6 +508,8 @@ pub mod command_operation_classification;
 pub mod composition_rules;
 #[cfg(unix)]
 pub mod contained_execution;
+#[cfg(unix)]
+pub mod contained_runner;
 pub mod data_flow_rules;
 pub mod decisions;
 pub mod detectors;
@@ -541,7 +552,12 @@ pub mod mcp_stdio_session;
 pub mod pep440;
 pub mod registry_metadata_transport;
 pub mod restricted_archive;
+mod restricted_archive_address;
+mod restricted_archive_destination;
+mod restricted_archive_peer;
+mod restricted_archive_stream;
 pub mod restricted_archive_transport;
+mod restricted_archive_write;
 #[cfg(unix)]
 pub mod restricted_pytest;
 pub mod resume_template;

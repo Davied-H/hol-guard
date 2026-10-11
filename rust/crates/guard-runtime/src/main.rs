@@ -20,6 +20,7 @@ mod approval_reuse_diagnostic_vectors_tests;
 mod approval_scope_contract;
 mod approval_scope_material;
 mod approval_scope_op;
+mod archive_acquisition_op;
 mod archive_inspect;
 mod archive_inspect_containment;
 mod archive_verdict_seam;
@@ -68,6 +69,8 @@ mod compound_git_inspection_op_tests;
 mod compound_git_inspection_vectors_tests;
 mod compound_git_paths;
 mod compound_git_segments;
+mod consumer_artifact_compose_op;
+mod consumer_artifact_compose_runtime;
 #[cfg(unix)]
 mod contained_op;
 mod context_digest;
