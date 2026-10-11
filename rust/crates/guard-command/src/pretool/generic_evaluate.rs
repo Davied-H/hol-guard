@@ -18,10 +18,14 @@ pub(super) fn evaluate_signals(
         signals.tool_name.as_deref(),
         signals,
     );
+    // A command the Rust authority proved explicitly benign (a lone version
+    // query, say) keeps its command decision even when it names a package tool.
     if action_type == PreToolActionTypeV1::Command
         && command_decision
             .and_then(|decision| decision.as_ref().ok())
-            .is_some_and(|decision| package_command(&decision.command_model))
+            .is_some_and(|decision| {
+                !decision.explicitly_benign && package_command(&decision.command_model)
+            })
     {
         action_type = PreToolActionTypeV1::Package;
         operation = PreToolOperationV1::Install;
@@ -260,11 +264,21 @@ pub(super) fn evaluate_signals(
         && !signals.sensitive_target
         && signals.url_values.is_empty()
         && signals.path_values.len() == 1
-        && super::super::safe_reads::bounded_file_read_target(
-            &signals.path_values[0],
-            home_dir,
-            cwd,
-        )
+        && if matches!(signals.tool_name.as_deref(), Some("Read" | "read")) {
+            // Only the host `Read` tools open their path literally, so a
+            // `[slug]` directory is a name. Any other tool may glob-expand.
+            super::super::safe_reads::bounded_structured_file_read_target(
+                &signals.path_values[0],
+                home_dir,
+                cwd,
+            )
+        } else {
+            super::super::safe_reads::bounded_file_read_target(
+                &signals.path_values[0],
+                home_dir,
+                cwd,
+            )
+        }
     {
         return generic_result(
             action,
