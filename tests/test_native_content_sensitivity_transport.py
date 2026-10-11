@@ -91,3 +91,55 @@ def test_expired_sensitivity_deadline_never_opens_a_client(monkeypatch):
     with pytest.raises(client.NativeContentSensitivityError):
         client.content_query("content_version", {}, deadline_monotonic=0.0)
     assert not calls
+
+
+def test_sensitivity_outage_obeys_existing_value_error_rejection_contract(monkeypatch):
+    _resident(monkeypatch, "missing")
+    with pytest.raises(ValueError):
+        client.content_query("content_version", {})
+
+
+def test_harness_presentation_is_available_without_native_runtime(monkeypatch):
+    from codex_plugin_scanner.guard.runtime import structured_output_mediation as mediation
+
+    def unavailable(*args, **kwargs):
+        raise client.NativeContentSensitivityError("offline")
+
+    monkeypatch.setattr(mediation, "content_query", unavailable)
+    assert mediation.canonical_harness_name(" Pi_Coding_Agent ") == "pi"
+    assert mediation.canonical_harness_name("oh-my-pi") == "omp"
+
+
+def test_path_batch_requires_exact_result_count(monkeypatch):
+    from codex_plugin_scanner.guard.runtime import secret_sensitivity as sensitivity
+
+    monkeypatch.setattr(sensitivity, "content_query", lambda *args, **kwargs: [None])
+    with pytest.raises(client.NativeContentSensitivityError):
+        sensitivity.classify_secret_paths_batch(["ordinary.txt", ".env"])
+
+
+def test_path_batch_presents_each_native_dto_in_order(monkeypatch):
+    from codex_plugin_scanner.guard.runtime import secret_sensitivity as sensitivity
+
+    calls = []
+
+    def native(query, body, **kwargs):
+        calls.append((query, body, kwargs))
+        return [
+            None,
+            {
+                "family": "local .env file",
+                "path": ".env",
+                "sensitivity": "critical",
+                "reason": "native fixture",
+                "requested_path": ".env",
+            },
+        ]
+
+    monkeypatch.setattr(sensitivity, "content_query", native)
+    result = sensitivity.classify_secret_paths_batch(["ordinary.txt", ".env"], deadline_monotonic=42)
+    assert result[0] is None
+    assert result[1].family == "local .env file"
+    assert len(calls) == 1
+    assert calls[0][0] == "path_batch"
+    assert calls[0][2] == {"deadline_monotonic": 42}

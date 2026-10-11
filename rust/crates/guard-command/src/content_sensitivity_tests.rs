@@ -56,3 +56,40 @@ fn schema_order_duplicates_numeric_types_and_unknown_claims_fail_closed() {
         assert_eq!(result["ok"]["reason_code"], reason);
     }
 }
+
+#[test]
+fn batched_paths_replay_original_python_outcomes_in_order() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../../tests/fixtures/content_sensitivity_parity.json"
+    ))
+    .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    for vector in fixture["vectors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|vector| vector["query"] == "path" && vector["body"]["path"].is_string())
+    {
+        let body = &vector["body"];
+        let actual = super::evaluate(
+            "path_batch",
+            &json!({
+                "paths":[body["path"],body["path"]],"cwd":body["cwd"],"home_dir":body["home_dir"]
+            }),
+            deadline,
+        )
+        .unwrap();
+        assert_eq!(
+            actual["ok"],
+            json!([vector["expected"]["ok"], vector["expected"]["ok"]])
+        );
+    }
+    assert!(super::evaluate(
+        "path_batch",
+        &json!({
+            "paths":vec!["ordinary.txt";129],"cwd":null,"home_dir":null
+        }),
+        deadline
+    )
+    .is_err());
+}

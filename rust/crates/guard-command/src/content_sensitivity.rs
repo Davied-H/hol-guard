@@ -25,6 +25,26 @@ pub fn evaluate(query: &str, body: &Value, deadline: Instant) -> Result<Value, &
         return Err("content_scan_deadline_exceeded");
     }
     let result = match query {
+        "path_batch" => {
+            keys(body, &["paths", "cwd", "home_dir"])?;
+            let paths = body["paths"].as_array().ok_or("content_input_invalid")?;
+            if paths.len() > 128 {
+                return Err("content_input_invalid");
+            }
+            let mut results = Vec::with_capacity(paths.len());
+            for path in paths {
+                if !path.is_string() || Instant::now() >= deadline {
+                    return Err("content_input_invalid");
+                }
+                let item = evaluate(
+                    "path",
+                    &json!({"path":path,"cwd":body["cwd"],"home_dir":body["home_dir"]}),
+                    deadline,
+                )?;
+                results.push(item["ok"].clone());
+            }
+            Value::Array(results)
+        }
         "path" => {
             keys(body, &["path", "cwd", "home_dir"])?;
             let path = body["path"].as_str();

@@ -76,7 +76,10 @@ def parse_structured_output_policy(value: object) -> StructuredOutputPolicy:
 
 
 def canonical_harness_name(value: str) -> str:
-    return content_query("harness", {"value": value})
+    # This public spelling helper is presentation, not a policy decision.
+    # The native operation independently normalizes and checks its binding.
+    normalized = value.strip().lower().replace("_", "-")
+    return {"pi-agent": "pi", "pi-coding-agent": "pi", "oh-my-pi": "omp"}.get(normalized, normalized)
 
 
 def _config_wire(config: object) -> dict[str, Any]:

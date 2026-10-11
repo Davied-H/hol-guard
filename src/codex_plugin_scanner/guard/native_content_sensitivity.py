@@ -18,7 +18,7 @@ from .strict_json_pairs import unique_json_object
 _RESULT_SCHEMA = "guard-request-context-result.v1"
 
 
-class NativeContentSensitivityError(RuntimeError):
+class NativeContentSensitivityError(RuntimeError, ValueError):
     """Missing, expired or unbound native authority; callers must fail closed."""
 
 
@@ -155,6 +155,8 @@ def _dto_shape(query: str, value: Any) -> bool:
             )
             and value["sensitivity"] in {"high", "critical"}
         )
+    if query == "path_batch":
+        return isinstance(value, list) and len(value) <= 128 and all(_dto_shape("path", item) for item in value)
     if query == "legacy":
         return isinstance(value, list) and len(value) <= 9 and all(isinstance(item, str) for item in value)
     if query == "content":
