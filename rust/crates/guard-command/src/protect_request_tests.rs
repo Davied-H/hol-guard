@@ -32,6 +32,15 @@ fn parity_vectors_match_the_recorded_python_outputs() {
     let mut mismatches = Vec::new();
     for vector in &vectors {
         let command = strings(&vector["command"]);
+        // The vectors were recorded on POSIX, where a backslash is not a path
+        // separator. Windows strips the directory, so those executables differ.
+        if cfg!(windows)
+            && command
+                .first()
+                .is_some_and(|program| program.contains('\\'))
+        {
+            continue;
+        }
         let advisories = vector["advisories"].as_array().unwrap();
         let actual = match parse_protect_command(&command) {
             Ok(request) => {

@@ -1,12 +1,16 @@
 """Record parity vectors for the native protect request op from ``protect.py``.
 
-Run from the repository root against the Python implementation the op
-replaces; writes ``rust/crates/guard-command/tests/fixtures/protect_request_vectors.json.gz``.
+Run from the repository root of a checkout that still has the Python
+implementation the op replaces, where ``evaluate_protect_request`` takes the
+cached advisory rows instead of a store. Writes
+``rust/crates/guard-command/tests/fixtures/protect_request_vectors.json.gz``.
+The script refuses to run against the native client.
 """
 
 from __future__ import annotations
 
 import gzip
+import inspect
 import itertools
 import json
 import sys
@@ -213,18 +217,28 @@ def _record(name: str, command: list[str], advisories: list[dict[str, object]]) 
         vector["error"] = f"invalid_url:{error}"
         return vector
     verdict = evaluate_protect_request(request, advisories)
-    positions = {id(advisory): index for index, advisory in enumerate(advisories)}
+    positions = {str(advisory["cache_key"]): index for index, advisory in enumerate(advisories)}
     vector["request"] = request.to_dict()
     vector["verdict"] = {
         "action": verdict.action,
         "reason": verdict.reason,
         "risk_signals": list(verdict.risk_signals),
-        "matched": [positions[id(item)] for item in verdict.matched_advisories],
+        "matched": [positions[str(item["cache_key"])] for item in verdict.matched_advisories],
     }
     return vector
 
 
+def _require_reference_implementation() -> None:
+    parameters = list(inspect.signature(evaluate_protect_request).parameters)
+    if parameters[1:2] != ["advisories"]:
+        raise SystemExit(
+            "protect.py no longer has the Python reference implementation; "
+            "run this script from a checkout that predates the native protect request op"
+        )
+
+
 def main() -> int:
+    _require_reference_implementation()
     vectors: list[dict[str, object]] = []
     commands = PACKAGE_COMMANDS + REGISTRATION_COMMANDS + CUSTOM_COMMANDS + INVALID_URL_COMMANDS
     for (index, command), (set_index, advisories) in itertools.product(enumerate(commands), enumerate(ADVISORY_SETS)):

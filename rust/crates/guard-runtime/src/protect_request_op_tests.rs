@@ -217,6 +217,29 @@ fn a_non_finite_critical_advisory_still_blocks() {
 }
 
 #[test]
+fn matches_over_the_response_budget_fail_closed() {
+    let workspace = Workspace::new("oversize-matches");
+    let headline = "x".repeat(400 * 1024);
+    let payloads: Vec<String> = (0..3)
+        .map(|_| {
+            format!(r#"{{"artifact_id":"install:npm:lodash","severity":"critical","headline":"{headline}"}}"#)
+        })
+        .collect();
+    workspace.write_cache(&[
+        ("a", &payloads[0], "2026-10-01"),
+        ("b", &payloads[1], "2026-10-02"),
+        ("c", &payloads[2], "2026-10-03"),
+    ]);
+    let result = run(&request(
+        &workspace,
+        Some(workspace.store()),
+        &["npm", "install", "lodash"],
+    ));
+    assert_eq!(result.code, "native_protect_request_matches_too_large");
+    assert!(result.verdict.is_none());
+}
+
+#[test]
 fn an_unparseable_cache_row_fails_closed() {
     let workspace = Workspace::new("corrupt");
     workspace.write_cache(&[("bad", "{not json", "2026-10-01")]);

@@ -20,6 +20,11 @@ use serde_json::{Map, Value};
 
 const STORE_UNAVAILABLE: &str = "native_protect_request_store_unavailable";
 const CACHE_INVALID: &str = "native_protect_request_cache_invalid";
+const MATCHES_TOO_LARGE: &str = "native_protect_request_matches_too_large";
+/// Encoded size budget for the matched cache rows, half the resident's 2 MiB
+/// response limit. Larger matches fail closed with a typed error instead of
+/// an unencodable response.
+const MATCHED_ADVISORIES_MAX_BYTES: usize = 1024 * 1024;
 /// Bound on rewriting one out-of-range number per cached payload.
 const OUT_OF_RANGE_REWRITES: u8 = 8;
 
@@ -90,17 +95,24 @@ fn evaluate(
     };
     let advisories: Vec<Value> = rows.iter().map(|(_, advisory)| advisory.clone()).collect();
     let verdict = evaluate_protect_request(&parsed, &advisories);
+    let matched_advisories: Vec<ProtectCachedAdvisoryV1> = verdict
+        .matched
+        .iter()
+        .map(|index| rows[*index].0.clone())
+        .collect();
+    let encoded_len = serde_json::to_vec(&matched_advisories)
+        .map_err(|_| Failure::from(CACHE_INVALID))?
+        .len();
+    if encoded_len > MATCHED_ADVISORIES_MAX_BYTES {
+        return Err(MATCHES_TOO_LARGE.into());
+    }
     Ok((
         parsed_request(&parsed),
         ProtectVerdictV1 {
             action: verdict.action.to_owned(),
             reason: verdict.reason,
             risk_signals: verdict.risk_signals,
-            matched_advisories: verdict
-                .matched
-                .iter()
-                .map(|index| rows[*index].0.clone())
-                .collect(),
+            matched_advisories,
         },
     ))
 }

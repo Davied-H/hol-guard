@@ -7,7 +7,7 @@ import os
 import shlex
 import subprocess
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
@@ -41,18 +41,7 @@ class ProtectTarget:
     harness: str | None
 
     def to_dict(self) -> dict[str, object]:
-        return {
-            "artifact_id": self.artifact_id,
-            "artifact_name": self.artifact_name,
-            "artifact_type": self.artifact_type,
-            "ecosystem": self.ecosystem,
-            "package_name": self.package_name,
-            "package_url": self.package_url,
-            "raw_spec": self.raw_spec,
-            "version": self.version,
-            "source_url": self.source_url,
-            "harness": self.harness,
-        }
+        return asdict(self)
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,14 +56,8 @@ class ProtectRequest:
     targets: tuple[ProtectTarget, ...]
 
     def to_dict(self) -> dict[str, object]:
-        return {
-            "command": list(self.command),
-            "install_kind": self.install_kind,
-            "executor": self.executor,
-            "package_manager": self.package_manager,
-            "harness": self.harness,
-            "targets": [target.to_dict() for target in self.targets],
-        }
+        payload = asdict(self)
+        return {**payload, "command": list(self.command), "targets": list(payload["targets"])}
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,11 +74,11 @@ class ProtectVerdict:
         return self.action != "allow"
 
     def to_dict(self) -> dict[str, object]:
+        payload = asdict(self)
         return {
-            "action": self.action,
-            "reason": self.reason,
+            **payload,
             "risk_signals": list(self.risk_signals),
-            "matched_advisories": list(self.matched_advisories),
+            "matched_advisories": list(payload["matched_advisories"]),
             "blocking": self.blocking,
         }
 
