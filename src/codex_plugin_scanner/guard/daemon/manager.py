@@ -2303,190 +2303,8 @@ def _set_windows_private_directory(path: Path) -> None:
         return
 
 
-def _schedule_stale_ephemeral_guard_daemon_reap(*, exclude_guard_home: Path | None = None) -> None:
-    with _EPHEMERAL_REAP_SCHEDULE_LOCK:
-        if globals().get("_EPHEMERAL_REAP_IN_FLIGHT") is True:
-            return
-        now = time.monotonic()
-        last_reap_at = globals().get("_LAST_EPHEMERAL_REAP_AT", 0.0)
-        if not isinstance(last_reap_at, (int, float)):
-            last_reap_at = 0.0
-        if now - float(last_reap_at) < _EPHEMERAL_GUARD_DAEMON_REAP_INTERVAL_SECONDS:
-            return
-        previous_reap_at = float(last_reap_at)
-        globals()["_EPHEMERAL_REAP_IN_FLIGHT"] = True
-        globals()["_LAST_EPHEMERAL_REAP_AT"] = now
-
-    reaper = _reap_stale_ephemeral_guard_daemons
-
-    def reap() -> None:
-        try:
-            reaper(
-                exclude_guard_home=exclude_guard_home,
-                force=True,
-            )
-        except Exception:
-            # A later interval can retry this best-effort cleanup.
-            pass
-        finally:
-            with _EPHEMERAL_REAP_SCHEDULE_LOCK:
-                globals()["_EPHEMERAL_REAP_IN_FLIGHT"] = False
-
-    thread = threading.Thread(
-        target=reap,
-        name="guard-daemon-stale-reaper",
-        daemon=True,
-    )
-    try:
-        thread.start()
-    except RuntimeError:
-        with _EPHEMERAL_REAP_SCHEDULE_LOCK:
-            globals()["_EPHEMERAL_REAP_IN_FLIGHT"] = False
-            globals()["_LAST_EPHEMERAL_REAP_AT"] = previous_reap_at
-
-
-def _reap_stale_ephemeral_guard_daemons(
-    *,
-    exclude_guard_home: Path | None = None,
-    force: bool = False,
-) -> None:
-    now = time.monotonic()
-    last_reap_at = globals().get("_LAST_EPHEMERAL_REAP_AT", 0.0)
-    if not isinstance(last_reap_at, (int, float)):
-        last_reap_at = 0.0
-    if not force and now - float(last_reap_at) < _EPHEMERAL_GUARD_DAEMON_REAP_INTERVAL_SECONDS:
-        return
-    if not force:
-        globals()["_LAST_EPHEMERAL_REAP_AT"] = now
-    temp_root = Path(tempfile.gettempdir())
-    candidate_paths = list(_ephemeral_guard_daemon_state_paths(temp_root))
-    exclude_resolved = exclude_guard_home.resolve() if exclude_guard_home is not None else None
-    for state_path in candidate_paths[:_EPHEMERAL_GUARD_DAEMON_MAX_STATES]:
-        try:
-            _reap_one_stale_ephemeral_state_file(state_path, exclude_resolved=exclude_resolved)
-        except Exception:
-            # A missing verdict leaves that home untouched and must not skip
-            # the process inventory, which still requires its own inactive verdict.
-            continue
-    for pid, guard_home, elapsed_seconds in _running_ephemeral_guard_daemon_processes():
-        if elapsed_seconds < _EPHEMERAL_GUARD_DAEMON_STALE_SECONDS:
-            continue
-        try:
-            resolved_guard_home = guard_home.resolve()
-        except OSError:
-            continue
-        if exclude_resolved is not None and resolved_guard_home == exclude_resolved:
-            continue
-        if not _ephemeral_guard_home_is_inactive(guard_home, fallback_age_seconds=elapsed_seconds):
-            continue
-        if _retire_guard_daemon_pid(pid, expected_guard_home=guard_home):
-            clear_guard_daemon_state(guard_home)
-
-
-def _reap_one_stale_ephemeral_state_file(state_path: Path, *, exclude_resolved: Path | None) -> None:
-    guard_home = state_path.parent
-    try:
-        resolved_guard_home = guard_home.resolve()
-    except OSError:
-        return
-    if exclude_resolved is not None and resolved_guard_home == exclude_resolved:
-        return
-    if not _guard_home_is_ephemeral(resolved_guard_home):
-        return
-    state_age_seconds = _state_path_age_seconds(state_path)
-    if state_age_seconds < _EPHEMERAL_GUARD_DAEMON_STALE_SECONDS:
-        return
-    payload = _load_state(guard_home)
-    if not _ephemeral_guard_home_is_inactive(
-        guard_home,
-        fallback_age_seconds=state_age_seconds,
-        state_payload=payload,
-    ):
-        return
-    if not isinstance(payload, dict) or not _looks_like_guard_daemon_state(payload, guard_home=guard_home):
-        return
-    pid = payload.get("pid")
-    if not isinstance(pid, int) or pid <= 0:
-        return
-    # Live daemons are handled by the single bounded process inventory below.
-    # Probing every stale state independently creates an unbounded process
-    # query fan-out when a temp root contains many prior test runs.
-    if not _guard_daemon_pid_is_running(pid):
-        clear_guard_daemon_state(guard_home)
-
-
-def _ephemeral_guard_daemon_state_paths(temp_root: Path) -> list[Path]:
-    results: list[Path] = []
-    for root in _pytest_temp_roots(temp_root):
-        _collect_daemon_state_paths(root, results, limit=_EPHEMERAL_GUARD_DAEMON_MAX_STATES)
-        if len(results) >= _EPHEMERAL_GUARD_DAEMON_MAX_STATES:
-            break
-    return sorted(results)
-
-
-def _pytest_temp_roots(temp_root: Path) -> list[Path]:
-    roots: list[Path] = []
-    try:
-        if _path_name_looks_like_pytest_temp_root(temp_root.name):
-            roots.append(temp_root)
-        with os.scandir(temp_root) as entries:
-            for entry in entries:
-                if not entry.is_dir(follow_symlinks=False):
-                    continue
-                if _path_name_looks_like_pytest_temp_root(entry.name):
-                    roots.append(Path(entry.path))
-    except OSError:
-        return []
-    return sorted(roots)
-
-
-def _path_name_looks_like_pytest_temp_root(name: str) -> bool:
-    return name.startswith("pytest-") or "pytest-of-" in name
-
-
-def _collect_daemon_state_paths(root: Path, results: list[Path], *, limit: int) -> None:
-    pending: list[Path] = [root]
-    while pending and len(results) < limit:
-        current = pending.pop()
-        try:
-            with os.scandir(current) as entries:
-                directories: list[Path] = []
-                files: list[Path] = []
-                for entry in entries:
-                    if entry.is_dir(follow_symlinks=False):
-                        directories.append(Path(entry.path))
-                    elif entry.is_file(follow_symlinks=False) and entry.name == "daemon-state.json":
-                        files.append(Path(entry.path))
-        except OSError:
-            continue
-        for path in sorted(files):
-            results.append(path)
-            if len(results) >= limit:
-                return
-        pending.extend(reversed(sorted(directories)))
-
-
-def _state_path_age_seconds(state_path: Path) -> float:
-    try:
-        return max(0.0, time.time() - state_path.stat().st_mtime)
-    except OSError:
-        return 0.0
-
-
 def _guard_home_is_ephemeral(guard_home: Path) -> bool:
     return bool(_lifecycle("ephemeral_home", {"guard_home": str(guard_home)})["ephemeral"])
-
-
-def _ephemeral_guard_home_is_inactive(
-    guard_home: Path,
-    *,
-    fallback_age_seconds: float,
-    state_payload: dict[str, object] | None = None,
-) -> bool:
-    payload = state_payload if isinstance(state_payload, dict) else _load_state(guard_home)
-    state = None if not isinstance(payload, dict) else {"pid": _native_int(payload.get("pid"))}
-    query = {"state": state, "fallback_age_seconds": float(fallback_age_seconds)}
-    return bool(_lifecycle("ephemeral_inactive", query, facts_home=guard_home)["inactive"])
 
 
 def _runtime_state_age_seconds(guard_home: Path) -> float | None:
@@ -2730,21 +2548,6 @@ def _bounded_process_query_stdout(
         return bytes(captured).decode("utf-8", errors="strict")
     except UnicodeDecodeError:
         return None
-
-
-def _running_ephemeral_guard_daemon_processes() -> list[tuple[int, Path, float]]:
-    if os.name == "nt":
-        return []
-    ps_path = _trusted_posix_ps_path()
-    if ps_path is None:
-        return []
-    output = _bounded_process_query_stdout([ps_path, "-axo", "pid=,etime=,command="])
-    if output is None:
-        return []
-    verdict = _lifecycle("ephemeral_processes", {"ps_output": output})
-    if "raises" in verdict:
-        raise ValueError("unparseable process elapsed time")
-    return [(int(pid), Path(home), float(elapsed)) for pid, home, elapsed in verdict["processes"]]
 
 
 def _guard_home_from_command(command: str) -> Path | None:
@@ -3455,3 +3258,19 @@ def _live_or_newer_daemon_url(guard_home: Path, *, executable: Path | None, pref
     from .runtime_peer import live_or_newer_daemon_url as resolve_live
 
     return resolve_live(guard_home, executable=executable, preferred_port=preferred_port, current_version=__version__)
+
+
+# Re-exported so ``manager`` stays the single patch surface; the janitor module
+# resolves every collaborator through ``manager`` at call time.
+from .manager_ephemeral_reap import (  # noqa: E402, F401
+    _collect_daemon_state_paths,
+    _ephemeral_guard_daemon_state_paths,
+    _ephemeral_guard_home_is_inactive,
+    _path_name_looks_like_pytest_temp_root,
+    _pytest_temp_roots,
+    _reap_one_stale_ephemeral_state_file,
+    _reap_stale_ephemeral_guard_daemons,
+    _running_ephemeral_guard_daemon_processes,
+    _schedule_stale_ephemeral_guard_daemon_reap,
+    _state_path_age_seconds,
+)
