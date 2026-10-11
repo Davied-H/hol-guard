@@ -41,6 +41,7 @@ from codex_plugin_scanner.guard import (
 if not hasattr(store_receipt_rollups, "canonical_receipt_rollup_action"):
     sys.exit("refusing to record: the original Python receipt implementation is gone")
 
+from receipts_mutator_scenarios import MUTATOR_SCENARIOS
 from receipts_read_scenarios import READ_SCENARIOS
 from receipts_scenario_support import NOW, QUEUE_LIMIT
 from receipts_write_scenarios import WRITE_SCENARIOS
@@ -239,7 +240,7 @@ def main(output: Path) -> None:
         "queue_limit": QUEUE_LIMIT,
         "order_by": TABLES,
         "schema_sql": schema,
-        "scenarios": [run_scenario(scenario) for scenario in [*WRITE_SCENARIOS, *READ_SCENARIOS]],
+        "scenarios": [run_scenario(scenario) for scenario in [*WRITE_SCENARIOS, *MUTATOR_SCENARIOS, *READ_SCENARIOS]],
     }
     output.write_text(json.dumps(document, indent=1, sort_keys=True) + "\n", encoding="utf-8")
 

@@ -17,7 +17,7 @@ use crate::guard_store_receipt_decision::{
     action_value, canonical_receipt_decision, canonical_rollup_action, compose, stored_checks,
 };
 use crate::guard_store_receipt_events::reconcile_pending_events;
-use crate::guard_store_receipt_rollups::{count_from_rollups, refresh};
+use crate::guard_store_receipt_rollups::{count_from_rollups, rebuild_if_pending, refresh};
 
 pub(crate) const BASE_QUERY: &str = "select r.rowid as receipt_rowid, r.receipt_id, r.harness, \
      r.artifact_id, r.artifact_hash, r.policy_decision, r.capabilities_summary, \
@@ -267,6 +267,7 @@ pub(crate) fn get_latest(connection: &Connection, args: &Args<'_>) -> StoreResul
 
 pub(crate) fn count(connection: &Connection, args: &Args<'_>) -> StoreResult<Value> {
     let harness = args.opt_str("harness")?;
+    rebuild_if_pending(connection)?;
     if let Some(total) = count_from_rollups(connection, harness)? {
         return Ok(json!(total));
     }

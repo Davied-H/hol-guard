@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sqlite3
+
 
 def receipt_rollup_schema_statements() -> list[str]:
     return [
@@ -155,3 +157,18 @@ def receipt_rollup_index_statements() -> list[str]:
             "on receipt_rollup_actions(dirty) where dirty = 1"
         ),
     ]
+
+
+RECEIPT_ROLLUP_REBUILD_PENDING_KEY = "receipt_rollups_rebuild_pending"
+
+
+def request_receipt_rollup_rebuild(connection: sqlite3.Connection, requested_at: str) -> None:
+    """Ask the resident to rebuild every receipt rollup before its next delta or total read."""
+
+    connection.execute(
+        """
+        insert into sync_state (state_key, payload_json, updated_at) values (?, '{}', ?)
+        on conflict(state_key) do update set updated_at = excluded.updated_at
+        """,
+        (RECEIPT_ROLLUP_REBUILD_PENDING_KEY, requested_at),
+    )

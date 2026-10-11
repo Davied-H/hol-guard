@@ -16,7 +16,9 @@ use crate::guard_store_receipt_envelope::{redact_mapping, redact_typed};
 use crate::guard_store_receipt_events::{
     add_guard_event, build_receipt_event, set_pending_event_decision,
 };
-use crate::guard_store_receipt_rollups::{action_query, record_decision_change, record_insert};
+use crate::guard_store_receipt_rollups::{
+    action_query, rebuild_if_pending, record_decision_change, record_insert,
+};
 
 const DEVICE_KEY: &str = "local-device";
 const APPROVAL_SQL: &str = "select request_id as linked_approval_request_id, \
@@ -105,6 +107,7 @@ pub(crate) fn insert_receipt(
     action_envelope: Option<&Map<String, Value>>,
     context: &ReceiptContext<'_>,
 ) -> StoreResult<()> {
+    rebuild_if_pending(connection)?;
     let envelope_value = action_envelope.map_or(Value::Null, |map| Value::Object(map.clone()));
     let canonical =
         canonical_receipt_decision(&cell(receipt, "policy_decision"), &envelope_value, true)?;
@@ -261,6 +264,7 @@ pub(crate) fn update_policy_decision(
     args: &Args<'_>,
 ) -> StoreResult<Value> {
     let receipt_id = args.str("receipt_id")?;
+    rebuild_if_pending(connection)?;
     let Some(row) = load_action_row(connection, receipt_id)? else {
         return Ok(Value::Null);
     };

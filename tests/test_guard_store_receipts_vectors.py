@@ -28,11 +28,12 @@ from codex_plugin_scanner.guard.store import GuardStore
 DATA_DIR = Path(__file__).resolve().parents[1] / "rust/crates/guard-runtime/testdata/guard_store"
 VECTORS: dict[str, Any] = json.loads((DATA_DIR / "receipts_vectors.json").read_text(encoding="utf-8"))
 sys.path.insert(0, str(DATA_DIR))
+from receipts_mutator_scenarios import MUTATOR_SCENARIOS  # noqa: E402
 from receipts_read_scenarios import READ_SCENARIOS  # noqa: E402
 from receipts_scenario_support import NOW, QUEUE_LIMIT  # noqa: E402
 from receipts_write_scenarios import WRITE_SCENARIOS  # noqa: E402
 
-SCENARIOS = [*WRITE_SCENARIOS, *READ_SCENARIOS]
+SCENARIOS = [*WRITE_SCENARIOS, *MUTATOR_SCENARIOS, *READ_SCENARIOS]
 UNUSED_DEVICE_ID = "f" * 32
 
 ERROR_CODES = {

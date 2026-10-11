@@ -179,3 +179,60 @@ fn listing_queries_use_ordered_indexes() {
     assert!(!by_artifact.contains("USE TEMP B-TREE"), "{by_artifact}");
     let _ = std::fs::remove_dir_all(&home);
 }
+
+/// A migration-requested rebuild keeps the archived totals and runs before the
+/// first incremental delta or direct total read.
+#[test]
+fn pending_rebuild_runs_before_deltas_and_total_reads() {
+    let vectors: Value = serde_json::from_str(VECTORS).unwrap();
+    let scenario = &vectors["scenarios"][0];
+    let home = temp_home("receipt-rebuild");
+    build_database(&home.join("guard.db"), &vectors, scenario);
+    let prepare = || {
+        let connection = Connection::open(home.join("guard.db")).unwrap();
+        connection
+            .execute_batch(
+                "update guard_storage_maintenance set archived_receipts = 7 where singleton = 1; \
+                 update receipt_aggregate_totals set total = 7, allowed = 5, blocked = 2 \
+                   where totals_key = 'global'; \
+                 insert or replace into sync_state (state_key, payload_json, updated_at) \
+                   values ('receipt_rollups_rebuild_pending', '{}', '2026-04-02T00:00:00Z');",
+            )
+            .unwrap();
+        connection
+    };
+    let source = vectors["source"].as_str().unwrap();
+    let now = vectors["now"].as_str().unwrap();
+    let count = |home: &Path| {
+        let step = serde_json::json!({"method": "count_receipts", "wire_args": {}});
+        run_step(home, source, now, &step)
+    };
+    drop(prepare());
+    let reply = count(&home);
+    assert_eq!(reply["status"], "ok", "{reply}");
+    assert_eq!(reply["payload"], 7);
+    let connection = Connection::open(home.join("guard.db")).unwrap();
+    let marker: i64 = connection
+        .query_row(
+            "select count(*) from sync_state where state_key = 'receipt_rollups_rebuild_pending'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(marker, 0);
+    drop(connection);
+
+    drop(prepare());
+    let add = run_step(&home, source, now, &scenario["steps"][0]);
+    assert_eq!(add["status"], "ok", "{add}");
+    let connection = Connection::open(home.join("guard.db")).unwrap();
+    let totals: (i64, i64, i64) = connection
+        .query_row(
+            "select total, allowed, blocked from receipt_aggregate_totals where totals_key = 'global'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(totals, (8, 6, 2));
+    let _ = std::fs::remove_dir_all(&home);
+}

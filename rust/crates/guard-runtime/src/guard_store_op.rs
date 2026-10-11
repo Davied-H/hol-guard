@@ -248,7 +248,6 @@ fn method_kind(method: &str) -> Option<Kind> {
         | "get_receipt"
         | "get_receipt_for_approval_request"
         | "get_latest_receipt"
-        | "count_receipts"
         | "receipt_decision_counts" => Kind::Read,
         "list_command_activity_page"
         | "command_activity_analytics"
@@ -293,6 +292,7 @@ fn method_kind(method: &str) -> Option<Kind> {
         | "update_receipt_policy_decision"
         | "update_receipt_approval_context"
         | "list_receipts_for_command_detail_backfill"
+        | "count_receipts"
         | "receipt_summary_between"
         | "receipt_analytics"
         | "reconcile_receipt_events" => Kind::Write,
