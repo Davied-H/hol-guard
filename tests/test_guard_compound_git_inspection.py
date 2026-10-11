@@ -20,13 +20,14 @@ def _patient_native_review(monkeypatch: pytest.MonkeyPatch) -> None:
     The hook path gives native review 0.5 s. A coverage shard can spend longer than
     that starting the evaluator, and Guard then (correctly) reports
     ``native_unavailable``. These tests are about the verdict, not the latency
-    budget, so the native call gets more time here.
+    budget, so the native call gets the 1 s ceiling that ``review_pre_tool_native``
+    allows any caller.
     """
 
     review = native_command_evaluation.review_command_native
 
     def patient(*args: object, **kwargs: object) -> object:
-        kwargs.setdefault("timeout_seconds", 5.0)
+        kwargs.setdefault("timeout_seconds", 1.0)
         return review(*args, **kwargs)
 
     monkeypatch.setattr(commands_support_runtime_artifacts, "review_command_native", patient)
