@@ -18,16 +18,8 @@ jobs:
       fail-fast: false
       matrix:
         sha:
-          - 01d7d874366658ccfc609f602841b84ac1eb9dd9
           - a3c6c11793f2be3e231882657e35d19489c8d9c7
-          - f15a54163b2c826cd190a13d74aadbd51bc9734e
-          - fa2b79b2deb8c1c5c17ae1fff1599c92d7ec7180
           - da723a48b221c135cbce3bade1bab3ddb4959044
-          - 72aedb0dd2bd8793f7116b327f204060cc533263
-          - c2a059c3dfc28f1c65338094bbe5fefac9102b7b
-          - 0f3a69efe10b62e37440edcb134f2dd9bab21198
-          - 4e0c1cd0cd2116867ce7908c1fc00227ac6a460a
-          - 78be1d8ba27b832891e63acc29e2ff949c468fbd
           - 114272fdd53542ea2f73115775bb241fcaef48d5
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
@@ -52,7 +44,7 @@ jobs:
         run: |
           uv run --no-sync python scripts/export_extension_directory.py
           uv run --no-sync python scripts/render_command_extension_directory.py
-      - name: Measure pi-480 p95 eight times
+      - name: Measure pi-480 alone and after the shard-2 prefix
         env:
           HOL_GUARD_NATIVE_BINARY: ${{ github.workspace }}/rust/target/release/hol-guard-runtime
           HOL_GUARD_NATIVE_REGRESSION: "1"
@@ -60,6 +52,18 @@ jobs:
           HOL_GUARD_NATIVE_TEST_SOURCE_COMPILER: ${{ github.workspace }}/rust/target/release/guard-command-source
           HOL_GUARD_BUILD_SOURCE_COMPILER: ${{ github.workspace }}/rust/target/release/guard-command-source
         run: |
-          for i in 1 2 3 4 5 6 7 8; do
-            uv run --no-sync pytest 'tests/test_guard_daemon_acceptance.py::test_packaged_correctness_workloads[pi-480-two-client-24]' -q --tb=line -p no:cacheprovider 2>&1 | grep -E 'workload pi-480|passed|failed' || true
+          pi='tests/test_guard_daemon_acceptance.py::test_packaged_correctness_workloads[pi-480-two-client-24]'
+          for i in 1 2 3; do
+            echo "### alone $i"
+            uv run --no-sync pytest "$pi" -q --tb=line -p no:cacheprovider 2>&1 | grep -E 'workload pi-480|passed|failed' || true
           done
+          for i in 1 2 3; do
+            echo "### after prefix $i"
+            uv run --no-sync pytest tests/test_guard_js_lockfile_resolution_phase11.py tests/test_guard_continuation_contract.py "$pi" -q --tb=line -p no:cacheprovider --durations=8 2>&1 | grep -E 'workload pi-480|passed|failed|s call|s setup|s teardown' || true
+          done
+          echo "### after lockfile only"
+          uv run --no-sync pytest tests/test_guard_js_lockfile_resolution_phase11.py "$pi" -q --tb=line -p no:cacheprovider 2>&1 | grep -E 'workload pi-480|passed|failed' || true
+          echo "### after continuation only"
+          uv run --no-sync pytest tests/test_guard_continuation_contract.py "$pi" -q --tb=line -p no:cacheprovider 2>&1 | grep -E 'workload pi-480|passed|failed' || true
+          echo "### leftover processes after the prefix"
+          ps -eo pid,ppid,pcpu,etime,comm | grep -Ei 'guard|runtime|python' | grep -v grep || true
