@@ -75,6 +75,7 @@ from .update_grok_repair import append_grok_repair
 from .update_install_verify import verify_installed_distribution
 from .update_opencode import _refresh_opencode_pretool_plugin
 from .update_release_candidates import newest_live_pypi_version, newest_pypi_version, select_live_release
+from .update_repair_notes import attach_repair_notes
 from .update_retirement import retire_with_retry
 from .update_subprocess import (
     InstalledDistribution,
@@ -735,8 +736,7 @@ def _run_guard_update_unlocked(
             dry_run=dry_run,
             update_context=update_context,
         )
-        if repair_notes:
-            payload["notes"] = [*_payload_notes(payload), *repair_notes]
+        attach_repair_notes(payload, repair_notes)
         if repaired_installs:
             payload["managed_installs"] = repaired_installs
             if len(repaired_installs) == 1:
@@ -1024,8 +1024,7 @@ def _run_guard_update_unlocked(
             dry_run=dry_run,
             update_context=update_context,
         )
-        if repair_notes:
-            payload["notes"] = [*_payload_notes(payload), *repair_notes]
+        attach_repair_notes(payload, repair_notes)
         if repaired_installs:
             payload["managed_installs"] = repaired_installs
             if len(repaired_installs) == 1:
