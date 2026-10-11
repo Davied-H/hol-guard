@@ -306,12 +306,12 @@ fn script_launch(
         reasons.push("script_runner_mismatch".to_owned());
         return None;
     }
-    let args: Vec<String> = tokens[1..].to_vec();
+    let args: Vec<String> = tokens.iter().skip(1).cloned().collect();
     let mut raw_files: Vec<String> = Vec::new();
     match operation {
         "test" => {
             if args.first().map(String::as_str) != Some("run")
-                || args[1..].iter().any(|value| value.starts_with('-'))
+                || args.iter().skip(1).any(|value| value.starts_with('-'))
             {
                 reasons.push("script_arguments_not_result_only".to_owned());
             }

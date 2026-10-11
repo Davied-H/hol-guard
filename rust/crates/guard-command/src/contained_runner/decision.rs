@@ -82,8 +82,13 @@ pub(crate) fn execute_and_decide(
     exit_policy: ExitPolicy,
     labels: &DecisionLabels,
 ) -> Result<ContainedOutcome, String> {
-    let (health, fingerprint) = current_health()?;
+    // Fail closed before running anything when containment is unhealthy.
+    current_health()?;
     let result = execute_contained(request, timeout_seconds)?;
+    // A long run can outlive the probe that admitted it; take the proof
+    // against current health (re-probed in-process when stale) so a completed
+    // contained run is not discarded as `containment_probe_stale`.
+    let (health, fingerprint) = current_health()?;
     let exit_code = match (result.enforced(), result.exit_code, exit_policy) {
         (true, Some(code), ExitPolicy::AnyExit) => code,
         (true, Some(0), ExitPolicy::ZeroExit) => 0,

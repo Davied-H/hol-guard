@@ -2,12 +2,18 @@
 //!
 //! Faithful port of `runtime/workspace_snapshot_inputs.py`.
 
-use std::fs::{self, DirEntry, OpenOptions};
+use std::ffi::{CStr, CString, OsStr};
+use std::fs::{self, File, Metadata};
 use std::io::Read;
-use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
-use std::path::Path;
+use std::os::fd::{AsFd, OwnedFd};
+use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::MetadataExt;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+use nix::dir::Dir;
+use nix::fcntl::{openat, AtFlags, OFlag};
+use nix::sys::stat::{fstatat, Mode, SFlag};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
@@ -79,48 +85,81 @@ impl Budget {
     }
 }
 
-type DirectoryIdentity = (u64, u64);
-
-fn directory_identity(path: &Path) -> Result<DirectoryIdentity, String> {
-    let metadata = fs::symlink_metadata(path).map_err(|error| error.to_string())?;
-    Ok((metadata.dev(), metadata.ino()))
+/// Kind of a directory entry, read without following links.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum EntryKind {
+    Directory,
+    File,
+    Symlink,
+    Other,
 }
 
-fn bounded_entries(
-    directory: &Path,
-    expected: DirectoryIdentity,
-    budget: &mut Budget,
-) -> Result<Vec<DirEntry>, String> {
+fn entry_kind(directory: &Dir, name: &CStr) -> Result<EntryKind, String> {
+    let stat = fstatat(directory.as_fd(), name, AtFlags::AT_SYMLINK_NOFOLLOW)
+        .map_err(|error| error.to_string())?;
+    let kind = SFlag::from_bits_truncate(stat.st_mode) & SFlag::S_IFMT;
+    Ok(if kind == SFlag::S_IFDIR {
+        EntryKind::Directory
+    } else if kind == SFlag::S_IFREG {
+        EntryKind::File
+    } else if kind == SFlag::S_IFLNK {
+        EntryKind::Symlink
+    } else {
+        EntryKind::Other
+    })
+}
+
+/// Open one child relative to its already-verified parent handle, never
+/// following a link, so a swapped path component cannot redirect discovery.
+fn open_child(directory: &Dir, name: &CStr, as_directory: bool) -> Result<File, String> {
+    let mut flags = OFlag::O_RDONLY | OFlag::O_CLOEXEC | OFlag::O_NOFOLLOW | OFlag::O_NONBLOCK;
+    if as_directory {
+        flags |= OFlag::O_DIRECTORY;
+    }
+    let descriptor: OwnedFd = openat(directory.as_fd(), name, flags, Mode::empty())
+        .map_err(|_| "workspace snapshot discovery failed".to_owned())?;
+    Ok(File::from(descriptor))
+}
+
+fn open_root(canonical: &Path) -> Result<Dir, String> {
     let failed = || "workspace snapshot discovery failed".to_owned();
-    let handle = OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_CLOEXEC | libc::O_DIRECTORY | libc::O_NOFOLLOW)
-        .open(directory)
+    let expected = fs::symlink_metadata(canonical).map_err(|_| failed())?;
+    let root = Dir::open(
+        canonical,
+        OFlag::O_RDONLY | OFlag::O_CLOEXEC | OFlag::O_NOFOLLOW | OFlag::O_DIRECTORY,
+        Mode::empty(),
+    )
+    .map_err(|_| failed())?;
+    let opened = File::from(root.as_fd().try_clone_to_owned().map_err(|_| failed())?)
+        .metadata()
         .map_err(|_| failed())?;
-    let metadata = handle.metadata().map_err(|_| failed())?;
-    if (metadata.dev(), metadata.ino()) != expected {
+    if (opened.dev(), opened.ino()) != (expected.dev(), expected.ino()) {
         return Err("workspace directory identity changed during discovery".to_owned());
     }
-    let mut entries = Vec::new();
-    for entry in fs::read_dir(directory).map_err(|_| failed())? {
+    Ok(root)
+}
+
+fn bounded_entries(directory: &mut Dir, budget: &mut Budget) -> Result<Vec<CString>, String> {
+    let failed = || "workspace snapshot discovery failed".to_owned();
+    let mut names = Vec::new();
+    for entry in directory.iter() {
         let entry = entry.map_err(|_| failed())?;
+        let name = entry.file_name();
+        if name.to_bytes() == b"." || name.to_bytes() == b".." {
+            continue;
+        }
         budget.visited += 1;
         budget.check(
             "workspace discovery entry budget exceeded",
             "workspace discovery time budget exceeded",
         )?;
-        entries.push(entry);
+        names.push(name.to_owned());
     }
-    Ok(entries)
+    Ok(names)
 }
 
-fn snapshot_file_digest(path: &Path, expected: &fs::Metadata) -> Result<String, String> {
-    let mut file = OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW)
-        .open(path)
-        .map_err(|error| error.to_string())?;
-    let identity = |metadata: &fs::Metadata| {
+fn snapshot_file_digest(mut file: File, before: &Metadata) -> Result<String, String> {
+    let identity = |metadata: &Metadata| {
         (
             metadata.dev(),
             metadata.ino(),
@@ -129,11 +168,7 @@ fn snapshot_file_digest(path: &Path, expected: &fs::Metadata) -> Result<String, 
             metadata.mtime_nsec(),
         )
     };
-    let before = file.metadata().map_err(|error| error.to_string())?;
     let changed = "workspace file identity changed during discovery";
-    if identity(&before) != identity(expected) || before.nlink() != 1 {
-        return Err(changed.to_owned());
-    }
     let mut digest = Sha256::new();
     let mut buffer = vec![0u8; 1024 * 1024];
     let mut consumed: u64 = 0;
@@ -149,7 +184,7 @@ fn snapshot_file_digest(path: &Path, expected: &fs::Metadata) -> Result<String, 
         digest.update(&buffer[..count]);
     }
     let after = file.metadata().map_err(|error| error.to_string())?;
-    if identity(&after) != identity(&before) {
+    if identity(&after) != identity(before) {
         return Err(changed.to_owned());
     }
     Ok(hex::encode(digest.finalize()))
@@ -178,10 +213,11 @@ pub(crate) fn complete_workspace_snapshot(
     let mut exclusions: Vec<(String, &'static str)> = Vec::new();
     let mut total_bytes: u64 = 0;
     let mut budget = Budget::new();
-    let mut directories = vec![(canonical.clone(), directory_identity(&canonical)?)];
-    while let Some((directory, expected)) = directories.pop() {
-        for entry in bounded_entries(&directory, expected, &mut budget)? {
-            let path = directory.join(entry.file_name());
+    let mut directories: Vec<(PathBuf, Dir)> = vec![(canonical.clone(), open_root(&canonical)?)];
+    while let Some((directory, mut handle)) = directories.pop() {
+        for name in bounded_entries(&mut handle, &mut budget)? {
+            let os_name = OsStr::from_bytes(name.to_bytes());
+            let path = directory.join(os_name);
             let relative = path
                 .strip_prefix(&canonical)
                 .map_err(|_| "workspace snapshot discovery failed".to_owned())?;
@@ -190,7 +226,8 @@ pub(crate) fn complete_workspace_snapshot(
                 .iter()
                 .map(|part| part.to_lowercase())
                 .collect();
-            let file_type = entry.file_type().map_err(|error| error.to_string())?;
+            let kind = entry_kind(&handle, &name)?;
+            let is_directory = kind == EntryKind::Directory;
             if lowered
                 .iter()
                 .any(|part| SKIPPED_STATE_NAMES.contains(&part.as_str()))
@@ -198,29 +235,44 @@ pub(crate) fn complete_workspace_snapshot(
                 exclusions.push((relative_text, "protected-state"));
                 continue;
             }
-            if is_protected(relative, file_type.is_dir()) {
+            if is_protected(relative, is_directory) {
                 if exclude_protected {
                     exclusions.push((relative_text, "protected-content"));
                     continue;
                 }
                 return Err("protected workspace content requires Guard review".to_owned());
             }
-            if file_type.is_dir()
-                && entry.file_name() == ".bin"
+            if is_directory
+                && os_name == OsStr::new(".bin")
                 && lowered.iter().any(|part| part == "node_modules")
             {
                 exclusions.push((relative_text, "package-bin-links"));
                 continue;
             }
-            if file_type.is_symlink() {
-                return Err("workspace snapshot cannot contain symlinks".to_owned());
+            match kind {
+                EntryKind::Symlink => {
+                    return Err("workspace snapshot cannot contain symlinks".to_owned());
+                }
+                EntryKind::Other => {
+                    return Err("workspace snapshot inputs must be regular files".to_owned());
+                }
+                EntryKind::Directory => {
+                    let child = open_child(&handle, &name, true)?;
+                    if !child.metadata().is_ok_and(|metadata| metadata.is_dir()) {
+                        return Err(
+                            "workspace directory identity changed during discovery".to_owned()
+                        );
+                    }
+                    let sub = Dir::from_fd(OwnedFd::from(child))
+                        .map_err(|_| "workspace snapshot discovery failed".to_owned())?;
+                    directories.push((path, sub));
+                    continue;
+                }
+                EntryKind::File => {}
             }
-            let metadata = fs::symlink_metadata(&path).map_err(|error| error.to_string())?;
-            if file_type.is_dir() {
-                directories.push((path, (metadata.dev(), metadata.ino())));
-                continue;
-            }
-            if !file_type.is_file() {
+            let file = open_child(&handle, &name, false)?;
+            let metadata = file.metadata().map_err(|error| error.to_string())?;
+            if !metadata.is_file() {
                 return Err("workspace snapshot inputs must be regular files".to_owned());
             }
             if metadata.nlink() != 1 {
@@ -230,7 +282,7 @@ pub(crate) fn complete_workspace_snapshot(
             if captured.len() >= MAX_FILES || total_bytes > MAX_BYTES {
                 return Err("workspace snapshot exceeds containment identity budget".to_owned());
             }
-            let digest = snapshot_file_digest(&path, &metadata)?;
+            let digest = snapshot_file_digest(file, &metadata)?;
             budget.check(
                 "workspace discovery entry budget exceeded",
                 "workspace discovery time budget exceeded",

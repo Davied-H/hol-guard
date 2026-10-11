@@ -136,6 +136,9 @@ def _resident_request(
     result_schema = {
         "prompt_analyze": "guard-prompt-analyze-result.v1",
         "mcp_stdio_probe": "guard-mcp-stdio-probe-result.v1",
+        "contained_node_execute": "guard-contained-node-execute-result.v1",
+        "contained_typescript_execute": "guard-contained-typescript-execute-result.v1",
+        "contained_package_script_execute": "guard-contained-package-script-execute-result.v1",
     }.get(operation)
     if result_schema is not None:
         # These versioned Rust replies have no status field. Do not discard
@@ -223,7 +226,12 @@ def _contained_request(
 
 
 _CONTAINED_RUNNER_MAX_SECONDS = 600.0
-_CONTAINED_RUNNER_TRANSPORT_SLACK_SECONDS = 10.0
+# The resident spends time outside the contained process: a pre-run health
+# probe (up to 5 s plus a 5 s kill wait), hashing and copying the workspace
+# snapshot (5 s discovery budget plus copy time) and up to 5 s reaping a
+# timed-out process. The slack must cover all of it so the resident, not the
+# client, reports a timeout and a finished run is never discarded.
+_CONTAINED_RUNNER_TRANSPORT_SLACK_SECONDS = 60.0
 
 
 def _contained_runner_request(

@@ -15,9 +15,7 @@ use sha2::{Digest, Sha256};
 pub(crate) const MAX_EXECUTABLE_BYTES: u64 = 256 * 1024 * 1024;
 const ALLOWED_ENVIRONMENT_KEYS: [&str; 5] = ["LANG", "LC_ALL", "LC_CTYPE", "NO_COLOR", "TERM"];
 
-pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
-    hex::encode(Sha256::digest(bytes))
-}
+pub(crate) use crate::launch_identity_common::sha256_hex;
 
 /// `_path_digest` / `_value_digest`: plain SHA-256 of the UTF-8 text.
 pub(crate) fn text_digest(value: &str) -> String {

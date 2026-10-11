@@ -390,9 +390,9 @@ pub(crate) fn parse_process_id(value: &str) -> Result<u32, String> {
 const CLIENT_TIMEOUT_CEILING_MS: u64 = 9_000;
 const SKILL_SCAN_TIMEOUT_CEILING_MS: u64 = 60_000;
 /// Contained local runners honour the caller's process timeout (up to ten
-/// minutes) plus transport slack, so their budget must not be clamped to the
+/// minutes) plus a minute of transport slack for the probe and snapshot, so their budget must not be clamped to the
 /// nine-second ceiling that would abort a legitimate test run mid-flight.
-const CONTAINED_RUNNER_TIMEOUT_CEILING_MS: u64 = 610_000;
+const CONTAINED_RUNNER_TIMEOUT_CEILING_MS: u64 = 670_000;
 
 pub(crate) fn client_timeout(payload: &[u8]) -> Duration {
     let value = crate::strict_json_value(payload).ok();

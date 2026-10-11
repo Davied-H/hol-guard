@@ -38,7 +38,7 @@ fn client_deadline_is_bounded() {
         let payload = format!(r#"{{"operation":"{operation}","deadline_budget_ms":130000}}"#);
         assert_eq!(client_timeout(payload.as_bytes()), Duration::from_secs(130));
         let payload = format!(r#"{{"operation":"{operation}","deadline_budget_ms":9999999}}"#);
-        assert_eq!(client_timeout(payload.as_bytes()), Duration::from_secs(610));
+        assert_eq!(client_timeout(payload.as_bytes()), Duration::from_secs(670));
     }
     assert_eq!(
         client_timeout(br#"{"deadline_budget_ms":250}"#),

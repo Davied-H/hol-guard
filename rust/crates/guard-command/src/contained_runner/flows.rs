@@ -220,7 +220,7 @@ pub(crate) fn run_typescript(
     if lowered(launch.manager) != "npx" {
         return Err("manager is not npx".to_owned());
     }
-    let workspace = canonical_workspace(launch.workspace)?;
+    let workspace = workspace_for(launch)?;
     let evidence = execution
         .get("typescript_launch")
         .filter(|value| value.is_object())
@@ -314,7 +314,7 @@ pub(crate) fn run_package_script(launch: &Launch) -> Result<ContainedOutcome, St
     if lowered(launch.manager) != "bun" {
         return Err("manager is not bun".to_owned());
     }
-    let workspace = canonical_workspace(launch.workspace)?;
+    let workspace = workspace_for(launch)?;
     let evidence = build_local_package_script_evidence("bun", launch.argv, &workspace)?
         .ok_or_else(|| "script evidence could not be built".to_owned())?;
     if !evidence.complete {

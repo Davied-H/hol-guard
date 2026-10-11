@@ -931,9 +931,7 @@ pub(crate) fn _linux_bwrap_argv(
 
 /// `canonical_json` (:82-87) — `json.dumps(sort_keys=True, separators)`.
 pub(crate) fn _canonical_json(payload: &Value) -> Vec<u8> {
-    let mut buf = Vec::new();
-    let _ = guard_contracts::write_canonical_json(payload, &mut buf);
-    buf
+    crate::contained_runner::common::canonical_bytes(payload).unwrap_or_default()
 }
 
 // ===========================================================================
