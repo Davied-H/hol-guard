@@ -30,6 +30,25 @@ def test_hermes_blocks_and_other_harnesses_use_the_hook_envelope() -> None:
     }
 
 
+def test_recording_only_render_forwards_the_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, object] = {}
+
+    def render(*_args: object, **kwargs: object) -> dict[str, object]:
+        seen.update(kwargs)
+        return {"decision": "allow", "policy_action": "warn"}
+
+    monkeypatch.setattr(hook_fail_closed, "native_render_recording_only_pre_tool", render)
+    rendered = render_recording_only_pre_tool("pi", reason_code="x", reason="y", deadline=12.0)
+    assert rendered["policy_action"] == "warn"
+    assert seen["deadline"] == 12.0
+
+
+def test_recording_only_render_denies_when_the_deadline_already_passed() -> None:
+    rendered = render_recording_only_pre_tool("pi", reason_code="x", reason="y", deadline=0.0)
+    assert rendered["decision"] == "deny"
+    assert rendered["policy_action"] == "block"
+
+
 def test_unavailable_resident_never_renders_an_allow(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(hook_fail_closed, "native_render_pre_tool", lambda *_a, **_k: None)
     monkeypatch.setattr(hook_fail_closed, "native_render_pre_tool_review", lambda *_a, **_k: None)

@@ -131,12 +131,17 @@ def render_recording_only_pre_tool(
     reason_code: str,
     reason: str,
     guard_home: Path | None = None,
+    deadline: float | None = None,
     fallback: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Resident-rendered Watch continue, or a fixed deny when it cannot render."""
 
     rendered = native_render_recording_only_pre_tool(
-        harness, reason_code=reason_code, reason=reason, guard_home=guard_home
+        harness,
+        reason_code=reason_code,
+        reason=reason,
+        guard_home=guard_home,
+        **_deadline_kwargs(deadline),
     )
     return rendered or fallback or fail_closed_pre_tool(harness)
 
