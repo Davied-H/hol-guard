@@ -56,6 +56,7 @@ fn fixture() -> (PathBuf, PathBuf) {
             "0123456789abcdef0123456789abcdef01234567\n",
         ),
         (".git/worktrees/feature/gitdir", "/elsewhere/.git\n"),
+        (".git/refs/heads/feature/.hidden", "synthetic hidden ref\n"),
         (".github/.git/HEAD", "ref: refs/heads/main\n"),
     ] {
         let file = repo.join(path);
@@ -72,6 +73,24 @@ fn read(harness: &str, path: &Path, home: &Path, cwd: &Path) -> String {
         "omp" => ("read", json!({"path": path.to_str().unwrap()})),
         _ => ("Read", json!({"file_path": path.to_str().unwrap()})),
     };
+    decide(harness, tool, input, home, cwd)
+}
+
+fn search(harness: &str, path: &Path, home: &Path, cwd: &Path) -> String {
+    let (tool, input) = match harness {
+        "omp" => (
+            "grep",
+            json!({"pattern": "ref", "path": path.to_str().unwrap()}),
+        ),
+        _ => (
+            "Grep",
+            json!({"pattern": "ref", "path": path.to_str().unwrap()}),
+        ),
+    };
+    decide(harness, tool, input, home, cwd)
+}
+
+fn decide(harness: &str, tool: &str, input: serde_json::Value, home: &Path, cwd: &Path) -> String {
     evaluate_pre_tool_envelope_with_context(
         harness,
         "PreToolUse",
@@ -116,6 +135,20 @@ fn git_ref_files_are_readable_without_opening_other_git_state() {
                 read(harness, &repo.join(path), &home, &repo),
                 "allow",
                 "{harness} {path}"
+            );
+        }
+        // A ref directory is not a ref document: reading or searching it
+        // could reach a hidden child the file rule refuses.
+        for path in [".git/refs/heads/feature", ".git/refs/heads"] {
+            assert_ne!(
+                read(harness, &repo.join(path), &home, &repo),
+                "allow",
+                "{harness} read {path}"
+            );
+            assert_ne!(
+                search(harness, &repo.join(path), &home, &repo),
+                "allow",
+                "{harness} search {path}"
             );
         }
         assert_ne!(

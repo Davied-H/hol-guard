@@ -282,7 +282,9 @@ pub(in crate::pretool) fn codex_notes_document(
 /// `.git/HEAD`, `.git/refs/{heads,tags,remotes}/**` and a linked worktree's
 /// `.git/worktrees/<name>/HEAD`. They hold a ref name or object id only.
 /// `.git/config`, hooks, logs and every other entry stay guarded, and every
-/// component outside the single `.git` marker must be visible.
+/// component outside the single `.git` marker must be visible. Only regular
+/// files qualify, so a ref directory cannot carry the exception to a search
+/// that walks its children.
 pub(in crate::pretool) fn git_ref_document(
     canonical: &std::path::Path,
     home_dir: Option<&str>,
@@ -308,6 +310,7 @@ pub(in crate::pretool) fn git_ref_document(
     };
     let visible = |parts: &[&str]| parts.iter().all(|part| !part.starts_with('.'));
     inside
+        && canonical.is_file()
         && parts[marker] == ".git"
         && visible(&parts[marker + 1..])
         && match &parts[marker + 1..] {
