@@ -16,13 +16,18 @@ pub(crate) mod directory_targets;
 pub(crate) use directory_targets::safe_directory_target;
 mod base64_reads;
 mod find_reads;
+pub(crate) mod git_branch_listing;
 mod git_config;
+pub(crate) mod git_hash_object;
+mod git_reads;
+use git_reads::safe_git_arguments;
 mod git_helper_context;
 mod git_probe;
 mod git_routes;
 mod git_worktree;
 mod guard_diagnostics;
 mod listing_reads;
+mod pytest_contained;
 pub(crate) use git_routes::git_route_within_workspace;
 mod apply_patch_writes;
 mod pure_expression;
@@ -158,74 +163,6 @@ fn sensitive_path_argument_with_credentials(value: &str, include_credential_name
     })
 }
 
-fn has_argument(arguments: &[String], exact: &[&str], prefixes: &[&str]) -> bool {
-    arguments.iter().any(|argument| {
-        exact.contains(&argument.as_str())
-            || prefixes.iter().any(|prefix| argument.starts_with(prefix))
-    })
-}
-
-fn safe_git_arguments(
-    arguments: &[String],
-    allow_helper_context: bool,
-    context: PathContext<'_>,
-) -> bool {
-    // Git magic pathspec semantics are not proven by this classifier; retain review.
-    if arguments
-        .iter()
-        .any(|value| value.starts_with(':') || sensitive_read_path_argument(value))
-    {
-        return false;
-    }
-    let Some(arguments) =
-        crate::command_compatibility::git_inspection_arguments(arguments, context)
-    else {
-        return false;
-    };
-    let Some(subcommand) = arguments.first().map(String::as_str) else {
-        return false;
-    };
-    if subcommand == "worktree" {
-        return matches!(&arguments[1..], [list] if list == "list")
-            || matches!(&arguments[1..], [list, flag] if list == "list" && flag == "--porcelain");
-    }
-    if !matches!(
-        subcommand,
-        "status" | "diff" | "log" | "show" | "rev-parse" | "ls-files" | "remote"
-    ) {
-        return false;
-    }
-    let option_end = arguments
-        .iter()
-        .position(|argument| argument == "--")
-        .unwrap_or(arguments.len());
-    let active_options = &arguments[1..option_end];
-    if subcommand == "remote" {
-        let has_arguments_after_options = option_end + 1 < arguments.len();
-        return !active_options.is_empty()
-            && !has_arguments_after_options
-            && active_options
-                .iter()
-                .all(|argument| matches!(argument.as_str(), "-v" | "--verbose"));
-    }
-    if !allow_helper_context
-        && matches!(subcommand, "diff" | "log" | "show")
-        && !(active_options
-            .iter()
-            .any(|argument| argument == "--no-ext-diff")
-            && active_options
-                .iter()
-                .any(|argument| argument == "--no-textconv"))
-    {
-        return false;
-    }
-    !has_argument(
-        active_options,
-        &["--ext-diff", "--textconv", "--output", "-o"],
-        &["--output=", "--exec-path="],
-    )
-}
-
 fn destructive_command(value: &str) -> bool {
     let lowered = normalized_haystack(value);
     let rm_force = lowered.contains("rm -rf") || lowered.contains("rm -fr");
@@ -293,7 +230,7 @@ fn exact_safe_command_with_context(
     if !safe_scalar::bounded_total_sleep(model) {
         return false;
     }
-    if segment_proof::exact_safe_cwd_compound(model, context) {
+    if segment_proof::exact_safe_cwd_compound(model, allow_git_helper_context, context) {
         return true;
     }
     model.segments.iter().all(|segment| {
@@ -483,7 +420,7 @@ pub(super) fn evaluate_pre_tool_with_execution_context(
             "HOL Guard requires review because this command overrides executable resolution.",
         ));
     }
-    if git_helper_context::git_helper_context_required(&model) {
+    if git_helper_context::git_helper_context_required(&model, context) {
         if git_helper_context::git_helpers_proven_inert(
             &model,
             context,

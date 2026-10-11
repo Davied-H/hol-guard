@@ -608,6 +608,7 @@ dependencies = [
  "base64ct",
  "caseless",
  "fancy-regex 0.19.2",
+ "flate2",
  "getrandom 0.3.4",
  "guard-command-build",
  "guard-contracts",
@@ -2162,6 +2163,7 @@ version = "0.8.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc1beb996b9d83529a9e75c17a1686767d148d70663143c7854d8b4a09ced362"
 dependencies = [
+ "indexmap",
  "serde",
  "serde_spanned 0.6.9",
  "toml_datetime 0.6.11",

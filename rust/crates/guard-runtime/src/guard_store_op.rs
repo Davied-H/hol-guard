@@ -28,6 +28,7 @@ use crate::guard_store_cmd_lifecycle as lifecycle;
 use crate::guard_store_cmd_maintenance as maintenance;
 use crate::guard_store_cmd_privacy as privacy;
 use crate::guard_store_db::{exec, query_all, query_one, text, StoreError, StoreResult};
+use crate::guard_store_inventory as inventory;
 use crate::guard_store_outbox_binding::{
     count_recoverable_unbound, load_binding, normalized_binding, reassign_quarantined,
     refresh_same_subject,
@@ -38,6 +39,7 @@ use crate::guard_store_outbox_reads as reads;
 use crate::guard_store_outbox_recover::recover_sequences;
 use crate::guard_store_outbox_requeue::{repair_rejected_correlation, requeue_method};
 use crate::guard_store_sessions as sessions;
+use crate::guard_store_storage_maintenance as storage_maintenance;
 
 const MAX_BUSY_TIMEOUT_MS: u64 = 600_000;
 const CACHE_SIZE_KIB: i64 = 256 * 1024;
@@ -233,7 +235,13 @@ fn method_kind(method: &str) -> Option<Kind> {
         | "list_guard_operation_items"
         | "get_guard_client_attachment"
         | "list_guard_client_attachments"
-        | "has_guard_surface_open" => Kind::Read,
+        | "has_guard_surface_open"
+        | "get_artifact_snapshot"
+        | "list_artifact_snapshots"
+        | "list_artifact_inventory"
+        | "find_artifact_inventory_item"
+        | "get_artifact_capability"
+        | "run_storage_housekeeping" => Kind::Read,
         "list_command_activity_page"
         | "command_activity_analytics"
         | "list_command_activity_invalidations"
@@ -263,7 +271,16 @@ fn method_kind(method: &str) -> Option<Kind> {
         | "add_guard_operation_item"
         | "attach_guard_client"
         | "renew_guard_client_attachment"
-        | "record_guard_surface_open" => Kind::Write,
+        | "record_guard_surface_open"
+        | "save_artifact_snapshot"
+        | "delete_artifact_snapshot"
+        | "record_artifact_diff"
+        | "record_inventory_artifact"
+        | "mark_inventory_removed"
+        | "save_artifact_capability"
+        | "upsert_provenance_cache"
+        | "next_aibom_trust_attestation_sequence"
+        | "maintain_storage" => Kind::Write,
         _ => return None,
     })
 }
@@ -374,6 +391,23 @@ fn dispatch(
         "list_guard_client_attachments" => clients::list_attachments(connection, args),
         "record_guard_surface_open" => clients::record_surface_open(connection, args),
         "has_guard_surface_open" => clients::has_surface_open(connection, args),
+        "save_artifact_snapshot" => inventory::save_snapshot(connection, args),
+        "get_artifact_snapshot" => inventory::get_snapshot(connection, args),
+        "list_artifact_snapshots" => inventory::list_snapshots(connection, args),
+        "delete_artifact_snapshot" => inventory::delete_snapshot(connection, args),
+        "record_artifact_diff" => inventory::record_diff(connection, args),
+        "record_inventory_artifact" => inventory::record_inventory_artifact(connection, args),
+        "mark_inventory_removed" => inventory::mark_removed(connection, args),
+        "list_artifact_inventory" => inventory::list_inventory(connection, args),
+        "find_artifact_inventory_item" => inventory::find_inventory_item(connection, args),
+        "save_artifact_capability" => inventory::save_capability(connection, args),
+        "get_artifact_capability" => inventory::get_capability(connection, args),
+        "upsert_provenance_cache" => inventory::upsert_provenance(connection, args),
+        "next_aibom_trust_attestation_sequence" => {
+            inventory::next_attestation_sequence(connection, args)
+        }
+        "maintain_storage" => storage_maintenance::maintain(connection, args),
+        "run_storage_housekeeping" => storage_maintenance::housekeeping(connection),
         _ => Err(StoreError::Invalid("native_guard_store_method_unknown")),
     }
 }
