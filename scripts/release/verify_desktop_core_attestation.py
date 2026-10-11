@@ -104,12 +104,15 @@ def verify(
     source_tag: str,
     target: str,
     expected_team_id: str,
+    channel: str = "stable",
 ) -> dict[str, object]:
     """Verify the post-sign bytes and return a privacy-safe evidence record."""
 
     _regular_file(binary, label="Desktop Core binary", maximum=_MAX_BINARY_BYTES)
     manifest_payload = _json(manifest, label="Desktop Core manifest")
     marker_payload = _json(marker, label="Desktop Core attestation marker")
+    if channel not in {"stable", "alpha"}:
+        raise DesktopAttestationError("release channel must be stable or alpha")
     _require_token(version, label="release version")
     _require_token(source_tag, label="source tag")
     _require_token(target, label="release target")
@@ -117,7 +120,7 @@ def verify(
         raise DesktopAttestationError("source commit must be a full lowercase Git SHA")
     expected_manifest: Mapping[str, object] = {
         "schema": _MANIFEST_SCHEMA,
-        "channel": "stable",
+        "channel": channel,
         "version": version,
         "sourceCommit": source_commit,
         "sourceTag": source_tag,
@@ -352,12 +355,15 @@ def verify_archive(
     source_tag: str,
     target: str,
     expected_team_id: str,
+    channel: str = "stable",
 ) -> dict[str, object]:
     """Verify a signed onedir zip, its v2 manifest, and the attestation marker."""
 
     _regular_file(archive, label="Desktop Core onedir archive", maximum=_MAX_BINARY_BYTES)
     manifest_payload = _json(manifest, label="Desktop Core onedir manifest")
     marker_payload = _json(marker, label="Desktop Core onedir attestation marker")
+    if channel not in {"stable", "alpha"}:
+        raise DesktopAttestationError("release channel must be stable or alpha")
     _require_token(version, label="release version")
     _require_token(source_tag, label="source tag")
     _require_token(target, label="release target")
@@ -367,7 +373,7 @@ def verify_archive(
         raise DesktopAttestationError("Onedir Desktop Core attestation is macOS-only")
     expected_manifest: Mapping[str, object] = {
         "schema": _ONEDIR_MANIFEST_SCHEMA,
-        "channel": "stable",
+        "channel": channel,
         "version": version,
         "sourceCommit": source_commit,
         "sourceTag": source_tag,
@@ -446,6 +452,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--source-tag", required=True)
     parser.add_argument("--target", required=True)
     parser.add_argument("--team-id", required=True)
+    parser.add_argument("--channel", choices=("stable", "alpha"), default="stable")
     parser.add_argument("--output", type=Path)
     return parser
 
@@ -465,6 +472,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 source_tag=args.source_tag,
                 target=args.target,
                 expected_team_id=args.team_id,
+                channel=args.channel,
             )
         else:
             assert args.binary is not None
@@ -477,6 +485,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 source_tag=args.source_tag,
                 target=args.target,
                 expected_team_id=args.team_id,
+                channel=args.channel,
             )
     except DesktopAttestationError as error:
         print(f"Desktop Core attestation failed: {error}", file=sys.stderr)
