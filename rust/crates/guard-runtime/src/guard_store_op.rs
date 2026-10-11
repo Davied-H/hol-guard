@@ -39,6 +39,7 @@ use crate::guard_store_outbox_reads as reads;
 use crate::guard_store_outbox_recover::recover_sequences;
 use crate::guard_store_outbox_requeue::{repair_rejected_correlation, requeue_method};
 use crate::guard_store_receipt_reads as receipt_reads;
+use crate::guard_store_receipt_rollups as receipt_rollups;
 use crate::guard_store_receipt_writes as receipt_writes;
 use crate::guard_store_sessions as sessions;
 use crate::guard_store_storage_maintenance as storage_maintenance;
@@ -95,13 +96,23 @@ fn evaluate(request: &GuardStoreRequestV1) -> StoreResult<(Value, Option<i64>)> 
         Some(kind) => kind,
         None => return invalid("native_guard_store_method_unknown"),
     };
-    let writes = kind == Kind::Write;
     let connection = Connection::open_with_flags(
         &path,
         OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )?;
     connection.busy_timeout(Duration::from_millis(request.busy_timeout_ms))?;
     apply_pragmas(&connection)?;
+    // A total read only writes for the one-time rebuild a migration requests;
+    // every other call stays lock-free.
+    let kind = if request.method == "count_receipts"
+        && kind == Kind::Read
+        && receipt_rollups::rebuild_pending(&connection)?
+    {
+        Kind::Write
+    } else {
+        kind
+    };
+    let writes = kind == Kind::Write;
     let initial_changes = connection.total_changes();
     match kind {
         Kind::Write => connection.execute_batch("BEGIN IMMEDIATE")?,
@@ -250,7 +261,8 @@ fn method_kind(method: &str) -> Option<Kind> {
         | "get_receipt_for_approval_request"
         | "get_latest_receipt"
         | "receipt_decision_counts"
-        | "run_storage_housekeeping" => Kind::Read,
+        | "run_storage_housekeeping"
+        | "count_receipts" => Kind::Read,
         "list_command_activity_page"
         | "command_activity_analytics"
         | "list_command_activity_invalidations"
@@ -294,7 +306,6 @@ fn method_kind(method: &str) -> Option<Kind> {
         | "update_receipt_policy_decision"
         | "update_receipt_approval_context"
         | "list_receipts_for_command_detail_backfill"
-        | "count_receipts"
         | "receipt_summary_between"
         | "receipt_analytics"
         | "reconcile_receipt_events"

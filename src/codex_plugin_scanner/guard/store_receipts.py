@@ -17,6 +17,7 @@ from .models import GuardRuntimeRegistration
 
 # ruff: noqa: F403,F405
 from .store_base import *
+from .store_base import _canonical_utc_timestamp
 
 
 def _receipt_wire(receipt: GuardReceipt) -> dict[str, object]:
@@ -42,7 +43,7 @@ def _receipt_wire(receipt: GuardReceipt) -> dict[str, object]:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return _canonical_utc_timestamp(datetime.now(timezone.utc).isoformat())
 
 
 class StoreReceiptsRuntimeMixin:

@@ -393,15 +393,20 @@ pub(crate) fn need_backfill(connection: &Connection) -> StoreResult<bool> {
 /// `sync_state` key a schema migration sets to request a full rollup rebuild.
 pub(crate) const REBUILD_PENDING_KEY: &str = "receipt_rollups_rebuild_pending";
 
-/// Run a migration-requested rebuild before any incremental delta or direct
-/// total read can build on rollups with stale bucket semantics.
-pub(crate) fn rebuild_if_pending(connection: &Connection) -> StoreResult<bool> {
-    let pending = query_one(
+/// Whether a migration has requested a full rollup rebuild.
+pub(crate) fn rebuild_pending(connection: &Connection) -> StoreResult<bool> {
+    Ok(query_one(
         connection,
         "select 1 as pending from sync_state where state_key = ?",
         &[Value::from(REBUILD_PENDING_KEY)],
-    )?;
-    if pending.is_none() {
+    )?
+    .is_some())
+}
+
+/// Run a migration-requested rebuild before any incremental delta or direct
+/// total read can build on rollups with stale bucket semantics.
+pub(crate) fn rebuild_if_pending(connection: &Connection) -> StoreResult<bool> {
+    if !rebuild_pending(connection)? {
         return Ok(false);
     }
     backfill(connection)?;
