@@ -7,6 +7,8 @@ on:
       - tests/test_desktop_core_feed_queue.py
       - tests/test_core_feed_publication_handoff.py
       - tests/test_desktop_core_alpha_channel_feed.py
+      - tests/test_desktop_core_alpha_channel_publication.py
+      - tests/test_desktop_core_alpha_channel_attestation.py
       - tests/test_desktop_core_alpha_feed_macos_signing.py
       - tests/test_stage_native_runtime_for_desktop_core.py
       - tests/test_verify_*.py
@@ -187,10 +189,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           CORE_VERSION: ${{ steps.release.outputs.version }}
           PUBLICATION_RUN_ID: ${{ inputs.publication_run_id || '' }}
+          PUBLICATION_SOURCE_SHA: ${{ inputs.publication_source_sha || '' }}
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -n "$PUBLICATION_RUN_ID" ]]; then
+          if [[ "$RELEASE_CHANNEL" == "alpha" ]]; then
+            # An alpha dispatch must prove its own publication run and PyPI wheel, even when the
+            # sidecar assets already exist; the wait fails the run rather than deferring silently.
+            python3 -I scripts/release/wait_for_core_publication.py \
+              --version "$CORE_VERSION" --wheel "$RUNNER_TEMP/attested-macos-arm64.whl" --filename "$ATTESTED_WHEEL_FILENAME" \
+              --channel alpha
+            echo registry_ready=true >> "$GITHUB_OUTPUT"
+          elif [[ -n "$PUBLICATION_RUN_ID" ]]; then
             echo registry_ready=true >> "$GITHUB_OUTPUT"
           else
             python3 -I scripts/release/wait_for_core_publication.py --check-only \
@@ -709,7 +719,7 @@ jobs:
           CORE_VERSION: ${{ steps.release.outputs.version }}
         run: python3 -I scripts/release/wait_for_core_publication.py --version "$CORE_VERSION" --wheel "$RUNNER_TEMP/attested-macos-arm64.whl" --filename "$ATTESTED_WHEEL_FILENAME" --bundle "$RUNNER_TEMP/core-trust-assets/hol-guard-v${CORE_VERSION}.intoto.jsonl" --channel "$RELEASE_CHANNEL"
       - name: Require alpha prerelease and tag to still be published
-        if: env.RELEASE_CHANNEL == 'alpha' && steps.release.outputs.available == 'true' && steps.registry.outputs.registry_ready == 'true' && steps.existing.outputs.mode == 'build'
+        if: env.RELEASE_CHANNEL == 'alpha' && steps.release.outputs.available == 'true' && steps.registry.outputs.registry_ready == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           CORE_TAG: ${{ steps.release.outputs.tag }}
@@ -722,7 +732,8 @@ jobs:
             > "$RUNNER_TEMP/alpha-release.json"
           python3 -I scripts/release/desktop_core_alpha_feed.py require-prerelease \
             --release-json "$RUNNER_TEMP/alpha-release.json" --tag "$CORE_TAG"
-          tag_sha=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${CORE_TAG}" --jq '.object.sha')
+          # Resolve to the commit so an annotated tag compares equal to the source commit.
+          tag_sha=$(gh api "repos/${GITHUB_REPOSITORY}/commits/refs/tags/${CORE_TAG}" --jq '.sha')
           test "$tag_sha" = "$SOURCE_SHA"
       - name: Publish immutable Core assets
         if: steps.release.outputs.available == 'true' && steps.registry.outputs.registry_ready == 'true' && steps.existing.outputs.mode == 'build'

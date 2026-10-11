@@ -88,6 +88,20 @@ def _require_token(value: object, *, label: str) -> str:
     return value
 
 
+_ALPHA_SOURCE_TAG = re.compile(r"^alpha/v3\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)a[1-9][0-9]*\Z")
+
+
+def _require_source_tag(source_tag: object, *, version: str, channel: str) -> str:
+    """Stable tags stay plain tokens; an alpha tag is exactly alpha/v<version> and may contain one slash."""
+    if channel == "alpha":
+        if not isinstance(source_tag, str) or _ALPHA_SOURCE_TAG.fullmatch(source_tag) is None:
+            raise DesktopAttestationError("source tag is not an alpha release tag")
+        if source_tag != f"alpha/v{version}":
+            raise DesktopAttestationError("alpha source tag does not match the release version")
+        return source_tag
+    return _require_token(source_tag, label="source tag")
+
+
 def _require_signing_identity(value: object, *, label: str) -> str:
     if not isinstance(value, str) or _SIGNING_IDENTITY.fullmatch(value) is None:
         raise DesktopAttestationError(f"{label} is not a bounded signing identity")
@@ -114,7 +128,7 @@ def verify(
     if channel not in {"stable", "alpha"}:
         raise DesktopAttestationError("release channel must be stable or alpha")
     _require_token(version, label="release version")
-    _require_token(source_tag, label="source tag")
+    _require_source_tag(source_tag, version=version, channel=channel)
     _require_token(target, label="release target")
     if not _SHA40.fullmatch(source_commit):
         raise DesktopAttestationError("source commit must be a full lowercase Git SHA")
@@ -365,7 +379,7 @@ def verify_archive(
     if channel not in {"stable", "alpha"}:
         raise DesktopAttestationError("release channel must be stable or alpha")
     _require_token(version, label="release version")
-    _require_token(source_tag, label="source tag")
+    _require_source_tag(source_tag, version=version, channel=channel)
     _require_token(target, label="release target")
     if not _SHA40.fullmatch(source_commit):
         raise DesktopAttestationError("source commit must be a full lowercase Git SHA")
