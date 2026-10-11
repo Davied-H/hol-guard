@@ -31,9 +31,7 @@ def test_fused_decision_needs_one_existing_resident_call(
         return original(*args, **kwargs)
 
     monkeypatch.setattr(client, "_resident_request", tracked)
-    vectors = json.loads(
-        (_FIXTURES / f"{operation}_artifact_compose_vectors.json").read_text()
-    )
+    vectors = json.loads((_FIXTURES / f"{operation}_artifact_compose_vectors.json").read_text())
     if operation == "hook":
         copy = dict(next(vector["query"] for vector in vectors if vector["query"]["kind"] == "decision_copy"))
         copy.pop("kind")
