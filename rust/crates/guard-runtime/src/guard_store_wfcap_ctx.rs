@@ -94,6 +94,8 @@ pub(crate) fn int_at(row: &Row<'_>, index: usize) -> WfResult<i64> {
             .ok()
             .and_then(|text| text.trim().parse().ok())
             .ok_or_else(|| WfError::Runtime("invalid literal for int()".to_owned())),
-        _ => Err(WfError::Runtime("int() argument must be a number".to_owned())),
+        _ => Err(WfError::Runtime(
+            "int() argument must be a number".to_owned(),
+        )),
     }
 }

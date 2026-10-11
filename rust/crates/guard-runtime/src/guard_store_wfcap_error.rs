@@ -1,7 +1,7 @@
 //! Failure taxonomy of the workflow-capability authority port. Capability and
 //! runtime failures are outcomes the Python caller re-raises as
 //! `WorkflowCapabilityError` / `RuntimeError`; store failures keep the
-//! `guard_store` mapping; 
+//! `guard_store` mapping.
 
 use rusqlite::ErrorCode;
 

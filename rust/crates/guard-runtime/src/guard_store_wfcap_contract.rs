@@ -6,13 +6,15 @@ use serde_json::{Map, Value};
 
 use crate::guard_store_wfcap_error::{cap, WfResult};
 use crate::guard_store_wfcap_frame::{
-    canonical, digest, digests_equal, frame, hmac_hex, ident, parse_ts, req_int, req_str, sha256_hex, strict, validate_key,
+    canonical, digest, digests_equal, frame, hmac_hex, ident, parse_ts, req_int, req_str,
+    sha256_hex, strict, validate_key,
 };
 
 pub(crate) const CLAIM_SCHEMA: &str = "hol-guard.workflow-capability.v1";
 pub(crate) const CLAIM_ENVELOPE_SCHEMA: &str = "hol-guard.workflow-capability-envelope.v1";
 pub(crate) const RECEIPT_SCHEMA: &str = "hol-guard.workflow-capability-receipt.v1";
-pub(crate) const RECEIPT_ENVELOPE_SCHEMA: &str = "hol-guard.workflow-capability-receipt-envelope.v1";
+pub(crate) const RECEIPT_ENVELOPE_SCHEMA: &str =
+    "hol-guard.workflow-capability-receipt-envelope.v1";
 pub(crate) const ALGORITHM: &str = "hmac-sha256";
 
 const BINDING_KEYS: [&str; 14] = [
@@ -154,7 +156,9 @@ pub(crate) fn validate_claim(value: &Value) -> WfResult<()> {
     }
     let nonce = text(value, "nonce");
     let hex_nonce = (32..=64).contains(&nonce.len())
-        && nonce.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
+        && nonce
+            .bytes()
+            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
     if !hex_nonce {
         return cap("invalid_nonce");
     }
@@ -183,7 +187,13 @@ fn envelope_strings(map: &Map<String, Value>) -> WfResult<()> {
 pub(crate) fn validate_signed_claim(value: &Value) -> WfResult<()> {
     let map = strict(
         value,
-        &["envelope_schema", "algorithm", "claim", "key_id", "signature"],
+        &[
+            "envelope_schema",
+            "algorithm",
+            "claim",
+            "key_id",
+            "signature",
+        ],
     )?;
     envelope_strings(map)?;
     validate_claim(&map["claim"])?;
@@ -214,19 +224,6 @@ fn claim_signature(claim: &Value, key: &[u8], key_id: &str) -> WfResult<String> 
     Ok(hmac_hex(key, &frame("claim-envelope", &authenticated)))
 }
 
-/// `sign_workflow_capability`: the persisted envelope for a claim.
-#[cfg(test)]
-pub(crate) fn sign_claim(claim: &Value, key: &[u8], key_id: &str) -> WfResult<Value> {
-    let signature = claim_signature(claim, key, key_id)?;
-    Ok(serde_json::json!({
-        "algorithm": ALGORITHM,
-        "claim": claim,
-        "envelope_schema": CLAIM_ENVELOPE_SCHEMA,
-        "key_id": key_id,
-        "signature": signature,
-    }))
-}
-
 /// `verify_workflow_capability_signature` on a decoded envelope.
 pub(crate) fn verify_claim_signature(signed: &Value, key: &[u8], key_id: &str) -> WfResult<()> {
     validate_key(key)?;
@@ -237,7 +234,8 @@ pub(crate) fn verify_claim_signature(signed: &Value, key: &[u8], key_id: &str) -
     if text(claim, "schema_version") != CLAIM_SCHEMA {
         return cap("unsupported_capability_schema");
     }
-    if text(signed, "algorithm") != ALGORITHM || text(claim, "algorithm") != text(signed, "algorithm")
+    if text(signed, "algorithm") != ALGORITHM
+        || text(claim, "algorithm") != text(signed, "algorithm")
     {
         return cap("unsupported_capability_algorithm");
     }
@@ -333,7 +331,13 @@ pub(crate) fn validate_receipt(value: &Value) -> WfResult<()> {
 pub(crate) fn validate_signed_receipt(value: &Value) -> WfResult<()> {
     let map = strict(
         value,
-        &["envelope_schema", "algorithm", "receipt", "key_id", "signature"],
+        &[
+            "envelope_schema",
+            "algorithm",
+            "receipt",
+            "key_id",
+            "signature",
+        ],
     )?;
     envelope_strings(map)?;
     validate_receipt(&map["receipt"])?;
@@ -410,4 +414,3 @@ pub(crate) fn decode_signed_receipt(encoded: &str) -> WfResult<Value> {
     }
     Ok(payload)
 }
-

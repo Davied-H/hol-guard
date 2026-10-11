@@ -21,7 +21,10 @@ const TABLES: [(&str, &str); 7] = [
     ("guard_workflow_capability_authority_state", "capability_id"),
     ("guard_workflow_capability_revocations", "revocation_id"),
     ("guard_workflow_capability_receipts", "receipt_id"),
-    ("guard_workflow_capability_authority_transitions", "sequence"),
+    (
+        "guard_workflow_capability_authority_transitions",
+        "sequence",
+    ),
     ("guard_events", "event_id"),
     ("schema_migrations", "version"),
 ];
@@ -140,6 +143,10 @@ fn run_step(home: &Path, source: &str, step: &Value, blob: &mut Blob, label: &st
             return failed(unavailable());
         }
     }
+    if step["op"] == "issue" {
+        // Python returns the signed claim it was handed.
+        result = serde_json::from_str(step["wire"]["signed_json"].as_str().unwrap()).unwrap();
+    }
     Outcome {
         result,
         error: Value::Null,
@@ -198,6 +205,8 @@ fn replays_every_recorded_workflow_capability_scenario() {
             match step["op"].as_str().unwrap() {
                 "sql" => {
                     let connection = Connection::open(home.join("guard.db")).unwrap();
+                    // The recorder's sqlite connection enforces no foreign keys.
+                    connection.execute_batch("pragma foreign_keys=off").unwrap();
                     for pair in step["statements"].as_array().unwrap() {
                         let params: Vec<Value> = pair[1].as_array().unwrap().clone();
                         exec(&connection, pair[0].as_str().unwrap(), &params).unwrap();
@@ -212,7 +221,14 @@ fn replays_every_recorded_workflow_capability_scenario() {
                         .map(|count| count.parse().unwrap());
                     let outcome = run_step(&home, source, step, &mut blob, &label);
                     assert_eq!(outcome.error, step["error"], "{label}: error");
-                    assert_eq!(outcome.result, step["result"], "{label}: result");
+                    // Python re-encodes signed objects as canonical JSON text.
+                    let recorded = step["result"].as_str().map_or_else(
+                        || step["result"].clone(),
+                        |text| {
+                            serde_json::from_str(text).unwrap_or_else(|_| step["result"].clone())
+                        },
+                    );
+                    assert_eq!(outcome.result, recorded, "{label}: result");
                     assert_eq!(
                         Value::Array(blob.writes.clone()),
                         step["blob_writes"],

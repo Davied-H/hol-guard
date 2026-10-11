@@ -12,8 +12,8 @@ use crate::guard_store_wfcap_ctx::{int_at, text_at, Ctx};
 use crate::guard_store_wfcap_error::{cap, WfResult};
 use crate::guard_store_wfcap_frame::{canonical, framed_text_digest, private_reference};
 use crate::guard_store_wfcap_state::{
-    decode_transition, encode_transition, sign_transition, state_sha256,
-    transition_sha256, verify_transition, SignedState, SignedTransition, Transition, ZERO_SHA256,
+    decode_transition, encode_transition, sign_transition, state_sha256, transition_sha256,
+    verify_transition, SignedState, SignedTransition, Transition, ZERO_SHA256,
 };
 
 pub(crate) fn event_payload_sha256(payload: &Value) -> String {
@@ -50,7 +50,10 @@ pub(crate) fn claim_event_extra(
     let mut extra = Map::new();
     extra.insert(
         "approval_provenance_ref".to_owned(),
-        Value::from(private_reference("approval-provenance", approval_provenance_id)),
+        Value::from(private_reference(
+            "approval-provenance",
+            approval_provenance_id,
+        )),
     );
     extra.insert(
         "receipt_ref".to_owned(),
@@ -111,7 +114,10 @@ pub(crate) struct TransitionInput<'a> {
 }
 
 /// `build_authority_transition`.
-pub(crate) fn build_transition(ctx: &Ctx<'_>, input: TransitionInput<'_>) -> WfResult<SignedTransition> {
+pub(crate) fn build_transition(
+    ctx: &Ctx<'_>,
+    input: TransitionInput<'_>,
+) -> WfResult<SignedTransition> {
     let transition = Transition {
         sequence: input.sequence,
         capability_id: text(&input.signed_claim["claim"], "capability_id").to_owned(),

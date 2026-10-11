@@ -82,7 +82,10 @@ pub(crate) fn ident(name: &str, value: &str) -> WfResult<()> {
 }
 
 pub(crate) fn is_digest(value: &str) -> bool {
-    value.len() == 64 && value.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 pub(crate) fn digest(name: &str, value: &str) -> WfResult<()> {
@@ -123,12 +126,15 @@ pub(crate) fn parse_ts(value: &str) -> WfResult<i64> {
     if !well_formed {
         return cap("invalid_canonical_timestamp");
     }
-    let number = |range: std::ops::Range<usize>| -> i64 {
-        value[range].parse::<i64>().unwrap_or(-1)
-    };
+    let number =
+        |range: std::ops::Range<usize>| -> i64 { value[range].parse::<i64>().unwrap_or(-1) };
     let (year, month, day) = (number(0..4), number(5..7), number(8..10));
-    let (hour, minute, second, micro) =
-        (number(11..13), number(14..16), number(17..19), number(20..26));
+    let (hour, minute, second, micro) = (
+        number(11..13),
+        number(14..16),
+        number(17..19),
+        number(20..26),
+    );
     let leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
     let month_days = match month {
         1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
@@ -171,7 +177,9 @@ pub(crate) fn opt_str(map: &Map<String, Value>, name: &str) -> WfResult<Option<S
 /// An integer field (`type(value) is int`); `code` is the error raised otherwise.
 pub(crate) fn req_int(map: &Map<String, Value>, name: &str, code: &str) -> WfResult<i64> {
     match map.get(name) {
-        Some(Value::Number(number)) if number.as_i64().is_some() => Ok(number.as_i64().unwrap_or(0)),
+        Some(Value::Number(number)) if number.as_i64().is_some() => {
+            Ok(number.as_i64().unwrap_or(0))
+        }
         _ => cap(code),
     }
 }

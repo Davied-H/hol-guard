@@ -124,8 +124,10 @@ pub(crate) fn prepare_transition(
 
 /// `finalize_control_transition`, performed after the database commit.
 pub(crate) fn finalize_transition(ctx: &mut Ctx<'_>, pending: &Control) -> WfResult<()> {
-    let (Some(sequence), Some(head)) = (pending.pending_sequence, pending.pending_head_sha256.clone())
-    else {
+    let (Some(sequence), Some(head)) = (
+        pending.pending_sequence,
+        pending.pending_head_sha256.clone(),
+    ) else {
         return cap("capability_control_pending_missing");
     };
     let finalized = Control {

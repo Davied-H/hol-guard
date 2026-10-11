@@ -97,7 +97,11 @@ pub(crate) fn commit(conn: &Connection, args: &Args<'_>) -> StoreResult<Value> {
     let outcome = execute(conn, args)?;
     let planned = args.strings("plan_writes")?.unwrap_or_default();
     let planned_post = args.strings("plan_post_writes")?.unwrap_or_default();
-    let matches = outcome.writes.iter().map(String::as_str).eq(planned.iter().copied())
+    let matches = outcome
+        .writes
+        .iter()
+        .map(String::as_str)
+        .eq(planned.iter().copied())
         && outcome
             .post_commit
             .iter()

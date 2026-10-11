@@ -341,14 +341,28 @@ pub(crate) type SignedState = Signed<AuthorityState>;
 pub(crate) type SignedRevocation = Signed<Revocation>;
 pub(crate) type SignedTransition = Signed<Transition>;
 
-pub(crate) fn sign_state(state: &AuthorityState, key: &[u8], key_id: &str) -> WfResult<SignedState> {
+pub(crate) fn sign_state(
+    state: &AuthorityState,
+    key: &[u8],
+    key_id: &str,
+) -> WfResult<SignedState> {
     let signature = mac("authority-state", &state.to_value(), key, key_id)?;
-    Ok(Signed { inner: state.clone(), key_id: key_id.to_owned(), signature })
+    Ok(Signed {
+        inner: state.clone(),
+        key_id: key_id.to_owned(),
+        signature,
+    })
 }
 
 pub(crate) fn verify_state(signed: &SignedState, key: &[u8], key_id: &str) -> WfResult<()> {
     let expected = sign_state(&signed.inner, key, key_id)?.signature;
-    check_envelope(&signed.key_id, &signed.signature, &expected, key_id, "authority_state")
+    check_envelope(
+        &signed.key_id,
+        &signed.signature,
+        &expected,
+        key_id,
+        "authority_state",
+    )
 }
 
 pub(crate) fn encode_state(signed: &SignedState) -> String {
@@ -368,7 +382,11 @@ fn decode_envelope(encoded: &str, keys: &[&str], purpose: &str) -> WfResult<Valu
 }
 
 pub(crate) fn decode_state(encoded: &str) -> WfResult<SignedState> {
-    let payload = decode_envelope(encoded, &["key_id", "signature", "state"], "authority_state")?;
+    let payload = decode_envelope(
+        encoded,
+        &["key_id", "signature", "state"],
+        "authority_state",
+    )?;
     let map = payload.as_object().cloned().unwrap_or_default();
     let inner = AuthorityState::from_value(&payload["state"])?;
     let signed = Signed {
@@ -388,12 +406,26 @@ pub(crate) fn sign_revocation(
     key_id: &str,
 ) -> WfResult<SignedRevocation> {
     let signature = mac("revocation", &revocation.to_value(), key, key_id)?;
-    Ok(Signed { inner: revocation.clone(), key_id: key_id.to_owned(), signature })
+    Ok(Signed {
+        inner: revocation.clone(),
+        key_id: key_id.to_owned(),
+        signature,
+    })
 }
 
-pub(crate) fn verify_revocation(signed: &SignedRevocation, key: &[u8], key_id: &str) -> WfResult<()> {
+pub(crate) fn verify_revocation(
+    signed: &SignedRevocation,
+    key: &[u8],
+    key_id: &str,
+) -> WfResult<()> {
     let expected = sign_revocation(&signed.inner, key, key_id)?.signature;
-    check_envelope(&signed.key_id, &signed.signature, &expected, key_id, "revocation")
+    check_envelope(
+        &signed.key_id,
+        &signed.signature,
+        &expected,
+        key_id,
+        "revocation",
+    )
 }
 
 pub(crate) fn encode_revocation(signed: &SignedRevocation) -> String {
@@ -405,7 +437,11 @@ pub(crate) fn encode_revocation(signed: &SignedRevocation) -> String {
 }
 
 pub(crate) fn decode_revocation(encoded: &str) -> WfResult<SignedRevocation> {
-    let payload = decode_envelope(encoded, &["key_id", "revocation", "signature"], "revocation")?;
+    let payload = decode_envelope(
+        encoded,
+        &["key_id", "revocation", "signature"],
+        "revocation",
+    )?;
     let map = payload.as_object().cloned().unwrap_or_default();
     let inner = Revocation::from_value(&payload["revocation"])?;
     let signed = Signed {
@@ -428,7 +464,11 @@ pub(crate) fn sign_transition(
     ident("key_id", key_id)?;
     let payload = json!({"key_id": key_id, "transition": transition.to_value()});
     let signature = hmac_hex(key, &frame("authority-transition", &payload));
-    Ok(Signed { inner: transition.clone(), key_id: key_id.to_owned(), signature })
+    Ok(Signed {
+        inner: transition.clone(),
+        key_id: key_id.to_owned(),
+        signature,
+    })
 }
 
 pub(crate) fn verify_transition(
