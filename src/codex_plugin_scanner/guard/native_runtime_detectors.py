@@ -30,14 +30,14 @@ _RESULT_SCHEMA = "guard-runtime-detector-run-result.v1"
 _RESULT_KEYS = frozenset({"schema", "request_id", "request_sha256", "status", "code", "payload"})
 _ENTRY_KEYS = frozenset({"detector_id", "categories", "status", "elapsed_ms", "error_type", "signals"})
 _STATUSES = frozenset({"ok", "disabled", "filtered", "timeout", "error"})
-# The resident bounds the ASCII-escaped canonical request at 4 MiB; the wire
-# envelope adds the operation name and deadline around it.
-_MAX_WIRE_BYTES = 4 * 1024 * 1024 + 4096
+# The resident bounds the ASCII-escaped canonical request at 4 MiB. The wire
+# envelope is serialized with spaced separators, so it is checked only against
+# the resident's 6 MiB frame limit and the canonical bound stays authoritative.
+_MAX_WIRE_BYTES = 6 * 1024 * 1024
 _MAX_ENTRIES = 32
-_MAX_SIGNALS = 256
-# The resident runs every detector in one call, so the budget covers the
-# data-flow and prompt analysis it used to wait on separately.
-_MIN_TIMEOUT_SECONDS = 10.0
+# The resident runs every detector in one call and clamps client deadlines for
+# this operation to nine seconds, so the transport waits for exactly that long.
+_TRANSPORT_TIMEOUT_SECONDS = 9.0
 _INVALID = "native_runtime_detector_run_invalid_result"
 
 DetectorEntry = tuple[
@@ -87,7 +87,7 @@ def native_runtime_detector_entries(
             operation="runtime_detector_run",
             request=request,
             guard_home=home,
-            timeout_seconds=max(_MIN_TIMEOUT_SECONDS, timeout_ms / 1_000),
+            timeout_seconds=_TRANSPORT_TIMEOUT_SECONDS,
             required_feature=_FEATURE,
             response_schema=_RESULT_SCHEMA,
             max_request_bytes=_MAX_WIRE_BYTES,
@@ -96,7 +96,7 @@ def native_runtime_detector_entries(
         raise NativeRuntimeDetectorError("native_runtime_detector_run_unavailable") from error
     if decoded is None:
         raise NativeRuntimeDetectorError("native_runtime_detector_run_unavailable")
-    if not set(decoded) <= _RESULT_KEYS or decoded.get("code") != "ok":
+    if not set(decoded) <= _RESULT_KEYS or decoded.get("status") != "ok" or decoded.get("code") != "ok":
         raise NativeRuntimeDetectorError(_INVALID)
     if decoded.get("request_id") != request["request_id"] or decoded.get("request_sha256") != request_sha256:
         raise NativeRuntimeDetectorError("native_runtime_detector_run_request_mismatch")
@@ -106,7 +106,7 @@ def native_runtime_detector_entries(
         raise NativeRuntimeDetectorError(_INVALID)
     parsed = tuple(_entry(entry) for entry in entries)
     ids = [entry[0] for entry in parsed]
-    if ids != sorted(set(ids)) or sum(len(entry[5]) for entry in parsed) > _MAX_SIGNALS:
+    if ids != sorted(set(ids)):
         raise NativeRuntimeDetectorError(_INVALID)
     return parsed
 

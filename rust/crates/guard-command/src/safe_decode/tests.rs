@@ -149,3 +149,17 @@ fn detector_version_matches_python() {
         "safe-decode.v2"
     );
 }
+
+#[test]
+fn backtrack_heavy_command_reports_an_error_instead_of_no_candidate() {
+    let content = format!("python -c '{}", "\\".repeat(80));
+    assert_eq!(
+        decode_layers_with(&content, &DecodeLimits::default()).map(|_| ()),
+        Err(DecodeError::RegexBudget)
+    );
+    let error = NativeSafeDecode
+        .decode_layers(&content)
+        .map(|_| ())
+        .unwrap_err();
+    assert_eq!(error, "RegexBudgetExceeded");
+}

@@ -107,7 +107,13 @@ impl Huffman {
             code |= bit as i32;
             let count = i32::from(self.counts[len]);
             if code - count < first {
-                return Step::Ok(self.symbols[(index + (code - first)) as usize]);
+                // `code >= first` holds for canonical codes, so the slot is in
+                // range; a bad table still ends as a malformed stream, not a panic.
+                let slot = usize::try_from(index + (code - first)).ok();
+                return match slot.and_then(|slot| self.symbols.get(slot)) {
+                    Some(&symbol) => Step::Ok(symbol),
+                    None => Step::Error,
+                };
             }
             index += count;
             first += count;
@@ -465,5 +471,28 @@ pub(super) fn gzip_read(raw: &[u8], limit: usize) -> Result<Vec<u8>, GzipFailure
         while pos < raw.len() && raw[pos] == 0 {
             pos += 1;
         }
+    }
+}
+
+#[cfg(test)]
+mod huffman_tests {
+    use super::{Bits, Huffman, Step};
+
+    fn decode(table: &Huffman, byte: u8) -> Option<u16> {
+        let data = [byte, byte];
+        match table.decode(&mut Bits {
+            data: &data,
+            pos: 0,
+        }) {
+            Step::Ok(symbol) => Some(symbol),
+            Step::Truncated | Step::Error => None,
+        }
+    }
+
+    #[test]
+    fn single_code_distance_tree_decodes_zero_bit_and_rejects_one_bit() {
+        let table = Huffman::build(&[0, 0, 1], false).expect("zlib accepts one length-1 code");
+        assert_eq!(decode(&table, 0x00), Some(2));
+        assert_eq!(decode(&table, 0xff), None);
     }
 }

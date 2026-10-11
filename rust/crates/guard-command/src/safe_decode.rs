@@ -60,7 +60,13 @@ fn externalize(text: &str) -> String {
 pub enum DecodeError {
     /// `EOFError` from a truncated gzip stream.
     Eof,
+    /// A pattern ran past its backtrack budget. Reported as a detector error so a
+    /// crafted input cannot turn a stalled match into a silent "no candidate".
+    RegexBudget,
 }
+
+/// Backtracking steps one pattern may take per match attempt.
+const REGEX_BACKTRACK_LIMIT: usize = 1_000_000;
 
 /// `DecodedLayer`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -123,7 +129,7 @@ fn build(pattern: &str) -> Regex {
         .replace("<SP>", SP)
         .replace("<NSP>", NSP);
     RegexBuilder::new(&expanded)
-        .backtrack_limit(usize::MAX)
+        .backtrack_limit(REGEX_BACKTRACK_LIMIT)
         .build()
         .expect("safe_decode regex is valid")
 }
@@ -163,22 +169,26 @@ static REDACT_TOKENS: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 /// Capture groups (index 0 is the whole match) of the leftmost match, if any.
-fn first_match(re: &Regex, text: &str) -> Option<Vec<String>> {
-    let caps = re.captures(text).ok().flatten()?;
-    Some(
+fn first_match(re: &Regex, text: &str) -> Result<Option<Vec<String>>, DecodeError> {
+    let Some(caps) = re.captures(text).map_err(|_| DecodeError::RegexBudget)? else {
+        return Ok(None);
+    };
+    Ok(Some(
         (0..caps.len())
             .map(|i| {
                 caps.get(i)
                     .map_or_else(String::new, |m| m.as_str().to_string())
             })
             .collect(),
-    )
+    ))
 }
 
-fn signals(re: &Regex, text: &str) -> Vec<String> {
+fn signals(re: &Regex, text: &str) -> Result<Vec<String>, DecodeError> {
     re.find_iter(text)
-        .filter_map(Result::ok)
-        .map(|m| m.as_str().chars().take(40).collect())
+        .map(|m| {
+            m.map(|m| m.as_str().chars().take(40).collect())
+                .map_err(|_| DecodeError::RegexBudget)
+        })
         .collect()
 }
 
@@ -189,27 +199,27 @@ fn unescape_command_argument(value: &str) -> String {
         .replace("\\'", "'")
 }
 
-fn find_encoded_candidate(text: &str) -> Option<(&'static str, String)> {
-    if let Some(c) = first_match(&POWERSHELL_ENCODED, text) {
-        return Some(("powershell-encoded", c[1].clone()));
+fn find_encoded_candidate(text: &str) -> Result<Option<(&'static str, String)>, DecodeError> {
+    if let Some(c) = first_match(&POWERSHELL_ENCODED, text)? {
+        return Ok(Some(("powershell-encoded", c[1].clone())));
     }
-    if let Some(c) = first_match(&PYTHON_C, text) {
-        return Some(("python-c", c[2].clone()));
+    if let Some(c) = first_match(&PYTHON_C, text)? {
+        return Ok(Some(("python-c", c[2].clone())));
     }
-    if let Some(c) = first_match(&NODE_E, text) {
-        return Some(("node-e", c[2].clone()));
+    if let Some(c) = first_match(&NODE_E, text)? {
+        return Ok(Some(("node-e", c[2].clone())));
     }
-    if let Some(c) = first_match(&JS_ATOB, text) {
-        return Some(("js-atob", c[1].clone()));
+    if let Some(c) = first_match(&JS_ATOB, text)? {
+        return Ok(Some(("js-atob", c[1].clone())));
     }
-    if let Some(c) = first_match(&HEREDOC, text) {
-        return Some(("shell-heredoc", c[2].clone()));
+    if let Some(c) = first_match(&HEREDOC, text)? {
+        return Ok(Some(("shell-heredoc", c[2].clone())));
     }
-    if first_match(&URL_PERCENT, text).is_some() {
-        return Some(("url-percent", text.to_string()));
+    if first_match(&URL_PERCENT, text)?.is_some() {
+        return Ok(Some(("url-percent", text.to_string())));
     }
-    if first_match(&UNICODE_ESCAPE, text).is_some() {
-        return Some(("unicode-escape", text.to_string()));
+    if first_match(&UNICODE_ESCAPE, text)?.is_some() {
+        return Ok(Some(("unicode-escape", text.to_string())));
     }
     let simple: [(&Regex, &'static str); 4] = [
         (&B64_URLSAFE_CANDIDATE, "base64-urlsafe"),
@@ -218,11 +228,11 @@ fn find_encoded_candidate(text: &str) -> Option<(&'static str, String)> {
         (&HEX_CANDIDATE, "hex"),
     ];
     for (re, name) in simple {
-        if let Some(c) = first_match(re, text) {
-            return Some((name, c[0].clone()));
+        if let Some(c) = first_match(re, text)? {
+            return Ok(Some((name, c[0].clone())));
         }
     }
-    None
+    Ok(None)
 }
 
 fn hash_preview(text: &str) -> (String, String) {
@@ -281,14 +291,14 @@ pub fn decode_layers_with(
         return Ok(result);
     }
     let mut current = content.to_string();
-    record_signals(&mut result, &current);
+    record_signals(&mut result, &current)?;
     let mut depth_limited = false;
     for depth in 0..limits.max_depth {
         if start.elapsed().as_secs_f64() * 1000.0 > limits.max_time_ms {
             result.timed_out = true;
             break;
         }
-        let Some((encoding, candidate)) = find_encoded_candidate(&current) else {
+        let Some((encoding, candidate)) = find_encoded_candidate(&current)? else {
             break;
         };
         let decoded = decode_candidate(encoding, &candidate)?;
@@ -313,7 +323,7 @@ pub fn decode_layers_with(
             depth,
         });
         current = decoded;
-        record_signals(&mut result, &current);
+        record_signals(&mut result, &current)?;
         if result.size_exceeded {
             break;
         }
@@ -350,10 +360,11 @@ fn warm_regexes() {
     }
 }
 
-fn record_signals(result: &mut DecodeResult, text: &str) {
-    result.eval_signals.extend(signals(&JS_EVAL, text));
-    result.exec_signals.extend(signals(&PY_EXEC, text));
-    result.marshal_signals.extend(signals(&PY_MARSHAL, text));
+fn record_signals(result: &mut DecodeResult, text: &str) -> Result<(), DecodeError> {
+    result.eval_signals.extend(signals(&JS_EVAL, text)?);
+    result.exec_signals.extend(signals(&PY_EXEC, text)?);
+    result.marshal_signals.extend(signals(&PY_MARSHAL, text)?);
+    Ok(())
 }
 
 /// Zero-sized native implementation of the detector seam.
@@ -366,7 +377,10 @@ impl SafeDecodeApi for NativeSafeDecode {
     }
 
     fn decode_layers<'a>(&self, content: &'a str) -> Result<DecodeResultView<'a>, String> {
-        let result = decode_layers(content).map_err(|DecodeError::Eof| "EOFError".to_owned())?;
+        let result = decode_layers(content).map_err(|error| match error {
+            DecodeError::Eof => "EOFError".to_owned(),
+            DecodeError::RegexBudget => "RegexBudgetExceeded".to_owned(),
+        })?;
         let final_text = if result.final_text == content {
             Cow::Borrowed(content)
         } else {

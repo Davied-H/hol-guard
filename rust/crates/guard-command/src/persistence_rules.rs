@@ -94,8 +94,10 @@ pub(crate) fn py_regex(pattern: &str, flags: &str) -> Regex {
         .unwrap_or_else(|err| panic!("invalid pattern {full}: {err}"))
 }
 
+/// A match that runs past the backtrack budget counts as a hit: every caller
+/// treats a match as risk, so crafted input cannot hide behind a stalled search.
 pub(crate) fn re_search(re: &Regex, text: &str) -> bool {
-    re.is_match(text).unwrap_or(false)
+    re.is_match(text).unwrap_or(true)
 }
 
 static GIT_HOOK_PATHS: LazyLock<Regex> = LazyLock::new(|| {
