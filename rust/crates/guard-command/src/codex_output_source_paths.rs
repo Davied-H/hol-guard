@@ -213,7 +213,13 @@ pub(crate) fn resolve_known_skill_doc_path(
     if name.starts_with("..") || name == "." || name.starts_with('/') {
         return None;
     }
+    // `Path.resolve()` anchors a relative home at the process working directory.
     let home = home_dir.unwrap_or(&ctx.default_home);
+    let home = if home.is_absolute() {
+        home.clone()
+    } else {
+        ctx.process_cwd.join(&home.to_string())
+    };
     for suffix in KNOWN_SKILL_DOC_ROOT_SUFFIXES {
         let candidate_dir = home.join(suffix).join(&name);
         let candidate_file = candidate_dir.join("SKILL.md");
