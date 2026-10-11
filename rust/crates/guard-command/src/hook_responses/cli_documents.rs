@@ -70,9 +70,10 @@ fn with_reason(output: &mut Object, decision: &str, reason: &str) {
 }
 
 fn hook_output(event: &str) -> Object {
-    let mut output = Object::new();
-    output.insert("hookEventName".into(), json!(event));
-    output
+    super::hook_output(event)
+        .as_object()
+        .cloned()
+        .unwrap_or_default()
 }
 
 fn with_output(mut payload: Object, output: Object) -> Object {

@@ -124,19 +124,43 @@ def _render_cli(kind: str, harness: str, params: dict[str, object]) -> tuple[str
     return native_render_cli(kind, harness, params)
 
 
-def _fixed_deny(harness: str, event_name: str, policy_action: str, reason: str) -> dict[str, object] | None:
-    """The constant deny for a blocking verdict the resident could not render."""
+def _fixed_deny(
+    harness: str,
+    event_name: str,
+    policy_action: str,
+    reason: str,
+    *,
+    additional_context: str | None = None,
+    system_message: str | None = None,
+) -> dict[str, object] | None:
+    """The constant document for an outcome the resident could not render.
+
+    A blocking verdict always renders as an explicit block, on every event
+    type. A nonblocking outcome carries no verdict and only forwards its own
+    notice fields, so nothing here ever authorizes an action.
+    """
 
     if policy_action not in _BLOCKING_ACTIONS:
-        return None
+        notice: dict[str, object] = {}
+        if system_message:
+            notice["systemMessage"] = system_message
+        if additional_context:
+            notice["hookSpecificOutput"] = {"hookEventName": event_name, "additionalContext": additional_context}
+        return notice or None
     from ..daemon.hook_fail_closed import fail_closed_response
 
-    return fail_closed_response(
-        harness,
-        event_name,
-        reason=reason or "HOL Guard blocked this action.",
-        prompt_reason=reason or None,
-    )
+    text = reason or "HOL Guard blocked this action."
+    document = fail_closed_response(harness, event_name, reason=text, prompt_reason=reason or None)
+    if document and document.get("policy_action") != "allow" and document.get("decision") != "allow":
+        return document
+    reason_code = str((document or {}).get("reason_code") or "native_hook_render_unavailable")
+    return {
+        "continue": True,
+        "decision": "block",
+        "reason": text,
+        "policy_action": "block",
+        "reason_code": reason_code,
+    }
 
 
 def _emit_native_hook_response(
@@ -165,7 +189,18 @@ def _emit_native_hook_response(
         "system_message": system_message,
     }
     rendered = _render_cli("cli_response", harness, params)
-    document = rendered[1] if rendered is not None else _fixed_deny(harness, event_name, policy_action, reason)
+    document = (
+        rendered[1]
+        if rendered is not None
+        else _fixed_deny(
+            harness,
+            event_name,
+            policy_action,
+            reason,
+            additional_context=additional_context,
+            system_message=system_message,
+        )
+    )
     if document:
         _write_json_line(document, output_stream=output_stream)
 
