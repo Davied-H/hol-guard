@@ -247,7 +247,7 @@ pub(crate) fn complete_workspace_snapshot(
                 .iter()
                 .map(|part| part.to_lowercase())
                 .collect();
-            let kind = entry_kind(&handle, &name)?;
+            let kind = entry_kind(handle, &name)?;
             let is_directory = kind == EntryKind::Directory;
             if lowered
                 .iter()
@@ -278,7 +278,7 @@ pub(crate) fn complete_workspace_snapshot(
                     return Err("workspace snapshot inputs must be regular files".to_owned());
                 }
                 EntryKind::Directory => {
-                    let child = open_child(&handle, &name, true)?;
+                    let child = open_child(handle, &name, true)?;
                     if !child.metadata().is_ok_and(|metadata| metadata.is_dir()) {
                         return Err(
                             "workspace directory identity changed during discovery".to_owned()
@@ -299,7 +299,7 @@ pub(crate) fn complete_workspace_snapshot(
                 }
                 EntryKind::File => {}
             }
-            let file = open_child(&handle, &name, false)?;
+            let file = open_child(handle, &name, false)?;
             let metadata = file.metadata().map_err(|error| error.to_string())?;
             if !metadata.is_file() {
                 return Err("workspace snapshot inputs must be regular files".to_owned());
