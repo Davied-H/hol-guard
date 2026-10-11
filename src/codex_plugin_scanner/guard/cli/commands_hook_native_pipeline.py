@@ -85,6 +85,8 @@ def run_native_hook_pipeline(
 ) -> int:
     """Compose the native edge decision into the harness hook response."""
 
+    # Anchor any harness-stamped hint at CLI entry, before state preparation.
+    edge_timing = RuntimeHookDeadline.cli_edge_kwargs(payload)
     if config is None:
         # Native-mode hooks defer config reads until after the payload loads;
         # composition needs the same synced overlay the daemon applies.
@@ -134,7 +136,7 @@ def run_native_hook_pipeline(
         home_dir=context.home_dir,
         guard_home=context.guard_home,
         workspace=runtime_workspace,
-        edge_budget_seconds=RuntimeHookDeadline.for_cli_hook(payload).remaining(),
+        **edge_timing,
     )
     edge_result = edge.get("result") if isinstance(edge, Mapping) else None
     edge_receipt = edge.get("receipt") if isinstance(edge, Mapping) else None
