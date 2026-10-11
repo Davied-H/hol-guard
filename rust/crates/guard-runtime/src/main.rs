@@ -36,6 +36,8 @@ mod cisco_preflight_op;
 #[cfg(test)]
 mod cisco_preflight_vectors_tests;
 mod claim_approval_reuse_op;
+#[cfg(test)]
+mod claim_consume_local_once_tests;
 mod claim_reuse;
 mod claim_reuse_binding;
 #[cfg(test)]
@@ -241,6 +243,7 @@ mod mcp_tool_evidence_op;
 mod mcp_tool_policy_composio;
 mod mcp_tool_policy_decide_op;
 mod mcp_tool_policy_decision;
+mod mcp_tool_policy_extension;
 mod mcp_tool_policy_flow;
 mod mcp_tool_policy_grants;
 mod mcp_tool_policy_revalidate;
@@ -296,6 +299,7 @@ mod policy_integrity_resolver;
 mod policy_snapshot_build;
 mod policy_store;
 mod prompt_analyze_op;
+mod protect_request_op;
 #[cfg(test)]
 mod registry_vectors_tests;
 mod request_context_op;
@@ -323,6 +327,7 @@ mod runner_sync_signals;
 mod runner_sync_url;
 mod runtime_cli;
 mod runtime_detector_run_op;
+mod secrets_cli;
 mod shim_op;
 #[cfg(unix)]
 mod skill_directory_identity_op;
