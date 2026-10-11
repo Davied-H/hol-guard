@@ -13,8 +13,8 @@ use guard_contracts::{
     ContainedWorkspaceWriteExecuteRequestV1, ContextDigestRequestV1,
     ContributedMcpDecisionRequestV1, CursorObserverProofRequestV1, DaemonHandlerRequestV1,
     DaemonLifecycleDecisionRequestV1, DaemonRouteRequestV1, DataFlowAnalyzeRequestV1,
-    FalsePositiveRulesRequestV1, GitExecutionSafetyRequestV1, GithubCliClassifyRequestV1,
-    GuardHookEnvelopeV2, GuardStoreRequestV1, HookAdapterRequestV1, HookArtifactComposeRequestV1,
+    GitExecutionSafetyRequestV1, GithubCliClassifyRequestV1, GuardHookEnvelopeV2,
+    GuardStoreRequestV1, HookAdapterRequestV1, HookArtifactComposeRequestV1,
     HookAuthorityStateRequestV1, HookDecisionRequestV1, LocalCliGrantRequestV1,
     LocalMcpGrantRequestV1, McpProxyDecisionRequestV1, McpRuntimeEvidenceRequestV1,
     McpStdioProbeRequestV1, McpStdioSessionCloseRequestV1, McpStdioSessionOpenRequestV1,
@@ -24,7 +24,7 @@ use guard_contracts::{
     PackageEvaluationComposeRequestV1, PackageIntentParseRequestV1, PackagePolicyResolveRequestV1,
     PackagePostureRequestV1, PolicyBundleAuthorityRequestV1, PolicyDecisionLookupRequestV1,
     PromptAnalyzeRequestV1, ProtectRequestRequestV1, RequestContextRequestV1,
-    RunnerAuthorityRequestV1, RuntimeCapabilitiesV1, ShimAdminRequestV1,
+    RunnerAuthorityRequestV1, RuntimeCapabilitiesV1, RuntimeDetectorRunRequestV1, ShimAdminRequestV1,
     SkillDirectoryIdentityRequestV1, SupplyChainEvalRequestV1, WorkspaceInventoryRequestV1,
     MAX_NATIVE_RESPONSE_BYTES, NATIVE_APPROVAL_ERROR_CODES, NATIVE_PROTOCOL_VERSION,
     NATIVE_RESIDENT_LIFECYCLE_ERROR_CODES,
@@ -32,9 +32,8 @@ use guard_contracts::{
 use serde::Deserialize;
 use serde_json::Value;
 
-// Evaluation (`capabilities`/`evaluate_resident_bytes`) lives in
-// `resident_ops.rs`; re-exported so `crate::resident_protocol::` call sites
-// and the approval-contract token surface stay stable.
+// Evaluation lives in `resident_ops.rs`; re-exported so `crate::resident_protocol::`
+// call sites and the approval-contract token surface stay stable.
 pub(crate) use crate::resident_ops::evaluate_resident_bytes;
 
 pub(crate) fn capabilities() -> RuntimeCapabilitiesV1 {
@@ -187,7 +186,7 @@ pub(crate) enum ResidentOperationV1 {
     CodexToolOutput(CodexToolOutputRequestV1),
     PolicyBundleAuthority(PolicyBundleAuthorityRequestV1),
     McpRuntimeEvidence(McpRuntimeEvidenceRequestV1),
-    FalsePositiveRules(FalsePositiveRulesRequestV1),
+    RuntimeDetectorRun(RuntimeDetectorRunRequestV1),
     RunnerAuthority(RunnerAuthorityRequestV1),
     LocalCliGrantDecide(LocalCliGrantRequestV1),
     ApprovalProofDecide(ApprovalProofRequestV1),

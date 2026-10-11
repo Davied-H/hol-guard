@@ -41,7 +41,7 @@ pub(crate) const RESIDENT_OP_FEATURES: &[&str] = &[
     guard_contracts::CODEX_TOOL_OUTPUT_FEATURE,
     guard_contracts::POLICY_BUNDLE_AUTHORITY_FEATURE,
     guard_contracts::MCP_RUNTIME_EVIDENCE_FEATURE,
-    guard_contracts::FALSE_POSITIVE_RULES_FEATURE,
+    guard_contracts::RUNTIME_DETECTOR_RUN_FEATURE,
     guard_contracts::RUNNER_AUTHORITY_FEATURE,
     guard_contracts::LOCAL_CLI_GRANT_FEATURE,
     guard_contracts::APPROVAL_PROOF_FEATURE,
