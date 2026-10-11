@@ -12,6 +12,7 @@ from codex_plugin_scanner.guard.runtime.command_extensions import (
     COMMAND_EXTENSION_SCHEMA_VERSION,
 )
 from codex_plugin_scanner.guard.runtime.command_model import CanonicalCommand
+from codex_plugin_scanner.guard.runtime.command_model import parse_shell_command as parse_shell_command
 from codex_plugin_scanner.guard.runtime.extension_control_runtime import ExtensionControlRuntimeSnapshot
 from codex_plugin_scanner.guard.runtime.native_command_evaluation import review_command_native
 from codex_plugin_scanner.guard.runtime.secret_file_requests import (

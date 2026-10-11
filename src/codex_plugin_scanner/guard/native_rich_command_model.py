@@ -15,13 +15,15 @@ from .native_context import (
 from .native_context import (
     _native_runtime_status_memo as native_runtime_status,
 )
-from .native_resident_client import native_resident_client_request
+from .native_resident_client import native_resident_client_ready, native_resident_client_request
 from .native_runtime import _isolated_environment
 
 FEATURE = "rich-command-model-v1"
 SCHEMA = "guard-rich-command-model-request.v1"
 RESULT_SCHEMA = "guard-rich-command-model-result.v1"
 _MAX_BYTES = 2 * 1024 * 1024
+_EXECUTABLE_CACHE: dict[tuple[str, str], str | None] = {}
+_MISS = object()
 
 
 class NativeCommandModelError(RuntimeError, ValueError):
@@ -112,7 +114,7 @@ def _valid_result(action: str, value: Any) -> bool:
 
 
 def request(action: str, args: dict[str, Any], *, timeout_seconds: float = 10.0) -> Any:
-    deadline = time.monotonic() + (timeout_seconds if action == "parse" else min(timeout_seconds, 1.0))
+    deadline = time.monotonic() + timeout_seconds
     try:
         home = _resolve_digest_home(None)
         if not ensure_resident_prerequisite(home):
@@ -127,6 +129,9 @@ def request(action: str, args: dict[str, Any], *, timeout_seconds: float = 10.0)
             or "resident-protocol-v2" not in status.capabilities.features
         ):
             raise NativeCommandModelError("native_rich_command_model_unavailable")
+        if action != "parse":
+            budget = 1.0 if native_resident_client_ready(status.identity.path, home) else 4.0
+            deadline = min(deadline, time.monotonic() + budget)
         material = {
             "schema": SCHEMA,
             "request_id": uuid4().hex,
@@ -138,6 +143,11 @@ def request(action: str, args: dict[str, Any], *, timeout_seconds: float = 10.0)
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise NativeCommandModelError("native_rich_command_model_deadline")
+        cache_key = None
+        if action == "executable" and (value := args.get("value")) is not None and len(value) <= 1024:
+            cache_key = (status.identity.sha256, value)
+        if cache_key is not None and (cached := _EXECUTABLE_CACHE.get(cache_key, _MISS)) is not _MISS:
+            return cached
         payload = json.dumps(
             {
                 "operation": "rich_command_model",
@@ -172,6 +182,10 @@ def request(action: str, args: dict[str, Any], *, timeout_seconds: float = 10.0)
             raise NativeCommandModelError("native_rich_command_model_invalid_result")
         if not _valid_result(action, decoded["result"]):
             raise NativeCommandModelError("native_rich_command_model_invalid_result")
+        if cache_key is not None:
+            if len(_EXECUTABLE_CACHE) >= 256:
+                _EXECUTABLE_CACHE.clear()
+            _EXECUTABLE_CACHE[cache_key] = decoded["result"]
         return decoded["result"]
     except UnicodeEncodeError as error:
         raise NativeCommandModelError("native_rich_command_model_invalid_input") from error
