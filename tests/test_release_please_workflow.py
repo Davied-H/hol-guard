@@ -154,7 +154,9 @@ def test_alpha_dispatch_is_maintainer_only_and_targets_main() -> None:
     assert "needs" not in dispatch
     assert dispatch["permissions"] == {"actions": "write", "contents": "read"}
     assert step["env"]["ACTOR_ID"] == "${{ github.actor_id }}"
-    assert step["env"]["SHA"] == "${{ github.sha }}"
+    assert "SHA" not in step["env"]
+    assert 'SHA=$(gh api "repos/${GITHUB_REPOSITORY}/commits/heads/main" --jq .sha)' in run
+    assert run.index("commits/heads/main") < run.index("gh workflow run")
     assert '"$ACTOR_ID" != "6068672" && "$ACTOR_ID" != "301892678"' in run
     assert "41898282" not in run
     assert run.index('"$ACTOR_ID" != "6068672"') < run.index("gh workflow run")
@@ -227,8 +229,19 @@ def test_alpha_deletion_is_maintainer_only_and_limited_to_prereleases() -> None:
     gate = steps["Require an authorized maintainer and a main alpha version"]
     assert '"$ACTOR_ID" != "6068672" && "$ACTOR_ID" != "301892678"' in gate
     assert '"$VERSION" =~ ^[0-9]+\\.[0-9]+\\.0a[1-9][0-9]*$' in gate
+    names = [step["name"] for step in job["steps"]]
+    verify = steps["Confirm the tag is a prerelease cut from main"]
+    image = steps["Delete the alpha container image tag"]
     release = steps["Delete the GitHub prerelease and tag"]
+    assert names.index("Confirm the tag is a prerelease cut from main") < names.index(
+        "Delete the alpha container image tag"
+    )
+    assert names.index("Delete the alpha container image tag") < names.index("Delete the GitHub prerelease and tag")
+    assert 'compare/${source_sha}...main" --jq .status' in verify
+    assert '"$status" != "ahead" && "$status" != "identical"' in verify
+    assert "it is not a prerelease" in verify
+    assert "|| true" not in image
+    assert 'grep -q "HTTP 404" lookup_error' in image
     assert 'tag="alpha/v${VERSION}"' in release
-    assert "it is not a prerelease" in release
-    assert release.index("it is not a prerelease") < release.index("gh release delete")
     assert "--cleanup-tag --yes" in release
+    assert "gone" not in steps["Explain the PyPI follow-up"]

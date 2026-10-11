@@ -63,8 +63,9 @@ permissions:
 
 concurrency:
   # Serialize publish-capable branch events while keeping pull-request
-  # validation isolated by its merge ref.
-  group: hol-guard-publish-${{ github.ref }}
+  # validation isolated by its merge ref. Alpha dispatches get their own group
+  # so a push to the same branch can never replace a pending alpha, or the reverse.
+  group: hol-guard-publish-${{ github.ref }}${{ github.event_name == 'workflow_dispatch' && inputs.release_channel == 'alpha' && '-alpha' || '' }}
   cancel-in-progress: false
 
 jobs:

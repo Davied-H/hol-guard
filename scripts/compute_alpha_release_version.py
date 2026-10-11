@@ -11,6 +11,11 @@ from typing import cast
 
 from packaging.version import InvalidVersion, Version
 
+try:
+    from scripts.validate_alpha_release import main_alpha_train
+except ModuleNotFoundError:  # Run directly as scripts/compute_alpha_release_version.py.
+    from validate_alpha_release import main_alpha_train
+
 SUPPORTED_TRAINS = {"2.2": (2, 2, 0), "3.0": (3, 0, 1), "3.1": (3, 1, 0)}
 MAIN_TRAIN = "main"
 
@@ -19,15 +24,8 @@ def _train_release(release_train: str, base_version: str | None) -> tuple[int, i
     if release_train == MAIN_TRAIN:
         if base_version is None:
             raise ValueError("The main alpha train requires --base-version")
-        try:
-            base = Version(base_version)
-        except InvalidVersion as exc:
-            raise ValueError(f"Base version is invalid: {base_version!r}") from exc
-        if str(base) != base_version or len(base.release) != 3 or base.is_prerelease or base.is_postrelease:
-            raise ValueError(f"Base version must be a canonical stable X.Y.Z version: {base_version!r}")
-        if base.local is not None or base.epoch != 0:
-            raise ValueError(f"Base version must be a canonical stable X.Y.Z version: {base_version!r}")
-        return (base.release[0], base.release[1] + 1, 0)
+        train = main_alpha_train(base_version)
+        return (train.major, train.minor, train.patch)
     release = SUPPORTED_TRAINS.get(release_train)
     if release is None:
         raise ValueError(f"Unsupported alpha release train: {release_train}")

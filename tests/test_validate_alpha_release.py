@@ -428,6 +428,18 @@ def test_main_alpha_train_rejects_versions_outside_the_next_minor(version: str, 
         )
 
 
+@pytest.mark.parametrize("closing", ["3.43.0", "3.43.0rc1", "3.43.0.post1"])
+def test_main_alpha_train_is_closed_once_the_next_minor_ships(closing: str) -> None:
+    with pytest.raises(ValueError, match=f"Existing release {closing} closes the 3.43.0 alpha train"):
+        _ = validate_release_train(
+            "3.43.0a2",
+            "refs/heads/main",
+            ReleaseChannel.ALPHA,
+            existing_versions=["3.43.0a1", closing],
+            base_version="3.42.0",
+        )
+
+
 def test_main_alpha_train_requires_a_canonical_stable_base() -> None:
     with pytest.raises(ValueError, match="require --base-version"):
         _ = validate_release_train("3.43.0a1", "refs/heads/main", ReleaseChannel.ALPHA)

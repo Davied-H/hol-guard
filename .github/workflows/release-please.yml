@@ -100,7 +100,6 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           ACTOR_ID: ${{ github.actor_id }}
           ALPHA_VERSION: ${{ inputs.alpha_version }}
-          SHA: ${{ github.sha }}
         run: |
           # The publish workflow trusts this bot dispatch, so only maintainers may request it.
           if [[ "$ACTOR_ID" != "6068672" && "$ACTOR_ID" != "301892678" ]]; then
@@ -114,8 +113,11 @@ jobs:
             echo "Alpha version must be \"next\" or a canonical X.Y.0aN" >&2
             exit 1
           fi
+          # Publish runs on the main ref and requires this exact commit, so pin the
+          # current main head rather than the possibly older SHA this run started on.
+          SHA=$(gh api "repos/${GITHUB_REPOSITORY}/commits/heads/main" --jq .sha)
           if [[ ! "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "Dispatch did not report a full commit SHA" >&2
+            echo "Could not resolve the main head to a full commit SHA" >&2
             exit 1
           fi
           gh workflow run "Publish to PyPI" --repo "$GITHUB_REPOSITORY" --ref main \

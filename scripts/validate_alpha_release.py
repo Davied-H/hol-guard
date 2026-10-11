@@ -222,6 +222,15 @@ def validate_release_train(
         raise ValueError(f"{parsed_channel.value.title()} version {version} already exists")
 
     if parsed_channel is ReleaseChannel.ALPHA:
+        closing = [
+            existing
+            for existing in parsed_existing
+            if existing.epoch == 0
+            and existing.release == (train.major, train.minor, train.patch)
+            and not _is_train_alpha(existing, train)
+        ]
+        if closing:
+            raise ValueError(f"Existing release {max(closing)} closes the {train.version_prefix} alpha train")
         train_alphas = [existing for existing in parsed_existing if _is_train_alpha(existing, train)]
         if train_alphas:
             latest = max(train_alphas)

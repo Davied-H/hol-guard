@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import io
 import json
+import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -135,3 +137,16 @@ def test_cli_computes_main_train_alpha(
 
     assert main() == 0
     assert capsys.readouterr().out == "3.43.0a2\n"
+
+
+def test_cli_runs_directly_as_a_script() -> None:
+    script = Path(__file__).resolve().parents[1] / "scripts" / "compute_alpha_release_version.py"
+    result = subprocess.run(
+        [sys.executable, str(script), "--release-train", "main", "--base-version", "3.42.0"],
+        input=json.dumps(["3.42.0"]),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert result.stdout == "3.43.0a1\n"
