@@ -450,14 +450,10 @@
       {
         "id": "secrets-cli",
         "category": "separate_product_cli",
-        "reason": "hol-guard-secrets repository/staged/pre-commit scanner CLI; separate product entry point, not a Guard runtime route. secrets/__init__.py and secret_detection.py (SECRET_RULES, SecretFinding, SecretScanSummary) are imported only by the repository/staged scanners and the secrets CLI; cli.py reaches the package only through main() for the `secrets` subcommand.",
+        "reason": "hol-guard-secrets argument parsing and text rendering; separate product entry point, not a Guard runtime route. Detection, repository/staged scans and pre-commit hooks run in the native secrets-cli command. public_rule_catalog.py is the static public rule listing; cli.py reaches the package only through main() for the `secrets` subcommand.",
         "path": [
           "src/codex_plugin_scanner/guard/secrets/cli.py",
-          "src/codex_plugin_scanner/guard/secrets/precommit.py",
-          "src/codex_plugin_scanner/guard/secrets/secret_repository_scanner.py",
-          "src/codex_plugin_scanner/guard/secrets/secret_staged_scanner.py",
           "src/codex_plugin_scanner/guard/secrets/public_rule_catalog.py",
-          "src/codex_plugin_scanner/guard/secrets/secret_detection.py",
           "src/codex_plugin_scanner/guard/secrets/__init__.py"
         ]
       },
@@ -773,6 +769,18 @@
           "src/codex_plugin_scanner/guard/policy_bundle_v2.py"
         ],
         "reason": "Reviewed: policy bundle v2 evidence and clock helpers. policy_bundle_trusted_keys loads the module through a literal importlib.import_module call when it builds the native verification request for a signed policy bundle, so it is runtime policy-bundle verification and stays counted."
+      },
+      {
+        "path": [
+          "src/codex_plugin_scanner/guard/codex_hook_command_line.py",
+          "src/codex_plugin_scanner/guard/codex_hook_compatibility.py",
+          "src/codex_plugin_scanner/guard/codex_hook_file_integrity.py",
+          "src/codex_plugin_scanner/guard/codex_hook_integrity.py",
+          "src/codex_plugin_scanner/guard/codex_hook_manifest.py",
+          "src/codex_plugin_scanner/guard/codex_hook_package_identity.py",
+          "src/codex_plugin_scanner/guard/codex_install_transaction.py"
+        ],
+        "reason": "Reviewed: Codex hook manifest, integrity and install-transaction modules. The Codex hook bridge no longer imports them at load; launch validation and the installer load them lazily, and they stay counted as runtime because launch trust still runs them until the native resident owns it."
       }
     ],
     "tests": {
