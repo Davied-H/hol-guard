@@ -26,6 +26,8 @@ _THREAD_ID_KEYS = (
     "sessionId",
 )
 _TURN_ID_KEYS = ("codex_turn_id", "turn_id", "turnId")
+_SOCKET_KEYS = ("codex_app_server_socket", "app_server_socket", "appServerSocket")
+_CODEX_HOME_KEYS = ("codex_home", "codexHome")
 _COMMAND_TEXT_KEYS = ("command_text", "commandText")
 _WORKSPACE_KEYS = ("workspace", "cwd", "working_directory", "workingDirectory")
 _MODEL_KEYS = ("codex_model", "codexModel", "model")
