@@ -81,9 +81,10 @@ def guard_pids(baseline: set[int], root: Path) -> set[int]:
             command = Path(f"/proc/{pid}/cmdline").read_bytes()
         except OSError:
             continue
-        # The canary fixture is the measured workload's upstream, not Guard: its marker-path argument
-        # contains the phase root, so keep it out of the service resource figures.
-        if b"mcp-canary-server" in command and not any(marker in command for marker in markers[:3]):
+        # The canary fixture is the measured workload's upstream, not Guard. Identify it by its own
+        # script argument (argv[1]), since its path may legitimately contain a Guard marker.
+        argv = command.split(b"\0")
+        if len(argv) > 1 and argv[1].endswith(b"mcp-canary-server.py"):
             continue
         if any(marker in command for marker in markers):
             found.add(pid)
