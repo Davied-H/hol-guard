@@ -13,15 +13,7 @@ from contextlib import suppress
 from pathlib import Path
 from typing import BinaryIO
 
-
-class _ManagerProxy:
-    """Late-bound view of ``manager`` that avoids an import cycle."""
-
-    def __getattr__(self, name: str):
-        from . import manager
-
-        return getattr(manager, name)
-
+from .manager_ephemeral_reap import _ManagerProxy
 
 m = _ManagerProxy()
 
