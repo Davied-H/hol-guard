@@ -474,7 +474,7 @@
       {
         "id": "cloud-memory-decision-outbox",
         "category": "async_control_plane",
-        "reason": "Producer of the guard.memory-decision.v1 cloud outbox event that feeds Guard Cloud's Suggested Memory candidates. memory_decision_outbox.py and memory_decision_event.py run only after a human approval or denial has already been recorded (approvals._enqueue_memory_decision_for_resolution, the last step of the local approval resolution) and swallow every failure. They write a cloud_events row for the async sync worker; no hook admission, decision, policy lookup or enforcement path reads their output, and the hook and run paths never import them.",
+        "reason": "Producer of the guard.memory-decision.v1 cloud outbox event that feeds Guard Cloud's Suggested Memory candidates. memory_decision_outbox.py and memory_decision_event.py are reached only through approvals._enqueue_memory_decision_for_resolution, the last step of apply_approval_resolution (daemon approval POST, CLI approval command, bulk allow-once), after the human decision is already recorded; every failure is swallowed. They are in the static closure only because approvals.py imports them eagerly, and hook modules import approvals; no hook admission, decision or run path calls them. They write a cloud_events row and a memory-decision-sourced local receipt for the async sync worker; nothing in enforcement reads either as an input to a verdict.",
         "path": [
           "src/codex_plugin_scanner/guard/memory_decision_outbox.py",
           "src/codex_plugin_scanner/guard/memory_decision_event.py"
