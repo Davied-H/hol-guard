@@ -171,7 +171,26 @@ def test_scan_settings_carry_the_release_please_package_version(tmp_path, monkey
     assert "sonar.projectVersion=3.42.0\n" in Path("sonar-scan.properties").read_text(encoding="utf-8")
 
 
-@pytest.mark.parametrize("manifest", ["{}", '{".": 3}', '{".": "3.42.0\\nsonar.qualitygate.wait=false"}', "[]"])
+@pytest.mark.parametrize("version", ["3.42.0", "3.42.0-rc.1", "3.42.0+build.7", "3.42.0-beta-2.1+sha.abc"])
+def test_semver_prerelease_and_build_identifiers_are_accepted(tmp_path, monkeypatch, version):
+    monkeypatch.chdir(tmp_path)
+    Path(".release-please-manifest.json").write_text(f'{{".": "{version}"}}', encoding="utf-8")
+    assert context_module.package_version() == version
+
+
+@pytest.mark.parametrize(
+    "manifest",
+    [
+        "{}",
+        '{".": 3}',
+        '{".": "3.42.0\\nsonar.qualitygate.wait=false"}',
+        "[]",
+        '{".": "3.42.0-.."}',
+        '{".": "3.42.0-rc..1"}',
+        '{".": "3.42.0+"}',
+        '{".": "3.42.0-rc.1."}',
+    ],
+)
 def test_an_invalid_package_version_blocks_scan_preparation(tmp_path, monkeypatch, manifest):
     monkeypatch.chdir(tmp_path)
     Path("sonar-project.properties").write_text("sonar.projectKey=hashgraph-online_hol-guard\n", encoding="utf-8")
