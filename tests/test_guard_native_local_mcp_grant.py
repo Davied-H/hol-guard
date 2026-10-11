@@ -50,3 +50,16 @@ def test_unpinned_store_sends_no_store_path_so_the_resident_holds_the_call(tmp_p
     artifact = _artifact(_identity(), "read_file")
     ext = build_extension_input(object(), artifact)
     assert (ext["store_path"], ext["guard_home"], ext["layers"]) == ("", "", [])
+
+
+def test_unreadable_control_layers_are_flagged_instead_of_raising(tmp_path: Path) -> None:
+    class _BrokenStore:
+        path = tmp_path / "guard-home" / "guard.db"
+        guard_home = tmp_path / "guard-home"
+
+        def read_extension_control_authority_for_registry(self, _registry: object) -> object:
+            raise RuntimeError("control authority requires a native mutation")
+
+    ext = build_extension_input(_BrokenStore(), _artifact(_identity(), "read_file"))
+    assert (ext["layers"], ext["layers_unavailable"]) == ([], True)
+    assert build_extension_input(object(), _artifact(_identity(), "read_file"))["layers_unavailable"] is False

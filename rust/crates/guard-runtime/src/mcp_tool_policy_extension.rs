@@ -16,6 +16,22 @@ use serde_json::{json, Value};
 use crate::local_store_read;
 
 type Decided = (String, String, String);
+/// A static reason code, never request text.
+type Code = &'static str;
+
+/// Name why a decision went unanswered. Only static codes are written, so the
+/// resident's stderr never carries request content.
+fn unanswered(stage: &str, code: Code) {
+    eprintln!("mcp_extension_unanswered stage={stage} code={code}");
+}
+
+fn store_code(error: local_store_read::StoreReadError) -> Code {
+    match error {
+        local_store_read::StoreReadError::PathInvalid => "store_path_invalid",
+        local_store_read::StoreReadError::StoreUnavailable => "store_unavailable",
+        local_store_read::StoreReadError::SchemaInvalid => "store_schema_invalid",
+    }
+}
 
 const GRANT_REFINABLE: [&str; 4] = ["allow", "review", "require-reapproval", "warn"];
 const HOLDABLE: [&str; 3] = ["allow", "warn", "review"];
@@ -25,7 +41,10 @@ pub(crate) fn extension_decision(ext: &McpExtensionInputV1, action: &str) -> Val
     let decided = match local_grant(ext, action) {
         Ok(Some(found)) => Some(found),
         Ok(None) => contributed_or_hold(ext, action),
-        Err(()) => hold_unverified(ext, action),
+        Err(code) => {
+            unanswered("local_grant", code);
+            hold_unverified(ext, action)
+        }
     };
     match decided {
         Some((action, source, summary)) => {
@@ -39,13 +58,13 @@ fn decided(action: &str, source: &str, summary: &str) -> Option<Decided> {
     Some((action.to_owned(), source.to_owned(), summary.to_owned()))
 }
 
-/// `Err` means the resident has no answer for the grant state.
-fn local_grant(ext: &McpExtensionInputV1, action: &str) -> Result<Option<Decided>, ()> {
+/// `Err` means the resident has no answer for the grant state, and says why.
+fn local_grant(ext: &McpExtensionInputV1, action: &str) -> Result<Option<Decided>, Code> {
     if !GRANT_REFINABLE.contains(&action) {
         return Ok(None);
     }
     if ext.local_unavailable {
-        return Err(());
+        return Err("local_unavailable");
     }
     let request = LocalMcpGrantRequestV1 {
         schema: LOCAL_MCP_GRANT_REQUEST_SCHEMA.to_owned(),
@@ -61,7 +80,7 @@ fn local_grant(ext: &McpExtensionInputV1, action: &str) -> Result<Option<Decided
         launcher_path: ext.launcher_path.clone(),
         launcher_home: ext.launcher_home.clone(),
     };
-    let payload = crate::local_mcp_grant_op::decide(&request).map_err(|_| ())?;
+    let payload = crate::local_mcp_grant_op::decide(&request)?;
     Ok(match payload.get("state").and_then(Value::as_str) {
         Some("blocked") => decided(
             "block",
@@ -82,7 +101,10 @@ fn local_grant(ext: &McpExtensionInputV1, action: &str) -> Result<Option<Decided
     })
 }
 
-fn contributed_once(ext: &McpExtensionInputV1, action: &str) -> Result<Option<Decided>, ()> {
+fn contributed_once(ext: &McpExtensionInputV1, action: &str) -> Result<Option<Decided>, Code> {
+    if ext.layers_unavailable {
+        return Err("layers_unavailable");
+    }
     let request = ContributedMcpDecisionRequestV1 {
         schema: CONTRIBUTED_MCP_DECISION_REQUEST_SCHEMA.to_owned(),
         request_id: String::new(),
@@ -95,21 +117,22 @@ fn contributed_once(ext: &McpExtensionInputV1, action: &str) -> Result<Option<De
         tool_name: ext.contributed_tool_name.clone(),
         layers: ext.layers.clone(),
     };
-    let payload = crate::contributed_mcp_decision_op::decide(&request).map_err(|_| ())?;
+    let payload = crate::contributed_mcp_decision_op::decide(&request)?;
     if payload.get("state").and_then(Value::as_str) != Some("decided") {
         return Ok(None);
     }
     let text = |key| payload.get(key).and_then(Value::as_str).map(str::to_owned);
     match (text("action"), text("source"), text("reason")) {
         (Some(action), Some(source), Some(reason)) => Ok(Some((action, source, reason))),
-        _ => Err(()),
+        _ => Err("contributed_payload_invalid"),
     }
 }
 
 /// The contributed decision. With no answer, an allowed or reviewed call is
 /// held in review rather than guessed at or allowed.
 fn contributed_or_hold(ext: &McpExtensionInputV1, action: &str) -> Option<Decided> {
-    let held = || {
+    let held = |code: Code| {
+        unanswered("contributed", code);
         if !HOLDABLE.contains(&action) {
             return None;
         }
@@ -123,10 +146,10 @@ fn contributed_or_hold(ext: &McpExtensionInputV1, action: &str) -> Option<Decide
         )
     };
     match contributed_once(ext, action) {
-        Err(()) => held(),
+        Err(code) => held(code),
         Ok(Some(found)) => Some(found),
         Ok(None) if action == "review" => match contributed_once(ext, "allow") {
-            Err(()) => held(),
+            Err(code) => held(code),
             Ok(Some(found)) if found.0 == "review" => Some(found),
             Ok(_) => None,
         },
@@ -159,16 +182,24 @@ fn hold_unverified(ext: &McpExtensionInputV1, action: &str) -> Option<Decided> {
     contributed
 }
 
-/// Whether any device grant row exists. An unreadable store counts as one.
+/// Whether any device grant row exists. An unreadable store counts as one, and
+/// so does a schema marker that is damaged or newer than this build reads: its
+/// rows cannot be trusted to be absent.
 fn may_hold_mcp_grants(ext: &McpExtensionInputV1) -> bool {
-    let probe = || -> Result<bool, ()> {
+    let probe = || -> Result<bool, Code> {
         let path = local_store_read::require_store_path(&ext.store_path, &ext.guard_home)
-            .map_err(|_| ())?;
-        let Some(connection) = local_store_read::open_read_only(&path).map_err(|_| ())? else {
+            .map_err(store_code)?;
+        let Some(connection) = local_store_read::open_read_only(&path).map_err(store_code)? else {
             return Ok(false);
         };
+        match local_store_read::schema_version(&connection).map_err(store_code)? {
+            Some(version) if version > local_store_read::SUPPORTED_SCHEMA_VERSION => {
+                return Ok(true);
+            }
+            _ => {}
+        }
         for table in ["local_cli_grant", "local_cli_command_grant"] {
-            if !local_store_read::table_exists(&connection, table).map_err(|_| ())? {
+            if !local_store_read::table_exists(&connection, table).map_err(store_code)? {
                 continue;
             }
             let found: bool = connection
@@ -177,14 +208,17 @@ fn may_hold_mcp_grants(ext: &McpExtensionInputV1) -> bool {
                     [],
                     |row| row.get(0),
                 )
-                .map_err(|_| ())?;
+                .map_err(|_| "grant_probe_failed")?;
             if found {
                 return Ok(true);
             }
         }
         Ok(false)
     };
-    probe().unwrap_or(true)
+    probe().unwrap_or_else(|code| {
+        unanswered("grant_probe", code);
+        true
+    })
 }
 
 #[cfg(test)]

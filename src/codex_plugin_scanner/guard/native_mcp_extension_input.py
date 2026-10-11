@@ -31,6 +31,13 @@ def build_extension_input(store: object, artifact: GuardArtifact) -> dict[str, o
     except OSError:
         # A deleted working directory cannot anchor relative entries; hold for review.
         local_unavailable = True
+    layers_unavailable = False
+    try:
+        layers = _layer_inputs(_authority_layers(store))
+    except Exception:
+        # An unreadable control layer must not abort the call before the
+        # resident applies its own denials; it holds the call for review.
+        layers, layers_unavailable = [], True
     server_hash = _server_identity_hash(identity)
     tool_identity = metadata.get("mcp_tool_identity")
     return {
@@ -57,7 +64,8 @@ def build_extension_input(store: object, artifact: GuardArtifact) -> dict[str, o
         "artifact_transport": artifact.transport,
         "server_name": metadata.get("server_name"),
         "contributed_tool_name": tool_identity.get("tool_name") if isinstance(tool_identity, Mapping) else None,
-        "layers": _layer_inputs(_authority_layers(store)),
+        "layers": layers,
+        "layers_unavailable": layers_unavailable,
     }
 
 

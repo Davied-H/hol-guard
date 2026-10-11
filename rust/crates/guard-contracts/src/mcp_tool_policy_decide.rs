@@ -58,6 +58,10 @@ pub struct McpExtensionInputV1 {
     #[serde(default)]
     pub contributed_tool_name: Option<Value>,
     pub layers: Vec<ContributedMcpLayerV1>,
+    /// The caller could not read the extension-control layers; the contributed
+    /// decision has no answer and the call is held for review.
+    #[serde(default)]
+    pub layers_unavailable: bool,
 }
 
 /// One tool call: everything the policy composition reads, in DTO form.

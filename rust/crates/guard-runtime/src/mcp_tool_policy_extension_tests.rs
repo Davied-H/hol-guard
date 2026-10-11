@@ -27,13 +27,22 @@ fn home() -> PathBuf {
 /// A store whose schema marker fails verification: the grant decision has no
 /// answer, while the grant probe can still see the rows.
 fn unreadable_store(rows: usize) -> PathBuf {
+    store_with_marker(rows, 11, "tampered")
+}
+
+fn store_with_marker(rows: usize, version: i64, checksum: &str) -> PathBuf {
     let home = home();
     let connection = Connection::open(home.join("guard.db")).unwrap();
     connection
         .execute_batch(
             "create table local_cli_grant (cli_id text);
-             create table local_cli_schema_migration (singleton integer, version integer, checksum text);
-             insert into local_cli_schema_migration values (1, 11, 'tampered');",
+             create table local_cli_schema_migration (singleton integer, version integer, checksum text);",
+        )
+        .unwrap();
+    connection
+        .execute(
+            "insert into local_cli_schema_migration values (1, ?1, ?2)",
+            rusqlite::params![version, checksum],
         )
         .unwrap();
     for index in 0..rows {
@@ -69,6 +78,7 @@ fn input(home: &std::path::Path) -> McpExtensionInputV1 {
         server_name: None,
         contributed_tool_name: None,
         layers: Vec::new(),
+        layers_unavailable: false,
     }
 }
 
@@ -101,9 +111,35 @@ fn an_unanswered_grant_never_loosens_a_stricter_call() {
 }
 
 #[test]
-fn an_unanswered_grant_with_no_rows_decides_nothing() {
-    let ext = input(&unreadable_store(0));
+fn an_unanswered_grant_with_no_rows_and_a_verified_marker_decides_nothing() {
+    let mut ext = input(&store_with_marker(
+        0,
+        crate::local_store_read::SUPPORTED_SCHEMA_VERSION,
+        &crate::local_store_read::schema_checksum(
+            crate::local_store_read::SUPPORTED_SCHEMA_VERSION,
+        ),
+    ));
+    ext.local_unavailable = true;
     assert_eq!(extension_decision(&ext, "allow"), Value::Null);
+}
+
+#[test]
+fn a_tampered_schema_marker_holds_even_with_no_rows() {
+    let ext = input(&unreadable_store(0));
+    let held = extension_decision(&ext, "allow");
+    assert_eq!(summary(&held), Some(("review", "local-mcp-extension")));
+}
+
+#[test]
+fn a_newer_schema_marker_holds_even_with_no_rows() {
+    let mut ext = input(&store_with_marker(
+        0,
+        crate::local_store_read::SUPPORTED_SCHEMA_VERSION + 1,
+        "from-the-future",
+    ));
+    ext.local_unavailable = true;
+    let held = extension_decision(&ext, "allow");
+    assert_eq!(summary(&held), Some(("review", "local-mcp-extension")));
 }
 
 #[test]
@@ -149,6 +185,23 @@ fn an_unanswered_contribution_holds_but_never_loosens() {
 fn no_grant_and_no_contribution_decides_nothing() {
     let ext = input(&home());
     for action in ["allow", "review", "block"] {
+        assert_eq!(extension_decision(&ext, action), Value::Null, "{action}");
+    }
+}
+
+#[test]
+fn unreadable_control_layers_hold_instead_of_deciding_from_none() {
+    let mut ext = input(&unreadable_store(0));
+    ext.layers_unavailable = true;
+    for action in ["allow", "warn", "review"] {
+        let held = extension_decision(&ext, action);
+        assert_eq!(
+            summary(&held),
+            Some(("review", "catalog-mcp-extension")),
+            "{action}"
+        );
+    }
+    for action in ["block", "require-reapproval"] {
         assert_eq!(extension_decision(&ext, action), Value::Null, "{action}");
     }
 }
