@@ -107,17 +107,19 @@ pub(super) fn claude_glob_scope_proven(
     unfiltered_directory_scope_proven(target, home_dir, cwd)
 }
 
-/// Content search (`grep`) variant of the unfiltered proof. Agent-state trees
-/// (`~/.agent/skills`, `~/.agent/artifacts`) are excluded: the per-file rules
-/// that deny direct reads there do not apply to a directory walk.
+/// Content search (`grep`) variant of the unfiltered proof. Inside agent-state
+/// trees (`~/.agent/skills`, `~/.agent/artifacts`) the per-file rules that
+/// deny direct reads do not apply to a directory walk, so the walk must reach
+/// only documents a direct read would allow.
 pub(super) fn content_search_scope_proven(
     target: &str,
     home_dir: Option<&str>,
     cwd: Option<&str>,
 ) -> bool {
-    !verified_directory_root(target, home_dir, cwd)
-        .is_some_and(|root| super::read_paths::inside_agent_state_tree(&root, home_dir))
-        && unfiltered_directory_scope_proven(target, home_dir, cwd)
+    verified_directory_root(target, home_dir, cwd).is_none_or(|root| {
+        !super::read_paths::inside_agent_state_tree(&root, home_dir)
+            || super::read_paths::agent_state_tree_holds_only_documents(&root, home_dir)
+    }) && unfiltered_directory_scope_proven(target, home_dir, cwd)
 }
 
 /// Host-neutral variant for hosts whose search semantics are not modeled
