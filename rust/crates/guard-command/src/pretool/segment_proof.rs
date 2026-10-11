@@ -42,6 +42,7 @@ pub(super) fn verified_cwd_compound_context(
 
 pub(super) fn exact_safe_cwd_compound(
     model: &CanonicalCommandV1,
+    allow_git_helper_context: bool,
     context: super::PathContext<'_>,
 ) -> bool {
     let Some(cwd) = verified_cwd_compound_context(model, context) else {
@@ -106,7 +107,7 @@ pub(super) fn exact_safe_cwd_compound(
         ) && exact_safe_segment_with_context(
             model,
             segment,
-            false,
+            allow_git_helper_context,
             crate::pretool::PathContext {
                 home_dir: context.home_dir,
                 cdpath_unset: context.cdpath_unset,
@@ -280,7 +281,9 @@ pub(super) fn exact_safe_segment_with_context(
     let basename = executable_basename(executable);
     let inert_search = matches!(basename, "rg" | "grep")
         && search::safe_search_arguments_with_context(basename, &segment.arguments, context);
-    if (!inert_search && sensitive_command(&segment.text))
+    if (!inert_search
+        && !super::source_file_read_segment(segment)
+        && sensitive_command(&segment.text))
         || (!matches!(basename, "rg" | "grep")
             && segment
                 .arguments

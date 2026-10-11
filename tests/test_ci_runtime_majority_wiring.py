@@ -174,7 +174,7 @@ def test_shipped_scope_declares_every_dynamic_import_with_the_registry_decision(
     scope = load_scope(REPO_ROOT / DEFAULT_SCOPE)
     entries = {entry["path"]: entry for entry in scope["python"]["dynamic_imports"]}
     registry = entries["src/codex_plugin_scanner/guard/adapters/__init__.py"]
-    assert registry["resolution"] == "unfollowed"
+    assert registry["resolution"] == "follow"
     assert ".cursor" in registry["targets"]
     assert "Decision" in registry["evidence"]
     assert all(entry["evidence"].strip() for entry in entries.values())
@@ -187,7 +187,7 @@ def test_shipped_rust_exclusions_carry_evidence_and_unwired_is_reported() -> Non
     assert result["rust"]["unwired_loc"] > 0
     counted = {item["path"] for item in result["rust"]["files"]}
     assert not counted & {item["path"] for item in result["rust"]["unwired_files"]}
-    assert f"{CRATES}/guard-command/src/hook_responses.rs" not in counted
+    assert f"{CRATES}/guard-command/src/hook_responses.rs" in counted
 
 
 def test_declaration_without_a_remaining_site_is_an_error(tmp_path: Path) -> None:

@@ -70,16 +70,83 @@ def _diagnostics(env: dict[str, str]) -> str:
             if entry.is_file():
                 lines.append(f"{entry.name}={_safe_read(entry)[-300:]!r}")
     for entry in guard_home.rglob("managed-resident-phases.v1.log"):
-        phases = [line for line in _safe_read(entry).splitlines() if line.startswith("native_resident_phase ")]
+        text = _safe_read(entry)
+        if text.startswith("<"):
+            # The resident may hold the file without read sharing; say so instead of dropping the evidence.
+            lines.append(f"{entry.name}={text}")
+            continue
+        phases = [line for line in text.splitlines() if line.startswith("native_resident_phase ")]
         lines.extend(phases[-96:])
     return " | ".join(lines)
+
+
+def _process_and_listener_snapshot(guard_home: Path) -> str:
+    """Name the live Guard processes, loopback listeners and resident state files for a failed step.
+
+    A resident that is listed in state but never answers authentication leaves no phase evidence of its
+    own, so record whether it is alive, what it listens on and whether its phase file exists.
+    """
+
+    lines = ["--- process and listener snapshot ---"]
+    for command in (
+        ["tasklist", "/FI", "IMAGENAME eq hol-guard*", "/FO", "CSV", "/NH"],
+        ["tasklist", "/FI", "IMAGENAME eq guard-runtime*", "/FO", "CSV", "/NH"],
+        ["netstat", "-ano", "-p", "TCP"],
+    ):
+        try:
+            result = subprocess.run(command, capture_output=True, check=False, text=True, timeout=10)
+        except (OSError, subprocess.SubprocessError) as error:
+            lines.append(f"{command[0]}: {error!r}")
+            continue
+        output = result.stdout
+        if command[0] == "netstat":
+            output = "\n".join(line for line in output.splitlines() if "127.0.0.1" in line and "LISTENING" in line)
+        lines.append(output.strip())
+    runtime_dir = guard_home / "native-runtime"
+    if runtime_dir.is_dir():
+        for entry in sorted(runtime_dir.rglob("*")):
+            try:
+                size = entry.stat().st_size if entry.is_file() else "dir"
+            except OSError as error:
+                size = repr(error)
+            lines.append(f"{entry.relative_to(runtime_dir)} size={size}")
+    return "\n".join(lines)
+
+
+def _start_timeline(env: dict[str, str]) -> str:
+    """Bounded daemon startup events and phase timings, printed even when the test passes."""
+
+    daemon_log = Path(env["HOL_GUARD_HOME"]) / "logs" / "daemon.log"
+    lines = []
+    for raw in _safe_read(daemon_log).splitlines():
+        try:
+            record = json.loads(raw)
+        except ValueError:
+            continue
+        event = str(record.get("event", ""))
+        if event in _TIMELINE_EVENTS or event == "startup_phase":
+            lines.append(f"{record.get('timestamp', '')[11:23]} {event} {record.get('detail', '')}".rstrip())
+    for entry in Path(env["HOL_GUARD_HOME"]).rglob("managed-resident-phases.v1.log"):
+        phases = [line for line in _safe_read(entry).splitlines() if line.startswith("native_resident_phase ")]
+        lines.extend(phases[-64:])
+    return "\n".join(lines[-300:])
+
+
+_TIMELINE_EVENTS = frozenset(
+    {
+        "daemon_listen_ready",
+        "daemon_ready",
+        "runtime_artifact_reconciliation_completed",
+        "onefile_extraction_reclaimed",
+    }
+)
 
 
 def _full_diagnostics(env: dict[str, str]) -> str:
     """Complete daemon journal records and complete log files for a failed packaged step."""
 
     guard_home = Path(env["HOL_GUARD_HOME"])
-    sections = [_diagnostics(env)]
+    sections = [_diagnostics(env), _process_and_listener_snapshot(guard_home)]
     journal = guard_home / "daemon-lifecycle"
     if journal.is_dir():
         for entry in sorted(journal.iterdir()):
@@ -196,6 +263,7 @@ def test_packaged_windows_core_bootstrap_retry_and_repair(tmp_path: Path, native
     except (Exception, pytest.fail.Exception) as error:
         pytest.fail(f"{error!r}\n{_full_diagnostics(env)}", pytrace=False)
     finally:
+        print(f"Packaged daemon start timeline:\n{_start_timeline(env)}")
         cleanup = _run_core(executable, stop_args, env=env)
         assert cleanup.returncode == 0, f"stdout={cleanup.stdout!r}\nstderr={cleanup.stderr!r}"
         cleanup_payload = _json_result(cleanup)
