@@ -14,7 +14,9 @@ import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
+from typing import TypeGuard
 
 from .zcode_contained_tests import contained_zcode_response
 
@@ -32,12 +34,15 @@ def route_codex_containment(
     *,
     hook_input: str,
     guard_home: Path | None,
+    home_dir: Path | None = None,
+    deadline: float | None = None,
 ) -> dict[str, object]:
     """Rewrite a containment receipt into the contained sink, or keep the denial."""
 
     if (
         sys.platform != "darwin"
         or guard_home is None
+        or not _absolute_hook_home(home_dir)
         or response.get("policy_action") != "sandbox-required"
         or response.get("decision") != "deny"
     ):
@@ -49,7 +54,7 @@ def route_codex_containment(
     if not isinstance(payload, dict) or payload.get("guard_containment_receipt_only") is True:
         return response
     executable = launching_codex_executable()
-    if executable is None or not codex_applies_updated_input(executable):
+    if executable is None or not codex_applies_updated_input(executable, deadline=deadline):
         return _with_update_hint(response)
     routed = contained_zcode_response(
         response,
@@ -60,9 +65,17 @@ def route_codex_containment(
             "python_executable": sys.executable,
             "package_root": str(Path(__file__).resolve().parents[3]),
         },
-        cli_args=["--home", str(Path.home())],
+        cli_args=["--home", str(home_dir)],
     )
     return routed if routed is not None else response
+
+
+def _absolute_hook_home(home_dir: Path | None) -> TypeGuard[Path]:
+    """True only for the absolute home bound into the installed Codex hook."""
+
+    if home_dir is None:
+        return False
+    return home_dir.is_absolute() and "\x00" not in str(home_dir)
 
 
 def launching_codex_executable() -> Path | None:
@@ -90,15 +103,18 @@ def launching_codex_executable() -> Path | None:
     return None
 
 
-def codex_applies_updated_input(executable: Path) -> bool:
-    """True when ``codex --version`` reports a release that applies ``updatedInput``."""
+def codex_applies_updated_input(executable: Path, *, deadline: float | None = None) -> bool:
+    """True when ``codex --version`` reports a stable release that applies ``updatedInput``."""
 
+    timeout = _version_probe_timeout(deadline)
+    if timeout is None:
+        return False
     try:
         result = subprocess.run(
             [os.fspath(executable), "--version"],
             capture_output=True,
             text=True,
-            timeout=3,
+            timeout=timeout,
             check=False,
             stdin=subprocess.DEVNULL,
             env={"PATH": "/usr/bin:/bin", "HOME": str(Path.home())},
@@ -109,8 +125,19 @@ def codex_applies_updated_input(executable: Path) -> bool:
     if match is None:
         return False
     version = tuple(int(part) for part in match.group(1, 2, 3))
-    # A 0.131.0 pre-release may predate the rewrite support.
-    return version > _MIN_VERSION or (version == _MIN_VERSION and match.group(4) is None)
+    # Any pre-release can predate the rewrite support, including one newer than 0.131.0.
+    return match.group(4) is None and version >= _MIN_VERSION
+
+
+def _version_probe_timeout(deadline: float | None) -> float | None:
+    """Stay inside the hook deadline. A missed probe keeps the denial."""
+
+    if deadline is None:
+        return 3.0
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        return None
+    return min(3.0, remaining)
 
 
 def _with_update_hint(response: dict[str, object]) -> dict[str, object]:

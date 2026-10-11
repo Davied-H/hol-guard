@@ -397,6 +397,7 @@ def main(
                 hook_input=data,
                 state_path=state_path,
                 deadline=deadline,
+                query=query,
             )
         )
     return 0
@@ -418,6 +419,18 @@ def _launcher_integrity_response(event_name: str, data: str) -> dict[str, object
     return _unavailable_response(event_name, _LAUNCH_INTEGRITY_REASON, data)
 
 
+def _installed_hook_home(query: str) -> Path | None:
+    """Return the single absolute home the installed Codex hook was bound to."""
+
+    values = parse_qs(query, keep_blank_values=True).get("home", [])
+    if len(values) != 1 or "\x00" in values[0]:
+        return None
+    home = Path(values[0])
+    if not home.is_absolute():
+        return None
+    return home
+
+
 def _bridge_output(
     response: dict[str, object],
     *,
@@ -425,6 +438,7 @@ def _bridge_output(
     hook_input: str,
     state_path: str | Path,
     deadline: float,
+    query: str = "",
 ) -> str:
     if event_name == "PreToolUse":
         state = Path(state_path)
@@ -432,6 +446,8 @@ def _bridge_output(
             response,
             hook_input=hook_input,
             guard_home=state.parent if state.is_absolute() and state.name == "daemon-state.json" else None,
+            home_dir=_installed_hook_home(query),
+            deadline=deadline,
         )
     payload = apply_browser_approval_wait(
         response,
