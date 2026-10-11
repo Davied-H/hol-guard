@@ -8,6 +8,7 @@ to the resident. Missing or malformed replies cannot authorize a context.
 from __future__ import annotations
 
 import os
+import sys
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -61,6 +62,9 @@ _BUDGET_MS = 9_000
 
 
 def _facts(cwd: Path, home_dir: Path) -> dict[str, Any]:
+    from . import shims
+    from .package_shim_frozen import package_shim_interpreter
+
     return {
         "cwd": _absolute_text(cwd),
         "home_dir": _absolute_text(home_dir),
@@ -75,6 +79,13 @@ def _facts(cwd: Path, home_dir: Path) -> dict[str, Any]:
         "caller_home": str(Path.home().absolute()),
         "temp_dir": tempfile.gettempdir(),
         "groups": _process_groups(),
+        "launcher": {
+            "python_executable": sys.executable,
+            "interpreter": package_shim_interpreter(),
+            "import_root": str(Path(shims.__file__).absolute().parents[2]),
+            "frozen": bool(getattr(sys, "frozen", False)),
+            "python_version": [sys.version_info.major, sys.version_info.minor],
+        },
     }
 
 
@@ -85,6 +96,13 @@ def native_direct_tool_context(
     cwd: Path | None,
     home_dir: Path,
 ) -> ShellExecutionContext | None:
+    # Necessary literal fragments only: this avoids transport for impossible
+    # inputs without granting a command verdict. Native parsing and proofs
+    # still decide every candidate. Strip shell quoting/escaping conservatively.
+    fragments = command_text.translate(str.maketrans("", "", "'\"\\\n\r")).casefold()
+    if "cd" not in fragments or ("vitest" if tool == "vitest" else "tsc") not in fragments:
+        return None
+
     from .runtime.shell_execution_context import _context_from_report
 
     try:

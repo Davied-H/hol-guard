@@ -183,6 +183,18 @@ pub struct RequestContextDirectFactsV1 {
     pub temp_dir: String,
     pub environment: BTreeMap<String, String>,
     pub groups: Vec<u32>,
+    pub launcher: RequestContextDirectLauncherV1,
+}
+
+/// Current caller runtime identity; no shim bytes, digests or trust verdicts.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct RequestContextDirectLauncherV1 {
+    pub python_executable: String,
+    pub interpreter: String,
+    pub import_root: String,
+    pub frozen: bool,
+    pub python_version: [u32; 2],
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

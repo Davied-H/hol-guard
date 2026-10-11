@@ -241,7 +241,9 @@ fn typescript_stream_observer_is_safe(
         return !pattern.is_empty()
             && !pattern.starts_with('-')
             && pattern.chars().count() <= 512
-            && tokens[1..tokens.len() - 1]
+            && tokens
+                .get(1..tokens.len().saturating_sub(1))
+                .unwrap_or(&[])
                 .iter()
                 .all(|s| ["-a", "-E", "-i", "-v", "-aE", "-ai", "-iv"].contains(&s.as_str()));
     }

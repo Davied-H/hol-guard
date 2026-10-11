@@ -48,7 +48,7 @@ def test_native_context_refusal_or_malformed_reply_cannot_recover_a_context(
 ) -> None:
     monkeypatch.setattr(client, "_call", lambda *_args, **_kwargs: reply)
     assert (
-        direct_vitest.direct_local_vitest_execution_context("synthetic command", cwd=tmp_path, home_dir=tmp_path)
+        direct_vitest.direct_local_vitest_execution_context("cd synthetic && vitest", cwd=tmp_path, home_dir=tmp_path)
         is None
     )
 
@@ -74,10 +74,10 @@ def test_context_is_hydrated_from_one_bound_native_call(
         shell_execution_context, "_context_from_report", lambda wire: expected if wire is report else None
     )
     entrypoint = getattr(direct_vitest, f"direct_local_{tool}_execution_context")
-    result = entrypoint("synthetic command", cwd=tmp_path, home_dir=tmp_path)
+    result = entrypoint("cd synthetic && npx tsc --noEmit && vitest", cwd=tmp_path, home_dir=tmp_path)
     assert result is expected
     assert len(calls) == 1
-    assert calls[0]["action"]["body"]["script"] == "synthetic command"
+    assert calls[0]["action"]["body"]["script"] == "cd synthetic && npx tsc --noEmit && vitest"
     assert calls[0]["action"]["body"]["tool"] == tool
     assert calls[0]["source"] == "direct_command"
 
@@ -98,3 +98,16 @@ def test_trusted_path_command_only_presents_strict_native_boolean(
 ) -> None:
     monkeypatch.setattr(client, "_call", lambda *_args, **_kwargs: reply)
     assert direct_vitest._trusted_path_command("bun", cwd=tmp_path, home_dir=tmp_path) is expected
+
+
+@pytest.mark.parametrize("command", ["pwd", "ls -la", "echo hello", "cd workspace && echo hello", "npx tsc --noEmit"])
+@pytest.mark.parametrize("tool", ["vitest", "typescript"])
+def test_impossible_literal_inputs_do_not_contact_the_resident(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, command: str, tool: str
+) -> None:
+    def unexpected(*_args: Any, **_kwargs: Any) -> None:
+        pytest.fail("impossible input contacted the resident")
+
+    monkeypatch.setattr(client, "_call", unexpected)
+    entrypoint = getattr(direct_vitest, f"direct_local_{tool}_execution_context")
+    assert entrypoint(command, cwd=tmp_path, home_dir=tmp_path) is None

@@ -3,7 +3,6 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use guard_command::direct_vitest::{self, DirectToolAuthority};
-use guard_command::shims::{package_shim_status, HarnessContext};
 use guard_contracts::{
     DirectToolV1, RequestContextBuildV1, RequestContextDirectFactsV1, RequestContextDirectToolV1,
     RequestContextRequestV1, RequestContextTrustedToolV1, MAX_REQUEST_CONTEXT_PATH_BYTES,
@@ -56,7 +55,7 @@ impl DirectToolAuthority for Authority<'_> {
                 &self.facts.groups,
             )
     }
-    fn trusted_command(&self, command: &str, cwd: &Path, home: &Path) -> bool {
+    fn trusted_command(&self, command: &str, cwd: &Path, _home: &Path) -> bool {
         if !self.within_budget() {
             return false;
         }
@@ -77,50 +76,8 @@ impl DirectToolAuthority for Authority<'_> {
         if command != "bun" {
             return false;
         }
-        let status = package_shim_status(
-            &HarnessContext {
-                guard_home: home.join(".hol-guard"),
-                home_dir: Some(home.to_path_buf()),
-                workspace_dir: Some(cwd.to_path_buf()),
-                home_override_explicit: false,
-            },
-            Some(
-                self.facts
-                    .environment
-                    .get("PATH")
-                    .map_or("", String::as_str),
-            ),
-        );
-        self.within_budget()
-            && status
-                .get("manager_details")
-                .and_then(Value::as_array)
-                .is_some_and(|details| {
-                    details.iter().any(|d| {
-                        d.get("manager").and_then(Value::as_str) == Some("bun")
-                            && d.get("integrity").and_then(Value::as_str) == Some("ok")
-                            && d.get("path_active").and_then(Value::as_bool) == Some(true)
-                            && d.get("shim_path").and_then(Value::as_str)
-                                == Some(resolved_tool_path_text(&resolved).as_str())
-                    })
-                })
+        crate::direct_tool_managed_bun::trusted(self.facts, &resolved, cwd, self.budget)
     }
-}
-
-fn resolved_tool_path_text(path: &Path) -> String {
-    let text = path.to_string_lossy();
-    #[cfg(windows)]
-    {
-        // Python realpath and the shim DTO use ordinary Windows paths; Rust
-        // canonicalize uses a verbatim prefix. Normalize only that spelling.
-        if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
-            return format!(r"\\{}", rest);
-        }
-        if let Some(rest) = text.strip_prefix(r"\\?\") {
-            return rest.to_owned();
-        }
-    }
-    text.into_owned()
 }
 
 fn admit(facts: &RequestContextDirectFactsV1, budget: &Budget) -> Result<(), &'static str> {
@@ -130,10 +87,13 @@ fn admit(facts: &RequestContextDirectFactsV1, budget: &Budget) -> Result<(), &'s
         &facts.home_dir,
         &facts.caller_home,
         &facts.temp_dir,
+        &facts.launcher.python_executable,
+        &facts.launcher.interpreter,
+        &facts.launcher.import_root,
     ] {
         if value.is_empty()
             || value.len() > MAX_REQUEST_CONTEXT_PATH_BYTES
-            || value.contains('\0')
+            || value.contains(['\0', '\n', '\r'])
             || !Path::new(value).is_absolute()
         {
             return Err("native_request_context_direct_path_invalid");

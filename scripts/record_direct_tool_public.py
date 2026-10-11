@@ -124,12 +124,12 @@ def public_cases() -> list[dict[str, Any]]:
     vitest = "cd {workspace} && {runner} run tests/unit.test.ts --no-coverage 2>&1 | tail -40"
     count = (
         'cd {workspace} && NODE_OPTIONS="--max-old-space-size=8192" '
-        'bun --smol ./node_modules/typescript/bin/tsc --noEmit 2>&1 '
+        "bun --smol ./node_modules/typescript/bin/tsc --noEmit 2>&1 "
         '| grep "error TS" | wc -l ; echo MY_TSC_ERRORS_COUNT_DONE'
     )
     routine = 'cd {workspace} && npx tsc --noEmit src/index.ts 2>&1 | grep -v "npm warn" | head -8 ; echo TSC_DONE'
     diagnostic = (
-        'cd {workspace} && npx tsc --noEmit 2>&1 '
+        "cd {workspace} && npx tsc --noEmit 2>&1 "
         '| grep -E "harnesses/page|enterprises/page" || echo NO_ERRORS_IN_TOUCHED_FILES'
     )
     for tool, commands in (
@@ -177,6 +177,8 @@ def public_cases() -> list[dict[str, Any]]:
                 routine,
                 routine.replace(' | grep -v "npm warn" | head -8 ; echo TSC_DONE', ""),
                 routine.replace("head -8", "tail -200"),
+                routine.replace('grep -v "npm warn"', "grep"),
+                routine.replace('grep -v "npm warn"', "grep -v"),
                 *[
                     routine.replace(a, b)
                     for a, b in [
