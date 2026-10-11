@@ -80,8 +80,14 @@ pub(in crate::pretool) fn safe_glob_operand(
     let Some(matches) = expand_glob(value, context) else {
         return false;
     };
+    // With globstar a final `**` also expands to every nested entry, so the
+    // matched directories must be proven like a recursive read.
+    let final_globstar = value
+        .rsplit('/')
+        .find(|part| !part.is_empty())
+        .is_some_and(|part| part.len() > 1 && part.bytes().all(|byte| byte == b'*'));
     matches.into_iter().all(|path| {
-        if recursive {
+        if recursive || final_globstar {
             walk(path, &[], &[])
         } else {
             true

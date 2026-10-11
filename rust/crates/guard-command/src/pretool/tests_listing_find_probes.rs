@@ -440,9 +440,18 @@ fn rg_glob_operands_are_proven_by_their_expansion() {
         "rg -n main ../**/*.ts",
         "rg -n main src/**/*.t#",
         "rg --hidden -n main src/**/*.ts",
+        // rg searches inside a matched directory, so its contents need proof.
+        "rg -n key k*",
+        "rg -n plan d*",
+        "rg -n env b*",
     ] {
         assert!(!allowed_in(&fixture, ws, command), "{command}");
     }
+    write(std::path::Path::new(ws), "lib/deep/server.pem");
+    // A final globstar can expand to nested entries even for `ls`.
+    assert!(!allowed_in(&fixture, ws, "ls lib/**"));
+    assert!(!allowed_in(&fixture, ws, "rg -n key lib/*"));
+    std::fs::remove_dir_all(std::path::Path::new(ws).join("lib")).unwrap();
     assert!(allowed_in(&fixture, ws, "rg -n main */main.ts"));
     std::os::unix::fs::symlink("src", std::path::Path::new(ws).join("linked")).unwrap();
     // A shell without globstar follows a directory link through `*`.
