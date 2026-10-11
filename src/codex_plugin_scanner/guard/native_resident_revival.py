@@ -85,6 +85,17 @@ def native_unavailable_reason(failure_code: str | None, default: str) -> str:
     return DEAD_RUNTIME_REASON if failure_code == RESTART_BLOCKED_CODE else default
 
 
+def native_route_unavailable_body() -> dict[str, str]:
+    """Body for a 503 route answer; names a refused respawn so hooks can deny fast."""
+
+    from .native_resident_client import native_resident_client_failure_code
+
+    body = {"error": "native_route_policy_unavailable"}
+    if native_resident_client_failure_code() == RESTART_BLOCKED_CODE:
+        body["reason_code"] = RESTART_BLOCKED_CODE
+    return body
+
+
 def reset_native_resident_restart_pacing(
     *,
     executable: Path,
@@ -141,6 +152,7 @@ __all__ = [
     "arm_restart_hold",
     "clear_restart_hold",
     "is_restart_blocked_frame",
+    "native_route_unavailable_body",
     "native_unavailable_reason",
     "reset_native_resident_restart_pacing",
     "restart_blocked_frame",

@@ -172,6 +172,7 @@ from ..native_policy_bundle import (
     PolicyBundleNativeUnavailableError,
     native_rejection_code,
 )
+from ..native_resident_revival import native_route_unavailable_body
 from ..native_resident_watchdog import start_native_resident_watchdog
 from ..native_runtime_request_scope import native_status_request_scope
 from ..package_firewall_action_rate_limit import PackageFirewallActionRateLimiter
@@ -3033,7 +3034,7 @@ class _GuardDaemonHandler(BaseHTTPRequestHandler):
         try:
             route = native_route_facts("POST", parsed.path, guard_home=self._route_home())
         except NativeDaemonRouteError:
-            self._write_json({"error": "native_route_policy_unavailable"}, status=503)
+            self._write_json(native_route_unavailable_body(), status=503)
             return
         if route.route_class != "none" and not self._header_token_is_valid():
             self._write_unauthorized(extra_headers=self._cors_headers_for_request())
@@ -3321,7 +3322,7 @@ class _GuardDaemonHandler(BaseHTTPRequestHandler):
         try:
             resolution = native_resolve_request(parsed.path, payload, guard_home=self._route_home())
         except NativeDaemonRouteError:
-            self._write_json({"resolved": False, "error": "native_route_policy_unavailable"}, status=503)
+            self._write_json({"resolved": False, **native_route_unavailable_body()}, status=503)
             return
         if resolution.outcome == "not_matched":
             self.send_response(404)

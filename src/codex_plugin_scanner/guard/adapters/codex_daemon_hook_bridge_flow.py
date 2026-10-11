@@ -15,8 +15,10 @@ from ..codex_hook_bridge_runtime import TrustedHookLaunch, trusted_hook_launch
 from ..codex_hook_launch_runtime import isolated_hook_environment, run_isolated_hook_process
 from .codex_daemon_dead_fastpath import (
     DEAD_DAEMON_REASON_CODE,
+    NATIVE_RUNTIME_DEAD_REASON_CODE,
     clear_start_failure,
     daemon_provably_dead,
+    native_runtime_refused,
     record_start_failure,
     should_fail_fast,
 )
@@ -210,6 +212,10 @@ def bridge_review_response(
     except (OSError, ValueError, http.client.HTTPException, urllib.error.URLError) as error:
         _record_failure(failure_causes, "daemon_request", _daemon_failure_reason(error))
         daemon_overloaded = _authenticated_daemon_overload(error)
+        if native_runtime_refused(error):
+            # Daemon is up, native runtime refused a restart: fallback would fail too.
+            _record_failure(failure_causes, "daemon_dead_fast", NATIVE_RUNTIME_DEAD_REASON_CODE)
+            return None, False, False
         if not daemon_overloaded and should_fail_fast(state_path):
             # A launch already failed to start the daemon: deny now, name the fix.
             _record_failure(failure_causes, "daemon_dead_fast", DEAD_DAEMON_REASON_CODE)
@@ -267,8 +273,7 @@ def bridge_review_response(
         )
         if response is None and not launch_integrity_failed and daemon_provably_dead(state_path):
             record_start_failure(state_path)
-            # The failed start is now recorded and the daemon is provably dead, so
-            # this first denial names the same fix as every later fast-path denial.
+            # The first denial names the same fix as every later fast-path denial.
             if failure_causes is not None:
                 failure_causes.append({"stage": "daemon_dead_fast", "reason_code": DEAD_DAEMON_REASON_CODE})
     return response, daemon_overloaded, launch_integrity_failed

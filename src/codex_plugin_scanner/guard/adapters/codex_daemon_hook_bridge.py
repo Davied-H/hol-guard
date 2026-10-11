@@ -84,6 +84,11 @@ _DAEMON_DEAD_REASON = (
     "HOL Guard's local daemon is not running and could not be restarted. "
     "Run `hol-guard repair` in a terminal, then retry."
 )
+_NATIVE_DEAD_CODE = "native_resident_restart_circuit_open"
+_NATIVE_RUNTIME_DEAD_REASON = (
+    "HOL Guard's native runtime is not running and could not be restarted. "
+    "Run `hol-guard repair` in a terminal, then retry."
+)
 _OVERLOAD_REASON = (
     "HOL Guard is temporarily saturated and kept this action blocked. No approval was requested; retry the action."
 )
@@ -440,6 +445,8 @@ def main(
                     isinstance(cause, dict) and cause.get("stage") == "daemon_dead_fast" for cause in failure_causes
                 ):
                     failure_reason = _DAEMON_DEAD_REASON
+                    if any(isinstance(c, dict) and c.get("reason_code") == _NATIVE_DEAD_CODE for c in failure_causes):
+                        failure_reason = _NATIVE_RUNTIME_DEAD_REASON
                 response = _unavailable_response(event_name, failure_reason, data)
         _write_transition_observation(data, response)
         sys.stdout.write(

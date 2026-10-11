@@ -239,6 +239,33 @@ def test_watchdog_respawns_only_a_tracked_dead_resident(tmp_path: Path, monkeypa
     assert calls == [tmp_path]
 
 
+@pytest.mark.skipif(os.name == "nt", reason="pid probing is POSIX only")
+def test_watchdog_treats_a_refused_respawn_as_not_respawned(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from codex_plugin_scanner.guard.approval_gate_types import ApprovalGateError
+
+    state_dir = tmp_path / "native-runtime"
+    _publish(state_dir, _dead_pid())
+
+    def refused(home: Path) -> None:
+        del home
+        raise ApprovalGateError("native_approval_gate_unavailable", "native approval authority did not answer")
+
+    monkeypatch.setattr("codex_plugin_scanner.guard.approval_gate.public_config", refused)
+    monkeypatch.setattr(watchdog, "tracked_native_resident_state_dirs", lambda _home: (state_dir,))
+    assert not watchdog.respawn_dead_resident(tmp_path)
+
+
+def test_route_unavailable_body_names_a_refused_respawn() -> None:
+    client_module.record_native_resident_client_failure_code(revival.RESTART_BLOCKED_CODE)
+    assert revival.native_route_unavailable_body() == {
+        "error": "native_route_policy_unavailable",
+        "reason_code": revival.RESTART_BLOCKED_CODE,
+    }
+    client_module.record_native_resident_client_failure_code("native_client_pool_exhausted")
+    assert revival.native_route_unavailable_body() == {"error": "native_route_policy_unavailable"}
+    client_module.record_native_resident_client_failure_code(None)
+
+
 def test_watchdog_thread_respawns_repeatedly_and_survives_errors(tmp_path: Path) -> None:
     stop = threading.Event()
     errors: list[str] = []

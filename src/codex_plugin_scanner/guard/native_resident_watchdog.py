@@ -73,8 +73,13 @@ def respawn_dead_resident(guard_home: Path) -> bool:
     if not any(resident_provably_dead(state_dir) for state_dir in tracked_native_resident_state_dirs(guard_home)):
         return False
     from .approval_gate import public_config
+    from .approval_gate_types import ApprovalGateError
 
-    public_config(guard_home)
+    try:
+        public_config(guard_home)
+    except ApprovalGateError:
+        # The resident did not come back (respawn paced or failed). The next tick retries.
+        return False
     return True
 
 

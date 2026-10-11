@@ -142,6 +142,55 @@ def test_second_hook_after_failed_start_denies_fast_with_repair_message(
     assert "hol-guard repair" in output["permissionDecisionReason"]
 
 
+def test_daemon_reporting_refused_native_respawn_denies_fast_without_fallback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    guard_home = tmp_path / "guard-home"
+    guard_home.mkdir()
+    calls: list[str] = []
+    refusal = json.dumps(
+        {"error": "native_route_policy_unavailable", "reason_code": "native_resident_restart_circuit_open"}
+    )
+
+    def refusing_daemon(**kwargs: object) -> dict[str, object]:
+        del kwargs
+        calls.append("request")
+        raise bridge_flow._DaemonResponseError(503, refusal, authenticated=False)
+
+    def no_fallback(*args: object, **kwargs: object) -> None:
+        raise AssertionError("the local fallback must not run")
+
+    monkeypatch.setattr(bridge_flow, "_daemon_response", refusing_daemon)
+    monkeypatch.setattr(bridge_flow, "_fallback_response", no_fallback)
+    monkeypatch.setattr(bridge_flow, "_run_daemon_start", no_fallback)
+
+    started = time.monotonic()
+    _run_main(guard_home, monkeypatch, "PreToolUse")
+    assert time.monotonic() - started < 2.0
+    output = json.loads(capsys.readouterr().out)["hookSpecificOutput"]
+    assert calls == ["request"]
+    assert output["permissionDecision"] == "deny"
+    assert "native runtime" in output["permissionDecisionReason"]
+    assert "hol-guard repair" in output["permissionDecisionReason"]
+
+
+def test_other_unauthenticated_503_still_uses_the_fallback(tmp_path: Path) -> None:
+    plain = bridge_flow._DaemonResponseError(503, '{"error": "native_route_policy_unavailable"}', authenticated=False)
+    refused = bridge_flow._DaemonResponseError(
+        503, '{"error": "x", "reason_code": "native_resident_restart_circuit_open"}', authenticated=False
+    )
+    wrong_status = bridge_flow._DaemonResponseError(
+        500, '{"reason_code": "native_resident_restart_circuit_open"}', authenticated=False
+    )
+    assert not fastpath.native_runtime_refused(plain)
+    assert not fastpath.native_runtime_refused(wrong_status)
+    assert not fastpath.native_runtime_refused(ValueError("nope"))
+    assert not fastpath.native_runtime_refused(bridge_flow._DaemonResponseError(503, "{nope", authenticated=False))
+    assert fastpath.native_runtime_refused(refused)
+
+
 def test_tombstone_state_after_failed_restart_records_marker_and_fails_fast(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
