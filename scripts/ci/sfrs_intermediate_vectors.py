@@ -16,6 +16,19 @@ import os
 import sys
 from pathlib import Path
 
+from codex_plugin_scanner.guard.runtime import (
+    github_shell_bindings as gh_bindings,
+)
+from codex_plugin_scanner.guard.runtime import (
+    github_shell_capabilities as runtime_gh_capabilities,
+)
+from codex_plugin_scanner.guard.runtime.github_capability_contract import github_assessment
+from codex_plugin_scanner.guard.runtime import (
+    github_shell_control_flow as gh_control_flow,
+)
+from codex_plugin_scanner.guard.runtime import (
+    github_shell_redirections as gh_redirections,
+)
 from codex_plugin_scanner.guard.runtime.secret_file_request_services import (
     local_read_operands,
     read_only_filters,
@@ -91,6 +104,113 @@ GITHUB_EXTRAS = (
     "echo `unterminated",
     "echo $(echo ')' )",
     "echo 'a' \"b\" $(c) `d`",
+    "gh pr merge 1 --squash",
+    "gh pr merge 1 && echo done",
+    "true && gh pr merge 1",
+    "false && gh pr merge 1",
+    "false || gh pr merge 1",
+    "true || gh pr merge 1",
+    "if true; then gh pr merge 1; fi",
+    "if false; then gh pr merge 1; fi",
+    "if false; then echo a; else gh pr merge 1; fi",
+    "if true; then echo a; else gh pr merge 1; fi",
+    "if foo; then gh pr merge 1; elif true; then gh repo delete x; fi",
+    "for n in 1 2; do gh pr merge $n; done",
+    "while true; do gh pr view 1; done",
+    "case $x in a) gh pr merge 1;; b) echo hi;; esac",
+    "case $x in a) gh repo delete x ;& b) echo hi ;;& esac",
+    "( gh pr merge 1 )",
+    "{ gh pr merge 1; }",
+    "! gh pr view 1",
+    "coproc gh pr view 1",
+    "GH=gh; $GH pr merge 1",
+    "GH=$(command -v gh); $GH pr merge 1",
+    "GH=\"$(which gh)\"; ${GH} repo delete x",
+    "g=/usr/bin/gh; \"$g\" pr view 1",
+    "g=gh.exe; $g pr view 1",
+    "g=C:\\\\bin\\\\gh.exe; $g pr view 1",
+    "cmd='gh pr merge 1'; eval $cmd",
+    "cmd='gh pr merge 1'; bash -c \"$cmd\"",
+    "cmd='gh pr merge 1'; echo $cmd | sh",
+    "echo 'gh pr merge 1' | bash",
+    "echo gh pr merge 1 | xargs",
+    "export GH=gh; bash -c '$GH pr merge 1'",
+    "export GH=gh; sh -c 'echo $GH'",
+    "unset GH; $GH pr view 1",
+    "GH=gh; unset GH; $GH pr view 1",
+    "${GH:-gh} pr merge 1",
+    "${GH-gh} pr merge 1",
+    "${X:-/usr/bin/gh} pr merge 1",
+    "$gh pr view 1",
+    "eval 'gh pr merge 1'",
+    "eval gh pr merge 1",
+    "exec gh pr view 1",
+    "builtin command gh pr view 1",
+    "timeout 5 gh pr view 1",
+    "watch gh pr view 1",
+    "trap 'gh pr merge 1' EXIT",
+    "xargs gh pr view",
+    "alias g=gh; g pr merge 1",
+    "alias gh=echo; gh pr merge 1",
+    "f() { gh pr merge 1; }; f",
+    "function f { gh repo delete x; }; f",
+    "f() ( gh pr view 1 ); f",
+    "f() { echo hi; }; f",
+    "f() { f2() { gh pr merge 1; }; }; f",
+    "a() { b() { c() { d() { gh pr view 1; }; }; }; }; a",
+    "echo $(gh pr merge 1)",
+    "echo $(echo $(echo $(echo $(echo $(gh pr view 1)))))",
+    "x=$(gh pr view 1); echo $x",
+    "echo `gh pr merge 1`",
+    "diff <(gh pr view 1) <(gh pr view 2)",
+    "echo hi > >(gh pr merge 1)",
+    "gh pr view 1 > out.txt",
+    "gh pr view 1 >> out.txt",
+    "gh pr view 1 > /dev/null",
+    "gh pr view 1 2> /dev/null",
+    "gh pr view 1 2>/dev/null",
+    "gh pr view 1 &>/dev/null",
+    "gh pr view 1 < input.txt",
+    "gh pr comment 1 --body-file - <<< hi",
+    "gh pr comment 1 --body-file - << EOF\nhi\nEOF",
+    "gh api graphql -f query='mutation { x }'",
+    "gh api -X DELETE /repos/o/r",
+    "gh api repos/o/r | jq '.x' | tee out",
+    "gh pr list | wc -l",
+    "gh pr list | grep fix | head",
+    "gh pr list | sh",
+    "gh pr list --json number | jq '.[]' | xargs -I{} gh pr merge {}",
+    "echo start; gh pr view 1; echo end",
+    "GH_TOKEN=x; gh pr view 1",
+    "FOO=bar gh pr view 1",
+    "env FOO=bar gh pr view 1",
+    "env gh pr merge 1",
+    "command gh pr merge 1",
+    "sudo gh pr merge 1",
+    "nohup gh pr merge 1 &",
+    "gh pr merge 1 & gh pr merge 2",
+    "(cd repo && gh pr merge 1)",
+    "cd repo; gh pr merge 1",
+    "gh --repo o/r pr merge 1",
+    "gh extension install x/y",
+    "gh auth login",
+    "gh auth status",
+    "gh alias set x 'pr merge'",
+    "gh workflow run x.yml",
+    "gh release create v1",
+    "gh repo view",
+    "echo ${GH} pr",
+    "echo $GH | sh",
+    "x=gh; y=$x; $y pr merge 1",
+    "x=gh; export x; bash -c '$x pr merge 1'",
+    "x=gh; declare -x x; bash -c '$x pr merge 1'",
+    "x=gh; export -n x; bash -c '$x pr merge 1'",
+    "x=gh; readonly x; $x pr merge 1",
+    "x=gh && $x pr merge 1",
+    "false && x=gh; $x pr merge 1",
+    "x=gh || true; $x pr merge 1",
+    "local x=gh; $x pr view 1",
+    "typeset -x x=gh; $x pr view 1",
 )
 
 
@@ -344,6 +464,122 @@ def _environments() -> list[object]:
     return [[[list(item) for item in case], gh._github_environment_requires_review(case)] for case in ENVIRONMENT_CASES]
 
 
+def _stand_in(args):
+    """Deterministic substitute for the native GitHub CLI classifier."""
+
+    joined = " ".join(args)
+    if joined.startswith("pr merge"):
+        capability = "merge_remote"
+    elif "delete" in joined:
+        capability = "delete_remote"
+    elif joined.startswith(("pr view", "repo view")):
+        capability = "read_remote"
+    else:
+        capability = "unknown"
+    return github_assessment(capability, f"stub.{joined}", "stub")
+
+
+def _assessment(found: object) -> object:
+    if found is None:
+        return None
+    return {
+        "capability": found.capability,
+        "capabilities": list(found.capabilities),
+        "reason_code": found.reason_code,
+        "detail": found.detail,
+    }
+
+
+def _stubbed_assessment(text: str) -> object:
+    original = runtime_gh_capabilities.classify_github_cli
+    runtime_gh_capabilities.classify_github_cli = _stand_in
+    try:
+        return _assessment(github_services.classify_github_shell_capabilities(text, home_dir=None))
+    finally:
+        runtime_gh_capabilities.classify_github_cli = original
+
+
+def _gh_shell(text: str, parts: list[str], segments: list[list[str]]) -> dict[str, object]:
+    gh, b = github_services, gh_bindings
+    primary = shell_tokenization._shell_segment_primary_command
+    pipelines = gh._iter_shell_pipelines(parts)
+    conditional, skipped = gh_control_flow.pipeline_control_flow(parts, pipelines, primary_command=primary)
+    names = [frozenset(), frozenset({"x"}), frozenset({"gh2", "y"})]
+    prefix = [(index, primary(segment)[1]) for index, segment in enumerate(segments)]
+    return {
+        "assessment": _stubbed_assessment(text),
+        "normalized": b.normalize_github_lookup_assignments(text),
+        "command_text": b.contains_github_command_text(text),
+        "functions": [[body, head, end - start] for body, head, start, end in b.function_definition_payloads(text)],
+        "parent": sorted(b.parent_expanded_variable_names(text)),
+        "complex": [
+            b.complex_control_flow_may_invoke_github(text, github_command_variables=one, github_command_text_variables=two)
+            for one in names
+            for two in names
+        ],
+        "connectors": sorted([key, value] for key, value in b.conditional_pipeline_connectors(parts).items()),
+        "control": [sorted(conditional), sorted(skipped)],
+        "scoped": [list(item) for item in b.scoped_command_substitutions(text, payloads=gh._shell_command_substitution_payloads)],
+        "executes": [[b.pipeline_executes_github_text(pipeline, primary_command=primary, github_command_text_variables=one) for one in names] for pipeline in pipelines],
+        "tokens": [
+            [
+                b.value_names_github_executable(part),
+                b.is_shell_variable_name(part),
+                b.token_is_shell_assignment(part),
+                [b.dynamic_command_may_invoke_github(part, github_command_variables=one, github_command_text_variables=two) for one in names for two in names],
+                [b.tokens_reference_github_variable([part], github_command_variables=one, github_command_text_variables=two) for one in names for two in names],
+            ]
+            for part in parts
+        ],
+        "segments": [
+            {
+                "exec": b.executable_control_flow_segment(segment),
+                "case": [list(arm) for arm in b.case_arm_segments(segment)],
+                "standalone": b.segment_is_standalone_assignment(segment),
+                "updates": [
+                    [list(item) for item in b.assignment_updates(segment, command_index=index, text_values=flag)]
+                    for flag in (False, True)
+                ],
+                "persistent": [
+                    [
+                        list(item)
+                        for item in b.persistent_assignment_updates(
+                            segment, command_name=name, command_index=index, text_values=flag
+                        )
+                    ]
+                    for flag in (False, True)
+                ],
+                "redirection": None if index is None else list(gh_redirections.github_shell_args_and_redirection(segment, index)),
+                "definition": None
+                if index is None or name is None
+                else [
+                    b.definition_payload(segment, command_name=kind, command_index=index) for kind in ("alias", "function")
+                ],
+                "exported": [
+                    _exported(segment, name, index, current, suppress)
+                    for current in (frozenset(), frozenset({"x", "gh2"}))
+                    for suppress in (False, True)
+                ],
+            }
+            for segment in segments
+            for name, index in [primary(segment)]
+        ],
+    }
+
+
+def _exported(segment: list[str], name: str | None, index: int | None, current: frozenset[str], suppress: bool) -> list[str]:
+    exported = {"x", "z"}
+    gh_bindings.update_exported_bindings(
+        segment,
+        command_name=name,
+        command_index=index,
+        current_bindings=set(current),
+        exported_bindings=exported,
+        suppress_removals=suppress,
+    )
+    return sorted(exported)
+
+
 def _parses(text: str) -> bool:
     try:
         ast.parse(text)
@@ -389,6 +625,7 @@ def _record(text: str) -> dict[str, object]:
         "quote": _quote_tokens(text),
         "static": _static(text, parts, segments),
         "github": _github(text, parts, segments),
+        "gh_shell": _gh_shell(text, parts, segments),
     }
 
 

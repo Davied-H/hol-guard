@@ -144,7 +144,15 @@ mod sfrs_constants;
 mod sfrs_docker_args;
 #[cfg(test)]
 mod sfrs_docker_vectors;
+mod sfrs_gh_bindings;
+mod sfrs_gh_control_flow;
+mod sfrs_gh_definitions;
 mod sfrs_gh_environment;
+mod sfrs_gh_redirections;
+mod sfrs_gh_service;
+mod sfrs_gh_shell;
+#[cfg(test)]
+mod sfrs_gh_shell_vectors;
 #[cfg(test)]
 mod sfrs_github_vectors;
 mod sfrs_interpreter_scripts;
