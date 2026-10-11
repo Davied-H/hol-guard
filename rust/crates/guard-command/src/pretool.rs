@@ -9,6 +9,9 @@ pub struct PathContext<'a> {
     pub home_dir: Option<&'a str>,
     pub cwd: Option<&'a str>,
     pub cdpath_unset: bool,
+    /// No inherited `RUSTUP_TOOLCHAIN` or `RUSTUP_HOME` can change which
+    /// toolchain the rustup proxy runs. Literal contexts leave this false.
+    pub rustup_override_absent: bool,
 }
 
 mod contained_wrapper;
@@ -16,7 +19,11 @@ pub(crate) mod directory_targets;
 pub(crate) use directory_targets::safe_directory_target;
 mod base64_reads;
 mod find_reads;
+pub(crate) mod git_branch_listing;
 mod git_config;
+pub(crate) mod git_hash_object;
+mod git_reads;
+use git_reads::safe_git_arguments;
 mod git_helper_context;
 mod git_probe;
 mod git_routes;
@@ -28,7 +35,10 @@ pub(crate) use git_routes::git_route_within_workspace;
 mod apply_patch_writes;
 mod pure_expression;
 mod read_paths;
+mod source_reads;
+use source_reads::{plain_source_code_path, sensitive_command_input, source_file_read_segment};
 mod restricted_tests;
+mod rust_toolchain;
 mod safe_reads;
 mod safe_scalar;
 mod safe_writes;
@@ -95,6 +105,23 @@ pub(super) fn normalized_haystack(value: &str) -> String {
 
 pub(super) fn sensitive_command(value: &str) -> bool {
     let lowered = normalized_haystack(value);
+    let keywords_apply = !plain_source_code_path(value);
+    let keyword_needles = [
+        "aws_secret_access_key",
+        "private_key",
+        "api key",
+        "api_key",
+        "api-key",
+        "password",
+        "secret",
+    ];
+    if keywords_apply
+        && keyword_needles
+            .iter()
+            .any(|needle| lowered.contains(needle))
+    {
+        return true;
+    }
     let needles = [
         "/.ssh/",
         "~/.ssh",
@@ -118,14 +145,7 @@ pub(super) fn sensitive_command(value: &str) -> bool {
         "~/.env",
         "id_rsa",
         "id_ed25519",
-        "aws_secret_access_key",
-        "private_key",
         ".env",
-        "api key",
-        "api_key",
-        "api-key",
-        "password",
-        "secret",
     ];
     needles.iter().any(|needle| lowered.contains(needle))
         || lowered.contains("printenv")
@@ -157,74 +177,6 @@ fn sensitive_path_argument_with_credentials(value: &str, include_credential_name
             || relative == ".git/config"
             || relative.ends_with("/.git/config")
     })
-}
-
-fn has_argument(arguments: &[String], exact: &[&str], prefixes: &[&str]) -> bool {
-    arguments.iter().any(|argument| {
-        exact.contains(&argument.as_str())
-            || prefixes.iter().any(|prefix| argument.starts_with(prefix))
-    })
-}
-
-fn safe_git_arguments(
-    arguments: &[String],
-    allow_helper_context: bool,
-    context: PathContext<'_>,
-) -> bool {
-    // Git magic pathspec semantics are not proven by this classifier; retain review.
-    if arguments
-        .iter()
-        .any(|value| value.starts_with(':') || sensitive_read_path_argument(value))
-    {
-        return false;
-    }
-    let Some(arguments) =
-        crate::command_compatibility::git_inspection_arguments(arguments, context)
-    else {
-        return false;
-    };
-    let Some(subcommand) = arguments.first().map(String::as_str) else {
-        return false;
-    };
-    if subcommand == "worktree" {
-        return matches!(&arguments[1..], [list] if list == "list")
-            || matches!(&arguments[1..], [list, flag] if list == "list" && flag == "--porcelain");
-    }
-    if !matches!(
-        subcommand,
-        "status" | "diff" | "log" | "show" | "rev-parse" | "ls-files" | "remote"
-    ) {
-        return false;
-    }
-    let option_end = arguments
-        .iter()
-        .position(|argument| argument == "--")
-        .unwrap_or(arguments.len());
-    let active_options = &arguments[1..option_end];
-    if subcommand == "remote" {
-        let has_arguments_after_options = option_end + 1 < arguments.len();
-        return !active_options.is_empty()
-            && !has_arguments_after_options
-            && active_options
-                .iter()
-                .all(|argument| matches!(argument.as_str(), "-v" | "--verbose"));
-    }
-    if !allow_helper_context
-        && matches!(subcommand, "diff" | "log" | "show")
-        && !(active_options
-            .iter()
-            .any(|argument| argument == "--no-ext-diff")
-            && active_options
-                .iter()
-                .any(|argument| argument == "--no-textconv"))
-    {
-        return false;
-    }
-    !has_argument(
-        active_options,
-        &["--ext-diff", "--textconv", "--output", "-o"],
-        &["--output=", "--exec-path="],
-    )
 }
 
 fn destructive_command(value: &str) -> bool {
@@ -305,31 +257,6 @@ fn exact_safe_command_with_context(
             context,
         )
     })
-}
-
-fn exact_safe_search_command(model: &CanonicalCommandV1) -> bool {
-    exact_safe_command(model, false)
-        && model.segments.iter().all(|segment| {
-            segment
-                .executable
-                .as_deref()
-                .is_some_and(|executable| matches!(executable_basename(executable), "rg" | "grep"))
-        })
-}
-
-pub(super) fn sensitive_command_input(value: &str) -> bool {
-    if !sensitive_command(value) {
-        return false;
-    }
-    let request = CommandModelRequestV1 {
-        command: value.to_owned(),
-        dialect: "posix".to_owned(),
-        transport: "shell_string".to_owned(),
-        extraction_provenance: "guard-shell".to_owned(),
-    };
-    // Only parsed, bounded search data may shed the raw keyword signal.
-    // Structured paths, prompts, URLs and arbitrary executable text keep it.
-    !parse_command(&request).is_ok_and(|model| exact_safe_search_command(&model))
 }
 
 fn exact_destructive_tool_introspection(model: &CanonicalCommandV1) -> bool {

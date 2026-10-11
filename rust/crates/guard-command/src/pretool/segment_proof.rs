@@ -65,6 +65,7 @@ pub(super) fn exact_safe_cwd_compound(
             crate::pretool::PathContext {
                 home_dir: context.home_dir,
                 cdpath_unset: context.cdpath_unset,
+                rustup_override_absent: context.rustup_override_absent,
                 cwd: Some(&cwd),
             },
         );
@@ -111,6 +112,7 @@ pub(super) fn exact_safe_cwd_compound(
             crate::pretool::PathContext {
                 home_dir: context.home_dir,
                 cdpath_unset: context.cdpath_unset,
+                rustup_override_absent: context.rustup_override_absent,
                 cwd: Some(&cwd),
             },
         )
@@ -139,6 +141,7 @@ pub(crate) fn benign_command_segments(
     let proof_context = crate::pretool::PathContext {
         home_dir: context.home_dir,
         cdpath_unset: context.cdpath_unset,
+        rustup_override_absent: context.rustup_override_absent,
         cwd: cwd.as_deref().or(context.cwd),
     };
     let segment_benign: Vec<bool> = model
@@ -281,7 +284,9 @@ pub(super) fn exact_safe_segment_with_context(
     let basename = executable_basename(executable);
     let inert_search = matches!(basename, "rg" | "grep")
         && search::safe_search_arguments_with_context(basename, &segment.arguments, context);
-    if (!inert_search && sensitive_command(&segment.text))
+    if (!inert_search
+        && !super::source_file_read_segment(segment)
+        && sensitive_command(&segment.text))
         || (!matches!(basename, "rg" | "grep")
             && segment
                 .arguments
@@ -302,6 +307,7 @@ pub(super) fn exact_safe_segment_with_context(
                 && super::directory_targets::drive_targets_quoted(segment)
         }
         "pwd" | "true" | "echo" | "printf" | "which" | "whoami" | "uname" => true,
+        "cargo" | "rustc" => super::rust_toolchain::safe_version_probe(&segment.arguments, context),
         "date" => safe_reads::safe_date_arguments(&segment.arguments),
         "sleep" => safe_reads::safe_sleep_arguments(&segment.arguments),
         "uptime" => segment.arguments.is_empty(),
