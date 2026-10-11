@@ -1,6 +1,9 @@
 name: CI macOS skill identity
 description: Run the skill-directory identity regressions against the CI-built macOS runtime.
 inputs:
+  opt-level:
+    description: Experiment-only workspace opt-level variant.
+    required: true
   python-version:
     description: Explicit python-version from the calling job.
     required: true
@@ -15,7 +18,7 @@ runs:
     - name: Download the CI-built macOS native runtime
       uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
       with:
-        name: macos-native-runtime
+        name: macos-native-runtime-${{ inputs.opt-level }}
         path: ${{ runner.temp }}/hol-guard-native-runtime
     - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
       with:
@@ -54,3 +57,9 @@ runs:
         tests/test_gemini_skill_directory_identity.py tests/test_antigravity_adapter.py tests/test_guard_aibom_detection.py
         tests/test_guard_aibom_content_upload_batches.py tests/test_guard_aibom_skill_directory_identity.py --tb=short
       shell: bash
+    - name: Time the native command-evaluation hot path
+      shell: bash
+      run: |
+        start=$(date +%s)
+        uv run --no-sync pytest -q --tb=short -n 3 --dist load tests/test_guard_benign_false_positive_gate.py tests/test_guard_command_corpus_benign_allow.py
+        echo "HOT_PATH_SECONDS=$(( $(date +%s) - start ))"

@@ -1,6 +1,9 @@
 name: CI Windows packaged daemon
 description: Build the frozen hol-guard package and exercise the packaged Windows Core daemon gate.
 inputs:
+  opt-level:
+    description: Experiment-only workspace opt-level variant.
+    required: true
   python-version:
     description: Explicit python-version from the calling job.
     required: true
@@ -18,7 +21,7 @@ runs:
     - name: Download the CI-built Windows native runtime
       uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
       with:
-        name: windows-native-runtime
+        name: windows-native-runtime-${{ inputs.opt-level }}
         path: ${{ runner.temp }}/hol-guard-native-runtime
     - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
       with:
