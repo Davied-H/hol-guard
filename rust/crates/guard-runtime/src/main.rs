@@ -54,6 +54,7 @@ mod cloud_request_text;
 mod cloud_request_vectors_tests;
 mod cloud_sync_privacy;
 mod codex_app_server_socket;
+mod codex_request_resume_busy;
 mod codex_request_resume_op;
 mod codex_request_resume_store;
 mod codex_thread_continue_op;

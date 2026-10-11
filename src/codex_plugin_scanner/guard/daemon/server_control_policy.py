@@ -18,7 +18,7 @@ from ..approval_scope_support import (
 from ..approvals import (
     bulk_allow_read_only_once,
 )
-from ..codex_resume import get_request_resume_status, retry_request_resume
+from ..codex_resume import ResumeUnavailableError, get_request_resume_status, retry_request_resume
 from ..models import (
     PolicyDecision,
 )
@@ -167,7 +167,11 @@ class _ControlPolicyRoutes:
         if self.server.store.get_approval_request(request_id) is None:  # type: ignore[attr-defined]
             self._write_json({"error": "not_found"}, status=404)
             return
-        payload = get_request_resume_status(self.server.store, request_id=request_id, now=_now())  # type: ignore[attr-defined]
+        try:
+            payload = get_request_resume_status(self.server.store, request_id=request_id, now=_now())  # type: ignore[attr-defined]
+        except ResumeUnavailableError:
+            self._write_json({"error": "resume_unavailable"}, status=503)
+            return
         if payload is None:
             self._write_json({"error": "not_found"}, status=404)
             return

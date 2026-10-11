@@ -8,8 +8,6 @@
 //! browser decision will continue the action itself; the caller has already
 //! confirmed that hook is live. Every timestamp comes from the caller.
 
-use std::time::Duration;
-
 use guard_contracts::{
     CodexRequestResumeRequestV1, CodexRequestResumeResultV1,
     CODEX_REQUEST_RESUME_MAX_BUSY_TIMEOUT_MS, CODEX_REQUEST_RESUME_MAX_BYTES,
@@ -96,8 +94,7 @@ fn evaluate(request: &CodexRequestResumeRequestV1) -> Result<Outcome, &'static s
         OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )
     .map_err(|_| "native_codex_request_resume_store_unavailable")?;
-    connection
-        .busy_timeout(Duration::from_millis(request.busy_timeout_ms))
+    crate::codex_request_resume_busy::arm(&connection, request.busy_timeout_ms)
         .map_err(|_| "native_codex_request_resume_store_unavailable")?;
     let call = Call {
         request_id: &request.approval_request_id,

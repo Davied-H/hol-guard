@@ -32,7 +32,7 @@ class ResumeNotSupportedError(ValueError):
 
 
 class ResumeUnavailableError(ValueError):
-    """Raised when the native resident gave no answer for a retry."""
+    """Raised when the native resident gave no answer for a status read or retry."""
 
     def __init__(self) -> None:
         super().__init__("resume_unavailable")
@@ -56,6 +56,8 @@ def seed_request_resume_record(store: GuardStore, *, request_id: str, now: str) 
 
 def get_request_resume_status(store: GuardStore, *, request_id: str, now: str) -> dict[str, object] | None:
     payload = _resume_call(store, call="status", request_id=request_id, now=now)
+    if payload is None:
+        raise ResumeUnavailableError()
     return _resume(payload)
 
 
