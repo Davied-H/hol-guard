@@ -231,20 +231,27 @@ def test_policy_floor_warning_on_proven_allow_is_silent(harness: str) -> None:
     assert "permissionDecisionReason" not in hook_specific
 
 
-def test_intrinsic_warning_still_reaches_the_harness() -> None:
+@pytest.mark.parametrize(
+    ("reason_code", "reason"),
+    [
+        ("native_risk_warning", "HOL Guard noticed risk signals."),
+        ("native_policy_observed_floor", "HOL Guard observed a stricter installed native policy floor."),
+    ],
+)
+def test_intrinsic_and_observed_floor_warnings_still_reach_the_harness(reason_code: str, reason: str) -> None:
     result = {
         "decision": "allow",
         "policy_action": "warn",
         "minimum_action": "warn",
-        "reason_code": "native_risk_warning",
-        "reason": "HOL Guard noticed risk signals.",
+        "reason_code": reason_code,
+        "reason": reason,
     }
     omp = harness_json_from_native_pre_tool("omp", result)
     assert omp["notice"] == "warning"
     codex = harness_json_from_native_pre_tool("codex", result)
     hook_specific = codex["hookSpecificOutput"]
     assert isinstance(hook_specific, dict)
-    assert hook_specific["permissionDecisionReason"] == "HOL Guard noticed risk signals."
+    assert hook_specific["permissionDecisionReason"] == reason
 
 
 def test_native_review_queues_approval_without_escaping_to_cli(
