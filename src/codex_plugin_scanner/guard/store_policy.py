@@ -157,17 +157,18 @@ class StorePolicyMixin:
         """
 
         normalized_now = _canonical_utc_timestamp(now)
-        parts = (provenance, managed_keyring, quarantined_local_keyring)
-        configured = all(part is not None for part in parts)
-        if any(part is not None for part in parts) and not configured:
+        configured = managed_keyring is not None and quarantined_local_keyring is not None and provenance is not None
+        if (
+            any(item is not None for item in (managed_keyring, quarantined_local_keyring, provenance))
+            and not configured
+        ):
             raise ValueError("managed_policy_bundle_keyring_reconcile_incomplete")
         arguments: dict[str, object] = {"configured": configured, "force_clear": force_clear, "now": normalized_now}
-        if configured:
-            provenance_json, managed_json, local_json = (json.dumps(dict(part), allow_nan=False) for part in parts)  # type: ignore[arg-type]
+        if provenance is not None and managed_keyring is not None and quarantined_local_keyring is not None:
             arguments.update(
-                provenance_json=provenance_json,
-                managed_keyring_json=managed_json,
-                local_keyring_json=local_json,
+                provenance_json=json.dumps(dict(provenance), allow_nan=False),
+                managed_keyring_json=json.dumps(dict(managed_keyring), allow_nan=False),
+                local_keyring_json=json.dumps(dict(quarantined_local_keyring), allow_nan=False),
             )
         return bool(self._native_store_call("managed_keyring_reconcile", arguments))
 
