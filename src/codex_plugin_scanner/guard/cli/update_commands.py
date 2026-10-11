@@ -18,7 +18,7 @@ import sysconfig
 import time
 import urllib.error
 import urllib.request
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextvars import ContextVar
 from pathlib import Path
 from urllib.parse import ParseResult, urlparse
@@ -56,6 +56,7 @@ from ..runtime.extension_control_authority import AuthorityHealth
 from ..store import GuardStore
 from .install_commands import apply_managed_install
 from .managed_install_context import managed_install_context as _repair_context_from_managed_install
+from .update_alpha_tag_lookup import alpha_tag_is_live, fail_closed_alpha_checker
 from .update_artifact import (
     TrustedWheelArtifact,
     UpdateArtifactError,
@@ -73,7 +74,7 @@ from .update_desktop_core import is_desktop_managed_runtime
 from .update_grok_repair import append_grok_repair
 from .update_install_verify import verify_installed_distribution
 from .update_opencode import _refresh_opencode_pretool_plugin
-from .update_release_candidates import newest_pypi_version
+from .update_release_candidates import newest_live_pypi_version, newest_pypi_version, select_live_release
 from .update_retirement import retire_with_retry
 from .update_subprocess import (
     InstalledDistribution,
@@ -1574,10 +1575,28 @@ def _cached_pypi_latest_version() -> str | None:
 
 
 def _latest_alpha_version_from_pypi(current_version: str) -> str | None:
-    """Return the newest non-yanked stable or alpha release on PyPI."""
+    """Return the newest non-yanked stable release or alpha whose GitHub tag is still live."""
     _ = current_version
     _ = _latest_version_from_pypi()
-    return newest_pypi_version(_last_pypi_payload, include_stable=True, include_alpha=True)
+    return newest_live_pypi_version(_last_pypi_payload, alpha_is_live=_alpha_liveness_checker())
+
+
+def _alpha_liveness_checker() -> Callable[[str], bool]:
+    """Build a fail-closed ``alpha/v<version>`` tag check for one selection walk."""
+
+    def lookup(version: str) -> bool | None:
+        deadline = time.monotonic() + _PYPI_TIMEOUT_SECONDS
+        return alpha_tag_is_live(
+            version,
+            opener=lambda request: managed_urlopen(
+                request,
+                timeout=_PYPI_TIMEOUT_SECONDS,
+                policy=_version_network_policy.get(),
+            ),
+            read_bounded=lambda response: _read_bounded_pypi_response(response, deadline=deadline),
+        )
+
+    return fail_closed_alpha_checker(lookup)
 
 
 def already_current_update_message(version_check: Mapping[str, object] | None) -> str:
@@ -1730,6 +1749,8 @@ def _latest_compatible_release_version(
             candidates.append((parsed_version, version_text.strip()))
     if not candidates:
         return None
+    if include_alpha:
+        return select_live_release(candidates, alpha_is_live=_alpha_liveness_checker())
     return max(candidates, key=lambda candidate: candidate[0])[1]
 
 
