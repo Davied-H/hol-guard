@@ -405,7 +405,9 @@ def main(
             event_name=event_name,
         )
         if response is None:
-            _write_failure_causes(failure_causes)
+            # Name the cause of every denial; an allowed continuation stays quiet.
+            if launch_integrity_failed or event_name == "PreToolUse" or hook_event_is_permission_request(event_name):
+                _write_failure_causes(failure_causes)
             if launch_integrity_failed:
                 if any(
                     isinstance(cause, dict) and cause.get("reason_code") == "codex_hook_validation_deadline_expired"
