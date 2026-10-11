@@ -51,6 +51,27 @@ pub trait InspectionHost {
     ) -> bool {
         false
     }
+    /// `_cached_diff_pathspecs_allowed` over the pathspecs after `--`.
+    fn cached_diff_pathspecs(&self, _values: &[String]) -> bool {
+        false
+    }
+    /// `_git_show_has_execution_free_config` for one modeled segment.
+    fn git_show_config(
+        &self,
+        _segment: &CompoundGitSegmentV1,
+        _repository_path: Option<&str>,
+    ) -> bool {
+        false
+    }
+    /// `is_low_risk_standalone_git_routine` over a modeled chain.
+    fn standalone_git_routine(
+        &self,
+        _segments: &[CompoundGitSegmentV1],
+        _complete: bool,
+        _home_dir: Option<&str>,
+    ) -> bool {
+        false
+    }
 }
 
 /// Per-request context.

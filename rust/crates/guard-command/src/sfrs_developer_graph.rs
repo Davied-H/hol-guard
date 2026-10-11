@@ -115,7 +115,7 @@ fn starts_with_literal_cd(context: &ShellExecutionContext) -> bool {
         == "cd"
 }
 
-fn git_segment(segment: &ShellExecutionSegment) -> CompoundGitSegmentV1 {
+pub(crate) fn git_segment(segment: &ShellExecutionSegment) -> CompoundGitSegmentV1 {
     CompoundGitSegmentV1 {
         tokens: segment.tokens.clone(),
         control_before: segment.control_before.clone(),

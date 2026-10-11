@@ -19,6 +19,7 @@ from pathlib import Path
 from codex_plugin_scanner.guard.runtime.secret_file_request_services import source_edit_context
 
 from sfrs_graph_cases import graph_cases
+from sfrs_index_cases import index_cases
 
 TOKEN = "{ROOT}"
 
@@ -226,6 +227,7 @@ def _cases(root: Path) -> list[dict[str, object]]:
                 source_edit_context._same_workspace_file(left, right, cwd=proj),
             )
     graph_cases(root, add)
+    index_cases(root, add)
     return cases
 
 

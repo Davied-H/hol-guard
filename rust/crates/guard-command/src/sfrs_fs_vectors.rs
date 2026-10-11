@@ -112,7 +112,7 @@ fn run(function: &str, args: &[Value]) -> Option<Value> {
             same_workspace_file(text(&args[0]), text(&args[1]), Path::new(text(&args[2]))).into()
         }
         "compound_developer_effect_graph" => crate::sfrs_developer_graph_vectors::run(args),
-        _ => return None,
+        other => return crate::sfrs_index_vectors::run(other, args),
     })
 }
 

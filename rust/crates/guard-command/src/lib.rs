@@ -161,8 +161,12 @@ mod sfrs_gh_service;
 mod sfrs_gh_shell;
 #[cfg(test)]
 mod sfrs_gh_shell_vectors;
+mod sfrs_git_cached_diff;
+mod sfrs_git_index;
 #[cfg(test)]
 mod sfrs_github_vectors;
+#[cfg(all(test, unix))]
+mod sfrs_index_vectors;
 mod sfrs_interpreter_scripts;
 mod sfrs_jq;
 mod sfrs_json;
