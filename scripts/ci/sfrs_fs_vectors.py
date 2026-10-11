@@ -20,6 +20,7 @@ from codex_plugin_scanner.guard.runtime.secret_file_request_services import sour
 
 from sfrs_graph_cases import graph_cases
 from sfrs_index_cases import index_cases
+from sfrs_pr_expansion_cases import pr_expansion_cases
 from sfrs_quote_cases import quote_cases
 from sfrs_source_edit_cases import source_edit_cases
 
@@ -238,6 +239,7 @@ def _cases(root: Path) -> list[dict[str, object]]:
     index_cases(root, add)
     source_edit_cases(root, add)
     quote_cases(root, add)
+    pr_expansion_cases(root, add)
     return cases
 
 

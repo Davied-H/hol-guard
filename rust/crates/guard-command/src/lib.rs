@@ -157,6 +157,8 @@ mod sfrs_gh_bindings;
 mod sfrs_gh_control_flow;
 mod sfrs_gh_definitions;
 mod sfrs_gh_environment;
+#[cfg(unix)]
+mod sfrs_gh_pr_expansion;
 mod sfrs_gh_redirections;
 mod sfrs_gh_service;
 mod sfrs_gh_shell;
@@ -173,6 +175,8 @@ mod sfrs_interpreter_scripts;
 mod sfrs_jq;
 mod sfrs_json;
 mod sfrs_patterns;
+#[cfg(all(test, unix))]
+mod sfrs_pr_expansion_vectors;
 mod sfrs_python_imports;
 #[cfg(unix)]
 mod sfrs_quote_parsing;
