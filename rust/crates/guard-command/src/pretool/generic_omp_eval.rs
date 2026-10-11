@@ -6,7 +6,7 @@
 //! `tool.grep`, `tool.glob` and `tool.bash` calls whose arguments are object
 //! literals of scalar literals, or the SDK's `await read(literal_path)` helper,
 //! plus `display`/`log`, `const`/`let` bindings,
-//! `Promise.all`, `JSON.stringify`, and `.text`. Every extracted call is then
+//! `Promise.all`, `JSON.stringify`, `.text` and `.length`. Every extracted call is then
 //! evaluated as the equivalent standalone tool; any non-allow reviews the
 //! whole program. Everything else, including comments, templates with
 //! interpolation, operators, other identifiers and other languages, is
@@ -195,9 +195,14 @@ impl Parser {
         }
     }
 
+    /// Output calls take one or more values, as `console.log(a, b)` does.
     fn paren_value(&mut self) -> Option<()> {
         self.eat('(')?;
         self.value(0)?;
+        while self.at(',') {
+            self.pos += 1;
+            self.value(0)?;
+        }
         self.eat(')')
     }
 
@@ -209,6 +214,8 @@ impl Parser {
             Token::Ident(word) => match word.as_str() {
                 "await" => self.awaited(depth)?,
                 "tool" => self.tool_call(depth)?,
+                // An un-awaited `read(...)`, as inside `Promise.all([...])`.
+                "read" => self.read_helper()?,
                 "Promise" => self.promise_all(depth)?,
                 "JSON" => {
                     self.eat('.')?;
@@ -240,10 +247,13 @@ impl Parser {
             Token::Punct('{') => self.display_object(depth)?,
             _ => return None,
         }
-        // Only the `.text` accessor may follow a value.
+        // Only the `.text` and `.length` accessors may follow a value.
         while self.at('.') {
             self.pos += 1;
-            self.eat_ident("text")?;
+            match self.ident()?.as_str() {
+                "text" | "length" => {}
+                _ => return None,
+            }
         }
         Some(())
     }
