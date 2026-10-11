@@ -43,6 +43,16 @@ from .hook_worker_native_review import (
 )
 from .hook_worker_responses import harness_json_from_native_pre_tool
 
+
+def _edge_harness_response(edge: Mapping[str, object]) -> dict[str, object]:
+    """The harness response Rust rendered for the edge decision."""
+
+    rendered = edge["harness_response"]
+    if not isinstance(rendered, dict):
+        raise ValueError("native_hook_edge_invalid_response")
+    return {str(key): value for key, value in rendered.items()}
+
+
 _NATIVE_PRE_TOOL_APPROVAL_ACTIONS = frozenset({"review", "require-reapproval"})
 
 
@@ -524,7 +534,7 @@ class HookWorkerNativeMixin:
                     ),
                     False,
                 )
-            response = dict(edge["harness_response"])
+            response = _edge_harness_response(edge)
             if not recording_only and native_harness.strip().lower().replace("_", "-") == "claude-code":
                 with suppress(Exception):
                     response = _claude_native_prompt_brand(response, native_result)
@@ -537,7 +547,7 @@ class HookWorkerNativeMixin:
                 if action != "allow" or native_result.get("decision") != "allow":
                     return (
                         _record_native_pre_activity(
-                            self, native_harness, payload, dict(edge["harness_response"]), accepted_receipt
+                            self, native_harness, payload, _edge_harness_response(edge), accepted_receipt
                         ),
                         True,
                     )
@@ -598,7 +608,7 @@ class HookWorkerNativeMixin:
             rendered = route_zcode_containment(
                 harness_json_from_native_pre_tool(native_harness, repaired_result)
                 if repaired_result
-                else dict(edge["harness_response"]),
+                else _edge_harness_response(edge),
                 harness=native_harness,
                 payload=payload,
                 guard_home=guard_home,
@@ -631,7 +641,7 @@ class HookWorkerNativeMixin:
             payload=payload,
             succeeded=hook_post_succeeded(native_event, payload),
         )
-        response = dict(edge["harness_response"])
+        response = _edge_harness_response(edge)
         mediation = mediated.get("structured_content_mediation")
         if mediation is not None and mediation != native_result.get("structured_content_mediation"):
             response["structured_content_mediation"] = mediation
