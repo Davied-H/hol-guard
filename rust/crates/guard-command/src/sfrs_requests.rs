@@ -41,7 +41,7 @@ const FILE_WRITE_TOOL_NAMES: &[&str] = &[
 ];
 
 /// `_PATH_KEYS` (constants_core.py).
-const PATH_KEYS: &[&str] = &[
+pub(crate) const PATH_KEYS: &[&str] = &[
     "path",
     "file_path",
     "filePath",
@@ -53,7 +53,7 @@ const PATH_KEYS: &[&str] = &[
 ];
 
 /// `_PATH_LIST_KEYS` (constants_core.py).
-const PATH_LIST_KEYS: &[&str] = &["paths", "file_paths", "filePaths"];
+pub(crate) const PATH_LIST_KEYS: &[&str] = &["paths", "file_paths", "filePaths"];
 
 /// `_COMMAND_KEYS` (constants_core.py).
 const COMMAND_KEYS: &[&str] = &[

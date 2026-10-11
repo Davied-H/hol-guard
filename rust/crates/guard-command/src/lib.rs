@@ -138,6 +138,7 @@ use parser_segments::*;
 pub mod pretool;
 mod runtime_read_paths;
 pub mod secret_path_probe;
+mod sfrs_benign_reads;
 mod sfrs_json;
 pub mod sfrs_replay;
 mod sfrs_requests;

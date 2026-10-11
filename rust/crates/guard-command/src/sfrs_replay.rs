@@ -10,7 +10,9 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{json, Map, Value};
 
+use crate::codex_output_env::{Ctx, GitCheck, GitRun, InspectionHost};
 use crate::hook_adapter_value::{OMap, OValue};
+use crate::sfrs_benign_reads::is_explicitly_benign_native_file_read_request;
 use crate::sfrs_requests::{
     build_file_read_request_artifact, build_file_write_request_artifact, classify_sensitive_path,
     command_list_candidate_texts, extract_sensitive_file_read_request,
@@ -30,6 +32,7 @@ pub fn implements(entry: &str) -> bool {
             | "extract_sensitive_file_write_request"
             | "build_file_read_request_artifact"
             | "build_file_write_request_artifact"
+            | "is_explicitly_benign_native_file_read_request"
     )
 }
 
@@ -103,7 +106,43 @@ pub fn replay_entry(entry: &str, args: &Value, _evaluation: &Value) -> Result<Va
                 str_arg(args, "source_scope").unwrap_or_default(),
             )))
         }
+        "is_explicitly_benign_native_file_read_request" => {
+            let host = ReplayHost;
+            let process_cwd = std::env::current_dir()
+                .map(|path| path.to_string_lossy().into_owned())
+                .unwrap_or_else(|_| "/".to_owned());
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/".to_owned());
+            let ctx = Ctx::new(&host, &process_cwd, &home);
+            Ok(json!(is_explicitly_benign_native_file_read_request(
+                &ovalue_arg(args, "tool_name"),
+                &ovalue_arg(args, "arguments"),
+                path_arg(args, "cwd").as_deref(),
+                path_arg(args, "home_dir").as_deref(),
+                &ctx,
+            )))
+        }
         other => Err(format!("entry {other} is not implemented")),
+    }
+}
+
+/// Host for classifiers that never run a process.
+struct ReplayHost;
+
+impl InspectionHost for ReplayHost {
+    fn env(&self, name: &str) -> Option<String> {
+        std::env::var(name).ok()
+    }
+    fn git_executable(&self) -> Option<String> {
+        None
+    }
+    fn git_safety(&self, _: GitCheck, _: Option<&str>, _: &[String]) -> bool {
+        false
+    }
+    fn git_binary_trusted(&self, _: &str, _: &str) -> bool {
+        false
+    }
+    fn run_git(&self, _: &str, _: &[String], _: &str) -> GitRun {
+        GitRun::Failed("replay host does not run git")
     }
 }
 
