@@ -1625,6 +1625,10 @@ def _render_skill_scan_results(console: Console, skill_scan: list[dict[str, obje
         severity_text = ", ".join(_coerce_string_list(entry.get("severities")))
         signal_text = " ".join(_coerce_string_list(entry.get("signal_ids")))
         risk_count = str(entry.get("risk_count", 0))
+        scan_error = entry.get("scan_error")
+        if isinstance(scan_error, str) and scan_error:
+            risk_count = "?"
+            signal_text = f"not scanned: {scan_error}"
         table.add_row(str(entry.get("skill_path", "?")), risk_count, severity_text, signal_text)
     console.print(
         Panel(

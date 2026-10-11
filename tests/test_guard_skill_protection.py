@@ -7,7 +7,9 @@ from pathlib import Path
 
 import pytest
 
+from codex_plugin_scanner.guard.cli import install_commands as install_commands_module
 from codex_plugin_scanner.guard.cli.install_commands import scan_workspace_skills
+from codex_plugin_scanner.guard.native_runner_authority import NativeRunnerAuthorityError
 from codex_plugin_scanner.guard.runtime.skill_protection import (
     build_skill_identity,
     detect_skill_content_risk,
@@ -377,3 +379,47 @@ def test_shell_in_frontmatter_detected_when_after_non_skill_block() -> None:
     assert any(s.signal_id == "skill.shell-in-frontmatter" for s in signals), (
         "shell in later frontmatter block must be detected even when an earlier non-skill dashed block is present"
     )
+
+
+def test_scan_workspace_skills_passes_the_store_guard_home(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    skills_dir = tmp_path / ".codex" / "skills" / "docs"
+    skills_dir.mkdir(parents=True)
+    (skills_dir / "SKILL.md").write_text("---\nname: docs\n---\n# Docs\n", encoding="utf-8")
+    store = _make_store(tmp_path)
+    homes: list[Path | None] = []
+
+    def _detect(content: str, *, guard_home: Path | None = None) -> tuple[()]:
+        homes.append(guard_home)
+        return ()
+
+    monkeypatch.setattr(install_commands_module, "detect_skill_content_risk", _detect)
+
+    assert scan_workspace_skills(tmp_path, store, "2024-01-01T00:00:00") == []
+    assert homes == [store.guard_home]
+
+
+def test_scan_workspace_skills_reports_unscanned_skill_when_the_resident_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    skills_dir = tmp_path / ".codex" / "skills" / "docs"
+    skills_dir.mkdir(parents=True)
+    (skills_dir / "SKILL.md").write_text("---\nname: docs\n---\n# Docs\n", encoding="utf-8")
+    store = _make_store(tmp_path)
+
+    def _fail(content: str, *, guard_home: Path | None = None) -> tuple[()]:
+        raise NativeRunnerAuthorityError("native_runner_authority_unavailable")
+
+    monkeypatch.setattr(install_commands_module, "detect_skill_content_risk", _fail)
+
+    result = scan_workspace_skills(tmp_path, store, "2024-01-01T00:00:00")
+
+    assert len(result) == 1
+    assert result[0]["scan_error"] == "native_runner_authority_unavailable"
+    assert result[0]["risk_count"] == 0
+    assert ".codex/skills/docs/SKILL.md" in str(result[0]["skill_path"])
+    artifact_id = f"skill-path:{skills_dir / 'SKILL.md'}"
+    assert store.get_snapshot("skill_scan", artifact_id) is None
