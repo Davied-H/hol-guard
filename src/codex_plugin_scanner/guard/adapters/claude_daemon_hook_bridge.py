@@ -36,7 +36,10 @@ _RISKY_PROMPT_ADDITIONAL_CONTEXT = (
     "approval question to protect you."
 )
 _HARNESS_TIMEOUT_BUDGET_SECONDS = 10
-_DAEMON_IO_TIMEOUT_SECONDS = 2
+# The identity challenge and hook POST share this budget. Parallel tool calls queue
+# at the daemon, and on slower Windows hosts two seconds expired mid-review; a fresh
+# fallback process could not finish in what was left of the hook deadline.
+_DAEMON_IO_TIMEOUT_SECONDS = 4
 _RECOVERY_TIMEOUT_SECONDS = 3
 _FALLBACK_TIMEOUT_SECONDS = 8
 _MAX_DAEMON_RESPONSE_BYTES = 1_000_000

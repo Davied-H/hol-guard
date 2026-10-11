@@ -416,6 +416,7 @@ def test_bridge_timeouts_stay_under_harness_budget() -> None:
     assert bridge._HARNESS_TIMEOUT_BUDGET_SECONDS == 10
     assert 0 < bridge._HOOK_DEADLINE_SECONDS < bridge._HARNESS_TIMEOUT_BUDGET_SECONDS
     assert bridge._DAEMON_IO_TIMEOUT_SECONDS <= bridge._HOOK_DEADLINE_SECONDS
+    assert bridge._DAEMON_IO_TIMEOUT_SECONDS * 2 <= bridge._HOOK_DEADLINE_SECONDS
     assert bridge._RECOVERY_TIMEOUT_SECONDS <= bridge._HOOK_DEADLINE_SECONDS
     assert bridge._FALLBACK_TIMEOUT_SECONDS <= bridge._HOOK_DEADLINE_SECONDS
 
