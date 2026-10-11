@@ -1,4 +1,5 @@
 #![forbid(unsafe_code)]
+#![recursion_limit = "512"]
 
 mod approval;
 mod approval_bulk_eligibility_op;
@@ -52,6 +53,8 @@ mod cloud_request_text;
 #[cfg(test)]
 mod cloud_request_vectors_tests;
 mod cloud_sync_privacy;
+mod codex_app_server_socket;
+mod codex_thread_continue_op;
 mod codex_tool_output_git;
 mod codex_tool_output_op;
 #[cfg(all(test, unix))]
@@ -77,6 +80,7 @@ mod context_digest;
 mod context_digest_json;
 mod context_digest_local_cli;
 mod contributed_mcp_decision_op;
+mod critical_floor_op;
 mod cursor_observer_proof_op;
 mod daemon_handler_digits;
 mod daemon_handler_fields;
@@ -103,9 +107,12 @@ mod daemon_route_paths;
 mod daemon_route_resolve;
 mod daemon_route_session;
 mod data_flow_analyze_op;
+mod direct_tool_context_op;
+#[cfg(test)]
+mod direct_tool_context_tests;
+mod direct_tool_managed_bun;
 mod edge;
 mod encrypted_secret_store;
-mod false_positive_rules_op;
 mod git_execution_safety_binary;
 mod git_execution_safety_checks;
 mod git_execution_safety_config;
@@ -116,6 +123,11 @@ mod git_execution_safety_repo_tests;
 #[cfg(test)]
 mod git_execution_safety_tests;
 mod github_cli_classify_op;
+mod guard_config_coerce;
+mod guard_config_harness;
+mod guard_config_iso;
+mod guard_config_load;
+mod guard_config_managed;
 mod guard_store_args;
 mod guard_store_clients;
 mod guard_store_cmd_activity;
@@ -186,11 +198,13 @@ mod hardening;
 mod hook_adapter_op;
 mod hook_artifact_compose_op;
 mod hook_artifact_compose_reuse;
+mod hook_authority_state_op;
 mod hook_decision_compose;
 mod hook_decision_directive;
 mod hook_decision_finalize;
 mod hook_decision_op;
 mod hook_process_spawn;
+mod hook_render_op;
 mod local_cli_grant_op;
 mod local_mcp_grant_identity;
 mod local_mcp_grant_launcher;
@@ -273,6 +287,7 @@ mod policy_bundle_v1_rules;
 mod policy_bundle_v2;
 mod policy_bundle_v2_ack;
 mod policy_decision_lookup_op;
+mod policy_effective;
 mod policy_enforcement;
 mod policy_integrity_resolver;
 mod policy_snapshot_build;
@@ -285,6 +300,7 @@ mod request_context_shell;
 mod resident_client;
 mod resident_diagnostics;
 mod resident_endpoint;
+mod resident_op_features;
 mod resident_ops;
 #[allow(dead_code)] // Worker enrollment is not enabled by this OS identity input.
 mod resident_peer_identity;
@@ -303,6 +319,7 @@ mod runner_sync_policy;
 mod runner_sync_signals;
 mod runner_sync_url;
 mod runtime_cli;
+mod runtime_detector_run_op;
 mod shim_op;
 #[cfg(unix)]
 mod skill_directory_identity_op;

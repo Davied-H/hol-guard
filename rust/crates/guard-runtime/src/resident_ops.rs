@@ -228,10 +228,16 @@ pub(crate) fn evaluate_resident_bytes(
                     &request,
                 )
             }
+            ResidentOperationV1::CodexThreadContinue(request) => {
+                crate::codex_thread_continue_op::evaluate_codex_thread_continue_request(&request)
+            }
             ResidentOperationV1::ApprovalQueueIdentity(request) => {
                 crate::approval_queue_identity_op::evaluate_approval_queue_identity_request(
                     &request,
                 )
+            }
+            ResidentOperationV1::HookRender(request) => {
+                crate::hook_render_op::evaluate_hook_render_request(&request)
             }
             ResidentOperationV1::ApprovalScope(request) => {
                 crate::approval_scope_op::evaluate_approval_scope_request(&request)
@@ -299,6 +305,9 @@ pub(crate) fn evaluate_resident_bytes(
             }
             ResidentOperationV1::CursorObserverProof(request) => {
                 crate::cursor_observer_proof_op::evaluate_cursor_observer_proof_request(&request)
+            }
+            ResidentOperationV1::HookAuthorityState(request) => {
+                crate::hook_authority_state_op::evaluate_hook_authority_state_request(&request)
             }
             ResidentOperationV1::HookDecide(request) => {
                 crate::hook_decision_op::evaluate_hook_decision_request(&request)
@@ -402,8 +411,8 @@ pub(crate) fn evaluate_resident_bytes(
             ResidentOperationV1::McpRuntimeEvidence(request) => {
                 crate::mcp_runtime_evidence_op::evaluate_mcp_runtime_evidence(&request)
             }
-            ResidentOperationV1::FalsePositiveRules(request) => {
-                crate::false_positive_rules_op::evaluate_false_positive_rules(&request)
+            ResidentOperationV1::RuntimeDetectorRun(request) => {
+                crate::runtime_detector_run_op::evaluate_runtime_detector_run(&request)
             }
             ResidentOperationV1::RunnerAuthority(request) => {
                 crate::runner_authority_op::evaluate_runner_authority(&request)
@@ -465,6 +474,7 @@ fn operation_guard_home(operation: &ResidentOperationV1) -> Option<&str> {
         ResidentOperationV1::ApplyStoredPackagePolicy(request) => Some(&request.guard_home),
         ResidentOperationV1::PackageAuthorityDecide(request) => Some(&request.guard_home),
         ResidentOperationV1::CursorObserverProof(request) => Some(&request.guard_home),
+        ResidentOperationV1::HookAuthorityState(request) => Some(&request.guard_home),
         ResidentOperationV1::PackageAdvisoryIds(request) => Some(&request.guard_home),
         ResidentOperationV1::PackageEvaluationCompose(request) => Some(&request.guard_home),
         ResidentOperationV1::PackageApprovalHash(request) => Some(&request.guard_home),
@@ -482,7 +492,7 @@ fn operation_guard_home(operation: &ResidentOperationV1) -> Option<&str> {
         ResidentOperationV1::McpStdioProbe(request) => Some(&request.guard_home),
         ResidentOperationV1::PromptAnalyze(request) => Some(&request.guard_home),
         ResidentOperationV1::McpRuntimeEvidence(request) => Some(&request.guard_home),
-        ResidentOperationV1::FalsePositiveRules(request) => Some(&request.guard_home),
+        ResidentOperationV1::RuntimeDetectorRun(request) => Some(&request.guard_home),
         ResidentOperationV1::RunnerAuthority(request) => Some(&request.guard_home),
         ResidentOperationV1::LocalCliGrantDecide(request) => Some(&request.guard_home),
         ResidentOperationV1::McpToolEvidence(request) => Some(&request.guard_home),
@@ -514,6 +524,7 @@ fn operation_store_path(operation: &ResidentOperationV1) -> Option<&str> {
         ResidentOperationV1::LocalCliGrantDecide(request) => Some(&request.store_path),
         ResidentOperationV1::LocalMcpGrantDecide(request) => Some(&request.store_path),
         ResidentOperationV1::ContributedMcpDecide(request) => Some(&request.store_path),
+        ResidentOperationV1::HookAuthorityState(request) => Some(&request.store_path),
         _ => None,
     }
 }
