@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import shutil
+import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -145,6 +146,30 @@ class TestExecution:
         assert result.timed_out is True
         assert result.exit_code == 124
         assert result.cleanup_complete is True
+        assert run.call_count == 2
+
+    @patch("subprocess.run")
+    def test_timeout_deletes_the_sandbox_before_waiting_for_output(self, run: MagicMock) -> None:
+        _bundle("guard-held")
+        held: list[int] = []
+
+        def invoke(command: tuple[str, ...], **kwargs: object) -> MagicMock:
+            if "run" in command:
+                # The sandbox keeps its own copy of stdout after runsc is killed.
+                held.append(os.dup(kwargs["stdout"]))
+                _write_fd(kwargs["stdout"], b"partial")
+                raise __import__("subprocess").TimeoutExpired(("runsc",), 1)
+            _write_fd(held[0], b"-tail")
+            os.close(held.pop())
+            return MagicMock(returncode=0)
+
+        run.side_effect = invoke
+        started = time.monotonic()
+        result = _runner().run("guard-held", timeout_seconds=1)
+        assert time.monotonic() - started < 5
+        assert result.timed_out is True
+        assert result.cleanup_complete is True
+        assert result.stdout_bytes == len(b"partial-tail")
         assert run.call_count == 2
 
     @patch("subprocess.run")

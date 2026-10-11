@@ -9,6 +9,9 @@ pub struct PathContext<'a> {
     pub home_dir: Option<&'a str>,
     pub cwd: Option<&'a str>,
     pub cdpath_unset: bool,
+    /// No inherited `RUSTUP_TOOLCHAIN` or `RUSTUP_HOME` can change which
+    /// toolchain the rustup proxy runs. Literal contexts leave this false.
+    pub rustup_override_absent: bool,
 }
 
 mod contained_wrapper;
@@ -28,6 +31,7 @@ mod git_worktree;
 mod guard_diagnostics;
 mod listing_reads;
 mod pytest_contained;
+mod trusted_location;
 pub(crate) use git_routes::git_route_within_workspace;
 mod apply_patch_writes;
 mod pure_expression;
@@ -35,6 +39,7 @@ mod read_paths;
 mod source_reads;
 use source_reads::{plain_source_code_path, sensitive_command_input, source_file_read_segment};
 mod restricted_tests;
+mod rust_toolchain;
 mod safe_reads;
 mod safe_scalar;
 mod safe_writes;

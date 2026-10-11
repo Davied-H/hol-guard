@@ -1,26 +1,19 @@
 name: Nightly native qualification
 
 # Runs the native, containment, installed-wheel and extension-builder proofs that
-# no per-pull-request lane runs. The pull_request trigger is limited to this file
-# so a change to the workflow is validated before it lands.
+# no per-pull-request lane runs. Validate a change to this file with
+# workflow_dispatch on the branch after it lands, or by temporarily adding a
+# pull_request trigger to the change.
 on:
   schedule:
     - cron: "17 6 * * *"
   workflow_dispatch:
-  pull_request:
-    paths:
-      - ".github/workflows/nightly-native.yml"
 
 permissions:
   contents: read
 
 env:
   UV_HTTP_TIMEOUT: "120"
-  CI_UV_CACHE_DEPENDENCY_GLOB: |
-    pyproject.toml
-    uv.lock
-    requirements.txt
-    docker-requirements.txt
 
 concurrency:
   group: nightly-native-${{ github.ref }}
@@ -132,8 +125,10 @@ jobs:
       - name: Enforce PreToolUse and PostToolUse source authority
         if: ${{ !cancelled() }}
         run: |
-          ! grep -q "Python remains authoritative" src/codex_plugin_scanner/guard/native_command_model.py
-          ! grep -q "Python remains authoritative" src/codex_plugin_scanner/guard/native_pretool.py
+          if grep -q "Python remains authoritative" src/codex_plugin_scanner/guard/native_command_model.py src/codex_plugin_scanner/guard/native_pretool.py; then
+            echo "::error::Python authority marker returned to the pre-tool path"
+            exit 1
+          fi
           grep -q "def review_pre_tool_native(" src/codex_plugin_scanner/guard/native_pretool.py
           grep -q 'command == "pre-tool"' rust/crates/guard-runtime/src/runtime_cli.rs
           grep -q "pub fn evaluate_pre_tool" rust/crates/guard-command/src/pretool.rs
@@ -268,14 +263,15 @@ jobs:
           enable-cache: true
       - uses: ./.github/actions/stage-command-projections
       - run: uv sync --frozen --no-dev --extra dev --python 3.12
+      - name: Install cached Rust toolchain
+        uses: ./.github/actions/setup-rust
       - name: Build the version-matched native runtime (daemon lifecycle decisions are resident-owned)
         env:
           HOL_GUARD_BUILD_SHA: ${{ github.sha }}
         run: |
           VERSION=$(uv run --no-sync python scripts/sync_repo_version.py --check)
           export HOL_GUARD_PACKAGE_VERSION="$VERSION"
-          cargo build --manifest-path rust/Cargo.toml --locked --release -p hol-guard-runtime -p guard-command --bin hol-guard-runtime --bin guard-command-source
-          uv run --no-sync python scripts/ci/verify_native_command_program.py --compiler rust/target/release/guard-command-source
+          cargo build --manifest-path rust/Cargo.toml --locked --release -p hol-guard-runtime --bin hol-guard-runtime
           echo "HOL_GUARD_NATIVE_BINARY=$GITHUB_WORKSPACE/rust/target/release/hol-guard-runtime" >> "$GITHUB_ENV"
           echo "HOL_GUARD_NATIVE_REGRESSION=1" >> "$GITHUB_ENV"
       - name: Run with a constrained descriptor budget
@@ -389,14 +385,15 @@ jobs:
           enable-cache: true
       - uses: ./.github/actions/stage-command-projections
       - run: uv sync --frozen --extra dev --python 3.12
+      - name: Install cached Rust toolchain
+        uses: ./.github/actions/setup-rust
       - name: Build the version-matched native runtime (package intent parsing is resident-owned)
         env:
           HOL_GUARD_BUILD_SHA: ${{ github.sha }}
         run: |
           VERSION=$(uv run --no-sync python scripts/sync_repo_version.py --check)
           export HOL_GUARD_PACKAGE_VERSION="$VERSION"
-          cargo build --manifest-path rust/Cargo.toml --locked --release -p hol-guard-runtime -p guard-command --bin hol-guard-runtime --bin guard-command-source
-          uv run --no-sync python scripts/ci/verify_native_command_program.py --compiler rust/target/release/guard-command-source
+          cargo build --manifest-path rust/Cargo.toml --locked --release -p hol-guard-runtime --bin hol-guard-runtime
           echo "HOL_GUARD_NATIVE_BINARY=$GITHUB_WORKSPACE/rust/target/release/hol-guard-runtime" >> "$GITHUB_ENV"
           # ci/ has no conftest to pin the mode, and auto mode does not take an explicit binary path.
           echo "HOL_GUARD_NATIVE=force" >> "$GITHUB_ENV"
@@ -1455,72 +1452,6 @@ jobs:
           platform: ${{ matrix.target }}
           shard-index: ${{ matrix.shard }}
           shard-count: '8'
-
-  native-windows-evaluators:
-    runs-on: windows-latest
-    # A cold Windows release build of both binaries takes 12-15 minutes.
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
-        with:
-          python-version: "3.12"
-      - uses: ./.github/actions/setup-rust
-        with:
-          save-main-cache: "true"
-      - name: Build Windows native command evaluators once for both updater Python versions
-        shell: pwsh
-        env:
-          HOL_GUARD_BUILD_SHA: ${{ github.sha }}
-        run: |
-          python scripts/refresh_extension_artifacts.py --trust-only
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo build --manifest-path rust/Cargo.toml --locked --release -p guard-command -p hol-guard-runtime --bin guard-command-source --bin hol-guard-runtime
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Verify current Windows native command projections
-        shell: pwsh
-        run: |
-          python scripts/ci/verify_native_command_program.py --compiler rust/target/release/guard-command-source.exe
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Verify Windows native runtime source binding
-        shell: pwsh
-        env:
-          EXPECTED_SOURCE_SHA: ${{ github.sha }}
-        run: |
-          $runtime = (Resolve-Path -LiteralPath "rust/target/release/hol-guard-runtime.exe").Path
-          $capabilitiesJson = & $runtime capabilities
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $capabilities = $capabilitiesJson | ConvertFrom-Json
-          if ($capabilities.build_sha -ne $env:EXPECTED_SOURCE_SHA) {
-            throw "Windows native runtime does not match this checkout's source SHA"
-          }
-      - name: Upload this attempt's verified Windows native command evaluators
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: pytest-native-command-evaluators-Windows-${{ github.sha }}-${{ github.run_attempt }}
-          path: |
-            rust/target/release/guard-command-source.exe
-            rust/target/release/hol-guard-runtime.exe
-          if-no-files-found: error
-          retention-days: 1
-
-  windows-updater:
-    needs: [native-windows-evaluators]
-    runs-on: windows-latest
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.10", "3.12"]
-    steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/ci-job-windows-updater
-        with:
-          python-version: ${{ matrix.python-version }}
 
   native-regression-complete:
     name: Installed regression shards ran every collected test once

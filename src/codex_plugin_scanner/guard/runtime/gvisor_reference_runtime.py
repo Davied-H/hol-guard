@@ -60,9 +60,10 @@ class _BoundedDrain:
         finally:
             os.close(self._read_fd)
 
-    def captured(self, timeout_seconds: float) -> bytes:
-        self._thread.join(timeout_seconds)
-        return b"".join(self._chunks)
+    def captured(self, deadline: float) -> bytes:
+        """Wait until EOF or ``deadline`` (``time.monotonic``), then snapshot."""
+        self._thread.join(max(0.0, deadline - time.monotonic()))
+        return b"".join(tuple(self._chunks))
 
 
 @dataclass(frozen=True, slots=True)
@@ -177,6 +178,7 @@ class GVisorReferenceRuntime:
         stderr = b""
         exit_code = 125
         cleanup_complete = False
+        cleaned = False
         stdout_read, stdout_write = os.pipe()
         stderr_read, stderr_write = os.pipe()
         stdout_drain = _BoundedDrain(stdout_read)
@@ -198,21 +200,17 @@ class GVisorReferenceRuntime:
             finally:
                 os.close(stdout_write)
                 os.close(stderr_write)
-            stdout = stdout_drain.captured(10)
-            stderr = stderr_drain.captured(10)
+            if timed_out:
+                # The timeout killed only the runsc parent. The sandbox still holds
+                # the pipe write ends, so delete it before waiting for EOF.
+                cleanup_complete = self._force_delete(execution_instance)
+                cleaned = True
+            drain_deadline = time.monotonic() + 10
+            stdout = stdout_drain.captured(drain_deadline)
+            stderr = stderr_drain.captured(drain_deadline)
         finally:
-            try:
-                cleanup = subprocess.run(
-                    (*self._base_command(), "delete", "--force", execution_instance),
-                    check=False,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    timeout=10,
-                    env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin"},
-                )
-                cleanup_complete = cleanup.returncode in {0, 128}
-            except subprocess.TimeoutExpired:
-                cleanup_complete = False
+            if not cleaned:
+                cleanup_complete = self._force_delete(execution_instance)
 
         duration_ms = (time.monotonic_ns() - started) // 1_000_000
         return GVisorRunResult(
@@ -226,6 +224,20 @@ class GVisorReferenceRuntime:
             timed_out=timed_out,
             cleanup_complete=cleanup_complete,
         )
+
+    def _force_delete(self, execution_instance: str) -> bool:
+        try:
+            cleanup = subprocess.run(
+                (*self._base_command(), "delete", "--force", execution_instance),
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=10,
+                env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin"},
+            )
+        except subprocess.TimeoutExpired:
+            return False
+        return cleanup.returncode in {0, 128}
 
     def cancel(self, execution_instance: str) -> bool:
         """Idempotently signal and delete one Guard-owned execution instance."""
