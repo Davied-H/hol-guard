@@ -87,14 +87,6 @@ fn content_length(
 
 /// `_write_chunk_with_deadline` (restricted_archive_stream.py) — write the
 /// full chunk or fail; the deadline budget is enforced by the caller.
-fn write_chunk_with_deadline(
-    file: &mut std::fs::File,
-    chunk: &[u8],
-    deadline: Instant,
-) -> Result<(), RestrictedDownloadError> {
-    crate::restricted_archive_write::write(file, chunk, deadline)
-}
-
 /// `_write_bounded_response` (restricted_archive_stream.py).
 pub(super) fn write_bounded_response(
     response: &mut dyn ReadableResponse,
@@ -184,6 +176,7 @@ pub(super) fn write_bounded_response(
     let result =
         (|file: &mut std::fs::File| -> Result<RestrictedArchiveDownload, RestrictedDownloadError> {
             require_remaining(deadline)?;
+            let mut writer = crate::restricted_archive_write::BlobWriter::start(file, &path)?;
             loop {
                 response.set_timeout(require_remaining(deadline)?);
                 // Keep one byte of overflow probe capacity.
@@ -202,7 +195,7 @@ pub(super) fn write_bounded_response(
                         "External archive exceeded Guard's download size limit.",
                     ));
                 }
-                write_chunk_with_deadline(file, &chunk, deadline)?;
+                writer.write(&chunk, deadline)?;
                 digest.update(&chunk);
                 require_remaining(deadline)?;
             }
@@ -214,6 +207,7 @@ pub(super) fn write_bounded_response(
                     ));
                 }
             }
+            writer.finish(deadline)?;
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;

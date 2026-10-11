@@ -41,6 +41,8 @@ const DNS_RESOLVER_MAX_INFLIGHT: usize = 2;
 /// Bounded semaphore mirroring `_DNS_RESOLVER_SLOTS` — at most
 /// `DNS_RESOLVER_MAX_INFLIGHT` concurrent blocking `getaddrinfo` calls.
 static DNS_RESOLVER_INFLIGHT: AtomicUsize = AtomicUsize::new(0);
+#[cfg(test)]
+pub(crate) static ARCHIVE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// `restricted_archive_contract.RestrictedArchiveFailure` mirror.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

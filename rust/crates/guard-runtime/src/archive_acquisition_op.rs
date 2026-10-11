@@ -76,11 +76,11 @@ fn evaluate(request: &ArchiveAcquisitionRequestV1) -> Result<Value, &'static str
         return Ok(json!({"kind": "destination", "canonical_url": canonical,
             "is_external": guard_command::restricted_archive::is_external_https_archive_source(&query.source_url)}));
     }
-    if query.max_bytes == 0
-        || query.max_bytes > ARCHIVE_ACQUISITION_MAX_BYTES
-        || query.max_redirects > 4
-        || query.timeout_ms == 0
-        || query.timeout_ms > ARCHIVE_ACQUISITION_MAX_TIMEOUT_MS
+    if query.max_bytes <= 0
+        || query.max_bytes > ARCHIVE_ACQUISITION_MAX_BYTES as i64
+        || !(0..=4).contains(&query.max_redirects)
+        || query.timeout_ms <= 0
+        || query.timeout_ms > ARCHIVE_ACQUISITION_MAX_TIMEOUT_MS as i64
     {
         return Ok(failure(
             "external_archive_download_policy_invalid",
@@ -98,7 +98,7 @@ fn evaluate(request: &ArchiveAcquisitionRequestV1) -> Result<Value, &'static str
             "External archive download exceeded Guard's time limit.",
         ));
     }
-    let timeout_ms = u128::from(query.timeout_ms).min(remaining_ms) as u64;
+    let timeout_ms = (query.timeout_ms as u128).min(remaining_ms) as u64;
     if query
         .temp_dir
         .as_ref()
@@ -142,8 +142,8 @@ fn evaluate(request: &ArchiveAcquisitionRequestV1) -> Result<Value, &'static str
     };
     let result = download_restricted_archive(
         &query.source_url,
-        query.max_bytes,
-        query.max_redirects,
+        query.max_bytes as u64,
+        query.max_redirects as u32,
         timeout_ms as f64 / 1000.0,
         query.temp_dir.as_deref().map(Path::new),
         &SystemDnsResolver,
@@ -181,7 +181,7 @@ mod tests {
             query: ArchiveAcquisitionQueryV1 {
                 action: ArchiveAcquisitionActionV1::Download,
                 source_url: "https://packages.example.com/a.tgz?signature=synthetic".into(),
-                max_bytes: ARCHIVE_ACQUISITION_MAX_BYTES,
+                max_bytes: ARCHIVE_ACQUISITION_MAX_BYTES as i64,
                 max_redirects: 4,
                 timeout_ms: 1000,
                 expires_at_unix_ms: expiry + 1000,
@@ -230,6 +230,19 @@ mod tests {
             evaluate(&request).unwrap()["code"],
             "external_archive_download_policy_invalid"
         );
+    }
+
+    #[test]
+    fn archive_acquisition_signed_invalid_limits_return_policy_failure() {
+        for field in ["max_bytes", "max_redirects", "timeout_ms"] {
+            let mut encoded = serde_json::to_value(request()).unwrap();
+            encoded["query"][field] = json!(-1);
+            let decoded: ArchiveAcquisitionRequestV1 = serde_json::from_value(encoded).unwrap();
+            assert_eq!(
+                evaluate(&decoded).unwrap()["code"],
+                "external_archive_download_policy_invalid"
+            );
+        }
     }
 
     #[test]

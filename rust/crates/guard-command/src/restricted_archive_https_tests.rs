@@ -111,6 +111,7 @@ impl PinnedHttpsTransport for TestRouting {
 
 #[test]
 fn managed_https_redirects_preserve_signed_query_and_request_headers() {
+    let _test_lock = crate::restricted_archive::ARCHIVE_TEST_LOCK.lock().unwrap();
     let (port, root, server) = server("packages.example.com", vec![
         b"HTTP/1.1 302 Found\r\nLocation: ../next.tgz?signature=a%2Fb&expires=1\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_vec(),
         b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n3\r\nabc\r\n4\r\ndefg\r\n0\r\n\r\n".to_vec(),
@@ -153,6 +154,7 @@ fn managed_https_redirects_preserve_signed_query_and_request_headers() {
 
 #[test]
 fn trusted_certificate_for_another_hostname_is_refused_before_http() {
+    let _test_lock = crate::restricted_archive::ARCHIVE_TEST_LOCK.lock().unwrap();
     let (port, root, server) = server(
         "other.example.com",
         vec![b"HTTP/1.1 200 OK\r\n\r\n".to_vec()],
@@ -180,6 +182,7 @@ fn trusted_certificate_for_another_hostname_is_refused_before_http() {
 
 #[test]
 fn untrusted_certificate_is_refused_before_http() {
+    let _test_lock = crate::restricted_archive::ARCHIVE_TEST_LOCK.lock().unwrap();
     let (port, _, server) = server(
         "packages.example.com",
         vec![b"HTTP/1.1 200 OK\r\n\r\n".to_vec()],
@@ -208,6 +211,7 @@ fn untrusted_certificate_is_refused_before_http() {
 
 #[test]
 fn real_https_unknown_length_body_is_bounded() {
+    let _test_lock = crate::restricted_archive::ARCHIVE_TEST_LOCK.lock().unwrap();
     let (port, root, server) = server(
         "packages.example.com",
         vec![b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n1234".to_vec()],
@@ -238,6 +242,7 @@ fn real_https_unknown_length_body_is_bounded() {
 
 #[test]
 fn real_https_headers_and_body_share_one_absolute_deadline() {
+    let _test_lock = crate::restricted_archive::ARCHIVE_TEST_LOCK.lock().unwrap();
     for body_delay in [false, true] {
         let (port, root, server) = delayed_server(
             "packages.example.com",
@@ -277,6 +282,7 @@ fn real_https_headers_and_body_share_one_absolute_deadline() {
 
 #[test]
 fn managed_registry_redirect_is_refused_before_second_dns_or_tls() {
+    let _test_lock = crate::restricted_archive::ARCHIVE_TEST_LOCK.lock().unwrap();
     struct CountingDns(std::sync::atomic::AtomicUsize);
     impl DnsResolver for CountingDns {
         fn getaddrinfo(&self, _: &str) -> Result<Option<Vec<String>>, String> {

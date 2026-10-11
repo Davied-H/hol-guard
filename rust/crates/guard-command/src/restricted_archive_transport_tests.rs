@@ -7,6 +7,7 @@ use std::sync::mpsc;
 
 #[test]
 fn stalled_dns_retains_admission_until_workers_exit() {
+    let _test_lock = crate::restricted_archive::ARCHIVE_TEST_LOCK.lock().unwrap();
     let (release_a, wait_a) = mpsc::channel();
     let (release_b, wait_b) = mpsc::channel();
     let (completed, completion) = mpsc::channel();
@@ -50,6 +51,7 @@ fn stalled_dns_retains_admission_until_workers_exit() {
 
 #[test]
 fn stalled_tls_uses_one_absolute_deadline() {
+    let _test_lock = crate::restricted_archive::ARCHIVE_TEST_LOCK.lock().unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     let (release, wait) = mpsc::channel();
@@ -80,6 +82,7 @@ fn stalled_tls_uses_one_absolute_deadline() {
 
 #[test]
 fn cleartext_peer_cannot_satisfy_https() {
+    let _test_lock = crate::restricted_archive::ARCHIVE_TEST_LOCK.lock().unwrap();
     use std::io::Read;
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -116,6 +119,7 @@ fn cleartext_peer_cannot_satisfy_https() {
 
 #[test]
 fn empty_managed_trust_fails_before_connection() {
+    let _test_lock = crate::restricted_archive::ARCHIVE_TEST_LOCK.lock().unwrap();
     let transport = ManagedUreqPinnedTransport {
         roots: Vec::new(),
         allow_public_registries: true,

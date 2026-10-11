@@ -123,16 +123,15 @@ pub(super) fn urljoin(base: &str, location: &str) -> String {
     if location.is_empty() {
         return base.to_string();
     }
-    // Absolute URL — keep verbatim.
-    let (scheme, _, _, _) = urlsplit(location);
-    if !scheme.is_empty() {
+    let (base_scheme, base_netloc, base_path, base_query) = urlsplit(base);
+    let (scheme, netloc, path, query) = urlsplit(location);
+    // Same-scheme references without authority inherit the current host.
+    if (!scheme.is_empty() && scheme != base_scheme) || !netloc.is_empty() {
+        if scheme.is_empty() {
+            return format!("{base_scheme}:{location}");
+        }
         return location.to_string();
     }
-    let (base_scheme, base_netloc, base_path, base_query) = urlsplit(base);
-    if let Some(rest) = location.strip_prefix("//") {
-        return format!("{base_scheme}://{rest}");
-    }
-    let (_, _, path, query) = urlsplit(location);
     let merged = if path.is_empty() {
         base_path
     } else if path.starts_with('/') {

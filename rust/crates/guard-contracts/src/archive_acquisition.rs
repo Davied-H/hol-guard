@@ -46,9 +46,9 @@ pub enum ArchiveAcquisitionActionV1 {
 pub struct ArchiveAcquisitionQueryV1 {
     pub action: ArchiveAcquisitionActionV1,
     pub source_url: String,
-    pub max_bytes: u64,
-    pub max_redirects: u32,
-    pub timeout_ms: u64,
+    pub max_bytes: i64,
+    pub max_redirects: i64,
+    pub timeout_ms: i64,
     /// Same-host expiry includes time spent waiting for a resident worker.
     pub expires_at_unix_ms: u64,
     pub temp_dir: Option<String>,

@@ -11,6 +11,7 @@ import json
 import tempfile
 import time
 import uuid
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
@@ -22,24 +23,18 @@ from .runtime.restricted_archive_contract import (
     RestrictedArchiveDownloadResult,
     RestrictedArchiveFailure,
 )
+from .strict_json_pairs import unique_json_object
 
 _FEATURE = "archive-acquisition-v1"
 _REQUEST_SCHEMA = "hol-guard.archive-acquisition-request.v1"
 _RESULT_SCHEMA = "hol-guard.archive-acquisition-result.v1"
 _MAX_REQUEST_BYTES = 2 * 1024 * 1024
-
-
-def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError("duplicate native result key")
-        result[key] = value
-    return result
+_MAX_TIMEOUT_MS = 8_000
 
 
 def _request(query: dict[str, object], *, deadline: float, guard_home: Path | None = None) -> dict[str, Any] | None:
     try:
+        deadline = min(deadline, time.monotonic() + _MAX_TIMEOUT_MS / 1000)
         home = _resolve_digest_home(guard_home)
         status = native_runtime_status(deadline_monotonic=deadline)
         if (
@@ -56,15 +51,22 @@ def _request(query: dict[str, object], *, deadline: float, guard_home: Path | No
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             return None
+        timeout_ms = max(1, int(remaining * 1000))
+        if query["action"] == "download":
+            timeout_ms = min(timeout_ms, query["timeout_ms"])
         query = {
             **query,
-            "timeout_ms": max(1, int(remaining * 1000)),
+            "timeout_ms": timeout_ms,
             "expires_at_unix_ms": int((time.time() + remaining) * 1000),
         }
         request = {"schema": _REQUEST_SCHEMA, "request_id": uuid.uuid4().hex, "guard_home": str(home), "query": query}
         digest = "sha256:" + _canonical_request_sha256(request)
         encoded = json.dumps(
-            {"operation": "archive_acquisition", "request": request, "deadline_budget_ms": query["timeout_ms"]},
+            {
+                "operation": "archive_acquisition",
+                "request": request,
+                "deadline_budget_ms": max(1, int(remaining * 1000)),
+            },
             ensure_ascii=True,
             allow_nan=False,
         ).encode("utf-8")
@@ -80,7 +82,7 @@ def _request(query: dict[str, object], *, deadline: float, guard_home: Path | No
         )
         if reply is None or time.monotonic() >= deadline:
             return None
-        result = json.loads(reply.decode("utf-8"), object_pairs_hook=_unique_object)
+        result = json.loads(reply.decode("utf-8"), object_pairs_hook=unique_json_object)
         if (
             not isinstance(result, dict)
             or set(result) != {"schema", "request_id", "request_sha256", "status", "code", "payload"}
@@ -152,18 +154,20 @@ def download_restricted_archive(
     )
     spool: tempfile.TemporaryDirectory[str] | None = None
     try:
-        deadline = time.monotonic() + timeout_seconds
+        # Invalid limits still reach native validation with a usable RPC budget.
+        deadline = time.monotonic() + (timeout_seconds if timeout_seconds > 0 else 3.0)
         policy, _managed = resolved_network_policy(None)
         # Trust selection stays in the existing platform/managed service.
         # The native TLS implementation verifies the chain and hostname.
         roots = export_managed_trust_roots(managed_ssl_context(policy))
         # This is transport lifetime management, not a blob verdict. Removing
         # the parent on failure prevents a late resident from publishing a file.
-        spool = tempfile.TemporaryDirectory(prefix="hol-guard-acquisition-", dir=temp_dir)
+        spool = tempfile.TemporaryDirectory(prefix="hol-guard-acquisition-", dir=temp_dir, ignore_cleanup_errors=True)
         query = {
             **_query(source_url, "download"),
             "max_bytes": max_bytes,
             "max_redirects": max_redirects,
+            "timeout_ms": int(timeout_seconds * 1000),
             "temp_dir": str(Path(spool.name).resolve()),
             "trust_roots_der_hex": [root.hex() for root in roots],
             "allow_public_registries": policy.allow_public_registries,
@@ -186,7 +190,7 @@ def download_restricted_archive(
             or not isinstance(payload["size"], int)
             or not 0 <= payload["size"] <= max_bytes
             or not Path(payload["path"]).is_absolute()
-            or Path(payload["path"]).parent != Path(spool.name).resolve()
+            or not Path(payload["path"]).parent.samefile(spool.name)
             or payload["source_url"] != source_url
             or len(payload["sha256"]) != 64
             or any(character not in "0123456789abcdef" for character in payload["sha256"])
@@ -206,4 +210,5 @@ def download_restricted_archive(
         return unavailable
     finally:
         if spool is not None:
-            spool.cleanup()
+            with suppress(OSError):
+                spool.cleanup()

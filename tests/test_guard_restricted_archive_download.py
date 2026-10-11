@@ -7,6 +7,7 @@ recorded Python vectors and synthetic HTTPS peers; no Python oracle remains.
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
@@ -122,7 +123,7 @@ def test_download_hydrates_native_digest_bound_blob(monkeypatch: pytest.MonkeyPa
         path.write_bytes(b"archive")
         return {
             "kind": "download",
-            "path": str(path),
+            "path": "\\\\?\\" + str(path) if os.name == "nt" else str(path),
             "size": 7,
             "sha256": "a" * 64,
             "source_url": source,
@@ -148,10 +149,43 @@ def test_download_hydrates_native_digest_bound_blob(monkeypatch: pytest.MonkeyPa
     assert query["expires_at_unix_ms"] > 0
     path = result.path
     spool = path.parent
-    assert spool.parent == tmp_path
+    assert spool.parent.samefile(tmp_path)
     result.cleanup()
     assert not path.exists()
     assert not spool.exists()
+
+
+@pytest.mark.parametrize("timeout", [-1.0, 0.0, 30.0])
+def test_download_marshals_timeout_with_bounded_rpc_budget(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, timeout: float
+) -> None:
+    _trust(monkeypatch)
+    calls = _stub(monkeypatch, tmp_path, {"kind": "failure", "code": "native_refusal", "message": "Refused."})
+    result = public.download_restricted_archive(
+        "https://packages.example.com/a", timeout_seconds=timeout, temp_dir=tmp_path
+    )
+    assert isinstance(result, RestrictedArchiveFailure)
+    assert result.code == "native_refusal"
+    query = calls[0]["request"]["query"]
+    assert query["timeout_ms"] <= 8_000
+    if timeout <= 0:
+        assert query["timeout_ms"] == int(timeout * 1000)
+    assert 0 < calls[0]["deadline_budget_ms"] <= 8_000
+
+
+def test_cleanup_error_preserves_native_failure(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _trust(monkeypatch)
+    _stub(monkeypatch, tmp_path, {"kind": "failure", "code": "native_timeout", "message": "Timed out."})
+    cleanup = client.tempfile.TemporaryDirectory.cleanup
+
+    def blocked_cleanup(self: Any) -> None:
+        cleanup(self)
+        raise PermissionError("synthetic late handle")
+
+    monkeypatch.setattr(client.tempfile.TemporaryDirectory, "cleanup", blocked_cleanup)
+    result = public.download_restricted_archive("https://packages.example.com/a", temp_dir=tmp_path)
+    assert isinstance(result, RestrictedArchiveFailure)
+    assert result.code == "native_timeout"
 
 
 @pytest.mark.parametrize("mutation", ["missing", "request_sha256"])

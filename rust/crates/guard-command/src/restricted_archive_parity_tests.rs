@@ -14,6 +14,7 @@ fn vectors() -> Value {
 
 #[test]
 fn recorded_destination_parity() {
+    let _test_lock = crate::restricted_archive::ARCHIVE_TEST_LOCK.lock().unwrap();
     let mut mismatches = Vec::new();
     for case in vectors()["destinations"].as_array().unwrap() {
         let input = case["input"].as_str().unwrap();
@@ -32,6 +33,7 @@ fn recorded_destination_parity() {
 
 #[test]
 fn recorded_public_address_parity() {
+    let _test_lock = crate::restricted_archive::ARCHIVE_TEST_LOCK.lock().unwrap();
     let mut mismatches = Vec::new();
     for case in vectors()["addresses"].as_array().unwrap() {
         let input = case["input"].as_str().unwrap();
@@ -45,6 +47,7 @@ fn recorded_public_address_parity() {
 
 #[test]
 fn recorded_source_route_parity() {
+    let _test_lock = crate::restricted_archive::ARCHIVE_TEST_LOCK.lock().unwrap();
     for case in vectors()["destinations"].as_array().unwrap() {
         let input = case["input"].as_str().unwrap();
         assert_eq!(
@@ -52,6 +55,26 @@ fn recorded_source_route_parity() {
             case["is_external"].as_bool().unwrap(),
             "{input:?}"
         );
+    }
+}
+
+#[test]
+fn same_scheme_redirects_inherit_authority() {
+    let base = "https://packages.example.com/dir/archive.tgz";
+    for (location, expected) in [
+        (
+            "https:next.tgz",
+            "https://packages.example.com/dir/next.tgz",
+        ),
+        ("https:/next.tgz", "https://packages.example.com/next.tgz"),
+        (
+            "HTTPS:../next.tgz?signature=a%2Fb",
+            "https://packages.example.com/next.tgz?signature=a%2Fb",
+        ),
+        ("https://other.example.com/a", "https://other.example.com/a"),
+        ("http:next.tgz", "http:next.tgz"),
+    ] {
+        assert_eq!(super::urljoin(base, location), expected);
     }
 }
 
@@ -111,6 +134,7 @@ impl PinnedHttpsTransport for Transport {
 
 #[test]
 fn recorded_download_parity() {
+    let _test_lock = crate::restricted_archive::ARCHIVE_TEST_LOCK.lock().unwrap();
     let mut mismatches = Vec::new();
     let mut nonce = [0; 16];
     getrandom::fill(&mut nonce).unwrap();
