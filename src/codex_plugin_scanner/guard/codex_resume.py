@@ -111,6 +111,8 @@ def defer_request_resume_to_live_hook(
     ):
         return None
     payload = _resume_call(store, call="defer", request_id=request_id, now=now, action=action)
+    if payload is None:
+        raise ResumeUnavailableError()
     return _resume(payload)
 
 
@@ -218,20 +220,23 @@ def _resume_call(
     }
     if not ensure_resident_prerequisite(home):
         return None
-    with store._hold_storage_gate(exclusive=False):  # pyright: ignore[reportPrivateUsage]
-        try:
-            response = _resident_request(
-                operation="codex_request_resume",
-                request=wire,
-                guard_home=home,
-                timeout_seconds=(timeout_ms + busy_timeout_ms) / 1000 + _TRANSPORT_GRACE_SECONDS,
-                required_feature=_FEATURE,
-                response_schema=_RESULT_SCHEMA,
-                max_request_bytes=_MAX_REQUEST_BYTES,
-                record_success=False,
-            )
-        except (TypeError, ValueError, OSError, RuntimeError):
-            response = None
+    try:
+        with store._hold_storage_gate(exclusive=False):  # pyright: ignore[reportPrivateUsage]
+            try:
+                response = _resident_request(
+                    operation="codex_request_resume",
+                    request=wire,
+                    guard_home=home,
+                    timeout_seconds=(timeout_ms + busy_timeout_ms) / 1000 + _TRANSPORT_GRACE_SECONDS,
+                    required_feature=_FEATURE,
+                    response_schema=_RESULT_SCHEMA,
+                    max_request_bytes=_MAX_REQUEST_BYTES,
+                    record_success=False,
+                )
+            except (TypeError, ValueError, OSError, RuntimeError):
+                response = None
+    except (OSError, TimeoutError):
+        return None
     store._repair_store_permissions()  # pyright: ignore[reportPrivateUsage]
     return _payload(response, wire, home)
 

@@ -184,6 +184,9 @@ class _ControlPolicyRoutes:
             if error_code == "not_resolved":
                 self._write_json({"error": "not_resolved"}, status=409)
                 return
+            if error_code == "resume_unavailable":
+                self._write_json({"error": "resume_unavailable"}, status=503)
+                return
             self._write_json({"error": "resume_not_supported"}, status=400)
             return
         self.server.store.add_event(  # type: ignore[attr-defined]
