@@ -189,8 +189,13 @@ def test_alpha_prerelease_still_waits_for_pypi_while_overlapping_it() -> None:
     names = [step.get("name") for step in job["steps"]]
     wait = next(step for step in job["steps"] if step.get("name") == "Wait for the PyPI publication to succeed")
     assert names.index("Generate release notes") < names.index("Wait for the PyPI publication to succeed")
-    assert names.index("Wait for the PyPI publication to succeed") < names.index("Create discoverable alpha prerelease")
+    assert names.index("Wait for the PyPI publication to succeed") < names.index("Refresh release API token")
+    assert names.index("Refresh release API token") < names.index("Create discoverable alpha prerelease")
     assert wait["env"]["GH_TOKEN"] == "${{ github.token }}"
+    notes = next(step for step in job["steps"] if step.get("name") == "Generate release notes")
+    prerelease = next(step for step in job["steps"] if step.get("name") == "Create discoverable alpha prerelease")
+    assert notes["env"]["GH_TOKEN"] == "${{ steps.release-token.outputs.token }}"
+    assert prerelease["env"]["GH_TOKEN"] == "${{ steps.release-token-after-pypi.outputs.token }}"
     publish_name = PUBLISH["publish-alpha-pypi"]["name"]
     assert "wait_for_run_job.py" in wait["run"]
     assert f'--job-name "{publish_name}"' in wait["run"]
