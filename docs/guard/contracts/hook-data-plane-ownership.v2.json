@@ -402,6 +402,7 @@
     "src/codex_plugin_scanner/guard/native_guard_store.py",
     "src/codex_plugin_scanner/guard/native_skill_directory_identity.py",
     "src/codex_plugin_scanner/guard/native_path_anchor.py",
+    "src/codex_plugin_scanner/guard/native_codex_binding_capture.py",
     "src/codex_plugin_scanner/guard/local_cli_grant_decision.py",
     "src/codex_plugin_scanner/guard/native_request_context.py"
    ],

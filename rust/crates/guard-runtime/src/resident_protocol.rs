@@ -102,6 +102,7 @@ pub(crate) fn capabilities() -> RuntimeCapabilitiesV1 {
         features.push(guard_contracts::CONTAINED_EXECUTION_FEATURE.into());
         features.push(guard_contracts::MCP_STDIO_SESSION_FEATURE.into());
         features.push(guard_contracts::SKILL_DIRECTORY_IDENTITY_FEATURE.into());
+        features.push(crate::binding_capture_op::BINDING_CAPTURE_FEATURE.into());
     }
     let (program_digest, catalog_digest, trust_digest) =
         guard_command::native_command_program::packaged_program_digests();
@@ -206,6 +207,8 @@ pub(crate) enum ResidentOperationV1 {
     RequestContextBuild(RequestContextRequestV1),
     McpToolPolicyDecide(McpToolPolicyDecideRequestV1),
     SkillDirectoryIdentity(SkillDirectoryIdentityRequestV1),
+    #[cfg(unix)]
+    CodexBindingCapture(crate::binding_capture_op::CodexBindingCaptureRequestV1),
     #[allow(dead_code)]
     PromptAnalyze(PromptAnalyzeRequestV1),
     CatalogRead(guard_command::catalog_read_model::CatalogReadRequestV1),
