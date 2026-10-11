@@ -1373,6 +1373,18 @@
         "evidence": "The only entry is `_run_init_command`, reached from the excluded `_run_guard_init_command` dispatcher; the other symbols are called only from it or from CLI parser setup in the already-excluded dispatch modules. The only in-scope mention is an `if TYPE_CHECKING` import in commands_dispatch_local, which is not a runtime edge. Workspace resolution helpers used by the hook and run paths stay in scope."
       },
       {
+        "id": "guard-mcp-reporting-server",
+        "category": "offline_reporting",
+        "path": "src/codex_plugin_scanner/guard/cli/commands_dispatch_local.py",
+        "root_function": true,
+        "symbols": [
+          "_run_guard_mcp_command"
+        ],
+        "entry_points": [],
+        "reason": "Dispatch body of the `guard mcp serve` subcommand, a local stdio MCP server that lets an agent search sanitized receipts and inventory, read Guard status and file pending policy requests for human approval.",
+        "evidence": "commands_router maps the \"mcp\" subcommand name to this handler by string. The server modules (mcp/server.py, tools.py, registry.py, adapters.py, sanitizers.py, schemas.py) serve three read-only tools (search, fetch, get_guard_status) over already-recorded receipts and inventory, plus validate_policy, create_policy and get_policy_creation in policy_tools.py, which only record a pending policy-import request; applying or declining it runs in the daemon policy-decision control route (mcp_policy_decisions, reached from the excluded daemon control routes) behind an approval grant. Nothing here admits, decides, authorizes or dispatches a hook, run, protect or MCP proxy call. The only in-scope edge into those modules is the lazy import inside this handler. mcp/policy_store.py stays in scope because store_connection_schema imports it. The report validates that no retained symbol references the excluded name. Marked root_function because the module is a dispatcher root."
+      },
+      {
         "id": "store2-dispatch-install-update-init",
         "category": "install_config",
         "path": "src/codex_plugin_scanner/guard/cli/commands_dispatch_local.py",
