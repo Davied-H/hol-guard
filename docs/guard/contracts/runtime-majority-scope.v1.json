@@ -724,15 +724,6 @@
           "src/codex_plugin_scanner/guard/adapters/paseo_config.py",
           "src/codex_plugin_scanner/guard/adapters/paseo_install.py",
           "src/codex_plugin_scanner/guard/adapters/pi.py",
-          "src/codex_plugin_scanner/guard/adapters/pi_extension_runtime_ownership.py",
-          "src/codex_plugin_scanner/guard/adapters/pi_extension_source.py",
-          "src/codex_plugin_scanner/guard/adapters/pi_extension_source_body.py",
-          "src/codex_plugin_scanner/guard/adapters/pi_extension_source_body_shared_v1.py",
-          "src/codex_plugin_scanner/guard/adapters/pi_extension_source_header.py",
-          "src/codex_plugin_scanner/guard/adapters/pi_extension_source_header_shared_v1.py",
-          "src/codex_plugin_scanner/guard/adapters/pi_extension_source_runtime.py",
-          "src/codex_plugin_scanner/guard/adapters/pi_extension_source_tail.py",
-          "src/codex_plugin_scanner/guard/adapters/pi_extension_source_tail_shared_v1.py",
           "src/codex_plugin_scanner/guard/adapters/pi_support.py",
           "src/codex_plugin_scanner/guard/adapters/zcode.py",
           "src/codex_plugin_scanner/json_comment_stripping.py"
@@ -750,6 +741,8 @@
     "generated": {
       "path": [
         "src/codex_plugin_scanner/guard/adapters/pi_extension_*_source*.py",
+        "src/codex_plugin_scanner/guard/adapters/pi_extension_source*.py",
+        "src/codex_plugin_scanner/guard/adapters/pi_extension_runtime_ownership.py",
         "src/codex_plugin_scanner/guard/adapters/cursor_hook_script_template_*.py",
         "src/codex_plugin_scanner/guard/adapters/opencode_*template.py",
         "src/codex_plugin_scanner/guard/adapters/grok_hook_*_template.py"
