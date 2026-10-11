@@ -100,8 +100,14 @@ class StoreWorkflowCapabilitiesMixin:
             except NativeGuardStoreUnavailable as error:
                 if error.reason != _PLAN_STALE_REASON:
                     raise
-                if original is not None and plan["writes"]:
-                    self._store_workflow_capability_control(original)
+                # The plan was never committed, so the pending control it saved
+                # has no ledger entry. Put back the last unpended control: the
+                # original, or on a first issue the freshly bootstrapped one,
+                # which is the first write of the plan. Otherwise the retry
+                # would see an unresolved pending sequence and lock authority.
+                baseline = original if original is not None else (plan["writes"][0] if plan["writes"] else None)
+                if baseline is not None and not self._store_workflow_capability_control(baseline):
+                    raise WorkflowCapabilityError("capability_control_unavailable")
                 continue
             self._persist_workflow_capability_controls(committed["post_writes"])
             return committed["result"]

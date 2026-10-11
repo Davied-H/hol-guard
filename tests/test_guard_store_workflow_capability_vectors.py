@@ -113,6 +113,30 @@ def test_stale_plan_restores_the_control_blob_and_retries_bounded(
     assert control.blob == "original"
 
 
+def test_stale_first_issue_restores_the_bootstrap_control_not_the_pending_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    control = FakeControl()
+    store = _store(tmp_path, monkeypatch, control)
+    attempts = 0
+
+    def native(method: str, args: Mapping[str, object]) -> Any:
+        nonlocal attempts
+        if method == "workflow_capability_plan":
+            # A retry must start from the unpended control, never a pending one.
+            assert control.blob in (None, "bootstrap")
+            return _plan(["bootstrap", "pending"], ["final"])
+        attempts += 1
+        if attempts == 1:
+            raise _unavailable("native_guard_store_capability_plan_stale")
+        return {"result": True, "post_writes": ["final"]}
+
+    monkeypatch.setattr(store, "_native_store_call", native)
+    assert store.revoke_workflow_capability("wc-1", reason_code="operator_revoked") is True
+    assert control.writes[-1] == "final"
+    assert control.writes[:3] == ["bootstrap", "pending", "bootstrap"]
+
+
 def test_other_native_failures_are_not_retried(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     store = _store(tmp_path, monkeypatch, FakeControl())
     methods: list[str] = []
