@@ -40,8 +40,6 @@ from .commands_parser_helpers import *
 from .commands_support_command_activity import record_pre_hook_command_activity_best_effort
 from .commands_support_observe_queue import queue_observe_mode_request
 
-_EDGE_KEYS = ("policy_action", "minimum_action", "decision")
-
 
 def run_native_copilot_pretool(
     args: argparse.Namespace,
@@ -179,11 +177,7 @@ def _settle_copilot_tool_call(
                 "action_envelope_json": _action_envelope_json(action_envelope),
                 "canonical_harness": _canonical_harness_name(args.harness),
             },
-            "native_edge": (
-                {key: native_edge_result.get(key) for key in _EDGE_KEYS}
-                if isinstance(native_edge_result, Mapping)
-                else None
-            ),
+            "native_edge": native_edge_result if isinstance(native_edge_result, Mapping) else None,
             "recording_only": harness_is_recording_only(config, "copilot"),
             "posture_watch": harness_posture_override(config, "copilot") == "watch",
             "asks_for_approval": asks_for_approval(config),

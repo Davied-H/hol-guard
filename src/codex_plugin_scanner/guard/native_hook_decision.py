@@ -94,6 +94,7 @@ _EFFECT_FIELDS: dict[str, dict[str, Any]] = {
     "queue_approval": {"evaluation_artifact": dict, "response_payload": dict, "deny_reason": str},
 }
 _ACKED_FACT = "acked_recording_only"
+_EDGE_KEYS = ("policy_action", "minimum_action", "decision")
 
 
 class NativeHookDecisionError(RuntimeError):
@@ -236,7 +237,7 @@ def native_copilot_settle(
             raise NativeHookDecisionError(_INVALID)
         needs = payload["needs_facts"]
         if needs:
-            if needs != [_ACKED_FACT] or _ACKED_FACT in inputs or payload["plan"] is not None:
+            if needs != [_ACKED_FACT] or inputs[_ACKED_FACT] is not None or payload["plan"] is not None:
                 raise NativeHookDecisionError(_INVALID)
             return
         plan = _shape(payload["plan"], _PLAN_FIELDS)
@@ -249,8 +250,15 @@ def native_copilot_settle(
                 raise NativeHookDecisionError(_INVALID)
             _shape({key: value for key, value in effect.items() if key != "effect"}, _EFFECT_FIELDS[kind])
 
-    query = {"kind": "copilot_settle", "inputs": dict(inputs)}
-    payload = _decide(query, guard_home, validate)
+    # The resident binds the reply to its typed request, so every optional
+    # field travels explicitly.
+    edge = inputs.get("native_edge")
+    inputs = {
+        **inputs,
+        _ACKED_FACT: inputs.get(_ACKED_FACT),
+        "native_edge": {key: edge.get(key) for key in _EDGE_KEYS} if isinstance(edge, Mapping) else None,
+    }
+    payload = _decide({"kind": "copilot_settle", "inputs": dict(inputs)}, guard_home, validate)
     if payload["needs_facts"]:
         inputs = {**inputs, _ACKED_FACT: bool(acked_recording_only())}
         payload = _decide({"kind": "copilot_settle", "inputs": dict(inputs)}, guard_home, validate)
