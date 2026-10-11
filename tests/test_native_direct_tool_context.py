@@ -10,6 +10,7 @@ import pytest
 
 from codex_plugin_scanner.guard import native_direct_tool_context as client
 from codex_plugin_scanner.guard.native_request_context import NativeRequestContextFailure
+from codex_plugin_scanner.guard.runtime import direct_vitest
 
 
 def test_caller_routing_environment_is_carried_without_unrelated_values(
@@ -46,10 +47,16 @@ def test_native_context_refusal_or_malformed_reply_cannot_recover_a_context(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, reply: Any
 ) -> None:
     monkeypatch.setattr(client, "_call", lambda *_args, **_kwargs: reply)
-    assert client.native_direct_tool_context("vitest", "synthetic command", cwd=tmp_path, home_dir=tmp_path) is None
+    assert (
+        direct_vitest.direct_local_vitest_execution_context("synthetic command", cwd=tmp_path, home_dir=tmp_path)
+        is None
+    )
 
 
-def test_context_is_hydrated_from_one_bound_native_call(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+@pytest.mark.parametrize("tool", ["vitest", "typescript"])
+def test_context_is_hydrated_from_one_bound_native_call(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, tool: str
+) -> None:
     from codex_plugin_scanner.guard.runtime import shell_execution_context
 
     report = {"synthetic_native_report": True}
@@ -66,11 +73,12 @@ def test_context_is_hydrated_from_one_bound_native_call(monkeypatch: pytest.Monk
     monkeypatch.setattr(
         shell_execution_context, "_context_from_report", lambda wire: expected if wire is report else None
     )
-    result = client.native_direct_tool_context("typescript", "synthetic command", cwd=tmp_path, home_dir=tmp_path)
+    entrypoint = getattr(direct_vitest, f"direct_local_{tool}_execution_context")
+    result = entrypoint("synthetic command", cwd=tmp_path, home_dir=tmp_path)
     assert result is expected
     assert len(calls) == 1
     assert calls[0]["action"]["body"]["script"] == "synthetic command"
-    assert calls[0]["action"]["body"]["tool"] == "typescript"
+    assert calls[0]["action"]["body"]["tool"] == tool
     assert calls[0]["source"] == "direct_command"
 
 
@@ -89,4 +97,4 @@ def test_trusted_path_command_only_presents_strict_native_boolean(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, reply: Any, expected: bool
 ) -> None:
     monkeypatch.setattr(client, "_call", lambda *_args, **_kwargs: reply)
-    assert client.native_trusted_tool_command("bun", cwd=tmp_path, home_dir=tmp_path) is expected
+    assert direct_vitest._trusted_path_command("bun", cwd=tmp_path, home_dir=tmp_path) is expected

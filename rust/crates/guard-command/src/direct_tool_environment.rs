@@ -59,7 +59,7 @@ pub(super) fn shell_read_execution_environment_is_safe(
             continue;
         }
         if !LOADER_PATH_ENVIRONMENT.contains(&key.as_str())
-            || !trusted_loader_paths(&value, cwd, authority)
+            || !trusted_loader_paths(value, cwd, authority)
         {
             return false;
         }

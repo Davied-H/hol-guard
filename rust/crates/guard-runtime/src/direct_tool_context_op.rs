@@ -33,7 +33,19 @@ impl DirectToolAuthority for Authority<'_> {
         Some(self.budget.deadline())
     }
     fn executable_file(&self, path: &Path) -> bool {
-        binary::executable_file(path)
+        // The legacy runner proof checks stat execute bits. PATH lookup uses
+        // the shared native access check separately, as shutil.which did.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            path.metadata()
+                .is_ok_and(|metadata| metadata.is_file() && metadata.mode() & 0o111 != 0)
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = path;
+            false
+        }
     }
     fn trusted_path(&self, path: &Path, cwd: &Path) -> bool {
         self.within_budget()
@@ -89,10 +101,26 @@ impl DirectToolAuthority for Authority<'_> {
                             && d.get("integrity").and_then(Value::as_str) == Some("ok")
                             && d.get("path_active").and_then(Value::as_bool) == Some(true)
                             && d.get("shim_path").and_then(Value::as_str)
-                                == Some(resolved.to_string_lossy().as_ref())
+                                == Some(resolved_tool_path_text(&resolved).as_str())
                     })
                 })
     }
+}
+
+fn resolved_tool_path_text(path: &Path) -> String {
+    let text = path.to_string_lossy();
+    #[cfg(windows)]
+    {
+        // Python realpath and the shim DTO use ordinary Windows paths; Rust
+        // canonicalize uses a verbatim prefix. Normalize only that spelling.
+        if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+            return format!(r"\\{}", rest);
+        }
+        if let Some(rest) = text.strip_prefix(r"\\?\") {
+            return rest.to_owned();
+        }
+    }
+    text.into_owned()
 }
 
 fn admit(facts: &RequestContextDirectFactsV1, budget: &Budget) -> Result<(), &'static str> {
