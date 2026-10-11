@@ -146,6 +146,20 @@ mod guard_store_sessions;
 mod guard_store_sessions_vectors_tests;
 #[cfg(test)]
 mod guard_store_vectors_tests;
+#[cfg(test)]
+mod guard_store_workflow_capability_vectors_tests;
+mod guard_store_wfcap_authority;
+mod guard_store_wfcap_contract;
+mod guard_store_wfcap_control;
+mod guard_store_wfcap_ctx;
+mod guard_store_wfcap_error;
+mod guard_store_wfcap_frame;
+mod guard_store_wfcap_ledger;
+mod guard_store_wfcap_ops;
+mod guard_store_wfcap_schema;
+mod guard_store_wfcap_schema_sql;
+mod guard_store_wfcap_state;
+mod guard_store_wfcap_wire;
 mod hardening;
 mod hook_adapter_op;
 mod hook_artifact_compose_op;
