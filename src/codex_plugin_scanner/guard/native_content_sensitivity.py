@@ -135,10 +135,9 @@ def _policy(value: Any) -> bool:
 
 
 def _binding(value: Any) -> bool:
-    return (
-        value is None
-        or (_record(value, {"harness", "managed_policy_hash", "policy", "rule_version"}, {"harness"})
-        and (_digest(value["managed_policy_hash"]) and _digest(value["rule_version"]) and _policy(value["policy"])))
+    return value is None or (
+        _record(value, {"harness", "managed_policy_hash", "policy", "rule_version"}, {"harness"})
+        and (_digest(value["managed_policy_hash"]) and _digest(value["rule_version"]) and _policy(value["policy"]))
     )
 
 
@@ -148,14 +147,13 @@ def _dto_shape(query: str, value: Any) -> bool:
     if query in {"canonical", "harness"}:
         return isinstance(value, str) or (query == "canonical" and value is None)
     if query == "path":
-        return (
-            value is None
-            or (_record(
+        return value is None or (
+            _record(
                 value,
                 {"family", "path", "sensitivity", "reason", "requested_path"},
                 {"family", "path", "sensitivity", "reason", "requested_path"},
             )
-            and value["sensitivity"] in {"high", "critical"})
+            and value["sensitivity"] in {"high", "critical"}
         )
     if query == "legacy":
         return isinstance(value, list) and len(value) <= 9 and all(isinstance(item, str) for item in value)
@@ -219,13 +217,18 @@ def _dto_shape(query: str, value: Any) -> bool:
     if query in {"mediate_prepare", "mediate_finish"}:
         return (
             value is None
-            or (_record(value, {"recheck_required"})
-            and value["recheck_required"] is True)
-            or (_record(
-                value, {"action", "reason_code", "native_decision_id", "content_sha256"}, {"action", "reason_code"}
+            or (_record(value, {"recheck_required"}) and value["recheck_required"] is True)
+            or (
+                _record(
+                    value, {"action", "reason_code", "native_decision_id", "content_sha256"}, {"action", "reason_code"}
+                )
+                and value["action"] in {"forward", "withhold"}
+                and (value["native_decision_id"] is None or isinstance(value["native_decision_id"], str))
+                and (
+                    _digest(value["content_sha256"])
+                    if value["action"] == "forward"
+                    else value["content_sha256"] is None
+                )
             )
-            and value["action"] in {"forward", "withhold"}
-            and (value["native_decision_id"] is None or isinstance(value["native_decision_id"], str))
-            and (_digest(value["content_sha256"]) if value["action"] == "forward" else value["content_sha256"] is None))
         )
     return False
