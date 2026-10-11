@@ -179,6 +179,11 @@ def public_cases() -> list[dict[str, Any]]:
                 routine.replace("head -8", "tail -200"),
                 routine.replace('grep -v "npm warn"', "grep"),
                 routine.replace('grep -v "npm warn"', "grep -v"),
+                routine.replace('grep -v "npm warn" | head -8', "grep error | head -200"),
+                *[
+                    routine.replace('grep -v "npm warn"', observer)
+                    for observer in ("grep -a ^*", "grep error?", "grep [error]")
+                ],
                 *[
                     routine.replace(a, b)
                     for a, b in [

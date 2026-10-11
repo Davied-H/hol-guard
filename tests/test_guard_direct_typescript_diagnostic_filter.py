@@ -23,13 +23,16 @@ from codex_plugin_scanner.guard.runtime.shell_execution_context import (
 
 def _accepted_native_context(
     tool: str, command_text: str, *, cwd: Path | None, home_dir: Path
-) -> ShellExecutionContext:
+) -> ShellExecutionContext | None:
     # The recognizer's positive service fact is covered by the frozen native
     # vectors. Here the real native shell model supplies filesystem proofs so
     # consumer regressions still exercise their independent execution gates.
-    assert tool in {"vitest", "typescript"}
+    if tool != "typescript":
+        return None
     workspace = Path(command_text.split(" && ", 1)[0].removeprefix("cd "))
-    return model_shell_execution_context(command_text, cwd=workspace, workspace_root=workspace, home_dir=home_dir)
+    context = model_shell_execution_context(command_text, cwd=workspace, workspace_root=workspace, home_dir=home_dir)
+    assert context.complete, context.reason_code
+    return context
 
 
 @pytest.fixture(autouse=True)
@@ -41,7 +44,9 @@ def _native_typescript_intents(
     native_mcp_probe(tmp_path / "home" / ".guard")
 
 
-def _fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path, str]:
+def _fixture(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, native_context_accepted: bool = True
+) -> tuple[Path, Path, str]:
     for key in tuple(os.environ):
         normalized_key = key.casefold()
         if (
@@ -87,7 +92,10 @@ def _fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Pat
         ),
         encoding="utf-8",
     )
-    monkeypatch.setattr(direct_vitest, "native_direct_tool_context", _accepted_native_context)
+    if native_context_accepted:
+        monkeypatch.setattr(direct_vitest, "native_direct_tool_context", _accepted_native_context)
+    else:
+        monkeypatch.setattr(direct_vitest, "native_direct_tool_context", lambda *_args, **_kwargs: None)
     command = (
         f"cd {workspace} && npx tsc --noEmit 2>&1 "
         '| grep -E "harnesses/page|enterprises/page" || echo "NO_ERRORS_IN_TOUCHED_FILES"'

@@ -22,13 +22,16 @@ from codex_plugin_scanner.guard.runtime.shell_execution_context import (
 
 def _accepted_native_context(
     tool: str, command_text: str, *, cwd: Path | None, home_dir: Path
-) -> ShellExecutionContext:
+) -> ShellExecutionContext | None:
     # The recognizer's positive service fact is covered by the frozen native
     # vectors. Here the real native shell model supplies filesystem proofs so
     # consumer regressions still exercise their independent execution gates.
-    assert tool in {"vitest", "typescript"}
+    if tool != "vitest":
+        return None
     workspace = Path(command_text.split(" && ", 1)[0].removeprefix("cd "))
-    return model_shell_execution_context(command_text, cwd=workspace, workspace_root=workspace, home_dir=home_dir)
+    context = model_shell_execution_context(command_text, cwd=workspace, workspace_root=workspace, home_dir=home_dir)
+    assert context.complete, context.reason_code
+    return context
 
 
 @pytest.fixture(autouse=True)
@@ -131,7 +134,9 @@ def test_verified_npx_vitest_still_requires_execution_authority(
     home, caller, workspace, runner = _fixture(tmp_path)
     _ = (workspace / "node_modules").symlink_to(runner.parents[1], target_is_directory=True)
     command = f"cd {workspace} && npx vitest run tests/unit.test.ts 2>&1 | tail -40"
-    monkeypatch.setattr(direct_vitest, "native_direct_tool_context", _accepted_native_context)
+    # The direct recognizers refuse npx launches; package evidence and the
+    # independent execution-authority gate still decide this caller case.
+    monkeypatch.setattr(direct_vitest, "native_direct_tool_context", lambda *_args, **_kwargs: None)
 
     assert (
         extract_sensitive_tool_action_request(
