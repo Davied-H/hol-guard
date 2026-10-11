@@ -26,6 +26,8 @@ _PAYLOAD_KEYS = (
     "file_path",
     "generation_id",
 )
+# How long leaving the tap waits for reviews that are still running to finish.
+_DRAIN_SECONDS = 15.0
 _RECEIPT_KEYS = (
     "harness",
     "event_name",
@@ -46,6 +48,8 @@ class GuardTap:
         self._log = log
         self._lock = threading.Lock()
         self._receipts = threading.local()
+        self._in_flight = 0
+        self._drained = threading.Condition()
         self._original = worker.review_http_payload
         self._record_receipt = worker._record_native_decision_receipt
 
@@ -62,11 +66,18 @@ class GuardTap:
             # Holding a lock across the review would queue a parallel tool batch behind
             # its slowest call and push the rest past their hook deadlines.
             self._receipts.accepted = None
-            started = time.monotonic()
-            response = original(**kwargs)
-            seconds = time.monotonic() - started
-            self._record(kwargs, response, self._receipts.accepted, seconds)
-            return response
+            with self._drained:
+                self._in_flight += 1
+            try:
+                started = time.monotonic()
+                response = original(**kwargs)
+                seconds = time.monotonic() - started
+                self._record(kwargs, response, self._receipts.accepted, seconds)
+                return response
+            finally:
+                with self._drained:
+                    self._in_flight -= 1
+                    self._drained.notify_all()
 
         self._worker._record_native_decision_receipt = capture_receipt
         self._worker.review_http_payload = review
@@ -74,7 +85,12 @@ class GuardTap:
 
     def __exit__(self, *_exc: object) -> None:
         self._worker.__dict__.pop("review_http_payload", None)
-        self._worker.__dict__.pop("_record_native_decision_receipt", None)
+        # A review that started before exit still needs the receipt recorder, and
+        # its row belongs in the log the case reads next.
+        with self._drained:
+            drained = self._drained.wait_for(lambda: self._in_flight == 0, timeout=_DRAIN_SECONDS)
+        if drained:
+            self._worker.__dict__.pop("_record_native_decision_receipt", None)
 
     def _record(self, kwargs: dict[str, Any], response: Any, receipt: Any, seconds: float) -> None:
         payload = kwargs.get("payload") if isinstance(kwargs.get("payload"), dict) else {}
