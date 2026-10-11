@@ -147,6 +147,8 @@ mod sfrs_developer_graph;
 #[cfg(all(test, unix))]
 mod sfrs_developer_graph_vectors;
 mod sfrs_developer_inspection;
+#[cfg(unix)]
+mod sfrs_developer_routines;
 #[cfg(test)]
 mod sfrs_developer_vectors;
 mod sfrs_docker_args;
@@ -176,6 +178,8 @@ mod sfrs_gh_shell_vectors;
 mod sfrs_git_cached_diff;
 #[cfg(unix)]
 mod sfrs_git_index;
+#[cfg(unix)]
+mod sfrs_git_routines;
 #[cfg(all(test, unix))]
 mod sfrs_github_body_vectors;
 #[cfg(test)]
@@ -221,6 +225,12 @@ mod sfrs_replay_context;
 mod sfrs_request_data;
 mod sfrs_requests;
 mod sfrs_routine_dirs;
+#[cfg(unix)]
+mod sfrs_routine_setup;
+#[cfg(unix)]
+mod sfrs_routines_support;
+#[cfg(all(test, unix))]
+mod sfrs_routines_vectors;
 mod sfrs_search_filters;
 mod sfrs_selectors;
 mod sfrs_shell_tokens;
