@@ -251,7 +251,7 @@
       "tool": "eval",
       "tool_input": {
         "language": "js",
-        "code": "const [a,b]=await Promise.all([read('README.md'),read('src/app.py')]); console.log(a.length,b.length)"
+        "code": "const [a,b]=await Promise.all([read('README.md'),read('src/one.ts')]); console.log(a.length,b.length)"
       },
       "cwd": "worktree",
       "expect": "quiet"
