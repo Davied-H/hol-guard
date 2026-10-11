@@ -129,6 +129,25 @@ def test_generated_client_stamps_outer_environment_before_daemon_forwarding(
     assert "GIT_EXTERNAL_DIFF" in context["environment_names"]
     assert context["environment_digest"]
     assert "frozen-caller-secret-not-serialized" not in forwarded
+    assert context["library_search_paths"] == {}
+
+
+def test_generated_client_stamps_loader_search_path_values_only(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_script(tmp_path, harness="zcode")
+    for name in ("LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH", "DYLD_FALLBACK_LIBRARY_PATH"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/usr/local/cuda/lib64:/usr/lib")
+    monkeypatch.setenv("DYLD_LIBRARY_PATH", "")
+    monkeypatch.setenv("LD_PRELOAD", "/synthetic/preload-not-serialized.so")
+
+    forwarded = module._stamp_hook_input(json.dumps({"hook_event_name": "PreToolUse"}))
+    context = json.loads(forwarded)["guard_execution_environment"]
+    assert context["library_search_paths"] == {"LD_LIBRARY_PATH": "/usr/local/cuda/lib64:/usr/lib"}
+    assert "LD_PRELOAD" in context["environment_names"]
+    assert "preload-not-serialized" not in forwarded
 
 
 @pytest.mark.parametrize(

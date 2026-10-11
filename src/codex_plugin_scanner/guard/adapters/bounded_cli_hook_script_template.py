@@ -142,6 +142,17 @@ def _stamp_hook_input(text: str) -> str:
         "home": os.environ.get("HOME"),
         "git_pager_disabled": pager_ok(os.environ.get("GIT_PAGER", "-")) is not None,
         "pager_disabled": pager_ok(os.environ.get("PAGER", "-")) is not None,
+        "library_search_paths": {
+            name: value
+            for name in (
+                "LD_LIBRARY_PATH",
+                "DYLD_LIBRARY_PATH",
+                "DYLD_FALLBACK_LIBRARY_PATH",
+                "DYLD_FRAMEWORK_PATH",
+                "DYLD_FALLBACK_FRAMEWORK_PATH",
+            )
+            if (value := os.environ.get(name)) and len(value.encode()) <= 32 * 1024
+        },
     }
     stamped = json.dumps(payload, ensure_ascii=True, separators=(",", ":"))
     return stamped if len(stamped) <= 1_000_000 else text
