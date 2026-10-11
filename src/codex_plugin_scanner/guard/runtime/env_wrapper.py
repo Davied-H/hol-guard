@@ -84,32 +84,18 @@ def parse_env_wrapper(
         },
     )
     effects, delta = value["option_effects"], value["environment_delta"]
-    return EnvWrapperParseResult(
-        complete=value["complete"],
-        error=value["error"],
-        original_tokens=string_tuple(value["original_tokens"]),
-        expanded_tokens=string_tuple(value["expanded_tokens"]),
-        option_effects=EnvOptionEffects(
-            effects["ignore_environment"],
-            string_tuple(effects["unset_names"]),
-            effects["chdir"],
-            effects["search_path"],
-            effects["verbose"],
-            effects["null_output"],
-        ),
-        environment_delta=EnvEnvironmentDelta(
-            delta["clear"], string_tuple(delta["unset_names"]), tuple(tuple(pair) for pair in delta["assignments"])
-        ),
-        effective_environment=(
-            None
-            if value["effective_environment"] is None
-            else tuple(tuple(pair) for pair in value["effective_environment"])
-        ),
-        effective_cwd=Path(value["effective_cwd"]) if value["effective_cwd"] is not None else None,
-        command_index=value["command_index"],
-        executable_argv=string_tuple(value["executable_argv"]),
-        split_expansions=tuple(
-            EnvSplitExpansion(e["payload"], e["source_index"], string_tuple(e["tokens"]))
-            for e in value["split_expansions"]
-        ),
+    effects["unset_names"] = string_tuple(effects["unset_names"])
+    delta["unset_names"] = string_tuple(delta["unset_names"])
+    delta["assignments"] = tuple(map(tuple, delta["assignments"]))
+    value["option_effects"] = EnvOptionEffects(**effects)
+    value["environment_delta"] = EnvEnvironmentDelta(**delta)
+    for name in ("original_tokens", "expanded_tokens", "executable_argv"):
+        value[name] = string_tuple(value[name])
+    environment = value["effective_environment"]
+    value["effective_environment"] = None if environment is None else tuple(map(tuple, environment))
+    cwd_value = value["effective_cwd"]
+    value["effective_cwd"] = None if cwd_value is None else Path(cwd_value)
+    value["split_expansions"] = tuple(
+        EnvSplitExpansion(**{**item, "tokens": string_tuple(item["tokens"])}) for item in value["split_expansions"]
     )
+    return EnvWrapperParseResult(**value)

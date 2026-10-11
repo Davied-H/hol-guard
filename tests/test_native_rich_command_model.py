@@ -72,12 +72,79 @@ def test_native_outage_has_no_python_parser_fallback(monkeypatch: pytest.MonkeyP
 
 def test_identity_cache_is_bound_to_complete_structure(monkeypatch: pytest.MonkeyPatch) -> None:
     model = command_model.parse_shell_command("echo hi")
+    manual = dataclasses.replace(model, _bound_identity=None)
+    assert manual.security_identity == model.security_identity
     identity = model.security_identity
     assert dataclasses.replace(model).security_identity == identity
     changed = dataclasses.replace(model, normalized_text="echo bye")
     monkeypatch.setattr(client, "ensure_resident_prerequisite", lambda _: False)
+    assert manual.to_dict()["security_identity"] == identity
     with pytest.raises(client.NativeCommandModelError):
         _ = changed.security_identity
+
+
+def test_explicit_inspection_home_identity_outage_returns_blocked_diagnostic(monkeypatch, tmp_path):
+    from codex_plugin_scanner.guard.runtime import command_inspection
+
+    expected_home = tmp_path / "explicit-guard-home"
+    seen = []
+    manual = command_model.CanonicalCommand(
+        "echo hi", "echo hi", "posix", "shell_string", "guard-shell", (), (), (), (), "uncertain"
+    )
+
+    def prerequisite(home):
+        seen.append(home)
+        return False
+
+    def review(*args, **kwargs):
+        assert kwargs["guard_home"] == expected_home
+        _ = manual.security_identity
+
+    monkeypatch.setattr(client, "ensure_resident_prerequisite", prerequisite)
+    monkeypatch.setattr(command_inspection, "review_command_native", review)
+    result = command_inspection.inspect_command("echo hi", guard_home=expected_home, cwd=tmp_path, home_dir=tmp_path)
+    assert seen == [expected_home]
+    assert result["status"] == "native_unavailable"
+    assert result["minimum_action"] == "block"
+    assert result["command_model"] is None
+
+
+def test_runtime_artifact_native_outage_does_not_reparse_or_fabricate_identity(monkeypatch, tmp_path):
+    from codex_plugin_scanner.guard.cli import commands_support_runtime_artifacts as artifacts
+
+    monkeypatch.setattr(artifacts, "review_command_native", lambda *args, **kwargs: None)
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Native outage must not reparse the command")
+
+    monkeypatch.setattr(artifacts, "parse_shell_command", forbidden)
+    result = artifacts._hook_runtime_artifact(
+        harness="codex",
+        payload={"hook_event_name": "PreToolUse", "tool_name": "Shell", "tool_input": {"command": "echo hi"}},
+        workspace=tmp_path,
+        home_dir=tmp_path,
+        guard_home=tmp_path / "guard",
+    )
+    assert result is not None
+    assert result.metadata["native_command_evaluation_status"] == "unavailable"
+    assert result.metadata["guard_default_action"] == "block"
+    assert "command_security_identity" not in result.metadata
+
+
+def test_reviewed_invocation_native_outage_is_structured_builder_failure(monkeypatch):
+    from types import SimpleNamespace
+
+    from codex_plugin_scanner.guard.extension_builder import review_invocations
+    from codex_plugin_scanner.guard.extension_builder.errors import BuilderError
+
+    owner = SimpleNamespace(operation_id="fixture")
+    discovery = SimpleNamespace(operations=(owner,), metadata=SimpleNamespace(executable="echo"))
+    monkeypatch.setattr(review_invocations, "_matcher", lambda *args: None)
+    monkeypatch.setattr(review_invocations, "validate_known_options", lambda *args: None)
+    monkeypatch.setattr(client, "ensure_resident_prerequisite", lambda _: False)
+    with pytest.raises(BuilderError) as raised:
+        review_invocations.validate_native_bindings(discovery, ((owner, ("hi",)),), frozenset())
+    assert raised.value.code == "native_unavailable"
 
 
 @pytest.mark.parametrize("damage", ["digest", "request_id", "schema", "shape", "status", "surrogate"])

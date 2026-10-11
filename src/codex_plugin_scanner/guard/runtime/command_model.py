@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Literal
 
@@ -35,18 +35,13 @@ class CommandSegment:
     end: int
 
     def to_dict(self) -> dict[str, object]:
-        return {
-            "text": self.text,
-            "tokens": list(self.tokens),
-            "executable": self.executable,
-            "arguments": list(self.arguments),
-            "environment_names": list(self.environment_names),
-            "wrapper_chain": list(self.wrapper_chain),
-            "path_overridden": self.path_overridden,
-            "execution_context": self.execution_context,
-            "pipeline_index": self.pipeline_index,
-            "span": {"source": "normalized", "start": self.start, "end": self.end},
+        value = {
+            item.name: list(value) if isinstance(value := getattr(self, item.name), tuple) else value
+            for item in fields(self)
+            if item.name not in {"start", "end"}
         }
+        value["span"] = {"source": "normalized", "start": self.start, "end": self.end}
+        return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,7 +72,7 @@ class CanonicalCommand:
         material = self._identity_material()
         if self._bound_identity is not None and self._bound_identity[0] == material:
             return self._bound_identity[1]
-        return build_command_security_identity(
+        identity = build_command_security_identity(
             normalized_text=self.normalized_text,
             dialect=self.dialect,
             transport=self.transport,
@@ -86,34 +81,23 @@ class CanonicalCommand:
             redirects=self.redirects,
             embedded_commands=self.embedded_commands,
         )
+        object.__setattr__(self, "_bound_identity", (material, identity))
+        return identity
 
     def _identity_material(self) -> object:
-        return (
-            self.normalized_text,
-            self.dialect,
-            self.transport,
-            self.wrapper_chain,
-            tuple(
-                (s.tokens, s.environment_names, s.wrapper_chain, s.execution_context, s.pipeline_index)
-                for s in self.segments
-            ),
-            tuple((r.operator, r.target) for r in self.redirects),
-            tuple((e.kind, e.text, e.execution_context) for e in self.embedded_commands),
-        )
+        return tuple(getattr(self, item.name) for item in fields(self) if item.compare)
 
     def to_dict(self) -> dict[str, object]:
         return {
-            "normalized_text": self.normalized_text,
-            "dialect": self.dialect,
-            "transport": self.transport,
-            "extraction_provenance": self.extraction_provenance,
-            "wrapper_chain": list(self.wrapper_chain),
+            **{
+                item.name: list(value) if isinstance(value := getattr(self, item.name), tuple) else value
+                for item in fields(self)
+                if item.compare and item.name not in {"raw_text", "segments", "redirects", "embedded_commands"}
+            },
             "segments": [segment.to_dict() for segment in self.segments],
             "redirects": [redirect.to_dict() for redirect in self.redirects],
             "embedded_commands": [embedded.to_dict() for embedded in self.embedded_commands],
             "security_identity": self.security_identity,
-            "confidence": self.confidence,
-            "uncertainty_reason": self.uncertainty_reason,
             "path_overridden": self.path_overridden,
         }
 
@@ -141,22 +125,13 @@ def parse_shell_command(
             "normalize_wrappers": normalize_wrappers,
         },
     )
-    segments = tuple(
-        CommandSegment(
-            text=s["text"],
-            tokens=string_tuple(s["tokens"]),
-            executable=s["executable"],
-            arguments=string_tuple(s["arguments"]),
-            environment_names=string_tuple(s["environment_names"]),
-            wrapper_chain=string_tuple(s["wrapper_chain"]),
-            path_overridden=s["path_overridden"],
-            execution_context=s["execution_context"],
-            pipeline_index=s["pipeline_index"],
-            start=s["span"]["start"],
-            end=s["span"]["end"],
-        )
-        for s in value["segments"]
-    )
+    segments = []
+    for segment in value["segments"]:
+        span = segment.pop("span")
+        segment.update(start=span["start"], end=span["end"])
+        for name in ("tokens", "arguments", "environment_names", "wrapper_chain"):
+            segment[name] = string_tuple(segment[name])
+        segments.append(CommandSegment(**segment))
     redirects = tuple(
         CommandRedirect(r["operator"], r["target"], r["span"]["start"], r["span"]["end"]) for r in value["redirects"]
     )
@@ -171,7 +146,7 @@ def parse_shell_command(
         transport=value["transport"],
         extraction_provenance=value["extraction_provenance"],
         wrapper_chain=string_tuple(value["wrapper_chain"]),
-        segments=segments,
+        segments=tuple(segments),
         redirects=redirects,
         embedded_commands=embedded,
         confidence=value["confidence"],

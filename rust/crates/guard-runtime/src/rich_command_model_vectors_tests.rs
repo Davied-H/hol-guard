@@ -39,6 +39,25 @@ fn invalid_redirect_ranges_do_not_panic_or_mask_command() {
 }
 
 #[test]
+fn long_plain_and_numeric_commands_do_not_rescan_or_copy_suffixes() {
+    for command in [
+        "a".repeat(262_144),
+        "1".repeat(262_144),
+        format!("{}>", "1".repeat(262_144)),
+    ] {
+        assert_eq!(
+            result("redirects", &json!({"command": command, "heredocs": []})).unwrap(),
+            json!([])
+        );
+    }
+    let command = " >out".repeat(4096);
+    let redirects = result("redirects", &json!({"command": command, "heredocs": []})).unwrap();
+    assert_eq!(redirects.as_array().unwrap().len(), 4096);
+    assert_eq!(redirects[0]["start"], 1);
+    assert_eq!(redirects[4095]["end"], command.chars().count());
+}
+
+#[test]
 fn response_is_bound_to_exact_request_and_rejects_unknown_inputs() {
     let request = RichCommandModelRequest {
         schema: REQUEST_SCHEMA.into(),
