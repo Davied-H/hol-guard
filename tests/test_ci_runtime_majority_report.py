@@ -406,7 +406,6 @@ def test_shipped_scope_keeps_synchronous_hook_path_modules_in_scope(shipped_repo
         "cli/render.py",
         "aibom_detection.py",
         "inventory_contract_fingerprints.py",
-        "evaluation_json.py",
         "store_receipt_rollup_schema.py",
         "store_review_event_outbox_writes.py",
         "store_storage_maintenance.py",
