@@ -6,21 +6,21 @@ use guard_contracts::{
     ApprovalQueueIdentityRequestV1, ApprovalResolutionPlanRequestV1,
     ApprovalReuseDiagnosticRequestV1, ApprovalReuseRequestV1, ApprovalScopeRequestV1,
     ApprovalValidateRequestV3, ApprovalValidateRequestV4, CiscoPreflightRequestV1,
-    ClaimApprovalReuseDecisionsRequestV1, CodexToolOutputRequestV1, CommandEffectBatchRequestV1,
-    CommandEffectRequestV1, CompoundGitInspectionRequestV1, ConsumerArtifactComposeRequestV1,
-    ContainedExecuteRequestV1, ContainedNodeExecuteRequestV1,
+    ClaimApprovalReuseDecisionsRequestV1, CodexThreadContinueRequestV1, CodexToolOutputRequestV1,
+    CommandEffectBatchRequestV1, CommandEffectRequestV1, CompoundGitInspectionRequestV1,
+    ConsumerArtifactComposeRequestV1, ContainedExecuteRequestV1, ContainedNodeExecuteRequestV1,
     ContainedPackageScriptExecuteRequestV1, ContainedTypescriptExecuteRequestV1,
     ContainedWorkspaceWriteExecuteRequestV1, ContextDigestRequestV1,
     ContributedMcpDecisionRequestV1, CursorObserverProofRequestV1, DaemonHandlerRequestV1,
     DaemonLifecycleDecisionRequestV1, DaemonRouteRequestV1, DataFlowAnalyzeRequestV1,
     FalsePositiveRulesRequestV1, GitExecutionSafetyRequestV1, GithubCliClassifyRequestV1,
     GuardHookEnvelopeV2, GuardStoreRequestV1, HookAdapterRequestV1, HookArtifactComposeRequestV1,
-    HookDecisionRequestV1, LocalCliGrantRequestV1, LocalMcpGrantRequestV1,
-    McpProxyDecisionRequestV1, McpRuntimeEvidenceRequestV1, McpStdioProbeRequestV1,
-    McpStdioSessionCloseRequestV1, McpStdioSessionOpenRequestV1, McpStdioSessionRecvRequestV1,
-    McpStdioSessionSendRequestV1, McpToolEvidenceRequestV1, McpToolPolicyDecideRequestV1,
-    NativeHookRequestV1, PackageAdvisoryIdsRequestV1, PackageApprovalHashRequestV1,
-    PackageAuditProjectionRequestV1, PackageAuthorityDecideRequestV1,
+    HookAuthorityStateRequestV1, HookDecisionRequestV1, LocalCliGrantRequestV1,
+    LocalMcpGrantRequestV1, McpProxyDecisionRequestV1, McpRuntimeEvidenceRequestV1,
+    McpStdioProbeRequestV1, McpStdioSessionCloseRequestV1, McpStdioSessionOpenRequestV1,
+    McpStdioSessionRecvRequestV1, McpStdioSessionSendRequestV1, McpToolEvidenceRequestV1,
+    McpToolPolicyDecideRequestV1, NativeHookRequestV1, PackageAdvisoryIdsRequestV1,
+    PackageApprovalHashRequestV1, PackageAuditProjectionRequestV1, PackageAuthorityDecideRequestV1,
     PackageEvaluationComposeRequestV1, PackageIntentParseRequestV1, PackagePolicyResolveRequestV1,
     PackagePostureRequestV1, PolicyBundleAuthorityRequestV1, PolicyDecisionLookupRequestV1,
     PromptAnalyzeRequestV1, ProtectRequestRequestV1, RequestContextRequestV1,
@@ -77,6 +77,7 @@ pub(crate) fn capabilities() -> RuntimeCapabilitiesV1 {
         "native-policy-snapshot-inspect-v1".into(),
         "native-business-policy-retained-floor-v1".into(),
         "native-business-policy-document-compile-v1".into(),
+        "native-policy-effective-v1".into(),
         "native-business-source-codec-v1".into(),
         "native-business-source-anchor-codec-v1".into(),
         "native-business-source-current-fence-v2".into(),
@@ -96,6 +97,7 @@ pub(crate) fn capabilities() -> RuntimeCapabilitiesV1 {
         guard_contracts::CLAIM_APPROVAL_REUSE_FEATURE.into(),
         guard_contracts::APPROVAL_REUSE_DIAGNOSTIC_FEATURE.into(),
         guard_contracts::APPROVAL_BULK_ELIGIBILITY_FEATURE.into(),
+        guard_contracts::CODEX_THREAD_CONTINUE_FEATURE.into(),
         guard_contracts::APPROVAL_QUEUE_IDENTITY_FEATURE.into(),
         guard_contracts::APPROVAL_RESOLUTION_PLAN_FEATURE.into(),
         guard_contracts::APPROVAL_SCOPE_FEATURE.into(),
@@ -125,6 +127,7 @@ pub(crate) fn capabilities() -> RuntimeCapabilitiesV1 {
         guard_contracts::LOCAL_CLI_GRANT_FEATURE.into(),
         guard_contracts::APPROVAL_PROOF_FEATURE.into(),
         guard_contracts::CURSOR_OBSERVER_PROOF_FEATURE.into(),
+        guard_contracts::HOOK_AUTHORITY_STATE_FEATURE.into(),
         guard_contracts::HOOK_DECISION_FEATURE.into(),
         guard_contracts::DAEMON_ROUTE_FEATURE.into(),
         guard_contracts::DAEMON_HANDLER_FEATURE.into(),
@@ -145,10 +148,8 @@ pub(crate) fn capabilities() -> RuntimeCapabilitiesV1 {
     }
     if cfg!(unix) {
         features.push("authenticated-unix-resident-v1".into());
-        // Capability flags must reflect dispatch reality: features gated
-        // cfg(unix) in resident_ops::evaluate_resident_bytes must not be
-        // advertised on other platforms, or callers route work the binary
-        // cannot honor.
+        // Features gated cfg(unix) in resident_ops::evaluate_resident_bytes must
+        // not be advertised elsewhere, or callers route work the binary cannot honor.
         features.push(guard_contracts::CONTAINED_EXECUTION_FEATURE.into());
         features.push(guard_contracts::MCP_STDIO_SESSION_FEATURE.into());
         features.push(guard_contracts::SKILL_DIRECTORY_IDENTITY_FEATURE.into());
@@ -195,6 +196,7 @@ pub(crate) enum ResidentOperationV1 {
     ClaimApprovalReuseDecisions(ClaimApprovalReuseDecisionsRequestV1),
     ApprovalReuseDiagnostic(ApprovalReuseDiagnosticRequestV1),
     ApprovalBulkEligibility(ApprovalBulkEligibilityRequestV1),
+    CodexThreadContinue(CodexThreadContinueRequestV1),
     ApprovalQueueIdentity(ApprovalQueueIdentityRequestV1),
     ApprovalResolutionPlan(ApprovalResolutionPlanRequestV1),
     ApprovalScope(ApprovalScopeRequestV1),
@@ -239,6 +241,7 @@ pub(crate) enum ResidentOperationV1 {
     LocalCliGrantDecide(LocalCliGrantRequestV1),
     ApprovalProofDecide(ApprovalProofRequestV1),
     CursorObserverProof(CursorObserverProofRequestV1),
+    HookAuthorityState(HookAuthorityStateRequestV1),
     HookDecide(HookDecisionRequestV1),
     DaemonRoute(DaemonRouteRequestV1),
     DaemonHandler(DaemonHandlerRequestV1),
