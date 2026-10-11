@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import subprocess
@@ -10,15 +11,32 @@ from copy import deepcopy
 from pathlib import Path
 from types import ModuleType
 
-from codex_plugin_scanner.guard.runtime.signals import RiskSignalV2
-
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_PATH = "src/codex_plugin_scanner/guard/runtime/decisions.py"
-reference = subprocess.run(["git", "show", f"HEAD:{SOURCE_PATH}"], cwd=ROOT, capture_output=True, check=True).stdout
+SIGNAL_PATH = "src/codex_plugin_scanner/guard/runtime/signals.py"
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--reference", default="55e051a711550e55d0dad5991c5bc63918946bfa")
+options = parser.parse_args()
+reference = subprocess.run(
+    ["git", "show", f"{options.reference}:{SOURCE_PATH}"], cwd=ROOT, capture_output=True, check=True
+).stdout
+if hashlib.sha256(reference).hexdigest() != "deff9f12e7d0be568f1e0531627d3b41479fdce4690f118d7293053bbb53bded":
+    raise SystemExit("reference implementation digest mismatch")
+signal_reference = subprocess.run(
+    ["git", "show", f"{options.reference}:{SIGNAL_PATH}"], cwd=ROOT, capture_output=True, check=True
+).stdout
+if hashlib.sha256(signal_reference).hexdigest() != "1d200371b9898ec1bb2205e5146eb18c70445417cf245024d7c4342c0bffe85c":
+    raise SystemExit("reference signal implementation digest mismatch")
+old_signals = ModuleType("codex_plugin_scanner.guard.runtime._signal_reference")
+old_signals.__package__ = "codex_plugin_scanner.guard.runtime"
+sys.modules[old_signals.__name__] = old_signals
+exec(compile(signal_reference, SIGNAL_PATH, "exec"), old_signals.__dict__)
+RiskSignalV2 = old_signals.RiskSignalV2
 old = ModuleType("codex_plugin_scanner.guard.runtime._decision_reference")
 old.__package__ = "codex_plugin_scanner.guard.runtime"
 sys.modules[old.__name__] = old
 exec(compile(reference, SOURCE_PATH, "exec"), old.__dict__)
+old.RiskSignalV2 = RiskSignalV2
 
 
 def evaluate(kind: str, args: dict[str, object]) -> dict[str, object]:
@@ -130,6 +148,8 @@ def main() -> None:
             record("decision_artifact_decode", {"payload": {"policy_action": action, key: "block"}})
         for raw in (None, {}, [], "invalid"):
             record("decision_artifact_decode", {"payload": {"policy_action": action, "authoritative_decision": raw}})
+        for field in ("policy_composition", "decision_v2_json", "action_envelope_json"):
+            record("decision_artifact_decode", {"payload": {"policy_action": action, field: None}})
         record("decision_artifact_decode", {"payload": {"policy_action": action}, "require_authoritative": True})
 
     sample = old.build_authoritative_decision(
@@ -165,7 +185,9 @@ def main() -> None:
     result = {
         "schema": "decision-authority-reference.v1",
         "source": SOURCE_PATH,
+        "reference_commit": options.reference,
         "source_sha256": hashlib.sha256(reference).hexdigest(),
+        "signal_source_sha256": hashlib.sha256(signal_reference).hexdigest(),
         "vectors": vectors,
     }
     destination = ROOT / "tests/fixtures/decision_authority_vectors.json"

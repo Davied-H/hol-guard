@@ -1067,7 +1067,10 @@ fn validate_artifact_projection(
             return err("verdict_action must match authoritative action");
         }
     }
-    if let Some(raw) = payload.get("policy_composition") {
+    if let Some(raw) = payload
+        .get("policy_composition")
+        .filter(|value| !value.is_null())
+    {
         let rc = match raw {
             Value::Object(m) => m,
             _ => return err("policy_composition must be an object"),
@@ -1079,7 +1082,10 @@ fn validate_artifact_projection(
             return err("policy_composition must match authoritative composition_trace");
         }
     }
-    if let Some(raw) = payload.get("decision_v2_json") {
+    if let Some(raw) = payload
+        .get("decision_v2_json")
+        .filter(|value| !value.is_null())
+    {
         let rd = match raw {
             Value::Object(m) => m,
             _ => return err("decision_v2_json must be an object"),
@@ -1098,7 +1104,10 @@ fn validate_artifact_projection(
             return err("decision_v2_json must match authoritative decision_v2");
         }
     }
-    if let Some(raw) = payload.get("action_envelope_json") {
+    if let Some(raw) = payload
+        .get("action_envelope_json")
+        .filter(|value| !value.is_null())
+    {
         let env = match raw {
             Value::Object(m) => m,
             _ => return err("action_envelope_json must be an object or null"),

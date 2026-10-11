@@ -10,6 +10,30 @@ class NativeDecisionAuthorityError(ValueError):
     """The native owner returned an incomplete decision projection."""
 
 
+_ARTIFACT_FIELDS = frozenset(
+    {
+        "artifact_id",
+        "artifact_type",
+        "inventory_only",
+        "approval_context_hash",
+        "policy_action",
+        "verdict_action",
+        "policy_composition",
+        "decision_v2_json",
+        "action_envelope_json",
+        "authoritative_decision",
+        "approval_reuse",
+        "approval_reuse_status",
+        "approval_reuse_reason_code",
+        "trusted_request_override",
+        "approval_claim",
+        "scanner_evidence",
+        "decision_contract_error",
+        "user_override",
+    }
+)
+
+
 def _invalid() -> NativeDecisionAuthorityError:
     return NativeDecisionAuthorityError("native_decision_authority_result_invalid")
 
@@ -108,6 +132,11 @@ def _shape(payload: dict[str, Any], kind: str) -> None:
 
 
 def decision_authority(kind: str, args: Mapping[str, object]) -> dict[str, Any]:
+    payload = args.get("payload")
+    if kind == "decision_artifact_decode" and isinstance(payload, Mapping):
+        # Preserve every key for native hidden-action detection, while removing
+        # values the owner never reads (including raw scanner content).
+        args = {**args, "payload": {key: value if key in _ARTIFACT_FIELDS else None for key, value in payload.items()}}
     result = _request(kind, args)
     if result.get("status") == "error":
         message = result.get("message")

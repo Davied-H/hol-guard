@@ -89,6 +89,6 @@ pub(crate) fn dispatch(kind: &str, args: &Value) -> KindResult {
         Err(error) if error.0.len() <= 4096 => json!({
             "status": "error", "error_type": "ValueError", "message": error.0,
         }),
-        Err(_) => return Err("native_decision_authority_error_too_large"),
+        Err(_) => return Err("native_runner_authority_decision_error_too_large"),
     })
 }

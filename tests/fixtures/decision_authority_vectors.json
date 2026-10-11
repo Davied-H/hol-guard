@@ -1,7 +1,9 @@
 {
   "schema": "decision-authority-reference.v1",
   "source": "src/codex_plugin_scanner/guard/runtime/decisions.py",
+  "reference_commit": "55e051a711550e55d0dad5991c5bc63918946bfa",
   "source_sha256": "deff9f12e7d0be568f1e0531627d3b41479fdce4690f118d7293053bbb53bded",
+  "signal_source_sha256": "1d200371b9898ec1bb2205e5146eb18c70445417cf245024d7c4342c0bffe85c",
   "vectors": [
     {
       "kind": "decision_legacy",
@@ -27892,6 +27894,135 @@
         "status": "error",
         "error_type": "ValueError",
         "message": "authoritative_decision must be an object"
+      }
+    },
+    {
+      "kind": "decision_artifact_decode",
+      "args": {
+        "payload": {
+          "policy_action": "allow",
+          "policy_composition": null
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "value": {
+          "schema_version": 1,
+          "action": "allow",
+          "source": "legacy-compatible-projection",
+          "reason": "allow",
+          "composition_trace": {
+            "final_action": "allow"
+          },
+          "signals": [],
+          "enforcement": {
+            "blocking": false,
+            "authority_finalized": true,
+            "launch_permitted": true,
+            "prompt_required": false,
+            "sandbox_required": false,
+            "snapshot_permitted": true
+          },
+          "decision_v2": {
+            "guard_action": "allow",
+            "action": "allow",
+            "reason": "allow",
+            "user_title": "Allowed by policy",
+            "user_body": "Policy allows this action.",
+            "harness_message": "Policy allows this action.",
+            "dashboard_primary_detail": "Policy allows this action.",
+            "approval_scopes": [],
+            "retry_instruction": null,
+            "signals": [],
+            "confidence": "likely"
+          }
+        }
+      }
+    },
+    {
+      "kind": "decision_artifact_decode",
+      "args": {
+        "payload": {
+          "policy_action": "allow",
+          "decision_v2_json": null
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "value": {
+          "schema_version": 1,
+          "action": "allow",
+          "source": "legacy-compatible-projection",
+          "reason": "allow",
+          "composition_trace": {
+            "final_action": "allow"
+          },
+          "signals": [],
+          "enforcement": {
+            "blocking": false,
+            "authority_finalized": true,
+            "launch_permitted": true,
+            "prompt_required": false,
+            "sandbox_required": false,
+            "snapshot_permitted": true
+          },
+          "decision_v2": {
+            "guard_action": "allow",
+            "action": "allow",
+            "reason": "allow",
+            "user_title": "Allowed by policy",
+            "user_body": "Policy allows this action.",
+            "harness_message": "Policy allows this action.",
+            "dashboard_primary_detail": "Policy allows this action.",
+            "approval_scopes": [],
+            "retry_instruction": null,
+            "signals": [],
+            "confidence": "likely"
+          }
+        }
+      }
+    },
+    {
+      "kind": "decision_artifact_decode",
+      "args": {
+        "payload": {
+          "policy_action": "allow",
+          "action_envelope_json": null
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "value": {
+          "schema_version": 1,
+          "action": "allow",
+          "source": "legacy-compatible-projection",
+          "reason": "allow",
+          "composition_trace": {
+            "final_action": "allow"
+          },
+          "signals": [],
+          "enforcement": {
+            "blocking": false,
+            "authority_finalized": true,
+            "launch_permitted": true,
+            "prompt_required": false,
+            "sandbox_required": false,
+            "snapshot_permitted": true
+          },
+          "decision_v2": {
+            "guard_action": "allow",
+            "action": "allow",
+            "reason": "allow",
+            "user_title": "Allowed by policy",
+            "user_body": "Policy allows this action.",
+            "harness_message": "Policy allows this action.",
+            "dashboard_primary_detail": "Policy allows this action.",
+            "approval_scopes": [],
+            "retry_instruction": null,
+            "signals": [],
+            "confidence": "likely"
+          }
+        }
       }
     },
     {
@@ -55797,6 +55928,135 @@
         "status": "error",
         "error_type": "ValueError",
         "message": "authoritative_decision must be an object"
+      }
+    },
+    {
+      "kind": "decision_artifact_decode",
+      "args": {
+        "payload": {
+          "policy_action": "warn",
+          "policy_composition": null
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "value": {
+          "schema_version": 1,
+          "action": "warn",
+          "source": "legacy-compatible-projection",
+          "reason": "warn",
+          "composition_trace": {
+            "final_action": "warn"
+          },
+          "signals": [],
+          "enforcement": {
+            "blocking": false,
+            "authority_finalized": true,
+            "launch_permitted": true,
+            "prompt_required": false,
+            "sandbox_required": false,
+            "snapshot_permitted": true
+          },
+          "decision_v2": {
+            "guard_action": "warn",
+            "action": "warn",
+            "reason": "warn",
+            "user_title": "Risk signals found",
+            "user_body": "HOL Guard noticed risk signals, but policy allows the harness to continue.",
+            "harness_message": "HOL Guard noticed risk signals, but policy allows the harness to continue.",
+            "dashboard_primary_detail": "HOL Guard noticed risk signals, but policy allows the harness to continue.",
+            "approval_scopes": [],
+            "retry_instruction": null,
+            "signals": [],
+            "confidence": "likely"
+          }
+        }
+      }
+    },
+    {
+      "kind": "decision_artifact_decode",
+      "args": {
+        "payload": {
+          "policy_action": "warn",
+          "decision_v2_json": null
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "value": {
+          "schema_version": 1,
+          "action": "warn",
+          "source": "legacy-compatible-projection",
+          "reason": "warn",
+          "composition_trace": {
+            "final_action": "warn"
+          },
+          "signals": [],
+          "enforcement": {
+            "blocking": false,
+            "authority_finalized": true,
+            "launch_permitted": true,
+            "prompt_required": false,
+            "sandbox_required": false,
+            "snapshot_permitted": true
+          },
+          "decision_v2": {
+            "guard_action": "warn",
+            "action": "warn",
+            "reason": "warn",
+            "user_title": "Risk signals found",
+            "user_body": "HOL Guard noticed risk signals, but policy allows the harness to continue.",
+            "harness_message": "HOL Guard noticed risk signals, but policy allows the harness to continue.",
+            "dashboard_primary_detail": "HOL Guard noticed risk signals, but policy allows the harness to continue.",
+            "approval_scopes": [],
+            "retry_instruction": null,
+            "signals": [],
+            "confidence": "likely"
+          }
+        }
+      }
+    },
+    {
+      "kind": "decision_artifact_decode",
+      "args": {
+        "payload": {
+          "policy_action": "warn",
+          "action_envelope_json": null
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "value": {
+          "schema_version": 1,
+          "action": "warn",
+          "source": "legacy-compatible-projection",
+          "reason": "warn",
+          "composition_trace": {
+            "final_action": "warn"
+          },
+          "signals": [],
+          "enforcement": {
+            "blocking": false,
+            "authority_finalized": true,
+            "launch_permitted": true,
+            "prompt_required": false,
+            "sandbox_required": false,
+            "snapshot_permitted": true
+          },
+          "decision_v2": {
+            "guard_action": "warn",
+            "action": "warn",
+            "reason": "warn",
+            "user_title": "Risk signals found",
+            "user_body": "HOL Guard noticed risk signals, but policy allows the harness to continue.",
+            "harness_message": "HOL Guard noticed risk signals, but policy allows the harness to continue.",
+            "dashboard_primary_detail": "HOL Guard noticed risk signals, but policy allows the harness to continue.",
+            "approval_scopes": [],
+            "retry_instruction": null,
+            "signals": [],
+            "confidence": "likely"
+          }
+        }
       }
     },
     {
@@ -86163,6 +86423,150 @@
       "kind": "decision_artifact_decode",
       "args": {
         "payload": {
+          "policy_action": "review",
+          "policy_composition": null
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "value": {
+          "schema_version": 1,
+          "action": "review",
+          "source": "legacy-compatible-projection",
+          "reason": "review",
+          "composition_trace": {
+            "final_action": "review"
+          },
+          "signals": [],
+          "enforcement": {
+            "blocking": true,
+            "authority_finalized": true,
+            "launch_permitted": false,
+            "prompt_required": true,
+            "sandbox_required": false,
+            "snapshot_permitted": false
+          },
+          "decision_v2": {
+            "guard_action": "review",
+            "action": "ask",
+            "reason": "review",
+            "user_title": "Approval required",
+            "user_body": "HOL Guard needs your approval before this action can run.",
+            "harness_message": "HOL Guard needs your approval before this action can run.",
+            "dashboard_primary_detail": "HOL Guard needs your approval before this action can run.",
+            "approval_scopes": [
+              "artifact",
+              "workspace",
+              "publisher",
+              "harness"
+            ],
+            "retry_instruction": "Choose an approval scope, then retry in the harness.",
+            "signals": [],
+            "confidence": "likely"
+          }
+        }
+      }
+    },
+    {
+      "kind": "decision_artifact_decode",
+      "args": {
+        "payload": {
+          "policy_action": "review",
+          "decision_v2_json": null
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "value": {
+          "schema_version": 1,
+          "action": "review",
+          "source": "legacy-compatible-projection",
+          "reason": "review",
+          "composition_trace": {
+            "final_action": "review"
+          },
+          "signals": [],
+          "enforcement": {
+            "blocking": true,
+            "authority_finalized": true,
+            "launch_permitted": false,
+            "prompt_required": true,
+            "sandbox_required": false,
+            "snapshot_permitted": false
+          },
+          "decision_v2": {
+            "guard_action": "review",
+            "action": "ask",
+            "reason": "review",
+            "user_title": "Approval required",
+            "user_body": "HOL Guard needs your approval before this action can run.",
+            "harness_message": "HOL Guard needs your approval before this action can run.",
+            "dashboard_primary_detail": "HOL Guard needs your approval before this action can run.",
+            "approval_scopes": [
+              "artifact",
+              "workspace",
+              "publisher",
+              "harness"
+            ],
+            "retry_instruction": "Choose an approval scope, then retry in the harness.",
+            "signals": [],
+            "confidence": "likely"
+          }
+        }
+      }
+    },
+    {
+      "kind": "decision_artifact_decode",
+      "args": {
+        "payload": {
+          "policy_action": "review",
+          "action_envelope_json": null
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "value": {
+          "schema_version": 1,
+          "action": "review",
+          "source": "legacy-compatible-projection",
+          "reason": "review",
+          "composition_trace": {
+            "final_action": "review"
+          },
+          "signals": [],
+          "enforcement": {
+            "blocking": true,
+            "authority_finalized": true,
+            "launch_permitted": false,
+            "prompt_required": true,
+            "sandbox_required": false,
+            "snapshot_permitted": false
+          },
+          "decision_v2": {
+            "guard_action": "review",
+            "action": "ask",
+            "reason": "review",
+            "user_title": "Approval required",
+            "user_body": "HOL Guard needs your approval before this action can run.",
+            "harness_message": "HOL Guard needs your approval before this action can run.",
+            "dashboard_primary_detail": "HOL Guard needs your approval before this action can run.",
+            "approval_scopes": [
+              "artifact",
+              "workspace",
+              "publisher",
+              "harness"
+            ],
+            "retry_instruction": "Choose an approval scope, then retry in the harness.",
+            "signals": [],
+            "confidence": "likely"
+          }
+        }
+      }
+    },
+    {
+      "kind": "decision_artifact_decode",
+      "args": {
+        "payload": {
           "policy_action": "review"
         },
         "require_authoritative": true
@@ -116523,6 +116927,150 @@
       "kind": "decision_artifact_decode",
       "args": {
         "payload": {
+          "policy_action": "require-reapproval",
+          "policy_composition": null
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "value": {
+          "schema_version": 1,
+          "action": "require-reapproval",
+          "source": "legacy-compatible-projection",
+          "reason": "require-reapproval",
+          "composition_trace": {
+            "final_action": "require-reapproval"
+          },
+          "signals": [],
+          "enforcement": {
+            "blocking": true,
+            "authority_finalized": true,
+            "launch_permitted": false,
+            "prompt_required": true,
+            "sandbox_required": false,
+            "snapshot_permitted": false
+          },
+          "decision_v2": {
+            "guard_action": "require-reapproval",
+            "action": "ask",
+            "reason": "require-reapproval",
+            "user_title": "Fresh approval required",
+            "user_body": "HOL Guard needs a fresh approval before this action can run.",
+            "harness_message": "HOL Guard needs a fresh approval before this action can run.",
+            "dashboard_primary_detail": "HOL Guard needs a fresh approval before this action can run.",
+            "approval_scopes": [
+              "artifact",
+              "workspace",
+              "publisher",
+              "harness"
+            ],
+            "retry_instruction": "Choose the smallest approval scope that matches your intent, then retry.",
+            "signals": [],
+            "confidence": "likely"
+          }
+        }
+      }
+    },
+    {
+      "kind": "decision_artifact_decode",
+      "args": {
+        "payload": {
+          "policy_action": "require-reapproval",
+          "decision_v2_json": null
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "value": {
+          "schema_version": 1,
+          "action": "require-reapproval",
+          "source": "legacy-compatible-projection",
+          "reason": "require-reapproval",
+          "composition_trace": {
+            "final_action": "require-reapproval"
+          },
+          "signals": [],
+          "enforcement": {
+            "blocking": true,
+            "authority_finalized": true,
+            "launch_permitted": false,
+            "prompt_required": true,
+            "sandbox_required": false,
+            "snapshot_permitted": false
+          },
+          "decision_v2": {
+            "guard_action": "require-reapproval",
+            "action": "ask",
+            "reason": "require-reapproval",
+            "user_title": "Fresh approval required",
+            "user_body": "HOL Guard needs a fresh approval before this action can run.",
+            "harness_message": "HOL Guard needs a fresh approval before this action can run.",
+            "dashboard_primary_detail": "HOL Guard needs a fresh approval before this action can run.",
+            "approval_scopes": [
+              "artifact",
+              "workspace",
+              "publisher",
+              "harness"
+            ],
+            "retry_instruction": "Choose the smallest approval scope that matches your intent, then retry.",
+            "signals": [],
+            "confidence": "likely"
+          }
+        }
+      }
+    },
+    {
+      "kind": "decision_artifact_decode",
+      "args": {
+        "payload": {
+          "policy_action": "require-reapproval",
+          "action_envelope_json": null
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "value": {
+          "schema_version": 1,
+          "action": "require-reapproval",
+          "source": "legacy-compatible-projection",
+          "reason": "require-reapproval",
+          "composition_trace": {
+            "final_action": "require-reapproval"
+          },
+          "signals": [],
+          "enforcement": {
+            "blocking": true,
+            "authority_finalized": true,
+            "launch_permitted": false,
+            "prompt_required": true,
+            "sandbox_required": false,
+            "snapshot_permitted": false
+          },
+          "decision_v2": {
+            "guard_action": "require-reapproval",
+            "action": "ask",
+            "reason": "require-reapproval",
+            "user_title": "Fresh approval required",
+            "user_body": "HOL Guard needs a fresh approval before this action can run.",
+            "harness_message": "HOL Guard needs a fresh approval before this action can run.",
+            "dashboard_primary_detail": "HOL Guard needs a fresh approval before this action can run.",
+            "approval_scopes": [
+              "artifact",
+              "workspace",
+              "publisher",
+              "harness"
+            ],
+            "retry_instruction": "Choose the smallest approval scope that matches your intent, then retry.",
+            "signals": [],
+            "confidence": "likely"
+          }
+        }
+      }
+    },
+    {
+      "kind": "decision_artifact_decode",
+      "args": {
+        "payload": {
           "policy_action": "require-reapproval"
         },
         "require_authoritative": true
@@ -144422,6 +144970,135 @@
         "status": "error",
         "error_type": "ValueError",
         "message": "authoritative_decision must be an object"
+      }
+    },
+    {
+      "kind": "decision_artifact_decode",
+      "args": {
+        "payload": {
+          "policy_action": "sandbox-required",
+          "policy_composition": null
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "value": {
+          "schema_version": 1,
+          "action": "sandbox-required",
+          "source": "legacy-compatible-projection",
+          "reason": "sandbox-required",
+          "composition_trace": {
+            "final_action": "sandbox-required"
+          },
+          "signals": [],
+          "enforcement": {
+            "blocking": true,
+            "authority_finalized": true,
+            "launch_permitted": false,
+            "prompt_required": false,
+            "sandbox_required": true,
+            "snapshot_permitted": false
+          },
+          "decision_v2": {
+            "guard_action": "sandbox-required",
+            "action": "ask",
+            "reason": "sandbox-required",
+            "user_title": "Sandbox review required",
+            "user_body": "HOL Guard wants this action reviewed and run in a sandboxed path.",
+            "harness_message": "HOL Guard wants this action reviewed and run in a sandboxed path.",
+            "dashboard_primary_detail": "HOL Guard wants this action reviewed and run in a sandboxed path.",
+            "approval_scopes": [],
+            "retry_instruction": "Run this action in an approved sandbox, then retry.",
+            "signals": [],
+            "confidence": "likely"
+          }
+        }
+      }
+    },
+    {
+      "kind": "decision_artifact_decode",
+      "args": {
+        "payload": {
+          "policy_action": "sandbox-required",
+          "decision_v2_json": null
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "value": {
+          "schema_version": 1,
+          "action": "sandbox-required",
+          "source": "legacy-compatible-projection",
+          "reason": "sandbox-required",
+          "composition_trace": {
+            "final_action": "sandbox-required"
+          },
+          "signals": [],
+          "enforcement": {
+            "blocking": true,
+            "authority_finalized": true,
+            "launch_permitted": false,
+            "prompt_required": false,
+            "sandbox_required": true,
+            "snapshot_permitted": false
+          },
+          "decision_v2": {
+            "guard_action": "sandbox-required",
+            "action": "ask",
+            "reason": "sandbox-required",
+            "user_title": "Sandbox review required",
+            "user_body": "HOL Guard wants this action reviewed and run in a sandboxed path.",
+            "harness_message": "HOL Guard wants this action reviewed and run in a sandboxed path.",
+            "dashboard_primary_detail": "HOL Guard wants this action reviewed and run in a sandboxed path.",
+            "approval_scopes": [],
+            "retry_instruction": "Run this action in an approved sandbox, then retry.",
+            "signals": [],
+            "confidence": "likely"
+          }
+        }
+      }
+    },
+    {
+      "kind": "decision_artifact_decode",
+      "args": {
+        "payload": {
+          "policy_action": "sandbox-required",
+          "action_envelope_json": null
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "value": {
+          "schema_version": 1,
+          "action": "sandbox-required",
+          "source": "legacy-compatible-projection",
+          "reason": "sandbox-required",
+          "composition_trace": {
+            "final_action": "sandbox-required"
+          },
+          "signals": [],
+          "enforcement": {
+            "blocking": true,
+            "authority_finalized": true,
+            "launch_permitted": false,
+            "prompt_required": false,
+            "sandbox_required": true,
+            "snapshot_permitted": false
+          },
+          "decision_v2": {
+            "guard_action": "sandbox-required",
+            "action": "ask",
+            "reason": "sandbox-required",
+            "user_title": "Sandbox review required",
+            "user_body": "HOL Guard wants this action reviewed and run in a sandboxed path.",
+            "harness_message": "HOL Guard wants this action reviewed and run in a sandboxed path.",
+            "dashboard_primary_detail": "HOL Guard wants this action reviewed and run in a sandboxed path.",
+            "approval_scopes": [],
+            "retry_instruction": "Run this action in an approved sandbox, then retry.",
+            "signals": [],
+            "confidence": "likely"
+          }
+        }
       }
     },
     {
@@ -178326,6 +179003,135 @@
         "status": "error",
         "error_type": "ValueError",
         "message": "authoritative_decision must be an object"
+      }
+    },
+    {
+      "kind": "decision_artifact_decode",
+      "args": {
+        "payload": {
+          "policy_action": "block",
+          "policy_composition": null
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "value": {
+          "schema_version": 1,
+          "action": "block",
+          "source": "legacy-compatible-projection",
+          "reason": "block",
+          "composition_trace": {
+            "final_action": "block"
+          },
+          "signals": [],
+          "enforcement": {
+            "blocking": true,
+            "authority_finalized": true,
+            "launch_permitted": false,
+            "prompt_required": false,
+            "sandbox_required": false,
+            "snapshot_permitted": false
+          },
+          "decision_v2": {
+            "guard_action": "block",
+            "action": "block",
+            "reason": "block",
+            "user_title": "Blocked by policy",
+            "user_body": "HOL Guard blocked this action.",
+            "harness_message": "HOL Guard blocked this action.",
+            "dashboard_primary_detail": "HOL Guard blocked this action.",
+            "approval_scopes": [],
+            "retry_instruction": "Review the details before changing policy or retrying.",
+            "signals": [],
+            "confidence": "likely"
+          }
+        }
+      }
+    },
+    {
+      "kind": "decision_artifact_decode",
+      "args": {
+        "payload": {
+          "policy_action": "block",
+          "decision_v2_json": null
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "value": {
+          "schema_version": 1,
+          "action": "block",
+          "source": "legacy-compatible-projection",
+          "reason": "block",
+          "composition_trace": {
+            "final_action": "block"
+          },
+          "signals": [],
+          "enforcement": {
+            "blocking": true,
+            "authority_finalized": true,
+            "launch_permitted": false,
+            "prompt_required": false,
+            "sandbox_required": false,
+            "snapshot_permitted": false
+          },
+          "decision_v2": {
+            "guard_action": "block",
+            "action": "block",
+            "reason": "block",
+            "user_title": "Blocked by policy",
+            "user_body": "HOL Guard blocked this action.",
+            "harness_message": "HOL Guard blocked this action.",
+            "dashboard_primary_detail": "HOL Guard blocked this action.",
+            "approval_scopes": [],
+            "retry_instruction": "Review the details before changing policy or retrying.",
+            "signals": [],
+            "confidence": "likely"
+          }
+        }
+      }
+    },
+    {
+      "kind": "decision_artifact_decode",
+      "args": {
+        "payload": {
+          "policy_action": "block",
+          "action_envelope_json": null
+        }
+      },
+      "expected": {
+        "status": "ok",
+        "value": {
+          "schema_version": 1,
+          "action": "block",
+          "source": "legacy-compatible-projection",
+          "reason": "block",
+          "composition_trace": {
+            "final_action": "block"
+          },
+          "signals": [],
+          "enforcement": {
+            "blocking": true,
+            "authority_finalized": true,
+            "launch_permitted": false,
+            "prompt_required": false,
+            "sandbox_required": false,
+            "snapshot_permitted": false
+          },
+          "decision_v2": {
+            "guard_action": "block",
+            "action": "block",
+            "reason": "block",
+            "user_title": "Blocked by policy",
+            "user_body": "HOL Guard blocked this action.",
+            "harness_message": "HOL Guard blocked this action.",
+            "dashboard_primary_detail": "HOL Guard blocked this action.",
+            "approval_scopes": [],
+            "retry_instruction": "Review the details before changing policy or retrying.",
+            "signals": [],
+            "confidence": "likely"
+          }
+        }
       }
     },
     {

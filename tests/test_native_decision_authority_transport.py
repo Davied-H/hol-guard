@@ -53,3 +53,21 @@ def test_native_validation_error_preserves_the_public_value_error(monkeypatch: p
     )
     with pytest.raises(ValueError, match="runtime detector block cannot be overridden"):
         build_authoritative_decision("allow", reason="fixture", composition_trace={}, authority_finalized=True)
+
+
+def test_artifact_transport_omits_unread_values_but_preserves_hidden_action_keys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: list[dict[str, object]] = []
+
+    def request(kind: str, args: dict[str, object]) -> dict[str, object]:
+        captured.append(args)
+        return {"status": "error", "error_type": "ValueError", "message": "fixture refusal"}
+
+    monkeypatch.setattr(native_decisions, "_request", request)
+    with pytest.raises(ValueError, match="fixture refusal"):
+        native_decisions.decision_authority(
+            "decision_artifact_decode",
+            {"payload": {"policy_action": "deny", "future_action": "allow", "raw_source": "unread"}},
+        )
+    assert captured == [{"payload": {"policy_action": "deny", "future_action": None, "raw_source": None}}]
