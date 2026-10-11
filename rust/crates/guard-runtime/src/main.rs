@@ -209,6 +209,7 @@ mod hook_decision_compose;
 mod hook_decision_directive;
 mod hook_decision_finalize;
 mod hook_decision_op;
+mod hook_decision_settle;
 mod hook_process_spawn;
 mod hook_render_op;
 mod local_cli_grant_op;
