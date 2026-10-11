@@ -83,6 +83,8 @@ def test_verifier_labels_legacy_reports_without_claiming_latency(tmp_path, monke
 
     scenario = ordinary()
     monkeypatch.setattr(verify, "load_catalog", lambda *args: (scenario,))
+    # The one-scenario catalog cannot hold the real known-gap ids; gap hygiene has its own tests.
+    monkeypatch.setattr(verify, "load_known_gaps", lambda *args: {})
     here = Path(verify.__file__).parent
     repo = here.parents[1]
     case = observed_case()

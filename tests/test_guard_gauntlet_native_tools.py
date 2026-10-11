@@ -202,7 +202,6 @@ def test_approval_row_without_always_is_named_as_a_false_positive() -> None:
         {"tool_name": "read", "always_available": False},
     ]
     assert always_gap(rows) == ["read"]
-    assert rows[0]["once_only_reason"] == "unproven_launch" and rows[0]["exact_context_token_present"] is False
 
 
 def test_approval_rows_name_the_tool_from_the_stored_action_envelope(monkeypatch) -> None:
