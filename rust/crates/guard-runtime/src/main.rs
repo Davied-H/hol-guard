@@ -36,6 +36,8 @@ mod cisco_preflight_op;
 #[cfg(test)]
 mod cisco_preflight_vectors_tests;
 mod claim_approval_reuse_op;
+#[cfg(test)]
+mod claim_consume_local_once_tests;
 mod claim_reuse;
 mod claim_reuse_binding;
 #[cfg(test)]
@@ -54,6 +56,9 @@ mod cloud_request_text;
 mod cloud_request_vectors_tests;
 mod cloud_sync_privacy;
 mod codex_app_server_socket;
+mod codex_request_resume_busy;
+mod codex_request_resume_op;
+mod codex_request_resume_store;
 mod codex_thread_continue_op;
 mod codex_tool_output_git;
 mod codex_tool_output_op;
@@ -150,6 +155,7 @@ mod guard_store_inventory_page_tests;
 mod guard_store_inventory_vectors_tests;
 mod guard_store_json;
 mod guard_store_lineage;
+mod guard_store_observed_mcp;
 mod guard_store_op;
 mod guard_store_outbox_append;
 mod guard_store_outbox_binding;
@@ -237,6 +243,7 @@ mod mcp_tool_evidence_op;
 mod mcp_tool_policy_composio;
 mod mcp_tool_policy_decide_op;
 mod mcp_tool_policy_decision;
+mod mcp_tool_policy_extension;
 mod mcp_tool_policy_flow;
 mod mcp_tool_policy_grants;
 mod mcp_tool_policy_revalidate;
