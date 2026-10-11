@@ -17,25 +17,42 @@ fn matches_recorded_vectors() {
 
 #[test]
 fn fused_authoritative_decision_preserves_recorded_runtime_composition() {
-    let vectors: Vec<Value> = serde_json::from_str(VECTORS).unwrap();
+    let reference: Value = serde_json::from_str(include_str!(
+        "../../../../tests/fixtures/decision_authority_vectors.json"
+    ))
+    .unwrap();
     let mut checked = 0;
-    for vector in vectors
+    let mut refused = 0;
+    for vector in reference["vectors"]
+        .as_array()
+        .unwrap()
         .iter()
-        .filter(|v| v["query"]["kind"] == "runtime_decision")
+        .filter(|v| !v["consumer_runtime_query"].is_null())
     {
-        let mut runtime = vector["query"].clone();
+        let mut runtime = vector["consumer_runtime_query"].clone();
         runtime.as_object_mut().unwrap().remove("kind");
         let query = serde_json::from_value(json!({
             "kind": "runtime_authoritative", "runtime": runtime, "signals": [],
         }))
         .unwrap();
-        let mut actual = compose(&query).unwrap();
+        let outcome = compose(&query);
+        if vector["expected"]["status"] == "error" {
+            assert_eq!(vector["expected"]["error_type"], "ValueError");
+            assert_eq!(
+                outcome.unwrap_err(),
+                "native_consumer_artifact_compose_payload_invalid"
+            );
+            refused += 1;
+            continue;
+        }
+        let mut actual = outcome.unwrap();
         let decision = actual
             .as_object_mut()
             .unwrap()
             .remove("authoritative_decision")
             .unwrap();
-        assert_eq!(actual, vector["expected"]);
+        assert_eq!(actual, vector["consumer_runtime_expected"]);
+        assert_eq!(decision, vector["expected"]["value"]);
         assert_eq!(decision["action"], actual["policy_action"]);
         assert_eq!(decision["reason"], actual["decision_reason"]);
         assert_eq!(decision["composition_trace"], actual["policy_composition"]);
@@ -45,7 +62,8 @@ fn fused_authoritative_decision_preserves_recorded_runtime_composition() {
         );
         checked += 1;
     }
-    assert!(checked >= 500);
+    assert_eq!(checked, 514);
+    assert_eq!(refused, 2);
 }
 
 fn resident(request: Value) -> Result<Value, String> {

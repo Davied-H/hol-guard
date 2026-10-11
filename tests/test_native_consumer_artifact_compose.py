@@ -201,7 +201,7 @@ def test_request_key_set_is_exact(monkeypatch: pytest.MonkeyPatch, kind: str, fi
 
 
 @pytest.mark.usefixtures("native_prompt_runtime")
-@pytest.mark.parametrize("failing", [("current_action", "runtime_decision"), ("runtime_decision",)])
+@pytest.mark.parametrize("failing", [("current_action", "runtime_authoritative"), ("runtime_authoritative",)])
 def test_resident_failure_blocks_each_artifact_without_aborting(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

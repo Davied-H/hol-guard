@@ -182,12 +182,40 @@ def main() -> None:
                 "authority_finalized": True,
             },
         )
+    consumer_path = "rust/crates/guard-runtime/tests/fixtures/consumer_artifact_compose_vectors.json"
+    consumer_reference = subprocess.check_output(["git", "show", f"{options.reference}:{consumer_path}"], cwd=ROOT)
+    if (
+        hashlib.sha256(consumer_reference).hexdigest()
+        != "dc1b734f34297eaa047ddd5f657ca9fbf3646b06ec6adcd8679336d913c035da"
+    ):
+        raise SystemExit("original consumer composition corpus digest mismatch")
+    for vector in json.loads(consumer_reference):
+        if vector["query"]["kind"] != "runtime_decision":
+            continue
+        composed = vector["expected"]
+        args = {
+            "action": composed["policy_action"],
+            "reason": composed["decision_reason"],
+            "composition_trace": composed["policy_composition"],
+            "authority_finalized": composed["authority_finalized"],
+            "signals": [],
+        }
+        vectors.append(
+            {
+                "kind": "decision_build",
+                "args": args,
+                "expected": evaluate("decision_build", args),
+                "consumer_runtime_query": vector["query"],
+                "consumer_runtime_expected": composed,
+            }
+        )
     result = {
         "schema": "decision-authority-reference.v1",
         "source": SOURCE_PATH,
         "reference_commit": options.reference,
         "source_sha256": hashlib.sha256(reference).hexdigest(),
         "signal_source_sha256": hashlib.sha256(signal_reference).hexdigest(),
+        "consumer_corpus_sha256": hashlib.sha256(consumer_reference).hexdigest(),
         "vectors": vectors,
     }
     destination = ROOT / "tests/fixtures/decision_authority_vectors.json"
