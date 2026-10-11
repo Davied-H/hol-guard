@@ -77,7 +77,7 @@ mod tests {
         let value = json!({"b": ["x", 1], "a": "é\u{1f600}\n", "c": null});
         assert_eq!(
             dumps_sorted(&value),
-            r#"{"a": "é😀\n", "b": ["x", 1], "c": null}"#
+            r#"{"a": "\u00e9\ud83d\ude00\n", "b": ["x", 1], "c": null}"#
         );
     }
 }
