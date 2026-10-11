@@ -450,14 +450,10 @@
       {
         "id": "secrets-cli",
         "category": "separate_product_cli",
-        "reason": "hol-guard-secrets repository/staged/pre-commit scanner CLI; separate product entry point, not a Guard runtime route. secrets/__init__.py and secret_detection.py (SECRET_RULES, SecretFinding, SecretScanSummary) are imported only by the repository/staged scanners and the secrets CLI; cli.py reaches the package only through main() for the `secrets` subcommand.",
+        "reason": "hol-guard-secrets argument parsing and text rendering; separate product entry point, not a Guard runtime route. Detection, repository/staged scans and pre-commit hooks run in the native secrets-cli command. public_rule_catalog.py is the static public rule listing; cli.py reaches the package only through main() for the `secrets` subcommand.",
         "path": [
           "src/codex_plugin_scanner/guard/secrets/cli.py",
-          "src/codex_plugin_scanner/guard/secrets/precommit.py",
-          "src/codex_plugin_scanner/guard/secrets/secret_repository_scanner.py",
-          "src/codex_plugin_scanner/guard/secrets/secret_staged_scanner.py",
           "src/codex_plugin_scanner/guard/secrets/public_rule_catalog.py",
-          "src/codex_plugin_scanner/guard/secrets/secret_detection.py",
           "src/codex_plugin_scanner/guard/secrets/__init__.py"
         ]
       },
@@ -650,7 +646,6 @@
           "src/codex_plugin_scanner/guard/runtime/manifest_dependency_targets.py",
           "src/codex_plugin_scanner/guard/runtime/mcp_connection_identity.py",
           "src/codex_plugin_scanner/guard/runtime/mcp_server_contribution.py",
-          "src/codex_plugin_scanner/guard/runtime/mcp_server_grants.py",
           "src/codex_plugin_scanner/guard/runtime/npm_policy_range.py",
           "src/codex_plugin_scanner/guard/runtime/oci_isolation_provider.py",
           "src/codex_plugin_scanner/guard/runtime/oci_mount_security.py",
@@ -660,7 +655,7 @@
           "src/codex_plugin_scanner/guard/runtime/source_paths.py",
           "src/codex_plugin_scanner/guard/runtime/workspace_snapshot_inputs.py"
         ],
-        "reason": "Reviewed: runtime support modules used by supply-chain evaluation, contained execution, local-CLI/MCP grant decisions and secret-file-request services: js_semver, npm_policy_range, lockfile/manifest evaluation, package_json_scripts, source_paths/skill_paths, workspace_snapshot_inputs, contained_test_hook/wrapper, oci isolation, extension and mcp_server contribution, embedded_script_evidence, executable_flag_contract, local_cli_compound, mcp_connection_identity, mcp_server_grants, and skill_protection (skill-content findings for the MCP skill firewall). Each is imported by an in-scope decision, parser or containment module on the hook/run path."
+        "reason": "Reviewed: runtime support modules used by supply-chain evaluation, contained execution, local-CLI/MCP grant decisions and secret-file-request services: js_semver, npm_policy_range, lockfile/manifest evaluation, package_json_scripts, source_paths/skill_paths, workspace_snapshot_inputs, contained_test_hook/wrapper, oci isolation, extension and mcp_server contribution, embedded_script_evidence, executable_flag_contract, local_cli_compound, mcp_connection_identity, and skill_protection (skill-content findings for the MCP skill firewall). Each is imported by an in-scope decision, parser or containment module on the hook/run path."
       },
       {
         "path": [
@@ -672,7 +667,6 @@
           "src/codex_plugin_scanner/guard/local_cli_grant_decision.py",
           "src/codex_plugin_scanner/guard/local_cli_hook.py",
           "src/codex_plugin_scanner/guard/local_cli_trust.py",
-          "src/codex_plugin_scanner/guard/local_mcp_grant_decision.py",
           "src/codex_plugin_scanner/guard/product_model.py",
           "src/codex_plugin_scanner/guard/runtime_transition_hook_probe.py",
           "src/codex_plugin_scanner/guard/skill_document_evidence.py",
@@ -684,7 +678,7 @@
           "src/codex_plugin_scanner/guard/cloud_exceptions.py",
           "src/codex_plugin_scanner/guard/policy_bundle_decisions.py"
         ],
-        "reason": "Reviewed: shared policy, inventory, store and consumer modules: consumer/service (runtime runner), capabilities, product_model (argv harness dispatch in the top-level CLI on every invocation), local_cli_*/local_mcp_grant_decision trust decisions (native_mcp_tool_policy), business_policy_document_import (policy snapshot publisher and recovery), store_* mixins on the policy/MCP/extension paths, skill_document_evidence, trust_metadata_boundary, inventory_item_description, text.py, runtime_transition_hook_probe (daemon/server), codex_binding_capture_join, cloud_exceptions (store_cloud_events) and policy_bundle_decisions (local_supply_chain policy-bundle handling)."
+        "reason": "Reviewed: shared policy, inventory, store and consumer modules: consumer/service (runtime runner), capabilities, product_model (argv harness dispatch in the top-level CLI on every invocation), local_cli_* trust decisions (native_mcp_tool_policy), business_policy_document_import (policy snapshot publisher and recovery), store_* mixins on the policy/MCP/extension paths, skill_document_evidence, trust_metadata_boundary, inventory_item_description, text.py, runtime_transition_hook_probe (daemon/server), codex_binding_capture_join, cloud_exceptions (store_cloud_events) and policy_bundle_decisions (local_supply_chain policy-bundle handling)."
       },
       {
         "path": [
@@ -1445,6 +1439,69 @@
         "entry_points": [],
         "reason": "Cloud connect and pairing lifecycle methods of the OAuth credential store: clearing credentials and sync state on disconnect or reconnect, listing sources, legacy macOS secret migration and recording connect results.",
         "evidence": "Remaining callers are the guard connect and uninstall CLI flows, the daemon connect-flow and cloud-sync control handlers, and the cloud sync runner, all of which the install-uninstall-doctor, daemon-control-plane-routes and cloud-sync-transport exclusions already remove from scope, plus the excluded install and update dispatchers that reach the legacy migration by name. The credential read path (health, profile, local credentials, source loading, recovery and the credential lock) is not excluded because approvals and package entitlement callers use it. The report validates that no retained method or in-scope module references the excluded names."
+      },
+      {
+        "id": "adapter-cline-setup",
+        "category": "install_config",
+        "path": "src/codex_plugin_scanner/guard/adapters/cline.py",
+        "symbols": [
+          "ClineHarnessAdapter.install",
+          "ClineHarnessAdapter.uninstall",
+          "ClineHarnessAdapter._install_transport",
+          "ClineHarnessAdapter._reconcile_transport"
+        ],
+        "entry_points": [],
+        "reason": "Cline adapter install and uninstall, including transport selection and inactive-transport cleanup used only by them.",
+        "evidence": "install and uninstall have no caller in any in-scope module; they are invoked by the excluded install, uninstall and repair dispatchers. The report validates that no retained symbol or in-scope module references the excluded names. Install-only imports live inside these methods so the retained module imports only state and detection helpers."
+      },
+      {
+        "id": "adapter-cline-hooks-setup",
+        "category": "install_config",
+        "path": "src/codex_plugin_scanner/guard/adapters/cline_hooks.py",
+        "symbols": [
+          "install_cline_hooks",
+          "_slot_for_event",
+          "_worker_path",
+          "_write",
+          "_posix_wrapper",
+          "_ps_quote",
+          "_powershell_wrapper"
+        ],
+        "entry_points": [],
+        "reason": "Cline native-hook install: worker and launcher file writes plus the POSIX and PowerShell launcher templates.",
+        "evidence": "install and uninstall have no caller in any in-scope module; they are invoked by the excluded install, uninstall and repair dispatchers. The report validates that no retained symbol or in-scope module references the excluded names. The generated Python hook worker source (_hook_source) stays in scope because that worker runs on each Cline hook call."
+      },
+      {
+        "id": "adapter-cline-plugin-setup",
+        "category": "install_config",
+        "path": "src/codex_plugin_scanner/guard/adapters/cline_plugin.py",
+        "symbols": [
+          "install_cline_plugin",
+          "uninstall_cline_plugin",
+          "cline_plugin_syntax_probe",
+          "_plugin_source",
+          "_package_json",
+          "_atomic_write"
+        ],
+        "entry_points": [],
+        "reason": "Cline AgentPlugin install, uninstall and install-time syntax probe, plus the TypeScript plugin and package.json templates they write.",
+        "evidence": "install and uninstall have no caller in any in-scope module; they are invoked by the excluded install, uninstall and repair dispatchers. The report validates that no retained symbol or in-scope module references the excluded names. The plugin source is a TypeScript asset executed by Cline, not Python on the request path."
+      },
+      {
+        "id": "adapter-cline-mcp-setup",
+        "category": "install_config",
+        "path": "src/codex_plugin_scanner/guard/adapters/cline_mcp.py",
+        "symbols": [
+          "install_cline_mcp_proxies",
+          "restore_cline_mcp_proxies",
+          "_proxy_entry",
+          "_managed_server",
+          "_backup_path",
+          "_atomic_write_bytes"
+        ],
+        "entry_points": [],
+        "reason": "Cline MCP settings rewrite to the Guard proxy on install and restore on uninstall.",
+        "evidence": "install and uninstall have no caller in any in-scope module; they are invoked by the excluded install, uninstall and repair dispatchers. The report validates that no retained symbol or in-scope module references the excluded names."
       }
     ],
     "dynamic_imports": [

@@ -133,6 +133,7 @@ mod powershell_effects;
 mod powershell_floors;
 mod powershell_parser;
 mod powershell_reads;
+pub mod protect_request;
 pub mod rich_command_model_api;
 use parser_executables::*;
 use parser_segments::*;
