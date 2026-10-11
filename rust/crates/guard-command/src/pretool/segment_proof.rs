@@ -65,6 +65,7 @@ pub(super) fn exact_safe_cwd_compound(
             crate::pretool::PathContext {
                 home_dir: context.home_dir,
                 cdpath_unset: context.cdpath_unset,
+                rustup_override_absent: context.rustup_override_absent,
                 cwd: Some(&cwd),
             },
         );
@@ -111,6 +112,7 @@ pub(super) fn exact_safe_cwd_compound(
             crate::pretool::PathContext {
                 home_dir: context.home_dir,
                 cdpath_unset: context.cdpath_unset,
+                rustup_override_absent: context.rustup_override_absent,
                 cwd: Some(&cwd),
             },
         )
@@ -139,6 +141,7 @@ pub(crate) fn benign_command_segments(
     let proof_context = crate::pretool::PathContext {
         home_dir: context.home_dir,
         cdpath_unset: context.cdpath_unset,
+        rustup_override_absent: context.rustup_override_absent,
         cwd: cwd.as_deref().or(context.cwd),
     };
     let segment_benign: Vec<bool> = model

@@ -8,9 +8,10 @@
 //! selects an official toolchain, which rustup downloads and verifies itself.
 //!
 //! The probe is admitted when no toolchain file is found, or when the nearest
-//! one names a plain channel and nothing else that can select a binary. Any
-//! file that cannot be read or parsed, is a symlink, or is unusually large
-//! keeps the normal review path.
+//! one names an official channel and nothing else that can select a binary.
+//! Any file that cannot be read or parsed, is a symlink, or is unusually large
+//! keeps the normal review path. So does an inherited `RUSTUP_TOOLCHAIN` or
+//! `RUSTUP_HOME`, which rustup reads before any toolchain file.
 
 use std::fs;
 use std::io::ErrorKind;
@@ -21,7 +22,9 @@ const MAX_TOOLCHAIN_FILE_BYTES: u64 = 4096;
 const TOOLCHAIN_KEYS: [&str; 4] = ["channel", "components", "targets", "profile"];
 
 pub(super) fn safe_version_probe(arguments: &[String], context: super::PathContext<'_>) -> bool {
-    if !matches!(arguments, [flag] if matches!(flag.as_str(), "--version" | "-V")) {
+    if !matches!(arguments, [flag] if matches!(flag.as_str(), "--version" | "-V"))
+        || !context.rustup_override_absent
+    {
         return false;
     }
     let Some(cwd) = context.cwd.map(Path::new) else {
@@ -85,7 +88,7 @@ fn nearest_toolchain(directory: &Path) -> Lookup {
 fn inert_toolchain(contents: &str) -> bool {
     let trimmed = contents.trim();
     if !trimmed.contains(['\n', '=', '[']) {
-        return plain_channel(trimmed);
+        return official_channel(trimmed);
     }
     let Ok(document) = trimmed.parse::<toml::Table>() else {
         return false;
@@ -102,14 +105,46 @@ fn inert_toolchain(contents: &str) -> bool {
             .all(|key| TOOLCHAIN_KEYS.contains(&key.as_str()))
         && toolchain
             .get("channel")
-            .is_some_and(|channel| channel.as_str().is_some_and(plain_channel))
+            .is_some_and(|channel| channel.as_str().is_some_and(official_channel))
 }
 
-fn plain_channel(channel: &str) -> bool {
-    !channel.is_empty()
-        && channel.chars().all(|character| {
-            character.is_ascii_alphanumeric() || matches!(character, '.' | '-' | '_')
-        })
+/// rustup's official toolchain names: `stable`, `beta`, `nightly` or a
+/// `major.minor[.patch]` release, then an optional `-YYYY-MM-DD` archive date
+/// and an optional host triple. rustup will not link a custom toolchain under
+/// such a name, so it cannot point at a local directory.
+fn official_channel(name: &str) -> bool {
+    let tokens: Vec<&str> = name.split('-').collect();
+    let Some((channel, mut rest)) = tokens.split_first() else {
+        return false;
+    };
+    if !matches!(*channel, "stable" | "beta" | "nightly") && !release_version(channel) {
+        return false;
+    }
+    if let [year, month, day, tail @ ..] = rest {
+        if digits(year, 4) && digits(month, 2) && digits(day, 2) {
+            rest = tail;
+        }
+    }
+    rest.is_empty()
+        || ((2..=4).contains(&rest.len())
+            && rest.iter().all(|part| {
+                !part.is_empty()
+                    && part
+                        .chars()
+                        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+            }))
+}
+
+fn release_version(version: &str) -> bool {
+    let parts: Vec<&str> = version.split('.').collect();
+    (2..=3).contains(&parts.len())
+        && parts
+            .iter()
+            .all(|part| !part.is_empty() && part.chars().all(|c| c.is_ascii_digit()))
+}
+
+fn digits(value: &str, length: usize) -> bool {
+    value.len() == length && value.chars().all(|c| c.is_ascii_digit())
 }
 
 #[cfg(test)]
@@ -122,6 +157,9 @@ mod tests {
             "stable",
             "1.85.0\n",
             "nightly-2025-01-01",
+            "1.85",
+            "stable-aarch64-apple-darwin",
+            "nightly-2025-01-01-x86_64-unknown-linux-gnu",
             "[toolchain]\nchannel = \"1.85.0\"\n",
             "[toolchain]\nchannel = \"stable\"\ncomponents = [\"clippy\", \"rustfmt\"]\nprofile = \"minimal\"\n",
         ] {
@@ -135,6 +173,13 @@ mod tests {
             "[toolchain]\npath = \"/opt/toolchain\"\n",
             "[toolchain]\nchannel = \"stable\"\npath = \"tools\"\n",
             "[toolchain]\nchannel = \"../tools\"\n",
+            "my-toolchain",
+            "custom",
+            "stable-",
+            "1",
+            "1.85.0.1",
+            "nightly-2025-01-01-Evil",
+            "[toolchain]\nchannel = \"workspace-linked\"\n",
             "[toolchain]\ncomponents = [\"clippy\"]\n",
             "[toolchain]\nchannel = \"stable\"\n[other]\nkey = 1\n",
             "path = \"/opt/toolchain\"\n",

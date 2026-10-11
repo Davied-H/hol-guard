@@ -4,16 +4,7 @@ use fixture::*;
 use serde_json::json;
 
 fn decide(harness: &str, command: &str, home: &std::path::Path, cwd: &std::path::Path) -> String {
-    evaluate_pre_tool_envelope_with_context(
-        harness,
-        "PreToolUse",
-        &json!({"tool_name":"bash", "tool_input":{"command":command}}),
-        Some(&github_controls("enabled")),
-        None,
-        home.to_str(),
-        cwd.to_str(),
-    )
-    .decision
+    decide_with(harness, &[], command, home, cwd)
 }
 
 #[test]
@@ -105,5 +96,55 @@ fn rust_version_queries_are_allowed_unless_a_toolchain_file_selects_a_binary() {
             assert_ne!(decide(harness, "cargo --version", &home, &linked), "allow");
             assert_ne!(decide(harness, "cargo --version", &home, &alias), "allow");
         }
+        // The hook stamps the harness environment. rustup reads an inherited RUSTUP_TOOLCHAIN or RUSTUP_HOME before any
+        // toolchain file, so either one keeps the probe on review.
+        assert_eq!(
+            decide_with(harness, &[], "cargo --version", &home, &plain),
+            "allow"
+        );
+        for name in ["RUSTUP_TOOLCHAIN", "RUSTUP_HOME", "rustup_toolchain"] {
+            assert_ne!(
+                decide_with(harness, &[name], "cargo --version", &home, &plain),
+                "allow",
+                "{harness} {name}"
+            );
+        }
     }
+}
+
+fn decide_with(
+    harness: &str,
+    environment_names: &[&str],
+    command: &str,
+    home: &std::path::Path,
+    cwd: &std::path::Path,
+) -> String {
+    let environment = guard_contracts::GuardExecutionEnvironmentV1 {
+        path: std::env::var("PATH").unwrap_or_default(),
+        environment_names: environment_names
+            .iter()
+            .map(|name| (*name).to_owned())
+            .collect(),
+        environment_digest: "0".repeat(64),
+        home: None,
+        git_pager_disabled: false,
+        pager_disabled: false,
+        xdg_config_home: None,
+        git_config_no_system: false,
+    };
+    guard_command::pretool::evaluate_pre_tool_envelope_with_execution_context(
+        harness,
+        "PreToolUse",
+        &json!({"tool_name":"bash", "tool_input":{"command":command}}),
+        Some(&github_controls("enabled")),
+        None,
+        guard_command::pretool::PathContext {
+            home_dir: home.to_str(),
+            cwd: cwd.to_str(),
+            cdpath_unset: false,
+            rustup_override_absent: false,
+        },
+        Some(&environment),
+    )
+    .decision
 }

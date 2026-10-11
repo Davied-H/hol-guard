@@ -9,6 +9,9 @@ pub struct PathContext<'a> {
     pub home_dir: Option<&'a str>,
     pub cwd: Option<&'a str>,
     pub cdpath_unset: bool,
+    /// No inherited `RUSTUP_TOOLCHAIN` or `RUSTUP_HOME` can change which
+    /// toolchain the rustup proxy runs. Literal contexts leave this false.
+    pub rustup_override_absent: bool,
 }
 
 mod contained_wrapper;
