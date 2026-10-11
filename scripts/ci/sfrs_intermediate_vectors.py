@@ -24,7 +24,7 @@ from codex_plugin_scanner.guard.runtime.secret_file_request_services import (
 )
 
 MAX_TEXTS = 6000
-HOST_MARKERS = ("michaelkantor", "runner2-port", "hol-guard/.venv", "/home/runner", "/private/var/folders")
+HOST_MARKERS = ("michaelkantor", "runner2-port", "hol-guard/.venv", "/home/runner", "/private/var/folders", "~/.codex")
 
 
 def _walk(value: object, found: set[str]) -> None:
