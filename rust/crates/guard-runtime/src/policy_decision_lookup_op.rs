@@ -1407,12 +1407,16 @@ fn evaluate_in_connection(
     let mut reported_local_once_failures: Vec<Value> = Vec::new();
     let local_once_hashes: Vec<String> = {
         let mut v = Vec::new();
-        for h in [
-            artifact_hash.map(str::to_string),
-            runtime_exact_match_key.clone(),
-        ]
-        .into_iter()
-        .flatten()
+        // The exact peek matches only the caller-supplied hash; the id-derived
+        // runtime-exact fallback belongs to ordinary policy lookups.
+        let runtime_fallback = if request.local_once_only {
+            None
+        } else {
+            runtime_exact_match_key.clone()
+        };
+        for h in [artifact_hash.map(str::to_string), runtime_fallback]
+            .into_iter()
+            .flatten()
         {
             if !v.contains(&h) {
                 v.push(h);

@@ -455,3 +455,33 @@ fn local_once_only_never_touches_policy_rows() {
         .unwrap();
     assert_eq!(remaining, 1);
 }
+
+/// The exact peek matches only the caller-supplied hash; the id-derived
+/// runtime-exact fallback used by ordinary lookups must not widen it.
+#[test]
+fn local_once_only_ignores_runtime_exact_fallback_hash() {
+    let store = tmp_store("local-once-exact-hash");
+    seed_store(&store);
+    let artifact_id = "codex:project:tool-action:shell";
+    let mut request = base_request(&store);
+    request.artifact_id = Some(artifact_id.to_owned());
+    request.artifact_hash = Some("sha256:caller-supplied".to_owned());
+    request.consume_one_shot = false;
+    let derived = runtime_scoped_exact_match_key(Some(artifact_id), None).unwrap();
+    let conn = Connection::open(&store).unwrap();
+    conn.execute(
+        "insert into guard_local_once_approvals
+         (approval_id,request_id,harness,artifact_id,artifact_hash,action,created_at,expires_at,authority_kind)
+         values ('derived','request','codex',?,?,'allow',
+                 '2029-01-01T00:00:00+00:00','2031-01-01T00:00:00+00:00','legacy')",
+        params![artifact_id, derived],
+    )
+    .unwrap();
+    // Ordinary lookups still probe the derived key and see the row.
+    let ordinary = evaluate(&request).unwrap();
+    assert!(!ordinary["ignored_local_integrity"].is_null());
+    request.local_once_only = true;
+    let peek = evaluate(&request).unwrap();
+    assert!(peek["decision"].is_null());
+    assert!(peek["ignored_local_integrity"].is_null());
+}

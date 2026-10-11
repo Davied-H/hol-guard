@@ -1705,3 +1705,45 @@ def test_approval_reuse_discovery_and_serialization_cannot_restart_budget(
         )
         is None
     )
+
+
+def test_local_once_peek_is_read_only(tmp_path, monkeypatch, native_context_digest: Path) -> None:
+    store = GuardStore(tmp_path / "guard-home")
+    store.upsert_policy(
+        PolicyDecision(
+            harness="codex",
+            scope="harness",
+            artifact_id="codex:project:tool-action:other",
+            action="allow",
+            reason="seed local policy so a lookup would refresh integrity state",
+        ),
+        "2026-07-17T12:00:00+00:00",
+    )
+    refreshed: list[bool] = []
+    created: list[bool] = []
+    original_material = store._policy_integrity_secret_material
+
+    def refresh_spy(*args: object, **kwargs: object) -> None:
+        refreshed.append(True)
+
+    def material_spy(*, create: bool = False):
+        created.append(create)
+        return original_material(create=create)
+
+    monkeypatch.setattr(store, "_refresh_policy_integrity_state", refresh_spy)
+    monkeypatch.setattr(store, "_policy_integrity_secret_material", material_spy)
+
+    assert (
+        store.peek_local_once_approval(
+            harness="codex",
+            artifact_id="codex:project:tool-action:peek",
+            artifact_hash="sha256:peek",
+            workspace="/workspace/a",
+            publisher=None,
+            now="2026-07-17T12:03:00+00:00",
+        )
+        is None
+    )
+
+    assert refreshed == []
+    assert not any(created)

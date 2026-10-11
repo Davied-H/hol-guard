@@ -1082,6 +1082,11 @@ class StorePolicyMixin:
             has_local_once_approvals = (
                 connection.execute("select 1 from guard_local_once_approvals limit 1").fetchone() is not None
             )
+            if local_once_only:
+                # The exact peek is read-only: it never refreshes the policy
+                # integrity state or mints key material.
+                has_local_policy = False
+                has_remote_policy = False
             integrity_state = (
                 self._refresh_policy_integrity_state(
                     connection,
@@ -1114,7 +1119,11 @@ class StorePolicyMixin:
         # local-once row whose signature was issued under the keyring) so a
         # lookup against a never-provisioned store does not mint an unused key.
         resident_key, resident_key_id = self._policy_integrity_secret_material(create=False)
-        if resident_key is None and (verifier_exists or has_remote_policy or has_local_once_approvals):
+        if (
+            resident_key is None
+            and not local_once_only
+            and (verifier_exists or has_remote_policy or has_local_once_approvals)
+        ):
             resident_key, resident_key_id = self._policy_integrity_secret_material(create=True)
         if has_local_policy:
             integrity_key, integrity_key_id = resident_key, resident_key_id
@@ -1158,7 +1167,7 @@ class StorePolicyMixin:
                         "trust_status": TrustStatus.from_policy_integrity_state(integrity_state).to_dict(),
                         "authority_revision": -1,
                     }
-        elif verifier_path is None or (not verifier_exists and not has_local_once_approvals):
+        elif verifier_path is None or (not verifier_exists and (local_once_only or not has_local_once_approvals)):
             # An untrusted guard home (verifier_path is None) can never persist
             # a verifier key, and a store with no integrity keyring, no
             # persisted verifier, and no local-once approvals has no authority
