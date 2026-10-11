@@ -152,7 +152,7 @@ pub(super) fn git_config_digest(
         if size > MAX_CONFIG_BYTES {
             return Err(UNPROVEN_LAUNCH);
         }
-        let data = std::fs::read(&path).map_err(|_| UNPROVEN_LAUNCH)?;
+        let data = fs_path::read_bounded(&path, MAX_CONFIG_BYTES).ok_or(UNPROVEN_LAUNCH)?;
         seen.insert(path.clone(), fs_path::sha256_hex(&data));
         // Included files are config whatever they are named; the rest are attributes.
         if configs.contains(&path) || depth > 0 {
@@ -211,7 +211,7 @@ fn hook_digests(hooks_dir: &str) -> Proof<BTreeMap<String, String>> {
         if digests.len() >= MAX_HOOK_FILES || size > MAX_CONFIG_BYTES {
             return Err(UNPROVEN_LAUNCH);
         }
-        let data = std::fs::read(&entry).map_err(|_| UNPROVEN_LAUNCH)?;
+        let data = fs_path::read_bounded(&entry, MAX_CONFIG_BYTES).ok_or(UNPROVEN_LAUNCH)?;
         digests.insert(format!("hook:{entry}"), fs_path::sha256_hex(&data));
     }
     Ok(digests)
@@ -236,6 +236,8 @@ fn nested_attribute_digests(root: &str, ctx: &Ctx) -> Proof<BTreeMap<String, Str
         };
         let mut has_attributes = false;
         for entry in entries.flatten() {
+            // A huge directory must not outlive the request budget.
+            ctx.check()?;
             let name = entry.file_name().to_string_lossy().into_owned();
             let path = fs_path::join(&current, &name);
             if fs_path::is_dir(&path) {
@@ -259,7 +261,7 @@ fn nested_attribute_digests(root: &str, ctx: &Ctx) -> Proof<BTreeMap<String, Str
         if size > MAX_CONFIG_BYTES || digests.len() >= MAX_CONFIG_FILES {
             return Err(UNPROVEN_LAUNCH);
         }
-        let data = std::fs::read(&path).map_err(|_| UNPROVEN_LAUNCH)?;
+        let data = fs_path::read_bounded(&path, MAX_CONFIG_BYTES).ok_or(UNPROVEN_LAUNCH)?;
         digests.insert(path, fs_path::sha256_hex(&data));
     }
     Ok(digests)

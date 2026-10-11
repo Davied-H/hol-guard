@@ -221,7 +221,17 @@ pub(super) fn expand_tilde(value: &str, home: &str) -> String {
 }
 
 /// Lowercase hex SHA-256 of `bytes` (`hashlib.sha256(...).hexdigest()`).
-pub(super) fn sha256_hex(bytes: &[u8]) -> String {
-    use sha2::{Digest, Sha256};
-    hex::encode(Sha256::digest(bytes))
+pub(super) use crate::guard_store_wfcap_frame::sha256_hex;
+
+/// Read a file of at most `limit` bytes; a longer one (even if it grew after a
+/// size check) is `None`, so a read never exceeds the budget.
+pub(super) fn read_bounded(path: &str, limit: u64) -> Option<Vec<u8>> {
+    use std::io::Read;
+    let mut data = Vec::new();
+    std::fs::File::open(path)
+        .ok()?
+        .take(limit.saturating_add(1))
+        .read_to_end(&mut data)
+        .ok()?;
+    (data.len() as u64 <= limit).then_some(data)
 }

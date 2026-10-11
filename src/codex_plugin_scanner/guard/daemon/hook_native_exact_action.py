@@ -14,12 +14,13 @@ fallback: when the resident cannot answer, a review is a one-time decision
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from ..native_daemon_route import _decide
+from ..native_daemon_route import EXACT_ACTION_ASK_SLOTS, _decide
 from ..native_resident_decision import ResidentOperation
 from ..runtime.extension_control_runtime import current_extension_control_binding_digest
 from .hook_native_review_binding import native_review_policy_binding
@@ -27,6 +28,7 @@ from .hook_request_parsing import pre_tool_command, pre_tool_input
 
 NATIVE_EXACT_ACTION_FEATURE = "native-exact-action-v1"
 UNPROVEN_LAUNCH = "unproven_launch"
+_LOGGER = logging.getLogger(__name__)
 _TIMEOUT_SECONDS = 6.0
 _BUDGET_MS = 4000
 _MAX_REQUEST_BYTES = 256 * 1024
@@ -155,7 +157,9 @@ def native_exact_action(
             "budget_ms": _BUDGET_MS,
         }
         reply = _answer(query, guard_home)
-    except (NativeExactActionError, OSError, RuntimeError, TypeError, ValueError):
+    except (NativeExactActionError, OSError, RuntimeError, TypeError, ValueError) as error:
+        # Only the error class is logged: the query holds environment and command text.
+        _LOGGER.warning("native exact-action ask failed closed: %s", type(error).__name__)
         return None, UNPROVEN_LAUNCH
     token, reason = reply["token"], reply["once_only_reason"]
     if (token is None) == (reason is None):
@@ -184,7 +188,8 @@ def native_review_binding(
             "policy_binding": _policy_binding(harness, native_result, native_receipt),
         }
         return _answer(query, guard_home)["binding"]
-    except (NativeExactActionError, OSError, RuntimeError, TypeError, ValueError):
+    except (NativeExactActionError, OSError, RuntimeError, TypeError, ValueError) as error:
+        _LOGGER.warning("native review-binding ask failed closed: %s", type(error).__name__)
         return None
 
 
@@ -208,6 +213,7 @@ def _answer(query: Mapping[str, object], guard_home: Path | None) -> dict[str, A
         _validate_exact_action if is_exact else None,
         operation=_OPERATION,
         max_request_bytes=_MAX_REQUEST_BYTES,
+        slots=EXACT_ACTION_ASK_SLOTS,
     )
 
 
