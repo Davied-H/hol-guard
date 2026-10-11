@@ -539,6 +539,7 @@
           "src/codex_plugin_scanner/guard/runtime/verified_*.py",
           "src/codex_plugin_scanner/guard/runtime/supply_chain*.py",
           "src/codex_plugin_scanner/guard/runtime/package_request_evaluation.py",
+          "src/codex_plugin_scanner/guard/runtime/data_flow_sink.py",
           "src/codex_plugin_scanner/guard/runtime/command_*.py",
           "src/codex_plugin_scanner/guard/runtime/shell_*.py",
           "src/codex_plugin_scanner/guard/runtime/secret_file_request*",

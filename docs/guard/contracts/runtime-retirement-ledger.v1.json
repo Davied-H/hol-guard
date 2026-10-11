@@ -3997,6 +3997,17 @@
  "implementation_base_sha": "1dc81dd4319cdf18e4b1c0fd3d061f732601b188",
  "replaced_implementations": [
   {
+   "path": "src/codex_plugin_scanner/guard/runtime/decisions.py",
+   "base_commit": "55e051a711550e55d0dad5991c5bc63918946bfa",
+   "source_sha256": "deff9f12e7d0be568f1e0531627d3b41479fdce4690f118d7293053bbb53bded",
+   "remaining_role": "Immutable public DTOs, serialization and resident transport only; native decision builders and action/schema/composition/approval/scanner validators replace Python semantic bodies.",
+   "native_replacements": [
+    "rust/crates/guard-command/src/decisions.rs",
+    "rust/crates/guard-runtime/src/decision_authority_op.rs"
+   ],
+   "parity_fixture": "tests/fixtures/decision_authority_vectors.json"
+  },
+  {
    "path": "src/codex_plugin_scanner/guard/runtime/direct_vitest.py",
    "base_commit": "8d96ae755a1d4906394d387cd3af4068c533a848",
    "source_sha256": "811b2826b08f1ebb7dd1767b98ac0b28b357bb412ee4fe81387c47c9798644d7",

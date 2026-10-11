@@ -224,9 +224,15 @@ fn action_messages(
 // ---------------------------------------------------------------------------
 
 /// `required_string` — non-empty string.
+fn python_trim(value: &str) -> &str {
+    value.trim_matches(|character: char| {
+        character.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&character)
+    })
+}
+
 fn required_string(payload: &Map<String, Value>, key: &str) -> Res<String> {
     match payload.get(key) {
-        Some(Value::String(s)) if !s.trim().is_empty() => Ok(s.clone()),
+        Some(Value::String(s)) if !python_trim(s).is_empty() => Ok(s.clone()),
         _ => err(&format!("{key} must be a non-empty string")),
     }
 }
@@ -299,7 +305,7 @@ fn parse_string_tuple(v: &Value, key: &str) -> Res<Vec<String>> {
     let mut out = Vec::with_capacity(arr.len());
     for item in arr {
         match item {
-            Value::String(s) if !s.trim().is_empty() => out.push(s.clone()),
+            Value::String(s) if !python_trim(s).is_empty() => out.push(s.clone()),
             _ => return err(&format!("{key} must be a list of non-empty strings")),
         }
     }
@@ -321,8 +327,20 @@ fn require_exact_fields(
     missing.sort();
     let mut extra: Vec<&str> = actual.difference(&expected_set).copied().collect();
     extra.sort();
+    let render = |fields: &[&str]| {
+        let fields: Vec<String> = fields
+            .iter()
+            .map(|field| {
+                let quoted = field.replace('\\', "\\\\").replace('\'', "\\'");
+                format!("'{quoted}'")
+            })
+            .collect();
+        format!("[{}]", fields.join(", "))
+    };
     err(&format!(
-        "{context} fields must match schema; missing={missing:?}, extra={extra:?}"
+        "{context} fields must match schema; missing={}, extra={}",
+        render(&missing),
+        render(&extra)
     ))
 }
 /// `_reject_unknown_action_bearing_fields`.
@@ -528,20 +546,23 @@ impl AuthoritativeGuardDecision {
             &authoritative_decision_fields(),
             "authoritative_decision",
         )?;
-        let schema_version = match p.get("schema_version").and_then(Value::as_i64) {
-            Some(v) => v,
-            None => return err("schema_version must be an integer"),
-        };
-        if schema_version != AUTHORITATIVE_DECISION_SCHEMA_VERSION {
-            return err("schema_version must match the authoritative schema version");
+        if p.get("schema_version").and_then(Value::as_f64) != Some(1.0) {
+            return err("schema_version must be 1");
         }
         let action = parse_guard_action(p.get("action").unwrap_or(&Value::Null))?;
         let source = required_string(p, "source")?;
         let reason = required_string(p, "reason")?;
         let composition_trace = match p.get("composition_trace") {
             Some(Value::Object(m)) => m.clone(),
-            _ => return err("composition_trace must be an object"),
+            _ => return err("composition_trace must be an object with string keys"),
         };
+        if composition_trace
+            .get("final_action")
+            .and_then(Value::as_str)
+            != Some(action.as_str())
+        {
+            return err("composition_trace.final_action must match action");
+        }
         let signals = parse_signals(p.get("signals").unwrap_or(&Value::Null))?;
         let enforcement = match p.get("enforcement") {
             Some(Value::Object(m)) => {
@@ -716,7 +737,7 @@ pub fn build_authoritative_decision(
     authority_finalized: bool,
     source: &str,
 ) -> Res<AuthoritativeGuardDecision> {
-    if reason.trim().is_empty() {
+    if python_trim(reason).is_empty() {
         return err("reason must be a non-empty string");
     }
     let mut trace = composition_trace.clone();
@@ -756,8 +777,8 @@ pub fn authoritative_decision_from_artifact(
     };
     let decision = match p.get("authoritative_decision") {
         Some(v) if v.is_object() => AuthoritativeGuardDecision::decode(v)?,
-        Some(_) => return err("authoritative_decision must be an object"),
-        None => {
+        Some(value) if !value.is_null() => return err("authoritative_decision must be an object"),
+        _ => {
             if require_authoritative {
                 return err("authoritative_decision is required at the launch boundary");
             }
@@ -769,7 +790,7 @@ pub fn authoritative_decision_from_artifact(
             composition.insert("final_action".into(), Value::String(action.as_str().into()));
             let reason = match p.get("decision_v2_json") {
                 Some(Value::Object(dv2)) => match dv2.get("reason") {
-                    Some(Value::String(s)) if !s.trim().is_empty() => s.clone(),
+                    Some(Value::String(s)) if !python_trim(s).is_empty() => s.clone(),
                     _ => action.as_str().to_string(),
                 },
                 _ => action.as_str().to_string(),

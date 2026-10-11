@@ -57,6 +57,12 @@ fn request_digest(request: &RunnerAuthorityRequestV1) -> Result<String, &'static
 
 pub(crate) fn dispatch(kind: &str, args: &Value) -> KindResult {
     match kind {
+        "decision_v2_decode"
+        | "decision_enforcement_decode"
+        | "decision_authoritative_decode"
+        | "decision_artifact_decode"
+        | "decision_legacy"
+        | "decision_build" => crate::decision_authority_op::dispatch(kind, args),
         "detector_authority" => detector::detector_authority(args),
         "detector_composition" => detector::detector_composition(args),
         "current_authority_actions" => detector::current_authority_actions(args),
