@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 pub mod action_lattice;
 pub mod approval_reuse;
+pub mod benign_request_api;
 pub mod browser_mcp_intent;
 pub mod business_gmail_plain;
 pub mod business_gmail_wire;
