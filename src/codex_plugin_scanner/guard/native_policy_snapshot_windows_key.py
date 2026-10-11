@@ -167,24 +167,37 @@ def provision_native_policy_verifier_key(
             raise NativePolicySnapshotError("native_policy_verifier_key_mismatch")
         return path
 
+    # Publish the key atomically: a concurrent provisioner must never observe
+    # the final path before the whole key has been written, or it would read a
+    # truncated file and report tampering. Write a private temporary file, then
+    # link it into place; link never replaces an existing key.
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    temporary = state_dir / f"{NATIVE_POLICY_VERIFIER_KEY_NAME}.{os.getpid()}.{secrets.token_hex(8)}.tmp"
     try:
-        descriptor = os.open(path, flags, 0o600)
-    except FileExistsError:
-        # Another process won the race. Re-enter the validation path without
-        # replacing or weakening its key.
-        return provision_native_policy_verifier_key(guard_home, policy_integrity_key)
+        descriptor = os.open(temporary, flags, 0o600)
     except OSError as error:
         raise NativePolicySnapshotError("native_policy_verifier_key_write_failed") from error
     try:
-        written = 0
-        while written < len(derived):
-            written += os.write(descriptor, derived[written:])
-        os.fsync(descriptor)
-    except OSError as error:
-        raise NativePolicySnapshotError("native_policy_verifier_key_write_failed") from error
+        try:
+            written = 0
+            while written < len(derived):
+                written += os.write(descriptor, derived[written:])
+            os.fsync(descriptor)
+        except OSError as error:
+            raise NativePolicySnapshotError("native_policy_verifier_key_write_failed") from error
+        finally:
+            os.close(descriptor)
+        try:
+            os.link(temporary, path)
+        except FileExistsError:
+            # Another process won the race. Re-enter the validation path without
+            # replacing or weakening its key.
+            return provision_native_policy_verifier_key(guard_home, policy_integrity_key)
+        except OSError as error:
+            raise NativePolicySnapshotError("native_policy_verifier_key_write_failed") from error
     finally:
-        os.close(descriptor)
+        with suppress(OSError):
+            temporary.unlink()
     if os.name != "nt":
         try:
             path.chmod(0o600)
