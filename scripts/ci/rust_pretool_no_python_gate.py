@@ -322,11 +322,15 @@ def _worker_failures(root: Path) -> list[str]:
     )
     if "_review_raw_hook_native" not in function_calls(native_edge_snapshot):
         failures.append("HookWorkerNativeMixin._review_native_edge_with_snapshot does not invoke the native hook edge")
-    # Both PreToolUse and PostToolUse responses are rendered from the native
-    # edge result in this one function; Python only transports and renders.
-    for rendered in ("harness_json_from_native_pre_tool", "harness_json_from_native_post_tool"):
-        if rendered not in function_calls(native_edge_snapshot):
-            failures.append(f"HookWorkerNativeMixin._review_native_edge_with_snapshot does not render via {rendered}")
+    # The resident renders the harness response for the edge decision; the
+    # worker returns that rendering instead of building PostToolUse output.
+    edge_calls = function_calls(native_edge_snapshot)
+    if "_edge_harness_response" not in edge_calls:
+        failures.append(
+            "HookWorkerNativeMixin._review_native_edge_with_snapshot does not return the native edge harness response"
+        )
+    if "harness_json_from_native_post_tool" in edge_calls:
+        failures.append("HookWorkerNativeMixin._review_native_edge_with_snapshot renders PostToolUse in Python")
     if "review_post_tool" in read(native_hook) or "review_post_tool" in read(hook_worker):
         failures.append("worker decides PostToolUse in Python instead of the native edge")
     raw_edge_review = function_node(hook_worker, "_review_raw_hook_native", class_name="HookWorker")

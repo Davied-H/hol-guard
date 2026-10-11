@@ -80,18 +80,18 @@ def test_missing_native_authority_link_fails_closed(
     ("call", "replacement", "expected"),
     [
         (
-            "harness_json_from_native_post_tool(native_harness, native_result)",
-            "unavailable_render(native_harness, native_result)",
-            "does not render via harness_json_from_native_post_tool",
+            "_edge_harness_response(edge)",
+            "unavailable_render(edge)",
+            "does not return the native edge harness response",
         ),
         (
-            "harness_json_from_native_pre_tool(native_harness, native_result),\n                harness=",
-            "unavailable_render(native_harness, native_result),\n                harness=",
-            "does not render via harness_json_from_native_pre_tool",
+            "        response = _edge_harness_response(edge)\n        mediation =",
+            "        response = harness_json_from_native_post_tool(native_harness, native_result)\n        mediation =",
+            "renders PostToolUse in Python",
         ),
     ],
 )
-def test_pre_and_post_tool_must_render_from_native_edge_result(
+def test_responses_must_come_from_the_native_edge_rendering(
     worker_checkout: Path,
     call: str,
     replacement: str,
