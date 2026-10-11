@@ -45,10 +45,11 @@ pub(super) fn safe_recursive_copy_arguments(
         return false;
     }
     let target = match destination_path.symlink_metadata() {
-        // cp places the tree under an existing directory. BSD cp copies only
-        // the contents of a source spelled with a trailing slash, merging
-        // them into the directory, so that spelling is not a new path.
-        Ok(existing) if existing.is_dir() && !source.ends_with('/') => {
+        // cp places the tree under an existing directory. A source spelled
+        // with a trailing slash (BSD cp) or ending in `.` or `..` copies only
+        // its contents, merging them into the directory, so those spellings
+        // are not a new path.
+        Ok(existing) if existing.is_dir() && names_the_tree(source) => {
             let Some(name) = source_root.file_name() else {
                 return false;
             };
@@ -73,6 +74,13 @@ pub(super) fn safe_recursive_copy_arguments(
         context.cwd,
     ) && super::worktree_writes::canonical_write_target(&target)
         .is_some_and(|canonical| !canonical.starts_with(&source_root))
+}
+
+fn names_the_tree(source: &str) -> bool {
+    source
+        .rsplit('/')
+        .next()
+        .is_some_and(|last| !matches!(last, "" | "." | ".."))
 }
 
 fn recursive_flag(flag: &str) -> bool {

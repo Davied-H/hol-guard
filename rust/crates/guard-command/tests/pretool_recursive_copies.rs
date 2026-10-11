@@ -75,6 +75,9 @@ fn recursive_copies_create_new_workspace_trees_only() {
     for command in [
         "cp -R src occupied",
         "cp -R src/ existing",
+        "cp -R src/. existing",
+        "cp -R src/nested/.. existing",
+        "cp -R . existing",
         "cp -R src src/inner",
         "cp -R src src/nested/inner",
         "cp -R src existing/readme.md",
