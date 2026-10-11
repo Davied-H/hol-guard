@@ -214,7 +214,7 @@ fn git_inspection_of_linked_worktree_below_home_is_allowed_unless_forged() {
 }
 
 #[test]
-fn quoted_home_or_variable_roots_and_home_wide_listings_are_reviewed() {
+fn quoted_home_or_variable_roots_are_reviewed_and_rootless_fd_matches_dot() {
     let layout = layout("quoted-roots");
     let cwd = layout.org.join("app-portal");
     for command in [
@@ -229,7 +229,13 @@ fn quoted_home_or_variable_roots_and_home_wide_listings_are_reviewed() {
     ] {
         assert_decision(&cwd, &layout.home, command, false);
     }
-    assert_decision(&layout.home, &layout.home, "fd -e rs main", false);
+    // A rootless fd lists the cwd, exactly like an explicit `.` root.
+    for directory in [&layout.home, &cwd] {
+        assert_eq!(
+            decide(directory, &layout.home, "fd -e rs main").decision,
+            decide(directory, &layout.home, "fd -e rs main .").decision,
+        );
+    }
     for command in [
         "fd -e rs main",
         "fd -e rs main ~/Code/org/app-portal",

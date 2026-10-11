@@ -125,7 +125,7 @@ pub(super) fn safe_fd_arguments(arguments: &[String], context: ReadContext<'_>) 
             pattern_seen = true;
         }
     }
-    // Without a root fd lists the cwd, which must clear the explicit-root
-    // screens, so a listing from home itself still needs review.
-    pending.is_none() && (root_seen || tree::implicit_listing_root_allowed(context))
+    // Without a root fd lists the cwd, the same listing as an explicit `.`
+    // root, so both spellings get the same decision.
+    pending.is_none() && (root_seen || !unsafe_root(".", context))
 }
