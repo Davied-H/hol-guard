@@ -10,10 +10,8 @@ the private home too.
 
 from __future__ import annotations
 
-import atexit
+import hashlib
 import os
-import shutil
-import tempfile
 from pathlib import Path
 
 # Toolchains located under the real home keep working after HOME moves.
@@ -39,10 +37,13 @@ def isolate_user_home() -> Path:
     for variable in _HOME_OVERRIDES:
         os.environ.pop(variable, None)
     # Outside the temp root: path-trust code treats the two differently, as on a real machine.
-    parent = real_home / ".cache" / "hol-guard-tests"
-    parent.mkdir(parents=True, exist_ok=True)
-    private_home = Path(tempfile.mkdtemp(prefix="home-", dir=parent)).resolve()
-    atexit.register(shutil.rmtree, private_home, ignore_errors=True)
+    # Some parametrize IDs embed the home, and CI plans shards in a separate job,
+    # so the path must be the same for every session in this checkout.
+    checkout = str(Path(__file__).resolve().parents[1])
+    name = "home-" + hashlib.sha256(checkout.encode()).hexdigest()[:12]
+    private_home = real_home / ".cache" / "hol-guard-tests" / name
+    private_home.mkdir(parents=True, exist_ok=True)
+    private_home = private_home.resolve()
     os.environ["HOME"] = str(private_home)
     if os.name == "nt":
         os.environ["USERPROFILE"] = str(private_home)

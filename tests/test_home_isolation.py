@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import subprocess
 import sys
@@ -15,6 +16,13 @@ def test_session_home_is_private():
     assert Path("~").expanduser() == Path(private_home)
     assert "CODEX_HOME" not in os.environ
     assert "HOL_GUARD_HOME" not in os.environ
+
+
+def test_private_home_is_stable_for_shard_planning():
+    # CI collects node IDs in one job and runs them in another.
+    assert Path(os.environ["HOL_GUARD_TEST_PRIVATE_HOME"]).name == (
+        "home-" + hashlib.sha256(str(Path(__file__).resolve().parents[1]).encode()).hexdigest()[:12]
+    )
 
 
 def test_spawned_helpers_inherit_private_home():
