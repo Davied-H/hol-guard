@@ -41,6 +41,7 @@ use crate::guard_store_outbox_requeue::{repair_rejected_correlation, requeue_met
 use crate::guard_store_receipt_reads as receipt_reads;
 use crate::guard_store_receipt_writes as receipt_writes;
 use crate::guard_store_sessions as sessions;
+use crate::guard_store_storage_maintenance as storage_maintenance;
 
 const MAX_BUSY_TIMEOUT_MS: u64 = 600_000;
 const CACHE_SIZE_KIB: i64 = 256 * 1024;
@@ -248,7 +249,8 @@ fn method_kind(method: &str) -> Option<Kind> {
         | "get_receipt"
         | "get_receipt_for_approval_request"
         | "get_latest_receipt"
-        | "receipt_decision_counts" => Kind::Read,
+        | "receipt_decision_counts"
+        | "run_storage_housekeeping" => Kind::Read,
         "list_command_activity_page"
         | "command_activity_analytics"
         | "list_command_activity_invalidations"
@@ -295,7 +297,8 @@ fn method_kind(method: &str) -> Option<Kind> {
         | "count_receipts"
         | "receipt_summary_between"
         | "receipt_analytics"
-        | "reconcile_receipt_events" => Kind::Write,
+        | "reconcile_receipt_events"
+        | "maintain_storage" => Kind::Write,
         _ => return None,
     })
 }
@@ -445,6 +448,8 @@ fn dispatch(
         "receipt_analytics" => receipt_reads::analytics(connection, args),
         "receipt_decision_counts" => receipt_reads::decision_counts(connection, args),
         "reconcile_receipt_events" => receipt_reads::reconcile_events(connection, args),
+        "maintain_storage" => storage_maintenance::maintain(connection, args),
+        "run_storage_housekeeping" => storage_maintenance::housekeeping(connection),
         _ => Err(StoreError::Invalid("native_guard_store_method_unknown")),
     }
 }

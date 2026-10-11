@@ -154,6 +154,9 @@ mod guard_store_receipts_vectors_tests;
 mod guard_store_sessions;
 #[cfg(test)]
 mod guard_store_sessions_vectors_tests;
+mod guard_store_storage_maintenance;
+#[cfg(test)]
+mod guard_store_storage_maintenance_vectors_tests;
 #[cfg(test)]
 mod guard_store_vectors_tests;
 mod hardening;
