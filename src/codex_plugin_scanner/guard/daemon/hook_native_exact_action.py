@@ -188,22 +188,24 @@ def native_review_binding(
         return None
 
 
-def _answer(query: Mapping[str, object], guard_home: Path | None) -> dict[str, Any]:
-    if query["kind"] == "exact_action":
-        fields: dict[str, Any] = {"token": (str, type(None)), "once_only_reason": (str, type(None))}
+def _validate_exact_action(payload: dict[str, Any]) -> None:
+    reason = payload["once_only_reason"]
+    if reason is not None and reason not in _ONCE_ONLY_REASONS:
+        raise NativeExactActionError(_OPERATION.invalid)
 
-        def validate(payload: dict[str, Any]) -> None:
-            reason = payload["once_only_reason"]
-            if reason is not None and reason not in _ONCE_ONLY_REASONS:
-                raise NativeExactActionError(_OPERATION.invalid)
-    else:
-        fields = {"binding": (str, type(None))}
-        validate = None
+
+def _answer(query: Mapping[str, object], guard_home: Path | None) -> dict[str, Any]:
+    is_exact = query["kind"] == "exact_action"
+    fields: dict[str, Any] = (
+        {"token": (str, type(None)), "once_only_reason": (str, type(None))}
+        if is_exact
+        else {"binding": (str, type(None))}
+    )
     return _decide(
         query,
         guard_home,
         fields,
-        validate,
+        _validate_exact_action if is_exact else None,
         operation=_OPERATION,
         max_request_bytes=_MAX_REQUEST_BYTES,
     )
