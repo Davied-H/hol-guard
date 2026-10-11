@@ -31,7 +31,7 @@
         "command": "npx wrangler --version"
       },
       "cwd": "worktree",
-      "expect": "quiet"
+      "expect": "always"
     },
     {
       "id": "mkdir-build-out",
