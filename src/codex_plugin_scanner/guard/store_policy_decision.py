@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from .policy_integrity import is_remote_policy_source
-from .store_policy_source_context import build_policy_source_context_index
 
 
 def get_policy_decision_payload(
@@ -28,21 +27,8 @@ def get_policy_decision_payload(
         row = connection.execute(query, (decision_id, approval_gate_policy_source)).fetchone()
         if row is None:
             return None
-        source_context_index = build_policy_source_context_index(
-            connection,
-            items=[
-                (
-                    str(row["harness"]),
-                    str(row["artifact_id"]) if row["artifact_id"] is not None else None,
-                    str(row["artifact_hash"]) if row["artifact_hash"] is not None else None,
-                )
-            ],
-        )
-        payload = store._policy_decision_dict_from_row(
-            connection,
-            row,
-            source_context_index=source_context_index,
-        )
+        (source_context,) = store._policy_source_contexts([row])
+        payload = store._policy_decision_dict_from_row(row, source_context=source_context)
         if not is_remote_policy_source(row["source"]):
             generation = state.get("generation")
             trusted_generation = (
