@@ -31,7 +31,7 @@ impl InspectionHost for Host {
 }
 
 /// Mirrors the recorder stand-in for the native GitHub CLI classifier.
-fn stand_in(args: &[String]) -> GitHubCommandAssessment {
+pub(crate) fn stand_in(args: &[String]) -> GitHubCommandAssessment {
     let joined = args.join(" ");
     let capability = if joined.starts_with("pr merge") {
         GitHubCommandCapability::MergeRemote

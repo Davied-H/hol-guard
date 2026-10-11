@@ -98,7 +98,7 @@ pub(crate) fn low_risk_compound_developer_execution_context(
     compound_developer_effect_graph(command_text, inputs).map(|graph| graph.context)
 }
 
-fn starts_with_literal_cd(context: &ShellExecutionContext) -> bool {
+pub(crate) fn starts_with_literal_cd(context: &ShellExecutionContext) -> bool {
     if !context.complete || context.segments.is_empty() {
         return false;
     }

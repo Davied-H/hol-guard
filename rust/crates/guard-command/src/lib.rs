@@ -183,6 +183,7 @@ mod sfrs_selectors;
 mod sfrs_shell_tokens;
 mod sfrs_shlex;
 mod sfrs_source_edit;
+mod sfrs_source_edit_context;
 mod sfrs_static_safety;
 #[cfg(test)]
 mod sfrs_static_vectors;

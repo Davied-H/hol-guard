@@ -5,6 +5,7 @@ use std::path::Path;
 use serde_json::Value;
 
 use crate::codex_output_env::{Ctx, GitCheck, GitRun, InspectionHost};
+use crate::sfrs_developer_graph::GraphInputs;
 use crate::sfrs_git_cached_diff::{
     cached_diff_kind, cached_diff_operands_are_safe, command_has_execution_routed_git_cached_diff,
     command_has_owned_git_cached_diff, executable_tokens, git_diff_operands,
@@ -14,6 +15,7 @@ use crate::sfrs_git_index::{
     index_scan_rg_args_are_safe, is_low_risk_git_index_inspection,
     owned_git_index_inspection_action_class,
 };
+use crate::sfrs_source_edit_context::low_risk_developer_execution_context;
 use guard_contracts::CompoundGitSegmentV1;
 
 /// Mirrors the recorder stand-ins for the resident git services.
@@ -129,6 +131,30 @@ pub(crate) fn run(function: &str, args: &[Value]) -> Option<Value> {
             } else {
                 owned_git_index_inspection_action_class(text, cwd, Some(home), &ctx)
                     .map_or(Value::Null, Value::from)
+            }
+        }
+        "low_risk_developer_context" => {
+            let text = args[0].as_str().expect("text");
+            let home = Path::new(args[2].as_str().expect("home"));
+            let ctx = Ctx::new(&plain, "/", &home.to_string_lossy());
+            let inputs = GraphInputs {
+                cwd: args[1].as_str().map(Path::new),
+                home_dir: home,
+                ctx: &ctx,
+                managed_bin_dirs: &[],
+                classify_github: crate::sfrs_developer_graph_vectors::stand_in,
+            };
+            match low_risk_developer_execution_context(text, &inputs) {
+                None => Value::Null,
+                Some(context) => serde_json::json!({
+                    "complete": context.complete,
+                    "segments": context.segments.len(),
+                    "command_text": context.command_text,
+                    "workspace_root": context
+                        .workspace_root
+                        .as_ref()
+                        .map(|path| path.to_string_lossy().into_owned()),
+                }),
             }
         }
         _ => return None,
