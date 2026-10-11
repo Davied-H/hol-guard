@@ -40,6 +40,7 @@ use crate::guard_store_outbox_queries as queries;
 use crate::guard_store_outbox_reads as reads;
 use crate::guard_store_outbox_recover::recover_sequences;
 use crate::guard_store_outbox_requeue::{repair_rejected_correlation, requeue_method};
+use crate::guard_store_policy_source_context::policy_source_contexts;
 use crate::guard_store_receipt_reads as receipt_reads;
 use crate::guard_store_receipt_rollups as receipt_rollups;
 use crate::guard_store_receipt_writes as receipt_writes;
@@ -265,7 +266,8 @@ fn method_kind(method: &str) -> Option<Kind> {
         | "get_latest_receipt"
         | "receipt_decision_counts"
         | "run_storage_housekeeping"
-        | "count_receipts" => Kind::Read,
+        | "count_receipts"
+        | "policy_source_contexts" => Kind::Read,
         "list_command_activity_page"
         | "command_activity_analytics"
         | "list_command_activity_invalidations"
@@ -465,6 +467,7 @@ fn dispatch(
         }
         "get_latest_receipt" => receipt_reads::get_latest(connection, args),
         "count_receipts" => receipt_reads::count(connection, args),
+        "policy_source_contexts" => policy_source_contexts(connection, args),
         "receipt_summary_between" => receipt_reads::summary_between(connection, args),
         "receipt_analytics" => receipt_reads::analytics(connection, args),
         "receipt_decision_counts" => receipt_reads::decision_counts(connection, args),
