@@ -8,6 +8,17 @@ use guard_scanner::secret_detection::{detector_version, scan_secret_text, secret
 const VECTORS: &str = include_str!("../testdata/secrets_cli/secrets_cli_vectors.json");
 #[cfg(unix)]
 const ROOT_TOKEN: &str = "<ROOT>";
+/// Inherited repository-location variables (set inside a Git hook) override
+/// `git -C`; fixture commands drop them so they never touch the caller's repo.
+#[cfg(unix)]
+const GIT_LOCATION_ENV: [&str; 6] = [
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_COMMON_DIR",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+];
 #[cfg(unix)]
 const GIT_ENV: [(&str, &str); 8] = [
     ("GIT_CONFIG_GLOBAL", "/dev/null"),
@@ -101,7 +112,11 @@ mod cli {
     }
 
     fn git(root: &Path, args: &[&str]) {
-        let status = Command::new("git")
+        let mut command = Command::new("git");
+        for name in GIT_LOCATION_ENV {
+            command.env_remove(name);
+        }
+        let status = command
             .arg("-C")
             .arg(root)
             .args(args)

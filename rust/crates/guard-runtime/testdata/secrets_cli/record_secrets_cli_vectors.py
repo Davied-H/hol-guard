@@ -1,6 +1,8 @@
 """Record HOL Guard Secrets parity vectors from the Python implementation.
 
-Run from a checkout that still has `codex_plugin_scanner.guard.secrets`:
+The Python package was removed when the native runtime took over, so run
+this from a checkout that still has it (for example commit 55e051a711),
+with that checkout's environment:
 
     python record_secrets_cli_vectors.py <repo-root> <output.json>
 
@@ -34,6 +36,16 @@ GIT_ENV = {
     "GIT_AUTHOR_DATE": "2026-01-01T00:00:00Z",
     "GIT_COMMITTER_DATE": "2026-01-01T00:00:00Z",
 }
+# Inherited repository-location variables (set when running inside a Git
+# hook) override `git -C`, so fixture commands would touch the caller's repo.
+GIT_LOCATION_ENV = (
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_COMMON_DIR",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+)
 TEXT_TEST_MODULES = (
     "tests/test_guard_secret_detection.py",
     "tests/test_guard_secret_fixture_precision.py",
@@ -58,6 +70,22 @@ PEM = _p(
 )
 DB_URL = _p("postgres://app:", "Xk29vQp7LmN4rT8w", "@db.internal:5432/app")
 ASSIGN = _p("PAYMENTS_API_SECRET=", "q8Vz2Lm4Np7Rt1Wx9Ky3Hb6Jd5Fg0Sc")
+MISSING_BLOB = "0123456789abcdef0123456789abcdef01234567"
+
+# Direct `scan_secret_text` calls beyond the test modules: the fixture-marker
+# context window is three lines either side (Python `splitlines()` slicing),
+# and only `str.isdigit()` characters count as a digit class.
+EXTRA_TEXT_CASES: list[tuple[str, dict[str, object]]] = [
+    (f"it('loads', () => {{\n  const token = '{GITHUB}'\n", {"path": "tests/fixtures/client.ts"}),
+    (f"it('loads', () => {{\n\n\n\n  const token = '{GITHUB}'\n", {"path": "tests/fixtures/client.ts"}),
+    (f"it('loads', () => {{\r\n\r\n\r\n\r\n  const token = '{GITHUB}'\n", {"path": "tests/fixtures/client.ts"}),
+    (f"it('loads', () => {{\u2028\u2028\u2028\u2028  const token = '{GITHUB}'\n", {"path": "tests/fixtures/client.ts"}),
+    (f"it('loads', () => {{\r\r\r\r  const token = '{GITHUB}'\n", {"path": "tests/fixtures/client.ts"}),
+    (f"const token = '{GITHUB}'\n\n\n\nexpect(token)\n", {"path": "tests/fixtures/client.ts"}),
+    ("TOKEN=aaabcdefABCDEFGHIJK\u2167\n", {"path": "src/config.py"}),
+    ("TOKEN=aaabcdefABCDEFGHIJK\u00b2\n", {"path": "src/config.py"}),
+    ("TOKEN=aaabcdefABCDEFGHIJK\u0663\n", {"path": "src/config.py"}),
+]
 
 
 def _write(path: str, text: str) -> dict[str, object]:
@@ -297,6 +325,21 @@ CLI_CASES: list[dict[str, object]] = [
         "hooks": True,
     },
     {
+        "name": "staged_blob_oversized",
+        "setup": [*INIT, _write("config.env", f"GITHUB_TOKEN={GITHUB}\n"), _git("add", "config.env")],
+        "request": _scan("staged", max_file_bytes=8),
+    },
+    {
+        "name": "staged_blob_unavailable",
+        "setup": [
+            *INIT,
+            _write("config.env", f"GITHUB_TOKEN={GITHUB}\n"),
+            _git("add", "config.env"),
+            _git("update-index", "--add", "--cacheinfo", f"100644,{MISSING_BLOB},ghost.env"),
+        ],
+        "request": _scan("staged"),
+    },
+    {
         "name": "uninstall_restores_backup_when_hook_missing",
         "setup": [*INIT, _write(".git/hooks/pre-commit.hol-guard-user", "#!/bin/sh\necho mine\n")],
         "request": _hook("uninstall-hook"),
@@ -450,6 +493,8 @@ def _record_text(repo: Path) -> list[dict[str, object]]:
                     function(**dict(zip(names, values, strict=True)))
             elif not parameters:
                 function()
+    for text, kwargs in EXTRA_TEXT_CASES:
+        recording(text, **kwargs)
     unique: dict[str, dict[str, object]] = {}
     for call in calls:
         unique.setdefault(json.dumps([call["text_b64"], call["kwargs"]], sort_keys=True), call)
@@ -459,6 +504,8 @@ def _record_text(repo: Path) -> list[dict[str, object]]:
 def main() -> int:
     repo = Path(sys.argv[1]).resolve()
     output = Path(sys.argv[2])
+    for name in GIT_LOCATION_ENV:
+        os.environ.pop(name, None)
     os.environ.update(GIT_ENV)
     from codex_plugin_scanner.guard.secrets.secret_detection import detector_version
 

@@ -245,3 +245,24 @@ def test_hook_install_refusal_returns_two(tmp_path: Path) -> None:
     assert exit_code == 2
     assert output == ""
     assert "custom core.hooksPath" in error
+
+
+def test_interrupt_stops_native_scan_before_propagating(monkeypatch: pytest.MonkeyPatch) -> None:
+    import _thread
+    import threading
+
+    from codex_plugin_scanner.guard import codex_hook_launch_runtime
+    from codex_plugin_scanner.guard.secrets import cli as secrets_cli
+
+    stopped = threading.Event()
+
+    def fake_run(command: object, *, stop_event: threading.Event, **options: object) -> object:
+        threading.Timer(0.3, _thread.interrupt_main).start()
+        assert stop_event.wait(10)
+        stopped.set()
+        return SimpleNamespace(returncode=None)
+
+    monkeypatch.setattr(codex_hook_launch_runtime, "run_isolated_hook_process", fake_run)
+    with pytest.raises(KeyboardInterrupt):
+        secrets_cli._run_interruptibly(("runtime",), input_text="{}")
+    assert stopped.is_set()

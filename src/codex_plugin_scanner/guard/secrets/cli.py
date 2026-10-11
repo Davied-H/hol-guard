@@ -11,6 +11,7 @@ import argparse
 import json
 import os
 import sys
+import threading
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -39,7 +40,6 @@ class SecretsNativeError(RuntimeError):
 def _native_request(request: Mapping[str, object]) -> dict[str, Any]:
     """Run one ``secrets-cli`` request and return its ``{ok, result|error}`` reply."""
 
-    from ..codex_hook_launch_runtime import run_isolated_hook_process
     from ..native_runtime import native_runtime_status
 
     status = native_runtime_status()
@@ -54,7 +54,7 @@ def _native_request(request: Mapping[str, object]) -> dict[str, Any]:
     runtime = status.identity.path
     # The scan runs the user's own Git against the user's repository, so it
     # keeps the caller's environment exactly as the Python scanner did.
-    completed = run_isolated_hook_process(
+    completed = _run_interruptibly(
         (str(runtime), SECRETS_CLI_COMMAND, "--stdin"),
         input_text=json.dumps(dict(request), sort_keys=True, separators=(",", ":")),
         cwd=runtime.parent,
@@ -76,6 +76,44 @@ def _native_request(request: Mapping[str, object]) -> dict[str, Any]:
     if not isinstance(response, dict) or not isinstance(response.get("ok"), bool):
         raise SecretsNativeError(_NATIVE_FAILED)
     return response
+
+
+def _run_interruptibly(command: Sequence[str], **options: Any) -> Any:
+    """Run the runtime on a worker thread so Ctrl-C stops it.
+
+    The child runs in its own session and never receives the terminal's
+    SIGINT. On interrupt the stop event ends it through the same containment
+    path as the deadline before the interrupt propagates.
+    """
+
+    from ..codex_hook_launch_runtime import run_isolated_hook_process
+
+    stop = threading.Event()
+    done = threading.Event()
+    outcome: list[Any] = []
+
+    def run() -> None:
+        try:
+            outcome.append(run_isolated_hook_process(command, stop_event=stop, **options))
+        except BaseException as error:  # re-raised on the calling thread
+            outcome.append(error)
+        finally:
+            done.set()
+
+    # An interrupted `Thread.join` can report the worker finished early, so
+    # completion is tracked with an event.
+    threading.Thread(target=run, name="hol-guard-secrets-cli", daemon=True).start()
+    try:
+        while not done.wait(0.2):
+            pass
+    except KeyboardInterrupt:
+        stop.set()
+        done.wait()
+        raise
+    result = outcome[0]
+    if isinstance(result, BaseException):
+        raise result
+    return result
 
 
 def _call(request: Mapping[str, object]) -> dict[str, Any] | None:
@@ -177,7 +215,12 @@ def _write_scan(result: Mapping[str, Any], *, json_output: bool) -> None:
 
 
 def _run_scan(args: argparse.Namespace) -> int:
-    scope = "staged" if args.staged else "history" if args.history else "working"
+    if args.staged:
+        scope = "staged"
+    elif args.history:
+        scope = "history"
+    else:
+        scope = "working"
     request: dict[str, object] = {
         "command": "scan",
         "target": _target(args.target),
