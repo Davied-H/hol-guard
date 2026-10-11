@@ -89,8 +89,6 @@ def macos_notification_guidance(notifier_path: str | None) -> str:
 _NOTIFIED_APPROVAL_IDS: set[str] = set()
 _NOTIFICATION_ATTEMPTS_IN_FLIGHT: set[str] = set()
 _NOTIFIED_APPROVAL_IDS_LOCK = threading.Lock()
-_NOTIFICATION_SETUP_PATHS_IN_FLIGHT: set[Path] = set()
-_NOTIFICATION_SETUP_LOCK = threading.Lock()
 
 
 def notify_pending_approval_once(

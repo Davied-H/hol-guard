@@ -321,25 +321,6 @@ def sign_workflow_capability(claim: WorkflowCapabilityClaim, *, key: bytes, key_
     )
 
 
-def _verify_workflow_capability_signature_fields(signed: SignedWorkflowCapability, *, key: bytes, key_id: str) -> None:
-    _validate_key(key)
-    if type(signed) is not SignedWorkflowCapability or type(signed.claim) is not WorkflowCapabilityClaim:
-        raise WorkflowCapabilityError("invalid_signed_capability")
-    if signed.envelope_schema != WORKFLOW_CAPABILITY_ENVELOPE_SCHEMA:
-        raise WorkflowCapabilityError("unsupported_capability_envelope")
-    if signed.claim.schema_version != WORKFLOW_CAPABILITY_SCHEMA:
-        raise WorkflowCapabilityError("unsupported_capability_schema")
-    if signed.algorithm != WORKFLOW_CAPABILITY_ALGORITHM or signed.claim.algorithm != signed.algorithm:
-        raise WorkflowCapabilityError("unsupported_capability_algorithm")
-    validate_workflow_capability_identifier("key_id", signed.key_id)
-    _validate_sha256("signature", signed.signature)
-    if signed.key_id != key_id:
-        raise WorkflowCapabilityError("capability_key_mismatch")
-    expected = sign_workflow_capability(signed.claim, key=key, key_id=key_id).signature
-    if not hmac.compare_digest(expected, signed.signature):
-        raise WorkflowCapabilityError("capability_signature_invalid")
-
-
 def sign_workflow_capability_receipt(
     receipt: WorkflowCapabilityReceipt, *, key: bytes, key_id: str
 ) -> SignedWorkflowCapabilityReceipt:

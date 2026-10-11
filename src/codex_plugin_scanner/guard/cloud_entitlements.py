@@ -19,31 +19,10 @@ GuardSubscriptionStatus = Literal[
     "past_due",
     "canceled",
 ]
-GuardCloudErrorCategory = Literal[
-    "plan_limit",
-    "billing",
-    "trial",
-    "sync_paused",
-    "authentication",
-    "cloud_error",
-]
 
 _GUARD_PLAN_IDS = frozenset({"free", "solo", "pro", "team", "enterprise"})
 _GUARD_SUBSCRIPTION_STATUSES = frozenset({"free", "trialing", "active", "past_due", "canceled"})
-_PLAN_LIMIT_CODES = frozenset(
-    {
-        "feature_not_in_plan",
-        "device_limit_reached",
-        "retention_limit_reached",
-        "storage_limit_reached",
-    }
-)
-_BILLING_CODES = frozenset({"subscription_past_due"})
-_TRIAL_CODES = frozenset({"trial_expired"})
-_SYNC_PAUSED_CODES = frozenset({"cloud_sync_paused_plan_limit"})
-_KNOWN_PLAN_ERROR_CODES = _PLAN_LIMIT_CODES | _BILLING_CODES | _TRIAL_CODES | _SYNC_PAUSED_CODES
 _ALLOWED_FEATURE_VALUE_TYPES = (bool, str, int, float, type(None))
-_ALLOWED_ACTION_HOSTS = frozenset({"hol.org", "www.hol.org"})
 
 
 @dataclass(frozen=True)
@@ -61,23 +40,6 @@ class GuardCloudEntitlements:
     cloud_storage_bytes: int | None = None
     cloud_storage_used_bytes: int | None = None
     features: dict[str, bool | str | int | float | None] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class GuardCloudPlanError:
-    """Normalized Cloud failure that is explicitly separate from local safety."""
-
-    code: str
-    category: GuardCloudErrorCategory
-    message: str
-    http_status: int | None = None
-    plan_id: GuardPlanId | None = None
-    limit: int | None = None
-    current: int | None = None
-    upgrade_plan_id: GuardPlanId | None = None
-    manage_url: str | None = None
-    upgrade_url: str | None = None
-    local_protection_affected: bool = False
 
 
 def _mapping(value: object) -> Mapping[str, object] | None:
