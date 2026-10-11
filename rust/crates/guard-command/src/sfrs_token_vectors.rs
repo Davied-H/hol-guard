@@ -5,13 +5,28 @@ use std::io::Read;
 
 use serde_json::Value;
 
+use crate::codex_output_env::{Ctx, GitCheck, GitRun, InspectionHost};
 use crate::sfrs_docker_args::{
     docker_build_args_are_sensitive, docker_buildx_subcommand_index,
     docker_subcommand_help_requested, docker_subcommand_index, shell_variable_names,
 };
+use crate::sfrs_quote_tokens::{shell_token_segments, shell_tokens_preserving_quote_context};
+use crate::sfrs_read_only_filters::{
+    read_only_lookup_arg_is_redirection, read_only_lookup_filter_segment_is_safe,
+    read_only_lookup_head_tail_args_are_safe, read_only_lookup_sed_args_are_safe,
+    read_only_lookup_target_is_safe, split_attached_redirection_token,
+};
+use crate::sfrs_search_filters::{
+    read_only_lookup_filter_grep_args_are_safe, read_only_lookup_filter_rg_args_are_safe,
+};
 use crate::sfrs_shell_tokens::{
     iter_shell_command_segments, normalized_shell_command_name, shell_segment_primary_command,
     split_shell_parts,
+};
+use crate::shell_secret_read_support::{
+    cat_file_operand_tokens, plain_file_operand_tokens, ripgrep_args_expand_hidden_files,
+    search_file_operand_roles, search_glob_pattern_is_safe, search_operands_are_safe,
+    sed_file_operand_tokens, shell_segment_file_operand_tokens,
 };
 
 fn records() -> Vec<Value> {
@@ -89,5 +104,142 @@ fn tokenization_helpers_match_recorded_python() {
         "{} differ, first: {:#?}",
         failures.len(),
         &failures[..failures.len().min(8)]
+    );
+}
+
+struct NoEnvHost;
+
+impl InspectionHost for NoEnvHost {
+    fn env(&self, _: &str) -> Option<String> {
+        None
+    }
+    fn git_executable(&self) -> Option<String> {
+        None
+    }
+    fn git_safety(&self, _: GitCheck, _: Option<&str>, _: &[String]) -> bool {
+        false
+    }
+    fn git_binary_trusted(&self, _: &str, _: &str) -> bool {
+        false
+    }
+    fn run_git(&self, _: &str, _: &[String], _: &str) -> GitRun {
+        GitRun::Failed("vector host does not run git")
+    }
+}
+
+fn pair(token: &crate::sfrs_quote_tokens::QuotedToken) -> Value {
+    serde_json::json!([token.raw, token.plain])
+}
+
+#[test]
+fn filters_and_quote_tokens_match_recorded_python() {
+    let host = NoEnvHost;
+    let ctx = Ctx::new(&host, "/", "/");
+    let mut failures = Vec::new();
+    for record in records() {
+        let text = record["text"].as_str().expect("text");
+        let parts = strings(&record["parts"]);
+        let filters = &record["filters"];
+        for (index, part) in parts.iter().enumerate() {
+            let actual = serde_json::json!([
+                read_only_lookup_target_is_safe(part, false, None),
+                read_only_lookup_target_is_safe(part, true, None),
+            ]);
+            if actual != filters["targets"][index] {
+                failures.push(format!("target {part:?}: {actual}"));
+            }
+            let split = split_attached_redirection_token(part)
+                .map(|(prefix, fd, op, target)| serde_json::json!([prefix, fd, op, target]));
+            let actual = serde_json::json!([
+                read_only_lookup_arg_is_redirection(part),
+                split.unwrap_or(Value::Null)
+            ]);
+            if actual != filters["redirections"][index] {
+                failures.push(format!("redirection {part:?}: {actual}"));
+            }
+        }
+        let segments = iter_shell_command_segments(&parts);
+        for (index, segment) in segments.iter().enumerate() {
+            let (command, args) = (segment[0].as_str(), &segment[1..]);
+            let actual = serde_json::json!([
+                read_only_lookup_filter_segment_is_safe(command, args, None, false, &ctx),
+                read_only_lookup_filter_segment_is_safe(command, args, None, true, &ctx),
+                read_only_lookup_sed_args_are_safe(args, true, None),
+                read_only_lookup_head_tail_args_are_safe(args, true, None),
+                read_only_lookup_filter_grep_args_are_safe(args, None),
+                read_only_lookup_filter_rg_args_are_safe(args, &ctx),
+            ]);
+            if actual != filters["segments"][index] {
+                failures.push(format!("filter segment {segment:?}: {actual}"));
+            }
+        }
+        let tokens = shell_tokens_preserving_quote_context(text);
+        let actual: Vec<Value> = tokens.iter().map(pair).collect();
+        if Value::Array(actual) != record["quote"]["tokens"] {
+            failures.push(format!("quote tokens {text:?}"));
+        }
+        let quoted: Vec<Value> = shell_token_segments(&tokens)
+            .iter()
+            .map(|segment| Value::Array(segment.iter().map(pair).collect()))
+            .collect();
+        if Value::Array(quoted) != record["quote"]["segments"] {
+            failures.push(format!("quote segments {text:?}"));
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "{} differ, first: {:#?}",
+        failures.len(),
+        &failures[..failures.len().min(8)]
+    );
+}
+
+#[test]
+fn local_read_operands_match_recorded_python() {
+    let mut failures = Vec::new();
+    for record in records() {
+        let text = record["text"].as_str().expect("text");
+        let parts = strings(&record["parts"]);
+        let operands = &record["operands"];
+        for (index, part) in parts.iter().enumerate() {
+            let actual = serde_json::json!(search_glob_pattern_is_safe(part, None));
+            if actual != operands["globs"][index] {
+                failures.push(format!("glob {part:?}: {actual}"));
+            }
+        }
+        let segments = iter_shell_command_segments(&parts);
+        for (index, segment) in segments.iter().enumerate() {
+            let args = &segment[1..];
+            let expected = &operands["segments"][index];
+            let roles = |name: &str| -> Value {
+                search_file_operand_roles(name, args)
+                    .into_iter()
+                    .map(|(operand, glob)| serde_json::json!([operand, glob]))
+                    .collect()
+            };
+            let actual = serde_json::json!({
+                "tokens": shell_segment_file_operand_tokens(segment),
+                "hidden": ripgrep_args_expand_hidden_files(args),
+                "roles": [roles("grep"), roles("rg")],
+                "cat": cat_file_operand_tokens(args),
+                "plain": plain_file_operand_tokens(args),
+                "sed": sed_file_operand_tokens(args),
+                "search": [
+                    search_operands_are_safe("grep", args, None),
+                    search_operands_are_safe("rg", args, None),
+                ],
+            });
+            if &actual != expected {
+                failures.push(format!(
+                    "operands {segment:?}\n  {actual}\n  {expected} ({text:?})"
+                ));
+            }
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "{} differ, first: {:#?}",
+        failures.len(),
+        &failures[..failures.len().min(6)]
     );
 }

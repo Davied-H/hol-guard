@@ -18,8 +18,22 @@ enum State {
 const WHITESPACE: &[char] = &[' ', '\t', '\r', '\n'];
 const PUNCTUATION: &[char] = &[';', '&', '|'];
 
-fn is_punctuation(c: char) -> bool {
-    PUNCTUATION.contains(&c)
+/// Lexer configuration: the punctuation characters and whether `#` starts a
+/// comment (`shlex.shlex.commenters`).
+#[derive(Clone, Copy)]
+pub(crate) struct Lexer {
+    punctuation: &'static [char],
+    comments: bool,
+}
+
+impl Lexer {
+    fn is_punctuation(self, c: char) -> bool {
+        self.punctuation.contains(&c)
+    }
+
+    fn is_comment(self, c: char) -> bool {
+        self.comments && c == '#'
+    }
 }
 
 /// cmd and PowerShell treat backslash as a path separator, so the lexer drops
@@ -35,15 +49,32 @@ fn is_quote(c: char) -> bool {
 /// Lexer error (`ValueError`) text; callers only branch on failure.
 pub(crate) type LexError = &'static str;
 
+/// The request classifier's lexer: punctuation `;&|` and `#` comments.
+pub(crate) const COMMAND_LEXER: Lexer = Lexer {
+    punctuation: PUNCTUATION,
+    comments: true,
+};
+
+/// The directory-creation lexer: punctuation `;&|<>()` and no comments.
+pub(crate) const STRICT_LEXER: Lexer = Lexer {
+    punctuation: &[';', '&', '|', '<', '>', '(', ')'],
+    comments: false,
+};
+
 /// Split `text` into shlex tokens, or the lexer's `ValueError`.
 pub(crate) fn split_punctuation(text: &str) -> Result<Vec<String>, LexError> {
+    split_with(COMMAND_LEXER, text)
+}
+
+/// Split `text` with the given lexer configuration.
+pub(crate) fn split_with(lexer: Lexer, text: &str) -> Result<Vec<String>, LexError> {
     let chars: Vec<char> = text.chars().collect();
     let mut position = 0usize;
     let mut pushback: Vec<char> = Vec::new();
     let mut tokens = Vec::new();
     let mut state = State::Blank;
     loop {
-        let (token, next) = read_token(&chars, &mut position, &mut pushback, state)?;
+        let (token, next) = read_token(lexer, &chars, &mut position, &mut pushback, state)?;
         state = next;
         match token {
             Some(token) => tokens.push(token),
@@ -53,6 +84,7 @@ pub(crate) fn split_punctuation(text: &str) -> Result<Vec<String>, LexError> {
 }
 
 fn read_token(
+    lexer: Lexer,
     chars: &[char],
     position: &mut usize,
     pushback: &mut Vec<char>,
@@ -87,12 +119,12 @@ fn read_token(
                     if !token.is_empty() || quoted {
                         break;
                     }
-                } else if c == '#' {
+                } else if lexer.is_comment(c) {
                     skip_line(chars, position);
                 } else if is_escape(c) {
                     escaped_state = State::Word;
                     state = State::Escape;
-                } else if is_punctuation(c) {
+                } else if lexer.is_punctuation(c) {
                     token.push(c);
                     state = State::Punct;
                 } else if is_quote(c) {
@@ -138,14 +170,14 @@ fn read_token(
                     if !token.is_empty() || quoted {
                         break;
                     }
-                } else if c == '#' {
+                } else if lexer.is_comment(c) {
                     skip_line(chars, position);
                     state = State::Blank;
                     if !token.is_empty() || quoted {
                         break;
                     }
                 } else if state == State::Punct {
-                    if is_punctuation(c) {
+                    if lexer.is_punctuation(c) {
                         token.push(c);
                     } else {
                         pushback.push(c);
@@ -157,7 +189,7 @@ fn read_token(
                 } else if is_escape(c) {
                     escaped_state = State::Word;
                     state = State::Escape;
-                } else if !is_punctuation(c) {
+                } else if !lexer.is_punctuation(c) {
                     token.push(c);
                 } else {
                     pushback.push(c);

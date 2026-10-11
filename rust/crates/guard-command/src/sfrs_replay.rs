@@ -13,6 +13,7 @@ use serde_json::{json, Map, Value};
 use crate::codex_output_env::{Ctx, GitCheck, GitRun, InspectionHost};
 use crate::hook_adapter_value::{OMap, OValue};
 use crate::sfrs_benign_reads::is_explicitly_benign_native_file_read_request;
+use crate::sfrs_read_only_filters::read_only_lookup_target_is_safe;
 use crate::sfrs_requests::{
     build_file_read_request_artifact, build_file_write_request_artifact, classify_sensitive_path,
     command_list_candidate_texts, extract_sensitive_file_read_request,
@@ -33,6 +34,7 @@ pub fn implements(entry: &str) -> bool {
             | "build_file_read_request_artifact"
             | "build_file_write_request_artifact"
             | "is_explicitly_benign_native_file_read_request"
+            | "read_only_lookup_target_is_safe"
     )
 }
 
@@ -121,6 +123,11 @@ pub fn replay_entry(entry: &str, args: &Value, _evaluation: &Value) -> Result<Va
                 &ctx,
             )))
         }
+        "read_only_lookup_target_is_safe" => Ok(json!(read_only_lookup_target_is_safe(
+            str_arg(args, "target").unwrap_or_default(),
+            args["allow_dirs"].as_bool().unwrap_or(false),
+            path_arg(args, "home_dir").as_deref(),
+        ))),
         other => Err(format!("entry {other} is not implemented")),
     }
 }
