@@ -17,7 +17,7 @@ AUTHENTICATION_FAILED_REASON = (
     "HOL Guard could not authenticate the local daemon. Run `hol-guard daemon repair` from a terminal, then retry."
 )
 DAEMON_UNAVAILABLE_REASON = (
-    "HOL Guard's local daemon did not answer before the hook deadline and kept this action blocked. "
+    "HOL Guard's local daemon was not ready before the hook deadline and kept this action blocked. "
     "No approval was requested; retry the action. "
     "If this keeps happening, run `hol-guard daemon repair` from a terminal."
 )
@@ -30,10 +30,13 @@ OVERLOAD_REASON = (
 )
 
 # Codes from ``_daemon_failure_reason`` that mean the daemon never answered:
-# it timed out, refused the connection, or restarted mid-request. Any other
-# code means it answered but could not be trusted, so the repair text stays.
+# it had not started, was stopped or restarting, timed out, or refused the
+# connection. Any other code means it answered but could not be trusted, so
+# the repair text stays.
 UNANSWERED_DAEMON_CODES = frozenset(
     {
+        "daemon_state_missing",
+        "daemon_state_stopped",
         "daemon_transport_timeout",
         "daemon_connection_refused",
         "daemon_transport_unavailable",

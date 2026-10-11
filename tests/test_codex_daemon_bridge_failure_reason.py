@@ -95,3 +95,29 @@ def test_bridge_timeout_denies_with_retry_message_and_reports_causes(
     diagnostic = json.loads(captured.err.strip().splitlines()[-1])
     assert diagnostic["schema"] == "hol-guard.codex-bridge-failure.v1"
     assert {"stage": "daemon_request", "reason_code": "daemon_transport_timeout"} in diagnostic["causes"]
+
+
+@pytest.mark.parametrize(
+    ("state_text", "reason_code"), [(None, "daemon_state_missing"), ("{}", "daemon_state_stopped")]
+)
+def test_missing_or_stopped_daemon_state_is_not_an_authentication_failure(
+    tmp_path: Path, state_text: str | None, reason_code: str
+) -> None:
+    guard_home = tmp_path / "guard-home"
+    guard_home.mkdir(mode=0o700)
+    key = guard_home / "daemon-discovery-key"
+    key.write_text("00" * 32, encoding="utf-8")
+    key.chmod(0o600)
+    state = guard_home / "daemon-state.json"
+    if state_text is not None:
+        state.write_text(state_text, encoding="utf-8")
+        state.chmod(0o600)
+
+    with pytest.raises(ValueError) as raised:
+        bridge_flow._daemon_response(state_path=state, query="", data="{}", timeout_seconds=1.0)
+
+    assert bridge_flow._daemon_failure_reason(raised.value) == reason_code
+    causes = [{"stage": "daemon_request", "reason_code": reason_code}]
+    assert failure_reason.daemon_failure_reason(causes, daemon_overloaded=False) == (
+        failure_reason.DAEMON_UNAVAILABLE_REASON
+    )
