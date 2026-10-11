@@ -52,6 +52,7 @@ def test_package_intent_capacity_wait_uses_the_earlier_deadline(
     )
     monkeypatch.setattr(package_authority, "native_runtime_status", lambda: status)
     monkeypatch.setattr(package_authority, "_isolated_environment", lambda: {})
+    monkeypatch.setattr(package_authority, "ensure_resident_prerequisite", lambda _home: True)
     monkeypatch.setattr(package_authority, "native_record_resident_failure", lambda *args, **kwargs: None)
     monkeypatch.setattr(pools, "_client_pool_for", lambda *args: pool)
     failure_token = pools._LAST_FAILURE_CODE.set(None)
