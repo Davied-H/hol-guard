@@ -282,12 +282,12 @@ pub(super) fn exact_safe_segment_with_context(
         return false;
     };
     let basename = executable_basename(executable);
-    let inert_search = matches!(basename, "rg" | "grep")
+    let inert_search = matches!(basename, "rg" | "grep" | "fd")
         && search::safe_search_arguments_with_context(basename, &segment.arguments, context);
     if (!inert_search
         && !super::source_file_read_segment(segment)
         && sensitive_command(&segment.text))
-        || (!matches!(basename, "rg" | "grep")
+        || (!matches!(basename, "rg" | "grep" | "fd")
             && segment
                 .arguments
                 .iter()
@@ -368,7 +368,7 @@ pub(super) fn exact_safe_segment_with_context(
             segment.pipeline_index > 0
                 && super::stdin_filters::safe_arguments(basename, &segment.arguments)
         }
-        "rg" | "grep" => {
+        "rg" | "grep" | "fd" => {
             search::safe_search_arguments_with_context(basename, &segment.arguments, context)
         }
         "sed" => {

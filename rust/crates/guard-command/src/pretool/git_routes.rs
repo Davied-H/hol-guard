@@ -35,7 +35,8 @@ pub(crate) fn git_route_within_workspace(target: &str, context: super::PathConte
         return false;
     }
     if !target.starts_with(&workspace) {
-        return registered_worktree_of_workspace(&target, &workspace);
+        return registered_worktree_of_workspace(&target, &workspace)
+            || repository_below_home(&target, context);
     }
     target
         .ancestors()
@@ -46,6 +47,37 @@ pub(crate) fn git_route_within_workspace(target: &str, context: super::PathConte
             Some(git_entry_within_workspace(&entry, &metadata, &workspace))
         })
         .is_some_and(|allowed| allowed)
+}
+
+/// Agents working from a multi-repository parent read sibling repositories
+/// with `git -C ../other log`. A route outside the working directory is
+/// treated like a read of that directory: it must sit strictly below home,
+/// every component below home must be a non-hidden directory that clears the
+/// sensitive-path screens, and the repository root must hold a real `.git`
+/// directory below home, so neither the home directory itself nor a linked or
+/// symlinked repository qualifies. The Git configuration probe still runs
+/// against the `-C` target and rejects executable helpers.
+fn repository_below_home(target: &std::path::Path, context: super::PathContext<'_>) -> bool {
+    let Some(home) = context.home_dir.and_then(|home| std::fs::canonicalize(home).ok()) else {
+        return false;
+    };
+    let Ok(relative) = target.strip_prefix(&home) else {
+        return false;
+    };
+    if relative.as_os_str().is_empty()
+        || relative
+            .components()
+            .any(|part| !matches!(part, std::path::Component::Normal(name) if !name.to_string_lossy().starts_with('.')))
+        || !super::read_paths::resolved_path_allowed(target, context.home_dir, context.cwd)
+        || super::read_paths::inside_agent_state_tree(target, context.home_dir)
+    {
+        return false;
+    }
+    target
+        .ancestors()
+        .take_while(|path| *path != home)
+        .find_map(|path| std::fs::symlink_metadata(path.join(".git")).ok())
+        .is_some_and(|metadata| metadata.is_dir())
 }
 
 fn git_entry_within_workspace(
