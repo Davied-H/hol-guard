@@ -55,7 +55,6 @@ from ..runtime.runner import (
 )
 from .managed_policy_delivery import daemon_managed_controls_candidate
 from .server_common import (
-    _is_string_object_dict,
     _now,
     _settings_response_payload,
 )
@@ -338,89 +337,6 @@ class _ControlSyncRoutes:
         settings = editable_guard_settings(config)
         settings["approval_gate"] = gate.to_dict()
         self._write_json(_settings_response_payload(guard_home, settings))
-
-    def _handle_mcp_policy_request_get(self, request_id: str) -> None:
-        """Return sanitized MCP policy request details for the dashboard.
-
-        GET /v1/mcp-policy/requests/<id>
-
-        Returns the request status, digests, mode, timestamps, and a
-        sanitized semantic diff summary.  Never returns the canonical
-        policy YAML or the full plan JSON — the dashboard renders the
-        diff summary only.
-        """
-        import json as _json
-
-        from codex_plugin_scanner.guard.mcp.policy_store import MCPolicyRequestRepository
-
-        store = self.server.store  # type: ignore[attr-defined]
-        repo = MCPolicyRequestRepository(store)
-        request = repo.get_request(request_id)
-        if request is None:
-            self._write_json({"error": "not_found"}, status=404)
-            return
-
-        result: dict[str, object] = {}
-        if request.result_json:
-            try:
-                parsed_result: object = _json.loads(request.result_json)
-                if _is_string_object_dict(parsed_result):
-                    result = parsed_result
-            except _json.JSONDecodeError:
-                pass
-
-        plan_summary: dict[str, object] = {}
-        if request.plan_json:
-            try:
-                parsed_plan: object = _json.loads(request.plan_json)
-                if _is_string_object_dict(parsed_plan):
-                    plan_summary = parsed_plan
-            except _json.JSONDecodeError:
-                pass
-
-        inserted_value = result.get("inserted", 0)
-        replaced_value = result.get("replaced", 0)
-        inserted = inserted_value if isinstance(inserted_value, (bool, int)) else 0
-        replaced = replaced_value if isinstance(replaced_value, (bool, int)) else 0
-        additions_value = plan_summary.get("additions", [])
-        replacements_value = plan_summary.get("replacements", [])
-        removals_value = plan_summary.get("removals", [])
-        additions = additions_value if isinstance(additions_value, list) else []
-        replacements = replacements_value if isinstance(replacements_value, list) else []
-        removals = removals_value if isinstance(removals_value, list) else []
-
-        self._write_json(
-            {
-                "requestId": request.request_id,
-                "status": request.status,
-                "documentId": request.policy_document_id,
-                "candidateDigest": request.policy_document_digest,
-                "expectedCurrentDigest": request.expected_current_digest,
-                "expectedPolicyGeneration": request.expected_policy_generation,
-                "mode": request.mode,
-                "createdAt": request.created_at,
-                "expiresAt": request.expires_at,
-                "resolvedAt": request.resolved_at,
-                "failureCode": request.failure_code,
-                "isTerminal": request.is_terminal,
-                "isExpired": request.is_expired,
-                "result": {
-                    "inserted": _safe_int(inserted),
-                    "replaced": _safe_int(replaced),
-                },
-                "writePlan": {
-                    "additions": list(additions),
-                    "replacements": list(replacements),
-                    "removals": list(removals),
-                },
-                "semanticDiff": {
-                    "additionCount": len(additions),
-                    "replacementCount": len(replacements),
-                    "removalCount": len(removals),
-                },
-                "activeEnforcementWarning": request.status == "pending" and not request.is_expired,
-            }
-        )
 
     def _handle_mcp_policy_decision(self, request_id: str, payload: dict[str, object]) -> None:
         from .mcp_policy_decisions import handle_mcp_policy_decision

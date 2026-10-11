@@ -24,9 +24,7 @@ from ..models import (
 )
 from ..native_daemon_handler import (
     native_body_handler,
-    native_requests_list,
 )
-from ..store_approvals import InvalidApprovalCursorError
 from .server_common import (
     _now,
 )
@@ -139,43 +137,6 @@ class _ControlPolicyRoutes:
             self._write_json(error_payload, status=error.status)
             return
         self._write_json(result)
-
-    def _handle_requests_list(self, query_string: str) -> None:
-        guard_home = self.server.store.guard_home  # type: ignore[attr-defined]
-        verdict = self._native_handler_decision(lambda: native_requests_list(query_string, guard_home=guard_home))
-        if verdict is None:
-            return
-        options = verdict.fields
-        from .business_review_queue import NativeBusinessReviewQueueReadError, local_request_page
-
-        try:
-            read_page = (
-                self.server.store.list_approval_request_page
-                if self._is_hosted_dashboard_origin()
-                else (lambda **options: local_request_page(self.server.store, **options))
-            )
-            page = read_page(**options)
-        except NativeBusinessReviewQueueReadError:
-            self._write_json(
-                {"error": "native_local_business_queue_read_failed"},
-                status=503,
-                extra_headers={"Cache-Control": "no-store"},
-            )
-            return
-        except InvalidApprovalCursorError:
-            self._write_json(
-                {
-                    "error": "invalid_cursor",
-                    "recovery": {
-                        "code": "refresh_queue",
-                        "title": "Refresh the blocked action list.",
-                        "body": "The queue position expired. Refresh the Review Queue to continue.",
-                    },
-                },
-                status=400,
-            )
-            return
-        self._write_json(page, extra_headers={"Cache-Control": "no-store"})
 
     def _approval_persist_policy(self, payload: dict[str, object]) -> bool | None:
         if "persist_policy" in payload:
