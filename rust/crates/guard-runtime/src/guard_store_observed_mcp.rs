@@ -128,14 +128,18 @@ pub(crate) fn observed_mcp_tool_actions(connection: &Connection) -> StoreResult<
     if !require_current_schema(connection)? {
         return Ok(Value::Object(actions));
     }
-    // `list_local_cli_items`: every observation in display order, with the
-    // grant identity that marks it stale.
+    // `list_local_cli_items`: every MCP observation in display order, and
+    // whether a grant for another identity marks it stale. Rows whose cells
+    // are not text are skipped here, so one malformed row cannot fail the
+    // whole read.
     let items = query_all(
         connection,
-        "select o.cli_id, o.identity_hash, o.surface, o.server_command, \
-                g.identity_hash as grant_identity_hash \
+        "select o.cli_id, o.identity_hash, o.server_command, \
+                (g.identity_hash is not null and g.identity_hash is not o.identity_hash) as stale \
          from local_cli_observation as o \
          left join local_cli_grant as g on g.cli_id = o.cli_id \
+         where o.surface = 'mcp' and typeof(o.cli_id) = 'text' \
+           and typeof(o.identity_hash) = 'text' and typeof(o.server_command) = 'text' \
          order by o.last_seen_at desc, o.cli_id asc",
         &[],
     )?;
@@ -150,11 +154,7 @@ fn compile_item(
     item: &Row,
     actions: &mut Map<String, Value>,
 ) -> StoreResult<()> {
-    let identity_hash = item.get("identity_hash").cloned().unwrap_or(Value::Null);
-    let stale = item
-        .get("grant_identity_hash")
-        .is_some_and(|grant| !grant.is_null() && *grant != identity_hash);
-    if text(item, "surface").as_deref() != Some("mcp") || stale {
+    if item.get("stale").and_then(Value::as_i64) != Some(0) {
         return Ok(());
     }
     if !text(item, "cli_id").is_some_and(|cli_id| is_local_cli_id(&cli_id)) {
@@ -172,11 +172,11 @@ fn compile_item(
     let Some(example) = observed_mcp_tool(harness, &format!("{namespace}probe")) else {
         return Ok(());
     };
-    if example.namespace != namespace || !identity_hash.is_string() {
+    if example.namespace != namespace {
         return Ok(());
     }
     let server_hash = example.server_identity_hash();
-    if identity_hash.as_str() != Some(server_hash.as_str()) {
+    if text(item, "identity_hash").as_deref() != Some(server_hash.as_str()) {
         return Ok(());
     }
     let Some((grant_cli_id, state)) = granted_connector(connection, &server_hash)? else {
@@ -221,7 +221,8 @@ fn granted_connector(
 ) -> StoreResult<Option<(String, Option<String>)>> {
     let observation = query_one(
         connection,
-        "select cli_id, identity_hash from local_cli_observation \
+        "select case when typeof(cli_id) = 'text' then cli_id end as cli_id, identity_hash \
+         from local_cli_observation \
          where surface = 'mcp' and identity_hash = ? \
            and (server_identity_hash = ? or server_identity_hash is null) \
          order by last_seen_at desc, cli_id asc limit 1",
@@ -238,7 +239,9 @@ fn granted_connector(
     };
     let grant = query_one(
         connection,
-        "select identity_hash, state from local_cli_grant where cli_id = ?",
+        "select case when typeof(identity_hash) = 'text' then identity_hash end as identity_hash, \
+                case when typeof(state) = 'text' then state end as state \
+         from local_cli_grant where cli_id = ?",
         &[Value::from(cli_id.as_str())],
     )?;
     let Some(grant) = grant else {
@@ -257,7 +260,8 @@ fn command_states(
 ) -> StoreResult<std::collections::HashMap<String, String>> {
     let rows = query_all(
         connection,
-        "select command_id, state from local_cli_command_grant where cli_id = ?",
+        "select command_id, state from local_cli_command_grant \
+         where cli_id = ? and typeof(command_id) = 'text' and typeof(state) = 'text'",
         &[Value::from(cli_id)],
     )?;
     Ok(rows
@@ -275,20 +279,15 @@ fn command_states(
 fn command_catalog(connection: &Connection, cli_id: &str) -> StoreResult<Vec<(String, String)>> {
     let rows = query_all(
         connection,
-        "select command_id, name, usage, description, parent_id from local_cli_command \
-         where cli_id = ? order by sort_index asc, command_id asc",
+        "select command_id, usage from local_cli_command \
+         where cli_id = ? and typeof(command_id) = 'text' and typeof(usage) = 'text' \
+           and typeof(name) = 'text' and typeof(description) = 'text' \
+           and typeof(parent_id) in ('null', 'text') \
+         order by sort_index asc, command_id asc",
         &[Value::from(cli_id)],
     )?;
     Ok(rows
         .iter()
-        .filter(|row| {
-            ["name", "description"]
-                .iter()
-                .all(|column| row.get(*column).is_some_and(Value::is_string))
-                && row
-                    .get("parent_id")
-                    .is_none_or(|parent| parent.is_null() || parent.is_string())
-        })
         .filter_map(|row| Some((text(row, "command_id")?, text(row, "usage")?)))
         .collect())
 }

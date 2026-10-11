@@ -51,6 +51,15 @@ class StoreLocalMcpMixin:
         # The resident reads only the current schema; migrate an older store first.
         with self._connect() as connection:
             ensure_local_cli_schema(connection)
+            # The snapshot publisher reads this on every policy observation.
+            # Without an observed connector the resident would return no
+            # actions, so skip the round trip.
+            observed = connection.execute(
+                "select 1 from local_cli_observation "
+                "where surface = 'mcp' and server_command like 'observed-mcp:%' limit 1"
+            ).fetchone()
+        if observed is None:
+            return {}
         actions = self._native_store_call("observed_mcp_tool_actions", {})
         if not isinstance(actions, dict) or any(
             not isinstance(key, str) or action not in _OBSERVED_MCP_ACTIONS

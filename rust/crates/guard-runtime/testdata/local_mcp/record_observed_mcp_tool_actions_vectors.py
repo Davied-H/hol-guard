@@ -18,8 +18,13 @@ import sys
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
+from typing import cast
 
-from codex_plugin_scanner.guard.runtime.local_cli_commands import OTHER_COMMAND_ID, LocalCliCommand
+from codex_plugin_scanner.guard.runtime.local_cli_commands import (
+    OTHER_COMMAND_ID,
+    LocalCliCommand,
+    LocalCliCommandState,
+)
 from codex_plugin_scanner.guard.runtime.local_cli_identity import UnlistedCliIdentity
 from codex_plugin_scanner.guard.runtime.observed_mcp_tools import (
     ObservedMcpTool,
@@ -67,7 +72,7 @@ def _grant(store: GuardStore, identity: UnlistedCliIdentity, state: str, states:
         state=state,
         expected_revision=store.read_local_cli_revision(),
         updated_at=_SEEN,
-        command_states=states,
+        command_states=cast("dict[str, LocalCliCommandState] | None", states),
     )
 
 

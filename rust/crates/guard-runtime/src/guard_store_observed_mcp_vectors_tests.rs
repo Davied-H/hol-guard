@@ -85,3 +85,41 @@ fn newer_or_missing_store_schema_is_not_read() {
         assert!(observed_mcp_tool_actions(&connection).is_err(), "{marker}");
     }
 }
+
+#[test]
+fn malformed_rows_are_skipped_without_losing_valid_choices() {
+    let recorded: Value = serde_json::from_str(include_str!(
+        "../testdata/local_mcp/observed_mcp_tool_actions_vectors.json"
+    ))
+    .unwrap();
+    let vector = recorded["vectors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|vector| vector["name"] == "allowed_exact_states")
+        .unwrap();
+    let connection = Connection::open_in_memory().unwrap();
+    seed(
+        &connection,
+        recorded["schema"].as_array().unwrap(),
+        vector["rows"].as_object().unwrap(),
+    );
+    // An unrelated observation, its grant and a catalogued command each
+    // carry a BLOB where the store writes text.
+    connection
+        .execute_batch(
+            "create temp table o as select * from local_cli_observation limit 1; \
+             update o set cli_id = 'local-cli.malformed', identity_hash = 'malformed', \
+                 server_command = x'00ff'; \
+             insert into local_cli_observation select * from o; \
+             create temp table g as select * from local_cli_grant limit 1; \
+             update g set cli_id = 'local-cli.malformed', identity_hash = x'00ff'; \
+             insert into local_cli_grant select * from g; \
+             create temp table c as select * from local_cli_command limit 1; \
+             update c set command_id = 'tool-malformed', usage = x'00ff'; \
+             insert into local_cli_command select * from c;",
+        )
+        .unwrap();
+    let actual = observed_mcp_tool_actions(&connection).unwrap();
+    assert_eq!(actual, vector["expected"]);
+}

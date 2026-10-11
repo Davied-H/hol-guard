@@ -17,6 +17,7 @@ from .native_policy_snapshot_test_fixtures import _ack, _status
 
 def _publisher(store: GuardStore, monkeypatch: pytest.MonkeyPatch, client):
     monkeypatch.setattr(store, "_policy_integrity_secret_material", lambda *, create: (b"m" * 32, "fixture"))
+    store._provision_resident_verifier()
     return NativePolicySnapshotPublisher(store=store, status_provider=_status, client_request=client)
 
 

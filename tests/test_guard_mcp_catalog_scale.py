@@ -137,6 +137,7 @@ def test_ten_thousand_tools_keep_per_connection_choices(tmp_path: Path) -> None:
 def test_large_observed_catalog_publishes_choices_and_reports_capacity_without_losing_grants(tmp_path: Path) -> None:
     store = GuardStore(tmp_path / "guard-home", prime_policy_integrity=False)
     store._policy_integrity_secret_material = lambda *, create: (b"m" * 32, "fixture")
+    store._provision_resident_verifier()
     seen_at = utc_now()
     connections = []
     for index in range(100):
