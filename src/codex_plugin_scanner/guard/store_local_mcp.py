@@ -52,7 +52,7 @@ class StoreLocalMcpMixin:
 
         # The resident reads only the current schema; migrate an older store first.
         with self._connect() as connection:
-            ensure_local_cli_schema(connection)
+            ensure_local_cli_schema(connection, for_read=True)
             # The snapshot publisher reads this on every policy observation.
             # Without an observed connector the resident would return no
             # actions, so skip the round trip.
