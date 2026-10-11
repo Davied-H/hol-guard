@@ -20,7 +20,7 @@ def _resident(monkeypatch: pytest.MonkeyPatch, mutation: str | None = None) -> l
         identity=identity,
         capabilities=SimpleNamespace(features=("resident-protocol-v2", "request-context-v1")),
     )
-    monkeypatch.setattr(client, "native_runtime_status", lambda: status)
+    monkeypatch.setattr(client, "native_runtime_status", lambda **kwargs: status)
     monkeypatch.setattr(client, "_resolve_digest_home", lambda _: Path("fixture-home").absolute())
     monkeypatch.setattr(client, "_isolated_environment", lambda: {})
     monkeypatch.setattr(client, "native_record_resident_failure", lambda *args, **kwargs: None)
@@ -143,3 +143,30 @@ def test_path_batch_presents_each_native_dto_in_order(monkeypatch):
     assert len(calls) == 1
     assert calls[0][0] == "path_batch"
     assert calls[0][2] == {"deadline_monotonic": 42}
+
+
+def test_status_probe_has_request_deadline_and_memo_expires_on_binary_or_manifest_change(monkeypatch, tmp_path):
+    _resident(monkeypatch)
+    status = client.native_runtime_status()
+    binary = tmp_path / "runtime-fixture"
+    binary.write_bytes(b"original")
+    status.identity.path = binary
+    probes = []
+    client._status_memo = None
+
+    def probe(*, deadline_monotonic):
+        probes.append(deadline_monotonic)
+        return status
+
+    monkeypatch.setattr(client, "native_runtime_status", probe)
+    monkeypatch.setattr(client, "_scoped_manifest_still_valid", lambda _: True)
+    deadline = time.monotonic() + 0.1
+    client.content_query("content_version", {}, deadline_monotonic=deadline)
+    client.content_query("content_version", {}, deadline_monotonic=deadline)
+    assert probes == [deadline]
+    binary.write_bytes(b"replacement-with-new-identity")
+    client.content_query("content_version", {}, deadline_monotonic=deadline)
+    assert len(probes) == 2
+    monkeypatch.setattr(client, "_scoped_manifest_still_valid", lambda _: False)
+    client.content_query("content_version", {}, deadline_monotonic=deadline)
+    assert len(probes) == 3

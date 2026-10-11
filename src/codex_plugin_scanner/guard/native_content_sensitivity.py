@@ -11,20 +11,69 @@ from uuid import uuid4
 
 from .native_context import _canonical_request_sha256, _resolve_digest_home
 from .native_resident_client import native_resident_client_request
-from .native_runtime import _isolated_environment, native_runtime_status
+from .native_runtime import (
+    NativeRuntimeStatus,
+    _isolated_environment,
+    _runtime_candidates,
+    _scoped_manifest_still_valid,
+    _status_request_key,
+    native_runtime_status,
+)
 from .native_runtime_resilience import native_record_resident_failure, native_record_resident_success
 from .strict_json_pairs import unique_json_object
 
 _RESULT_SCHEMA = "guard-request-context-result.v1"
+_status_memo: tuple[float, object, NativeRuntimeStatus, tuple[int, ...], object] | None = None
 
 
 class NativeContentSensitivityError(RuntimeError, ValueError):
     """Missing, expired or unbound native authority; callers must fail closed."""
 
 
+def _binary_signature(status: NativeRuntimeStatus) -> tuple[int, ...] | None:
+    if status.identity is None:
+        return None
+    try:
+        info = status.identity.path.stat()
+    except OSError:
+        return None
+    return (
+        info.st_dev,
+        info.st_ino,
+        info.st_mode,
+        info.st_uid,
+        info.st_gid,
+        info.st_size,
+        info.st_mtime_ns,
+        info.st_ctime_ns,
+    )
+
+
+def _status(deadline: float) -> NativeRuntimeStatus:
+    global _status_memo
+    if time.monotonic() >= deadline:
+        raise NativeContentSensitivityError("native_content_sensitivity_unavailable")
+    key = _status_request_key(_runtime_candidates())
+    memo = _status_memo
+    if (
+        memo is not None
+        and memo[1] == key
+        and memo[4] is native_runtime_status
+        and time.monotonic() - memo[0] < 0.1
+        and _binary_signature(memo[2]) == memo[3]
+        and _scoped_manifest_still_valid(memo[2])
+    ):
+        return memo[2]
+    status = native_runtime_status(deadline_monotonic=deadline)
+    signature = _binary_signature(status)
+    if signature is not None and status.available and status.compatible:
+        _status_memo = (time.monotonic(), key, status, signature, native_runtime_status)
+    return status
+
+
 def content_query(query: str, body: dict[str, Any], *, deadline_monotonic: float | None = None) -> Any:
     deadline = min(time.monotonic() + 0.5, deadline_monotonic if deadline_monotonic is not None else float("inf"))
-    status = native_runtime_status()
+    status = _status(deadline)
     if (
         time.monotonic() >= deadline
         or not status.available
