@@ -182,7 +182,17 @@ pub(super) fn inspection_arguments<'a>(
     let remaining = arguments.get(index..)?;
     matches!(
         remaining.first().map(String::as_str),
-        Some("status" | "diff" | "log" | "show" | "rev-parse" | "ls-files" | "remote" | "worktree")
+        Some(
+            "status"
+                | "diff"
+                | "log"
+                | "show"
+                | "branch"
+                | "rev-parse"
+                | "ls-files"
+                | "remote"
+                | "worktree"
+        )
     )
     .then_some(remaining)
 }
@@ -218,7 +228,13 @@ pub(super) fn observe_with_context(
         // extension can still block it.
         result.permission("command.git.permission.ls-files", index, false);
     }
+    // A proven pure listing is read-only inspection, not branch mutation.
+    let branch_listing = command == "branch"
+        && inspection.is_some_and(|remaining| {
+            crate::pretool::git_branch_listing::is_listing(&remaining[1..])
+        });
     if plumbing
+        || branch_listing
         || (command_index == 0 && bounded_inspection(arguments))
         || inspection.is_some_and(bounded_inspection)
     {

@@ -18,7 +18,7 @@ pub(super) fn execution_free(
 ) -> Option<bool> {
     let remaining = crate::command_compatibility::git_inspection_arguments(arguments, context)?;
     let operation = remaining.first()?.as_str();
-    if !matches!(operation, "status" | "diff" | "log" | "show") {
+    if !matches!(operation, "status" | "diff" | "log" | "show" | "branch") {
         return None;
     }
     Some(

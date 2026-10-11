@@ -16,6 +16,7 @@ pub(crate) mod directory_targets;
 pub(crate) use directory_targets::safe_directory_target;
 mod base64_reads;
 mod find_reads;
+pub(crate) mod git_branch_listing;
 mod git_config;
 mod git_helper_context;
 mod git_probe;
@@ -171,6 +172,22 @@ fn safe_git_arguments(
     allow_helper_context: bool,
     context: PathContext<'_>,
 ) -> bool {
+    // Branch patterns are ref names, not paths, so only the leading git options
+    // (such as -C) go through the path checks.
+    if let Some(inspected) =
+        crate::command_compatibility::git_inspection_arguments(arguments, context)
+    {
+        if let Some((_, rest)) = inspected
+            .split_first()
+            .filter(|(subcommand, _)| subcommand.as_str() == "branch")
+        {
+            let leading = &arguments[..arguments.len() - inspected.len()];
+            return !leading
+                .iter()
+                .any(|value| value.starts_with(':') || sensitive_read_path_argument(value))
+                && git_branch_listing::is_listing(rest);
+        }
+    }
     // Git magic pathspec semantics are not proven by this classifier; retain review.
     if arguments
         .iter()
