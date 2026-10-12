@@ -79,6 +79,7 @@ _RESULT_OPTIONAL_KEYS = {
     "custom_extension_continuity",
     "package_json_scripts",
     "custom_extension_suggestion",
+    "managed_controls_policy_fields",
 }
 _RESULT_CODES = {
     "ok",
@@ -376,6 +377,7 @@ _OK_OUTPUT_FIELD: dict[str, str] = {
 }
 _OK_NULLABLE_OUTPUT_FIELD: dict[str, str] = {
     "custom_extension_continuity": "custom_extension_continuity",
+    "managed_controls_policy_fields": "managed_controls_policy_fields",
     "validate_approval_context": "validation_reason",
     "validate_approval_context_tokens": "validation_reason",
     "package_execution_context_from_evidence": "package_context",
@@ -648,6 +650,9 @@ def _decode_result(
         return None
     # Shape is checked by ``native_local_cli_identity``; absent means not applicable.
     if "local_cli_identity" in payload and kind != "local_cli_identity":
+        return None
+    # Shape is checked by ``managed_controls_policy_fields``.
+    if "managed_controls_policy_fields" in payload and kind != "managed_controls_policy_fields":
         return None
     # Shape is checked by ``package_json_scripts``; absent means not applicable.
     if "package_json_scripts" in payload and kind != "package_json_scripts":
