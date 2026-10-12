@@ -12,6 +12,7 @@ raises ``NativeHookDecisionError`` and callers fail closed.
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,7 @@ _UNAVAILABLE = "native_hook_decision_unavailable"
 _INVALID = "native_hook_decision_payload_invalid"
 _TIMEOUT_SECONDS = 5.0
 _MAX_FACT_ROUNDS = 12
+_MAX_REQUEST_BYTES = 6 * 1024 * 1024
 
 _ACTION_NAMES = frozenset({"allow", "warn", "review", "require-reapproval", "sandbox-required", "block"})
 _OPT_STR = (str, type(None))
@@ -93,6 +95,14 @@ _EFFECT_FIELDS: dict[str, dict[str, Any]] = {
     "permission_response": {"behavior": str, "message": _OPT_STR, "interrupt": (bool, type(None))},
     "queue_approval": {"evaluation_artifact": dict, "response_payload": dict, "deny_reason": str},
 }
+# Effect values the transport dispatches on; anything else is malformed.
+_EFFECT_VALUES: dict[str, frozenset[str]] = {
+    "verdict": frozenset({"allow", "block"}),
+    "reuse_status": frozenset({"accepted", "rejected", "not-applicable"}),
+    "permission_decision": frozenset({"allow", "deny"}),
+    "behavior": frozenset({"allow", "deny"}),
+    "event": frozenset({"preToolUse", "copilotPermissionRequest"}),
+}
 _ACKED_FACT = "acked_recording_only"
 _EDGE_KEYS = ("policy_action", "minimum_action", "decision")
 
@@ -132,7 +142,15 @@ def _decide(
     guard_home: Path | None,
     validate: Callable[[dict[str, Any]], None],
 ) -> dict[str, Any]:
-    return resident_decide(_OPERATION, _resident_request, query, guard_home, validate)
+    # Copilot settlement carries the serialized tool arguments, so the request
+    # gets the same budget as the hook edge that already accepted them.
+    return resident_decide(
+        _OPERATION,
+        functools.partial(_resident_request, max_request_bytes=_MAX_REQUEST_BYTES),
+        query,
+        guard_home,
+        validate,
+    )
 
 
 def native_compose_current(
@@ -236,6 +254,8 @@ def native_copilot_settle(
         if set(payload) != {"kind", "needs_facts", "plan"}:
             raise NativeHookDecisionError(_INVALID)
         needs = payload["needs_facts"]
+        if not isinstance(needs, list):
+            raise NativeHookDecisionError(_INVALID)
         if needs:
             if needs != [_ACKED_FACT] or inputs[_ACKED_FACT] is not None or payload["plan"] is not None:
                 raise NativeHookDecisionError(_INVALID)
@@ -248,7 +268,13 @@ def native_copilot_settle(
             kind = effect.get("effect") if isinstance(effect, dict) else None
             if kind not in _EFFECT_FIELDS:
                 raise NativeHookDecisionError(_INVALID)
-            _shape({key: value for key, value in effect.items() if key != "effect"}, _EFFECT_FIELDS[kind])
+            fields = _shape({key: value for key, value in effect.items() if key != "effect"}, _EFFECT_FIELDS[kind])
+            for key, allowed in _EFFECT_VALUES.items():
+                if key in fields and fields[key] not in allowed:
+                    raise NativeHookDecisionError(_INVALID)
+            for key in ("policy_action", "executable_action", "observed_policy_action"):
+                if key in fields:
+                    _action(fields[key])
 
     # The resident binds the reply to its typed request, so every optional
     # field travels explicitly.

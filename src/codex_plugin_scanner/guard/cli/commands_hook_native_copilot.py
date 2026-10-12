@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 
 
 from ..harness_posture import harness_is_recording_only, harness_posture_override
-from ..native_hook_decision import native_copilot_settle
+from ..native_hook_decision import NativeHookDecisionError, native_copilot_settle
 from ..retry_lineage import capture_retry_lineage
 from ..runtime.command_activity_contract import ActivityApprovalReuseStatus
 from ._commands_shared import *
@@ -270,7 +270,9 @@ def _settle_copilot_tool_call(
                 scanner_evidence=scanner_evidence,
                 output_stream=output_stream,
             )
-        elif guard_home is not None:
+        elif kind == "queue_approval":
+            if guard_home is None:
+                raise NativeHookDecisionError("native_hook_decision_payload_invalid")
             _queue_copilot_approval(
                 args,
                 effect=effect,
@@ -289,6 +291,8 @@ def _settle_copilot_tool_call(
                 store=store,
                 action_envelope=action_envelope,
             )
+        else:
+            raise NativeHookDecisionError("native_hook_decision_payload_invalid")
     return plan["exit_code"]
 
 
