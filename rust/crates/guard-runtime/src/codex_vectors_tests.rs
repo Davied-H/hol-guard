@@ -170,7 +170,7 @@ fn replays_every_recorded_codex_detection_case() {
         replayed += 1;
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
-    assert!(replayed >= 120, "only {replayed} cases recorded");
+    assert!(replayed >= 140, "only {replayed} cases recorded");
 }
 
 fn valid_request() -> Value {
@@ -238,4 +238,33 @@ fn undecodable_sources_are_refused() {
     args["sources"][0]["hooks_path"] = serde_json::json!(root.join(".codex/hooks.json"));
     assert!(detect(&args).is_err());
     let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
+fn only_a_number_the_parser_cannot_hold_refuses_a_toml_source() {
+    use crate::codex_sources::{toml_payload, ERR_VALUE};
+
+    for text in [
+        "x = 99999999999999999999\n",
+        "list = [1, 99999999999999999999]\n",
+        "a = 99999999999999999999\nb = 18446744073709551616\n",
+    ] {
+        assert_eq!(
+            toml_payload(Some(text.as_bytes())).err(),
+            Some(ERR_VALUE),
+            "{text}"
+        );
+    }
+    for text in [
+        "file123 = = 1\n",
+        "n = 1000000000000000000 =\n",
+        "sha = \"sha256:0123456789abcdef0123456789abcdef\" trailing\n",
+        "big = 99999999999999999999 junk\n",
+        "note = \"99999999999999999999\" =\n",
+        "# 99999999999999999999\n= 1\n",
+    ] {
+        let payload = toml_payload(Some(text.as_bytes())).unwrap();
+        assert!(payload.as_dict().is_some_and(<[_]>::is_empty), "{text}");
+    }
+    assert!(toml_payload(Some(b"n = 9223372036854775807\n")).is_ok());
 }

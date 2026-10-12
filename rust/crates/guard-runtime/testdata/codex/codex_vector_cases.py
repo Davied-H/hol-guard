@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 """Fixture cases for the Codex detection vectors (see record_codex_vectors.py).
 
 `<CMD>` stands for the exact managed hook command an install writes; the
@@ -139,6 +140,24 @@ def mcp_cases() -> list[dict]:
             [file(HC, '[mcp_servers.n]\ncommand = "c"\nweight = 0xff\nratio = 1_0.5e+1\nx = inf\ny = nan\n')],
         ),
         case("toml_invalid_syntax", [file(HC, '[mcp_servers.a\ncommand = "x"\n')]),
+        case("toml_malformed_digits_in_word", [file(HC, '[mcp_servers.a]\ncommand = "x"\nfile123 = = 1\n')]),
+        case(
+            "toml_malformed_representable_long_number",
+            [file(HC, '[mcp_servers.a]\ncommand = "x"\nn = 1000000000000000000 =\n')],
+        ),
+        case(
+            "toml_malformed_hash_text",
+            [file(HC, '[mcp_servers.a]\ncommand = "x"\nsha = "sha256:0123456789abcdef0123456789abcdef" trailing\n')],
+        ),
+        case(
+            "toml_malformed_overflow_beside_syntax_error",
+            [file(HC, '[mcp_servers.a]\ncommand = "x"\nbig = 99999999999999999999 junk\n')],
+        ),
+        case(
+            "toml_malformed_radix_hash",
+            [file(HC, '[mcp_servers.a]\ncommand = "x"\nh = 0x00112233445566778899aabb junk\n')],
+        ),
+        case("toml_surrogate_escape", [file(HC, '[mcp_servers.a]\ncommand = "x\\ud800"\n')]),
         case("toml_duplicate_key", [file(HC, "a = 1\na = 2\n")]),
         case("toml_bom", [raw(HC, b'\xef\xbb\xbf[mcp_servers.a]\ncommand = "x"\n')]),
         case("toml_invalid_utf8", [raw(HC, b'[mcp_servers.a]\ncommand = "\xff"\n')]),
@@ -496,6 +515,18 @@ def hook_cases() -> list[dict]:
         case(
             "json_escaped_surrogate_pair",
             [file(HH, '{"hooks": {"Stop": [{"hooks": [{"command": "x\\ud83d\\ude00"}]}]}}')],
+        ),
+        case(
+            "json_lone_surrogate_command",
+            [file(HH, '{"hooks": {"Stop": [{"hooks": [{"command": "x\\ud800"}]}]}}')],
+        ),
+        case(
+            "json_lone_surrogate_status_message",
+            [file(HH, '{"hooks": {"Stop": [{"hooks": [{"command": "a", "statusMessage": "s\\udc00"}]}]}}')],
+        ),
+        case(
+            "json_lone_surrogate_outside_hooks",
+            [file(HH, '{"note": "\\ud800", "hooks": {"Stop": [{"hooks": [{"command": "a"}]}]}}')],
         ),
         case("json_directory", dirs=[HH]),
         case(

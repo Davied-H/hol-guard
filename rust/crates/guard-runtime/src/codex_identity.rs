@@ -4,6 +4,7 @@
 use sha2::{Digest, Sha256};
 
 use super::codex_value::{canonical_mapping, canonical_value, Canon, HookVal};
+use super::pyjson::LONE_SURROGATE_MARK;
 
 pub(crate) const IDENTITY_SCHEMA: &str = "codex-hook-identity-v1";
 
@@ -82,14 +83,16 @@ fn canonical_handler(handler: &[(String, HookVal)]) -> Canon {
     Canon::Obj(values)
 }
 
-/// `canonical_codex_hook_identity`.
+/// `canonical_codex_hook_identity`. `None` when the hook carries a lone
+/// surrogate, which CPython keeps in the value but cannot encode when it
+/// hashes the canonical JSON, so the detection fails there.
 pub(crate) fn hook_identity(
     source_scope: &str,
     source_hooks_enabled: bool,
     event_name: &str,
     group: &[(String, HookVal)],
     handler: &[(String, HookVal)],
-) -> String {
+) -> Option<String> {
     let matcher = group
         .iter()
         .find(|(key, _)| key == "matcher")
@@ -105,5 +108,8 @@ pub(crate) fn hook_identity(
     ]);
     let mut text = String::new();
     payload.write(&mut text);
-    hex::encode(Sha256::digest(text.as_bytes()))
+    if text.contains(LONE_SURROGATE_MARK) {
+        return None;
+    }
+    Some(hex::encode(Sha256::digest(text.as_bytes())))
 }

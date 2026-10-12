@@ -1456,6 +1456,252 @@
     {
      "mode": 420,
      "path": "home/.codex/config.toml",
+     "text": "[mcp_servers.a]\ncommand = \"x\"\nfile123 = = 1\n"
+    }
+   ],
+   "found_paths": [],
+   "name": "toml_malformed_digits_in_word",
+   "symlinks": [],
+   "warnings": []
+  },
+  {
+   "args": {
+    "authenticated_bindings": [],
+    "contents": null,
+    "harness": "codex",
+    "sources": [
+     {
+      "authenticated": true,
+      "config_legacy": [],
+      "config_path": "<ROOT>/home/.codex/config.toml",
+      "config_scope": "global",
+      "hooks_legacy": [],
+      "hooks_path": "<ROOT>/home/.codex/hooks.json",
+      "hooks_scope": "global"
+     },
+     {
+      "authenticated": false,
+      "config_legacy": [],
+      "config_path": "<ROOT>/work/.codex/config.toml",
+      "config_scope": "project",
+      "hooks_legacy": [],
+      "hooks_path": "<ROOT>/work/.codex/hooks.json",
+      "hooks_scope": "project"
+     }
+    ]
+   },
+   "artifacts": [],
+   "dir_modes": {},
+   "dirs": [],
+   "files": [
+    {
+     "mode": 420,
+     "path": "home/.codex/config.toml",
+     "text": "[mcp_servers.a]\ncommand = \"x\"\nn = 1000000000000000000 =\n"
+    }
+   ],
+   "found_paths": [],
+   "name": "toml_malformed_representable_long_number",
+   "symlinks": [],
+   "warnings": []
+  },
+  {
+   "args": {
+    "authenticated_bindings": [],
+    "contents": null,
+    "harness": "codex",
+    "sources": [
+     {
+      "authenticated": true,
+      "config_legacy": [],
+      "config_path": "<ROOT>/home/.codex/config.toml",
+      "config_scope": "global",
+      "hooks_legacy": [],
+      "hooks_path": "<ROOT>/home/.codex/hooks.json",
+      "hooks_scope": "global"
+     },
+     {
+      "authenticated": false,
+      "config_legacy": [],
+      "config_path": "<ROOT>/work/.codex/config.toml",
+      "config_scope": "project",
+      "hooks_legacy": [],
+      "hooks_path": "<ROOT>/work/.codex/hooks.json",
+      "hooks_scope": "project"
+     }
+    ]
+   },
+   "artifacts": [],
+   "dir_modes": {},
+   "dirs": [],
+   "files": [
+    {
+     "mode": 420,
+     "path": "home/.codex/config.toml",
+     "text": "[mcp_servers.a]\ncommand = \"x\"\nsha = \"sha256:0123456789abcdef0123456789abcdef\" trailing\n"
+    }
+   ],
+   "found_paths": [],
+   "name": "toml_malformed_hash_text",
+   "symlinks": [],
+   "warnings": []
+  },
+  {
+   "args": {
+    "authenticated_bindings": [],
+    "contents": null,
+    "harness": "codex",
+    "sources": [
+     {
+      "authenticated": true,
+      "config_legacy": [],
+      "config_path": "<ROOT>/home/.codex/config.toml",
+      "config_scope": "global",
+      "hooks_legacy": [],
+      "hooks_path": "<ROOT>/home/.codex/hooks.json",
+      "hooks_scope": "global"
+     },
+     {
+      "authenticated": false,
+      "config_legacy": [],
+      "config_path": "<ROOT>/work/.codex/config.toml",
+      "config_scope": "project",
+      "hooks_legacy": [],
+      "hooks_path": "<ROOT>/work/.codex/hooks.json",
+      "hooks_scope": "project"
+     }
+    ]
+   },
+   "artifacts": [],
+   "dir_modes": {},
+   "dirs": [],
+   "files": [
+    {
+     "mode": 420,
+     "path": "home/.codex/config.toml",
+     "text": "[mcp_servers.a]\ncommand = \"x\"\nbig = 99999999999999999999 junk\n"
+    }
+   ],
+   "found_paths": [],
+   "name": "toml_malformed_overflow_beside_syntax_error",
+   "symlinks": [],
+   "warnings": []
+  },
+  {
+   "args": {
+    "authenticated_bindings": [],
+    "contents": null,
+    "harness": "codex",
+    "sources": [
+     {
+      "authenticated": true,
+      "config_legacy": [],
+      "config_path": "<ROOT>/home/.codex/config.toml",
+      "config_scope": "global",
+      "hooks_legacy": [],
+      "hooks_path": "<ROOT>/home/.codex/hooks.json",
+      "hooks_scope": "global"
+     },
+     {
+      "authenticated": false,
+      "config_legacy": [],
+      "config_path": "<ROOT>/work/.codex/config.toml",
+      "config_scope": "project",
+      "hooks_legacy": [],
+      "hooks_path": "<ROOT>/work/.codex/hooks.json",
+      "hooks_scope": "project"
+     }
+    ]
+   },
+   "artifacts": [],
+   "dir_modes": {},
+   "dirs": [],
+   "files": [
+    {
+     "mode": 420,
+     "path": "home/.codex/config.toml",
+     "text": "[mcp_servers.a]\ncommand = \"x\"\nh = 0x00112233445566778899aabb junk\n"
+    }
+   ],
+   "found_paths": [],
+   "name": "toml_malformed_radix_hash",
+   "symlinks": [],
+   "warnings": []
+  },
+  {
+   "args": {
+    "authenticated_bindings": [],
+    "contents": null,
+    "harness": "codex",
+    "sources": [
+     {
+      "authenticated": true,
+      "config_legacy": [],
+      "config_path": "<ROOT>/home/.codex/config.toml",
+      "config_scope": "global",
+      "hooks_legacy": [],
+      "hooks_path": "<ROOT>/home/.codex/hooks.json",
+      "hooks_scope": "global"
+     },
+     {
+      "authenticated": false,
+      "config_legacy": [],
+      "config_path": "<ROOT>/work/.codex/config.toml",
+      "config_scope": "project",
+      "hooks_legacy": [],
+      "hooks_path": "<ROOT>/work/.codex/hooks.json",
+      "hooks_scope": "project"
+     }
+    ]
+   },
+   "artifacts": [],
+   "dir_modes": {},
+   "dirs": [],
+   "files": [
+    {
+     "mode": 420,
+     "path": "home/.codex/config.toml",
+     "text": "[mcp_servers.a]\ncommand = \"x\\ud800\"\n"
+    }
+   ],
+   "found_paths": [],
+   "name": "toml_surrogate_escape",
+   "symlinks": [],
+   "warnings": []
+  },
+  {
+   "args": {
+    "authenticated_bindings": [],
+    "contents": null,
+    "harness": "codex",
+    "sources": [
+     {
+      "authenticated": true,
+      "config_legacy": [],
+      "config_path": "<ROOT>/home/.codex/config.toml",
+      "config_scope": "global",
+      "hooks_legacy": [],
+      "hooks_path": "<ROOT>/home/.codex/hooks.json",
+      "hooks_scope": "global"
+     },
+     {
+      "authenticated": false,
+      "config_legacy": [],
+      "config_path": "<ROOT>/work/.codex/config.toml",
+      "config_scope": "project",
+      "hooks_legacy": [],
+      "hooks_path": "<ROOT>/work/.codex/hooks.json",
+      "hooks_scope": "project"
+     }
+    ]
+   },
+   "artifacts": [],
+   "dir_modes": {},
+   "dirs": [],
+   "files": [
+    {
+     "mode": 420,
+     "path": "home/.codex/config.toml",
      "text": "a = 1\na = 2\n"
     }
    ],
@@ -7847,6 +8093,171 @@
     "<ROOT>/home/.codex/hooks.json"
    ],
    "name": "json_escaped_surrogate_pair",
+   "symlinks": [],
+   "warnings": []
+  },
+  {
+   "args": {
+    "authenticated_bindings": [],
+    "contents": null,
+    "harness": "codex",
+    "sources": [
+     {
+      "authenticated": true,
+      "config_legacy": [],
+      "config_path": "<ROOT>/home/.codex/config.toml",
+      "config_scope": "global",
+      "hooks_legacy": [],
+      "hooks_path": "<ROOT>/home/.codex/hooks.json",
+      "hooks_scope": "global"
+     },
+     {
+      "authenticated": false,
+      "config_legacy": [],
+      "config_path": "<ROOT>/work/.codex/config.toml",
+      "config_scope": "project",
+      "hooks_legacy": [],
+      "hooks_path": "<ROOT>/work/.codex/hooks.json",
+      "hooks_scope": "project"
+     }
+    ]
+   },
+   "dir_modes": {},
+   "dirs": [],
+   "files": [
+    {
+     "mode": 420,
+     "path": "home/.codex/hooks.json",
+     "text": "{\"hooks\": {\"Stop\": [{\"hooks\": [{\"command\": \"x\\ud800\"}]}]}}"
+    }
+   ],
+   "name": "json_lone_surrogate_command",
+   "refused": true,
+   "symlinks": []
+  },
+  {
+   "args": {
+    "authenticated_bindings": [],
+    "contents": null,
+    "harness": "codex",
+    "sources": [
+     {
+      "authenticated": true,
+      "config_legacy": [],
+      "config_path": "<ROOT>/home/.codex/config.toml",
+      "config_scope": "global",
+      "hooks_legacy": [],
+      "hooks_path": "<ROOT>/home/.codex/hooks.json",
+      "hooks_scope": "global"
+     },
+     {
+      "authenticated": false,
+      "config_legacy": [],
+      "config_path": "<ROOT>/work/.codex/config.toml",
+      "config_scope": "project",
+      "hooks_legacy": [],
+      "hooks_path": "<ROOT>/work/.codex/hooks.json",
+      "hooks_scope": "project"
+     }
+    ]
+   },
+   "dir_modes": {},
+   "dirs": [],
+   "files": [
+    {
+     "mode": 420,
+     "path": "home/.codex/hooks.json",
+     "text": "{\"hooks\": {\"Stop\": [{\"hooks\": [{\"command\": \"a\", \"statusMessage\": \"s\\udc00\"}]}]}}"
+    }
+   ],
+   "name": "json_lone_surrogate_status_message",
+   "refused": true,
+   "symlinks": []
+  },
+  {
+   "args": {
+    "authenticated_bindings": [],
+    "contents": null,
+    "harness": "codex",
+    "sources": [
+     {
+      "authenticated": true,
+      "config_legacy": [],
+      "config_path": "<ROOT>/home/.codex/config.toml",
+      "config_scope": "global",
+      "hooks_legacy": [],
+      "hooks_path": "<ROOT>/home/.codex/hooks.json",
+      "hooks_scope": "global"
+     },
+     {
+      "authenticated": false,
+      "config_legacy": [],
+      "config_path": "<ROOT>/work/.codex/config.toml",
+      "config_scope": "project",
+      "hooks_legacy": [],
+      "hooks_path": "<ROOT>/work/.codex/hooks.json",
+      "hooks_scope": "project"
+     }
+    ]
+   },
+   "artifacts": [
+    {
+     "args": [],
+     "artifact_id": "codex:global:hook:01c71e2dbf54fa6e071259e8123b7bd4a2c15661b5dc9058ba291e0dfbc9e2f9",
+     "artifact_type": "hook",
+     "command": "a",
+     "config_path": "<ROOT>/home/.codex/hooks.json",
+     "harness": "codex",
+     "metadata": {
+      "active": true,
+      "codex_hook_identity": "01c71e2dbf54fa6e071259e8123b7bd4a2c15661b5dc9058ba291e0dfbc9e2f9",
+      "codex_hook_identity_schema": "codex-hook-identity-v1",
+      "command_argv": [
+       "a"
+      ],
+      "env_keys": [],
+      "event": "Stop",
+      "executable": true,
+      "handler_type": null,
+      "matcher": null,
+      "ownership": [
+       "unmanaged"
+      ],
+      "source_formats": [
+       "json"
+      ],
+      "source_paths": [
+       "<ROOT>/home/.codex/hooks.json"
+      ],
+      "source_provenance": [
+       {
+        "coordinate": "Stop/group[0]/handler[0]",
+        "format": "json",
+        "path": "<ROOT>/home/.codex/hooks.json"
+       }
+      ],
+      "timeout": null
+     },
+     "name": "Stop",
+     "publisher": null,
+     "source_scope": "global",
+     "transport": null,
+     "url": null
+    }
+   ],
+   "dir_modes": {},
+   "dirs": [],
+   "files": [
+    {
+     "mode": 420,
+     "path": "home/.codex/hooks.json",
+     "text": "{\"note\": \"\\ud800\", \"hooks\": {\"Stop\": [{\"hooks\": [{\"command\": \"a\"}]}]}}"
+    }
+   ],
+   "found_paths": [
+    "<ROOT>/home/.codex/hooks.json"
+   ],
+   "name": "json_lone_surrogate_outside_hooks",
    "symlinks": [],
    "warnings": []
   },

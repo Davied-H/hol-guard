@@ -18,7 +18,7 @@ use super::codex_hook_artifacts::hook_artifacts;
 use super::codex_hooks::{enumerate, Source};
 use super::codex_proxy::{parse_proxy_args, ProxyArgs};
 use super::codex_sources::{
-    hooks_feature_enabled, is_empty, json_payload, read_source, toml_payload,
+    hooks_feature_enabled, is_empty, json_payload, read_source, toml_payload, ERR_VALUE,
 };
 use super::codex_value::HookVal;
 use super::context_digest::python_strip;
@@ -416,6 +416,9 @@ pub(crate) fn detect(args: &Value) -> KindResult {
         );
         records.extend(inventory.records);
         warnings.extend(inventory.warnings);
+    }
+    if records.iter().any(|record| record.unencodable) {
+        return Err(ERR_VALUE);
     }
     artifacts.extend(hook_artifacts(&records)?);
     Ok(json!({

@@ -85,6 +85,13 @@ from ..native_path_anchor import anchor_to_process_directory
 from ..shims import install_guard_shim, prepare_guard_shim, remove_guard_shim
 from ..stable_guard_cli import resolve_frozen_guard_cli
 from .base import HarnessAdapter, HarnessContext, PreparedHarnessInstall, _command_available
+from .codex_detect_sources import (
+    json_payload_from_bytes,
+    path_restorations,
+    read_source_bytes,
+    restore_paths,
+    toml_payload_from_bytes,
+)
 from .codex_remote_control import (
     codex_remote_launch_environment,
     guarded_codex_launch_command,
@@ -1204,17 +1211,26 @@ class CodexHarnessAdapter(HarnessAdapter):
         config_contents: Mapping[Path, bytes | None] | None = None,
     ) -> HarnessDetection:
         pairs = self._config_hook_pairs(context)
-        captured = None if config_contents is None else {path: config_contents[path] for pair in pairs for path in pair}
+        if config_contents is None:
+            # One read per file feeds both the legacy-ownership bindings and the
+            # native inventory, so a file changing in between cannot split them.
+            captured = {path: read_source_bytes(path) for pair in pairs for path in pair}
+            config_payloads = {config: toml_payload_from_bytes(captured[config]) for config, _hooks in pairs}
+            hooks_payloads = {hooks: json_payload_from_bytes(captured[hooks]) for _config, hooks in pairs}
+        else:
+            captured = {path: config_contents[path] for pair in pairs for path in pair}
+            config_payloads = {
+                config: parse_toml_object(captured[config], path=config, label="Codex config file")
+                for config, _hooks in pairs
+            }
+            hooks_payloads = {
+                hooks: parse_json_object(captured[hooks], path=hooks, label="Codex hooks file")
+                for _config, hooks in pairs
+            }
         authenticated_manifest = load_hook_manifest_baseline(_hook_manifest_spec(context))
         hook_config_path = self._hook_config_path(context)
         sources: list[dict[str, object]] = []
         for config_path, hooks_path in pairs:
-            if captured is None:
-                config_payload = _read_toml(config_path)
-                hooks_payload = _json_object(hooks_path)
-            else:
-                config_payload = parse_toml_object(captured[config_path], path=config_path, label="Codex config file")
-                hooks_payload = parse_json_object(captured[hooks_path], path=hooks_path, label="Codex hooks file")
             sources.append(
                 {
                     "config_path": anchor_to_process_directory(config_path),
@@ -1222,22 +1238,23 @@ class CodexHarnessAdapter(HarnessAdapter):
                     "config_scope": self._scope_for(context, config_path),
                     "hooks_scope": self._scope_for(context, hooks_path),
                     "authenticated": config_path == hook_config_path,
-                    "config_legacy": _legacy_wire_bindings(context, config_payload),
-                    "hooks_legacy": _legacy_wire_bindings(context, hooks_payload),
+                    "config_legacy": _legacy_wire_bindings(context, config_payloads[config_path]),
+                    "hooks_legacy": _legacy_wire_bindings(context, hooks_payloads[hooks_path]),
                 }
             )
         request: dict[str, object] = {
             "harness": self.harness,
             "authenticated_bindings": _wire_bindings(_manifest_bindings(authenticated_manifest)),
             "sources": sources,
-            "contents": None
-            if captured is None
-            else {
+            "contents": {
                 anchor_to_process_directory(path): None if data is None else data.hex()
                 for path, data in captured.items()
             },
         }
         artifacts, found_paths, warnings = native_adapter_detection_with_warnings("codex_detect", request)
+        artifacts, found_paths, warnings = restore_paths(
+            path_restorations(tuple(path for pair in pairs for path in pair)), artifacts, found_paths, warnings
+        )
         detection = HarnessDetection(
             harness=self.harness,
             installed=bool(found_paths) or _command_available(self.executable),

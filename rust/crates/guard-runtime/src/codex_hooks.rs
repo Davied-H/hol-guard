@@ -47,6 +47,8 @@ pub(crate) struct Record {
     pub(crate) executable: bool,
     pub(crate) ownership: Ownership,
     pub(crate) canonical_identity: String,
+    /// The hook holds text CPython cannot encode, so its identity does not exist.
+    pub(crate) unencodable: bool,
 }
 
 impl Record {
@@ -318,13 +320,15 @@ fn handler_record(
         .get("matcher")
         .and_then(HookVal::as_str)
         .map(str::to_owned);
-    let canonical_identity = hook_identity(
+    let identity = hook_identity(
         context.source.scope,
         context.source.hooks_enabled,
         at.event,
         context.group_entries,
         handler_entries,
     );
+    let unencodable = identity.is_none();
+    let canonical_identity = identity.unwrap_or_default();
     Some(Record {
         source_path: context.source.path.to_owned(),
         source_scope: context.source.scope.to_owned(),
@@ -343,6 +347,7 @@ fn handler_record(
         executable,
         ownership,
         canonical_identity,
+        unencodable,
     })
 }
 
