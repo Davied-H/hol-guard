@@ -173,6 +173,8 @@ pub(super) fn operation(
         "wire_finish" => {
             keys(input, &["handle"])?;
             let token = handle(input)?;
+            // An expired budget must not consume the finished upload.
+            budget.check()?;
             let entry = {
                 let mut cache = cache().lock().map_err(|_| INVALID)?;
                 prune(&mut cache);

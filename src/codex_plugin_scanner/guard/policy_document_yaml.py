@@ -9,6 +9,7 @@ import re
 from dataclasses import dataclass
 from functools import lru_cache
 from importlib import resources
+from itertools import islice
 from pathlib import Path
 from typing import TypeAlias, cast
 
@@ -189,7 +190,7 @@ def _policy_document_validator() -> Draft202012Validator:
 def _scan_restricted_tokens(text: str) -> None:
     tokens: list[list[object]] = []
     try:
-        for token in yaml.scan(text, Loader=_PolicyLoader):
+        for token in islice(yaml.scan(text, Loader=_PolicyLoader), MAX_POLICY_TOKENS + 1):
             value = getattr(token, "value", None)
             tokens.append(
                 [

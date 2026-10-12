@@ -262,6 +262,69 @@ def test_mcp_native_outage_returns_structured_retryable_error():
     assert result["error"]["retryable"]
 
 
+def test_mcp_compile_outage_reaches_the_retryable_envelope(monkeypatch):
+    from codex_plugin_scanner.guard.mcp import policy_tools
+
+    def unavailable(_document):
+        raise client.NativePolicyDocumentError("native_policy_document_unavailable")
+
+    monkeypatch.setattr(policy_tools, "parse_policy_document_yaml", lambda _yaml: object())
+    monkeypatch.setattr(policy_tools, "compile_document_for_import", unavailable)
+    with pytest.raises(client.NativePolicyDocumentError):
+        policy_tools._parse_and_compile("policy: yaml")
+
+
+def test_pending_candidate_outage_is_retryable_not_invalid(monkeypatch):
+    from codex_plugin_scanner.guard.mcp import policy_tools
+
+    request = SimpleNamespace(status="pending", mode="merge", canonical_policy_yaml="", policy_document_digest="")
+    repository = SimpleNamespace(get_request=lambda _request_id: request)
+    monkeypatch.setattr(policy_tools, "MCPolicyRequestRepository", lambda _store: repository)
+    monkeypatch.setattr(policy_tools, "parse_policy_document_yaml", lambda _yaml: object())
+
+    def unavailable(_document):
+        raise client.NativePolicyDocumentError("native_policy_document_unavailable")
+
+    monkeypatch.setattr(policy_tools, "policy_document_digest", unavailable)
+    with pytest.raises(policy_tools.PolicyToolError) as caught:
+        policy_tools._pending_policy_candidate(object(), "request")
+    assert caught.value.code == "policy_compile_failed"
+    assert caught.value.retryable
+
+
+def test_business_rule_detection_reads_match_extensions_locally(monkeypatch):
+    from codex_plugin_scanner.guard.business_policy_document_import import has_business_rules
+
+    monkeypatch.setattr(document, "policy_query", lambda *args, **kwargs: pytest.fail("native call"))
+    plain = SimpleNamespace(match=document.PolicyMatch(extensions=(("vendor", "{}"),)))
+    business = SimpleNamespace(match=document.PolicyMatch(extensions=(("business", "{}"),)))
+    assert not has_business_rules(SimpleNamespace(rules=(plain,)))
+    assert has_business_rules(SimpleNamespace(rules=(plain, business)))
+
+
+def test_data_named_like_transfer_headers_stays_policy_data(monkeypatch):
+    mapping = {"wire_download": {"handle": "data"}, "wire_upload": "data"}
+    _resident(monkeypatch, result={"ok": mapping})
+    assert client.policy_query("to_mapping", {}) == mapping
+
+
+def test_scanner_observations_stop_at_native_admission_boundary(monkeypatch):
+    generated = []
+    mark = SimpleNamespace(line=0, column=0)
+
+    def tokens(*args, **kwargs):
+        for index in range(loader.MAX_POLICY_TOKENS + 100):
+            generated.append(index)
+            yield SimpleNamespace(start_mark=mark)
+
+    monkeypatch.setattr(loader.yaml, "scan", tokens)
+    monkeypatch.setattr(loader, "policy_query", lambda query, body: {"code": "limit_tokens", "line": 1, "column": 1})
+    with pytest.raises(loader.PolicyDocumentError) as caught:
+        loader._scan_restricted_tokens("")
+    assert len(generated) == loader.MAX_POLICY_TOKENS + 1
+    assert caught.value.diagnostics[0].code == "limit_tokens"
+
+
 @pytest.mark.parametrize("corrupt", [None, "offset", "digest", "short"])
 def test_large_document_wire_keeps_one_deadline_and_rejects_corrupt_chunks(monkeypatch, corrupt):
     _resident(monkeypatch)

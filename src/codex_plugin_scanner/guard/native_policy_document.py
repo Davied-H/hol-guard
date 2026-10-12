@@ -151,7 +151,7 @@ def _bound_query(
         if exception := exceptions.get(error["type"]):
             raise exception(error["message"].strip("'") if error["type"] == "KeyError" else error["message"])
         raise NativePolicyDocumentError("native_policy_document_malformed")
-    return result.get("ok", result)
+    return result
 
 
 def policy_query(
@@ -190,8 +190,8 @@ def policy_query(
         result = call("wire_finish", {"handle": token})
     else:
         result = call(query, body)
-    if not isinstance(result, dict) or "wire_download" not in result:
-        return result
+    if isinstance(result, dict) and set(result) == {"ok"}:
+        return result["ok"]
     page = _wire_frame(result, "wire_download")
     token, total, digest = page["handle"], page["total"], page["sha256"]
     if type(total) is not int or not 0 < total <= 64 * 1024 * 1024:

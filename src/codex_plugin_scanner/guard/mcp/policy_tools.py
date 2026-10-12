@@ -100,6 +100,8 @@ def _parse_and_compile(policy_yaml: str) -> tuple[GuardPolicyDocument, tuple[Com
         raise PolicyToolError(code, "Policy YAML parsing failed.") from error
     try:
         compiled = compile_document_for_import(document)
+    except NativePolicyDocumentError:
+        raise
     except Exception as error:
         raise PolicyToolError("policy_compile_failed", "Policy compilation failed.") from error
     return document, compiled
@@ -366,9 +368,14 @@ def _pending_policy_candidate(
         raise PolicyToolError("candidate_invalid", "Stored policy candidate is invalid.")
     try:
         document = parse_policy_document_yaml(request.canonical_policy_yaml)
+        digest = policy_document_digest(document)
+    except NativePolicyDocumentError:
+        # An unavailable native runtime is retryable; it does not make the
+        # stored candidate invalid, and it must not escape the daemon handler.
+        raise PolicyToolError("policy_compile_failed", "Native policy runtime unavailable.", retryable=True) from None
     except ValueError:
         raise PolicyToolError("candidate_invalid", "Stored policy candidate is invalid.") from None
-    if policy_document_digest(document) != request.policy_document_digest:
+    if digest != request.policy_document_digest:
         raise PolicyToolError("candidate_digest_mismatch", "Stored candidate digest mismatch.")
     return request, document
 
