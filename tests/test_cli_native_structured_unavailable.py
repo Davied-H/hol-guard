@@ -224,8 +224,6 @@ def test_cli_native_success_projects_worker_structured_mediation_without_mutatin
         "schema": "guard-structured-content-mediation.v1",
         "action": "withhold",
         "reason_code": "structured_managed_authority_unavailable",
-        "native_decision_id": None,
-        "content_sha256": None,
     }
     assert response["structured_content_mediation"] is not worker_result["structured_content_mediation"]
     assert native_result == original_native_result
