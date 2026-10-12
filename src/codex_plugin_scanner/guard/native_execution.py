@@ -1,4 +1,6 @@
-"""Resident bridge for contained-execution + shim-admin + MCP-probe ops (RTM-020).
+"""Resident bridge for contained-execution, MCP-probe and prompt ops (RTM-020).
+
+Package-shim administration lives in ``native_shim_admin``.
 
 Each helper sends a native request and decodes its response. A missing or
 malformed response returns ``None``; enforcement callers must treat that as
