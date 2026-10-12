@@ -85,7 +85,7 @@ def test_inspect_decodes_bound_complete_identity(tmp_path: Path, monkeypatch: py
     assert identity.status == "complete"
     assert identity.directory_hash == _HASH_A
     assert seen[0]["command"]["kind"] == "inspect_encoded"
-    assert seen[0]["command"]["skill_document_hex"] == transport._encoded_path(tmp_path / "SKILL.md")
+    assert seen[0]["command"]["skill_document_hex"] == transport._encoded_path(tmp_path / "skill" / "SKILL.md")
 
 
 @pytest.mark.parametrize(

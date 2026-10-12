@@ -4386,6 +4386,251 @@
    "old_node": "tests/test_guard_native_skill_directory_identity_transport.py::test_missing_root_without_a_runtime_is_an_empty_discovery",
    "new_node": "tests/test_guard_native_skill_directory_identity_transport.py::test_native_outage_cannot_claim_a_root_is_absent",
    "reason": "Native OS path transport replaces portable fallback routing; native outage cannot establish filesystem absence. Real native missing-root discovery remains covered."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_inspect_matches_shared_vectors[basic-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_inspect_matches_original_vectors[basic-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_inspect_matches_shared_vectors[root_mode_700-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_inspect_matches_original_vectors[root_mode_700-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_inspect_matches_shared_vectors[nested-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_inspect_matches_original_vectors[nested-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_inspect_matches_shared_vectors[unicode_nfd_and_cjk-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_inspect_matches_original_vectors[unicode_nfd_and_cjk-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_inspect_matches_shared_vectors[lower_primary_name-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_inspect_matches_original_vectors[lower_primary_name-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_inspect_matches_shared_vectors[symlink_to_file_same_dir-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_inspect_matches_original_vectors[symlink_to_file_same_dir-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_inspect_matches_shared_vectors[symlink_dot_slash-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_inspect_matches_original_vectors[symlink_dot_slash-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_inspect_matches_shared_vectors[symlink_from_subdir-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_inspect_matches_original_vectors[symlink_from_subdir-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_inspect_matches_shared_vectors[symlink_to_other_file-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_inspect_matches_original_vectors[symlink_to_other_file-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_inspect_matches_shared_vectors[symlink_broken-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_inspect_matches_original_vectors[symlink_broken-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_inspect_matches_shared_vectors[symlink_loop-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_inspect_matches_original_vectors[symlink_loop-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_inspect_matches_shared_vectors[symlink_escape_relative-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_inspect_matches_original_vectors[symlink_escape_relative-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_inspect_matches_shared_vectors[symlink_escape_absolute-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_inspect_matches_original_vectors[symlink_escape_absolute-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_inspect_matches_shared_vectors[symlink_directory-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_inspect_matches_original_vectors[symlink_directory-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_inspect_matches_shared_vectors[primary_missing-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_inspect_matches_original_vectors[primary_missing-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_inspect_matches_shared_vectors[primary_is_directory-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_inspect_matches_original_vectors[primary_is_directory-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_inspect_matches_shared_vectors[primary_symlink-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_inspect_matches_original_vectors[primary_symlink-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_inspect_matches_shared_vectors[root_missing-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_inspect_matches_original_vectors[root_missing-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_inspect_matches_shared_vectors[root_is_file-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_inspect_matches_original_vectors[root_is_file-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_inspect_matches_shared_vectors[root_is_symlink-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_inspect_matches_original_vectors[root_is_symlink-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_inspect_matches_shared_vectors[parent_symlink-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_inspect_matches_original_vectors[parent_symlink-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_inspect_matches_shared_vectors[document_outside_scope-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_inspect_matches_original_vectors[document_outside_scope-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_inspect_matches_shared_vectors[special_file_fifo-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_inspect_matches_original_vectors[special_file_fifo-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_inspect_matches_shared_vectors[backslash_name-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_inspect_matches_original_vectors[backslash_name-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_inspect_matches_shared_vectors[limit_depth_ok-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_inspect_matches_original_vectors[limit_depth_ok-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_inspect_matches_shared_vectors[limit_depth_exceeded-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_inspect_matches_original_vectors[limit_depth_exceeded-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_inspect_matches_shared_vectors[limit_entries_ok-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_inspect_matches_original_vectors[limit_entries_ok-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_inspect_matches_shared_vectors[limit_entries_exceeded-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_inspect_matches_original_vectors[limit_entries_exceeded-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_inspect_matches_shared_vectors[limit_file_bytes_exceeded-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_inspect_matches_original_vectors[limit_file_bytes_exceeded-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_inspect_matches_shared_vectors[limit_file_bytes_primary_exceeded-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_inspect_matches_original_vectors[limit_file_bytes_primary_exceeded-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_inspect_matches_shared_vectors[limit_total_bytes_exceeded-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_inspect_matches_original_vectors[limit_total_bytes_exceeded-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_inspect_matches_shared_vectors[limit_total_symlink_double_count-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_inspect_matches_original_vectors[limit_total_symlink_double_count-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_inspect_matches_shared_vectors[limit_zero-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_inspect_matches_original_vectors[limit_zero-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_inspect_matches_shared_vectors[empty_primary-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_inspect_matches_original_vectors[empty_primary-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_inspect_matches_shared_vectors[total_exceeded_after_symlink_state-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_inspect_matches_original_vectors[total_exceeded_after_symlink_state-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_discovery_matches_shared_vectors[empty_root-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_discovery_matches_original_vectors[empty_root-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_discovery_matches_shared_vectors[missing_root-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_discovery_matches_original_vectors[missing_root-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_discovery_matches_shared_vectors[root_is_file-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_discovery_matches_original_vectors[root_is_file-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_discovery_matches_shared_vectors[root_is_symlink_dir-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_discovery_matches_original_vectors[root_is_symlink_dir-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_discovery_matches_shared_vectors[root_is_symlink_broken-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_discovery_matches_original_vectors[root_is_symlink_broken-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_discovery_matches_shared_vectors[flat_and_grouped-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_discovery_matches_original_vectors[flat_and_grouped-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_discovery_matches_shared_vectors[root_has_primary-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_discovery_matches_original_vectors[root_has_primary-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_discovery_matches_shared_vectors[primary_is_dir_counts_as_found-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_discovery_matches_original_vectors[primary_is_dir_counts_as_found-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_discovery_matches_shared_vectors[symlinked_dirs-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_discovery_matches_original_vectors[symlinked_dirs-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_discovery_matches_shared_vectors[unicode_names-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_discovery_matches_original_vectors[unicode_names-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_discovery_matches_shared_vectors[backslash_dir-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_discovery_matches_original_vectors[backslash_dir-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_discovery_matches_shared_vectors[depth_exceeded-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_discovery_matches_original_vectors[depth_exceeded-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_discovery_matches_shared_vectors[depth_ok-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_discovery_matches_original_vectors[depth_ok-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
+  },
+  {
+   "old_node": "tests/test_guard_skill_directory_identity_vectors.py::test_discovery_matches_shared_vectors[entries_exceeded-native]",
+   "new_node": "tests/test_guard_skill_directory_identity_vectors.py::test_native_discovery_matches_original_vectors[entries_exceeded-native]",
+   "reason": "Retained compiled native caller replay is named explicitly; obsolete portable parameter nodes are retired separately."
   }
  ],
  "unchanged_regression_suites": [

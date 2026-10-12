@@ -94,7 +94,7 @@ def _expected(spec: dict[str, Any]) -> dict[str, Any]:
 
 @pytest.mark.parametrize("implementation", sorted(_IMPLEMENTATIONS))
 @pytest.mark.parametrize("spec", _VECTORS["inspect"], ids=lambda spec: spec["name"])
-def test_inspect_matches_shared_vectors(tmp_path: Path, spec: dict[str, Any], implementation: str) -> None:
+def test_native_inspect_matches_original_vectors(tmp_path: Path, spec: dict[str, Any], implementation: str) -> None:
     _skip_unavailable(implementation)
     base = tmp_path.resolve() / "case"
     base.mkdir()
@@ -116,7 +116,7 @@ def test_inspect_matches_shared_vectors(tmp_path: Path, spec: dict[str, Any], im
 
 @pytest.mark.parametrize("implementation", sorted(_IMPLEMENTATIONS))
 @pytest.mark.parametrize("spec", _VECTORS["discover"], ids=lambda spec: spec["name"])
-def test_discovery_matches_shared_vectors(tmp_path: Path, spec: dict[str, Any], implementation: str) -> None:
+def test_native_discovery_matches_original_vectors(tmp_path: Path, spec: dict[str, Any], implementation: str) -> None:
     _skip_unavailable(implementation)
     base = tmp_path.resolve() / "case"
     base.mkdir()
