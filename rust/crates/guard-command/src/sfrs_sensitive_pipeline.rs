@@ -6,6 +6,7 @@
 
 use std::path::Path;
 
+use crate::codex_output_py::strip_quotes;
 use crate::sfrs_constants::{FIND_EXEC_ACTION_FLAGS, FIND_EXEC_TERMINATOR_TOKENS};
 use crate::sfrs_gh_body_safety::shell_segment_reads_sensitive_path;
 use crate::sfrs_patterns::{
@@ -18,11 +19,6 @@ const SSH_FLAGS_WITH_VALUES: &[&str] = &[
     "-b", "-c", "-D", "-E", "-e", "-F", "-I", "-i", "-J", "-L", "-l", "-m", "-O", "-o", "-p", "-R",
     "-S", "-W", "-w",
 ];
-
-/// `.strip("'\"")`.
-fn strip_quotes(value: &str) -> &str {
-    value.trim_matches(|c| c == '\'' || c == '"')
-}
 
 /// `value.split("=", 1)[1]` when `value` starts with `flag=`.
 fn flag_assignment<'a>(value: &'a str, flag: &str) -> Option<&'a str> {

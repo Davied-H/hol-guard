@@ -544,13 +544,12 @@ def main() -> None:
                 run("Bash", {"command": f"   {text}   "}, f"   {text}   ", cwd_rel, home_rel, text, None)
         counts: dict[str, int] = {}
         for case in cases:
-            key = (
-                "error"
-                if "error" in case
-                else "none"
-                if case.get("result") is None
-                else str(case["result"]["action_class"])
-            )  # type: ignore[index]
+            if "error" in case:
+                key = "error"
+            elif case.get("result") is None:
+                key = "none"
+            else:
+                key = str(case["result"]["action_class"])  # type: ignore[index]
             counts[key] = counts.get(key, 0) + 1
     document = {
         "schema": "sfrs-dispatcher.v1",

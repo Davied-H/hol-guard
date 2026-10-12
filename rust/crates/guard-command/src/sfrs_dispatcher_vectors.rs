@@ -348,14 +348,42 @@ fn host_only_difference(fields: &str) -> bool {
         })
 }
 
+/// Set in the child process that replays the vectors from `proj`.
+const REPLAY_CHILD_ENV: &str = "HOL_GUARD_SFRS_DISPATCHER_REPLAY_CHILD";
+
+/// The recorder ran from `proj`, and a shell model without a declared cwd
+/// starts at the process cwd. Changing the cwd is process-wide, so the replay
+/// runs in its own child process of this test binary; `cargo test` threads that
+/// read the cwd never observe the scratch tree, and a failed replay cannot leave
+/// the cwd changed for them.
 #[test]
 fn dispatcher_matches_recorded_python() {
+    if std::env::var_os(REPLAY_CHILD_ENV).is_some() {
+        replay_from_proj();
+        return;
+    }
+    let output = std::process::Command::new(std::env::current_exe().expect("test binary"))
+        .args([
+            "--exact",
+            "sfrs_dispatcher_vectors::dispatcher_matches_recorded_python",
+            "--nocapture",
+            "--test-threads=1",
+        ])
+        .env(REPLAY_CHILD_ENV, "1")
+        .output()
+        .expect("spawn dispatcher replay");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success() && stdout.contains("1 passed"),
+        "dispatcher replay failed\n{stdout}\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+fn replay_from_proj() {
     let document = fixture();
     let scratch = build_tree_in(&document, "sfrs-dispatch");
     let root = scratch.0.clone();
-    // The recorder ran from `proj`, and a shell model without a declared cwd
-    // starts at the process cwd. nextest gives each test its own process.
-    let previous_cwd = std::env::current_dir().expect("cwd");
     std::env::set_current_dir(root.join("proj")).expect("enter proj");
     let mut host_failures = Vec::new();
     let mut other_failures = Vec::new();
@@ -403,7 +431,6 @@ fn dispatcher_matches_recorded_python() {
             }
         }
     }
-    std::env::set_current_dir(previous_cwd).expect("restore cwd");
     assert!(cases.len() >= 800, "recorded {} cases", cases.len());
     // Recorded on macOS: `command -p` and `command -pv` find no `/bin/python3` there, so `command -p` and
     // `command -pv` observe a different interpreter trust on Linux CI. The

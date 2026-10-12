@@ -9,7 +9,7 @@
 use std::path::Path;
 
 use crate::codex_output_env::Ctx;
-use crate::codex_output_py::PyPath;
+use crate::codex_output_py::{strip_quotes, PyPath};
 use crate::github_command_capabilities::static_markdown_pr_body_file_operand;
 use crate::sfrs_constants::FIND_EXEC_TERMINATOR_TOKENS;
 use crate::sfrs_constants::{FIND_EXEC_ACTION_FLAGS, FIND_EXEC_PLACEHOLDER_TARGET};
@@ -196,10 +196,6 @@ pub(crate) fn gh_pr_edit_uses_safe_static_body_file(
     };
     !home_relative_operand_is_unexpanded(&operand, args)
         && body_file_is_safe(&operand, cwd, home_dir, ctx)
-}
-
-fn strip_quotes(token: &str) -> &str {
-    token.trim_matches(|c| c == '\'' || c == '"')
 }
 
 /// `_shell_segment_reads_sensitive_path`.
