@@ -24,6 +24,7 @@ _METADATA_KEYS = (
     "watch_only_observation",
     "watch_only_authoritative_action",
 )
+_SUMMARY_KEYS = ("request_summary", "runtime_request_summary", "prompt_summary")
 _EVENT_SCAN_LIMIT = 1000
 _ADVISORY_SCAN_LIMIT = 200
 
@@ -32,6 +33,10 @@ def wire_artifact(artifact: GuardArtifact) -> dict[str, object]:
     """The artifact fields the capability and incident logic read."""
 
     metadata: dict[str, object] = {key: artifact.metadata[key] for key in _METADATA_KEYS if key in artifact.metadata}
+    for key in _SUMMARY_KEYS:
+        if key in metadata:
+            # Python's own text rendering, so structured summaries cannot abort the check.
+            metadata[key] = str(metadata[key] or "")
     if "mcp_tool_identity" in artifact.metadata:
         metadata["mcp_tool_identity"] = True
     return {

@@ -87,6 +87,17 @@ def test_wire_artifact_matches_the_recorded_vector_artifacts() -> None:
     assert checked > 100
 
 
+def test_wire_artifact_renders_structured_summaries_as_python_text() -> None:
+    wire = next(v["query"]["artifact"] for v in _VECTORS if isinstance(v["query"].get("artifact"), dict))
+    artifact = _artifact_from_wire(wire)
+    artifact.metadata.update({"request_summary": {"a": 1}, "prompt_summary": [], "runtime_request_summary": 7})
+    metadata = projection.wire_artifact(artifact)["metadata"]
+    assert isinstance(metadata, dict)
+    assert metadata["request_summary"] == "{'a': 1}"
+    assert metadata["prompt_summary"] == ""
+    assert metadata["runtime_request_summary"] == "7"
+
+
 class _Store:
     guard_home = None
 
