@@ -4188,7 +4188,7 @@
       "category": "cat",
       "content_hash": "sha256:2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881",
       "description": "",
-      "directory_hash": "sha256:b52f5f67238d0ade585e43fa0be45964e8dc92019fc628863a971a1735c56190",
+      "directory_hash": "sha256:fa572f7e5616ae4f0061c477d904ea7c43739c447ae46f6ab9a68fb5f64d7ece",
       "env_mentions": [],
       "has_code_blocks": false,
       "inspection_complete": true,
@@ -4197,16 +4197,16 @@
       "related_skills": "",
       "size_bytes": 1,
       "skillDirectoryIdentity": {
-       "contentHash": "sha256:b52f5f67238d0ade585e43fa0be45964e8dc92019fc628863a971a1735c56190",
-       "entryCount": 11,
+       "contentHash": "sha256:fa572f7e5616ae4f0061c477d904ea7c43739c447ae46f6ab9a68fb5f64d7ece",
+       "entryCount": 12,
        "reusable": true,
        "schemaVersion": "guard.skill-directory-identity.v1",
        "status": "complete",
-       "totalBytes": 9
+       "totalBytes": 10
       },
       "versionInfo": {
        "changedFields": [],
-       "contentHash": "sha256:b52f5f67238d0ade585e43fa0be45964e8dc92019fc628863a971a1735c56190",
+       "contentHash": "sha256:fa572f7e5616ae4f0061c477d904ea7c43739c447ae46f6ab9a68fb5f64d7ece",
        "hashBasis": "skill-directory-v1",
        "versionLabel": "cat/so"
       }
@@ -4239,6 +4239,33 @@
       "subdir": "references"
      },
      "name": "so/references/.hidden.md",
+     "publisher": null,
+     "source_scope": "global",
+     "transport": null,
+     "url": null
+    },
+    {
+     "args": [
+      "x"
+     ],
+     "artifact_id": "hermes:skill:cat:so:references/Bc.md",
+     "artifact_type": "skill_file",
+     "command": "<ROOT>/home/.hermes/skills/cat/so/references/Bc.md",
+     "config_path": "<ROOT>/home/.hermes/skills/cat/so/references/Bc.md",
+     "harness": "hermes",
+     "metadata": {
+      "analysis_truncated": false,
+      "content_hash": "sha256:2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881",
+      "env_mentions": [],
+      "has_code_blocks": false,
+      "inspection_complete": true,
+      "inspection_readable": true,
+      "parent_skill": "so",
+      "preview_bytes": 1,
+      "size_bytes": 1,
+      "subdir": "references"
+     },
+     "name": "so/references/Bc.md",
      "publisher": null,
      "source_scope": "global",
      "transport": null,
@@ -4427,7 +4454,7 @@
     },
     {
      "mode": 420,
-     "path": "home/.hermes/skills/cat/so/references/B.md",
+     "path": "home/.hermes/skills/cat/so/references/Bc.md",
      "text": "x"
     },
     {
@@ -4467,6 +4494,81 @@
    "name": "skill_subdir_ordering",
    "symlinks": [],
    "warnings": []
+  },
+  {
+   "args": {
+    "harness": "hermes",
+    "hermes_home": "<ROOT>/home/.hermes",
+    "host_home": null,
+    "managed_names": [],
+    "manifest_path": "<ROOT>/guard-home/hermes/manifest.json"
+   },
+   "artifacts": [
+    {
+     "args": [
+      "x"
+     ],
+     "artifact_id": "hermes:skill:cat:lc",
+     "artifact_type": "skill",
+     "command": "<ROOT>/home/.hermes/skills/cat/lc/SKILL.md",
+     "config_path": "<ROOT>/home/.hermes/skills/cat/lc/SKILL.md",
+     "harness": "hermes",
+     "metadata": {
+      "analysis_truncated": false,
+      "category": "cat",
+      "content_hash": "sha256:2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881",
+      "description": "",
+      "env_mentions": [],
+      "has_code_blocks": false,
+      "inspection_complete": true,
+      "inspection_readable": true,
+      "preview_bytes": 1,
+      "related_skills": "",
+      "runtime_request_signals": [
+       "Hermes skill directory identity is incomplete; review is required."
+      ],
+      "size_bytes": 1,
+      "skillDirectoryIdentity": {
+       "entryCount": 1,
+       "incompleteStateHash": "sha256:04946057e5f7313ae8a49c50a03f05d9bf1d5c416a74ef3a268b7c08647f2859",
+       "reason": "primary_missing",
+       "reusable": false,
+       "schemaVersion": "guard.skill-directory-identity.v1",
+       "status": "incomplete",
+       "totalBytes": 0
+      },
+      "versionInfo": {
+       "changedFields": [],
+       "contentHash": "sha256:04946057e5f7313ae8a49c50a03f05d9bf1d5c416a74ef3a268b7c08647f2859",
+       "hashBasis": "skill-directory-v1",
+       "versionLabel": "cat/lc"
+      }
+     },
+     "name": "lc",
+     "publisher": null,
+     "source_scope": "global",
+     "transport": null,
+     "url": null
+    }
+   ],
+   "dir_modes": {},
+   "dirs": [],
+   "files": [
+    {
+     "mode": 420,
+     "path": "home/.hermes/skills/cat/lc/skill.md",
+     "text": "x"
+    }
+   ],
+   "found_paths": [
+    "<ROOT>/home/.hermes/skills/cat/lc/SKILL.md"
+   ],
+   "name": "skill_lowercase_skill_md",
+   "requires_case_insensitive_fs": true,
+   "symlinks": [],
+   "warnings": [
+    "Hermes skill directory identity is incomplete (primary_missing); approval reuse is disabled."
+   ]
   },
   {
    "args": {
@@ -4806,80 +4908,6 @@
    "name": "skill_stray_files",
    "symlinks": [],
    "warnings": []
-  },
-  {
-   "args": {
-    "harness": "hermes",
-    "hermes_home": "<ROOT>/home/.hermes",
-    "host_home": null,
-    "managed_names": [],
-    "manifest_path": "<ROOT>/guard-home/hermes/manifest.json"
-   },
-   "artifacts": [
-    {
-     "args": [
-      "x"
-     ],
-     "artifact_id": "hermes:skill:cat:lc",
-     "artifact_type": "skill",
-     "command": "<ROOT>/home/.hermes/skills/cat/lc/SKILL.md",
-     "config_path": "<ROOT>/home/.hermes/skills/cat/lc/SKILL.md",
-     "harness": "hermes",
-     "metadata": {
-      "analysis_truncated": false,
-      "category": "cat",
-      "content_hash": "sha256:2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881",
-      "description": "",
-      "env_mentions": [],
-      "has_code_blocks": false,
-      "inspection_complete": true,
-      "inspection_readable": true,
-      "preview_bytes": 1,
-      "related_skills": "",
-      "runtime_request_signals": [
-       "Hermes skill directory identity is incomplete; review is required."
-      ],
-      "size_bytes": 1,
-      "skillDirectoryIdentity": {
-       "entryCount": 1,
-       "incompleteStateHash": "sha256:04946057e5f7313ae8a49c50a03f05d9bf1d5c416a74ef3a268b7c08647f2859",
-       "reason": "primary_missing",
-       "reusable": false,
-       "schemaVersion": "guard.skill-directory-identity.v1",
-       "status": "incomplete",
-       "totalBytes": 0
-      },
-      "versionInfo": {
-       "changedFields": [],
-       "contentHash": "sha256:04946057e5f7313ae8a49c50a03f05d9bf1d5c416a74ef3a268b7c08647f2859",
-       "hashBasis": "skill-directory-v1",
-       "versionLabel": "cat/lc"
-      }
-     },
-     "name": "lc",
-     "publisher": null,
-     "source_scope": "global",
-     "transport": null,
-     "url": null
-    }
-   ],
-   "dir_modes": {},
-   "dirs": [],
-   "files": [
-    {
-     "mode": 420,
-     "path": "home/.hermes/skills/cat/lc/skill.md",
-     "text": "x"
-    }
-   ],
-   "found_paths": [
-    "<ROOT>/home/.hermes/skills/cat/lc/SKILL.md"
-   ],
-   "name": "skill_lowercase_skill_md",
-   "symlinks": [],
-   "warnings": [
-    "Hermes skill directory identity is incomplete (primary_missing); approval reuse is disabled."
-   ]
   },
   {
    "args": {

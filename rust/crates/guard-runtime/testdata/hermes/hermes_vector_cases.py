@@ -260,8 +260,15 @@ def skill_cases() -> list[dict]:
             [skill("cat", "so", "x")]
             + [
                 file(f"{H}/skills/cat/so/references/{n}", "x")
-                for n in ("b.md", "a.md", "B.md", "dir/z.md", "dir/a.md", "é.md", ".hidden.md", "c.TXT", "d.xyz")
+                for n in ("b.md", "a.md", "Bc.md", "dir/z.md", "dir/a.md", "é.md", ".hidden.md", "c.TXT", "d.xyz")
             ],
+        ),
+        # Found only on a case-insensitive volume (macOS, Windows); the replay
+        # skips it where the fixture volume folds case differently.
+        case(
+            "skill_lowercase_skill_md",
+            [file(f"{H}/skills/cat/lc/skill.md", "x")],
+            requires_case_insensitive_fs=True,
         ),
         case(
             "skill_scripts_without_extension",
@@ -287,7 +294,6 @@ def skill_cases() -> list[dict]:
             [file(f"{H}/skills/stray.md", "x"), file(f"{H}/skills/cat/stray.md", "x")],
             dirs=[f"{H}/skills/cat/empty", f"{H}/skills/emptycat"],
         ),
-        case("skill_lowercase_skill_md", [file(f"{H}/skills/cat/lc/skill.md", "x")]),
         case(
             "skill_unicode",
             [

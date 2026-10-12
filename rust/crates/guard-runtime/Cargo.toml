@@ -37,6 +37,7 @@ unicode-normalization = "0.1.25"
 zeroize = "1.9.0"
 aes.workspace = true
 base64ct.workspace = true
+flate2 = { version = "1.1.9", default-features = false, features = ["rust_backend"] }
 cbc.workspace = true
 hmac.workspace = true
 sha2.workspace = true
@@ -63,7 +64,6 @@ seccompiler = "0.5.0"
 
 [dev-dependencies]
 base64.workspace = true
-flate2 = { version = "1.1.9", default-features = false, features = ["rust_backend"] }
 
 [lints]
 workspace = true

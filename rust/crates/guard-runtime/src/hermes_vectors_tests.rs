@@ -104,6 +104,10 @@ fn replay(case: &Value) -> Result<(), String> {
             .take(60)
             .collect::<String>(),
     );
+    if case["requires_case_insensitive_fs"] == true && !folds_case(&root) {
+        release(&root);
+        return Ok(());
+    }
     materialize(&root, case);
     let root_text = root.to_string_lossy().into_owned();
     let args = substitute(&case["args"], &root_text);
@@ -111,6 +115,15 @@ fn replay(case: &Value) -> Result<(), String> {
     let outcome = check(case, name, &root_text, result);
     release(&root);
     outcome
+}
+
+/// Whether the fixture volume treats names that differ only in case as one.
+fn folds_case(directory: &Path) -> bool {
+    let probe = directory.join("CaseProbe");
+    fs::write(&probe, b"").unwrap();
+    let folded = directory.join("caseprobe").exists();
+    fs::remove_file(&probe).unwrap();
+    folded
 }
 
 fn check(
@@ -209,17 +222,19 @@ fn one_digit_timestamp_with_a_time_rejects_the_config() {
     let answer = detect(&args).expect("timestamp config");
     let artifacts = answer["artifacts"].as_array().expect("artifacts");
     assert!(
-        artifacts.iter().any(|artifact| {
-            artifact["metadata"]["config_reason"] == "config_value_invalid"
-        }),
+        artifacts
+            .iter()
+            .any(|artifact| { artifact["metadata"]["config_reason"] == "config_value_invalid" }),
         "{answer}"
     );
     assert!(
-        artifacts.iter().all(|artifact| artifact["command"] != "evil"),
+        artifacts
+            .iter()
+            .all(|artifact| artifact["command"] != "evil"),
         "{answer}"
     );
-    let tagged = crate::hermes_yaml::load("mcp_servers:\n  one:\n    command: !!str tool\n")
-        .expect("yaml");
+    let tagged =
+        crate::hermes_yaml::load("mcp_servers:\n  one:\n    command: !!str tool\n").expect("yaml");
     let tagged = tagged.expect("!!str is a core tag");
     let command = tagged
         .get("mcp_servers")

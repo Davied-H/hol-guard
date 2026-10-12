@@ -8,8 +8,7 @@ import os
 import queue
 import sys
 import threading
-from collections import deque
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
@@ -41,8 +40,7 @@ from ..mcp_tool_calls import (
     ToolCallDecision,
     allow_tool_call,
     block_tool_call,
-    build_tool_call_artifact,
-    build_tool_call_hash,
+    build_tool_call_identity,
     evaluate_tool_call,
     tool_call_risk_categories,
     tool_call_risk_summary,
@@ -56,8 +54,6 @@ from ..native_approval_proof import (
 from ..native_execution import (
     mcp_stdio_session_close_native,
     mcp_stdio_session_open_native,
-    mcp_stdio_session_recv_native,
-    mcp_stdio_session_send_native,
 )
 from ..native_mcp_proxy_decision import (
     NativeMcpProxyDecisionError,
@@ -87,6 +83,7 @@ from ..runtime.surface_server import GuardSurfaceRuntime
 from ..store import GuardStore
 from ..tool_decision_evidence import tool_decision_scanner_evidence as _tool_decision_scanner_evidence
 from ._env import _build_scrubbed_env
+from .native_mcp_child_io import _ChildOutputFrame, _NativeChildProcess, _NativeMcpChildIo
 from .stdio import (
     ProxyIoTimeoutError,
     _blocked_tool_response,
@@ -213,156 +210,6 @@ _TOOLS_CALL_PREWRITE_QUIET_SECONDS = 0.005
 
 class _ToolCatalogBoundaryChangedError(RuntimeError):
     """The catalog authority changed before a guarded tool call was written."""
-
-
-@dataclass(frozen=True, slots=True)
-class _ChildOutputFrame:
-    line: str | None = None
-    error: BaseException | None = None
-
-
-class _NativeMcpChildIo:
-    """Child-side transport over the native MCP stdio session ops (RTM-022/023).
-
-    Quacks like the pipe pair ``_forward_message``/``_drain_child_messages``
-    use: ``write``/``flush`` frame a client→child message via ``send``;
-    ``next_frame`` surfaces the next inbound child event via ``recv``. The
-    resident owns the subprocess, newline framing, correlation, and teardown;
-    this adapter only marshals frames. Returned ``line`` values are re-parsed
-    by the relay so the existing catalog-poison/quarantine gate is preserved.
-    """
-
-    def __init__(self, session_id: str, guard_home: Path) -> None:
-        self._session_id = session_id
-        self._guard_home = guard_home
-        self._pending: deque[str] = deque()
-        self.exit_code: int | None = None
-
-    # stdin side ------------------------------------------------------------
-    def write(self, data: str) -> int:
-        """Accept a ``json.dumps(message) + "\\n"`` write like a text pipe."""
-        text = data.rstrip("\n")
-        try:
-            message = json.loads(text)
-        except json.JSONDecodeError as exc:  # pragma: no cover - defensive
-            raise RuntimeError("native MCP session received a non-JSON frame") from exc
-        result = mcp_stdio_session_send_native(self._session_id, message, guard_home=self._guard_home)
-        if result is None or result.get("status") != "sent":
-            raise RuntimeError("native MCP session send failed")
-        return len(data)
-
-    def flush(self) -> None:  # resident op is already synchronous/flushed
-        return None
-
-    def writelines(self, lines: Iterable[str]) -> None:
-        for line in lines:
-            self.write(line)
-
-    def close(self) -> None:
-        mcp_stdio_session_close_native(self._session_id, guard_home=self._guard_home)
-
-    # stdout side -----------------------------------------------------------
-    def next_frame(self, timeout_seconds: float, required: bool) -> _ChildOutputFrame | None:
-        # Test/injection seam: locally-queued frames are delivered before the
-        # resident so callers can synthesize inbound child events (e.g.
-        # `tools/list_changed`) without a native inject op.
-        if self._pending:
-            return _ChildOutputFrame(line=self._pending.popleft())
-        result = mcp_stdio_session_recv_native(
-            self._session_id,
-            guard_home=self._guard_home,
-            timeout_seconds=timeout_seconds,
-        )
-        if result is None:
-            return _ChildOutputFrame(error=RuntimeError("native MCP session recv transport failure"))
-        status = str(result.get("status", ""))
-        if status == "event":
-            payload = result.get("payload")
-            return _ChildOutputFrame(line=json.dumps(payload) + "\n")
-        if status in {"exited", "eof"}:
-            code = result.get("exit_code")
-            if isinstance(code, int) and not isinstance(code, bool):
-                self.exit_code = code
-            return _ChildOutputFrame()
-        if status == "timeout":
-            if required:
-                return _ChildOutputFrame(
-                    error=ProxyIoTimeoutError(source="child_response", timeout_seconds=timeout_seconds)
-                )
-            return None
-        # "error" status — surface as a frame error so the relay fails closed.
-        code = result.get("payload")
-        return _ChildOutputFrame(error=RuntimeError(f"native MCP session error: {code}"))
-
-    def readline(self) -> str:  # pragma: no cover - compatibility sink
-        return ""
-
-
-class _NativeChildProcess:
-    """Popen-shaped adapter over a resident-owned MCP stdio session.
-
-    ``serve``/``run_session`` only touch ``stdin``/``stdout``/teardown; the
-    resident owns the real subprocess, so ``stdin``/``stdout`` share one
-    ``_NativeMcpChildIo`` transport and lifecycle calls delegate to ``close``.
-    ``returncode`` is available after the resident reports child exit; clean
-    close returns ``0`` and quarantine/cancel returns ``-9``.
-    """
-
-    def __init__(self, session_id: str, guard_home: Path) -> None:
-        self._session_id = session_id
-        self._guard_home = guard_home
-        io = _NativeMcpChildIo(session_id, guard_home)
-        self.stdin: _NativeMcpChildIo = io
-        self.stdout: _NativeMcpChildIo = io
-        self.stderr = None
-        self._closed = False
-        self._cancelled = False
-        self._returncode: int | None = None
-
-    def close(self) -> None:
-        if self._closed:
-            return
-        self._closed = True
-        mcp_stdio_session_close_native(self._session_id, guard_home=self._guard_home)
-
-    def terminate(self) -> None:
-        self.close()
-
-    def kill(self) -> None:
-        self._cancelled = True
-        self.close()
-
-    def poll(self) -> int | None:
-        if self._returncode is not None:
-            return self._returncode
-        if self.stdin.exit_code is not None:
-            self._returncode = self.stdin.exit_code
-            return self._returncode
-        if self._cancelled:
-            return -9
-        if self._closed:
-            return 0
-        result = mcp_stdio_session_recv_native(
-            self._session_id,
-            guard_home=self._guard_home,
-            timeout_seconds=1.0,
-            poll_only=True,
-        )
-        if result is not None and result.get("status") == "exited":
-            exit_code = result.get("exit_code")
-            self._returncode = exit_code if isinstance(exit_code, int) and not isinstance(exit_code, bool) else -1
-        return self._returncode
-
-    def wait(self, timeout: float | None = None) -> int:
-        self.close()
-        returncode = self.returncode
-        if returncode is None:
-            raise RuntimeError("Native MCP session closed without an exit status.")
-        return returncode
-
-    @property
-    def returncode(self) -> int | None:
-        return self.poll()
 
 
 def _tool_catalog_fingerprint(
@@ -958,15 +805,12 @@ class RuntimeMcpGuardProxy:
         """
 
         authority_config = config or self.config
-        tool_definition = self._tool_catalog.get(tool_name, {})
-        tool_description_value = tool_definition.get("description")
-        tool_schema = tool_definition.get("inputSchema", tool_definition.get("input_schema"))
         # The native canonical catalog page retains `name` inside each entry.
-        # Strip it before building the public artifact so the name-matched
-        # `mcp_tool_authority_hash` is not written into hash-affecting
-        # `metadata`; the full definition is bound via
-        # `runtime_private_metadata` below without changing the exact
-        # saved-block artifact hash.
+        # Strip it before the build so the name-matched `mcp_tool_authority_hash`
+        # is not written into hash-affecting `metadata`; the resident binds the
+        # full definition in `runtime_private_metadata` without changing the
+        # exact saved-block artifact hash.
+        tool_definition = self._tool_catalog.get(tool_name, {})
         public_tool_definition = {key: value for key, value in tool_definition.items() if key != "name"}
         catalog_generation = self._tool_catalog_generation
         catalog_state = self._tool_catalog_state
@@ -974,7 +818,11 @@ class RuntimeMcpGuardProxy:
             self._tool_catalog,
             state=catalog_state,
         )
-        artifact = build_tool_call_artifact(
+        identity = build_tool_call_identity(
+            arguments=arguments,
+            workspace=self.context.workspace_dir or Path.cwd(),
+            config=authority_config,
+            guard_home=self.store.guard_home,
             harness=self.harness,
             server_name=self.server_name,
             tool_name=tool_name,
@@ -991,32 +839,14 @@ class RuntimeMcpGuardProxy:
                 "tool_catalog_fingerprint": catalog_fingerprint,
             },
             server_identity=self._session_server_identity(),
-            tool_schema=tool_schema,
-            tool_description=tool_description_value if isinstance(tool_description_value, str) else None,
             tool_definition=public_tool_definition,
             provider_catalog_hash=(
                 self.store.read_mcp_provider_authority_hash() if composio_requires_action_review(tool_name) else None
             ),
         )
-        if tool_name in self._tool_catalog:
-            from ..store_mcp_catalog import tool_definition_authority_hash
-
-            # Catalog entries omit their name because it is the map key. Bind
-            # the full definition for local grants without changing the
-            # artifact hash used by existing exact saved blocks.
-            artifact = replace(
-                artifact,
-                runtime_private_metadata={
-                    **artifact.runtime_private_metadata,
-                    "mcp_tool_authority_hash": tool_definition_authority_hash({"name": tool_name, **tool_definition}),
-                },
-            )
-        artifact_hash = build_tool_call_hash(
-            artifact,
-            arguments,
-            workspace=self.context.workspace_dir or Path.cwd(),
-            config=authority_config,
-        )
+        artifact, artifact_hash = identity.artifact, identity.artifact_hash
+        if artifact_hash is None:
+            raise ValueError("native_mcp_tool_approval_hash_unavailable")
         gate_state = self._tool_catalog_state
         folded: dict[str, Any] = {}
         evaluated = evaluate_tool_call(
@@ -3149,6 +2979,21 @@ class RuntimeMcpGuardProxy:
             fingerprint=fingerprint,
         )
 
+    def _can_exchange(
+        self,
+        child_stdin: IO[str] | _NativeMcpChildIo,
+        child_stdout: IO[str] | _NativeMcpChildIo,
+    ) -> bool:
+        """True when the quiet edge, write and response can ride one resident round trip.
+
+        Frames already queued on the proxy side (injected or locally pending)
+        are an unfinished drain, so the legacy path must run them first.
+        """
+        if not isinstance(child_stdin, _NativeMcpChildIo) or child_stdin is not child_stdout:
+            return False
+        injected = self._child_output_queue
+        return child_stdin.idle() and (injected is None or injected.empty())
+
     def _forward_message(
         self,
         message: dict[str, Any],
@@ -3162,25 +3007,44 @@ class RuntimeMcpGuardProxy:
         expected_catalog_fingerprint: str | None = None,
     ) -> dict[str, Any]:
         request_id = message.get("id")
-        if (
-            str(message.get("method", "")) == "tools/call"
+        catalog = (
+            (expected_catalog_generation, expected_catalog_state, expected_catalog_fingerprint)
+            if str(message.get("method", "")) == "tools/call"
             and expected_catalog_generation is not None
             and expected_catalog_state is not None
             and expected_catalog_fingerprint is not None
+            else None
+        )
+        written = False
+        if catalog is not None and request_id is not None and self._can_exchange(child_stdin, child_stdout):
+            if not self._catalog_authority_matches(generation=catalog[0], state=catalog[1], fingerprint=catalog[2]):
+                raise _ToolCatalogBoundaryChangedError(_TOOL_CATALOG_EXECUTION_BOUNDARY_CHANGED)
+            exchanged = cast("_NativeMcpChildIo", child_stdin).exchange(
+                message,
+                quiet_seconds=_TOOLS_CALL_PREWRITE_QUIET_SECONDS,
+                response_timeout_seconds=self._child_response_timeout_seconds(),
+            )
+            if isinstance(exchanged, dict):
+                return exchanged
+            written = exchanged
+        if (
+            catalog is not None
+            and not written
             and not self._drain_and_validate_catalog_authority(
                 child_stdin=child_stdin,
                 child_stdout=child_stdout,
                 client_input=client_input,
                 server_output=server_output,
-                generation=expected_catalog_generation,
-                state=expected_catalog_state,
-                fingerprint=expected_catalog_fingerprint,
+                generation=catalog[0],
+                state=catalog[1],
+                fingerprint=catalog[2],
                 quiet_seconds=_TOOLS_CALL_PREWRITE_QUIET_SECONDS,
             )
         ):
             raise _ToolCatalogBoundaryChangedError(_TOOL_CATALOG_EXECUTION_BOUNDARY_CHANGED)
-        child_stdin.write(json.dumps(message) + "\n")
-        child_stdin.flush()
+        if not written:
+            child_stdin.write(json.dumps(message) + "\n")
+            child_stdin.flush()
         while True:
             buffered_response = self._pop_buffered_child_response(request_id)
             if buffered_response is not None:

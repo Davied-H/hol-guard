@@ -106,6 +106,15 @@ def scrub(value: object, root: Path) -> object:
     return json.loads(json.dumps(value, ensure_ascii=False).replace(str(root), "<ROOT>"))
 
 
+def case_insensitive(directory: Path) -> bool:
+    probe = directory / "CaseProbe"
+    probe.touch()
+    try:
+        return (directory / "caseprobe").exists()
+    finally:
+        probe.unlink()
+
+
 def run_case(spec: dict) -> dict:
     root = Path(tempfile.mkdtemp(prefix="hermes-vec-")).resolve()
     saved = {key: os.environ.get(key) for key in ENV_KEYS}
@@ -139,6 +148,10 @@ def run_case(spec: dict) -> dict:
         except (ValueError, RecursionError, OSError):
             outcome = {"refused": True}
         record = {key: spec[key] for key in ("name", "files", "symlinks", "dirs", "dir_modes")}
+        if spec.get("requires_case_insensitive_fs"):
+            if not case_insensitive(root):
+                sys.exit(f"{spec['name']} must be recorded on a case-insensitive volume")
+            record["requires_case_insensitive_fs"] = True
         record["args"] = scrub(args, root)
         record.update(scrub(outcome, root))
         return record
