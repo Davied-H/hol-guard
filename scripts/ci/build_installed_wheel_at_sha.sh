@@ -41,7 +41,7 @@ jq -n --slurpfile source rust/crates/guard-command/tests/fixtures/command-source
   --slurpfile trust "$trust" \
   '{schema:"guard.command-extension-build.v1",sources:$source,mcp_sources:[],trust:$trust[0],base:"packaged"}' \
   > source-build.json
-"$compiler" compile < source-build.json > source-compiled.json
+"$runtime" compile < source-build.json > source-compiled.json
 
 uv build --wheel --out-dir pure-dist
 rule_digest=$("$runtime" capabilities --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["rule_digest"])')
@@ -54,7 +54,6 @@ HOL_GUARD_BUILD_SOURCE_COMPILER="$compiler" .venv/bin/python scripts/build_nativ
   --target "$target" \
   --source-sha "$source_sha" \
   --rule-digest "$rule_digest" \
-  --source-compiler "$compiler" \
   --implementation-digest "$(jq -r '.implementation_digest' source-compiled.json)" \
   --base-program-digest "$(jq -r '.base_program_digest' source-compiled.json)"
 
