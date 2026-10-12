@@ -55,6 +55,8 @@ mod claim_reuse_binding;
 mod claim_reuse_binding_tests;
 #[cfg(test)]
 mod claim_reuse_vectors_tests;
+mod cli_copilot_resolution;
+mod cli_runtime_support_op;
 mod cloud_action_envelope;
 mod cloud_action_envelope_fields;
 mod cloud_receipt_payload;
@@ -143,6 +145,8 @@ mod git_execution_safety_repo_tests;
 #[cfg(test)]
 mod git_execution_safety_tests;
 mod github_cli_classify_op;
+mod github_workflow_context_io;
+mod github_workflow_prepare_op;
 mod guard_config_coerce;
 mod guard_config_harness;
 mod guard_config_iso;
@@ -213,6 +217,9 @@ mod guard_store_state_ops_vectors_tests;
 mod guard_store_storage_maintenance;
 #[cfg(test)]
 mod guard_store_storage_maintenance_vectors_tests;
+mod guard_store_tool_call_evidence;
+#[cfg(test)]
+mod guard_store_tool_call_evidence_tests;
 #[cfg(test)]
 mod guard_store_vectors_tests;
 mod guard_store_wfcap_authority;
@@ -242,6 +249,7 @@ mod hermes_yaml;
 mod hermes_yaml_construct;
 mod hermes_yaml_resolve;
 mod hook_adapter_op;
+mod hook_approval_context;
 mod hook_artifact_compose_op;
 mod hook_artifact_compose_reuse;
 mod hook_authority_state_op;
@@ -258,6 +266,7 @@ mod hook_decision_settle;
 mod hook_process_spawn;
 mod hook_render_op;
 mod local_cli_grant_op;
+mod local_cli_identify;
 mod local_mcp_grant_identity;
 mod local_mcp_grant_launcher;
 mod local_mcp_grant_op;
@@ -286,6 +295,8 @@ mod mcp_sensitive_read;
 #[cfg(test)]
 mod mcp_sensitive_read_vectors_tests;
 mod mcp_stdio_session_op;
+mod mcp_tool_call_identity_build;
+mod mcp_tool_call_identity_op;
 mod mcp_tool_evidence_op;
 mod mcp_tool_policy_composio;
 mod mcp_tool_policy_decide_op;
@@ -314,6 +325,7 @@ mod package_approval_hash_op;
 mod package_audit_projection_op;
 mod package_authority_config;
 mod package_authority_op;
+mod package_context_build_op;
 mod package_evaluation_compose_op;
 mod package_policy_resolve_op;
 mod package_posture_op;
@@ -372,6 +384,7 @@ mod resident_transport;
 mod resident_transport_service;
 mod resident_update_lock;
 mod restricted_pytest_op;
+mod rich_command_model_op;
 mod runner_authority_detector;
 mod runner_authority_evaluation;
 mod runner_authority_op;
@@ -386,16 +399,13 @@ mod secrets_cli;
 #[allow(dead_code, clippy::pedantic)]
 #[path = "../../guard-command/tests/sfrs_support/mod.rs"]
 mod sfrs_support;
+mod shell_helpers_op;
 mod shim_op;
-#[cfg(unix)]
 mod skill_directory_identity_op;
-#[cfg(unix)]
 mod skill_identity_canon;
-#[cfg(unix)]
 mod skill_identity_discovery;
-#[cfg(unix)]
 mod skill_identity_inspect;
-#[cfg(unix)]
+mod skill_identity_platform;
 mod skill_identity_walk;
 #[cfg(unix)]
 mod state_directory_lock;

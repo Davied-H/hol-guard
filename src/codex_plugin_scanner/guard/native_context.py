@@ -78,6 +78,7 @@ _RESULT_OPTIONAL_KEYS = {
     "local_cli_identity",
     "custom_extension_continuity",
     "package_json_scripts",
+    "local_cli_identities",
     "custom_extension_suggestion",
     "managed_controls_policy_fields",
 }
@@ -90,23 +91,32 @@ _RESULT_CODES = {
     "native_mcp_risk_serialization_failed",
     "canonical_json_unencodable",
     "native_mcp_arguments_invalid",
+    "native_local_cli_identify_deadline",
+    "native_local_cli_identify_program_unavailable",
+    "native_hook_approval_context_invalid",
+    "native_hook_approval_context_path_unresolved",
+    "native_hook_approval_context_random_failed",
     "native_custom_extension_continuity_invalid_request",
 }
 
 # Filesystem authority: launch/executable identities hash on-disk bytes and
 # stat metadata, so the same request legitimately produces a different result
 # after entrypoint/executable bytes change; `package_json_scripts` reads the
-# project's package.json and lockfiles.  `mcp_launch_environment` is also
+# project's package.json and lockfiles, and `local_cli_identify` resolves
+# launches and runner bins on disk.  `mcp_launch_environment` is also
 # uncacheable because it carries granted credentials (see the transport
 # comment below).  Every other kind is a pure function of request content.
 _UNCACHEABLE_DIGEST_KINDS = frozenset(
     {
+        "generic_hook_approval_context",
         "mcp_launch_environment",
         "runtime_executable_identity",
+        "runtime_hook_approval_context",
         "runtime_launch_identity",
         "runtime_launch_identity_matches",
         "runtime_launch_identity_projection",
         "package_json_scripts",
+        "local_cli_identify",
     }
 )
 _MAX_REQUEST_BYTES = 2 * 1024 * 1024
@@ -387,6 +397,7 @@ _OK_NULLABLE_OUTPUT_FIELD: dict[str, str] = {
     # Either ``digest`` or ``token`` is present depending on the request's
     # config; ``mcp_tool_risk`` is always populated — the adapter validates.
     "build_mcp_tool_approval_hash": "mcp_tool_risk",
+    "local_cli_identify": "local_cli_identities",
 }
 
 
@@ -656,6 +667,9 @@ def _decode_result(
         return None
     # Shape is checked by ``package_json_scripts``; absent means not applicable.
     if "package_json_scripts" in payload and kind != "package_json_scripts":
+        return None
+    # Shape is checked by ``native_local_cli_identify``; absent means not applicable.
+    if "local_cli_identities" in payload and kind != "local_cli_identify":
         return None
     # Shape is checked by ``custom_extension_suggestion``; absent means not applicable.
     if "custom_extension_suggestion" in payload and kind != "custom_extension_suggestion":
@@ -946,28 +960,6 @@ def context_opaque_digest(
     if strict:
         return f"{_UNBOUND_PREFIX}{unbound_label}:{_unbound_material_digest(material)}"
     return hashlib.sha256(material.encode("utf-8")).hexdigest()  # codeql[py/weak-sensitive-data-hashing]
-
-
-def context_package_environment_values(
-    manager: str,
-    environment: Mapping[str, str],
-    referenced_names: Sequence[str],
-    *,
-    guard_home: Path | None = None,
-) -> dict[str, str | None] | None:
-    """Transport native package environment selection without a local fallback."""
-
-    result = native_context_digest(
-        "package_environment_policy",
-        {
-            "manager": manager,
-            "environment": dict(environment),
-            "referenced_names": list(referenced_names),
-        },
-        guard_home=_resolve_digest_home(guard_home),
-    )
-    values = result.get("environment_values") if isinstance(result, dict) else None
-    return values if isinstance(values, dict) else None
 
 
 def context_mcp_launch_environment(
@@ -1343,7 +1335,6 @@ __all__ = [
     "context_mcp_tool_approval_hash",
     "context_mcp_tool_catalog_fingerprint",
     "context_opaque_digest",
-    "context_package_environment_values",
     "context_package_evidence",
     "context_runtime_executable_identity",
     "context_runtime_launch_identity",
