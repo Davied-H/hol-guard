@@ -23,7 +23,7 @@ fn input(root: &Path, command: &[&str]) -> Input {
     }
 }
 
-fn after<'a>(argv: &'a [String], flag: &str, value: &str) -> bool {
+fn after(argv: &[String], flag: &str, value: &str) -> bool {
     argv.windows(2)
         .any(|pair| pair[0] == flag && pair[1] == value)
 }
