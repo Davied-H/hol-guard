@@ -206,6 +206,11 @@ def run_full_task(
                 raise RuntimeError("installed Guard or its generated extension changed during the session")
     except Exception as exc:
         case["execution_error"] = type(exc).__name__
+        chain, link = [], exc
+        while link is not None and len(chain) < 4:
+            chain.append(f"{type(link).__name__}: {link}"[:240])
+            link = link.__cause__ or link.__context__
+        case["execution_error_chain"] = chain
         if private is not None and private.is_dir():
             (private / "execution-error.txt").write_text(f"{type(exc).__name__}: {exc}\n", encoding="utf-8")
     finally:
