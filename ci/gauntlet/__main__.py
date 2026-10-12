@@ -41,6 +41,11 @@ def main() -> int:
         help="Run OpenAI Luna (openai-codex/gpt-6-luna) through the existing Oh My Pi ChatGPT login; "
         "medium effort unless --reasoning-effort high or low",
     )
+    run.add_argument(
+        "--native-route",
+        metavar="PROVIDER/MODEL",
+        help="Like --native-luna-route, through another pinned native OMP backend (for example devin/swe-2)",
+    )
     run.add_argument("--sdk-root", type=Path, help="Pinned SDK directory for --native-luna-route (default: from omp)")
     run.add_argument("--case", action="append", dest="cases", help="Targeted runs are never full-profile qualification")
     run.add_argument("--timeout", type=float, default=300, help="Per-scenario host deadline in seconds")
@@ -93,9 +98,16 @@ def main() -> int:
     run.add_argument("--work-root", type=Path, help="Parent for newly created disposable fixtures")
     run.add_argument(
         "--profile",
-        choices=("core", "contained-bun-vitest"),
+        choices=("core", "contained-bun-vitest", "full-tasks"),
         default="core",
-        help="Complete core qualification or the additive contained Bun/Vitest profile",
+        help="Complete core qualification, the additive contained Bun/Vitest profile, or full developer tasks "
+        "(never merge-qualifying)",
+    )
+    run.add_argument(
+        "--full-task-mode",
+        choices=("discover", "enforce"),
+        default="enforce",
+        help="discover runs full tasks under Watch and lists every would-have-stopped verdict",
     )
     run.add_argument(
         "--contained-test-project",
@@ -217,14 +229,22 @@ def main() -> int:
             return _run_harness(args)
         if args.harness_cli or args.harness_model:
             raise ValueError("--harness-cli and --harness-model need --harness claude-code, codex or cursor")
+        backend = None
+        if args.native_route:
+            from .luna_route import parse_backend
+
+            backend = parse_backend(args.native_route)
+            args.native_luna_route = True
         if args.native_luna_route:
             if args.provider_url or args.model or args.provider_identity or args.allow_loopback_provider:
                 raise ValueError("--native-luna-route selects the provider, model, identity and loopback itself")
-            from .luna_route import DEFAULT_EFFORT, EFFORTS
+            from .luna_route import BACKEND, BACKENDS, DEFAULT_EFFORT
 
+            efforts = BACKENDS[backend or BACKEND]
             args.reasoning_effort = args.reasoning_effort or DEFAULT_EFFORT
-            if args.reasoning_effort not in EFFORTS:
-                raise ValueError("--native-luna-route supports Luna " + " or ".join(EFFORTS))
+            if args.reasoning_effort not in efforts:
+                label = "/".join(backend) if backend else "Luna"
+                raise ValueError(f"--native-luna-route supports {label} " + " or ".join(efforts))
         elif not args.provider_url or not args.model or not args.provider_identity:
             raise ValueError("live provider URL, model and provider identity are required; there is no mock fallback")
         if not 30 <= args.timeout <= 1800 or not 1 <= args.max_inference_rounds <= 128:
@@ -235,8 +255,12 @@ def main() -> int:
         from .parallel import MAX_SLOTS, validate_jobs
 
         validate_jobs(args.jobs)
-        if args.profile == "contained-bun-vitest" and args.jobs != 1:
+        if args.profile != "core" and args.jobs != 1:
             raise ValueError("--jobs is only supported by the core profile")
+        if args.profile == "full-tasks" and (
+            args.fail_fast or args.host_slots is not None or args.max_load is not None
+        ):
+            raise ValueError("--fail-fast, --host-slots and --max-load are only supported by the core profile")
         if args.profile == "core" and args.contained_test_project is not None:
             raise ValueError("--contained-test-project requires --profile contained-bun-vitest")
         if args.profile == "contained-bun-vitest" and args.contained_test_project is None:
@@ -278,7 +302,12 @@ def main() -> int:
                     signal.signal(name, lambda number, _frame: sys.exit(128 + number))
 
                 route = stack.enter_context(
-                    NativeLunaRoute(omp=args.omp, sdk_root=args.sdk_root, effort=args.reasoning_effort)
+                    NativeLunaRoute(
+                        omp=args.omp,
+                        sdk_root=args.sdk_root,
+                        effort=args.reasoning_effort,
+                        **({"backend": backend} if backend else {}),
+                    )
                 )
                 provider = route.provider(max_rounds=args.max_inference_rounds, timeout=min(args.timeout, 120))
             else:
@@ -292,7 +321,20 @@ def main() -> int:
                     "timeout": min(args.timeout, 120),
                     "reasoning_effort": args.reasoning_effort,
                 }
-            if args.profile == "contained-bun-vitest":
+            if args.profile == "full-tasks":
+                from .full_task_runner import run_full_tasks
+
+                report = run_full_tasks(
+                    expected_source_sha=args.expected_source_sha,
+                    output=args.output,
+                    provider=provider,
+                    mode=args.full_task_mode,
+                    model_timeout=args.timeout,
+                    selected_ids=args.cases,
+                    omp=args.omp,
+                    work_root=args.work_root,
+                )
+            elif args.profile == "contained-bun-vitest":
                 report = run_contained_profile(
                     expected_source_sha=args.expected_source_sha,
                     output=args.output,
