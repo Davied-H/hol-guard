@@ -629,9 +629,11 @@ def _generic_hook_composition_inputs(
     configured_narrow_override: object,
     configured_override: object,
     command_text: str | None,
+    home_dir: Path | None,
     native_edge_result: Mapping[str, object] | None,
     payload_map: Mapping[str, object],
     runtime_artifact_checked: bool,
+    runtime_workspace: Path | None,
 ) -> dict[str, object]:
     return composition_inputs(
         cli_action=getattr(args, "policy_action", None),
@@ -641,9 +643,11 @@ def _generic_hook_composition_inputs(
         has_command_text=isinstance(command_text, str) and bool(command_text.strip()),
         has_configured_override=configured_override is not None,
         has_narrow_override=configured_narrow_override is not None,
+        home_dir=home_dir,
         native_edge_result=native_edge_result,
         payload=payload_map,
         runtime_artifact_checked=runtime_artifact_checked,
+        runtime_workspace=runtime_workspace,
     )
 
 
@@ -703,9 +707,11 @@ def run_native_generic_payload(
         configured_narrow_override=configured_narrow_override,
         configured_override=configured_override,
         command_text=command_text,
+        home_dir=home_dir,
         native_edge_result=native_edge_result,
         payload_map=payload_map,
         runtime_artifact_checked=runtime_artifact_checked,
+        runtime_workspace=runtime_workspace,
     )
     classifiers = hook_classifiers(
         canonical_harness=_canonical_harness_name(args.harness),
@@ -1087,7 +1093,7 @@ def run_native_generic_payload(
         payload=payload_map,
         policy_action=policy_action,
         remediation=lambda: _embedded_script_remediation(command_text),
-        verified_benign=lambda: hook_event_name == "PreToolUse" and classifiers["benign_tool_action"](hook_event_name),
+        verified_benign=lambda: hook_event_name == "PreToolUse" and bool(composition["verified_benign"]),
     )
 
 
