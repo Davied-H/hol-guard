@@ -11,6 +11,14 @@ use std::sync::LazyLock;
 const NODE_INVALID: &str = "node_test_restricted_invalid_command";
 const VITEST_INVALID: &str = "vitest_restricted_invalid_command";
 
+/// `node_modules/<entry>`, `./node_modules/<entry>`, or `<dir>/node_modules/<entry>`.
+fn local_package_entry(argument: &str, package_entry: &str) -> bool {
+    argument
+        .strip_suffix(package_entry)
+        .and_then(|prefix| prefix.strip_suffix("node_modules/"))
+        .is_some_and(|prefix| prefix.is_empty() || prefix.ends_with('/'))
+}
+
 fn basename(command: &[String]) -> &str {
     command
         .first()
@@ -326,12 +334,12 @@ fn contained_kind(command: &[String]) -> Result<Value, RestrictedPytestError> {
             || (matches!(name, "node" | "nodejs")
                 && entries.clone().any(|v| {
                     [
-                        "/node_modules/eslint/bin/eslint.js",
-                        "/node_modules/typescript/bin/tsc",
-                        "/node_modules/vite/bin/vite.js",
+                        "eslint/bin/eslint.js",
+                        "typescript/bin/tsc",
+                        "vite/bin/vite.js",
                     ]
                     .iter()
-                    .any(|suffix| v.ends_with(suffix))
+                    .any(|entry| local_package_entry(v, entry))
                 })));
     Ok(
         json!({"inline_eval":inline,"node_test":node_test,"vitest":vitest,"git":name=="git","node_tool":node_tool}),
