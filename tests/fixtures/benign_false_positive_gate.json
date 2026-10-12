@@ -1632,6 +1632,54 @@
       "expect": "allow"
     },
     {
+      "id": "cp-recursive-in-workspace",
+      "fix_area": "shell",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cp -R src src-copy"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "neg-cp-recursive-to-ssh",
+      "fix_area": "shell",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cp -R src ${HOME}/.ssh/x"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-cp-recursive-ssh-source",
+      "fix_area": "shell",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cp -R ${HOME}/.ssh ssh-copy"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
       "id": "git-cd-worktree-log",
       "fix_area": "shell",
       "harnesses": [
@@ -2062,6 +2110,38 @@
       "tool": "shell",
       "tool_input": {
         "command": "git -C ${ORG}/service-api status --short"
+      },
+      "cwd": "org_app",
+      "expect": "allow"
+    },
+    {
+      "id": "home-rg-relative-sibling-repo",
+      "fix_area": "shell",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "rg -n export ../service-api"
+      },
+      "cwd": "org_app",
+      "expect": "allow"
+    },
+    {
+      "id": "home-rg-abs-sibling-repo",
+      "fix_area": "shell",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "rg -n export ${ORG}/service-api/src"
       },
       "cwd": "org_app",
       "expect": "allow"
