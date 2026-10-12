@@ -31,8 +31,9 @@ pub(super) fn safe_find_listing_arguments(
     }
     verified_path_context(context.home_dir, context.cwd)
         && roots.iter().all(|root| {
-            bounded_read_target(root, context.home_dir, context.cwd, true)
-                || super::search::skill_listing_root(root, context)
+            !super::search::skill_link_resolves_over_home(root, context)
+                && (bounded_read_target(root, context.home_dir, context.cwd, true)
+                    || super::search::skill_listing_root(root, context))
         })
         && safe_expression(expression)
 }

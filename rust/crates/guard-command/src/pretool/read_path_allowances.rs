@@ -136,6 +136,22 @@ const SKILL_ROOTS: [&str; 6] = [
     ".zcode/cli/plugins/cache",
 ];
 
+/// A skill-root symlink that resolves to the home directory, or to one of
+/// its ancestors, would make a names-only listing print the whole home.
+pub(in crate::pretool) fn skill_link_resolves_over_home(
+    expanded: &std::path::Path,
+    canonical: &std::path::Path,
+    home: &std::path::Path,
+) -> bool {
+    if !home.starts_with(canonical) {
+        return false;
+    }
+    SKILL_ROOTS.iter().any(|root| {
+        let lexical = home.join(root);
+        expanded.starts_with(&lexical) && canonical != lexical && !canonical.starts_with(&lexical)
+    })
+}
+
 /// Every skill root holding `canonical`, each with the visible components
 /// below it.
 fn skill_tree_parts<'a>(

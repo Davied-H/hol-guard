@@ -47,6 +47,37 @@ pub(in crate::pretool) fn agent_root_listing(
 /// names only (`ls` without recursion, `find` without actions). Agents look
 /// up skill scripts this way; the operand must clear the same word screens as
 /// the `.agent` root and resolve to a directory the skill rules admit.
+/// The operand names a skill root, and that root is a link to the home
+/// directory or an ancestor. `skill_listing_root` already rejects it; a
+/// bounded directory read must reject it too, or `find` allows the listing.
+pub(in crate::pretool) fn skill_link_resolves_over_home(
+    value: &str,
+    context: ReadContext<'_>,
+) -> bool {
+    if value.is_empty()
+        || value.len() > 4096
+        || value.starts_with('-')
+        || value.contains(HAZARDS)
+        || value.contains(['*', '?', '[', ']', '{', '}'])
+        || value.split('/').any(|part| part == "..")
+    {
+        return false;
+    }
+    let Some(home) = context
+        .home_dir
+        .and_then(|home| std::fs::canonicalize(home).ok())
+    else {
+        return false;
+    };
+    let Some(expanded) = expanded_operand(value, context) else {
+        return false;
+    };
+    let Some(canonical) = std::fs::canonicalize(&expanded).ok() else {
+        return false;
+    };
+    super::super::read_paths::skill_link_resolves_over_home(&expanded, &canonical, &home)
+}
+
 pub(in crate::pretool) fn skill_listing_root(value: &str, context: ReadContext<'_>) -> bool {
     if value.is_empty()
         || value.len() > 4096
