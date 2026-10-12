@@ -25,6 +25,10 @@ use super::{rank, rule_floor, CompiledNativeCommandControls};
 use crate::pretool::generic::workspace_redirects;
 use crate::CanonicalCommandV1;
 
+#[path = "native_command_link_makers.rs"]
+mod link_makers;
+use link_makers::creates_links;
+
 /// Compatibility owners recognize these programs without a catalog matcher.
 const COMPATIBILITY_EXECUTABLES: &[(&str, &[&str])] = &[
     ("command.git", &["git"]),
@@ -236,75 +240,6 @@ fn literal_redirects_only(text: &str) -> bool {
     workspace_redirects::project_naming_files(text).is_some_and(|(projected, names_files)| {
         let literal = unquoted_literal(&projected);
         !moves_data(&literal) && !(names_files && creates_links(&literal))
-    })
-}
-
-/// Whether a segment runs a program that makes or moves links. A later
-/// redirect can write through such a link, so its literal path no longer
-/// names the file. Copies that make or keep links (`cp -l`, `-a`, `-P`, `-d`,
-/// `-R`), archive or sync tools that recreate them, and Git commands that
-/// write a working tree, which may hold committed symlinks, count too. Names
-/// are compared case-insensitively without `.exe` or `.cmd`, and any `--sy`
-/// option is taken as GNU's abbreviation of `--symbolic-link`.
-fn creates_links(literal: &str) -> bool {
-    let words = || literal.split_whitespace();
-    let link_copy = words().any(|word| {
-        word.starts_with("--sy")
-            || matches!(
-                word,
-                "--archive" | "--no-dereference" | "--recursive" | "--preserve=links" | "--link"
-            )
-            || (word.starts_with('-')
-                && !word.starts_with("--")
-                && word.contains(['s', 'a', 'P', 'd', 'r', 'R', 'l']))
-    });
-    let writes_tree = words().any(|word| {
-        matches!(
-            word,
-            "checkout"
-                | "checkout-index"
-                | "switch"
-                | "restore"
-                | "reset"
-                | "clone"
-                | "worktree"
-                | "stash"
-                | "pull"
-                | "merge"
-                | "rebase"
-                | "cherry-pick"
-                | "revert"
-                | "apply"
-                | "am"
-                | "read-tree"
-                | "sparse-checkout"
-                | "submodule"
-        )
-    });
-    command_words(literal).any(|word| {
-        let base = word.rsplit(['/', '\\']).next().unwrap_or(word);
-        let lowered = base.to_ascii_lowercase();
-        let name = lowered
-            .strip_suffix(".exe")
-            .or_else(|| lowered.strip_suffix(".cmd"))
-            .unwrap_or(&lowered);
-        matches!(
-            name,
-            "ln" | "gln"
-                | "link"
-                | "mklink"
-                | "mv"
-                | "gmv"
-                | "tar"
-                | "gtar"
-                | "bsdtar"
-                | "unzip"
-                | "cpio"
-                | "pax"
-                | "7z"
-                | "rsync"
-        ) || (link_copy && matches!(name, "cp" | "gcp" | "ditto"))
-            || (writes_tree && name == "git")
     })
 }
 
