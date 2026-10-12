@@ -1,75 +1,12 @@
 //! Assignment prefixes (`NAME=value cmd`) the compatibility layer can attribute.
 //!
 //! A prefix only changes the program's environment, so the observed program
-//! and arguments still describe the command. That holds unless the name points
-//! the program at other code or configuration. Those names, and every name on
-//! tools whose compatibility rules depend on their configuration, keep the
-//! segment unsupported.
+//! and arguments still describe the command when the name is inert. Any other
+//! name can point the program, its compiler or its loader at other code
+//! (`NODE_PATH`, `RUSTFLAGS`, `GOFLAGS`, `CC`, `LD_PRELOAD`, ...). No denylist
+//! can name all of those, so only an allowlist of inert names is accepted.
 
-use super::basename;
 use crate::CommandSegmentV1;
-
-/// Programs whose observed operation can change with any environment name
-/// other than an inert one: Git, GitHub, container and cluster CLIs read
-/// remotes, contexts and credentials from it, and network clients read config.
-const CONFIGURED_PROGRAMS: &[&str] = &[
-    "git", "gh", "docker", "kubectl", "oc", "curl", "wget", "nc", "netcat", "scp", "rsync", "sftp",
-    "ftp", "ssh", "printenv", "env",
-];
-
-/// Names that load code or configuration before or instead of the program.
-const LOADER_NAMES: &[&str] = &[
-    "HOME",
-    "ENV",
-    "BASH_ENV",
-    "ZDOTDIR",
-    "SHELLOPTS",
-    "BASHOPTS",
-    "IFS",
-    "PS4",
-    "PROMPT_COMMAND",
-    "NODE_OPTIONS",
-    "BUN_OPTIONS",
-    "DENO_OPTIONS",
-    "PYTHONSTARTUP",
-    "PYTHONPATH",
-    "PYTHONHOME",
-    "PYTHONUSERBASE",
-    "PYTHONINSPECT",
-    "PERL5OPT",
-    "PERL5LIB",
-    "PERLLIB",
-    "RUBYOPT",
-    "RUBYLIB",
-    "JAVA_TOOL_OPTIONS",
-    "_JAVA_OPTIONS",
-    "JDK_JAVA_OPTIONS",
-    "CURL_HOME",
-    "WGETRC",
-    "PAGER",
-    "MANPAGER",
-    "EDITOR",
-    "VISUAL",
-    "BROWSER",
-    "LESSOPEN",
-    "LESSCLOSE",
-    "SSH_ASKPASS",
-    "SUDO_ASKPASS",
-    "SHELL",
-    "PERL5DB",
-    "RUSTC",
-    "RUSTC_WRAPPER",
-];
-
-const LOADER_PREFIXES: &[&str] = &[
-    "LD_",
-    "DYLD_",
-    "GIT_",
-    "XDG_",
-    "NPM_CONFIG_",
-    "BUN_CONFIG_",
-    "CARGO_",
-];
 
 /// Names that only adjust output, locale or a build mode.
 pub(crate) fn inert_environment_name(name: &str) -> bool {
@@ -95,21 +32,11 @@ pub(crate) fn inert_environment_name(name: &str) -> bool {
     ) || name.starts_with("LC_")
 }
 
-fn loader_name(name: &str) -> bool {
-    let upper = name.to_ascii_uppercase();
-    LOADER_NAMES.contains(&upper.as_str())
-        || LOADER_PREFIXES
-            .iter()
-            .any(|prefix| upper.starts_with(prefix))
-}
-
 pub(super) fn supported(segment: &CommandSegmentV1) -> bool {
-    let names = &segment.environment_names;
-    if names.iter().all(|name| inert_environment_name(name)) {
-        return true;
-    }
-    !CONFIGURED_PROGRAMS.contains(&basename(segment).as_str())
-        && !names.iter().any(|name| loader_name(name))
+    segment
+        .environment_names
+        .iter()
+        .all(|name| inert_environment_name(name))
 }
 
 #[cfg(test)]
@@ -136,22 +63,35 @@ mod tests {
     }
 
     #[test]
-    fn configured_programs_and_loader_names_stay_unsupported() {
-        assert!(supported(&segment("bun", &["APP_FLAG", "NODE_PATH"])));
-        assert!(!supported(&segment("git", &["APP_FLAG"])));
-        assert!(!supported(&segment("/usr/bin/curl", &["APP_FLAG"])));
-        for name in [
-            "NODE_OPTIONS",
-            "BUN_OPTIONS",
-            "LD_PRELOAD",
-            "DYLD_INSERT_LIBRARIES",
-            "GIT_SSH_COMMAND",
-            "HOME",
-            "npm_config_script_shell",
-            "XDG_CONFIG_HOME",
-            "PYTHONPATH",
-        ] {
-            assert!(!supported(&segment("bun", &[name])), "{name}");
+    fn every_other_name_stays_unsupported() {
+        for program in ["bun", "node", "cargo", "go", "make", "git", "curl"] {
+            for name in [
+                "APP_FLAG",
+                "NODE_PATH",
+                "NODE_OPTIONS",
+                "BUN_OPTIONS",
+                "LD_PRELOAD",
+                "DYLD_INSERT_LIBRARIES",
+                "GIT_SSH_COMMAND",
+                "HOME",
+                "npm_config_script_shell",
+                "XDG_CONFIG_HOME",
+                "PYTHONPATH",
+                "PYTHONBREAKPOINT",
+                "RUSTFLAGS",
+                "RUSTDOCFLAGS",
+                "GOFLAGS",
+                "CC",
+                "CXX",
+                "MAKEFLAGS",
+                "GCONV_PATH",
+            ] {
+                assert!(!supported(&segment(program, &[name])), "{program}: {name}");
+                assert!(
+                    !supported(&segment(program, &["CI", name])),
+                    "{program}: CI {name}"
+                );
+            }
         }
     }
 }

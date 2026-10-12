@@ -232,6 +232,11 @@ fn build_commands_behind_command_time_or_plain_env_are_not_evaluation_failures()
         "env LD_PRELOAD=./x.so vite build",
         "GIT_SSH_COMMAND=./x git fetch",
         "env GIT_SSH_COMMAND=./x git fetch",
+        "NODE_PATH=./evil node build.js",
+        "RUSTFLAGS='-C linker=./x' cargo build",
+        "GOFLAGS=-toolexec=./x go build",
+        "CC=./x npm run build",
+        "APP_FLAG=1 bun run build",
     ] {
         assert_eq!(decision(&controls, command).0, "block", "{command}");
     }

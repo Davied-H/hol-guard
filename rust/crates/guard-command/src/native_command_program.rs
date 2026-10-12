@@ -374,30 +374,11 @@ impl NativeCommandProgram {
                 .iter()
                 .enumerate()
                 .filter(|(_, extension)| active_extensions.contains(&extension.extension_id))
-                .any(|(index, _)| !self.declared_names(index).is_disjoint(&prefixed))
-    }
-
-    /// Every program an extension names, either as a declared executable or
-    /// as one a rule's matcher requires.
-    fn declared_names(&self, extension_index: usize) -> BTreeSet<String> {
-        let mut names: BTreeSet<String> = self.extensions[extension_index]
-            .executables
-            .iter()
-            .map(|name| lowercase_for_ascii_comparison(basename(name)))
-            .collect();
-        for rule in self
-            .rules
-            .iter()
-            .filter(|rule| rule.extension_index == extension_index)
-        {
-            if let Some(required) = rule
-                .matcher
-                .and_then(|node| self.required_executables(node, 0))
-            {
-                names.extend(required);
-            }
-        }
-        names
+                // A rule without an executable gate can own any program.
+                .any(|(index, _)| {
+                    self.extension_names(index, Some(&[]))
+                        .is_none_or(|names| !names.is_disjoint(&prefixed))
+                })
     }
 
     /// Executables one of which a match of `node` must run. Alternatives need
