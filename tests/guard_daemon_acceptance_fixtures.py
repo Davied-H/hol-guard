@@ -165,6 +165,55 @@ def _run_client_reviews(
             future.result(timeout=timeout_seconds)
 
 
+def _prime_resident_client_pool(
+    *,
+    port: int,
+    auth_token: str,
+    query: str,
+    concurrency: int,
+    deadline_monotonic: float,
+) -> None:
+    """Send one burst of concurrent benign requests so every pool slot spawns once."""
+
+    def prime(index: int) -> bool:
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{port}/v1/hooks/pi?{query}",
+            data=json.dumps(
+                {
+                    "hook_event_name": "PostToolUse",
+                    "tool_name": "Read",
+                    "tool_input": {"path": "docs/prime.md"},
+                    "tool_response": [{"type": "text", "text": "routine documentation"}],
+                    "stdout": "routine documentation",
+                    "session_id": f"prime-{index}",
+                    "guard_remaining_ms": 30_000,
+                }
+            ).encode(),
+            headers={
+                "Content-Type": "application/json",
+                "X-Guard-Token": auth_token,
+                "X-Guard-Remaining-Ms": "30000",
+            },
+            method="POST",
+        )
+        while time.monotonic() < deadline_monotonic:
+            try:
+                with urllib.request.urlopen(request, timeout=30) as response:
+                    result = cast(dict[str, object], json.loads(response.read()))
+            except TRANSIENT_HOOK_EXCEPTIONS:
+                time.sleep(0.1)
+                continue
+            if result.get("reason_code") not in TRANSIENT_HOOK_REASON_CODES:
+                return True
+            time.sleep(0.1)
+        return False
+
+    with ThreadPoolExecutor(max_workers=concurrency) as executor:
+        warmed = list(executor.map(prime, range(concurrency)))
+    if not all(warmed):
+        raise RuntimeError("resident client pool did not warm")
+
+
 def _mark_resident_request_log() -> None:
     """Separate warmup resident calls from the measured workload."""
 
@@ -196,7 +245,10 @@ def run_workload(spec: WorkloadSpec, *, root: Path) -> WorkloadResult:
     # HOL_GUARD_NATIVE=force the resident edge still compiles its snapshot on
     # first use, and early requests would race it. Production callers retry
     # `native_policy_not_ready` until the edge answers, so prime the same way
-    # before the measured workload begins.
+    # before the measured workload begins. Neither readiness signal covers the
+    # resident client pool, which spawns one Rust client process per concurrent
+    # stream on first use; production daemons reach that size after their first
+    # concurrent burst, so prime the pool before the measured window too.
     warmup_query = (
         f"guard-home={urllib.parse.quote(str(guard_home))}&"
         f"home={urllib.parse.quote(str(root))}&"
@@ -235,6 +287,13 @@ def run_workload(spec: WorkloadSpec, *, root: Path) -> WorkloadResult:
         time.sleep(0.1)
     else:
         raise RuntimeError("native policy did not become ready")
+    _prime_resident_client_pool(
+        port=daemon.port,
+        auth_token=daemon._server.auth_token,
+        query=warmup_query,
+        concurrency=sum(client["concurrency"] for client in spec["clients"]),
+        deadline_monotonic=time.monotonic() + 60 * under_coverage_scale(1.0),
+    )
     _mark_resident_request_log()
     initial_pid = os.getpid()
     initial_workers = threading.active_count()
