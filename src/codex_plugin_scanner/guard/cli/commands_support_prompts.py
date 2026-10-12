@@ -261,8 +261,16 @@ def _prompt_request_classes(artifact: GuardArtifact) -> set[str]:
     values = prompt_classes if isinstance(prompt_classes, list) else [artifact.metadata.get("prompt_request_class")]
     return {str(item) for item in values if isinstance(item, str) and item.strip()}
 
+_NATIVE_COPY_UNAVAILABLE_REASON = (
+    "HOL Guard flagged this request for review, but its native runtime is unavailable to explain why."
+)
+
 def _runtime_artifact_native_reason(artifact: GuardArtifact, response_payload: dict[str, object]) -> str:
-    return native_guard_support.native_reason(artifact, response_payload)
+    # Copy only: the decision was already made natively and is not changed here.
+    try:
+        return native_guard_support.native_reason(artifact, response_payload)
+    except native_guard_support.NativeGuardSupportError:
+        return _NATIVE_COPY_UNAVAILABLE_REASON
 
 def _claude_prompt_additional_context(
     *,
@@ -274,13 +282,16 @@ def _claude_prompt_additional_context(
 ) -> str | None:
     if event_name != "UserPromptSubmit" or policy_action != "require-reapproval":
         return None
-    return native_guard_support.claude_additional_context(
-        harness=_canonical_harness_name(harness),
-        event_name=event_name,
-        policy_action=policy_action,
-        artifact=artifact,
-        native_reason=native_reason,
-    )
+    try:
+        return native_guard_support.claude_additional_context(
+            harness=_canonical_harness_name(harness),
+            event_name=event_name,
+            policy_action=policy_action,
+            artifact=artifact,
+            native_reason=native_reason,
+        )
+    except native_guard_support.NativeGuardSupportError:
+        return None
 
 def _claude_prompt_system_message(
     *,
@@ -291,14 +302,20 @@ def _claude_prompt_system_message(
 ) -> str | None:
     if policy_action not in {"require-reapproval", "block", "sandbox-required"}:
         return None
-    return native_guard_support.claude_system_message(
-        event_name=event_name, policy_action=policy_action, artifact=artifact, native_reason=native_reason
-    )
+    try:
+        return native_guard_support.claude_system_message(
+            event_name=event_name, policy_action=policy_action, artifact=artifact, native_reason=native_reason
+        )
+    except native_guard_support.NativeGuardSupportError:
+        return None
 
 def _codex_prompt_block_system_message(*, policy_action: str, native_reason: str) -> str | None:
     if policy_action not in {"review", "require-reapproval", "sandbox-required", "block"}:
         return None
-    return native_guard_support.codex_block_message(policy_action=policy_action, native_reason=native_reason)
+    try:
+        return native_guard_support.codex_block_message(policy_action=policy_action, native_reason=native_reason)
+    except native_guard_support.NativeGuardSupportError:
+        return None
 
 def _copilot_hook_reason(*values: object | None) -> str:
     reason = _native_hook_reason(*values)

@@ -3,16 +3,24 @@
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from . import native_execution
 
 _UNSERIALIZABLE = "<unserializable>"
+_NON_FINITE_TAG = "\0float"
 
 
-class NativeGuardSupportError(RuntimeError):
-    """The native owner could not supply a complete, typed support result."""
+UNAVAILABLE_MESSAGE = "HOL Guard's native runtime is unavailable, so this request could not be completed."
+
+
+class NativeGuardSupportError(ValueError):
+    """The native owner could not supply a complete, typed support result.
+
+    A `ValueError` so CLI entry points print the message instead of a traceback.
+    """
 
 
 def _home(guard_home: Path | None) -> Path:
@@ -27,9 +35,9 @@ def _call(subop: str, payload: Mapping[str, object], guard_home: Path | None) ->
     try:
         result = native_execution.guard_support_native(subop, payload, guard_home=_home(guard_home))
     except (OSError, ValueError) as error:
-        raise NativeGuardSupportError("native_guard_support_unavailable") from error
+        raise NativeGuardSupportError(UNAVAILABLE_MESSAGE) from error
     if result is None:
-        raise NativeGuardSupportError("native_guard_support_unavailable")
+        raise NativeGuardSupportError(UNAVAILABLE_MESSAGE)
     return result
 
 
@@ -43,22 +51,31 @@ def _jsonable(value: object) -> object:
 
 def _string(result: object) -> str:
     if not isinstance(result, str):
-        raise NativeGuardSupportError("native_guard_support_invalid")
+        raise NativeGuardSupportError("HOL Guard received an invalid reply from its native runtime.")
     return result
 
 
 def _optional_string(result: object) -> str | None:
     if result is not None and not isinstance(result, str):
-        raise NativeGuardSupportError("native_guard_support_invalid")
+        raise NativeGuardSupportError("HOL Guard received an invalid reply from its native runtime.")
     return result
 
 
+def _toml_value(value: object) -> object:
+    """Shape a parsed config value the way the previous Python writer rendered it."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return {_NON_FINITE_TAG: repr(value)}
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, list):
+        return [_toml_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _toml_value(item) for key, item in value.items() if isinstance(key, str)}
+    return str(value)
+
+
 def render_toml(config: Mapping[str, object], *, guard_home: Path | None = None) -> str:
-    try:
-        json.dumps(config, allow_nan=False)
-    except (TypeError, ValueError) as error:
-        raise ValueError("Guard config contains a value that cannot be written.") from error
-    return _string(_call("toml_render", {"config": config}, guard_home))
+    return _string(_call("toml_render", {"config": _toml_value(dict(config))}, guard_home))
 
 
 def coerce_setting(key: str, value: object, *, max_wait_seconds: int, guard_home: Path | None = None) -> object:
@@ -69,19 +86,19 @@ def coerce_setting(key: str, value: object, *, max_wait_seconds: int, guard_home
         guard_home,
     )
     if not isinstance(result, dict):
-        raise NativeGuardSupportError("native_guard_support_invalid")
+        raise NativeGuardSupportError("HOL Guard received an invalid reply from its native runtime.")
     if "ok" in result:
         return result["ok"]
     message = result.get("error")
     if not isinstance(message, str):
-        raise NativeGuardSupportError("native_guard_support_invalid")
+        raise NativeGuardSupportError("HOL Guard received an invalid reply from its native runtime.")
     raise ValueError(f"{message}: {value!r}" if result.get("repr") else message)
 
 
 def coerce_loaded(items: Sequence[Mapping[str, object]], *, guard_home: Path | None = None) -> list[object]:
     result = _call("coerce_loaded", {"items": [dict(item) for item in items]}, guard_home)
     if not isinstance(result, list) or len(result) != len(items):
-        raise NativeGuardSupportError("native_guard_support_invalid")
+        raise NativeGuardSupportError("HOL Guard received an invalid reply from its native runtime.")
     return result
 
 

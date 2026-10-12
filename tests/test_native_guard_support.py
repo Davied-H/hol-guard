@@ -43,13 +43,55 @@ def test_unserializable_value_is_sent_as_an_invalid_sentinel(monkeypatch: pytest
     assert seen[0][1]["value"] == "<unserializable>"
 
 
-def test_toml_render_rejects_unserializable_config(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    _fake(monkeypatch, "unused")
-    with pytest.raises(ValueError, match="cannot be written"):
-        native_guard_support.render_toml({"x": float("nan")}, guard_home=tmp_path)
-
-
 def test_batch_length_mismatch_is_invalid(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _fake(monkeypatch, ["only-one"])
     with pytest.raises(native_guard_support.NativeGuardSupportError):
         native_guard_support.coerce_loaded([{"kind": "bool"}, {"kind": "bool"}], guard_home=tmp_path)
+
+
+def test_unavailable_error_is_a_value_error_with_a_clear_message(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _fake(monkeypatch, None)
+    with pytest.raises(ValueError, match="native runtime is unavailable"):
+        native_guard_support.coerce_setting("mode", "prompt", max_wait_seconds=600, guard_home=tmp_path)
+
+
+def test_hook_copy_degrades_without_a_traceback_when_the_resident_is_down(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from codex_plugin_scanner.guard.cli import commands_support_prompts as prompts
+    from codex_plugin_scanner.guard.models import GuardArtifact
+
+    _fake(monkeypatch, None)
+    artifact = GuardArtifact(
+        artifact_id="a",
+        name="n",
+        harness="claude-code",
+        artifact_type="prompt_request",
+        source_scope="harness",
+        config_path="",
+        metadata={},
+    )
+    reason = prompts._runtime_artifact_native_reason(artifact, {"policy_action": "block"})
+    assert "native runtime is unavailable" in reason
+    assert (
+        prompts._claude_prompt_system_message(
+            event_name="PreToolUse", policy_action="block", artifact=artifact, native_reason=reason
+        )
+        is None
+    )
+    assert prompts._codex_prompt_block_system_message(policy_action="block", native_reason="Open HOL Guard") is None
+
+
+def test_toml_value_matches_the_previous_writer_for_unusual_values() -> None:
+    import datetime
+
+    shaped = native_guard_support._toml_value(
+        {"nan": float("nan"), "when": datetime.date(2026, 1, 2), 7: "dropped", "inner": {"inf": float("-inf")}}
+    )
+    assert shaped == {
+        "nan": {"\0float": "nan"},
+        "when": "2026-01-02",
+        "inner": {"inf": {"\0float": "-inf"}},
+    }

@@ -156,3 +156,23 @@ fn unknown_subop_is_rejected() {
         "unknown_guard_support_subop:nope"
     );
 }
+
+#[test]
+fn toml_render_writes_non_finite_floats_like_python() {
+    let tag = "\0float";
+    let config =
+        json!({"a": {tag: "nan"}, "b": [{tag: "inf"}, {tag: "-inf"}], "t": {"x": {tag: "inf"}}});
+    assert_eq!(
+        run_subop("toml_render", &json!({"config": config})).unwrap(),
+        "a = nan\nb = [inf, -inf]\n\n[t]\nx = inf\n"
+    );
+}
+
+#[test]
+fn toml_render_quotes_keys_with_trailing_newlines() {
+    // The old `$`-anchored pattern accepted "a\n" as a bare key and wrote invalid TOML.
+    assert_eq!(
+        run_subop("toml_render", &json!({"a\n": 1})).unwrap(),
+        "\"a\\n\" = 1\n"
+    );
+}

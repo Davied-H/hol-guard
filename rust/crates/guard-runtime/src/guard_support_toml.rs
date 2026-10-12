@@ -22,10 +22,10 @@ fn table_lines(table: &Map<String, Value>, path: &[&str]) -> Vec<String> {
         let header: Vec<String> = path.iter().map(|part| key(part)).collect();
         lines.push(format!("[{}]", header.join(".")));
     }
-    for (name, value) in entries.iter().filter(|(_, value)| !value.is_object()) {
+    for (name, value) in entries.iter().filter(|(_, value)| !is_table(value)) {
         lines.push(format!("{} = {}", key(name), literal(value)));
     }
-    for (name, value) in entries.iter().filter(|(_, value)| value.is_object()) {
+    for (name, value) in entries.iter().filter(|(_, value)| is_table(value)) {
         let mut nested_path = path.to_vec();
         nested_path.push(name.as_str());
         let nested = table_lines(value.as_object().expect("object"), &nested_path);
@@ -35,6 +35,24 @@ fn table_lines(table: &Map<String, Value>, path: &[&str]) -> Vec<String> {
         lines.extend(nested);
     }
     lines
+}
+
+/// JSON cannot carry non-finite floats, so the client sends them as
+/// `{"\0float": "nan" | "inf" | "-inf"}`; TOML spells them the same way.
+const NON_FINITE_TAG: &str = "\0float";
+
+fn non_finite(value: &Value) -> Option<&'static str> {
+    let table = value.as_object().filter(|table| table.len() == 1)?;
+    match table.get(NON_FINITE_TAG)?.as_str()? {
+        "nan" => Some("nan"),
+        "inf" => Some("inf"),
+        "-inf" => Some("-inf"),
+        _ => None,
+    }
+}
+
+fn is_table(value: &Value) -> bool {
+    value.is_object() && non_finite(value).is_none()
 }
 
 fn key(name: &str) -> String {
@@ -50,6 +68,9 @@ fn key(name: &str) -> String {
 }
 
 fn literal(value: &Value) -> String {
+    if let Some(text) = non_finite(value) {
+        return text.to_owned();
+    }
     match value {
         Value::Bool(flag) => flag.to_string(),
         Value::Number(number) => number_text(number),
