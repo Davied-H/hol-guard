@@ -65,6 +65,16 @@ fn inside(base: &Path, workspace: &Path, value: &str) -> Option<PathBuf> {
     (normal.starts_with(workspace) && normal != workspace).then_some(normal)
 }
 
+/// Keys of remotes and submodules that name refs, URLs or checkout paths,
+/// never a program. Their other keys, such as `uploadpack` or `update`, can.
+fn names_data(section: &str, key: &str) -> bool {
+    matches!(section, "remote" | "submodule")
+        && matches!(
+            key,
+            "url" | "pushurl" | "fetch" | "push" | "path" | "branch"
+        )
+}
+
 /// Workspace paths a configured hook directory or helper command names. Every
 /// one becomes write-denied inside the sandbox. `None` keeps the command at
 /// review: an include of workspace configuration this reader never parses, a
@@ -103,14 +113,19 @@ pub(crate) fn helper_write_denials(config: &str, workspace: &Path) -> Option<Vec
         } else if key == "hookspath" {
             // Relative hook directories resolve against the work tree.
             candidates.push(inside(workspace, workspace, value)?);
-        } else if section != "branch" && section != "user" {
+        } else if section != "branch" && section != "user" && !names_data(&section, &key) {
             // The first word is a program Git finds on PATH unless it has a
-            // slash. Later words are arguments a shell resolves in the
-            // repository, so a workspace file there is a helper too.
+            // slash. Later words are arguments a shell may resolve in the
+            // repository, so each one is denied whether or not it exists yet:
+            // the sandbox could otherwise create it for a later host command.
             let words = value.trim_start_matches('!').split_whitespace();
             for (index, word) in words.enumerate() {
                 let word = word.trim_matches(|c| c == '"' || c == '\'');
-                if word.contains('/') || (index > 0 && workspace.join(word).exists()) {
+                let word = match word.split_once('=') {
+                    Some((option, value)) if option.starts_with('-') => value,
+                    _ => word,
+                };
+                if !word.is_empty() && !word.starts_with('-') && (word.contains('/') || index > 0) {
                     candidates.extend(inside(workspace, workspace, word));
                 }
             }
@@ -158,22 +173,38 @@ mod tests {
 
     #[test]
     fn helper_paths_in_any_word_are_write_denied() {
-        let ws = std::env::temp_dir().join(format!("hol-git-config-{}", std::process::id()));
-        std::fs::create_dir_all(ws.join("tools")).unwrap();
-        std::fs::write(ws.join("x.sh"), "").unwrap();
+        // Nothing here exists yet: the sandbox could create any of it.
+        let ws = Path::new("/w/repo");
         let config = "[core]\n\thooksPath = .githooks\n\tfsmonitor = ./tools/mon\n\
+             \tsshCommand = ssh -F sshcfg\n\
              [alias]\n\tx = !sh tools/x\n\ty = !sh x.sh\n\tst = status -s\n\
+             \td = difftool --extcmd=./tools/d\n\
              [branch \"main\"]\n\tmerge = refs/heads/main\n";
-        let got = denials(config, &ws).unwrap();
+        let got = denials(config, ws).unwrap();
         assert_eq!(
             got,
             vec![
                 ws.join(".githooks"),
                 ws.join("tools/mon"),
+                ws.join("sshcfg"),
                 ws.join("tools/x"),
                 ws.join("x.sh"),
+                ws.join("tools/d"),
             ]
         );
-        std::fs::remove_dir_all(&ws).unwrap();
+    }
+
+    #[test]
+    fn remote_and_submodule_data_keys_are_not_helpers() {
+        let ws = Path::new("/w/repo");
+        let config = "[remote \"origin\"]\n\turl = ../origin.git\n\
+             \tfetch = +refs/heads/*:refs/remotes/origin/*\n\
+             \tuploadpack = ./tools/up\n\
+             [submodule \"libs/x\"]\n\tpath = libs/x\n\turl = ./libs/x.git\n\
+             \tupdate = !sh tools/sync\n";
+        assert_eq!(
+            denials(config, ws).unwrap(),
+            vec![ws.join("tools/up"), ws.join("tools/sync")]
+        );
     }
 }
