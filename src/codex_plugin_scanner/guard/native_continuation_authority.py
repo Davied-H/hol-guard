@@ -70,22 +70,31 @@ def continuation_authority(call: str, *, guard_home: Path | None = None, **args:
                     parent[path[-1]] = float(token)
             except (KeyError, IndexError, TypeError):
                 continue
-    if result.get("exception") == "RuntimeError":
-        raise RuntimeError(result["error"])
-    if result.get("exception") == "ValueError":
-        raise ValueError(result["error"])
-    if result.get("exception") == "sqlite3.IntegrityError":
-        raise sqlite3.IntegrityError(result["error"])
-    if result.get("exception") == "sqlite3.DatabaseError":
-        raise sqlite3.DatabaseError(result["error"])
-    if result.get("exception") == "sqlite3.OperationalError":
-        raise sqlite3.OperationalError(result["error"])
-    if result.get("exception") == "sqlite3.DataError":
-        raise sqlite3.DataError(result["error"])
-    if result.get("exception") == "sqlite3.InterfaceError":
-        raise sqlite3.InterfaceError(result["error"])
-    if result.get("exception") == "MemoryError":
-        raise MemoryError(result["error"])
+    exception_type = {
+        "RuntimeError": RuntimeError,
+        "ValueError": ValueError,
+        "MemoryError": MemoryError,
+        "sqlite3.IntegrityError": sqlite3.IntegrityError,
+        "sqlite3.DatabaseError": sqlite3.DatabaseError,
+        "sqlite3.OperationalError": sqlite3.OperationalError,
+        "sqlite3.InternalError": sqlite3.InternalError,
+        "sqlite3.DataError": sqlite3.DataError,
+        "sqlite3.InterfaceError": sqlite3.InterfaceError,
+    }.get(result.get("exception", ""))
+    if exception_type is not None:
+        error = exception_type(result["error"])
+        code, prefix = result.get("sqlite_errorcode"), result.get("sqlite_errorname_prefix")
+        if isinstance(error, sqlite3.Error) and isinstance(code, int) and isinstance(prefix, str):
+            error.sqlite_errorcode = code
+            error.sqlite_errorname = next(
+                (
+                    name
+                    for name, value in vars(sqlite3).items()
+                    if value == code and (name == prefix or name.startswith(prefix + "_"))
+                ),
+                "unknown",
+            )
+        raise error
     return result
 
 

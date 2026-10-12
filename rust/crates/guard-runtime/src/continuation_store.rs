@@ -30,36 +30,65 @@ pub(crate) fn evaluate(args: &Value) -> super::runner_authority_op::KindResult {
         Err(StoreError::Value(message)) => Ok(json!({"error":message,"exception":"ValueError"})),
         Err(StoreError::Sqlite(error)) => {
             let class = sqlite_exception(&error);
-            Ok(json!({"exception":class,"error":error.to_string()}))
+            let code = if let rusqlite::Error::SqliteFailure(code, _) = &error {
+                Some(code.extended_code)
+            } else {
+                None
+            };
+            let prefix = code.and_then(|code| {
+                [
+                    "SQLITE_OK",
+                    "SQLITE_ERROR",
+                    "SQLITE_INTERNAL",
+                    "SQLITE_PERM",
+                    "SQLITE_ABORT",
+                    "SQLITE_BUSY",
+                    "SQLITE_LOCKED",
+                    "SQLITE_NOMEM",
+                    "SQLITE_READONLY",
+                    "SQLITE_INTERRUPT",
+                    "SQLITE_IOERR",
+                    "SQLITE_CORRUPT",
+                    "SQLITE_NOTFOUND",
+                    "SQLITE_FULL",
+                    "SQLITE_CANTOPEN",
+                    "SQLITE_PROTOCOL",
+                    "SQLITE_EMPTY",
+                    "SQLITE_SCHEMA",
+                    "SQLITE_TOOBIG",
+                    "SQLITE_CONSTRAINT",
+                    "SQLITE_MISMATCH",
+                    "SQLITE_MISUSE",
+                    "SQLITE_NOLFS",
+                    "SQLITE_AUTH",
+                    "SQLITE_FORMAT",
+                    "SQLITE_RANGE",
+                    "SQLITE_NOTADB",
+                    "SQLITE_NOTICE",
+                    "SQLITE_WARNING",
+                ]
+                .get((code & 0xff) as usize)
+                .copied()
+            });
+            Ok(
+                json!({"exception":class,"error":error.to_string(),"sqlite_errorcode":code,"sqlite_errorname_prefix":prefix}),
+            )
         }
         Err(_) => Err("native_runner_authority_continuation_store_unavailable"),
     }
 }
 fn sqlite_exception(error: &rusqlite::Error) -> &'static str {
-    use rusqlite::ErrorCode::*;
-    match error.sqlite_error_code() {
-        Some(ConstraintViolation | TypeMismatch) => "sqlite3.IntegrityError",
-        Some(TooBig) => "sqlite3.DataError",
-        Some(ApiMisuse) => "sqlite3.InterfaceError",
-        Some(OutOfMemory) => "MemoryError",
-        Some(
-            InternalMalfunction
-            | PermissionDenied
-            | OperationAborted
-            | DatabaseBusy
-            | DatabaseLocked
-            | ReadOnly
-            | OperationInterrupted
-            | SystemIoFailure
-            | NotFound
-            | DiskFull
-            | CannotOpen
-            | FileLockingProtocolFailed
-            | SchemaChanged
-            | NoLargeFileSupport
-            | AuthorizationForStatementDenied
-            | Unknown,
-        ) => "sqlite3.OperationalError",
+    // CPython Modules/_sqlite/util.c selects by the primary SQLite result code.
+    let rusqlite::Error::SqliteFailure(code, _) = error else {
+        return "sqlite3.DatabaseError";
+    };
+    match code.extended_code & 0xff {
+        2 | 12 => "sqlite3.InternalError",
+        7 => "MemoryError",
+        1 | 3 | 4 | 5 | 6 | 8 | 9 | 10 | 13 | 14 | 15 | 16 | 17 => "sqlite3.OperationalError",
+        18 => "sqlite3.DataError",
+        19 | 20 => "sqlite3.IntegrityError",
+        21 | 25 => "sqlite3.InterfaceError",
         _ => "sqlite3.DatabaseError",
     }
 }
@@ -351,9 +380,29 @@ mod tests {
 
     #[test]
     fn sqlite_exception_and_windows_wake_keys_preserve_public_behavior() {
-        for code in [1, 5, 6, 8, 10, 13, 14] {
+        for (code, expected) in [
+            (1, "sqlite3.OperationalError"),
+            (2, "sqlite3.InternalError"),
+            (5, "sqlite3.OperationalError"),
+            (6, "sqlite3.OperationalError"),
+            (8, "sqlite3.OperationalError"),
+            (10, "sqlite3.OperationalError"),
+            (12, "sqlite3.InternalError"),
+            (13, "sqlite3.OperationalError"),
+            (14, "sqlite3.OperationalError"),
+            (16, "sqlite3.OperationalError"),
+            (18, "sqlite3.DataError"),
+            (19, "sqlite3.IntegrityError"),
+            (20, "sqlite3.IntegrityError"),
+            (21, "sqlite3.InterfaceError"),
+            (22, "sqlite3.DatabaseError"),
+            (23, "sqlite3.DatabaseError"),
+            (25, "sqlite3.InterfaceError"),
+            (27, "sqlite3.DatabaseError"),
+            (2067, "sqlite3.IntegrityError"),
+        ] {
             let error = rusqlite::Error::SqliteFailure(rusqlite::ffi::Error::new(code), None);
-            assert_eq!(sqlite_exception(&error), "sqlite3.OperationalError");
+            assert_eq!(sqlite_exception(&error), expected, "SQLite code {code}");
         }
         assert_eq!(
             wake_database_key(r"\\?\C:\guard\store.db"),
