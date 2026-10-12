@@ -204,6 +204,66 @@ fn case_sensitive_recording_is_selected_when_spellings_stay_distinct() {
     release(&root);
 }
 
+/// CPython keeps `{"\ud800": a, "\ud801": b}` as two members; decoding both
+/// keys to U+FFFD would drop the first, so the resident refuses the config
+/// instead. The oracle answered this input, so it cannot sit in the recorded
+/// vectors (those only mark cases Python itself refused).
+#[test]
+fn object_keys_with_lone_surrogates_are_refused() {
+    let root = temp_home("zcode-surrogate-keys");
+    let config = root.join("home/.zcode/cli/config.json");
+    fs::create_dir_all(config.parent().unwrap()).unwrap();
+    fs::write(
+        &config,
+        "{\"mcpServers\": {\"\\ud800\": {\"command\": \"a\"}, \
+         \"\\ud801\": {\"command\": \"b\"}}}",
+    )
+    .unwrap();
+    let v2_config = root.join("home/.zcode/v2/config.json");
+    let args = serde_json::json!({
+        "harness": "zcode",
+        "configs": [{"path": config.to_string_lossy(), "scope": "global"}],
+        "v2_config": v2_config.to_string_lossy(),
+        "plugin_roots": [],
+        "marketplace_roots": [],
+    });
+    assert_eq!(
+        detect(&args).expect_err("surrogate keys must not collapse into one server"),
+        crate::zcode_artifacts::ERR_UNREPRESENTABLE
+    );
+    release(&root);
+}
+
+/// A lone surrogate in a value still decodes, and the server beside it is
+/// reported. Refusal is only for keys, which would otherwise merge.
+#[test]
+fn object_values_with_lone_surrogates_stay_readable() {
+    let root = temp_home("zcode-surrogate-value");
+    let config = root.join("home/.zcode/cli/config.json");
+    fs::create_dir_all(config.parent().unwrap()).unwrap();
+    fs::write(
+        &config,
+        "{\"mcp\": {\"servers\": {\"ok\": {\"command\": \"tool\", \
+         \"note\": \"\\ud800\"}}}}",
+    )
+    .unwrap();
+    let v2_config = root.join("home/.zcode/v2/config.json");
+    let args = serde_json::json!({
+        "harness": "zcode",
+        "configs": [{"path": config.to_string_lossy(), "scope": "global"}],
+        "v2_config": v2_config.to_string_lossy(),
+        "plugin_roots": [],
+        "marketplace_roots": [],
+    });
+    let answer = detect(&args).expect("a surrogate value must stay readable");
+    let artifacts = answer["artifacts"].as_array().expect("artifacts");
+    assert!(
+        artifacts.iter().any(|artifact| artifact["command"] == "tool"),
+        "server command missing from {answer}"
+    );
+    release(&root);
+}
+
 #[test]
 fn malformed_requests_are_refused() {
     for args in [
