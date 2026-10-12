@@ -117,6 +117,51 @@ def test_shadow_native_identity_is_reused_without_another_transport(monkeypatch)
     assert _canonical_command_from_native("echo hi", {**payload, "security_identity": "invalid"}) is None
 
 
+def test_fresh_status_probe_receives_deadline_and_expired_probe_does_not_start(monkeypatch):
+    from types import SimpleNamespace
+
+    from codex_plugin_scanner.guard import native_context
+
+    seen = []
+    now = [1.0]
+    status = SimpleNamespace()
+
+    def probe(*, deadline_monotonic):
+        seen.append(deadline_monotonic)
+        return status
+
+    monkeypatch.setattr(client, "time", SimpleNamespace(monotonic=lambda: now[0]))
+    monkeypatch.setattr(native_context, "_status_memo", None)
+    monkeypatch.setattr(native_context, "native_runtime_status", probe)
+    monkeypatch.setattr(native_context, "_status_binary_unchanged", lambda _: True)
+    assert client.native_runtime_status(deadline_monotonic=3.0) is status
+    assert client.native_runtime_status(deadline_monotonic=3.0) is status
+    assert seen == [3.0]
+    now[0] = 4.0
+    with pytest.raises(client.NativeCommandModelError):
+        client.native_runtime_status(deadline_monotonic=3.0)
+    assert seen == [3.0]
+
+
+def test_shell_read_assessment_parser_loss_requires_review(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    from codex_plugin_scanner.guard.runtime import shell_secret_reads
+
+    monkeypatch.setattr(shell_secret_reads, "_command_may_need_read_assessment", lambda *args, **kwargs: True)
+    monkeypatch.setattr(
+        shell_secret_reads, "model_shell_execution_context", lambda *args, **kwargs: SimpleNamespace(complete=True)
+    )
+
+    def unavailable(*args, **kwargs):
+        raise client.NativeCommandModelError("native_rich_command_model_unavailable")
+
+    monkeypatch.setattr(shell_secret_reads, "parse_shell_command", unavailable)
+    assessment = shell_secret_reads.assess_shell_reads("cat note.txt", cwd=tmp_path, home_dir=tmp_path)
+    assert assessment.incomplete
+    assert assessment.requires_review
+
+
 def test_explicit_inspection_home_identity_outage_returns_blocked_diagnostic(monkeypatch, tmp_path):
     from codex_plugin_scanner.guard import native_context
     from codex_plugin_scanner.guard.runtime import command_inspection
@@ -200,7 +245,7 @@ def test_transport_rejects_unbound_or_malformed_replies(
     monkeypatch.setattr(
         client,
         "native_runtime_status",
-        lambda: SimpleNamespace(
+        lambda **_: SimpleNamespace(
             available=True,
             compatible=True,
             identity=SimpleNamespace(path="/fixture/runtime"),
@@ -252,7 +297,7 @@ def test_cold_helper_setup_and_spawn_share_bounded_overall_deadline(monkeypatch,
         identity=SimpleNamespace(path=tmp_path / "runtime", sha256="fixture"),
         capabilities=SimpleNamespace(features=[client.FEATURE, "resident-protocol-v2"]),
     )
-    monkeypatch.setattr(client, "native_runtime_status", lambda: status)
+    monkeypatch.setattr(client, "native_runtime_status", lambda **_: status)
 
     def respond(**kwargs):
         assert setup_seconds < 10
@@ -291,7 +336,7 @@ def test_executable_reuse_is_bounded_and_bound_to_available_native_identity(monk
         identity=SimpleNamespace(path=tmp_path / "runtime", sha256="fixture-a"),
         capabilities=SimpleNamespace(features=[client.FEATURE, "resident-protocol-v2"]),
     )
-    monkeypatch.setattr(client, "native_runtime_status", lambda: status)
+    monkeypatch.setattr(client, "native_runtime_status", lambda **_: status)
     calls = []
 
     def respond(**kwargs):

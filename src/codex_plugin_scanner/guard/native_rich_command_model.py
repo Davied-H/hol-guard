@@ -7,16 +7,14 @@ import time
 from typing import Any
 from uuid import uuid4
 
+from . import native_context as _context
 from .native_context import (
     _canonical_request_sha256,
     _resolve_digest_home,
     ensure_resident_prerequisite,
 )
-from .native_context import (
-    _native_runtime_status_memo as native_runtime_status,
-)
 from .native_resident_client import native_resident_client_ready, native_resident_client_request
-from .native_runtime import _isolated_environment
+from .native_runtime import NativeRuntimeStatus, _isolated_environment
 
 FEATURE = "rich-command-model-v1"
 SCHEMA = "guard-rich-command-model-request.v1"
@@ -24,6 +22,26 @@ RESULT_SCHEMA = "guard-rich-command-model-result.v1"
 _MAX_BYTES = 2 * 1024 * 1024
 _EXECUTABLE_CACHE: dict[tuple[str, str], str | None] = {}
 _MISS = object()
+
+
+def native_runtime_status(*, deadline_monotonic: float) -> NativeRuntimeStatus:
+    """Reuse the shared status memo and bound every fresh capability probe."""
+    if time.monotonic() >= deadline_monotonic:
+        raise NativeCommandModelError("native_rich_command_model_deadline")
+    probe = _context.native_runtime_status
+    with _context._STATUS_MEMO_LOCK:
+        memo = _context._status_memo
+        if (
+            memo is not None
+            and memo[2] is probe
+            and time.monotonic() - memo[0] < _context._STATUS_MEMO_TTL_SECONDS
+            and _context._status_binary_unchanged(memo[1])
+        ):
+            return memo[1]
+    status = probe(deadline_monotonic=deadline_monotonic)
+    with _context._STATUS_MEMO_LOCK:
+        _context._status_memo = (time.monotonic(), status, probe)
+    return status
 
 
 class NativeCommandModelError(RuntimeError, ValueError):
@@ -117,9 +135,7 @@ def request(action: str, args: dict[str, Any], *, timeout_seconds: float = 10.0)
     deadline = time.monotonic() + timeout_seconds
     try:
         home = _resolve_digest_home(None)
-        if not ensure_resident_prerequisite(home):
-            raise NativeCommandModelError("native_rich_command_model_unavailable")
-        status = native_runtime_status()
+        status = native_runtime_status(deadline_monotonic=deadline)
         if (
             not status.available
             or not status.compatible
@@ -128,6 +144,8 @@ def request(action: str, args: dict[str, Any], *, timeout_seconds: float = 10.0)
             or FEATURE not in status.capabilities.features
             or "resident-protocol-v2" not in status.capabilities.features
         ):
+            raise NativeCommandModelError("native_rich_command_model_unavailable")
+        if time.monotonic() >= deadline or not ensure_resident_prerequisite(home):
             raise NativeCommandModelError("native_rich_command_model_unavailable")
         if action != "parse":
             budget = 1.0 if native_resident_client_ready(status.identity.path, home) else 4.0
