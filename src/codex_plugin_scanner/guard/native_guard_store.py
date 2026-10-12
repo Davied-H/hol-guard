@@ -57,6 +57,12 @@ def _unavailable(reason: str) -> NativeGuardStoreUnavailable:
     return _failure(error, _SQLITE_ERROR)
 
 
+def prerequisite_unavailable(guard_home: Path) -> NativeGuardStoreUnavailable:
+    """The resident's on-disk prerequisite for ``guard_home`` could not be established."""
+
+    return _unavailable(prerequisite_unavailable_code("native_guard_store_prerequisite_unavailable", guard_home))
+
+
 def unavailable_outbox_status(error: NativeGuardStoreUnavailable) -> dict[str, object]:
     """Report the Review outbox as unavailable; never a locally computed answer.
 
@@ -116,7 +122,7 @@ def native_guard_store_call(
     """
 
     if not ensure_resident_prerequisite(guard_home):
-        raise _unavailable(prerequisite_unavailable_code("native_guard_store_prerequisite_unavailable", guard_home))
+        raise prerequisite_unavailable(guard_home)
     remaining_seconds = deadline_monotonic - time.monotonic()
     if remaining_seconds <= 0:
         raise TimeoutError("Guard storage operation deadline expired.")

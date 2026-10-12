@@ -21,7 +21,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, TypeGuard
+from typing import TYPE_CHECKING, Any, TypeGuard
 
 from .directory_path_authority import canonical_guard_home_path
 from .fork_safety import forget_in_child
@@ -38,6 +38,9 @@ from .native_resident_prerequisite_reason import (
     record_prerequisite_failure,
 )
 from .native_response_decoder import native_error as _native_error
+
+if TYPE_CHECKING:
+    from .store import GuardStore
 from .native_runtime import NativeRuntimeStatus, _isolated_environment, native_runtime_status
 from .native_runtime_request_scope import _status_binary_unchanged
 from .native_runtime_resilience import (
@@ -280,7 +283,7 @@ def _resolve_existing_digest_home(guard_home: Path | None) -> Path:
     return _resolve_digest_home(None)
 
 
-def ensure_resident_prerequisite(guard_home: Path) -> bool:
+def ensure_resident_prerequisite(guard_home: Path, *, store: GuardStore | None = None) -> bool:
     """Establish the resident's on-disk prerequisite for ``guard_home``.
 
     The resident refuses every request until the owner-private verifier key
@@ -297,6 +300,10 @@ def ensure_resident_prerequisite(guard_home: Path) -> bool:
     secret-store master that their guard home was never given.  Returns
     ``False`` when a missing prerequisite cannot be created, which callers
     report as an unavailable runtime rather than a crash.
+
+    ``store`` provisions from a store that is still starting up: its schema is
+    created by the resident, so the resident key must exist before that store
+    can open, and constructing a second store here would wait on the first.
     """
 
     try:
@@ -318,11 +325,13 @@ def ensure_resident_prerequisite(guard_home: Path) -> bool:
     phase = "open_store"
     try:
         from .native_policy_snapshot_publisher import provision_native_verifier_key_for_store
-        from .store import GuardStore
 
-        # Provisioning the resident key must not prime policy decisions or
-        # refresh signed store state on the evaluation hot path.
-        store = GuardStore(guard_home, prime_policy_integrity=False)
+        if store is None:
+            from .store import GuardStore
+
+            # Provisioning the resident key must not prime policy decisions or
+            # refresh signed store state on the evaluation hot path.
+            store = GuardStore(guard_home, prime_policy_integrity=False)
         phase = "provision_key"
         provision_native_verifier_key_for_store(store)
     except Exception as error:

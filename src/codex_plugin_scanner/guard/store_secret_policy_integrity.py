@@ -608,7 +608,19 @@ class StoreSecretPolicyIntegrityMixin:
         return str(payload_json) if isinstance(payload_json, str) and payload_json else None
 
     def _policy_integrity_cache_marker(self) -> str | None:
+        # First startup provisions the resident verifier key before the native
+        # store creates the schema, so there is no marker to read yet. Opening
+        # the file here would also create it ahead of the native store.
+        if not self.path.exists():
+            return None
         with self._connect() as connection:
+            if (
+                connection.execute(
+                    "select 1 from sqlite_schema where type = 'table' and name = 'sync_state'"
+                ).fetchone()
+                is None
+            ):
+                return None
             return self._load_policy_integrity_state_cache_marker(connection)
 
     @staticmethod

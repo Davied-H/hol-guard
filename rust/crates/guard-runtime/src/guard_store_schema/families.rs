@@ -475,7 +475,7 @@ fn check_object_sql(
             .iter()
             .filter(|row| text(row, "name") == name)
             .filter_map(|row| row.get("sql").and_then(Value::as_str))
-            .last()
+            .next_back()
             .map(canonical_sql);
         if stored.as_deref() != Some(sql.as_str()) {
             return runtime_error(&format!(

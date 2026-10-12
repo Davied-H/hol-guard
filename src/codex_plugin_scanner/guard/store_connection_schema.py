@@ -14,7 +14,7 @@ from uuid import uuid4
 from . import store_connection_scope, store_native_decision_receipts, store_review_event_outbox_schema
 from .fork_safety import forget_in_child
 from .mcp.policy_store import ensure_mcp_policy_request_schema
-from .native_guard_store import native_guard_store_call
+from .native_guard_store import native_guard_store_call, prerequisite_unavailable
 from .sqlite_deadline_connection import DeadlineConnection
 from .sqlite_errors import sqlite_error_is_fatal, sqlite_error_is_io
 from .sqlite_profile import (
@@ -960,6 +960,13 @@ class StoreConnectionSchemaMixin:
             return False
 
     def _initialize_native_schema_prefix(self) -> None:
+        from .native_context import ensure_resident_prerequisite
+
+        # The resident only starts once its verifier key exists. Provision it
+        # from this store: a fresh home has no schema yet for another store to
+        # open, and opening one would wait on this initialization.
+        if not ensure_resident_prerequisite(self.guard_home, store=cast("GuardStore", self)):
+            raise prerequisite_unavailable(self.guard_home)
         args = {"applied_at": _now()}
         if not self._current_thread_owns_storage_recovery():
             self._native_store_call(NATIVE_SCHEMA_PREFIX_METHOD, args)
