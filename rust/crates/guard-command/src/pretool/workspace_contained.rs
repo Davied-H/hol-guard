@@ -11,6 +11,15 @@ use crate::CanonicalCommandV1;
 use guard_contracts::{PreToolActionTypeV1, PreToolResultV1};
 use std::path::Path;
 
+#[cfg(unix)]
+use crate::restricted_pytest::workspace_admissible;
+
+/// The workspace sandbox is macOS-only; other platforms never admit a workspace.
+#[cfg(not(unix))]
+fn workspace_admissible(_cwd: &Path, _home: Option<&Path>) -> Option<std::path::PathBuf> {
+    None
+}
+
 pub(crate) const REASON: &str = "native_workspace_containment_required";
 pub(crate) const PROFILE: &str = "workspace-contained-v1";
 
@@ -329,10 +338,8 @@ pub(super) fn convert(
     {
         return;
     }
-    let Some(workspace) = crate::restricted_pytest::workspace_admissible(
-        Path::new(cwd),
-        context.home_dir.map(Path::new),
-    ) else {
+    let Some(workspace) = workspace_admissible(Path::new(cwd), context.home_dir.map(Path::new))
+    else {
         return;
     };
     // Installs, one-shot executions and lockfile syncs stay with supply-chain

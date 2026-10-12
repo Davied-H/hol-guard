@@ -248,10 +248,10 @@ def run_authorized_contained_test(
             and response.get("observe_mode") is not True
         )
 
-    # The receipt taken before planning is this command's single live
-    # authorization; planning reads files but cannot change what it bound.
+    # The routing receipt only picked this path. Authorize again after
+    # planning so the live decision follows every file the planner read.
     if not required(
-        receipt,
+        authorize(payload),
         expected_reason=PACKAGE_TEST_REASON if package_test else reason,
         expected_profile=PACKAGE_TEST_PROFILE if package_test else profile,
     ):
