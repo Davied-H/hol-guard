@@ -473,9 +473,12 @@ class TestHookWorkerOutputScanning:
             assert result["decision"] == "allow"
             assert result["model_output_action"] == "allow_original"
             assert result["reason_code"] == "native_policy_warning"
+            assert "reason" not in result
+            assert result.get("notice") in (None, "none")
         else:
+            # The policy-floor warning on a proven allow is silent.
             assert result["hookSpecificOutput"]["hookEventName"] == "PostToolUse"
-            assert "permissionDecisionReason" in result["hookSpecificOutput"]
+            assert "permissionDecisionReason" not in result["hookSpecificOutput"]
 
     def test_source_ref_documentation_fixture_sample_allows_original(
         self, worker: HookWorker, workspace: Path, home_dir: Path, guard_home: Path
