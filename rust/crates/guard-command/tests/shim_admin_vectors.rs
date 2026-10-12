@@ -15,7 +15,7 @@ use std::os::unix::fs::{symlink, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 use base64::Engine;
-use guard_command::shims::{self, ProbeOptions, ShimContext, ShimFacts};
+use guard_command::shims::{self, GuardShimInputs, ProbeOptions, ShimContext, ShimFacts};
 use serde_json::{json, Value};
 
 #[path = "shim_admin_vectors/normalise.rs"]
@@ -29,10 +29,18 @@ use normalise::{
 // The POSIX fixture is recorded on a POSIX host and the Windows one on Windows:
 // pathlib's `WindowsPath` cannot be built elsewhere, so each replays only on its
 // own platform.
+//
+// The harness fixture (launcher render, profile plan, audit stamp) is recorded
+// against the same Python and replays on POSIX only.
 #[cfg(unix)]
-const FIXTURE: &[u8] = include_bytes!("fixtures/shim_admin_vectors.v1.json.gz");
+const FIXTURES: [&[u8]; 2] = [
+    include_bytes!("fixtures/shim_admin_vectors.v1.json.gz"),
+    include_bytes!("fixtures/shim_admin_vectors_harness.v1.json.gz"),
+];
 #[cfg(windows)]
-const FIXTURE: &[u8] = include_bytes!("fixtures/shim_admin_vectors_windows.v1.json.gz");
+const FIXTURES: [&[u8]; 1] = [include_bytes!(
+    "fixtures/shim_admin_vectors_windows.v1.json.gz"
+)];
 const TRANSIENT_FRAGMENTS: [&str; 6] = [
     "/var/folders/",
     "/private/var/folders/",
@@ -42,7 +50,7 @@ const TRANSIENT_FRAGMENTS: [&str; 6] = [
     "pytest-of-",
 ];
 #[cfg(unix)]
-const MIN_SCENARIOS_RUN: usize = 300;
+const MIN_SCENARIOS_RUN: usize = 400;
 #[cfg(windows)]
 const MIN_SCENARIOS_RUN: usize = 150;
 
@@ -138,7 +146,81 @@ fn to_value<T: serde::Serialize>(result: Result<T, String>) -> Result<Value, Str
     result.map(|item| serde_json::to_value(item).expect("serialise"))
 }
 
-fn run_call(context: &ShimContext, subop: &str, args: &Value) -> Result<Value, String> {
+fn guard_inputs(
+    context: &ShimContext,
+    args: &Value,
+    home_override_explicit: bool,
+    existing_profile: Option<String>,
+) -> GuardShimInputs {
+    GuardShimInputs {
+        harness: args
+            .get("harness")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        launcher_name: args
+            .get("launcher_name")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        display_name: args
+            .get("display_name")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        guard_home: context.guard_home.clone(),
+        home_dir: context.home_dir.clone(),
+        workspace_dir: context.workspace_dir.clone(),
+        home_override_explicit,
+        launcher_env: args
+            .get("launcher_env")
+            .and_then(Value::as_array)
+            .map(|pairs| {
+                pairs
+                    .iter()
+                    .map(|pair| (string_of(&pair[0]), string_of(&pair[1])))
+                    .collect()
+            })
+            .unwrap_or_default(),
+        platform: args
+            .get("platform")
+            .and_then(Value::as_str)
+            .unwrap_or("linux")
+            .to_owned(),
+        existing_profile,
+    }
+}
+
+/// The two-call flow `native_shim_admin.guard_profile_plan` drives: plan, read the
+/// profile the plan names (a missing file is empty, any other failure aborts),
+/// then plan again over that content.
+fn plan_profile(
+    context: &ShimContext,
+    args: &Value,
+    home_override_explicit: bool,
+) -> Result<Value, String> {
+    let first = shims::guard_profile_plan(
+        &context.facts,
+        &guard_inputs(context, args, home_override_explicit, None),
+    )?;
+    if first["skip"] == true {
+        return Ok(first);
+    }
+    let path = string_of(&first["profile_path"]);
+    let existing = match fs::read(&path) {
+        Ok(bytes) => String::from_utf8(bytes).map_err(|error| error.to_string())?,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) => return Err(error.to_string()),
+    };
+    shims::guard_profile_plan(
+        &context.facts,
+        &guard_inputs(context, args, home_override_explicit, Some(existing)),
+    )
+}
+
+fn run_call(
+    context: &ShimContext,
+    subop: &str,
+    args: &Value,
+    home_override_explicit: bool,
+) -> Result<Value, String> {
     let managers: Option<Vec<String>> = args
         .get("managers")
         .and_then(Value::as_array)
@@ -182,6 +264,16 @@ fn run_call(context: &ShimContext, subop: &str, args: &Value) -> Result<Value, S
         "supported_managers" => Ok(json!(shims::package_shim_supported_managers())),
         "ensure_package_shim_profile" => shims::ensure_package_shim_path_in_shell_profile(context),
         "remove_guard_profile_blocks" => shims::remove_guard_profile_blocks(context),
+        "record_audit" => shims::record_package_shim_audit_result(
+            context,
+            args.get("audited_at").and_then(Value::as_str),
+        )
+        .map(|_| Value::Null),
+        "render_guard_shim" => shims::render_guard_shim(
+            &context.facts,
+            &guard_inputs(context, args, home_override_explicit, None),
+        ),
+        "guard_profile_plan" => plan_profile(context, args, home_override_explicit),
         other => panic!("unknown subop {other}"),
     }
 }
@@ -266,6 +358,7 @@ fn run_scenario(scenario: &Value, base: &Path, index: usize) -> Vec<String> {
             .filter(|text| !text.is_empty()),
         facts_from(&facts),
     );
+    let home_override_explicit = context_spec["home_override_explicit"] == true;
     let expected_calls = scenario["expected"]["calls"].as_array().expect("calls");
     let mut failures = Vec::new();
     let mut hashes = BTreeMap::new();
@@ -281,6 +374,7 @@ fn run_scenario(scenario: &Value, base: &Path, index: usize) -> Vec<String> {
             &context,
             step["subop"].as_str().expect("subop"),
             &step["args"],
+            home_override_explicit,
         );
         let after = snapshot(&root);
         collect_hashes(&after, &root_text, &mut hashes);
@@ -331,32 +425,38 @@ fn run_scenario(scenario: &Value, base: &Path, index: usize) -> Vec<String> {
 
 #[test]
 fn shim_admin_matches_recorded_python_vectors() {
-    let mut json_text = String::new();
-    flate2::read::GzDecoder::new(FIXTURE)
-        .read_to_string(&mut json_text)
-        .expect("gunzip fixture");
-    let document: Value = serde_json::from_str(&json_text).expect("fixture json");
-    assert_eq!(document["schema"], "guard-shim-admin-vectors.v1");
     let base = root_base();
     let base_text = format!("{}/", base.display());
     let ci = std::env::var_os("CI").is_some();
     let mut failures = Vec::new();
     let mut ran = 0;
-    for (index, scenario) in document["scenarios"]
-        .as_array()
-        .expect("scenarios")
-        .iter()
-        .enumerate()
-    {
-        if scenario["durable_root"] == true && is_transient(&base_text) {
-            assert!(
-                !ci,
-                "durable-root scenarios need a non-transient root base in CI"
-            );
-            continue;
+    for (fixture_index, fixture) in FIXTURES.iter().enumerate() {
+        let mut json_text = String::new();
+        flate2::read::GzDecoder::new(*fixture)
+            .read_to_string(&mut json_text)
+            .expect("gunzip fixture");
+        let document: Value = serde_json::from_str(&json_text).expect("fixture json");
+        assert_eq!(document["schema"], "guard-shim-admin-vectors.v1");
+        for (index, scenario) in document["scenarios"]
+            .as_array()
+            .expect("scenarios")
+            .iter()
+            .enumerate()
+        {
+            if scenario["durable_root"] == true && is_transient(&base_text) {
+                assert!(
+                    !ci,
+                    "durable-root scenarios need a non-transient root base in CI"
+                );
+                continue;
+            }
+            failures.extend(run_scenario(
+                scenario,
+                &base,
+                fixture_index * 10_000 + index,
+            ));
+            ran += 1;
         }
-        failures.extend(run_scenario(scenario, &base, index));
-        ran += 1;
     }
     assert!(
         failures.is_empty(),

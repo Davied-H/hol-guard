@@ -38,7 +38,7 @@ from .stable_guard_cli import resolve_frozen_guard_cli, trusted_frozen_guard_cli
 UNAVAILABLE = "native_shim_admin_unavailable"
 _OPERATION = "shim_admin"
 _RESIDENT_PROTOCOL_FEATURE = "resident-protocol-v2"
-_FEATURE = "shim-admin-v2"
+_FEATURE = "shim-admin-v3"
 _REQUEST_SCHEMA = "guard-shim-admin-request.v2"
 _RESULT_SCHEMA = "guard-shim-admin-result.v2"
 _MAX_REQUEST_BYTES = 512 * 1024
@@ -49,7 +49,19 @@ _PROBE_MANAGER_COUNT = 20
 _PROBE_TIMEOUT_SECONDS = int(SQLITE_CONNECT_TIMEOUT_SECONDS) + 5
 # The environment keys the non-probe subops read; a probe forwards everything
 # because the shim it executes inherits the caller's environment.
-_ENVIRONMENT_KEYS = ("HOME", "PATH", "PATHEXT", "SHELL", "TEMP", "TMP", "TMPDIR")
+_ENVIRONMENT_KEYS = (
+    "APPDATA",
+    "HOL_GUARD_DESKTOP_RUNTIME_OWNER",
+    "HOME",
+    "PATH",
+    "PATHEXT",
+    "SHELL",
+    "TEMP",
+    "TMP",
+    "TMPDIR",
+    "XDG_DATA_HOME",
+)
+_HARNESS_SUBOPS = frozenset({"render_guard_shim", "guard_profile_plan"})
 _RESULT_KEYS = frozenset({"schema", "request_id", "request_sha256", "status", "code", "detail", "result"})
 _request_counter = itertools.count(1)
 # Contract constant mirrored from guard-command's manager table; a drift test compares it to the resident.
@@ -162,6 +174,7 @@ def native_shim_admin(
     project_shell_profile: bool | None = None,
     timeout_seconds: int | None = None,
     generated_at: str | None = None,
+    guard_shim: Mapping[str, object] | None = None,
     transport_timeout_seconds: float = _DEFAULT_TIMEOUT_SECONDS,
 ) -> Any:
     """Run one shim-admin subop in the resident and return its decoded result."""
@@ -200,9 +213,10 @@ def native_shim_admin(
             "project_shell_profile": project_shell_profile,
             "timeout_seconds": timeout_seconds,
             "generated_at": generated_at,
+            "guard_shim": dict(guard_shim) if guard_shim is not None else None,
             "facts": _facts(
                 full_environment=subop == "probe_intercepts",
-                shim_dir=home / "package-shims" / "bin",
+                shim_dir=home / "bin" if subop in _HARNESS_SUBOPS else home / "package-shims" / "bin",
             ),
         }
         request_sha256 = "sha256:" + _canonical_request_sha256(request)
@@ -275,7 +289,7 @@ def _decode(
     return result
 
 
-def _object(subop: str, context: HarnessContextLike, **fields: Any) -> dict[str, object]:
+def _object(subop: str, context: HarnessContextLike, **fields: Any) -> dict[str, Any]:
     result = native_shim_admin(
         subop,
         guard_home=context.guard_home,
@@ -286,6 +300,73 @@ def _object(subop: str, context: HarnessContextLike, **fields: Any) -> dict[str,
     if not isinstance(result, dict):
         raise NativeShimAdminError("native_shim_admin_invalid_result")
     return result
+
+
+def _guard_shim(
+    harness: str | None,
+    context: HarnessContextLike,
+    *,
+    launcher_name: str | None = None,
+    display_name: str | None = None,
+    launcher_env: Mapping[str, str] | None = None,
+    existing_profile: str | None = None,
+) -> dict[str, object]:
+    workspace_dir = context.workspace_dir
+    return {
+        "harness": harness,
+        "launcher_name": launcher_name,
+        "display_name": display_name,
+        "guard_home": str(context.guard_home),
+        "home_dir": str(context.home_dir),
+        "workspace_dir": str(workspace_dir) if workspace_dir is not None else None,
+        "home_override_explicit": bool(getattr(context, "home_override_explicit", False)),
+        "launcher_env": [[key, value] for key, value in (launcher_env or {}).items()],
+        "platform": sys.platform,
+        "existing_profile": existing_profile,
+    }
+
+
+def render_guard_shim(
+    harness: str,
+    context: HarnessContextLike,
+    *,
+    launcher_name: str | None = None,
+    display_name: str | None = None,
+) -> dict[str, Any]:
+    """Render both harness launchers and their manifest; the caller publishes the bytes."""
+
+    from .launcher import merge_guard_launcher_env
+
+    return _object(
+        "render_guard_shim",
+        context,
+        guard_shim=_guard_shim(
+            harness,
+            context,
+            launcher_name=launcher_name,
+            display_name=display_name,
+            launcher_env=merge_guard_launcher_env(),
+        ),
+    )
+
+
+def render_guard_shim_source(harness: str, context: HarnessContextLike) -> str:
+    """The POSIX launcher text a fresh install of ``harness`` would publish."""
+
+    return str(render_guard_shim(harness, context)["posix_source"])
+
+
+def guard_profile_plan(context: HarnessContextLike, *, existing_profile: str | None = None) -> dict[str, Any]:
+    """Plan the harness-launcher PATH block: a skip manifest, or the profile path and new content."""
+
+    shim = _guard_shim(None, context, existing_profile=existing_profile)
+    return _object("guard_profile_plan", context, guard_shim=shim)
+
+
+def record_package_shim_audit_result(guard_home: Path, *, audited_at: str | None = None) -> None:
+    """Stamp ``last_audit_at`` into the package-shim manifest (the resident owns the write)."""
+
+    native_shim_admin("record_audit", guard_home=guard_home, generated_at=audited_at)
 
 
 def package_shim_status(context: HarnessContextLike, *, path_env: str | None = None) -> dict[str, object]:

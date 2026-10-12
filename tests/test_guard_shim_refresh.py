@@ -11,12 +11,13 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
+from codex_plugin_scanner.guard.native_shim_admin import render_guard_shim_source
 from codex_plugin_scanner.guard.shim_refresh import (
     _existing_shim_harnesses,
     _launcher_map,
     refresh_stale_harness_shims,
 )
-from codex_plugin_scanner.guard.shims import _build_python_shim, install_guard_shim
+from codex_plugin_scanner.guard.shims import install_guard_shim
 
 
 class _Context:
@@ -122,7 +123,7 @@ class ShimRefreshTest(unittest.TestCase):
                 side_effect=lambda path: ".mount_" in str(path),
             ),
             mock.patch.dict(
-                "codex_plugin_scanner.guard.durable_harness_launcher.os.environ",
+                "os.environ",
                 {"HOL_GUARD_DESKTOP_RUNTIME_OWNER": str(desktop_owner)},
                 clear=False,
             ),
@@ -174,7 +175,7 @@ class ShimRefreshTest(unittest.TestCase):
                 side_effect=lambda path: ".mount_" in str(path),
             ),
             mock.patch.dict(
-                "codex_plugin_scanner.guard.durable_harness_launcher.os.environ",
+                "os.environ",
                 {"HOL_GUARD_DESKTOP_RUNTIME_OWNER": ""},
                 clear=False,
             ),
@@ -200,7 +201,7 @@ class ShimRefreshTest(unittest.TestCase):
         )
         self.assertEqual(result.refreshed, ("kimi",))
         self.assertEqual(result.errors, ())
-        expected = _build_python_shim("kimi", self._context(), [])
+        expected = render_guard_shim_source("kimi", self._context())
         self.assertEqual(path.read_text(encoding="utf-8"), expected)
 
     def test_workspace_binding_is_preserved_from_managed_installs(self) -> None:
@@ -228,7 +229,7 @@ class ShimRefreshTest(unittest.TestCase):
         shim_dir = self.guard_home / "bin"
         shim_dir.mkdir()
         # Write a real cursor shim under the legacy launcher name.
-        body = _build_python_shim("cursor", self._context(), [])
+        body = render_guard_shim_source("cursor", self._context())
         legacy = shim_dir / "guard-cursor"
         legacy.write_text(body, encoding="utf-8")
         legacy.chmod(0o755)
@@ -280,11 +281,11 @@ class ShimRefreshTest(unittest.TestCase):
         workspace = self.home_dir / "project"
         workspace.mkdir()
         # Canonical shim carries a workspace binding; legacy has none.
-        canonical_body = _build_python_shim("cursor", self._context(workspace), ["--workspace", str(workspace)])
+        canonical_body = render_guard_shim_source("cursor", self._context(workspace))
         canonical = shim_dir / "guard-cursor-agent"
         canonical.write_text(canonical_body, encoding="utf-8")
         canonical.chmod(0o755)
-        legacy_body = _build_python_shim("cursor", self._context(), [])
+        legacy_body = render_guard_shim_source("cursor", self._context())
         legacy = shim_dir / "guard-cursor"
         legacy.write_text(legacy_body, encoding="utf-8")
         legacy.chmod(0o755)

@@ -4,10 +4,10 @@
 //! in the request. A failure is a typed `error` result; the caller never
 //! recomputes a shim result itself.
 
-use guard_command::shims::{self, ProbeOptions, ShimContext, ShimFacts};
+use guard_command::shims::{self, GuardShimInputs, ProbeOptions, ShimContext, ShimFacts};
 use guard_contracts::{
-    ShimAdminFactsV2, ShimAdminRequestV2, ShimAdminResultV2, SHIM_ADMIN_MAX_BYTES,
-    SHIM_ADMIN_REQUEST_SCHEMA, SHIM_ADMIN_RESULT_SCHEMA,
+    ShimAdminFactsV2, ShimAdminGuardShimV2, ShimAdminRequestV2, ShimAdminResultV2,
+    SHIM_ADMIN_MAX_BYTES, SHIM_ADMIN_REQUEST_SCHEMA, SHIM_ADMIN_RESULT_SCHEMA,
 };
 use serde_json::{json, Map, Value};
 
@@ -53,6 +53,21 @@ fn context_from(request: &ShimAdminRequestV2) -> ShimContext {
         request.workspace_dir.as_deref(),
         facts_from(&request.facts),
     )
+}
+
+fn guard_shim_from(shim: &ShimAdminGuardShimV2) -> GuardShimInputs {
+    GuardShimInputs {
+        harness: shim.harness.clone(),
+        launcher_name: shim.launcher_name.clone(),
+        display_name: shim.display_name.clone(),
+        guard_home: shim.guard_home.clone(),
+        home_dir: shim.home_dir.clone(),
+        workspace_dir: shim.workspace_dir.clone(),
+        home_override_explicit: shim.home_override_explicit,
+        launcher_env: shim.launcher_env.clone(),
+        platform: shim.platform.clone(),
+        existing_profile: shim.existing_profile.clone(),
+    }
 }
 
 fn subop_failed(detail: String) -> Failure {
@@ -112,6 +127,21 @@ fn dispatch(request: &ShimAdminRequestV2) -> Result<Value, Failure> {
             )
             .map(object)
         }
+        "record_audit" => {
+            shims::record_package_shim_audit_result(&context, request.generated_at.as_deref())
+        }
+        "render_guard_shim" | "guard_profile_plan" => {
+            let shim = request.guard_shim.as_ref().ok_or(Failure {
+                code: INVALID_REQUEST,
+                detail: Some(format!("{} requires guard_shim", request.subop)),
+            })?;
+            let inputs = guard_shim_from(shim);
+            if request.subop == "render_guard_shim" {
+                shims::render_guard_shim(&context.facts, &inputs)
+            } else {
+                shims::guard_profile_plan(&context.facts, &inputs)
+            }
+        }
         "supported_managers" => Ok(json!(shims::package_shim_supported_managers())),
         "ensure_package_shim_profile" => shims::ensure_package_shim_path_in_shell_profile(&context),
         "remove_guard_profile_blocks" => shims::remove_guard_profile_blocks(&context),
@@ -147,8 +177,10 @@ fn evaluate(request: &ShimAdminRequestV2) -> Result<Value, Failure> {
             detail: Some("path flavour does not match the host platform".to_owned()),
         });
     }
-    if matches!(request.subop.as_str(), "install" | "activate" | "repair")
-        && request.facts.frozen
+    if matches!(
+        request.subop.as_str(),
+        "install" | "activate" | "repair" | "render_guard_shim"
+    ) && request.facts.frozen
         && (request.facts.frozen_cli.is_empty()
             || !request
                 .facts
@@ -227,6 +259,7 @@ mod tests {
             project_shell_profile: None,
             timeout_seconds: None,
             generated_at: None,
+            guard_shim: None,
             facts: ShimAdminFactsV2 {
                 environ: BTreeMap::new(),
                 home: "/nonexistent-home".to_owned(),
@@ -337,6 +370,58 @@ mod tests {
     #[test]
     fn path_order_needs_a_manager() {
         assert_eq!(decode(&request("path_order")).code, INVALID_REQUEST);
+    }
+
+    fn guard_shim(guard_home: &str) -> ShimAdminGuardShimV2 {
+        ShimAdminGuardShimV2 {
+            harness: Some("codex".to_owned()),
+            launcher_name: None,
+            display_name: None,
+            guard_home: guard_home.to_owned(),
+            home_dir: Some("/nonexistent-home".to_owned()),
+            workspace_dir: None,
+            home_override_explicit: false,
+            launcher_env: Vec::new(),
+            platform: "linux".to_owned(),
+            existing_profile: None,
+        }
+    }
+
+    #[test]
+    fn harness_subops_require_guard_shim() {
+        for subop in ["render_guard_shim", "guard_profile_plan"] {
+            assert_eq!(decode(&request(subop)).code, INVALID_REQUEST, "{subop}");
+        }
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn render_guard_shim_returns_both_launchers_and_the_manifest() {
+        let mut render = request("render_guard_shim");
+        render.guard_shim = Some(guard_shim("/nonexistent-guard-home"));
+        let result = decode(&render);
+        assert_eq!(result.status, "ok", "{:?}", result.detail);
+        let body = result.result.expect("body");
+        assert_eq!(
+            body["manifest"]["shim_path"],
+            "/nonexistent-guard-home/bin/guard-codex"
+        );
+        assert!(body["posix_source"]
+            .as_str()
+            .is_some_and(|source| source.starts_with("#!/usr/bin/python3\n")));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn guard_profile_plan_renders_the_managed_block() {
+        let mut plan = request("guard_profile_plan");
+        plan.facts.shim_dir_transient = Some(false);
+        plan.guard_shim = Some(guard_shim("/nonexistent-guard-home"));
+        let result = decode(&plan);
+        assert_eq!(result.status, "ok", "{:?}", result.detail);
+        let body = result.result.expect("body");
+        assert_eq!(body["skip"], json!(false));
+        assert_eq!(body["profile_path"], json!("/nonexistent-home/.zshrc"));
     }
 
     #[test]

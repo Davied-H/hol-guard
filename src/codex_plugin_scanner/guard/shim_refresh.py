@@ -22,7 +22,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .shims import HarnessContextLike, _build_python_shim
+from .native_shim_admin import render_guard_shim_source
+from .shims import HarnessContextLike
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -204,8 +205,7 @@ def refresh_stale_harness_shims(
                 workspace_dir,
                 home_override_explicit=home_value is not None,
             )
-            workspace_args = ["--workspace", str(workspace_dir)] if workspace_dir is not None else []
-            expected = _build_python_shim(harness, context, workspace_args)
+            expected = render_guard_shim_source(harness, context)
             stale_content = current != expected
             if not stale_content and not legacy_name:
                 unchanged.append(shim_name)
