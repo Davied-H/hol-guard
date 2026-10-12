@@ -55,6 +55,8 @@ mod claim_reuse_binding;
 mod claim_reuse_binding_tests;
 #[cfg(test)]
 mod claim_reuse_vectors_tests;
+mod cli_copilot_resolution;
+mod cli_runtime_support_op;
 mod cloud_action_envelope;
 mod cloud_action_envelope_fields;
 mod cloud_receipt_payload;
@@ -313,6 +315,7 @@ mod package_approval_hash_op;
 mod package_audit_projection_op;
 mod package_authority_config;
 mod package_authority_op;
+mod package_context_build_op;
 mod package_evaluation_compose_op;
 mod package_policy_resolve_op;
 mod package_posture_op;
@@ -350,6 +353,7 @@ mod policy_snapshot_build;
 mod policy_store;
 mod prompt_analyze_op;
 mod protect_request_op;
+mod pyjson;
 #[cfg(test)]
 mod registry_vectors_tests;
 mod request_context_op;
@@ -387,15 +391,11 @@ mod secrets_cli;
 mod sfrs_support;
 mod shell_helpers_op;
 mod shim_op;
-#[cfg(unix)]
 mod skill_directory_identity_op;
-#[cfg(unix)]
 mod skill_identity_canon;
-#[cfg(unix)]
 mod skill_identity_discovery;
-#[cfg(unix)]
 mod skill_identity_inspect;
-#[cfg(unix)]
+mod skill_identity_platform;
 mod skill_identity_walk;
 #[cfg(unix)]
 mod state_directory_lock;
@@ -410,6 +410,10 @@ mod totp;
 mod workspace_inventory_files;
 mod workspace_inventory_op;
 mod workspace_scan_targets;
+mod zcode_artifacts;
+mod zcode_detect;
+#[cfg(all(test, unix))]
+mod zcode_vectors_tests;
 
 pub(crate) use resident_protocol::{capabilities, encode_response, strict_json_value};
 pub(crate) use resident_transport::{
