@@ -237,9 +237,10 @@ fn evaluate_envelope(
                 execution_environment,
                 project_redirects,
             );
-            // Extension rules keep their own fail-closed answer for wrapped
-            // forms of the commands they govern.
-            if !extension_rule_matched(&projected) {
+            // Inert settings cannot widen what an extension rule already
+            // allows, but a rule that gates the plain form keeps its own
+            // fail-closed answer for wrapped forms.
+            if projected.minimum_action == "allow" || !extension_rule_matched(&projected) {
                 return projected;
             }
         }

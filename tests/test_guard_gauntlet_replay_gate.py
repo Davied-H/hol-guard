@@ -85,6 +85,13 @@ def replay_environment(
     patch.setenv("HOL_GUARD_NATIVE_BINARY", binary)
     for key, value in environment_overlay(request.param, fixture.home).items():
         patch.setenv(key, value)
+    # The `bun -e` proof resolves `bun` from PATH outside the workspace. Hosted runners ship no
+    # Bun, so put a stand-in where Bun's installer does; a real Bun earlier on PATH still wins.
+    bun = fixture.home / ".bun" / "bin" / "bun"
+    bun.parent.mkdir(parents=True, exist_ok=True)
+    bun.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    bun.chmod(0o755)
+    patch.setenv("PATH", os.pathsep.join([os.environ.get("PATH", ""), str(bun.parent)]))
     worker = HookWorker(store=GuardStore(fixture.guard_home), workspace=fixture.worktree)
     try:
         yield request.param, fixture, worker
