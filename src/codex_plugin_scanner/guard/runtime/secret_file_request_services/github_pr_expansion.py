@@ -1,8 +1,10 @@
 """Public carriers delegated to the existing native shell kernels."""
 
 from __future__ import annotations
+
 import ast
 import re
+
 from ...native_shell_request_authority import shell_request_authority
 from .shell_quote_tokens import ShellTokenWithQuoteContext as _ShellTokenWithQuoteContext
 

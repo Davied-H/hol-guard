@@ -1,7 +1,9 @@
 """Public carriers delegated to the existing native shell kernels."""
 
 from __future__ import annotations
+
 from pathlib import Path
+
 from ...native_shell_request_authority import shell_request_authority
 from ..github_capability_contract import GitHubCommandAssessment
 from .shell_quote_tokens import ShellTokenWithQuoteContext as _ShellTokenWithQuoteContext
@@ -9,7 +11,13 @@ from .shell_quote_tokens import ShellTokenWithQuoteContext as _ShellTokenWithQuo
 
 def classify_github_shell_capabilities(command_text: str, *, home_dir: Path | None) -> GitHubCommandAssessment | None:
     value = shell_request_authority("classify_github_shell_capabilities", locals())
-    return None if value is None else GitHubCommandAssessment(**{**value, "capabilities": tuple(value["capabilities"])})
+    return (
+        None
+        if value is None
+        else GitHubCommandAssessment(
+            value["capability"], value["reason_code"], value["detail"], tuple(value["capabilities"])
+        )
+    )
 
 
 def _github_environment_requires_review(assignments: tuple[tuple[str, str], ...]) -> bool:

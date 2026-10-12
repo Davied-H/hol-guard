@@ -14,7 +14,10 @@ from codex_plugin_scanner.guard.native_runner_authority import NativeRunnerAutho
 @pytest.fixture
 def bridge(monkeypatch):
     status = SimpleNamespace(
-        available=True, compatible=True, identity=SimpleNamespace(sha256="a" * 64, path=Path("/runtime"))
+        available=True,
+        compatible=True,
+        identity=SimpleNamespace(sha256="a" * 64, path=Path("/runtime")),
+        capabilities=SimpleNamespace(features=["runner-authority-v1", "resident-protocol-v2"]),
     )
     calls = []
     flags = {

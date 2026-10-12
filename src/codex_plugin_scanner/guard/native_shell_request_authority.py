@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
 import threading
@@ -36,12 +37,18 @@ def _wire(value: Any) -> Any:
 
 def shell_request_authority(entry: str, arguments: dict[str, Any]) -> Any:
     status = _native_runtime_status_memo()
-    if not status.available or not status.compatible or status.identity is None:
+    if (
+        not status.available
+        or not status.compatible
+        or status.identity is None
+        or status.capabilities is None
+        or not {"runner-authority-v1", "resident-protocol-v2"}.issubset(status.capabilities.features)
+    ):
         raise NativeRunnerAuthorityError("native_shell_request_authority_unavailable")
     home = _resolve_digest_home(None)
     command = str(arguments.get("command_text", ""))
     depth = int(arguments.get("depth", 0))
-    key = (status.identity.sha256, command, depth)
+    key = (status.identity.sha256, hashlib.sha256(command.encode("utf-8", "surrogatepass")).hexdigest(), depth)
     flag_entries = {
         "_gh_pr_create_body_has_shell_command_substitution",
         "_gh_pr_create_has_active_shell_expansion",
@@ -66,6 +73,8 @@ def shell_request_authority(entry: str, arguments: dict[str, Any]) -> Any:
     payload = native_runner_authority("shell_request_authority", request, home)
     flags = payload.get("flags")
     if isinstance(flags, dict):
+        if not flag_entries.issubset(flags) or not all(isinstance(flags[name], bool) for name in flag_entries):
+            raise NativeRunnerAuthorityError("native_shell_request_flags_invalid")
         with _LOCK:
             _FLAGS[key] = dict(flags)
             _FLAGS.move_to_end(key)
