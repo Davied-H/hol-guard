@@ -38,9 +38,24 @@ fn measure(deadline: Instant) -> Result<u64, ()> {
 }
 
 #[cfg(target_os = "linux")]
+fn status_bytes(reader: impl std::io::Read) -> Result<Option<Vec<u8>>, ()> {
+    let mut bytes = Vec::new();
+    let mut bounded = std::io::Read::take(reader, 65537);
+    match std::io::Read::read_to_end(&mut bounded, &mut bytes) {
+        Ok(_) if bytes.len() <= 65536 => Ok(Some(bytes)),
+        Err(error)
+            if error.raw_os_error() == Some(libc::ESRCH)
+                || error.kind() == std::io::ErrorKind::NotFound =>
+        {
+            Ok(None)
+        }
+        _ => Err(()),
+    }
+}
+
+#[cfg(target_os = "linux")]
 fn measure(deadline: Instant) -> Result<u64, ()> {
     use std::fs::File;
-    use std::io::Read;
     let uid = nix::unistd::getuid().as_raw();
     let mut total = 0u64;
     for entry in std::fs::read_dir("/proc").map_err(|_| ())? {
@@ -64,11 +79,9 @@ fn measure(deadline: Instant) -> Result<u64, ()> {
             }
             Err(_) => return Err(()),
         };
-        let mut bytes = Vec::new();
-        file.take(65537).read_to_end(&mut bytes).map_err(|_| ())?;
-        if bytes.len() > 65536 {
-            return Err(());
-        }
+        let Some(bytes) = status_bytes(file)? else {
+            continue;
+        };
         let text = std::str::from_utf8(&bytes).map_err(|_| ())?;
         let real_uid = text
             .lines()
@@ -118,5 +131,26 @@ mod tests {
             }
         }
         assert!(count >= 3);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn exiting_process_is_omitted_but_io_errors_and_oversized_status_fail_closed() {
+        struct FailedRead(i32);
+        impl std::io::Read for FailedRead {
+            fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::from_raw_os_error(self.0))
+            }
+        }
+        assert!(status_bytes(FailedRead(libc::ESRCH)).unwrap().is_none());
+        assert!(status_bytes(FailedRead(libc::ENOENT)).unwrap().is_none());
+        assert!(status_bytes(FailedRead(libc::EIO)).is_err());
+        assert!(status_bytes(std::io::repeat(b'a')).is_err());
+        assert_eq!(
+            status_bytes(&b"Uid:\t1000\nThreads:\t2\n"[..])
+                .unwrap()
+                .unwrap(),
+            b"Uid:\t1000\nThreads:\t2\n"
+        );
     }
 }

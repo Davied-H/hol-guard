@@ -1,10 +1,10 @@
 //! Owned, private descriptor handoff for indexes larger than an IPC frame.
 use super::*;
+use nix::fcntl::{openat, OFlag};
+use nix::sys::stat::Mode;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use std::ffi::CString;
 use std::fs::OpenOptions;
-use std::os::fd::{AsRawFd, FromRawFd};
 use std::os::unix::fs::OpenOptionsExt;
 
 pub(super) fn read(input: &Value) -> Result<Value, &'static str> {
@@ -45,20 +45,14 @@ pub(super) fn read(input: &Value) -> Result<Value, &'static str> {
     if metadata.uid() != nix::unistd::getuid().as_raw() || metadata.mode() & 0o077 != 0 {
         return Err(error);
     }
-    let name = CString::new("mapping-index.json").unwrap();
-    // SAFETY: the live directory descriptor anchors the NUL-terminated leaf.
-    let descriptor = unsafe {
-        libc::openat(
-            directory.as_raw_fd(),
-            name.as_ptr(),
-            libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC,
-        )
-    };
-    if descriptor < 0 {
-        return Err(error);
-    }
-    // SAFETY: openat returned a new descriptor owned only by this File.
-    let mut file = unsafe { fs::File::from_raw_fd(descriptor) };
+    let descriptor = openat(
+        &directory,
+        "mapping-index.json",
+        OFlag::O_RDONLY | OFlag::O_NOFOLLOW | OFlag::O_NONBLOCK | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    )
+    .map_err(|_| error)?;
+    let mut file = fs::File::from(descriptor);
     let before = file.metadata().map_err(|_| error)?;
     if !before.is_file()
         || before.uid() != nix::unistd::getuid().as_raw()
