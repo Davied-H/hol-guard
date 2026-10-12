@@ -329,7 +329,7 @@ class TestHookWorkerAllHarnessFallback:
 
         assert result["policy_action"] == "warn"
         assert result["hookSpecificOutput"]["hookEventName"] == "PostToolUse"
-        assert "permissionDecisionReason" in result["hookSpecificOutput"]
+        assert "permissionDecisionReason" not in result["hookSpecificOutput"]
 
     def test_codex_posttooluse_uses_fast_path(
         self, worker: HookWorker, workspace: Path, home_dir: Path, guard_home: Path
@@ -353,7 +353,7 @@ class TestHookWorkerAllHarnessFallback:
 
         assert result["policy_action"] == "warn"
         assert result["hookSpecificOutput"]["hookEventName"] == "PostToolUse"
-        assert "permissionDecisionReason" in result["hookSpecificOutput"]
+        assert "permissionDecisionReason" not in result["hookSpecificOutput"]
 
     def test_grok_posttooluse_uses_fast_path(
         self, worker: HookWorker, workspace: Path, home_dir: Path, guard_home: Path
@@ -377,7 +377,7 @@ class TestHookWorkerAllHarnessFallback:
 
         assert result["policy_action"] == "warn"
         assert result["hookSpecificOutput"]["hookEventName"] == "PostToolUse"
-        assert "permissionDecisionReason" in result["hookSpecificOutput"]
+        assert "permissionDecisionReason" not in result["hookSpecificOutput"]
 
     def test_zcode_posttooluse_uses_fast_path(
         self, worker: HookWorker, workspace: Path, home_dir: Path, guard_home: Path
@@ -401,7 +401,7 @@ class TestHookWorkerAllHarnessFallback:
 
         assert result["policy_action"] == "warn"
         assert result["hookSpecificOutput"]["hookEventName"] == "PostToolUse"
-        assert "permissionDecisionReason" in result["hookSpecificOutput"]
+        assert "permissionDecisionReason" not in result["hookSpecificOutput"]
 
     def test_pi_with_source_ref_still_works(
         self, worker: HookWorker, workspace: Path, home_dir: Path, guard_home: Path
@@ -663,7 +663,7 @@ class TestHookWorkerOutputScanning:
 
         assert result["policy_action"] == "warn"
         assert result["hookSpecificOutput"]["hookEventName"] == "PostToolUse"
-        assert "permissionDecisionReason" in result["hookSpecificOutput"]
+        assert "permissionDecisionReason" not in result["hookSpecificOutput"]
 
     def test_shell_secret_output_remains_blocked(
         self, worker: HookWorker, workspace: Path, home_dir: Path, guard_home: Path
@@ -736,7 +736,7 @@ class TestHookWorkerOutputScanning:
 
         assert result["policy_action"] == "warn"
         assert result["hookSpecificOutput"]["hookEventName"] == "PostToolUse"
-        assert "permissionDecisionReason" in result["hookSpecificOutput"]
+        assert "permissionDecisionReason" not in result["hookSpecificOutput"]
 
     def test_oversized_output_array_never_allows_unscanned_tail(
         self, worker: HookWorker, workspace: Path, home_dir: Path, guard_home: Path
@@ -812,4 +812,4 @@ class TestHookWorkerOutputScanning:
 
         assert result["policy_action"] == "warn"
         assert result["hookSpecificOutput"]["hookEventName"] == "PostToolUse"
-        assert "permissionDecisionReason" in result["hookSpecificOutput"]
+        assert "permissionDecisionReason" not in result["hookSpecificOutput"]
