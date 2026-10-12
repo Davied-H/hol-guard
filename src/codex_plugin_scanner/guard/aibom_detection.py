@@ -13,10 +13,12 @@ validate as approval context.
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Literal
 
+from .inventory_contract_fingerprints import fingerprint_mapping, fingerprint_text
 from .models import GuardArtifact, HarnessDetection
 from .native_context import _UNBOUND_PREFIX
 from .native_path_anchor import anchor_to_process_directory
@@ -62,6 +64,7 @@ INVENTORY_ITEM_KINDS: tuple[str, ...] = (
     "network_endpoint",
 )
 
+_SHA256_HEX = re.compile(r"^[0-9a-f]{64}$")
 _CODEX_WORKSPACE_SKILL_ROOTS = (".agents/skills",)
 _CODEX_HOME_SKILL_ROOTS = (".codex/skills", ".agents/skills")
 
@@ -406,6 +409,28 @@ def _explicit_hash(value: object) -> str | None:
     return value if isinstance(value, str) else None
 
 
+def _mcp_launch_fingerprints(request: Mapping[str, object]) -> None:
+    """Hash MCP launch content with the inventory identity algorithm.
+
+    Adapter detect runs this on the synchronous hook path. The resident still
+    owns the digest that is stored. A value the inventory algorithm cannot hash
+    fails closed before that call.
+    """
+
+    command = request.get("command")
+    command_text = command if isinstance(command, str) else ""
+    content = fingerprint_mapping(
+        {
+            "args": request.get("args"),
+            "command": command_text,
+            "transport": request.get("transport"),
+            "url": request.get("url"),
+        }
+    )
+    if _SHA256_HEX.fullmatch(fingerprint_text(command_text)) is None or _SHA256_HEX.fullmatch(content) is None:
+        raise NativeAibomError("native_runner_authority_result_invalid")
+
+
 def _unbound_keys(configured: object, pairs: object) -> list[str]:
     keys = sorted({key.strip() for key in _string_items(configured) if key.strip()})
     if keys or not isinstance(pairs, list):
@@ -475,6 +500,7 @@ def enrich_mcp_server_metadata(
         "header_values_hash": _explicit_hash(metadata.get("header_values_hash")),
         "label": str(metadata.get("name", "mcp")),
     }
+    _mcp_launch_fingerprints(request)
     try:
         answer = native_runner_authority("aibom_mcp_metadata", request)
     except NativeRunnerAuthorityError:

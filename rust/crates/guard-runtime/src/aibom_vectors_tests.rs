@@ -37,6 +37,50 @@ fn substitute(value: &Value, root: &str, marketplace_id: &str) -> Value {
     }
 }
 
+/// These vectors were recorded where directory lookup is case-insensitive, so
+/// `docs/Design` is the directory already created as `docs/design`. Reuse that
+/// directory. The final component of a file or link keeps its recorded spelling,
+/// which is how `B.md` stays distinct from `b.md`.
+fn path_reusing_directory_case(path: &Path, reuse_final: bool) -> PathBuf {
+    let mut resolved = PathBuf::new();
+    let components: Vec<_> = path.components().collect();
+    for (index, component) in components.iter().enumerate() {
+        let final_component = index + 1 == components.len();
+        if final_component && !reuse_final {
+            resolved.push(component);
+            break;
+        }
+        if let std::path::Component::Normal(name) = component {
+            let exact = resolved.join(name);
+            if exact.is_dir() {
+                resolved = exact;
+                continue;
+            }
+            if let Some(existing) = directory_with_same_case(&resolved, name) {
+                resolved.push(existing);
+                continue;
+            }
+        }
+        resolved.push(component);
+    }
+    resolved
+}
+
+fn directory_with_same_case(parent: &Path, name: &std::ffi::OsStr) -> Option<std::ffi::OsString> {
+    let folded = name.to_string_lossy().to_lowercase();
+    fs::read_dir(parent)
+        .ok()?
+        .filter_map(Result::ok)
+        .find_map(|entry| {
+            let is_dir = entry.file_type().ok()?.is_dir();
+            if !is_dir {
+                return None;
+            }
+            let found = entry.file_name();
+            (found.to_string_lossy().to_lowercase() == folded).then_some(found)
+        })
+}
+
 fn materialize(root: &Path, case: &Value) {
     for name in ["work", "home", "uhome"] {
         fs::create_dir_all(root.join(name)).unwrap();
@@ -44,16 +88,17 @@ fn materialize(root: &Path, case: &Value) {
     let root_text = root.to_string_lossy();
     let mut locked: Vec<(PathBuf, u32)> = Vec::new();
     for entry in case["files"].as_array().unwrap() {
-        let path = root.join(entry["path"].as_str().unwrap());
+        let path = path_reusing_directory_case(&root.join(entry["path"].as_str().unwrap()), false);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, entry["text"].as_str().unwrap()).unwrap();
         locked.push((path, entry["mode"].as_u64().unwrap() as u32));
     }
     for relative in case["dirs"].as_array().unwrap() {
-        fs::create_dir_all(root.join(relative.as_str().unwrap())).unwrap();
+        let path = path_reusing_directory_case(&root.join(relative.as_str().unwrap()), true);
+        fs::create_dir_all(path).unwrap();
     }
     for entry in case["symlinks"].as_array().unwrap() {
-        let path = root.join(entry["path"].as_str().unwrap());
+        let path = path_reusing_directory_case(&root.join(entry["path"].as_str().unwrap()), false);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         let target = entry["target"]
             .as_str()
