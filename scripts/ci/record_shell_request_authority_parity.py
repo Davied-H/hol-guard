@@ -46,6 +46,10 @@ def main() -> None:
         }
         exec(compile(source, filename, "exec"), namespace)
         namespaces.update({name: namespace[name] for name in functions})
+    file_proof = "src/codex_plugin_scanner/guard/runtime/github_pr_body_file.py"
+    hashes[file_proof] = hashlib.sha256(
+        subprocess.check_output(["git", "show", f"{BASE}:{file_proof}"], cwd=ROOT)
+    ).hexdigest()
     tokens = [
         "",
         "plain",

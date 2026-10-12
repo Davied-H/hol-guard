@@ -1224,6 +1224,7 @@
   "schema": "guard-shell-request-authority-python-parity.v1",
   "source_commit": "68558a59d9e8b6d4a8a86ef9de9263de41248068",
   "source_sha256": {
+    "src/codex_plugin_scanner/guard/runtime/github_pr_body_file.py": "5453086e51325808e512a050a4b7408b8a26f82e2a7e2b6c4fae80367a52ce7a",
     "src/codex_plugin_scanner/guard/runtime/secret_file_request_services/github_pr_body_safety.py": "64ba8eac46f7178a1899ca502a333a33e321f36f10a699ba77337babb3dc9c24",
     "src/codex_plugin_scanner/guard/runtime/secret_file_request_services/github_pr_expansion.py": "1d245cfc7dd004faba76f35dd631f1d6561945610a6f7e1f1e0236feeb74cf68",
     "src/codex_plugin_scanner/guard/runtime/secret_file_request_services/github_shell_capabilities.py": "d584623615ba075ac4ab57cc81f9db42a8c4448638308935dff08e5172484317"
