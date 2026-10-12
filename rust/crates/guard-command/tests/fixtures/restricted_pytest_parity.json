@@ -4552,6 +4552,46 @@
       }
     },
     {
+      "operation": "locate_executable",
+      "input": {
+        "value": "./bin/python",
+        "cwd": "$ROOT/project"
+      },
+      "expected": {
+        "value": "$ROOT/project/bin/python"
+      }
+    },
+    {
+      "operation": "locate_executable",
+      "input": {
+        "value": "bin/python",
+        "cwd": "$ROOT/project"
+      },
+      "expected": {
+        "value": "$ROOT/project/bin/python"
+      }
+    },
+    {
+      "operation": "locate_executable",
+      "input": {
+        "value": "../project/bin/python",
+        "cwd": "$ROOT/project"
+      },
+      "expected": {
+        "value": "$ROOT/project/../project/bin/python"
+      }
+    },
+    {
+      "operation": "locate_executable",
+      "input": {
+        "value": "$ROOT/project/bin/python",
+        "cwd": "$ROOT/project"
+      },
+      "expected": {
+        "value": "$ROOT/project/bin/python"
+      }
+    },
+    {
       "operation": "restricted_pythonpath",
       "input": {
         "value": "",

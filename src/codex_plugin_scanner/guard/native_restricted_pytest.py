@@ -50,15 +50,18 @@ def restricted_native(operation: str, fields: Mapping[str, Any], expected: type)
     search_path = os.pathsep.join(
         str(Path(item).absolute()) for item in os.environ.get("PATH", os.defpath).split(os.pathsep)
     )
-    payload = _call(
-        {
-            "kind": "restricted_pytest",
-            "body": {"operation": operation, "input": {**_wire(inputs), "search_path": search_path}},
-        },
-        source="direct_command",
-        guard_home=None,
-        budget_ms=9_000,
-    )
+    try:
+        payload = _call(
+            {
+                "kind": "restricted_pytest",
+                "body": {"operation": operation, "input": {**_wire(inputs), "search_path": search_path}},
+            },
+            source="direct_command",
+            guard_home=None,
+            budget_ms=9_000,
+        )
+    except (OSError, RuntimeError, TypeError, ValueError):
+        payload = NativeRequestContextFailure("native_request_context_transport_failed")
     if isinstance(payload, dict):
         if set(payload) == {"reason_code", "message"}:
             reason, message = payload["reason_code"], payload["message"]

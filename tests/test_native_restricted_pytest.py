@@ -1,9 +1,11 @@
+import os
 from pathlib import Path
 
 import pytest
 
 from codex_plugin_scanner.guard import native_restricted_pytest as transport
 from codex_plugin_scanner.guard.native_request_context import NativeRequestContextFailure
+from codex_plugin_scanner.guard.runtime import restricted_pytest_validation as validation
 from codex_plugin_scanner.guard.runtime.restricted_pytest import prepare_restricted_pytest
 from codex_plugin_scanner.guard.runtime.restricted_pytest_model import RestrictedPytestError
 
@@ -81,6 +83,7 @@ def test_native_preparation_is_one_call_with_no_python_verdict(monkeypatch, tmp_
     assert "allow" not in calls[0]["body"]["input"]
 
 
+@pytest.mark.skipif(os.name != "posix", reason="restricted execution uses Unix OS sandbox backends")
 def test_real_native_preparation_preserves_validated_plan(native_context_digest, tmp_path):
     import sys
 
@@ -95,3 +98,33 @@ def test_real_native_preparation_preserves_validated_plan(native_context_digest,
     assert plan.workspace == workspace.resolve()
     assert plan.command[1:] == ("-m", "pytest", "-q")
     assert "network" in plan.denied_capabilities
+
+
+@pytest.mark.parametrize("failure", [OSError("unavailable"), ValueError("invalid"), RuntimeError("unavailable")])
+def test_transport_exceptions_are_terminal_refusals(monkeypatch, failure):
+    def call(*args, **kwargs):
+        raise failure
+
+    monkeypatch.setattr(transport, "_call", call)
+    with pytest.raises(RestrictedPytestError, match="execution was not started"):
+        transport.restricted_native("prepare", {}, dict)
+
+
+def test_real_native_unsupported_backend_fails_closed(native_context_digest):
+    with pytest.raises(RestrictedPytestError) as caught:
+        transport.restricted_native("select_backend", {"platform": "win32", "backend_executable": None}, list)
+    assert caught.value.reason_code == "pytest_restricted_sandbox_unavailable"
+
+
+@pytest.mark.parametrize("wrapper", [validation._locate_executable, validation._resolve_executable])
+@pytest.mark.parametrize("value", ["./node", "./git", "bin/python", "../bin/python"])
+def test_executable_transport_preserves_explicit_relative_prefix(monkeypatch, tmp_path, wrapper, value):
+    observed = {}
+
+    def native(operation, fields, expected):
+        observed.update(fields)
+        return str(tmp_path / "tool")
+
+    monkeypatch.setattr(validation, "restricted_native", native)
+    assert wrapper(value, cwd=tmp_path) == tmp_path / "tool"
+    assert observed["value"] == value

@@ -23,11 +23,13 @@ def _resolve_cwd(cwd: Path, *, workspace: Path) -> Path:
 
 
 def _resolve_executable(value: str, *, cwd: Path) -> Path:
-    return Path(restricted_native("resolve_executable", {"value": str(Path(value).expanduser()), "cwd": cwd}, str))
+    expanded = str(Path(value).expanduser()) if value.startswith("~") else value
+    return Path(restricted_native("resolve_executable", {"value": expanded, "cwd": cwd}, str))
 
 
 def _locate_executable(value: str, *, cwd: Path) -> Path:
-    return Path(restricted_native("locate_executable", {"value": str(Path(value).expanduser()), "cwd": cwd}, str))
+    expanded = str(Path(value).expanduser()) if value.startswith("~") else value
+    return Path(restricted_native("locate_executable", {"value": expanded, "cwd": cwd}, str))
 
 
 def _select_backend(*, platform: str, backend_executable: Path | None) -> tuple[RestrictedPytestBackend, Path]:

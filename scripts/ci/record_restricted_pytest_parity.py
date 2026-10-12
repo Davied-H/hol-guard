@@ -132,6 +132,14 @@ def record() -> dict:
                 cwd=workspace,
                 workspace=workspace,
             )
+        for value in ("./bin/python", "bin/python", "../project/bin/python", str(executable)):
+            add(
+                "locate_executable",
+                {"value": value, "cwd": workspace},
+                validation._locate_executable,
+                value,
+                cwd=workspace,
+            )
         for value in ("", ".", "sub", "alias", "alias/missing", "sub:alias", "../", "sub::sub"):
             add(
                 "restricted_pythonpath",
