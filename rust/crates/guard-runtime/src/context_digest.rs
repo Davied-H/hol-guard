@@ -664,6 +664,27 @@ fn evaluate_request(
                     home_dir,
                 )?;
         }
+        ContextDigestKindV1::LocalCliIdentify {
+            command_text,
+            cwd,
+            home_dir,
+            user_home,
+            compound,
+            env,
+            budget_ms,
+        } => {
+            result.local_cli_identities = Some(super::local_cli_identify::identify(
+                &super::local_cli_identify::Request {
+                    command_text,
+                    cwd,
+                    home_dir: home_dir.as_deref(),
+                    user_home,
+                    compound: *compound,
+                    env,
+                    budget_ms: *budget_ms,
+                },
+            )?);
+        }
         ContextDigestKindV1::CustomExtensionSuggestion { tools } => {
             result.custom_extension_suggestion = Some(
                 super::custom_extension_suggestion::suggestion_verdicts(tools)?,
@@ -854,6 +875,7 @@ fn evaluate_context_digest_request_inner(
         tool_catalog: None,
         local_cli_identity: None,
         package_json_scripts: None,
+        local_cli_identities: None,
         custom_extension_suggestion: None,
     };
     if let Err(code) = evaluate_request(request, &mut result) {
