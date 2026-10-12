@@ -13,10 +13,14 @@ pub(crate) fn evaluate(
     #[cfg(unix)]
     let result = guard_command::restricted_pytest::evaluate(operation, input);
     #[cfg(not(unix))]
-    let result = serde_json::json!({
-        "reason_code": "pytest_restricted_sandbox_unavailable",
-        "message": "No enforceable restricted pytest backend is available for this platform; execution was not started."
-    });
+    let result = if operation == "normalized_command" {
+        guard_command::restricted_command::evaluate_normalized(input)
+    } else {
+        serde_json::json!({
+            "reason_code": "pytest_restricted_sandbox_unavailable",
+            "message": "No enforceable restricted pytest backend is available for this platform; execution was not started."
+        })
+    };
     budget.check()?;
     Ok(result)
 }

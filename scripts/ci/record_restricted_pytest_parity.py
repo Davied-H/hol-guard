@@ -44,6 +44,12 @@ def record() -> dict:
         pytest_executable = workspace / "bin/pytest"
         pytest_executable.write_text("#!/bin/sh\n")
         pytest_executable.chmod(0o755)
+        upper_python = workspace / "bin/Python"
+        upper_python.write_text("#!/usr/bin/python3\n")
+        upper_python.chmod(0o755)
+        python_entrypoint = workspace / "bin/py.test"
+        python_entrypoint.write_text(f"#!{upper_python}\n")
+        python_entrypoint.chmod(0o755)
         (workspace / "alias").symlink_to(workspace / "sub", target_is_directory=True)
 
         def wire(value):
@@ -114,7 +120,15 @@ def record() -> dict:
                 cwd=workspace,
                 workspace=workspace,
             )
-        for target in (executable, pytest_executable):
+        add(
+            "resolve_pytest_executable",
+            {"command": [str(upper_python), "-m", "pytest"], "cwd": workspace, "workspace": workspace},
+            validation._resolve_pytest_executable,
+            (str(upper_python), "-m", "pytest"),
+            cwd=workspace,
+            workspace=workspace,
+        )
+        for target in (executable, pytest_executable, python_entrypoint):
             command = (str(target), "-m", "pytest") if target == executable else (str(target), "-q")
             add(
                 "allowed_executables",

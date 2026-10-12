@@ -20,6 +20,7 @@ from .restricted_pytest_model import (
     PYTEST_EXTERNAL_PYTHONPATH_REASON_CODE,
     PYTEST_INVALID_COMMAND_REASON_CODE,
     PYTEST_INVALID_WORKSPACE_REASON_CODE,
+    PYTEST_READ_ONLY_PROFILE_VERSION,
     PYTEST_RESTRICTED_PROFILE_VERSION,
     PYTEST_RESTRICTED_REASON_CODE,
     PYTEST_SANDBOX_UNAVAILABLE_REASON_CODE,
@@ -70,6 +71,10 @@ def prepare_restricted_pytest(
             for key in arrays
         )
         or result["backend"] not in {"macos-seatbelt", "linux-bubblewrap"}
+        or result["profile_version"]
+        != (PYTEST_READ_ONLY_PROFILE_VERSION if read_only_workspace else PYTEST_RESTRICTED_PROFILE_VERSION)
+        or not result["command"]
+        or not result["allowed_executables"]
     ):
         raise RestrictedPytestError(PYTEST_SANDBOX_UNAVAILABLE_REASON_CODE, "Invalid native restricted launch plan.")
     return RestrictedPytestPlan(

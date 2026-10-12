@@ -128,3 +128,16 @@ def test_executable_transport_preserves_explicit_relative_prefix(monkeypatch, tm
     monkeypatch.setattr(validation, "restricted_native", native)
     assert wrapper(value, cwd=tmp_path) == tmp_path / "tool"
     assert observed["value"] == value
+
+
+def test_prepare_expands_tilde_against_current_caller_home(monkeypatch, tmp_path):
+    observed = {}
+
+    def call(action, **kwargs):
+        observed.update(action["body"]["input"])
+        return {"value": {}}
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(transport, "_call", call)
+    assert transport.restricted_native("prepare", {"command": ["~/bin/python", "-m", "pytest"]}, dict) == {}
+    assert observed["command"] == [str(tmp_path / "bin/python"), "-m", "pytest"]

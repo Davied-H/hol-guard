@@ -69,7 +69,7 @@ pub(super) fn first_symlink_expansion(path: &Path) -> Option<PathBuf> {
         for part in &parts[index + 1..] {
             expanded = expanded.join(part);
         }
-        return Some(path_absolute(&expanded));
+        return Some(normpath(&path_absolute(&expanded)));
     }
     None
 }

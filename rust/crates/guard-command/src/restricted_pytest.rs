@@ -1,9 +1,4 @@
-//! `runtime/restricted_pytest_validation.py` — fail-closed restricted pytest
-//! launch validation (497 lines — verbatim port, defmap order).
-//!
-//! Shared model constants live at the top of this module because the Python
-//! `restricted_pytest_model.py` module is out of this port's scope; only the
-//! constants and literals this validation file reads are duplicated here.
+//! Restricted execution admission, environment filtering and runtime read grants.
 
 use std::collections::HashSet;
 use std::env;
@@ -28,14 +23,11 @@ pub const PYTEST_EXTERNAL_PYTHONPATH_REASON_CODE: &str = "pytest_restricted_exte
 /// `RestrictedPytestBackend` (:37).
 pub type RestrictedPytestBackend = &'static str;
 
-const MAX_ARG_COUNT: usize = 4_096;
-const MAX_ARG_BYTES: usize = 1_048_576;
-
 static PYTEST_EXECUTABLE_NAMES: LazyLock<HashSet<&'static str>> =
     LazyLock::new(|| HashSet::from(["pytest", "py.test", "pytest.exe", "py.test.exe"]));
 
 static PYTHON_EXECUTABLE_PATTERN: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^(?:python|pythonw)(?:\d+(?:\.\d+)*)?(?:\.exe)?$").unwrap());
+    LazyLock::new(|| Regex::new(r"(?i)^(?:python|pythonw)(?:\d+(?:\.\d+)*)?(?:\.exe)?$").unwrap());
 
 const PROJECT_WORKSPACE_MARKERS: &[&str] = &[
     ".git",
@@ -69,28 +61,7 @@ static TRUSTED_EXECUTABLE_ROOTS: LazyLock<Vec<PathBuf>> = LazyLock::new(|| {
 // ---------------------------------------------------------------------------
 
 /// `RestrictedPytestError` — reason-coded fail-closed error.
-#[derive(Debug, Clone)]
-pub struct RestrictedPytestError {
-    pub reason_code: String,
-    pub message: String,
-}
-
-impl RestrictedPytestError {
-    fn new(reason_code: &str, message: impl Into<String>) -> Self {
-        Self {
-            reason_code: reason_code.to_owned(),
-            message: message.into(),
-        }
-    }
-}
-
-impl std::fmt::Display for RestrictedPytestError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(formatter, "{}", self.message)
-    }
-}
-
-impl std::error::Error for RestrictedPytestError {}
+use crate::restricted_command::{normalized_command, RestrictedPytestError};
 
 // ---------------------------------------------------------------------------
 // Path/executable primitives used below.
@@ -113,8 +84,7 @@ fn expand_user(path: &Path) -> PathBuf {
     path.to_path_buf()
 }
 
-/// `path.absolute()`: lexical absolutization (POSIX mirrors `abspath`, which
-/// is CWD-relative with `.`/`..` collapsed via normpath).
+/// `Path.absolute()`: anchor to cwd without resolving parent components.
 fn path_absolute(path: &Path) -> PathBuf {
     let joined = if path.is_absolute() {
         path.to_path_buf()
@@ -123,7 +93,12 @@ fn path_absolute(path: &Path) -> PathBuf {
             .unwrap_or_else(|_| PathBuf::from("/"))
             .join(path)
     };
-    normpath(&joined)
+    let absolute: PathBuf = joined.components().collect();
+    if joined.to_string_lossy().starts_with("//") && !joined.to_string_lossy().starts_with("///") {
+        PathBuf::from(format!("/{}", absolute.display()))
+    } else {
+        absolute
+    }
 }
 
 /// POSIX `os.path.normpath`: collapse `.`, redundant separators, and `..`

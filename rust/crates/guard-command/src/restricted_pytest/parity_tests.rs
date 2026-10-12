@@ -38,6 +38,16 @@ fn recorded_original_restricted_execution_outcomes() {
     let pytest_executable = workspace.join("bin/pytest");
     fs::write(&pytest_executable, "#!/bin/sh\n").unwrap();
     fs::set_permissions(&pytest_executable, fs::Permissions::from_mode(0o755)).unwrap();
+    let upper_python = workspace.join("bin/Python");
+    fs::write(&upper_python, "#!/usr/bin/python3\n").unwrap();
+    fs::set_permissions(&upper_python, fs::Permissions::from_mode(0o755)).unwrap();
+    let python_entrypoint = workspace.join("bin/py.test");
+    fs::write(
+        &python_entrypoint,
+        format!("#!{}\n", upper_python.display()),
+    )
+    .unwrap();
+    fs::set_permissions(&python_entrypoint, fs::Permissions::from_mode(0o755)).unwrap();
     symlink(workspace.join("sub"), workspace.join("alias")).unwrap();
     let recorded: Value = serde_json::from_str(include_str!(
         "../../tests/fixtures/restricted_pytest_parity.json"

@@ -30,7 +30,7 @@ pub fn evaluate(operation: &str, input: &Value) -> Value {
     match serde_json::from_value::<Input>(input.clone()) {
         Ok(input) => match evaluate_inner(operation, &input) {
             Ok(value) => json!({"value": value}),
-            Err(error) => json!({"reason_code": error.reason_code, "message": error.message}),
+            Err(error) => crate::restricted_command::error_reply(error),
         },
         Err(_) => json!({"reason_code": PYTEST_INVALID_COMMAND_REASON_CODE,
                         "message": "Invalid restricted execution request."}),

@@ -1,26 +1,5 @@
 use super::*;
 
-pub(super) fn normalized_command(command: &[String]) -> Result<Vec<String>, RestrictedPytestError> {
-    let mut normalized: Vec<String> = command.to_vec();
-    if normalized.first().map(|s| s.as_str()) == Some("--") {
-        normalized.remove(0);
-    }
-    let total_bytes: usize = normalized.iter().map(|item| item.len()).sum();
-    if normalized.is_empty() || normalized.len() > MAX_ARG_COUNT || total_bytes > MAX_ARG_BYTES {
-        return Err(RestrictedPytestError::new(
-            PYTEST_INVALID_COMMAND_REASON_CODE,
-            "Restricted pytest requires a bounded, non-empty argv after `--`.",
-        ));
-    }
-    if normalized.iter().any(|item| item.contains('\0')) {
-        return Err(RestrictedPytestError::new(
-            PYTEST_INVALID_COMMAND_REASON_CODE,
-            "Restricted pytest argv cannot contain NUL bytes.",
-        ));
-    }
-    Ok(normalized)
-}
-
 /// `_resolve_workspace` (:52-77).
 pub(super) fn resolve_workspace(workspace: &Path) -> Result<PathBuf, RestrictedPytestError> {
     let resolved = expand_user(workspace).canonicalize().map_err(|error| {

@@ -38,6 +38,8 @@ def restricted_native(operation: str, fields: Mapping[str, Any], expected: type)
     # Lexical anchoring preserves the caller's cwd/home; the resident owns
     # existence, symlink, workspace and executable admission.
     inputs = dict(fields)
+    if operation == "prepare" and inputs.get("command") and inputs["command"][0].startswith("~"):
+        inputs["command"] = [str(Path(inputs["command"][0]).expanduser()), *inputs["command"][1:]]
     if operation == "environment":
         source = dict(inputs["source"])
         if "PYTHONPATH" in source:

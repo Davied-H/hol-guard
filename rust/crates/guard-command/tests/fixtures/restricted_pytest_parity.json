@@ -4516,6 +4516,24 @@
       }
     },
     {
+      "operation": "resolve_pytest_executable",
+      "input": {
+        "command": [
+          "$ROOT/project/bin/Python",
+          "-m",
+          "pytest"
+        ],
+        "cwd": "$ROOT/project",
+        "workspace": "$ROOT/project"
+      },
+      "expected": {
+        "value": [
+          "$ROOT/project/bin/Python",
+          "$ROOT/project/bin/Python"
+        ]
+      }
+    },
+    {
       "operation": "allowed_executables",
       "input": {
         "executable": "$ROOT/project/bin/python",
@@ -4549,6 +4567,25 @@
       "expected": {
         "reason_code": "pytest_restricted_invalid_command",
         "message": "Restricted pytest entry points must use a Python interpreter."
+      }
+    },
+    {
+      "operation": "allowed_executables",
+      "input": {
+        "executable": "$ROOT/project/bin/py.test",
+        "launch_executable": "$ROOT/project/bin/py.test",
+        "command": [
+          "$ROOT/project/bin/py.test",
+          "-q"
+        ],
+        "cwd": "$ROOT/project",
+        "workspace": "$ROOT/project"
+      },
+      "expected": {
+        "value": [
+          "$ROOT/project/bin/py.test",
+          "$ROOT/project/bin/Python"
+        ]
       }
     },
     {
