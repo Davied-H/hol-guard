@@ -51,6 +51,7 @@ def run_restricted_inline_eval(
     *,
     timeout_seconds: int,
     authorize_capability: Callable[[tuple[str, ...]], None],
+    merge_stderr: bool = False,
 ) -> int:
     if (
         not 0 < timeout_seconds <= 86400
@@ -87,4 +88,5 @@ def run_restricted_inline_eval(
             timeout_seconds=timeout_seconds,
             cwd=plan.cwd,
             node_virtual_address_space=node and plan.backend == "linux-bubblewrap",
+            merge_stderr=merge_stderr,
         )

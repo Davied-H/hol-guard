@@ -18,6 +18,7 @@ struct Input {
     platform: String,
     backend_executable: Option<PathBuf>,
     search_path: String,
+    home: Option<PathBuf>,
     path: PathBuf,
     value: String,
 }
@@ -45,7 +46,11 @@ pub(super) fn evaluate(operation: &str, input: &Value) -> Option<Value> {
             "prepare_node" => prepare_node(&input),
             "prepare_vitest" => prepare_vitest(&input),
             "prepare_inline" => prepare_inline(&input),
-            "approved_node" => Ok(json!(approved_node(&input.path, &input.workspace))),
+            "approved_node" => Ok(json!(approved_node(
+                &input.path,
+                &input.workspace,
+                input.home.as_deref()
+            ))),
             "nearest_project_root" => Ok(json!(nearest_project_root(
                 &input.cwd,
                 &input.workspace,
@@ -67,7 +72,27 @@ fn invalid_node(message: &str) -> RestrictedPytestError {
     RestrictedPytestError::new("node_test_restricted_invalid_command", message)
 }
 
-fn approved_node(executable: &Path, workspace: &Path) -> bool {
+fn nvm_versions_root(home: Option<&Path>) -> Option<PathBuf> {
+    if let Some(home) = home {
+        return home
+            .canonicalize()
+            .ok()
+            .map(|path| path.join(".nvm/versions/node"));
+    }
+    let from_env = std::env::var_os("HOME").and_then(|raw| {
+        let path = PathBuf::from(&raw);
+        if raw.is_empty() || !path.is_absolute() {
+            None
+        } else {
+            path.canonicalize().ok()
+        }
+    });
+    from_env
+        .or_else(host_home_directory)
+        .map(|home| home.join(".nvm/versions/node"))
+}
+
+fn approved_node(executable: &Path, workspace: &Path, home: Option<&Path>) -> bool {
     let Ok(metadata) = executable.metadata() else {
         return false;
     };
@@ -82,7 +107,7 @@ fn approved_node(executable: &Path, workspace: &Path) -> bool {
     }
     let parent = executable.parent().unwrap_or(Path::new("/"));
     let version = parent.parent().unwrap_or(Path::new("/"));
-    let nvm = host_home_directory().map(|p| p.join(".nvm/versions/node"));
+    let nvm = nvm_versions_root(home);
     static VERSION: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^v\d+\.\d+\.\d+$").unwrap());
     let trusted = [
         workspace,
@@ -159,10 +184,11 @@ fn prepare_node(input: &Input) -> Result<Value, RestrictedPytestError> {
         input.backend_executable.as_deref(),
         &input.search_path,
     )?;
-    let workspace = resolve_workspace(&input.workspace)?;
+    let workspace =
+        validation::resolve_workspace_with_home(&input.workspace, input.home.as_deref())?;
     let cwd = resolve_cwd(&input.cwd, &workspace)?;
     let executable = resolve_executable(&argv[0], &cwd, &input.search_path)?;
-    if !approved_node(&executable, &workspace) {
+    if !approved_node(&executable, &workspace, input.home.as_deref()) {
         return Err(invalid_node(
             "The Node runtime does not resolve to an approved native executable.",
         ));
@@ -269,6 +295,7 @@ fn prepare_vitest(input: &Input) -> Result<Value, RestrictedPytestError> {
         platform: input.platform.clone(),
         backend_executable: input.backend_executable.clone(),
         search_path: input.search_path.clone(),
+        home: input.home.clone(),
         ..Input::default()
     };
     let mut plan = prepare_node(&base)?;
@@ -321,6 +348,7 @@ fn prepare_tsx(
         platform: input.platform.clone(),
         backend_executable: input.backend_executable.clone(),
         search_path: input.search_path.clone(),
+        home: input.home.clone(),
         ..Input::default()
     })?;
     let workspace = Path::new(plan["workspace"].as_str().unwrap());
@@ -392,7 +420,7 @@ fn prepare_inline(input: &Input) -> Result<Value, RestrictedPytestError> {
     let index = 1 + runtime.len();
     let script_index = if node {
         node_script_index(&argv, index)
-    } else if argv[index] != "-c" {
+    } else if !matches!(argv[index].as_str(), "-c" | "-m") {
         Some(index)
     } else {
         None
@@ -419,6 +447,7 @@ fn prepare_inline(input: &Input) -> Result<Value, RestrictedPytestError> {
             platform: input.platform.clone(),
             backend_executable: input.backend_executable.clone(),
             search_path: input.search_path.clone(),
+            home: input.home.clone(),
             ..Input::default()
         })?
     } else {

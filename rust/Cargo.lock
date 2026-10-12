@@ -934,6 +934,7 @@ dependencies = [
  "sha2",
  "sysinfo",
  "toml 0.8.23",
+ "toml_edit",
  "unicode-normalization",
  "windows-permissions",
  "zeroize",

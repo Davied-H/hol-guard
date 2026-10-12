@@ -34,6 +34,40 @@ fn expand(value: &Value, root: &str) -> Value {
 }
 
 struct Fixture(PathBuf);
+
+#[test]
+fn per_request_home_selects_nvm_and_preserves_home_root_refusal() {
+    let fixture = fixture("guard-caller-home");
+    let home = fixture.0.join("caller-home");
+    let node = home.join(".nvm/versions/node/v20.1.2/bin/node");
+    let workspace = fixture.0.join("project");
+    fs::create_dir_all(node.parent().unwrap()).unwrap();
+    fs::create_dir(&workspace).unwrap();
+    fs::write(workspace.join("package.json"), "{}").unwrap();
+    fs::write(home.join("package.json"), "{}").unwrap();
+    fs::write(&node, b"\x7fELFnative-fixture").unwrap();
+    fs::set_permissions(&node, fs::Permissions::from_mode(0o755)).unwrap();
+    let request = json!({"path":node,"workspace":workspace,"home":home});
+    assert_eq!(evaluate("approved_node", &request), json!({"value":true}));
+    let mut wrong_home = request;
+    wrong_home["home"] = json!(workspace);
+    assert_eq!(
+        evaluate("approved_node", &wrong_home),
+        json!({"value":false})
+    );
+    let mut launch = json!({"command":[node,"--test"],"workspace":workspace,"cwd":workspace,
+        "home":home,"platform":"darwin","backend_executable":"/usr/bin/true","search_path":""});
+    assert_eq!(
+        evaluate("prepare_node", &launch)["value"]["executable"],
+        json!(node)
+    );
+    launch["workspace"] = json!(home);
+    launch["cwd"] = json!(home);
+    assert_eq!(
+        evaluate("prepare_node", &launch)["reason_code"],
+        PYTEST_INVALID_WORKSPACE_REASON_CODE
+    );
+}
 impl Drop for Fixture {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
@@ -183,14 +217,18 @@ fn mapping_snapshot_is_descriptor_bound_and_can_exceed_an_ipc_frame() {
     fs::write(&path, &raw).unwrap();
     fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
     let mut input = json!({"mapping_snapshot":path,"decoded_bytes":raw.len(),"sha256":format!("{:x}",Sha256::digest(&raw))});
-    assert_eq!(super::mapping_snapshot::read(&input).unwrap(), payload);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    assert_eq!(
+        super::mapping_snapshot::read(&input, deadline).unwrap(),
+        payload
+    );
     let records = json!((0..1024)
         .map(
             |i| json!({"path":format!("/workspace/{}-{i}","module-".repeat(430)),
         "identity":[1,i,1,1,0o100500],"sha256":"0".repeat(64)})
         )
         .collect::<Vec<_>>());
-    let result = super::mapping_snapshot::write(&input, &records).unwrap();
+    let result = super::mapping_snapshot::write(&input, &records, deadline).unwrap();
     assert!(result["decoded_bytes"].as_u64().unwrap() > 2 * 1024 * 1024);
     assert!(serde_json::to_vec(&result).unwrap().len() < 1024);
     let output = fixture.0.join("mapping-result.json");
@@ -202,10 +240,73 @@ fn mapping_snapshot_is_descriptor_bound_and_can_exceed_an_ipc_frame() {
     );
     assert_eq!(serde_json::from_slice::<Value>(&bytes).unwrap(), records);
     input["sha256"] = json!("0".repeat(64));
-    assert!(super::mapping_snapshot::read(&input).is_err());
+    assert!(super::mapping_snapshot::read(&input, deadline).is_err());
     input["sha256"] = json!(format!("{:x}", Sha256::digest(&raw)));
     fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
-    assert!(super::mapping_snapshot::read(&input).is_err());
+    assert!(super::mapping_snapshot::read(&input, deadline).is_err());
+}
+
+#[test]
+fn expired_mapping_deadline_stops_before_an_unreadable_snapshot() {
+    let expired = Instant::now() - Duration::from_secs(1);
+    let missing = json!({
+        "mapping_snapshot": "/tmp/hol-guard-mapping-missing/mapping-index.json",
+        "decoded_bytes": 2,
+        "sha256": "ab".repeat(32),
+    });
+    let stopped = evaluate_with_deadline("mapping_evidence", &missing, expired);
+    assert_eq!(
+        stopped["message"],
+        "Linux executable mapping inspection deadline exceeded."
+    );
+    let inspected = evaluate_with_deadline(
+        "mapping_evidence",
+        &missing,
+        Instant::now() + Duration::from_secs(5),
+    );
+    assert_eq!(inspected["message"], "Invalid executable mapping snapshot.");
+}
+
+#[test]
+fn nvm_node_under_process_home_stays_approved_when_passwd_home_differs() {
+    const CHILD: &str = "HOL_GUARD_NVM_HOME_CHILD";
+    if env::var_os(CHILD).is_none() {
+        let fixture = fixture("hol-guard-nvm-home");
+        let status = std::process::Command::new(env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "restricted_pytest::contained_tests::nvm_node_under_process_home_stays_approved_when_passwd_home_differs",
+                "--test-threads=1",
+            ])
+            .env("HOME", &fixture.0)
+            .env(CHILD, "1")
+            .env("HOL_GUARD_NVM_FIXTURE", &fixture.0)
+            .status()
+            .unwrap();
+        assert!(status.success());
+        return;
+    }
+    let root = PathBuf::from(env::var_os("HOL_GUARD_NVM_FIXTURE").unwrap());
+    let executable = root.join(".nvm/versions/node/v20.11.0/bin/node");
+    fs::create_dir_all(executable.parent().unwrap()).unwrap();
+    fs::write(&executable, b"\x7fELF").unwrap();
+    fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).unwrap();
+    let workspace = root.join("project");
+    fs::create_dir_all(&workspace).unwrap();
+    let outside = root.join("other/bin/node");
+    fs::create_dir_all(outside.parent().unwrap()).unwrap();
+    fs::write(&outside, b"\x7fELF").unwrap();
+    fs::set_permissions(&outside, fs::Permissions::from_mode(0o755)).unwrap();
+    let approved = evaluate(
+        "approved_node",
+        &json!({"path": executable, "workspace": workspace}),
+    );
+    let rejected = evaluate(
+        "approved_node",
+        &json!({"path": outside, "workspace": workspace}),
+    );
+    assert_eq!(approved["value"], json!(true));
+    assert_eq!(rejected["value"], json!(false));
 }
 
 #[test]

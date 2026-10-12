@@ -153,6 +153,7 @@ def _run_backend_process(
     cwd: Path | None = None,
     stdout_capture: bytearray | None = None,
     node_virtual_address_space: bool = False,
+    merge_stderr: bool = False,
 ) -> int:
     if (
         node_virtual_address_space
@@ -198,7 +199,7 @@ def _run_backend_process(
                 cwd=cwd,
                 stdin=subprocess.DEVNULL,
                 stdout=stdout_file,
-                stderr=stderr_file,
+                stderr=stdout_file if merge_stderr else stderr_file,
                 close_fds=True,
                 start_new_session=True,
                 preexec_fn=apply_limits if _RESOURCE_AVAILABLE else None,
@@ -245,7 +246,8 @@ def _run_backend_process(
             else:
                 stdout_file.seek(0)
                 stdout_capture.extend(stdout_file.read(_MAX_REPLAY_BYTES))
-            _replay_sandbox_output(stderr_file, sys.stderr)
+            if not merge_stderr:
+                _replay_sandbox_output(stderr_file, sys.stderr)
         return return_code if return_code >= 0 else 128 + abs(return_code)
 
 

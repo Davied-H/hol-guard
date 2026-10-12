@@ -1,4 +1,9 @@
-"""Native credential-path expressions for contained operating-system profiles."""
+"""Parity entry points for native credential-path expressions.
+
+Contained profiles are built in the resident. The parity recorder calls these
+functions so the recorded native replies stay attached to this module. They
+are not a second source for the macOS profile.
+"""
 
 from __future__ import annotations
 
