@@ -4,8 +4,8 @@ The gateway adds the operator's real GitHub token to a GraphQL request once poli
 so policy must understand the whole document, not pattern-match pieces of it. This module
 parses a document into operations, fields and fragments; any syntax it does not recognize is a
 rejection. Only a short list of root fields is accepted for each operation kind, every
-repository reference (literal or variable) must name a run-owned repository, and nested
-fields that can reach other repositories are refused.
+repository reference (literal or variable) must name a run-owned repository, and every nested
+selection must appear in the SCHEMA allowlist (keyed on field name, never alias); all else is refused.
 """
 
 from __future__ import annotations
@@ -28,28 +28,44 @@ MUTATION_ROOTS = {
     "PullRequestCreate": frozenset({"createPullRequest"}),
 }
 VIEWER_FIELDS = frozenset({"login", "id", "name", "url", "databaseId", "__typename"})
-OWNER_FIELDS = frozenset({"login", "id", "url", "__typename"})
-# Below a repository, fields that lead to other repositories, users, organizations or any node by id.
-NESTED_DENY = frozenset(
+REPO_SCALARS = frozenset(
     {
-        "search",
-        "node",
-        "organization",
-        "user",
-        "repositoryOwner",
-        "topic",
-        "enterprise",
-        "repositories",
-        "repository",
-        "viewer",
-        "parent",
-        "forks",
-        "templateRepository",
-        "sponsors",
-        "topRepositories",
-        "pinnedItems",
+        "id", "databaseId", "name", "nameWithOwner", "url", "sshUrl", "isPrivate", "visibility", "description",
+        "isFork", "isArchived", "isEmpty", "createdAt", "pushedAt", "updatedAt", "homepageUrl", "viewerPermission",
+        "hasIssuesEnabled", "hasWikiEnabled", "mergeCommitAllowed", "squashMergeAllowed", "rebaseMergeAllowed",
+        "__typename",
     }
-)
+)  # fmt: skip
+PR_SCALARS = frozenset(
+    {
+        "id", "number", "url", "title", "state", "headRefName", "baseRefName", "isDraft", "createdAt", "__typename",
+    }
+)  # fmt: skip
+# Fail-closed schema: type name -> {field name: child type, or None for a scalar}. A field that is not
+# listed for its parent type is rejected at every depth. Keys are real field names, never aliases.
+SCHEMA: dict[str, dict[str, str | None]] = {
+    "Repository": {
+        **dict.fromkeys(REPO_SCALARS),
+        "defaultBranchRef": "Ref",
+        "owner": "Owner",
+        "pullRequest": "PullRequest",
+        "pullRequests": "PullRequestConnection",
+    },
+    "Ref": {"name": None, "target": "GitObject", "__typename": None},
+    "GitObject": {"oid": None, "__typename": None},
+    "Owner": {"login": None, "id": None, "url": None, "__typename": None},
+    "PullRequest": dict.fromkeys(PR_SCALARS),
+    "PullRequestConnection": {
+        "totalCount": None,
+        "nodes": "PullRequest",
+        "pageInfo": "PageInfo",
+        "__typename": None,
+    },
+    "PageInfo": {"hasNextPage": None, "endCursor": None, "__typename": None},
+    "CreateRepositoryPayload": {"repository": "Repository", "__typename": None},
+    "CreatePullRequestPayload": {"pullRequest": "PullRequest", "__typename": None},
+}
+MUTATION_PAYLOADS = {"createRepository": "CreateRepositoryPayload", "createPullRequest": "CreatePullRequestPayload"}
 ID_KEYS = frozenset({"repositoryid", "headrepositoryid", "baserepositoryid", "repoid"})
 CROSS_OWNER_KEYS = frozenset({"ownerid", "teamid", "templaterepositoryid", "organizationid"})
 
@@ -77,6 +93,7 @@ class Spread:
 
 @dataclass
 class Inline:
+    type_name: str | None
     selections: list[Any]
 
 
@@ -118,9 +135,9 @@ class Parser:
             raise GraphQLRejectedError("graphql-unparseable")
         return text
 
-    def document(self) -> tuple[list[tuple[str, str, list[Any]]], dict[str, list[Any]]]:
+    def document(self) -> tuple[list[tuple[str, str, list[Any]]], dict[str, tuple[str, list[Any]]]]:
         operations: list[tuple[str, str, list[Any]]] = []
-        fragments: dict[str, list[Any]] = {}
+        fragments: dict[str, tuple[str, list[Any]]] = {}
         while self.peek()[0] != "end":
             kind, text = self.peek()
             if kind == "name" and text in ("query", "mutation", "subscription"):
@@ -131,11 +148,11 @@ class Parser:
                 label = self.name()
                 if self.name() != "on":
                     raise GraphQLRejectedError("graphql-unparseable")
-                self.name()
+                type_name = self.name()
                 self.no_directives()
                 if label in fragments:
                     raise GraphQLRejectedError("graphql-duplicate-fragment")
-                fragments[label] = self.selection_set(0)
+                fragments[label] = (type_name, self.selection_set(0))
             else:
                 raise GraphQLRejectedError("graphql-anonymous-or-unsupported")
         return operations, fragments
@@ -176,11 +193,11 @@ class Parser:
             self.take()
             if self.peek()[1] == "on":
                 self.take()
-                self.name()
+                type_name = self.name()
                 self.no_directives()
-                return Inline(self.selection_set(depth + 1))
+                return Inline(type_name, self.selection_set(depth + 1))
             if self.peek()[1] == "{":
-                return Inline(self.selection_set(depth + 1))
+                return Inline(None, self.selection_set(depth + 1))
             label = self.name()
             self.no_directives()
             return Spread(label)
@@ -263,7 +280,7 @@ class Checker:
     owns: Callable[[str, str], bool]
     owns_node: Callable[[str], bool]
     variables: dict[str, Any]
-    fragments: dict[str, list[Any]]
+    fragments: dict[str, tuple[str, list[Any]]]
     references: int = 0
 
     def reference_walk(self, value: Any) -> None:
@@ -288,31 +305,41 @@ class Checker:
                 else:
                     self.reference_walk(item)
 
-    def expand(self, selections: list[Any], seen: tuple[str, ...] = ()) -> list[Field]:
+    def expand(self, selections: list[Any], parent: str, seen: tuple[str, ...] = ()) -> list[Field]:
+        """Flatten fragments; a type condition must be exactly the parent type, anything else is refused."""
         fields: list[Field] = []
         for item in selections:
             if isinstance(item, Field):
                 fields.append(item)
             elif isinstance(item, Inline):
-                fields.extend(self.expand(item.selections, seen))
+                if item.type_name not in (None, parent):
+                    raise GraphQLRejectedError("graphql-fragment-type")
+                fields.extend(self.expand(item.selections, parent, seen))
             else:
                 if item.name in seen or item.name not in self.fragments:
                     raise GraphQLRejectedError("graphql-fragment")
-                fields.extend(self.expand(self.fragments[item.name], (*seen, item.name)))
+                type_name, body = self.fragments[item.name]
+                if type_name != parent:
+                    raise GraphQLRejectedError("graphql-fragment-type")
+                fields.extend(self.expand(body, parent, (*seen, item.name)))
         return fields
 
-    def nested(self, node: Field, *, payload: bool = False) -> None:
+    def select(self, node: Field, parent: str) -> None:
+        """Allow node only when SCHEMA lists its field name under the parent type; recurse into objects."""
+        allowed = SCHEMA[parent]
+        if node.name not in allowed:
+            raise GraphQLRejectedError("graphql-selection-not-allowed")
+        child_type = allowed[node.name]
         for value in node.args.values():
             self.reference_walk(_resolve(value, self.variables))
-        if node.name in NESTED_DENY and not (payload and node.name == "repository"):
-            raise GraphQLRejectedError("graphql-cross-repository-selection")
-        if node.selections is None:
+        if child_type is None:
+            if node.selections is not None or node.args:
+                raise GraphQLRejectedError("graphql-selection-not-allowed")
             return
-        children = self.expand(node.selections)
-        if node.name == "owner" and any(child.name not in OWNER_FIELDS or child.selections for child in children):
-            raise GraphQLRejectedError("graphql-owner-selection")
-        for child in children:
-            self.nested(child)
+        if node.selections is None:
+            raise GraphQLRejectedError("graphql-selection-not-allowed")
+        for child in self.expand(node.selections, child_type):
+            self.select(child, child_type)
 
     def root(self, node: Field, roots: frozenset[str]) -> None:
         if node.name not in roots:
@@ -320,7 +347,7 @@ class Checker:
         if node.name == "viewer":
             if node.args or node.selections is None:
                 raise GraphQLRejectedError("graphql-viewer")
-            children = self.expand(node.selections)
+            children = self.expand(node.selections, "Viewer")
             if any(child.name not in VIEWER_FIELDS or child.selections or child.args for child in children):
                 raise GraphQLRejectedError("graphql-viewer")
         elif node.name == "repository":
@@ -333,14 +360,15 @@ class Checker:
             self.references += 1
             if not self.owns(owner, name):
                 raise GraphQLRejectedError("foreign-repository")
-            for child in self.expand(node.selections):
-                self.nested(child)
+            for child in self.expand(node.selections, "Repository"):
+                self.select(child, "Repository")
         else:
             if set(node.args) != {"input"} or not isinstance(node.args["input"], Var) or node.selections is None:
                 raise GraphQLRejectedError("graphql-mutation-arguments")
             self.reference_walk(_resolve(node.args["input"], self.variables))
-            for child in self.expand(node.selections):
-                self.nested(child, payload=True)
+            payload = MUTATION_PAYLOADS[node.name]
+            for child in self.expand(node.selections, payload):
+                self.select(child, payload)
 
 
 def validate(
@@ -365,6 +393,6 @@ def validate(
     checker = Checker(owns, owns_node, variables, fragments)
     checker.reference_walk(variables)
     roots = QUERY_ROOTS if kind == "query" else MUTATION_ROOTS[name]
-    for node in checker.expand(selections):
+    for node in checker.expand(selections, "Query" if kind == "query" else "Mutation"):
         checker.root(node, roots)
     return kind, name, checker.references

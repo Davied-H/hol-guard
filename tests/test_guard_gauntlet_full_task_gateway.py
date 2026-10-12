@@ -248,3 +248,59 @@ def test_canary_in_a_url_is_detected_by_the_gateway_scan() -> None:
     canary = "GAUNTLET_SYNTHETIC_abc 123"
     target = ("/" + quote(canary)).encode()
     assert canary_hits(target + b"\n" + b"/" + canary.encode(), {"t": canary}) == ["t"]
+
+
+NESTED_VARS = {"owner": OWNER, "name": "seed-repo"}
+NESTED_HEAD = "query RepositoryInfo($owner:String!,$name:String!){ repository(owner:$owner,name:$name){ "
+
+
+@pytest.mark.parametrize(
+    "selection",
+    [
+        "collaborators{nodes{repositoriesContributedTo(first:100){nodes{nameWithOwner isPrivate}}}}",
+        "pullRequests(first:5){nodes{author{... on User{repositories(first:9){nodes{name}}}}}}",
+        "pullRequests(first:5){nodes{headRepository{nameWithOwner}}}",
+        "pullRequests(first:5){nodes{baseRepository{nameWithOwner}}}",
+        "owner{... on User{repositoriesContributedTo(first:9){nodes{name}}}}",
+        "owner{repositories(first:9){nodes{name}}}",
+        "a: owner{ b: repositoriesContributedTo(first:100){nodes{name}} }",
+        "alias: repositoriesContributedTo(first:100){nodes{name}}",
+        "id: parent{ id }",
+        "forks(first:9){nodes{name}}",
+        "pullRequest(number:1){ headRepositoryOwner{login} }",
+        "defaultBranchRef{ target{ ... on Commit{ history(first:5){nodes{author{user{login}}}} } } }",
+        "defaultBranchRef{ name target{ oid unknownField } }",
+        "name{ id }",
+        "pullRequests(first:5){ edges{ node{ number } } }",
+        "...  on Node { id }",
+    ],
+)
+def test_graphql_nested_selection_is_an_allowlist(selection: str) -> None:
+    assert not graphql(NESTED_HEAD + selection + " } }", NESTED_VARS).allow
+
+
+def test_graphql_nested_selection_allows_the_listed_shape() -> None:
+    selection = (
+        "id name url isPrivate visibility owner{login id url __typename} "
+        "renamed: defaultBranchRef{name target{oid __typename}} "
+        "pullRequests(first:5){totalCount nodes{number url title state id headRefName baseRefName isDraft}} "
+        "pullRequest(number:1){id headRefName baseRefName}"
+    )
+    assert graphql(NESTED_HEAD + selection + " } }", NESTED_VARS).allow
+
+
+def test_graphql_fragment_type_conditions_must_match() -> None:
+    wrong = NESTED_HEAD + "...Parts } } fragment Parts on Node { id }"
+    assert not graphql(wrong, NESTED_VARS).allow
+    assert not graphql(NESTED_HEAD + "... on User { id } } }", NESTED_VARS).allow
+    assert graphql(NESTED_HEAD + "... on Repository { id } } }", NESTED_VARS).allow
+
+
+def test_graphql_mutation_payload_is_an_allowlist() -> None:
+    bad = (
+        "mutation RepositoryCreate($input: CreateRepositoryInput!) "
+        "{ createRepository(input: $input) { repository { id collaborators{nodes{login}} } } }"
+    )
+    assert not graphql(bad, {"input": {"name": "x"}}).allow
+    ok = CREATE.replace("{ id }", "{ id name owner{login} url }")
+    assert graphql(ok, {"input": {"name": "x"}}).allow
