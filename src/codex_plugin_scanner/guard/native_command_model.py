@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import time
+from dataclasses import fields
 from pathlib import Path
 from typing import Any
 
@@ -345,22 +346,13 @@ def _canonical_command_from_native(
         return None
     # The decoder above already validates every field and span. Present its
     # complete DTO without repeating its checks or deriving new semantics.
-    segments = tuple(
-        CommandSegment(
-            text=segment["text"],
-            tokens=tuple(segment["tokens"]),
-            executable=segment["executable"],
-            arguments=tuple(segment["arguments"]),
-            environment_names=tuple(segment["environment_names"]),
-            wrapper_chain=tuple(segment["wrapper_chain"]),
-            path_overridden=segment["path_overridden"],
-            execution_context=segment["execution_context"],
-            pipeline_index=segment["pipeline_index"],
-            start=segment["span"]["start"],
-            end=segment["span"]["end"],
-        )
-        for segment in raw_segments
-    )
+    segments = []
+    for segment in raw_segments:
+        value = {item.name: segment[item.name] for item in fields(CommandSegment) if item.name not in {"start", "end"}}
+        value.update(start=segment["span"]["start"], end=segment["span"]["end"])
+        for name in ("tokens", "arguments", "environment_names", "wrapper_chain"):
+            value[name] = tuple(value[name])
+        segments.append(CommandSegment(**value))
 
     canonical = CanonicalCommand(
         raw_text=command.strip(),
@@ -369,7 +361,7 @@ def _canonical_command_from_native(
         transport="shell_string",
         extraction_provenance="guard-shell",
         wrapper_chain=tuple(validated["wrapper_chain"]),
-        segments=segments,
+        segments=tuple(segments),
         redirects=(),
         embedded_commands=(),
         confidence=validated["confidence"],

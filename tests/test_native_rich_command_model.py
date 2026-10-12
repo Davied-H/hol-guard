@@ -157,6 +157,28 @@ def test_large_uncertain_command_preserves_native_identity_without_duplicate_wir
     assert model.security_identity.startswith("command-security-v2:")
 
 
+def test_public_tokens_preserve_stderr_to_null_redirect():
+    assert command_tokens.shell_tokens("echo 2>/dev/null") == (("echo", "2>/dev/null"), True)
+
+
+def test_swallowed_outage_still_records_local_identity_failure():
+    from codex_plugin_scanner.guard.native_local_cli_identity import track_local_cli_identity_failures
+
+    with track_local_cli_identity_failures() as failures:
+        try:
+            raise client.NativeCommandModelError("native_rich_command_model_unavailable")
+        except ValueError:
+            pass
+    assert failures == ["native_rich_command_model_unavailable"]
+
+
+def test_env_outage_returns_incomplete_transport_dto(monkeypatch):
+    monkeypatch.setattr(client, "ensure_resident_prerequisite", lambda _: False)
+    result = env_wrapper.parse_env_wrapper(("echo", "hi"))
+    assert not result.complete and result.error == "native_unavailable"
+    assert result.executable_argv == ()
+
+
 def test_local_cli_parser_outage_uses_existing_unverified_grant_path(monkeypatch, tmp_path):
     from codex_plugin_scanner.guard import local_cli_hook, local_cli_trust
 

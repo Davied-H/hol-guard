@@ -13669,6 +13669,19 @@
         0,
         []
       ]
+    },
+    {
+      "action": "tokens",
+      "args": {
+        "command": "echo 2>/dev/null"
+      },
+      "result": [
+        [
+          "echo",
+          "2>/dev/null"
+        ],
+        true
+      ]
     }
   ]
 }

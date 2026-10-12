@@ -24,7 +24,9 @@ pub(crate) struct RichCommandModelRequest {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ParseArgs {
-    command: String,
+    command: Option<String>,
+    #[serde(default)]
+    command_chunks: Option<Vec<String>>,
     #[serde(default)]
     cwd: Option<String>,
     #[serde(default)]
@@ -141,11 +143,16 @@ pub(crate) fn result(action: &str, args: &Value) -> Result<Value, String> {
     match action {
         "parse" => {
             let a: ParseArgs = decode(args)?;
-            if a.command.trim().is_empty() {
+            let command = match (a.command, a.command_chunks) {
+                (Some(command), None) => command,
+                (None, Some(chunks)) if !chunks.is_empty() => chunks.concat(),
+                _ => return Err("native_rich_command_model_invalid_args".into()),
+            };
+            if command.trim().is_empty() {
                 return Err("Command text cannot be empty".into());
             }
             let model = command_model::parse_shell_command(
-                &a.command,
+                &command,
                 a.cwd.as_deref().map(Path::new),
                 a.home_dir.as_deref().map(Path::new),
                 &a.dialect,
@@ -161,8 +168,8 @@ pub(crate) fn result(action: &str, args: &Value) -> Result<Value, String> {
                     .len()
                     > 1024 * 1024
             {
-                let text = a.command.trim();
-                let start = text.as_ptr() as usize - a.command.as_ptr() as usize;
+                let text = command.trim();
+                let start = text.as_ptr() as usize - command.as_ptr() as usize;
                 value["raw_text"] = json!("");
                 value["normalized_text"] = json!("");
                 value["source_text_span"] = json!({"start": start, "end": start + text.len()});

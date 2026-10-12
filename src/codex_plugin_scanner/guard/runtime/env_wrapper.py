@@ -6,7 +6,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..native_rich_command_model import request, string_tuple
+from ..native_rich_command_model import NativeCommandModelError, request, string_tuple
 
 __all__ = [
     "ENV_SPLIT_MAX_BYTES",
@@ -75,14 +75,29 @@ def parse_env_wrapper(
     cwd: Path | None = None,
 ) -> EnvWrapperParseResult:
     """Present the native env parser result; never infer an executable locally."""
-    value = request(
-        "env",
-        {
-            "tokens": list(tokens),
-            "inherited_environment": dict(inherited_environment) if inherited_environment is not None else None,
-            "cwd": str(cwd) if cwd is not None else None,
-        },
-    )
+    try:
+        value = request(
+            "env",
+            {
+                "tokens": list(tokens),
+                "inherited_environment": dict(inherited_environment) if inherited_environment is not None else None,
+                "cwd": str(cwd) if cwd is not None else None,
+            },
+        )
+    except NativeCommandModelError:
+        return EnvWrapperParseResult(
+            False,
+            "native_unavailable",
+            tuple(tokens),
+            (),
+            EnvOptionEffects(False, (), None, None, False, False),
+            EnvEnvironmentDelta(False, (), ()),
+            None,
+            None,
+            None,
+            (),
+            (),
+        )
     effects, delta = value["option_effects"], value["environment_delta"]
     effects["unset_names"] = string_tuple(effects["unset_names"])
     delta["unset_names"] = string_tuple(delta["unset_names"])

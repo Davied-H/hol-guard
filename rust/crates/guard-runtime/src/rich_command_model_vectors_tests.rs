@@ -97,6 +97,22 @@ fn large_uncertain_parse_uses_a_bound_text_reference() {
 }
 
 #[test]
+fn public_token_projection_preserves_redirect_without_widening_argument_proofs() {
+    assert_eq!(
+        result("tokens", &json!({"command": "echo 2>/dev/null"})).unwrap(),
+        json!([["echo", "2>/dev/null"], true])
+    );
+    let model = guard_command::parse_command(&guard_command::CommandModelRequestV1 {
+        command: "echo 2>/dev/null".to_owned(),
+        dialect: "posix".to_owned(),
+        transport: "shell_string".to_owned(),
+        extraction_provenance: "guard-shell".to_owned(),
+    })
+    .unwrap();
+    assert_eq!(model.segments[0].tokens, vec!["echo"]);
+}
+
+#[test]
 fn response_is_bound_to_exact_request_and_rejects_unknown_inputs() {
     let request = RichCommandModelRequest {
         schema: REQUEST_SCHEMA.into(),

@@ -110,7 +110,7 @@ pub fn shell_tokens(command: &str) -> (Vec<String>, bool) {
     if cfg!(windows) {
         return windows_shell_tokens(command);
     }
-    match crate::shell_tokens(command, false) {
+    match crate::parser_segments::shell_tokens_preserving_redirects(command) {
         Ok(tokens) => (tokens, true),
         Err(_) => (
             command.split_whitespace().map(str::to_owned).collect(),

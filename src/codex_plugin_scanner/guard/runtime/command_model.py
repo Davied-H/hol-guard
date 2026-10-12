@@ -139,18 +139,10 @@ def parse_shell_command(
         EmbeddedCommand(e["kind"], e["text"], e["execution_context"], e["span"]["start"], e["span"]["end"])
         for e in value["embedded_commands"]
     )
-    model = CanonicalCommand(
-        raw_text=value["raw_text"],
-        normalized_text=value["normalized_text"],
-        dialect=value["dialect"],
-        transport=value["transport"],
-        extraction_provenance=value["extraction_provenance"],
-        wrapper_chain=string_tuple(value["wrapper_chain"]),
-        segments=tuple(segments),
-        redirects=redirects,
-        embedded_commands=embedded,
-        confidence=value["confidence"],
-        uncertainty_reason=value["uncertainty_reason"],
-    )
-    object.__setattr__(model, "_bound_identity", (model._identity_material(), value["security_identity"]))
+    identity = value.pop("security_identity")
+    value.pop("path_overridden")
+    value.update(segments=tuple(segments), redirects=redirects, embedded_commands=embedded)
+    value["wrapper_chain"] = string_tuple(value["wrapper_chain"])
+    model = CanonicalCommand(**value)
+    object.__setattr__(model, "_bound_identity", (model._identity_material(), identity))
     return model

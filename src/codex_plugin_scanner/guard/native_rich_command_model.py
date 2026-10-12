@@ -45,8 +45,14 @@ def native_runtime_status(*, deadline_monotonic: float) -> NativeRuntimeStatus:
     return status
 
 
-class NativeCommandModelError(RuntimeError):
+class NativeCommandModelError(RuntimeError, ValueError):
     """The native parser did not return an authoritative, bound result."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        from .native_local_cli_identity import _failed
+
+        _failed(message)
 
 
 def _shape(value: Any, spec: Any) -> bool:
@@ -149,25 +155,30 @@ def request(action: str, args: dict[str, Any], *, timeout_seconds: float = 10.0)
             raise NativeCommandModelError("native_rich_command_model_unavailable")
         if time.monotonic() >= deadline or not ensure_resident_prerequisite(home):
             raise NativeCommandModelError("native_rich_command_model_unavailable")
-        if action != "parse":
-            budget = 1.0 if native_resident_client_ready(status.identity.path, home) else 4.0
-            deadline = min(deadline, time.monotonic() + budget)
-        material = {
-            "schema": SCHEMA,
-            "request_id": uuid4().hex,
-            "guard_home": str(home),
-            "action": action,
-            "args": args,
-        }
-        digest = _canonical_request_sha256(material)
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise NativeCommandModelError("native_rich_command_model_deadline")
         cache_key = None
         if action == "executable" and (value := args.get("value")) is not None and len(value) <= 1024:
             cache_key = (status.identity.sha256, value)
         if cache_key is not None and (cached := _EXECUTABLE_CACHE.get(cache_key, _MISS)) is not _MISS:
             return cached
+        if action != "parse":
+            budget = 1.0 if native_resident_client_ready(status.identity.path, home) else 4.0
+            deadline = min(deadline, time.monotonic() + budget)
+        wire_args = args
+        if action == "parse" and len(args["command"].encode("utf-8")) > 1024 * 1024:
+            wire_args = {key: value for key, value in args.items() if key != "command"}
+            text = args["command"]
+            wire_args["command_chunks"] = [text[index : index + 131072] for index in range(0, len(text), 131072)]
+        material = {
+            "schema": SCHEMA,
+            "request_id": uuid4().hex,
+            "guard_home": str(home),
+            "action": action,
+            "args": wire_args,
+        }
+        digest = _canonical_request_sha256(material)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise NativeCommandModelError("native_rich_command_model_deadline")
         payload = json.dumps(
             {
                 "operation": "rich_command_model",
@@ -206,6 +217,7 @@ def request(action: str, args: dict[str, Any], *, timeout_seconds: float = 10.0)
             source = args["command"].encode("utf-8")
             if (
                 not _shape(span, {"start": int, "end": int})
+                or span["start"] >= span["end"]
                 or span["end"] > len(source)
                 or result.get("uncertainty_reason") != "command_byte_limit_exceeded"
                 or result.get("confidence") != "uncertain"
