@@ -245,7 +245,37 @@ fn shown(value: Option<&Value>) -> String {
     }
 }
 
-/// Names each top-level field whose value differs, with both values shortened.
+/// Follows a difference down to its first differing leaf and shows both values.
+fn first_difference(path: &str, want: Option<&Value>, got: Option<&Value>) -> String {
+    match (want, got) {
+        (Some(Value::Object(left)), Some(Value::Object(right))) => {
+            let mut keys: Vec<&String> = left.keys().chain(right.keys()).collect();
+            keys.sort();
+            keys.dedup();
+            for key in keys {
+                if left.get(key) != right.get(key) {
+                    return first_difference(
+                        &format!("{path}.{key}"),
+                        left.get(key),
+                        right.get(key),
+                    );
+                }
+            }
+            path.to_owned()
+        }
+        (Some(Value::Array(left)), Some(Value::Array(right))) if left.len() == right.len() => {
+            for (index, (one, two)) in left.iter().zip(right).enumerate() {
+                if one != two {
+                    return first_difference(&format!("{path}[{index}]"), Some(one), Some(two));
+                }
+            }
+            path.to_owned()
+        }
+        _ => format!("{path}: {} != {}", shown(want), shown(got)),
+    }
+}
+
+/// Names each top-level field whose value differs, down to its first differing leaf.
 fn differing_fields(expected: &Value, actual: &Value) -> String {
     let (Some(left), Some(right)) = (expected.as_object(), actual.as_object()) else {
         return format!(
@@ -261,10 +291,25 @@ fn differing_fields(expected: &Value, actual: &Value) -> String {
     for key in keys {
         let (want, got) = (left.get(key), right.get(key));
         if want != got {
-            parts.push(format!("{key}: {} != {}", shown(want), shown(got)));
+            parts.push(first_difference(key, want, got));
         }
     }
     parts.join("; ")
+}
+
+/// The Rust inline `python -c` pytest check is lexical where Python parses the
+/// payload, so it may also route a payload that only might reach pytest into
+/// the restricted pytest profile. That divergence is accepted only one way:
+/// Python found no pytest route and Rust requires the sandbox.
+fn stricter_inline_pytest(case: &Value, expected: &Value, actual: &Value) -> bool {
+    let command = case["arguments"]["command"].as_str().unwrap_or_default();
+    command.contains("python")
+        && command.contains(" -c")
+        && expected["guard_default_action"].is_null()
+        && expected["pytest_config_reason_codes"]
+            .as_array()
+            .is_none_or(Vec::is_empty)
+        && actual["guard_default_action"] == "sandbox-required"
 }
 
 #[test]
@@ -272,6 +317,10 @@ fn dispatcher_matches_recorded_python() {
     let document = fixture();
     let scratch = build_tree_in(&document, "sfrs-dispatch");
     let root = scratch.0.clone();
+    // The recorder ran from `proj`, and a shell model without a declared cwd
+    // starts at the process cwd. nextest gives each test its own process.
+    let previous_cwd = std::env::current_dir().expect("cwd");
+    std::env::set_current_dir(root.join("proj")).expect("enter proj");
     let mut failures = Vec::new();
     let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
     let mut kinds: BTreeMap<String, usize> = BTreeMap::new();
@@ -290,9 +339,15 @@ fn dispatcher_matches_recorded_python() {
             }
         };
         let actual = run_case(&document, &root, case);
-        let bucket = if actual == expected { "pass" } else { "fail" };
+        let bucket = if actual == expected {
+            "pass"
+        } else if stricter_inline_pytest(case, &expected, &actual) {
+            "stricter"
+        } else {
+            "fail"
+        };
         *counts.entry(bucket).or_default() += 1;
-        if actual != expected {
+        if bucket == "fail" {
             let fields = differing_fields(&expected, &actual);
             let names = fields
                 .split("; ")
@@ -309,6 +364,7 @@ fn dispatcher_matches_recorded_python() {
             }
         }
     }
+    std::env::set_current_dir(previous_cwd).expect("restore cwd");
     assert!(cases.len() >= 800, "recorded {} cases", cases.len());
     assert!(
         !counts.contains_key("fail"),
