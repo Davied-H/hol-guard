@@ -33,10 +33,14 @@ def wire_artifact(artifact: GuardArtifact) -> dict[str, object]:
     """The artifact fields the capability and incident logic read."""
 
     metadata: dict[str, object] = {key: artifact.metadata[key] for key in _METADATA_KEYS if key in artifact.metadata}
+    rendered: dict[str, str] = {}
     for key in _SUMMARY_KEYS:
-        if key in metadata:
-            # Python's own text rendering, so structured summaries cannot abort the check.
-            metadata[key] = str(metadata[key] or "")
+        if key in metadata and not isinstance(metadata[key], str):
+            # Launch and incident copy only ever used string summaries; the capability text
+            # still saw Python's rendering, so that travels under its own key.
+            rendered[key] = str(metadata.pop(key) or "")
+    if rendered:
+        metadata["capability_text_summaries"] = rendered
     if "mcp_tool_identity" in artifact.metadata:
         metadata["mcp_tool_identity"] = True
     return {

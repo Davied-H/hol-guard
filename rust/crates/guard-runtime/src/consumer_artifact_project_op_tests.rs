@@ -94,6 +94,24 @@ fn rejects_wrong_schema_unknown_fields_and_unknown_actions() {
 }
 
 #[test]
+fn accepts_structured_summaries_pre_rendered_for_capability_text() {
+    let query = json!({
+        "kind": "artifact_evidence",
+        "artifact": {
+            "artifact_id": "id", "name": "n", "harness": "codex", "artifact_type": "skill",
+            "source_scope": "project", "config_path": "/p", "command": "node", "args": [],
+            "url": null, "transport": null, "publisher": null,
+            "metadata": {"capability_text_summaries": {"request_summary": "{'a': 1}"}},
+        },
+        "current_payload": {}, "payload_keys": [], "current_hash": "h",
+        "previous_snapshot": null, "previous_capabilities": null,
+        "history": {"inventory_item": null, "decision_counts": {}, "event_names": [], "advisories": []},
+    });
+    let query: ConsumerArtifactProjectQueryV1 = serde_json::from_value(query).unwrap();
+    assert!(project(&query).is_ok());
+}
+
+#[test]
 fn refuses_metadata_without_a_faithful_text_form() {
     let query = json!({
         "kind": "artifact_evidence",

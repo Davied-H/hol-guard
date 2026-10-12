@@ -104,7 +104,16 @@ impl CapabilityArtifact {
     pub(crate) fn from_value(value: &Value) -> Result<Self, &'static str> {
         let text = |key: &str| value.get(key).and_then(Value::as_str).map(str::to_owned);
         let metadata = value.get("metadata").unwrap_or(&Value::Null);
-        let summary = |key: &str| python_text(metadata.get(key).unwrap_or(&Value::Null));
+        // Non-string summaries arrive pre-rendered (Python's `str(value or "")`) under
+        // their own key so launch and incident logic never sees them as strings.
+        let summary = |key: &str| match metadata
+            .get("capability_text_summaries")
+            .and_then(|rendered| rendered.get(key))
+            .and_then(Value::as_str)
+        {
+            Some(text) => Ok(text.to_owned()),
+            None => python_text(metadata.get(key).unwrap_or(&Value::Null)),
+        };
         let strings = |source: &Value, key: &str| -> Vec<String> {
             source
                 .get(key)
