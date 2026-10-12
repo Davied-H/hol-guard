@@ -204,7 +204,7 @@ def _consistent_pending_requests(
     """
     if not request_ids:
         return set()
-    rows: list[tuple[object, ...]] = []
+    rows: list[sqlite3.Row] = []
     # Chunk the lookup so a large queue group stays under SQLite's host-parameter cap.
     for start in range(0, len(request_ids), _REQUEST_ID_CHUNK):
         chunk = tuple(request_ids[start : start + _REQUEST_ID_CHUNK])
