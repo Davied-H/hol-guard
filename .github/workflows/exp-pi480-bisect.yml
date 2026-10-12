@@ -10,61 +10,69 @@ env:
   CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
   UV_HTTP_TIMEOUT: "300"
 jobs:
-  profile:
-    name: profile ${{ matrix.n }}
+  ab:
+    name: ab ${{ matrix.label }}
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 50
     strategy:
       fail-fast: false
       matrix:
-        n: [1, 2, 3]
+        include:
+          - {label: fix-1, old: 0320660063205e4f9209187d0794c94be3d21a8c, new: ff68a0e8bd70d59d906fe875849b8dcf3a4478f9}
+          - {label: fix-2, old: 0320660063205e4f9209187d0794c94be3d21a8c, new: ff68a0e8bd70d59d906fe875849b8dcf3a4478f9}
+          - {label: fix-3, old: 0320660063205e4f9209187d0794c94be3d21a8c, new: ff68a0e8bd70d59d906fe875849b8dcf3a4478f9}
+          - {label: fix-4, old: 0320660063205e4f9209187d0794c94be3d21a8c, new: ff68a0e8bd70d59d906fe875849b8dcf3a4478f9}
+          - {label: fix-5, old: 0320660063205e4f9209187d0794c94be3d21a8c, new: ff68a0e8bd70d59d906fe875849b8dcf3a4478f9}
     env:
       PI_NODE: tests/test_guard_daemon_acceptance.py::test_packaged_correctness_workloads[pi-480-two-client-24]
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
-          ref: 114272fdd53542ea2f73115775bb241fcaef48d5
+          ref: ${{ matrix.new }}
+          persist-credentials: false
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          ref: ${{ matrix.old }}
+          path: old
           persist-credentials: false
       - name: Runner hardware
         run: lscpu | grep -E 'Model name|^CPU\(s\)'
       - uses: ./.github/actions/setup-rust
         with:
           cache-key: pytest-native-command
-      - name: Build native evaluators
+      - name: Build native evaluators once (the change is Python-only)
         run: |
           python3 scripts/refresh_extension_artifacts.py --trust-only
           cargo build --manifest-path rust/Cargo.toml --locked --release -p guard-command -p hol-guard-runtime --bin guard-command-source --bin hol-guard-runtime
           python3 scripts/ci/verify_native_command_program.py --compiler rust/target/release/guard-command-source
+          (cd old && python3 scripts/refresh_extension_artifacts.py --trust-only && python3 scripts/ci/verify_native_command_program.py --compiler "$GITHUB_WORKSPACE/rust/target/release/guard-command-source")
       - uses: ./.github/actions/setup-ci-python
         with:
           python-version: "3.12.14"
           cache-dependency-glob: |
             pyproject.toml
             uv.lock
-      - name: Prepare public directory
+      - name: Prepare both trees
         run: |
           uv run --no-sync python scripts/export_extension_directory.py
           uv run --no-sync python scripts/render_command_extension_directory.py
-          uv pip install py-spy==0.4.1
-      - name: Profile pi-480
+          cd old
+          uv sync --frozen --no-dev --group ci-test --python 3.12.14
+          uv run --no-sync python scripts/export_extension_directory.py
+          uv run --no-sync python scripts/render_command_extension_directory.py
+      - name: Alternate old and new pi-480 measurements
         env:
-          HOL_GUARD_NATIVE_BINARY: ${{ github.workspace }}/rust/target/release/hol-guard-runtime
           HOL_GUARD_NATIVE_REGRESSION: "1"
+          HOL_GUARD_NATIVE_BINARY: ${{ github.workspace }}/rust/target/release/hol-guard-runtime
           HOL_GUARD_NATIVE_SOURCE_COMPILER: ${{ github.workspace }}/rust/target/release/guard-command-source
           HOL_GUARD_NATIVE_TEST_SOURCE_COMPILER: ${{ github.workspace }}/rust/target/release/guard-command-source
           HOL_GUARD_BUILD_SOURCE_COMPILER: ${{ github.workspace }}/rust/target/release/guard-command-source
         run: |
-          mkdir -p profiles
-          for i in 1 2; do
-            uv run --no-sync pytest "$PI_NODE" -q --tb=line -p no:cacheprovider 2>&1 | grep -E 'p95_ms|passed|failed' || true
+          measure() {
+            (cd "$1" && uv run --no-sync pytest "$PI_NODE" -q --tb=line -p no:cacheprovider 2>&1 \
+              | grep -oE 'p95_ms=[0-9.]+' | head -1 | sed "s/^/RESULT $2 /") || true
+          }
+          for i in 1 2 3 4 5 6; do
+            measure old old
+            measure . new
           done
-          for mode in gil all; do
-            extra=(); [ "$mode" = gil ] && extra=(--gil)
-            .venv/bin/py-spy record --nonblocking --rate 100 --threads "${extra[@]}" --format speedscope -o "profiles/pi480-$mode.speedscope.json" -- \
-              .venv/bin/python -m pytest "$PI_NODE" -q --tb=line -p no:cacheprovider 2>&1 | grep -E 'p95_ms|passed|failed|py-spy' || true
-          done
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: pi480-profile-${{ matrix.n }}
-          path: profiles/
-          retention-days: 3
