@@ -169,13 +169,16 @@ def native_runner_authority(
 
 
 def _projection_carrier_home(requested: Path) -> Path:
-    """Pure field projection uses an initialized carrier, without signing-state creation."""
+    """Pure field projection prefers an initialized carrier over signing-state creation.
+
+    When neither the requested home nor the default carrier is initialized, the
+    requested home is returned so the resident prerequisite provisions it, as
+    the write path that follows would do anyway.
+    """
     from .native_policy_snapshot_constants import NATIVE_POLICY_VERIFIER_KEY_NAME, NATIVE_RUNTIME_STATE_DIRECTORY
 
     key = Path(NATIVE_RUNTIME_STATE_DIRECTORY) / NATIVE_POLICY_VERIFIER_KEY_NAME
     if os.path.lexists(requested / key):
         return requested
     carrier = _resolve_digest_home(None)
-    if not os.path.lexists(carrier / key):
-        raise NativeRunnerAuthorityError("native_runner_authority_prerequisite_unavailable")
-    return carrier
+    return carrier if os.path.lexists(carrier / key) else requested

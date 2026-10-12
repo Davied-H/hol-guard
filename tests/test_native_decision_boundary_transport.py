@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -11,7 +12,9 @@ from codex_plugin_scanner.guard.decision_boundaries import (
     canonical_approval_surfaces_batch,
     canonical_receipt_decision,
 )
+from codex_plugin_scanner.guard.native_approval_queue_identity import bind_connection_guard_home
 from codex_plugin_scanner.guard.native_signal_projection import NativeSignalProjectionUnavailableError
+from codex_plugin_scanner.guard.store_approvals import resolvable_approval_request_ids
 
 
 @pytest.mark.parametrize("operation", ("approval", "receipt", "surfaces", "batch"))
@@ -194,6 +197,21 @@ def test_unencodable_row_fails_closed_without_hiding_the_page(tmp_path: Path) ->
     )
     assert (results[0].policy_action, results[0].contract_error) == ("review", None)
     assert (results[1].policy_action, results[1].contract_error) == ("block", "authoritative_decision_inconsistent")
+
+
+def test_resolution_sweep_skips_an_unencodable_row_in_one_projection(tmp_path: Path) -> None:
+    connection = sqlite3.connect(":memory:")
+    connection.row_factory = sqlite3.Row
+    bind_connection_guard_home(connection, tmp_path / "sweep-home")
+    rows = connection.execute(
+        """
+        select 'readable' as request_id, 'review' as policy_action,
+               null as decision_v2_json, null as action_envelope_json
+        union all
+        select 'unencodable', 'review', '{"score": NaN}', null
+        """
+    ).fetchall()
+    assert resolvable_approval_request_ids(connection, rows) == ["readable"]
 
 
 def test_batch_request_bytes_are_bounded_even_below_the_row_cap(monkeypatch: pytest.MonkeyPatch) -> None:

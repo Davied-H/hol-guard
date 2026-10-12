@@ -178,6 +178,8 @@ def _resident_request(
             "protect_request",
             "hook_artifact_compose",
             "consumer_artifact_compose",
+            "mcp_tool_call_identity",
+            "package_context_build",
         }:
             accepted = frozenset({"ok", "error"})
         elif operation == "mcp_tool_policy_decide":
