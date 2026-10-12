@@ -99,14 +99,15 @@ class Parser:
             raise GraphQLRejectedError("graphql-unparseable")
         return text
 
-    def document(self) -> tuple[list[tuple[str, str, list[Any]]], dict[str, tuple[str, list[Any]]]]:
-        operations: list[tuple[str, str, list[Any]]] = []
+    def document(self) -> tuple[list[tuple[str, str, dict[str, Any], list[Any]]], dict[str, tuple[str, list[Any]]]]:
+        operations: list[tuple[str, str, dict[str, Any], list[Any]]] = []
         fragments: dict[str, tuple[str, list[Any]]] = {}
         while self.peek()[0] != "end":
             kind, text = self.peek()
             if kind == "name" and text in ("query", "mutation", "subscription"):
                 self.take()
-                operations.append((text, self.name(), self.operation_rest()))
+                label = self.name()
+                operations.append((text, label, *self.operation_rest()))
             elif kind == "name" and text == "fragment":
                 self.take()
                 label = self.name()
@@ -121,18 +122,35 @@ class Parser:
                 raise GraphQLRejectedError("graphql-anonymous-or-unsupported")
         return operations, fragments
 
-    def operation_rest(self) -> list[Any]:
+    def operation_rest(self) -> tuple[dict[str, Any], list[Any]]:
+        """Parse variable definitions (their default values are checked like variables) and the selection set."""
+        defaults: dict[str, Any] = {}
         if self.peek()[1] == "(":
-            depth = 0
-            while True:
-                kind, text = self.take()
-                if kind == "end":
+            self.take()
+            while self.peek()[1] != ")":
+                self.expect("$")
+                label = self.name()
+                self.expect(":")
+                self.variable_type()
+                if self.peek()[1] == "=":
+                    self.take()
+                    defaults[label] = self.value(0)
+                self.no_directives()
+                if self.peek()[0] == "end":
                     raise GraphQLRejectedError("graphql-unparseable")
-                depth += (text == "(") - (text == ")")
-                if depth == 0:
-                    break
+            self.take()
         self.no_directives()
-        return self.selection_set(0)
+        return defaults, self.selection_set(0)
+
+    def variable_type(self) -> None:
+        if self.peek()[1] == "[":
+            self.take()
+            self.variable_type()
+            self.expect("]")
+        else:
+            self.name()
+        if self.peek()[1] == "!":
+            self.take()
 
     def no_directives(self) -> None:
         if self.peek()[1] == "@":
@@ -351,13 +369,14 @@ def validate(
     operations, fragments = Parser(tokenize(query)).document()
     if len(operations) != 1:
         raise GraphQLRejectedError("graphql-anonymous-or-multiple")
-    kind, name, selections = operations[0]
+    kind, name, defaults, selections = operations[0]
     if kind == "subscription":
         raise GraphQLRejectedError("graphql-anonymous-or-multiple")
     if kind == "query" and name not in queries:
         raise GraphQLRejectedError("graphql-operation-not-allowed")
     if kind == "mutation" and name not in MUTATION_ROOTS:
         raise GraphQLRejectedError("graphql-operation-not-allowed")
+    variables = {**{key: _resolve(item, {}) for key, item in defaults.items()}, **variables}
     checker = Checker(owns, owns_node, variables, fragments)
     checker.reference_walk(variables)
     roots = QUERY_ROOTS if kind == "query" else MUTATION_ROOTS[name]

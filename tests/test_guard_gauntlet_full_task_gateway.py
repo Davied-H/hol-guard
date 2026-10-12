@@ -351,3 +351,22 @@ def test_graphql_allows_gh_shaped_actor_and_repository_refs() -> None:
         "repositoryTopics(first:5){nodes{topic{name}}} stargazerCount forkCount homepageUrl description"
     )
     assert graphql(NESTED_HEAD + selection + " } }", NESTED_VARS).allow
+
+
+def test_graphql_variable_defaults_are_validated() -> None:
+    mutation = (
+        'mutation PullRequestCreate($input: CreatePullRequestInput = {repositoryId: "R_foreign", title: "t"}) '
+        "{ createPullRequest(input: $input) { pullRequest { id url } } }"
+    )
+    assert not graphql(mutation, {}).allow
+    read = (
+        'query RepositoryInfo($owner: String = "other-owner", $name: String = "x") '
+        "{ repository(owner: $owner, name: $name) { id } }"
+    )
+    assert not graphql(read, {}).allow
+    assert not graphql(read.replace("String = ", "String @skip = "), {}).allow
+    safe = (
+        "query RepositoryInfo($owner: String!, $name: String!, $states: [PullRequestState!] = OPEN) "
+        "{ repository(owner: $owner, name: $name) { id } }"
+    )
+    assert graphql(safe, NESTED_VARS).allow
