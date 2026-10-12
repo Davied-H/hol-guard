@@ -20,7 +20,7 @@ use crate::claude_hook_bridge_transport::{
     authenticated_claude_hook_response, json_failure, BridgeError,
 };
 use crate::claude_hook_bridge_url::{
-    assert_loopback_http_url, endpoint_query, state_path_for_query,
+    assert_loopback_http_url, endpoint_query, state_names_loopback_port, state_path_for_query,
 };
 use crate::hook_env_stamp::{current_environment, stamp_hook_input_text, Stamp};
 use crate::hook_process_spawn::{isolated_hook_environment, run_isolated_hook_process};

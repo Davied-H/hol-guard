@@ -113,7 +113,7 @@ pub(crate) fn state_path_for_query(raw: &str, query: &str) -> Result<PathBuf, St
 
 /// `daemon_port_from_state` reduced to whether it finds a port: the
 /// transport always reconnects to the authenticated state's own address.
-fn state_names_loopback_port(path: &Path) -> bool {
+pub(crate) fn state_names_loopback_port(path: &Path) -> bool {
     let parent = state_parent(path);
     let Some(payload) = load_authenticated_daemon_state(parent) else {
         return false;
