@@ -318,6 +318,7 @@ mod package_approval_hash_op;
 mod package_audit_projection_op;
 mod package_authority_config;
 mod package_authority_op;
+mod package_context_build_op;
 mod package_evaluation_compose_op;
 mod package_policy_resolve_op;
 mod package_posture_op;
@@ -398,15 +399,11 @@ mod signal_projection_op;
 mod signal_projection_receipt;
 #[cfg(test)]
 mod signal_projection_vectors_tests;
-#[cfg(unix)]
 mod skill_directory_identity_op;
-#[cfg(unix)]
 mod skill_identity_canon;
-#[cfg(unix)]
 mod skill_identity_discovery;
-#[cfg(unix)]
 mod skill_identity_inspect;
-#[cfg(unix)]
+mod skill_identity_platform;
 mod skill_identity_walk;
 #[cfg(unix)]
 mod state_directory_lock;
