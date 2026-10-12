@@ -92,8 +92,9 @@ def test_offers_always_only_from_the_scope_contract() -> None:
 
 
 def test_known_gaps_name_catalog_scenarios_and_report_staleness() -> None:
-    gaps = load_known_gaps()
-    assert set(gaps) <= {s.id for s in load_catalog()}
+    assert set(load_known_gaps()) <= {s.id for s in load_catalog()}
+    # The checked-in list may be empty once every gap is fixed; staleness uses a catalog id.
+    gaps = {next(iter(load_catalog())).id: "synthetic reason"}
     report = known_gap_report([{"id": next(iter(gaps)), "outcome": "pass"}], gaps)
     assert report[0]["stale"] is True
     assert json.dumps(report)
