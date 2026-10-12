@@ -552,6 +552,7 @@ fn parse_posix_command(request: &CommandModelRequestV1) -> Result<CanonicalComma
                 segments.last(),
             )
             && !parser_wrappers::is_file_shell_invocation(executable.as_deref(), &arguments)
+            && !parser_wrappers::is_command_lookup(executable.as_deref(), &arguments)
         {
             return Ok(uncertain(
                 request,
@@ -661,6 +662,7 @@ pub mod aibom_trust_metadata;
 pub mod archive_inspection;
 pub mod command_operation_classification;
 pub mod composition_rules;
+pub mod contained_argv;
 #[cfg(unix)]
 pub mod contained_execution;
 #[cfg(unix)]

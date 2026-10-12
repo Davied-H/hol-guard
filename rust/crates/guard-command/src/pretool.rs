@@ -21,19 +21,23 @@ mod contained_wrapper;
 pub(crate) mod directory_targets;
 pub(crate) use directory_targets::safe_directory_target;
 mod base64_reads;
+mod bun_eval;
 mod find_reads;
 pub(crate) mod git_branch_listing;
 mod git_config;
 pub(crate) mod git_config_reads;
 pub(crate) mod git_hash_object;
+mod git_read_floor;
 mod git_reads;
 use git_reads::safe_git_arguments;
 mod git_helper_context;
 mod git_probe;
+mod git_push;
 mod git_routes;
 mod git_worktree;
 mod guard_diagnostics;
 mod listing_reads;
+mod lookup_reads;
 mod metadata_reads;
 mod pytest_contained;
 mod trusted_location;
@@ -69,6 +73,7 @@ pub use generic::evaluate_pre_tool_envelope;
 pub use generic::evaluate_pre_tool_envelope_with_context;
 pub use generic::evaluate_pre_tool_envelope_with_execution_context;
 pub use generic::evaluate_pre_tool_envelope_with_extensions;
+pub use git_push::{install_git_push_verdict, GitPushRequest, GitPushVerdict};
 pub(crate) use segment_proof::benign_command_segments;
 
 fn executable_basename(executable: &str) -> &str {
@@ -386,6 +391,14 @@ pub(super) fn evaluate_pre_tool_with_execution_context(
             "HOL Guard requires fresh approval for the privileged execution context.",
         ));
     }
+    if bun_eval::exact_safe_command(&model, context, execution_environment) {
+        return Ok(pretool_decision(
+            model,
+            "allow",
+            "native_exact_safe_command",
+            "The Rust command authority proved this Bun program only prints constants and no preload can run first.",
+        ));
+    }
     if worktree_add::exact_safe_command(&model, context, deadline, execution_environment) {
         return Ok(pretool_decision(
             model,
@@ -394,7 +407,17 @@ pub(super) fn evaluate_pre_tool_with_execution_context(
             "The Rust command authority proved this bounded worktree creation has a fresh contained destination, a local ref, and no executable Git routes.",
         ));
     }
-    if exact_safe_command_with_context(&model, false, context) {
+    if git_push::exact_safe_command(&model, context, deadline, execution_environment) {
+        return Ok(pretool_decision(
+            model,
+            "allow",
+            "native_exact_safe_git_push",
+            "The Rust command authority proved this push sends the checked-out branch to a credential-free GitHub HTTPS origin through trusted Git, credential helpers and hooks.",
+        ));
+    }
+    if exact_safe_command_with_context(&model, false, context)
+        && !bun_eval::node_inline_preload_configured(&model, execution_environment)
+    {
         return Ok(pretool_decision(
             model,
             "allow",

@@ -316,6 +316,9 @@ pub(super) fn exact_safe_segment_with_context(
                 && super::directory_targets::drive_targets_quoted(segment)
         }
         "pwd" | "true" | "echo" | "printf" | "which" | "whoami" | "uname" => true,
+        "type" | "command" => {
+            super::lookup_reads::safe_lookup_arguments(basename, &segment.arguments)
+        }
         "cargo" | "rustc" => super::rust_toolchain::safe_version_probe(&segment.arguments, context),
         "date" => safe_reads::safe_date_arguments(&segment.arguments),
         "sleep" => safe_reads::safe_sleep_arguments(&segment.arguments),
@@ -414,7 +417,9 @@ fn stderr_merge_tail(segment: &crate::CommandSegmentV1) -> bool {
         && segment.tokens.last().map(String::as_str) == Some("2>&1")
 }
 
-fn without_stderr_merge(segment: &crate::CommandSegmentV1) -> Option<crate::CommandSegmentV1> {
+pub(super) fn without_stderr_merge(
+    segment: &crate::CommandSegmentV1,
+) -> Option<crate::CommandSegmentV1> {
     if !stderr_merge_tail(segment) {
         return None;
     }
