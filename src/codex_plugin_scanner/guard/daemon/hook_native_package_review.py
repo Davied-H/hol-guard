@@ -113,7 +113,7 @@ def native_package_review_response(
         return None
     if evaluation is None:
         return None
-    if evaluation.decision == "allow":
+    if evaluation.decision == "allow" or _script_free_watch(evaluation):
         allowed = dict(native_result)
         allowed.update(decision="allow", minimum_action="allow", policy_action="allow")
         return render_accepted_allow(harness, allowed, guard_home=guard_home, deadline=deadline)
@@ -136,6 +136,15 @@ def native_package_review_response(
     response = render_pre_tool(harness, blocked, guard_home=guard_home, deadline=deadline)
     response["prompted"] = False
     return response
+
+
+def _script_free_watch(evaluation: PackageRequestEvaluation) -> bool:
+    """Whether every package is watched only because no package code runs."""
+    return (
+        evaluation.decision == "monitor"
+        and bool(evaluation.packages)
+        and all(package.get("scriptFreeRegistryInstall") is True for package in evaluation.packages)
+    )
 
 
 def _evaluate(

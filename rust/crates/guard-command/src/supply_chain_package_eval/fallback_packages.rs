@@ -36,6 +36,10 @@ pub(super) fn fallback_package_results(
                 continue;
             }
         }
+        let script_free_resolved = script_free_install
+            && registry_selector(target).is_some_and(|selector| {
+                registry_resolved_target_version(deps, target, &selector).is_some()
+            });
         let identity_resolved = (optional_string(target.get("ecosystem")).as_deref()
             == Some("npm")
             && flags.contains("--ignore-scripts")
@@ -46,12 +50,16 @@ pub(super) fn fallback_package_results(
                 && optional_string(target.get("range")).is_some_and(|range| {
                     registry_resolved_target_version(deps, target, &range).is_some()
                 }))
-            || (script_free_install
-                && registry_selector(target).is_some_and(|selector| {
-                    registry_resolved_target_version(deps, target, &selector).is_some()
-                }));
+            || script_free_resolved;
         let mut result =
             unknown_package_result(deps, target, fail_closed_unidentified, identity_resolved);
+        // Only this path proves no package code runs; other resolved
+        // identities still reach the same watched outcome.
+        if script_free_resolved
+            && optional_string(result.get("decision")).as_deref() == Some("monitor")
+        {
+            result.insert("scriptFreeRegistryInstall".to_string(), Value::Bool(true));
+        }
         if scripts_guidance
             && registry_selector(target).is_some()
             && optional_string(result.get("decision")).as_deref() == Some("ask")

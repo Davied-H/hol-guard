@@ -168,30 +168,46 @@ def test_only_a_plain_npm_package_review_is_settled(tmp_path: Path, command: str
     assert response is None
 
 
+SCRIPT_FREE = {"name": "zod", "scriptFreeRegistryInstall": True}
+
+
 @pytest.mark.parametrize(
-    ("decision", "reasons", "expected"),
+    ("decision", "reasons", "packages", "expected"),
     [
-        ("allow", (), {"rendered": "allow"}),
+        ("allow", (), (), {"rendered": "allow"}),
+        ("monitor", (), (SCRIPT_FREE,), {"rendered": "allow"}),
+        ("monitor", (), (SCRIPT_FREE, {"name": "left-pad"}), None),
+        ("monitor", (), ({"name": "zod", "scriptFreeRegistryInstall": "true"},), None),
+        ("monitor", (), (), None),
         (
             "ask",
             ({"code": "package_lifecycle_scripts_enabled", "message": "Rerun with the flags."},),
+            (),
             {"rendered": "deny", "reason": "Rerun with the flags.", "prompted": False},
         ),
         (
             "block",
             ({"code": "package_known_malicious", "message": "zod@9.9.9 is malicious."},),
+            (SCRIPT_FREE,),
             {"rendered": "deny", "reason": "zod@9.9.9 is malicious.", "prompted": False},
         ),
-        ("ask", ({"code": "unidentified_package", "message": "Unknown package."},), None),
+        ("ask", ({"code": "unidentified_package", "message": "Unknown package."},), (), None),
     ],
 )
 def test_evaluator_verdict_settles_the_review(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, decision: str, reasons: tuple, expected: dict | None
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    decision: str,
+    reasons: tuple,
+    packages: tuple,
+    expected: dict | None,
 ) -> None:
     monkeypatch.setattr(package_review.os, "name", "posix")
     monkeypatch.setattr(package_review, "verified_npm_version", lambda *_args, **_kwargs: "11.9.0")
     monkeypatch.setattr(
-        package_review, "_evaluate", lambda *_args, **_kwargs: SimpleNamespace(decision=decision, reasons=reasons)
+        package_review,
+        "_evaluate",
+        lambda *_args, **_kwargs: SimpleNamespace(decision=decision, reasons=reasons, packages=packages),
     )
     monkeypatch.setattr(
         package_review, "render_accepted_allow", lambda _harness, verdict, **_kwargs: {"rendered": verdict["decision"]}
@@ -242,7 +258,9 @@ class TestEvaluatorRule:
     ) -> None:
         evaluation = self._evaluate(tmp_path, monkeypatch, f"npm install -D {spec} {SAFE_FLAGS}", "11.9.0")
 
-        assert evaluation.decision == "allow", evaluation.reasons
+        # Watched, not trusted: the request is still recorded as evidence.
+        assert evaluation.decision == "monitor", evaluation.reasons
+        assert [package.get("scriptFreeRegistryInstall") for package in evaluation.packages] == [True]
 
     def test_missing_flags_get_rerun_guidance(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         evaluation = self._evaluate(tmp_path, monkeypatch, "npm install zod --ignore-scripts", "11.9.0")
@@ -273,6 +291,7 @@ class TestEvaluatorRule:
         evaluation = self._evaluate(tmp_path, monkeypatch, command, "11.9.0")
 
         assert evaluation.decision != "allow"
+        assert not any(package.get("scriptFreeRegistryInstall") for package in evaluation.packages)
 
     def test_project_npmrc_registry_keeps_review(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         workspace = tmp_path / "workspace"
@@ -282,3 +301,4 @@ class TestEvaluatorRule:
         evaluation = self._evaluate(tmp_path, monkeypatch, f"npm install zod {SAFE_FLAGS}", "11.9.0")
 
         assert evaluation.decision != "allow"
+        assert not any(package.get("scriptFreeRegistryInstall") for package in evaluation.packages)
