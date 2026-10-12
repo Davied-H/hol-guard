@@ -91,7 +91,6 @@ jobs:
             --target "$TARGET" \
             --source-sha "$SOURCE_SHA" \
             --rule-digest "$RULE_DIGEST" \
-            --source-compiler "$compiler" \
             --implementation-digest "$(jq -r '.implementation_digest' source-compiled.json)" \
             --base-program-digest "$(jq -r '.base_program_digest' source-compiled.json)"
           uv pip uninstall --python .venv/bin/python hol-guard

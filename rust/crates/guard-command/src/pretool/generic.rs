@@ -227,7 +227,7 @@ fn evaluate_envelope(
             &projected,
         );
         if projected_payload != *payload {
-            return evaluate_envelope(
+            let projected = evaluate_envelope(
                 harness,
                 event,
                 &projected_payload,
@@ -237,6 +237,11 @@ fn evaluate_envelope(
                 execution_environment,
                 project_redirects,
             );
+            // Extension rules keep their own fail-closed answer for wrapped
+            // forms of the commands they govern.
+            if !extension_rule_matched(&projected) {
+                return projected;
+            }
         }
     }
     // A setting that may change behavior (`NODE_PATH=... node x.mjs`) leaves
@@ -255,8 +260,8 @@ fn evaluate_envelope(
             signals.command.as_deref().unwrap_or_default(),
             &reviewed.command,
         );
-        if projected_payload != *payload {
-            let projected = evaluate_envelope(
+        let projected = (projected_payload != *payload).then(|| {
+            evaluate_envelope(
                 harness,
                 event,
                 &projected_payload,
@@ -265,7 +270,12 @@ fn evaluate_envelope(
                 context,
                 execution_environment,
                 project_redirects,
-            );
+            )
+        });
+        // An extension rule that governs the command was written for its
+        // plain form; a setting in front can change what it acts on (a target
+        // org, a profile), so that command keeps failing closed.
+        if let Some(projected) = projected.filter(|result| !extension_rule_matched(result)) {
             let raw = evaluate_envelope(
                 harness,
                 event,
@@ -279,6 +289,7 @@ fn evaluate_envelope(
             return env_prefix_projection::join_reviewed(projected, raw, &reviewed.setting);
         }
     }
+
     if let Some(projection) = signals
         .command
         .as_deref()
@@ -575,4 +586,13 @@ fn evaluate_envelope(
         .into();
     }
     result
+}
+
+fn extension_rule_matched(result: &PreToolResultV1) -> bool {
+    result.command_extensions.as_ref().is_some_and(|batch| {
+        batch
+            .observations
+            .iter()
+            .any(|row| !row.effective_segment_indexes.is_empty())
+    })
 }

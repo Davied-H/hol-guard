@@ -158,8 +158,8 @@ impl Probe {
             match fs::symlink_metadata(&path) {
                 Err(error) => error.kind() == std::io::ErrorKind::NotFound,
                 Ok(metadata) => {
-                    !metadata.file_type().is_symlink()
-                        && !(metadata.is_file() && hook_is_executable(&metadata))
+                    !(metadata.file_type().is_symlink()
+                        || metadata.is_file() && hook_is_executable(&metadata))
                 }
             }
         })
