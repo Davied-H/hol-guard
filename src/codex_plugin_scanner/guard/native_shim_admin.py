@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import itertools
 import json
+import logging
 import os
 import sys
 import time
@@ -35,10 +36,16 @@ from .native_runtime_resilience import (
 from .sqlite_tuning import SQLITE_CONNECT_TIMEOUT_SECONDS
 from .stable_guard_cli import resolve_frozen_guard_cli, trusted_frozen_guard_cli_paths
 
+logger = logging.getLogger(__name__)
+
 UNAVAILABLE = "native_shim_admin_unavailable"
+_UNRECORDED_AUDIT_PROOF = frozenset({UNAVAILABLE, "native_overloaded"})
+# Exact resident detail for a blank, truncated, or otherwise unusable manifest.
+# Other `native_shim_admin_failed` outcomes, including a refused write, still raise.
+_STRICT_MANIFEST_DETAIL = "package shim manifest is not strict JSON"
 _OPERATION = "shim_admin"
 _RESIDENT_PROTOCOL_FEATURE = "resident-protocol-v2"
-_FEATURE = "shim-admin-v2"
+_FEATURE = "shim-admin-v3"
 _REQUEST_SCHEMA = "guard-shim-admin-request.v2"
 _RESULT_SCHEMA = "guard-shim-admin-result.v2"
 _MAX_REQUEST_BYTES = 512 * 1024
@@ -404,3 +411,25 @@ def package_shim_supported_managers(guard_home: Path | None = None) -> tuple[str
 
     del guard_home
     return SUPPORTED_PACKAGE_SHIM_MANAGERS
+
+
+def record_package_shim_audit_result(guard_home: Path, *, audited_at: str | None = None) -> dict[str, object]:
+    """Stamp ``last_audit_at``. The resident owns the write.
+
+    A resident that is unavailable or overloaded, and a manifest that is not
+    strict JSON, leaves the finished audit unstamped and reports that. This
+    does not write the manifest in Python and does not authorize anything.
+    A refused write still raises.
+    """
+
+    try:
+        native_shim_admin("record_audit", guard_home=guard_home, generated_at=audited_at)
+    except NativeShimAdminError as error:
+        unrecorded = error.code in _UNRECORDED_AUDIT_PROOF or (
+            error.code == "native_shim_admin_failed" and error.detail == _STRICT_MANIFEST_DETAIL
+        )
+        if unrecorded:
+            logger.warning("package shim audit proof was not recorded: %s", error.code)
+            return {"audit_proof_recorded": False, "audit_proof_error": error.code}
+        raise
+    return {"audit_proof_recorded": True}
