@@ -1,5 +1,13 @@
-use super::{helper_write_denials, workspace_write_denials};
+use super::{helper_write_denials, write_denials_from};
 use std::path::{Path, PathBuf};
+
+/// Only the user's files, so the host's system configuration and environment
+/// cannot change the result.
+fn workspace_write_denials(workspace: &Path, home: Option<&Path>) -> Option<Vec<PathBuf>> {
+    let user = home.unwrap();
+    let globals = vec![user.join(".gitconfig"), user.join(".config/git/config")];
+    write_denials_from(workspace, home, globals)
+}
 
 fn denials(config: &str, workspace: &Path) -> Option<Vec<PathBuf>> {
     helper_write_denials(config, workspace)
@@ -213,6 +221,7 @@ fn global_hooks_in_any_form_and_writable_global_files_are_covered() {
     let _ = std::fs::remove_dir_all(&root);
 }
 
+#[cfg(unix)]
 #[test]
 fn hook_directories_are_denied_where_their_links_lead() {
     let root = scratch("linked-hooks");
@@ -253,5 +262,34 @@ fn hook_directories_are_denied_where_their_links_lead() {
     std::fs::remove_file(home.join(".githooks")).unwrap();
     std::os::unix::fs::symlink(app.join("missing"), home.join(".gitconfig")).unwrap();
     assert_eq!(workspace_write_denials(&app, Some(&home)), None);
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn global_helper_programs_in_the_workspace_are_denied() {
+    let root = scratch("global-helpers");
+    let home = root.join("home");
+    let ws = home.join("proj");
+    std::fs::create_dir_all(&ws).unwrap();
+    let global = home.join(".gitconfig");
+    let config = format!(
+        "[core]\n\tfsmonitor = ~/proj/tools/mon\n\tpager = less -R\n\
+         [alias]\n\tx = !{}/tools/x\n\ty = !sh run.sh\n\
+         [credential]\n\thelper = osxkeychain\n[safe]\n\tdirectory = *\n\
+         [difftool \"code\"]\n\tcmd = code --wait --diff \"$LOCAL\" $REMOTE\n",
+        ws.display()
+    );
+    std::fs::write(&global, config).unwrap();
+    let mut denied = workspace_write_denials(&ws, Some(&home)).unwrap();
+    denied.sort();
+    assert_eq!(
+        denied,
+        vec![ws.join("run.sh"), ws.join("tools/mon"), ws.join("tools/x")]
+    );
+    // Any other expansion still keeps the command at review.
+    for value in ["!sh $(cat x)", "!$PWD/tools/x", "!~other/x", "!sh ./*.sh"] {
+        std::fs::write(&global, format!("[alias]\n\tz = {value}\n")).unwrap();
+        assert_eq!(workspace_write_denials(&ws, Some(&home)), None, "{value}");
+    }
     let _ = std::fs::remove_dir_all(&root);
 }
