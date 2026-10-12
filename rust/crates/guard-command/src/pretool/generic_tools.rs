@@ -45,7 +45,7 @@ fn is_mcp_tool(tool: &str) -> bool {
         || (tool.contains('/') && !tool.starts_with('/'))
 }
 
-fn is_package_tool(tool: &str) -> bool {
+pub(in crate::pretool) fn is_package_tool(tool: &str) -> bool {
     tool_matches(
         tool,
         &[
@@ -204,10 +204,22 @@ fn is_command_tool(tool: &str) -> bool {
 }
 
 pub(super) fn package_command(model: &CanonicalCommandV1) -> bool {
-    model
-        .segments
-        .iter()
-        .any(|segment| segment.executable.as_deref().is_some_and(is_package_tool))
+    model.segments.iter().any(|segment| {
+        segment.executable.as_deref().is_some_and(is_package_tool) && !inline_eval(segment)
+    })
+}
+
+/// `bun -e <code>` runs code, not a package operation; keep the command
+/// decision so the reason names what actually needs review.
+fn inline_eval(segment: &crate::CommandSegmentV1) -> bool {
+    segment
+        .executable
+        .as_deref()
+        .is_some_and(|executable| executable.rsplit(['/', '\\']).next() == Some("bun"))
+        && segment
+            .arguments
+            .first()
+            .is_some_and(|argument| matches!(argument.as_str(), "-e" | "--eval" | "-p" | "--print"))
 }
 
 pub(super) fn infer_action_type(
