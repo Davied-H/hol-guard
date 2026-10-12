@@ -109,16 +109,13 @@ def _degraded_lookup_evidence(
 def _remembered_rules_disabled(lookup: PolicyDecisionLookupResult) -> bool:
     """Whether the lookup is the empty answer of a home that serves no authority."""
 
+    trust = lookup.get("trust_status")
     return (
         lookup["decision"] is None
         and lookup["authority_revision"] == _DEGRADED_AUTHORITY_REVISION
-        and lookup["trust_status"].get("remembered_rules") == "disabled_degraded"
+        and isinstance(trust, dict)
+        and trust.get("remembered_rules") == "disabled_degraded"
     )
-
-
-def _remembered_rules_disabled(lookup: PolicyDecisionLookupResult) -> bool:
-    trust = lookup.get("trust_status")
-    return isinstance(trust, dict) and trust.get("remembered_rules") == "disabled_degraded"
 
 
 def memory_lookup_candidates(
