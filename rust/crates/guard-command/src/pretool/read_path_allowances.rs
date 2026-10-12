@@ -82,15 +82,17 @@ pub(in crate::pretool) fn agent_skill_document(
         return false;
     }
     // A linked `.agents/skills` can put one path under two roots; any root
-    // whose own depth rule admits the document is enough.
-    skill_tree_parts(canonical, &home).any(|(root, parts)| {
+    // whose own depth rule admits the document is enough. Bind the answer
+    // before `home` drops: the iterator borrows that canonical path.
+    let admitted = skill_tree_parts(canonical, &home).any(|(root, parts)| {
         // Cache entries are marketplace/plugin/version/skills/skill/document.
         if root == ".zcode/cli/plugins/cache" {
             parts.len() >= 6 && parts[3] == "skills"
         } else {
             parts.len() >= 2
         }
-    })
+    });
+    admitted
 }
 
 /// A directory a names-only listing may start from: a user skill root, any
@@ -105,10 +107,17 @@ pub(in crate::pretool) fn agent_skill_listing_directory(
         return false;
     };
     let agents = home.join(".agents");
-    canonical.is_dir()
-        && ((canonical == agents
-            && std::fs::symlink_metadata(&agents).is_ok_and(|metadata| metadata.is_dir()))
-            || skill_tree_parts(canonical, &home).next().is_some())
+    if !canonical.is_dir() {
+        return false;
+    }
+    if canonical == agents
+        && std::fs::symlink_metadata(&agents).is_ok_and(|metadata| metadata.is_dir())
+    {
+        return true;
+    }
+    // Drop the iterator before `home`. It borrows that canonical path.
+    let in_skill_tree = skill_tree_parts(canonical, &home).next().is_some();
+    in_skill_tree
 }
 
 const SKILL_ROOTS: [&str; 6] = [
