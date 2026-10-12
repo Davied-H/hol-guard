@@ -73,6 +73,35 @@ fn per_request_home_selects_nvm_and_preserves_home_root_refusal() {
         PYTEST_INVALID_WORKSPACE_REASON_CODE
     );
 }
+
+#[test]
+fn passwd_home_stays_sensitive_when_the_caller_home_differs() {
+    let fixture = fixture("guard-passwd-home");
+    let caller = fixture.0.join("caller-home");
+    fs::create_dir_all(&caller).unwrap();
+    let host = super::paths::host_home_directory().expect("account home");
+    let launch = json!({
+        "command": ["python3", "-c", "print(1)"],
+        "workspace": host,
+        "cwd": host,
+        "home": caller,
+        "platform": "darwin",
+        "backend_executable": "/usr/bin/true",
+        "search_path": ""
+    });
+    let result = evaluate("prepare_inline", &launch);
+    assert_eq!(
+        result["reason_code"],
+        PYTEST_INVALID_WORKSPACE_REASON_CODE
+    );
+    assert!(
+        result["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("home"),
+        "{result}"
+    );
+}
 impl Drop for Fixture {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);

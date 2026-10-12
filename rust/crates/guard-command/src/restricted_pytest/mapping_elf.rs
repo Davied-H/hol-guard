@@ -11,7 +11,15 @@ fn number(bytes: &[u8], offset: usize, width: usize) -> u64 {
     u64::from_le_bytes(buffer)
 }
 
-fn at(file: &mut File, offset: u64, width: usize) -> Result<Vec<u8>> {
+fn at(
+    file: &mut File,
+    offset: u64,
+    width: usize,
+    deadline: std::time::Instant,
+) -> Result<Vec<u8>> {
+    if std::time::Instant::now() >= deadline {
+        return Err("Linux executable mapping inspection deadline exceeded.");
+    }
     file.seek(SeekFrom::Start(offset))
         .map_err(|_| "Truncated ELF metadata.")?;
     let mut bytes = vec![0; width];
@@ -25,8 +33,9 @@ pub(super) fn inspect(
     metadata: &Metadata,
     library: bool,
     system_library: bool,
+    deadline: std::time::Instant,
 ) -> Result<(Option<String>, Vec<String>)> {
-    let header = at(file, 0, 64)?;
+    let header = at(file, 0, 64, deadline)?;
     let kind = number(&header, 16, 2);
     let machine = number(&header, 18, 2);
     let offset = number(&header, 32, 8);
@@ -47,7 +56,7 @@ pub(super) fn inspect(
     }
     let mut programs = Vec::new();
     for index in 0..count {
-        let bytes = at(file, offset + width * index, 56)?;
+        let bytes = at(file, offset + width * index, 56, deadline)?;
         programs.push([
             number(&bytes, 0, 4),
             number(&bytes, 4, 4),
@@ -77,7 +86,7 @@ pub(super) fn inspect(
             return Err("Truncated dynamic metadata.");
         }
         for index in 0..segment[5] / 16 {
-            let bytes = at(file, segment[2] + index * 16, 16)?;
+            let bytes = at(file, segment[2] + index * 16, 16, deadline)?;
             let tag = number(&bytes, 0, 8);
             if tag == 0 {
                 break;
@@ -128,7 +137,12 @@ pub(super) fn inspect(
             if *index >= size {
                 return Err("Invalid ELF dependency index.");
             }
-            let bytes = at(file, locations[0] + index, (size - index).min(257) as usize)?;
+            let bytes = at(
+                file,
+                locations[0] + index,
+                (size - index).min(257) as usize,
+                deadline,
+            )?;
             let Some(end) = bytes.iter().position(|v| *v == 0) else {
                 return Err("Unbounded ELF dependency name.");
             };
@@ -168,4 +182,24 @@ pub(super) fn inspect(
         }
     }
     Ok((soname, dependencies))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn inspection_stops_when_the_request_deadline_has_passed() {
+        let mut file = File::open(env!("CARGO_MANIFEST_DIR")).unwrap();
+        let metadata = file.metadata().unwrap();
+        let deadline = Instant::now()
+            .checked_sub(Duration::from_secs(1))
+            .unwrap_or_else(Instant::now);
+        let error = inspect(&mut file, &metadata, false, false, deadline).unwrap_err();
+        assert_eq!(
+            error,
+            "Linux executable mapping inspection deadline exceeded."
+        );
+    }
 }

@@ -67,21 +67,32 @@ fn workspace_is_broad_or_sensitive_for_home(workspace: &Path, home: Option<&Path
     if broad_roots.contains(workspace) {
         return true;
     }
-    let home = home
-        .map(|path| path.canonicalize().unwrap_or_else(|_| path.to_path_buf()))
-        .or_else(host_home_directory);
-    let home = match home {
-        Some(h) => h,
-        None => return true,
-    };
-    if workspace == home || home.ancestors().skip(1).any(|p| p == workspace) {
+    // The caller home is an extra root. It must not replace the account home
+    // from the password database, or a different `$HOME` would hide that root.
+    let mut homes = Vec::new();
+    if let Some(host) = host_home_directory() {
+        homes.push(host);
+    }
+    if let Some(path) = home {
+        let caller = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        if !homes.iter().any(|existing| existing == &caller) {
+            homes.push(caller);
+        }
+    }
+    if homes.is_empty() {
         return true;
     }
-    let relative_to_home = match workspace.strip_prefix(&home) {
-        Ok(rel) => rel,
-        Err(_) => return false,
+    homes.iter().any(|home| sensitive_under_home(workspace, home))
+}
+
+fn sensitive_under_home(workspace: &Path, home: &Path) -> bool {
+    if workspace == home || home.ancestors().skip(1).any(|ancestor| ancestor == workspace) {
+        return true;
+    }
+    let Ok(relative) = workspace.strip_prefix(home) else {
+        return false;
     };
-    match relative_to_home.components().next() {
+    match relative.components().next() {
         Some(component) => {
             SENSITIVE_HOME_ROOT_NAMES.contains(component.as_os_str().to_string_lossy().as_ref())
         }
