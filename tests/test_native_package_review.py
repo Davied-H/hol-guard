@@ -68,7 +68,19 @@ def test_standard_npm_install_reports_its_version(npm_layout: tuple[Path, Path, 
 
 
 @pytestmark_posix
-@pytest.mark.parametrize("name", ["npm_config_registry", "NPM_CONFIG_ALLOW_GIT", "NODE_OPTIONS", "NODE_PATH"])
+@pytest.mark.parametrize(
+    "name",
+    [
+        "npm_config_registry",
+        "NPM_CONFIG_ALLOW_GIT",
+        "NODE_OPTIONS",
+        "NODE_PATH",
+        "PREFIX",
+        "DESTDIR",
+        "NODE_EXTRA_CA_CERTS",
+        "NODE_TLS_REJECT_UNAUTHORIZED",
+    ],
+)
 def test_settings_that_change_npm_fail_closed(npm_layout: tuple[Path, Path, Path], name: str) -> None:
     prefix, home, workspace = npm_layout
 
@@ -85,6 +97,16 @@ def test_user_config_that_moves_the_fetch_fails_closed(npm_layout: tuple[Path, P
     (home / ".npmrc").write_text(npmrc, encoding="utf-8")
 
     assert package_review.verified_npm_version(_environment(prefix, home), workspace=workspace) is None
+
+
+@pytestmark_posix
+@pytest.mark.parametrize("home", [None, "", "relative/home"])
+def test_unlocatable_user_config_fails_closed(npm_layout: tuple[Path, Path, Path], home: str | None) -> None:
+    prefix, _home, workspace = npm_layout
+    environment = _environment(prefix, _home)
+    environment["home"] = home
+
+    assert package_review.verified_npm_version(environment, workspace=workspace) is None
 
 
 @pytestmark_posix

@@ -60,8 +60,10 @@ _FETCH_REDIRECTING_KEYS = frozenset(
         "userconfig",
     }
 )
-# Settings that change what npm or node load before the command line is read.
+# Settings that change what npm or node load before the command line is read,
+# where npm finds its global config, or which TLS certificates node trusts.
 _ENVIRONMENT_OVERRIDES = ("npm_config_", "node_options", "node_path")
+_ENVIRONMENT_NAMES = frozenset({"prefix", "destdir", "node_extra_ca_certs", "node_tls_reject_unauthorized"})
 
 
 def native_package_review_response(
@@ -192,7 +194,10 @@ def verified_npm_version(environment: object, *, workspace: Path) -> str | None:
         return None
     names = environment.get("environment_names")
     if not isinstance(names, list) or any(
-        not isinstance(name, str) or name.lower().startswith(_ENVIRONMENT_OVERRIDES) for name in names
+        not isinstance(name, str)
+        or name.lower().startswith(_ENVIRONMENT_OVERRIDES)
+        or name.lower() in _ENVIRONMENT_NAMES
+        for name in names
     ):
         return None
     if environment.get("library_search_paths"):
@@ -216,10 +221,12 @@ def verified_npm_version(environment: object, *, workspace: Path) -> str | None:
         return None
     if not isinstance(manifest, dict) or manifest.get("name") != "npm":
         return None
+    # Without an absolute HOME the user config cannot be located, so it
+    # cannot be shown not to move the fetch.
     home = environment.get("home")
-    config_files = [npm.parent.parent / "npmrc", node.parent.parent / "etc" / "npmrc"]
-    if isinstance(home, str) and os.path.isabs(home):
-        config_files.append(Path(home) / ".npmrc")
+    if not isinstance(home, str) or not os.path.isabs(home):
+        return None
+    config_files = [npm.parent.parent / "npmrc", node.parent.parent / "etc" / "npmrc", Path(home) / ".npmrc"]
     if any(_npmrc_redirects_fetch(path) for path in config_files):
         return None
     version = manifest.get("version")
