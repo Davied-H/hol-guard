@@ -12,9 +12,6 @@ from contextlib import suppress
 from pathlib import Path
 
 from .approval_resolution import approval_resolution_block_reason
-from .decision_boundaries import (
-    canonical_approval_surfaces_batch,
-)
 from .models import GuardApprovalRequest
 from .native_approval_queue_identity import (
     ApprovalQueueIdentityUnavailableError,
@@ -285,17 +282,7 @@ def get_approval_request(
             ).fetchone()
             if (
                 candidate is not None
-                and canonical_approval_surfaces_batch(
-                    [
-                        (
-                            candidate[0],
-                            _optional_json_object(candidate[1]) or candidate[1],
-                            _optional_json_object(candidate[2]) or candidate[2],
-                        )
-                    ],
-                    guard_home=guard_home,
-                )[0].contract_error
-                is None
+                and _project_listing_rows([candidate], guard_home=guard_home)[0].contract_error is None
             ):
                 payload["superseded_by_request_id"] = replacement
     return payload
@@ -963,9 +950,7 @@ def resolvable_approval_request_ids(connection: sqlite3.Connection, rows: Sequen
     unreadable row reads as inconsistent instead of aborting the sweep.
     """
 
-    projections = canonical_approval_surfaces_batch(
-        [_row_decision_inputs(row) for row in rows], guard_home=connection_guard_home(connection)
-    )
+    projections = _project_listing_rows(list(rows), guard_home=connection_guard_home(connection))
     resolvable: list[str] = []
     for row, projection in zip(rows, projections, strict=True):
         request: dict[str, object] = {"policy_action": projection.policy_action}

@@ -191,6 +191,9 @@ def _expire_inconsistent_group_requests(
         )
 
 
+_REQUEST_ID_CHUNK = 500
+
+
 def _consistent_pending_requests(
     connection: sqlite3.Connection, request_ids: Sequence[str], *, guard_home: Path
 ) -> set[str]:
@@ -201,12 +204,18 @@ def _consistent_pending_requests(
     """
     if not request_ids:
         return set()
-    placeholders = ", ".join("?" for _ in request_ids)
-    rows = connection.execute(
-        "select request_id, policy_action, decision_v2_json, action_envelope_json from approval_requests"
-        f" where request_id in ({placeholders})",
-        tuple(request_ids),
-    ).fetchall()
+    rows: list[tuple[object, ...]] = []
+    # Chunk the lookup so a large queue group stays under SQLite's host-parameter cap.
+    for start in range(0, len(request_ids), _REQUEST_ID_CHUNK):
+        chunk = tuple(request_ids[start : start + _REQUEST_ID_CHUNK])
+        placeholders = ", ".join("?" for _ in chunk)
+        rows.extend(
+            connection.execute(
+                "select request_id, policy_action, decision_v2_json, action_envelope_json from approval_requests"
+                f" where request_id in ({placeholders})",
+                chunk,
+            ).fetchall()
+        )
     candidates: list[tuple[str, tuple[object, object, object]]] = []
     for row in rows:
         try:

@@ -141,6 +141,9 @@ def test_listing_outage_reports_scope_unavailable(monkeypatch: pytest.MonkeyPatc
         store.list_approval_requests(status="pending", limit=1)
     with pytest.raises(ApprovalScopeUnavailableError):
         store.list_approval_request_page(include_totals=False)
+    # The approval write path reads the row with derive_scope=False; it must surface the same outage.
+    with pytest.raises(ApprovalScopeUnavailableError):
+        store.get_approval_request("outage-request", derive_scope=False)
 
 
 def test_boundary_healthy_refusal_is_validation(monkeypatch: pytest.MonkeyPatch) -> None:

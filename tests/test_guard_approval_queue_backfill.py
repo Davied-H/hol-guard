@@ -431,3 +431,29 @@ def test_backfill_without_a_home_fills_counters_without_calling_the_resident(
     assert row["action_identity"] is None
     assert row["last_seen_at"] == row["created_at"]
     assert calls == []
+
+
+def test_consistent_pending_requests_chunks_large_groups(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from codex_plugin_scanner.guard import store_approval_writes
+
+    connection = sqlite3.connect(":memory:")
+    connection.execute(
+        "create table approval_requests (request_id text, policy_action text,"
+        " decision_v2_json text, action_envelope_json text)"
+    )
+    request_ids = [f"request-{index}" for index in range(7)]
+    connection.executemany(
+        "insert into approval_requests values (?, 'review', null, null)", [(rid,) for rid in request_ids]
+    )
+    seen_batches: list[int] = []
+
+    def project(inputs, *, guard_home):
+        seen_batches.append(len(inputs))
+        return [SimpleNamespace(contract_error=None) for _ in inputs]
+
+    monkeypatch.setattr(store_approval_writes, "_REQUEST_ID_CHUNK", 3)
+    monkeypatch.setattr(store_approval_writes, "canonical_approval_surfaces_batch", project)
+    consistent = store_approval_writes._consistent_pending_requests(connection, request_ids, guard_home=tmp_path)
+    assert consistent == set(request_ids)
+    # Lookups are chunked; the native projection stays one batched call.
+    assert seen_batches == [7]

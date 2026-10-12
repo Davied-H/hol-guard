@@ -147,7 +147,7 @@ def _row_to_draft(
 ) -> tuple[dict[str, object], str | None]:
     if canonical_decision is None:
         # A batch of one keeps the unreadable-row fallback for a single stored row.
-        canonical_decision = canonical_approval_surfaces_batch([_row_decision_inputs(row)], guard_home=guard_home)[0]
+        canonical_decision = _project_listing_rows([row], guard_home=guard_home)[0]
     launch_target, browser_target = _browser_launch_target_for_display(row["launch_target"])
     risk_signals = _browser_risk_signals_for_display(_safe_json_list(row["risk_signals_json"]), browser_target)
     payload: dict[str, object] = {
