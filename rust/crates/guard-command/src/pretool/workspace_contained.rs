@@ -294,6 +294,21 @@ fn destroys_workspace(
         })
 }
 
+/// Whether this host runs the workspace sandbox for this harness hook.
+pub(super) fn host_eligible(harness: &str, event: &str) -> bool {
+    cfg!(target_os = "macos")
+        && event == "PreToolUse"
+        && matches!(
+            harness,
+            "omp" | "oh-my-pi" | "zcode" | "claude-code" | "codex"
+        )
+}
+
+/// The workspace the sandbox would confine for this session, if any.
+pub(super) fn admitted_workspace(context: PathContext<'_>) -> Option<std::path::PathBuf> {
+    workspace_admissible(Path::new(context.cwd?), context.home_dir.map(Path::new))
+}
+
 /// Convert a generic review into a workspace sandbox requirement when every
 /// condition holds. `pre_floor` is the reason and action before the Git
 /// execution-context floor ran.
@@ -309,12 +324,7 @@ pub(super) fn convert(
     event: &str,
     command_text: Option<&str>,
 ) {
-    if !cfg!(target_os = "macos")
-        || event != "PreToolUse"
-        || !matches!(
-            harness,
-            "omp" | "oh-my-pi" | "zcode" | "claude-code" | "codex"
-        )
+    if !host_eligible(harness, event)
         || !matches!(
             result.action.action_type,
             PreToolActionTypeV1::Command | PreToolActionTypeV1::Package

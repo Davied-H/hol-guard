@@ -14,6 +14,8 @@ mod pure_eval;
 mod redirect_projection;
 #[path = "generic_result.rs"]
 mod result;
+#[path = "workspace_redirects.rs"]
+pub(crate) mod workspace_redirects;
 use command_rewrite::payload_with_command;
 
 use crate::native_command_controls::CompiledNativeCommandControls;
@@ -197,6 +199,25 @@ fn evaluate_envelope(
         && signals.command.as_deref().is_some_and(|patch| {
             super::apply_patch_writes::routine_apply_patch(patch, home_dir, cwd)
         });
+    if let Some(contained) = signals
+        .command
+        .as_deref()
+        .filter(|_| project_redirects && !search_scope_proven && !apply_patch_proven)
+        .and_then(|command| {
+            workspace_redirects::contained(
+                harness,
+                event,
+                payload,
+                command,
+                controls,
+                deadline,
+                context,
+                execution_environment,
+            )
+        })
+    {
+        return contained;
+    }
     if let Some(projection) = signals
         .command
         .as_deref()

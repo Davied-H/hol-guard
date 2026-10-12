@@ -1,5 +1,6 @@
 //! Native launch plan for `workspace-contained-v1`.
 use super::*;
+use crate::pretool::generic::workspace_redirects;
 use crate::pretool::workspace_git_config::workspace_write_denials;
 use crate::pretool::workspace_git_environment::GitVariables;
 use crate::pretool::{command_shape, WORKSPACE_PROFILE};
@@ -60,16 +61,24 @@ fn prepare(input: &Input) -> Result<Value, RestrictedPytestError> {
             "The workspace sandbox runs only from the workspace root.",
         ));
     }
-    // Re-derive the decision from the exact bytes about to run.
-    let model = parse_command(&CommandModelRequestV1 {
-        command: input.text.clone(),
-        dialect: "posix".into(),
-        transport: "shell_string".into(),
-        extraction_provenance: "pre-tool-generic".into(),
-    })
-    .map_err(|_| invalid("The command could not be parsed."))?;
-    let shape = command_shape(&model, &workspace, Some(&input.text))
-        .ok_or_else(|| invalid("The command is not eligible for the workspace sandbox."))?;
+    // Re-derive the decision from the exact bytes about to run. Literal-path
+    // redirects are classified without them; the raw text still runs.
+    let shape = match workspace_redirects::project(&input.text) {
+        Some(projected) => {
+            workspace_redirects::contained_shape(&input.text, &projected, &workspace)
+        }
+        None => {
+            let model = parse_command(&CommandModelRequestV1 {
+                command: input.text.clone(),
+                dialect: "posix".into(),
+                transport: "shell_string".into(),
+                extraction_provenance: "pre-tool-generic".into(),
+            })
+            .map_err(|_| invalid("The command could not be parsed."))?;
+            command_shape(&model, &workspace, Some(&input.text))
+        }
+    }
+    .ok_or_else(|| invalid("The command is not eligible for the workspace sandbox."))?;
     let variables: GitVariables = input
         .git_environment
         .iter()

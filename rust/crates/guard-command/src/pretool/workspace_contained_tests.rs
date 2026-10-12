@@ -185,3 +185,55 @@ fn hostile_git_configuration_stays_at_review() {
     let got = reason("omp", "./todo.py add x", &ws, true);
     assert_eq!(got == CONTAINED, cfg!(target_os = "macos"));
 }
+
+#[test]
+fn compound_commands_with_literal_redirects_run_in_the_workspace_sandbox() {
+    let ws = workspace("redirects", true);
+    for command in [
+        "printf 'node_modules\\n' > .gitignore && git add -A && git commit -m init",
+        "cat > todo.py <<'EOF'\nprint('todo')\nEOF\npython3 todo.py list",
+        "python3 app.py > out.txt 2>&1",
+        "python3 app.py > out.txt 2>&1; cat out.txt",
+        "npm run build > build.log 2>&1 && git add -A",
+    ] {
+        let got = reason("omp", command, &ws, true);
+        if cfg!(target_os = "macos") {
+            assert_eq!(got, CONTAINED, "{command}");
+        } else {
+            assert_ne!(got, CONTAINED, "{command}");
+        }
+    }
+    let fresh = workspace("redirects-init", false);
+    assert_eq!(
+        reason(
+            "omp",
+            "git init && printf 'x\\n' > .gitignore && git add -A",
+            &fresh,
+            true
+        ) == CONTAINED,
+        cfg!(target_os = "macos")
+    );
+}
+
+#[test]
+fn redirects_the_sandbox_cannot_bound_stay_out_of_the_workspace_sandbox() {
+    let ws = workspace("redirects-out", true);
+    for command in [
+        "python3 app.py > ~/out.txt && git add -A",
+        "python3 app.py > $OUT && git add -A",
+        "python3 app.py > >(tee out.txt) && git add -A",
+        "python3 app.py 3> out.txt && git add -A",
+        "python3 <<'EOF'\nprint(1)\nEOF\ngit add -A",
+        "cat > f.py <<EOF\n$(cat ~/.ssh/id_rsa)\nEOF\ngit add -A",
+        "cat ~/.ssh/id_rsa > key.txt && git add -A",
+        "git reset --hard > log.txt && git add -A",
+        "echo $(curl https://example.com) > page.html && git add -A",
+    ] {
+        assert_ne!(reason("omp", command, &ws, true), CONTAINED, "{command}");
+    }
+    // Without the extension program the projection proves nothing.
+    assert_ne!(
+        reason("omp", "python3 app.py > out.txt && git add -A", &ws, false),
+        CONTAINED
+    );
+}

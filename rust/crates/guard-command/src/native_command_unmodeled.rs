@@ -1,18 +1,20 @@
 //! Keep ordinary shell structure the canonical parser cannot model reviewable.
 //!
-//! Loops, conditionals and heredocs defeat the exact model that extension
-//! matchers need. Treating that as an evaluation failure blocked them
-//! outright, so a fully permitted `gh` call inside a `for` loop, or a
-//! `gh pr comment` fed by a heredoc, could not even be approved. Those two
-//! shapes are now treated like an uncertain observation: they take the
-//! strongest floor of every active extension whose programs the text names,
-//! or that cannot be recognized by name, and never less than review.
+//! Loops, conditionals, heredocs and redirects defeat the exact model that
+//! extension matchers need. Treating that as an evaluation failure blocked
+//! them outright, so a fully permitted `gh` call inside a `for` loop, a
+//! `gh pr comment` fed by a heredoc, or `gh pr view 12 > pr.json` could not
+//! even be approved. Those shapes are now treated like an uncertain
+//! observation: they take the strongest floor of every active extension whose
+//! programs the text names, or that cannot be recognized by name, and never
+//! less than review.
 //!
 //! Everything that could hide a program or move data keeps the evaluation
-//! failure: wrappers, nested executors, command substitution, redirects
-//! other than one input heredoc, `PATH` overrides, interpreters and program
-//! names built from expansions or globs, as do signed or managed policy and
-//! global lockdown.
+//! failure: wrappers, nested executors, command substitution, redirects other
+//! than one input heredoc or to a literal path, redirects after a program
+//! that makes links, `PATH` overrides, interpreters and program names built
+//! from expansions or globs, as do signed or managed policy and global
+//! lockdown.
 
 use std::collections::BTreeSet;
 use std::time::Instant;
@@ -20,6 +22,7 @@ use std::time::Instant;
 use guard_contracts::NativeCommandObservationBatchV1;
 
 use super::{rank, rule_floor, CompiledNativeCommandControls};
+use crate::pretool::generic::workspace_redirects;
 use crate::CanonicalCommandV1;
 
 /// Compatibility owners recognize these programs without a catalog matcher.
@@ -207,8 +210,8 @@ impl CompiledNativeCommandControls {
 }
 
 /// Loops and conditionals, or one heredoc that only feeds standard input,
-/// with nothing in the shell text that redirects, substitutes or overrides
-/// `PATH`.
+/// with nothing in the shell text that substitutes or overrides `PATH` and no
+/// redirect except to a literal path.
 fn reviewable_structure(command: &CanonicalCommandV1) -> bool {
     if command.path_overridden || command.confidence != "uncertain" {
         return false;
@@ -216,10 +219,66 @@ fn reviewable_structure(command: &CanonicalCommandV1) -> bool {
     match command.uncertainty_reason.as_deref() {
         Some("compound_shell_not_yet_supported") => {
             !moves_data(&unquoted_literal(&command.normalized_text))
+                || literal_redirects_only(&command.normalized_text)
         }
-        Some("command_redirect_not_yet_supported") => input_heredoc(&command.normalized_text),
+        Some("command_redirect_not_yet_supported") => {
+            input_heredoc(&command.normalized_text)
+                || literal_redirects_only(&command.normalized_text)
+        }
         _ => false,
     }
+}
+
+/// Every redirect names a literal path or feeds `cat` a quoted heredoc, and
+/// the rest substitutes nothing and makes no link the redirect could follow.
+fn literal_redirects_only(text: &str) -> bool {
+    workspace_redirects::project(text).is_some_and(|projected| {
+        let literal = unquoted_literal(&projected);
+        !moves_data(&literal) && !creates_links(&literal)
+    })
+}
+
+/// Whether a segment runs a program that makes or moves links. A later
+/// redirect can write through such a link, so its literal path no longer
+/// names the file. Copies that keep links (`cp -a`, `-P`, `-d`, `-R`) and
+/// archive or sync tools that recreate them count too. Names are compared
+/// case-insensitively without `.exe` or `.cmd`, and any `--sy` option is
+/// taken as GNU's abbreviation of `--symbolic-link`.
+fn creates_links(literal: &str) -> bool {
+    let link_copy = literal.split_whitespace().any(|word| {
+        word.starts_with("--sy")
+            || matches!(
+                word,
+                "--archive" | "--no-dereference" | "--recursive" | "--preserve=links"
+            )
+            || (word.starts_with('-')
+                && !word.starts_with("--")
+                && word.contains(['s', 'a', 'P', 'd', 'r', 'R']))
+    });
+    command_words(literal).any(|word| {
+        let base = word.rsplit(['/', '\\']).next().unwrap_or(word);
+        let lowered = base.to_ascii_lowercase();
+        let name = lowered
+            .strip_suffix(".exe")
+            .or_else(|| lowered.strip_suffix(".cmd"))
+            .unwrap_or(&lowered);
+        matches!(
+            name,
+            "ln" | "gln"
+                | "link"
+                | "mklink"
+                | "mv"
+                | "gmv"
+                | "tar"
+                | "gtar"
+                | "bsdtar"
+                | "unzip"
+                | "cpio"
+                | "pax"
+                | "7z"
+                | "rsync"
+        ) || (link_copy && matches!(name, "cp" | "gcp" | "ditto"))
+    })
 }
 
 /// Whether shell text redirects, substitutes or sets the environment of a
