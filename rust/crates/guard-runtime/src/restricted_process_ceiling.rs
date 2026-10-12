@@ -1,0 +1,122 @@
+//! Fresh user-wide process/thread headroom without spawning a measurement tool.
+use serde_json::{json, Value};
+use std::time::{Duration, Instant};
+
+const MESSAGE: &str =
+    "The desktop process budget could not be measured; protected execution was not started.";
+
+pub(crate) fn evaluate(deadline: Instant) -> Value {
+    if cfg!(not(any(target_os = "linux", target_os = "macos"))) {
+        return json!({"value":64});
+    }
+    let deadline = deadline.min(Instant::now() + Duration::from_secs(3));
+    match measure(deadline).and_then(ceiling) {
+        Ok(value) => json!({"value":value}),
+        Err(()) => json!({"reason_code":"pytest_restricted_sandbox_unavailable","message":MESSAGE}),
+    }
+}
+
+fn ceiling(existing: u64) -> Result<u64, ()> {
+    // The old `ps -U` snapshot included its own one-process measurement probe.
+    // Retain that slot while preserving the original 64-unit execution margin.
+    existing
+        .checked_add(1)
+        .and_then(|v| v.checked_add(64))
+        .ok_or(())
+}
+
+#[cfg(target_os = "macos")]
+fn measure(deadline: Instant) -> Result<u64, ()> {
+    let pids = libproc::processes::pids_by_type(libproc::processes::ProcFilter::ByRealUID {
+        ruid: nix::unistd::getuid().as_raw(),
+    })
+    .map_err(|_| ())?;
+    if Instant::now() >= deadline || pids.is_empty() {
+        return Err(());
+    }
+    Ok(pids.len() as u64)
+}
+
+#[cfg(target_os = "linux")]
+fn measure(deadline: Instant) -> Result<u64, ()> {
+    use std::fs::File;
+    use std::io::Read;
+    let uid = nix::unistd::getuid().as_raw();
+    let mut total = 0u64;
+    for entry in std::fs::read_dir("/proc").map_err(|_| ())? {
+        if Instant::now() >= deadline {
+            return Err(());
+        }
+        let entry = entry.map_err(|_| ())?;
+        let name = entry.file_name();
+        if !name.to_string_lossy().bytes().all(|v| v.is_ascii_digit()) {
+            continue;
+        }
+        let file = match File::open(entry.path().join("status")) {
+            Ok(file) => file,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::NotFound | std::io::ErrorKind::PermissionDenied
+                ) =>
+            {
+                continue
+            }
+            Err(_) => return Err(()),
+        };
+        let mut bytes = Vec::new();
+        file.take(65537).read_to_end(&mut bytes).map_err(|_| ())?;
+        if bytes.len() > 65536 {
+            return Err(());
+        }
+        let text = std::str::from_utf8(&bytes).map_err(|_| ())?;
+        let real_uid = text
+            .lines()
+            .find_map(|v| v.strip_prefix("Uid:"))
+            .and_then(|v| v.split_whitespace().next())
+            .and_then(|v| v.parse::<u32>().ok())
+            .ok_or(())?;
+        if real_uid != uid {
+            continue;
+        }
+        let threads = text
+            .lines()
+            .find_map(|v| v.strip_prefix("Threads:"))
+            .and_then(|v| v.trim().parse::<u64>().ok())
+            .ok_or(())?;
+        total = total.checked_add(threads).ok_or(())?;
+    }
+    if total == 0 || Instant::now() >= deadline {
+        return Err(());
+    }
+    Ok(total)
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn measure(_deadline: Instant) -> Result<u64, ()> {
+    Ok(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn original_process_snapshot_headroom() {
+        let vectors: Value = serde_json::from_str(include_str!(
+            "../../guard-command/tests/fixtures/contained_execution_parity.json"
+        ))
+        .unwrap();
+        let mut count = 0;
+        for case in vectors["cases"].as_array().unwrap() {
+            if case["operation"] == "process_ceiling_snapshot" {
+                assert_eq!(
+                    json!({"value":ceiling(case["input"]["existing"].as_u64().unwrap()).unwrap()}),
+                    case["expected"]
+                );
+                count += 1;
+            }
+        }
+        assert!(count >= 3);
+    }
+}
