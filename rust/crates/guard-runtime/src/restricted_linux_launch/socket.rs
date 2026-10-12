@@ -69,9 +69,9 @@ pub(super) fn instructions(machine: &str) -> Result<Vec<(u16, u8, u8, u32)>> {
 #[cfg(target_os = "linux")]
 pub(super) fn enforce() -> Result<()> {
     let items = instructions(std::env::consts::ARCH)?;
-    let filters: Vec<libc::sock_filter> = items
+    let filters: Vec<seccompiler::sock_filter> = items
         .into_iter()
-        .map(|(code, jt, jf, k)| libc::sock_filter { code, jt, jf, k })
+        .map(|(code, jt, jf, k)| seccompiler::sock_filter { code, jt, jf, k })
         .collect();
     seccompiler::apply_filter(&filters).map_err(|_| "Could not enforce Linux socket isolation.")?;
     Ok(())

@@ -69,7 +69,8 @@ def test_linked_metadata_has_listing_without_parent_checkout_or_secret_read_gran
     fixed_plan = str(namespace.PLAN_DIRECTORY / namespace.PLAN_FILENAME)
     snapshot_path = private / namespace.PLAN_FILENAME
     assert argv[-1] == hashlib.sha256(snapshot_path.read_bytes()).hexdigest()
-    assert argv[-2].endswith("restricted_linux_entry.py")
+    assert argv[-2] == "restricted-linux-launch"
+    assert Path(argv[-3]).is_file()
     entrypoint_index = argv.index("--")
     assert str(snapshot_path) not in argv[entrypoint_index:]
     plan_mount = argv.index(fixed_plan)

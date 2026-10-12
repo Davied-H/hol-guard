@@ -4,6 +4,8 @@ import sys
 from pathlib import Path
 
 from ..native_restricted_linux import linux_native
+from .restricted_linux_entry import PLAN_DIRECTORY as PLAN_DIRECTORY
+from .restricted_linux_entry import PLAN_FILENAME as PLAN_FILENAME
 from .restricted_pytest_model import RestrictedPytestPlan
 
 
