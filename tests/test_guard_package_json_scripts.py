@@ -428,3 +428,25 @@ def test_native_failure_is_reported_so_grant_callers_fail_closed(tmp_path: Path,
                 is None
             )
     assert failures == ["native_package_json_scripts_unavailable", "native_package_json_scripts_malformed"]
+
+
+def test_command_tokens_raise_on_native_failure_instead_of_generic_argv(tmp_path: Path, monkeypatch) -> None:
+    import pytest
+
+    from codex_plugin_scanner.guard.native_local_cli_identity import (
+        LocalCliIdentityUnavailableError,
+        track_local_cli_identity_failures,
+    )
+    from codex_plugin_scanner.guard.runtime import package_json_scripts
+
+    project = _write_package(tmp_path / "app", scripts={"build": "vite build"})
+    replies: list[object] = [None, {"status": "ok", "package_json_scripts": {"runner": "npm"}}, {"status": "ok"}]
+    monkeypatch.setattr(package_json_scripts, "native_context_digest", lambda *_args, **_kwargs: replies.pop(0))
+    with track_local_cli_identity_failures() as failures:
+        for _ in range(2):
+            with pytest.raises(LocalCliIdentityUnavailableError):
+                package_json_scripts.package_script_command_tokens("npm run build", cwd=project, home_dir=tmp_path)
+        assert (
+            package_json_scripts.package_script_command_tokens("npm run build", cwd=project, home_dir=tmp_path) is None
+        )
+    assert failures == ["native_package_json_scripts_unavailable", "native_package_json_scripts_malformed"]

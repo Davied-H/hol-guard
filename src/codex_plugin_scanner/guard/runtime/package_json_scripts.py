@@ -14,7 +14,12 @@ from pathlib import Path
 from typing import Any
 
 from ..native_context import _is_sha256_digest, _resolve_digest_home, native_context_digest
-from ..native_local_cli_identity import record_local_cli_identity_failure, valid_local_cli_identity
+from ..native_local_cli_identity import (
+    LocalCliIdentityUnavailableError,
+    record_local_cli_identity_failure,
+    track_local_cli_identity_failures,
+    valid_local_cli_identity,
+)
 from .local_cli_commands import LocalCliCommand, merge_discovered_commands
 from .local_cli_identity import UnlistedCliIdentity
 
@@ -99,9 +104,18 @@ def identify_package_json_scripts(
 
 
 def package_script_command_tokens(command_text: str, *, cwd: Path, home_dir: Path | None) -> tuple[str, ...] | None:
-    """Return colon-nested tokens for one package script name."""
+    """Return colon-nested tokens for one package script name.
 
-    found = _native_package_scripts(command_text, cwd=cwd, home_dir=home_dir or cwd)
+    ``None`` means the command is not a package script. A failed or malformed
+    native answer raises ``LocalCliIdentityUnavailableError`` instead, so a
+    grant decision is never made against generic argv tokens.
+    """
+
+    with track_local_cli_identity_failures() as failures:
+        found = _native_package_scripts(command_text, cwd=cwd, home_dir=home_dir or cwd)
+    if failures:
+        record_local_cli_identity_failure(failures[0])
+        raise LocalCliIdentityUnavailableError(failures[0])
     return None if found is None else found.command_tokens
 
 

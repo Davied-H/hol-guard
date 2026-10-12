@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 from collections.abc import Mapping
 from typing import cast
 
 from .runtime.custom_extension_suggestion import SuggestionTool, suggestion_tool, suggestion_verdicts
 
+_LOGGER = logging.getLogger(__name__)
+# Native batches allow 4096 tools and a 2 MiB request; source paths can be
+# long, so stay well inside both.
+_SUGGESTION_BATCH = 256
+
 
 def _with_suggestions(items: list[dict[str, object]]) -> list[dict[str, object]]:
-    """Rank every item in one native call; items the resident cannot rank stay hidden."""
+    """Rank items in bounded native batches; items the resident cannot rank stay hidden."""
 
     ranked: list[tuple[dict[str, object], SuggestionTool]] = []
     for item in items:
@@ -33,10 +39,15 @@ def _with_suggestions(items: list[dict[str, object]]) -> list[dict[str, object]]
             surface=raw_surface if isinstance(raw_surface, str) else "cli",
         )
         ranked.append((item, tool))
-    verdicts = suggestion_verdicts([tool for _item, tool in ranked])
-    for (item, _tool), verdict in zip(ranked, verdicts or (), strict=False):
-        item["suggestion_score"] = verdict["score"]
-        item["suggestable"] = verdict["suggestable"]
+    for offset in range(0, len(ranked), _SUGGESTION_BATCH):
+        batch = ranked[offset : offset + _SUGGESTION_BATCH]
+        verdicts = suggestion_verdicts([tool for _item, tool in batch])
+        if verdicts is None:
+            _LOGGER.warning("native custom extension suggestion unavailable for %d tools", len(batch))
+            continue
+        for (item, _tool), verdict in zip(batch, verdicts, strict=True):
+            item["suggestion_score"] = verdict["score"]
+            item["suggestable"] = verdict["suggestable"]
     return items
 
 

@@ -184,3 +184,13 @@ def test_native_failure_hides_suggestions_and_fails_identity_closed(monkeypatch)
         lambda *_args, **_kwargs: {"status": "ok", "custom_extension_suggestion": [{"score": -1}]},
     )
     assert suggestion_verdicts([suggestion_tool(name="internal-deploy")]) is None
+
+
+def test_recognize_operator_cli_reports_native_outage_not_common_utility(tmp_path, monkeypatch) -> None:
+    from codex_plugin_scanner.guard.runtime import custom_extension_suggestion, local_cli_identity
+
+    monkeypatch.setattr(local_cli_identity, "identify_unlisted_cli", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(custom_extension_suggestion, "native_context_digest", lambda *_args, **_kwargs: None)
+    _, code, message = recognize_operator_cli("internal-deploy run", cwd=tmp_path, home_dir=tmp_path)
+    assert code == "native_unavailable"
+    assert message == custom_extension_suggestion.NATIVE_UNAVAILABLE_MESSAGE

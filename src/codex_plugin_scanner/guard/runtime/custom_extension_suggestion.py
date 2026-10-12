@@ -18,6 +18,7 @@ from ..native_local_cli_identity import record_local_cli_identity_failure
 _VERDICT_KEYS = frozenset({"score", "suggestable", "path_class", "common_utility", "reject_message"})
 # The native request carries observed counts as signed 64-bit integers.
 _COUNT_LIMIT = 2**62
+NATIVE_UNAVAILABLE_MESSAGE = "Guard could not check this tool right now. Try again in a moment."
 
 
 class SuggestionTool(TypedDict):
@@ -76,8 +77,14 @@ def suggestion_verdicts(tools: Sequence[SuggestionTool]) -> list[SuggestionVerdi
     return verdicts
 
 
+def common_utility_verdict(name: str) -> SuggestionVerdict | None:
+    """Return the native verdict for a bare tool name, or ``None`` when the resident cannot answer."""
+
+    return _single(suggestion_tool(name=name))
+
+
 def is_common_shell_utility(name: str) -> bool:
-    verdict = _single(suggestion_tool(name=name))
+    verdict = common_utility_verdict(name)
     if verdict is None:
         record_local_cli_identity_failure("native_custom_extension_suggestion_unavailable")
         return True
@@ -96,9 +103,9 @@ def observation_path_class(source_path: str | None) -> str:
 def common_utility_reject_message(name: str) -> str:
     """Return operator-facing copy when a pasted command is a common tool."""
 
-    verdict = _single(suggestion_tool(name=name))
+    verdict = common_utility_verdict(name)
     if verdict is None:
-        return "Guard could not check this tool right now. Try again in a moment."
+        return NATIVE_UNAVAILABLE_MESSAGE
     return verdict["reject_message"]
 
 

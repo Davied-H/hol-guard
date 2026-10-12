@@ -251,7 +251,7 @@ fn assigned_prefix<'a>(token: &'a str, flags: &[&str]) -> Option<&'a str> {
 fn manifest_from_path(command_text: &str, cwd: &Path, home_dir: &Path) -> Option<PathBuf> {
     let expanded = command_text.replace("~/", &format!("{}/", home_dir.display()));
     let expanded = match expanded.as_str() {
-        "~" => std::env::var("HOME").unwrap_or(expanded),
+        "~" => home_dir.display().to_string(),
         _ => expanded,
     };
     // `pathlib.Path` drops trailing separators before resolving.
