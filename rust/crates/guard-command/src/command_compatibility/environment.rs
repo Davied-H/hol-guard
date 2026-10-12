@@ -33,6 +33,33 @@ pub(crate) fn inert_environment_name(name: &str) -> bool {
     ) || name.starts_with("LC_")
 }
 
+/// Names that hand the program a credential or point it at another
+/// credential or configuration store (`GH_TOKEN`, `GOOGLE_APPLICATION_CREDENTIALS`,
+/// `GOG_KEYRING_PASSWORD`, `GH_CONFIG_DIR`). The arguments then no longer say
+/// whose authority the command runs with, so the prefix cannot be reviewed.
+/// Words are matched whole, so `TOKENIZERS_PARALLELISM` is not one.
+pub(crate) fn credential_routing_environment_name(name: &str) -> bool {
+    let upper = name.to_ascii_uppercase();
+    let words: Vec<&str> = upper.split('_').collect();
+    words.iter().any(|word| {
+        matches!(
+            *word,
+            "TOKEN"
+                | "CREDENTIAL"
+                | "CREDENTIALS"
+                | "SECRET"
+                | "PASSWORD"
+                | "PASSPHRASE"
+                | "APIKEY"
+        )
+    }) || words.windows(2).any(|pair| {
+        matches!(
+            (pair[0], pair[1]),
+            ("API" | "ACCESS" | "PRIVATE", "KEY") | ("CONFIG", "DIR")
+        )
+    })
+}
+
 #[cfg(test)]
 pub(super) fn supported(segment: &CommandSegmentV1) -> bool {
     segment
@@ -61,6 +88,32 @@ mod tests {
     fn inert_names_are_supported_on_every_program() {
         for program in ["git", "gh", "bun", "curl"] {
             assert!(supported(&segment(program, &["CI", "LC_ALL", "NO_COLOR"])));
+        }
+    }
+
+    #[test]
+    fn credential_routing_names_are_whole_words() {
+        for name in [
+            "GH_TOKEN",
+            "GOOGLE_APPLICATION_CREDENTIALS",
+            "GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE",
+            "GOOGLE_WORKSPACE_CLI_CLIENT_SECRET",
+            "GOOGLE_WORKSPACE_CLI_CONFIG_DIR",
+            "GOG_KEYRING_PASSWORD",
+            "OPENAI_API_KEY",
+            "AWS_SECRET_ACCESS_KEY",
+            "gh_config_dir",
+        ] {
+            assert!(credential_routing_environment_name(name), "{name}");
+        }
+        for name in [
+            "TOKENIZERS_PARALLELISM",
+            "CI",
+            "XDG_CONFIG_HOME",
+            "KEYBOARD",
+            "TODO_FILE",
+        ] {
+            assert!(!credential_routing_environment_name(name), "{name}");
         }
     }
 
