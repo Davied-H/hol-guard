@@ -24,6 +24,7 @@ use crate::sfrs_requests::{
     extract_sensitive_file_read_request_from_action, extract_sensitive_file_write_request,
     FileReadRequest, FileWriteRequest, SensitivePath,
 };
+use crate::CommandModelRequestV1;
 
 #[cfg(all(test, unix))]
 #[path = "sensitive_request_tests.rs"]
@@ -207,10 +208,33 @@ fn bound_canonical(
         parse_shell_command(raw_text, cwd, home, dialect, transport, provenance, true);
     native_evaluation.redirects.clear();
     native_evaluation.embedded_commands.clear();
-    if native_evaluation.security_identity() != identity {
-        return Err("native_sensitive_request_canonical_unbound");
+    if native_evaluation.security_identity() == identity
+        || native_model_identity(raw_text, dialect, transport, provenance).as_deref()
+            == Some(identity)
+    {
+        return Ok(Some(command));
     }
-    Ok(Some(command))
+    Err("native_sensitive_request_canonical_unbound")
+}
+
+/// The identity the native command model gives `raw_text`. Native evaluation
+/// stores this model, which keeps no segments for input it cannot prove (an
+/// unsupported redirect, for one), so its identity differs from the full parse.
+fn native_model_identity(
+    raw_text: &str,
+    dialect: &str,
+    transport: &str,
+    provenance: &str,
+) -> Option<String> {
+    let request = CommandModelRequestV1 {
+        command: raw_text.to_owned(),
+        dialect: dialect.to_owned(),
+        transport: transport.to_owned(),
+        extraction_provenance: provenance.to_owned(),
+    };
+    crate::parse_command(&request)
+        .ok()
+        .map(|model| model.security_identity)
 }
 
 fn text_list(value: &Value) -> Result<Vec<String>, &'static str> {

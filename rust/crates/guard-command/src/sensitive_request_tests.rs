@@ -219,3 +219,31 @@ fn canonical_claim_parse_settings_must_be_known() {
         Err("native_sensitive_request_input_invalid")
     );
 }
+
+#[test]
+fn uncertain_native_model_claim_binds_to_the_full_parse() {
+    let text = "stripe products delete prod_123 2> --help";
+    let request = crate::CommandModelRequestV1 {
+        command: text.to_owned(),
+        dialect: "posix".to_owned(),
+        transport: "shell_string".to_owned(),
+        extraction_provenance: "guard-shell".to_owned(),
+    };
+    let model = crate::parse_command(&request).expect("model");
+    let input = json!({
+        "tool_name": "Shell",
+        "arguments": {"command": text},
+        "cwd": "/work",
+        "home_dir": "/home/user",
+        "canonical": {"raw_text": text, "security_identity": model.security_identity},
+    });
+    let found = ask("tool_action", &input).expect("bound");
+    if let Some(command) = found["match"].get("canonical_command") {
+        assert!(
+            command["redirects"]
+                .as_array()
+                .is_some_and(|items| !items.is_empty()),
+            "classified without the redirect: {found}"
+        );
+    }
+}
