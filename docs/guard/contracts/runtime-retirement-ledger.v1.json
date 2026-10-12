@@ -5524,7 +5524,7 @@
    "path": "src/codex_plugin_scanner/guard/runtime/restricted_pytest_sandbox.py",
    "base_commit": "d75f7f7c590536b3116bd03643033e19ca4117f9",
    "source_sha256": "b7fa65965fee0f3cb4e4bd10f64a2f9a42fc5fdd7065d6478c07b0364599faa6",
-   "remaining_role": "Bounded native DTO projection and process/control presentation; argv admission, runtime plan preparation and sandbox policy construction are native. Linux namespace and mount enforcement remain in Python.",
+   "remaining_role": "Native sandbox-policy projection plus environment and process orchestration; policy construction and process-budget measurement are native. Linux namespace and mount enforcement remain in Python.",
    "native_replacements": [
     "rust/crates/guard-command/src/restricted_pytest/authority.rs",
     "rust/crates/guard-command/src/restricted_pytest/validation.rs",
@@ -5611,7 +5611,7 @@
    "path": "src/codex_plugin_scanner/guard/runtime/restricted_node_test.py",
    "base_commit": "1b76783140a37e849645f943984f587acaa52cfa",
    "source_sha256": "1188bd505740a12b2507284217f00481bdad5d87df6badae296aa7646f6da3b3",
-   "remaining_role": "Bounded native DTO projection and process/control presentation; argv admission, runtime plan preparation and sandbox policy construction are native. Linux namespace and mount enforcement remain in Python.",
+   "remaining_role": "Native launch-plan projection and Node process orchestration; argv and executable admission are native.",
    "native_replacements": [
     "rust/crates/guard-command/src/contained_argv.rs",
     "rust/crates/guard-command/src/restricted_pytest/contained.rs",
@@ -5623,7 +5623,7 @@
    "path": "src/codex_plugin_scanner/guard/runtime/restricted_vitest.py",
    "base_commit": "1b76783140a37e849645f943984f587acaa52cfa",
    "source_sha256": "9d1684406dc67261a3813b6194fd69fd060fee76e3d8cf6318ffed246a7dafc0",
-   "remaining_role": "Bounded native DTO projection and process/control presentation; argv admission, runtime plan preparation and sandbox policy construction are native. Linux namespace and mount enforcement remain in Python.",
+   "remaining_role": "Native launch-plan projection and Vitest process orchestration; dependency admission and Bun/Node invocation construction are native.",
    "native_replacements": [
     "rust/crates/guard-command/src/contained_argv.rs",
     "rust/crates/guard-command/src/restricted_pytest/contained.rs",
@@ -5635,7 +5635,7 @@
    "path": "src/codex_plugin_scanner/guard/runtime/restricted_inline_eval.py",
    "base_commit": "1b76783140a37e849645f943984f587acaa52cfa",
    "source_sha256": "9eea9ae400dc6631696401f84d02bf6ae4009218a250500288e02d0652e81ad9",
-   "remaining_role": "Bounded native DTO projection and process/control presentation; argv admission, runtime plan preparation and sandbox policy construction are native. Linux namespace and mount enforcement remain in Python.",
+   "remaining_role": "Native launch-plan projection and inline process orchestration; command admission and Python isolation flags are native.",
    "native_replacements": [
     "rust/crates/guard-command/src/contained_argv.rs",
     "rust/crates/guard-command/src/restricted_pytest/contained.rs",
@@ -5647,7 +5647,7 @@
    "path": "src/codex_plugin_scanner/guard/runtime/restricted_credential_patterns.py",
    "base_commit": "1b76783140a37e849645f943984f587acaa52cfa",
    "source_sha256": "ee4457fac77d70e091e7786c9436d942749a6a6ef8004460b8d23c84150d9908",
-   "remaining_role": "Bounded native DTO projection and process/control presentation; argv admission, runtime plan preparation and sandbox policy construction are native. Linux namespace and mount enforcement remain in Python.",
+   "remaining_role": "Native transport projection of credential patterns and Seatbelt denials only; pattern construction and string escaping are native.",
    "native_replacements": [
     "rust/crates/guard-command/src/restricted_pytest/credentials.rs",
     "rust/crates/guard-runtime/src/restricted_pytest_op.rs"
@@ -5658,7 +5658,7 @@
    "path": "src/codex_plugin_scanner/guard/runtime/restricted_linux_mapping_plan.py",
    "base_commit": "1b76783140a37e849645f943984f587acaa52cfa",
    "source_sha256": "0b7d2c667b1da815b33870865be842e46702a96a9bd8271dcafa1e98329a4e4a",
-   "remaining_role": "Bounded native DTO projection and process/control presentation; argv admission, runtime plan preparation and sandbox policy construction are native. Linux namespace and mount enforcement remain in Python.",
+   "remaining_role": "Bounded owner-only mapping input/result snapshot handoff and path-based ELF projection; ELF parsing and dependency-closure evidence are native.",
    "native_replacements": [
     "rust/crates/guard-command/src/restricted_pytest/mapping.rs",
     "rust/crates/guard-command/src/restricted_pytest/mapping_elf.rs",
@@ -5670,7 +5670,7 @@
    "path": "src/codex_plugin_scanner/guard/runtime/contained_test_hook.py",
    "base_commit": "1b76783140a37e849645f943984f587acaa52cfa",
    "source_sha256": "fe10f99e29110692288aa3c162ca745d1def40f843eced5036376cb565b3d6be",
-   "remaining_role": "Bounded native DTO projection and process/control presentation; argv admission, runtime plan preparation and sandbox policy construction are native. Linux namespace and mount enforcement remain in Python.",
+   "remaining_role": "Authorization receipt checks, wrapper peeling and runner dispatch; contained-command classification is native.",
    "native_replacements": [
     "rust/crates/guard-command/src/contained_argv.rs",
     "rust/crates/guard-runtime/src/restricted_pytest_op.rs"

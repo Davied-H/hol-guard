@@ -12,13 +12,13 @@ _MAX_FILE_BYTES = 256 * 1024 * 1024
 _MAX_MAPPING_BYTES = 1024 * 1024 * 1024
 
 
-def _elf(stream, metadata, *, library: bool, system_library: bool = False):
-    """Compatibility projection; native I/O owns actual image metadata."""
+def _elf(path: Path, *, library: bool, system_library: bool = False):
+    """Project native ELF evidence from a path with measured file metadata."""
     try:
         value = restricted_native(
             "mapping_elf",
             {
-                "path": Path(stream.name),
+                "path": path,
                 "library": library,
                 "system_library": system_library,
             },

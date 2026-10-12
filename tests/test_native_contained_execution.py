@@ -84,12 +84,51 @@ def test_mapping_codec_preserves_full_index_without_python_inspection(monkeypatc
         assert len(raw) == snapshot["decoded_bytes"]
         assert hashlib.sha256(raw).hexdigest() == snapshot["sha256"]
         assert json.loads(raw)["read_files"] == list(map(str, paths))
-        return {"value": []}
+        result = b"[]"
+        path.with_name("mapping-result.json").write_bytes(result)
+        return {"value": {"decoded_bytes": len(result), "sha256": hashlib.sha256(result).hexdigest()}}
 
     monkeypatch.setattr(transport, "_call", call)
     paths = [tmp_path / f"module-{i}.so" for i in range(100000)]
     assert transport.restricted_native("mapping_evidence", {"read_files": paths}, list) == []
     assert not Path(observed[0]["body"]["input"]["mapping_snapshot"]).exists()
+
+
+def test_large_mapping_response_reaches_namespace_preparation_caller(monkeypatch, tmp_path):
+    from codex_plugin_scanner.guard.runtime.restricted_linux_mapping_plan import collect_mapping_evidence
+
+    records = [
+        {"path": "/workspace/" + "module-" * 430 + str(i), "identity": [1, i, 1, 1, 0o100500], "sha256": "0" * 64}
+        for i in range(1024)
+    ]
+    raw = json.dumps(records, separators=(",", ":")).encode()
+    assert len(raw) > 2 * 1024 * 1024
+    outputs = []
+
+    def call(action, **kwargs):
+        assert len(json.dumps(action).encode()) < 2 * 1024 * 1024
+        output = Path(action["body"]["input"]["mapping_snapshot"]).with_name("mapping-result.json")
+        output.write_bytes(raw)
+        outputs.append(output)
+        return {"value": {"decoded_bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest()}}
+
+    monkeypatch.setattr(transport, "_call", call)
+    assert collect_mapping_evidence(images=set(), read_files=set(), runtime_roots=(), workspace=tmp_path) == records
+    assert not outputs[0].exists()
+
+
+@pytest.mark.parametrize("corruption", ["digest", "length", "budget"])
+def test_mapping_result_transport_corruption_fails_closed(monkeypatch, corruption):
+    def call(action, **kwargs):
+        output = Path(action["body"]["input"]["mapping_snapshot"]).with_name("mapping-result.json")
+        output.write_bytes(b"[]")
+        length = 3 if corruption == "length" else (32 * 1024 * 1024 + 1 if corruption == "budget" else 2)
+        digest = "0" * 64 if corruption == "digest" else hashlib.sha256(b"[]").hexdigest()
+        return {"value": {"decoded_bytes": length, "sha256": digest}}
+
+    monkeypatch.setattr(transport, "_call", call)
+    with pytest.raises(RestrictedPytestError, match="Mapping snapshot transport"):
+        transport.restricted_native("mapping_evidence", {}, list)
 
 
 def test_node_omitted_cwd_stays_at_supplied_workspace(monkeypatch, tmp_path):

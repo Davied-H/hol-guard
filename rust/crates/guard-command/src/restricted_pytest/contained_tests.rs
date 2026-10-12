@@ -141,6 +141,16 @@ fn mapping_snapshot_is_descriptor_bound_and_can_exceed_an_ipc_frame() {
     fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
     let mut input = json!({"mapping_snapshot":path,"decoded_bytes":raw.len(),"sha256":format!("{:x}",Sha256::digest(&raw))});
     assert_eq!(super::mapping_snapshot::read(&input).unwrap(), payload);
+    let records = json!((0..1024).map(|i|json!({"path":format!("/workspace/{}-{i}","module-".repeat(430)),
+        "identity":[1,i,1,1,0o100500],"sha256":"0".repeat(64)})).collect::<Vec<_>>());
+    let result = super::mapping_snapshot::write(&input, &records).unwrap();
+    assert!(result["decoded_bytes"].as_u64().unwrap() > 2 * 1024 * 1024);
+    assert!(serde_json::to_vec(&result).unwrap().len() < 1024);
+    let output = fixture.0.join("mapping-result.json");
+    assert_eq!(fs::metadata(&output).unwrap().mode() & 0o077, 0);
+    let bytes = fs::read(&output).unwrap();
+    assert_eq!(format!("{:x}", Sha256::digest(&bytes)), result["sha256"].as_str().unwrap());
+    assert_eq!(serde_json::from_slice::<Value>(&bytes).unwrap(), records);
     input["sha256"] = json!("0".repeat(64));
     assert!(super::mapping_snapshot::read(&input).is_err());
     input["sha256"] = json!(format!("{:x}", Sha256::digest(&raw)));

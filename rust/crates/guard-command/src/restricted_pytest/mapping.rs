@@ -244,6 +244,13 @@ pub(super) fn evaluate(operation: &str, input: &Value, deadline: Instant) -> Opt
                 mapping_elf::inspect(&mut file, &metadata, input.library, input.system_library)
                     .map(|v| json!(v))
             }
+        })
+        .and_then(|value| {
+            if operation == "mapping_evidence" && input.get("mapping_snapshot").is_some() {
+                super::mapping_snapshot::write(input, &value)
+            } else {
+                Ok(value)
+            }
         });
     Some(match result {
         Ok(value) => json!({"value":value}),

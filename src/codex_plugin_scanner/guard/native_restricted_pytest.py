@@ -74,16 +74,33 @@ def restricted_native(operation: str, fields: Mapping[str, Any], expected: type 
                 descriptor = os.open(snapshot, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
                 with os.fdopen(descriptor, "wb") as stream:
                     stream.write(raw)
-                return _request(
+                envelope = _request(
                     operation,
                     {
                         "mapping_snapshot": str(snapshot),
                         "decoded_bytes": len(raw),
                         "sha256": hashlib.sha256(raw).hexdigest(),
                     },
-                    expected,
+                    dict,
                 )
-        except OSError as error:
+                if (
+                    set(envelope) != {"decoded_bytes", "sha256"}
+                    or type(envelope["decoded_bytes"]) is not int
+                    or not 0 <= envelope["decoded_bytes"] <= 32 * 1024 * 1024
+                ):
+                    raise ValueError("Invalid mapping result envelope.")
+                descriptor = os.open(
+                    snapshot.with_name("mapping-result.json"), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+                )
+                with os.fdopen(descriptor, "rb") as stream:
+                    raw = stream.read(envelope["decoded_bytes"] + 1)
+                if len(raw) != envelope["decoded_bytes"] or hashlib.sha256(raw).hexdigest() != envelope["sha256"]:
+                    raise ValueError("Invalid mapping result envelope.")
+                value = json.loads(raw)
+                if type(value) not in (expected if isinstance(expected, tuple) else (expected,)):
+                    raise ValueError("Invalid mapping result reply.")
+                return value
+        except (OSError, ValueError, TypeError) as error:
             raise RestrictedPytestError(
                 PYTEST_SANDBOX_UNAVAILABLE_REASON_CODE, "Mapping snapshot transport is unavailable."
             ) from error
@@ -137,8 +154,6 @@ def native_launch_plan(
     profile: str | tuple[str, ...],
 ):
     """Decode a profile-bound native plan without recalculating admission."""
-    from .runtime.restricted_pytest_model import RestrictedPytestPlan
-
     result = restricted_native(
         operation,
         {
@@ -150,9 +165,15 @@ def native_launch_plan(
         },
         dict,
     )
+    return decode_native_plan(result, (profile,) if isinstance(profile, str) else profile)
+
+
+def decode_native_plan(result: dict[str, Any], profiles: tuple[str, ...]):
+    """Decode one profile-bound native DTO for every contained runner."""
+    from .runtime.restricted_pytest_model import RestrictedPytestPlan
+
     scalars = {"profile_version", "backend", "backend_executable", "workspace", "cwd", "executable"}
     arrays = {"command", "allowed_executables", "denied_capabilities"}
-    profiles = (profile,) if isinstance(profile, str) else profile
     if (
         set(result) != scalars | arrays
         or any(not isinstance(result[key], str) for key in scalars)
