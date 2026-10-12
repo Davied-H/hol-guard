@@ -221,15 +221,9 @@ def install_facts(facts: dict[str, object]) -> list[tuple[object, str, object]]:
     """
 
     # Resolved at run time: these modules exist only at the recorded base commit.
-    package_shim_frozen, shell_profile_cleanup, shims, durable_harness_launcher, package_shim_status = (
+    package_shim_frozen, shell_profile_cleanup, shims = (
         importlib.import_module(f"codex_plugin_scanner.guard.{name}")
-        for name in (
-            "package_shim_frozen",
-            "shell_profile_cleanup",
-            "shims",
-            "durable_harness_launcher",
-            "package_shim_status",
-        )
+        for name in ("package_shim_frozen", "shell_profile_cleanup", "shims")
     )
 
     argv0 = facts["argv0"]
@@ -258,7 +252,6 @@ def install_facts(facts: dict[str, object]) -> list[tuple[object, str, object]]:
 
     patch(shims, "sys", sys_proxy)
     patch(package_shim_frozen, "sys", sys_proxy)
-    patch(durable_harness_launcher, "sys", sys_proxy)
     patch(shims, "os", os_proxy)
     patch(package_shim_frozen, "os", os_proxy)
     patch(shell_profile_cleanup, "os", os_proxy)
@@ -267,7 +260,6 @@ def install_facts(facts: dict[str, object]) -> list[tuple[object, str, object]]:
     patch(shims, "_trusted_import_root", lambda: import_root)
     patch(shims, "SQLITE_CONNECT_TIMEOUT_SECONDS", float(facts["sqlite_connect_timeout_seconds"]))  # type: ignore[arg-type]
     patch(shims, "datetime", _FixedDatetime)
-    patch(package_shim_status, "datetime", _FixedDatetime)
     return patches
 
 

@@ -60,44 +60,6 @@ pub struct ShimAdminFactsV2 {
     pub shim_dir_transient: Option<bool>,
 }
 
-/// The `HarnessContext` and process values a harness launcher shim bakes in.
-///
-/// Paths are the exact `str(Path)` spellings the launcher must contain, which
-/// can differ from the resolved `guard_home` the request is keyed by.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields)]
-pub struct ShimAdminGuardShimV2 {
-    /// The harness name (`render_guard_shim` only).
-    #[serde(default)]
-    pub harness: Option<String>,
-    /// `launcher_name`; empty or absent means the harness name.
-    #[serde(default)]
-    pub launcher_name: Option<String>,
-    /// `display_name`; empty or absent means the harness name.
-    #[serde(default)]
-    pub display_name: Option<String>,
-    /// `str(context.guard_home)`.
-    pub guard_home: String,
-    /// `str(context.home_dir)`.
-    #[serde(default)]
-    pub home_dir: Option<String>,
-    /// `str(context.workspace_dir)`.
-    #[serde(default)]
-    pub workspace_dir: Option<String>,
-    /// `context.home_override_explicit`.
-    #[serde(default)]
-    pub home_override_explicit: bool,
-    /// `merge_guard_launcher_env()`, in insertion order.
-    #[serde(default)]
-    pub launcher_env: Vec<(String, String)>,
-    /// `sys.platform`.
-    #[serde(default)]
-    pub platform: String,
-    /// `guard_profile_plan`: the current profile text; absent when the file is.
-    #[serde(default)]
-    pub existing_profile: Option<String>,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ShimAdminRequestV2 {
@@ -108,8 +70,7 @@ pub struct ShimAdminRequestV2 {
     /// `status` | `dashboard_status` | `cloud_coverage` | `path_order` |
     /// `install` | `activate` | `repair` | `uninstall` | `probe_intercepts` |
     /// `supported_managers` | `ensure_package_shim_profile` |
-    /// `remove_guard_profile_blocks` | `record_audit` | `render_guard_shim` |
-    /// `guard_profile_plan`.
+    /// `remove_guard_profile_blocks` | `record_audit`.
     pub subop: String,
     pub guard_home: String,
     /// `HarnessContext.home_dir`.
@@ -142,9 +103,6 @@ pub struct ShimAdminRequestV2 {
     /// `cloud_coverage`: the `generated_at` override.
     #[serde(default)]
     pub generated_at: Option<String>,
-    /// `render_guard_shim` / `guard_profile_plan`: the harness launcher inputs.
-    #[serde(default)]
-    pub guard_shim: Option<ShimAdminGuardShimV2>,
     pub facts: ShimAdminFactsV2,
 }
 

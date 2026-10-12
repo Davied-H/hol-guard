@@ -15,7 +15,6 @@ mod admin;
 mod audit;
 mod frozen;
 mod generate;
-mod harness;
 mod manifest;
 mod path_order;
 mod probe;
@@ -33,7 +32,6 @@ pub use admin::{
     activate_package_shims, install_package_shims, repair_package_shims, uninstall_package_shims,
 };
 pub use audit::record_package_shim_audit_result;
-pub use harness::{guard_profile_plan, render_guard_shim, GuardShimInputs};
 pub use path_order::get_path_order_status;
 pub use probe::{probe_package_shim_intercepts, ProbeOptions};
 pub use profile::{

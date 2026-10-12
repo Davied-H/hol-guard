@@ -91,16 +91,12 @@ def scenario(
     home_dir: str | None = "{root}/home",
     workspace_dir: str | None = None,
     durable: bool = False,
-    home_override_explicit: bool = False,
 ) -> Scenario:
-    context: dict[str, object] = {"guard_home": guard_home, "home_dir": home_dir, "workspace_dir": workspace_dir}
-    if home_override_explicit:
-        context["home_override_explicit"] = True
     return {
         "name": name,
         "durable_root": durable,
         "facts": facts if facts is not None else base_facts(),
-        "context": context,
+        "context": {"guard_home": guard_home, "home_dir": home_dir, "workspace_dir": workspace_dir},
         "steps": [*setup_steps(), *copy.deepcopy(steps)],
     }
 

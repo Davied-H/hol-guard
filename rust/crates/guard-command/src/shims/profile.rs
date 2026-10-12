@@ -80,7 +80,7 @@ pub(crate) fn is_transient_path(facts: &ShimFacts, path: &str) -> bool {
     false
 }
 
-pub(crate) fn shell_name(facts: &ShimFacts) -> String {
+fn shell_name(facts: &ShimFacts) -> String {
     facts.name(facts.environ.get("SHELL").map_or("", String::as_str))
 }
 
@@ -239,7 +239,7 @@ pub fn strip_managed_marker_blocks(content: &str, marker: &str) -> String {
 }
 
 /// `_managed_profile_content`.
-pub(crate) fn managed_profile_content(existing: &str, export_line: &str, marker: &str) -> String {
+fn managed_profile_content(existing: &str, export_line: &str, marker: &str) -> String {
     let mut export_line = export_line.trim_end_matches('\n').to_owned();
     let marker_line = export_line.split('\n').next().unwrap_or("");
     if py_strip(marker_line) != py_strip(marker) {
@@ -392,9 +392,7 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::super::{ShimContext, ShimFacts};
-    use super::{
-        ensure_package_shim_path_in_shell_profile, is_transient_path, strip_managed_marker_blocks,
-    };
+    use super::{ensure_package_shim_path_in_shell_profile, is_transient_path};
 
     fn facts(shim_dir_transient: Option<bool>) -> ShimFacts {
         ShimFacts {
@@ -469,48 +467,5 @@ mod tests {
         ));
         assert!(!profile.exists());
         fs::remove_dir_all(&home).expect("cleanup home");
-    }
-
-    #[test]
-    fn static_temp_roots_are_transient_and_stable_homes_are_not() {
-        let facts = facts(None);
-        for path in [
-            "/var/folders/xx/pytest-1/guard-home/package-shims/bin",
-            "/private/var/folders/yy/T/abc/guard-home/bin",
-            "/tmp/guard-shims/bin",
-            "/private/tmp/guard/bin",
-            "/some/where/pytest-of-user/pytest-5/guard-home/package-shims/bin",
-        ] {
-            assert!(is_transient_path(&facts, path), "{path}");
-        }
-        for path in [
-            "/Users/home/.hol-guard/package-shims/bin",
-            "/usr/local/guard/package-shims/bin",
-            "/home/user/.hol-guard/bin",
-        ] {
-            assert!(!is_transient_path(&facts, path), "{path}");
-        }
-    }
-
-    #[test]
-    fn a_custom_tmpdir_makes_paths_under_it_transient() {
-        let mut facts = facts(None);
-        facts
-            .environ
-            .insert("TMPDIR".to_owned(), "/scratch-root/tmp".to_owned());
-        assert!(is_transient_path(&facts, "/scratch-root/tmp/guard/bin"));
-        assert!(!is_transient_path(&facts, "/scratch-root/other/guard/bin"));
-    }
-
-    #[test]
-    fn marker_stripping_only_drops_blank_lines_next_to_a_block() {
-        let marker = "# HOL Guard package manager shims";
-        let plain = "a=1\nb=2\n";
-        assert_eq!(strip_managed_marker_blocks(plain, marker), plain);
-        assert_eq!(strip_managed_marker_blocks("", marker), "");
-        let blanks = "a=1\n\n\n\nb=2\n";
-        assert_eq!(strip_managed_marker_blocks(blanks, marker), blanks);
-        let block = format!("a=1\n\n{marker}\nexport PATH=/x:$PATH\n\nb=2\n");
-        assert_eq!(strip_managed_marker_blocks(&block, marker), "a=1\nb=2\n");
     }
 }

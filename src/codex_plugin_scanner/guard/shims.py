@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,13 +12,14 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .runtime_transition import TransitionFile
 
+from .durable_harness_launcher import build_harness_shim, build_windows_script
+from .launcher import merge_guard_launcher_env
 from .native_shim_admin import (
     SUPPORTED_PACKAGE_SHIM_MANAGERS,
     HarnessContextLike,
     activate_package_shims,
     ensure_package_shim_path_in_shell_profile,
     get_path_order_status,
-    guard_profile_plan,
     install_package_shims,
     package_shim_cloud_coverage,
     package_shim_dashboard_status,
@@ -25,12 +27,12 @@ from .native_shim_admin import (
     package_shim_supported_managers,
     probe_package_shim_intercepts,
     remove_guard_profile_blocks,
-    render_guard_shim,
     repair_package_shims,
     uninstall_package_shims,
 )
 from .package_shim_frozen import (
     FROZEN_PACKAGE_SHIM_SENTINEL,
+    package_shim_interpreter,
     resolve_frozen_package_shim_path,
     run_frozen_package_shim,
 )
@@ -39,6 +41,46 @@ HarnessContext = HarnessContextLike
 
 _PACKAGE_SHIM_COMMANDS = {manager: manager for manager in SUPPORTED_PACKAGE_SHIM_MANAGERS}
 _GUARD_PROFILE_MARKER = "# HOL Guard harness launchers"
+# Path fragments that indicate a shim dir lives in an ephemeral location (a test
+# temp dir, the system temp root, etc.). Such paths must never be written into a
+# long-lived shell profile: they vanish and leave broken PATH entries behind.
+# Kept POSIX-only because the profile writers short-circuit on Windows
+# (os.name == "nt") before the transient check can run.
+_TRANSIENT_PATH_FRAGMENTS = (
+    "/var/folders/",
+    "/private/var/folders/",
+    "/tmp/",
+    "/private/tmp/",
+    "/temp/",
+    "pytest-of-",
+)
+_TRUSTED_CLI_LAUNCHER = (
+    "import importlib.util, os, sys; "
+    "trusted_root = os.path.realpath(sys.argv.pop(1)); "
+    "module_name = sys.argv.pop(1); "
+    "package_name = module_name.split('.', 1)[0]; "
+    "package_root = os.path.join(trusted_root, package_name); "
+    "module_path = os.path.join(package_root, *module_name.split('.')[1:]) + '.py'; "
+    "cwd = os.path.realpath(os.getcwd()); "
+    "normalize = lambda entry: cwd if entry in ('', '.', os.curdir) else os.path.realpath(entry); "
+    "blocked_entries = {cwd, trusted_root}; "
+    "sys.path = [trusted_root, *[entry for entry in sys.path if normalize(entry) not in blocked_entries]]; "
+    "package_spec = importlib.util.spec_from_file_location("
+    "package_name, "
+    "os.path.join(package_root, '__init__.py'), "
+    "submodule_search_locations=[package_root],"
+    "); "
+    "package_module = importlib.util.module_from_spec(package_spec); "
+    "sys.modules[package_name] = package_module; "
+    "package_spec.loader.exec_module(package_module); "
+    "module_spec = importlib.util.spec_from_file_location(module_name, module_path); "
+    "module = importlib.util.module_from_spec(module_spec); "
+    "module.__package__ = package_name; "
+    "sys.modules[module_name] = module; "
+    "module_spec.loader.exec_module(module); "
+    "sys.argv[0] = module_path; "
+    "raise SystemExit(module.main(sys.argv[1:]))"
+)
 
 
 @dataclass(frozen=True)
@@ -58,14 +100,19 @@ def prepare_guard_shim(
     from .codex_hook_recovery import _snapshot
     from .runtime_transition import TransitionFile
 
-    rendered = render_guard_shim(harness, context, launcher_name=launcher_name, display_name=display_name)
-    manifest = rendered["manifest"]
-    posix_path = Path(str(manifest["shim_path"]))
-    windows_path = Path(str(manifest["windows_shim_path"]))
+    shim_dir = context.guard_home / "bin"
+    shim_name = launcher_name or harness
+    harness_label = display_name or harness
+    posix_path = shim_dir / f"guard-{shim_name}"
+    windows_path = shim_dir / f"guard-{shim_name}.cmd"
+    workspace_args = []
+    if context.workspace_dir is not None:
+        workspace_args = ["--workspace", str(context.workspace_dir)]
+    posix_source = _build_python_shim(harness, context, workspace_args)
     files = []
     for path, text, executable in (
-        (posix_path, rendered["posix_source"], True),
-        (windows_path, rendered["windows_source"], False),
+        (posix_path, posix_source, True),
+        (windows_path, _build_windows_script(posix_path, source=posix_source), False),
     ):
         before = _snapshot(path)
         before_mode = path.stat().st_mode & 0o777 if before is not None else 0o644
@@ -78,6 +125,16 @@ def prepare_guard_shim(
         )
         change.payload()  # Reject unsafe modes/targets before any publication.
         files.append(change)
+    manifest: dict[str, object] = {
+        "shim_path": str(posix_path),
+        "shim_dir": str(shim_dir),
+        "shim_command": posix_path.name,
+        "windows_shim_path": str(windows_path),
+        "notes": [
+            f"Launch {harness_label} through {posix_path.name} so Guard checks changes before the harness starts.",
+            f"Add {shim_dir} to PATH to use the wrapper command from any shell.",
+        ],
+    }
     return PreparedGuardShim(tuple(files), manifest)
 
 
@@ -155,21 +212,58 @@ def _remove_guard_shim_owned(
     }
 
 
+def _build_python_shim(harness: str, context: HarnessContextLike, workspace_args: list[str]) -> str:
+    return build_harness_shim(
+        sys.executable,
+        harness,
+        context,
+        workspace_args,
+        trusted_python_flags=_trusted_python_flags(),
+        trusted_launcher=_TRUSTED_CLI_LAUNCHER,
+        trusted_import_root=_trusted_import_root(),
+        launcher_env=merge_guard_launcher_env(),
+        home_override_args=_home_override_args(context),
+        is_transient_path=_is_transient_path,
+    )
+
+
+def _build_windows_script(posix_path: Path, *, source: str | None = None) -> str:
+    return build_windows_script(package_shim_interpreter(), posix_path, source=source)
+
+
+def _home_override_args(context: HarnessContextLike) -> list[str]:
+    if not context.home_dir:
+        return []
+    if not bool(getattr(context, "home_override_explicit", False)) and (
+        context.home_dir.resolve() == Path.home().resolve()
+    ):
+        return []
+    return ["--home", str(context.home_dir)]
+
+
 def prepare_guard_shim_shell_profile(context: HarnessContext) -> PreparedGuardShim:
     """Capture the selected shell profile and render its PATH block without writes."""
     from .adapters.base import _ensure_path_within_root
     from .codex_hook_recovery import _snapshot
     from .runtime_transition import TransitionFile
 
-    plan = guard_profile_plan(context)
-    if plan["skip"]:
-        return PreparedGuardShim((), dict(plan["manifest"]))
-    shim_dir = Path(str(plan["shim_dir"]))
-    profile_path = Path(str(plan["profile_path"]))
+    shim_dir = context.guard_home / "bin"
+    if os.name == "nt" or _is_transient_path(shim_dir):
+        return PreparedGuardShim(
+            (),
+            {
+                "changed": False,
+                "profile_path": None,
+                "shim_dir": str(shim_dir),
+                "restart_shell_required": False,
+                "manual_path_required": True,
+            },
+        )
+    profile_path, export_line = _guard_shim_profile_target(context.home_dir, shim_dir)
     _ensure_path_within_root(context.home_dir, profile_path, label="Guard shell profile")
     before = _snapshot(profile_path)
     existing = before.decode("utf-8") if before is not None else ""
-    after = str(guard_profile_plan(context, existing_profile=existing)["content"]).encode("utf-8")
+    after = _managed_profile_content(existing, export_line, _GUARD_PROFILE_MARKER).encode("utf-8")
     mode = profile_path.stat().st_mode & 0o777 if before is not None else 0o600
     change = TransitionFile(
         profile_path.resolve(strict=False), before, after, before_mode=mode, after_mode=mode, no_follow=True
@@ -206,15 +300,120 @@ def ensure_guard_shim_path_in_shell_profile(context: HarnessContext) -> dict[str
         return prepared.manifest
 
 
-def _is_transient_path(path: Path) -> bool | None:
-    """Test seam: one verdict for every path, or ``None`` to let the resident decide.
+def _managed_profile_content(existing: str, export_line: str, marker: str) -> str:
+    """Render the same idempotent block for normal and transition publication."""
+    export_line = export_line.rstrip("\n")
+    marker_line = export_line.split("\n", 1)[0]
+    if marker_line.strip() != marker.strip():
+        # Defensive: caller always passes a block whose first line is the marker.
+        export_line = f"{marker}\n{export_line}"
+    desired = f"{export_line}\n"
+    if existing == desired:
+        return existing
+    cleaned = _strip_managed_marker_blocks(existing, marker)
+    if cleaned == "":
+        new_content = desired
+    else:
+        prefix = "" if cleaned.endswith("\n") else "\n"
+        new_content = f"{cleaned}{prefix}{desired}"
+    return new_content
 
-    The resident applies the real ephemeral-location check (static temp roots and
-    the process ``TMPDIR``/``TEMP``/``TMP``); a test patches this to force a verdict.
+
+def _strip_managed_marker_blocks(content: str, marker: str) -> str:
+    """Remove every Guard-managed block tagged with *marker* from *content*.
+
+    A block is the marker line plus the single line that follows it. To avoid
+    leaving a gap where a block sat, a single blank line immediately preceding
+    or following a removed block is also dropped. Blank-line runs elsewhere in
+    the file (user content) are left untouched.
     """
 
-    del path
-    return None
+    if not content:
+        return ""
+    marker_stripped = marker.strip()
+    lines = content.splitlines()
+    # First pass: locate index ranges [i, i+1] of each marker block.
+    drop_indices: set[int] = set()
+    for index, line in enumerate(lines):
+        if line.strip() == marker_stripped and index + 1 < len(lines):
+            drop_indices.add(index)
+            drop_indices.add(index + 1)
+    if not drop_indices:
+        return content if content.endswith("\n") else content + "\n"
+    # Second pass: keep lines, swallowing one blank line adjacent to a dropped
+    # block so the removal does not leave a stale blank gap.
+    keep: list[str] = []
+    for index, line in enumerate(lines):
+        if index in drop_indices:
+            continue
+        is_blank = line.strip() == ""
+        if is_blank:
+            prev_kept_blank_gap = keep and keep[-1].strip() == ""
+            # Drop this blank only if both neighbors were removed (i.e. the blank
+            # was sandwiched between two removed block lines or sits at the edge
+            # of a removal zone).
+            prev_dropped = (index - 1) in drop_indices
+            next_dropped = (index + 1) in drop_indices
+            edge_of_removal = prev_dropped or next_dropped
+            if edge_of_removal and not prev_kept_blank_gap:
+                continue
+        keep.append(line)
+    cleaned = "\n".join(keep)
+    if cleaned and not cleaned.endswith("\n"):
+        cleaned += "\n"
+    return cleaned
+
+
+def _guard_shim_profile_target(home_dir: Path, shim_dir: Path) -> tuple[Path, str]:
+    shell = Path(os.environ.get("SHELL", "")).name
+    marker = _GUARD_PROFILE_MARKER
+    if shell == "fish":
+        return (
+            home_dir / ".config" / "fish" / "config.fish",
+            f"{marker}\n{_fish_path_prepend(shim_dir)}",
+        )
+    if shell == "bash":
+        return (
+            home_dir / ".bashrc",
+            f"{marker}\n{_posix_path_export(shim_dir)}",
+        )
+    return (
+        home_dir / ".zshrc",
+        f"{marker}\n{_posix_path_export(shim_dir)}",
+    )
+
+
+def _posix_path_export(shim_dir: Path) -> str:
+    return f"export PATH={shlex.quote(str(shim_dir))}:$PATH"
+
+
+def _fish_path_prepend(shim_dir: Path) -> str:
+    return f"fish_add_path --prepend -- {shlex.quote(str(shim_dir))}"
+
+
+def _is_transient_path(path: Path) -> bool:
+    """Return True when *path* lives in an ephemeral temp/test location.
+
+    Such paths must not be persisted into a user shell profile because they are
+    cleaned up, leaving broken PATH entries that shadow the real binaries.
+    Besides the known static temp roots, any path under the process's own
+    ``TMPDIR``/``TEMP``/``TMP`` is treated as transient so non-standard temp
+    roots on Linux or CI cannot bypass the guard.
+    """
+
+    text = str(path)
+    if any(fragment in text for fragment in _TRANSIENT_PATH_FRAGMENTS):
+        return True
+    for env_name in ("TMPDIR", "TEMP", "TMP"):
+        env_value = os.environ.get(env_name, "").strip()
+        if env_value:
+            try:
+                if path.resolve().is_relative_to(Path(env_value).expanduser().resolve()):
+                    return True
+            except (OSError, ValueError):
+                if text.startswith(env_value):
+                    return True
+    return False
 
 
 def _trusted_python_flags() -> list[str]:

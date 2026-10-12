@@ -40,7 +40,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-from shim_admin_vector_harness_scenarios import HARNESS_SUBOPS, all_harness_scenarios, run_harness_call
 from shim_admin_vector_profile_scenarios import all_profile_scenarios
 from shim_admin_vector_scenarios import all_install_status_scenarios
 from shim_admin_vector_state_scenarios import all_state_scenarios
@@ -61,7 +60,6 @@ from shim_admin_vector_windows_scenarios import all_windows_scenarios
 FIXTURES = Path(__file__).resolve().parents[2] / "rust/crates/guard-command/tests/fixtures"
 OUT = FIXTURES / "shim_admin_vectors.v1.json.gz"
 OUT_WINDOWS = FIXTURES / "shim_admin_vectors_windows.v1.json.gz"
-OUT_HARNESS = FIXTURES / "shim_admin_vectors_harness.v1.json.gz"
 
 
 def apply_step(root: str, step: dict[str, object]) -> None:
@@ -90,8 +88,6 @@ def apply_step(root: str, step: dict[str, object]) -> None:
 
 
 def run_call(shims: object, context: object, subop: str, args: dict[str, object]) -> object:
-    if subop in HARNESS_SUBOPS:
-        return run_harness_call(shims, context, subop, args)
     managers = tuple(args["managers"]) if args.get("managers") is not None else None  # type: ignore[arg-type]
     path_env = args.get("path_env")
     if subop == "status":
@@ -148,7 +144,6 @@ def record_scenario(scenario: dict[str, object], work_base: str) -> dict[str, ob
             home_dir=Path(str(context_spec["home_dir"])),
             workspace_dir=Path(str(context_spec["workspace_dir"])) if context_spec["workspace_dir"] else None,
             guard_home=Path(str(context_spec["guard_home"])),
-            home_override_explicit=bool(context_spec.get("home_override_explicit", False)),
         )
         patches = install_facts(facts)
         os.environ.clear()
@@ -205,12 +200,9 @@ def main() -> int:
     parser.add_argument("--work-base", default=str(Path.home() / ".cache" / "rtm-shim-vectors-work"))
     parser.add_argument(
         "--platform",
-        choices=("posix", "windows", "harness"),
+        choices=("posix", "windows"),
         default="windows" if os.name == "nt" else "posix",
-        help=(
-            "windows records the nt scenarios and must run on a real Windows host; "
-            "harness records the launcher, profile-plan and audit scenarios on a POSIX host"
-        ),
+        help="windows records the nt scenarios and must run on a real Windows host",
     )
     parser.add_argument("--out", default="")
     parser.add_argument("--only", default="")
@@ -219,7 +211,7 @@ def main() -> int:
     work_base = Path(args.work_base)
     work_base.mkdir(parents=True, exist_ok=True)
     resolved = os.path.realpath(work_base)
-    if args.platform != "windows" and is_transient_root(resolved + "/"):
+    if args.platform == "posix" and is_transient_root(resolved + "/"):
         print(f"work base {resolved} is transient; pass --work-base outside temp dirs", file=sys.stderr)
         return 2
     if (args.platform == "windows") != (os.name == "nt"):
@@ -227,8 +219,6 @@ def main() -> int:
         return 2
     if args.platform == "windows":
         scenarios = all_windows_scenarios()
-    elif args.platform == "harness":
-        scenarios = all_harness_scenarios()
     else:
         # Scenarios that pretend to be Windows are recorded on a real Windows host.
         scenarios = [
@@ -250,7 +240,7 @@ def main() -> int:
         "recorded_at_revision": args.revision or git_revision(),
         "scenarios": recorded,
     }
-    out = Path(args.out or {"windows": OUT_WINDOWS, "harness": OUT_HARNESS}.get(args.platform, OUT))
+    out = Path(args.out or (OUT_WINDOWS if args.platform == "windows" else OUT))
     out.parent.mkdir(parents=True, exist_ok=True)
     payload = json.dumps(document, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
     with gzip.GzipFile(filename="", mode="wb", fileobj=out.open("wb"), mtime=0, compresslevel=9) as handle:
