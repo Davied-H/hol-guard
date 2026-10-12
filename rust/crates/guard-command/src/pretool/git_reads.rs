@@ -57,19 +57,21 @@ pub(super) fn safe_git_arguments(
             || matches!(&arguments[1..], [list, flag] if list == "list" && flag == "--porcelain");
     }
     if subcommand == "merge-base" {
-        // Prints commit names only; it reads no index, diff driver or pathspec.
-        return arguments[1..].iter().all(|argument| {
-            !argument.starts_with('-')
-                || matches!(
-                    argument.as_str(),
-                    "--is-ancestor"
-                        | "--all"
-                        | "-a"
-                        | "--octopus"
-                        | "--independent"
-                        | "--fork-point"
-                )
-        });
+        // Prints commit names only. It still honors pager.merge-base, so the
+        // configuration probe has to clear the helper context first.
+        return allow_helper_context
+            && arguments[1..].iter().all(|argument| {
+                !argument.starts_with('-')
+                    || matches!(
+                        argument.as_str(),
+                        "--is-ancestor"
+                            | "--all"
+                            | "-a"
+                            | "--octopus"
+                            | "--independent"
+                            | "--fork-point"
+                    )
+            });
     }
     if subcommand == "config" {
         // Only the configuration probe can prove what the read prints.

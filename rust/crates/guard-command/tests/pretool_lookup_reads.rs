@@ -89,11 +89,15 @@ fn lookups_and_help_proceed() {
             "type git",
             "type -a node",
             "type -t ls python3",
+            "type -p git",
+            "type -P git",
             "command -v git",
             "command -V git",
             "command -v hol-guard 2>/dev/null",
             "command -v -- node",
             "which hol-guard 2>/dev/null; type hol-guard 2>/dev/null; echo DONE",
+            "which hol-guard 2>/dev/null; type -p hol-guard 2>/dev/null; echo DONE",
+            "hol-guard risk-report --help",
             "hol-guard --help",
             "hol-guard -h",
             "hol-guard help",
@@ -122,6 +126,8 @@ fn executing_or_unproven_lookup_forms_still_ask() {
             "type -x git",
             "type",
             "command -v",
+            "hol-guard risk --help",
+            "hol-guard help risk",
             "hol-guard npm --help",
             "hol-guard __guard-claude-hook --help",
             "hol-guard uninstall",
@@ -152,6 +158,31 @@ fn merge_base_and_chained_git_reads_proceed() {
 }
 
 #[test]
+fn merge_base_pager_configuration_still_asks() {
+    let home = home();
+    git(
+        &home.join("project"),
+        &["config", "pager.merge-base", "sh -c id"],
+    );
+    let result = classify(&home, "codex", "git merge-base HEAD main");
+    assert_ne!(result.decision, "allow", "{result:?}");
+}
+
+#[test]
+fn bun_x_no_install_typecheck_routes_to_the_readonly_tool() {
+    let home = home();
+    let result = classify(&home, "codex", "bun x --no-install tsc --noEmit");
+    assert_eq!(result.decision, "deny", "{result:?}");
+    if cfg!(target_os = "macos") {
+        assert_eq!(result.minimum_action, "sandbox-required", "{result:?}");
+        assert_eq!(
+            result.reason_code, "native_node_tool_readonly_containment_required",
+            "{result:?}"
+        );
+    }
+}
+
+#[test]
 fn git_reads_after_unproven_segments_still_ask() {
     let home = home();
     for harness in ["omp", "codex"] {
@@ -172,7 +203,11 @@ fn git_reads_after_unproven_segments_still_ask() {
 fn bun_x_builds_route_to_the_build_boundary() {
     let home = home();
     for harness in HARNESSES {
-        for command in ["bun x vite build", "bun x vite build 2>&1 | tail -12"] {
+        for command in [
+            "bun x vite build",
+            "bun x --no-install vite build",
+            "bun x vite build 2>&1 | tail -12",
+        ] {
             let result = classify(&home, harness, command);
             assert_eq!(result.decision, "deny", "{harness}: {command}");
             if cfg!(target_os = "macos") {

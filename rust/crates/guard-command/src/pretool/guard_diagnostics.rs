@@ -92,7 +92,7 @@ const HELP_SUBCOMMANDS: &[&str] = &[
     "policy",
     "receipts",
     "repair",
-    "risk",
+    "risk-report",
     "run",
     "scan",
     "secrets",
