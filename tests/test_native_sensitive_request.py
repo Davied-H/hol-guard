@@ -208,6 +208,37 @@ def test_native_grep_is_not_read_only_when_classification_is_down(
     assert search.native_post_tool_search_is_read_only(payload=payload, cwd=tmp_path, home_dir=tmp_path) is False
 
 
+def test_command_list_outage_blocks_the_post_tool_artifact(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from codex_plugin_scanner.guard.cli import commands_support_codex_commands as codex
+    from codex_plugin_scanner.guard.cli import commands_support_runtime_artifacts as artifacts
+
+    def down(*_args: object, **_kwargs: object) -> tuple[str, ...]:
+        raise client.NativeSensitiveRequestError("native_sensitive_request_unavailable")
+
+    monkeypatch.setattr(codex, "command_list_candidate_texts", down)
+    result = artifacts._hook_runtime_artifact(
+        harness="codex",
+        payload={
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Bash",
+            "tool_input": {
+                "command": "cat ~/.ssh/id_rsa",
+                "commands": ["cat ~/.ssh/id_rsa"],
+            },
+        },
+        workspace=tmp_path,
+        home_dir=tmp_path,
+        guard_home=tmp_path / "guard",
+        action_envelope=None,
+    )
+    assert result is not None
+    assert result.metadata["guard_default_action"] == "block"
+    assert result.metadata["native_command_evaluation_status"] == "unavailable"
+    assert result.metadata.get("command_text") != "Bash"
+
+
 def test_command_list_outage_is_not_a_read_only_post_tool(monkeypatch: pytest.MonkeyPatch) -> None:
     from codex_plugin_scanner.guard.cli import commands_support_codex_commands as codex
 

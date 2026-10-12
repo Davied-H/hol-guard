@@ -56,7 +56,10 @@ def _codex_post_tool_command_is_read_only_source_inspection(
     cwd: Path | None,
     home_dir: Path | None,
 ) -> bool:
-    command_texts = _codex_post_tool_command_texts(payload)
+    try:
+        command_texts = _codex_post_tool_command_texts(payload)
+    except NativeSensitiveRequestError:
+        return False
     if not command_texts:
         return False
     return codex_tool_output_native(
@@ -76,13 +79,11 @@ def _codex_post_tool_command_texts(payload: dict[str, object]) -> tuple[str, ...
         for key in COMMAND_CANDIDATE_LIST_KEYS:
             candidate = tool_input.get(key)
             if isinstance(candidate, list):
-                try:
-                    texts = command_list_candidate_texts(
+                candidates.extend(
+                    command_list_candidate_texts(
                         candidate, preserve_items=key in COMMAND_SEQUENCE_KEYS
                     )
-                except NativeSensitiveRequestError:
-                    return ()
-                candidates.extend(texts)
+                )
         if not candidates and str(payload.get("tool_name", "")).strip().lower() in {
             "cat_file",
             "open_file",
