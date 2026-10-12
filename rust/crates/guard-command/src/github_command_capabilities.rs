@@ -597,7 +597,7 @@ pub(crate) fn private_repo_create(args: &[String]) -> bool {
         };
         let bounded = match option {
             "--source" | "-s" => matches!(value, "." | "./"),
-            "--description" | "-d" => true,
+            "--description" | "-d" => !value.starts_with('@'),
             _ => repository_component_re().is_match(value),
         };
         if !bounded {
