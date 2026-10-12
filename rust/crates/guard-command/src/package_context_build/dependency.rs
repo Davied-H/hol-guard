@@ -1,7 +1,7 @@
 //! Manifest and lockfile digests (`dependency_material`).
 
+use crate::launch_identity_common::sha256_hex;
 use serde_json::{Map, Value};
-use sha2::{Digest, Sha256};
 
 use crate::codex_output_py::{py_strip, PyPath};
 use crate::hook_adapter_value::OValue;
@@ -107,7 +107,7 @@ pub(super) fn dependency_material(
             };
             match files.read(fs, &resolved, MAX_DEPENDENCY_FILE_BYTES, false) {
                 Ok(payload) => {
-                    let digest = hex::encode(Sha256::digest(&payload));
+                    let digest = sha256_hex(&payload);
                     entries.push(entry(kind, &relative, "digest", &digest));
                 }
                 Err(BuildError::Unavailable(reason)) => {

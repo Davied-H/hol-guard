@@ -5,8 +5,8 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
+use crate::launch_identity_common::sha256_hex;
 use serde_json::{Map, Value};
-use sha2::{Digest, Sha256};
 
 use crate::launch_identity::{build_runtime_launch_identity, runtime_launch_identity_is_reusable};
 use crate::package_context_environment::environment_policy_values;
@@ -42,17 +42,13 @@ pub trait Ports {
 /// Production ports.
 pub struct NativePorts;
 
-fn sha256_hex(text: &str) -> String {
-    hex::encode(Sha256::digest(text.as_bytes()))
-}
-
 impl Ports for NativePorts {
     fn digest_material(&mut self, canonical_text: &str) -> String {
-        sha256_hex(canonical_text)
+        sha256_hex(canonical_text.as_bytes())
     }
 
     fn opaque_digest(&mut self, material: &str) -> String {
-        sha256_hex(material)
+        sha256_hex(material.as_bytes())
     }
 
     fn environment_values(

@@ -10,20 +10,26 @@ the exact request comes back, the build fails closed with ``ValueError``.
 
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Final
+from typing import Final, cast
 from uuid import uuid4
 
 from .native_context import _canonical_request_sha256, _resolve_digest_home, ensure_resident_prerequisite
 from .native_execution import _resident_request
 from .native_resident_client import native_resident_client_failure_code
+from .native_runtime import native_runtime_status
+from .native_runtime_resilience import native_record_resident_failure, native_record_resident_success
 
 PACKAGE_CONTEXT_BUILD_FEATURE: Final = "package-context-build-v1"
 _REQUEST_SCHEMA: Final = "guard-package-context-build-request.v1"
 _RESULT_SCHEMA: Final = "guard-package-context-build-result.v1"
 _TIMEOUT_SECONDS: Final = 30.0
+# The resident accepts canonical requests up to 512 KiB; the envelope adds
+# framing and ensure-ascii escaping on top, so leave generous headroom.
+_MAX_REQUEST_BYTES: Final = 1024 * 1024
 _STRING_KEYS: Final = ("package_manager", "package_executable")
 _LIST_KEYS: Final = ("flags", "manifest_paths", "lockfile_paths")
 
@@ -51,6 +57,23 @@ def _environment_facts(environment: Mapping[str, str] | None) -> dict[str, str]:
     if not all(isinstance(key, str) and isinstance(value, str) for key, value in values.items()):
         raise ValueError("native_package_context_build_invalid_environment")
     return values
+
+
+def _well_formed_context(context: object) -> bool:
+    if not isinstance(context, dict):
+        return False
+    reason = context.get("non_portable_reason")
+    components = context.get("components")
+    return (
+        isinstance(context.get("digest"), str)
+        and isinstance(context.get("portable"), bool)
+        and (reason is None or isinstance(reason, str))
+        and isinstance(components, list)
+        and all(
+            isinstance(item, dict) and isinstance(item.get("name"), str) and isinstance(item.get("digest"), str)
+            for item in components
+        )
+    )
 
 
 def native_build_package_context(
@@ -82,8 +105,15 @@ def native_build_package_context(
         digest = "sha256:" + _canonical_request_sha256(request)
     except (TypeError, ValueError) as error:
         raise ValueError("native_package_context_build_unrepresentable") from error
+    try:
+        # The resident parses strict UTF-8 JSON; an unpaired surrogate (POSIX
+        # surrogateescape in an environment value or path) cannot be carried.
+        json.dumps(request, ensure_ascii=False).encode("utf-8")
+    except UnicodeEncodeError as error:
+        raise ValueError("native_package_context_build_non_utf8") from error
     if not ensure_resident_prerequisite(guard_home):
         raise ValueError("native_package_context_build_unavailable")
+    status = native_runtime_status()
     response = _resident_request(
         operation="package_context_build",
         request=request,
@@ -91,19 +121,32 @@ def native_build_package_context(
         timeout_seconds=_TIMEOUT_SECONDS,
         required_feature=PACKAGE_CONTEXT_BUILD_FEATURE,
         response_schema=_RESULT_SCHEMA,
+        max_request_bytes=_MAX_REQUEST_BYTES,
+        record_success=False,
+        status=status,
     )
     if response is None:
         raise ValueError(native_resident_client_failure_code() or "native_package_context_build_unavailable")
+    identity = status.identity
+    if identity is None:
+        raise ValueError("native_package_context_build_unavailable")
+
+    def reject(code: str) -> ValueError:
+        native_record_resident_failure(identity.sha256, guard_home, reason=code)
+        return ValueError(code)
+
     if (
         response.get("schema") != _RESULT_SCHEMA
         or response.get("request_id") != request["request_id"]
         or response.get("request_sha256") != digest
     ):
-        raise ValueError("native_package_context_build_unbound")
+        raise reject("native_package_context_build_unbound")
     if response.get("status") != "ok" or response.get("code") != "ok":
         code = response.get("code")
+        native_record_resident_success(identity.sha256, guard_home)
         raise ValueError(code if isinstance(code, str) else "native_package_context_build_failed")
     context = response.get("context")
-    if not isinstance(context, dict):
-        raise ValueError("native_package_context_build_malformed")
-    return context
+    if not _well_formed_context(context):
+        raise reject("native_package_context_build_malformed")
+    native_record_resident_success(identity.sha256, guard_home)
+    return cast(dict[str, object], context)

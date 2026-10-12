@@ -2,8 +2,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::launch_identity_common::sha256_hex;
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 
 use crate::codex_output_py::PyPath;
 use crate::hook_adapter_value::OValue;
@@ -27,7 +27,9 @@ pub(super) struct ExecutableInput<'a> {
 
 /// `os.access(path, X_OK)` plus `exists` and not-a-directory (`shutil._access_check`).
 fn executable_file(fs: &Fs, path: &str) -> Built<bool> {
-    if !fs.exists(path)? || fs.is_dir(path)? {
+    // `os.path.exists` and `os.path.isdir` swallow every OSError, so an
+    // untraversable PATH entry is skipped instead of failing the build.
+    if !matches!(fs.exists(path), Ok(true)) || matches!(fs.is_dir(path), Ok(true) | Err(_)) {
         return Ok(false);
     }
     Ok(nix::unistd::access(&fs.fs_path(path), nix::unistd::AccessFlags::X_OK).is_ok())
@@ -203,7 +205,7 @@ pub(super) fn executable_material(
         input.workspace,
         input.environment,
     );
-    let content_digest = hex::encode(Sha256::digest(&payload));
+    let content_digest = sha256_hex(&payload);
     let verified = identity.get("executable").is_some_and(|executable| {
         executable.is_object()
             && executable.get("status").and_then(Value::as_str) == Some("verified")

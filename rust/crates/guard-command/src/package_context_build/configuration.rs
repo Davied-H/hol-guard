@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use sha2::{Digest, Sha256};
+use crate::launch_identity_common::sha256_hex;
 
 use crate::codex_output_py::{py_splitlines, py_strip, PyPath};
 use crate::hook_adapter_value::{parse_python_json, OMap, OValue};
@@ -122,10 +122,6 @@ fn normalize_npmrc(content: &str) -> String {
         map.insert(&key, OValue::Str(value));
     }
     OValue::Map(map).canonical_json()
-}
-
-fn sha256_hex(payload: &[u8]) -> String {
-    hex::encode(Sha256::digest(payload))
 }
 
 #[derive(Clone, Copy, Default)]
