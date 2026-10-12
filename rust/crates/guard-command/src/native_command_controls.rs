@@ -213,20 +213,18 @@ impl CompiledNativeCommandControls {
         context: crate::pretool::PathContext<'_>,
     ) -> PreToolResultV1 {
         let observed = match command {
-            Some(command) => self.program.observe_with_context(
-                command,
-                &self.active_extensions,
-                deadline,
-                context,
-            ),
-            None => Ok(NativeCommandObservationBatchV1::default()),
+            Some(command) => self.observe_command(command, deadline, context),
+            None => Ok((NativeCommandObservationBatchV1::default(), None)),
         };
-        let mut batch = match observed {
-            Ok(batch) => batch,
-            Err(_) => NativeCommandObservationBatchV1 {
-                evaluation_error: Some("native_command_evaluation_failed".to_owned()),
-                ..Default::default()
-            },
+        let (mut batch, unmodeled) = match observed {
+            Ok(observed) => observed,
+            Err(_) => (
+                NativeCommandObservationBatchV1 {
+                    evaluation_error: Some("native_command_evaluation_failed".to_owned()),
+                    ..Default::default()
+                },
+                None,
+            ),
         };
         let delegated_floor = if batch.evaluation_error.is_none() {
             match self.delegated_observations(command, tool, packages, &mut batch, deadline) {
@@ -258,7 +256,8 @@ impl CompiledNativeCommandControls {
         };
         // An uncertain observation may belong to any of its candidate owners,
         // so it takes the strongest of their floors and never less than review.
-        let mut uncertain_floor: Option<&'static str> = None;
+        // An unmodeled command already carries the floor of its possible owners.
+        let mut uncertain_floor: Option<&'static str> = unmodeled;
         for observation in &batch.observations {
             if !observation.uncertainty_reasons.is_empty() {
                 let candidate = match self.rule_indices.get(&observation.rule_id) {
@@ -472,6 +471,8 @@ pub(crate) use delegated::normalized_tool;
 
 #[path = "native_command_controls_floor.rs"]
 mod floor;
+#[path = "native_command_unmodeled.rs"]
+mod unmodeled;
 use floor::{add_authority_repair_hint, rank, rule_floor, strengthen};
 
 #[cfg(test)]

@@ -180,6 +180,8 @@ fn enabled_github_permissions_cover_graphql_mutations_and_literal_mentions() {
 @example-bot line two'",
         "gh api --raw-field 'body=@example-bot done' repos/example-org/example-repo/issues/1/comments",
         &format!("{RESOLVE_LITERAL_COMMAS} && {REPLY_MENTION}"),
+        "gh api graphql -f query='mutation { resolveReviewThread(input: { threadId: \"PRRT_kwDOexample1234\" }) { thread { id isResolved } } }'",
+        "gh api graphql -f query='mutation($t: ID!) { resolveReviewThread(input: { threadId: $t }) { thread { isResolved } } }' -f t=PRRT_kwDOexample1234",
     ] {
         assert_eq!(action(&controls, command), "allow", "{command}");
     }

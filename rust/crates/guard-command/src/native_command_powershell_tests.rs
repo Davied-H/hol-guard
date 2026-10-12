@@ -66,13 +66,9 @@ fn write_all_text_reviews_like_set_content() {
         result.minimum_action,
         evaluate(&binding, "Set-Content docs/change.md x", true).minimum_action
     );
-    // Off Windows the original hard block for unparsed input is unchanged.
+    // Off Windows the input stays unparsed and is never allowed.
     let off = evaluate(&binding, WRITE_ALL_TEXT, false);
-    assert_eq!(
-        off.reason_code,
-        "native_command_extension_evaluation_failed"
-    );
-    assert_eq!(off.minimum_action, "block");
+    assert_ne!(off.minimum_action, "allow");
     let encoded = "[System.IO.File]::WriteAllText('docs/change.md', \"Retry limit increased from 3 to 5.`n\", [System.Text.UTF8Encoding]::new($false))";
     assert_eq!(action(encoded), action(WRITE_ALL_TEXT));
 }
@@ -129,11 +125,11 @@ fn unsupported_powershell_stays_fail_closed() {
             let plain = evaluate(&open, command, windows);
             assert_ne!(plain.minimum_action, "allow", "{command}");
         }
-        // Windows may only be stricter: a rejected cmdlet fails closed.
-        let windows = evaluate(&open, command, true).reason_code;
-        let posix = evaluate(&open, command, false).reason_code;
+        // Windows may only be stricter.
+        let windows = evaluate(&open, command, true).minimum_action;
+        let posix = evaluate(&open, command, false).minimum_action;
         assert!(
-            windows == posix || windows == "native_command_extension_evaluation_failed",
+            super::rank(&windows) >= super::rank(&posix),
             "{command}: {windows} vs {posix}"
         );
     }

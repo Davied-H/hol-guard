@@ -315,11 +315,10 @@ mod tests {
             .unwrap()
             .iter()
             .any(|row| { row["rule_id"] == "command.git.hard-reset" }));
+        // `env` can run any program, so the unmodeled command takes the
+        // strongest floor of every extension instead of an evaluation failure.
         let uncertain = &output["cases"][3]["payload"]["command_extensions"];
-        assert_eq!(
-            uncertain["evaluation_error"],
-            "native_command_evaluation_failed"
-        );
+        assert!(uncertain["evaluation_error"].is_null());
         assert_eq!(output["cases"][3]["payload"]["minimum_action"], "block");
         assert_eq!(
             output["cases"][4]["payload"]["command_model"]["uncertainty_reason"],
