@@ -242,7 +242,7 @@ class TestEvaluatorRule:
     ) -> None:
         evaluation = self._evaluate(tmp_path, monkeypatch, f"npm install -D {spec} {SAFE_FLAGS}", "11.9.0")
 
-        assert evaluation.decision == "allow"
+        assert evaluation.decision == "allow", evaluation.reasons
 
     def test_missing_flags_get_rerun_guidance(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         evaluation = self._evaluate(tmp_path, monkeypatch, "npm install zod --ignore-scripts", "11.9.0")

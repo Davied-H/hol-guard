@@ -103,6 +103,7 @@ fn npmrc_settings_that_move_the_fetch_are_overrides() {
     assert!(npmrc_redirects_fetch("strict-ssl=false"));
     assert!(npmrc_redirects_fetch("\"https-proxy\"=http://example.test"));
     assert!(npmrc_redirects_fetch("Prefix=/tmp/x"));
+    assert!(npmrc_redirects_fetch("noproxy=registry.npmjs.org"));
     assert!(!npmrc_redirects_fetch("# registry=https://example.test/"));
     assert!(!npmrc_redirects_fetch("save-exact=true"));
     assert!(!npmrc_redirects_fetch("engine-strict=true"));

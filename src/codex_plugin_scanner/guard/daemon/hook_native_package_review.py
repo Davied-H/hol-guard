@@ -54,6 +54,8 @@ _FETCH_REDIRECTING_KEYS = frozenset(
         "proxy",
         "https-proxy",
         "http-proxy",
+        "noproxy",
+        "no-proxy",
         "global",
         "location",
         "globalconfig",

@@ -330,7 +330,7 @@ fn project_npmrc_overrides_registry(
 /// npm settings that change where packages come from, how their transport is
 /// trusted, or where they are installed. Command-line flags outrank a project
 /// `.npmrc`, but none of these is checked on the command line by the rule.
-const FETCH_REDIRECTING_KEYS: [&str; 12] = [
+const FETCH_REDIRECTING_KEYS: [&str; 14] = [
     "registry",
     "replace-registry-host",
     "strict-ssl",
@@ -339,6 +339,8 @@ const FETCH_REDIRECTING_KEYS: [&str; 12] = [
     "proxy",
     "https-proxy",
     "http-proxy",
+    "noproxy",
+    "no-proxy",
     "prefix",
     "global",
     "location",
