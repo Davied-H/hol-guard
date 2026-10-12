@@ -8,6 +8,7 @@ fn query(guard_home: Option<&str>, home: Option<&str>, workspace: Option<&str>) 
         guard_home: guard_home.map(str::to_owned),
         home: home.map(str::to_owned),
         workspace: workspace.map(str::to_owned),
+        runtime_harness: None,
     }
 }
 
@@ -28,6 +29,11 @@ fn the_query_parses_like_parse_qs() {
         Some(query(None, Some("/a%2"), Some("%zz%")))
     );
     assert_eq!(parse_hook_query(""), Some(HookQuery::default()));
+    assert_eq!(
+        parse_hook_query("runtime-harness=cursor&runtime-harness=+")
+            .map(|query| query.runtime_harness),
+        Some(Some(" ".to_owned()))
+    );
 }
 
 #[test]
@@ -146,6 +152,7 @@ fn a_context_the_daemon_would_replace_takes_the_daemon_path() {
         format!("guard-home={guard_home}&home=user"),
         format!("guard-home={guard_home}&home={}", encoded(&homes.root)),
         format!("guard-home={guard_home}&home={home}%2Fmissing"),
+        format!("guard-home={guard_home}&home={home}&runtime-harness=cursor"),
     ] {
         assert_eq!(built(&homes, &query, PAYLOAD), None, "{query}");
     }
@@ -193,4 +200,15 @@ fn only_an_answer_returns_its_harness_response() {
         );
     }
     assert_eq!(answered_response(b"not json"), None);
+}
+
+#[test]
+fn a_blank_runtime_harness_keeps_the_codex_review() {
+    let homes = homes("runtime-harness");
+    let query = format!(
+        "guard-home={}&home={}&runtime-harness=+",
+        encoded(&homes.guard_home),
+        encoded(&homes.home),
+    );
+    assert!(built(&homes, &query, PAYLOAD).is_some());
 }

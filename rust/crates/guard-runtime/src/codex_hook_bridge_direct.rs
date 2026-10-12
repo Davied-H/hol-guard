@@ -37,6 +37,7 @@ pub(crate) struct HookQuery {
     pub(crate) guard_home: Option<String>,
     pub(crate) home: Option<String>,
     pub(crate) workspace: Option<String>,
+    pub(crate) runtime_harness: Option<String>,
 }
 
 fn hex_value(byte: u8) -> Option<u8> {
@@ -88,6 +89,7 @@ pub(crate) fn parse_hook_query(query: &str) -> Option<HookQuery> {
             "guard-home" => parsed.guard_home = Some(value),
             "home" => parsed.home = Some(value),
             "workspace" => parsed.workspace = Some(value),
+            "runtime-harness" => parsed.runtime_harness = Some(value),
             _ => {}
         }
     }
@@ -124,6 +126,14 @@ pub(crate) fn direct_request(
     budget: Duration,
 ) -> Option<Vec<u8>> {
     let query = parse_hook_query(query)?;
+    // The daemon reviews the hook as this harness instead of Codex.
+    if query
+        .runtime_harness
+        .as_deref()
+        .is_some_and(|harness| !py_strip(harness).is_empty())
+    {
+        return None;
+    }
     let resolved_guard_home = std::fs::canonicalize(guard_home).ok()?;
     if resolved_directory(query.guard_home.as_deref()?)? != resolved_guard_home {
         return None;
