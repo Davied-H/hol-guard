@@ -1,12 +1,11 @@
 """Socket restrictions preserve private IPC, not access to mounted host services."""
 
-
 import pytest
 
 from codex_plugin_scanner.guard.runtime import restricted_linux_landlock as boundary
 
-
 pytestmark = pytest.mark.usefixtures("native_context_digest")
+
 
 def _evaluate(machine, *, arch, number, domain=1, kind=1, protocol=0):
     data = {0: number, 4: arch, 16: domain, 24: kind, 32: protocol}
@@ -48,8 +47,6 @@ def test_filter_uses_exact_architecture_and_allows_only_private_stream_pairs(
     assert _evaluate(machine, arch=0x40000003, number=0) == 0x80000000
     for number in (0x40000000 | socket, 0xFFFFFFFF):
         assert _evaluate(machine, arch=arch, number=number) == 0x80000000
-
-
 
 
 def test_unknown_socket_architecture_is_not_guessed():

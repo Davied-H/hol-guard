@@ -11,7 +11,8 @@ def main() -> int:
     # Namespace construction invokes the packaged native launcher directly.
     # Direct legacy Python entry has no authority to execute a command.
     print(
-        "HOL Guard could not enforce the validated Linux execution boundary. Execution was not started.", file=sys.stderr
+        "HOL Guard could not enforce the validated Linux execution boundary. Execution was not started.",
+        file=sys.stderr,
     )
     return 126
 

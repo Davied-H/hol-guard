@@ -14,9 +14,7 @@ from codex_plugin_scanner.guard.runtime import restricted_pytest_model as model
 @pytest.mark.skipif(sys.platform != "linux", reason="native Linux namespace preparation")
 @pytest.mark.usefixtures("native_context_digest")
 @pytest.mark.parametrize("with_system_library", [False, True])
-def test_linked_metadata_has_listing_without_parent_checkout_or_secret_read_grants(
-    tmp_path, with_system_library
-):
+def test_linked_metadata_has_listing_without_parent_checkout_or_secret_read_grants(tmp_path, with_system_library):
     """Verify linked metadata has listing without parent checkout or secret read grants."""
     workspace = tmp_path / "workspace"
     workspace.mkdir()

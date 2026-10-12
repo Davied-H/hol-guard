@@ -1,8 +1,8 @@
 //! The private namespace launcher executes only the fixed, hash-bound plan.
 #[cfg(target_os = "linux")]
-mod json;
-#[cfg(target_os = "linux")]
 mod argv;
+#[cfg(target_os = "linux")]
+mod json;
 mod mapping_records;
 mod mounts;
 #[cfg(target_os = "linux")]
@@ -10,43 +10,54 @@ mod plan;
 mod socket;
 type BoundaryResult<T> = Result<T, &'static str>;
 #[cfg(target_os = "linux")]
-mod capabilities;
-#[cfg(target_os = "linux")]
-mod landlock;
-#[cfg(target_os = "linux")]
 mod admission;
 #[cfg(target_os = "linux")]
-mod pipeline;
+mod capabilities;
+#[cfg(unix)]
+mod elf;
+#[cfg(unix)]
+mod index_snapshot;
+#[cfg(target_os = "linux")]
+mod landlock;
 #[cfg(target_os = "linux")]
 mod mapping_copy;
 #[cfg(target_os = "linux")]
 mod mappings;
 #[cfg(unix)]
 mod paths;
-#[cfg(unix)]
-mod index_snapshot;
 #[cfg(target_os = "linux")]
-mod read;
+mod pipeline;
 #[cfg(target_os = "linux")]
 mod prepare;
-#[cfg(unix)]
-mod elf;
+#[cfg(target_os = "linux")]
+mod read;
 #[cfg(all(test, target_os = "linux"))]
 mod tests;
 
-pub(crate) fn evaluate(operation: &str, input: &serde_json::Value, deadline: std::time::Instant) -> serde_json::Value {
+pub(crate) fn evaluate(
+    operation: &str,
+    input: &serde_json::Value,
+    deadline: std::time::Instant,
+) -> serde_json::Value {
     if operation == "linux_socket_filter" {
-        return match input["machine"].as_str().ok_or("Unsupported Linux socket-filter architecture.")
+        return match input["machine"]
+            .as_str()
+            .ok_or("Unsupported Linux socket-filter architecture.")
             .and_then(socket::instructions)
         {
             Ok(instructions) => serde_json::json!({"value":{"instructions":instructions}}),
-            Err(message) => serde_json::json!({"reason_code":"pytest_restricted_sandbox_unavailable","message":message}),
+            Err(message) => {
+                serde_json::json!({"reason_code":"pytest_restricted_sandbox_unavailable","message":message})
+            }
         };
     }
     if operation == "linux_mount_targets" {
-        let result = input["raw_hex"].as_str().ok_or("Malformed namespace mount snapshot.")
+        let result = input["raw_hex"]
+            .as_str()
+            .ok_or("Malformed namespace mount snapshot.")
             .and_then(|v| hex::decode(v).map_err(|_| "Malformed namespace mount snapshot."))
-            .and_then(|v| mounts::targets(&v)).map(|targets| serde_json::json!({"targets":targets}));
+            .and_then(|v| mounts::targets(&v))
+            .map(|targets| serde_json::json!({"targets":targets}));
         return reply(result);
     }
     if operation == "linux_validate_records" {
@@ -58,18 +69,32 @@ pub(crate) fn evaluate(operation: &str, input: &serde_json::Value, deadline: std
     }
     #[cfg(unix)]
     if operation == "linux_read_grants" {
-        let result = input["root"].as_str().and_then(|root| input["max_entries"].as_u64().map(|limit| (root,limit)))
+        let result = input["root"]
+            .as_str()
+            .and_then(|root| input["max_entries"].as_u64().map(|limit| (root, limit)))
             .ok_or("Invalid Linux workspace discovery boundary.")
-            .and_then(|(root,limit)| usize::try_from(limit).map_err(|_| "Invalid Linux workspace discovery boundary.")
-                .and_then(|limit| paths::collect(std::path::Path::new(root),limit,deadline)))
-            .and_then(|value| input["result_snapshot"].as_str().ok_or("Linux workspace index transport is unavailable.")
-                .and_then(|path| index_snapshot::write(std::path::Path::new(path),&value)));
+            .and_then(|(root, limit)| {
+                usize::try_from(limit)
+                    .map_err(|_| "Invalid Linux workspace discovery boundary.")
+                    .and_then(|limit| paths::collect(std::path::Path::new(root), limit, deadline))
+            })
+            .and_then(|value| {
+                input["result_snapshot"]
+                    .as_str()
+                    .ok_or("Linux workspace index transport is unavailable.")
+                    .and_then(|path| index_snapshot::write(std::path::Path::new(path), &value))
+            });
         return reply(result);
     }
     #[cfg(unix)]
     if operation == "linux_elf_loader" {
-        return reply(input["executable"].as_str().ok_or("Invalid Linux executable.")
-            .and_then(|path| elf::resolve(std::path::Path::new(path))).map(|v| serde_json::json!(v)));
+        return reply(
+            input["executable"]
+                .as_str()
+                .ok_or("Invalid Linux executable.")
+                .and_then(|path| elf::resolve(std::path::Path::new(path)))
+                .map(|v| serde_json::json!(v)),
+        );
     }
     #[cfg(target_os = "linux")]
     let result = match operation {
@@ -78,7 +103,7 @@ pub(crate) fn evaluate(operation: &str, input: &serde_json::Value, deadline: std
     };
     #[cfg(not(target_os = "linux"))]
     let result: Result<serde_json::Value, &str> = {
-        let _ = (operation,input,deadline);
+        let _ = (operation, input, deadline);
         Err("No native Linux execution boundary is available.")
     };
     reply(result)
@@ -87,7 +112,9 @@ pub(crate) fn evaluate(operation: &str, input: &serde_json::Value, deadline: std
 fn reply(result: BoundaryResult<serde_json::Value>) -> serde_json::Value {
     match result {
         Ok(value) => serde_json::json!({"value":value}),
-        Err(message) => serde_json::json!({"reason_code":"pytest_restricted_sandbox_unavailable","message":message}),
+        Err(message) => {
+            serde_json::json!({"reason_code":"pytest_restricted_sandbox_unavailable","message":message})
+        }
     }
 }
 

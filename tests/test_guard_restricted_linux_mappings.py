@@ -7,8 +7,8 @@ import pytest
 
 from codex_plugin_scanner.guard.runtime import restricted_linux_mappings as mapping
 
-
 pytestmark = pytest.mark.usefixtures("native_context_digest")
+
 
 def _record(path):
     path.write_bytes(b"synthetic approved executable")
@@ -25,10 +25,6 @@ def test_valid_mapping_evidence_keeps_exact_targets(tmp_path):
     record = _record(path)
     validated = mapping.validate_records([record], approved_paths={path})
     assert validated == [(path, tuple(record["identity"]), record["sha256"], (path,))]
-
-
-
-
 
 
 @pytest.mark.parametrize(
@@ -93,5 +89,3 @@ def test_noexec_remount_preserves_locked_atime_flags(options, flags):
 def test_invalid_mount_snapshot_is_not_ignored(raw):
     with pytest.raises(ValueError):
         mapping.mount_targets(raw)
-
-

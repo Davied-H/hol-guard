@@ -12,7 +12,8 @@ pub(super) const NOEXEC: u64 = 8;
 
 pub(super) fn path(text: &str) -> Result<PathBuf> {
     let path = PathBuf::from(text);
-    if text.contains('\0') || !path.is_absolute()
+    if text.contains('\0')
+        || !path.is_absolute()
         || path.components().any(|part| part == Component::ParentDir)
     {
         return Err("Invalid executable mapping path.");
@@ -25,8 +26,11 @@ fn decode(raw: &str) -> Result<PathBuf> {
     let mut decoded = Vec::with_capacity(bytes.len());
     let mut cursor = 0;
     while cursor < bytes.len() {
-        if bytes[cursor] == b'\\' && cursor + 3 < bytes.len()
-            && bytes[cursor + 1..cursor + 4].iter().all(|v| (b'0'..=b'7').contains(v))
+        if bytes[cursor] == b'\\'
+            && cursor + 3 < bytes.len()
+            && bytes[cursor + 1..cursor + 4]
+                .iter()
+                .all(|v| (b'0'..=b'7').contains(v))
         {
             let value = (bytes[cursor + 1] - b'0') as u16 * 64
                 + (bytes[cursor + 2] - b'0') as u16 * 8
@@ -62,12 +66,22 @@ pub(super) fn targets(raw: &[u8]) -> Result<Vec<(PathBuf, u64)>> {
             return Err("Ambiguous namespace mount permissions.");
         }
         let mut flags = NOSUID | NOEXEC;
-        if options.contains(&"ro") { flags |= READONLY; }
-        if options.contains(&"nodev") { flags |= NODEV; }
-        flags |= if options.contains(&"noatime") { 1024 }
-            else if options.contains(&"relatime") { 1 << 21 }
-            else { 1 << 24 };
-        if options.contains(&"nodiratime") { flags |= 2048; }
+        if options.contains(&"ro") {
+            flags |= READONLY;
+        }
+        if options.contains(&"nodev") {
+            flags |= NODEV;
+        }
+        flags |= if options.contains(&"noatime") {
+            1024
+        } else if options.contains(&"relatime") {
+            1 << 21
+        } else {
+            1 << 24
+        };
+        if options.contains(&"nodiratime") {
+            flags |= 2048;
+        }
         targets.insert(destination, flags);
     }
     let mut targets: Vec<_> = targets.into_iter().collect();

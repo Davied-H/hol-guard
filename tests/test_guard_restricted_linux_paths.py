@@ -7,8 +7,8 @@ import pytest
 from codex_plugin_scanner.guard.runtime.restricted_linux_landlock import LinuxContainmentUnavailableError
 from codex_plugin_scanner.guard.runtime.restricted_linux_paths import collect_linux_read_grants
 
-
 pytestmark = pytest.mark.usefixtures("native_context_digest")
+
 
 def test_ordinary_source_is_admitted_without_reading_credential_data(tmp_path: Path):
     source = tmp_path / "source.py"
@@ -65,5 +65,3 @@ def test_credential_directory_cannot_become_an_index_root(tmp_path: Path):
     (directory / "ordinary-name.txt").write_text("synthetic fixture only")
     with pytest.raises(LinuxContainmentUnavailableError, match="nonsensitive"):
         collect_linux_read_grants(directory)
-
-

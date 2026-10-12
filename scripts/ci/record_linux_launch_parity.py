@@ -3,14 +3,14 @@
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import dataclasses
-import contextlib
 import hashlib
 import json
 import os
-import struct
 import stat
+import struct
 import subprocess
 import sys
 import tempfile
@@ -26,7 +26,13 @@ sys.path.insert(0, str(ROOT / "src"))
 
 def record() -> dict:
     modules, hashes, cases = {}, {}, []
-    for name in ("restricted_linux_landlock", "restricted_linux_mappings", "restricted_linux_entry", "restricted_linux_elf", "restricted_linux_paths"):
+    for name in (
+        "restricted_linux_landlock",
+        "restricted_linux_mappings",
+        "restricted_linux_entry",
+        "restricted_linux_elf",
+        "restricted_linux_paths",
+    ):
         path = f"src/codex_plugin_scanner/guard/runtime/{name}.py"
         source = subprocess.check_output(["git", "show", f"{BASE}:{path}"], cwd=ROOT)
         hashes[path] = hashlib.sha256(source).hexdigest()
@@ -86,34 +92,64 @@ def record() -> dict:
             ("device_files", "/dev/null", stat.S_IFCHR, None, 1, 1, 9),
             ("device_files", "/dev/null", stat.S_IFREG, None, 1, 1, 3),
         ]
-        rights = {"read_roots": boundary._READ_FILE | boundary._READ_DIR,
-                  "read_files": boundary._READ_FILE, "list_roots": boundary._READ_DIR,
-                  "write_roots": boundary._WRITE_DIRECTORY | boundary._READ_FILE | boundary._READ_DIR,
-                  "executables": boundary._EXECUTE | boundary._READ_FILE}
+        rights = {
+            "read_roots": boundary._READ_FILE | boundary._READ_DIR,
+            "read_files": boundary._READ_FILE,
+            "list_roots": boundary._READ_DIR,
+            "write_roots": boundary._WRITE_DIRECTORY | boundary._READ_FILE | boundary._READ_DIR,
+            "executables": boundary._EXECUTE | boundary._READ_FILE,
+        }
         for role, name, mode, grant_identity, links, major, minor in specs:
             calls = []
+
             class Syscall:
+                def __init__(self, recorded):
+                    self.recorded = recorded
+
                 restype = None
+
                 def __call__(self, number, *args):
-                    if number == 444: return 3 if args[2] == 1 else 20
+                    if number == 444:
+                        return 3 if args[2] == 1 else 20
                     if number == 445:
-                        calls.append(boundary.ctypes.cast(args[2], boundary.ctypes.POINTER(boundary._PathRule)).contents.allowed_access)
+                        self.recorded.append(
+                            boundary.ctypes.cast(
+                                args[2], boundary.ctypes.POINTER(boundary._PathRule)
+                            ).contents.allowed_access
+                        )
                     return 0
+
             plan = dict(read_roots=(), read_files=(), list_roots=(), write_roots=(), executables=(), device_files=())
             plan[role] = (Path(name),)
-            if grant_identity is not None: plan["read_identities"] = {Path(name): grant_identity}
+            if grant_identity is not None:
+                plan["read_identities"] = {Path(name): grant_identity}
             evidence = types.SimpleNamespace(st_mode=mode, st_dev=1, st_ino=2, st_nlink=links, st_rdev=minor)
             access = rights.get(role, boundary._READ_FILE | (boundary._WRITE_FILE if name == "/dev/null" else 0))
-            inputs = {"path": name, "access": access, "directory": role in {"read_roots", "list_roots", "write_roots"},
-                      "identity": grant_identity, "device": role == "device_files",
-                      "evidence": {"mode": mode, "device": 1, "inode": 2, "links": links, "major": major, "minor": minor}}
+            inputs = {
+                "path": name,
+                "access": access,
+                "directory": role in {"read_roots", "list_roots", "write_roots"},
+                "identity": grant_identity,
+                "device": role == "device_files",
+                "evidence": {"mode": mode, "device": 1, "inode": 2, "links": links, "major": major, "minor": minor},
+            }
+
             def capture(plan=plan, calls=calls):
                 boundary.enforce_landlock(**plan)
                 return calls
+
             with contextlib.ExitStack() as stack:
                 stack.enter_context(patch.object(boundary.platform, "system", lambda: "Linux"))
                 stack.enter_context(patch.object(boundary.platform, "machine", lambda: "aarch64"))
-                stack.enter_context(patch.object(boundary.ctypes, "CDLL", lambda *args, **kwargs: types.SimpleNamespace(syscall=Syscall(), prctl=lambda *args: 0)))
+                stack.enter_context(
+                    patch.object(
+                        boundary.ctypes,
+                        "CDLL",
+                        lambda *args, syscall=Syscall(calls), **kwargs: types.SimpleNamespace(
+                            syscall=syscall, prctl=lambda *args: 0
+                        ),
+                    )
+                )
                 stack.enter_context(patch.object(boundary.os, "open", lambda *args, **kwargs: 21))
                 stack.enter_context(patch.object(boundary.os, "O_PATH", 0x200000, create=True))
                 stack.enter_context(patch.object(boundary.os, "close", lambda *args: None))
@@ -133,43 +169,101 @@ def record() -> dict:
         for options in ("rw,noatime", "ro,relatime,nodev", "rw,strictatime,nodiratime", "rw,nodev"):
             raw = f"1 0 0:1 / /lib {options} - bind bind rw\n"
             add("mount_targets", {"raw": raw}, mappings.mount_targets, raw.encode())
-        record = {"path": str(image), "identity": identity, "sha256": hashlib.sha256(image.read_bytes()).hexdigest(),
-                  "targets": [str(image)]}
-        for mutation in ("valid", "unknown-field", "relative-path", "parent-path", "bad-hash", "bad-identity",
-                         "empty-aliases", "duplicate-aliases", "unbound-alias", "unbound-image", "duplicate-image"):
+        record = {
+            "path": str(image),
+            "identity": identity,
+            "sha256": hashlib.sha256(image.read_bytes()).hexdigest(),
+            "targets": [str(image)],
+        }
+        for mutation in (
+            "valid",
+            "unknown-field",
+            "relative-path",
+            "parent-path",
+            "bad-hash",
+            "bad-identity",
+            "empty-aliases",
+            "duplicate-aliases",
+            "unbound-alias",
+            "unbound-image",
+            "duplicate-image",
+        ):
             records = [copy.deepcopy(record)]
             approved = {image}
             item = records[0]
-            if mutation == "unknown-field": item["extra"] = True
-            elif mutation == "relative-path": item["path"] = "runner"
-            elif mutation == "parent-path": item["path"] = str(root / "../runner")
-            elif mutation == "bad-hash": item["sha256"] = "f" * 63
-            elif mutation == "bad-identity": item["identity"][0] = True
-            elif mutation == "empty-aliases": item["targets"] = []
-            elif mutation == "duplicate-aliases": item["targets"] *= 2
-            elif mutation == "unbound-alias": item["targets"] = [str(root / "other")]
-            elif mutation == "unbound-image": approved = set()
-            elif mutation == "duplicate-image": records *= 2
-            add("validate_records", {"records": records, "approved_paths": list(approved)},
-                mappings.validate_records, records, approved_paths=approved)
+            if mutation == "unknown-field":
+                item["extra"] = True
+            elif mutation == "relative-path":
+                item["path"] = "runner"
+            elif mutation == "parent-path":
+                item["path"] = str(root / "../runner")
+            elif mutation == "bad-hash":
+                item["sha256"] = "f" * 63
+            elif mutation == "bad-identity":
+                item["identity"][0] = True
+            elif mutation == "empty-aliases":
+                item["targets"] = []
+            elif mutation == "duplicate-aliases":
+                item["targets"] *= 2
+            elif mutation == "unbound-alias":
+                item["targets"] = [str(root / "other")]
+            elif mutation == "unbound-image":
+                approved = set()
+            elif mutation == "duplicate-image":
+                records *= 2
+            add(
+                "validate_records",
+                {"records": records, "approved_paths": list(approved)},
+                mappings.validate_records,
+                records,
+                approved_paths=approved,
+            )
         entry = modules["restricted_linux_entry"]
         entry.PLAN_DIRECTORY = root
-        plan = {"schema": "guard-linux-readonly-plan.v2", "mapping_records": [], "command": [str(image), "-V"],
-                "read_roots": [], "read_files": [], "list_roots": [], "write_roots": [str(root)],
-                "executables": [str(image)], "device_files": [], "read_identities": [],
-                "write_identities": [[str(root), root.stat().st_dev, root.stat().st_ino]]}
-        for mutation in ("valid", "schema", "missing-field", "extra-field", "relative-command", "nul-command",
-                         "negative-identity", "bool-identity", "mismatched-identity", "duplicate-identity"):
+        plan = {
+            "schema": "guard-linux-readonly-plan.v2",
+            "mapping_records": [],
+            "command": [str(image), "-V"],
+            "read_roots": [],
+            "read_files": [],
+            "list_roots": [],
+            "write_roots": [str(root)],
+            "executables": [str(image)],
+            "device_files": [],
+            "read_identities": [],
+            "write_identities": [[str(root), root.stat().st_dev, root.stat().st_ino]],
+        }
+        for mutation in (
+            "valid",
+            "schema",
+            "missing-field",
+            "extra-field",
+            "relative-command",
+            "nul-command",
+            "negative-identity",
+            "bool-identity",
+            "mismatched-identity",
+            "duplicate-identity",
+        ):
             payload = copy.deepcopy(plan)
-            if mutation == "schema": payload["schema"] = "guard-linux-readonly-plan.v1"
-            elif mutation == "missing-field": del payload["mapping_records"]
-            elif mutation == "extra-field": payload["extra"] = True
-            elif mutation == "relative-command": payload["command"][0] = "runner"
-            elif mutation == "nul-command": payload["command"][1] = "bad\x00"
-            elif mutation == "negative-identity": payload["write_identities"][0][1] = -1
-            elif mutation == "bool-identity": payload["write_identities"][0][1] = True
-            elif mutation == "mismatched-identity": payload["write_identities"][0][0] = str(root / "other")
-            elif mutation == "duplicate-identity": payload["write_identities"] *= 2
+            if mutation == "schema":
+                payload["schema"] = "guard-linux-readonly-plan.v1"
+            elif mutation == "missing-field":
+                del payload["mapping_records"]
+            elif mutation == "extra-field":
+                payload["extra"] = True
+            elif mutation == "relative-command":
+                payload["command"][0] = "runner"
+            elif mutation == "nul-command":
+                payload["command"][1] = "bad\x00"
+            elif mutation == "negative-identity":
+                payload["write_identities"][0][1] = -1
+            elif mutation == "bool-identity":
+                payload["write_identities"][0][1] = True
+            elif mutation == "mismatched-identity":
+                payload["write_identities"][0][0] = str(root / "other")
+            elif mutation == "duplicate-identity":
+                payload["write_identities"] *= 2
             raw = json.dumps(payload).encode()
             path = root / entry.PLAN_FILENAME
             path.write_bytes(raw)
@@ -186,10 +280,14 @@ def record() -> dict:
             expected_identity = list(mappings._identity(source.stat()))
             digest = hashlib.sha256(data).hexdigest()
             locator = source
-            if mutation == "hash": digest = "0" * 64
-            elif mutation == "inode": expected_identity[1] += 1
-            elif mutation == "size": expected_identity[2] += 1
-            elif mutation == "mode": expected_identity[4] ^= 0o100
+            if mutation == "hash":
+                digest = "0" * 64
+            elif mutation == "inode":
+                expected_identity[1] += 1
+            elif mutation == "size":
+                expected_identity[2] += 1
+            elif mutation == "mode":
+                expected_identity[4] ^= 0o100
             elif mutation == "symlink":
                 locator = root / "copy-alias"
                 locator.symlink_to(source)
@@ -197,26 +295,51 @@ def record() -> dict:
             try:
                 descriptor = mappings._seal_copy(locator, tuple(expected_identity), digest, destination)
                 try:
-                    expected = {"value": {"bytes_hex": destination.read_bytes().hex(), "mode": stat.S_IMODE(os.fstat(descriptor).st_mode)}}
+                    expected = {
+                        "value": {
+                            "bytes_hex": destination.read_bytes().hex(),
+                            "mode": stat.S_IMODE(os.fstat(descriptor).st_mode),
+                        }
+                    }
                 finally:
                     os.close(descriptor)
             except (OSError, ValueError):
                 expected = {"refused": True}
-            cases.append({"operation": "seal_copy", "input": {"data_hex": data.hex(), "mutation": mutation}, "expected": expected})
+            cases.append(
+                {
+                    "operation": "seal_copy",
+                    "input": {"data_hex": data.hex(), "mutation": mutation},
+                    "expected": expected,
+                }
+            )
         elf = modules["restricted_linux_elf"]
         for machine in (62, 183):
             identity = b"\x7fELF\x02\x01\x01" + b"\0" * 9
             header = struct.pack("<16sHHIQQQIHHHHHH", identity, 2, machine, 1, 0, 64, 0, 0, 64, 56, 1, 0, 0, 0)
             program = struct.pack("<IIQQQQQQ", 1, 5, 0, 0, 0, 120, 120, 4096)
             good = header + program
-            for mutation in ("valid-static", "truncated", "class", "machine", "program-size", "no-load", "excessive-count"):
+            for mutation in (
+                "valid-static",
+                "truncated",
+                "class",
+                "machine",
+                "program-size",
+                "no-load",
+                "excessive-count",
+            ):
                 raw = bytearray(good)
-                if mutation == "truncated": raw = raw[:63]
-                elif mutation == "class": raw[4] = 1
-                elif mutation == "machine": raw[18:20] = (3).to_bytes(2, "little")
-                elif mutation == "program-size": raw[54:56] = (55).to_bytes(2, "little")
-                elif mutation == "no-load": raw[64:68] = (4).to_bytes(4, "little")
-                elif mutation == "excessive-count": raw[56:58] = (129).to_bytes(2, "little")
+                if mutation == "truncated":
+                    raw = raw[:63]
+                elif mutation == "class":
+                    raw[4] = 1
+                elif mutation == "machine":
+                    raw[18:20] = (3).to_bytes(2, "little")
+                elif mutation == "program-size":
+                    raw[54:56] = (55).to_bytes(2, "little")
+                elif mutation == "no-load":
+                    raw[64:68] = (4).to_bytes(4, "little")
+                elif mutation == "excessive-count":
+                    raw[56:58] = (129).to_bytes(2, "little")
                 image.write_bytes(raw)
                 add("elf_loader", {"executable": image, "image_hex": raw.hex()}, elf.resolve_linux_elf_loader, image)
         paths = modules["restricted_linux_paths"]
@@ -224,7 +347,16 @@ def record() -> dict:
         # Freeze the old Python descriptor walk with declared classifier replies;
         # this recorder never invokes a resident or recalculates native policy.
         paths.classify_secret_path = lambda path, **kwargs: "fixture_secret" if Path(path).name == ".env" else None
-        for mutation in ("ordinary", "credentials", "symlink", "hardlink", "budget", "root-alias", "parent-alias", "protected-root"):
+        for mutation in (
+            "ordinary",
+            "credentials",
+            "symlink",
+            "hardlink",
+            "budget",
+            "root-alias",
+            "parent-alias",
+            "protected-root",
+        ):
             workspace = root / ("tree-" + mutation)
             workspace.mkdir()
             (workspace / "source.py").write_text("fixture source")
@@ -236,9 +368,12 @@ def record() -> dict:
                 (workspace / ".env").write_text("fixture")
                 (workspace / ".ssh").mkdir()
                 (workspace / ".ssh/id_rsa").write_text("fixture")
-            elif mutation == "symlink": (workspace / "alias.py").symlink_to(workspace / "source.py")
-            elif mutation == "hardlink": os.link(workspace / "source.py", workspace / "hardlink.py")
-            elif mutation == "budget": limit = 1
+            elif mutation == "symlink":
+                (workspace / "alias.py").symlink_to(workspace / "source.py")
+            elif mutation == "hardlink":
+                os.link(workspace / "source.py", workspace / "hardlink.py")
+            elif mutation == "budget":
+                limit = 1
             elif mutation == "root-alias":
                 locator = root / "root-alias"
                 locator.symlink_to(workspace, target_is_directory=True)
@@ -249,8 +384,13 @@ def record() -> dict:
             elif mutation == "protected-root":
                 locator = workspace / ".ssh"
                 locator.mkdir()
-            add("read_grants", {"root": locator, "max_entries": limit, "fixture_tree": mutation},
-                paths.collect_linux_read_grants, locator, max_entries=limit)
+            add(
+                "read_grants",
+                {"root": locator, "max_entries": limit, "fixture_tree": mutation},
+                paths.collect_linux_read_grants,
+                locator,
+                max_entries=limit,
+            )
             value = cases[-1]["expected"].get("value")
             if value is not None:
                 for grant in value:
