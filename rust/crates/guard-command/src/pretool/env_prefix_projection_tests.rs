@@ -59,6 +59,9 @@ fn execution_changing_prefixes_leave_the_command_untouched() {
         "GH_TOKEN=$(gh auth token --user other) gh repo view o/r",
         "GH_TOKEN=ghp_literal gh repo view o/r",
         "GITHUB_TOKEN=abc gh api user",
+        "'LC_ALL=C' ls",
+        "\"NO_COLOR=1\" ls",
+        "L\"C_ALL\"=C ls",
         "NODE_OPTIONS=--require=/tmp/x.js node -v",
         "BASH_ENV=/tmp/rc bash -c true",
         "HOME=/tmp/fake git status",
@@ -165,6 +168,11 @@ fn reviewed_projection_refuses_program_loader_and_credential_settings() {
         "JAVA_HOME=/ws/jdk mvn test",
         "EDITOR=./x npm run release",
         "CC=./x npm run build",
+        "PYTHONUSERBASE=/ws/site python x.py",
+        "BUNDLE_GEMFILE=/ws/Gemfile bundle exec rake",
+        "LESSOPEN='|/ws/x %s' less README.md",
+        "LESSCLOSE=/ws/x less README.md",
+        "'REPORT_DIR=out' node x.mjs",
     ] {
         assert!(project_reviewed(command).is_none(), "{command}");
     }

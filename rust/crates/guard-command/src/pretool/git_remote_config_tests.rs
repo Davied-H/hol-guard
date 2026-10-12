@@ -78,6 +78,9 @@ fn fetch_routes_reject_programs_rewrites_and_refspecs() {
         ("fetch.recursesubmodules", "yes"),
         ("remote.origin.tagopt", "--tags"),
         ("remote.origin.vcs", "evil"),
+        ("fetch.bundleuri", "https://evil.example/b.bundle"),
+        ("transfer.bundleuri", "true"),
+        ("core.alternaterefscommand", "sh -c id"),
     ] {
         assert!(
             fetch_config_routes_execution(&config(&[base[0], extra])),

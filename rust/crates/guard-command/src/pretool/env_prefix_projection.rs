@@ -110,7 +110,8 @@ const MAX_SETTING_CHARS: usize = 40;
 const CODE_LOADING_MARKERS: &[&str] = &[
     "ARGS", "BIN", "BROWSER", "CMD", "COMMAND", "CONF", "EDITOR", "EXEC", "FLAGS", "HOME", "HOOK",
     "IMPORT", "INIT", "LIB", "LOAD", "MODULE", "OPT", "PAGER", "PATH", "PLUGIN", "REQUIRE",
-    "RUSTC", "SCRIPT", "STARTUP", "VISUAL", "WRAPPER",
+    "RUSTC", "SCRIPT", "STARTUP", "VISUAL", "WRAPPER", "USERBASE", "GEMFILE", "LESSOPEN",
+    "LESSCLOSE",
 ];
 
 /// Toolchain programs a build reads from the environment.
@@ -194,7 +195,7 @@ fn strip_prefixes(
     let mut stripped = false;
     while index < tokens.len() && !tokens[index].is_control {
         let token = &tokens[index];
-        if let Some((name, value)) = assignment(token) {
+        if let Some((name, value)) = shell_assignment(chars, token) {
             if !literal_word(chars, token) {
                 return None;
             }
@@ -298,6 +299,17 @@ fn assignment(token: &ShellToken) -> Option<(&str, &str)> {
     let first = characters.next()?;
     ((first == '_' || first.is_ascii_alphabetic())
         && characters.all(|value| value == '_' || value.is_ascii_alphanumeric()))
+    .then_some((name, value))
+}
+
+/// A prefix word is an assignment only when its name and `=` are unquoted;
+/// the shell runs `'LC_ALL=C' ls` as a program named `LC_ALL=C`.
+fn shell_assignment<'t>(chars: &[char], token: &'t ShellToken) -> Option<(&'t str, &'t str)> {
+    let (name, value) = assignment(token)?;
+    let raw = chars.get(token.start..token.end)?;
+    (raw.len() > name.len()
+        && raw[name.len()] == '='
+        && raw[..name.len()].iter().copied().eq(name.chars()))
     .then_some((name, value))
 }
 
@@ -420,7 +432,7 @@ pub(super) fn code_loading_setting(command: &str) -> Option<String> {
         if token.value == "env" || token.value == "/usr/bin/env" {
             continue;
         }
-        let Some((name, _)) = assignment(token) else {
+        let Some((name, _)) = shell_assignment(chars.as_slice(), token) else {
             in_prefix = false;
             continue;
         };

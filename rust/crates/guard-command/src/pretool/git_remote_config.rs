@@ -51,13 +51,24 @@ fn enables_behavior(values: &[String]) -> bool {
 /// Settings that would make a fetch from `origin` run a program, reach a
 /// different host, or rewrite more refs than the plain remote-tracking set.
 pub(super) fn fetch_config_routes_execution(config: &GitConfig) -> bool {
-    if ["remote.origin.uploadpack", "remote.origin.vcs"]
-        .iter()
-        .any(|key| config.contains_key(*key))
+    if [
+        "remote.origin.uploadpack",
+        "remote.origin.vcs",
+        "fetch.bundleuri",
+        "transfer.bundleuri",
+    ]
+    .iter()
+    .any(|key| config.contains_key(*key))
     {
         return true;
     }
-    if ["core.askpass", "core.sshcommand"].iter().any(|key| {
+    if [
+        "core.askpass",
+        "core.sshcommand",
+        "core.alternaterefscommand",
+    ]
+    .iter()
+    .any(|key| {
         values(config, key)
             .iter()
             .any(|value| !value.trim().is_empty())
