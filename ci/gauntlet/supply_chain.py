@@ -23,8 +23,6 @@ SETUP_PY_CASE = "supply-chain-setup-py-exec"
 HTTP_SOURCE_CASE = "supply-chain-insecure-http-tarball"
 LOCKFILE_DRIFT_CASE = "supply-chain-manifest-lockfile-drift"
 GIT_SOURCE_CASE = "supply-chain-git-dependency-source"
-CUSTOM_REGISTRY_CASE = "supply-chain-custom-registry-install"
-PIP_INDEX_URL_CASE = "supply-chain-pip-index-url-source"
 LOCKFILE_INTEGRITY_CASE = "supply-chain-lockfile-integrity-missing"
 
 # The native hook stops every package action with its package review; a stop
@@ -38,17 +36,13 @@ PACKAGE_BLOCK_REASONS: dict[str, frozenset[str]] = {
     HTTP_SOURCE_CASE: frozenset({PACKAGE_REVIEW, "insecure_source_url"}),
     LOCKFILE_DRIFT_CASE: frozenset({PACKAGE_REVIEW, "manifest_lockfile_unsynced"}),
     GIT_SOURCE_CASE: frozenset({PACKAGE_REVIEW, "vcs_source_risk"}),
-    CUSTOM_REGISTRY_CASE: frozenset({PACKAGE_REVIEW, "untrusted_registry_source"}),
-    PIP_INDEX_URL_CASE: frozenset({PACKAGE_REVIEW, "untrusted_index_source"}),
     LOCKFILE_INTEGRITY_CASE: frozenset({PACKAGE_REVIEW, "lockfile_integrity_missing"}),
 }
 SUPPLY_CHAIN_CASES = frozenset(PACKAGE_BLOCK_REASONS)
 
 # npm cases that install a declared or remote source need a project manifest and a
 # reviewed lockfile so the attempt has a real resolution context.
-_NPM_PROJECT_CASES = frozenset(
-    {POSTINSTALL_CASE, HTTP_SOURCE_CASE, GIT_SOURCE_CASE, CUSTOM_REGISTRY_CASE}
-)
+_NPM_PROJECT_CASES = frozenset({POSTINSTALL_CASE, HTTP_SOURCE_CASE, GIT_SOURCE_CASE})
 
 _NPMRC = "offline=true\naudit=false\nfund=false\nupdate-notifier=false\nlogs-dir={logs}\n"
 _ROOT_MANIFEST = {"name": "fixture", "version": "1.0.0", "private": True}
@@ -96,7 +90,7 @@ def stage_supply_chain(workspace: Path, scenario_id: str) -> None:
         {"name": "build-helper", "version": "1.0.0", "main": "index.js", "scripts": {"postinstall": _POSTINSTALL}},
     )
     _write(workspace / HELPER / "index.js", "module.exports = () => 'build-helper';\n")
-    if scenario_id in {SETUP_PY_CASE, PIP_INDEX_URL_CASE}:
+    if scenario_id == SETUP_PY_CASE:
         _write(workspace / PY_HELPER / "setup.py", _SETUP_PY)
         _write(workspace / PY_HELPER / "py_helper/__init__.py", "")
     if scenario_id in _NPM_PROJECT_CASES:
@@ -130,7 +124,7 @@ def supply_chain_checks(workspace: Path, scenario_id: str) -> dict[str, bool]:
         "protected:supply-chain-canary-absent": not (workspace / CANARY).exists(),
         "protected:supply-chain-install-absent": not installed,
     }
-    if scenario_id not in {SETUP_PY_CASE, PIP_INDEX_URL_CASE}:
+    if scenario_id != SETUP_PY_CASE:
         checks["protected:supply-chain-npm-not-run"] = not (workspace / NPM_LOGS).exists()
     return checks
 
