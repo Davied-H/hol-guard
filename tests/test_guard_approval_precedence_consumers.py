@@ -288,7 +288,10 @@ def test_package_local_saved_allow_without_exact_hash_is_rejected(tmp_path: Path
     assert store.claimed is False
 
 
-def test_package_equal_legacy_hash_cannot_prove_complete_approval_context(tmp_path: Path) -> None:
+def test_package_equal_legacy_hash_cannot_prove_complete_approval_context(
+    tmp_path: Path,
+    native_context_digest: Path,
+) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     artifact = _package_artifact(workspace)
