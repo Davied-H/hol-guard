@@ -23,9 +23,9 @@ from tests.test_guard_runtime_mcp_saved_blocks import _child_command, _context, 
 pytestmark = [pytest.mark.usefixtures("bundle_first_cloud"), pytest.mark.usefixtures("package_intent_native")]
 
 # Resident ops one benign warm allow may spend, excluding the `tools/list` setup.
-# One warm allow is three round trips: the fused stdio exchange (allow evidence, forward and response),
-# the tool-call identity, and the policy decision.
-_TOTAL_BUDGET = 3
+# One warm allow is four round trips: the catalog-authority drain before the decision, the fused stdio
+# exchange (allow evidence, forward and response), the tool-call identity, and the policy decision.
+_TOTAL_BUDGET = 4
 _CONNECTION_BUDGET = 2
 # `native_context_digest` calls (cached ones included) cost Python time even when no resident round
 # trip happens, so they are bounded too.
@@ -36,7 +36,7 @@ _PER_OPERATION_BUDGET = {
     "mcp_proxy_decide": 0,
     "mcp_tool_call_identity": 1,
     "mcp_stdio_session_send": 1,
-    "mcp_stdio_session_recv": 0,
+    "mcp_stdio_session_recv": 1,
     "mcp_runtime_evidence": 0,
     "guard_store": 0,
 }
