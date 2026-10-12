@@ -189,7 +189,11 @@ class _FixedDatetime(datetime):
 
 
 def install_facts(facts: dict[str, object]) -> list[tuple[object, str, object]]:
-    """Patch the process facts the Python implementation reads; returns undo records."""
+    """Patch the process facts the pre-cutover Python implementation reads; returns undo records.
+
+    Only meaningful against the recorded base commit (see the recorder), where
+    ``shell_profile_cleanup`` and the Python admin bodies still exist.
+    """
 
     from codex_plugin_scanner.guard import package_shim_frozen, shell_profile_cleanup, shims
 

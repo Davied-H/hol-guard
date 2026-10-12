@@ -1,7 +1,9 @@
 """Record parity vectors for the package-shim admin operations.
 
 Run against the Python implementation that preceded the resident ``shim_admin``
-op (``codex_plugin_scanner.guard.shims`` at base commit ``78be1d8ba2``)::
+op (``codex_plugin_scanner.guard.shims`` at base commit ``78be1d8ba2``). The Python
+bodies were removed once the helpers moved to the resident op, so re-recording needs
+that commit checked out in a separate worktree::
 
     cd scripts/ci
     PYTHONPATH=../../src python shim_admin_vector_recorder.py [--work-base DIR]
@@ -146,8 +148,11 @@ def record_scenario(scenario: dict[str, object], work_base: str) -> dict[str, ob
             collect_hashes(snapshot(root), root, hash_map)
             os.chdir(str(facts["cwd"]))
             try:
-                outcome: dict[str, object] = {"ok": True, "result": run_call(shims, context, str(step["subop"]), step["args"])}
-            except Exception as error:  # noqa: BLE001 - the recorder keeps the failure shape
+                outcome: dict[str, object] = {
+                    "ok": True,
+                    "result": run_call(shims, context, str(step["subop"]), step["args"]),
+                }
+            except Exception as error:
                 outcome = {"ok": False, "error": type(error).__name__}
             after = snapshot(root)
             collect_hashes(after, root, hash_map)
