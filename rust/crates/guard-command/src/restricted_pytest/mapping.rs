@@ -222,7 +222,8 @@ pub(super) fn evaluate(operation: &str, input: &Value, deadline: Instant) -> Opt
     if !matches!(operation, "mapping_evidence" | "mapping_elf") {
         return None;
     }
-    let result = unpack(input)
+    let result = check(deadline)
+        .and_then(|_| unpack(input, deadline))
         .and_then(|input| {
             serde_json::from_value::<Input>(input)
                 .map_err(|_| "Invalid executable mapping request.")
@@ -246,7 +247,7 @@ pub(super) fn evaluate(operation: &str, input: &Value, deadline: Instant) -> Opt
         })
         .and_then(|value| {
             if operation == "mapping_evidence" && input.get("mapping_snapshot").is_some() {
-                super::mapping_snapshot::write(input, &value)
+                super::mapping_snapshot::write(input, &value, deadline)
             } else {
                 Ok(value)
             }
@@ -257,9 +258,9 @@ pub(super) fn evaluate(operation: &str, input: &Value, deadline: Instant) -> Opt
     })
 }
 
-fn unpack(input: &Value) -> Result<Value> {
+fn unpack(input: &Value, deadline: Instant) -> Result<Value> {
     if input.get("mapping_snapshot").is_some() {
-        return super::mapping_snapshot::read(input);
+        return super::mapping_snapshot::read(input, deadline);
     }
     let Some(packed) = input.get("packed_json_gzip_v1") else {
         return Ok(input.clone());

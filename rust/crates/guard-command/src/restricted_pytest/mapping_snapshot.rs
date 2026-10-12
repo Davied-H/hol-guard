@@ -5,7 +5,17 @@ use nix::sys::stat::Mode;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::fs::OpenOptions;
+use std::io::{Read, Write};
 use std::os::unix::fs::OpenOptionsExt;
+use std::time::Instant;
+
+fn check(deadline: Instant) -> Result<(), &'static str> {
+    if Instant::now() >= deadline {
+        Err("Linux executable mapping inspection deadline exceeded.")
+    } else {
+        Ok(())
+    }
+}
 
 fn directory(input: &Value) -> Result<fs::File, &'static str> {
     let error = "Invalid executable mapping snapshot.";
@@ -36,8 +46,9 @@ fn directory(input: &Value) -> Result<fs::File, &'static str> {
     Ok(directory)
 }
 
-pub(super) fn read(input: &Value) -> Result<Value, &'static str> {
+pub(super) fn read(input: &Value, deadline: Instant) -> Result<Value, &'static str> {
     let error = "Invalid executable mapping snapshot.";
+    check(deadline)?;
     let directory = directory(input)?;
     let length = input["decoded_bytes"]
         .as_u64()
@@ -69,10 +80,25 @@ pub(super) fn read(input: &Value) -> Result<Value, &'static str> {
         return Err(error);
     }
     let mut bytes = Vec::new();
-    std::io::Read::by_ref(&mut file)
-        .take(length + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|_| error)?;
+    let mut chunk = [0u8; 1024 * 1024];
+    loop {
+        check(deadline)?;
+        let read = file.read(&mut chunk).map_err(|_| error)?;
+        if read == 0 {
+            break;
+        }
+        let room = (length as usize)
+            .saturating_add(1)
+            .saturating_sub(bytes.len());
+        if room == 0 {
+            break;
+        }
+        bytes.extend_from_slice(&chunk[..read.min(room)]);
+        if bytes.len() > length as usize {
+            break;
+        }
+    }
+    check(deadline)?;
     let after = file.metadata().map_err(|_| error)?;
     if bytes.len() as u64 != length
         || before.dev() != after.dev()
@@ -84,14 +110,22 @@ pub(super) fn read(input: &Value) -> Result<Value, &'static str> {
     {
         return Err(error);
     }
-    serde_json::from_slice(&bytes).map_err(|_| error)
+    check(deadline)?;
+    let parsed = serde_json::from_slice(&bytes).map_err(|_| error)?;
+    check(deadline)?;
+    Ok(parsed)
 }
 
-pub(super) fn write(input: &Value, value: &Value) -> Result<Value, &'static str> {
-    use std::io::Write;
+pub(super) fn write(
+    input: &Value,
+    value: &Value,
+    deadline: Instant,
+) -> Result<Value, &'static str> {
     let error = "Invalid executable mapping result snapshot.";
+    check(deadline)?;
     let directory = directory(input)?;
     let bytes = serde_json::to_vec(value).map_err(|_| error)?;
+    check(deadline)?;
     if bytes.len() > 32 * 1024 * 1024 {
         return Err("Executable mapping result exceeds its wire budget.");
     }
@@ -102,9 +136,12 @@ pub(super) fn write(input: &Value, value: &Value) -> Result<Value, &'static str>
         Mode::from_bits_truncate(0o600),
     )
     .map_err(|_| error)?;
-    fs::File::from(descriptor)
-        .write_all(&bytes)
-        .map_err(|_| error)?;
+    let mut file = fs::File::from(descriptor);
+    for chunk in bytes.chunks(1024 * 1024) {
+        check(deadline)?;
+        file.write_all(chunk).map_err(|_| error)?;
+    }
+    check(deadline)?;
     Ok(
         serde_json::json!({"decoded_bytes":bytes.len(),"sha256":format!("{:x}",Sha256::digest(&bytes))}),
     )

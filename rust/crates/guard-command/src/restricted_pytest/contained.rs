@@ -67,6 +67,22 @@ fn invalid_node(message: &str) -> RestrictedPytestError {
     RestrictedPytestError::new("node_test_restricted_invalid_command", message)
 }
 
+fn nvm_versions_root() -> Option<PathBuf> {
+    // Match Path.home(): $HOME, then the passwd directory. A request field
+    // cannot choose this root.
+    let from_env = std::env::var_os("HOME").and_then(|raw| {
+        let path = PathBuf::from(&raw);
+        if raw.is_empty() || !path.is_absolute() {
+            None
+        } else {
+            path.canonicalize().ok()
+        }
+    });
+    from_env
+        .or_else(host_home_directory)
+        .map(|home| home.join(".nvm/versions/node"))
+}
+
 fn approved_node(executable: &Path, workspace: &Path) -> bool {
     let Ok(metadata) = executable.metadata() else {
         return false;
@@ -82,7 +98,7 @@ fn approved_node(executable: &Path, workspace: &Path) -> bool {
     }
     let parent = executable.parent().unwrap_or(Path::new("/"));
     let version = parent.parent().unwrap_or(Path::new("/"));
-    let nvm = host_home_directory().map(|p| p.join(".nvm/versions/node"));
+    let nvm = nvm_versions_root();
     static VERSION: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^v\d+\.\d+\.\d+$").unwrap());
     let trusted = [
         workspace,
