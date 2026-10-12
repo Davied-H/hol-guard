@@ -111,6 +111,7 @@ def test_python_bridge_pin_keeps_the_python_argv_when_native_is_offered(
     assert python_bridge_argv(list(argv)) == list(argv)
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="the native Codex bridge is POSIX-only")
 def test_python_bridge_pin_skips_native_selection_in_a_fresh_process() -> None:
     """A subprocess installer must see the same Python bridge pin as the parent."""
 
