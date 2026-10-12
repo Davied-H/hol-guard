@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import gzip
 import json
 import time
 from typing import Any
@@ -136,7 +138,21 @@ def _valid_result(action: str, value: Any) -> bool:
             "split_expansions": [{"payload": str, "source_index": int, "tokens": [str]}],
         },
     }
-    return action in specs and _shape(value, specs[action])
+    if action not in specs or not _shape(value, specs[action]):
+        return False
+    if action == "parse":
+        identity = value["security_identity"].removeprefix("command-security-v2:")
+        if not value["security_identity"].startswith("command-security-v2:") or len(identity) != 64:
+            return False
+        if any(character not in "0123456789abcdef" for character in identity):
+            return False
+        length = len(value["normalized_text"])
+        for collection in ("segments", "redirects", "embedded_commands"):
+            if any(
+                item["span"]["source"] != "normalized" or item["span"]["end"] > length for item in value[collection]
+            ):
+                return False
+    return True
 
 
 def request(action: str, args: dict[str, Any], *, timeout_seconds: float = 10.0) -> Any:
@@ -164,10 +180,15 @@ def request(action: str, args: dict[str, Any], *, timeout_seconds: float = 10.0)
             budget = 1.0 if native_resident_client_ready(status.identity.path, home) else 4.0
             deadline = min(deadline, time.monotonic() + budget)
         wire_args = args
-        if action == "parse" and len(args["command"].encode("utf-8")) > 1024 * 1024:
+        if action == "parse" and len(args["command"].encode("utf-8")) > 32768:
             wire_args = {key: value for key, value in args.items() if key != "command"}
-            text = args["command"]
-            wire_args["command_chunks"] = [text[index : index + 131072] for index in range(0, len(text), 131072)]
+            source = args["command"].encode("utf-8")
+            if len(source) > 8 * 1024 * 1024:
+                raise NativeCommandModelError("native_rich_command_model_bounds")
+            encoded = base64.b64encode(gzip.compress(source, mtime=0)).decode("ascii")
+            wire_args["command_gzip_chunks"] = [
+                encoded[index : index + 524288] for index in range(0, len(encoded), 524288)
+            ]
         material = {
             "schema": SCHEMA,
             "request_id": uuid4().hex,
@@ -219,7 +240,6 @@ def request(action: str, args: dict[str, Any], *, timeout_seconds: float = 10.0)
                 not _shape(span, {"start": int, "end": int})
                 or span["start"] >= span["end"]
                 or span["end"] > len(source)
-                or result.get("uncertainty_reason") != "command_byte_limit_exceeded"
                 or result.get("confidence") != "uncertain"
                 or result.get("raw_text") != ""
                 or result.get("normalized_text") != ""

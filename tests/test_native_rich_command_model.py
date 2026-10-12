@@ -66,8 +66,9 @@ def test_native_outage_has_no_python_parser_fallback(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(client, "ensure_resident_prerequisite", lambda _: False)
     with pytest.raises(client.NativeCommandModelError):
         command_model.parse_shell_command("echo hi")
-    with pytest.raises(client.NativeCommandModelError):
-        env_wrapper.parse_env_wrapper(["echo", "hi"])
+    result = env_wrapper.parse_env_wrapper(["echo", "hi"])
+    assert not result.complete and result.error == "native_unavailable"
+    assert result.executable_argv == ()
 
 
 def test_identity_cache_is_bound_to_complete_structure(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -117,7 +118,18 @@ def test_shadow_native_identity_is_reused_without_another_transport(monkeypatch)
     assert _canonical_command_from_native("echo hi", {**payload, "security_identity": "invalid"}) is None
 
 
-@pytest.mark.parametrize("damage", ["negative_pipeline", "negative_span", "reversed_span"])
+@pytest.mark.parametrize(
+    "damage",
+    [
+        "negative_pipeline",
+        "negative_span",
+        "reversed_span",
+        "segment_overrun",
+        "redirect_overrun",
+        "embedded_overrun",
+        "invalid_identity",
+    ],
+)
 def test_malformed_bound_positions_fail_closed(monkeypatch, damage):
     model = command_model.parse_shell_command("echo hi")
     payload = {**model.to_dict(), "raw_text": model.raw_text}
@@ -126,8 +138,20 @@ def test_malformed_bound_positions_fail_closed(monkeypatch, damage):
         segment["pipeline_index"] = -1
     elif damage == "negative_span":
         segment["span"]["start"] = -1
-    else:
+    elif damage == "reversed_span":
         segment["span"].update(start=2, end=1)
+    elif damage == "segment_overrun":
+        segment["span"].update(start=99, end=99)
+    elif damage in {"redirect_overrun", "embedded_overrun"}:
+        span = {"source": "normalized", "start": 0, "end": 99}
+        if damage == "redirect_overrun":
+            payload["redirects"] = [{"operator": ">", "target": "out", "span": span}]
+        else:
+            payload["embedded_commands"] = [
+                {"kind": "substitution", "text": "hi", "execution_context": "shell", "span": span}
+            ]
+    else:
+        payload["security_identity"] = "command-security-v2:invalid"
 
     def respond(**kwargs):
         material = json.loads(kwargs["payload"])["request"]
@@ -147,13 +171,21 @@ def test_malformed_bound_positions_fail_closed(monkeypatch, damage):
         command_model.parse_shell_command("echo hi")
 
 
-def test_large_uncertain_command_preserves_native_identity_without_duplicate_wire_text():
-    text = " " + "a" * 1_100_000 + " "
-    model = command_model.parse_shell_command(text)
+@pytest.mark.parametrize(
+    "content",
+    ["a" * 1_100_000, "é" * 400_000, "a" * 3_000_000],
+    ids=["large-ascii", "large-unicode", "multi-megabyte-ascii"],
+)
+@pytest.mark.parametrize("dialect", ["posix", "powershell"])
+def test_large_uncertain_command_preserves_native_identity_without_duplicate_wire_text(content, dialect):
+    text = " " + content + " "
+    model = command_model.parse_shell_command(text, dialect=dialect)
     assert model.raw_text == text[1:-1]
     assert model.normalized_text == text[1:-1]
     assert model.confidence == "uncertain"
-    assert model.uncertainty_reason == "command_byte_limit_exceeded"
+    assert model.uncertainty_reason == (
+        "command_byte_limit_exceeded" if dialect == "posix" else "unsupported_powershell_shell_string"
+    )
     assert model.security_identity.startswith("command-security-v2:")
 
 

@@ -1,7 +1,9 @@
 //! Request-bound access to the existing rich parser and its model helpers.
 use std::collections::BTreeMap;
+use std::io::Read;
 use std::path::Path;
 
+use base64::Engine;
 use guard_command::{command_model, rich_command_model_api as model_api};
 use guard_contracts::write_canonical_json_with_limit;
 use guard_policy_snapshot::digest_bytes;
@@ -27,6 +29,8 @@ struct ParseArgs {
     command: Option<String>,
     #[serde(default)]
     command_chunks: Option<Vec<String>>,
+    #[serde(default)]
+    command_gzip_chunks: Option<Vec<String>>,
     #[serde(default)]
     cwd: Option<String>,
     #[serde(default)]
@@ -143,9 +147,23 @@ pub(crate) fn result(action: &str, args: &Value) -> Result<Value, String> {
     match action {
         "parse" => {
             let a: ParseArgs = decode(args)?;
-            let command = match (a.command, a.command_chunks) {
-                (Some(command), None) => command,
-                (None, Some(chunks)) if !chunks.is_empty() => chunks.concat(),
+            let command = match (a.command, a.command_chunks, a.command_gzip_chunks) {
+                (Some(command), None, None) => command,
+                (None, Some(chunks), None) if !chunks.is_empty() => chunks.concat(),
+                (None, None, Some(chunks)) if !chunks.is_empty() => {
+                    let bytes = base64::engine::general_purpose::STANDARD
+                        .decode(chunks.concat())
+                        .map_err(|_| "native_rich_command_model_invalid_args")?;
+                    let mut text = String::new();
+                    flate2::read::GzDecoder::new(bytes.as_slice())
+                        .take(8 * 1024 * 1024 + 1)
+                        .read_to_string(&mut text)
+                        .map_err(|_| "native_rich_command_model_invalid_args")?;
+                    if text.len() > 8 * 1024 * 1024 {
+                        return Err("native_rich_command_model_bounds".into());
+                    }
+                    text
+                }
                 _ => return Err("native_rich_command_model_invalid_args".into()),
             };
             if command.trim().is_empty() {
@@ -162,7 +180,8 @@ pub(crate) fn result(action: &str, args: &Value) -> Result<Value, String> {
             );
             let mut value = model.to_dict();
             value["raw_text"] = json!(model.raw_text);
-            if model.uncertainty_reason.as_deref() == Some("command_byte_limit_exceeded")
+            if model.confidence == "uncertain"
+                && model.raw_text == model.normalized_text
                 && serde_json::to_vec(&value)
                     .map_err(|_| "native_rich_command_model_invalid_result")?
                     .len()
