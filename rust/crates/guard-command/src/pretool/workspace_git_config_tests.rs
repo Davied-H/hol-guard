@@ -212,3 +212,38 @@ fn global_hooks_in_any_form_and_writable_global_files_are_covered() {
     }
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[test]
+fn hook_directories_are_denied_where_their_links_lead() {
+    let root = scratch("linked-hooks");
+    let (home, repo) = (root.join("home"), root.join("repo"));
+    let app = repo.join("app");
+    std::fs::create_dir_all(repo.join(".git")).unwrap();
+    std::fs::create_dir_all(app.join("real")).unwrap();
+    std::fs::write(repo.join(".git/config"), "[core]\n").unwrap();
+    // A global hook directory outside the workspace that links into it.
+    std::os::unix::fs::symlink(app.join("real"), home.join(".githooks")).unwrap();
+    std::fs::write(
+        home.join(".gitconfig"),
+        "[core]\n\thooksPath = ~/.githooks\n",
+    )
+    .unwrap();
+    assert_eq!(
+        workspace_write_denials(&app, Some(&home)),
+        Some(vec![app.join("real")])
+    );
+    std::fs::remove_file(home.join(".gitconfig")).unwrap();
+    // A repository hook link inside the workspace is denied as written, so
+    // it cannot be swapped, and where it leads.
+    std::os::unix::fs::symlink(app.join("real"), app.join(".hooks")).unwrap();
+    std::fs::write(
+        repo.join(".git/config"),
+        "[core]\n\thooksPath = app/.hooks\n",
+    )
+    .unwrap();
+    assert_eq!(
+        workspace_write_denials(&app, Some(&home)),
+        Some(vec![app.join(".hooks"), app.join("real")])
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
