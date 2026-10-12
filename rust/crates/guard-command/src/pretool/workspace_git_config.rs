@@ -125,7 +125,7 @@ pub(crate) fn helper_write_denials(config: &str, workspace: &Path) -> Option<Vec
                 return None;
             }
             let words = value
-                .trim_start_matches(|c| c == '"' || c == '\'')
+                .trim_start_matches(['"', '\''])
                 .trim_start_matches('!')
                 .split(|c: char| c.is_whitespace() || ";&|(){}<>".contains(c))
                 .filter(|word| !word.is_empty());
