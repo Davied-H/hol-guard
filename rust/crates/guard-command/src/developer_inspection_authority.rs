@@ -46,7 +46,21 @@ fn effect_name(value: DeveloperShellEffect) -> &'static str {
     }
 }
 fn report(context: &ShellExecutionContext) -> Value {
-    json!({"context":crate::sfrs_replay_context::encode_context(context),"context_hash":context.context_hash(),"segment_hashes":context.segments.iter().map(|s|shell_execution_segment_hash(context,s)).collect::<Vec<_>>(),"metadata":shell_execution_context_metadata(context)})
+    json!({"context":context_wire(crate::sfrs_replay_context::encode_context(context)),"context_hash":context.context_hash(),"segment_hashes":context.segments.iter().map(|s|shell_execution_segment_hash(context,s)).collect::<Vec<_>>(),"metadata":shell_execution_context_metadata(context)})
+}
+
+fn context_wire(value: Value) -> Value {
+    match value {
+        Value::Object(fields) => Value::Object(
+            fields
+                .into_iter()
+                .filter(|(key, _)| key != "$type")
+                .map(|(key, value)| (key, context_wire(value)))
+                .collect(),
+        ),
+        Value::Array(values) => Value::Array(values.into_iter().map(context_wire).collect()),
+        other => other,
+    }
 }
 fn encode_graph(graph: &DeveloperShellEffectGraph) -> Value {
     json!({"context":report(&graph.context),"segments":graph.segments.iter().map(|s|json!({"index":s.index,"command_name":s.command_name,"effect":effect_name(s.effect)})).collect::<Vec<_>>(),"has_observation":graph.has_observation()})
@@ -251,6 +265,16 @@ pub fn dispatch(entry: &str, args: &Value, ctx: &Ctx) -> Result<Value, &'static 
 mod tests {
     use super::*;
     use crate::sfrs_token_vectors::NoEnvHost;
+
+    #[test]
+    fn context_report_uses_the_production_wire_contract() {
+        let context =
+            crate::shell_execution_context::model_shell_execution_context("pwd", None, None, None);
+        let output = report(&context);
+        let wire: guard_contracts::ShellContextV1 =
+            serde_json::from_value(output["context"].clone()).unwrap();
+        assert_eq!(serde_json::to_value(wire).unwrap(), output["context"]);
+    }
     #[test]
     fn pinned_original_python_helpers() {
         let fixture: Value = serde_json::from_str(include_str!(
