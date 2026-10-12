@@ -24,7 +24,13 @@ const MAX_ITEMS: usize = 100;
 const MAX_COMMANDS: usize = 101;
 const MAX_COMMAND_DEPTH: usize = 4;
 const MAX_DEVICE_BINDINGS: usize = 1;
-const TOP_LEVEL_FIELDS: &[&str] = &["expiresAt", "items", "observedAt", "revision", "schemaVersion"];
+const TOP_LEVEL_FIELDS: &[&str] = &[
+    "expiresAt",
+    "items",
+    "observedAt",
+    "revision",
+    "schemaVersion",
+];
 const V1_ITEM_FIELDS: &[&str] = &["cliId", "identityHash", "settings"];
 const V2_ITEM_FIELDS: &[&str] = &["deviceIdentityHashes", "identityHash", "state"];
 const SETTINGS_FIELDS: &[&str] = &["commands", "state"];
@@ -109,7 +115,11 @@ impl Plan {
 
     /// Python dict assignment: a repeated key keeps its first position.
     fn set_status(&mut self, key: &str, evidence: Value) {
-        match self.statuses.iter_mut().find(|(existing, _)| existing == key) {
+        match self
+            .statuses
+            .iter_mut()
+            .find(|(existing, _)| existing == key)
+        {
             Some(slot) => slot.1 = evidence,
             None => self.statuses.push((key.to_owned(), evidence)),
         }
@@ -234,7 +244,9 @@ impl Frame<'_> {
 }
 
 fn frame<'a>(value: &'a Value, schema: &str) -> Planned<Frame<'a>> {
-    let Some(object) = value.as_object().filter(|object| has_exact_keys(object, TOP_LEVEL_FIELDS))
+    let Some(object) = value
+        .as_object()
+        .filter(|object| has_exact_keys(object, TOP_LEVEL_FIELDS))
     else {
         return refuse("continuity observation contains unsupported fields");
     };
@@ -273,7 +285,10 @@ struct V1Item<'a> {
 }
 
 fn parse_v1_item<'a>(raw: &'a Value, seen: &mut BTreeSet<&'a str>) -> Planned<V1Item<'a>> {
-    let Some(item) = raw.as_object().filter(|item| has_exact_keys(item, V1_ITEM_FIELDS)) else {
+    let Some(item) = raw
+        .as_object()
+        .filter(|item| has_exact_keys(item, V1_ITEM_FIELDS))
+    else {
         return refuse("continuity item contains unsupported fields");
     };
     let Some(cli_id) = item
@@ -397,7 +412,10 @@ struct V2Item<'a> {
 }
 
 fn parse_v2_item<'a>(raw: &'a Value, seen: &mut BTreeSet<&'a str>) -> Planned<V2Item<'a>> {
-    let Some(item) = raw.as_object().filter(|item| has_exact_keys(item, V2_ITEM_FIELDS)) else {
+    let Some(item) = raw
+        .as_object()
+        .filter(|item| has_exact_keys(item, V2_ITEM_FIELDS))
+    else {
         return refuse("continuity item contains unsupported fields");
     };
     let Some(identity_hash) = item
@@ -596,7 +614,8 @@ fn plan_context_cleanup(
         let Some(raw) = items.get(cli_id).and_then(Value::as_object) else {
             continue;
         };
-        if protected.contains(cli_id) || raw.get("status").and_then(Value::as_str) != Some("applied")
+        if protected.contains(cli_id)
+            || raw.get("status").and_then(Value::as_str) != Some("applied")
         {
             continue;
         }
@@ -639,7 +658,12 @@ fn plan_context_cleanup(
 }
 
 fn local_mutation(request: &Value) -> Planned<Value> {
-    let text = |key: &str| request.get(key).and_then(Value::as_str).ok_or(Fail::Request);
+    let text = |key: &str| {
+        request
+            .get(key)
+            .and_then(Value::as_str)
+            .ok_or(Fail::Request)
+    };
     let (cli_id, identity_hash, state) = (text("cli_id")?, text("identity_hash")?, text("state")?);
     let now = request.get("now").ok_or(Fail::Request)?;
     let active = request.get("active").and_then(Value::as_object);
@@ -716,7 +740,10 @@ fn public_state(request: &Value) -> Planned<Value> {
     let (Some(items), Some(expires_at)) = (items, expires_at) else {
         return Ok(json!({ "states": {} }));
     };
-    let stale = match (timestamp(expires_at, "expiry"), timestamp(now, "current time")) {
+    let stale = match (
+        timestamp(expires_at, "expiry"),
+        timestamp(now, "current time"),
+    ) {
         (Ok(expires), Ok(now)) => expires <= now,
         _ => return Ok(json!({ "states": {} })),
     };
@@ -756,7 +783,10 @@ fn plan_exact_settings(
         .and_then(Value::as_array)
         .map(|ids| ids.iter().filter_map(Value::as_str).collect())
         .unwrap_or_default();
-    if !commands.keys().all(|command| catalog.contains(command.as_str())) {
+    if !commands
+        .keys()
+        .all(|command| catalog.contains(command.as_str()))
+    {
         return refuse("continuity settings reference an unobserved command");
     }
     let identity = identity_from_local(local)?;
@@ -777,10 +807,18 @@ fn plan_exact_settings(
 }
 
 fn unset_update(local: &Map<String, Value>) -> Planned<Value> {
-    Ok(authority_update(identity_from_local(local)?, "unset", Map::new()))
+    Ok(authority_update(
+        identity_from_local(local)?,
+        "unset",
+        Map::new(),
+    ))
 }
 
-fn authority_update(mut identity: Map<String, Value>, state: &str, commands: Map<String, Value>) -> Value {
+fn authority_update(
+    mut identity: Map<String, Value>,
+    state: &str,
+    commands: Map<String, Value>,
+) -> Value {
     identity.insert("state".to_owned(), json!(state));
     identity.insert("commands".to_owned(), Value::Object(commands));
     Value::Object(identity)
@@ -795,7 +833,14 @@ fn identity_from_local(local: &Map<String, Value>) -> Planned<Map<String, Value>
     }
     Ok(pick(
         local,
-        &["cli_id", "name", "kind", "identity_hash", "example_label", "interpreter_name"],
+        &[
+            "cli_id",
+            "name",
+            "kind",
+            "identity_hash",
+            "example_label",
+            "interpreter_name",
+        ],
     ))
 }
 
@@ -826,7 +871,12 @@ fn observation_precondition(local: Option<&Map<String, Value>>) -> Value {
 
 fn pick(local: &Map<String, Value>, keys: &[&str]) -> Map<String, Value> {
     keys.iter()
-        .map(|key| ((*key).to_owned(), local.get(*key).cloned().unwrap_or(Value::Null)))
+        .map(|key| {
+            (
+                (*key).to_owned(),
+                local.get(*key).cloned().unwrap_or(Value::Null),
+            )
+        })
         .collect()
 }
 
@@ -901,7 +951,10 @@ fn has_exact_keys(object: &Map<String, Value>, keys: &[&str]) -> bool {
 }
 
 fn is_sha256(value: &str) -> bool {
-    value.len() == 64 && value.bytes().all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 fn is_command_id(value: &str) -> bool {
@@ -912,7 +965,9 @@ fn is_command_id(value: &str) -> bool {
     parts.len() <= MAX_COMMAND_DEPTH
         && parts.iter().all(|part| {
             let mut bytes = part.bytes();
-            bytes.next().is_some_and(|first| first.is_ascii_alphabetic())
+            bytes
+                .next()
+                .is_some_and(|first| first.is_ascii_alphabetic())
                 && part.len() <= 41
                 && bytes.all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
         })
