@@ -292,10 +292,6 @@ fn destroys_workspace(
         })
 }
 
-/// Convert a generic review into a workspace sandbox requirement when every
-/// condition holds. `pre_floor` is the reason and action before the Git
-/// execution-context floor ran.
-#[allow(clippy::too_many_arguments)]
 /// Whether this host runs the workspace sandbox for this harness hook.
 pub(super) fn host_eligible(harness: &str, event: &str) -> bool {
     cfg!(target_os = "macos")
@@ -311,6 +307,10 @@ pub(super) fn admitted_workspace(context: PathContext<'_>) -> Option<std::path::
     workspace_admissible(Path::new(context.cwd?), context.home_dir.map(Path::new))
 }
 
+/// Convert a generic review into a workspace sandbox requirement when every
+/// condition holds. `pre_floor` is the reason and action before the Git
+/// execution-context floor ran.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn convert(
     result: &mut PreToolResultV1,
     pre_floor: &(String, String),
