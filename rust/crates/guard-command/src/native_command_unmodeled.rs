@@ -239,7 +239,7 @@ fn reviewable_structure(command: &CanonicalCommandV1) -> bool {
 fn literal_redirects_only(text: &str) -> bool {
     workspace_redirects::project_naming_files(text).is_some_and(|(projected, names_files)| {
         let literal = unquoted_literal(&projected);
-        !moves_data(&literal) && !(names_files && creates_links(&literal))
+        !(moves_data(&literal) || (names_files && creates_links(&literal)))
     })
 }
 
