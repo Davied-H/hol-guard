@@ -88,3 +88,31 @@ fn a_reviewable_setting_before_an_unmodeled_script_reaches_ordinary_review() {
         );
     }
 }
+
+#[test]
+fn an_open_quote_is_named_instead_of_the_extension_controls() {
+    let root = std::env::temp_dir().canonicalize().unwrap().join(format!(
+        "guard-open-quote-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(root.join("project")).unwrap();
+    let _cleanup = FixtureCleanup(root.clone());
+
+    let command = "gh api graphql -f query='mutation($t: ID!) { resolveReviewThread(input: {threadId: $t}) { thread { isResolved } } }' -f t=PRRT_example'}";
+    let result = evaluate(&root, command);
+    assert_eq!(
+        (result.minimum_action.as_str(), result.reason_code.as_str()),
+        ("block", "native_command_extension_evaluation_failed"),
+        "{}",
+        result.reason
+    );
+    assert!(
+        result.reason.contains("leaves a quote open"),
+        "{}",
+        result.reason
+    );
+}

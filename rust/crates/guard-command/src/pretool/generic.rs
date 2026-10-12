@@ -10,6 +10,8 @@ mod env_prefix_projection;
 mod extract;
 #[path = "generic_omp.rs"]
 mod omp;
+#[path = "open_quote.rs"]
+mod open_quote;
 #[path = "generic_pure_eval.rs"]
 mod pure_eval;
 #[path = "redirect_projection.rs"]
@@ -152,18 +154,25 @@ pub fn evaluate_pre_tool_envelope_with_execution_context(
             true,
         )
     });
-    // Name the setting that kept the extension controls from evaluating the
-    // command, so the agent can retry without it instead of guessing.
+    // Name what kept the extension controls from evaluating the command, a
+    // code-loading setting or an open quote, so the agent can fix it and retry
+    // instead of guessing.
     if result.reason_code == "native_command_extension_evaluation_failed" {
-        if let Some(setting) = extract_generic_signals(payload)
+        let command = extract_generic_signals(payload)
             .ok()
-            .and_then(|signals| signals.command)
+            .and_then(|signals| signals.command);
+        if let Some(setting) = command
             .as_deref()
             .and_then(env_prefix_projection::code_loading_setting)
         {
             result.reason = format!(
                 "HOL Guard blocked this command because the {setting} setting can load code that the installed extension controls cannot check. Run the command without it."
             );
+        } else if command
+            .as_deref()
+            .is_some_and(open_quote::leaves_quote_open)
+        {
+            result.reason = "HOL Guard blocked this command because it leaves a quote open, so the shell cannot run it as written. Close or remove the stray quote and run it again.".into();
         }
     }
     result
