@@ -123,9 +123,13 @@ def _trusted_import_root() -> Path:
     return trusted_import_root()
 
 
-def _facts(*, full_environment: bool) -> dict[str, object]:
+def _facts(*, full_environment: bool, shim_dir: Path) -> dict[str, object]:
     frozen = bool(getattr(sys, "frozen", False))
     argv0 = sys.argv[0] if sys.argv else None
+    # Imported here so a test patch of `shims._is_transient_path` is visible.
+    # `shims` imports this module at load time.
+    from .shims import _is_transient_path
+
     return {
         "environ": _environment(full=full_environment),
         "home": str(Path.home()),
@@ -140,6 +144,7 @@ def _facts(*, full_environment: bool) -> dict[str, object]:
         "windows": os.name == "nt",
         "sqlite_connect_timeout_seconds": float(SQLITE_CONNECT_TIMEOUT_SECONDS),
         "now": datetime.now(timezone.utc).isoformat(),
+        "shim_dir_transient": _is_transient_path(shim_dir),
     }
 
 
@@ -195,7 +200,10 @@ def native_shim_admin(
             "project_shell_profile": project_shell_profile,
             "timeout_seconds": timeout_seconds,
             "generated_at": generated_at,
-            "facts": _facts(full_environment=subop == "probe_intercepts"),
+            "facts": _facts(
+                full_environment=subop == "probe_intercepts",
+                shim_dir=home / "package-shims" / "bin",
+            ),
         }
         request_sha256 = "sha256:" + _canonical_request_sha256(request)
         remaining = deadline - time.monotonic()

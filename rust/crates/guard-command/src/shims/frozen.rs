@@ -2,7 +2,7 @@
 
 use std::collections::BTreeSet;
 
-use super::generate::{needs_shell_wrapper, package_shim_interpreter};
+use super::generate::{is_transient_appimage_path, needs_shell_wrapper, package_shim_interpreter};
 use super::pyfs::{py_join, py_norm};
 use super::values::{parse_py_str_list, py_repr_list, py_splitlines, py_strip, sha256_hex};
 use super::{ShimFacts, ShimResult};
@@ -82,8 +82,19 @@ fn trusted_frozen_cli_path(facts: &ShimFacts, path: &str) -> bool {
 }
 
 fn interpreter_runnable(facts: &ShimFacts, wrapper: &[u8]) -> bool {
-    wrapper_interpreter(wrapper)
-        .is_none_or(|interpreter| trusted_frozen_cli_path(facts, &interpreter))
+    let Some(interpreter) = wrapper_interpreter(wrapper) else {
+        return true;
+    };
+    if trusted_frozen_cli_path(facts, &interpreter) {
+        return true;
+    }
+    // A normal unfrozen shebang names `facts.executable`. A spaced path uses a
+    // shell wrapper, and an AppImage mount is ephemeral; both stay stale.
+    // Frozen builds remain limited to the trusted frozen CLI list above.
+    if needs_shell_wrapper(facts) || is_transient_appimage_path(facts, &interpreter) {
+        return false;
+    }
+    !path_aliases(facts, &interpreter).is_disjoint(&path_aliases(facts, &facts.executable))
 }
 
 /// `_package_shim_base_command`: the first `base_command = [...]` line of the
@@ -367,4 +378,59 @@ pub(crate) fn classify_integrity(
         return Ok("unknown");
     }
     Ok("tampered")
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use super::super::ShimFacts;
+    use super::interpreter_runnable;
+
+    fn facts(executable: &str, frozen: bool) -> ShimFacts {
+        ShimFacts {
+            environ: BTreeMap::new(),
+            home: "/Users/home".to_owned(),
+            cwd: "/Users/work".to_owned(),
+            executable: executable.to_owned(),
+            frozen,
+            frozen_cli: String::new(),
+            trusted_frozen_cli_paths: Vec::new(),
+            python_version: (3, 12),
+            import_root: "/Users/src".to_owned(),
+            argv0: None,
+            windows: false,
+            sqlite_connect_timeout_seconds: 30.0,
+            now: "2026-01-01T00:00:00+00:00".to_owned(),
+            shim_dir_transient: None,
+        }
+    }
+
+    #[test]
+    fn unfrozen_shebang_is_runnable_only_for_the_current_executable() {
+        let executable = std::env::current_exe().expect("test executable");
+        let path = executable.to_str().expect("utf8");
+        let wrapper = format!("#!{path}\n");
+        assert!(interpreter_runnable(
+            &facts(path, false),
+            wrapper.as_bytes()
+        ));
+        assert!(!interpreter_runnable(
+            &facts(path, false),
+            b"#!/tmp/not-the-guard-interpreter\n"
+        ));
+        assert!(!interpreter_runnable(
+            &facts(path, true),
+            wrapper.as_bytes()
+        ));
+        let spaced = "/Users/py bin/python3";
+        assert!(!interpreter_runnable(
+            &facts(spaced, false),
+            format!("#!{spaced}\n").as_bytes()
+        ));
+        assert!(!interpreter_runnable(
+            &facts("/tmp/.mount_HOLabc123/usr/bin/python3", false),
+            b"#!/tmp/.mount_HOLabc123/usr/bin/python3\n"
+        ));
+    }
 }
