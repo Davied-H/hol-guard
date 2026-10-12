@@ -8,11 +8,12 @@
 //! `http.extraHeader` values and credential sections live, and add-on key
 //! stores such as git-crypt's.
 //!
-//! A `.git` file (a linked worktree or submodule pointer) holds one `gitdir:`
-//! line and is allowed when it is small. A `.git` directory is walked by
-//! metadata like any tree, never following links. Every configuration file in
-//! it is read, bounded, and must carry no credential marker; any key store,
-//! hidden name, secret extension or credential name sends the search to review.
+//! A `.git` file (a linked worktree or submodule pointer) is allowed only when
+//! it holds a single `gitdir:` line. A `.git` directory is walked by metadata
+//! like any tree, never following links. Every configuration file in it, and
+//! every legacy remote definition under `remotes/` or `branches/`, is read,
+//! bounded, and must carry no credential marker; any key store, hidden name,
+//! secret extension or credential name sends the search to review.
 use std::io::Read;
 use std::path::Path;
 
@@ -21,6 +22,8 @@ const MAX_DEPTH: usize = 16;
 const MAX_POINTER_BYTES: u64 = 4 * 1024;
 const MAX_CONFIG_BYTES: u64 = 64 * 1024;
 const CONFIG_NAMES: &[&str] = &["config", "config.worktree"];
+/// Directories whose files hold legacy remote URLs.
+const REMOTE_DIRECTORIES: &[&str] = &["remotes", "branches"];
 const KEY_STORES: &[&str] = &["git-crypt", "credentials", "credential"];
 /// Lowercase substrings that mark a credential in Git configuration.
 const CREDENTIAL_MARKERS: &[&str] = &[
@@ -38,9 +41,19 @@ const CREDENTIAL_MARKERS: &[&str] = &[
 /// True when a recursive `grep` may read the `.git` entry at `path`.
 pub(super) fn safe_git_entry(path: &Path, metadata: &std::fs::Metadata) -> bool {
     if metadata.is_file() {
-        return metadata.len() <= MAX_POINTER_BYTES;
+        return gitdir_pointer(path, metadata);
     }
     metadata.is_dir() && safe_git_directory(path)
+}
+
+/// A linked worktree or submodule `.git` file: one `gitdir: <path>` line.
+fn gitdir_pointer(path: &Path, metadata: &std::fs::Metadata) -> bool {
+    let Some(text) = bounded_text(path, metadata, MAX_POINTER_BYTES) else {
+        return false;
+    };
+    let mut lines = text.lines().filter(|line| !line.trim().is_empty());
+    let pointer = lines.next().and_then(|line| line.strip_prefix("gitdir: "));
+    pointer.is_some_and(|target| !target.trim().is_empty()) && lines.next().is_none()
 }
 
 fn safe_git_directory(root: &Path) -> bool {
@@ -87,28 +100,32 @@ fn safe_git_descendant(path: &Path, root: &Path, metadata: &std::fs::Metadata) -
     if !metadata.is_file() {
         return false;
     }
-    if CONFIG_NAMES.contains(&lowered.as_str()) {
+    let in_remote_directory = path
+        .parent()
+        .filter(|parent| parent.parent() == Some(root))
+        .and_then(|parent| parent.file_name())
+        .and_then(|parent| parent.to_str())
+        .is_some_and(|parent| REMOTE_DIRECTORIES.contains(&parent));
+    if CONFIG_NAMES.contains(&lowered.as_str()) || in_remote_directory {
         return config_without_credentials(path, metadata);
     }
     super::tree::descendant_allowed(path, root, true)
 }
 
-fn config_without_credentials(path: &Path, metadata: &std::fs::Metadata) -> bool {
-    if metadata.len() > MAX_CONFIG_BYTES {
-        return false;
+fn bounded_text(path: &Path, metadata: &std::fs::Metadata, limit: u64) -> Option<String> {
+    if metadata.len() > limit {
+        return None;
     }
-    let Ok(file) = std::fs::File::open(path) else {
+    let file = std::fs::File::open(path).ok()?;
+    let mut text = String::new();
+    file.take(limit + 1).read_to_string(&mut text).ok()?;
+    (text.len() as u64 <= limit).then_some(text)
+}
+
+fn config_without_credentials(path: &Path, metadata: &std::fs::Metadata) -> bool {
+    let Some(text) = bounded_text(path, metadata, MAX_CONFIG_BYTES) else {
         return false;
     };
-    let mut text = String::new();
-    if file
-        .take(MAX_CONFIG_BYTES + 1)
-        .read_to_string(&mut text)
-        .is_err()
-        || text.len() as u64 > MAX_CONFIG_BYTES
-    {
-        return false;
-    }
     let text = text.to_ascii_lowercase();
     !CREDENTIAL_MARKERS
         .iter()

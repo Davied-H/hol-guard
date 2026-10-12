@@ -127,3 +127,50 @@ fn listings_and_other_hidden_entries_are_unchanged() {
     assert_ne!(shell(&home, "grep -rln retry ~/other-project"), "allow");
     assert_ne!(shell(&home, "grep -rn retry ~/.ssh"), "allow");
 }
+
+#[test]
+fn legacy_remote_definitions_are_screened() {
+    for (directory, text) in [
+        (
+            "remotes",
+            "URL: https://user:synthetic@example.com/repo.git\n",
+        ),
+        ("branches", "https://synthetic@example.com/repo.git#main\n"),
+    ] {
+        let home = home();
+        write(
+            home.join(format!("other-project/.git/{directory}/origin")),
+            text,
+        );
+        assert_ne!(
+            shell(&home, "grep -rln retry ~/other-project"),
+            "allow",
+            "{directory}"
+        );
+    }
+    let home = home();
+    write(
+        home.join("other-project/.git/remotes/origin"),
+        "URL: https://github.com/example/repo.git\nPull: refs/heads/main:refs/heads/origin\n",
+    );
+    assert_eq!(shell(&home, "grep -rln retry ~/other-project"), "allow");
+}
+
+#[test]
+fn a_git_file_must_be_a_gitdir_pointer() {
+    let pointer = |text: &str| {
+        let home = home();
+        let worktree = home.join("worktree-project");
+        write(worktree.join("notes.md"), "retry twice\n");
+        write(worktree.join(".git"), text);
+        shell(&home, "grep -rln retry ~/worktree-project")
+    };
+    assert_eq!(pointer("gitdir: /nonexistent/.git/worktrees/x\n"), "allow");
+    for text in [
+        "synthetic-token-value\n",
+        "gitdir: /nonexistent\nsynthetic-token-value\n",
+        "",
+    ] {
+        assert_ne!(pointer(text), "allow", "{text:?}");
+    }
+}
