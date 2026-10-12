@@ -1,6 +1,9 @@
 #[path = "read_path_allowances.rs"]
 mod allowances;
-pub(super) use allowances::{agent_state_tree_holds_only_documents, inside_agent_state_tree};
+pub(super) use allowances::{
+    agent_skill_listing_directory, agent_state_tree_holds_only_documents, inside_agent_state_tree,
+    skill_link_resolves_over_home,
+};
 #[path = "hidden_listing.rs"]
 mod hidden_listing;
 #[path = "omp_read_targets.rs"]
