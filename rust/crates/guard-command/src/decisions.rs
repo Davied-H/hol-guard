@@ -15,6 +15,7 @@ use guard_contracts::{
 };
 use serde_json::{json, Map, Value};
 
+use crate::command_structured_matchers::python_trim;
 pub use crate::signals::parse_risk_confidence;
 
 // ---------------------------------------------------------------------------
@@ -222,13 +223,6 @@ fn action_messages(
 // ---------------------------------------------------------------------------
 // Coercion helpers (payload_coercion.py) + strict field-set parsers
 // ---------------------------------------------------------------------------
-
-/// `required_string` — non-empty string.
-fn python_trim(value: &str) -> &str {
-    value.trim_matches(|character: char| {
-        character.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&character)
-    })
-}
 
 fn required_string(payload: &Map<String, Value>, key: &str) -> Res<String> {
     match payload.get(key) {
@@ -546,8 +540,12 @@ impl AuthoritativeGuardDecision {
             &authoritative_decision_fields(),
             "authoritative_decision",
         )?;
-        if p.get("schema_version").and_then(Value::as_f64) != Some(1.0) {
-            return err("schema_version must be 1");
+        if p.get("schema_version").and_then(Value::as_f64)
+            != Some(AUTHORITATIVE_DECISION_SCHEMA_VERSION as f64)
+        {
+            return err(&format!(
+                "schema_version must be {AUTHORITATIVE_DECISION_SCHEMA_VERSION}"
+            ));
         }
         let action = parse_guard_action(p.get("action").unwrap_or(&Value::Null))?;
         let source = required_string(p, "source")?;

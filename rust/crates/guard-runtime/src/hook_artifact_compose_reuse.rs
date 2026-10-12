@@ -247,7 +247,7 @@ pub(crate) fn decision_build_copy(query: &DecisionBuildCopyQueryV1) -> Result<Va
         .as_str()
         .and_then(GuardAction::from_canonical)
         .ok_or_else(invalid)?;
-    let signals = parse_signals(&query.signals).map_err(|_| invalid())?;
+    let signals = parse_signals(&query.signals).map_err(|error| error.to_string())?;
     let mut decision =
         decision_from_legacy_policy_action(action, &query.reason, &signals).to_value();
     let mut copy = query.copy.clone();

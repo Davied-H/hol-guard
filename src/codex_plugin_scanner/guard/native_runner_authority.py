@@ -53,6 +53,10 @@ class NativeRunnerAuthorityError(ValueError):
     """The native owner could not supply a bound, typed runner-authority answer."""
 
 
+class NativeRunnerAuthorityRefusalError(NativeRunnerAuthorityError):
+    """A healthy owner, or the bounded encoder, refused invalid input."""
+
+
 def _fail(status: Any, guard_home: Path, code: str) -> NativeRunnerAuthorityError:
     native_record_resident_failure(status.identity.sha256, guard_home, reason=code)
     return NativeRunnerAuthorityError(code)
@@ -100,9 +104,9 @@ def native_runner_authority(kind: str, args: Mapping[str, Any], guard_home: Path
             allow_nan=False,
         ).encode("utf-8")
     except (TypeError, ValueError, UnicodeEncodeError) as error:
-        raise NativeRunnerAuthorityError("native_runner_authority_component_unencodable") from error
+        raise NativeRunnerAuthorityRefusalError("native_runner_authority_component_unencodable") from error
     if len(envelope) > _MAX_REQUEST_BYTES:
-        raise NativeRunnerAuthorityError("native_runner_authority_request_too_large")
+        raise NativeRunnerAuthorityRefusalError("native_runner_authority_request_too_large")
     try:
         output = native_resident_client_request(
             executable=status.identity.path,
@@ -139,7 +143,7 @@ def native_runner_authority(kind: str, args: Mapping[str, Any], guard_home: Path
         # is refused (callers fail closed) but the resident stays healthy, so a
         # bad request can never open the shared availability circuit.
         native_record_resident_success(status.identity.sha256, guard_home)
-        raise NativeRunnerAuthorityError(code)
+        raise NativeRunnerAuthorityRefusalError(code)
     if payload.get("status") != "ok" or code != "ok" or not isinstance(payload.get("payload"), dict):
         raise _fail(status, guard_home, _INVALID_RESULT)
     native_record_resident_success(status.identity.sha256, guard_home)

@@ -40,7 +40,7 @@ fn fused_authoritative_decision_preserves_recorded_runtime_composition() {
             assert_eq!(vector["expected"]["error_type"], "ValueError");
             assert_eq!(
                 outcome.unwrap_err(),
-                "native_consumer_artifact_compose_payload_invalid"
+                vector["expected"]["message"].as_str().unwrap()
             );
             refused += 1;
             continue;
@@ -100,6 +100,45 @@ fn resident_transport_binds_request_and_composes() {
         .unwrap()
         .starts_with("sha256:"));
     assert_eq!(reply["payload"]["current_action"], "warn");
+}
+
+#[test]
+fn semantic_refusals_remain_bound_resident_answers() {
+    let reference: Value = serde_json::from_str(include_str!(
+        "../../../../tests/fixtures/decision_authority_vectors.json"
+    ))
+    .unwrap();
+    let mut checked = 0;
+    for vector in
+        reference["vectors"].as_array().unwrap().iter().filter(|v| {
+            !v["consumer_runtime_query"].is_null() && v["expected"]["status"] == "error"
+        })
+    {
+        let mut runtime = vector["consumer_runtime_query"].clone();
+        runtime.as_object_mut().unwrap().remove("kind");
+        let reply = resident(envelope(
+            CONSUMER_ARTIFACT_COMPOSE_REQUEST_SCHEMA,
+            json!({
+                "kind": "runtime_authoritative", "runtime": runtime, "signals": []
+            }),
+        ))
+        .unwrap();
+        assert_eq!(reply["schema"], CONSUMER_ARTIFACT_COMPOSE_RESULT_SCHEMA);
+        assert_eq!(reply["request_id"], "req-consumer");
+        assert!(reply["request_sha256"]
+            .as_str()
+            .unwrap()
+            .starts_with("sha256:"));
+        assert_eq!(reply["status"], "error");
+        assert_eq!(
+            reply["code"],
+            "native_consumer_artifact_compose_validation_refused"
+        );
+        assert_eq!(reply["payload"]["error_type"], "ValueError");
+        assert_eq!(reply["payload"]["message"], vector["expected"]["message"]);
+        checked += 1;
+    }
+    assert_eq!(checked, 2);
 }
 
 #[test]

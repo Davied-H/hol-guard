@@ -57,6 +57,18 @@ def test_native_validation_error_preserves_the_public_value_error(monkeypatch: p
         build_authoritative_decision("allow", reason="fixture", composition_trace={}, authority_finalized=True)
 
 
+@pytest.mark.parametrize("code", ("native_runner_authority_request_too_large", "native_decision_authority_invalid"))
+def test_healthy_native_refusal_is_validation_not_an_outage(monkeypatch: pytest.MonkeyPatch, code: str) -> None:
+    def refuse(*args: object, **kwargs: object) -> object:
+        raise native_runner_authority.NativeRunnerAuthorityRefusalError(code)
+
+    monkeypatch.setattr(native_runner_authority, "native_runner_authority", refuse)
+    with pytest.raises(NativeDecisionAuthorityError, match=code) as caught:
+        build_authoritative_decision("allow", reason="fixture", composition_trace={}, authority_finalized=True)
+    assert not isinstance(caught.value, NativeDecisionUnavailableError)
+    assert isinstance(caught.value.__cause__, native_runner_authority.NativeRunnerAuthorityRefusalError)
+
+
 def test_artifact_transport_omits_unread_values_but_preserves_hidden_action_keys(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

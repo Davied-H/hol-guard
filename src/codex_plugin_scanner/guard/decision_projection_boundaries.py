@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from .models import GuardAction
 from .native_signal_projection import signal_projection
@@ -22,10 +23,12 @@ def canonical_approval_decision(
     decision_v2_json: object,
     *,
     reject_contradiction: bool,
+    guard_home: Path | None = None,
 ) -> CanonicalApprovalDecision:
     return CanonicalApprovalDecision(
         **signal_projection(
             "projection_approval",
             {"action": policy_action, "decision": decision_v2_json, "reject": reject_contradiction},
+            guard_home=guard_home,
         )
     )

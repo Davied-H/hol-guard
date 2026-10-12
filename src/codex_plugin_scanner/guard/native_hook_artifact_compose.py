@@ -194,6 +194,10 @@ class NativeHookComposeError(RuntimeError):
         self.code = code
 
 
+class NativeHookComposeValidationError(ValueError):
+    """The bound healthy owner refused invalid decision-copy facts."""
+
+
 def native_hook_compose(kind: str, fields: Mapping[str, object], *, guard_home: Path | None) -> dict[str, object]:
     """Return the resident's answer to one composition query, or raise."""
 
@@ -232,6 +236,15 @@ def native_hook_compose(kind: str, fields: Mapping[str, object], *, guard_home: 
         raise NativeHookComposeError(_UNAVAILABLE)
     status, code = response.get("status"), response.get("code")
     if status == "error":
+        payload = response.get("payload")
+        if (
+            code == "native_hook_artifact_compose_validation_refused"
+            and isinstance(payload, dict)
+            and payload.get("error_type") == "ValueError"
+            and isinstance(payload.get("message"), str)
+            and len(payload["message"].encode("utf-8")) <= 4096
+        ):
+            raise NativeHookComposeValidationError(payload["message"])
         reason = code if isinstance(code, str) and _RESIDENT_CODE.fullmatch(code) else _UNAVAILABLE
         raise NativeHookComposeError(reason)
     payload = response.get("payload")
@@ -242,4 +255,9 @@ def native_hook_compose(kind: str, fields: Mapping[str, object], *, guard_home: 
     return payload
 
 
-__all__ = ["HOOK_ARTIFACT_COMPOSE_FEATURE", "NativeHookComposeError", "native_hook_compose"]
+__all__ = [
+    "HOOK_ARTIFACT_COMPOSE_FEATURE",
+    "NativeHookComposeError",
+    "NativeHookComposeValidationError",
+    "native_hook_compose",
+]

@@ -37,13 +37,21 @@ pub(crate) fn evaluate_consumer_artifact_compose_request(
     if request.schema != CONSUMER_ARTIFACT_COMPOSE_REQUEST_SCHEMA {
         return Err("native_consumer_artifact_compose_schema_mismatch".to_owned());
     }
+    let (status, code, payload) = match compose(&request.query) {
+        Ok(payload) => ("ok", "ok", payload),
+        Err(message) => (
+            "error",
+            "native_consumer_artifact_compose_validation_refused",
+            json!({"error_type": "ValueError", "message": message.chars().take(1024).collect::<String>()}),
+        ),
+    };
     crate::resident_protocol::encode_response(&ConsumerArtifactComposeResultV1 {
         schema: CONSUMER_ARTIFACT_COMPOSE_RESULT_SCHEMA.to_owned(),
         request_id: request.request_id.clone(),
         request_sha256,
-        status: "ok".to_owned(),
-        code: "ok".to_owned(),
-        payload: Some(compose(&request.query)?),
+        status: status.to_owned(),
+        code: code.to_owned(),
+        payload: Some(payload),
     })
 }
 
@@ -78,7 +86,7 @@ pub(crate) fn compose(query: &ConsumerArtifactComposeQueryV1) -> Result<Value, S
             let finalized = result["authority_finalized"]
                 .as_bool()
                 .ok_or_else(invalid)?;
-            let signals = parse_signals(&query.signals).map_err(|_| invalid())?;
+            let signals = parse_signals(&query.signals).map_err(|error| error.to_string())?;
             let decision = build_authoritative_decision(
                 action,
                 reason,
@@ -87,7 +95,7 @@ pub(crate) fn compose(query: &ConsumerArtifactComposeQueryV1) -> Result<Value, S
                 finalized,
                 "composed-consumer-policy",
             )
-            .map_err(|_| invalid())?;
+            .map_err(|error| error.to_string())?;
             result["authoritative_decision"] = decision.to_value();
             result
         }

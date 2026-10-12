@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 
@@ -14,17 +15,23 @@ class NativeSignalProjectionUnavailableError(RuntimeError):
     """Projection transport failed independently of persisted decision validity."""
 
 
-def _request(kind: str, args: Mapping[str, object]) -> dict[str, Any]:
-    from .native_runner_authority import NativeRunnerAuthorityError, native_runner_authority
+def _request(kind: str, args: Mapping[str, object], *, guard_home: Path | None = None) -> dict[str, Any]:
+    from .native_runner_authority import (
+        NativeRunnerAuthorityError,
+        NativeRunnerAuthorityRefusalError,
+        native_runner_authority,
+    )
 
     try:
-        return native_runner_authority(kind, args)
+        return native_runner_authority(kind, args, guard_home=guard_home)
+    except NativeRunnerAuthorityRefusalError as error:
+        raise NativeSignalProjectionError(str(error)) from error
     except NativeRunnerAuthorityError as error:
         raise NativeSignalProjectionUnavailableError(str(error)) from error
 
 
-def signal_projection(kind: str, args: Mapping[str, object]) -> Any:
-    result = _request(kind, args)
+def signal_projection(kind: str, args: Mapping[str, object], *, guard_home: Path | None = None) -> Any:
+    result = _request(kind, args, guard_home=guard_home)
     if (
         result.get("status") == "error"
         and result.get("error_type") == "ValueError"

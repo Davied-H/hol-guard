@@ -6,9 +6,7 @@ import hashlib
 import json
 import os
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
 from datetime import datetime, timezone
-from functools import partial
 from pathlib import Path
 from typing import Any, TypedDict, TypeGuard, cast
 
@@ -27,7 +25,7 @@ from ..models import (
     HarnessDetection,
     PolicyDecision,
 )
-from ..native_consumer_artifact_compose import NativeConsumerComposeError, native_consumer_compose
+from ..native_consumer_artifact_compose import native_consumer_compose
 from ..receipts import build_receipt
 from ..risk import artifact_risk_signals_typed, artifact_risk_summary, summarize_signals
 from ..runtime.approval_context import (
@@ -35,9 +33,7 @@ from ..runtime.approval_context import (
     build_runtime_launch_identity,
 )
 from ..runtime.decisions import (
-    AuthoritativeGuardDecision,
     build_authoritative_decision,
-    project_native_authoritative_decision,
 )
 from ..runtime.runner_native_authority import authority_error as native_authority_error
 from ..runtime.signals import RiskSignalV2
@@ -50,6 +46,21 @@ from ..types import (
     HistoryContext,
     ProvenanceBundle,
     PublisherTrust,
+)
+from .native_decision_projection import (
+    _ConsumerAuthorityInputs as _ConsumerAuthorityInputs,
+)
+from .native_decision_projection import (
+    _native_current_action as _native_current_action,
+)
+from .native_decision_projection import (
+    _native_runtime_decision as _native_runtime_decision,
+)
+from .native_decision_projection import (
+    _project_runtime_decision as _project_runtime_decision,
+)
+from .native_decision_projection import (
+    _runtime_artifact_projection as _runtime_artifact_projection,
 )
 
 _PROMPT_FILE_HASH_VOLATILE_METADATA_KEYS = frozenset(
@@ -643,11 +654,6 @@ def _merge_risk_signals(
     return tuple(merged)
 
 
-_SAVED_DECISION_KEYS = ("action", "artifact_hash", "scope", "fresh_local_approval", "durable_exact_approval")
-_QUALIFICATION_KEYS = ("fresh_local_approval", "durable_exact_approval")
-_COMPOSE_UNAVAILABLE_REASON = "consumer_artifact_compose_unavailable"
-
-
 def _scoring_inputs(
     signals: tuple[GuardSignal, ...],
     deltas: tuple[CapabilityDelta, ...],
@@ -676,246 +682,6 @@ def _scoring_inputs(
         "prior_approvals": int(history.prior_approvals),
         "prior_incidents": int(history.prior_incidents),
     }
-
-
-def _native_current_action(
-    store: GuardStore,
-    config: GuardConfig,
-    *,
-    removed: bool,
-    artifact_type: str | None,
-    configured_action: str | None,
-    guard_default_action: str | None,
-    first_seen: bool,
-    changed: bool,
-    effective_default_action: GuardAction | None,
-    skill_directory_identity_reusable: bool | None,
-    scoring: Mapping[str, object],
-) -> dict[str, object]:
-    """Ask the resident for the scoring recommendation and current action.
-
-    Without an answer the artifact blocks (``compose_unavailable`` carries the
-    reason) so the evaluation still completes instead of aborting midway.
-    """
-
-    try:
-        return native_consumer_compose(
-            "current_action",
-            {
-                "removed": removed,
-                "artifact_type": artifact_type,
-                "configured_action": configured_action,
-                "guard_default_action": guard_default_action,
-                "first_seen": first_seen,
-                "changed": changed,
-                "effective_default_action": effective_default_action,
-                "config_changed_hash_action": config.changed_hash_action,
-                "config_default_action": config.default_action,
-                "skill_directory_identity_reusable": skill_directory_identity_reusable,
-                **scoring,
-            },
-            guard_home=getattr(store, "guard_home", None),
-        )
-    except NativeConsumerComposeError as error:
-        return {
-            "current_action": "block",
-            "scanner_action": None,
-            "verdict": {
-                "action": "block",
-                "confidence": 0.0,
-                "evidence_sources": [],
-                "provenance_state": "none",
-                "reasons": ["Guard could not score this artifact, so it stays blocked."],
-                "recommended_next_actions": ["open_investigation"],
-                "review_priority": "critical",
-                "severity": 9,
-                "suppressible": False,
-            },
-            "compose_unavailable": error.code,
-        }
-
-
-def _compose_unavailable_decision(
-    code: str,
-    *,
-    configured_action: str | None,
-    scanner_action: GuardAction | None,
-    raw_scoring_recommendation: object,
-) -> dict[str, object]:
-    """Fail-closed runtime answer when the resident composed nothing.
-
-    The artifact blocks, no saved approval is claimed and no override applies.
-    """
-
-    return {
-        "approval_claim": None,
-        "approval_reuse": {
-            "action": "block",
-            "current_action": "block",
-            "current_normalization_reason_code": None,
-            "original_current_action": "block",
-            "original_current_type": "str",
-            "original_saved_action": None,
-            "original_saved_type": None,
-            "reason_code": _COMPOSE_UNAVAILABLE_REASON,
-            "saved_action": None,
-            "saved_normalization_reason_code": None,
-            "should_claim": False,
-            "status": "not-applicable",
-        },
-        "approval_source": "policy",
-        "append_pending_claim": False,
-        "authority_finalized": True,
-        "decision_reason": _COMPOSE_UNAVAILABLE_REASON,
-        "policy_action": "block",
-        "policy_composition": {
-            "configured_action": configured_action,
-            "current_action": "block",
-            "final_action": "block",
-            "native_compose_error": code,
-            "raw_scoring_recommendation": raw_scoring_recommendation,
-            "saved_action": None,
-            "saved_state_present": False,
-            "scanner_action": scanner_action,
-            "scoring_recommendation_non_authoritative": True,
-            "trusted_request_override": False,
-        },
-        "saved_state_present": False,
-        "scanner_evidence": [],
-        "trusted_request_override": False,
-    }
-
-
-@dataclass(frozen=True)
-class _ConsumerAuthorityInputs:
-    """Per-evaluation authority evidence shared by every artifact query."""
-
-    store: GuardStore
-    harness: str
-    workspace: str | None
-    now: str
-    trusted_request_overrides: Mapping[str, str]
-    claimed_saved_approval_overrides: Mapping[str, str]
-    retained_saved_approval_overrides: Mapping[str, str]
-    saved_approval_qualification_overrides: Mapping[str, Mapping[str, object]]
-    runtime_detector_composition: dict[str, object] | None
-    runtime_detector_block_reason: str | None
-    runtime_signals: list[dict[str, object]]
-    pending_approval_claims: list[tuple[Mapping[str, object], str, str]] | None
-
-
-def _native_runtime_decision(
-    inputs: _ConsumerAuthorityInputs,
-    *,
-    artifact_id: str,
-    approval_context_hash: str,
-    publisher: str | None,
-    memory_command: str | None,
-    memory_artifact_type: str | None,
-    memory_artifact_name: str | None,
-    current_action: GuardAction,
-    configured_action: str | None,
-    scanner_action: GuardAction | None,
-    raw_scoring_recommendation: object,
-    skill_directory_identity_reusable: bool | None,
-    compose_unavailable: object = None,
-    decision_signals: Sequence[RiskSignalV2] = (),
-) -> dict[str, object]:
-    """Gather saved-decision evidence; the resident composes the final authority.
-
-    A failed current-action query, or no answer here, blocks the artifact.
-    """
-
-    unavailable = partial(
-        _compose_unavailable_decision,
-        configured_action=configured_action,
-        scanner_action=scanner_action,
-        raw_scoring_recommendation=raw_scoring_recommendation,
-    )
-    if isinstance(compose_unavailable, str):
-        return unavailable(compose_unavailable)
-    store = inputs.store
-    lookup = store.resolve_policy_decision_lookup_with_memory_pattern(
-        inputs.harness,
-        artifact_id,
-        artifact_hash=approval_context_hash,
-        workspace=inputs.workspace,
-        publisher=publisher,
-        now=inputs.now,
-        memory_command=memory_command,
-        memory_artifact_type=memory_artifact_type,
-        memory_artifact_name=memory_artifact_name,
-        consume_one_shot=False,
-    )
-    saved_decision = lookup["decision"]
-    ignored_integrity = lookup["ignored_local_integrity"] is not None
-    diagnosed_reason = (
-        store.approval_reuse_validation_reason(
-            inputs.harness,
-            artifact_id,
-            approval_context_hash,
-            inputs.workspace,
-            publisher,
-            inputs.now,
-        )
-        if saved_decision is None and not ignored_integrity
-        else None
-    )
-    qualification = inputs.saved_approval_qualification_overrides.get(artifact_id)
-    try:
-        answer = native_consumer_compose(
-            "runtime_authoritative",
-            {
-                "signals": [signal.to_dict() for signal in decision_signals],
-                "runtime": {
-                    "current_action": current_action,
-                    "configured_action": configured_action,
-                    "scanner_action": scanner_action,
-                    "raw_scoring_recommendation": raw_scoring_recommendation,
-                    "skill_directory_identity_reusable": skill_directory_identity_reusable,
-                    "approval_context_hash": approval_context_hash,
-                    "saved_decision": (
-                        None
-                        if saved_decision is None
-                        else {key: saved_decision.get(key) for key in _SAVED_DECISION_KEYS}
-                    ),
-                    "ignored_local_integrity": ignored_integrity,
-                    "diagnosed_reason": diagnosed_reason,
-                    "trusted_request_override_hash": inputs.trusted_request_overrides.get(artifact_id),
-                    "claimed_saved_approval_hash": inputs.claimed_saved_approval_overrides.get(artifact_id),
-                    "retained_saved_approval_hash": inputs.retained_saved_approval_overrides.get(artifact_id),
-                    "saved_approval_qualification": (
-                        None
-                        if qualification is None
-                        else {key: qualification.get(key) is True for key in _QUALIFICATION_KEYS}
-                    ),
-                    "runtime_detector_composition": inputs.runtime_detector_composition,
-                    "runtime_detector_block_reason": inputs.runtime_detector_block_reason,
-                    "runtime_signals": inputs.runtime_signals,
-                },
-            },
-            guard_home=getattr(store, "guard_home", None),
-        )
-    except NativeConsumerComposeError as error:
-        return unavailable(error.code)
-    pending = inputs.pending_approval_claims
-    if answer["append_pending_claim"] is True and saved_decision is not None and pending is not None:
-        pending.append((saved_decision, artifact_id, approval_context_hash))
-    return answer
-
-
-def _project_runtime_decision(
-    runtime: dict[str, object], signals: Sequence[RiskSignalV2]
-) -> AuthoritativeGuardDecision:
-    if "authoritative_decision" in runtime:
-        return project_native_authoritative_decision(cast(dict[str, Any], runtime["authoritative_decision"]))
-    return build_authoritative_decision(
-        cast(GuardAction, runtime["policy_action"]),
-        reason=cast(str, runtime["decision_reason"]),
-        composition_trace=cast(dict[str, object], runtime["policy_composition"]),
-        signals=signals,
-        authority_finalized=runtime["authority_finalized"] is True,
-    )
 
 
 def detect_all(context: HarnessContext) -> list[HarnessDetection]:
@@ -1067,6 +833,7 @@ def evaluate_detection(
         current = _native_current_action(
             store,
             config,
+            composer=native_consumer_compose,
             removed=False,
             artifact_type=artifact.artifact_type,
             configured_action=configured_action,
@@ -1095,6 +862,7 @@ def evaluate_detection(
         )
         runtime = _native_runtime_decision(
             authority_inputs,
+            composer=native_consumer_compose,
             artifact_id=artifact.artifact_id,
             approval_context_hash=approval_context_hash,
             publisher=artifact.publisher,
@@ -1115,14 +883,18 @@ def evaluate_detection(
         scanner_evidence = cast(list[dict[str, object]], runtime["scanner_evidence"])
         policy_composition = cast(dict[str, object], runtime["policy_composition"])
         authoritative_decision = _project_runtime_decision(runtime, risk_signals_v2)
-        policy_action = authoritative_decision.action
-        if authoritative_decision.enforcement.blocking:
+        policy_action = authoritative_decision.action if authoritative_decision is not None else "block"
+        if authoritative_decision is None or authoritative_decision.enforcement.blocking:
             blocked = True
-        risk_signals = tuple(signal.plain_reason for signal in authoritative_decision.signals)
+        projected_signals = authoritative_decision.signals if authoritative_decision is not None else risk_signals_v2
+        risk_signals = tuple(signal.plain_reason for signal in projected_signals)
+        snapshot_permitted = (
+            authoritative_decision is not None and authoritative_decision.enforcement.snapshot_permitted
+        )
         has_runtime_authority = bool(runtime_risk_signals_v2) or "runtime_detector_action" in policy_composition
         risk_summary = (
             authoritative_decision.decision_v2.dashboard_primary_detail
-            if has_runtime_authority
+            if authoritative_decision is not None and has_runtime_authority
             else artifact_risk_summary(artifact)
             if structured_signals
             else summarize_signals(())
@@ -1171,7 +943,7 @@ def evaluate_detection(
                 policy_action=policy_action,
                 changed=bool(diff["changed"]),
                 now=now,
-                approved=authoritative_decision.enforcement.snapshot_permitted,
+                approved=snapshot_permitted,
             )
             store.save_artifact_capability(
                 harness=detection.harness,
@@ -1194,7 +966,7 @@ def evaluate_detection(
                     str(diff["current_hash"]),
                     now,
                 )
-            if authoritative_decision.enforcement.snapshot_permitted:
+            if snapshot_permitted:
                 store.save_snapshot(
                     detection.harness,
                     artifact.artifact_id,
@@ -1224,7 +996,7 @@ def evaluate_detection(
                 "artifact_name": artifact.name,
                 "changed": diff["changed"],
                 "changed_fields": diff["changed_fields"],
-                **authoritative_decision.to_artifact_projection(),
+                **_runtime_artifact_projection(runtime, authoritative_decision),
                 "artifact_hash": diff["current_hash"],
                 "approval_context_hash": approval_context_hash,
                 "effective_workspace": workspace,
@@ -1290,6 +1062,7 @@ def evaluate_detection(
         removed_current = _native_current_action(
             store,
             config,
+            composer=native_consumer_compose,
             removed=True,
             artifact_type=None,
             configured_action=configured_action,
@@ -1317,6 +1090,7 @@ def evaluate_detection(
         previous_name_value = previous.get("name")
         runtime = _native_runtime_decision(
             authority_inputs,
+            composer=native_consumer_compose,
             artifact_id=artifact_id,
             approval_context_hash=approval_context_hash,
             publisher=previous_publisher,
@@ -1342,14 +1116,20 @@ def evaluate_detection(
         scanner_evidence = cast(list[dict[str, object]], runtime["scanner_evidence"])
         policy_composition = cast(dict[str, object], runtime["policy_composition"])
         authoritative_decision = _project_runtime_decision(runtime, runtime_risk_signals_v2)
-        policy_action = authoritative_decision.action
-        if authoritative_decision.enforcement.blocking:
+        policy_action = authoritative_decision.action if authoritative_decision is not None else "block"
+        if authoritative_decision is None or authoritative_decision.enforcement.blocking:
             blocked = True
-        removed_risk_signals = tuple(signal.plain_reason for signal in authoritative_decision.signals)
+        projected_signals = (
+            authoritative_decision.signals if authoritative_decision is not None else runtime_risk_signals_v2
+        )
+        removed_risk_signals = tuple(signal.plain_reason for signal in projected_signals)
+        snapshot_permitted = (
+            authoritative_decision is not None and authoritative_decision.enforcement.snapshot_permitted
+        )
         has_runtime_authority = bool(runtime_risk_signals_v2) or "runtime_detector_action" in policy_composition
         removed_risk_summary = (
             authoritative_decision.decision_v2.dashboard_primary_detail
-            if has_runtime_authority
+            if authoritative_decision is not None and has_runtime_authority
             else "Artifact was removed from the harness configuration."
         )
         artifact_name = previous.get("name")
@@ -1407,7 +1187,7 @@ def evaluate_detection(
                 "removed",
                 now,
             )
-            if authoritative_decision.enforcement.snapshot_permitted:
+            if snapshot_permitted:
                 store.delete_snapshot(detection.harness, artifact_id)
             store.add_receipt(receipt)
             store.add_event(
@@ -1430,7 +1210,7 @@ def evaluate_detection(
                 "artifact_name": str(artifact_name) if isinstance(artifact_name, str) else artifact_id,
                 "changed": True,
                 "changed_fields": ["removed"],
-                **authoritative_decision.to_artifact_projection(),
+                **_runtime_artifact_projection(runtime, authoritative_decision),
                 "artifact_hash": previous_hash,
                 "approval_context_hash": approval_context_hash,
                 "effective_workspace": workspace,
@@ -1455,7 +1235,7 @@ def evaluate_detection(
                 "removed": True,
                 "risk_signals": list(removed_risk_signals) or ["artifact removed from local harness configuration"],
                 "risk_summary": removed_risk_summary,
-                "signals": [signal.to_dict() for signal in authoritative_decision.signals],
+                "signals": [signal.to_dict() for signal in projected_signals],
                 "confidence": 0.7,
                 "severity": 3,
                 "evidence_sources": ["history"],

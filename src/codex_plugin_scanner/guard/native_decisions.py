@@ -43,10 +43,16 @@ def _invalid() -> NativeDecisionAuthorityError:
 
 
 def _request(kind: str, args: Mapping[str, object]) -> dict[str, Any]:
-    from .native_runner_authority import NativeRunnerAuthorityError, native_runner_authority
+    from .native_runner_authority import (
+        NativeRunnerAuthorityError,
+        NativeRunnerAuthorityRefusalError,
+        native_runner_authority,
+    )
 
     try:
         return native_runner_authority(kind, args)
+    except NativeRunnerAuthorityRefusalError as error:
+        raise NativeDecisionAuthorityError(str(error)) from error
     except NativeRunnerAuthorityError as error:
         raise NativeDecisionUnavailableError(str(error)) from error
 

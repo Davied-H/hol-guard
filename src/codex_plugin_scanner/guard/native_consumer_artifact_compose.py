@@ -113,6 +113,10 @@ class NativeConsumerComposeError(RuntimeError):
         self.code = code
 
 
+class NativeConsumerComposeValidationError(ValueError):
+    """The bound healthy owner refused inconsistent composition facts."""
+
+
 def native_consumer_compose(kind: str, fields: Mapping[str, object], *, guard_home: Path | None) -> dict[str, object]:
     """Return the resident's answer to one composition query, or raise."""
 
@@ -159,6 +163,14 @@ def native_consumer_compose(kind: str, fields: Mapping[str, object], *, guard_ho
     if not bound:
         raise NativeConsumerComposeError(_UNAVAILABLE)
     if status == "error":
+        if (
+            code == "native_consumer_artifact_compose_validation_refused"
+            and isinstance(payload, dict)
+            and payload.get("error_type") == "ValueError"
+            and isinstance(payload.get("message"), str)
+            and len(payload["message"].encode("utf-8")) <= 4096
+        ):
+            raise NativeConsumerComposeValidationError(payload["message"])
         reason = code if isinstance(code, str) and _RESIDENT_CODE.fullmatch(code) else _UNAVAILABLE
         raise NativeConsumerComposeError(reason)
     if not usable or not isinstance(payload, dict):
@@ -176,4 +188,9 @@ def _record_health(home: Path, *, healthy: bool) -> None:
         native_record_resident_failure(identity.sha256, home, reason="native_consumer_artifact_compose_binding")
 
 
-__all__ = ["CONSUMER_ARTIFACT_COMPOSE_FEATURE", "NativeConsumerComposeError", "native_consumer_compose"]
+__all__ = [
+    "CONSUMER_ARTIFACT_COMPOSE_FEATURE",
+    "NativeConsumerComposeError",
+    "NativeConsumerComposeValidationError",
+    "native_consumer_compose",
+]
