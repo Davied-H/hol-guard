@@ -9,6 +9,7 @@ runtime cannot answer, parsing fails closed with ``native_unavailable``.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Final, TypeGuard, cast
 
 from .native_context import _resolve_digest_home, native_context_digest
@@ -100,6 +101,7 @@ def parse_managed_controls_policy_fields(
     registry: CommandSafetyExtensionRegistry,
     negotiated_capabilities: frozenset[str],
     package_firewall_supported: bool = False,
+    guard_home: Path | None = None,
 ) -> ParsedManagedControlsPolicy:
     """Parse signed policy Extension fields after envelope authenticity is established."""
 
@@ -107,6 +109,8 @@ def parse_managed_controls_policy_fields(
         isinstance(item, str) for item in negotiated_capabilities
     ):
         raise ManagedControlsPolicyError("invalid_capabilities", "Managed Controls capabilities are malformed.")
+    if _without_extension_fields(document):
+        return _EMPTY
     capabilities = set(negotiated_capabilities)
     if package_firewall_supported:
         capabilities.add(PACKAGE_FIREWALL_CAPABILITY)
@@ -114,12 +118,12 @@ def parse_managed_controls_policy_fields(
         "managed_controls_policy_fields",
         {
             "request": {
-                "document": document,
+                "document": _projected_document(document),
                 "capabilities": sorted(capabilities),
                 "catalog": _catalog(registry),
             }
         },
-        guard_home=_resolve_digest_home(None),
+        guard_home=_resolve_digest_home(guard_home),
     )
     if not isinstance(result, dict) or result.get("status") != "ok":
         raise _unavailable()
@@ -138,6 +142,59 @@ def parse_managed_controls_policy_fields(
         return _parsed(parsed, registry)
     except (KeyError, TypeError, ValueError) as error:
         raise _unavailable() from error
+
+
+_EMPTY: Final = ParsedManagedControlsPolicy(
+    authority_mode=None,
+    signed_cloud_layer=None,
+    managed_controls=(),
+    managed_global_lockdown=False,
+    rule_targets=(),
+    delegated_targets=(),
+)
+
+
+def _rules(document: object) -> list[object] | None:
+    if not is_mapping(document):
+        return None
+    spec = document.get("spec")
+    if not is_mapping(spec):
+        return None
+    rules = spec.get("rules")
+    return cast(list[object], rules) if isinstance(rules, list) else None
+
+
+def _without_extension_fields(document: object) -> bool:
+    """A well-formed document that carries neither Extension field has nothing to parse."""
+
+    rules = _rules(document)
+    return (
+        rules is not None
+        and HOL_EXTENSION_CONTROLS_FIELD not in cast(dict[str, object], document)
+        and all(is_mapping(rule) and HOL_EXTENSION_TARGETS_FIELD not in rule for rule in rules)
+    )
+
+
+def _projected_document(document: object) -> object:
+    """Keep only what the native parser reads; malformed shapes pass through unchanged."""
+
+    if not is_mapping(document):
+        return document
+    projected = {key: document[key] for key in (HOL_EXTENSION_CONTROLS_FIELD,) if key in document}
+    if "spec" not in document:
+        return projected
+    spec = document["spec"]
+    if not is_mapping(spec) or "rules" not in spec:
+        projected["spec"] = {} if is_mapping(spec) else spec
+        return projected
+    rules = spec["rules"]
+    if isinstance(rules, list):
+        rules = [
+            {key: rule[key] for key in ("id", HOL_EXTENSION_TARGETS_FIELD) if key in rule} if is_mapping(rule) else rule
+            for rule in cast(list[object], rules)
+        ]
+    projected["spec"] = {"rules": rules}
+    return projected
 
 
 def _catalog(registry: CommandSafetyExtensionRegistry) -> dict[str, object]:
