@@ -334,3 +334,54 @@ fn uncertain_native_model_claim_binds_to_the_full_parse() {
         );
     }
 }
+
+/// The Windows host floor runs only on Windows builds, so its rule is
+/// checked directly: a compound Python launch needs review, a lone one does
+/// not.
+#[test]
+fn windows_floor_reviews_only_a_compound_python_launch() {
+    use crate::sfrs_shell_classifier::{windows_interpreter_floor, ShellClassifyInputs};
+    use std::path::Path;
+
+    let host = Host;
+    let ctx = Ctx::new(&host, "/work", "/home/user");
+    let (cwd, home) = (Path::new("/work"), Path::new("/home/user"));
+    let floor = |text: &str| {
+        let command = crate::command_model::parse_shell_command(
+            text,
+            Some(cwd),
+            Some(home),
+            "posix",
+            "shell_string",
+            "guard-shell",
+            true,
+        );
+        let inputs = ShellClassifyInputs {
+            tool_name: "Bash",
+            normalized_tool_name: "bash",
+            command_text: text,
+            cwd: Some(cwd),
+            home_dir: Some(home),
+            canonical_command: None,
+            raw_command_text: None,
+            execution_context: None,
+            raw_execution_context: None,
+            native_evaluation: None,
+            controls: None,
+            ctx: &ctx,
+        };
+        windows_interpreter_floor(&inputs, &command)
+    };
+    let found = floor("cd /work && printf data | /usr/bin/python3 -c 'print(1)'")
+        .expect("a compound Python launch is floored");
+    assert_eq!(
+        found.reason_code.as_deref(),
+        Some("interpreter_host_binding_unverified")
+    );
+    assert_eq!(
+        found.guard_default_action.as_deref(),
+        Some("require-reapproval")
+    );
+    assert!(floor("/usr/bin/python3 -c 'print(1)'").is_none());
+    assert!(floor("cd /work && ls -la").is_none());
+}
