@@ -98,6 +98,8 @@ def random_case(rng: random.Random) -> dict[str, object]:
         "publisher_actions": {"acme": rng.choice(ACTIONS)} if rng.random() < 0.08 else None,
         "harness_actions": {HARNESS: rng.choice(ACTIONS)} if rng.random() < 0.08 else None,
     }
+    if rng.random() < 0.08:
+        config["harness_risk_actions"] = {HARNESS: {"data_flow_exfiltration": rng.choice(("???", ""))}}
     metadata: dict[str, object] = {}
     kind = rng.choice(("tool_action_request",) * 6 + ("file_read_request", "package_request", "prompt_request"))
     if kind == "tool_action_request":
@@ -141,6 +143,23 @@ def random_case(rng: random.Random) -> dict[str, object]:
 
 def _typed_override(value: object) -> object:
     return value if value is None or isinstance(value, str) else ""
+
+
+def _old_data_flow_action(config: GuardConfig, strong: bool) -> object:
+    """The configured data-flow action the previous Python hook evaluation sent."""
+    from codex_plugin_scanner.guard.config import resolve_risk_action
+    from codex_plugin_scanner.guard.protection_posture import apply_posture_confidence
+
+    action = resolve_risk_action(config, "data_flow_exfiltration", harness=HARNESS)
+    if action is None:
+        return None
+    return apply_posture_confidence(
+        posture=config.protection_posture,
+        explicit=config.protection_posture_explicit,
+        risk_class="data_flow_exfiltration",
+        action=action,
+        confidence="strong" if strong else None,
+    )
 
 
 def record() -> list[dict[str, object]]:
@@ -199,9 +218,14 @@ def record() -> list[dict[str, object]]:
                 "skill_is_known_bad": runtime_policy._artifact_skill_is_known_bad(artifact),
             },
         }
+        data_flow = {
+            "weak": _old_data_flow_action(config, False),
+            "strong": _old_data_flow_action(config, True),
+        }
         vectors.append(
             {
                 "name": f"case_{index:04d}",
+                "data_flow": data_flow,
                 "spec": case,
                 "query": query,
                 "expected": {"action": action, "auto_stop_events": list(events)},
