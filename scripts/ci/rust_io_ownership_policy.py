@@ -224,6 +224,8 @@ _TRANSPORT_DECODE_PATHS: Final = frozenset(
         # Decodes the bounded resident runner-authority response envelope and
         # projects typed runner state to it; Rust owns every authority answer.
         "src/codex_plugin_scanner/guard/native_runner_authority.py",
+        # Fused CLI input/identity DTO from the existing bound resident stream.
+        "src/codex_plugin_scanner/guard/native_cli_runtime_support.py",
         "src/codex_plugin_scanner/guard/runtime/runner_native_authority.py",
         # Decodes the bounded resident MCP tool-evidence response envelope.
         "src/codex_plugin_scanner/guard/native_mcp_tool_evidence.py",
@@ -375,7 +377,6 @@ _PENDING_AUTHORITY_PATHS: Final = frozenset(
         "src/codex_plugin_scanner/guard/runtime/github_workflow_runtime.py",
         "src/codex_plugin_scanner/guard/runtime/jsonc.py",
         "src/codex_plugin_scanner/guard/runtime/local_cli_commands.py",
-        "src/codex_plugin_scanner/guard/runtime/local_cli_compound.py",
         "src/codex_plugin_scanner/guard/runtime/local_cli_identity.py",
         "src/codex_plugin_scanner/guard/runtime/local_cli_runner.py",
         "src/codex_plugin_scanner/guard/runtime/local_package_script_evidence.py",
