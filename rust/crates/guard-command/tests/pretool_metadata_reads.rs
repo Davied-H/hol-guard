@@ -1,6 +1,6 @@
 #![cfg(unix)]
 //! Disk usage, filesystem, file comparison and Git configuration reads.
-use guard_command::pretool::evaluate_pre_tool_envelope_with_context;
+use guard_command::pretool::{evaluate_pre_tool_envelope_with_execution_context, PathContext};
 use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -57,17 +57,35 @@ fn home() -> PathBuf {
     std::fs::canonicalize(home).unwrap()
 }
 
-/// The decision both shell harnesses reach, or "mixed" when they differ.
+/// The decision both shell harnesses reach, or "mixed" when they differ. The
+/// harness-stamped environment lets the Git configuration probe run.
 fn shell(home: &Path, command: &str) -> String {
+    let environment = guard_contracts::GuardExecutionEnvironmentV1 {
+        path: std::env::var("PATH").unwrap(),
+        environment_names: vec!["GIT_CONFIG_NOSYSTEM".into()],
+        environment_digest: "0".repeat(64),
+        home: Some(home.to_str().unwrap().to_owned()),
+        git_pager_disabled: false,
+        pager_disabled: false,
+        xdg_config_home: None,
+        git_config_no_system: true,
+        library_search_paths: Default::default(),
+    };
+    let project = home.join("project");
     let [omp, zcode] = ["omp", "zcode"].map(|harness| {
-        evaluate_pre_tool_envelope_with_context(
+        evaluate_pre_tool_envelope_with_execution_context(
             harness,
             "PreToolUse",
             &json!({"tool_name": "bash", "tool_input": {"command": command}}),
             None,
             None,
-            home.to_str(),
-            home.join("project").to_str(),
+            PathContext {
+                home_dir: home.to_str(),
+                cwd: project.to_str(),
+                cdpath_unset: false,
+                rustup_override_absent: false,
+            },
+            Some(&environment),
         )
         .minimum_action
     });
@@ -107,6 +125,10 @@ fn unproven_size_and_comparison_reads_still_ask() {
         "du --files0-from=list",
         "du -sh ~/.ssh",
         "du -ah src",
+        "du -h src",
+        "du -h -d 1 src",
+        "du -shL src",
+        "du -L -s src",
         "df -h $(cat list)",
         "diff -r src old",
         "diff src/.env README.md",
@@ -148,6 +170,7 @@ fn configuration_writes_and_credentials_still_ask() {
         "[http \"https://github.com/\"]\n\textraheader = AUTHORIZATION: basic synthetic\n",
         "[github]\n\ttoken = synthetic\n",
         "[remote \"origin\"]\n\turl = https://user:synthetic@example.com/repo.git\n",
+        "[remote \"origin\"]\n\turl = https://example.com/repo.git?access_token=synthetic\n",
     ] {
         let home = self::home();
         let config = home.join("project/.git/config");
@@ -175,4 +198,13 @@ fn a_configured_pager_still_asks() {
     assert!(!shell(&home, "git config --list").contains("allow"));
     assert!(!shell(&home, "git config --get-all user.name").contains("allow"));
     assert_eq!(shell(&home, "git config user.name"), "allow");
+}
+
+#[test]
+fn summaries_still_proceed_beside_hidden_directories() {
+    let home = home();
+    write(home.join("project/src/.env"), "SYNTHETIC=1\n");
+    for command in ["du -sh src", "du -h --max-depth=0 src", "du -s -d 0 src"] {
+        assert_eq!(shell(&home, command), "allow", "{command}");
+    }
 }

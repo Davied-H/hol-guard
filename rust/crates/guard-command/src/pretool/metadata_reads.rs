@@ -2,8 +2,10 @@
 //!
 //! `du` and `df` report sizes from metadata and never open a file. `df` only
 //! asks which filesystem holds each operand, so a plain path is enough. `du`
-//! walks its operands and prints directory names; with `-a` it prints every
-//! file name too, which gets the same tree screen as `ls -R`.
+//! walks its operands and prints the name of every directory below them (every
+//! file too with `-a`), so unless `-s` or a zero depth limits the output to the
+//! operands, each operand gets the same tree screen as `ls -R`. Following
+//! symbolic links (`-L`) is not admitted.
 //!
 //! `diff` reads the content of both operands. Two files each need the
 //! ordinary read proof. A directory operand makes `diff` read the files inside
@@ -13,26 +15,29 @@ use super::{safe_reads, search};
 const MAX_OPERANDS: usize = 16;
 
 pub(super) fn safe_du_arguments(arguments: &[String], context: super::PathContext<'_>) -> bool {
-    let mut names_every_file = false;
+    let mut names_descendants = true;
     let mut operands = Vec::new();
     let mut values = arguments.iter();
     while let Some(argument) = values.next() {
         let option = argument.as_str();
         if option == "-d" {
-            if !values.next().is_some_and(|depth| digits(depth)) {
-                return false;
+            match values.next() {
+                Some(depth) if digits(depth) => names_descendants &= !zero(depth),
+                _ => return false,
             }
-        } else if option.strip_prefix("-d").is_some_and(digits) {
-            continue;
+        } else if let Some(depth) = option.strip_prefix("-d").filter(|depth| digits(depth)) {
+            names_descendants &= !zero(depth);
         } else if let Some(long) = option.strip_prefix("--") {
             match long.split_once('=') {
-                Some(("max-depth", depth)) if digits(depth) => {}
+                Some(("max-depth", depth)) if digits(depth) => {
+                    names_descendants &= !zero(depth);
+                }
                 Some(("exclude", pattern)) if !pattern.is_empty() => {}
-                None if long == "all" => names_every_file = true,
+                None if long == "all" => names_descendants = true,
+                None if long == "summarize" => names_descendants = false,
                 None if matches!(
                     long,
-                    "summarize"
-                        | "human-readable"
+                    "human-readable"
                         | "total"
                         | "apparent-sizes"
                         | "si"
@@ -42,10 +47,12 @@ pub(super) fn safe_du_arguments(arguments: &[String], context: super::PathContex
                 _ => return false,
             }
         } else if let Some(flags) = option.strip_prefix('-').filter(|flags| !flags.is_empty()) {
-            if !flags.bytes().all(|flag| b"abchkmsxAHLP".contains(&flag)) {
+            if !flags.bytes().all(|flag| b"abchkmsxAHP".contains(&flag)) {
                 return false;
             }
-            names_every_file |= flags.contains('a');
+            if flags.contains('s') {
+                names_descendants = false;
+            }
         } else if option == "-" {
             return false;
         } else {
@@ -57,7 +64,7 @@ pub(super) fn safe_du_arguments(arguments: &[String], context: super::PathContex
     }
     operands.len() <= MAX_OPERANDS
         && operands.iter().all(|operand| {
-            if names_every_file {
+            if names_descendants {
                 search::safe_recursive_target(operand, context)
             } else {
                 safe_reads::bounded_read_target(operand, context.home_dir, context.cwd, true)
@@ -156,6 +163,10 @@ fn diff_option(option: &str) -> bool {
         || option[1..]
             .bytes()
             .all(|flag| b"uqrNbwBiastpyEZ".contains(&flag))
+}
+
+fn zero(depth: &str) -> bool {
+    depth.bytes().all(|byte| byte == b'0')
 }
 
 fn digits(value: &str) -> bool {

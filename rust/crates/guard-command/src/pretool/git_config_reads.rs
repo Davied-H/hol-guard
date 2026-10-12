@@ -155,7 +155,19 @@ fn entries_free(listing: &str, printed: &Printed) -> bool {
                 && !VALUE_MARKERS.iter().any(|marker| value.contains(marker))
                 && !url_with_userinfo(&key)
                 && !url_with_userinfo(&value)
+                && !url_with_query(&value)
         })
+}
+
+/// A URL with a query string, where services accept `access_token=` and
+/// similar parameters. Remote and `insteadOf` URLs never need one.
+fn url_with_query(text: &str) -> bool {
+    text.match_indices("://").any(|(index, _)| {
+        text[index + 3..]
+            .split_whitespace()
+            .next()
+            .is_some_and(|rest| rest.contains('?'))
+    })
 }
 
 /// A URL that embeds a secret: any password (`user:pw@`), or any user name
@@ -249,6 +261,7 @@ mod tests {
             "remote.origin.url\nhttps://synthetic@example.com/repo.git\0",
             "url.https://synthetic@example.com/.insteadof\nhttps://example.com/\0",
             "alias.deploy\n!curl -H 'Authorization: Bearer x'\0",
+            "remote.origin.url\nhttps://example.invalid/repo.git?access_token=synthetic\0",
         ] {
             assert!(!entries_free(listing, &all), "{listing}");
         }

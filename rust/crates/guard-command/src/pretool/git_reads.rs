@@ -57,8 +57,9 @@ pub(super) fn safe_git_arguments(
             || matches!(&arguments[1..], [list, flag] if list == "list" && flag == "--porcelain");
     }
     if subcommand == "config" {
-        // The configuration probe screens what the read prints.
-        return super::git_config_reads::read_form(&arguments[1..]).is_some();
+        // Only the configuration probe can prove what the read prints.
+        return allow_helper_context
+            && super::git_config_reads::read_form(&arguments[1..]).is_some();
     }
     if !matches!(
         subcommand,
