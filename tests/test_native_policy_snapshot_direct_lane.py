@@ -34,13 +34,14 @@ def _publisher(tmp_path: Path) -> _Publisher:
     return _Publisher(tmp_path)
 
 
-def test_binding_excludes_database_files_and_keeps_stat_identity(tmp_path: Path) -> None:
+def test_binding_excludes_hint_only_files_and_keeps_stat_identity(tmp_path: Path) -> None:
     config = str(tmp_path / "config.toml")
     binding = direct_lane_binding(
         inputs=(
             (config, (1, 2, 3, 4)),
             (str(tmp_path / "guard.db"), (5, 6, 7, 8)),
             (str(tmp_path / "guard.db-wal"), None),
+            (str(tmp_path / "native-runtime" / "command-control-authority.v1.json"), (9, 9, 9, 9)),
             (str(tmp_path / "absent.toml"), None),
         ),
         workspaces=(tmp_path / "repo-b", tmp_path / "repo-a", Path("relative")),
