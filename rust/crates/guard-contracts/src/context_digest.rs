@@ -8,8 +8,9 @@
 //! --stdin`.
 
 use crate::{BrowserMcpArtifactV1, BrowserMcpRequestV1, BrowserMcpResultV1};
-use crate::{LocalCliIdentitySourceV1, LocalCliIdentityV1};
+use crate::{LocalCliIdentitySourceV1, LocalCliIdentityV1, PackageJsonScriptsV1};
 use crate::{McpToolPolicyRequestV1, McpToolPolicyResultV1};
+use crate::{SuggestionToolV1, SuggestionVerdictV1};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
@@ -269,6 +270,15 @@ pub enum ContextDigestKindV1 {
     LocalCliIdentity {
         source: LocalCliIdentitySourceV1,
     },
+    /// Recognize a package script run or project path; reads the filesystem.
+    PackageJsonScripts {
+        command_text: String,
+        cwd: String,
+        home_dir: String,
+    },
+    CustomExtensionSuggestion {
+        tools: Vec<SuggestionToolV1>,
+    },
     McpServerIdentity {
         request: McpServerIdentityRequestV1,
     },
@@ -494,4 +504,9 @@ pub struct ContextDigestResultV1 {
     /// (`{"error": message}`), a local override, or public state.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_extension_continuity: Option<Value>,
+    /// `package_json_scripts` output; absent when nothing is recognized.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package_json_scripts: Option<PackageJsonScriptsV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_extension_suggestion: Option<Vec<SuggestionVerdictV1>>,
 }
