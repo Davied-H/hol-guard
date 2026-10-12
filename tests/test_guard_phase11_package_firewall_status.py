@@ -50,6 +50,44 @@ def test_package_shim_status_exposes_phase11_alias_fields(tmp_path: Path) -> Non
     assert status["lastInterceptProofAt"] == status["last_intercept_proof_at"] == status["last_test_at"]
 
 
+@pytest.mark.parametrize("code", ["native_shim_admin_unavailable", "native_overloaded"])
+def test_unavailable_resident_reports_unrecorded_audit_proof(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    code: str,
+) -> None:
+    from codex_plugin_scanner.guard.native_shim_admin import NativeShimAdminError
+
+    def unavailable(*_args: object, **_kwargs: object) -> dict[str, object]:
+        raise NativeShimAdminError(code)
+
+    monkeypatch.setattr(
+        "codex_plugin_scanner.guard.native_shim_admin.native_shim_admin",
+        unavailable,
+    )
+    recorded = record_package_shim_audit_result(
+        _harness_context(tmp_path),
+        audited_at="2026-06-10T01:00:00+00:00",
+    )
+
+    assert recorded == {"audit_proof_recorded": False, "audit_proof_error": code}
+
+
+def test_refused_audit_write_still_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from codex_plugin_scanner.guard.native_shim_admin import NativeShimAdminError
+
+    def refused(*_args: object, **_kwargs: object) -> dict[str, object]:
+        raise NativeShimAdminError("rejected", "package shim manifest escapes the Guard home")
+
+    monkeypatch.setattr("codex_plugin_scanner.guard.package_shim_status._record_audit", refused)
+
+    with pytest.raises(ValueError, match="escapes the Guard home"):
+        record_package_shim_audit_result(
+            _harness_context(tmp_path),
+            audited_at="2026-06-10T01:00:00+00:00",
+        )
+
+
 def test_package_shim_audit_refuses_manifest_outside_guard_home(tmp_path: Path) -> None:
     context = _harness_context(tmp_path)
     outside = tmp_path / "outside"

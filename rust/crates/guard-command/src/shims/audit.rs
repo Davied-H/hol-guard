@@ -39,9 +39,12 @@ pub fn record_package_shim_audit_result(
     let mut manifest = load_any(context)?;
     let stamp = audited_at.unwrap_or(&facts.now).to_owned();
     manifest.insert("last_audit_at".to_owned(), Value::String(stamp.clone()));
-    let path = context.manifest_path();
-    let within = match (facts.resolve(&context.guard_home), facts.resolve(&path)) {
-        (Ok(root), Ok(target)) => facts.is_within(&target, &root),
+    let path = facts.expanded_abspath(&context.manifest_path());
+    let root = facts.expanded_abspath(&context.guard_home);
+    let within = match (facts.resolve(&root), facts.resolve(&path)) {
+        (Ok(resolved_root), Ok(resolved_target)) => {
+            facts.is_within(&resolved_target, &resolved_root)
+        }
         _ => false,
     };
     if !within {
@@ -61,7 +64,8 @@ fn errno_io(error: nix::errno::Errno) -> io::Error {
 /// Atomically replace `path` without following any symlink on the way to it:
 /// every directory is opened relative to its parent with `O_NOFOLLOW` (and
 /// created `0o755` when missing), and the bytes land in an exclusive `0o600`
-/// sibling that is renamed over the target.
+/// sibling that is renamed over the target. A root-owned system symlink such
+/// as `/tmp` or `/var` is resolved first; every other symlink is refused.
 #[cfg(unix)]
 fn write_no_follow(path: &str, payload: &[u8]) -> io::Result<()> {
     use std::fs::File;
@@ -74,7 +78,8 @@ fn write_no_follow(path: &str, payload: &[u8]) -> io::Result<()> {
     use nix::sys::stat::{fchmod, mkdirat, Mode};
     use nix::unistd::{fsync, unlinkat, UnlinkatFlags};
 
-    let target = Path::new(path);
+    let normalized = normalize_trusted_output_path(Path::new(path))?;
+    let target = normalized.as_path();
     let name = target
         .file_name()
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no file name"))?
@@ -144,28 +149,149 @@ fn write_no_follow(path: &str, payload: &[u8]) -> io::Result<()> {
     published
 }
 
-/// Windows has no `openat`; every directory below the root is created plainly
-/// and a reparse point anywhere on the path is refused before the write.
+#[cfg(unix)]
+fn normalize_trusted_output_path(path: &std::path::Path) -> io::Result<std::path::PathBuf> {
+    use std::path::{Component, PathBuf};
+
+    if !path.is_absolute() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "path is not absolute",
+        ));
+    }
+    let parent = path
+        .parent()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no parent"))?;
+    let name = path
+        .file_name()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no file name"))?;
+    let mut parts = Vec::new();
+    for component in parent.components() {
+        match component {
+            Component::RootDir => {}
+            Component::Normal(part) => parts.push(part.to_os_string()),
+            _ => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "path is not normalised",
+                ))
+            }
+        }
+    }
+    let mut current = PathBuf::from("/");
+    for (index, part) in parts.iter().enumerate() {
+        let candidate = current.join(part);
+        match std::fs::symlink_metadata(&candidate) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                let mut rest = candidate;
+                for later in parts.iter().skip(index + 1) {
+                    rest.push(later);
+                }
+                rest.push(name);
+                return Ok(rest);
+            }
+            Err(error) => return Err(error),
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                if !trusted_system_link(&candidate)? {
+                    return Err(io::Error::new(
+                        io::ErrorKind::PermissionDenied,
+                        format!(
+                            "refusing symlinked output directory: {}",
+                            candidate.display()
+                        ),
+                    ));
+                }
+                current = std::fs::canonicalize(&candidate)?;
+            }
+            Ok(_) => current = candidate,
+        }
+    }
+    current.push(name);
+    Ok(current)
+}
+
+#[cfg(unix)]
+fn trusted_system_link(path: &std::path::Path) -> io::Result<bool> {
+    use std::os::unix::fs::MetadataExt;
+
+    let metadata = std::fs::symlink_metadata(path)?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no parent"))?;
+    let parent_metadata = std::fs::symlink_metadata(parent)?;
+    Ok(metadata.uid() == 0 && parent_metadata.uid() == 0 && parent_metadata.mode() & 0o022 == 0)
+}
+
+#[cfg(windows)]
+fn is_reparse_point(meta: &std::fs::Metadata) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    meta.file_attributes() & 0x0000_0400 != 0
+}
+
+#[cfg(not(any(unix, windows)))]
+fn is_reparse_point(meta: &std::fs::Metadata) -> bool {
+    meta.file_type().is_symlink()
+}
+
+/// Refuse a symlink, junction, or other reparse point before creating or writing.
 #[cfg(not(unix))]
 fn write_no_follow(path: &str, payload: &[u8]) -> io::Result<()> {
     use std::fs;
-    use std::path::Path;
+    use std::path::{Component, Path, PathBuf};
 
     let target = Path::new(path);
     let parent = target
         .parent()
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no parent"))?;
-    fs::create_dir_all(parent)?;
-    let mut current = std::path::PathBuf::new();
-    for component in target.components() {
-        current.push(component);
-        if let Ok(meta) = fs::symlink_metadata(&current) {
-            if meta.file_type().is_symlink() {
+    let mut current = PathBuf::new();
+    let mut missing = false;
+    for component in parent.components() {
+        match component {
+            Component::CurDir | Component::ParentDir => {
                 return Err(io::Error::new(
-                    io::ErrorKind::PermissionDenied,
-                    format!("refusing symlinked output path: {}", current.display()),
+                    io::ErrorKind::InvalidInput,
+                    "path is not normalised",
                 ));
             }
+            other => current.push(other),
+        }
+        if missing {
+            fs::create_dir(&current)?;
+        }
+        match fs::symlink_metadata(&current) {
+            Ok(meta) if is_reparse_point(&meta) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    format!(
+                        "refusing reparse-point output directory: {}",
+                        current.display()
+                    ),
+                ));
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound && !missing => {
+                fs::create_dir(&current)?;
+                missing = true;
+                let created = fs::symlink_metadata(&current)?;
+                if is_reparse_point(&created) {
+                    return Err(io::Error::new(
+                        io::ErrorKind::PermissionDenied,
+                        format!(
+                            "refusing reparse-point output directory: {}",
+                            current.display()
+                        ),
+                    ));
+                }
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    if let Ok(meta) = fs::symlink_metadata(target) {
+        if is_reparse_point(&meta) {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                format!("refusing reparse-point output path: {}", target.display()),
+            ));
         }
     }
     let mut token = [0_u8; 16];
@@ -266,6 +392,107 @@ mod tests {
         let error = record_package_shim_audit_result(&context, None).expect_err("escape");
         assert!(error.contains("escapes the Guard home"), "{error}");
         assert_eq!(fs::read_dir(&outside).expect("outside").count(), 0);
+        fs::remove_dir_all(&root).expect("cleanup");
+    }
+
+    #[test]
+    fn writes_a_relative_guard_home_under_facts_cwd() {
+        let root = scratch("relative");
+        let work = root.join("work");
+        fs::create_dir_all(&work).expect("work");
+        let mut request_facts = facts();
+        request_facts.cwd = work.to_str().expect("utf8").to_owned();
+        let context = ShimContext::new("guard-home", None, None, request_facts);
+        record_package_shim_audit_result(&context, None).expect("stamp");
+        let manifest = work
+            .join("guard-home")
+            .join("package-shims")
+            .join("manifest.json");
+        assert_eq!(
+            fs::read_to_string(&manifest).expect("manifest"),
+            "{\"last_audit_at\": \"2026-01-01T00:00:00+00:00\"}"
+        );
+        assert!(!root.join("guard-home").exists());
+        fs::remove_dir_all(&root).expect("cleanup");
+    }
+
+    #[test]
+    fn refuses_an_untrusted_symlinked_ancestor_inside_the_guard_home() {
+        let root = scratch("untrusted-link");
+        let real = root.join("real");
+        fs::create_dir_all(&real).expect("real");
+        let link = root.join("link");
+        symlink(&real, &link).expect("link");
+        let context = ShimContext::new(link.to_str().expect("utf8"), None, None, facts());
+        let error = record_package_shim_audit_result(&context, None).expect_err("symlink");
+        assert!(
+            error.contains("refusing symlinked output directory"),
+            "{error}"
+        );
+        assert!(!real.join("package-shims").exists());
+        fs::remove_dir_all(&root).expect("cleanup");
+    }
+
+    #[test]
+    fn writes_through_a_root_owned_system_symlink() {
+        let tmp = std::path::Path::new("/tmp");
+        let metadata = fs::symlink_metadata(tmp).expect("tmp");
+        if !metadata.file_type().is_symlink() {
+            return;
+        }
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let logical =
+            std::path::PathBuf::from(format!("/tmp/hol-guard-shim-audit-syslink-{stamp}"));
+        let home = logical.join("guard-home");
+        let context = ShimContext::new(home.to_str().expect("utf8"), None, None, facts());
+        record_package_shim_audit_result(&context, None).expect("stamp");
+        let manifest = home.join("package-shims").join("manifest.json");
+        assert_eq!(
+            fs::read_to_string(&manifest).expect("manifest"),
+            "{\"last_audit_at\": \"2026-01-01T00:00:00+00:00\"}"
+        );
+        fs::remove_dir_all(&logical).expect("cleanup");
+    }
+}
+
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use std::fs;
+    use std::process::Command;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use super::write_no_follow;
+
+    #[test]
+    fn refuses_a_junction_and_does_not_write_outside() {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("hol-guard-shim-audit-junction-{stamp}"));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).expect("root");
+        let outside = root.join("outside");
+        let home = root.join("guard-home");
+        fs::create_dir_all(&outside).expect("outside");
+        fs::create_dir_all(&home).expect("home");
+        let junction = home.join("package-shims");
+        let status = Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(&junction)
+            .arg(&outside)
+            .status()
+            .expect("mklink");
+        assert!(status.success(), "mklink /J");
+        let manifest = junction.join("manifest.json");
+        let path = manifest.to_str().expect("utf8");
+        let error = write_no_follow(path, b"{}").expect_err("junction");
+        assert!(error.to_string().contains("reparse-point"), "{error}");
+        assert_eq!(fs::read_dir(&outside).expect("outside").count(), 0);
+        let _ = fs::remove_dir(&junction);
         fs::remove_dir_all(&root).expect("cleanup");
     }
 }

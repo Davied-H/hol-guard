@@ -21,10 +21,17 @@ def record_package_shim_audit_result(
     context: HarnessContextLike,
     *,
     audited_at: str | None = None,
-) -> None:
-    """Stamp the audit time; a refused or failed write is a ``ValueError``."""
+) -> dict[str, object]:
+    """Stamp the audit time. A refused write is a ``ValueError``.
+
+    An unavailable or overloaded resident returns ``audit_proof_recorded``
+    false and does not discard the audit the caller already finished.
+    """
 
     try:
-        _record_audit(context.guard_home, audited_at=audited_at)
+        recorded = _record_audit(context.guard_home, audited_at=audited_at)
     except NativeShimAdminError as error:
         raise ValueError(error.detail or error.code) from error
+    if not isinstance(recorded, dict):
+        return {"audit_proof_recorded": True}
+    return recorded
