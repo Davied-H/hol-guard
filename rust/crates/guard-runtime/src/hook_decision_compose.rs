@@ -61,8 +61,11 @@ pub(crate) fn compose(inputs: &HookCompositionInputsV1) -> Needs<Composed> {
     let event = event_name.as_deref();
     let configured =
         normalize_guard_action_result(&inputs.configured_action, GuardAction::RequireReapproval);
-    let verified_benign = event == Some("PreToolUse") && benign_tool_action(inputs);
-    let relaxed = relax_configured_default(inputs, event, configured.action, verified_benign)?;
+    // Computed once, and only after every classifier fact this round needs is present.
+    let benign = std::cell::OnceCell::new();
+    let verified_benign =
+        || *benign.get_or_init(|| event == Some("PreToolUse") && benign_tool_action(inputs));
+    let relaxed = relax_configured_default(inputs, event, configured.action, &verified_benign)?;
     let current_config_normalization = if relaxed {
         normalize_guard_action_result(&Value::from("warn"), GuardAction::RequireReapproval)
     } else {
@@ -77,7 +80,8 @@ pub(crate) fn compose(inputs: &HookCompositionInputsV1) -> Needs<Composed> {
     let payload = inputs.has_payload_action.then(|| {
         normalize_guard_action_result(&inputs.payload_action, GuardAction::RequireReapproval)
     });
-    let ignored_payload_reason = ignored_payload_reason(inputs, payload.as_ref(), verified_benign)?;
+    let ignored_payload_reason =
+        ignored_payload_reason(inputs, payload.as_ref(), verified_benign());
     let payload_disposition = if ignored_payload_reason.is_some() {
         Some("ignored")
     } else if payload.is_some() {
@@ -102,6 +106,7 @@ pub(crate) fn compose(inputs: &HookCompositionInputsV1) -> Needs<Composed> {
     }
     let classifier = relax_classifier(inputs, event);
     let effective_event = event.unwrap_or("PreToolUse").to_owned();
+    let verified_benign = verified_benign();
     let mut out = Composed {
         effective_event,
         event_name,
@@ -151,7 +156,7 @@ fn relax_configured_default(
     inputs: &HookCompositionInputsV1,
     event: Option<&str>,
     configured: GuardAction,
-    verified_benign: bool,
+    verified_benign: &dyn Fn() -> bool,
 ) -> Needs<bool> {
     if inputs.has_narrow_override
         || !matches!(
@@ -179,7 +184,7 @@ fn relax_configured_default(
     if pre && matches!(canonical, "claude-code" | "codex") && benign_native_file_read(inputs) {
         return Ok(true);
     }
-    Ok(pre && verified_benign)
+    Ok(pre && verified_benign())
 }
 
 /// The classifier that justified (or would justify) the relaxation, for audit.
@@ -202,15 +207,15 @@ fn ignored_payload_reason(
     inputs: &HookCompositionInputsV1,
     payload: Option<&GuardActionNormalization>,
     verified_benign: bool,
-) -> Needs<Option<&'static str>> {
+) -> Option<&'static str> {
     let recognized = payload.is_some_and(GuardActionNormalization::recognized);
     if !recognized
         || inputs.canonical_harness != "copilot"
         || copilot_stage(inputs).as_deref() != Some("pretooluse")
     {
-        return Ok(None);
+        return None;
     }
-    Ok(verified_benign.then_some(COPILOT_BENIGN_HINT_REASON))
+    verified_benign.then_some(COPILOT_BENIGN_HINT_REASON)
 }
 
 fn copilot_stage(inputs: &HookCompositionInputsV1) -> Option<String> {

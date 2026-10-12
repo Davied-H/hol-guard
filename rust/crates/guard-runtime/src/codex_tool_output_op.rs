@@ -74,6 +74,14 @@ impl InspectionHost for ResidentInspectionHost<'_> {
         self.facts.environment.get(name).cloned()
     }
 
+    fn environment(&self) -> Vec<(String, String)> {
+        self.facts
+            .environment
+            .iter()
+            .map(|(name, value)| (name.clone(), value.clone()))
+            .collect()
+    }
+
     fn git_executable(&self) -> Option<String> {
         self.facts.git_executable.clone()
     }

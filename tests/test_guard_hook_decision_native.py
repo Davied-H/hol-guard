@@ -233,6 +233,8 @@ def test_composition_inputs_forward_raw_tool_call_without_verdicts(tmp_path: Pat
         )
 
     assert "native_request" not in inputs_for({**payload, "hook_event_name": "PostToolUse"})
+    oversized = {**payload, "tool_name": "Write", "tool_input": {"file_path": "a.txt", "content": "x" * 70_000}}
+    assert "native_request" not in inputs_for(oversized)
     request = inputs_for(payload)["native_request"]
     assert isinstance(request, dict)
     assert request["tool_name"] == "Read"
