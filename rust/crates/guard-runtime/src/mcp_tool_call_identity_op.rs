@@ -20,6 +20,7 @@ const ERR_INVALID: &str = "native_mcp_tool_call_identity_request_invalid";
 const ERR_SCHEMA: &str = "native_mcp_tool_call_identity_schema_mismatch";
 const ERR_TOO_LARGE: &str = "native_mcp_tool_call_identity_request_too_large";
 const ERR_HASH: &str = "native_mcp_tool_call_identity_hash_unavailable";
+const ERR_RESPONSE_TOO_LARGE: &str = "native_mcp_tool_call_identity_response_too_large";
 
 fn request_digest(request: &McpToolCallIdentityRequestV1) -> Result<String, &'static str> {
     let material = serde_json::to_value(request).map_err(|_| ERR_INVALID)?;
@@ -103,7 +104,15 @@ pub(crate) fn evaluate_mcp_tool_call_identity_request(
         Err(code) => return result(request, String::new(), "error", code, None),
     };
     match compose(request) {
-        Ok(payload) => result(request, digest, "ok", "ok", Some(payload)),
+        // An artifact whose schema-bearing metadata does not fit one resident
+        // response is a typed refusal, not a transport encoding failure.
+        Ok(payload) => result(request, digest.clone(), "ok", "ok", Some(payload)).or_else(|code| {
+            if code == "native_response_too_large" {
+                result(request, digest, "error", ERR_RESPONSE_TOO_LARGE, None)
+            } else {
+                Err(code)
+            }
+        }),
         Err(code) => result(request, digest, "error", code, None),
     }
 }

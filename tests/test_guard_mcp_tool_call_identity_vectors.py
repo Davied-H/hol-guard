@@ -3,7 +3,9 @@
 ``tests/fixtures/mcp_tool_call_identity/parity_vectors.json`` records, for each
 recipe, the artifact and approval hash the Python builders produce and the
 equivalent resident request. The Rust op replays the same request and must
-return the same artifact, private metadata, hash and risk categories. Set
+return the same artifact, private metadata and hash. Risk categories come from
+the native approval-hash builder both paths already share, so the fixture does
+not record them separately. Set
 ``HOL_GUARD_RECORD_VECTORS=1`` to re-record the fixture from the Python path.
 """
 

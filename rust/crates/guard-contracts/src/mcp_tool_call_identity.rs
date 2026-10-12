@@ -16,8 +16,10 @@ pub const MCP_TOOL_CALL_IDENTITY_REQUEST_SCHEMA: &str = "guard-mcp-tool-call-ide
 pub const MCP_TOOL_CALL_IDENTITY_RESULT_SCHEMA: &str = "guard-mcp-tool-call-identity-result.v1";
 /// Capability advertised by the runtime when this operation is available.
 pub const MCP_TOOL_CALL_IDENTITY_FEATURE: &str = "mcp-tool-call-identity-v1";
-/// Largest canonical request serialization the op will accept.
-pub const MCP_TOOL_CALL_IDENTITY_MAX_BYTES: usize = 8 * 1024 * 1024;
+/// Largest canonical request serialization the op will accept. It stays below
+/// `MAX_NATIVE_REQUEST_BYTES` so the resident envelope around an accepted
+/// request still fits one transport frame.
+pub const MCP_TOOL_CALL_IDENTITY_MAX_BYTES: usize = 4 * 1024 * 1024;
 
 fn required<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
 where

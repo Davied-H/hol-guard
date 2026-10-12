@@ -94,3 +94,35 @@ fn risky_tool_reports_risk_categories() {
         .as_array()
         .is_some_and(|items| !items.is_empty()));
 }
+
+#[test]
+fn request_bound_fits_one_resident_frame() {
+    const { assert!(MCP_TOOL_CALL_IDENTITY_MAX_BYTES < guard_contracts::MAX_NATIVE_REQUEST_BYTES) };
+    let doc = vectors();
+    let mut request = parse(&doc["vectors"]["catalog_token"]["request"]);
+    request.hash.arguments = json!({ "blob": "x".repeat(MCP_TOOL_CALL_IDENTITY_MAX_BYTES) });
+    let reply = run(&request);
+    assert_eq!(
+        reply["code"],
+        "native_mcp_tool_call_identity_request_too_large"
+    );
+}
+
+#[test]
+fn artifact_too_large_for_one_response_is_a_typed_error() {
+    let doc = vectors();
+    let mut request = parse(&doc["vectors"]["hash_only_refresh"]["request"]);
+    let artifact = request.artifact.as_mut().expect("hash-only artifact");
+    artifact.metadata.insert(
+        "description".to_owned(),
+        json!("x".repeat(guard_contracts::MAX_NATIVE_RESPONSE_BYTES)),
+    );
+    assert!(request_digest(&request).is_ok());
+    let reply = run(&request);
+    assert_eq!(reply["status"], "error");
+    assert_eq!(
+        reply["code"],
+        "native_mcp_tool_call_identity_response_too_large"
+    );
+    assert!(reply["payload"].is_null());
+}
