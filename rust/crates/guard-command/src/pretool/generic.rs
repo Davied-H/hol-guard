@@ -140,7 +140,7 @@ pub fn evaluate_pre_tool_envelope_with_execution_context(
     context: super::PathContext<'_>,
     execution_environment: Option<&guard_contracts::GuardExecutionEnvironmentV1>,
 ) -> PreToolResultV1 {
-    super::git_probe::with_memo(|| {
+    let mut result = super::git_probe::with_memo(|| {
         evaluate_envelope(
             harness,
             event,
@@ -151,7 +151,22 @@ pub fn evaluate_pre_tool_envelope_with_execution_context(
             execution_environment,
             true,
         )
-    })
+    });
+    // Name the setting that kept the extension controls from evaluating the
+    // command, so the agent can retry without it instead of guessing.
+    if result.reason_code == "native_command_extension_evaluation_failed" {
+        if let Some(setting) = extract_generic_signals(payload)
+            .ok()
+            .and_then(|signals| signals.command)
+            .as_deref()
+            .and_then(env_prefix_projection::code_loading_setting)
+        {
+            result.reason = format!(
+                "HOL Guard blocked this command because the {setting} setting can load code that the installed extension controls cannot check. Run the command without it."
+            );
+        }
+    }
+    result
 }
 
 #[allow(clippy::too_many_arguments)]

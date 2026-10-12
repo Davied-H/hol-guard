@@ -103,6 +103,21 @@ const UNREVIEWABLE_PREFIXES: [&str; 22] = [
 
 const MAX_SETTING_CHARS: usize = 40;
 
+/// Name fragments of settings that point a program, its compiler or its
+/// loader at other code or options (`NODE_OPTIONS`, `NODE_PATH`, `RUSTFLAGS`,
+/// `PYTHONSTARTUP`). Those stay unprojected, so extension controls keep
+/// failing closed on them.
+const CODE_LOADING_MARKERS: &[&str] = &[
+    "ARGS", "BIN", "BROWSER", "CMD", "COMMAND", "CONF", "EDITOR", "EXEC", "FLAGS", "HOME", "HOOK",
+    "IMPORT", "INIT", "LIB", "LOAD", "MODULE", "OPT", "PAGER", "PATH", "PLUGIN", "REQUIRE",
+    "RUSTC", "SCRIPT", "STARTUP", "VISUAL", "WRAPPER",
+];
+
+/// Toolchain programs a build reads from the environment.
+const CODE_LOADING_NAMES: &[&str] = &[
+    "AR", "AS", "CC", "CPP", "CXX", "FC", "LD", "LINK", "NM", "RANLIB",
+];
+
 /// A command whose leading environment settings were removed although one of
 /// them may change how it runs. It never earns less than review.
 pub(super) struct ReviewedProjection {
@@ -369,6 +384,54 @@ fn reviewable_assignment(name: &str) -> bool {
         && !CREDENTIAL_MARKERS
             .iter()
             .any(|marker| upper.contains(marker))
+        && !code_loading_name(&upper)
+}
+
+fn code_loading_name(upper: &str) -> bool {
+    CODE_LOADING_NAMES.contains(&upper)
+        || CODE_LOADING_MARKERS
+            .iter()
+            .any(|marker| upper.contains(marker))
+}
+
+/// The first leading setting of any simple command that can load other code,
+/// as a shape-checked name a reason may echo.
+pub(super) fn code_loading_setting(command: &str) -> Option<String> {
+    if command.len() > MAX_PROJECTED_CHARS {
+        return None;
+    }
+    let chars: Vec<char> = command.chars().collect();
+    let tokens = shell_tokens(&chars)?;
+    let mut command_start = true;
+    let mut in_prefix = false;
+    for token in &tokens {
+        if token.is_control {
+            command_start = COMMAND_SEPARATORS.contains(&token.value.as_str());
+            in_prefix = false;
+            continue;
+        }
+        if command_start {
+            command_start = false;
+            in_prefix = true;
+        }
+        if !in_prefix {
+            continue;
+        }
+        if token.value == "env" || token.value == "/usr/bin/env" {
+            continue;
+        }
+        let Some((name, _)) = assignment(token) else {
+            in_prefix = false;
+            continue;
+        };
+        if name.len() <= MAX_SETTING_CHARS
+            && assignment_name_shape(name)
+            && code_loading_name(&name.to_ascii_uppercase())
+        {
+            return Some(name.to_owned());
+        }
+    }
+    None
 }
 
 fn assignment_name_shape(name: &str) -> bool {

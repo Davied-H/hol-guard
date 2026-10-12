@@ -36,11 +36,11 @@ fn a_reviewable_setting_before_an_unmodeled_script_reaches_ordinary_review() {
 
     for command in [
         format!(
-            "NODE_PATH={} REPORT_DIR=.tmp/report node scripts/report.mjs",
+            "REPORT_SOURCE={} REPORT_DIR=.tmp/report node scripts/report.mjs",
             modules.display()
         ),
         format!(
-            "env NODE_PATH={} REPORT_DIR=.tmp/report node scripts/report.mjs",
+            "env REPORT_SOURCE={} REPORT_DIR=.tmp/report node scripts/report.mjs",
             modules.display()
         ),
     ] {
@@ -53,12 +53,26 @@ fn a_reviewable_setting_before_an_unmodeled_script_reaches_ordinary_review() {
         );
     }
 
-    let result = evaluate(&root, &format!("NODE_PATH={} ls", modules.display()));
+    let result = evaluate(&root, &format!("REPORT_SOURCE={} ls", modules.display()));
     assert_eq!(result.minimum_action, "review", "{}", result.reason);
     assert!(
         result
             .reason
-            .contains("the NODE_PATH setting can change how this command runs"),
+            .contains("the REPORT_SOURCE setting can change how this command runs"),
+        "{}",
+        result.reason
+    );
+
+    let result = evaluate(
+        &root,
+        &format!("NODE_PATH={} node scripts/report.mjs", modules.display()),
+    );
+    assert_eq!(result.minimum_action, "block", "{}", result.reason);
+    assert!(
+        result
+            .reason
+            .contains("the NODE_PATH setting can load code")
+            && result.reason.contains("Run the command without it"),
         "{}",
         result.reason
     );

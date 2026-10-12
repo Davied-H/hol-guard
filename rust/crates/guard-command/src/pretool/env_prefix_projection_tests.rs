@@ -1,4 +1,4 @@
-use super::{project, project_reviewed};
+use super::{code_loading_setting, project, project_reviewed};
 
 #[test]
 fn inert_prefixes_are_removed_in_place() {
@@ -128,15 +128,14 @@ fn guard_markers_cannot_be_unset() {
 #[test]
 fn reviewable_settings_project_and_name_the_first_setting() {
     let reviewed = project_reviewed(
-        "NODE_PATH=/ws/node_modules REPORT_NOW=2026-10-11T12:00:00.000Z node scripts/report.mjs",
+        "REPORT_DIR=/ws/out REPORT_NOW=2026-10-11T12:00:00.000Z node scripts/report.mjs",
     )
     .unwrap();
     assert_eq!(reviewed.command, "node scripts/report.mjs");
-    assert_eq!(reviewed.setting, "NODE_PATH");
-    let reviewed =
-        project_reviewed("env OPENSSL_CONF=/ws/a.cnf LC_ALL=C git fetch origin").unwrap();
+    assert_eq!(reviewed.setting, "REPORT_DIR");
+    let reviewed = project_reviewed("env APP_REGION=eu LC_ALL=C git fetch origin").unwrap();
     assert_eq!(reviewed.command, "git fetch origin");
-    assert_eq!(reviewed.setting, "OPENSSL_CONF");
+    assert_eq!(reviewed.setting, "APP_REGION");
 }
 
 #[test]
@@ -157,8 +156,40 @@ fn reviewed_projection_refuses_program_loader_and_credential_settings() {
         "NODE_PATH=$HOME/x node x.mjs",
         "NODE_PATH=`id` node x.mjs",
         "HOL_GUARD_MODE=off git status",
+        "NODE_PATH=/ws/node_modules node x.mjs",
+        "NODE_OPTIONS=--require=./x.js node x.mjs",
+        "env OPENSSL_CONF=/ws/a.cnf git fetch origin",
+        "RUSTFLAGS='-C linker=./x' cargo build",
+        "RUSTC_WRAPPER=./x cargo build",
+        "PYTHONPATH=. python x.py",
+        "JAVA_HOME=/ws/jdk mvn test",
+        "EDITOR=./x npm run release",
+        "CC=./x npm run build",
     ] {
         assert!(project_reviewed(command).is_none(), "{command}");
+    }
+}
+
+#[test]
+fn code_loading_settings_are_named_for_the_block_reason() {
+    for (command, setting) in [
+        ("NODE_PATH=/ws/node_modules node x.mjs", Some("NODE_PATH")),
+        (
+            "env LC_ALL=C NODE_OPTIONS=--inspect node x.mjs",
+            Some("NODE_OPTIONS"),
+        ),
+        ("REPORT_DIR=out CC=./x npm run build", Some("CC")),
+        ("cd app && PYTHONPATH=. python x.py", Some("PYTHONPATH")),
+        ("REPORT_DIR=out node x.mjs", None),
+        ("echo NODE_PATH=/ws | cat", None),
+        ("node x.mjs NODE_PATH=/ws", None),
+        ("NODE-PATH=/ws node x.mjs", None),
+    ] {
+        assert_eq!(
+            code_loading_setting(command).as_deref(),
+            setting,
+            "{command}"
+        );
     }
 }
 
