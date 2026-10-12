@@ -29,25 +29,54 @@ pub(crate) fn evaluate(args: &Value) -> super::runner_authority_op::KindResult {
         }
         Err(StoreError::Value(message)) => Ok(json!({"error":message,"exception":"ValueError"})),
         Err(StoreError::Sqlite(error)) => {
-            let class =
-                if error.sqlite_error_code() == Some(rusqlite::ErrorCode::ConstraintViolation) {
-                    "sqlite3.IntegrityError"
-                } else {
-                    "sqlite3.DatabaseError"
-                };
+            let class = sqlite_exception(&error);
             Ok(json!({"exception":class,"error":error.to_string()}))
         }
         Err(_) => Err("native_runner_authority_continuation_store_unavailable"),
+    }
+}
+fn sqlite_exception(error: &rusqlite::Error) -> &'static str {
+    use rusqlite::ErrorCode::*;
+    match error.sqlite_error_code() {
+        Some(ConstraintViolation | TypeMismatch) => "sqlite3.IntegrityError",
+        Some(TooBig) => "sqlite3.DataError",
+        Some(ApiMisuse) => "sqlite3.InterfaceError",
+        Some(OutOfMemory) => "MemoryError",
+        Some(
+            InternalMalfunction
+            | PermissionDenied
+            | OperationAborted
+            | DatabaseBusy
+            | DatabaseLocked
+            | ReadOnly
+            | OperationInterrupted
+            | SystemIoFailure
+            | NotFound
+            | DiskFull
+            | CannotOpen
+            | FileLockingProtocolFailed
+            | SchemaChanged
+            | NoLargeFileSupport
+            | AuthorizationForStatementDenied
+            | Unknown,
+        ) => "sqlite3.OperationalError",
+        _ => "sqlite3.DatabaseError",
+    }
+}
+fn wake_database_key(path: &str) -> String {
+    if let Some(unc) = path.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{unc}")
+    } else {
+        path.strip_prefix(r"\\?\").unwrap_or(path).to_owned()
     }
 }
 fn run(args: &Value) -> StoreResult<Value> {
     let home = string(args, "guard_home")?;
     let path = crate::local_store_read::require_store_path(string(args, "store_path")?, home)
         .map_err(|_| StoreError::Invalid("continuation_store_path_invalid"))?;
-    let database_key = std::fs::canonicalize(&path)
-        .map_err(|_| StoreError::Invalid("continuation_store_path_invalid"))?
-        .to_string_lossy()
-        .into_owned();
+    let canonical = std::fs::canonicalize(&path)
+        .map_err(|_| StoreError::Invalid("continuation_store_path_invalid"))?;
+    let database_key = wake_database_key(&canonical.to_string_lossy());
     let mut connection = Connection::open_with_flags(
         path,
         OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
@@ -122,7 +151,7 @@ fn claim(connection: &Connection, args: &Value) -> StoreResult<Value> {
             crate::guard_store_json::py_repr_str(now)
         ));
     }
-    if guard_contracts::canonical_utc_timestamp(now).is_none() {
+    if !crate::continuation_authority_op::has_time_zone(now) {
         return value_error("continuation claim timestamp must be timezone-aware");
     }
     let seconds = args["lease_seconds"]
@@ -150,7 +179,7 @@ fn claim(connection: &Connection, args: &Value) -> StoreResult<Value> {
                 if crate::guard_store_json::add_seconds_isoformat(&text,0).is_none() {
                     return value_error(&format!("Invalid isoformat string: {}",crate::guard_store_json::py_repr_str(&text)));
                 }
-                if guard_contracts::utc_timestamp_micros(&text).zip(guard_contracts::utc_timestamp_micros(now)).is_some_and(|(end,start)|end > start) {return Ok(json!({"claim_id":Value::Null}));}
+                if crate::continuation_authority_op::has_time_zone(&text) && guard_contracts::utc_timestamp_micros(&text).zip(guard_contracts::utc_timestamp_micros(now)).is_some_and(|(end,start)|end > start) {return Ok(json!({"claim_id":Value::Null}));}
             }
         }
     }
@@ -319,6 +348,23 @@ fn persist_resume(connection: &Connection, args: &Value) -> StoreResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sqlite_exception_and_windows_wake_keys_preserve_public_behavior() {
+        for code in [1, 5, 6, 8, 10, 13, 14] {
+            let error = rusqlite::Error::SqliteFailure(rusqlite::ffi::Error::new(code), None);
+            assert_eq!(sqlite_exception(&error), "sqlite3.OperationalError");
+        }
+        assert_eq!(
+            wake_database_key(r"\\?\C:\guard\store.db"),
+            r"C:\guard\store.db"
+        );
+        assert_eq!(
+            wake_database_key(r"\\?\UNC\server\share\store.db"),
+            r"\\server\share\store.db"
+        );
+        assert_eq!(wake_database_key("/guard/store.db"), "/guard/store.db");
+    }
 
     fn sql_value(value: &Value) -> rusqlite::types::Value {
         match value {

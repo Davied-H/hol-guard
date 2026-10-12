@@ -78,6 +78,14 @@ def continuation_authority(call: str, *, guard_home: Path | None = None, **args:
         raise sqlite3.IntegrityError(result["error"])
     if result.get("exception") == "sqlite3.DatabaseError":
         raise sqlite3.DatabaseError(result["error"])
+    if result.get("exception") == "sqlite3.OperationalError":
+        raise sqlite3.OperationalError(result["error"])
+    if result.get("exception") == "sqlite3.DataError":
+        raise sqlite3.DataError(result["error"])
+    if result.get("exception") == "sqlite3.InterfaceError":
+        raise sqlite3.InterfaceError(result["error"])
+    if result.get("exception") == "MemoryError":
+        raise MemoryError(result["error"])
     return result
 
 

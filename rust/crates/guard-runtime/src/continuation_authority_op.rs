@@ -93,6 +93,7 @@ fn replay(args: &Value) -> KindResult {
         return Ok(json!({"result":Value::Null}));
     };
     let completed = text(&value["continuation_completed_at"])
+        .filter(|value| has_time_zone(value))
         .and_then(guard_contracts::canonical_utc_timestamp);
     let evidence = value["continuation_evidence"]
         .as_array()
@@ -109,6 +110,17 @@ fn replay(args: &Value) -> KindResult {
     Ok(
         json!({"result":{"correlation_id":offer["correlation_id"],"capability":offer["capability"],"status":state,"reason":reason,"completed_at":completed,"evidence_id":evidence}}),
     )
+}
+
+pub(crate) fn has_time_zone(value: &str) -> bool {
+    crate::guard_store_json::add_seconds_isoformat(value, 0).is_some_and(|value| {
+        value
+            .split_once('T')
+            .or_else(|| value.split_once(' '))
+            .is_some_and(|(_, time)| {
+                time.contains('+') || time.contains('-') || time.ends_with('Z')
+            })
+    })
 }
 fn offer(args: &Value) -> KindResult {
     let harness = text(&args["harness"]).unwrap_or("unknown").to_lowercase();
