@@ -116,6 +116,7 @@ _TRANSPORT_INTEGRITY_PATHS: Final = frozenset(
         "src/codex_plugin_scanner/guard/native_hook_adapter.py",
         "src/codex_plugin_scanner/guard/native_hook_adapter_wire.py",
         "src/codex_plugin_scanner/guard/native_github_cli.py",
+        "src/codex_plugin_scanner/guard/native_shell_request_authority.py",
         # Same correlation-only digest for the GitHub workflow prepare op.
         "src/codex_plugin_scanner/guard/native_github_workflow.py",
         "src/codex_plugin_scanner/guard/native_protect_request.py",

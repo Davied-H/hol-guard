@@ -422,6 +422,7 @@ mod secrets_cli;
 #[path = "../../guard-command/tests/sfrs_support/mod.rs"]
 mod sfrs_support;
 mod shell_helpers_op;
+mod shell_request_authority_op;
 mod shim_op;
 mod signal_projection_approval;
 mod signal_projection_decode;
