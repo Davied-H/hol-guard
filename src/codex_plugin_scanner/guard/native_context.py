@@ -95,8 +95,10 @@ _RESULT_CODES = {
 # comment below).  Every other kind is a pure function of request content.
 _UNCACHEABLE_DIGEST_KINDS = frozenset(
     {
+        "generic_hook_approval_context",
         "mcp_launch_environment",
         "runtime_executable_identity",
+        "runtime_hook_approval_context",
         "runtime_launch_identity",
         "runtime_launch_identity_matches",
         "runtime_launch_identity_projection",

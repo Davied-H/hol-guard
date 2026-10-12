@@ -26,7 +26,7 @@ use crate::resident_diagnostics::{observe, observe_value, Phase};
 
 const TOKEN_VERSION: u64 = 1;
 const TOKEN_DOMAIN: &str = "hol.guard.approval-context";
-const CONFIGURED_ENV_HASH_DOMAIN: &[u8] = b"hol.guard.configured-environment:v1\0";
+pub(crate) const CONFIGURED_ENV_HASH_DOMAIN: &[u8] = b"hol.guard.configured-environment:v1\0";
 const CONFIGURED_HEADER_HASH_DOMAIN: &[u8] = b"hol.guard.configured-headers:v1\0";
 const TOKEN_HASH_FIELDS: [&str; 5] = ["identity", "content", "capabilities", "policy", "sandbox"];
 
@@ -310,7 +310,7 @@ pub(crate) fn python_strip(text: &str) -> &str {
     text.trim_matches(|ch: char| is_python_space(ch))
 }
 
-fn configured_values_hash(
+pub(crate) fn configured_values_hash(
     values: Option<&Value>,
     configured_keys: Option<&[String]>,
     domain: &[u8],
@@ -758,6 +758,12 @@ fn evaluate_request(
                 guard_command::mcp_tool_catalog::tool_catalog_fingerprint(entries, state, version);
             result.digest = digest;
             result.tool_catalog = canonical;
+        }
+        ContextDigestKindV1::RuntimeHookApprovalContext { inputs } => {
+            result.token = Some(crate::hook_approval_context::runtime_hook_token(inputs)?);
+        }
+        ContextDigestKindV1::GenericHookApprovalContext { inputs } => {
+            result.token = Some(crate::hook_approval_context::generic_hook_token(inputs)?);
         }
     }
     Ok(())
