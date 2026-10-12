@@ -164,12 +164,10 @@ pub(crate) fn build_rows(request: &McpToolCallRecordRequestV1) -> Result<Rows, &
     } else {
         "inline-denied"
     };
-    let user_override = (request.decision_source == inline_override).then(|| {
-        if allow {
-            "inline-approve"
-        } else {
-            "inline-deny"
-        }
+    let user_override = (request.decision_source == inline_override).then_some(if allow {
+        "inline-approve"
+    } else {
+        "inline-deny"
     });
     let mut receipt = Map::new();
     receipt.insert("receipt_id".into(), json!(request.receipt_id));

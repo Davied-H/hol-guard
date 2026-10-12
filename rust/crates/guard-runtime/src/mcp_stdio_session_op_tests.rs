@@ -262,6 +262,7 @@ fn exchange(id: &str, message: Value, quiet_ms: u64, response_timeout_ms: u64) -
             exchange: Some(guard_contracts::McpStdioSessionExchangeV1 {
                 quiet_ms,
                 response_timeout_ms,
+                record: None,
             }),
         })
         .unwrap(),
