@@ -8,6 +8,8 @@ from codex_plugin_scanner.guard.runtime.restricted_linux_elf import resolve_linu
 from codex_plugin_scanner.guard.runtime.restricted_linux_landlock import LinuxContainmentUnavailableError
 
 
+pytestmark = pytest.mark.usefixtures("native_context_digest")
+
 def _image(path, *, interpreter=None, machine=183):
     identity = b"\x7fELF\x02\x01\x01" + bytes(9)
     count = 1 if interpreter is None else 2

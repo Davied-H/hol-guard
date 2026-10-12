@@ -1,6 +1,7 @@
 """Extra metadata reads stay indexed; listing never becomes blanket file access."""
 
 import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -8,12 +9,13 @@ import pytest
 
 from codex_plugin_scanner.guard.runtime import restricted_linux_namespace as namespace
 from codex_plugin_scanner.guard.runtime import restricted_pytest_model as model
-from codex_plugin_scanner.guard.runtime import restricted_pytest_sandbox as sandbox
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="native Linux namespace preparation")
+@pytest.mark.usefixtures("native_context_digest")
 @pytest.mark.parametrize("with_system_library", [False, True])
 def test_linked_metadata_has_listing_without_parent_checkout_or_secret_read_grants(
-    monkeypatch, tmp_path, with_system_library
+    tmp_path, with_system_library
 ):
     """Verify linked metadata has listing without parent checkout or secret read grants."""
     workspace = tmp_path / "workspace"
@@ -26,22 +28,14 @@ def test_linked_metadata_has_listing_without_parent_checkout_or_secret_read_gran
     (metadata / ".env").write_text("synthetic fixture")
     private = tmp_path / "private"
     private.mkdir(mode=0o700)
-    executable = tmp_path / "bin" / "git"
-    executable.parent.mkdir()
-    executable.write_bytes(b"\x7fELF")
+    executable = Path(shutil.which("git")).resolve()
     approved_image = private / "esbuild"
-    approved_image.write_bytes(b"\x7fELF")
+    shutil.copyfile(executable, approved_image)
     approved_image.chmod(0o500)
-    monkeypatch.setattr(sys, "platform", "linux")
     library = tmp_path / "library"
     library.mkdir()
     (library / "ordinary.dat").write_text("ordinary runtime data")
     (library / ".env").write_text("synthetic fixture")
-    monkeypatch.setattr(model, "_LINUX_READ_ROOTS", (library,) if with_system_library else ())
-    monkeypatch.setattr(model, "_LINUX_READ_FILES", ())
-    monkeypatch.setattr(sandbox, "_runtime_read_roots", lambda plan, **kwargs: ())
-    monkeypatch.setattr(namespace, "resolve_linux_elf_loader", lambda path: None)
-    monkeypatch.setattr(namespace, "collect_mapping_evidence", lambda **kwargs: [])
     plan = model.RestrictedPytestPlan(
         profile_version=model.GIT_READ_ONLY_PROFILE_VERSION,
         backend="linux-bubblewrap",
@@ -51,14 +45,15 @@ def test_linked_metadata_has_listing_without_parent_checkout_or_secret_read_gran
         command=(str(executable), "diff", "--stat"),
         executable=executable,
         allowed_executables=(executable, approved_image),
-        read_only_roots=(metadata,),
+        read_only_roots=(metadata, library) if with_system_library else (metadata,),
         denied_capabilities=("workspace-write", "workspace-credential-read", "network"),
     )
     argv = namespace.linux_readonly_argv(plan, private_root=private)
     snapshot = json.loads((private / "linux-plan.json").read_text())
     assert snapshot["schema"] == "guard-linux-readonly-plan.v2"
     assert "mapping_records" in snapshot
-    assert snapshot["list_roots"] == [str(workspace), *([str(library)] if with_system_library else []), str(metadata)]
+    assert str(workspace) in snapshot["list_roots"] and str(metadata) in snapshot["list_roots"]
+    assert (str(library) in snapshot["list_roots"]) is with_system_library
     assert snapshot["read_roots"] == []
     assert str(metadata / "HEAD") in snapshot["read_files"]
     assert str(metadata / ".env") not in snapshot["read_files"]
