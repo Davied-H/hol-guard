@@ -140,6 +140,26 @@ fn a_planted_bare_repository_is_denied() {
     let l = layers("nested-reflog");
     write(&l.upper.join("vendor/x/logs/HEAD"), "0 1 commit: x\n");
     assert!(apply(&l.upper, &l.workspace, &[]).is_err());
+    // The reopened reflog may not gain the rest of a repository.
+    for planted in [
+        ".git/logs/objects/ab/cd",
+        ".git/logs/config",
+        ".git/refs/remotes/o/commondir",
+    ] {
+        let l = layers("reflog-repository");
+        write(&l.upper.join(".git/logs/HEAD"), "0 1 commit: x\n");
+        write(&l.upper.join(planted), "x");
+        assert!(apply(&l.upper, &l.workspace, &[]).is_err(), "{planted}");
+        assert!(!l.workspace.join(planted).exists(), "{planted}");
+    }
+    let l = layers("branch-reflog");
+    write(&l.upper.join(".git/logs/HEAD"), "0 1 commit: x\n");
+    write(
+        &l.upper.join(".git/logs/refs/heads/main"),
+        "0 1 commit: x\n",
+    );
+    write(&l.upper.join(".git/refs/heads/main"), "0123\n");
+    apply(&l.upper, &l.workspace, &[]).unwrap();
 }
 
 #[test]

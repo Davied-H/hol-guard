@@ -42,6 +42,8 @@ pub(super) fn creates_links(literal: &str) -> bool {
                 | "read-tree"
                 | "sparse-checkout"
                 | "submodule"
+                | "mv"
+                | "bisect"
         )
     });
     command_words(literal).any(|word| {

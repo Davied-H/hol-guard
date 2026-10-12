@@ -9,7 +9,9 @@
 //! a command that fails on its first denied write.
 
 use super::credentials::patterns;
-use super::profiles::workspace_profile::{bare_head_pattern, git_exec_pattern, protected_patterns};
+use super::profiles::workspace_profile::{
+    bare_head_pattern, git_exec_pattern, protected_patterns, ref_store_repository_pattern,
+};
 use super::*;
 use regex::Regex;
 use serde::Deserialize;
@@ -80,7 +82,10 @@ struct Denials {
 
 impl Denials {
     fn new(workspace: &Path, prefixes: &[PathBuf]) -> Result<Self, RestrictedPytestError> {
-        let mut sources = vec![git_exec_pattern(workspace)?];
+        let mut sources = vec![
+            git_exec_pattern(workspace)?,
+            ref_store_repository_pattern(workspace)?,
+        ];
         sources.extend(protected_patterns(workspace)?);
         sources.extend(patterns());
         let patterns = sources
