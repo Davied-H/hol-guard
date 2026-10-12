@@ -156,11 +156,6 @@ class StorePolicyMixin:
         user-writable marker cannot preserve a replacement local anchor.
         """
 
-        state_keys = (
-            "managed_policy_bundle_keyring_provenance",
-            "managed_policy_bundle_keyring_mirror",
-            "policy_bundle_keyring",
-        )
         normalized_now = _canonical_utc_timestamp(now)
         configured = managed_keyring is not None and quarantined_local_keyring is not None and provenance is not None
         if (
@@ -168,43 +163,14 @@ class StorePolicyMixin:
             and not configured
         ):
             raise ValueError("managed_policy_bundle_keyring_reconcile_incomplete")
-        with self._connect() as connection:
-            connection.execute("begin immediate")
-            if not configured:
-                marker = connection.execute(
-                    "select 1 from sync_state where state_key = ?",
-                    (state_keys[0],),
-                ).fetchone()
-                if marker is None and not force_clear:
-                    connection.rollback()
-                    return False
-                placeholders = ",".join("?" for _ in state_keys)
-                connection.execute(
-                    f"delete from sync_state where state_key in ({placeholders})",
-                    state_keys,
-                )
-                return True
-            assert managed_keyring is not None
-            assert quarantined_local_keyring is not None
-            assert provenance is not None
-            payloads = {
-                state_keys[0]: dict(provenance),
-                state_keys[1]: dict(managed_keyring),
-                state_keys[2]: dict(quarantined_local_keyring),
-            }
-            encoded = {state_key: json.dumps(payload, allow_nan=False) for state_key, payload in payloads.items()}
-            for state_key, payload_json in encoded.items():
-                connection.execute(
-                    """
-                    insert into sync_state (state_key, payload_json, updated_at)
-                    values (?, ?, ?)
-                    on conflict(state_key) do update set
-                      payload_json = excluded.payload_json,
-                      updated_at = excluded.updated_at
-                    """,
-                    (state_key, payload_json, normalized_now),
-                )
-        return True
+        arguments: dict[str, object] = {"configured": configured, "force_clear": force_clear, "now": normalized_now}
+        if provenance is not None and managed_keyring is not None and quarantined_local_keyring is not None:
+            arguments.update(
+                provenance_json=json.dumps(dict(provenance), allow_nan=False),
+                managed_keyring_json=json.dumps(dict(managed_keyring), allow_nan=False),
+                local_keyring_json=json.dumps(dict(quarantined_local_keyring), allow_nan=False),
+            )
+        return bool(self._native_store_call("managed_keyring_reconcile", arguments))
 
     def _cached_policy_bundle_decision_identities(
         self,
@@ -1002,6 +968,40 @@ class StorePolicyMixin:
             )
         return _most_restrictive_policy_lookup(candidate_lookups)
 
+    def peek_local_once_approval(
+        self,
+        *,
+        harness: str,
+        artifact_id: str | None,
+        artifact_hash: str | None,
+        workspace: str | None,
+        publisher: str | None,
+        now: str,
+    ) -> dict[str, object] | None:
+        """Return exact unexpired approval evidence without consuming it.
+
+        The resident owns the exact local-once match, its integrity check and
+        the legacy-provenance refusal; this only ships the request.
+        """
+
+        if not artifact_id or not artifact_hash:
+            return None
+        # Bypass the portable-workspace composition: the exact peek is bound to
+        # the caller's workspace, never a git-derived one.
+        lookup = StorePolicyMixin.resolve_policy_decision_lookup(
+            self,
+            harness,
+            artifact_id,
+            artifact_hash=artifact_hash,
+            workspace=workspace,
+            publisher=publisher,
+            now=now,
+            consume_one_shot=False,
+            local_once_only=True,
+        )
+        decision = lookup["decision"]
+        return dict(decision) if isinstance(decision, Mapping) else None
+
     def resolve_policy_decision_lookup(
         self,
         harness: str,
@@ -1012,6 +1012,7 @@ class StorePolicyMixin:
         now: str | None = None,
         runtime_exact_match_context: str | None = None,
         consume_one_shot: bool = True,
+        local_once_only: bool = False,
     ) -> PolicyDecisionLookupResult:
         """Resolve the effective policy decision via the native resident op.
 
@@ -1047,6 +1048,11 @@ class StorePolicyMixin:
             has_local_once_approvals = (
                 connection.execute("select 1 from guard_local_once_approvals limit 1").fetchone() is not None
             )
+            if local_once_only:
+                # The exact peek is read-only: it never refreshes the policy
+                # integrity state or mints key material.
+                has_local_policy = False
+                has_remote_policy = False
             integrity_state = (
                 self._refresh_policy_integrity_state(
                     connection,
@@ -1079,7 +1085,11 @@ class StorePolicyMixin:
         # local-once row whose signature was issued under the keyring) so a
         # lookup against a never-provisioned store does not mint an unused key.
         resident_key, resident_key_id = self._policy_integrity_secret_material(create=False)
-        if resident_key is None and (verifier_exists or has_remote_policy or has_local_once_approvals):
+        if (
+            resident_key is None
+            and not local_once_only
+            and (verifier_exists or has_remote_policy or has_local_once_approvals)
+        ):
             resident_key, resident_key_id = self._policy_integrity_secret_material(create=True)
         if has_local_policy:
             integrity_key, integrity_key_id = resident_key, resident_key_id
@@ -1123,7 +1133,7 @@ class StorePolicyMixin:
                         "trust_status": TrustStatus.from_policy_integrity_state(integrity_state).to_dict(),
                         "authority_revision": -1,
                     }
-        elif verifier_path is None or (not verifier_exists and not has_local_once_approvals):
+        elif verifier_path is None or (not verifier_exists and (local_once_only or not has_local_once_approvals)):
             # An untrusted guard home (verifier_path is None) can never persist
             # a verifier key, and a store with no integrity keyring, no
             # persisted verifier, and no local-once approvals has no authority
@@ -1166,6 +1176,8 @@ class StorePolicyMixin:
             ),
             "local_once_integrity_key_id": local_once_key_id,
         }
+        if local_once_only:
+            request["local_once_only"] = True
         bundle_identities = self._cached_policy_bundle_decision_identities(
             now=_parse_utc_timestamp(current_time).timestamp(),
         )
@@ -1223,6 +1235,7 @@ class StorePolicyMixin:
         decision: Mapping[str, object],
         *,
         now: str | None = None,
+        consume_local_once: bool = False,
     ) -> bool:
         """Atomically validate and claim an accepted saved ``allow`` decision.
 
@@ -1231,7 +1244,7 @@ class StorePolicyMixin:
         then enforce the recomputed current action without saved evidence.
         """
 
-        return self.claim_approval_reuse_decisions((decision,), now=now)
+        return self.claim_approval_reuse_decisions((decision,), now=now, consume_local_once=consume_local_once)
 
     def approval_reuse_claim_disposition(
         self,
@@ -1250,6 +1263,7 @@ class StorePolicyMixin:
         decisions: Sequence[Mapping[str, object]],
         *,
         now: str | None = None,
+        consume_local_once: bool = False,
     ) -> bool:
         """Validate and claim a group of saved allows in one transaction.
 
@@ -1274,6 +1288,7 @@ class StorePolicyMixin:
             decisions=decisions,
             now=current_time,
             evidence=self._claim_integrity_evidence(decisions, current_time),
+            consume_local_once=consume_local_once,
         )
 
     def _claim_integrity_evidence(

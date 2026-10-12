@@ -302,6 +302,9 @@ fn decide(
             store,
             Path::new(&request.guard_home),
         )?,
+        RequestContextKindV1::RestrictedPytest { operation, input } => {
+            crate::restricted_pytest_op::evaluate(operation, input, &budget)?
+        }
         RequestContextKindV1::CriticalFloor(body) => {
             crate::critical_floor_op::evaluate(body, &budget)?
         }

@@ -164,6 +164,10 @@ pub struct ShellContextV1 {
 pub enum RequestContextKindV1 {
     /// Native sensitivity and structured-output authority over bounded content.
     ContentSensitivity(RequestContextContentSensitivityV1),
+    RestrictedPytest {
+        operation: String,
+        input: Value,
+    },
     /// Rebuild monotonic command floors without workflow authorization grants.
     CriticalFloor(RequestContextCriticalFloorV1),
     /// Admit the request and build the whole canonical context.
