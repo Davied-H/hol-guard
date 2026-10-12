@@ -15,8 +15,10 @@ from codex_plugin_scanner.guard.runtime.restricted_pytest_model import (
     RestrictedPytestPlan,
 )
 
-
-pytestmark = [pytest.mark.usefixtures("native_context_digest"), pytest.mark.skipif(os.name != "posix", reason="native preparation requires Unix")]
+pytestmark = [
+    pytest.mark.usefixtures("native_context_digest"),
+    pytest.mark.skipif(os.name != "posix", reason="native preparation requires Unix"),
+]
 
 
 @pytest.fixture(autouse=True)

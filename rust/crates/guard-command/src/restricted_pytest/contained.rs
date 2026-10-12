@@ -308,27 +308,61 @@ fn prepare_vitest(input: &Input) -> Result<Value, RestrictedPytestError> {
     Ok(plan)
 }
 
-fn prepare_tsx(input: &Input, argv: &[String], script: &str, arguments: &[String]) -> Result<Value, RestrictedPytestError> {
+fn prepare_tsx(
+    input: &Input,
+    argv: &[String],
+    script: &str,
+    arguments: &[String],
+) -> Result<Value, RestrictedPytestError> {
     let mut plan = prepare_node(&Input {
         command: vec!["node".to_owned(), "--test".to_owned()],
-        workspace: input.workspace.clone(), cwd: input.cwd.clone(),
-        platform: input.platform.clone(), backend_executable: input.backend_executable.clone(),
-        search_path: input.search_path.clone(), ..Input::default()
+        workspace: input.workspace.clone(),
+        cwd: input.cwd.clone(),
+        platform: input.platform.clone(),
+        backend_executable: input.backend_executable.clone(),
+        search_path: input.search_path.clone(),
+        ..Input::default()
     })?;
     let workspace = Path::new(plan["workspace"].as_str().unwrap());
     let cwd = Path::new(plan["cwd"].as_str().unwrap());
-    let modules = nearest_project_root(cwd, workspace, "node_modules/tsx/dist/loader.mjs")?.join("node_modules");
-    let loader = modules.join("tsx/dist/loader.mjs").canonicalize().ok().filter(|path| path.is_file() && path_is_within(path, &modules));
-    let node = matches!(Path::new(&argv[0]).file_name().and_then(OsStr::to_str), Some("node" | "nodejs"));
-    let runtime = if node { node_runtime_args(argv)? } else { vec![] };
-    let matching = !node || argv.get(1 + runtime.len()).and_then(|value| cwd.join(value).canonicalize().ok()) == loader.as_ref().map(|path| path.parent().unwrap().join("cli.mjs"));
+    let modules = nearest_project_root(cwd, workspace, "node_modules/tsx/dist/loader.mjs")?
+        .join("node_modules");
+    let loader = modules
+        .join("tsx/dist/loader.mjs")
+        .canonicalize()
+        .ok()
+        .filter(|path| path.is_file() && path_is_within(path, &modules));
+    let node = matches!(
+        Path::new(&argv[0]).file_name().and_then(OsStr::to_str),
+        Some("node" | "nodejs")
+    );
+    let runtime = if node {
+        node_runtime_args(argv)?
+    } else {
+        vec![]
+    };
+    let matching = !node
+        || argv
+            .get(1 + runtime.len())
+            .and_then(|value| cwd.join(value).canonicalize().ok())
+            == loader
+                .as_ref()
+                .map(|path| path.parent().unwrap().join("cli.mjs"));
     let Some(loader) = loader.filter(|_| matching) else {
         return Err(RestrictedPytestError::new("vitest_restricted_dependency_unavailable", "tsx is not installed inside this workspace. Guard did not download or execute a replacement."));
     };
-    if !cwd.join(script).canonicalize().is_ok_and(|path| path.is_file() && path_is_within(&path, workspace)) {
-        return Err(RestrictedPytestError::new("vitest_restricted_invalid_command", "Test script is not in the workspace."));
+    if !cwd
+        .join(script)
+        .canonicalize()
+        .is_ok_and(|path| path.is_file() && path_is_within(&path, workspace))
+    {
+        return Err(RestrictedPytestError::new(
+            "vitest_restricted_invalid_command",
+            "Test script is not in the workspace.",
+        ));
     }
-    let uri = url::Url::from_file_path(loader).map_err(|_| invalid_node("Test loader is unavailable."))?;
+    let uri = url::Url::from_file_path(loader)
+        .map_err(|_| invalid_node("Test loader is unavailable."))?;
     let mut command = vec![plan["executable"].as_str().unwrap().to_owned()];
     command.extend(runtime);
     command.extend(["--import".to_owned(), uri.into(), script.to_owned()]);
@@ -356,7 +390,13 @@ fn prepare_inline(input: &Input) -> Result<Value, RestrictedPytestError> {
         python_runtime_args(&argv).unwrap_or_default()
     };
     let index = 1 + runtime.len();
-    let script_index = if node { node_script_index(&argv, index) } else if argv[index] != "-c" { Some(index) } else { None };
+    let script_index = if node {
+        node_script_index(&argv, index)
+    } else if argv[index] != "-c" {
+        Some(index)
+    } else {
+        None
+    };
     if let Some(script_index) = script_index {
         let script = input.cwd.join(&argv[script_index]).canonicalize().ok();
         let root = input.workspace.canonicalize().ok();

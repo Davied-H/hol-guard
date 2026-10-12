@@ -61,7 +61,9 @@ fn named_test_script(script: &str, node: bool) -> bool {
             .split('/')
             .all(|v| !v.is_empty() && v != "..")
         && if node {
-            static NODE_NAME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(?:[A-Za-z0-9_.-]*(?:\.test|\.spec|_test)|test_[A-Za-z0-9_.-]*|tests?)\.(?:js|mjs|cjs|jsx|ts|mts|cts|tsx)$").unwrap());
+            static NODE_NAME: LazyLock<Regex> = LazyLock::new(|| {
+                Regex::new(r"^(?:[A-Za-z0-9_.-]*(?:\.test|\.spec|_test)|test_[A-Za-z0-9_.-]*|tests?)\.(?:js|mjs|cjs|jsx|ts|mts|cts|tsx)$").unwrap()
+            });
             NODE_NAME.is_match(script.rsplit('/').next().unwrap_or(""))
         } else {
             NAME.is_match(script.rsplit('/').next().unwrap_or(""))
@@ -69,17 +71,29 @@ fn named_test_script(script: &str, node: bool) -> bool {
 }
 
 pub fn node_script_index(command: &[String], start: usize) -> Option<usize> {
-    static FLAGS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(?:--experimental-strip-types|--experimental-transform-types|--no-warnings|--disable-warning=[A-Za-z0-9_]{1,64})$").unwrap());
+    static FLAGS: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"^(?:--experimental-strip-types|--experimental-transform-types|--no-warnings|--disable-warning=[A-Za-z0-9_]{1,64})$").unwrap()
+    });
     let mut index = start;
-    while command.get(index).is_some_and(|value| FLAGS.is_match(value)) {
+    while command
+        .get(index)
+        .is_some_and(|value| FLAGS.is_match(value))
+    {
         index += 1;
     }
-    command.get(index).filter(|value| named_test_script(value, true)).map(|_| index)
+    command
+        .get(index)
+        .filter(|value| named_test_script(value, true))
+        .map(|_| index)
 }
 
-pub fn tsx_test_invocation(command: &[String]) -> Result<Option<(String, Vec<String>)>, RestrictedPytestError> {
+pub fn tsx_test_invocation(
+    command: &[String],
+) -> Result<Option<(String, Vec<String>)>, RestrictedPytestError> {
     let name = basename(command);
-    let Some(mut args) = command.get(1..) else { return Ok(None); };
+    let Some(mut args) = command.get(1..) else {
+        return Ok(None);
+    };
     if name == "npx" && args.first().is_some_and(|value| value == "--no-install") {
         args = &args[1..];
     }
@@ -87,14 +101,21 @@ pub fn tsx_test_invocation(command: &[String]) -> Result<Option<(String, Vec<Str
         args = &args[1..];
     } else if matches!(name, "node" | "nodejs") {
         args = &args[node_runtime_args(command)?.len()..];
-        if !args.first().is_some_and(|value| value.replace('\\', "/").ends_with("/node_modules/tsx/dist/cli.mjs")) {
+        if !args.first().is_some_and(|value| {
+            value
+                .replace('\\', "/")
+                .ends_with("/node_modules/tsx/dist/cli.mjs")
+        }) {
             return Ok(None);
         }
         args = &args[1..];
     } else if name != "tsx" {
         return Ok(None);
     }
-    Ok(args.first().filter(|value| named_test_script(value, true)).map(|script| (script.clone(), args[1..].to_vec())))
+    Ok(args
+        .first()
+        .filter(|value| named_test_script(value, true))
+        .map(|script| (script.clone(), args[1..].to_vec())))
 }
 
 pub fn python_runtime_args(command: &[String]) -> Option<Vec<String>> {
@@ -133,8 +154,10 @@ pub fn inline_eval(command: &[String]) -> Result<bool, RestrictedPytestError> {
         return Ok(false);
     }
     let index = 1 + node_runtime_args(command)?.len();
-    Ok((command.len() == index + 2 && matches!(command[index].as_str(), "-e" | "--eval"))
-        || node_script_index(command, index).is_some())
+    Ok(
+        (command.len() == index + 2 && matches!(command[index].as_str(), "-e" | "--eval"))
+            || node_script_index(command, index).is_some(),
+    )
 }
 
 pub fn bun_vitest_invocation(command: &[String]) -> Option<(Option<String>, Vec<String>)> {
