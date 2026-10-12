@@ -87,7 +87,7 @@ def test_hook_uses_the_native_bridge_when_the_runtime_offers_it(
 def test_other_harnesses_keep_the_python_bridge(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _offer_native(monkeypatch, tmp_path / "hol-guard-runtime", (NATIVE_BOUNDED_HOOK_FEATURE,))
 
-    argv = _command(tmp_path, "grok")
+    argv = _command(tmp_path, "claude")
 
     assert argv[:2] == (sys.executable, "-I")
 
