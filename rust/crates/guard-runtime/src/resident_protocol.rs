@@ -104,7 +104,6 @@ pub(crate) fn capabilities() -> RuntimeCapabilitiesV1 {
         features.push(guard_contracts::MCP_STDIO_SESSION_FEATURE.into());
     }
     features.push(guard_contracts::SKILL_DIRECTORY_IDENTITY_FEATURE.into());
-    features.push("skill-directory-portable-v1".into());
     let (program_digest, catalog_digest, trust_digest) =
         guard_command::native_command_program::packaged_program_digests();
     RuntimeCapabilitiesV1 {

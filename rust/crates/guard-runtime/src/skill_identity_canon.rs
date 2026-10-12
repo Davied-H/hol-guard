@@ -146,6 +146,14 @@ mod tests {
     }
 
     #[test]
+    fn incomplete_unreadable_hash_matches_canonical_json() {
+        assert_eq!(
+            incomplete_state_hash_for_label("unreadable_entry", None, 0, 0),
+            "sha256:bf09c846d64946fdeed2604edadb1ab6fa48c36020e3141b14066a5034f2ba73"
+        );
+    }
+
+    #[test]
     fn casefold_is_full_unicode_folding() {
         assert_eq!(casefold("Stra\u{df}e"), "strasse");
         assert_eq!(casefold("STRASSE"), "strasse");

@@ -11,11 +11,16 @@ Windows UTF-16 names. The native walker owns every platform path decision.
 When no bound answer is available the result is an explicit, non-reusable
 ``native_unavailable`` identity. Its state hash and the discovery issue id are
 fixed constants pinned against the runtime's own hashing material by a
-runtime test, so even the unavailable path never derives a hash in Python.
+runtime test, so inspection and discovery never derive a hash in Python.
+The compatibility constructor for a caller-supplied incomplete reason uses
+the same canonical JSON material as the runtime when the runtime does not
+answer, and it keeps that reason.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import re
 import time
@@ -46,6 +51,7 @@ _REQUEST_SCHEMA = "guard-skill-directory-identity-request.v1"
 _RESULT_SCHEMA = "guard-skill-directory-identity-result.v1"
 _INSPECT_TIMEOUT_SECONDS = 60.0
 _DISCOVER_TIMEOUT_SECONDS = 30.0
+_INCOMPLETE_TIMEOUT_SECONDS = 2.0
 _SHA256 = re.compile(r"^sha256:[0-9a-f]{64}$")
 _ISSUE_ID = re.compile(r"^[0-9a-f]{16}$")
 _FAILURES = frozenset(get_args(SkillDirectoryIdentityFailure)) - {"native_unavailable"}
@@ -160,9 +166,45 @@ def _limits(limits: SkillDirectoryIdentityLimits) -> dict[str, object]:
 
 
 def native_incomplete_skill_directory_identity(reason: SkillDirectoryIdentityFailure) -> SkillDirectoryIdentity:
-    payload = _exchange({"kind": "incomplete", "reason": reason}, timeout_seconds=_DISCOVER_TIMEOUT_SECONDS)
+    payload = _exchange(
+        {"kind": "incomplete", "reason": reason},
+        timeout_seconds=_INCOMPLETE_TIMEOUT_SECONDS,
+    )
     identity = _decode_identity(payload)
-    return identity if identity is not None else unavailable_skill_directory_identity()
+    if identity is not None and identity.failure_reason == reason:
+        return identity
+    return _caller_incomplete_identity(reason)
+
+
+def _caller_incomplete_identity(reason: SkillDirectoryIdentityFailure) -> SkillDirectoryIdentity:
+    """Zero-progress identity for a reason the caller already decided.
+
+    The digest matches ``incomplete_state_hash_for_label`` (CPython canonical
+    JSON). A missing runtime must not relabel that reason as
+    ``native_unavailable``.
+    """
+
+    material = {
+        "schema": SKILL_DIRECTORY_IDENTITY_SCHEMA,
+        "status": "incomplete",
+        "reason": reason,
+        "primaryContentHash": None,
+        "entryCount": 0,
+        "totalBytes": 0,
+    }
+    encoded = json.dumps(material, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode(
+        "ascii"
+    )
+    return SkillDirectoryIdentity(
+        schema_version=SKILL_DIRECTORY_IDENTITY_SCHEMA,
+        status="incomplete",
+        directory_hash=None,
+        primary_content_hash=None,
+        entry_count=0,
+        total_bytes=0,
+        failure_reason=reason,
+        incomplete_state_hash="sha256:" + hashlib.sha256(encoded).hexdigest(),
+    )
 
 
 def _exchange(command: dict[str, object], *, timeout_seconds: float) -> object | None:
@@ -191,7 +233,7 @@ def _exchange(command: dict[str, object], *, timeout_seconds: float) -> object |
         request=request,
         guard_home=guard_home,
         timeout_seconds=remaining,
-        required_feature="skill-directory-portable-v1",
+        required_feature=SKILL_DIRECTORY_IDENTITY_FEATURE,
         response_schema=_RESULT_SCHEMA,
         status=status,
     )

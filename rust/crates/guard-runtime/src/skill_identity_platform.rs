@@ -51,11 +51,9 @@ pub(crate) fn stat_key(path: &Path, metadata: &Metadata) -> Result<StatKey, Fail
     let file_id = if metadata.file_type().is_symlink() {
         None
     } else if metadata.is_dir() {
-        let binding = guard_runtime_windows_process::bind_readonly_directory(path)
-            .map_err(|_| Failure::TreeChangedDuringHash)?;
         Some(
-            guard_runtime_windows_process::handle_file_id(binding.handle())
-                .map_err(|_| Failure::TreeChangedDuringHash)?,
+            guard_runtime_windows_process::directory_file_id(path)
+                .map_err(|_| Failure::UnreadableEntry)?,
         )
     } else if metadata.is_file() {
         let (identity, links) = guard_runtime_windows_process::regular_file_id(path, false)
@@ -129,7 +127,7 @@ pub(crate) fn link_loop(error: &std::io::Error) -> bool {
 #[cfg(unix)]
 pub(crate) struct DirectoryGuard;
 #[cfg(windows)]
-pub(crate) type DirectoryGuard = guard_runtime_windows_process::PrivateDirectoryBinding;
+pub(crate) type DirectoryGuard = File;
 
 pub(crate) fn directory_guard(path: &Path) -> Result<DirectoryGuard, Failure> {
     #[cfg(unix)]
@@ -139,7 +137,10 @@ pub(crate) fn directory_guard(path: &Path) -> Result<DirectoryGuard, Failure> {
     }
     #[cfg(windows)]
     {
-        guard_runtime_windows_process::bind_readonly_directory(path)
+        // Pin the skill directory itself. Walking every ancestor rejects a
+        // junction or synced folder above the skill, which the scan never
+        // follows.
+        guard_runtime_windows_process::open_skill_directory(path)
             .map_err(|_| Failure::UnreadableEntry)
     }
 }
