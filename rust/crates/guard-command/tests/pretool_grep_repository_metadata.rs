@@ -136,6 +136,11 @@ fn legacy_remote_definitions_are_screened() {
             "URL: https://user:synthetic@example.com/repo.git\n",
         ),
         ("branches", "https://synthetic@example.com/repo.git#main\n"),
+        // Case-insensitive volumes resolve this like `remotes`.
+        (
+            "Remotes",
+            "URL: https://user:synthetic@example.com/repo.git\n",
+        ),
     ] {
         let home = home();
         write(

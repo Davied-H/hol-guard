@@ -105,7 +105,9 @@ fn safe_git_descendant(path: &Path, root: &Path, metadata: &std::fs::Metadata) -
         .filter(|parent| parent.parent() == Some(root))
         .and_then(|parent| parent.file_name())
         .and_then(|parent| parent.to_str())
-        .is_some_and(|parent| REMOTE_DIRECTORIES.contains(&parent));
+        // Default macOS volumes are case-insensitive, so `.git/Remotes`
+        // resolves like `.git/remotes`.
+        .is_some_and(|parent| REMOTE_DIRECTORIES.contains(&parent.to_ascii_lowercase().as_str()));
     if CONFIG_NAMES.contains(&lowered.as_str()) || in_remote_directory {
         return config_without_credentials(path, metadata);
     }
