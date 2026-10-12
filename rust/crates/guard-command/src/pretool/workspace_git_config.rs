@@ -157,7 +157,8 @@ pub(crate) fn workspace_write_denials(
 }
 
 /// `path` with its longest existing ancestor resolved through links, or
-/// `None` when that ancestor cannot be resolved.
+/// `None` when that ancestor cannot be resolved. A dangling link is `None`
+/// too: the sandbox could create its target, which host Git would follow.
 fn resolve(path: &Path) -> Option<PathBuf> {
     let path = normalize(path);
     let mut existing = path.as_path();
@@ -168,6 +169,9 @@ fn resolve(path: &Path) -> Option<PathBuf> {
                 return Some(rest.iter().rev().fold(real, |acc, part| acc.join(part)));
             }
             Err(_) => {
+                if existing.symlink_metadata().is_ok() {
+                    return None;
+                }
                 rest.push(existing.file_name()?.to_owned());
                 existing = existing.parent()?;
             }
