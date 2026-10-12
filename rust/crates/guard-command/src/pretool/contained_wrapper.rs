@@ -17,6 +17,20 @@ fn output_filter(segment: &CommandSegmentV1) -> bool {
         }
 }
 
+/// A final `; echo "exit=$?"`: the sink prints the label and status itself.
+fn status_echo(segment: &CommandSegmentV1) -> bool {
+    segment.environment_names.is_empty()
+        && segment.wrapper_chain.is_empty()
+        && !segment.path_overridden
+        && segment.pipeline_index == 0
+        && segment.executable.as_deref() == Some("echo")
+        && matches!(segment.arguments.as_slice(), [argument] if argument
+            .strip_suffix("$?")
+            .is_some_and(|label| label.len() <= 32
+                && label.bytes().all(|byte| byte.is_ascii_alphanumeric()
+                    || matches!(byte, b'_' | b'=' | b':' | b' ' | b'-'))))
+}
+
 // Parser spans count Unicode characters, not UTF-8 byte offsets.
 fn text(model: &CanonicalCommandV1, start: usize, end: usize) -> Option<String> {
     let length = end.checked_sub(start)?;
@@ -58,9 +72,9 @@ fn sibling_project_root(_target: &std::path::Path, _home: &str) -> Option<std::p
     None
 }
 
-/// Peel a verified `cd <workspace or sibling repository dir> &&` prefix and
-/// a final bounded `| tail -N`/`| head -N` filter, returning the sole core
-/// invocation.
+/// Peel a verified `cd <workspace or sibling repository dir> &&` prefix, a
+/// trailing `2>&1`, a bounded `| tail -N`/`| head -N` filter and a final
+/// `; echo "<label>$?"`, returning the sole core invocation.
 /// Classification only: the execution sink peels the same shape and
 /// re-authorizes the core in the resolved directory before running it.
 pub(super) fn contained_core(
@@ -70,7 +84,7 @@ pub(super) fn contained_core(
     if model.confidence != "exact" || model.path_overridden || !model.wrapper_chain.is_empty() {
         return None;
     }
-    let segments = model.segments.as_slice();
+    let mut segments = model.segments.as_slice();
     let mut start = 0;
     if segments.first()?.executable.as_deref() == Some("cd") {
         let target = super::segment_proof::verified_cwd_compound_context(model, context)?;
@@ -83,6 +97,16 @@ pub(super) fn contained_core(
         }
         start = 1;
     }
+    let status = segments.len() >= start + 2
+        && segments.last().is_some_and(status_echo)
+        && text(
+            model,
+            segments[segments.len() - 2].span.end,
+            segments[segments.len() - 1].span.start,
+        )? == ";";
+    if status {
+        segments = &segments[..segments.len() - 1];
+    }
     let filtered = segments.len() == start + 2 && output_filter(&segments[start + 1]);
     if filtered
         && text(
@@ -93,19 +117,21 @@ pub(super) fn contained_core(
     {
         return None;
     }
-    if (start == 0 && !filtered) || segments.len() != start + 1 + usize::from(filtered) {
+    if segments.len() != start + 1 + usize::from(filtered) {
         return None;
     }
     let mut core = segments[start].clone();
-    if core.pipeline_index != 0 || core.executable.as_deref() == Some("cd") {
+    let merged = core
+        .arguments
+        .last()
+        .is_some_and(|argument| argument == "2>&1");
+    if (start == 0 && !filtered && !status && !merged)
+        || core.pipeline_index != 0
+        || core.executable.as_deref() == Some("cd")
+    {
         return None;
     }
-    if filtered
-        && core
-            .arguments
-            .last()
-            .is_some_and(|argument| argument == "2>&1")
-    {
+    if merged {
         core.arguments.pop();
     }
     let producer = text(model, core.span.start, core.span.end)?;

@@ -7,6 +7,7 @@ import json
 import os
 import shlex
 import stat
+import sys
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
@@ -151,7 +152,7 @@ def run_authorized_contained_test(
                 raise _reject()
             workspace = sibling
         with bounded_output(output):
-            return run_authorized_contained_test(
+            exit_code = run_authorized_contained_test(
                 {**payload, "cwd": str(directory), "tool_input": {**tool_input, "command": core}},
                 workspace=workspace,
                 authorize=authorize,
@@ -159,6 +160,13 @@ def run_authorized_contained_test(
                 cwd=directory,
                 home_dir=home_dir,
             )
+        status_line = output.status_line(exit_code) if output is not None else None
+        if status_line is None:
+            return exit_code
+        # The shell's status is the echo's own.
+        sys.stdout.write(status_line)
+        sys.stdout.flush()
+        return 0
     try:
         command = shlex.split(tool_input["command"], posix=True)
     except ValueError as error:
