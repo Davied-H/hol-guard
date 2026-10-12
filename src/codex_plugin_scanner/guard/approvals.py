@@ -71,6 +71,8 @@ from .native_approval_resolution import (
     ApprovalResolutionPlanUnavailableError,
     native_approval_resolution_plan,
 )
+from .native_approval_scope import UNAVAILABLE as APPROVAL_SCOPE_UNAVAILABLE
+from .native_approval_scope import ApprovalScopeUnavailableError
 from .package_execution_context import package_execution_context_from_scanner_evidence
 from .protection_capabilities import protection_capability_payloads
 from .redaction import redact_text
@@ -2355,7 +2357,8 @@ def bulk_allow_read_only_once(
         now=resolved_at,
     )
 
-    for normalized_id in eligible_ids:
+    scope_unavailable = False
+    for index, normalized_id in enumerate(eligible_ids):
         try:
             apply_approval_resolution(
                 store=store,
@@ -2372,14 +2375,22 @@ def bulk_allow_read_only_once(
                 persist_policy=False,
             )
             resolved_count += 1
+        except ApprovalScopeUnavailableError as error:
+            # A resident outage affects every remaining row; stop instead of retrying each one.
+            failed.extend({"request_id": remaining, "error": str(error)} for remaining in eligible_ids[index:])
+            scope_unavailable = True
+            break
         except (ApprovalRequestNotFoundError, ApprovalRequestAlreadyResolvedError, ValueError) as error:
             failed.append({"request_id": normalized_id, "error": str(error)})
 
-    return {
+    result: dict[str, object] = {
         "resolved_count": resolved_count,
         "failed": failed,
         "resolution_summary": f"{resolved_count} action{'s' if resolved_count != 1 else ''} approved once.",
     }
+    if scope_unavailable:
+        result["error"] = APPROVAL_SCOPE_UNAVAILABLE
+    return result
 
 
 def _optional_string(value: object) -> str | None:
