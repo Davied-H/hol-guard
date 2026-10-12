@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import gzip
 import hashlib
+import importlib
 import json
 import os
 import shutil
@@ -47,9 +48,11 @@ from package_context_vector_support import (
 )
 
 from codex_plugin_scanner.guard import package_execution_context as context_module
-from codex_plugin_scanner.guard import package_execution_context_configuration as configuration_module
-from codex_plugin_scanner.guard import package_execution_context_inputs as inputs_module
 from codex_plugin_scanner.guard.models import GuardArtifact
+
+# These modules exist only at the recorded base commit (see the module docstring).
+configuration_module = importlib.import_module("codex_plugin_scanner.guard.package_execution_context_configuration")
+inputs_module = importlib.import_module("codex_plugin_scanner.guard.package_execution_context_inputs")
 
 OUT = (
     Path(__file__).resolve().parents[2] / "rust/crates/guard-command/tests/fixtures/package_context_vectors.v1.json.gz"

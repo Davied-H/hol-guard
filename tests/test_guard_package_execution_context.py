@@ -470,5 +470,5 @@ def test_native_build_failure_cannot_produce_reusable_context(
     _write_package_files(workspace)
     environment = _environment(tmp_path)
     monkeypatch.setattr(native_package_context_build, "_resident_request", lambda **_kwargs: None)
-    with pytest.raises(ValueError, match="native_package_context_build_|native_"):
+    with pytest.raises(ValueError, match=r"native_package_context_build_|native_"):
         _context(workspace, _artifact(), environment)
