@@ -154,6 +154,10 @@ mod sfrs_destructive_classifier;
 #[cfg(all(test, unix))]
 mod sfrs_destructive_vectors;
 mod sfrs_developer_graph;
+#[cfg(unix)]
+mod sfrs_dispatcher;
+#[cfg(unix)]
+mod sfrs_dispatcher_request;
 #[cfg(all(test, unix))]
 mod sfrs_developer_graph_vectors;
 mod sfrs_developer_inspection;
@@ -211,6 +215,8 @@ mod sfrs_interpreter_scripts;
 mod sfrs_interpreter_trust;
 #[cfg(all(test, unix))]
 mod sfrs_interpreter_vectors;
+#[cfg(all(test, unix))]
+mod sfrs_dispatcher_vectors;
 mod sfrs_jq;
 mod sfrs_json;
 mod sfrs_kubernetes_commands;
@@ -225,6 +231,12 @@ mod sfrs_kubernetes_vectors;
 mod sfrs_leaf_vectors;
 #[cfg(all(test, unix))]
 mod sfrs_net_vectors;
+#[cfg(unix)]
+mod sfrs_shell_classifier;
+#[cfg(unix)]
+mod sfrs_shell_classifier_context;
+#[cfg(unix)]
+mod sfrs_shell_initial_risk;
 mod sfrs_network_upload;
 #[cfg(unix)]
 mod sfrs_node_heredoc;
