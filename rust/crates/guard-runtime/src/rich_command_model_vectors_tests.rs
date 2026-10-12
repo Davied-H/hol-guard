@@ -98,21 +98,17 @@ fn large_uncertain_parse_uses_a_bound_text_reference() {
 
 #[test]
 fn compressed_unicode_and_multi_megabyte_requests_remain_native_uncertain_models() {
-    use base64::Engine;
-    use std::io::Write;
-
-    for text in ["é".repeat(400_000), "a".repeat(3_000_000)] {
-        let mut compressed =
-            flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
-        compressed.write_all(text.as_bytes()).unwrap();
-        let encoded =
-            base64::engine::general_purpose::STANDARD.encode(compressed.finish().unwrap());
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../tests/fixtures/rich_command_gzip_transport.json"
+    ))
+    .unwrap();
+    for vector in fixture["vectors"].as_array().unwrap() {
         let request = RichCommandModelRequest {
             schema: REQUEST_SCHEMA.into(),
             request_id: "compressed-fixture".into(),
             guard_home: "/fixture".into(),
             action: "parse".into(),
-            args: json!({"command_gzip_chunks": [encoded]}),
+            args: json!({"command_gzip_chunks": vector["command_gzip_chunks"]}),
         };
         let reply: Value = serde_json::from_slice(&evaluate(&request).unwrap()).unwrap();
         assert_eq!(reply["status"], "ok");

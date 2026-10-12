@@ -81,11 +81,8 @@ def build_command_security_identity(
             "wrapper_chain": wrapper_chain,
             "segments": [
                 {
-                    "tokens": s.tokens,
-                    "environment_names": s.environment_names,
-                    "wrapper_chain": s.wrapper_chain,
-                    "execution_context": s.execution_context,
-                    "pipeline_index": s.pipeline_index,
+                    name: getattr(s, name)
+                    for name in ("tokens", "environment_names", "wrapper_chain", "execution_context", "pipeline_index")
                 }
                 for s in segments
             ],

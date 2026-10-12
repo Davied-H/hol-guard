@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, fields
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from ..native_rich_command_model import request, string_tuple
 from .command_structure import CommandRedirect, EmbeddedCommand, build_command_security_identity
@@ -125,9 +125,19 @@ def parse_shell_command(
             "normalize_wrappers": normalize_wrappers,
         },
     )
+    return _canonical_from_wire(value)
+
+
+def _canonical_from_wire(value: dict[str, Any]) -> CanonicalCommand:
+    """Present a validated native model without deriving command semantics."""
+    identity = value["security_identity"]
+    value = {item.name: value[item.name] for item in fields(CanonicalCommand) if item.compare and item.name in value}
     segments = []
-    for segment in value["segments"]:
-        span = segment.pop("span")
+    for raw_segment in value["segments"]:
+        segment = {
+            item.name: raw_segment[item.name] for item in fields(CommandSegment) if item.name not in {"start", "end"}
+        }
+        span = raw_segment["span"]
         segment.update(start=span["start"], end=span["end"])
         for name in ("tokens", "arguments", "environment_names", "wrapper_chain"):
             segment[name] = string_tuple(segment[name])
@@ -139,8 +149,6 @@ def parse_shell_command(
         EmbeddedCommand(e["kind"], e["text"], e["execution_context"], e["span"]["start"], e["span"]["end"])
         for e in value["embedded_commands"]
     )
-    identity = value.pop("security_identity")
-    value.pop("path_overridden")
     value.update(segments=tuple(segments), redirects=redirects, embedded_commands=embedded)
     value["wrapper_chain"] = string_tuple(value["wrapper_chain"])
     model = CanonicalCommand(**value)

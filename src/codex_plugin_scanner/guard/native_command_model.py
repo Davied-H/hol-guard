@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import fields
 from pathlib import Path
 from typing import Any
 
@@ -24,7 +23,7 @@ from .native_runtime_resilience import (
     native_record_resident_failure,
     native_record_resident_success,
 )
-from .runtime.command_model import CanonicalCommand, CommandSegment
+from .runtime.command_model import CanonicalCommand, _canonical_from_wire
 
 _MAX_REQUEST_BYTES = 64 * 1024
 _MAX_SEGMENTS = 128
@@ -340,47 +339,22 @@ def _canonical_command_from_native(
     if validated is None:
         return None
 
-    normalized_text = validated.get("normalized_text")
-    raw_segments = validated.get("segments")
-    if not isinstance(normalized_text, str) or not isinstance(raw_segments, list):
-        return None
-    # The decoder above already validates every field and span. Present its
-    # complete DTO without repeating its checks or deriving new semantics.
-    segments = []
-    for segment in raw_segments:
-        value = {item.name: segment[item.name] for item in fields(CommandSegment) if item.name not in {"start", "end"}}
-        value.update(start=segment["span"]["start"], end=segment["span"]["end"])
-        for name in ("tokens", "arguments", "environment_names", "wrapper_chain"):
-            value[name] = tuple(value[name])
-        segments.append(CommandSegment(**value))
-
-    canonical = CanonicalCommand(
-        raw_text=command.strip(),
-        normalized_text=normalized_text,
-        dialect="posix",
-        transport="shell_string",
-        extraction_provenance="guard-shell",
-        wrapper_chain=tuple(validated["wrapper_chain"]),
-        segments=tuple(segments),
-        redirects=(),
-        embedded_commands=(),
-        confidence=validated["confidence"],
-        uncertainty_reason=validated["uncertainty_reason"],
-    )
-    if validated.get("path_overridden") is not canonical.path_overridden:
-        return None
-    return _bind_native_identity(canonical, validated)
-
-
-def _bind_native_identity(canonical: CanonicalCommand, payload: dict[str, Any]) -> CanonicalCommand | None:
-    identity = payload.get("security_identity")
+    value = {**validated, "raw_text": command.strip(), "redirects": [], "embedded_commands": []}
+    identity = value.get("security_identity")
     if identity is not None:
         if not isinstance(identity, str) or not identity.startswith("command-security-v2:"):
             return None
         digest = identity.removeprefix("command-security-v2:")
         if len(digest) != 64 or any(character not in "0123456789abcdef" for character in digest):
             return None
-        object.__setattr__(canonical, "_bound_identity", (canonical._identity_material(), identity))
+    else:
+        # Older exact shadow payloads omit the identity; keep their lazy API.
+        value["security_identity"] = ""
+    canonical = _canonical_from_wire(value)
+    if validated.get("path_overridden") is not canonical.path_overridden:
+        return None
+    if identity is None:
+        object.__setattr__(canonical, "_bound_identity", None)
     return canonical
 
 
