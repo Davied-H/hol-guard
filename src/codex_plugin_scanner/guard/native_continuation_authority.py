@@ -67,7 +67,7 @@ def continuation_authority(call: str, *, guard_home: Path | None = None, **args:
                 for key in path[:-1]:
                     parent = parent[key]
                 if path and parent[path[-1]] is None:
-                    parent[path[-1]] = float(token)
+                    parent[path[-1]] = json.loads(token)
             except (KeyError, IndexError, TypeError):
                 continue
     exception_type = {
@@ -99,13 +99,26 @@ def continuation_authority(call: str, *, guard_home: Path | None = None, **args:
 
 
 def _metadata_carrier(value: object) -> tuple[object, list[tuple[list[str | int], str]]]:
-    """Encode legacy nonfinite metadata values outside the strict JSON value tree."""
+    """Carry legacy metadata the strict UTF-8 envelope cannot hold as JSON literals.
+
+    Nonfinite floats travel as their ``json.dumps`` token and strings holding a
+    lone surrogate as their ASCII-escaped ``json.dumps`` literal, so the native
+    writer persists the bytes the Python store wrote.
+    """
     nonfinite: list[tuple[list[str | int], str]] = []
 
     def normalize(item: Any, path: list[str | int]) -> Any:
         if isinstance(item, float) and not math.isfinite(item):
-            token = "NaN" if math.isnan(item) else "Infinity" if item > 0 else "-Infinity"
+            if math.isnan(item):
+                token = "NaN"
+            elif item > 0:
+                token = "Infinity"
+            else:
+                token = "-Infinity"
             nonfinite.append((path, token))
+            return None
+        if isinstance(item, str) and not _utf8_encodable(item):
+            nonfinite.append((path, json.dumps(item)))
             return None
         if isinstance(item, Mapping):
             return {key: normalize(nested, [*path, key]) for key, nested in item.items()}
@@ -114,6 +127,14 @@ def _metadata_carrier(value: object) -> tuple[object, list[tuple[list[str | int]
         return item
 
     return normalize(value, []), nonfinite
+
+
+def _utf8_encodable(text: str) -> bool:
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
 
 
 def project(

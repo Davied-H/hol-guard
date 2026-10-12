@@ -345,7 +345,7 @@ fn persist_resume(connection: &Connection, args: &Value) -> StoreResult<()> {
         values[2] = json!(i64::from(values[2] == true));
     }
     if !values[14].is_null() {
-        values[14] = json!(crate::guard_store_json::dumps_default(&values[14])
+        values[14] = json!(crate::guard_store_json::dumps_sorted(&values[14])
             .ok_or(StoreError::Invalid("continuation_evidence_invalid"))?);
     }
     values.push(now.clone());
@@ -375,102 +375,5 @@ fn persist_resume(connection: &Connection, args: &Value) -> StoreResult<()> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn sqlite_exception_and_windows_wake_keys_preserve_public_behavior() {
-        for (code, expected) in [
-            (1, "sqlite3.OperationalError"),
-            (2, "sqlite3.InternalError"),
-            (5, "sqlite3.OperationalError"),
-            (6, "sqlite3.OperationalError"),
-            (8, "sqlite3.OperationalError"),
-            (10, "sqlite3.OperationalError"),
-            (12, "sqlite3.InternalError"),
-            (13, "sqlite3.OperationalError"),
-            (14, "sqlite3.OperationalError"),
-            (16, "sqlite3.OperationalError"),
-            (18, "sqlite3.DataError"),
-            (19, "sqlite3.IntegrityError"),
-            (20, "sqlite3.IntegrityError"),
-            (21, "sqlite3.InterfaceError"),
-            (22, "sqlite3.DatabaseError"),
-            (23, "sqlite3.DatabaseError"),
-            (25, "sqlite3.InterfaceError"),
-            (27, "sqlite3.DatabaseError"),
-            (2067, "sqlite3.IntegrityError"),
-        ] {
-            let error = rusqlite::Error::SqliteFailure(rusqlite::ffi::Error::new(code), None);
-            assert_eq!(sqlite_exception(&error), expected, "SQLite code {code}");
-        }
-        assert_eq!(
-            wake_database_key(r"\\?\C:\guard\store.db"),
-            r"C:\guard\store.db"
-        );
-        assert_eq!(
-            wake_database_key(r"\\?\UNC\server\share\store.db"),
-            r"\\server\share\store.db"
-        );
-        assert_eq!(wake_database_key("/guard/store.db"), "/guard/store.db");
-    }
-
-    fn sql_value(value: &Value) -> rusqlite::types::Value {
-        match value {
-            Value::Null => rusqlite::types::Value::Null,
-            Value::String(value) => rusqlite::types::Value::Text(value.clone()),
-            _ => panic!("lease fixture cells must be text or null"),
-        }
-    }
-
-    #[test]
-    fn original_python_sqlite_lease_transition_traces() {
-        let document: Value = serde_json::from_str(include_str!(
-            "../tests/fixtures/continuation_lease_traces.json"
-        ))
-        .unwrap();
-        for (index, case) in document["cases"].as_array().unwrap().iter().enumerate() {
-            let mut connection = Connection::open_in_memory().unwrap();
-            connection
-                .execute_batch(document["schema_sql"].as_str().unwrap())
-                .unwrap();
-            for seed in case["seed"].as_array().unwrap() {
-                let values: Vec<_> = seed.as_array().unwrap().iter().map(sql_value).collect();
-                connection
-                    .execute(
-                        "insert into guard_continuation_claims values (?,?,?,?,?,?,?,?)",
-                        rusqlite::params_from_iter(values),
-                    )
-                    .unwrap();
-            }
-            let tx = connection
-                .transaction_with_behavior(TransactionBehavior::Immediate)
-                .unwrap();
-            let outcome = match claim(&tx, &case["args"]) {
-                Ok(result) => {
-                    tx.commit().unwrap();
-                    result
-                }
-                Err(StoreError::Value(error)) => {
-                    tx.rollback().unwrap();
-                    json!({"exception":"ValueError","error":error})
-                }
-                Err(error) => panic!("trace {index}: {error:?}"),
-            };
-            assert_eq!(outcome, case["expected"], "trace {index}");
-            let mut statement = connection
-                .prepare("select * from guard_continuation_claims order by request_id")
-                .unwrap();
-            let rows = statement
-                .query_map([], |row| {
-                    (0..8)
-                        .map(|i| row.get::<_, Option<String>>(i).map(|v| json!(v)))
-                        .collect::<rusqlite::Result<Vec<_>>>()
-                })
-                .unwrap()
-                .collect::<rusqlite::Result<Vec<_>>>()
-                .unwrap();
-            assert_eq!(json!(rows), case["rows"], "trace {index} durable state");
-        }
-    }
-}
+#[path = "continuation_store_tests.rs"]
+mod tests;

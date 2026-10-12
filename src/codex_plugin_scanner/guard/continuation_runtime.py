@@ -84,8 +84,9 @@ def continue_request_after_application(
         observed_at=observed_at,
         headless=headless,
     )
+    offer_hash = _offer_hash(offer)
     existing = store.get_request_resume(request_id)
-    previous = _previous_result(existing, offer=offer, action=normalized_action)
+    previous = _replayable_result(existing, offer=offer, offer_hash=offer_hash, action=normalized_action)
     if previous is not None:
         _persist_attempt(
             store,
@@ -96,7 +97,6 @@ def continue_request_after_application(
             now=now,
         )
         return _payload(offer, previous, replayed=True)
-    offer_hash = _offer_hash(offer)
     claim_id = store.claim_continuation_attempt(
         request_id=request_id,
         offer_hash=offer_hash,
@@ -108,7 +108,7 @@ def continue_request_after_application(
         wait_deadline = time.monotonic() + min(timeout_seconds, 0.5)
         while True:
             existing = store.get_request_resume(request_id)
-            previous = _previous_result(existing, offer=offer, action=normalized_action)
+            previous = _replayable_result(existing, offer=offer, offer_hash=offer_hash, action=normalized_action)
             if previous is not None:
                 _persist_attempt(
                     store,
@@ -297,6 +297,29 @@ def _finalize_persist_attempt(
         approval_decision=approval_decision,
     )
     return cast(bool, finalized["finalized"])
+
+
+def _replayable_result(
+    existing: Mapping[str, object] | None,
+    *,
+    offer: ContinuationOffer,
+    offer_hash: str,
+    action: ContinuationAction,
+) -> ContinuationResult | None:
+    """Ask the native replay only for a row bound to this offer and action.
+
+    Replay can only succeed for a row carrying this offer hash, this action and
+    a persisted status, so the claim-wait loop skips the native round trip for
+    every other row.
+    """
+    if (
+        not isinstance(existing, Mapping)
+        or existing.get("continuation_offer_hash") != offer_hash
+        or existing.get("continuation_action") != action
+        or not isinstance(existing.get("continuation_status"), str)
+    ):
+        return None
+    return _previous_result(existing, offer=offer, action=action)
 
 
 def _persist_attempt(

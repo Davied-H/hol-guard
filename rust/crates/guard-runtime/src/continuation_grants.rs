@@ -86,7 +86,9 @@ pub(crate) fn consume(
         {
             return Ok(false);
         }
-        let workspace = workspace_key(request.get("workspace").and_then(Value::as_str));
+        let workspace = crate::policy_decision_lookup_op::computed_workspace_policy_key(
+            request.get("workspace").and_then(Value::as_str),
+        );
         let publisher = request
             .get("publisher")
             .and_then(Value::as_str)
@@ -161,22 +163,4 @@ pub(crate) fn consume(
     let changed = connection.execute("update guard_local_once_approvals set claimed_at = ?, integrity_version = ?, payload_hash = ?, payload_mac = ?, integrity_key_id = ?, signed_at = ? where approval_id = ? and claimed_at is null",
         params![now,signature.integrity_version,signature.payload_hash,signature.payload_mac,signature.integrity_key_id,signature.signed_at,id])?;
     Ok(changed == 1)
-}
-
-fn workspace_key(value: Option<&str>) -> Option<String> {
-    let value = value?.trim();
-    if value.is_empty() {
-        return None;
-    }
-    let mut normalized = value.replace('\\', "/");
-    while normalized.len() > 1 && normalized.ends_with('/') {
-        normalized.pop();
-    }
-    if normalized.as_bytes().get(1) == Some(&b':') {
-        normalized = normalized.to_lowercase();
-    }
-    Some(format!(
-        "workspace:{}",
-        guard_policy_snapshot::digest_bytes(normalized.as_bytes())
-    ))
 }

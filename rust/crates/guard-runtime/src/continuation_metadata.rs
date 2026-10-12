@@ -57,6 +57,14 @@ fn at_path<'a>(mut value: &'a mut Value, path: &[Value]) -> Option<&'a mut Value
     Some(value)
 }
 
+/// An ASCII JSON string literal, as `json.dumps` writes a string holding a
+/// lone surrogate that the UTF-8 request envelope cannot carry.
+fn is_escaped_string(text: &str) -> bool {
+    text.is_ascii()
+        && text.starts_with('"')
+        && matches!(crate::pyjson::parse(text), Ok(crate::pyjson::PyVal::Str(_)))
+}
+
 pub(crate) fn serialize(
     mut metadata: Value,
     nonfinite: &Value,
@@ -72,7 +80,7 @@ pub(crate) fn serialize(
             .ok_or(StoreError::Invalid("continuation_metadata_invalid"))?;
         let token = record[1]
             .as_str()
-            .filter(|s| matches!(*s, "NaN" | "Infinity" | "-Infinity"))
+            .filter(|s| matches!(*s, "NaN" | "Infinity" | "-Infinity") || is_escaped_string(s))
             .ok_or(StoreError::Invalid("continuation_metadata_invalid"))?;
         if retained && path.first().and_then(Value::as_str) == Some("retry_lineage") {
             continue;
@@ -113,5 +121,36 @@ mod tests {
         let decoded = super::legacy_value(&text);
         assert_eq!(decoded["retry_lineage"]["version"], 1);
         assert!(decoded["legacy_score"].is_null());
+    }
+
+    #[test]
+    fn embedded_marker_text_in_other_strings_is_left_unchanged() {
+        let value = serde_json::json!({
+            "note": "prefixguard-continuation-nonfinite-0suffix",
+            "quoted": "x\"guard-continuation-nonfinite-1",
+            "score": null
+        });
+        let markers = serde_json::json!([[["score"], "NaN"]]);
+        let text = super::serialize(value, &markers, false).unwrap();
+        assert_eq!(
+            text,
+            r#"{"note": "prefixguard-continuation-nonfinite-0suffix", "quoted": "x\"guard-continuation-nonfinite-1", "score": NaN}"#
+        );
+    }
+
+    #[test]
+    fn escaped_lone_surrogate_strings_are_restored_verbatim() {
+        let value = serde_json::json!({"label": null, "score": null});
+        let markers = serde_json::json!([[["label"], "\"a\\ud800b\""], [["score"], "-Infinity"]]);
+        let text = super::serialize(value, &markers, false).unwrap();
+        assert_eq!(text, r#"{"label": "a\ud800b", "score": -Infinity}"#);
+        for invalid in ["\"a\" ,1", "{\"a\": 1}", "\"\u{e9}\"", "1"] {
+            let markers = serde_json::json!([[["label"], invalid]]);
+            let value = serde_json::json!({"label": null});
+            assert!(
+                super::serialize(value, &markers, false).is_err(),
+                "{invalid}"
+            );
+        }
     }
 }
