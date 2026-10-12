@@ -3,7 +3,6 @@
 import base64
 import gzip
 import json
-from pathlib import Path
 
 import pytest
 
