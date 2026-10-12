@@ -69,7 +69,7 @@ def test_setup_does_not_restart_skill_request_deadline(monkeypatch, tmp_path: Pa
     from types import SimpleNamespace
 
     clock = [0.0]
-    monkeypatch.setattr(client.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(client, "time", SimpleNamespace(monotonic=lambda: clock[0]))
 
     def prerequisite(_home):
         clock[0] = 61.0

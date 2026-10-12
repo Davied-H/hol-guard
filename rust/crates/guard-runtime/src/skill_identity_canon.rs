@@ -115,7 +115,10 @@ pub(crate) fn incomplete_state_hash_for_label(
 #[cfg(test)]
 mod tests {
     use std::ffi::OsString;
+    #[cfg(unix)]
     use std::os::unix::ffi::OsStringExt;
+    #[cfg(windows)]
+    use std::os::windows::ffi::OsStringExt;
 
     use super::*;
 
@@ -132,7 +135,10 @@ mod tests {
                 "{bad:?}"
             );
         }
+        #[cfg(unix)]
         let invalid = OsString::from_vec(vec![0x66, 0x80, 0x6f]);
+        #[cfg(windows)]
+        let invalid = OsString::from_wide(&[0x66, 0xd800, 0x6f]);
         assert_eq!(
             canonical_component(&invalid).unwrap_err(),
             Failure::InvalidPathEncoding
