@@ -194,7 +194,7 @@ fn reopened_reflog_cannot_become_a_bare_repository() {
         "/w/proj/.git/LOGS/Commondir",
         "/w/proj/.git/refs/remotes/o/config.lock",
         "/w/proj/.git/logs/refs/remotes/o/gitdir",
-        "/w/proj/sub/.git/refs/objects",
+        "/w/proj/sub/.git/logs/objects",
     ] {
         assert!(store.is_match(denied), "{denied}");
     }
@@ -202,6 +202,12 @@ fn reopened_reflog_cannot_become_a_bare_repository() {
         "/w/proj/.git/logs/HEAD",
         "/w/proj/.git/logs/refs/heads/main",
         "/w/proj/.git/refs/heads/feat/x",
+        "/w/proj/.git/refs/heads/fix/config",
+        "/w/proj/.git/refs/heads/fix/config.lock",
+        "/w/proj/.git/logs/refs/heads/fix/config",
+        "/w/proj/.git/refs/tags/objects/v1",
+        "/w/proj/.git/refs/remotes/o/fix/config",
+        "/w/proj/.git/refs/objects",
         "/w/proj/.git/objects/ab/cd",
         "/w/proj/.git/config",
         "/w/proj/src/logs/config",
@@ -240,4 +246,30 @@ fn reopened_reflog_cannot_become_a_bare_repository() {
             seatbelt_string(&carrier)
         )));
     }
+}
+
+#[test]
+fn system_links_and_toolchain_config_stay_readable() {
+    let profile = workspace_profile::compose(&input("/w/proj"), &[], &[]).unwrap();
+    let metadata = profile
+        .lines()
+        .find(|line| line.starts_with("(allow file-read-metadata"))
+        .unwrap();
+    for link in ["/etc", "/tmp", "/var"] {
+        if Path::new(link).exists() {
+            assert!(
+                metadata.contains(&format!("(literal \"{link}\")")),
+                "{link}"
+            );
+        }
+    }
+    for file in [
+        "/private/var/select/developer_dir",
+        "/opt/homebrew/etc/gitconfig",
+    ] {
+        if Path::new(file).exists() {
+            assert!(profile.contains(&format!("(literal \"{file}\")")), "{file}");
+        }
+    }
+    assert!(!profile.contains("(subpath \"/private/var\")"));
 }

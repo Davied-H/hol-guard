@@ -29,6 +29,20 @@ const PRIVILEGE_NAMES: &[&str] = &[
     "killall",
     "pkill",
 ];
+/// Root-level links (`/var` -> `/private/var`) that system tools name.
+/// xcode-select reads `/var/select/developer_dir`; without metadata on the
+/// link it fails with EPERM instead of falling back to its default.
+const ROOT_LINKS: &[&str] = &["/etc", "/tmp", "/var"];
+/// Configuration the granted toolchains read at startup: the developer
+/// directory link, Xcode's license acceptance and Homebrew Git's system
+/// config (which the classifier already evaluates for write denials).
+const TOOLCHAIN_FILES: &[&str] = &[
+    "/private/var/select/developer_dir",
+    "/private/var/db/xcode_select_link",
+    "/Library/Preferences/com.apple.dt.Xcode.plist",
+    "/opt/homebrew/etc/gitconfig",
+    "/usr/local/etc/gitconfig",
+];
 const PROTECTED_DIRECTORIES: &[&str] = &[
     ".agents",
     ".claude",
@@ -120,19 +134,22 @@ pub(super) fn bare_head_pattern(root: &Path) -> Result<String, RestrictedPytestE
 }
 
 /// Git keeps a `HEAD` in `.git/logs` (the reflog) and in each remote under
-/// `.git/refs/remotes`. Adding `objects`, `commondir` or `config` beside one
-/// would complete a bare repository there, so none may be written.
+/// `.git/(logs/)?refs/remotes`. Adding `objects`, `commondir` or `config`
+/// directly beside one would complete a bare repository there, so none may be
+/// written. Deeper paths are ordinary refs, such as a branch named `fix/config`.
 pub(super) fn ref_store_repository_pattern(root: &Path) -> Result<String, RestrictedPytestError> {
     let config = format!("{}({}|{})?", ci("config")?, ci(".worktree")?, ci(".lock")?);
-    Ok(format!(
-        "^{}/(.*/)?{}/({}|{})/(.*/)?({config}|{}|{}|{})(/.*)?$",
-        ci(&root.to_string_lossy())?,
-        ci(".git")?,
-        ci("logs")?,
-        ci("refs")?,
+    let names = format!(
+        "({config}|{}|{}|{})(/.*)?",
         ci("objects")?,
         ci("commondir")?,
-        ci("gitdir")?,
+        ci("gitdir")?
+    );
+    let (logs, refs, remotes) = (ci("logs")?, ci("refs")?, ci("remotes")?);
+    Ok(format!(
+        "^{}/(.*/)?{}/({logs}|({logs}/)?{refs}/{remotes}/[^/]+)/{names}$",
+        ci(&root.to_string_lossy())?,
+        ci(".git")?,
     ))
 }
 
@@ -213,6 +230,9 @@ pub(super) fn compose(
     roots.extend(extra_reads.iter().cloned());
     let mut metadata = vec![PathBuf::from("/")];
     metadata.extend(ancestor_paths(&roots));
+    metadata.extend(existing(ROOT_LINKS));
+    let mut files = files.to_vec();
+    files.extend(existing(TOOLCHAIN_FILES));
     let mut executable = vec![workspace.clone()];
     executable.extend(existing(&["/bin", "/usr/bin"]));
     executable.extend(input.exec_roots.iter().cloned());
@@ -241,7 +261,7 @@ pub(super) fn compose(
         format!(
             "(allow file-read* {} {})",
             filter(&roots, "subpath"),
-            filter(files, "literal")
+            filter(&files, "literal")
         ),
         format!(
             "(allow file-write* {} (literal \"/dev/null\"))",
