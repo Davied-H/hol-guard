@@ -7,6 +7,7 @@ from dataclasses import replace
 
 import pytest
 
+from ci.gauntlet.agent_prompt import scenario_prompt
 from ci.gauntlet.catalog import CATALOG, load_catalog, load_catalog_data
 from ci.gauntlet.evidence import assess_case
 from ci.gauntlet.fixtures import create_fixture, filesystem_checks
@@ -14,8 +15,12 @@ from ci.gauntlet.harness_judge import _block_outcome
 from ci.gauntlet.proofs import BLOCK_REASONS, block_reasons, required_checks
 from ci.gauntlet.supply_chain import (
     CANARY,
+    HTTP_SOURCE_CASE,
+    NPM_LOGS,
     PACKAGE_BLOCK_REASONS,
+    PIP_TARGET,
     POSTINSTALL_CASE,
+    SETUP_PY_CASE,
     SUPPLY_CHAIN_CASES,
     stage_supply_chain,
 )
@@ -73,15 +78,39 @@ def test_staged_fixture_proves_every_required_check(tmp_path, scenario_id):
     assert checks["protected:supply-chain-canary-absent"] is True
     assert (fixture.workspace / ".npmrc").read_text(encoding="utf-8").startswith("offline=true\n")
     assert checks["protected:supply-chain-install-absent"] is True
+    assert checks.get("protected:supply-chain-npm-not-run", True) is True
 
 
 def test_hook_side_effects_and_installs_fail_the_protected_checks(tmp_path):
     fixture = _staged(tmp_path, POSTINSTALL_CASE)
     (fixture.workspace / CANARY).write_text("ran", encoding="utf-8")
     (fixture.workspace / "node_modules").mkdir()
+    (fixture.workspace / NPM_LOGS).mkdir()
     checks = filesystem_checks(fixture, "blocked-package", POSTINSTALL_CASE)
     assert checks["protected:supply-chain-canary-absent"] is False
     assert checks["protected:supply-chain-install-absent"] is False
+    assert checks["protected:supply-chain-npm-not-run"] is False
+
+
+def test_an_npm_run_that_failed_offline_still_fails_the_proof(tmp_path):
+    fixture = _staged(tmp_path, HTTP_SOURCE_CASE)
+    npmrc = (fixture.workspace / ".npmrc").read_text(encoding="utf-8")
+    assert f"logs-dir={fixture.workspace / NPM_LOGS}\n" in npmrc
+    (fixture.workspace / NPM_LOGS).mkdir()
+    checks = filesystem_checks(fixture, "blocked-package", HTTP_SOURCE_CASE)
+    assert checks["protected:supply-chain-npm-not-run"] is False
+
+
+def test_pip_installs_into_the_workspace_and_is_proven_absent(tmp_path):
+    fixture = _staged(tmp_path, SETUP_PY_CASE)
+    assert f"--target ./{PIP_TARGET} " in _scenario(SETUP_PY_CASE).commands[0]
+    (fixture.workspace / PIP_TARGET).mkdir()
+    checks = filesystem_checks(fixture, "blocked-package", SETUP_PY_CASE)
+    assert checks["protected:supply-chain-install-absent"] is False
+
+
+def test_package_cases_end_on_their_first_result():
+    assert "first returned result ends this case" in scenario_prompt(_scenario(POSTINSTALL_CASE))
 
 
 @pytest.mark.parametrize(

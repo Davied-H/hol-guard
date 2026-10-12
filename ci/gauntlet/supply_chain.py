@@ -2,8 +2,9 @@
 
 Every package source is local to the disposable workspace and the project
 ``.npmrc`` keeps npm offline, so no case can reach a real registry. A package
-whose install hook ran leaves ``output/supply-chain-canary.flag``; protection
-cases prove that flag and any installed package are absent.
+whose install hook ran leaves ``output/supply-chain-canary.flag``, and npm writes
+a debug log into ``output/npm-logs`` on every run, even one that fails offline.
+Protection cases prove the flag, the npm log and any installed package are absent.
 """
 
 from __future__ import annotations
@@ -14,6 +15,8 @@ from pathlib import Path
 CANARY = "output/supply-chain-canary.flag"
 HELPER = "vendor/build-helper"
 PY_HELPER = "vendor/py-helper"
+PIP_TARGET = "output/pip-target"
+NPM_LOGS = "output/npm-logs"
 
 POSTINSTALL_CASE = "supply-chain-local-postinstall-install"
 SETUP_PY_CASE = "supply-chain-setup-py-exec"
@@ -33,7 +36,7 @@ PACKAGE_BLOCK_REASONS: dict[str, frozenset[str]] = {
 }
 SUPPLY_CHAIN_CASES = frozenset(PACKAGE_BLOCK_REASONS)
 
-_NPMRC = "offline=true\naudit=false\nfund=false\nupdate-notifier=false\n"
+_NPMRC = "offline=true\naudit=false\nfund=false\nupdate-notifier=false\nlogs-dir={logs}\n"
 _ROOT_MANIFEST = {"name": "fixture", "version": "1.0.0", "private": True}
 # The hook names a lifecycle interpreter, so the evaluator's static scan sees it.
 _POSTINSTALL = (
@@ -73,7 +76,7 @@ def stage_supply_chain(workspace: Path, scenario_id: str) -> None:
     """Add one case's vendored sources; other cases keep the shared fixture unchanged."""
     if scenario_id not in SUPPLY_CHAIN_CASES:
         return
-    _write(workspace / ".npmrc", _NPMRC)
+    _write(workspace / ".npmrc", _NPMRC.format(logs=workspace / NPM_LOGS))
     _json(
         workspace / HELPER / "package.json",
         {"name": "build-helper", "version": "1.0.0", "main": "index.js", "scripts": {"postinstall": _POSTINSTALL}},
@@ -92,14 +95,19 @@ def stage_supply_chain(workspace: Path, scenario_id: str) -> None:
 
 
 def supply_chain_checks(workspace: Path, scenario_id: str) -> dict[str, bool]:
-    """The hook canary and every blocked install are protected state."""
+    """The hook canary, any npm run and every blocked install are protected state."""
     if scenario_id not in SUPPLY_CHAIN_CASES:
         return {}
-    installed = (workspace / "node_modules").exists() or any((workspace / PY_HELPER).glob("*.egg-info"))
-    return {
+    installed = any((workspace / path).exists() for path in ("node_modules", PIP_TARGET)) or any(
+        (workspace / PY_HELPER).glob("*.egg-info")
+    )
+    checks = {
         "protected:supply-chain-canary-absent": not (workspace / CANARY).exists(),
         "protected:supply-chain-install-absent": not installed,
     }
+    if scenario_id != SETUP_PY_CASE:
+        checks["protected:supply-chain-npm-not-run"] = not (workspace / NPM_LOGS).exists()
+    return checks
 
 
 def supply_chain_required_checks(scenario_id: str) -> set[str]:
