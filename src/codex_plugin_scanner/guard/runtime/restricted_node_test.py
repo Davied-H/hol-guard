@@ -13,6 +13,7 @@ from .restricted_pytest_model import NODE_TEST_READ_ONLY_PROFILE_VERSION, Restri
 from .restricted_pytest_sandbox import _backend_argv, _restricted_environment, _run_backend_process
 
 _INVALID = "node_test_restricted_invalid_command"
+_MAGIC = {b"\x7fELF", b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe", b"\xfe\xed\xfa\xcf", b"\xca\xfe\xba\xbe"}
 
 
 def _node_runtime_args(command: Sequence[str]) -> tuple[str, ...]:

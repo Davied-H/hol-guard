@@ -77,7 +77,7 @@ def _backend_argv(plan: RestrictedPytestPlan, *, private_root: Path) -> list[str
     return _bubblewrap_argv(plan, private_root=private_root)
 
 
-def _profile_fields(plan: RestrictedPytestPlan, private_root: Path) -> dict[str, object]:
+def _profile_fields(plan: RestrictedPytestPlan, private_root: Path) -> Mapping[str, object]:
     return {
         key: getattr(plan, key)
         for key in (
