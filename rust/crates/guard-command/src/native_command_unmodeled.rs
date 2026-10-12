@@ -238,17 +238,46 @@ fn literal_redirects_only(text: &str) -> bool {
     })
 }
 
-/// Whether a segment runs a program that makes links. A later redirect can
-/// write through such a link, so its literal path no longer names the file.
+/// Whether a segment runs a program that makes or moves links. A later
+/// redirect can write through such a link, so its literal path no longer
+/// names the file. Copies that keep links (`cp -a`, `-P`, `-d`, `-R`) and
+/// archive or sync tools that recreate them count too. Names are compared
+/// case-insensitively without `.exe` or `.cmd`, and any `--sy` option is
+/// taken as GNU's abbreviation of `--symbolic-link`.
 fn creates_links(literal: &str) -> bool {
-    let symbolic_copy = literal.split_whitespace().any(|word| {
-        word == "--symbolic-link"
-            || (word.starts_with('-') && !word.starts_with("--") && word.contains('s'))
+    let link_copy = literal.split_whitespace().any(|word| {
+        word.starts_with("--sy")
+            || matches!(
+                word,
+                "--archive" | "--no-dereference" | "--recursive" | "--preserve=links"
+            )
+            || (word.starts_with('-')
+                && !word.starts_with("--")
+                && word.contains(['s', 'a', 'P', 'd', 'r', 'R']))
     });
     command_words(literal).any(|word| {
-        let name = word.rsplit('/').next().unwrap_or(word);
-        matches!(name, "ln" | "gln" | "link" | "mklink")
-            || (symbolic_copy && matches!(name, "cp" | "gcp"))
+        let base = word.rsplit(['/', '\\']).next().unwrap_or(word);
+        let lowered = base.to_ascii_lowercase();
+        let name = lowered
+            .strip_suffix(".exe")
+            .or_else(|| lowered.strip_suffix(".cmd"))
+            .unwrap_or(&lowered);
+        matches!(
+            name,
+            "ln" | "gln"
+                | "link"
+                | "mklink"
+                | "mv"
+                | "gmv"
+                | "tar"
+                | "gtar"
+                | "bsdtar"
+                | "unzip"
+                | "cpio"
+                | "pax"
+                | "7z"
+                | "rsync"
+        ) || (link_copy && matches!(name, "cp" | "gcp" | "ditto"))
     })
 }
 
