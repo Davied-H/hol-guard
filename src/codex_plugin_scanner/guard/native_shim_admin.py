@@ -48,8 +48,23 @@ _PROBE_TRANSPORT_SLACK_SECONDS = 15.0
 _PROBE_MANAGER_COUNT = 20
 _PROBE_TIMEOUT_SECONDS = int(SQLITE_CONNECT_TIMEOUT_SECONDS) + 5
 # The environment keys the non-probe subops read; a probe forwards everything
-# because the shim it executes inherits the caller's environment.
-_ENVIRONMENT_KEYS = ("HOME", "PATH", "PATHEXT", "SHELL", "TEMP", "TMP", "TMPDIR")
+# because the shim it executes inherits the caller's environment. The Windows
+# path model also reads the profile and cwd-search keys from this map, so a
+# status or repair subop must see them too.
+_ENVIRONMENT_KEYS = (
+    "HOME",
+    "PATH",
+    "PATHEXT",
+    "SHELL",
+    "TEMP",
+    "TMP",
+    "TMPDIR",
+    "USERPROFILE",
+    "HOMEDRIVE",
+    "HOMEPATH",
+    "USERNAME",
+    "NoDefaultCurrentDirectoryInExePath",
+)
 _RESULT_KEYS = frozenset({"schema", "request_id", "request_sha256", "status", "code", "detail", "result"})
 _request_counter = itertools.count(1)
 # Contract constant mirrored from guard-command's manager table; a drift test compares it to the resident.
