@@ -1,8 +1,9 @@
 //! Read a package-shim manifest the way Python `json.loads` accepts an object.
 //!
 //! `serde_json` rejects `NaN` and `Infinity`. Those tokens stay in the file,
-//! and the audit stamp is inserted beside them. Any other parse failure is
-//! returned to the caller so the existing bytes are left untouched.
+//! and the audit stamp is inserted beside them. Blank text and any other
+//! parse failure are returned to the caller so the existing bytes are left
+//! untouched.
 
 use serde_json::{Map, Value};
 
@@ -16,8 +17,10 @@ pub(super) enum ManifestBody {
 }
 
 pub(super) fn read_manifest(text: &str) -> Result<ManifestBody, String> {
+    // An existing blank file is not a missing file. A parse error leaves
+    // those bytes in place instead of replacing them with a fresh stamp.
     if text.trim().is_empty() {
-        return Ok(ManifestBody::Object(Map::new()));
+        return Err("package shim manifest is not strict JSON".to_owned());
     }
     match serde_json::from_str::<Value>(text) {
         Ok(Value::Object(map)) => Ok(ManifestBody::Object(map)),
@@ -264,6 +267,14 @@ fn end_of_container(bytes: &[u8], start: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::{read_manifest, with_stamp};
+
+    #[test]
+    fn blank_or_whitespace_manifest_text_is_not_an_empty_object() {
+        for text in ["", " ", "\n\t"] {
+            let error = read_manifest(text).expect_err("blank");
+            assert!(error.contains("not strict JSON"), "{error}");
+        }
+    }
 
     #[test]
     fn a_truncated_nonfinite_object_is_not_treated_as_empty() {

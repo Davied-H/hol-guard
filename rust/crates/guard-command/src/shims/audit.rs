@@ -494,3 +494,7 @@ mod windows_tests {
         fs::remove_dir_all(&root).expect("cleanup");
     }
 }
+
+#[cfg(all(test, unix))]
+#[path = "audit_fail_closed_tests.rs"]
+mod audit_fail_closed_tests;
