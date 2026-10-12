@@ -109,9 +109,12 @@ fn evaluate(request: &GuardStoreRequestV1) -> StoreResult<(Value, Option<i64>)> 
     apply_pragmas(&connection)?;
     // A total read only writes for the one-time rebuild a migration requests;
     // every other call stays lock-free.
-    let kind = if request.method == "count_receipts"
+    let args = Args(&request.args);
+    let kind = if (request.method == "count_receipts"
         && kind == Kind::Read
-        && receipt_rollups::rebuild_pending(&connection)?
+        && receipt_rollups::rebuild_pending(&connection)?)
+        || (connect::is_state_read(&request.method)
+            && connect::read_persists_expiry(&connection, &args)?)
     {
         Kind::Write
     } else {
@@ -124,7 +127,6 @@ fn evaluate(request: &GuardStoreRequestV1) -> StoreResult<(Value, Option<i64>)> 
         Kind::Snapshot => connection.execute_batch("BEGIN")?,
         Kind::Read => {}
     }
-    let args = Args(&request.args);
     let outcome = dispatch(&connection, &request.source, &request.method, &args);
     let payload = match outcome {
         Ok(payload) => payload,
@@ -320,6 +322,7 @@ fn method_kind(method: &str) -> Option<Kind> {
         | "receipt_analytics"
         | "reconcile_receipt_events"
         | "maintain_storage" => Kind::Write,
+        _ if connect::is_state_read(method) => Kind::Read,
         _ if connect::handles(method) => Kind::Write,
         _ => return None,
     })

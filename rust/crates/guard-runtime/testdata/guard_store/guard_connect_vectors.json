@@ -4895,7 +4895,7 @@
    ]
   },
   {
-   "name": "legacy_proof_documents",
+   "name": "stored_proof_documents",
    "seed": {
     "guard_connect_requests": [],
     "guard_connect_states": [],

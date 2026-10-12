@@ -36,6 +36,14 @@ pub(crate) fn handles(method: &str) -> bool {
     )
 }
 
+/// The two reads; they write only when an expiry must be persisted.
+pub(crate) fn is_state_read(method: &str) -> bool {
+    matches!(
+        method,
+        "guard_connect_latest_state" | "guard_connect_effective_state"
+    )
+}
+
 pub(crate) fn dispatch(connection: &Connection, method: &str, args: &Args) -> StoreResult<Value> {
     match method {
         "guard_connect_latest_state" => Ok(latest_state(connection, Some(args.str("now")?))?
@@ -180,8 +188,33 @@ fn invalid_isoformat<T>(value: &str) -> StoreResult<T> {
     )))
 }
 
+/// ISO instants as `datetime.fromisoformat` reads them, which also accepts a
+/// comma as the fractional-second separator.
 fn instant(value: &str) -> StoreResult<i128> {
-    epoch_micros(value).map_or_else(|| invalid_isoformat(value), Ok)
+    epoch_micros(&value.replace(',', ".")).map_or_else(|| invalid_isoformat(value), Ok)
+}
+
+/// Whether a state read has an expiry to persist. Only a waiting request past
+/// its expiry writes; every other read stays lock-free. An unparseable
+/// instant reports a write so the read raises the same error as before.
+pub(crate) fn read_persists_expiry(connection: &Connection, args: &Args) -> StoreResult<bool> {
+    let Some(row) = query_one(
+        connection,
+        "select status, milestone, expires_at from guard_connect_states \
+         order by updated_at desc limit 1",
+        &[],
+    )?
+    else {
+        return Ok(false);
+    };
+    if text(&row, "status") != "waiting" || text(&row, "milestone") != "waiting_for_browser" {
+        return Ok(false);
+    }
+    let now = args.str("now")?;
+    Ok(match (instant(text(&row, "expires_at")), instant(now)) {
+        (Ok(expires_at), Ok(now)) => expires_at <= now,
+        _ => true,
+    })
 }
 
 /// `load_connect_state`: reads one state; a waiting request past its expiry is
@@ -366,4 +399,19 @@ fn record_sync_result(connection: &Connection, args: &Args) -> StoreResult<Value
         return Ok(latest.into_value());
     }
     persist_result(connection, latest.text("request_id"), args, now)
+}
+
+#[cfg(test)]
+mod instant_tests {
+    use super::instant;
+
+    #[test]
+    fn comma_and_period_fractions_are_the_same_instant() {
+        assert_eq!(
+            instant("2025-01-01T00:00:00,123456+00:00").ok(),
+            instant("2025-01-01T00:00:00.123456+00:00").ok()
+        );
+        assert!(instant("2025-01-01T00:00:00,123456+00:00").is_ok());
+        assert!(instant("not a time").is_err());
+    }
 }

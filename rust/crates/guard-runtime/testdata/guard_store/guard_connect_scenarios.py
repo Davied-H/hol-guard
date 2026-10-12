@@ -467,7 +467,7 @@ SCENARIOS: list[dict[str, object]] = [
         ],
     },
     {
-        "name": "legacy_proof_documents",
+        "name": "stored_proof_documents",
         "steps": [
             sql("invalid proof", state_row("l-1", proof="{not json", updated_at=T1)),
             call("get_latest_guard_connect_state", "invalid proof", now=NOW),
