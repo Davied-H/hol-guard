@@ -1,18 +1,20 @@
 //! Keep ordinary shell structure the canonical parser cannot model reviewable.
 //!
-//! Loops, conditionals and heredocs defeat the exact model that extension
-//! matchers need. Treating that as an evaluation failure blocked them
-//! outright, so a fully permitted `gh` call inside a `for` loop, or a
-//! `gh pr comment` fed by a heredoc, could not even be approved. Those two
-//! shapes are now treated like an uncertain observation: they take the
-//! strongest floor of every active extension whose programs the text names,
-//! or that cannot be recognized by name, and never less than review.
+//! Loops, conditionals, heredocs and redirects defeat the exact model that
+//! extension matchers need. Treating that as an evaluation failure blocked
+//! them outright, so a fully permitted `gh` call inside a `for` loop, a
+//! `gh pr comment` fed by a heredoc, or `gh pr view 12 > pr.json` could not
+//! even be approved. Those shapes are now treated like an uncertain
+//! observation: they take the strongest floor of every active extension whose
+//! programs the text names, or that cannot be recognized by name, and never
+//! less than review.
 //!
 //! Everything that could hide a program or move data keeps the evaluation
-//! failure: wrappers, nested executors, command substitution, redirects
-//! other than one input heredoc, `PATH` overrides, interpreters and program
-//! names built from expansions or globs, as do signed or managed policy and
-//! global lockdown.
+//! failure: wrappers, nested executors, command substitution, redirects other
+//! than one input heredoc or to a literal path, redirects after a program
+//! that makes links, `PATH` overrides, interpreters and program names built
+//! from expansions or globs, as do signed or managed policy and global
+//! lockdown.
 
 use std::collections::BTreeSet;
 use std::time::Instant;
