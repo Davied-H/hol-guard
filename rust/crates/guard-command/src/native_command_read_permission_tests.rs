@@ -208,7 +208,13 @@ fn enabled_github_permissions_cover_graphql_mutations_and_literal_mentions() {
 #[test]
 fn routine_review_thread_permission_alone_covers_only_one_static_resolution() {
     let controls = controls_with(&["command.github.permission.routine-review-thread-remote"]);
-    for command in [RESOLVE_WITH_VARIABLE, RESOLVE_LITERAL_COMMAS] {
+    let projected =
+        format!("{RESOLVE_WITH_VARIABLE} --jq .data.resolveReviewThread.thread.isResolved");
+    for command in [
+        RESOLVE_WITH_VARIABLE,
+        RESOLVE_LITERAL_COMMAS,
+        projected.as_str(),
+    ] {
         assert_eq!(action(&controls, command), "allow", "{command}");
     }
     for command in [

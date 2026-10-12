@@ -1593,14 +1593,17 @@ fn routine_review_thread_arguments_are_static(args: &[String]) -> bool {
     field_names.iter().filter(|n| n.as_str() == "query").count() == 1 && field_names.len() <= 2
 }
 
-/// A `--jq` filter made only of `.field` steps selects response data and cannot
-/// call `env`, `input` or any other builtin.
+/// A `--jq` filter that only walks down the resolution's own response,
+/// `.data.resolveReviewThread.thread.isResolved` or a prefix of it, and so
+/// cannot call `env`, `input` or any other builtin or project other data.
 fn jq_is_plain_path(filter: &str) -> bool {
-    filter.starts_with('.')
-        && filter.len() <= 256
-        && filter.split('.').skip(1).all(|step| {
-            !step.is_empty() && step.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
-        })
+    let steps: Vec<&str> = filter.split('.').collect();
+    steps.first() == Some(&"")
+        && (2..=5).contains(&steps.len())
+        && steps[1..]
+            .iter()
+            .zip(["data", "resolveReviewThread", "thread", "id|isResolved"])
+            .all(|(step, expected)| expected.split('|').any(|name| name == *step))
 }
 
 // ---------------------------------------------------------------------------
