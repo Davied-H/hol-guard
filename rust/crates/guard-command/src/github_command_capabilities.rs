@@ -1799,6 +1799,16 @@ pub fn classify_graphql_document(document: &str) -> GitHubCommandAssessment {
 }
 
 /// `_graphql_mutation_capabilities` (:137).
+/// Whether a document is one mutation whose root fields were all read
+/// exactly. A fragment or an unreadable selection makes the classifier fall
+/// back to a generic mutation, which must not stand in for a narrower grant.
+pub fn graphql_mutation_fields_proven(document: &str) -> bool {
+    let sanitized = strip_strings_and_comments(document);
+    !word_re("fragment").is_match(&sanitized)
+        && top_level_operations(&sanitized).is_some_and(|operations| operations == ["mutation"])
+        && root_fields_of(&sanitized).is_some_and(|fields| !fields.is_empty())
+}
+
 fn graphql_mutation_capabilities(field: &str) -> Vec<Cap> {
     if MAINTENANCE_MUTATIONS.contains(&field) {
         return vec![Cap::MaintainRemote];

@@ -447,17 +447,23 @@ impl CompiledNativeCommandControls {
         }
         // An enabled GitHub permission-only owner (a proven read or routine
         // review-thread resolution) runs last so it never hides an ungranted rule.
+        // A segment is covered only when every GitHub permission it needs is
+        // enabled, so `gh auth status` needs both its local and remote reads.
         let enabled = &self.explicitly_enabled_permissions;
+        let (mut granted, mut withheld) = (BTreeSet::new(), BTreeSet::new());
         for item in &batch.permission_observations {
             let id = &item.permission_id;
-            if item.mcp_tool.is_none()
-                && item.uncertainty_reasons.is_empty()
-                && id.starts_with("command.github.permission.")
-                && enabled.contains(id)
-            {
-                covered.extend(item.matcher_evidence.iter().map(|e| e.segment_index));
+            if item.mcp_tool.is_some() || !id.starts_with("command.github.permission.") {
+                continue;
             }
+            let target = if item.uncertainty_reasons.is_empty() && enabled.contains(id) {
+                &mut granted
+            } else {
+                &mut withheld
+            };
+            target.extend(item.matcher_evidence.iter().map(|e| e.segment_index));
         }
+        covered.extend(granted.difference(&withheld).copied());
         // Delegated package-firewall ownership is not execution consent. Only
         // verified rule observations or the native benign proof can cover a
         // segment; an extra unclassified command retains its own review.

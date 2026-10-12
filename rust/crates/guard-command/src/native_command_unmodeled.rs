@@ -277,8 +277,10 @@ fn named_words(text: &str) -> BTreeSet<String> {
     named
 }
 
-/// The text outside single quotes. Single-quoted text is literal and only
-/// runs as a command through an interpreter, which is checked separately.
+/// The text with single-quoted spans reduced to their word characters.
+/// Single-quoted text is literal, so its separators, redirects and expansions
+/// are dropped, but its letters stay joined to the word around them as the
+/// shell joins them: `'sh' -c` still names `sh` and `g''h` names `gh`.
 /// Quotes inside double quotes or after a backslash stay ordinary text. An
 /// unterminated quote or a heredoc, whose body quotes are not shell syntax,
 /// keeps the whole text in view.
@@ -291,6 +293,12 @@ fn unquoted_literal(text: &str) -> String {
     for character in text.chars() {
         if single {
             single = character != '\'';
+            if single
+                && (character.is_ascii_alphanumeric()
+                    || matches!(character, '.' | '_' | '-' | '+' | '/'))
+            {
+                literal.push(character);
+            }
         } else if escaped {
             escaped = false;
             literal.push(character);

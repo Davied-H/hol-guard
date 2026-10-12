@@ -137,6 +137,8 @@ fn a_disabled_extension_blocks_unmodeled_commands_that_could_hide_its_program() 
         "for x in a; do printf 'docker ps' | sh; done",
         "for x in a; do echo \"it's\"; $X ps; echo 'x'; done",
         "cat <<EOF\ndon't\nEOF\n$X ps 'x'",
+        "for x in a; do 'sh' -c 'X=dock; Y=er; $X$Y ps'; done",
+        "for x in a; do 'doc''ker' ps; done",
     ] {
         assert_eq!(decision(&controls, command).0, "block", "{command}");
     }

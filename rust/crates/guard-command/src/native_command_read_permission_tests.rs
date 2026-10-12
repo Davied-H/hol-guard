@@ -226,3 +226,42 @@ fn routine_review_thread_permission_alone_covers_only_one_static_resolution() {
         assert_ne!(action(&unset, command), "allow", "{command}");
     }
 }
+
+#[test]
+fn a_github_segment_needs_every_permission_it_observes() {
+    // `gh auth status` reads local and remote state; the local grant alone
+    // must not cover it, even after a granted mutation in the same chain.
+    let partial = controls_with(&[
+        "command.github.permission.content-remote",
+        "command.github.permission.mutate-remote",
+        "command.github.permission.read-local",
+    ]);
+    let chain = "gh issue comment 1 --body hi && gh auth status";
+    assert_ne!(action(&partial, chain), "allow");
+    let full = controls_with(&[
+        "command.github.permission.content-remote",
+        "command.github.permission.mutate-remote",
+        "command.github.permission.read-local",
+        "command.github.permission.read-remote",
+    ]);
+    assert_eq!(action(&full, chain), "allow");
+}
+
+#[test]
+fn a_generic_mutation_grant_does_not_cover_fields_hidden_in_fragments() {
+    let controls = controls_with(&["command.github.permission.mutate-remote"]);
+    for command in [
+        "gh api graphql -f query='mutation { ... on Mutation { deleteRepository(input:{repositoryId:\"R_x\"}) { clientMutationId } } }'",
+        "gh api graphql -f query='mutation { ...M } fragment M on Mutation { deleteRepository(input:{repositoryId:\"R_x\"}) { clientMutationId } }'",
+        "gh api graphql -f query='subscription { a }'",
+    ] {
+        assert_ne!(action(&controls, command), "allow", "{command}");
+    }
+    assert_eq!(
+        action(
+            &controls,
+            "gh api graphql -f query='mutation{addStar(input:{starrableId:\"X\"}){clientMutationId}}'"
+        ),
+        "allow"
+    );
+}

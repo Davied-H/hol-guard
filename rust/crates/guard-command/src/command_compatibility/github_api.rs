@@ -251,7 +251,13 @@ fn graphql_read(method: Option<&str>, fields: &[(&str, &str)]) -> Capabilities {
         return one("routine_review_thread_remote");
     }
     let assessment = crate::github_command_capabilities::classify_graphql_document(document);
-    if assessment.capabilities.contains(&Cap::Unknown) {
+    if assessment.capabilities.contains(&Cap::Unknown)
+        || (assessment
+            .capabilities
+            .iter()
+            .any(|capability| *capability != Cap::ReadRemote)
+            && !crate::github_command_capabilities::graphql_mutation_fields_proven(document))
+    {
         return None;
     }
     let mut capabilities: Vec<&'static str> = assessment
