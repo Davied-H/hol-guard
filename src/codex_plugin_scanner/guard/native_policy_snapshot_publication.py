@@ -210,6 +210,7 @@ class NativePolicySnapshotPublicationMixin:
                 home_dir=daemon_home_dir(),
                 harness_postures=bound_postures,
                 local_cli_block_rules=local_cli_block_rules,
+                evidence_drain=publisher.direct_evidence_bound(getattr(capabilities, "features", ())),
             )
             resident_fingerprint_before = publisher._current_input_fingerprint()[1]
             try:

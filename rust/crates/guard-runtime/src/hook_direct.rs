@@ -8,6 +8,9 @@
 //! Watch, in a workspace the current snapshot settled, while the publisher's
 //! ACK still holds. Every other request, and every verdict other than allow,
 //! defers so the caller takes the daemon path, which is unchanged.
+//!
+//! The daemon also records evidence after an allow. An answer is returned
+//! only once that evidence is queued for the daemon to drain.
 
 use crate::policy_store::policy_store_direct_lane::DirectLaneDefer;
 use crate::policy_store::PolicySnapshotStore;
@@ -74,6 +77,8 @@ enum HookDirectDefer {
     LocalCliRules,
     RecordingOnly,
     ExecutionEnvironmentInvalid,
+    EvidenceUndrained,
+    EvidenceFull,
     EdgeFailed,
     NotAllow,
 }
@@ -93,6 +98,8 @@ impl HookDirectDefer {
             Self::LocalCliRules => "direct_hook_local_cli_rules",
             Self::RecordingOnly => "direct_hook_recording_only",
             Self::ExecutionEnvironmentInvalid => "direct_hook_execution_environment_invalid",
+            Self::EvidenceUndrained => "direct_hook_evidence_undrained",
+            Self::EvidenceFull => "direct_hook_evidence_full",
             Self::EdgeFailed => "direct_hook_edge_failed",
             Self::NotAllow => "direct_hook_not_allow",
         }
@@ -142,6 +149,12 @@ fn answer(
         return Err(HookDirectDefer::PayloadUnsupported);
     }
     payload.remove("hook_env");
+    // The daemon records the payload without `hook_env`, and with the
+    // execution environment present even when the caller sent none.
+    let mut evidence_payload = payload.clone();
+    evidence_payload
+        .entry(EXECUTION_ENVIRONMENT_FIELD)
+        .or_insert(Value::Null);
     let execution_environment = match payload.remove(EXECUTION_ENVIRONMENT_FIELD) {
         None | Some(Value::Null) => None,
         Some(value @ Value::Object(_)) => Some(
@@ -184,6 +197,9 @@ fn answer(
         // Watch needs the daemon's would-have-stopped evidence.
         return Err(HookDirectDefer::RecordingOnly);
     }
+    if binding.evidence_drain != Some(true) {
+        return Err(HookDirectDefer::EvidenceUndrained);
+    }
 
     let envelope = GuardHookEnvelopeV2 {
         schema: GUARD_HOOK_ENVELOPE_V2_SCHEMA.to_owned(),
@@ -204,8 +220,8 @@ fn answer(
             "runtime_identity": snapshot.runtime_identity,
         }),
         source: GuardHookSourceMetadataV2 {
-            cwd: Some(workspace),
-            home_dir: request.home_dir,
+            cwd: Some(workspace.clone()),
+            home_dir: request.home_dir.clone(),
             guard_home: request.guard_home,
             source_ref_external_allowed: false,
             execution_environment,
@@ -214,7 +230,19 @@ fn answer(
     };
     let edge = crate::edge::evaluate_envelope_with_store(envelope, policy_store)
         .map_err(|_| HookDirectDefer::EdgeFailed)?;
-    allow_answer(&edge)
+    let answered = allow_answer(&edge)?;
+    let evidence = json!({
+        "harness": DIRECT_HARNESS,
+        "workspace": workspace,
+        "home_dir": request.home_dir,
+        "payload": Value::Object(evidence_payload),
+        "receipt": answered.get("receipt").cloned().unwrap_or(Value::Null),
+        "harness_response": answered["harness_response"].clone(),
+    });
+    if !policy_store.direct_evidence().offer(evidence) {
+        return Err(HookDirectDefer::EvidenceFull);
+    }
+    Ok(answered)
 }
 
 /// The edge result to return as is, when it is an allow the daemon would

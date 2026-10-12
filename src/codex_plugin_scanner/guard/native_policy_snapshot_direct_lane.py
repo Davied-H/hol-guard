@@ -17,12 +17,14 @@ import os
 import stat
 import threading
 import time
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 
 from .native_policy_snapshot_constants import NATIVE_RUNTIME_STATE_DIRECTORY
 
 DIRECT_LANE_PUSH_FEATURE = "policy-snapshot-direct-lane-v1"
+# The resident queues the evidence of each direct answer for the daemon to drain.
+DIRECT_HOOK_EVIDENCE_FEATURE = "hook-direct-evidence-v1"
 DIRECT_LANE_ACK_DIRECTORY = "direct-lane"
 DIRECT_LANE_ACK_FILE_NAME = "ack.json"
 DIRECT_LANE_ACK_SCHEMA = "guard-direct-lane-ack.v1"
@@ -135,16 +137,22 @@ def with_direct_hook_state(
     home_dir: str,
     harness_postures: Mapping[str, str],
     local_cli_block_rules: bool,
+    evidence_drain: bool,
 ) -> dict[str, object] | None:
     """Add the daemon state a direct hook needs beyond the snapshot.
 
     A field the resident cannot accept is left out, so the lane still proves
-    freshness and direct hooks defer as incomplete.
+    freshness and direct hooks defer as incomplete. ``evidence_drain`` is
+    true only while this daemon drains the evidence of direct answers.
     """
 
     if binding is None:
         return None
-    bound: dict[str, object] = {**binding, "local_cli_block_rules": local_cli_block_rules}
+    bound: dict[str, object] = {
+        **binding,
+        "local_cli_block_rules": local_cli_block_rules,
+        "evidence_drain": evidence_drain,
+    }
     if _path_valid(home_dir):
         bound["home_dir"] = home_dir
     if len(harness_postures) <= _MAX_HARNESS_POSTURES and all(
@@ -164,6 +172,8 @@ class NativePolicySnapshotDirectLaneAck:
     _direct_lane_lease_expires_at_ms: int = 0
     # The custom command-line rule revision the open lane was bound against.
     _direct_lane_local_cli_revision: int | None = None
+    # Set while the daemon drains direct-answer evidence from the resident.
+    _direct_evidence_drain_enabled: bool = False
 
     @property
     def _acked(self) -> bool:
@@ -221,6 +231,34 @@ class NativePolicySnapshotDirectLaneAck:
             self._direct_lane_ack_target = None
             self._direct_lane_lease_expires_at_ms = 0
             self._unlink_direct_lane_ack()
+
+    def enable_direct_evidence_drain(self, enabled: bool) -> None:
+        """Advertise the evidence drain in the next binding, or stop direct hooks."""
+
+        self._direct_evidence_drain_enabled = enabled
+        if not enabled:
+            self._close_direct_lane_ack()
+
+    def direct_evidence_bound(self, features: Iterable[str]) -> bool:
+        """Whether a push to a resident with ``features`` may bind the drain."""
+
+        return self._direct_evidence_drain_enabled and DIRECT_HOOK_EVIDENCE_FEATURE in set(features)
+
+    def direct_evidence_transport(self) -> tuple[Path, Callable[..., bytes | None]] | None:
+        """The resident executable and client the evidence drain uses."""
+
+        status = getattr(self, "_last_runtime_status", None)
+        identity = getattr(status, "identity", None)
+        capabilities = getattr(status, "capabilities", None)
+        path = getattr(identity, "path", None)
+        if path is None or DIRECT_HOOK_EVIDENCE_FEATURE not in set(getattr(capabilities, "features", ())):
+            return None
+        client = getattr(self, "_client_request", None)
+        if client is None:
+            from .native_resident_client import native_resident_client_request
+
+            client = native_resident_client_request
+        return Path(path), client
 
     def _direct_lane_ack_path(self) -> Path:
         return self.guard_home / NATIVE_RUNTIME_STATE_DIRECTORY / DIRECT_LANE_ACK_DIRECTORY / DIRECT_LANE_ACK_FILE_NAME

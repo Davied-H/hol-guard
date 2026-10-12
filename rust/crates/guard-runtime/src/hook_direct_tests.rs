@@ -199,6 +199,7 @@ fn lane(label: &str, extra: Value) -> Lane {
     bound["home_dir"] = json!(HOME);
     bound["harness_postures"] = json!({});
     bound["local_cli_block_rules"] = json!(false);
+    bound["evidence_drain"] = json!(true);
     for (key, value) in extra.as_object().unwrap() {
         bound[key] = value.clone();
     }
@@ -316,6 +317,7 @@ fn daemon_only_state_in_the_binding_defers() {
         bound["home_dir"] = json!(HOME);
         bound["harness_postures"] = json!({});
         bound["local_cli_block_rules"] = json!(false);
+        bound["evidence_drain"] = json!(true);
         bound.as_object_mut().unwrap().remove(missing);
         push(&lane.fixture, Some(bound)).unwrap();
         assert_eq!(
@@ -338,4 +340,59 @@ fn an_edge_verdict_other_than_allow_takes_the_daemon_path() {
         "cwd": lane.workspace,
     });
     assert_eq!(deferred(&run(&lane, payload)), "direct_hook_not_allow");
+}
+
+fn drain(lane: &Lane) -> Value {
+    let request = crate::hook_direct_evidence::HookDirectEvidenceDrainRequestV1 {
+        guard_home: lane.fixture.root.to_str().unwrap().to_owned(),
+        max_records: None,
+    };
+    let page =
+        crate::hook_direct_evidence::drain(&request, lane.fixture.store.direct_evidence()).unwrap();
+    serde_json::from_slice(&page).unwrap()
+}
+
+#[test]
+fn a_daemon_that_does_not_drain_evidence_keeps_the_lane_closed() {
+    let lane = lane("undrained", json!({ "evidence_drain": false }));
+    assert_eq!(
+        deferred(&run(&lane, read_payload(&lane))),
+        "direct_hook_evidence_undrained"
+    );
+    assert_eq!(drain(&lane)["records"], json!([]));
+}
+
+#[test]
+fn an_answer_queues_the_evidence_the_daemon_records() {
+    let lane = lane("evidence", json!({}));
+    let mut payload = read_payload(&lane);
+    payload["hook_env"] = json!({ "HOME": HOME });
+    let result = run(&lane, payload);
+    assert_eq!(result["outcome"], "answer", "{result}");
+    let edge = &result["edge"];
+    let page = drain(&lane);
+    let records = page["records"].as_array().unwrap();
+    assert_eq!(records.len(), 1);
+    let record = &records[0];
+    assert_eq!(record["harness"], "codex");
+    assert_eq!(record["workspace"], json!(lane.workspace));
+    assert_eq!(record["home_dir"], HOME);
+    assert_eq!(record["harness_response"], edge["harness_response"]);
+    assert_eq!(
+        record["receipt"],
+        edge.get("receipt").cloned().unwrap_or(Value::Null)
+    );
+    let mut expected = read_payload(&lane);
+    expected["guard_execution_environment"] = Value::Null;
+    assert_eq!(record["payload"], expected);
+    assert_eq!(drain(&lane)["records"], json!([]));
+}
+
+#[test]
+fn a_deferred_hook_queues_no_evidence() {
+    let lane = lane("deferred-evidence", json!({}));
+    let mut post = read_payload(&lane);
+    post["hook_event_name"] = json!("PostToolUse");
+    deferred(&run(&lane, post));
+    assert_eq!(drain(&lane)["records"], json!([]));
 }

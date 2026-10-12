@@ -345,6 +345,7 @@ mod hook_decision_native_facts_tests;
 mod hook_decision_op;
 mod hook_decision_settle;
 mod hook_direct;
+mod hook_direct_evidence;
 #[cfg(unix)]
 mod hook_env_stamp;
 mod hook_policy_config;
