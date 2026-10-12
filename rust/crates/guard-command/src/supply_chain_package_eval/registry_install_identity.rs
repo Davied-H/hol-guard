@@ -122,9 +122,9 @@ fn plain_registry_spec(spec: &str) -> bool {
                 .chars()
                 .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || "._~-".contains(c))
     };
-    scope.map_or(true, name_part)
+    scope.is_none_or(name_part)
         && name_part(name)
-        && selector.map_or(true, |selector| {
+        && selector.is_none_or(|selector| {
             !selector.is_empty()
                 && selector
                     .chars()
@@ -323,7 +323,7 @@ fn project_npmrc_overrides_registry(
         let Ok(text) = std::fs::read_to_string(&path) else {
             return true;
         };
-        text.lines().any(|line| npmrc_redirects_fetch(line))
+        text.lines().any(npmrc_redirects_fetch)
     })
 }
 
