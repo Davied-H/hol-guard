@@ -11,7 +11,6 @@ import hashlib
 import json
 import os
 import platform
-import re
 import shutil
 import signal
 import stat
@@ -21,6 +20,8 @@ from collections.abc import Iterator
 from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Any
+
+from scripts.release.workspace_opt_profile import render_profile, workspace_member_names
 
 from .fixtures import digest_file, mkdir_private
 
@@ -256,7 +257,7 @@ def _dev_profile_supported(worktree: Path) -> bool:
 
 
 def _write_dev_cargo_config(worktree: Path, *, env: dict[str, str] | None = None, runner=subprocess.run) -> None:
-    """Pin workspace crates to opt-level 0; dependencies keep the release profile."""
+    """Pin workspace crates to opt-level 0; dependencies keep their optimization level."""
     result = runner(
         [
             "cargo",
@@ -276,17 +277,13 @@ def _write_dev_cargo_config(worktree: Path, *, env: dict[str, str] | None = None
     if result.returncode:
         raise RuntimeError("cargo metadata failed: " + result.stderr.strip()[:400])
     metadata = json.loads(result.stdout)
-    workspace_members = set(metadata["workspace_members"])
-    names = sorted(package["name"] for package in metadata["packages"] if package["id"] in workspace_members)
-    invalid = [name for name in names if re.fullmatch(r"[A-Za-z0-9_-]+", name) is None]
-    if invalid:
-        raise RuntimeError("unexpected workspace member names: " + ", ".join(invalid))
+    try:
+        names = workspace_member_names(metadata)
+    except ValueError as exc:
+        raise RuntimeError(str(exc)) from exc
     config = worktree / ".cargo" / "config.toml"
     config.parent.mkdir(parents=True, exist_ok=True)
-    config.write_text(
-        "".join(f'[profile.release.package."{name}"]\nopt-level = 0\n\n' for name in names),
-        encoding="utf-8",
-    )
+    config.write_text(render_profile(names, "0"), encoding="utf-8")
 
 
 def _cached_wheel(store: Path) -> dict[str, Any] | None:
