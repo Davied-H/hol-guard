@@ -46,8 +46,59 @@ pub(super) fn safe_hol_guard_arguments(arguments: &[String]) -> bool {
             | ["daemon", "status"]
             | ["status" | "doctor" | "settings", "--json"]
             | ["daemon", "status", "--json"]
-    )
+    ) || help_request(&words)
 }
+
+/// `--help` for the launcher or a documented subcommand. The parser prints
+/// usage and exits before any subcommand runs. Only known subcommand names are
+/// admitted: a frozen launcher treats a leading word naming a package manager
+/// as a shim script path, which the working directory could supply.
+fn help_request(words: &[&str]) -> bool {
+    let known = |word: &&str| HELP_SUBCOMMANDS.contains(word);
+    match words {
+        ["help", rest @ ..] => rest.len() <= 2 && rest.iter().all(known),
+        [rest @ .., "--help" | "-h"] => rest.len() <= 2 && rest.iter().all(known),
+        _ => false,
+    }
+}
+
+const HELP_SUBCOMMANDS: &[&str] = &[
+    "abom",
+    "advisories",
+    "apps",
+    "daemon",
+    "detect",
+    "diff",
+    "doctor",
+    "events",
+    "exceptions",
+    "explain",
+    "export",
+    "history",
+    "hooks",
+    "import",
+    "install",
+    "inventory",
+    "list",
+    "mcp",
+    "receipts",
+    "repair",
+    "risk",
+    "run",
+    "scan",
+    "secrets",
+    "security-level",
+    "set",
+    "settings",
+    "show",
+    "skills",
+    "start",
+    "status",
+    "stop",
+    "sync",
+    "trust",
+    "validate",
+];
 
 #[cfg(test)]
 mod tests {
@@ -69,6 +120,13 @@ mod tests {
             "doctor --json",
             "settings",
             "settings --json",
+            "--help",
+            "-h",
+            "help",
+            "help doctor",
+            "doctor --help",
+            "daemon status -h",
+            "secrets --help",
         ] {
             assert!(safe_hol_guard_arguments(&arguments(command)), "{command}");
         }
@@ -101,6 +159,11 @@ mod tests {
             "capability consume",
             "--home /tmp status",
             "status --home /tmp",
+            "npm --help",
+            "__guard-claude-hook --help",
+            "status --json --help",
+            "help npm",
+            "a b c --help",
         ] {
             assert!(!safe_hol_guard_arguments(&arguments(command)), "{command}");
         }

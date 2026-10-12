@@ -270,6 +270,18 @@ pub(super) fn readonly_test_reason(model: &CanonicalCommandV1) -> Option<&'stati
             return Some("native_package_test_readonly_containment_required");
         }
     }
+    // `bun x` is Bun's spelling of `bunx`; the later proofs read it as one.
+    // Bun takes `--cwd` only before `x`, so a later one is not unwrapped.
+    let (executable, arguments) = match arguments {
+        [wrapper, rest @ ..]
+            if super::executable_basename(executable) == "bun"
+                && wrapper == "x"
+                && !rest.first().is_some_and(|word| word.starts_with("--cwd")) =>
+        {
+            ("bunx", rest)
+        }
+        _ => (executable, arguments),
+    };
     let build = match super::executable_basename(executable) {
         "bun" | "npm" | "pnpm" => {
             matches!(arguments, [run, task] if run == "run" && task == "build")
