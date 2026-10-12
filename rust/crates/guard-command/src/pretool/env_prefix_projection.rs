@@ -1,0 +1,571 @@
+//! Agents routinely prefix a command with inert environment settings
+//! (`LC_ALL=C ls`, `env -u GH_TOKEN gh api ...`, `GH_TOKEN= gh repo view`).
+//! The canonical parser treats any prefix as unmodeled context, which made
+//! the whole command fail closed. This projection removes only prefixes that
+//! cannot change how the remaining command runs, so the remaining command is
+//! judged on its own merits. Any prefix that can redirect execution, config,
+//! credentials, code loading or network routing leaves the command untouched.
+
+use crate::cloud_scrub_shell::{shell_tokens, ShellToken};
+use guard_contracts::PreToolResultV1;
+
+const MAX_PROJECTED_CHARS: usize = 32_768;
+
+/// Command separators after which a new simple command starts.
+const COMMAND_SEPARATORS: [&str; 6] = ["|", "||", "&&", ";", "&", "|&"];
+
+/// Names whose value redirects execution, config, credentials, code loading,
+/// pagers or network routing for the tools Guard proves.
+const DENIED_NAMES: [&str; 44] = [
+    "BASH_ENV",
+    "BROWSER",
+    "CDPATH",
+    "CLASSPATH",
+    "CURL_CA_BUNDLE",
+    "DOCKER_CONFIG",
+    "DOCKER_HOST",
+    "EDITOR",
+    "ENV",
+    "FPATH",
+    "GLOBIGNORE",
+    "HOME",
+    "IFS",
+    "INPUTRC",
+    "JAVA_TOOL_OPTIONS",
+    "KUBECONFIG",
+    "LESS",
+    "LESSCLOSE",
+    "LESSKEY",
+    "LESSOPEN",
+    "MAIL",
+    "MANPAGER",
+    "MANPATH",
+    "MAKEFLAGS",
+    "MFLAGS",
+    "NETRC",
+    "PAGER",
+    "PATH",
+    "PROMPT_COMMAND",
+    "PS4",
+    "REQUESTS_CA_BUNDLE",
+    "RIPGREP_CONFIG_PATH",
+    "RUBYLIB",
+    "RUBYOPT",
+    "SHELL",
+    "SHELLOPTS",
+    "SSL_CERT_DIR",
+    "SSL_CERT_FILE",
+    "SUDO_ASKPASS",
+    "TAR_OPTIONS",
+    "VISUAL",
+    "WGETRC",
+    "ZDOTDIR",
+    "_JAVA_OPTIONS",
+];
+
+const DENIED_PREFIXES: [&str; 57] = [
+    "ANTHROPIC_",
+    "AWS_",
+    "AZURE_",
+    "BASH_FUNC_",
+    "BUN_",
+    "CARGO_",
+    "CLAUDE",
+    "CLOUDSDK_",
+    "CODEX_",
+    "CONDA",
+    "COREPACK_",
+    "CURL",
+    "DENO_",
+    "DOTNET_",
+    "DYLD_",
+    "ESBUILD_",
+    "GCLOUD_",
+    "GH_",
+    "GIT",
+    "GNUPG",
+    "GO",
+    "GOOGLE_",
+    "GPG",
+    "GREP_",
+    "GUARD_",
+    "HOL_",
+    "JAVA",
+    "JDK_",
+    "JQ_",
+    "KUBE",
+    "LD_",
+    "LUA_",
+    "NODE_",
+    "NPM_",
+    "OPENAI_",
+    "OPENSSL",
+    "PERL",
+    "PHP",
+    "PIP_",
+    "PNPM_",
+    "PYTEST",
+    "PYTHON",
+    "RUST",
+    "SSH_",
+    "SSL_",
+    "SSLKEYLOG",
+    "SUDO_",
+    "SWC_",
+    "TERRAFORM_",
+    "TF_",
+    "UV_",
+    "VIRTUAL_ENV",
+    "XDG_",
+    "YARN_",
+    "ZIP",
+    "ZCODE",
+    "ZSH",
+];
+
+/// Exact settings that only quiet a tool, accepted despite a denied prefix.
+const QUIETING_SETTINGS: [(&str, &str); 11] = [
+    ("GH_NO_UPDATE_NOTIFIER", "1"),
+    ("GH_PAGER", "cat"),
+    ("GH_PAGER", ""),
+    ("GH_PROMPT_DISABLED", "1"),
+    ("GH_PROMPT_DISABLED", "true"),
+    ("GIT_OPTIONAL_LOCKS", "0"),
+    ("GIT_PAGER", "cat"),
+    ("GIT_PAGER", ""),
+    ("GIT_TERMINAL_PROMPT", "0"),
+    ("PAGER", "cat"),
+    ("PAGER", ""),
+];
+
+/// Settings that only shape output, locale or time.
+const PRESENTATION_NAMES: [&str; 12] = [
+    "CI",
+    "CLICOLOR",
+    "CLICOLOR_FORCE",
+    "COLORTERM",
+    "COLUMNS",
+    "FORCE_COLOR",
+    "LANG",
+    "LANGUAGE",
+    "LINES",
+    "NO_COLOR",
+    "TERM",
+    "TZ",
+];
+
+/// Name fragments of settings that point a tool at code, config, files,
+/// options or network endpoints. Tools other than the ones Guard proves read
+/// such settings too (`OPENSSL_CONF`, `SSLKEYLOGFILE`, `PYTEST_ADDOPTS`), so
+/// any name carrying one is never inert.
+const LOADER_MARKERS: [&str; 34] = [
+    "ADDR", "AGENT", "ARGS", "BINARY", "CERT", "CMD", "COMMAND", "CONF", "DIR", "EDITOR",
+    "ENDPOINT", "ENGINE", "EXEC", "FILE", "FLAGS", "HOME", "HOOK", "HOST", "IMPORT", "INIT",
+    "KEYLOG", "LIB", "LOAD", "MODULE", "OPTIONS", "OPTS", "PAGER", "PATH", "PLUGIN", "PROGRAM",
+    "PROVIDER", "REGISTRY", "SCRIPT", "SOCKET",
+];
+
+const MAX_SCALAR_CHARS: usize = 128;
+
+const CREDENTIAL_MARKERS: [&str; 8] = [
+    "TOKEN",
+    "SECRET",
+    "PASSWORD",
+    "PASSWD",
+    "API_KEY",
+    "AUTH",
+    "CREDENTIAL",
+    "PRIVATE_KEY",
+];
+
+/// Prefixes that can swap the program, hijack its loader or shell, or hand
+/// it credentials. A command with one keeps its own unprojected verdict even
+/// on the reviewed path.
+const UNREVIEWABLE_NAMES: [&str; 12] = [
+    "BASH_ENV",
+    "CDPATH",
+    "ENV",
+    "FPATH",
+    "HOME",
+    "IFS",
+    "PATH",
+    "PROMPT_COMMAND",
+    "PS4",
+    "SHELL",
+    "SHELLOPTS",
+    "ZDOTDIR",
+];
+
+const UNREVIEWABLE_PREFIXES: [&str; 22] = [
+    "ANTHROPIC_",
+    "AWS_",
+    "AZURE_",
+    "BASH_FUNC_",
+    "CLAUDE",
+    "CLOUDSDK_",
+    "CODEX_",
+    "DOCKER_",
+    "DYLD_",
+    "GCLOUD_",
+    "GH_",
+    "GIT",
+    "GOOGLE_",
+    "GUARD_",
+    "HOL_",
+    "KUBE",
+    "LD_",
+    "OPENAI_",
+    "SSH_",
+    "SUDO_",
+    "XDG_",
+    "ZSH",
+];
+
+const MAX_SETTING_CHARS: usize = 40;
+
+/// A command whose leading environment settings were removed although one of
+/// them may change how it runs. It never earns less than review.
+pub(super) struct ReviewedProjection {
+    pub(super) command: String,
+    /// The first setting that is not inert, a shape-checked variable name.
+    pub(super) setting: String,
+}
+
+/// The command with every inert environment prefix removed, or `None` when
+/// there is nothing to remove or any prefix might change execution.
+pub(super) fn project(command: &str) -> Option<String> {
+    project_with(command, None)
+}
+
+/// The command with its literal environment prefixes removed when at least
+/// one of them is not inert but none can swap the program, its loader or its
+/// credentials. `None` when [`project`] applies or nothing qualifies.
+pub(super) fn project_reviewed(command: &str) -> Option<ReviewedProjection> {
+    let mut setting = None;
+    let command = project_with(command, Some(&mut setting))?;
+    Some(ReviewedProjection {
+        command,
+        setting: setting?,
+    })
+}
+
+fn project_with(command: &str, mut setting: Option<&mut Option<String>>) -> Option<String> {
+    if command.len() > MAX_PROJECTED_CHARS || command.contains(['\n', '\r', '\0']) {
+        return None;
+    }
+    let chars: Vec<char> = command.chars().collect();
+    let tokens = shell_tokens(&chars)?;
+    let mut removed = vec![false; tokens.len()];
+    let mut index = 0usize;
+    let mut command_start = true;
+    while index < tokens.len() {
+        if tokens[index].is_control {
+            command_start = COMMAND_SEPARATORS.contains(&tokens[index].value.as_str());
+            index += 1;
+            continue;
+        }
+        if !command_start {
+            index += 1;
+            continue;
+        }
+        command_start = false;
+        index = strip_prefixes(&tokens, &chars, index, &mut removed, setting.as_deref_mut())?;
+    }
+    if !removed.contains(&true) {
+        return None;
+    }
+    let mut projected = String::with_capacity(command.len());
+    let mut cursor = 0usize;
+    for (token, drop) in tokens.iter().zip(&removed) {
+        if *drop {
+            projected.extend(&chars[cursor..token.start]);
+            cursor = next_word_start(&chars, token.end);
+        }
+    }
+    projected.extend(&chars[cursor..]);
+    let projected = projected.trim().to_owned();
+    (!projected.is_empty() && projected != command.trim()).then_some(projected)
+}
+
+/// Mark leading assignments and `env` wrappers of one simple command and
+/// return the index of its executable; `None` when a prefix is not inert.
+fn strip_prefixes(
+    tokens: &[ShellToken],
+    chars: &[char],
+    mut index: usize,
+    removed: &mut [bool],
+    mut setting: Option<&mut Option<String>>,
+) -> Option<usize> {
+    let mut stripped = false;
+    while index < tokens.len() && !tokens[index].is_control {
+        let token = &tokens[index];
+        if let Some((name, value)) = assignment(token) {
+            if !literal_word(chars, token) {
+                return None;
+            }
+            if !inert_assignment(name, value) {
+                let first = setting
+                    .as_deref_mut()
+                    .filter(|_| reviewable_assignment(name))?;
+                first.get_or_insert_with(|| name.to_owned());
+            }
+        } else if token.value == "env" || token.value == "/usr/bin/env" {
+            removed[index] = true;
+            index = strip_env_options(tokens, chars, index + 1, removed, setting.as_deref_mut())?;
+            stripped = true;
+            continue;
+        } else {
+            break;
+        }
+        removed[index] = true;
+        stripped = true;
+        index += 1;
+    }
+    // A prefix with nothing after it sets shell state or dumps the
+    // environment; leave that to the full parser.
+    if stripped && (index >= tokens.len() || tokens[index].is_control) {
+        return None;
+    }
+    // Guard's own launchers prove their exact invocation, environment
+    // included; a prefix in front of them is never projected away.
+    if stripped && guard_launcher(&tokens[index].value) {
+        return None;
+    }
+    Some(index)
+}
+
+fn guard_launcher(executable: &str) -> bool {
+    executable
+        .rsplit(['/', '\\'])
+        .next()
+        .is_some_and(|name| name.to_ascii_lowercase().starts_with("hol-guard"))
+}
+
+/// Mark the `-u NAME` / `--unset=NAME` / `NAME=VALUE` arguments of an `env`
+/// wrapper and return the index of the wrapped executable. Any other option
+/// (`-i`, `-C`, `-S`, `-P`, ...) changes execution and is not inert.
+fn strip_env_options(
+    tokens: &[ShellToken],
+    chars: &[char],
+    mut index: usize,
+    removed: &mut [bool],
+    mut setting: Option<&mut Option<String>>,
+) -> Option<usize> {
+    while index < tokens.len() && !tokens[index].is_control {
+        let token = &tokens[index];
+        if !literal_word(chars, token) {
+            return None;
+        }
+        let value = token.value.as_str();
+        if value == "--" {
+            removed[index] = true;
+            index += 1;
+            break;
+        }
+        if value == "-u" || value == "--unset" {
+            let name = tokens.get(index + 1).filter(|next| !next.is_control)?;
+            if !literal_word(chars, name) || !inert_unset(&name.value) {
+                return None;
+            }
+            removed[index] = true;
+            removed[index + 1] = true;
+            index += 2;
+            continue;
+        }
+        if let Some(name) = value
+            .strip_prefix("--unset=")
+            .or_else(|| value.strip_prefix("-u").filter(|rest| !rest.is_empty()))
+        {
+            if !inert_unset(name) {
+                return None;
+            }
+        } else if value.starts_with('-') {
+            return None;
+        } else if let Some((name, assigned)) = assignment(token) {
+            if !inert_assignment(name, assigned) {
+                let first = setting
+                    .as_deref_mut()
+                    .filter(|_| reviewable_assignment(name))?;
+                first.get_or_insert_with(|| name.to_owned());
+            }
+        } else {
+            break;
+        }
+        removed[index] = true;
+        index += 1;
+    }
+    Some(index)
+}
+
+fn assignment(token: &ShellToken) -> Option<(&str, &str)> {
+    let (name, value) = token.value.split_once('=')?;
+    let mut characters = name.chars();
+    let first = characters.next()?;
+    ((first == '_' || first.is_ascii_alphabetic())
+        && characters.all(|value| value == '_' || value.is_ascii_alphanumeric()))
+    .then_some((name, value))
+}
+
+/// The raw word has no expansion, substitution, glob or escape.
+fn literal_word(chars: &[char], token: &ShellToken) -> bool {
+    !chars[token.start..token.end].iter().any(|character| {
+        matches!(
+            character,
+            '$' | '`'
+                | '\\'
+                | '('
+                | ')'
+                | '{'
+                | '}'
+                | '*'
+                | '?'
+                | '['
+                | ']'
+                | '~'
+                | '<'
+                | '>'
+                | '!'
+        )
+    })
+}
+
+fn inert_assignment(name: &str, value: &str) -> bool {
+    let upper = name.to_ascii_uppercase();
+    if QUIETING_SETTINGS
+        .iter()
+        .any(|(known, quiet)| upper == *known && value == *quiet)
+    {
+        return true;
+    }
+    // Clearing a credential only removes authority from the command.
+    if value.is_empty()
+        && CREDENTIAL_MARKERS
+            .iter()
+            .any(|marker| upper.contains(marker))
+    {
+        return true;
+    }
+    if (upper.starts_with("LC_") || PRESENTATION_NAMES.contains(&upper.as_str()))
+        && plain_scalar(value)
+    {
+        return true;
+    }
+    // Any other setting is inert only when it names no code, config, file or
+    // endpoint and its value is a plain word that cannot be a path or option.
+    !denied_name(&upper)
+        && !upper.ends_with("PROXY")
+        && !upper.ends_with("RC")
+        && !CREDENTIAL_MARKERS
+            .iter()
+            .any(|marker| upper.contains(marker))
+        && !LOADER_MARKERS.iter().any(|marker| upper.contains(marker))
+        && plain_scalar(value)
+}
+
+fn plain_scalar(value: &str) -> bool {
+    value.len() <= MAX_SCALAR_CHARS
+        && !value.starts_with('-')
+        && value
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || "._:+,-".contains(character))
+}
+
+/// Unsetting removes context; only names whose absence changes which config
+/// or executables a tool loads stay unproven.
+fn inert_unset(name: &str) -> bool {
+    let upper = name.to_ascii_uppercase();
+    assignment_name_shape(name)
+        && !matches!(upper.as_str(), "PATH" | "HOME")
+        && ![
+            "XDG_", "GIT_", "GUARD_", "HOL_", "CLAUDE", "CODEX_", "ZCODE",
+        ]
+        .iter()
+        .any(|prefix| upper.starts_with(prefix))
+}
+
+/// A setting that may change behavior but leaves the program, its loader and
+/// its credentials alone, so a human can review the command it prefixes.
+fn reviewable_assignment(name: &str) -> bool {
+    let upper = name.to_ascii_uppercase();
+    name.len() <= MAX_SETTING_CHARS
+        && !UNREVIEWABLE_NAMES.contains(&upper.as_str())
+        && !UNREVIEWABLE_PREFIXES
+            .iter()
+            .any(|prefix| upper.starts_with(prefix))
+        && !upper.ends_with("PROXY")
+        && !CREDENTIAL_MARKERS
+            .iter()
+            .any(|marker| upper.contains(marker))
+}
+
+fn assignment_name_shape(name: &str) -> bool {
+    let mut characters = name.chars();
+    characters
+        .next()
+        .is_some_and(|first| first == '_' || first.is_ascii_alphabetic())
+        && characters.all(|value| value == '_' || value.is_ascii_alphanumeric())
+}
+
+fn denied_name(upper: &str) -> bool {
+    DENIED_NAMES.contains(&upper)
+        || DENIED_PREFIXES
+            .iter()
+            .any(|prefix| upper.starts_with(prefix))
+}
+
+fn next_word_start(chars: &[char], mut index: usize) -> usize {
+    while index < chars.len() && chars[index].is_whitespace() {
+        index += 1;
+    }
+    index
+}
+
+/// Joins the verdict of a [`ReviewedProjection`] with the unprojected
+/// command's own intrinsic verdict, never below review.
+pub(super) fn join_reviewed(
+    mut projected: PreToolResultV1,
+    raw: PreToolResultV1,
+    setting: &str,
+) -> PreToolResultV1 {
+    projected.action.sensitive_target |= raw.action.sensitive_target;
+    projected.action.bounded &= raw.action.bounded;
+    if raw.reason_code != "native_command_review_required"
+        && raw.reason_code != "native_command_extension_evaluation_failed"
+        && rank(&raw.minimum_action) > rank(&projected.minimum_action)
+    {
+        projected.minimum_action = raw.minimum_action;
+        projected.policy_action = raw.policy_action;
+        projected.decision = raw.decision;
+        projected.reason_code = raw.reason_code;
+        projected.reason = raw.reason;
+    }
+    // Protected execution would run the command without its settings.
+    if rank(&projected.minimum_action) < rank("review")
+        || projected.minimum_action == "sandbox-required"
+    {
+        projected.minimum_action = "review".into();
+        projected.policy_action = "review".into();
+        projected.decision = "deny".into();
+        projected.reason_code = "native_command_review_required".into();
+        projected.reason = format!(
+            "HOL Guard requires review because the {setting} setting can change how this command runs."
+        );
+    }
+    projected.explicitly_benign = false;
+    projected
+}
+
+fn rank(action: &str) -> u8 {
+    match action {
+        "allow" => 0,
+        "warn" => 1,
+        "review" => 2,
+        "require-reapproval" => 3,
+        "sandbox-required" => 4,
+        _ => 5,
+    }
+}
+
+#[cfg(test)]
+#[path = "env_prefix_projection_tests.rs"]
+mod tests;

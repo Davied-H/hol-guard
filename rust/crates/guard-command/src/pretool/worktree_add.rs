@@ -30,14 +30,9 @@ pub(super) fn exact_safe_command(
         .iter()
         .position(|segment| segment.executable.as_deref() == Some("cd"))
         .and_then(|cd_index| verified_worktree_cwd_context(model, cd_index, context));
-    let proof_context = super::PathContext {
-        home_dir: context.home_dir,
-        cdpath_unset: context.cdpath_unset,
-        rustup_override_absent: context.rustup_override_absent,
-        cwd: cwd_proof
-            .as_ref()
-            .map(|proof| proof.cwd.as_str())
-            .or(context.cwd),
+    let proof_context = match cwd_proof.as_ref() {
+        Some(proof) => context.in_directory(&proof.cwd),
+        None => context,
     };
     let mut worktree_seen = false;
     for (index, segment) in model.segments.iter().enumerate() {

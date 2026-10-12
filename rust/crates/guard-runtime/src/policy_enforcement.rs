@@ -63,7 +63,7 @@ use policy_enforcement_facts::{
     classify_tool_name, collect_fact_maps, payload_facts, preferred_tool_name, PATH_KEYS,
 };
 use policy_enforcement_helpers::{
-    action_rank, join_action, normalized_harness, policy_floor, FloorInput,
+    action_rank, join_action, normalized_harness, policy_floor_with_cause, FloorCause, FloorInput,
 };
 use policy_enforcement_policy::CompiledEffectivePolicy;
 
@@ -110,28 +110,64 @@ const MAX_SELECTOR_VALUE_BYTES: usize = 4 * 1024;
 const MAX_FACT_DEPTH: usize = 32;
 const MAX_FACT_NODES: usize = 2_048;
 
-fn policy_override_reason(action: &str) -> (&'static str, &'static str) {
-    match action {
-        "block" => (
-            "native_policy_block",
-            "HOL Guard blocked this hook action under the installed native policy.",
-        ),
+fn policy_override_reason(action: &str, cause: Option<FloorCause>) -> (&'static str, String) {
+    let (code, outcome) = match action {
+        "block" => ("native_policy_block", "blocked this hook action"),
         "sandbox-required" => (
             "native_policy_sandbox_required",
-            "HOL Guard requires sandbox enforcement under the installed native policy.",
+            "requires sandbox enforcement",
         ),
         "require-reapproval" => (
             "native_policy_reapproval_required",
-            "HOL Guard requires fresh approval under the installed native policy.",
+            "requires fresh approval",
         ),
-        "review" => (
-            "native_policy_review_required",
-            "HOL Guard requires review under the installed native policy.",
-        ),
-        _ => (
-            "native_policy_warning",
-            "HOL Guard raised this action under the installed native policy.",
-        ),
+        "review" => ("native_policy_review_required", "requires review"),
+        _ => ("native_policy_warning", "raised this action"),
+    };
+    let Some(cause) = cause else {
+        return (
+            code,
+            format!("HOL Guard {outcome} under the installed native policy."),
+        );
+    };
+    let setting = match cause {
+        FloorCause::Default => "default action".to_owned(),
+        FloorCause::Harness => "setting for this harness".to_owned(),
+        FloorCause::Subprocess => "subprocess setting".to_owned(),
+        FloorCause::Network => "new network domain setting".to_owned(),
+        FloorCause::Unknown => "rule for unrecognized tool operations".to_owned(),
+        FloorCause::ChangedHash => "changed artifact setting".to_owned(),
+        FloorCause::UnknownPublisher => "unknown publisher setting".to_owned(),
+        FloorCause::Artifact => "rule for this artifact".to_owned(),
+        FloorCause::Publisher => "rule for this publisher".to_owned(),
+        FloorCause::Risk(risk) => format!("{} setting", risk_label(risk)),
+    };
+    (
+        code,
+        format!("HOL Guard {outcome} under the installed policy's {setting}."),
+    )
+}
+
+fn risk_label(risk: &str) -> &'static str {
+    match risk {
+        "local_secret_read" => "secret read",
+        "credential_exfiltration" => "credential export",
+        "data_flow_exfiltration" => "data export",
+        "destructive_shell" => "destructive command",
+        "encoded_execution" => "encoded execution",
+        "network_egress" => "network access",
+        "prompt_injection" => "prompt injection",
+        "mcp_dangerous_tool" => "unreviewed MCP tool",
+        "malicious_skill" => "malicious skill",
+        "package_script" => "package script",
+        "persistence" => "persistence",
+        "guard_bypass" => "Guard bypass",
+        "cloud_advisory" => "cloud advisory",
+        "encoded_exfiltration" => "encoded export",
+        "execution" => "command execution",
+        "supply_chain" => "supply chain",
+        "policy_bypass" => "policy bypass",
+        _ => "risk",
     }
 }
 
@@ -270,7 +306,7 @@ pub(crate) fn apply_pre_tool_policy(
             }
         }
     }
-    let policy_floor = policy_floor(
+    let (policy_floor, floor_cause) = policy_floor_with_cause(
         &snapshot.effective_policy,
         &snapshot.compiled,
         &harness,
@@ -328,9 +364,9 @@ pub(crate) fn apply_pre_tool_policy(
     }
 
     if policy_raised {
-        let (reason_code, reason) = policy_override_reason(&effective);
+        let (reason_code, reason) = policy_override_reason(&effective, Some(floor_cause));
         output.reason_code = reason_code.to_owned();
-        output.reason = reason.to_owned();
+        output.reason = reason;
     }
     output.policy_action = effective.clone();
     output.minimum_action = effective.clone();
@@ -399,7 +435,7 @@ pub(crate) fn apply_post_tool_policy(
         action_type,
         &response.reason_code,
     )?;
-    let floor = policy_floor(
+    let (floor, floor_cause) = policy_floor_with_cause(
         &snapshot.effective_policy,
         &snapshot.compiled,
         &harness,
@@ -466,7 +502,10 @@ pub(crate) fn apply_post_tool_policy(
     if intrinsic == "block" && response.decision == "deny" {
         return Ok(response);
     }
-    let (reason_code, reason) = policy_override_reason(&effective);
+    // Name the setting only when the policy floor, not the intrinsic
+    // result, set the outcome.
+    let cause = (action_rank(&floor) > action_rank(&intrinsic)).then_some(floor_cause);
+    let (reason_code, reason) = policy_override_reason(&effective, cause);
     let mut denied = HookReviewResponseV1::deny(reason_code, reason);
     denied.policy_action = Some(effective);
     Ok(denied)

@@ -165,13 +165,99 @@ pub(super) fn python_print_program(code: &str) -> bool {
         })
 }
 
+/// Built-in runtime identity properties. Reading one runs no user code, and
+/// anything that could redefine it (a preload or loader) already runs for a
+/// constant program too, so the existing runtime-context checks still apply.
+const JAVASCRIPT_RUNTIME_IDENTITY: [&str; 9] = [
+    "Bun.version",
+    "Bun.revision",
+    "process.version",
+    "process.platform",
+    "process.arch",
+    "process.versions.node",
+    "process.versions.bun",
+    "process.versions.v8",
+    "process.release.name",
+];
+
+/// Split `console.log` arguments at top-level commas. Plain strings carry no
+/// quote characters, so a quote always opens or closes one.
+fn console_arguments(source: &str) -> Option<Vec<&str>> {
+    let mut arguments = Vec::new();
+    let (mut start, mut depth, mut quote) = (0usize, 0usize, None);
+    for (index, character) in source.char_indices() {
+        match (quote, character) {
+            (Some(open), _) if character == open => quote = None,
+            (Some(_), _) => {}
+            (None, '"' | '\'') => quote = Some(character),
+            (None, '(') => depth += 1,
+            (None, ')') => depth = depth.checked_sub(1)?,
+            (None, ',') if depth == 0 => {
+                arguments.push(&source[start..index]);
+                start = index + 1;
+            }
+            _ => {}
+        }
+    }
+    if quote.is_some() || depth != 0 {
+        return None;
+    }
+    arguments.push(&source[start..]);
+    (arguments.len() <= 8).then_some(arguments)
+}
+
+fn javascript_value(source: &str) -> bool {
+    numeric_source(source)
+        || plain_string_literal(source)
+        || JAVASCRIPT_RUNTIME_IDENTITY.contains(&source.trim())
+}
+
 /// One JavaScript expression statement: a number expression, a plain string,
-/// or `console.log` of one of those.
+/// or `console.log` of up to eight of those or built-in runtime identity
+/// properties such as `Bun.version`.
 pub(super) fn javascript_pure_program(code: &str) -> bool {
     let code = code.trim().trim_end_matches(';').trim();
     code.len() <= 256
         && (numeric_source(code)
             || plain_string_literal(code)
             || call_argument(code, "console.log")
-                .is_some_and(|arg| numeric_source(arg) || plain_string_literal(arg)))
+                .and_then(console_arguments)
+                .is_some_and(|arguments| arguments.into_iter().all(javascript_value)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::javascript_pure_program;
+
+    #[test]
+    fn console_log_accepts_literals_arithmetic_and_runtime_identity() {
+        for code in [
+            "console.log('bun-ok')",
+            "console.log('bun-eval-ok', 1+1)",
+            "console.log('bun-ok', Bun.version)",
+            "console.log(process.version, process.platform, process.arch);",
+            "console.log('a, b', (2 * 3) % 4)",
+        ] {
+            assert!(javascript_pure_program(code), "{code}");
+        }
+    }
+
+    #[test]
+    fn console_log_rejects_anything_that_can_run_code() {
+        for code in [
+            "console.log(Bun.version())",
+            "console.log(Bun.env)",
+            "console.log(process.env.HOME)",
+            "console.log(require('fs'))",
+            "console.log('x'), require('child_process')",
+            "console.log('x', `${1}`)",
+            "console.log(Bun.version.constructor)",
+            "console.log(globalThis.Bun.version)",
+            "console.log('a', 1, 2, 3, 4, 5, 6, 7, 8)",
+            "console.log('unterminated)",
+            "console.log(1))",
+        ] {
+            assert!(!javascript_pure_program(code), "{code}");
+        }
+    }
 }

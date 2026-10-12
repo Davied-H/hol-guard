@@ -126,6 +126,8 @@ fn evaluate_with_path(
             cwd: repository.to_str(),
             cdpath_unset: false,
             rustup_override_absent: false,
+            js_loader_override_absent: false,
+            bun_config_absent: false,
         },
         Some(&context),
     )

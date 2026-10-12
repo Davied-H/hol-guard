@@ -84,6 +84,8 @@ fn shell(home: &Path, command: &str) -> String {
                 cwd: project.to_str(),
                 cdpath_unset: false,
                 rustup_override_absent: false,
+                js_loader_override_absent: false,
+                bun_config_absent: false,
             },
             Some(&environment),
         )

@@ -4,6 +4,8 @@ use evaluate::evaluate_signals;
 
 #[path = "generic_command_rewrite.rs"]
 mod command_rewrite;
+#[path = "env_prefix_projection.rs"]
+mod env_prefix_projection;
 #[path = "generic_extract.rs"]
 mod extract;
 #[path = "generic_omp.rs"]
@@ -123,6 +125,8 @@ pub fn evaluate_pre_tool_envelope_with_context(
             cwd,
             cdpath_unset: false,
             rustup_override_absent: false,
+            js_loader_override_absent: false,
+            bun_config_absent: false,
         },
         None,
     )
@@ -195,6 +199,72 @@ fn evaluate_envelope(
         && signals.command.as_deref().is_some_and(|patch| {
             super::apply_patch_writes::routine_apply_patch(patch, home_dir, cwd)
         });
+    // An inert environment prefix cannot change how the rest of the command
+    // runs, so the command without it carries the whole verdict.
+    if let Some(projected) = signals
+        .command
+        .as_deref()
+        .filter(|_| !search_scope_proven && !apply_patch_proven)
+        .and_then(env_prefix_projection::project)
+    {
+        let projected_payload = payload_with_command(
+            payload,
+            signals.command.as_deref().unwrap_or_default(),
+            &projected,
+        );
+        if projected_payload != *payload {
+            return evaluate_envelope(
+                harness,
+                event,
+                &projected_payload,
+                controls,
+                deadline,
+                context,
+                execution_environment,
+                project_redirects,
+            );
+        }
+    }
+    // A setting that may change behavior (`NODE_PATH=... node x.mjs`) leaves
+    // the command unmodeled, which the extension controls cannot bound. Judge
+    // the command without it, keep the full command's intrinsic verdict, and
+    // never settle below review. The unprojected pass runs without controls,
+    // so it cannot recurse here.
+    if let Some(reviewed) = signals
+        .command
+        .as_deref()
+        .filter(|_| controls.is_some() && !search_scope_proven && !apply_patch_proven)
+        .and_then(env_prefix_projection::project_reviewed)
+    {
+        let projected_payload = payload_with_command(
+            payload,
+            signals.command.as_deref().unwrap_or_default(),
+            &reviewed.command,
+        );
+        if projected_payload != *payload {
+            let projected = evaluate_envelope(
+                harness,
+                event,
+                &projected_payload,
+                controls,
+                deadline,
+                context,
+                execution_environment,
+                project_redirects,
+            );
+            let raw = evaluate_envelope(
+                harness,
+                event,
+                payload,
+                None,
+                deadline,
+                context,
+                execution_environment,
+                false,
+            );
+            return env_prefix_projection::join_reviewed(projected, raw, &reviewed.setting);
+        }
+    }
     if let Some(projection) = signals
         .command
         .as_deref()

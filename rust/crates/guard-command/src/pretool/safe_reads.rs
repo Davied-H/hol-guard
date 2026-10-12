@@ -40,6 +40,11 @@ pub(super) fn safe_listing_arguments(
         }
         command_read_target(argument, context, true)
             || super::search::agent_root_listing(argument, context, false)
+            || super::read_paths::repository_hidden_directory(
+                argument,
+                context.home_dir,
+                context.cwd,
+            )
     })
 }
 

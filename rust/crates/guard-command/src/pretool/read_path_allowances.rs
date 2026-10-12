@@ -293,8 +293,9 @@ pub(in crate::pretool) fn project_skill_document(
 }
 
 /// Codex planning and memory notes in the verified user home:
-/// `~/.codex/plans/**/*.md` and `~/.codex/memories/**/*.md`. Auth material,
-/// config and sessions live elsewhere under `.codex` and stay guarded.
+/// `~/.codex/plans/**/*.{md,json,txt}` and the same under `~/.codex/memories`.
+/// Plans keep their evidence beside the notes. Auth material, config and
+/// sessions live elsewhere under `.codex` and stay guarded.
 pub(in crate::pretool) fn codex_notes_document(
     canonical: &std::path::Path,
     home_dir: Option<&str>,
@@ -304,7 +305,7 @@ pub(in crate::pretool) fn codex_notes_document(
     };
     if canonical
         .extension()
-        .is_none_or(|extension| extension != "md")
+        .is_none_or(|extension| !matches!(extension.to_str(), Some("md" | "json" | "txt")))
     {
         return false;
     }
@@ -375,6 +376,46 @@ pub(in crate::pretool) fn git_ref_document(
             ["refs", "heads" | "tags" | "remotes", rest @ ..] => !rest.is_empty(),
             _ => false,
         }
+}
+
+/// A linked worktree's `.git` pointer file: a small regular file whose only
+/// content is `gitdir: <path>`. It names a directory and holds no secret, so
+/// reading it is how an agent learns which repository a checkout belongs to.
+pub(in crate::pretool) fn worktree_gitfile(canonical: &std::path::Path) -> bool {
+    use std::io::Read;
+
+    if canonical.file_name().is_none_or(|name| name != ".git")
+        || canonical
+            .parent()
+            .is_none_or(|parent| !visible_path(parent))
+    {
+        return false;
+    }
+    let Ok(metadata) = std::fs::symlink_metadata(canonical) else {
+        return false;
+    };
+    if !metadata.is_file() || metadata.len() > 1024 {
+        return false;
+    }
+    let mut content = String::new();
+    if std::fs::File::open(canonical)
+        .and_then(|file| file.take(1025).read_to_string(&mut content))
+        .is_err()
+        || content.len() > 1024
+    {
+        return false;
+    }
+    let line = content.strip_suffix('\n').unwrap_or(&content);
+    line.strip_prefix("gitdir: ")
+        .is_some_and(|path| !path.is_empty() && !path.contains(['\n', '\r', '\0']))
+}
+
+/// No component of `path` below the root is hidden.
+pub(in crate::pretool) fn visible_path(path: &std::path::Path) -> bool {
+    path.components().all(|component| match component {
+        std::path::Component::Normal(part) => !part.to_string_lossy().starts_with('.'),
+        _ => true,
+    })
 }
 
 fn common_git_marker(common: &std::path::Path, parts: &[&str]) -> Option<usize> {

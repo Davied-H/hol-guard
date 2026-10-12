@@ -62,12 +62,7 @@ pub(super) fn exact_safe_cwd_compound(
             &operation,
             &operation.segments[0],
             false,
-            crate::pretool::PathContext {
-                home_dir: context.home_dir,
-                cdpath_unset: context.cdpath_unset,
-                rustup_override_absent: context.rustup_override_absent,
-                cwd: Some(&cwd),
-            },
+            context.in_directory(&cwd),
         );
     }
     model.segments[1..].iter().all(|segment| {
@@ -112,12 +107,7 @@ pub(super) fn exact_safe_cwd_compound(
             model,
             segment,
             allow_git_helper_context,
-            crate::pretool::PathContext {
-                home_dir: context.home_dir,
-                cdpath_unset: context.cdpath_unset,
-                rustup_override_absent: context.rustup_override_absent,
-                cwd: Some(&cwd),
-            },
+            context.in_directory(&cwd),
         )
     })
 }
@@ -141,11 +131,9 @@ pub(crate) fn benign_command_segments(
     {
         return Vec::new();
     }
-    let proof_context = crate::pretool::PathContext {
-        home_dir: context.home_dir,
-        cdpath_unset: context.cdpath_unset,
-        rustup_override_absent: context.rustup_override_absent,
-        cwd: cwd.as_deref().or(context.cwd),
+    let proof_context = match cwd.as_deref() {
+        Some(cwd) => context.in_directory(cwd),
+        None => context,
     };
     let segment_benign: Vec<bool> = model
         .segments
@@ -168,21 +156,7 @@ pub(crate) fn benign_command_segments(
             let segment = stripped.as_ref().unwrap_or(original);
             let benign = segment_benign[index];
             let basename = executable_basename(segment.executable.as_deref().unwrap_or(""));
-            let stdin_filter = segment.pipeline_index > 0
-                && ((matches!(basename, "head" | "tail")
-                    && safe_reads::safe_head_tail_stdin_arguments(&segment.arguments))
-                    || (basename == "jq"
-                        && safe_reads::safe_jq_stdin_arguments(&segment.arguments))
-                    || (basename == "wc"
-                        && safe_reads::safe_word_count_stdin_arguments(&segment.arguments))
-                    || (basename == "od"
-                        && safe_reads::safe_byte_dump_stdin_arguments(&segment.arguments))
-                    || (basename == "grep"
-                        && search::safe_grep_stdin_arguments(&segment.arguments))
-                    || (basename == "rg" && search::safe_rg_stdin_arguments(&segment.arguments))
-                    || (basename == "sed"
-                        && safe_reads::safe_sed_stdin_arguments(&segment.arguments))
-                    || super::stdin_filters::safe_arguments(basename, &segment.arguments));
+            let stdin_filter = stdin_filter_segment(segment);
             let path_free = matches!(
                 basename,
                 "pwd"
@@ -275,6 +249,22 @@ pub(crate) fn benign_command_segments(
         .collect()
 }
 
+/// A later pipeline stage that only filters its standard input.
+pub(super) fn stdin_filter_segment(segment: &crate::CommandSegmentV1) -> bool {
+    let basename = executable_basename(segment.executable.as_deref().unwrap_or(""));
+    segment.pipeline_index > 0
+        && ((matches!(basename, "head" | "tail")
+            && safe_reads::safe_head_tail_stdin_arguments(&segment.arguments))
+            || (basename == "jq" && safe_reads::safe_jq_stdin_arguments(&segment.arguments))
+            || (basename == "wc"
+                && safe_reads::safe_word_count_stdin_arguments(&segment.arguments))
+            || (basename == "od" && safe_reads::safe_byte_dump_stdin_arguments(&segment.arguments))
+            || (basename == "grep" && search::safe_grep_stdin_arguments(&segment.arguments))
+            || (basename == "rg" && search::safe_rg_stdin_arguments(&segment.arguments))
+            || (basename == "sed" && safe_reads::safe_sed_stdin_arguments(&segment.arguments))
+            || super::stdin_filters::safe_arguments(basename, &segment.arguments))
+}
+
 pub(super) fn exact_safe_segment_with_context(
     model: &CanonicalCommandV1,
     segment: &crate::CommandSegmentV1,
@@ -312,6 +302,13 @@ pub(super) fn exact_safe_segment_with_context(
                 && super::directory_targets::drive_targets_quoted(segment)
         }
         "pwd" | "true" | "echo" | "printf" | "which" | "whoami" | "uname" => true,
+        // A constant program has no import, file, network, environment or
+        // process effect, provided no option or config can preload a module.
+        "bun" => {
+            context.js_loader_override_absent
+                && context.bun_config_absent
+                && javascript_constant_program(&segment.arguments)
+        }
         "cargo" | "rustc" => super::rust_toolchain::safe_version_probe(&segment.arguments, context),
         "date" => safe_reads::safe_date_arguments(&segment.arguments),
         "sleep" => safe_reads::safe_sleep_arguments(&segment.arguments),
@@ -392,12 +389,30 @@ pub(super) fn exact_safe_segment_with_context(
         "sed" => {
             safe_reads::safe_sed_arguments(&segment.arguments, segment.pipeline_index > 0, context)
         }
-        "python" | "python3" | "node" | "nodejs" => {
+        "python" | "python3" => {
             super::safe_scalar::version_probe_arguments(basename, &segment.arguments)
                 || pure_expression::safe_inline_expression(basename, &segment.arguments)
         }
+        "node" | "nodejs" => {
+            super::safe_scalar::version_probe_arguments(basename, &segment.arguments)
+                || (context.js_loader_override_absent
+                    && (pure_expression::safe_inline_expression(basename, &segment.arguments)
+                        || javascript_constant_program(&segment.arguments)))
+        }
+        "ln" => {
+            model.segments.len() == 1
+                && super::symlink_writes::safe_symlink_arguments(segment, context)
+        }
         _ => false,
     }
+}
+
+fn javascript_constant_program(arguments: &[String]) -> bool {
+    matches!(
+        arguments,
+        [flag, code] if matches!(flag.as_str(), "-e" | "--eval" | "-p" | "--print")
+            && pure_expression::javascript_pure_program(code)
+    )
 }
 
 /// Trailing `2>&1` redirects only join stderr to the segment's own stdout, so
