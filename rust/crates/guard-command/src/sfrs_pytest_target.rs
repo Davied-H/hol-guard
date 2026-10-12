@@ -403,6 +403,10 @@ mod tests {
             0
         ));
         assert!(!inline_python_payload_runs_pytest(
+            "print('''run\nsystem''', b'exec')",
+            0
+        ));
+        assert!(!inline_python_payload_runs_pytest(
             "print('run system', b'exec')",
             0
         ));

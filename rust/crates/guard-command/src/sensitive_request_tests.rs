@@ -156,7 +156,7 @@ fn native_evaluation_claim_without_redirects_binds() {
     native.embedded_commands.clear();
     let stripped = native.security_identity();
     assert_ne!(full, stripped);
-    for identity in [full, stripped] {
+    for identity in [full.clone(), stripped] {
         let input = json!({
             "tool_name": "Bash",
             "arguments": {"command": text},
@@ -164,7 +164,19 @@ fn native_evaluation_claim_without_redirects_binds() {
             "home_dir": "/home/user",
             "canonical": {"raw_text": text, "security_identity": identity},
         });
-        assert!(ask("tool_action", &input).is_ok(), "{identity}");
+        let found = ask("tool_action", &input).expect(&identity);
+        let command = &found["match"]["canonical_command"];
+        assert!(
+            command["redirects"]
+                .as_array()
+                .is_some_and(|items| !items.is_empty()),
+            "{identity} dropped redirects: {found}"
+        );
+        assert_eq!(
+            command["security_identity"].as_str(),
+            Some(full.as_str()),
+            "{identity} classified the stripped command: {found}"
+        );
     }
 }
 
