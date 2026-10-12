@@ -26,6 +26,7 @@ from tests.test_guard_runtime_mcp_saved_blocks import _child_command, _context
 pytestmark = [pytest.mark.usefixtures("bundle_first_cloud"), pytest.mark.usefixtures("package_intent_native")]
 
 _ARGUMENTS: dict[str, object] = {"target": ".env"}
+_ROW_SCENARIOS = ("exact_block", "exact_allow", "artifact_review")
 _SCENARIOS = ("empty", "exact_block", "exact_allow", "artifact_review", "other_workspace_row")
 
 
@@ -119,7 +120,9 @@ def test_in_process_saved_policy_read_equals_the_policy_lookup_effect(
     effect = _evaluate(store, config, artifact, digest)
 
     assert dict(inprocess.payload) == dict(effect.payload), scenario
-    assert not any("policy_lookup" in key for key in shipped), dict(shipped)
+    # A miss is read in-process. A saved row can be consumed by a claim, so it is
+    # pinned through the effect: every round replays the pass and must see one row.
+    assert any("policy_lookup" in key for key in shipped) == (scenario in _ROW_SCENARIOS), dict(shipped)
     assert any("policy_lookup" in key for key in operations), dict(operations)
 
 

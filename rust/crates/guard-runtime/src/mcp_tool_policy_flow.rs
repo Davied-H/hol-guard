@@ -65,6 +65,12 @@ pub(crate) struct Ctx<'a> {
 }
 
 impl Ctx<'_> {
+    fn has_observed(&self, need: &Value) -> bool {
+        self.observations
+            .iter()
+            .any(|observation| &observation.need == need)
+    }
+
     /// The observed result of `need`, or a stop asking the caller for it.
     pub(crate) fn ask(&self, need: Value) -> Flow<&Value> {
         self.observations
@@ -73,6 +79,10 @@ impl Ctx<'_> {
             .map(|observation| &observation.result)
             .ok_or(Stop::Need(need))
     }
+}
+
+fn return_need<T>(need: &Value) -> Flow<T> {
+    Err(Stop::Need(need.clone()))
 }
 
 pub(crate) enum Pass {
@@ -278,27 +288,35 @@ fn saved_evidence(
     subject: &McpToolPolicySubjectV1,
     intent: Option<&BrowserAutomationIntentV1>,
 ) -> Flow<Option<Saved>> {
+    let need = json!({
+        "kind": "policy_lookup",
+        "phase": phase.as_str(),
+        "harness": subject.harness,
+        "artifact_id": subject.artifact_id,
+        "artifact_hash": subject.artifact_hash,
+        "workspace": subject.workspace,
+        "publisher": subject.publisher,
+        "runtime_exact_match_context": exact_match_context(intent),
+        "memory_command": subject.artifact.command,
+        "memory_artifact_type": subject.artifact_type,
+        "memory_artifact_name": subject.artifact.name,
+    });
     let read;
     let lookup = match (ctx.lookup, phase) {
         // Only the initial pass reads the store itself: a fresh pass judges a
-        // refreshed subject the caller's evidence was not built for.
-        (Some(input), Phase::Initial) => {
+        // refreshed subject the caller's evidence was not built for. Every round
+        // replays this pass, so a pinned observation wins over a new read, and a
+        // saved row (which a claim can consume) is pinned as an observation
+        // instead of being trusted to be read the same way again.
+        (Some(input), Phase::Initial) if !ctx.has_observed(&need) => {
             read = policy_lookup(input, subject, exact_match_context(intent))?;
-            &read
+            if field(&read, "decision")?.is_null() {
+                &read
+            } else {
+                return_need(&need)?
+            }
         }
-        _ => ctx.ask(json!({
-            "kind": "policy_lookup",
-            "phase": phase.as_str(),
-            "harness": subject.harness,
-            "artifact_id": subject.artifact_id,
-            "artifact_hash": subject.artifact_hash,
-            "workspace": subject.workspace,
-            "publisher": subject.publisher,
-            "runtime_exact_match_context": exact_match_context(intent),
-            "memory_command": subject.artifact.command,
-            "memory_artifact_type": subject.artifact_type,
-            "memory_artifact_name": subject.artifact.name,
-        }))?,
+        _ => ctx.ask(need)?,
     };
     let row = row_of(field(lookup, "decision")?)?;
     let Some(ignored) = field(lookup, "ignored_local_integrity")?.as_bool() else {

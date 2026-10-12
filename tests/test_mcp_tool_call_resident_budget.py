@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import collections
 import json
+import sqlite3
 
 import pytest
 
@@ -23,6 +24,7 @@ pytestmark = [pytest.mark.usefixtures("bundle_first_cloud"), pytest.mark.usefixt
 
 # Resident ops one benign warm allow may spend, excluding the `tools/list` setup.
 _TOTAL_BUDGET = 7
+_CONNECTION_BUDGET = 2
 _PER_OPERATION_BUDGET = {
     "mcp_tool_policy_decide": 1,
     "policy_decision_lookup": 0,
@@ -60,13 +62,27 @@ def test_benign_tool_call_stays_within_the_resident_round_trip_budget(
         return real(**kwargs)
 
     monkeypatch.setattr(native_execution, "native_resident_client_request", spy)
+    connections: list[str] = []
+    real_connect = sqlite3.connect
+
+    def counting_connect(*args, **kwargs):
+        connections.append(str(args[0]) if args else "")
+        return real_connect(*args, **kwargs)
+
+    monkeypatch.setattr(sqlite3, "connect", counting_connect)
     messages = _messages(tool_name="safe_echo", arguments={"value": "hello"}, elicitation=False)
     proxy.run_session(messages[:2])  # initialize and tools/list
     setup = collections.Counter(operations)
     operations.clear()
+    connections.clear()
     result = proxy.run_session(messages)
     assert "result" in result["responses"][2], result["responses"][2]
     spent = operations - setup
     for operation, budget in _PER_OPERATION_BUDGET.items():
         assert spent[operation] <= budget, (operation, dict(spent))
     assert sum(spent.values()) <= _TOTAL_BUDGET, dict(spent)
+    # Each short-lived store connection costs about a millisecond of first-touch work. The extension
+    # authority read, the policy lookup and every effect share one connection scope, and the receipt,
+    # inventory and event writes share another, so this must not grow back to a connection per method.
+    guard_db = [path for path in connections if path.endswith("guard.db")]
+    assert len(guard_db) <= _CONNECTION_BUDGET, (len(guard_db), dict(spent))

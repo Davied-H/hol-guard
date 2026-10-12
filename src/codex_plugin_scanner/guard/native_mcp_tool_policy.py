@@ -383,11 +383,12 @@ def native_evaluate_tool_call(
     if not ensure_resident_prerequisite(guard_home):
         raise NativeMcpToolPolicyError("home_unprovisioned")
     initial_authority: FreshAuthority = (config, artifact, artifact_hash, arguments)
-    subject = _subject(store, config, artifact, artifact_hash, arguments)
     observations: list[dict[str, object]] = []
     authority: FreshAuthority | None = None
+    # One connection serves the extension-authority read, the lookup evidence and every effect.
     effects = _Effects(store)
     try:
+        subject = _subject(store, config, artifact, artifact_hash, arguments)
         lookup_input = _lookup_input(store, subject)
         for _ in range(_MAX_ROUNDS):
             reply = _round_trip(
@@ -424,10 +425,10 @@ def native_evaluate_tool_call(
                     reset_context_digest_home(home_token)
                 result: object = {"status": "failed"}
                 authority = initial_authority
+                effects = _Effects(store)
                 if provided is not None:
                     authority = provided
                     result = {"status": "provided", "subject": _subject(store, *provided)}
-                effects = _Effects(store)
             else:
                 result = effects.run(cast("Mapping[str, Any]", need))
             observations.append({"need": need, "result": result})
