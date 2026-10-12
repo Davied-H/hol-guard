@@ -24,9 +24,16 @@ from .native_resident_client import native_resident_client_request
 from .native_response_decoder import native_error as _native_error
 from .native_response_decoder import response_from_payload as _response_from_payload
 from .native_route_receipt import record_native_hook_result
+from .native_runtime_process_cache import (
+    forget_process_status,
+    process_snapshot,
+    process_status,
+    remember_process_status,
+)
 from .native_runtime_request_scope import (
     _resolved_candidate_path,
     remember_scoped_status,
+    scoped_candidates,
     scoped_status,
 )
 from .native_runtime_resilience import (
@@ -85,6 +92,13 @@ def _bundled_runtime_candidate() -> Path:
 
 
 def _runtime_candidates() -> tuple[Path, ...]:
+    return scoped_candidates(
+        (native_mode(), os.environ.get(_NATIVE_BINARY_ENV)),
+        _discover_runtime_candidates,
+    )
+
+
+def _discover_runtime_candidates() -> tuple[Path, ...]:
     mode = native_mode()
     candidates: list[Path] = []
     override = os.environ.get(_NATIVE_BINARY_ENV)
@@ -289,6 +303,7 @@ def _clear_capabilities_probe_state() -> None:
     with _capabilities_probe_lock:
         _capabilities_cache.clear()
         _capabilities_retry_after.clear()
+    forget_process_status()
 
 
 def _capabilities_for_identity(
@@ -370,11 +385,20 @@ def native_runtime_status(*, deadline_monotonic: float | None = None) -> NativeR
     key = _status_request_key(candidates)
     if (cached := scoped_status(key)) is not None:
         identity = cached.identity
-        resolved = {_resolved_candidate_path(candidate) for candidate in candidates}
-        if identity is not None and identity.path in resolved and _scoped_manifest_still_valid(cached):
+        if (
+            identity is not None
+            and any(_resolved_candidate_path(candidate) == identity.path for candidate in candidates)
+            and _scoped_manifest_still_valid(cached)
+        ):
             return cached
+    expired = deadline_monotonic is not None and time.monotonic() >= deadline_monotonic
+    if not expired and (process := process_status(key, candidates)) is not None:
+        remember_scoped_status(key, process)
+        return process
+    before = process_snapshot(candidates)
     status = _compute_runtime_status(candidates, deadline_monotonic=deadline_monotonic)
     remember_scoped_status(key, status)
+    remember_process_status(key, status, before)
     return status
 
 
