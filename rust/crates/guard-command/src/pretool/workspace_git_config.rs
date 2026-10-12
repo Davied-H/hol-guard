@@ -7,11 +7,14 @@ use std::path::{Component, Path, PathBuf};
 
 const MAX_CONFIG_BYTES: u64 = 64 * 1024;
 const MAX_DENIALS: usize = 64;
+const MAX_GLOBAL_FILES: usize = 32;
+const MAX_INCLUDE_DEPTH: usize = 4;
 
 /// `Ok(None)` for a missing file, `Ok(Some(text))` for a plain, bounded one,
 /// and `Err` for anything this reader cannot reason about (a special file,
 /// oversized or binary content, or a symlink unless `follow`). Global files
-/// lie outside the sandbox's writable tree, so their links are followed.
+/// are followed through links; callers first prove the target is outside the
+/// workspace.
 fn read_config(path: &Path, follow: bool) -> Result<Option<String>, ()> {
     let metadata = if follow {
         fs::metadata(path)
@@ -102,9 +105,8 @@ fn work_tree(workspace: &Path, home: Option<&Path>) -> Option<PathBuf> {
 /// Every workspace path the sandbox must keep unwritable so a later host Git
 /// never runs code it planted, or `None` to keep the command at review. It
 /// covers the repository whose work tree holds the workspace, which may be
-/// an ancestor, and relative hook directories in global configuration.
-/// Includes in global configuration are not followed: they are files the
-/// sandbox cannot write.
+/// an ancestor, and hook directories named by global configuration and the
+/// files it includes.
 pub(crate) fn workspace_write_denials(
     workspace: &Path,
     home: Option<&Path>,
@@ -118,25 +120,111 @@ pub(crate) fn workspace_write_denials(
         None => Vec::new(),
     };
     let base = root.as_deref().unwrap_or(workspace);
-    for path in global_config_paths(home) {
+    let mut pending: Vec<(PathBuf, usize)> = global_config_paths(home)
+        .into_iter()
+        .map(|path| (path, 0))
+        .collect();
+    let mut visited = 0usize;
+    while let Some((path, depth)) = pending.pop() {
+        visited += 1;
+        if visited > MAX_GLOBAL_FILES || depth > MAX_INCLUDE_DEPTH {
+            return None;
+        }
+        // A global file the sandbox could write, directly or through a link
+        // or a missing parent, could name any helper; keep it at review.
+        let resolved = resolve(&path)?;
+        if folded_inside(&resolved, workspace) {
+            return None;
+        }
         let Some(config) = read_config(&path, true).ok()? else {
             continue;
         };
-        for (_, key, value) in entries(&config)? {
-            let value = value.trim_matches('"');
-            if key != "hookspath" || value.starts_with('~') || Path::new(value).is_absolute() {
-                continue;
-            }
-            let path = normalize(&base.join(value));
-            if !path.starts_with(base) {
-                return None;
-            }
-            if path.starts_with(workspace) && !denials.contains(&path) {
-                denials.push(path);
+        let directory = resolved.parent()?.to_path_buf();
+        for (section, key, value) in entries(&config)? {
+            if section.starts_with("include") && key == "path" {
+                pending.push((expand(&directory, home, value)?, depth + 1));
+            } else if key == "hookspath" {
+                let relative = !value.trim_matches('"').starts_with(['~', '/']);
+                let path = expand(base, home, value)?;
+                if relative && !path.starts_with(base) {
+                    return None;
+                }
+                deny(&mut denials, path, workspace)?;
             }
         }
     }
     (denials.len() <= MAX_DENIALS).then_some(denials)
+}
+
+/// `path` with its longest existing ancestor resolved through links, or
+/// `None` when that ancestor cannot be resolved.
+fn resolve(path: &Path) -> Option<PathBuf> {
+    let path = normalize(path);
+    let mut existing = path.as_path();
+    let mut rest = Vec::new();
+    loop {
+        match existing.canonicalize() {
+            Ok(real) => {
+                return Some(rest.iter().rev().fold(real, |acc, part| acc.join(part)));
+            }
+            Err(_) => {
+                rest.push(existing.file_name()?.to_owned());
+                existing = existing.parent()?;
+            }
+        }
+    }
+}
+
+/// Whether `path` lies at or under `workspace` when case is ignored, as it
+/// is on the default macOS volume.
+fn folded_inside(path: &Path, workspace: &Path) -> bool {
+    let fold = |path: &Path| PathBuf::from(path.to_string_lossy().to_ascii_lowercase());
+    fold(path).starts_with(fold(workspace))
+}
+
+/// A configuration path value resolved the way Git does: `~/` against
+/// `home`, a relative value against `base`. `None` for a form this reader
+/// does not resolve (`~user`, `%(prefix)`, an inline comment, an escape or an
+/// expansion), which keeps the command at review.
+fn expand(base: &Path, home: Option<&Path>, value: &str) -> Option<PathBuf> {
+    let value = value.trim();
+    let value = value
+        .strip_prefix('"')
+        .and_then(|inner| inner.strip_suffix('"'))
+        .unwrap_or(value);
+    if value.is_empty() || value.contains(['"', '#', ';', '\\', '$', '`', '%']) {
+        return None;
+    }
+    let path = if value == "~" {
+        home?.to_path_buf()
+    } else if let Some(rest) = value.strip_prefix("~/") {
+        home?.join(rest)
+    } else if value.starts_with('~') {
+        return None;
+    } else {
+        base.join(value)
+    };
+    Some(normalize(&path))
+}
+
+/// Adds `path` to the denials when it is inside the workspace. `None` when
+/// it is the workspace or holds it, which no denial can express, or when it
+/// differs from the workspace only by case.
+fn deny(denials: &mut Vec<PathBuf>, path: PathBuf, workspace: &Path) -> Option<()> {
+    if workspace.starts_with(&path) || folded_inside(workspace, &path) {
+        return None;
+    }
+    if path.starts_with(workspace) {
+        if !denials.contains(&path) {
+            if denials.len() >= MAX_DENIALS {
+                return None;
+            }
+            denials.push(path);
+        }
+    } else if folded_inside(&path, workspace) {
+        return None;
+    }
+    Some(())
 }
 
 fn normalize(path: &Path) -> PathBuf {
@@ -238,7 +326,11 @@ fn helper_denials(config: &str, root: &Path, workspace: &Path) -> Option<Vec<Pat
                 return None;
             }
         } else if key == "hookspath" {
-            // Relative hook directories resolve against the work tree.
+            // Relative hook directories resolve against the work tree. An
+            // inline comment or escape would move the path Git uses.
+            if value.contains(['#', ';', '\\']) {
+                return None;
+            }
             candidates.push(inside(root, root, value)?);
         } else if section != "branch" && section != "user" && !names_data(section, key) {
             // The first word is a program Git finds on PATH unless it has a
@@ -278,178 +370,14 @@ fn helper_denials(config: &str, root: &Path, workspace: &Path) -> Option<Vec<Pat
             }
         }
         for path in candidates {
-            if path.starts_with(workspace) && !denials.contains(&path) {
-                if denials.len() >= MAX_DENIALS {
-                    // An unbounded list cannot be proven; keep the command at review.
-                    return None;
-                }
-                denials.push(path);
-            }
+            // An unbounded list, or a path that is or holds the workspace,
+            // cannot be denied; keep the command at review.
+            deny(&mut denials, path, workspace)?;
         }
     }
     Some(denials)
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{helper_write_denials, workspace_write_denials};
-    use std::path::{Path, PathBuf};
-
-    fn denials(config: &str, workspace: &Path) -> Option<Vec<PathBuf>> {
-        helper_write_denials(config, workspace)
-    }
-
-    #[test]
-    fn workspace_includes_and_outside_hooks_keep_the_command_at_review() {
-        let ws = Path::new("/w/repo");
-        // Relative includes resolve against `.git/`, so both name workspace files.
-        assert_eq!(denials("[include]\n\tpath = ../.gitconfig\n", ws), None);
-        assert_eq!(denials("[include]\n\tpath = extra\n", ws), None);
-        assert_eq!(
-            denials("[includeIf \"gitdir:/w/\"]\n\tpath = /w/repo/cfg\n", ws),
-            None
-        );
-        assert_eq!(denials("[core]\n\thooksPath = /outside/hooks\n", ws), None);
-        assert_eq!(denials("[core]\n\thooksPath = ~/hooks\n", ws), None);
-        // An include outside the workspace is not writable from the sandbox.
-        assert_eq!(
-            denials("[include]\n\tpath = /etc/gitconfig.d/team\n", ws),
-            Some(vec![])
-        );
-    }
-
-    #[test]
-    fn shell_punctuation_splits_helper_words() {
-        let ws = Path::new("/w/repo");
-        let config = "[alias]\n\tx = \"!f() { ./tools/x.sh; }; f\"\n\ty = !./tools/a&&git status\n\tz = \"!f() { ./tools/z; }\"\n";
-        let got = denials(config, ws).unwrap();
-        assert!(got.contains(&ws.join("tools/x.sh")), "{got:?}");
-        assert!(got.contains(&ws.join("tools/a")), "{got:?}");
-        assert!(got.contains(&ws.join("tools/z")), "{got:?}");
-        for expansion in [
-            "!$PWD/tools/x.sh",
-            "!`pwd`/x.sh",
-            "!sh tools\\\\x",
-            "!./tools/ru?",
-            "!sh tools/*.sh",
-            "!./tools/[r]un",
-            "!./tools/{run,x}.sh",
-        ] {
-            let config = format!("[alias]\n\tx = {expansion}\n");
-            assert_eq!(denials(&config, ws), None, "{expansion}");
-        }
-    }
-
-    #[test]
-    fn helper_paths_in_any_word_are_write_denied() {
-        // Nothing here exists yet: the sandbox could create any of it.
-        let ws = Path::new("/w/repo");
-        let config = "[core]\n\thooksPath = .githooks\n\tfsmonitor = ./tools/mon\n\
-             \tsshCommand = ssh -F sshcfg\n\
-             [alias]\n\tx = !sh tools/x\n\ty = !sh x.sh\n\tst = status -s\n\
-             \td = difftool --extcmd=./tools/d\n\
-             [branch \"main\"]\n\tmerge = refs/heads/main\n";
-        let got = denials(config, ws).unwrap();
-        assert_eq!(
-            got,
-            vec![
-                ws.join(".githooks"),
-                ws.join("tools/mon"),
-                ws.join("sshcfg"),
-                ws.join("tools/x"),
-                ws.join("x.sh"),
-                ws.join("tools/d"),
-            ]
-        );
-    }
-
-    #[test]
-    fn remote_and_submodule_data_keys_are_not_helpers() {
-        let ws = Path::new("/w/repo");
-        let config = "[remote \"origin\"]\n\turl = ../origin.git\n\
-             \tfetch = +refs/heads/*:refs/remotes/origin/*\n\
-             \tuploadpack = ./tools/up\n\
-             [submodule \"libs/x\"]\n\tpath = libs/x\n\turl = ./libs/x.git\n\
-             \tupdate = !sh tools/sync\n";
-        assert_eq!(
-            denials(config, ws).unwrap(),
-            vec![ws.join("tools/up"), ws.join("tools/sync")]
-        );
-    }
-
-    #[test]
-    fn a_key_on_the_header_line_keeps_the_command_at_review() {
-        let ws = Path::new("/w/repo");
-        assert_eq!(denials("[core] hooksPath = tools/hooks\n", ws), None);
-        assert_eq!(denials("[alias]x = !./tools/evil\n", ws), None);
-        assert_eq!(denials("[core\n\thooksPath = h\n", ws), None);
-        assert_eq!(
-            denials("[core] # comment\n\thooksPath = h\n", ws),
-            Some(vec![ws.join("h")])
-        );
-    }
-
-    fn scratch(name: &str) -> PathBuf {
-        let root = std::env::temp_dir().join(format!("guard-wgc-{}-{name}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(root.join("home")).unwrap();
-        std::fs::create_dir_all(root.join("repo/app")).unwrap();
-        root.canonicalize().unwrap()
-    }
-
-    #[test]
-    fn worktree_config_keeps_the_command_at_review() {
-        let root = scratch("worktree");
-        let (home, repo) = (root.join("home"), root.join("repo"));
-        std::fs::create_dir_all(repo.join(".git")).unwrap();
-        std::fs::write(repo.join(".git/config"), "[core]\n\tbare = false\n").unwrap();
-        assert_eq!(workspace_write_denials(&repo, Some(&home)), Some(vec![]));
-        std::fs::write(
-            repo.join(".git/config.worktree"),
-            "[core]\n\thooksPath = h\n",
-        )
-        .unwrap();
-        assert_eq!(workspace_write_denials(&repo, Some(&home)), None);
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn an_enclosing_repository_and_global_hooks_name_workspace_paths() {
-        let root = scratch("enclosing");
-        let (home, repo) = (root.join("home"), root.join("repo"));
-        let app = repo.join("app");
-        std::fs::create_dir_all(repo.join(".git")).unwrap();
-        std::fs::write(
-            repo.join(".git/config"),
-            "[core]\n\tfsmonitor = app/tools/mon\n[alias]\n\tx = !sh other/x\n",
-        )
-        .unwrap();
-        // Only paths inside the workspace need a denial; `other/x` is outside
-        // the sandbox's writable tree.
-        assert_eq!(
-            workspace_write_denials(&app, Some(&home)),
-            Some(vec![app.join("tools/mon")])
-        );
-        // A relative global hook directory resolves against the work tree.
-        std::fs::write(
-            home.join(".gitconfig"),
-            "[core]\n\thooksPath = app/.githooks\n",
-        )
-        .unwrap();
-        assert_eq!(
-            workspace_write_denials(&app, Some(&home)),
-            Some(vec![app.join("tools/mon"), app.join(".githooks")])
-        );
-        std::fs::write(home.join(".gitconfig"), "[core]\n\thooksPath = ../../x\n").unwrap();
-        assert_eq!(workspace_write_denials(&app, Some(&home)), None);
-        std::fs::write(home.join("dotfile"), "[core]\n\thooksPath = ~/.hooks\n").unwrap();
-        std::fs::remove_file(home.join(".gitconfig")).unwrap();
-        std::os::unix::fs::symlink(home.join("dotfile"), home.join(".gitconfig")).unwrap();
-        assert_eq!(
-            workspace_write_denials(&app, Some(&home)),
-            Some(vec![app.join("tools/mon")])
-        );
-        let _ = std::fs::remove_dir_all(&root);
-    }
-}
+#[path = "workspace_git_config_tests.rs"]
+mod tests;
