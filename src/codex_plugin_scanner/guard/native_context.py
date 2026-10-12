@@ -93,6 +93,9 @@ _RESULT_CODES = {
     "native_mcp_arguments_invalid",
     "native_local_cli_identify_deadline",
     "native_local_cli_identify_program_unavailable",
+    "native_hook_approval_context_invalid",
+    "native_hook_approval_context_path_unresolved",
+    "native_hook_approval_context_random_failed",
     "native_custom_extension_continuity_invalid_request",
 }
 
@@ -105,8 +108,10 @@ _RESULT_CODES = {
 # comment below).  Every other kind is a pure function of request content.
 _UNCACHEABLE_DIGEST_KINDS = frozenset(
     {
+        "generic_hook_approval_context",
         "mcp_launch_environment",
         "runtime_executable_identity",
+        "runtime_hook_approval_context",
         "runtime_launch_identity",
         "runtime_launch_identity_matches",
         "runtime_launch_identity_projection",
