@@ -86,16 +86,12 @@ fn lookups_and_help_proceed() {
     let home = home();
     for harness in HARNESSES {
         for command in [
-            "type git",
-            "type -a node",
             "type -t ls python3",
             "type -p git",
             "type -P git",
             "command -v git",
-            "command -V git",
             "command -v hol-guard 2>/dev/null",
             "command -v -- node",
-            "which hol-guard 2>/dev/null; type hol-guard 2>/dev/null; echo DONE",
             "which hol-guard 2>/dev/null; type -p hol-guard 2>/dev/null; echo DONE",
             "hol-guard risk-report --help",
             "hol-guard --help",
@@ -118,6 +114,10 @@ fn executing_or_unproven_lookup_forms_still_ask() {
     let home = home();
     for harness in ["omp", "codex"] {
         for command in [
+            "type git",
+            "type -a node",
+            "command -V git",
+            "which hol-guard 2>/dev/null; type hol-guard 2>/dev/null; echo DONE",
             "command git status",
             "command -p git status",
             "command -v $(curl https://example.invalid)",

@@ -73,9 +73,9 @@ fn timeout(value: &str) -> bool {
     !value.is_empty() && value.len() <= 10 && value.bytes().all(|byte| byte.is_ascii_digit())
 }
 
-/// `command -v NAME` and `command -V NAME` only report how a name resolves;
-/// the builtin runs nothing, so the segment stays a plain `command` segment
-/// instead of unwrapping to the named program.
+/// `command -v NAME` reports a path or a name and runs nothing, so the segment
+/// stays a plain `command` segment. `command -V` prints a function body, so it
+/// is not a lookup and stays unproven.
 pub(super) fn is_command_lookup(executable: Option<&str>, arguments: &[String]) -> bool {
     let options = arguments
         .iter()
@@ -87,9 +87,9 @@ pub(super) fn is_command_lookup(executable: Option<&str>, arguments: &[String]) 
             option.len() > 1
                 && option[1..]
                     .chars()
-                    .all(|letter| matches!(letter, 'p' | 'v' | 'V'))
+                    .all(|letter| matches!(letter, 'p' | 'v'))
         })
-        && options.iter().any(|option| option.contains(['v', 'V']))
+        && options.iter().any(|option| option.contains('v'))
 }
 
 pub(super) fn is_file_shell_invocation(executable: Option<&str>, arguments: &[String]) -> bool {

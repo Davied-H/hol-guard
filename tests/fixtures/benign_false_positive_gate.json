@@ -2801,7 +2801,7 @@
       ],
       "tool": "shell",
       "tool_input": {
-        "command": "type git"
+        "command": "type -p git"
       },
       "cwd": "worktree",
       "expect": "allow"
@@ -2833,7 +2833,7 @@
       ],
       "tool": "shell",
       "tool_input": {
-        "command": "which git 2>/dev/null; type git 2>/dev/null; echo DONE"
+        "command": "which git 2>/dev/null; type -p git 2>/dev/null; echo DONE"
       },
       "cwd": "worktree",
       "expect": "allow"

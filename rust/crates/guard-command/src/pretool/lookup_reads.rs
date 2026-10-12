@@ -5,10 +5,14 @@
 //! command names, so a path or expansion is never treated as a lookup.
 
 /// Whether a `type` or `command` segment is a lookup of plain names.
+///
+/// `type NAME` and `type -a NAME` print a shell function body. `command -V`
+/// does too. Those stay under review. `type -t`/`-p`/`-P` and `command -v`
+/// print a word or a path.
 pub(super) fn safe_lookup_arguments(executable: &str, arguments: &[String]) -> bool {
     let letters = match executable {
         "type" => "afpPt",
-        "command" => "pvV",
+        "command" => "pv",
         _ => return false,
     };
     let mut names = 0;
@@ -27,10 +31,35 @@ pub(super) fn safe_lookup_arguments(executable: &str, arguments: &[String]) -> b
             return false;
         }
     }
-    // `command` without `-v`/`-V` runs the named program.
+    // `command` without `-v` runs the named program.
     names > 0
+        && (executable != "type" || type_hides_definition(arguments))
         && (executable == "type"
             || crate::parser_wrappers::is_command_lookup(Some(executable), arguments))
+}
+
+/// `-t` prints only the type word, including with `-a`. `-p` and `-P` print a
+/// path, but `-a` alongside them still prints the function body.
+fn type_hides_definition(arguments: &[String]) -> bool {
+    let mut type_word = false;
+    let mut path_only = false;
+    let mut all = false;
+    for argument in arguments {
+        if argument == "--" {
+            break;
+        }
+        if argument.len() > 1 && argument.starts_with('-') {
+            for letter in argument[1..].chars() {
+                match letter {
+                    't' => type_word = true,
+                    'p' | 'P' => path_only = true,
+                    'a' => all = true,
+                    _ => {}
+                }
+            }
+        }
+    }
+    type_word || (path_only && !all)
 }
 
 fn plain_name(argument: &str) -> bool {
