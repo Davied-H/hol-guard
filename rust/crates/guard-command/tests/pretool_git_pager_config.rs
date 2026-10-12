@@ -118,6 +118,7 @@ fn pager_checks_follow_the_actual_subcommand_and_global_override() {
                 rustup_override_absent: false,
                 js_loader_override_absent: false,
                 bun_config_absent: false,
+                shell_home_matches: false,
             },
             Some(&context),
         );
@@ -149,6 +150,7 @@ fn pager_checks_follow_the_actual_subcommand_and_global_override() {
                 rustup_override_absent: false,
                 js_loader_override_absent: false,
                 bun_config_absent: false,
+                shell_home_matches: false,
             },
             Some(&caller),
         );
@@ -195,6 +197,7 @@ fn pager_checks_follow_the_actual_subcommand_and_global_override() {
                 rustup_override_absent: false,
                 js_loader_override_absent: false,
                 bun_config_absent: false,
+                shell_home_matches: false,
             },
             Some(&caller),
         );
@@ -257,6 +260,7 @@ fn empty_git_pager_overrides_a_custom_pager_variable() {
                 rustup_override_absent: false,
                 js_loader_override_absent: false,
                 bun_config_absent: false,
+                shell_home_matches: false,
             },
             Some(context),
         );
@@ -320,6 +324,7 @@ fn piped_git_output_never_starts_a_configured_pager() {
                 rustup_override_absent: false,
                 js_loader_override_absent: false,
                 bun_config_absent: false,
+                shell_home_matches: false,
             },
             Some(&context),
         );

@@ -1,5 +1,5 @@
-//! Pure predicates over the effective Git configuration of a remote refresh
-//! or feature-branch push. Keys are case-folded when parsed, and any shape
+//! Pure predicates over the effective Git configuration of a remote
+//! refresh. Keys are case-folded when parsed, and any shape
 //! these predicates do not recognize is treated as unsafe.
 //!
 //! These mirror the resident runtime's origin checks so the hook decision and
@@ -102,44 +102,6 @@ pub(super) fn fetch_config_routes_execution(config: &GitConfig) -> bool {
     values(config, "remote.origin.tagopt")
         .iter()
         .any(|value| value.trim() != "--no-tags")
-}
-
-/// Settings that would make a push send more than the named branch, sign
-/// with a configured program, or go somewhere other than `origin`'s URL.
-pub(super) fn push_config_routes_execution(config: &GitConfig, branch: &str) -> bool {
-    if config.contains_key("core.gitproxy")
-        || config.keys().any(|key| {
-            (key.starts_with("url.") && key.ends_with(".pushinsteadof")) || key.starts_with("hook.")
-        })
-    {
-        return true;
-    }
-    let branch_remote = format!("branch.{}.pushremote", branch.to_ascii_lowercase());
-    if [
-        "remote.origin.push",
-        "remote.origin.pushurl",
-        "remote.origin.receivepack",
-        "remote.origin.vcs",
-        "remote.pushdefault",
-        branch_remote.as_str(),
-    ]
-    .iter()
-    .any(|key| config.contains_key(*key))
-    {
-        return true;
-    }
-    if ["push.followtags", "push.gpgsign", "remote.origin.mirror"]
-        .iter()
-        .any(|key| enables_behavior(values(config, key)))
-    {
-        return true;
-    }
-    values(config, "push.recursesubmodules")
-        .iter()
-        .any(|value| {
-            !["", "0", "false", "no", "off", "check"]
-                .contains(&value.trim().to_ascii_lowercase().as_str())
-        })
 }
 
 /// Repository-scoped transport or credential settings a cloned repository

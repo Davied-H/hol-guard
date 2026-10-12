@@ -270,6 +270,26 @@ pub(super) fn readonly_test_reason(model: &CanonicalCommandV1) -> Option<&'stati
             return Some("native_package_test_readonly_containment_required");
         }
     }
+    // `bun x` is Bun's spelling of `bunx`; the later proofs read it as one.
+    // Bun takes `--cwd` only before `x`, so a later one is not unwrapped.
+    let (executable, arguments) = match arguments {
+        [wrapper, no_install, rest @ ..]
+            if super::executable_basename(executable) == "bun"
+                && wrapper == "x"
+                && no_install == "--no-install"
+                && !rest.first().is_some_and(|word| word.starts_with("--cwd")) =>
+        {
+            ("bunx", rest)
+        }
+        [wrapper, rest @ ..]
+            if super::executable_basename(executable) == "bun"
+                && wrapper == "x"
+                && !rest.first().is_some_and(|word| word.starts_with("--cwd")) =>
+        {
+            ("bunx", rest)
+        }
+        _ => (executable, arguments),
+    };
     let build = match super::executable_basename(executable) {
         "bun" | "npm" | "pnpm" => {
             matches!(arguments, [run, task] if run == "run" && task == "build")
@@ -279,7 +299,7 @@ pub(super) fn readonly_test_reason(model: &CanonicalCommandV1) -> Option<&'stati
         }
         "vite" => arguments.first().is_some_and(|arg| arg == "build"),
         "node" | "nodejs" => {
-            matches!(arguments, [entry, task, ..] if entry.ends_with("/node_modules/vite/bin/vite.js") && task == "build")
+            matches!(arguments, [entry, task, ..] if local_package_entry(entry, "vite/bin/vite.js") && task == "build")
         }
         _ => false,
     };
@@ -296,7 +316,7 @@ pub(super) fn readonly_test_reason(model: &CanonicalCommandV1) -> Option<&'stati
         "eslint" => true,
         "tsc" => arguments.iter().any(|arg| arg == "--noEmit"),
         "node" | "nodejs" => {
-            matches!(arguments, [entry, rest @ ..] if entry.ends_with("/node_modules/eslint/bin/eslint.js") || (entry.ends_with("/node_modules/typescript/bin/tsc") && rest.iter().any(|arg| arg == "--noEmit")))
+            matches!(arguments, [entry, rest @ ..] if local_package_entry(entry, "eslint/bin/eslint.js") || (local_package_entry(entry, "typescript/bin/tsc") && rest.iter().any(|arg| arg == "--noEmit")))
         }
         _ => false,
     };
@@ -370,4 +390,13 @@ pub(super) fn readonly_test_reason(model: &CanonicalCommandV1) -> Option<&'stati
         return Some("native_node_test_readonly_containment_required");
     }
     None
+}
+
+/// `node node_modules/<entry>` and `node <dir>/node_modules/<entry>`. The sink
+/// still proves the file is the project's own installed entrypoint.
+fn local_package_entry(entry: &str, package_entry: &str) -> bool {
+    entry
+        .strip_suffix(package_entry)
+        .and_then(|prefix| prefix.strip_suffix("node_modules/"))
+        .is_some_and(|prefix| prefix.is_empty() || prefix.ends_with('/'))
 }

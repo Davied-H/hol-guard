@@ -44,6 +44,7 @@ pub(super) fn bounded_native_temporary_write_target(
             rustup_override_absent: false,
             js_loader_override_absent: false,
             bun_config_absent: false,
+            shell_home_matches: false,
         },
     )
 }
@@ -198,11 +199,18 @@ pub(super) fn safe_file_mutation_arguments(
                 && absent_move_destination(destination, context)
                 && safe_copy_arguments(arguments, context)
         }
+        ("ln", [flag, source, destination]) if flag == "-s" => {
+            super::safe_links::safe_symlink_arguments(source, destination, context)
+        }
+        ("ln", [flag, separator, source, destination]) if flag == "-s" && separator == "--" => {
+            super::safe_links::safe_symlink_arguments(source, destination, context)
+        }
+        ("rm", operands) => super::safe_links::safe_remove_arguments(operands, context),
         _ => false,
     }
 }
 
-fn absent_move_destination(value: &str, context: super::PathContext<'_>) -> bool {
+pub(super) fn absent_move_destination(value: &str, context: super::PathContext<'_>) -> bool {
     let expanded =
         expand_home_read_path(value, context.home_dir).unwrap_or_else(|| value.to_owned());
     let supplied = std::path::Path::new(&expanded);

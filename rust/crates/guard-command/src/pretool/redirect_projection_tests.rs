@@ -20,6 +20,7 @@ fn context() -> crate::pretool::PathContext<'static> {
         rustup_override_absent: false,
         js_loader_override_absent: false,
         bun_config_absent: false,
+        shell_home_matches: false,
     }
 }
 
@@ -124,6 +125,7 @@ fn file_writes_never_follow_an_existing_symlink() {
         rustup_override_absent: false,
         js_loader_override_absent: false,
         bun_config_absent: false,
+        shell_home_matches: false,
     };
     for command in [
         "echo hi > link/hosts".to_owned(),

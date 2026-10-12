@@ -114,6 +114,7 @@ fn textconv_driver_is_reviewed_only_where_git_can_run_it() {
                 rustup_override_absent: false,
                 js_loader_override_absent: false,
                 bun_config_absent: false,
+                shell_home_matches: false,
             },
             Some(&stamped),
         )

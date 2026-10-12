@@ -1,5 +1,5 @@
-//! Execution-free Git probes for session operations: a remote refresh, a
-//! feature-branch push and worktree maintenance. The probe sees the
+//! Execution-free Git probes for session operations: a remote refresh and
+//! worktree maintenance. The probe sees the
 //! configuration the agent's own Git would see (home, XDG directory, system
 //! file switch and `-C` routes) and only runs Git built-ins that never start
 //! a configured helper.
@@ -111,15 +111,6 @@ impl Probe {
         let (status, output) = self.run(true, arguments, TEXT_LIMIT)?;
         status.success().then_some(())?;
         line(&output)
-    }
-
-    /// `Some(None)` when the query reports a missing value (exit 1, no output).
-    pub(super) fn optional_text(&self, arguments: &[&str]) -> Option<Option<String>> {
-        let (status, output) = self.run(true, arguments, TEXT_LIMIT)?;
-        if status.success() {
-            return line(&output).map(Some);
-        }
-        (status.code() == Some(1) && output.is_empty()).then_some(None)
     }
 
     /// Effective and repository-scoped configuration, includes followed.

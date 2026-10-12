@@ -25,6 +25,7 @@ mod command_ascii_comparison;
 mod command_candidate_common;
 mod command_common_cli_matchers;
 pub mod cursor_shell_command;
+pub mod policy_document;
 pub use codex_output_entry::{review_codex_tool_output, ToolOutputOutcome};
 pub use codex_output_env::{Ctx, GitCheck, GitProbe, GitRun, InspectionHost};
 mod codex_output_fnmatch;
@@ -550,6 +551,7 @@ fn parse_posix_command(request: &CommandModelRequestV1) -> Result<CanonicalComma
                 segments.last(),
             )
             && !parser_wrappers::is_file_shell_invocation(executable.as_deref(), &arguments)
+            && !parser_wrappers::is_command_lookup(executable.as_deref(), &arguments)
         {
             return Ok(uncertain(
                 request,
@@ -659,6 +661,7 @@ pub mod aibom_trust_metadata;
 pub mod archive_inspection;
 pub mod command_operation_classification;
 pub mod composition_rules;
+pub mod contained_argv;
 #[cfg(unix)]
 pub mod contained_execution;
 #[cfg(unix)]

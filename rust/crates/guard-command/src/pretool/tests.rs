@@ -185,6 +185,7 @@ fn read_only_github_predecessor_counts_as_benign_for_git_context() {
                 rustup_override_absent: false,
                 js_loader_override_absent: false,
                 bun_config_absent: false,
+                shell_home_matches: false,
             },
         ),
         vec![0, 1]

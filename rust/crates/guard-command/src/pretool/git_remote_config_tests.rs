@@ -87,32 +87,7 @@ fn fetch_routes_reject_programs_rewrites_and_refspecs() {
 }
 
 #[test]
-fn push_routes_reject_redirects_signing_and_transport_changes() {
-    assert!(!push_config_routes_execution(
-        &config(&[]),
-        "fix/report-lane"
-    ));
-    for extra in [
-        ("remote.origin.pushurl", "https://evil.example/r.git"),
-        ("remote.origin.push", "+refs/heads/*:refs/heads/*"),
-        ("remote.origin.receivepack", "sh -c id"),
-        ("remote.pushdefault", "fork"),
-        ("branch.fix/report-lane.pushremote", "fork"),
-        (
-            "url.https://evil.example/.pushinsteadof",
-            "https://github.com/",
-        ),
-        ("push.gpgsign", "true"),
-        ("push.followtags", "true"),
-        ("push.recursesubmodules", "on-demand"),
-        ("core.gitproxy", "/tmp/proxy"),
-        ("hook.pre-push.command", "id"),
-    ] {
-        assert!(
-            push_config_routes_execution(&config(&[extra]), "fix/report-lane"),
-            "{extra:?}"
-        );
-    }
+fn transport_weakening_settings_are_detected() {
     assert!(config_weakens_transport(&config(&[(
         "http.sslverify",
         "false"

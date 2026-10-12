@@ -45,6 +45,7 @@ fn git_query_uses_bounded_request_context_not_resident_path() {
                 rustup_override_absent: false,
                 js_loader_override_absent: false,
                 bun_config_absent: false,
+                shell_home_matches: false,
             },
             Some(context),
         )
@@ -440,6 +441,7 @@ fn stamped_git_reads_allow_only_when_no_diff_helper_is_configured() {
                 rustup_override_absent: false,
                 js_loader_override_absent: false,
                 bun_config_absent: false,
+                shell_home_matches: false,
             },
             context,
         )

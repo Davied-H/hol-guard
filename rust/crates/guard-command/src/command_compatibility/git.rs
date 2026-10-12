@@ -182,6 +182,7 @@ pub(super) fn inspection_arguments<'a>(
                 | "branch"
                 | "hash-object"
                 | "rev-parse"
+                | "merge-base"
                 | "ls-files"
                 | "remote"
                 | "worktree"

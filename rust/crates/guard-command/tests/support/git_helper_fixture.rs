@@ -52,6 +52,7 @@ pub fn evaluate_pre_tool_envelope_with_context(
             rustup_override_absent: false,
             js_loader_override_absent: false,
             bun_config_absent: false,
+            shell_home_matches: false,
         },
         Some(&context),
     )

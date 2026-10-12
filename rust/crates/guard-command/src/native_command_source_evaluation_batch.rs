@@ -118,6 +118,7 @@ pub fn evaluate_batch(bytes: &[u8]) -> Result<Value, &'static str> {
                 rustup_override_absent: false,
                 js_loader_override_absent: false,
                 bun_config_absent: false,
+                shell_home_matches: false,
             },
             request.execution_environment.as_ref(),
         );

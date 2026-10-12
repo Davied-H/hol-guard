@@ -36,6 +36,24 @@ mod archive_acquisition_op;
 mod archive_inspect;
 mod archive_inspect_containment;
 mod archive_verdict_seam;
+#[cfg(unix)]
+mod binding_capture_capture;
+#[cfg(unix)]
+mod binding_capture_crypto;
+#[cfg(unix)]
+mod binding_capture_fs;
+#[cfg(unix)]
+mod binding_capture_join;
+#[cfg(unix)]
+mod binding_capture_json;
+#[cfg(unix)]
+mod binding_capture_op;
+#[cfg(unix)]
+mod binding_capture_receipt;
+#[cfg(unix)]
+mod binding_capture_record;
+#[cfg(all(test, unix))]
+mod binding_capture_vectors_tests;
 #[cfg(test)]
 mod bundle_parse_reuse_tests;
 mod business_document_compile;
@@ -117,6 +135,11 @@ mod context_digest_json;
 mod context_digest_local_cli;
 mod context_digest_package_scripts;
 mod context_digest_result_check;
+mod continuation_authority_op;
+mod continuation_grants;
+mod continuation_lineage;
+mod continuation_metadata;
+mod continuation_store;
 mod contributed_mcp_decision_op;
 mod critical_floor_op;
 mod cursor_observer_proof_op;
@@ -155,6 +178,7 @@ mod direct_tool_context_op;
 mod direct_tool_context_tests;
 mod direct_tool_managed_bun;
 mod edge;
+mod edge_git_push;
 mod encrypted_secret_store;
 mod git_execution_safety_binary;
 mod git_execution_safety_checks;
@@ -329,6 +353,7 @@ mod mcp_tool_policy_grants;
 mod mcp_tool_policy_lookup;
 mod mcp_tool_policy_proxy;
 mod mcp_tool_policy_revalidate;
+mod memory_pattern;
 mod native_exact_action_op;
 mod native_hook_receipt;
 mod native_runtime_admission;
@@ -378,6 +403,7 @@ mod policy_bundle_v1_rules;
 mod policy_bundle_v2;
 mod policy_bundle_v2_ack;
 mod policy_decision_lookup_op;
+mod policy_document_op;
 mod policy_effective;
 mod policy_enforcement;
 mod policy_integrity_resolver;
@@ -405,6 +431,7 @@ mod resident_state_encoding;
 mod resident_transport;
 mod resident_transport_service;
 mod resident_update_lock;
+mod restricted_process_ceiling;
 mod restricted_pytest_op;
 mod rich_command_model_op;
 mod runner_authority_detector;

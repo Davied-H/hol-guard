@@ -128,6 +128,7 @@ fn evaluate_with_path(
             rustup_override_absent: false,
             js_loader_override_absent: false,
             bun_config_absent: false,
+            shell_home_matches: false,
         },
         Some(&context),
     )
