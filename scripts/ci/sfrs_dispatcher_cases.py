@@ -3,12 +3,12 @@
 Usage: ``sfrs_dispatcher_cases.py FIXTURE_DIR``. The unmodified Python dispatcher
 (``tool_action_requests``, ``shell_request_classifier`` and ``shell_initial_risk``)
 runs over the command corpora of the other recorders, wrapper chains, tool-name and
-argument shapes, and synthetic native command evaluations. Every resident (native)
-call on the path is replaced by a deterministic stand-in whose facts are stored with
-the case: the modeled shell context, the environment-secret verdict, the executable
-identities, and the absence of Git, direct-tool and critical-floor answers. The stand-in
-shell model is exact only for flat literal lines and a leading ``cd LITERAL &&``; any
-other shape is skipped rather than approximated. Paths carry the ``{ROOT}`` token so the
+argument shapes, and synthetic native command evaluations. The shell execution
+context comes from the resident, so record with ``HOL_GUARD_NATIVE=force`` and a
+current runtime binary. Resident calls the Rust port answers in-process are replaced
+by deterministic stand-ins whose facts are stored with the case: the executable
+identities, and the absence of Git, direct-tool and critical-floor answers; cases
+that need any other resident answer are skipped. Paths carry the ``{ROOT}`` token so the
 Rust port can rebuild the tree and replay every case. This script depends on the Python
 implementation and is retired with it.
 """
@@ -18,7 +18,6 @@ from __future__ import annotations
 import gzip
 import json
 import os
-import re
 import secrets
 import shlex
 import sys
@@ -40,21 +39,11 @@ from codex_plugin_scanner.guard import native_compound_git_inspection as ncgi
 from codex_plugin_scanner.guard import native_direct_tool_context as ndtc
 from codex_plugin_scanner.guard import native_github_cli as ngc
 from codex_plugin_scanner.guard.runtime import direct_vitest as dvitest
-from codex_plugin_scanner.guard.runtime import shell_execution_context as sec
-from codex_plugin_scanner.guard.runtime._shell_execution_context_support import ShellPathIdentity
 from codex_plugin_scanner.guard.runtime.command_model import parse_shell_command
 from codex_plugin_scanner.guard.runtime.secret_file_request_services import interpreter_launch as ilaunch
 from codex_plugin_scanner.guard.runtime.secret_file_request_services import tool_action_requests as tar
-from codex_plugin_scanner.guard.runtime.secret_file_request_services.shell_tokenization import (
-    _iter_shell_command_segments,
-    _split_shell_parts,
-)
 
 TOKEN = "{ROOT}"
-HASH = "context-hash"
-UNSUPPORTED = re.compile(r"\b(cd|pushd|popd|eval)\b|^\s*[({]|[{}]|''|\"\"|\(\(|<<|\$\(|`|~")
-LEADING_CD = re.compile(r"\s*cd\s+([A-Za-z0-9_./~-]+)\s*(&&|;)\s*(.+)\Z", re.S)
-ENV_DUMP_SEGMENT = re.compile(r"(?:printenv|env|export -p|declare -x|declare -p|set)(?: -[A-Za-z0-9]+)*")
 
 CD_PREFIXES = ["cd pkg && ", "cd .. && ", "cd missing && ", "cd ~ && ", "cd pkg; ", "cd ../.. && "]
 
@@ -227,130 +216,13 @@ NATIVE_KINDS = [
 ]
 
 
-class UnsupportedError(Exception):
-    """The stand-in shell model is not exact for this command line."""
-
-
 class ResidentError(Exception):
     """A resident-only answer was requested that the stand-in cannot give."""
 
 
 class State:
-    env_dump = False
     calls: ClassVar[list[list[object]]] = []
     resident = False
-
-
-def _segment(
-    tokens: list[str],
-    index: int,
-    before: tuple[str, ...],
-    after: tuple[str, ...],
-    cwd: Path | None,
-    stack: tuple[Path, ...],
-    *,
-    complete: bool,
-    reason: str | None,
-    operation: str | None = None,
-) -> sec.ShellExecutionSegment:
-    identity = ShellPathIdentity(1, 1, 0o40755, 1, 1) if complete and cwd is not None else None
-    return sec.ShellExecutionSegment(
-        tokens=tuple(tokens),
-        segment_index=index,
-        control_before=before,
-        control_after=after,
-        effective_cwd=cwd if complete else None,
-        cwd_identity=identity,
-        cwd_path_proofs=(),
-        cwd_source="process" if cwd is not None else "unresolved",
-        directory_stack=stack,
-        complete=complete,
-        reason_code=reason,
-        directory_operation=operation,
-    )
-
-
-def _flat_segments(text: str) -> list[list[str]]:
-    return _iter_shell_command_segments(_split_shell_parts(text))
-
-
-def _model(
-    command_text: str,
-    *,
-    cwd: Path | None = None,
-    workspace_root: Path | None = None,
-    home_dir: Path | None = None,
-    source: str = "hook",
-    classify_environment_secrets: bool = False,
-) -> sec.ShellExecutionContext:
-    initial = (cwd or Path.cwd()).resolve()
-    workspace = (workspace_root or initial).resolve()
-    identity = ShellPathIdentity(1, 1, 0o40755, 1, 1)
-    leading = LEADING_CD.fullmatch(command_text)
-    rest, operator, target = command_text, None, None
-    if leading is not None:
-        target, operator, rest = leading.group(1), leading.group(2), leading.group(3)
-    elif UNSUPPORTED.search(command_text):
-        raise UnsupportedError
-    if UNSUPPORTED.search(rest.replace("~", "")) or (target is not None and "~" in rest):
-        raise UnsupportedError
-    rest_tokens = _flat_segments(rest)
-    cwd_now: Path | None = initial
-    reason: str | None = None
-    if target is not None:
-        base = (home_dir or Path.home()) if target.startswith("~") else initial
-        resolved = (
-            (base / target.lstrip("~").lstrip("/")).resolve()
-            if target.startswith("~")
-            else (initial / target).resolve()
-        )
-        if not resolved.is_dir():
-            cwd_now, reason = None, "shell_cwd_missing_directory"
-        elif workspace not in (resolved, *resolved.parents):
-            cwd_now, reason = None, "shell_cwd_workspace_escape"
-        else:
-            cwd_now = resolved
-    complete = reason is None
-    segments: list[sec.ShellExecutionSegment] = []
-    if target is not None:
-        segments.append(
-            _segment(
-                ["cd", target],
-                0,
-                (),
-                (operator or "&&",),
-                cwd_now,
-                (initial,),
-                complete=complete,
-                reason=reason,
-                operation="cd",
-            )
-        )
-    offset = len(segments)
-    for position, tokens in enumerate(rest_tokens):
-        before = (operator,) if target is not None and position == 0 and operator else ()
-        segments.append(
-            _segment(tokens, offset + position, before, (), cwd_now, (initial,), complete=complete, reason=reason)
-        )
-    return sec.ShellExecutionContext(
-        command_text=command_text,
-        initial_cwd=initial,
-        workspace_root=workspace,
-        workspace_identity=identity,
-        segments=tuple(segments),
-        complete=complete,
-        reason_code=reason,
-        directory_change_present=target is not None,
-        native=object(),  # type: ignore[arg-type]
-        environment_secret_dump=State.env_dump,
-        environment_secret_scope=(command_text, cwd, home_dir),
-    )
-
-
-def _validate(context: sec.ShellExecutionContext, segment: sec.ShellExecutionSegment) -> tuple[Path | None, str | None]:
-    if not segment.complete or segment.effective_cwd is None:
-        return None, segment.reason_code or context.reason_code or "shell_cwd_path_changed"
-    return segment.effective_cwd, None
 
 
 def _patch(original: object, replacement: object) -> None:
@@ -389,14 +261,6 @@ def _floor(*_args: object, **_kwargs: object) -> str:
 def _resident_only(*_args: object, **_kwargs: object) -> None:
     """GitHub CLI classification has no in-process answer; skip such cases."""
     raise ResidentError
-
-
-def _dump_truth(text: str) -> bool:
-    try:
-        segments = _flat_segments(text)
-    except ValueError:
-        return False
-    return any(ENV_DUMP_SEGMENT.fullmatch(" ".join(tokens)) for tokens in segments)
 
 
 def _native(kind: str, command: object, other: object) -> types.SimpleNamespace:
@@ -511,9 +375,6 @@ def main() -> None:
         os.chdir(process_cwd)
         sys.executable = str(guard)
         secrets.token_hex = lambda *_a, **_k: icases.NONCE  # type: ignore[assignment]
-        _patch(sec.model_shell_execution_context, _model)
-        _patch(sec.validate_shell_execution_segment, _validate)
-        _patch(sec.shell_execution_context_hash, lambda _context: HASH)
         _patch(ilaunch.build_runtime_executable_identity, _identity_stand_in(guard))
         _patch(ncgi.compound_git_inspection_native, _no_git)
         _patch(ndtc.native_direct_tool_context, _no_direct)
@@ -531,7 +392,7 @@ def main() -> None:
             ("proj", None),
         ]
         cases: list[dict[str, object]] = []
-        skipped = {"unsupported": 0, "resident": 0, "error": 0}
+        skipped = {"resident": 0, "error": 0}
 
         def path(rel: str | None) -> Path | None:
             return None if rel is None else root / rel
@@ -547,7 +408,6 @@ def main() -> None:
         ) -> None:
             cwd, home_dir = path(cwd_rel), path(home_rel)
             State.calls.clear()
-            State.env_dump = _dump_truth(text_for_state)
             canonical = None
             native = None
             try:
@@ -566,15 +426,11 @@ def main() -> None:
                 "home": home_rel,
                 "canonical": canonical_text,
                 "native": native_kind,
-                "env_dump": State.env_dump,
             }
             try:
                 result = tar.extract_sensitive_tool_action_request(
                     tool, arguments, cwd=cwd, home_dir=home_dir, canonical_command=canonical, native_evaluation=native
                 )
-            except UnsupportedError:
-                skipped["unsupported"] += 1
-                return
             except ResidentError:
                 skipped["resident"] += 1
                 return
