@@ -33,6 +33,7 @@ from .mdm.network import managed_urlopen
 from .models import GuardAction, GuardArtifact
 from .native_package_approval_hash import native_package_approval_hash, native_package_current_action
 from .native_package_policy_resolve import native_resolve_stored_package_policy
+from .native_shim_admin import NativeShimAdminError
 from .native_supply_chain_posture import native_local_supply_chain_posture
 from .native_workspace_inventory import native_workspace_inventory
 from .package_execution_context import PackageExecutionContext, build_package_execution_context
@@ -1675,7 +1676,12 @@ def _build_package_manager_protection(store: Any) -> dict[str, object]:
         workspace_dir=None,
         guard_home=store.guard_home,
     )
-    status = package_shim_dashboard_status(context)
+    try:
+        status = package_shim_dashboard_status(context)
+    except NativeShimAdminError as error:
+        # Posture still renders when the resident cannot answer; the shim
+        # fields read as unavailable instead of failing the whole projection.
+        status = {"path_status": "unavailable", "error": error.code}
     shim_dir = Path(str(status.get("shim_dir") or store.guard_home / "package-shims" / "bin"))
     installed_managers = sorted(set(_string_items(status.get("installed_managers"))))
     active_managers = sorted(set(_string_items(status.get("active_managers"))))

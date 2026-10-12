@@ -118,8 +118,6 @@ def test_package_shim_status_repairs_trusted_old_runtime_binding(
     monkeypatch: pytest.MonkeyPatch,
     stale_binding: str,
 ) -> None:
-    from codex_plugin_scanner.guard import package_shim_frozen
-
     core_dir = tmp_path / "core"
     versioned = core_dir / "versions" / "3.0.151" / "hol-guard"
     versioned.parent.mkdir(parents=True)
@@ -145,13 +143,17 @@ def test_package_shim_status_repairs_trusted_old_runtime_binding(
     )
     _expose_real_npm(tmp_path, monkeypatch)
 
-    with monkeypatch.context() as old_runtime:
-        old_runtime.setattr(guard_shims_module, "package_shim_interpreter", lambda: str(old_bundle))
-        old_runtime.setattr(package_shim_frozen, "package_shim_interpreter", lambda: str(old_bundle))
-        guard_shims_module.install_package_shims(context, managers=("npm",))
+    guard_shims_module.install_package_shims(context, managers=("npm",))
     shim_dir = context.guard_home / "package-shims" / "bin"
     wrapper_path = shim_dir / "npm"
     sidecar_path = shim_dir / ".npm.py"
+    # Resident generation uses the resolved frozen CLI. Plant the trusted
+    # predecessor so status sees an old binding instead of the fresh one.
+    for installed_path in (wrapper_path, sidecar_path):
+        installed_path.write_text(
+            installed_path.read_text(encoding="utf-8").replace(str(current), str(old_bundle)),
+            encoding="utf-8",
+        )
     if stale_binding == "wrapper":
         wrapper_path.write_text(
             "\n".join(

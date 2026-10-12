@@ -367,9 +367,11 @@ def probe_package_shim_intercepts(
 ) -> dict[str, object]:
     """Execute the installed shims natively to prove intercept wiring is live."""
 
-    per_probe = max(1, int(timeout_seconds))
-    count = len(managers) if managers else _PROBE_MANAGER_COUNT
-    budget = min(per_probe * max(1, count), _PROBE_BATCH_CEILING_SECONDS)
+    count = max(1, len(managers) if managers else _PROBE_MANAGER_COUNT)
+    # Each manager gets an equal share of the batch ceiling, as the resident
+    # does, so a full slow batch finishes inside the transport deadline.
+    per_probe = max(1, min(int(timeout_seconds), _PROBE_BATCH_CEILING_SECONDS // count))
+    budget = per_probe * count
     return _object(
         "probe_intercepts",
         context,

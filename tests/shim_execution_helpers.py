@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 from pathlib import Path
 from typing import Any
 
 from codex_plugin_scanner.guard.runtime.package_execution_policy import is_execution_permitted
 from codex_plugin_scanner.guard.shim_probe import _PACKAGE_SHIM_PROBE_ARGS
+from codex_plugin_scanner.guard.stable_digest import sha256_content_digest
 
 __all__ = [
     "manager_probe_args",
@@ -127,4 +127,4 @@ def protect_evaluator_evidence(payload: dict[str, Any]) -> dict[str, object]:
 def build_shim_content_hash(content: bytes) -> str:
     """Expected manifest content hash of generated shim bytes (hex SHA-256)."""
 
-    return hashlib.sha256(content).hexdigest()
+    return sha256_content_digest(content)
