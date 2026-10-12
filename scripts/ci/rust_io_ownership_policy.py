@@ -30,6 +30,11 @@ _FS_FUNCTIONS: Final = frozenset({"open", "readlink", "stat", "lstat", "listdir"
 _HASH_FUNCTIONS: Final = frozenset({"md5", "sha1", "sha224", "sha256", "sha384", "sha512", "blake2b", "blake2s"})
 _ARCHIVE_MODULES: Final = frozenset({"tarfile", "zipfile", "gzip", "bz2", "lzma", "shutil"})
 _DECODE_FUNCTIONS: Final = frozenset({"b64decode", "loads", "decode", "unpack", "decompress"})
+# This codec only encodes request bytes; the resident owns decompression,
+# command parsing, normalization and identity derivation.
+_TRANSPORT_ENCODE_OPERATIONS: Final = frozenset(
+    {("src/codex_plugin_scanner/guard/native_rich_command_model.py", ("gzip", "compress"))}
+)
 _EQUIVALENCE_FUNCTIONS: Final = frozenset({"output_equivalent", "parity_signature", "sha256_text"})
 
 _COMPATIBILITY_PATHS: Final = frozenset(
