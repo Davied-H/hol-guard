@@ -120,13 +120,23 @@ pub(crate) fn helper_write_denials(config: &str, workspace: &Path) -> Option<Vec
             // the sandbox could otherwise create it for a later host command.
             // Shell separators and grouping split words too, so `./x.sh;` and
             // `./a&&git` deny `x.sh` and `a`. An expansion names a path this
-            // reader cannot resolve, so it keeps the command at review.
-            if value.contains(['$', '`', '\\']) {
+            // reader cannot resolve, so it keeps the command at review. Globs
+            // and brace expansions count: the sandbox could create a file a
+            // pattern later matches. A brace on its own is a command group.
+            if value.contains(['$', '`', '\\', '*', '?', '[']) {
+                return None;
+            }
+            let value = value
+                .trim_start_matches(['"', '\''])
+                .trim_start_matches('!');
+            if value
+                .split(|c: char| c.is_whitespace() || ";&|()<>".contains(c))
+                .map(|word| word.trim_matches(['"', '\'']))
+                .any(|word| word.contains(['{', '}']) && word != "{" && word != "}")
+            {
                 return None;
             }
             let words = value
-                .trim_start_matches(['"', '\''])
-                .trim_start_matches('!')
                 .split(|c: char| c.is_whitespace() || ";&|(){}<>".contains(c))
                 .filter(|word| !word.is_empty());
             for (index, word) in words.enumerate() {
@@ -184,11 +194,20 @@ mod tests {
     #[test]
     fn shell_punctuation_splits_helper_words() {
         let ws = Path::new("/w/repo");
-        let config = "[alias]\n\tx = \"!f() { ./tools/x.sh; }; f\"\n\ty = !./tools/a&&git status\n";
+        let config = "[alias]\n\tx = \"!f() { ./tools/x.sh; }; f\"\n\ty = !./tools/a&&git status\n\tz = \"!f() { ./tools/z; }\"\n";
         let got = denials(config, ws).unwrap();
         assert!(got.contains(&ws.join("tools/x.sh")), "{got:?}");
         assert!(got.contains(&ws.join("tools/a")), "{got:?}");
-        for expansion in ["!$PWD/tools/x.sh", "!`pwd`/x.sh", "!sh tools\\\\x"] {
+        assert!(got.contains(&ws.join("tools/z")), "{got:?}");
+        for expansion in [
+            "!$PWD/tools/x.sh",
+            "!`pwd`/x.sh",
+            "!sh tools\\\\x",
+            "!./tools/ru?",
+            "!sh tools/*.sh",
+            "!./tools/[r]un",
+            "!./tools/{run,x}.sh",
+        ] {
             let config = format!("[alias]\n\tx = {expansion}\n");
             assert_eq!(denials(&config, ws), None, "{expansion}");
         }
