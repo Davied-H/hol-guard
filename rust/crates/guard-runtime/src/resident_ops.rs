@@ -318,6 +318,9 @@ pub(crate) fn evaluate_resident_bytes(
             ResidentOperationV1::DaemonHandler(request) => {
                 crate::daemon_handler_op::evaluate_daemon_handler_request(&request)
             }
+            ResidentOperationV1::NativeExactAction(request) => {
+                crate::native_exact_action_op::evaluate_native_exact_action_request(&request)
+            }
             ResidentOperationV1::DaemonRoute(request) => {
                 crate::daemon_route_op::evaluate_daemon_route_request(&request)
             }
@@ -336,7 +339,10 @@ pub(crate) fn evaluate_resident_bytes(
                 crate::local_mcp_grant_op::evaluate_local_mcp_grant_request(&request)
             }
             ResidentOperationV1::RequestContextBuild(request) => {
-                crate::request_context_op::evaluate_request_context_request(&request)
+                crate::request_context_op::evaluate_request_context_request_with_store(
+                    &request,
+                    policy_store,
+                )
             }
             #[cfg(unix)]
             ResidentOperationV1::SkillDirectoryIdentity(request) => {
@@ -523,6 +529,7 @@ fn operation_store_path(operation: &ResidentOperationV1) -> Option<&str> {
         ResidentOperationV1::PackageAuditProjection(request) => match &request.query {
             guard_contracts::PackageAuditQueryV1::Receipt(query) => query.store_path.as_deref(),
             guard_contracts::PackageAuditQueryV1::Aliases(query) => Some(&query.store_path),
+            guard_contracts::PackageAuditQueryV1::CloudPayload(query) => Some(&query.store_path),
             _ => None,
         },
         ResidentOperationV1::PolicyDecisionLookup(request) => Some(&request.store_path),
