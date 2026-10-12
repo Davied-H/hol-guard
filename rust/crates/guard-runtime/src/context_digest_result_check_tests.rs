@@ -50,6 +50,7 @@ fn every_kind_name_is_a_contract_tag() {
         "managed_controls_policy_fields",
         "local_cli_identity",
         "package_json_scripts",
+        "local_cli_identify",
         "custom_extension_suggestion",
         "mcp_server_identity",
         "mcp_tool_identity",
@@ -67,6 +68,8 @@ fn every_kind_name_is_a_contract_tag() {
         "runtime_launch_identity_matches",
         "runtime_launch_identity_projection",
         "mcp_tool_catalog_fingerprint",
+        "runtime_hook_approval_context",
+        "generic_hook_approval_context",
     ];
     for name in names {
         // A bare tag may or may not be a complete request; it is only ever

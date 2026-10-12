@@ -2522,6 +2522,98 @@
    }
   },
   {
+   "accepted": true,
+   "kind": "local_cli_identify",
+   "name": "local_cli_identify_ok",
+   "payload": {
+    "code": "ok",
+    "local_cli_identities": [],
+    "request_id": "r",
+    "request_sha256": "s",
+    "schema": "guard-context-digest-result.v1",
+    "status": "ok"
+   }
+  },
+  {
+   "accepted": true,
+   "kind": "local_cli_identify",
+   "name": "local_cli_identify_nonempty",
+   "payload": {
+    "code": "ok",
+    "local_cli_identities": [
+     {
+      "cli_id": "x"
+     }
+    ],
+    "request_id": "r",
+    "request_sha256": "s",
+    "schema": "guard-context-digest-result.v1",
+    "status": "ok"
+   }
+  },
+  {
+   "accepted": false,
+   "kind": "local_cli_identify",
+   "name": "local_cli_identify_missing",
+   "payload": {
+    "code": "ok",
+    "request_id": "r",
+    "request_sha256": "s",
+    "schema": "guard-context-digest-result.v1",
+    "status": "ok"
+   }
+  },
+  {
+   "accepted": false,
+   "kind": "canonical_sha256",
+   "name": "local_cli_identities_wrong_kind",
+   "payload": {
+    "code": "ok",
+    "digest": "abababababababababababababababababababababababababababababababab",
+    "local_cli_identities": [],
+    "request_id": "r",
+    "request_sha256": "s",
+    "schema": "guard-context-digest-result.v1",
+    "status": "ok"
+   }
+  },
+  {
+   "accepted": true,
+   "kind": "local_cli_identify",
+   "name": "local_cli_identify_error_without_output",
+   "payload": {
+    "code": "native_local_cli_identify_deadline",
+    "request_id": "r",
+    "request_sha256": "s",
+    "schema": "guard-context-digest-result.v1",
+    "status": "error"
+   }
+  },
+  {
+   "accepted": true,
+   "kind": "runtime_hook_approval_context",
+   "name": "hook_approval_context_runtime_ok",
+   "payload": {
+    "code": "ok",
+    "request_id": "r",
+    "request_sha256": "s",
+    "schema": "guard-context-digest-result.v1",
+    "status": "ok"
+   }
+  },
+  {
+   "accepted": true,
+   "kind": "generic_hook_approval_context",
+   "name": "hook_approval_context_generic_ok",
+   "payload": {
+    "code": "ok",
+    "request_id": "r",
+    "request_sha256": "s",
+    "schema": "guard-context-digest-result.v1",
+    "status": "ok"
+   }
+  },
+  {
    "accepted": false,
    "kind": "custom_extension_continuity",
    "name": "custom_extension_continuity_missing",

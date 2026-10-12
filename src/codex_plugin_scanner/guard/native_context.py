@@ -78,6 +78,7 @@ _RESULT_OPTIONAL_KEYS = {
     "local_cli_identity",
     "custom_extension_continuity",
     "package_json_scripts",
+    "local_cli_identities",
     "custom_extension_suggestion",
     "managed_controls_policy_fields",
 }
@@ -90,23 +91,32 @@ _RESULT_CODES = {
     "native_mcp_risk_serialization_failed",
     "canonical_json_unencodable",
     "native_mcp_arguments_invalid",
+    "native_local_cli_identify_deadline",
+    "native_local_cli_identify_program_unavailable",
+    "native_hook_approval_context_invalid",
+    "native_hook_approval_context_path_unresolved",
+    "native_hook_approval_context_random_failed",
     "native_custom_extension_continuity_invalid_request",
 }
 
 # Filesystem authority: launch/executable identities hash on-disk bytes and
 # stat metadata, so the same request legitimately produces a different result
 # after entrypoint/executable bytes change; `package_json_scripts` reads the
-# project's package.json and lockfiles.  `mcp_launch_environment` is also
+# project's package.json and lockfiles, and `local_cli_identify` resolves
+# launches and runner bins on disk.  `mcp_launch_environment` is also
 # uncacheable because it carries granted credentials (see the transport
 # comment below).  Every other kind is a pure function of request content.
 _UNCACHEABLE_DIGEST_KINDS = frozenset(
     {
+        "generic_hook_approval_context",
         "mcp_launch_environment",
         "runtime_executable_identity",
+        "runtime_hook_approval_context",
         "runtime_launch_identity",
         "runtime_launch_identity_matches",
         "runtime_launch_identity_projection",
         "package_json_scripts",
+        "local_cli_identify",
     }
 )
 _MAX_REQUEST_BYTES = 2 * 1024 * 1024

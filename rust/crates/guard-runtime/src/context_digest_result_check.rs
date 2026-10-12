@@ -92,6 +92,7 @@ pub(crate) fn kind_name(kind: &Kind) -> &'static str {
         Kind::ManagedControlsPolicyFields { .. } => "managed_controls_policy_fields",
         Kind::LocalCliIdentity { .. } => "local_cli_identity",
         Kind::PackageJsonScripts { .. } => "package_json_scripts",
+        Kind::LocalCliIdentify { .. } => "local_cli_identify",
         Kind::CustomExtensionSuggestion { .. } => "custom_extension_suggestion",
         Kind::McpServerIdentity { .. } => "mcp_server_identity",
         Kind::McpToolIdentity { .. } => "mcp_tool_identity",
@@ -109,6 +110,8 @@ pub(crate) fn kind_name(kind: &Kind) -> &'static str {
         Kind::RuntimeLaunchIdentityMatches { .. } => "runtime_launch_identity_matches",
         Kind::RuntimeLaunchIdentityProjection { .. } => "runtime_launch_identity_projection",
         Kind::McpToolCatalogFingerprint { .. } => "mcp_tool_catalog_fingerprint",
+        Kind::RuntimeHookApprovalContext { .. } => "runtime_hook_approval_context",
+        Kind::GenericHookApprovalContext { .. } => "generic_hook_approval_context",
     }
 }
 
@@ -143,18 +146,20 @@ fn nullable_output(kind: &str) -> Option<&'static str> {
         "mcp_tool_risk" => "mcp_tool_risk",
         "mcp_tool_policy" => "mcp_tool_policy",
         "build_mcp_tool_approval_hash" => "mcp_tool_risk",
+        "local_cli_identify" => "local_cli_identities",
         _ => return None,
     })
 }
 
 /// Fields that only make sense for exactly one request kind.
-const KIND_GATED_FIELDS: [(&str, &str); 5] = [
+const KIND_GATED_FIELDS: [(&str, &str); 6] = [
     ("local_cli_identity", "local_cli_identity"),
     (
         "managed_controls_policy_fields",
         "managed_controls_policy_fields",
     ),
     ("package_json_scripts", "package_json_scripts"),
+    ("local_cli_identities", "local_cli_identify"),
     ("custom_extension_suggestion", "custom_extension_suggestion"),
     ("custom_extension_continuity", "custom_extension_continuity"),
 ];
