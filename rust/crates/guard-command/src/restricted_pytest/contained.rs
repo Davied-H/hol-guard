@@ -451,6 +451,7 @@ fn prepare_inline(input: &Input) -> Result<Value, RestrictedPytestError> {
             ..Input::default()
         })?
     } else {
+        validation::resolve_workspace_with_home(&input.workspace, input.home.as_deref())?;
         let response = super::authority::evaluate(
             "prepare",
             &json!({"command":[argv[0],"-m","pytest"],

@@ -66,6 +66,23 @@ fn expired_snapshot_deadline_cannot_create_or_append_a_plan() {
 }
 
 #[test]
+fn discovery_records_library_aliases_without_granting_link_or_secret_reads() {
+    use std::os::unix::fs::symlink;
+    use std::time::{Duration, Instant};
+    let fixture = fixture("guard-library-index");
+    std::fs::write(fixture.0.join("libfixture.so.1.2"), b"fixture").unwrap();
+    std::fs::write(fixture.0.join("id_rsa"), b"ordinary fixture outside .ssh").unwrap();
+    std::fs::write(fixture.0.join(".env"), b"synthetic secret fixture").unwrap();
+    symlink("libfixture.so.1.2", fixture.0.join("libfixture.so.1")).unwrap();
+    let (grants, candidates) = paths::collect_with_candidates(&fixture.0, 100, Instant::now() + Duration::from_secs(5)).unwrap();
+    let grants: BTreeSet<_> = grants.as_array().unwrap().iter().map(|v| v["path"].as_str().unwrap()).collect();
+    assert_eq!(grants.len(), 2);
+    assert!(grants.contains(fixture.0.join("id_rsa").to_str().unwrap()));
+    assert_eq!(candidates["libfixture.so.1"], BTreeSet::from([fixture.0.clone()]));
+    assert!(!candidates.contains_key(".env"));
+}
+
+#[test]
 fn original_python_kernel_plan_and_mount_contracts() {
     let fixture = fixture("guard-linux-launch-parity");
     std::fs::write(fixture.0.join("runner"), b"\x7fELFfixture-not-executed").unwrap();

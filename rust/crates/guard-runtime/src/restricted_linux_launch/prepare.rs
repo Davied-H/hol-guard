@@ -71,9 +71,13 @@ fn native(operation: &str, input: &Value, deadline: Instant) -> Result<Value> {
 fn index(
     root: &Path,
     indexed: &mut BTreeMap<PathBuf, (u64, u64)>,
+    candidates: &mut super::paths::Candidates,
     deadline: Instant,
 ) -> Result<()> {
-    let grants = super::paths::collect(root, 240_000, deadline)?;
+    let (grants, discovered) = super::paths::collect_with_candidates(root, 240_000, deadline)?;
+    for (name, parents) in discovered {
+        candidates.entry(name).or_default().extend(parents);
+    }
     for grant in grants.as_array().ok_or("Invalid Linux workspace index.")? {
         let path = PathBuf::from(
             grant["path"]
@@ -162,7 +166,8 @@ pub(super) fn argv(value: &Value, deadline: Instant) -> Result<Value> {
         .chain([helper.clone()])
         .collect();
     let mut indexed = BTreeMap::new();
-    index(&input.workspace, &mut indexed, deadline)?;
+    let mut candidates = super::paths::Candidates::new();
+    index(&input.workspace, &mut indexed, &mut candidates, deadline)?;
     let mut list_roots = vec![input.workspace.clone()];
     let mut discovery: Vec<_> = system_roots
         .iter()
@@ -178,7 +183,7 @@ pub(super) fn argv(value: &Value, deadline: Instant) -> Result<Value> {
         if root.starts_with(&input.workspace) || discovered.iter().any(|p| root.starts_with(p)) {
             continue;
         }
-        index(&root, &mut indexed, deadline)?;
+        index(&root, &mut indexed, &mut candidates, deadline)?;
         list_roots.push(root.clone());
         mounts.push(root.clone());
         discovered.push(root);
@@ -223,7 +228,7 @@ pub(super) fn argv(value: &Value, deadline: Instant) -> Result<Value> {
     let mut records = native(
         "mapping_evidence",
         &json!({"images":images,"read_files":indexed.keys().collect::<Vec<_>>(),
-        "runtime_roots":runtime_roots,"workspace":input.workspace}),
+        "runtime_roots":runtime_roots,"workspace":input.workspace,"dependency_candidates":candidates}),
         deadline,
     )?;
     for record in records

@@ -4,6 +4,7 @@ use nix::dir::{Dir, OwningIter};
 use nix::fcntl::{open, openat, AtFlags, OFlag};
 use nix::sys::stat::{fstatat, Mode};
 use serde_json::{json, Value};
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::MetadataExt;
@@ -13,6 +14,7 @@ use std::time::Instant;
 const MAX_ENTRIES: usize = 240_000;
 const PROTECTED: &[&str] = &[".ssh", ".aws", ".docker", ".kube", ".gnupg", ".hol-guard"];
 const MESSAGE: &str = "Linux workspace could not be indexed safely.";
+pub(super) type Candidates = BTreeMap<String, BTreeSet<PathBuf>>;
 
 struct Frame {
     path: PathBuf,
@@ -37,7 +39,7 @@ fn protected(path: &Path, root: &Path) -> Result<bool> {
         .file_name()
         .and_then(|v| v.to_str())
         .is_some_and(|v| PROTECTED.contains(&v.to_lowercase().as_str()))
-        || guard_command::secret_path_probe::is_secret_path(text, Some(root), Some(root)))
+        || guard_command::secret_path_probe::is_request_secret_path(text, Some(root), Some(root)))
 }
 
 pub(super) fn child(parent: &File, name: &std::ffi::CStr, device: u64, inode: u64) -> Result<File> {
@@ -58,8 +60,12 @@ pub(super) fn child(parent: &File, name: &std::ffi::CStr, device: u64, inode: u6
 
 // libc uses signed dev_t on macOS and unsigned dev_t on Linux. Both become
 // the same unsigned identity reported by std::fs::Metadata and the wire DTO.
-#[allow(clippy::unnecessary_cast)]
 pub(super) fn collect(root: &Path, limit: usize, deadline: Instant) -> Result<Value> {
+    collect_with_candidates(root, limit, deadline).map(|(grants, _)| grants)
+}
+
+#[allow(clippy::unnecessary_cast)]
+pub(super) fn collect_with_candidates(root: &Path, limit: usize, deadline: Instant) -> Result<(Value, Candidates)> {
     if !root.is_absolute() || limit == 0 || limit > MAX_ENTRIES {
         return Err("Invalid Linux workspace discovery boundary.");
     }
@@ -80,6 +86,7 @@ pub(super) fn collect(root: &Path, limit: usize, deadline: Instant) -> Result<Va
     let mut stack = vec![Frame::new(root.to_path_buf(), File::from(descriptor))?];
     let mut visited = 0;
     let mut grants = Vec::new();
+    let mut candidates = Candidates::new();
     while let Some(frame) = stack.last_mut() {
         if Instant::now() >= deadline {
             return Err("Linux workspace discovery exceeds its time budget.");
@@ -103,7 +110,14 @@ pub(super) fn collect(root: &Path, limit: usize, deadline: Instant) -> Result<Va
         let metadata =
             fstatat(&frame.file, name, AtFlags::AT_SYMLINK_NOFOLLOW).map_err(|_| MESSAGE)?;
         let kind = metadata.st_mode & libc::S_IFMT;
-        if protected(&path, root)? || kind == libc::S_IFLNK {
+        if protected(&path, root)? {
+            continue;
+        }
+        if kind == libc::S_IFLNK || (kind == libc::S_IFREG && metadata.st_nlink == 1) {
+            let name = name.to_str().map_err(|_| MESSAGE)?;
+            candidates.entry(name.to_owned()).or_default().insert(frame.path.clone());
+        }
+        if kind == libc::S_IFLNK {
             continue;
         }
         if kind == libc::S_IFDIR {
@@ -120,5 +134,5 @@ pub(super) fn collect(root: &Path, limit: usize, deadline: Instant) -> Result<Va
             );
         }
     }
-    Ok(Value::Array(grants))
+    Ok((Value::Array(grants), candidates))
 }
