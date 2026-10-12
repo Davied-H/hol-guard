@@ -49,6 +49,7 @@ runs:
     if: runner.os == 'Windows'
     env:
       HOL_GUARD_NATIVE_BINARY: ${{ runner.temp }}/hol-guard-native-runtime/hol-guard-runtime.exe
+      HOL_GUARD_NATIVE: force
     run: uv run --no-sync pytest tests/test_guard_skill_directory_identity.py
       tests/test_guard_skill_directory_identity_discovery.py tests/test_guard_skill_directory_identity_downstream.py tests/test_guard_skill_directory_identity_links.py
       tests/test_guard_skill_directory_identity_vectors.py
