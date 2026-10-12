@@ -19,6 +19,7 @@ from .native_policy_snapshot_constants import (
     NATIVE_RUNTIME_STATE_DIRECTORY,
     NativePolicySnapshotError,
 )
+from .native_policy_snapshot_direct_lane import NativePolicySnapshotDirectLaneAck
 from .native_policy_snapshot_policy import _stricter_action
 
 if TYPE_CHECKING:
@@ -26,7 +27,7 @@ if TYPE_CHECKING:
     from .store import GuardStore
 
 
-class NativePolicySnapshotPublisherInputs:
+class NativePolicySnapshotPublisherInputs(NativePolicySnapshotDirectLaneAck):
     """Mixin containing filesystem observation outside synchronous hooks."""
 
     store: GuardStore  # pyright: ignore[reportUninitializedInstanceVariable]
@@ -34,7 +35,6 @@ class NativePolicySnapshotPublisherInputs:
     _observe_extension_refresh: bool = False
     guard_home: Path  # pyright: ignore[reportUninitializedInstanceVariable]
     _condition: Condition  # pyright: ignore[reportUninitializedInstanceVariable]
-    _acked: bool  # pyright: ignore[reportUninitializedInstanceVariable]
     _workspace_paths: set[Path]  # pyright: ignore[reportUninitializedInstanceVariable]
     _pending_workspace_paths: set[Path]  # pyright: ignore[reportUninitializedInstanceVariable]
     _published_policy_fingerprint: tuple[str, str, str] | None  # pyright: ignore[reportUninitializedInstanceVariable]
