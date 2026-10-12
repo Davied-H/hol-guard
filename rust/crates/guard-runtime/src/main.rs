@@ -157,6 +157,9 @@ mod guard_store_inventory_page_tests;
 mod guard_store_inventory_vectors_tests;
 mod guard_store_json;
 mod guard_store_lineage;
+mod guard_store_native_review_consume;
+#[cfg(test)]
+mod guard_store_native_review_consume_tests;
 mod guard_store_observed_mcp;
 mod guard_store_op;
 mod guard_store_outbox_append;
@@ -169,6 +172,11 @@ mod guard_store_outbox_reads;
 mod guard_store_outbox_reads_tests;
 mod guard_store_outbox_recover;
 mod guard_store_outbox_requeue;
+mod guard_store_policy_source_context;
+#[cfg(test)]
+mod guard_store_policy_source_context_vectors_tests;
+mod guard_store_policy_source_labels;
+mod guard_store_policy_source_rows;
 mod guard_store_receipt_analytics;
 mod guard_store_receipt_approval;
 mod guard_store_receipt_decision;
