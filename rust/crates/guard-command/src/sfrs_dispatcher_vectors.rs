@@ -232,6 +232,37 @@ fn tagged_wire(value: &Value) -> Value {
     }
 }
 
+fn shown(value: Option<&Value>) -> String {
+    let text = value.map_or("<absent>".to_owned(), Value::to_string);
+    if text.chars().count() > 160 {
+        format!("{}…", text.chars().take(160).collect::<String>())
+    } else {
+        text
+    }
+}
+
+/// Names each top-level field whose value differs, with both values shortened.
+fn differing_fields(expected: &Value, actual: &Value) -> String {
+    let (Some(left), Some(right)) = (expected.as_object(), actual.as_object()) else {
+        return format!(
+            "whole value: expected {} actual {}",
+            shown(Some(expected)),
+            shown(Some(actual))
+        );
+    };
+    let mut keys: Vec<&String> = left.keys().chain(right.keys()).collect();
+    keys.sort();
+    keys.dedup();
+    let mut parts = Vec::new();
+    for key in keys {
+        let (want, got) = (left.get(key), right.get(key));
+        if want != got {
+            parts.push(format!("{key}: {} != {}", shown(want), shown(got)));
+        }
+    }
+    parts.join("; ")
+}
+
 #[test]
 fn dispatcher_matches_recorded_python() {
     let document = fixture();
@@ -239,6 +270,7 @@ fn dispatcher_matches_recorded_python() {
     let root = scratch.0.clone();
     let mut failures = Vec::new();
     let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+    let mut kinds: BTreeMap<String, usize> = BTreeMap::new();
     let cases = document["cases"].as_array().expect("cases");
     for (position, case) in cases.iter().enumerate() {
         let expected = match case.get("error") {
@@ -248,17 +280,26 @@ fn dispatcher_matches_recorded_python() {
         let actual = run_case(&document, &root, case);
         let bucket = if actual == expected { "pass" } else { "fail" };
         *counts.entry(bucket).or_default() += 1;
-        if actual != expected && failures.len() < 40 {
-            failures.push(format!(
-                "case {position}: tool {} args {} cwd {} home {} canonical {} native {}\n  expected {expected}\n  actual   {actual}",
-                case["tool"], case["arguments"], case["cwd"], case["home"], case["canonical"], case["native"],
-            ));
+        if actual != expected {
+            let fields = differing_fields(&expected, &actual);
+            let names = fields
+                .split("; ")
+                .map(|part| part.split(':').next().unwrap_or_default())
+                .collect::<Vec<_>>()
+                .join(",");
+            *kinds.entry(names).or_default() += 1;
+            if failures.len() < 60 {
+                failures.push(format!(
+                    "case {position}: tool {} args {} cwd {} home {} canonical {} native {}\n  differ {fields}",
+                    case["tool"], case["arguments"], case["cwd"], case["home"], case["canonical"], case["native"],
+                ));
+            }
         }
     }
     assert!(cases.len() >= 800, "recorded {} cases", cases.len());
     assert!(
-        counts.get("fail").is_none(),
-        "{counts:?}\n{}",
+        !counts.contains_key("fail"),
+        "{counts:?}\n{kinds:#?}\n{}",
         failures.join("\n")
     );
 }
