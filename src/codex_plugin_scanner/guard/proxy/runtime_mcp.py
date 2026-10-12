@@ -537,7 +537,6 @@ class RuntimeMcpGuardProxy:
         self._tool_catalog_inflight = False
         self._tool_catalog_inflight_cursor: str | None = None
         self._tool_catalog_generation = 0
-        self._catalog_fingerprint_cache: tuple[tuple[int, int, str], str] | None = None
         self._active_process: _NativeChildProcess | None = None
         self._active_runtime_launch_identity: dict[str, object] | None = None
         self._active_executable_identity: dict[str, object] | None = None
@@ -943,16 +942,6 @@ class RuntimeMcpGuardProxy:
             approval_reuse_claim_disposition=None,
         )
 
-    def _current_catalog_fingerprint(self, state: _ToolCatalogState) -> str:
-        """Fingerprint of the mirrored catalog, recomputed only when the catalog object or state changes."""
-        key = (id(self._tool_catalog), self._tool_catalog_generation, state)
-        cached = self._catalog_fingerprint_cache
-        if cached is not None and cached[0] == key:
-            return cached[1]
-        fingerprint = _tool_catalog_fingerprint(self._tool_catalog, state=state)
-        self._catalog_fingerprint_cache = (key, fingerprint)
-        return fingerprint
-
     def _resolve_tool_call_authority(
         self,
         *,
@@ -977,7 +966,10 @@ class RuntimeMcpGuardProxy:
         public_tool_definition = {key: value for key, value in tool_definition.items() if key != "name"}
         catalog_generation = self._tool_catalog_generation
         catalog_state = self._tool_catalog_state
-        catalog_fingerprint = self._current_catalog_fingerprint(catalog_state)
+        catalog_fingerprint = _tool_catalog_fingerprint(
+            self._tool_catalog,
+            state=catalog_state,
+        )
         identity = build_tool_call_identity(
             arguments=arguments,
             workspace=self.context.workspace_dir or Path.cwd(),

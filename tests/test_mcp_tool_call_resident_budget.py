@@ -23,7 +23,8 @@ from tests.test_guard_runtime_mcp_saved_blocks import _child_command, _context, 
 pytestmark = [pytest.mark.usefixtures("bundle_first_cloud"), pytest.mark.usefixtures("package_intent_native")]
 
 # Resident ops one benign warm allow may spend, excluding the `tools/list` setup.
-_TOTAL_BUDGET = 6
+# Includes the single `mcp_tool_call_identity` round trip; the stdio exchange fusion lowers it further.
+_TOTAL_BUDGET = 7
 _CONNECTION_BUDGET = 2
 # `native_context_digest` calls (cached ones included) cost Python time even when no resident round
 # trip happens, so they are bounded too.
