@@ -544,7 +544,7 @@ def _hook_runtime_artifact(**kwargs: Any) -> GuardArtifact | None:
         with bound_context_digest_home(kwargs.get("guard_home")):
             return _hook_runtime_artifact_with_native(**kwargs)
     except NativeCommandModelError:
-        harness = kwargs["harness"]
+        harness = _canonical_harness_name(kwargs["harness"])
         return GuardArtifact(
             artifact_id=f"{harness}:native-command-unavailable",
             name="native command runtime unavailable",

@@ -1,6 +1,17 @@
 #![forbid(unsafe_code)]
 #![recursion_limit = "512"]
 
+mod aibom_artifact;
+mod aibom_discovery;
+mod aibom_extend;
+mod aibom_marketplace;
+mod aibom_mcp_metadata;
+mod aibom_op;
+mod aibom_paths;
+mod aibom_skill_rules;
+mod aibom_skills;
+#[cfg(all(test, unix))]
+mod aibom_vectors_tests;
 mod approval;
 mod approval_bulk_eligibility_op;
 mod approval_gate_consumers;
@@ -81,6 +92,7 @@ mod consumer_artifact_compose_op;
 mod consumer_artifact_compose_runtime;
 #[cfg(unix)]
 mod contained_op;
+mod content_sensitivity_op;
 mod context_digest;
 mod context_digest_json;
 mod context_digest_local_cli;
@@ -149,6 +161,10 @@ mod guard_store_cmd_rollups;
 #[cfg(test)]
 mod guard_store_cmd_vectors_tests;
 mod guard_store_cmd_wire;
+mod guard_store_connect;
+mod guard_store_connect_effective;
+#[cfg(test)]
+mod guard_store_connect_vectors_tests;
 mod guard_store_db;
 mod guard_store_inventory;
 #[cfg(test)]
@@ -236,6 +252,7 @@ mod local_mcp_grant_launcher;
 mod local_mcp_grant_op;
 mod local_once_store;
 mod local_store_read;
+mod managed_controls_policy_fields;
 mod managed_resident;
 mod mcp_probe_op;
 mod mcp_proxy_actions;
@@ -287,6 +304,7 @@ mod package_authority_op;
 mod package_evaluation_compose_op;
 mod package_policy_resolve_op;
 mod package_posture_op;
+mod package_protect_projection_op;
 mod policy_bundle_crypto;
 mod policy_bundle_decisions;
 mod policy_bundle_delivery;

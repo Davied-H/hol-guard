@@ -61,6 +61,7 @@ _TRANSPORT_IDENTITY_PATHS: Final = frozenset(
         # Extracted binary identity validation; no command or policy semantics.
         "src/codex_plugin_scanner/guard/native_binary_identity.py",
         "src/codex_plugin_scanner/guard/native_context.py",
+        "src/codex_plugin_scanner/guard/native_content_sensitivity.py",
         # Bounded non-secret reason code for resident prerequisite failures.
         "src/codex_plugin_scanner/guard/native_resident_prerequisite_reason.py",
         "src/codex_plugin_scanner/guard/native_resident_client.py",
@@ -152,6 +153,7 @@ _TRANSPORT_DECODE_PATHS: Final = frozenset(
         "src/codex_plugin_scanner/guard/native_package_policy_resolve.py",
         "src/codex_plugin_scanner/guard/native_supply_chain_posture.py",
         "src/codex_plugin_scanner/guard/native_package_audit_projection.py",
+        "src/codex_plugin_scanner/guard/native_package_protect_projection.py",
         "src/codex_plugin_scanner/guard/native_workspace_inventory.py",
         # Decodes the bounded resident command-effect result envelope and binds
         # it to the request; the decision itself is computed in Rust.
