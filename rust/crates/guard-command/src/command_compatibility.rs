@@ -153,29 +153,20 @@ fn basename(segment: &CommandSegmentV1) -> String {
         .to_owned()
 }
 
-/// Toolchain runners take the rest of the command as code they compile or
-/// execute. A non-inert assignment can point that runner at other code, and
-/// these names do that for any program.
+/// A loader or compiler variable makes any program run other code, so the
+/// prefix is not a reviewable steer of that program.
 fn assignment_prefix_is_unsupported(segment: &CommandSegmentV1) -> bool {
-    let non_inert = segment
-        .environment_names
-        .iter()
-        .any(|name| !environment::inert_environment_name(name));
-    non_inert
-        && (segment.environment_names.iter().any(|name| {
-            matches!(
-                name.as_str(),
-                "CC" | "GIT_SSH_COMMAND"
-                    | "GOFLAGS"
-                    | "LD_PRELOAD"
-                    | "NODE_OPTIONS"
-                    | "NODE_PATH"
-                    | "RUSTFLAGS"
-            )
-        }) || matches!(
-            basename(segment).as_str(),
-            "bun" | "cargo" | "go" | "node" | "npm" | "vite"
-        ))
+    segment.environment_names.iter().any(|name| {
+        matches!(
+            name.as_str(),
+            "CC" | "GIT_SSH_COMMAND"
+                | "GOFLAGS"
+                | "LD_PRELOAD"
+                | "NODE_OPTIONS"
+                | "NODE_PATH"
+                | "RUSTFLAGS"
+        )
+    })
 }
 
 pub fn compatibility_observations(
@@ -255,10 +246,10 @@ pub fn compatibility_observations_with_context(
         }
         // Inert names (`CI`, `LANG`, `LC_*`) do not steer, so the segment
         // keeps the same permission decision as the unprefixed command.
-        // A loader or compiler name, or any non-inert name on a toolchain
-        // runner, is not a reviewable prefix: it can execute other code, so
-        // the context is unsupported. Every other non-inert name (`GIT_DIR=`,
-        // `GH_HOST=`, `X=`) stays uncertainty. It takes the owners' floor and
+        // A loader or compiler name is not a reviewable prefix: it makes the
+        // program execute other code, so the context is unsupported. Every
+        // other non-inert name (`GIT_DIR=`, `GH_HOST=`, `PORT=`) stays
+        // uncertainty. It takes the owners' floor and
         // no permission can allow it, without turning the evaluation into a
         // failure that would hide a disabled permission.
         if assignment_prefix_is_unsupported(segment) {
