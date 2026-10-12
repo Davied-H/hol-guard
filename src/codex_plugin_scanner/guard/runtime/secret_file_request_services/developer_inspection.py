@@ -32,7 +32,7 @@ class DeveloperShellSegmentEffect:
 class DeveloperShellEffectGraph:
     """Complete, ordered proof that every shell segment is a bounded observer."""
 
-    __slots__ = ("context", "segments", "_native_observation")
+    __slots__ = ("_native_observation", "context", "segments")
     context: ShellExecutionContext
     segments: tuple[DeveloperShellSegmentEffect, ...]
 
