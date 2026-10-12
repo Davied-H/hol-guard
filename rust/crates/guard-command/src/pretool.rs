@@ -48,6 +48,7 @@ mod recursive_copy;
 mod restricted_tests;
 mod rust_toolchain;
 mod safe_reads;
+mod safe_links;
 mod safe_scalar;
 mod safe_writes;
 mod search;

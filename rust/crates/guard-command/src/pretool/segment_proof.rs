@@ -52,7 +52,7 @@ pub(super) fn exact_safe_cwd_compound(
     if model.segments.len() == 2
         && matches!(
             model.segments[1].executable.as_deref(),
-            Some("cp" | "mkdir" | "touch" | "mv")
+            Some("cp" | "mkdir" | "touch" | "mv" | "ln" | "rm")
         )
     {
         // A verified successful cd has no filesystem side effects. Reuse the
@@ -215,6 +215,8 @@ pub(crate) fn benign_command_segments(
                         | "mkdir"
                         | "touch"
                         | "mv"
+                        | "ln"
+                        | "rm"
                         | "head"
                         | "tail"
                         | "rg"
@@ -346,7 +348,7 @@ pub(super) fn exact_safe_segment_with_context(
                         context,
                     ))
         }
-        "mktemp" | "mkdir" | "touch" | "mv" => {
+        "mktemp" | "mkdir" | "touch" | "mv" | "ln" | "rm" => {
             model.segments.len() == 1
                 && safe_reads::safe_file_mutation_arguments(basename, &segment.arguments, context)
         }
