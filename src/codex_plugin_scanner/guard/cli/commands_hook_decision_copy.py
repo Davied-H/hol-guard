@@ -29,6 +29,18 @@ def native_hook_decision_copy(
 ) -> dict[str, object]:
     """Forward gathered fields; Rust builds both decision and display copy."""
 
+    package_copy: dict[str, object] | None = None
+    if package_evaluation is not None:
+        package_copy = {
+            "reason_codes": [
+                _optional_string(reason.get("code")) or ""
+                for reason in package_evaluation.reasons
+                if isinstance(reason, Mapping)
+            ],
+            "user_title": package_evaluation.user_copy.title,
+            "user_summary": package_evaluation.user_copy.summary,
+            "user_harness_message": package_evaluation.user_copy.harness_message,
+        }
     return composer(
         "decision_build_copy",
         {
@@ -36,20 +48,7 @@ def native_hook_decision_copy(
             "signals": [signal.to_dict() for signal in decision_signals],
             "copy": {
                 "policy_action": policy_action,
-                "package": (
-                    {
-                        "reason_codes": [
-                            _optional_string(reason.get("code")) or ""
-                            for reason in package_evaluation.reasons
-                            if isinstance(reason, Mapping)
-                        ],
-                        "user_title": package_evaluation.user_copy.title,
-                        "user_summary": package_evaluation.user_copy.summary,
-                        "user_harness_message": package_evaluation.user_copy.harness_message,
-                    }
-                    if package_evaluation is not None
-                    else None
-                ),
+                "package": package_copy,
                 "package_policy_action": package_policy_action,
                 "has_compound_findings": has_compound_findings,
                 "compound_finding_count": compound_finding_count if has_compound_findings else None,

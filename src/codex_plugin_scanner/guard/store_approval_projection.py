@@ -9,7 +9,6 @@ from pathlib import Path
 from .approval_scope_support import apply_scope_surfaces, request_scope_contract_payloads
 from .decision_boundaries import (
     CanonicalApprovalSurfaces,
-    canonical_approval_surfaces,
     canonical_approval_surfaces_batch,
 )
 from .native_signal_projection import NativeSignalProjectionError, NativeSignalProjectionUnavailableError
@@ -52,13 +51,14 @@ def _browser_launch_target_for_display(value: object) -> tuple[object, str | Non
         return value, None
 
     operation_lower = operation.lower()
+    element_operation = operation_lower.removeprefix("browser_")
     if "network" in operation_lower:
         target = "network request" if operation_lower.startswith(("get_", "read_")) else "network activity"
     elif "console" in operation_lower:
         target = "console message" if operation_lower.startswith(("get_", "read_")) else "console messages"
-    elif operation_lower in _LEGACY_BROWSER_MULTI_ELEMENT_OPERATIONS:
+    elif element_operation in _LEGACY_BROWSER_MULTI_ELEMENT_OPERATIONS:
         target = "page elements"
-    elif operation_lower in _LEGACY_BROWSER_ELEMENT_OPERATIONS:
+    elif element_operation in _LEGACY_BROWSER_ELEMENT_OPERATIONS:
         target = "page element"
     elif operation_lower in {"list_pages", "browser_list_pages"}:
         target = "open pages"
@@ -146,9 +146,8 @@ def _row_to_draft(
     guard_home: Path | None = None,
 ) -> tuple[dict[str, object], str | None]:
     if canonical_decision is None:
-        canonical_decision = canonical_approval_surfaces(
-            *_row_decision_inputs(row), reject_contradiction=False, guard_home=guard_home
-        )
+        # A batch of one keeps the unreadable-row fallback for a single stored row.
+        canonical_decision = canonical_approval_surfaces_batch([_row_decision_inputs(row)], guard_home=guard_home)[0]
     launch_target, browser_target = _browser_launch_target_for_display(row["launch_target"])
     risk_signals = _browser_risk_signals_for_display(_safe_json_list(row["risk_signals_json"]), browser_target)
     payload: dict[str, object] = {

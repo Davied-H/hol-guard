@@ -7,12 +7,13 @@ import json
 import logging
 import re
 import sqlite3
+from collections.abc import Sequence
 from contextlib import suppress
 from pathlib import Path
 
 from .approval_resolution import approval_resolution_block_reason
 from .decision_boundaries import (
-    canonical_approval_surfaces,
+    canonical_approval_surfaces_batch,
 )
 from .models import GuardApprovalRequest
 from .native_approval_queue_identity import (
@@ -284,13 +285,16 @@ def get_approval_request(
             ).fetchone()
             if (
                 candidate is not None
-                and canonical_approval_surfaces(
-                    candidate[0],
-                    _optional_json_object(candidate[1]) or candidate[1],
-                    _optional_json_object(candidate[2]) or candidate[2],
-                    reject_contradiction=False,
+                and canonical_approval_surfaces_batch(
+                    [
+                        (
+                            candidate[0],
+                            _optional_json_object(candidate[1]) or candidate[1],
+                            _optional_json_object(candidate[2]) or candidate[2],
+                        )
+                    ],
                     guard_home=guard_home,
-                ).contract_error
+                )[0].contract_error
                 is None
             ):
                 payload["superseded_by_request_id"] = replacement
@@ -939,17 +943,7 @@ def resolve_matching_duplicate_requests(
         """,
         (queue_group_id, oauth_source, request_id),
     ).fetchall()
-    guard_home = connection_guard_home(connection)
-    resolvable_ids = [
-        str(row["request_id"])
-        for row in rows
-        if approval_request_surfaces_are_resolvable(
-            row["policy_action"],
-            row["decision_v2_json"],
-            row["action_envelope_json"],
-            guard_home=guard_home,
-        )
-    ]
+    resolvable_ids = resolvable_approval_request_ids(connection, rows)
     _resolve_request_ids(
         connection,
         resolvable_ids,
@@ -961,28 +955,25 @@ def resolve_matching_duplicate_requests(
     return resolvable_ids
 
 
-def approval_request_surfaces_are_resolvable(
-    policy_action: object,
-    decision_v2_json: object,
-    action_envelope_json: object,
-    *,
-    guard_home: Path | None = None,
-) -> bool:
-    """Return whether raw persisted approval surfaces form a resolvable row."""
+def resolvable_approval_request_ids(connection: sqlite3.Connection, rows: Sequence[sqlite3.Row]) -> list[str]:
+    """Return, in order, the pending rows whose persisted surfaces are resolvable.
 
-    parsed_decision_v2 = _optional_json_object(decision_v2_json)
-    parsed_action_envelope = _optional_json_object(action_envelope_json)
-    canonical_decision = canonical_approval_surfaces(
-        policy_action,
-        parsed_decision_v2 if parsed_decision_v2 is not None else decision_v2_json,
-        parsed_action_envelope if parsed_action_envelope is not None else action_envelope_json,
-        reject_contradiction=False,
-        guard_home=guard_home,
+    One batched projection in the connection's Guard home covers every row, so a
+    scope sweep holds the write lock for a bounded number of resident calls and an
+    unreadable row reads as inconsistent instead of aborting the sweep.
+    """
+
+    projections = canonical_approval_surfaces_batch(
+        [_row_decision_inputs(row) for row in rows], guard_home=connection_guard_home(connection)
     )
-    request: dict[str, object] = {"policy_action": canonical_decision.policy_action}
-    if canonical_decision.contract_error is not None:
-        request["decision_contract_error"] = canonical_decision.contract_error
-    return approval_resolution_block_reason(request) is None
+    resolvable: list[str] = []
+    for row, projection in zip(rows, projections, strict=True):
+        request: dict[str, object] = {"policy_action": projection.policy_action}
+        if projection.contract_error is not None:
+            request["decision_contract_error"] = projection.contract_error
+        if approval_resolution_block_reason(request) is None:
+            resolvable.append(str(row["request_id"]))
+    return resolvable
 
 
 def _resolve_request_ids(
