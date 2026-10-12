@@ -396,7 +396,6 @@ _OK_NULLABLE_OUTPUT_FIELD: dict[str, str] = {
     "mcp_tool_policy": "mcp_tool_policy",
     # Either ``digest`` or ``token`` is present depending on the request's
     # config; ``mcp_tool_risk`` is always populated — the adapter validates.
-    "build_mcp_tool_approval_hash": "mcp_tool_risk",
     "local_cli_identify": "local_cli_identities",
 }
 
@@ -650,7 +649,7 @@ def _decode_result(
         return None
     categories = payload.get("mcp_tool_risk")
     if categories is not None and (
-        kind not in {"mcp_tool_risk", "build_mcp_tool_approval_hash"}
+        kind != "mcp_tool_risk"
         or not isinstance(categories, list)
         or any(not isinstance(category, str) or category not in _MCP_RISK_CATEGORIES for category in categories)
         or len(categories) != len(set(categories))
@@ -1265,45 +1264,6 @@ def context_browser_mcp(request: dict[str, Any]) -> dict[str, Any]:
     return browser
 
 
-def context_mcp_tool_approval_hash(request: dict[str, Any], *, expect_token: bool) -> tuple[str, tuple[str, ...]]:
-    """Compose the full MCP approval hash natively; no local fallback.
-
-    Requests must be plain JSON types — the worker owns canonicalization, so
-    no ``default=str`` coercion here (that would silently re-materialize big
-    ints/sets as strings and change persisted digests).  Unencodable argument
-    values hit the same ``component_invalid`` boundary the per-op adapters
-    raised before.
-    """
-    try:
-        fields = json.loads(json.dumps({"request": request}))
-    except (TypeError, ValueError) as exc:
-        _LAST_DIGEST_FAILURE.set(None)
-        raise ValueError("native_mcp_tool_approval_hash_unavailable") from exc
-    result = native_context_digest(
-        "build_mcp_tool_approval_hash",
-        fields,
-        guard_home=_resolve_digest_home(None),
-    )
-    if not isinstance(result, dict) or result.get("status") != "ok":
-        raise _unavailable("native_mcp_tool_approval_hash_unavailable")
-    categories = result.get("mcp_tool_risk")
-    if (
-        not isinstance(categories, list)
-        or any(not isinstance(category, str) or category not in _MCP_RISK_CATEGORIES for category in categories)
-        or len(categories) != len(set(categories))
-    ):
-        raise _unavailable("native_mcp_tool_approval_hash_unavailable")
-    if expect_token:
-        token = result.get("token")
-        if not isinstance(token, str) or not token.startswith("guard-approval-context:v1:"):
-            raise _unavailable("native_mcp_tool_approval_hash_unavailable")
-        return token, tuple(categories)
-    digest = result.get("digest")
-    if not isinstance(digest, str) or not _is_sha256_digest(digest):
-        raise _unavailable("native_mcp_tool_approval_hash_unavailable")
-    return digest, tuple(categories)
-
-
 def context_mcp_arguments_projection(tool_name: str, arguments: object) -> tuple[object, str, str]:
     """`_safe_mcp_arguments` + `_mcp_arguments_digest` + `_launch_target`, one op.
 
@@ -1354,7 +1314,6 @@ __all__ = [
     "context_mcp_arguments_projection",
     "context_mcp_identity",
     "context_mcp_redact_json",
-    "context_mcp_tool_approval_hash",
     "context_mcp_tool_catalog_fingerprint",
     "context_opaque_digest",
     "context_package_environment_values",
