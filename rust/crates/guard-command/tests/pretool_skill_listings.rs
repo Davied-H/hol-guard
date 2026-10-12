@@ -214,3 +214,25 @@ fn a_skills_link_to_the_home_directory_lists_nothing() {
         "allow"
     );
 }
+
+#[test]
+fn a_skills_link_to_home_stays_closed_when_home_is_spelled_through_a_symlink() {
+    let canonical = home("home-link-alias");
+    std::fs::remove_dir_all(canonical.join(".agents/skills")).unwrap();
+    std::os::unix::fs::symlink(&canonical, canonical.join(".agents/skills")).unwrap();
+    let alias = canonical.parent().unwrap().join(format!(
+        "home-alias-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::os::unix::fs::symlink(&canonical, &alias).unwrap();
+    assert_ne!(alias.canonicalize().unwrap(), alias);
+    assert_eq!(alias.canonicalize().unwrap(), canonical);
+    assert_ne!(
+        action(&alias, "zcode", "find ~/.agents/skills/. -maxdepth 2"),
+        "allow"
+    );
+    assert_eq!(action(&alias, "zcode", "ls ~/.codex/skills/notes"), "allow");
+}

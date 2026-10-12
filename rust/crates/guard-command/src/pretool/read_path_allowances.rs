@@ -138,17 +138,27 @@ const SKILL_ROOTS: [&str; 6] = [
 
 /// A skill-root symlink that resolves to the home directory, or to one of
 /// its ancestors, would make a names-only listing print the whole home.
+///
+/// `home` is canonical. `lexical_home` is the spelling the caller supplied:
+/// tilde expansion uses that spelling, and a symlink home does not share a
+/// prefix with the canonical path.
 pub(in crate::pretool) fn skill_link_resolves_over_home(
     expanded: &std::path::Path,
     canonical: &std::path::Path,
     home: &std::path::Path,
+    lexical_home: &std::path::Path,
 ) -> bool {
     if !home.starts_with(canonical) {
         return false;
     }
+    let spellings = [home, lexical_home];
     SKILL_ROOTS.iter().any(|root| {
-        let lexical = home.join(root);
-        expanded.starts_with(&lexical) && canonical != lexical && !canonical.starts_with(&lexical)
+        spellings.iter().any(|spelling| {
+            let lexical = spelling.join(root);
+            expanded.starts_with(&lexical)
+                && canonical != lexical
+                && !canonical.starts_with(&lexical)
+        })
     })
 }
 

@@ -63,10 +63,10 @@ pub(in crate::pretool) fn skill_link_resolves_over_home(
     {
         return false;
     }
-    let Some(home) = context
-        .home_dir
-        .and_then(|home| std::fs::canonicalize(home).ok())
-    else {
+    let Some(raw_home) = context.home_dir else {
+        return false;
+    };
+    let Some(home) = std::fs::canonicalize(raw_home).ok() else {
         return false;
     };
     let Some(expanded) = expanded_operand(value, context) else {
@@ -75,7 +75,12 @@ pub(in crate::pretool) fn skill_link_resolves_over_home(
     let Some(canonical) = std::fs::canonicalize(&expanded).ok() else {
         return false;
     };
-    super::super::read_paths::skill_link_resolves_over_home(&expanded, &canonical, &home)
+    super::super::read_paths::skill_link_resolves_over_home(
+        &expanded,
+        &canonical,
+        &home,
+        std::path::Path::new(raw_home),
+    )
 }
 
 pub(in crate::pretool) fn skill_listing_root(value: &str, context: ReadContext<'_>) -> bool {
