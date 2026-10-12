@@ -48,6 +48,7 @@ def native_preparation(tmp_path, monkeypatch):
 
 def _workspace(tmp_path: Path) -> Path:
     (tmp_path / "src").mkdir(parents=True)
+    (tmp_path / "package.json").write_text("{}")
     (tmp_path / "src" / "math.test.ts").write_text("export {};\n")
     loader = tmp_path / "node_modules" / "tsx" / "dist" / "loader.mjs"
     loader.parent.mkdir(parents=True)

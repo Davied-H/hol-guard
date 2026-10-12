@@ -27,6 +27,11 @@ def reply(tmp_path, profile):
     }
 
 
+def test_tsx_positive_nested_reply_reaches_the_caller(monkeypatch):
+    monkeypatch.setattr(transport, "_call", lambda *args, **kwargs: {"value": ["math.test.ts", ["--flag"]]})
+    assert restricted_vitest.tsx_test_invocation(["tsx", "math.test.ts", "--flag"]) == ("math.test.ts", ("--flag",))
+
+
 @pytest.mark.parametrize(
     "module,method,profile",
     [

@@ -291,7 +291,7 @@ fn prepare_vitest(input: &Input) -> Result<Value, RestrictedPytestError> {
         || input
             .command
             .get(1 + runtime.len())
-            .and_then(|p| Path::new(p).canonicalize().ok())
+            .and_then(|p| cwd.join(p).canonicalize().ok())
             == entry;
     if entry.is_none() || !matching {
         return Err(RestrictedPytestError::new("vitest_restricted_dependency_unavailable",

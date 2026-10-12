@@ -133,6 +133,28 @@ fn mapping_deadline_and_packed_input_fail_closed() {
 }
 
 #[test]
+fn relative_vitest_entry_uses_request_cwd_without_changing_resident_cwd() {
+    let fixture = fixture("guard-vitest-relative");
+    let workspace = fixture.0.join("project");
+    let bin = workspace.join("bin");
+    let entry = workspace.join("node_modules/vitest/vitest.mjs");
+    fs::create_dir_all(&bin).unwrap();
+    fs::create_dir_all(entry.parent().unwrap()).unwrap();
+    fs::write(workspace.join("package.json"), "{}").unwrap();
+    fs::write(&entry, "").unwrap();
+    fs::write(bin.join("node"), b"\x7fELFnative-fixture").unwrap();
+    fs::set_permissions(bin.join("node"), fs::Permissions::from_mode(0o755)).unwrap();
+    let before = env::current_dir().unwrap();
+    let reply = evaluate_with_deadline("prepare_vitest", &json!({
+        "command":["node","./node_modules/vitest/vitest.mjs","run"],
+        "workspace":workspace,"cwd":workspace,"platform":"darwin",
+        "backend_executable":"/usr/bin/true","search_path":bin
+    }), Instant::now() + Duration::from_secs(5));
+    assert_eq!(reply["value"]["command"][1], json!(entry));
+    assert_eq!(env::current_dir().unwrap(), before);
+}
+
+#[test]
 fn large_ordinary_file_index_keeps_the_mapping_deadline_for_image_inspection() {
     let input = json!({"images":[],"read_files":(0..100000).map(|i|
         format!("/guard-fixture/workspace/a/b/c/d/e/f/ordinary-{i}.txt")).collect::<Vec<_>>(),
