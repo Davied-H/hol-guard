@@ -633,7 +633,6 @@
           "src/codex_plugin_scanner/guard/runtime/extension_contribution.py",
           "src/codex_plugin_scanner/guard/runtime/extension_trust.py",
           "src/codex_plugin_scanner/guard/runtime/js_semver.py",
-          "src/codex_plugin_scanner/guard/runtime/local_cli_compound.py",
           "src/codex_plugin_scanner/guard/runtime/lockfile_evaluation_support.py",
           "src/codex_plugin_scanner/guard/runtime/manifest_dependency_targets.py",
           "src/codex_plugin_scanner/guard/runtime/mcp_connection_identity.py",
@@ -647,7 +646,7 @@
           "src/codex_plugin_scanner/guard/runtime/source_paths.py",
           "src/codex_plugin_scanner/guard/runtime/workspace_snapshot_inputs.py"
         ],
-        "reason": "Reviewed: runtime support modules used by supply-chain evaluation, contained execution, local-CLI/MCP grant decisions and secret-file-request services: js_semver, npm_policy_range, lockfile/manifest evaluation, package_json_scripts, source_paths/skill_paths, workspace_snapshot_inputs, contained_test_hook/wrapper, oci isolation, extension and mcp_server contribution, embedded_script_evidence, executable_flag_contract, local_cli_compound, mcp_connection_identity, and skill_protection (skill-content findings for the MCP skill firewall). Each is imported by an in-scope decision, parser or containment module on the hook/run path."
+        "reason": "Reviewed: runtime support modules used by supply-chain evaluation, contained execution, local-CLI/MCP grant decisions and secret-file-request services: js_semver, npm_policy_range, lockfile/manifest evaluation, package_json_scripts, source_paths/skill_paths, workspace_snapshot_inputs, contained_test_hook/wrapper, oci isolation, extension and mcp_server contribution, embedded_script_evidence, executable_flag_contract, mcp_connection_identity, and skill_protection (skill-content findings for the MCP skill firewall). Each is imported by an in-scope decision, parser or containment module on the hook/run path."
       },
       {
         "path": [
@@ -739,7 +738,6 @@
           "src/codex_plugin_scanner/guard/adapters/claude_code.py",
           "src/codex_plugin_scanner/guard/aibom_detection.py",
           "src/codex_plugin_scanner/guard/codex_config.py",
-          "src/codex_plugin_scanner/guard/codex_skill_config.py",
           "src/codex_plugin_scanner/guard/inventory_agent_types.py",
           "src/codex_plugin_scanner/guard/inventory_contract_constants.py",
           "src/codex_plugin_scanner/guard/inventory_contract_fingerprints.py",
@@ -765,10 +763,9 @@
       {
         "path": [
           "src/codex_plugin_scanner/guard/runtime/github_workflow_runtime.py",
-          "src/codex_plugin_scanner/guard/runtime/github_workflow_approval_record.py",
-          "src/codex_plugin_scanner/guard/runtime/github_workflow_context.py"
+          "src/codex_plugin_scanner/guard/runtime/github_workflow_approval_record.py"
         ],
-        "reason": "Reviewed: GitHub workflow capability preflight and approval records. commands_hook_native_eval.py imports github_workflow_runtime to resolve the workflow capability preflight on a native hook call, and commands_support_runtime_policy.py reads GitHubWorkflowApprovalRecord when it resolves runtime policy, so all three are hook-path runtime and stay counted. approvals.py used to pull them in eagerly; they are now reached only through these lazy hook-path imports."
+        "reason": "Reviewed: GitHub workflow capability preflight and approval records. commands_hook_native_eval.py imports github_workflow_runtime to resolve the workflow capability preflight on a native hook call, and commands_support_runtime_policy.py reads GitHubWorkflowApprovalRecord when it resolves runtime policy, so both are hook-path runtime and stay counted. approvals.py used to pull them in eagerly; they are now reached only through these lazy hook-path imports."
       },
       {
         "path": [
