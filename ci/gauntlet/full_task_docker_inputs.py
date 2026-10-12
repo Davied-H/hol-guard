@@ -12,6 +12,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -20,6 +21,8 @@ REPO = HERE.parents[1]
 DOCKER_DIR = HERE / "docker"
 PIN_DIR = REPO / "ci" / "pi-exact-continuation"
 PLATFORM = "linux/amd64"
+ARM_PLATFORM = "linux/arm64"
+ARM_WHEEL_TAG = "manylinux_2_17_aarch64"
 SLUG = "hashgraph-online/hol-guard"
 GATEWAY_FILES = ("full_task_gateway.py", "full_task_gateway_policy.py")
 SHA = re.compile(r"[0-9a-f]{40}")
@@ -33,6 +36,8 @@ class GuardSource:
     requirement: str
     expected_sha: str
     runtime: Path | None = None
+    platform: str = PLATFORM
+    wheel_sha256: str | None = None
 
 
 def run(args: list[str], *, timeout: float = 600, cwd: Path | None = None) -> str:
@@ -42,9 +47,11 @@ def run(args: list[str], *, timeout: float = 600, cwd: Path | None = None) -> st
     return result.stdout.strip()
 
 
-def image_tag() -> str:
+def image_tag(platform: str = PLATFORM) -> str:
     """A tag derived from everything the image is built from, so a changed pin rebuilds it."""
     digest = hashlib.sha256()
+    if platform != PLATFORM:
+        digest.update(platform.encode())
     for path in (
         DOCKER_DIR / "Dockerfile",
         DOCKER_DIR / "entrypoint.sh",
@@ -55,15 +62,15 @@ def image_tag() -> str:
     return "hol-guard-gauntlet-ft:" + digest.hexdigest()[:12]
 
 
-def ensure_image() -> str:
-    tag = image_tag()
+def ensure_image(platform: str = PLATFORM) -> str:
+    tag = image_tag(platform)
     if subprocess.run(["docker", "image", "inspect", tag], capture_output=True).returncode != 0:
         run(
             [
                 "docker",
                 "build",
                 "--platform",
-                PLATFORM,
+                platform,
                 "--build-context",
                 f"pin={PIN_DIR}",
                 "-t",
@@ -86,8 +93,10 @@ def resolve_release_sha(version: str) -> str:
     raise RuntimeError(f"no public tag found for Guard {version}; pass --guard-build-sha")
 
 
-def download_wheelhouse(image: str, spec: str, wheelhouse: Path, *, mount: Path | None = None) -> None:
-    """Fetch the wheel and every dependency for linux x86-64 with a plain, credential-free container."""
+def download_wheelhouse(
+    image: str, spec: str, wheelhouse: Path, *, mount: Path | None = None, platform: str = PLATFORM
+) -> None:
+    """Fetch the wheel and every dependency for the image platform with a plain, credential-free container."""
     mounts = ["-v", f"{wheelhouse}:/out"] + (["-v", f"{mount}:/in:ro"] if mount else [])
     run(
         [
@@ -95,7 +104,7 @@ def download_wheelhouse(image: str, spec: str, wheelhouse: Path, *, mount: Path 
             "run",
             "--rm",
             "--platform",
-            PLATFORM,
+            platform,
             *mounts,
             image,
             "pip",
@@ -185,6 +194,33 @@ def pr_head_source(sha: str, inputs: Path, image: str) -> GuardSource:
         # Dependencies only: pip resolves them from the local wheel inside a credential-free container.
         download_wheelhouse(image, f"/in/{wheels[0].name}", wheelhouse, mount=wheelhouse)
     return GuardSource(f"pr-head:{sha[:12]}", wheels[0].name, sha, inputs / "runtime" / "hol-guard-runtime")
+
+
+def wheel_source(wheel: Path, expected_sha: str, inputs: Path, image: str) -> GuardSource:
+    """An externally built arm64 native wheel, checked against the head it must have been built from."""
+    if not SHA.fullmatch(expected_sha):
+        raise ValueError("--guard-wheel needs --guard-pr-head with the full 40-hex commit it was built from")
+    wheel = wheel.resolve()
+    if not wheel.is_file() or not wheel.name.endswith(f"-{ARM_WHEEL_TAG}.whl"):
+        raise ValueError(f"--guard-wheel must be a {ARM_WHEEL_TAG} hol-guard wheel")
+    with zipfile.ZipFile(wheel) as archive:
+        names = archive.namelist()
+        manifests = [name for name in names if name.endswith("runtime-manifest.json")]
+        runtimes = [name for name in names if name.endswith("/hol-guard-runtime")]
+        if len(manifests) != 1 or len(runtimes) != 1:
+            raise RuntimeError("the wheel does not carry exactly one native runtime and manifest")
+        manifest = json.loads(archive.read(manifests[0]))
+        runtime_sha = hashlib.sha256(archive.read(runtimes[0])).hexdigest()
+    if manifest.get("source_sha") != expected_sha:
+        raise RuntimeError("the wheel's embedded source sha does not match the requested head")
+    if manifest.get("platform_tag") != ARM_WHEEL_TAG or manifest.get("runtime_sha256") != runtime_sha:
+        raise RuntimeError("the wheel's runtime manifest does not describe its runtime")
+    wheelhouse = inputs / "wheelhouse"
+    wheelhouse.mkdir(parents=True)
+    shutil.copy2(wheel, wheelhouse / wheel.name)
+    download_wheelhouse(image, f"/in/{wheel.name}", wheelhouse, mount=wheelhouse, platform=ARM_PLATFORM)
+    digest = hashlib.sha256(wheel.read_bytes()).hexdigest()
+    return GuardSource(f"wheel:{expected_sha[:12]}", wheel.name, expected_sha, None, ARM_PLATFORM, digest)
 
 
 def write_repo_inputs(inputs: Path) -> None:

@@ -175,3 +175,31 @@ def test_canary_is_found_in_plain_encoded_and_url_forms_and_evidence_has_no_bodi
     row = evidence_row(host=API, method="POST", path="/x?token=abc", decision=decision, status=201, canaries=["task"])
     assert canary not in json.dumps(row) and "token" not in json.dumps(row)
     assert set(row) <= {"host", "method", "path", "decision", "reason", "status", "graphql_op", "canary_hits"}
+
+
+def _arm_wheel(path, *, sha, runtime=b"elf"):
+    import hashlib as _h
+    import json as _j
+    import zipfile as _z
+
+    manifest = {
+        "source_sha": sha,
+        "platform_tag": "manylinux_2_17_aarch64",
+        "runtime_sha256": _h.sha256(runtime).hexdigest(),
+    }
+    with _z.ZipFile(path, "w") as archive:
+        archive.writestr("codex_plugin_scanner/_native/hol-guard-runtime", runtime)
+        archive.writestr("codex_plugin_scanner/_native/runtime-manifest.json", _j.dumps(manifest))
+
+
+def test_wheel_source_rejects_a_wheel_built_from_another_head(tmp_path):
+    import pytest
+
+    from ci.gauntlet.full_task_docker_inputs import wheel_source
+
+    wheel = tmp_path / "hol_guard-1.0.0-py3-none-manylinux_2_17_aarch64.whl"
+    _arm_wheel(wheel, sha="a" * 40)
+    with pytest.raises(RuntimeError, match="embedded source sha"):
+        wheel_source(wheel, "b" * 40, tmp_path / "inputs", "image")
+    with pytest.raises(ValueError, match="aarch64"):
+        wheel_source(tmp_path / "other.whl", "a" * 40, tmp_path / "inputs", "image")

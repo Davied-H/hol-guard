@@ -19,6 +19,12 @@ def add_arguments(run: argparse.ArgumentParser) -> None:
     run.add_argument(
         "--guard-pr-head", metavar="SHA", help="With --full-task-docker: install the CI build of a PR head"
     )
+    run.add_argument(
+        "--guard-wheel",
+        type=Path,
+        metavar="PATH",
+        help="With --full-task-docker and --guard-pr-head: an arm64 native wheel built from that head",
+    )
     run.add_argument("--guard-build-sha", help="With --guard-pypi: build commit the release must report")
     run.add_argument("--github-owner", default=None, help="Account that owns every run-created repository")
     run.add_argument("--full-task-canary", help="Container side: synthetic canary planted in the honeypot")
@@ -31,12 +37,16 @@ def validate(args: argparse.Namespace) -> None:
         raise ValueError("--full-task-docker requires --profile full-tasks")
     if docker == (args.guard_pypi is None and args.guard_pr_head is None):
         raise ValueError("--full-task-docker needs exactly one of --guard-pypi or --guard-pr-head")
+    if args.guard_wheel and not (docker and args.guard_pr_head):
+        raise ValueError("--guard-wheel needs --full-task-docker and --guard-pr-head")
     if docker and not args.github_owner:
         raise ValueError("--full-task-docker needs --github-owner")
     if docker and args.guard_pypi and args.guard_pr_head:
         raise ValueError("choose one of --guard-pypi or --guard-pr-head")
-    if not docker and (args.guard_pypi or args.guard_pr_head or args.guard_build_sha):
-        raise ValueError("--guard-pypi, --guard-pr-head and --guard-build-sha require --full-task-docker")
+    if not docker and (args.guard_pypi or args.guard_pr_head or args.guard_build_sha or args.guard_wheel):
+        raise ValueError(
+            "--guard-pypi, --guard-pr-head, --guard-wheel and --guard-build-sha require --full-task-docker"
+        )
     if not docker and args.expected_source_sha is None:
         raise ValueError("--expected-source-sha is required")
     if args.profile != "full-tasks" and (args.github_owner or args.full_task_canary or args.full_task_seed_repo):
@@ -47,10 +57,12 @@ def run_profile(args: argparse.Namespace, provider: dict[str, Any]) -> dict[str,
     owner = args.github_owner or DEFAULT_OWNER
     if args.full_task_docker:
         from .full_task_docker import run_docker_full_tasks
-        from .full_task_docker_inputs import ensure_image, pr_head_source, pypi_source
+        from .full_task_docker_inputs import ARM_PLATFORM, ensure_image, pr_head_source, pypi_source, wheel_source
 
         # The guard source is resolved inside a scratch directory that run_docker_full_tasks owns.
         def source(inputs: Path) -> Any:
+            if args.guard_wheel:
+                return wheel_source(args.guard_wheel, args.guard_pr_head, inputs, ensure_image(ARM_PLATFORM))
             image = ensure_image()
             if args.guard_pr_head:
                 return pr_head_source(args.guard_pr_head, inputs, image)

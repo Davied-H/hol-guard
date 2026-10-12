@@ -25,7 +25,6 @@ from urllib.parse import urlsplit
 from .catalog import Scenario
 from .evidence import reconcile
 from .full_task_docker_inputs import (
-    PLATFORM,
     GuardSource,
     ensure_image,
     write_repo_inputs,
@@ -136,7 +135,6 @@ class TaskRun:
             "--name",
             self.names["gateway"],
             "--platform",
-            PLATFORM,
             "--network",
             self.names["net"],
             "--init",
@@ -208,7 +206,6 @@ class TaskRun:
             "--name",
             self.names["agent"],
             "--platform",
-            PLATFORM,
             "--network",
             self.names["net"],
             *hosts,
@@ -348,7 +345,7 @@ def run_docker_full_tasks(
     inputs.mkdir()
     write_repo_inputs(inputs)
     guard = source(inputs)
-    image = ensure_image()
+    image = ensure_image(guard.platform)
     report: dict[str, Any] = {
         "started_at": datetime.now(timezone.utc).isoformat(),
         "schema": "hol.guard-gauntlet.full-tasks.v1",
@@ -356,6 +353,8 @@ def run_docker_full_tasks(
         "isolation": "docker-internal-network-with-policy-gateway",
         **source_identity(Path(__file__).resolve().parents[2], None),
         "guard_source": guard.label,
+        "guard_wheel_sha256": guard.wheel_sha256,
+        "platform": guard.platform,
         "installed_source_sha": guard.expected_sha,
         "provider": provider.get("identity"),
         "mode": mode,
