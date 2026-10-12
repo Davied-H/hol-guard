@@ -41,13 +41,13 @@ pub(super) fn exact_safe_command(
         && !environment
             .environment_names
             .iter()
-            .any(stamped_loader_name)
+            .any(|name| stamped_loader_name(name))
         && resolved_outside_workspace(&environment.path, &cwd, &home)
         && !preload_config_present(environment, &home, &cwd)
 }
 
 /// `BUN_OPTIONS` and dynamic-loader injection run code before the print.
-fn stamped_loader_name(name: &String) -> bool {
+fn stamped_loader_name(name: &str) -> bool {
     name.eq_ignore_ascii_case("BUN_OPTIONS")
         || matches!(
             name.to_ascii_uppercase().as_str(),
