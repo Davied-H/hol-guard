@@ -135,6 +135,7 @@ async function terminateGuardProcessGroup(
 
 export async function spawnGuardProcess(options: {
   args: string[];
+  nativeArgs?: (pythonTarget: string) => string[];
   cwd: string;
   deadlineMs: number;
   env: Record<string, string>;
@@ -184,9 +185,16 @@ export async function spawnGuardProcess(options: {
       finish({ kind: "reject", error });
       return;
     }
+    let command = pythonTarget;
+    let args = options.args;
+    const nativeRuntime = options.nativeArgs === undefined ? null : resolveGuardNativeRuntime();
+    if (nativeRuntime !== null && options.nativeArgs !== undefined) {
+      command = nativeRuntime;
+      args = options.nativeArgs(pythonTarget);
+    }
     let proc: ReturnType<typeof nodeSpawn>;
     try {
-      proc = nodeSpawn(pythonTarget, options.args, {
+      proc = nodeSpawn(command, args, {
         cwd: options.cwd,
         detached: process.platform !== "win32",
         env: options.env,
