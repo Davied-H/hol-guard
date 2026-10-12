@@ -92,12 +92,16 @@ mod consumer_artifact_compose_op;
 mod consumer_artifact_compose_runtime;
 #[cfg(unix)]
 mod contained_op;
+mod content_sensitivity_op;
 mod context_digest;
 mod context_digest_json;
 mod context_digest_local_cli;
+mod context_digest_package_scripts;
 mod contributed_mcp_decision_op;
 mod critical_floor_op;
 mod cursor_observer_proof_op;
+mod custom_extension_continuity;
+mod custom_extension_suggestion;
 mod daemon_handler_digits;
 mod daemon_handler_fields;
 mod daemon_handler_headless;
@@ -158,6 +162,10 @@ mod guard_store_cmd_rollups;
 #[cfg(test)]
 mod guard_store_cmd_vectors_tests;
 mod guard_store_cmd_wire;
+mod guard_store_connect;
+mod guard_store_connect_effective;
+#[cfg(test)]
+mod guard_store_connect_vectors_tests;
 mod guard_store_db;
 mod guard_store_inventory;
 #[cfg(test)]
@@ -166,6 +174,9 @@ mod guard_store_inventory_page_tests;
 mod guard_store_inventory_vectors_tests;
 mod guard_store_json;
 mod guard_store_lineage;
+mod guard_store_native_review_consume;
+#[cfg(test)]
+mod guard_store_native_review_consume_tests;
 mod guard_store_observed_mcp;
 mod guard_store_op;
 mod guard_store_outbox_append;
@@ -178,6 +189,11 @@ mod guard_store_outbox_reads;
 mod guard_store_outbox_reads_tests;
 mod guard_store_outbox_recover;
 mod guard_store_outbox_requeue;
+mod guard_store_policy_source_context;
+#[cfg(test)]
+mod guard_store_policy_source_context_vectors_tests;
+mod guard_store_policy_source_labels;
+mod guard_store_policy_source_rows;
 mod guard_store_receipt_analytics;
 mod guard_store_receipt_approval;
 mod guard_store_receipt_decision;
@@ -191,6 +207,9 @@ mod guard_store_receipts_vectors_tests;
 mod guard_store_sessions;
 #[cfg(test)]
 mod guard_store_sessions_vectors_tests;
+mod guard_store_state_ops;
+#[cfg(test)]
+mod guard_store_state_ops_vectors_tests;
 mod guard_store_storage_maintenance;
 #[cfg(test)]
 mod guard_store_storage_maintenance_vectors_tests;
@@ -225,10 +244,16 @@ mod hook_adapter_op;
 mod hook_artifact_compose_op;
 mod hook_artifact_compose_reuse;
 mod hook_authority_state_op;
+#[cfg(all(test, unix))]
+mod hook_decision_benign_tool_action_tests;
 mod hook_decision_compose;
 mod hook_decision_directive;
 mod hook_decision_finalize;
+mod hook_decision_native_facts;
+#[cfg(all(test, unix))]
+mod hook_decision_native_facts_tests;
 mod hook_decision_op;
+mod hook_decision_settle;
 mod hook_process_spawn;
 mod hook_render_op;
 mod local_cli_grant_op;
@@ -237,6 +262,7 @@ mod local_mcp_grant_launcher;
 mod local_mcp_grant_op;
 mod local_once_store;
 mod local_store_read;
+mod managed_controls_policy_fields;
 mod managed_resident;
 mod mcp_probe_op;
 mod mcp_proxy_actions;
@@ -266,7 +292,10 @@ mod mcp_tool_policy_decision;
 mod mcp_tool_policy_extension;
 mod mcp_tool_policy_flow;
 mod mcp_tool_policy_grants;
+mod mcp_tool_policy_lookup;
+mod mcp_tool_policy_proxy;
 mod mcp_tool_policy_revalidate;
+mod native_exact_action_op;
 mod native_hook_receipt;
 mod native_runtime_admission;
 mod native_runtime_resilience;
@@ -287,6 +316,7 @@ mod package_authority_op;
 mod package_evaluation_compose_op;
 mod package_policy_resolve_op;
 mod package_posture_op;
+mod package_protect_projection_op;
 mod policy_bundle_crypto;
 mod policy_bundle_decisions;
 mod policy_bundle_delivery;
@@ -328,6 +358,7 @@ mod request_context_shell;
 mod resident_client;
 mod resident_diagnostics;
 mod resident_endpoint;
+mod resident_inspection_services;
 mod resident_op_features;
 mod resident_ops;
 #[allow(dead_code)] // Worker enrollment is not enabled by this OS identity input.
@@ -339,6 +370,7 @@ mod resident_state_encoding;
 mod resident_transport;
 mod resident_transport_service;
 mod resident_update_lock;
+mod restricted_pytest_op;
 mod runner_authority_detector;
 mod runner_authority_evaluation;
 mod runner_authority_op;
@@ -349,6 +381,10 @@ mod runner_sync_url;
 mod runtime_cli;
 mod runtime_detector_run_op;
 mod secrets_cli;
+#[cfg(all(test, unix))]
+#[allow(dead_code, clippy::pedantic)]
+#[path = "../../guard-command/tests/sfrs_support/mod.rs"]
+mod sfrs_support;
 mod shim_op;
 #[cfg(unix)]
 mod skill_directory_identity_op;
