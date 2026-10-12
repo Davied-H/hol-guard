@@ -6,6 +6,7 @@ import base64
 import hashlib
 import json
 import os
+import struct
 import sys
 import time
 from typing import Any
@@ -22,6 +23,31 @@ from .strict_json_pairs import unique_json_object
 
 class NativePolicyDocumentError(ValueError, RuntimeError):
     """Unavailable or unbound native authority cannot compile a policy."""
+
+    code = "native_policy_document_unavailable"
+
+
+def bounds_claim(value: object) -> list[Any]:
+    """Losslessly frame Python strings, floats and ordered containers as claims."""
+    if isinstance(value, str):
+        return ["text", base64.b64encode(value.encode("utf-32-le", "surrogatepass")).decode("ascii")]
+    if isinstance(value, list):
+        return ["list", [bounds_claim(item) for item in value]]
+    if isinstance(value, dict):
+        return ["mapping", [[bounds_claim(key), bounds_claim(item)] for key, item in value.items()]]
+    if isinstance(value, float):
+        return ["float", struct.pack(">d", value).hex()]
+    return ["scalar", None]
+
+
+def _wire_frame(result: Any, kind: str) -> dict[str, Any]:
+    if not isinstance(result, dict) or set(result) != {kind} or not isinstance(result[kind], dict):
+        raise NativePolicyDocumentError("native_policy_document_transfer_unbound")
+    frame = result[kind]
+    keys = {"handle", "offset"} if kind == "wire_upload" else {"handle", "offset", "total", "sha256", "bytes"}
+    if set(frame) != keys or not isinstance(frame["handle"], str) or type(frame["offset"]) is not int:
+        raise NativePolicyDocumentError("native_policy_document_transfer_unbound")
+    return frame
 
 
 def _bound_query(
@@ -148,10 +174,13 @@ def policy_query(
         raise NativePolicyDocumentError("native_policy_document_request_invalid") from exc
     if len(encoded) > 64 * 1024 * 1024:
         raise NativePolicyDocumentError("native_policy_document_request_too_large")
-    if len(encoded) > 512 * 1024:
-        start = call(
-            "wire_start", {"query": query, "size": len(encoded), "sha256": hashlib.sha256(encoded).hexdigest()}
-        )["wire_upload"]
+    if len(encoded) > 512 * 1024 or query in {"validate_bounds", "validate_yaml_tokens"}:
+        start = _wire_frame(
+            call("wire_start", {"query": query, "size": len(encoded), "sha256": hashlib.sha256(encoded).hexdigest()}),
+            "wire_upload",
+        )
+        if start["offset"] != 0:
+            raise NativePolicyDocumentError("native_policy_document_upload_unbound")
         token = start["handle"]
         for offset in range(0, len(encoded), 512 * 1024):
             chunk = encoded[offset : offset + 512 * 1024]
@@ -163,7 +192,7 @@ def policy_query(
         result = call(query, body)
     if not isinstance(result, dict) or "wire_download" not in result:
         return result
-    page = result["wire_download"]
+    page = _wire_frame(result, "wire_download")
     token, total, digest = page["handle"], page["total"], page["sha256"]
     if type(total) is not int or not 0 < total <= 64 * 1024 * 1024:
         raise NativePolicyDocumentError("native_policy_document_result_too_large")
@@ -176,16 +205,22 @@ def policy_query(
             page["sha256"],
         ) != (token, len(chunks), total, digest):
             raise NativePolicyDocumentError("native_policy_document_download_unbound")
-        chunk = base64.b64decode(page["bytes"], validate=True)
+        try:
+            chunk = base64.b64decode(page["bytes"], validate=True)
+        except (TypeError, ValueError) as exc:
+            raise NativePolicyDocumentError("native_policy_document_download_unbound") from exc
         if len(chunk) != min(512 * 1024, total - len(chunks)):
             raise NativePolicyDocumentError("native_policy_document_download_unbound")
         chunks.extend(chunk)
         if len(chunks) == total:
             break
-        page = call("wire_read", {"handle": token, "offset": len(chunks)})["wire_download"]
+        page = _wire_frame(call("wire_read", {"handle": token, "offset": len(chunks)}), "wire_download")
     if hashlib.sha256(chunks).hexdigest() != digest or time.monotonic() >= deadline:
         raise NativePolicyDocumentError("native_policy_document_download_unbound")
-    decoded = json.loads(chunks, object_pairs_hook=unique_json_object)
+    try:
+        decoded = json.loads(chunks, object_pairs_hook=unique_json_object)
+    except (TypeError, ValueError) as exc:
+        raise NativePolicyDocumentError("native_policy_document_download_unbound") from exc
     if not isinstance(decoded, dict) or set(decoded) != {"ok"}:
         raise NativePolicyDocumentError("native_policy_document_malformed")
     return decoded["ok"]

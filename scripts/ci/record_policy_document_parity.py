@@ -13,6 +13,8 @@ import types
 from dataclasses import asdict
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[2]
 PACKAGE = "codex_plugin_scanner.guard"
 OWNERS = (
@@ -76,11 +78,21 @@ def document(rules=(), defaults=None):
     }
 
 
+def ordered_frame(value):
+    if isinstance(value, dict):
+        return {"object": [[key, ordered_frame(item)] for key, item in value.items()]}
+    if isinstance(value, list):
+        return {"array": [ordered_frame(item) for item in value]}
+    return value
+
+
 def record(base: str):
     modules, hashes = original_sources(base)
     dto = modules["policy_document"]
     compiler = modules["policy_document_compile"]
     diff = modules["policy_document_diff"]
+    from codex_plugin_scanner.guard.native_policy_document import bounds_claim
+
     vectors = []
 
     def add(query, body):
@@ -309,7 +321,150 @@ def record(base: str):
         value = rule()
         value["provenance"]["createdAt"] = stamp
         add("validate_timestamps", {"value": document([value])})
-    return {"schema": "guard-policy-document-parity.v1", "base": base, "source_sha256": hashes, "vectors": vectors}
+    loader = modules["policy_document_yaml"]
+    bounds_values = [
+        None,
+        True,
+        2**80,
+        "ordinary",
+        "é" * 4096,
+        "😀" * 4096,
+        "a" * 4097,
+        "\ud800",
+        {"\udfff": None},
+        1.0,
+        float("inf"),
+        float("nan"),
+        [None] * 256,
+        [None] * 257,
+        {str(i): None for i in range(257)},
+        {1: None},
+        {"password": "value"},
+        {"x-safe": {"Password": "value"}},
+        {"authorization": "value", "token": "value"},
+        {"token": "value", "authorization": "value"},
+        {"k" * 129: None},
+        {"spec": {"rules": [None] * 1000}},
+        {"spec": {"rules": [None] * 1001}},
+    ]
+    nested = None
+    for _ in range(35):
+        nested = [nested]
+        bounds_values.append(nested)
+    for value in bounds_values:
+        expected = None
+        try:
+            loader._validate_bounds(value)
+        except loader.PolicyDocumentError as exc:
+            path = [bounds_claim(part) if isinstance(part, str) else part for part in exc.diagnostics[0].path]
+            expected = {"code": exc.diagnostics[0].code, "path_claims": path}
+        vectors.append(
+            {"query": "validate_bounds", "body": {"claim": bounds_claim(value)}, "expected": {"ok": expected}}
+        )
+    for vector in tuple(vectors):
+        if vector["query"] == "from_mapping" and "ok" in vector["expected"]:
+            vectors.append(
+                {
+                    "query": "to_mapping_ordered",
+                    "body": {"class_name": vector["body"]["class_name"], "dto": vector["expected"]["ok"]["dto"]},
+                    "expected": {"ok": ordered_frame(vector["expected"]["ok"]["mapping"])},
+                }
+            )
+    yaml_cases = [
+        "",
+        "value",
+        "k: value",
+        "k: [one, two]",
+        "k: *alias",
+        "k: &anchor value",
+        "k: !!str value",
+        "k: '!!str value'",
+        "k: [",
+        "k: *alias\nbad: [",
+        "k: &anchor value\nbad: [",
+        "k: " + "x" * 4096,
+        "k: " + "é" * 4097,
+        "k: 12345678901234567",
+        "k: -12345678901234567",
+        "k: '12345678901234567'",
+        "k: 0000000000000000001",
+        "k: +12345678901234567",
+        "k: " + "[" * 33 + "value" + "]" * 33,
+        "k: " + "[" * 34 + "value" + "]" * 34,
+        'k: "\\uD800"',
+    ]
+    for source in yaml_cases:
+        tokens = []
+        try:
+            for token in yaml.scan(source, Loader=loader._PolicyLoader):
+                value = getattr(token, "value", None)
+                tokens.append(
+                    [
+                        type(token).__name__,
+                        token.start_mark.line + 1,
+                        token.start_mark.column + 1,
+                        bounds_claim(value) if isinstance(value, str) else None,
+                        getattr(token, "style", None),
+                    ]
+                )
+        except (RecursionError, ValueError):
+            tokens.append(["scanner_resource", None, None, None, None])
+        except yaml.YAMLError as exc:
+            mark = getattr(exc, "problem_mark", None)
+            tokens.append(
+                [
+                    "scanner_syntax",
+                    mark.line + 1 if mark is not None else None,
+                    mark.column + 1 if mark is not None else None,
+                    None,
+                    None,
+                ]
+            )
+        expected = None
+        try:
+            loader._scan_restricted_tokens(source)
+        except loader.PolicyDocumentError as exc:
+            diagnostic = exc.diagnostics[0]
+            expected = {"code": diagnostic.code, "line": diagnostic.line, "column": diagnostic.column}
+        vectors.append({"query": "validate_yaml_tokens", "body": {"tokens": tokens}, "expected": {"ok": expected}})
+    scanner = yaml.scan
+    marker = types.SimpleNamespace(start_mark=types.SimpleNamespace(line=0, column=0))
+    try:
+        yaml.scan = lambda *args, **kwargs: itertools.repeat(marker, 200001)
+        loader._scan_restricted_tokens("")
+        raise AssertionError("old token count boundary did not reject")
+    except loader.PolicyDocumentError as exc:
+        diagnostic = exc.diagnostics[0]
+        token_boundary = {
+            "count": 200001,
+            "token": ["StreamStartToken", 1, 1, None, None],
+            "expected": {"ok": {"code": diagnostic.code, "line": diagnostic.line, "column": diagnostic.column}},
+        }
+    finally:
+        yaml.scan = scanner
+    goldens = []
+    for value in [
+        document([rule()]),
+        document([dict(rule(), description="Ordinary rule")]),
+        dict(document([rule(match={"paths": ["*.txt"], "harnesses": ["pi"]})]), **{"x-z": True, "x-a": {"label": "é"}}),
+    ]:
+        parsed = dto.GuardPolicyDocument.from_mapping(value)
+        goldens.append(
+            {
+                "value": value,
+                "dto": asdict(parsed),
+                "frame": ordered_frame(parsed.to_mapping()),
+                "yaml": loader.format_policy_document_yaml(parsed),
+            }
+        )
+    return {
+        "yaml_token_count_boundary": token_boundary,
+        "yaml_order_goldens": goldens,
+        "schema": "guard-policy-document-parity.v1",
+        "base": base,
+        "source_sha256": hashes,
+        "vectors": vectors,
+    }
 
 
 def main():

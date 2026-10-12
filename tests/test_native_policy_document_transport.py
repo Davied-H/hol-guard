@@ -14,6 +14,7 @@ import pytest
 from codex_plugin_scanner.guard import native_policy_document as client
 from codex_plugin_scanner.guard import policy_document as document
 from codex_plugin_scanner.guard import policy_document_compile as compiler
+from codex_plugin_scanner.guard import policy_document_yaml as loader
 
 
 def _resident(monkeypatch, mutation=None, result=None):
@@ -205,6 +206,60 @@ def test_canonical_projection_rejects_non_string_native_output(monkeypatch):
     monkeypatch.setattr(document, "policy_query", lambda *args, **kwargs: {"claimed_allow": True})
     with pytest.raises(client.NativePolicyDocumentError):
         document.canonical_json_bytes({})
+
+
+def test_yaml_order_matches_frozen_original_text(monkeypatch):
+    fixture = json.loads((Path(__file__).parent / "fixtures" / "policy_document_parity.json").read_text())
+    for golden in fixture["yaml_order_goldens"]:
+        monkeypatch.setattr(document, "policy_query", lambda *args, frame=golden["frame"], **kwargs: frame)
+        value = document._decode_dto(document.GuardPolicyDocument, golden["dto"])
+        assert loader.format_policy_document_yaml(value) == golden["yaml"]
+
+
+def test_yaml_scanner_sends_observations_and_preserves_native_error_precedence(monkeypatch):
+    calls = []
+    result = {"code": "yaml_alias", "line": 1, "column": 4}
+    monkeypatch.setattr(loader, "policy_query", lambda query, body: calls.append((query, body)) or result)
+    with pytest.raises(loader.PolicyDocumentError) as caught:
+        loader._scan_restricted_tokens("k: *alias\nbad: \tvalue")
+    assert caught.value.diagnostics == (loader.PolicyDiagnostic("yaml_alias", line=1, column=4),)
+    assert calls[0][0] == "validate_yaml_tokens"
+    assert any(row[0] == "AliasToken" for row in calls[0][1]["tokens"])
+    assert calls[0][1]["tokens"][-1][0] == "scanner_syntax"
+
+
+def test_native_bounds_preserve_surrogates_order_and_diagnostic_paths(monkeypatch):
+    value = {"\udfff": float("nan"), "ordinary": ["\ud800"]}
+    claim = client.bounds_claim(value)
+    assert claim[0] == "mapping"
+    assert base64.b64decode(claim[1][0][0][1]).decode("utf-32-le", "surrogatepass") == "\udfff"
+    monkeypatch.setattr(
+        loader, "policy_query", lambda *args: {"code": "invalid_unicode", "path_claims": [claim[1][0][0]]}
+    )
+    with pytest.raises(loader.PolicyDocumentError) as caught:
+        loader._validate_bounds(value)
+    assert caught.value.diagnostics[0].path == ("\udfff",)
+
+
+@pytest.mark.parametrize("frame", [{}, {"wire_download": {}}, {"wire_download": {"handle": 1, "offset": 0}}])
+def test_malformed_transfer_frames_raise_native_unavailable(monkeypatch, frame):
+    _resident(monkeypatch)
+    monkeypatch.setattr(client, "_bound_query", lambda *args, **kwargs: frame)
+    with pytest.raises(client.NativePolicyDocumentError):
+        client.policy_query("from_mapping", {"value": "x" * (600 * 1024)})
+
+
+def test_mcp_native_outage_returns_structured_retryable_error():
+    from codex_plugin_scanner.guard.mcp import policy_tools
+
+    @policy_tools._native_policy_errors
+    def unavailable():
+        raise client.NativePolicyDocumentError("native_policy_document_unavailable")
+
+    result = json.loads(unavailable())
+    assert not result["ok"]
+    assert result["error"]["code"] == "policy_compile_failed"
+    assert result["error"]["retryable"]
 
 
 @pytest.mark.parametrize("corrupt", [None, "offset", "digest", "short"])

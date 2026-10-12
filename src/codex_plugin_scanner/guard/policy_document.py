@@ -54,10 +54,27 @@ class _NativeDocumentDTO:
         return _decode_dto(cls, policy_query("from_mapping_dto", {"class_name": cls.__name__, "value": value}))
 
     def to_mapping(self) -> dict[str, JsonValue]:
-        result = policy_query("to_mapping", {"class_name": type(self).__name__, "dto": asdict(cast(Any, self))})
+        result = _ordered_mapping(
+            policy_query("to_mapping_ordered", {"class_name": type(self).__name__, "dto": asdict(cast(Any, self))})
+        )
         if not isinstance(result, dict):
             raise NativePolicyDocumentError("native_policy_document_dto_invalid")
         return cast(dict[str, JsonValue], result)
+
+
+def _ordered_mapping(value: Any) -> Any:
+    if isinstance(value, dict) and set(value) == {"object"} and isinstance(value["object"], list):
+        pairs = value["object"]
+        if any(not isinstance(pair, list) or len(pair) != 2 or not isinstance(pair[0], str) for pair in pairs):
+            raise NativePolicyDocumentError("native_policy_document_dto_invalid")
+        result = {key: _ordered_mapping(item) for key, item in pairs}
+        if len(result) == len(pairs):
+            return result
+    elif isinstance(value, dict) and set(value) == {"array"} and isinstance(value["array"], list):
+        return [_ordered_mapping(item) for item in value["array"]]
+    elif value is None or type(value) in (str, int, bool):
+        return value
+    raise NativePolicyDocumentError("native_policy_document_dto_invalid")
 
 
 def _decode_dto(cls: type[_DTO], value: Any) -> _DTO:

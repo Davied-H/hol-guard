@@ -15,7 +15,7 @@ fn original_python_policy_document_outcomes_replay() {
     ))
     .unwrap();
     let vectors = fixture["vectors"].as_array().unwrap();
-    assert_eq!(vectors.len(), 1246);
+    assert_eq!(vectors.len(), 1419);
     let mut failures = Vec::new();
     for (index, vector) in vectors.iter().enumerate() {
         let query = vector["query"].as_str().unwrap();
@@ -66,6 +66,14 @@ fn original_python_policy_document_outcomes_replay() {
             }
         }
     }
+    let boundary = &fixture["yaml_token_count_boundary"];
+    assert_eq!(
+        run(
+            "validate_yaml_tokens",
+            &json!({"tokens": vec![boundary["token"].clone(); boundary["count"].as_u64().unwrap() as usize]})
+        ),
+        boundary["expected"]
+    );
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 

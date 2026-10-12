@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from functools import wraps
+from typing import TYPE_CHECKING, Any
 
 from ..approval_gate import ApprovalGateGrant
 from ..business_policy_document_import import (
@@ -19,6 +20,7 @@ from ..business_policy_document_import import (
     plan_document_for_import,
     read_business_document_for_store,
 )
+from ..native_policy_document import NativePolicyDocumentError
 from ..policy_document import GuardPolicyDocument, policy_document_digest
 from ..policy_document_authority import PolicyImportApprovalBinding, policy_import_approval_binding
 from ..policy_document_compile import build_policy_document_from_rows
@@ -45,6 +47,28 @@ if TYPE_CHECKING:
 
 _POLICY_IMPORT_FLAG = "HOL_GUARD_POLICY_YAML_IMPORT"
 _MCP_POLICY_WRITE_FLAG = "HOL_GUARD_MCP_POLICY_WRITE"
+
+
+def _native_policy_errors(operation: Callable[..., str]) -> Callable[..., str]:
+    @wraps(operation)
+    def run(*args: Any, **kwargs: Any) -> str:
+        try:
+            return operation(*args, **kwargs)
+        except NativePolicyDocumentError:
+            from .tools import _envelope
+
+            return _envelope(
+                {
+                    "ok": False,
+                    "error": {
+                        "code": "policy_compile_failed",
+                        "message": "Native policy runtime unavailable.",
+                        "retryable": True,
+                    },
+                }
+            )
+
+    return run
 
 
 def _safe_int(value: object) -> int:
@@ -165,6 +189,7 @@ def _check_feature_flags() -> None:
         )
 
 
+@_native_policy_errors
 def execute_validate_policy(store: GuardStore, arguments: dict[str, object]) -> str:
     """Validate a canonical policy document without writing any state."""
     from .policy_schemas import parse_validate_policy_input
@@ -203,6 +228,7 @@ def execute_validate_policy(store: GuardStore, arguments: dict[str, object]) -> 
     return _envelope(payload)
 
 
+@_native_policy_errors
 def execute_create_policy(
     store: GuardStore,
     arguments: dict[str, object],
@@ -286,6 +312,7 @@ def execute_create_policy(
     return _envelope(payload)
 
 
+@_native_policy_errors
 def execute_get_policy_creation(store: GuardStore, arguments: dict[str, object]) -> str:
     """Read the status of one policy creation request by opaque request ID."""
     from .policy_schemas import parse_get_policy_creation_input

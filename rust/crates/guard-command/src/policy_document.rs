@@ -5,6 +5,8 @@ use std::time::Instant;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
+#[path = "policy_document_bounds.rs"]
+mod bounds;
 #[path = "policy_document_command_dto.rs"]
 mod command_dto;
 #[path = "policy_document_compile.rs"]
@@ -15,6 +17,8 @@ mod diff;
 mod mapping;
 #[path = "policy_document_metadata.rs"]
 mod metadata;
+#[path = "policy_document_ordered.rs"]
+mod ordered;
 #[path = "policy_document_projection.rs"]
 mod projection;
 #[cfg(test)]
@@ -22,6 +26,8 @@ mod projection;
 mod tests;
 #[path = "policy_document_value.rs"]
 mod values;
+#[path = "policy_document_yaml_tokens.rs"]
+mod yaml_tokens;
 
 use values::{canonical, failure, text, truthy, Error};
 
@@ -59,6 +65,10 @@ pub fn evaluate(query: &str, input: &Value, deadline: Instant) -> Result<Value, 
         return Err("policy_document_deadline");
     }
     let output: Result<Value, Error> = (|| match query {
+        "validate_yaml_tokens" => yaml_tokens::validate(input, deadline)
+            .map_err(|message| failure("ValueError", message, None)),
+        "validate_bounds" => bounds::validate(&input["claim"], deadline)
+            .map_err(|message| failure("ValueError", message, None)),
         "validate_ids" | "validate_timestamps" => {
             metadata::validate(query, &input["value"], deadline)
                 .map_err(|message| failure("ValueError", message, None))
@@ -75,11 +85,15 @@ pub fn evaluate(query: &str, input: &Value, deadline: Instant) -> Result<Value, 
             })
         }
         "canonical" => canonical(&input["value"]).map(Value::String),
-        "to_mapping" => {
+        "to_mapping" | "to_mapping_ordered" => {
             let class = input["class_name"]
                 .as_str()
                 .ok_or_else(|| failure("TypeError", "policy_document_class", None))?;
-            projection::mapping(class, &input["dto"])
+            if query == "to_mapping_ordered" {
+                ordered::mapping(class, &input["dto"])
+            } else {
+                projection::mapping(class, &input["dto"])
+            }
         }
         "bounds" => {
             let rules = input["value"]["spec"]["rules"].as_array();
