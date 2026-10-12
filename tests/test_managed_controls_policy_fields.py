@@ -449,3 +449,16 @@ def test_rotation_rollback_and_downgrade_fixtures_are_monotonic() -> None:
         )
         is None
     )
+
+
+def test_native_outage_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    from codex_plugin_scanner.guard import managed_controls_policy_fields as fields
+
+    monkeypatch.setattr(fields, "native_context_digest", lambda *_args, **_kwargs: None)
+    assert _code(_document()) == "native_unavailable"
+    monkeypatch.setattr(
+        fields,
+        "native_context_digest",
+        lambda *_args, **_kwargs: {"status": "ok", "managed_controls_policy_fields": {"ok": {}}},
+    )
+    assert _code(_document()) == "native_unavailable"
