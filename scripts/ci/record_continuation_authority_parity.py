@@ -1,6 +1,7 @@
 """Freeze continuation outcomes from a pinned source revision."""
 
-import __future__
+from __future__ import annotations
+
 import ast
 import dataclasses
 import hashlib
@@ -84,7 +85,7 @@ for old, new in [
     ("persisted_resume_status", "_persisted_resume_status"),
 ]:
     bindings[new] = getattr(p, old)
-exec(compile(selected, runtime_path, "exec", flags=__future__.annotations.compiler_flag), bindings)
+exec(compile(selected, runtime_path, "exec"), bindings)
 
 
 class CapturedStore:
@@ -221,7 +222,7 @@ selected = ast.Module(
     type_ignores=[],
 )
 store_bindings = {}
-exec(compile(selected, store_path, "exec", flags=__future__.annotations.compiler_flag), store_bindings)
+exec(compile(selected, store_path, "exec"), store_bindings)
 for state, stored_claim, stored_evidence, claim_id in itertools.product(
     (None, "claimed", "waiting", "completed"),
     (None, "claim-original", "claim-foreign"),

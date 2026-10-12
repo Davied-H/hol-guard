@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
+from copy import deepcopy
 from dataclasses import asdict
 from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -64,6 +67,14 @@ def project(
     now: str = "",
     guard_home: Path | None = None,
 ) -> dict[str, Any]:
+    if operation is None and not request_id and action == "allow_once" and not now and guard_home is None:
+        carrier = json.dumps(
+            {"offer": offer_wire(offer), "result": result_wire(result)},
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
+        return deepcopy(_public_projection(carrier))
     return continuation_authority(
         "project",
         offer=offer_wire(offer),
@@ -73,4 +84,17 @@ def project(
         action=action,
         now=now,
         guard_home=guard_home,
+    )
+
+
+@lru_cache(maxsize=128)
+def _public_projection(carrier: str) -> dict[str, Any]:
+    """Reuse one bound pure projection for the immutable public carrier pair."""
+    return continuation_authority(
+        "project",
+        **json.loads(carrier),
+        operation=None,
+        request_id="",
+        action="allow_once",
+        now="",
     )

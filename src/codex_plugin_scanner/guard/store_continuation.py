@@ -8,19 +8,22 @@ from uuid import uuid4
 
 from .native_continuation_authority import continuation_authority
 from .store_base import sqlite_connect_timeout_seconds
+from .store_review_event_outbox_schema import notify_review_event_wake
 
 
 def continuation_store_call(store: Any, call: str, **args: Any) -> dict[str, Any]:
     """Hold the store admission gate across one bound native transaction."""
     with store._hold_storage_gate(exclusive=False):
         try:
-            return continuation_authority(
+            result = continuation_authority(
                 call,
                 guard_home=store.guard_home,
                 store_path=str(store.path),
                 busy_timeout_ms=max(1, min(10_000, int(sqlite_connect_timeout_seconds() * 1000))),
                 **args,
             )
+            notify_review_event_wake(store.path, result.get("outbox_generation"))
+            return result
         finally:
             store._repair_store_permissions()
 

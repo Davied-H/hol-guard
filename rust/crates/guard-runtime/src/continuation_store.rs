@@ -79,7 +79,25 @@ fn run(args: &Value) -> StoreResult<Value> {
     if output.get("finalized") == Some(&Value::Bool(false)) {
         return Ok(output);
     }
+    let changes = tx.total_changes();
     tx.commit()?;
+    let mut output = output;
+    output["outbox_generation"] = if changes > 0 {
+        let exists = query_one(&connection,"select name from sqlite_master where type='table' and name='guard_review_outbox_wake_state'",&[])?;
+        if exists.is_some() {
+            query_one(
+                &connection,
+                "select generation from guard_review_outbox_wake_state where singleton=1",
+                &[],
+            )?
+            .and_then(|row| row.get("generation").cloned())
+            .unwrap_or(json!(0))
+        } else {
+            json!(0)
+        }
+    } else {
+        Value::Null
+    };
     Ok(output)
 }
 fn claim(connection: &Connection, args: &Value) -> StoreResult<Value> {
