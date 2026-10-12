@@ -228,10 +228,26 @@ fn reviewable_structure(command: &CanonicalCommandV1) -> bool {
 }
 
 /// Every redirect names a literal path or feeds `cat` a quoted heredoc, and
-/// the rest substitutes nothing.
+/// the rest substitutes nothing and makes no link the redirect could follow.
 fn literal_redirects_only(text: &str) -> bool {
-    workspace_redirects::project(text)
-        .is_some_and(|projected| !moves_data(&unquoted_literal(&projected)))
+    workspace_redirects::project(text).is_some_and(|projected| {
+        let literal = unquoted_literal(&projected);
+        !moves_data(&literal) && !creates_links(&literal)
+    })
+}
+
+/// Whether a segment runs a program that makes links. A later redirect can
+/// write through such a link, so its literal path no longer names the file.
+fn creates_links(literal: &str) -> bool {
+    let symbolic_copy = literal.split_whitespace().any(|word| {
+        word == "--symbolic-link"
+            || (word.starts_with('-') && !word.starts_with("--") && word.contains('s'))
+    });
+    command_words(literal).any(|word| {
+        let name = word.rsplit('/').next().unwrap_or(word);
+        matches!(name, "ln" | "gln" | "link" | "mklink")
+            || (symbolic_copy && matches!(name, "cp" | "gcp"))
+    })
 }
 
 /// Whether shell text redirects, substitutes or sets the environment of a
