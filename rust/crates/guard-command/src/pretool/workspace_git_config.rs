@@ -105,25 +105,32 @@ fn work_tree(workspace: &Path, home: Option<&Path>) -> Option<PathBuf> {
 /// Every workspace path the sandbox must keep unwritable so a later host Git
 /// never runs code it planted, or `None` to keep the command at review. It
 /// covers the repository whose work tree holds the workspace, which may be
-/// an ancestor, and hook directories named by global configuration and the
-/// files it includes.
+/// an ancestor, and the hook directories and helper programs named by global
+/// configuration and the files it includes.
 pub(crate) fn workspace_write_denials(
     workspace: &Path,
     home: Option<&Path>,
+) -> Option<Vec<PathBuf>> {
+    write_denials_from(workspace, home, global_config_paths(home))
+}
+
+/// [`workspace_write_denials`] with `globals` as the global configuration
+/// files, before includes.
+fn write_denials_from(
+    workspace: &Path,
+    home: Option<&Path>,
+    globals: Vec<PathBuf>,
 ) -> Option<Vec<PathBuf>> {
     let root = work_tree(workspace, home);
     let mut denials = match &root {
         Some(root) => {
             let config = repository_config(root).ok()?.unwrap_or_default();
-            helper_denials(&config, root, workspace)?
+            helper_denials(&config, root, workspace, home)?
         }
         None => Vec::new(),
     };
     let base = root.as_deref().unwrap_or(workspace);
-    let mut pending: Vec<(PathBuf, usize)> = global_config_paths(home)
-        .into_iter()
-        .map(|path| (path, 0))
-        .collect();
+    let mut pending: Vec<(PathBuf, usize)> = globals.into_iter().map(|path| (path, 0)).collect();
     let mut visited = 0usize;
     while let Some((path, depth)) = pending.pop() {
         visited += 1;
@@ -150,6 +157,8 @@ pub(crate) fn workspace_write_denials(
                     return None;
                 }
                 deny_linked(&mut denials, path, workspace)?;
+            } else if section != "branch" && section != "user" && !names_data(&section, &key) {
+                helper_word_denials(&mut denials, value, base, home, workspace)?;
             }
         }
     }
@@ -268,12 +277,14 @@ fn inside(base: &Path, workspace: &Path, value: &str) -> Option<PathBuf> {
 
 /// Keys of remotes and submodules that name refs, URLs or checkout paths,
 /// never a program. Their other keys, such as `uploadpack` or `update`, can.
+/// `safe.directory` names trusted repositories, often with a `*` pattern.
 fn names_data(section: &str, key: &str) -> bool {
-    matches!(section, "remote" | "submodule")
+    (matches!(section, "remote" | "submodule")
         && matches!(
             key,
             "url" | "pushurl" | "fetch" | "push" | "path" | "branch"
-        )
+        ))
+        || (section == "safe" && key == "directory")
 }
 
 /// Section, key and value of each `key = value` line. `None` when a header
@@ -316,7 +327,7 @@ fn entries(config: &str) -> Option<Vec<(String, String, &str)>> {
 /// a repository whose work tree is the workspace.
 #[cfg(test)]
 pub(crate) fn helper_write_denials(config: &str, workspace: &Path) -> Option<Vec<PathBuf>> {
-    helper_denials(config, workspace, workspace)
+    helper_denials(config, workspace, workspace, None)
 }
 
 /// Workspace paths a configured hook directory or helper command names. Every
@@ -325,7 +336,12 @@ pub(crate) fn helper_write_denials(config: &str, workspace: &Path) -> Option<Vec
 /// written by the sandbox and are skipped. `None` keeps the command at
 /// review: an include of repository configuration this reader never parses,
 /// a hook directory outside the work tree, or a list beyond its bound.
-fn helper_denials(config: &str, root: &Path, workspace: &Path) -> Option<Vec<PathBuf>> {
+fn helper_denials(
+    config: &str,
+    root: &Path,
+    workspace: &Path,
+    home: Option<&Path>,
+) -> Option<Vec<PathBuf>> {
     let git_dir = root.join(".git");
     let mut denials: Vec<PathBuf> = Vec::new();
     for (section, key, value) in entries(config)? {
@@ -347,41 +363,7 @@ fn helper_denials(config: &str, root: &Path, workspace: &Path) -> Option<Vec<Pat
             }
             candidates.push(inside(root, root, value)?);
         } else if section != "branch" && section != "user" && !names_data(section, key) {
-            // The first word is a program Git finds on PATH unless it has a
-            // slash. Later words are arguments a shell may resolve in the
-            // repository, so each one is denied whether or not it exists yet:
-            // the sandbox could otherwise create it for a later host command.
-            // Shell separators and grouping split words too, so `./x.sh;` and
-            // `./a&&git` deny `x.sh` and `a`. An expansion names a path this
-            // reader cannot resolve, so it keeps the command at review. Globs
-            // and brace expansions count: the sandbox could create a file a
-            // pattern later matches. A brace on its own is a command group.
-            if value.contains(['$', '`', '\\', '*', '?', '[']) {
-                return None;
-            }
-            let value = value
-                .trim_start_matches(['"', '\''])
-                .trim_start_matches('!');
-            if value
-                .split(|c: char| c.is_whitespace() || ";&|()<>".contains(c))
-                .map(|word| word.trim_matches(['"', '\'']))
-                .any(|word| word.contains(['{', '}']) && word != "{" && word != "}")
-            {
-                return None;
-            }
-            let words = value
-                .split(|c: char| c.is_whitespace() || ";&|(){}<>".contains(c))
-                .filter(|word| !word.is_empty());
-            for (index, word) in words.enumerate() {
-                let word = word.trim_matches(|c| c == '"' || c == '\'');
-                let word = match word.split_once('=') {
-                    Some((option, value)) if option.starts_with('-') => value,
-                    _ => word,
-                };
-                if !word.is_empty() && !word.starts_with('-') && (word.contains('/') || index > 0) {
-                    candidates.extend(inside(root, root, word));
-                }
-            }
+            helper_word_denials(&mut denials, value, root, home, workspace)?;
         }
         for path in candidates {
             // An unbounded list, or a path that is or holds the workspace,
@@ -390,6 +372,89 @@ fn helper_denials(config: &str, root: &Path, workspace: &Path) -> Option<Vec<Pat
         }
     }
     Some(denials)
+}
+
+/// Denies each workspace path a helper value could run or hand to a shell.
+/// The first word is a program Git finds on PATH unless it has a slash.
+/// Later words are arguments a shell may resolve in the repository, so each
+/// one is denied whether or not it exists yet: the sandbox could otherwise
+/// create it for a later host command. Shell separators and grouping split
+/// words too, so `./x.sh;` and `./a&&git` deny `x.sh` and `a`. Globs and brace
+/// expansions keep the command at review, because the sandbox could create a
+/// file a pattern later matches; a brace on its own is a command group. So
+/// does any expansion except a whole-word variable such as `$LOCAL`, which
+/// Git or the environment sets at run time and the sandbox cannot change.
+fn helper_word_denials(
+    denials: &mut Vec<PathBuf>,
+    value: &str,
+    base: &Path,
+    home: Option<&Path>,
+    workspace: &Path,
+) -> Option<()> {
+    if value.contains(['`', '\\', '*', '?', '[']) {
+        return None;
+    }
+    let value = value
+        .trim_start_matches(['"', '\''])
+        .trim_start_matches('!');
+    if value
+        .split(|c: char| c.is_whitespace() || ";&|()<>".contains(c))
+        .map(|word| word.trim_matches(['"', '\'']))
+        .any(|word| word.contains(['{', '}']) && word != "{" && word != "}")
+    {
+        return None;
+    }
+    let words = value
+        .split(|c: char| c.is_whitespace() || ";&|(){}<>".contains(c))
+        .filter(|word| !word.is_empty());
+    for (index, word) in words.enumerate() {
+        let word = word.trim_matches(|c| c == '"' || c == '\'');
+        let word = match word.split_once('=') {
+            Some((option, value)) if option.starts_with('-') => value,
+            _ => word,
+        };
+        if word.contains('$') {
+            if bare_variable(word) {
+                continue;
+            }
+            return None;
+        }
+        if word.is_empty()
+            || word.starts_with('-')
+            || word.contains("://")
+            || !(word.contains('/') || index > 0)
+        {
+            continue;
+        }
+        let path = if word == "~" {
+            continue;
+        } else if let Some(rest) = word.strip_prefix("~/") {
+            home?.join(rest)
+        } else if word.starts_with('~') {
+            return None;
+        } else {
+            base.join(word)
+        };
+        let path = normalize(&path);
+        // A word naming the workspace or a directory that holds it is not a
+        // program the sandbox could plant.
+        if workspace.starts_with(&path) || folded_inside(workspace, &path) {
+            continue;
+        }
+        deny_linked(denials, path, workspace)?;
+    }
+    Some(())
+}
+
+/// `$NAME`, `$1` or `$@` as a whole word.
+fn bare_variable(word: &str) -> bool {
+    let Some(name) = word.strip_prefix('$') else {
+        return false;
+    };
+    let digits = !name.is_empty() && name.chars().all(|c| c.is_ascii_digit());
+    let identifier = name.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
+        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+    matches!(name, "@" | "#") || digits || identifier
 }
 
 #[cfg(test)]
