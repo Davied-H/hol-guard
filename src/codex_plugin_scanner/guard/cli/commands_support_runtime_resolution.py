@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..store import GuardStore
@@ -126,6 +126,11 @@ class _CopilotMcpRuntimeServer:
     config_path: str
     server_config: object
 
+def _copilot_identity_dto(value: dict[str, Any]) -> McpServerIdentity:
+    fields: dict[str, Any] = dict(value)
+    fields["env_keys"] = tuple(fields["env_keys"])
+    return McpServerIdentity(**fields)
+
 
 def _copilot_runtime_tool_call(
     *, payload: dict[str, object], home_dir: Path, workspace: Path | None,
@@ -166,9 +171,7 @@ def _copilot_runtime_tool_call(
     artifact = build_tool_call_artifact(
         harness="copilot", server_name=server["server_name"], tool_name=runtime_name,
         source_scope=server["source_scope"], config_path=server["config_path"], transport=identity["transport"],
-        server_identity=McpServerIdentity(**{
-            **server_identity, "env_keys": tuple(server_identity["env_keys"]),
-        }),
+        server_identity=_copilot_identity_dto(server_identity),
         server_fingerprint=identity["fingerprint"], tool_schema=metadata["schema"],
         tool_description=metadata["description"],
         provider_catalog_hash=store.read_mcp_provider_authority_hash()
@@ -196,16 +199,15 @@ def _resolve_copilot_workspace_root(workspace: Path | None) -> Path | None:
 def _copilot_runtime_server_identity(
     server: _CopilotMcpRuntimeServer, *, launch_cwd: Path,
 ) -> tuple[McpServerIdentity, dict[str, object], str]:
+    environment = server.server_config.get("env") if isinstance(server.server_config, Mapping) else None
     result = _native_cli_support("server_identity", {
         "server": {"server_name": server.server_name, "source_scope": server.source_scope,
                    "config_path": server.config_path, "server_config": server.server_config,
-                   "environment_keys": list(server.server_config.get("env", {}))
-                   if isinstance(server.server_config, Mapping)
-                   and isinstance(server.server_config.get("env"), Mapping) else []},
+                   "environment_keys": list(environment) if isinstance(environment, Mapping) else []},
         "launch_cwd": str(launch_cwd), "environment": dict(os.environ),
     })
     identity = result["server_identity"]
-    server_identity = McpServerIdentity(**{**identity, "env_keys": tuple(identity["env_keys"])})
+    server_identity = _copilot_identity_dto(identity)
     return server_identity, result["fingerprint"], result["transport"]
 
 
