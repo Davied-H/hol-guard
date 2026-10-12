@@ -47,6 +47,8 @@ fn literals_with_regex_specials_are_escaped_and_backslashes_rejected() {
     assert!(re.is_match("/w/a+b(c)/.git/config"));
     assert!(!re.is_match("/w/aab(c)/.git/config"));
     assert!(workspace_profile::git_exec_pattern(Path::new("/w/a\\b")).is_err());
+    assert!(workspace_profile::git_exec_pattern(Path::new("/w/a^b")).is_err());
+    assert!(workspace_profile::protected_patterns(Path::new("/w/a^b")).is_err());
 }
 
 #[test]

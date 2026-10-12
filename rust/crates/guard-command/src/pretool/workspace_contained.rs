@@ -254,7 +254,12 @@ fn broad_target(argument: &str, workspace: &Path) -> bool {
         && normal
             .file_name()
             .and_then(|name| name.to_str())
-            .is_some_and(|name| name.chars().all(|c| matches!(c, '*' | '.' | '?')));
+            .is_some_and(|name| {
+                // Brackets and braces can spell any name, so only a literal
+                // stem or suffix such as `*.pyc` keeps a root glob narrow.
+                name.chars().all(|c| matches!(c, '*' | '.' | '?'))
+                    || name.contains(['[', '{', '\\'])
+            });
     workspace.starts_with(&normal) || root_glob
 }
 
