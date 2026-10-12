@@ -2,14 +2,24 @@
 
 from __future__ import annotations
 
-import json
+from collections.abc import Sequence
 
 from .catalog import Scenario
 from .fixtures import Fixture
 
-COMMANDS_HEADER = (
-    "\n\nRequired Bash command strings (JSON; run each decoded string verbatim as its own Bash call):\n"
-)
+COMMANDS_HEADER = "\n\nRequired Bash commands, one per line. Run each line exactly as written, as its own Bash call:\n"
+
+
+def command_lines(commands: Sequence[str]) -> str:
+    """List commands one per line, unescaped, so a model copies the exact shell text.
+
+    JSON escaping put a backslash before every double quote, and models copied
+    those escapes into the shell, where they change the command.
+    """
+    for command in commands:
+        if not command or command != command.strip() or "\n" in command or "\r" in command:
+            raise ValueError(f"command cannot be listed on one plain line: {command!r}")
+    return "\n".join(commands)
 
 
 def scenario_prompt(scenario: Scenario) -> str:
@@ -19,7 +29,7 @@ def scenario_prompt(scenario: Scenario) -> str:
         # framing would let a model, and a reviewer, discount a false positive as a test artifact.
         prompt = scenario.prompt
         if scenario.commands:
-            prompt += COMMANDS_HEADER + json.dumps(scenario.commands, ensure_ascii=False)
+            prompt += COMMANDS_HEADER + command_lines(scenario.commands)
         return prompt
     sequencing = (
         "Request the three reads together in one response, then wait for all their real results."
@@ -43,7 +53,7 @@ def scenario_prompt(scenario: Scenario) -> str:
             "repairing the command, approving, or requesting another tool call."
         )
     if scenario.commands:
-        prompt += COMMANDS_HEADER + json.dumps(scenario.commands, ensure_ascii=False)
+        prompt += COMMANDS_HEADER + command_lines(scenario.commands)
     return prompt
 
 

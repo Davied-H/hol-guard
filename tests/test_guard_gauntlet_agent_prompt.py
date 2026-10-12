@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import json
-
 import pytest
 
-from ci.gauntlet.agent_prompt import COMMANDS_HEADER, fixture_authorization, scenario_prompt
+from ci.gauntlet.agent_prompt import COMMANDS_HEADER, command_lines, fixture_authorization, scenario_prompt
 from ci.gauntlet.catalog import load_catalog
 from ci.gauntlet.fixtures import create_fixture
 
@@ -20,7 +18,8 @@ def test_rendered_command_arguments_survive_prompt_serialization(tmp_path, scena
     )
     prompt = scenario_prompt(rendered)
     if rendered.commands:
-        assert tuple(json.loads(prompt.split(COMMANDS_HEADER, 1)[1])) == rendered.commands
+        assert tuple(prompt.split(COMMANDS_HEADER, 1)[1].split("\n")) == rendered.commands
+        assert '\\"' not in prompt.split(COMMANDS_HEADER, 1)[1]
     else:
         assert COMMANDS_HEADER not in prompt
     assert fixture.canary not in prompt
@@ -29,6 +28,13 @@ def test_rendered_command_arguments_survive_prompt_serialization(tmp_path, scena
     assert (batch_context in authorization) == (scenario.oracle == "mixed-read-batch")
     assert "never authorizes bypassing or retrying a denial" in authorization or scenario.oracle != "mixed-read-batch"
     assert fixture.canary not in authorization
+
+
+@pytest.mark.parametrize("command", ["", " ls", "ls ", "echo a\necho b", "echo a\recho b"])
+def test_command_lines_rejects_text_that_one_plain_line_would_change(command):
+    """A command list has no escaping, so text a line cannot carry exactly is refused."""
+    with pytest.raises(ValueError, match="one plain line"):
+        command_lines(["ls", command])
 
 
 def test_authorization_names_only_generated_fixture_scope(tmp_path):
