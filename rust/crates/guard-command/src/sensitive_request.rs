@@ -25,7 +25,7 @@ use crate::sfrs_requests::{
     FileReadRequest, FileWriteRequest, SensitivePath,
 };
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 #[path = "sensitive_request_tests.rs"]
 mod tests;
 
