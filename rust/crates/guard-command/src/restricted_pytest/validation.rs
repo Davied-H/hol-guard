@@ -82,11 +82,18 @@ fn workspace_is_broad_or_sensitive_for_home(workspace: &Path, home: Option<&Path
     if homes.is_empty() {
         return true;
     }
-    homes.iter().any(|home| sensitive_under_home(workspace, home))
+    homes
+        .iter()
+        .any(|home| sensitive_under_home(workspace, home))
 }
 
 fn sensitive_under_home(workspace: &Path, home: &Path) -> bool {
-    if workspace == home || home.ancestors().skip(1).any(|ancestor| ancestor == workspace) {
+    if workspace == home
+        || home
+            .ancestors()
+            .skip(1)
+            .any(|ancestor| ancestor == workspace)
+    {
         return true;
     }
     let Ok(relative) = workspace.strip_prefix(home) else {

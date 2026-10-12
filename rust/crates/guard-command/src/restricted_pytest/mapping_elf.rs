@@ -11,12 +11,7 @@ fn number(bytes: &[u8], offset: usize, width: usize) -> u64 {
     u64::from_le_bytes(buffer)
 }
 
-fn at(
-    file: &mut File,
-    offset: u64,
-    width: usize,
-    deadline: std::time::Instant,
-) -> Result<Vec<u8>> {
+fn at(file: &mut File, offset: u64, width: usize, deadline: std::time::Instant) -> Result<Vec<u8>> {
     if std::time::Instant::now() >= deadline {
         return Err("Linux executable mapping inspection deadline exceeded.");
     }

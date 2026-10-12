@@ -90,15 +90,9 @@ fn passwd_home_stays_sensitive_when_the_caller_home_differs() {
         "search_path": ""
     });
     let result = evaluate("prepare_inline", &launch);
-    assert_eq!(
-        result["reason_code"],
-        PYTEST_INVALID_WORKSPACE_REASON_CODE
-    );
+    assert_eq!(result["reason_code"], PYTEST_INVALID_WORKSPACE_REASON_CODE);
     assert!(
-        result["message"]
-            .as_str()
-            .unwrap_or("")
-            .contains("home"),
+        result["message"].as_str().unwrap_or("").contains("home"),
         "{result}"
     );
 }

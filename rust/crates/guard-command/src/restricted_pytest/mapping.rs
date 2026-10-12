@@ -99,15 +99,14 @@ impl Inspector<'_> {
             let system = ["/usr/lib", "/usr/lib64", "/lib", "/lib64"]
                 .iter()
                 .any(|p| path.starts_with(p));
-            mapping_elf::inspect(&mut file, &before, library, system, self.deadline).map_err(
-                |message| {
+            mapping_elf::inspect(&mut file, &before, library, system, self.deadline)
+                .map_err(|message| {
                     if message == "Linux executable mapping inspection deadline exceeded." {
                         message
                     } else {
                         "Unverified executable mapping."
                     }
-                },
-            )?
+                })?
                 .1
         } else if !library && read >= 2 && prefix[..2] == *b"#!" {
             vec![]
@@ -255,7 +254,7 @@ pub(super) fn evaluate(operation: &str, input: &Value, deadline: Instant) -> Opt
                     input.system_library,
                     deadline,
                 )
-                    .map(|v| json!(v))
+                .map(|v| json!(v))
             }
         })
         .and_then(|value| {
