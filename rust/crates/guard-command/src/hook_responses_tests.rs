@@ -133,11 +133,25 @@ fn post_tool_policy_floor_warning_on_a_proven_allow_renders_no_text() {
         "reason_code": "native_policy_warning",
         "notice": "none",
     }));
-    for harness in ["claude-code", "codex", "zcode", "omp", "pi", "grok", "cursor"] {
+    for harness in [
+        "claude-code",
+        "codex",
+        "zcode",
+        "omp",
+        "pi",
+        "grok",
+        "cursor",
+    ] {
         let rendered = Value::Object(post_tool(harness, &response));
         assert_eq!(rendered["policy_action"], "warn", "{harness}");
         let text = rendered.to_string();
-        assert!(!text.contains("permissionDecisionReason"), "{harness}: {text}");
-        assert!(!text.contains("\"notice\":\"warning\""), "{harness}: {text}");
+        assert!(
+            !text.contains("permissionDecisionReason"),
+            "{harness}: {text}"
+        );
+        assert!(
+            !text.contains("\"notice\":\"warning\""),
+            "{harness}: {text}"
+        );
     }
 }
