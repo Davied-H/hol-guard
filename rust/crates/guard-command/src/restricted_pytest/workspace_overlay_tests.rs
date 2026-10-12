@@ -135,7 +135,11 @@ fn a_planted_bare_repository_is_denied() {
     let l = layers("own-head");
     write(&l.workspace.join(".git/HEAD"), "ref: refs/heads/main\n");
     write(&l.upper.join(".git/HEAD"), "ref: refs/heads/feature\n");
+    write(&l.upper.join(".git/logs/HEAD"), "0 1 commit: x\n");
     apply(&l.upper, &l.workspace, &[]).unwrap();
+    let l = layers("nested-reflog");
+    write(&l.upper.join("vendor/x/logs/HEAD"), "0 1 commit: x\n");
+    assert!(apply(&l.upper, &l.workspace, &[]).is_err());
 }
 
 #[test]

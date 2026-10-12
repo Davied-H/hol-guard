@@ -72,9 +72,10 @@ struct Change {
 struct Denials {
     patterns: Vec<Regex>,
     prefixes: Vec<PathBuf>,
-    /// Any `HEAD` but the repository's own, which checkout rewrites.
+    /// Any `HEAD` but the repository's own, which checkout rewrites, and its
+    /// reflog, which every commit appends to.
     head: Regex,
-    own_head: PathBuf,
+    own_heads: [PathBuf; 2],
 }
 
 impl Denials {
@@ -90,7 +91,10 @@ impl Denials {
             patterns,
             prefixes: prefixes.to_vec(),
             head: Regex::new(&bare_head_pattern(workspace)?).map_err(|_| invalid())?,
-            own_head: workspace.join(".git/HEAD"),
+            own_heads: [
+                workspace.join(".git/HEAD"),
+                workspace.join(".git/logs/HEAD"),
+            ],
         })
     }
 
@@ -98,7 +102,7 @@ impl Denials {
         let text = path.to_string_lossy();
         self.patterns.iter().any(|pattern| pattern.is_match(&text))
             || self.prefixes.iter().any(|prefix| path.starts_with(prefix))
-            || (self.head.is_match(&text) && path != self.own_head)
+            || (self.head.is_match(&text) && !self.own_heads.iter().any(|own| path == own))
     }
 }
 
