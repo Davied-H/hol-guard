@@ -17,6 +17,9 @@ const GITHUB_PERMISSIONS: &[&str] = &[
 const UNMODELED_GITHUB: &[&str] = &[
     "for id in PRRT_kwDOexample1234 PRRT_kwDOexample5678; do gh api graphql -f query='mutation($t: ID!) { resolveReviewThread(input: { threadId: $t }) { thread { isResolved } } }' -f t=\"$id\"; done",
     "gh pr comment 12 --body-file - <<'EOF'\nFixed in the latest push.\nEOF",
+    // Program names in comment text are data, not commands.
+    "gh pr comment 12 --body-file - <<'EOF'\nUpdated the build script and env handling.\nEOF",
+    "for n in 12 13; do gh pr comment $n --body \"Fixed the node script's env handling.\"; done",
 ];
 
 fn controls(controls: serde_json::Value, lockdown: bool) -> CompiledNativeCommandControls {
@@ -139,6 +142,10 @@ fn a_disabled_extension_blocks_unmodeled_commands_that_could_hide_its_program() 
         "cat <<EOF\ndon't\nEOF\n$X ps 'x'",
         "for x in a; do 'sh' -c 'X=dock; Y=er; $X$Y ps'; done",
         "for x in a; do 'doc''ker' ps; done",
+        "for X in dock; do timeout 5 ${X}er ps; done",
+        "for X in dock; do find . -exec ${X}er ps {} +; done",
+        "for x in a; do $'\\x64ocker' ps; done",
+        "for x in a; do \"s\"h -c 'X=dock; $X'er ps; done",
     ] {
         assert_eq!(decision(&controls, command).0, "block", "{command}");
     }

@@ -36,8 +36,30 @@ const UNMODELED_ERRORS: [&str; 2] = [
     "native_command_compatibility_context_unsupported",
 ];
 
-/// Programs that run text they receive, so they can assemble any command.
+/// Programs that run text they receive, or a program named by a later
+/// argument, so they can assemble any command.
 const INTERPRETERS: &[&str] = &[
+    "timeout",
+    "gtimeout",
+    "nice",
+    "ionice",
+    "sudo",
+    "doas",
+    "stdbuf",
+    "chrt",
+    "taskset",
+    "setsid",
+    "flock",
+    "chroot",
+    "strace",
+    "ltrace",
+    "unbuffer",
+    "caffeinate",
+    "fd",
+    "-exec",
+    "-execdir",
+    "-ok",
+    "-okdir",
     "sh",
     "bash",
     "zsh",
@@ -123,9 +145,11 @@ impl CompiledNativeCommandControls {
             return None;
         }
         let text = &command.normalized_text;
-        let literal = unquoted_literal(text);
-        let interpreted = named_words(&literal);
-        if synthesizes_program(&literal)
+        let shell = shell_text(text);
+        let interpreted = named_words(&joined_quotes(shell));
+        if shell.contains("$'")
+            || shell.contains("$\"")
+            || synthesizes_program(&unquoted_literal(shell))
             || INTERPRETERS.iter().any(|name| interpreted.contains(*name))
         {
             return None;
@@ -314,6 +338,53 @@ fn unquoted_literal(text: &str) -> String {
         return text.to_owned();
     }
     literal
+}
+
+/// The text the shell runs as commands. An accepted input heredoc contributes
+/// only its command, since `input_heredoc` already keeps its body from
+/// expanding and the body is data on standard input.
+fn shell_text(text: &str) -> &str {
+    match text.split_once('\n') {
+        Some((line, _)) if text.contains("<<") => line.split_once("<<").map_or(line, |(b, _)| b),
+        _ => text,
+    }
+}
+
+/// The text with every quoted span reduced to its word characters, joined to
+/// the word around it, so a quoted argument such as `--body "fix env
+/// handling"` names no program while `"sh" -c` and `g""h` still do. A
+/// backslash inside double quotes escapes the next character. An
+/// unterminated quote keeps the whole text in view.
+fn joined_quotes(text: &str) -> String {
+    let mut joined = String::with_capacity(text.len());
+    let (mut quote, mut escaped) = (None, false);
+    for character in text.chars() {
+        match quote {
+            Some(_) if escaped => escaped = false,
+            Some(open) if character == open => quote = None,
+            Some(open) => {
+                escaped = open == '"' && character == '\\';
+                if character.is_ascii_alphanumeric()
+                    || matches!(character, '.' | '_' | '-' | '+' | '/')
+                {
+                    joined.push(character);
+                }
+            }
+            None if escaped => {
+                escaped = false;
+                joined.push(character);
+            }
+            None if matches!(character, '\'' | '"') => quote = Some(character),
+            None => {
+                escaped = character == '\\';
+                joined.push(character);
+            }
+        }
+    }
+    if quote.is_some() {
+        return text.to_owned();
+    }
+    joined
 }
 
 /// Whether a command position holds an expansion, glob or `.` source, which
