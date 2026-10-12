@@ -285,17 +285,16 @@ fn build_commands_behind_command_time_or_plain_env_are_not_evaluation_failures()
     ] {
         assert_eq!(decision(&controls, command).0, "block", "{command}");
     }
-    // Plain application settings cannot load code, so the command itself is
-    // judged and the setting keeps it at review instead of a hard block.
-    for command in [
-        "APP_FLAG=1 bun run build",
-        "PORT=3000 npm run dev",
-        "VITE_BASE=/app/ vite build",
+    // An ordinary application variable cannot load code, so the command keeps
+    // the decision of its unprefixed form.
+    for (command, bare) in [
+        ("APP_FLAG=1 bun run build", "bun run build"),
+        ("PORT=3000 npm run dev", "npm run dev"),
+        ("VITE_BASE=/app/ vite build", "vite build"),
     ] {
-        let (action, reason_code) = decision(&controls, command);
-        assert_ne!(action, "allow", "{command}");
-        assert_ne!(
-            reason_code, "native_command_extension_evaluation_failed",
+        assert_eq!(
+            decision(&controls, command).0,
+            decision(&controls, bare).0,
             "{command}"
         );
     }
