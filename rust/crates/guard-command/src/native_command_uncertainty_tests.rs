@@ -86,9 +86,17 @@ fn assignment_prefixes_keep_the_native_floor_instead_of_an_evaluation_block() {
 #[test]
 fn assignment_prefixes_cannot_evade_a_disabled_permission() {
     let binding = binding_with_layers(disabled_permission_layer("command.git.push"));
-    let result = evaluate(&binding, "GIT_DIR=/tmp/other git push origin main");
-    assert_eq!(result.minimum_action, "block");
-    assert_eq!(result.reason_code, "native_command_permission_disabled");
+    for command in [
+        "GIT_DIR=/tmp/other git push origin main",
+        "GIT_DIR=/tmp/other git push origin main --force --dry-run",
+    ] {
+        let result = evaluate(&binding, command);
+        assert_eq!(result.minimum_action, "block", "{command}");
+        assert_eq!(
+            result.reason_code, "native_command_permission_disabled",
+            "{command}"
+        );
+    }
 }
 
 #[test]
