@@ -128,7 +128,12 @@ def artifact_hash(artifact: GuardArtifact) -> str:
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
 
 
-def diff_artifact(previous: dict[str, object] | None, current: GuardArtifact) -> ArtifactDiff:
+def diff_artifact(
+    previous: dict[str, object] | None,
+    current: GuardArtifact,
+    *,
+    guard_home: Path | None = None,
+) -> ArtifactDiff:
     """Compare a stored snapshot to the current artifact (resident-decided)."""
 
     payload = _serialize_artifact(current)
@@ -139,6 +144,7 @@ def diff_artifact(previous: dict[str, object] | None, current: GuardArtifact) ->
         content_hash=artifact_hash(current),
         previous=previous,
         with_history=False,
+        guard_home=guard_home,
     )
     return {
         "changed": evidence["changed"],

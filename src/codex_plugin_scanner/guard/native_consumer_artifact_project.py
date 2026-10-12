@@ -16,11 +16,10 @@ from collections.abc import Mapping
 from pathlib import Path
 from uuid import uuid4
 
+from .native_consumer_artifact_compose import record_binding_health
 from .native_context import _canonical_request_sha256, _resolve_digest_home, ensure_resident_prerequisite
 from .native_execution import _resident_request
 from .native_hook_artifact_compose import _field_valid
-from .native_runtime import native_runtime_status
-from .native_runtime_resilience import native_record_resident_failure, native_record_resident_success
 
 CONSUMER_ARTIFACT_PROJECT_FEATURE = "consumer-artifact-project-v1"
 _REQUEST_SCHEMA = "guard-consumer-artifact-project-request.v1"
@@ -127,6 +126,13 @@ _ANSWERS: dict[str, dict[str, str]] = {
         "risk_headline": "s",
     },
 }
+# The receipt strings ``evaluate_detection`` reads when an artifact is removed.
+_REMOVED_RECEIPT: dict[str, str] = {
+    "artifact_name": "s",
+    "capabilities_summary": "s",
+    "provenance_summary": "s",
+    "source_scope": "S",
+}
 _RESULT_FIELDS: dict[str, str] = {
     "artifact_id": "s",
     "policy_action": "a",
@@ -150,8 +156,16 @@ def _answer_valid(kind: str, payload: dict[str, object]) -> bool:
         return all(name in payload and _field_valid(spec, payload[name]) for name, spec in _RESULT_FIELDS.items())
     shape = _ANSWERS[kind]
     valid = set(payload) == set(shape) and all(_field_valid(spec, payload[name]) for name, spec in shape.items())
-    result = payload.get("result")
-    return valid and (kind != "removed_result" or (isinstance(result, dict) and result.get("removed") is True))
+    if kind != "removed_result":
+        return valid
+    result, receipt = payload.get("result"), payload.get("receipt")
+    return (
+        valid
+        and isinstance(result, dict)
+        and result.get("removed") is True
+        and isinstance(receipt, dict)
+        and all(name in receipt and _field_valid(spec, receipt[name]) for name, spec in _REMOVED_RECEIPT.items())
+    )
 
 
 class NativeConsumerProjectError(RuntimeError):
@@ -216,13 +230,7 @@ def native_consumer_project(kind: str, fields: Mapping[str, object], *, guard_ho
 
 
 def _record_health(home: Path, *, healthy: bool) -> None:
-    identity = native_runtime_status().identity
-    if identity is None:
-        return
-    if healthy:
-        native_record_resident_success(identity.sha256, home)
-    else:
-        native_record_resident_failure(identity.sha256, home, reason="native_consumer_artifact_project_binding")
+    record_binding_health(home, healthy=healthy, reason="native_consumer_artifact_project_binding")
 
 
 __all__ = ["CONSUMER_ARTIFACT_PROJECT_FEATURE", "NativeConsumerProjectError", "native_consumer_project"]

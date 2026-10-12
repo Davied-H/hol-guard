@@ -106,6 +106,7 @@ def artifact_evidence(
     content_hash: str,
     previous: Mapping[str, object] | None,
     with_history: bool = True,
+    guard_home: Path | None = None,
 ) -> dict[str, Any]:
     """Diff, capability snapshot and delta, history and provenance of one artifact.
 
@@ -130,7 +131,7 @@ def artifact_evidence(
             "previous_capabilities": capabilities.to_dict() if capabilities is not None else None,
             "history": history,
         },
-        guard_home=_home(store) if store is not None else None,
+        guard_home=_home(store) if store is not None else guard_home,
     )
 
 

@@ -7,6 +7,8 @@ resident cannot answer.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from .consumer import projection
 from .models import GuardAction, GuardArtifact
 
@@ -24,6 +26,7 @@ def build_incident_context(
     policy_action: GuardAction,
     launch_target: str | None,
     risk_summary: str | None,
+    guard_home: Path | None = None,
 ) -> dict[str, str]:
     return projection.incident_context(
         harness=harness,
@@ -37,4 +40,5 @@ def build_incident_context(
         policy_action=policy_action,
         launch_target=launch_target,
         risk_summary=risk_summary,
+        guard_home=guard_home,
     )
