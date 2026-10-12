@@ -138,7 +138,7 @@ pub(super) fn evaluate(body: &Value, deadline: Instant) -> Result<Value, &'stati
         .collect::<Vec<_>>();
     let modifications = before
         .iter()
-        .filter(|(id, rule)| after.get(*id).is_some_and(|other| *rule != *other))
+        .filter(|(id, rule)| after.get(*id).is_some_and(|other| *rule != other))
         .map(|(id, _)| id.clone())
         .collect::<Vec<_>>();
     let changed = additions

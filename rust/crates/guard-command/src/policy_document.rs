@@ -110,6 +110,10 @@ pub fn evaluate(query: &str, input: &Value, deadline: Instant) -> Result<Value, 
             &mapping::parse("GuardPolicyDocument", &input["document"])?.mapping,
             deadline,
         ),
+        "compile_dto" => compiler::compile(
+            &projection::mapping("GuardPolicyDocument", &input["dto"])?,
+            deadline,
+        ),
         "compile_mapped" => compiler::compile(&input["document"], deadline),
         "compile_page" => compiler::page(input, deadline),
         "diff" => {

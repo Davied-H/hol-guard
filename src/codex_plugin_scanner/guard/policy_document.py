@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, fields
-from typing import Any, TypeAlias, TypeVar, cast
+from dataclasses import asdict, dataclass, fields, is_dataclass
+from types import UnionType
+from typing import Any, Literal, TypeAlias, TypeVar, cast, get_args, get_origin, get_type_hints
 
 from .native_policy_document import NativePolicyDocumentError, policy_query
 from .runtime.command_expression import CommandCondition, CommandExpression
@@ -62,18 +63,14 @@ class _NativeDocumentDTO:
 def _decode_dto(cls: type[_DTO], value: Any) -> _DTO:
     if not isinstance(value, dict) or set(value) != {field.name for field in fields(cast(Any, cls))}:
         raise NativePolicyDocumentError("native_policy_document_dto_invalid")
+    annotations = get_type_hints(cls)
     values = value.copy()
-    nested = {
-        "metadata": PolicyMetadata,
-        "defaults": PolicyDefaults,
-        "match": PolicyMatch,
-        "lifetime": PolicyLifetime,
-        "provenance": PolicyProvenance,
-        "command_expression": CommandExpression,
-    }
     for key, item in values.items():
-        if key in nested and item is not None:
-            values[key] = _decode_dto(nested[key], item)
+        annotation = annotations[key]
+        nested = get_args(annotation)[0] if get_origin(annotation) is UnionType else annotation
+        primitive = type(get_args(annotation)[0]) if get_origin(annotation) is Literal else annotation
+        if isinstance(nested, type) and is_dataclass(nested) and item is not None:
+            values[key] = _decode_dto(nested, item)
         elif key in {"rules", "conditions"}:
             if not isinstance(item, list):
                 raise NativePolicyDocumentError("native_policy_document_dto_invalid")
@@ -96,27 +93,7 @@ def _decode_dto(cls: type[_DTO], value: Any) -> _DTO:
             if not isinstance(item, list) or not all(isinstance(part, str) for part in item):
                 raise NativePolicyDocumentError("native_policy_document_dto_invalid")
             values[key] = tuple(item)
-        elif (
-            (key == "revision" and type(item) is not int)
-            or (key in {"enabled", "case_sensitive"} and type(item) is not bool)
-            or (
-                key
-                in {
-                    "id",
-                    "name",
-                    "mode",
-                    "source",
-                    "created_at",
-                    "api_version",
-                    "kind",
-                    "field",
-                    "operator",
-                    "combinator",
-                    "effect",
-                }
-                and not isinstance(item, str)
-            )
-        ):
+        elif primitive in (str, int, bool) and type(item) is not primitive:
             raise NativePolicyDocumentError("native_policy_document_dto_invalid")
     # The native parser validated command DTOs; construction cannot rerun their
     # Python pattern normalization or evaluate a second command expression.

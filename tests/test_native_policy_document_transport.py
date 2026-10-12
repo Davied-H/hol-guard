@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import time
 from pathlib import Path
@@ -131,51 +133,44 @@ def test_document_preserves_compilation_error_code_and_rule_id(monkeypatch):
 
 
 def _compile_transport(monkeypatch, mutation=None):
-    source = SimpleNamespace(to_mapping=lambda: {"native-source": "fixture"})
-    monkeypatch.setattr(
-        compiler, "native_runtime_status", lambda **kwargs: SimpleNamespace(identity=SimpleNamespace(sha256="a" * 64))
+    source = document.GuardPolicyDocument(
+        document.PolicyMetadata("fixture", "Fixture", 0), document.PolicyDefaults("prompt"), ()
     )
     calls = []
 
-    def page(query, body, **kwargs):
+    def rows(query, body, **kwargs):
         calls.append((query, body.copy(), kwargs.copy()))
-        offset = body["offset"]
         item = {
             "rule_id": "native-rule",
             "provenance_json": "{}",
             "decision": {"harness": "pi", "scope": "harness", "action": "block"},
         }
-        result = {"items": [item.copy() for _ in range(min(32, 65 - offset))], "offset": offset, "total": 65}
-        if mutation == "offset":
-            result["offset"] += 1
-        elif mutation == "short":
-            result["items"].pop()
-        elif mutation == "total" and offset:
-            result["total"] = 64
-        elif mutation == "action":
-            result["items"][0]["decision"] = {"harness": "pi", "scope": "harness", "action": "claimed_allow"}
+        if mutation == "action":
+            item["decision"]["action"] = "claimed_allow"
         elif mutation == "type":
-            result["items"][0]["decision"] = {"harness": [], "scope": "harness", "action": "block"}
+            item["decision"]["harness"] = []
         elif mutation == "scope":
-            result["items"][0]["decision"] = {"harness": "pi", "scope": "claimed-global", "action": "block"}
-        return result
+            item["decision"]["scope"] = "claimed-global"
+        elif mutation == "missing":
+            item.pop("rule_id")
+        return [item.copy() for _ in range(65)]
 
-    monkeypatch.setattr(compiler, "policy_query", page)
+    monkeypatch.setattr(compiler, "policy_query", rows)
     return source, calls
 
 
-def test_compiled_rows_present_native_pages_without_recomputing_actions(monkeypatch):
+def test_compiled_rows_present_one_native_compilation_without_recomputing_actions(monkeypatch):
     source, calls = _compile_transport(monkeypatch)
     rows = compiler.compile_policy_document(source)
     assert len(rows) == 65
     assert {row.decision.action for row in rows} == {"block"}
-    assert [body["offset"] for _, body, _ in calls] == [0, 32, 64]
-    assert len({kwargs["deadline_monotonic"] for _, _, kwargs in calls}) == 1
-    assert {kwargs["runtime_sha256"] for _, _, kwargs in calls} == {"a" * 64}
+    assert len(calls) == 1
+    assert calls[0][0] == "compile_dto"
+    assert calls[0][1]["dto"]["metadata"]["id"] == "fixture"
 
 
-@pytest.mark.parametrize("mutation", ["offset", "short", "total", "action", "type", "scope"])
-def test_compiled_rows_reject_unbound_pages_and_invalid_dto_fields(monkeypatch, mutation):
+@pytest.mark.parametrize("mutation", ["action", "type", "scope", "missing"])
+def test_compiled_rows_reject_invalid_native_dto_fields(monkeypatch, mutation):
     source, _ = _compile_transport(monkeypatch, mutation)
     with pytest.raises(client.NativePolicyDocumentError):
         compiler.compile_policy_document(source)
@@ -210,3 +205,55 @@ def test_canonical_projection_rejects_non_string_native_output(monkeypatch):
     monkeypatch.setattr(document, "policy_query", lambda *args, **kwargs: {"claimed_allow": True})
     with pytest.raises(client.NativePolicyDocumentError):
         document.canonical_json_bytes({})
+
+
+@pytest.mark.parametrize("corrupt", [None, "offset", "digest", "short"])
+def test_large_document_wire_keeps_one_deadline_and_rejects_corrupt_chunks(monkeypatch, corrupt):
+    _resident(monkeypatch)
+    source = {"value": "x" * (7 * 1024 * 1024)}
+    encoded_result = json.dumps({"ok": {"fixture": "y" * (3 * 1024 * 1024)}}).encode()
+    token = "b" * 64
+    uploaded = bytearray()
+    calls = []
+
+    def reply(query, body, **kwargs):
+        calls.append((query, kwargs.copy()))
+        if query == "wire_start":
+            assert body["size"] > 6 * 1024 * 1024
+            return {"wire_upload": {"handle": token, "offset": 0}}
+        if query == "wire_append":
+            assert body["offset"] == len(uploaded)
+            uploaded.extend(base64.b64decode(body["bytes"]))
+            return {"wire_upload": {"handle": token, "offset": len(uploaded)}}
+        if query == "wire_finish":
+            assert json.loads(uploaded) == source
+            offset = 0
+        else:
+            assert query == "wire_read"
+            offset = body["offset"]
+        page = {
+            "handle": token,
+            "offset": offset,
+            "total": len(encoded_result),
+            "sha256": hashlib.sha256(encoded_result).hexdigest(),
+            "bytes": base64.b64encode(encoded_result[offset : offset + 512 * 1024]).decode(),
+        }
+        if corrupt == "offset":
+            page["offset"] += 1
+        elif corrupt == "digest":
+            page["sha256"] = "0" * 64
+        elif corrupt == "short":
+            page["bytes"] = base64.b64encode(b"short").decode()
+        return {"wire_download": page}
+
+    monkeypatch.setattr(client, "_bound_query", reply)
+    deadline = time.monotonic() + 30
+    if corrupt:
+        with pytest.raises(client.NativePolicyDocumentError):
+            client.policy_query("from_mapping", source, deadline_monotonic=deadline)
+    else:
+        assert client.policy_query("from_mapping", source, deadline_monotonic=deadline) == {
+            "fixture": "y" * (3 * 1024 * 1024)
+        }
+    assert len({kwargs["deadline_monotonic"] for _, kwargs in calls}) == 1
+    assert {kwargs["runtime_sha256"] for _, kwargs in calls} == {"a" * 64}

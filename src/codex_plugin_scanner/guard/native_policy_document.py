@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import os
 import sys
@@ -13,6 +15,8 @@ from .native_binary_identity import validate_native_binary
 from .native_context import _canonical_request_sha256, _resolve_digest_home
 from .native_resident_client import native_resident_client_request
 from .native_runtime import _isolated_environment, native_runtime_status
+from .policy_document_types import PolicyCompilationError
+from .runtime.command_expression import CommandExpressionError
 from .strict_json_pairs import unique_json_object
 
 
@@ -20,7 +24,7 @@ class NativePolicyDocumentError(ValueError, RuntimeError):
     """Unavailable or unbound native authority cannot compile a policy."""
 
 
-def policy_query(
+def _bound_query(
     query: str,
     body: dict[str, Any],
     *,
@@ -96,7 +100,7 @@ def policy_query(
         ):
             raise NativePolicyDocumentError("native_policy_document_unbound")
         result = payload["result"]
-        if not isinstance(result, dict) or set(result) not in ({"ok"}, {"error"}):
+        if not isinstance(result, dict) or set(result) not in ({"ok"}, {"error"}, {"wire_upload"}, {"wire_download"}):
             raise NativePolicyDocumentError("native_policy_document_malformed")
         if "error" in result:
             error = result["error"]
@@ -111,18 +115,77 @@ def policy_query(
     if "error" in result:
         error = result["error"]
         if error["type"] == "PolicyCompilationError" and set(error) == {"type", "message", "code", "rule_id"}:
-            from .policy_document_types import PolicyCompilationError
-
             raise PolicyCompilationError(error["code"], error["rule_id"])
-        if error["type"] == "CommandExpressionError":
-            from .runtime.command_expression import CommandExpressionError
-
-            raise CommandExpressionError(error["message"])
-        if error["type"] == "KeyError":
-            raise KeyError(error["message"].strip("'"))
-        if error["type"] == "TypeError":
-            raise TypeError(error["message"])
-        if error["type"] == "ValueError":
-            raise ValueError(error["message"])
+        exceptions = {
+            "CommandExpressionError": CommandExpressionError,
+            "KeyError": KeyError,
+            "TypeError": TypeError,
+            "ValueError": ValueError,
+        }
+        if exception := exceptions.get(error["type"]):
+            raise exception(error["message"].strip("'") if error["type"] == "KeyError" else error["message"])
         raise NativePolicyDocumentError("native_policy_document_malformed")
-    return result["ok"]
+    return result.get("ok", result)
+
+
+def policy_query(
+    query: str, body: dict[str, Any], *, deadline_monotonic: float | None = None, runtime_sha256: str | None = None
+) -> Any:
+    deadline = deadline_monotonic if deadline_monotonic is not None else time.monotonic() + 30.0
+    if time.monotonic() >= deadline:
+        raise NativePolicyDocumentError("native_policy_document_unavailable")
+    status = native_runtime_status(deadline_monotonic=deadline)
+    if status.identity is None:
+        raise NativePolicyDocumentError("native_policy_document_unavailable")
+    identity = runtime_sha256 or status.identity.sha256
+
+    def call(operation: str, value: dict[str, Any]) -> Any:
+        return _bound_query(operation, value, deadline_monotonic=deadline, runtime_sha256=identity)
+
+    try:
+        encoded = json.dumps(body, ensure_ascii=False, allow_nan=False).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise NativePolicyDocumentError("native_policy_document_request_invalid") from exc
+    if len(encoded) > 64 * 1024 * 1024:
+        raise NativePolicyDocumentError("native_policy_document_request_too_large")
+    if len(encoded) > 512 * 1024:
+        start = call(
+            "wire_start", {"query": query, "size": len(encoded), "sha256": hashlib.sha256(encoded).hexdigest()}
+        )["wire_upload"]
+        token = start["handle"]
+        for offset in range(0, len(encoded), 512 * 1024):
+            chunk = encoded[offset : offset + 512 * 1024]
+            reply = call("wire_append", {"handle": token, "offset": offset, "bytes": base64.b64encode(chunk).decode()})
+            if reply != {"wire_upload": {"handle": token, "offset": offset + len(chunk)}}:
+                raise NativePolicyDocumentError("native_policy_document_upload_unbound")
+        result = call("wire_finish", {"handle": token})
+    else:
+        result = call(query, body)
+    if not isinstance(result, dict) or "wire_download" not in result:
+        return result
+    page = result["wire_download"]
+    token, total, digest = page["handle"], page["total"], page["sha256"]
+    if type(total) is not int or not 0 < total <= 64 * 1024 * 1024:
+        raise NativePolicyDocumentError("native_policy_document_result_too_large")
+    chunks = bytearray()
+    while True:
+        if set(page) != {"handle", "offset", "total", "sha256", "bytes"} or (
+            page["handle"],
+            page["offset"],
+            page["total"],
+            page["sha256"],
+        ) != (token, len(chunks), total, digest):
+            raise NativePolicyDocumentError("native_policy_document_download_unbound")
+        chunk = base64.b64decode(page["bytes"], validate=True)
+        if len(chunk) != min(512 * 1024, total - len(chunks)):
+            raise NativePolicyDocumentError("native_policy_document_download_unbound")
+        chunks.extend(chunk)
+        if len(chunks) == total:
+            break
+        page = call("wire_read", {"handle": token, "offset": len(chunks)})["wire_download"]
+    if hashlib.sha256(chunks).hexdigest() != digest or time.monotonic() >= deadline:
+        raise NativePolicyDocumentError("native_policy_document_download_unbound")
+    decoded = json.loads(chunks, object_pairs_hook=unique_json_object)
+    if not isinstance(decoded, dict) or set(decoded) != {"ok"}:
+        raise NativePolicyDocumentError("native_policy_document_malformed")
+    return decoded["ok"]
