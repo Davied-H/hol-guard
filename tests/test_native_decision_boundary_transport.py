@@ -82,7 +82,6 @@ def test_store_read_projections_use_the_connection_home(monkeypatch: pytest.Monk
         review_command="review",
         approval_url="",
     )
-    store.add_approval_request(request, "2026-01-01T00:00:00+00:00")
     original = native_runner_authority.native_runner_authority
     homes: list[Path] = []
 
@@ -95,11 +94,50 @@ def test_store_read_projections_use_the_connection_home(monkeypatch: pytest.Monk
         return original(kind, args, guard_home=guard_home)
 
     monkeypatch.setattr(native_runner_authority, "native_runner_authority", bound)
+    # The insert projects through the store's home even when the default home is not set up.
+    store.add_approval_request(request, "2026-01-01T00:00:00+00:00")
+    store.add_approval_request(request, "2026-01-01T00:00:01+00:00")
     page = store.list_approval_request_page(include_totals=False)
     detail = store.get_approval_request(request.request_id, derive_scope=False)
     assert page["items"][0]["request_id"] == request.request_id
     assert detail is not None and detail["policy_action"] == "review"
-    assert homes == [home, home]
+    assert len(homes) >= 4 and set(homes) == {home}
+
+
+@pytest.mark.usefixtures("native_prompt_runtime")
+def test_listing_outage_reports_scope_unavailable(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from codex_plugin_scanner.guard.models import GuardApprovalRequest
+    from codex_plugin_scanner.guard.native_approval_scope import ApprovalScopeUnavailableError
+    from codex_plugin_scanner.guard.store import GuardStore
+
+    store = GuardStore(tmp_path / "outage-home")
+    store.add_approval_request(
+        GuardApprovalRequest(
+            request_id="outage-request",
+            harness="codex",
+            artifact_id="artifact-1",
+            artifact_name="fixture",
+            artifact_hash="sha256:" + "a" * 64,
+            policy_action="review",
+            recommended_scope="artifact",
+            changed_fields=(),
+            source_scope="project",
+            config_path="config.toml",
+            review_command="review",
+            approval_url="",
+        ),
+        "2026-01-01T00:00:00+00:00",
+    )
+
+    def unavailable(*args: object, **kwargs: object) -> object:
+        raise native_runner_authority.NativeRunnerAuthorityError("native_runtime_unavailable")
+
+    monkeypatch.setattr(native_runner_authority, "native_runner_authority", unavailable)
+    # Daemon polls and /requests treat this as the 503 scope outage, not a crash.
+    with pytest.raises(ApprovalScopeUnavailableError):
+        store.list_approval_requests(status="pending", limit=1)
+    with pytest.raises(ApprovalScopeUnavailableError):
+        store.list_approval_request_page(include_totals=False)
 
 
 def test_boundary_healthy_refusal_is_validation(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -140,10 +178,22 @@ def test_large_readable_rows_split_without_reordering(monkeypatch: pytest.Monkey
     assert batches == [100, 50, 50]
     # Each admitted string stays below 1 MiB; the combined result exceeds 2 MiB.
     signals = [{"signal_id": f"large:{index}", "technical_detail": "x" * (800 * 1024)} for index in range(3)]
-    oversized = [("review", {**source, "signals": signals}, None)]
-    with pytest.raises(native_signal_projection.NativeSignalProjectionError, match="response_too_large"):
-        canonical_approval_surfaces_batch(oversized, guard_home=home)
-    assert canonical_approval_surfaces_batch([("review", None, None)], guard_home=home)[0].policy_action == "review"
+    oversized = [("review", None, None), ("review", {**source, "signals": signals}, None)]
+    # One unreadable row fails closed on its own; the rest of the page still projects.
+    readable, unreadable = canonical_approval_surfaces_batch(oversized, guard_home=home)
+    assert (readable.policy_action, readable.contract_error) == ("review", None)
+    assert unreadable.contract_error == "authoritative_decision_inconsistent"
+    assert unreadable.policy_action in {"review", "require-reapproval"}
+
+
+@pytest.mark.usefixtures("native_prompt_runtime")
+def test_unencodable_row_fails_closed_without_hiding_the_page(tmp_path: Path) -> None:
+    home = tmp_path / "unencodable-home"
+    results = canonical_approval_surfaces_batch(
+        [("review", None, None), ("block", {"score": float("nan")}, None)], guard_home=home
+    )
+    assert (results[0].policy_action, results[0].contract_error) == ("review", None)
+    assert (results[1].policy_action, results[1].contract_error) == ("block", "authoritative_decision_inconsistent")
 
 
 def test_batch_request_bytes_are_bounded_even_below_the_row_cap(monkeypatch: pytest.MonkeyPatch) -> None:

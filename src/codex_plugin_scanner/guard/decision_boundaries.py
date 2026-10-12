@@ -23,6 +23,8 @@ _PROJECTION_SIZE_REFUSALS = frozenset(
         "native_runner_authority_projection_batch_too_large",
     }
 )
+_UNREADABLE_DECISION = "unreadable"
+_UNREADABLE_ACTION_MAX_LENGTH = 64
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,11 +105,12 @@ def canonical_approval_surfaces_batch(
     rows: list[dict[str, object]] = []
     size = 0
     for action, decision, envelope in inputs:
-        row = {"action": action, "decision": decision, "envelope": envelope}
+        row: dict[str, object] = {"action": action, "decision": decision, "envelope": envelope}
         try:
             row_size = len(json.dumps(row, separators=(",", ":"), allow_nan=False).encode("utf-8")) + 1
-        except (TypeError, ValueError, UnicodeEncodeError) as error:
-            raise NativeSignalProjectionError("native_runner_authority_component_unencodable") from error
+        except (TypeError, ValueError, UnicodeEncodeError):
+            row = _unreadable_row(row)
+            row_size = len(json.dumps(row, separators=(",", ":")).encode("utf-8")) + 1
         if rows and (len(rows) == 128 or size + row_size > _PROJECTION_BATCH_BYTES):
             result.extend(_project_approval_rows(rows, guard_home=guard_home))
             rows, size = [], 0
@@ -126,12 +129,34 @@ def _project_approval_rows(
             "projection_surfaces_batch", {"rows": rows, "reject": False}, guard_home=guard_home
         )
     except NativeSignalProjectionError as error:
-        # A bound size refusal proves availability. Split aggregates only;
-        # a single unreadable row retains the native refusal and no partial page.
-        if str(error) not in _PROJECTION_SIZE_REFUSALS or len(rows) == 1:
+        # A bound size refusal proves availability. Split aggregates; a single
+        # oversized row is projected again as unreadable so it fails closed
+        # without hiding the rest of the page.
+        if str(error) not in _PROJECTION_SIZE_REFUSALS:
             raise
+        if len(rows) == 1:
+            if rows[0].get("decision") == _UNREADABLE_DECISION:
+                raise
+            return _project_approval_rows([_unreadable_row(rows[0])], guard_home=guard_home)
         midpoint = len(rows) // 2
         return _project_approval_rows(rows[:midpoint], guard_home=guard_home) + _project_approval_rows(
             rows[midpoint:], guard_home=guard_home
         )
     return [CanonicalApprovalSurfaces(**row) for row in projected]
+
+
+def _unreadable_row(row: Mapping[str, object]) -> dict[str, object]:
+    """Replace stored fields the resident cannot receive with a non-object decision.
+
+    The native projection treats a non-object decision as inconsistent, so the
+    row fails closed with a contract error at the stored action or stricter.
+    """
+    action = row.get("action")
+    if not isinstance(action, str) or len(action) > _UNREADABLE_ACTION_MAX_LENGTH:
+        action = None
+    else:
+        try:
+            action.encode("utf-8")
+        except UnicodeEncodeError:
+            action = None
+    return {"action": action, "decision": _UNREADABLE_DECISION, "envelope": None}

@@ -13,7 +13,6 @@ from pathlib import Path
 from .approval_resolution import approval_resolution_block_reason
 from .decision_boundaries import (
     canonical_approval_surfaces,
-    canonical_approval_surfaces_batch,
 )
 from .models import GuardApprovalRequest
 from .native_approval_queue_identity import (
@@ -45,6 +44,9 @@ from .store_approval_projection import (
 )
 from .store_approval_projection import (
     _optional_json_object as _optional_json_object,
+)
+from .store_approval_projection import (
+    _project_listing_rows as _project_listing_rows,
 )
 from .store_approval_projection import (
     _row_decision_inputs as _row_decision_inputs,
@@ -522,9 +524,7 @@ def list_approval_request_summary_rows(
         rows = connection.execute(query, params).fetchall()
     else:
         rows = connection.execute(f"{query}\nlimit ?", (*params, limit)).fetchall()
-    projections = canonical_approval_surfaces_batch(
-        [_row_decision_inputs(row) for row in rows], guard_home=connection_guard_home(connection)
-    )
+    projections = _project_listing_rows(rows, guard_home=connection_guard_home(connection))
     return [_row_to_approval_summary(row, projection) for row, projection in zip(rows, projections, strict=True)]
 
 

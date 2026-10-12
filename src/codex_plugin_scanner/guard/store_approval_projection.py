@@ -12,6 +12,7 @@ from .decision_boundaries import (
     canonical_approval_surfaces,
     canonical_approval_surfaces_batch,
 )
+from .native_signal_projection import NativeSignalProjectionError, NativeSignalProjectionUnavailableError
 from .runtime.browser_mcp_intent import classify_browser_operation
 
 APPROVAL_QUEUE_PREVIEW_MAX_LENGTH = 512
@@ -100,7 +101,7 @@ def _row_to_payload(row: sqlite3.Row, *, guard_home: Path | None = None) -> dict
 def _rows_to_payloads(rows: list[sqlite3.Row], *, guard_home: Path | None = None) -> list[dict[str, object]]:
     """Build payloads, asking the resident for every row's scope contract in one call."""
 
-    projections = canonical_approval_surfaces_batch([_row_decision_inputs(row) for row in rows], guard_home=guard_home)
+    projections = _project_listing_rows(rows, guard_home=guard_home)
     drafts = [_row_to_draft(row, projection) for row, projection in zip(rows, projections, strict=True)]
     if not drafts:
         return []
@@ -113,6 +114,19 @@ def _rows_to_payloads(rows: list[sqlite3.Row], *, guard_home: Path | None = None
         apply_scope_surfaces(payload)
         payloads.append(payload)
     return payloads
+
+
+def _project_listing_rows(
+    rows: list[sqlite3.Row], *, guard_home: Path | None = None
+) -> list[CanonicalApprovalSurfaces]:
+    """Project stored rows for listings; a resident failure reads as scope unavailable."""
+
+    from .native_approval_scope import ApprovalScopeUnavailableError
+
+    try:
+        return canonical_approval_surfaces_batch([_row_decision_inputs(row) for row in rows], guard_home=guard_home)
+    except (NativeSignalProjectionError, NativeSignalProjectionUnavailableError) as error:
+        raise ApprovalScopeUnavailableError from error
 
 
 def _row_decision_inputs(row: sqlite3.Row) -> tuple[object, object, object]:
@@ -260,12 +274,5 @@ def _row_to_approval_summary(row: sqlite3.Row, canonical_decision: CanonicalAppr
 
 
 def _optional_json_object(value: object) -> dict[str, object] | None:
-    if value is None:
-        return None
-    try:
-        parsed = json.loads(str(value))
-    except (json.JSONDecodeError, TypeError, ValueError):
-        return None
-    if isinstance(parsed, dict):
-        return {str(key): item for key, item in parsed.items() if isinstance(key, str)}
-    return None
+    # JSON object keys are always strings, so the general parser is exact here.
+    return _json_object(value)
