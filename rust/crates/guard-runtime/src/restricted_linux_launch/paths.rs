@@ -65,7 +65,11 @@ pub(super) fn collect(root: &Path, limit: usize, deadline: Instant) -> Result<Va
 }
 
 #[allow(clippy::unnecessary_cast)]
-pub(super) fn collect_with_candidates(root: &Path, limit: usize, deadline: Instant) -> Result<(Value, Candidates)> {
+pub(super) fn collect_with_candidates(
+    root: &Path,
+    limit: usize,
+    deadline: Instant,
+) -> Result<(Value, Candidates)> {
     if !root.is_absolute() || limit == 0 || limit > MAX_ENTRIES {
         return Err("Invalid Linux workspace discovery boundary.");
     }
@@ -115,7 +119,10 @@ pub(super) fn collect_with_candidates(root: &Path, limit: usize, deadline: Insta
         }
         if kind == libc::S_IFLNK || (kind == libc::S_IFREG && metadata.st_nlink == 1) {
             let name = name.to_str().map_err(|_| MESSAGE)?;
-            candidates.entry(name.to_owned()).or_default().insert(frame.path.clone());
+            candidates
+                .entry(name.to_owned())
+                .or_default()
+                .insert(frame.path.clone());
         }
         if kind == libc::S_IFLNK {
             continue;

@@ -164,8 +164,12 @@ impl Inspector<'_> {
                 // then apply the same canonical target and read-index checks.
                 // Legacy callers and path-valued DT_NEEDED retain full lookup.
                 let parents: Vec<_> = match &self.input.dependency_candidates {
-                    Some(index) if !name.contains('/') => index.get(&name)
-                        .into_iter().flatten().filter(|parent| self.parents.contains(*parent)).collect(),
+                    Some(index) if !name.contains('/') => index
+                        .get(&name)
+                        .into_iter()
+                        .flatten()
+                        .filter(|parent| self.parents.contains(*parent))
+                        .collect(),
                     _ => self.parents.iter().collect(),
                 };
                 for parent in parents {
