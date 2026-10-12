@@ -311,6 +311,9 @@ pub(crate) fn evaluate_resident_bytes(
             ResidentOperationV1::LocalCliGrantDecide(request) => {
                 crate::local_cli_grant_op::evaluate_local_cli_grant_request(&request)
             }
+            ResidentOperationV1::ShellHelpers(request) => {
+                crate::shell_helpers_op::evaluate(&request)
+            }
             ResidentOperationV1::ApprovalProofDecide(request) => {
                 crate::approval_proof_op::evaluate_approval_proof_request(&request)
             }
@@ -365,6 +368,9 @@ pub(crate) fn evaluate_resident_bytes(
             }
             ResidentOperationV1::McpToolPolicyDecide(request) => {
                 crate::mcp_tool_policy_decide_op::evaluate_mcp_tool_policy_decide_request(&request)
+            }
+            ResidentOperationV1::McpToolCallIdentity(request) => {
+                crate::mcp_tool_call_identity_op::evaluate_mcp_tool_call_identity_request(&request)
             }
             ResidentOperationV1::PackageAdvisoryIds(request) => {
                 crate::package_authority_op::evaluate_package_advisory_ids(&request)
