@@ -11,6 +11,8 @@ mod approval_reuse;
 pub use approval_reuse::*;
 mod github_cli_classify;
 pub use github_cli_classify::*;
+mod github_workflow_prepare;
+pub use github_workflow_prepare::*;
 mod protect_request;
 pub use protect_request::*;
 mod git_execution_safety;
@@ -128,6 +130,8 @@ mod daemon_handler;
 pub use daemon_handler::*;
 mod daemon_route;
 pub use daemon_route::*;
+mod native_exact_action;
+pub use native_exact_action::*;
 
 mod workflow_capability;
 pub use workflow_capability::*;
