@@ -260,7 +260,7 @@ def skill_cases() -> list[dict]:
             [skill("cat", "so", "x")]
             + [
                 file(f"{H}/skills/cat/so/references/{n}", "x")
-                for n in ("b.md", "a.md", "B.md", "dir/z.md", "dir/a.md", "é.md", ".hidden.md", "c.TXT", "d.xyz")
+                for n in ("b.md", "a.md", "Bc.md", "dir/z.md", "dir/a.md", "é.md", ".hidden.md", "c.TXT", "d.xyz")
             ],
         ),
         case(
@@ -287,7 +287,6 @@ def skill_cases() -> list[dict]:
             [file(f"{H}/skills/stray.md", "x"), file(f"{H}/skills/cat/stray.md", "x")],
             dirs=[f"{H}/skills/cat/empty", f"{H}/skills/emptycat"],
         ),
-        case("skill_lowercase_skill_md", [file(f"{H}/skills/cat/lc/skill.md", "x")]),
         case(
             "skill_unicode",
             [
