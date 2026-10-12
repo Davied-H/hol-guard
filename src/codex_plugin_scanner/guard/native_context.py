@@ -81,6 +81,7 @@ _RESULT_OPTIONAL_KEYS = {
     "local_cli_identities",
     "custom_extension_suggestion",
     "managed_controls_policy_fields",
+    "claude_guard_question",
 }
 _RESULT_CODES = {
     "ok",
@@ -384,6 +385,7 @@ _OK_OUTPUT_FIELD: dict[str, str] = {
     "mcp_tool_content_digest": "digest",
     "browser_mcp": "browser_mcp",
     "package_launcher_token": "package_launcher",
+    "claude_guard_question": "claude_guard_question",
 }
 _OK_NULLABLE_OUTPUT_FIELD: dict[str, str] = {
     "custom_extension_continuity": "custom_extension_continuity",
@@ -673,6 +675,9 @@ def _decode_result(
         return None
     # Shape is checked by ``custom_extension_suggestion``; absent means not applicable.
     if "custom_extension_suggestion" in payload and kind != "custom_extension_suggestion":
+        return None
+    # Shape is checked by ``native_claude_guard_question``.
+    if "claude_guard_question" in payload and kind != "claude_guard_question":
         return None
     # Shape is checked by ``custom_extension_continuity``.
     if "custom_extension_continuity" in payload and kind != "custom_extension_continuity":
