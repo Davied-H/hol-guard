@@ -67,6 +67,11 @@ fn per_request_home_selects_nvm_and_preserves_home_root_refusal() {
         evaluate("prepare_node", &launch)["reason_code"],
         PYTEST_INVALID_WORKSPACE_REASON_CODE
     );
+    launch["command"] = json!(["python3", "-c", "print(1)"]);
+    assert_eq!(
+        evaluate("prepare_inline", &launch)["reason_code"],
+        PYTEST_INVALID_WORKSPACE_REASON_CODE
+    );
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
