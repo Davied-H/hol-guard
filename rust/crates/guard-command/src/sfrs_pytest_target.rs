@@ -299,14 +299,17 @@ pub(crate) fn inline_python_payload_runs_pytest(payload: &str, depth: usize) -> 
     if !normalized.contains('(') {
         return false;
     }
-    let code: String = match code_outside_plain_literals(&folded) {
+    let stripped = code_outside_plain_literals(&folded);
+    let code: String = match &stripped {
         Some(code) => code.nfkc().collect(),
         None => normalized.clone(),
     };
+    // A triple-quoted delimiter is one literal. Adjacent quotes and
+    // backslashes fail closed only when that split is uncertain.
+    let uncertain = stripped.is_none();
     code.contains("pytest")
         || code.contains("py.test")
-        || normalized.contains('\\')
-        || has_adjacent_quotes(&normalized)
+        || (uncertain && (normalized.contains('\\') || has_adjacent_quotes(&normalized)))
         || STRING_ROUTE_WORDS.iter().any(|word| code.contains(word))
 }
 
@@ -316,9 +319,10 @@ fn is_line_end(character: char) -> bool {
 
 /// `payload` with the contents of its plain string literals removed, so only
 /// code and comments remain. `None` when the split is not certain: an f- or
-/// t-string (its fields are code), any backslash, or an unterminated
-/// literal. Python's tokenizer only opens strings on ASCII quotes, so this
-/// runs before NFKC folding, which could otherwise mint new quotes.
+/// t-string (its fields are code), any backslash, an unterminated literal,
+/// or another literal after only whitespace (implicit concatenation).
+/// Python's tokenizer only opens strings on ASCII quotes, so this runs
+/// before NFKC folding, which could otherwise mint new quotes.
 fn code_outside_plain_literals(payload: &str) -> Option<String> {
     if payload.contains('\\') {
         return None;
@@ -365,6 +369,15 @@ fn code_outside_plain_literals(payload: &str) -> Option<String> {
         }
         code.push_str("\"\"");
         index = cursor + quote_len;
+        let mut look = index;
+        while look < chars.len() && chars[look].is_whitespace() {
+            look += 1;
+        }
+        // Implicit concatenation can assemble a route from pieces this
+        // splitter would otherwise delete.
+        if matches!(chars.get(look), Some('\'' | '"')) {
+            return None;
+        }
     }
     Some(code)
 }
