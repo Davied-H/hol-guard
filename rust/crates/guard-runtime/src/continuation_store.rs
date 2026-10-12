@@ -28,6 +28,15 @@ pub(crate) fn evaluate(args: &Value) -> super::runner_authority_op::KindResult {
             Ok(json!({"error":message,"exception":"RuntimeError"}))
         }
         Err(StoreError::Value(message)) => Ok(json!({"error":message,"exception":"ValueError"})),
+        Err(StoreError::Sqlite(error)) => {
+            let class =
+                if error.sqlite_error_code() == Some(rusqlite::ErrorCode::ConstraintViolation) {
+                    "sqlite3.IntegrityError"
+                } else {
+                    "sqlite3.DatabaseError"
+                };
+            Ok(json!({"exception":class,"error":error.to_string()}))
+        }
         Err(_) => Err("native_runner_authority_continuation_store_unavailable"),
     }
 }
@@ -35,6 +44,10 @@ fn run(args: &Value) -> StoreResult<Value> {
     let home = string(args, "guard_home")?;
     let path = crate::local_store_read::require_store_path(string(args, "store_path")?, home)
         .map_err(|_| StoreError::Invalid("continuation_store_path_invalid"))?;
+    let database_key = std::fs::canonicalize(&path)
+        .map_err(|_| StoreError::Invalid("continuation_store_path_invalid"))?
+        .to_string_lossy()
+        .into_owned();
     let mut connection = Connection::open_with_flags(
         path,
         OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
@@ -82,6 +95,7 @@ fn run(args: &Value) -> StoreResult<Value> {
     let changes = tx.total_changes();
     tx.commit()?;
     let mut output = output;
+    output["database_key"] = json!(database_key);
     output["outbox_generation"] = if changes > 0 {
         let exists = query_one(&connection,"select name from sqlite_master where type='table' and name='guard_review_outbox_wake_state'",&[])?;
         if exists.is_some() {
@@ -102,6 +116,12 @@ fn run(args: &Value) -> StoreResult<Value> {
 }
 fn claim(connection: &Connection, args: &Value) -> StoreResult<Value> {
     let now = string(args, "now")?;
+    if crate::guard_store_json::add_seconds_isoformat(now, 0).is_none() {
+        return value_error(&format!(
+            "Invalid isoformat string: {}",
+            crate::guard_store_json::py_repr_str(now)
+        ));
+    }
     if guard_contracts::canonical_utc_timestamp(now).is_none() {
         return value_error("continuation claim timestamp must be timezone-aware");
     }
@@ -160,7 +180,7 @@ fn finalize(connection: &Connection, args: &Value) -> StoreResult<Value> {
         .as_array()
         .ok_or(StoreError::Invalid("continuation_events_invalid"))?
     {
-        if !event.as_array().is_some_and(|items| items.len() == 2) {
+        if event.as_array().is_none_or(|items| items.len() != 2) {
             return Err(StoreError::Invalid("continuation_event_invalid"));
         }
         let name = event[0]
@@ -279,6 +299,7 @@ fn persist_resume(connection: &Connection, args: &Value) -> StoreResult<()> {
             .as_object()
             .cloned()
             .unwrap_or_default();
+        let mut retained = false;
         if let Some(row) = query_one(
             connection,
             "select metadata_json from guard_operations where operation_id = ?",
@@ -286,11 +307,75 @@ fn persist_resume(connection: &Connection, args: &Value) -> StoreResult<()> {
         )? {
             let existing = row["metadata_json"]
                 .as_str()
-                .and_then(|s| serde_json::from_str::<Value>(s).ok())
+                .map(crate::continuation_metadata::legacy_value)
                 .unwrap_or(Value::Null);
-            crate::continuation_lineage::preserve(&existing, &mut metadata)?;
+            retained = crate::continuation_lineage::preserve(&existing, &mut metadata)?;
         }
-        exec(connection,"update guard_operations set status=?,metadata_json=?,updated_at=? where operation_id=?",&[operation["status"].clone(),json!(crate::guard_store_json::dumps_default(&json!(metadata)).ok_or(StoreError::Invalid("continuation_metadata_invalid"))?),now.clone(),operation["operation_id"].clone()])?;
+        exec(connection,"update guard_operations set status=?,metadata_json=?,updated_at=? where operation_id=?",&[operation["status"].clone(),json!(crate::continuation_metadata::serialize(json!(metadata),&args["metadata_nonfinite"],retained)?),now.clone(),operation["operation_id"].clone()])?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sql_value(value: &Value) -> rusqlite::types::Value {
+        match value {
+            Value::Null => rusqlite::types::Value::Null,
+            Value::String(value) => rusqlite::types::Value::Text(value.clone()),
+            _ => panic!("lease fixture cells must be text or null"),
+        }
+    }
+
+    #[test]
+    fn original_python_sqlite_lease_transition_traces() {
+        let document: Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/continuation_lease_traces.json"
+        ))
+        .unwrap();
+        for (index, case) in document["cases"].as_array().unwrap().iter().enumerate() {
+            let mut connection = Connection::open_in_memory().unwrap();
+            connection
+                .execute_batch(document["schema_sql"].as_str().unwrap())
+                .unwrap();
+            for seed in case["seed"].as_array().unwrap() {
+                let values: Vec<_> = seed.as_array().unwrap().iter().map(sql_value).collect();
+                connection
+                    .execute(
+                        "insert into guard_continuation_claims values (?,?,?,?,?,?,?,?)",
+                        rusqlite::params_from_iter(values),
+                    )
+                    .unwrap();
+            }
+            let tx = connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .unwrap();
+            let outcome = match claim(&tx, &case["args"]) {
+                Ok(result) => {
+                    tx.commit().unwrap();
+                    result
+                }
+                Err(StoreError::Value(error)) => {
+                    tx.rollback().unwrap();
+                    json!({"exception":"ValueError","error":error})
+                }
+                Err(error) => panic!("trace {index}: {error:?}"),
+            };
+            assert_eq!(outcome, case["expected"], "trace {index}");
+            let mut statement = connection
+                .prepare("select * from guard_continuation_claims order by request_id")
+                .unwrap();
+            let rows = statement
+                .query_map([], |row| {
+                    (0..8)
+                        .map(|i| row.get::<_, Option<String>>(i).map(|v| json!(v)))
+                        .collect::<rusqlite::Result<Vec<_>>>()
+                })
+                .unwrap()
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .unwrap();
+            assert_eq!(json!(rows), case["rows"], "trace {index} durable state");
+        }
+    }
 }

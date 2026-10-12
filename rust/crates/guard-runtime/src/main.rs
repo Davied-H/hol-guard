@@ -103,6 +103,7 @@ mod context_digest_result_check;
 mod continuation_authority_op;
 mod continuation_grants;
 mod continuation_lineage;
+mod continuation_metadata;
 mod continuation_store;
 mod contributed_mcp_decision_op;
 mod critical_floor_op;

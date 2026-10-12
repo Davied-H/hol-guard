@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import math
+import sqlite3
 from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import asdict
@@ -47,14 +49,54 @@ def result_dto(value: object) -> ContinuationResult | None:
 
 def continuation_authority(call: str, *, guard_home: Path | None = None, **args: Any) -> dict[str, Any]:
     carrier = {"call": call, **args}
+    for field, marker in (("operation", "operation_metadata_nonfinite"), ("operation_update", "metadata_nonfinite")):
+        operation = carrier.get(field)
+        if isinstance(operation, Mapping) and isinstance(operation.get("metadata"), Mapping):
+            normalized, nonfinite = _metadata_carrier(operation["metadata"])
+            carrier[field] = {**operation, "metadata": normalized}
+            carrier[marker] = nonfinite
     if call.startswith("store_") and guard_home is not None:
         carrier["guard_home"] = str(guard_home)
     result = native_runner_authority("continuation_authority", carrier, guard_home)
+    projected = result.get("operation_update")
+    if isinstance(projected, dict) and isinstance(projected.get("metadata"), dict):
+        metadata = projected["metadata"]
+        for path, token in carrier.get("operation_metadata_nonfinite", []):
+            parent = metadata
+            try:
+                for key in path[:-1]:
+                    parent = parent[key]
+                if path and parent[path[-1]] is None:
+                    parent[path[-1]] = float(token)
+            except (KeyError, IndexError, TypeError):
+                continue
     if result.get("exception") == "RuntimeError":
         raise RuntimeError(result["error"])
     if result.get("exception") == "ValueError":
         raise ValueError(result["error"])
+    if result.get("exception") == "sqlite3.IntegrityError":
+        raise sqlite3.IntegrityError(result["error"])
+    if result.get("exception") == "sqlite3.DatabaseError":
+        raise sqlite3.DatabaseError(result["error"])
     return result
+
+
+def _metadata_carrier(value: object) -> tuple[object, list[tuple[list[str | int], str]]]:
+    """Encode legacy nonfinite metadata values outside the strict JSON value tree."""
+    nonfinite: list[tuple[list[str | int], str]] = []
+
+    def normalize(item: Any, path: list[str | int]) -> Any:
+        if isinstance(item, float) and not math.isfinite(item):
+            token = "NaN" if math.isnan(item) else "Infinity" if item > 0 else "-Infinity"
+            nonfinite.append((path, token))
+            return None
+        if isinstance(item, Mapping):
+            return {key: normalize(nested, [*path, key]) for key, nested in item.items()}
+        if isinstance(item, (list, tuple)):
+            return [normalize(nested, [*path, index]) for index, nested in enumerate(item)]
+        return item
+
+    return normalize(value, []), nonfinite
 
 
 def project(

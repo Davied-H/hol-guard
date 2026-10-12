@@ -60,6 +60,7 @@ pub(crate) fn evaluate(args: &Value) -> KindResult {
                 request[key] = args[key].clone();
             }
             request["call"] = json!("store_finalize");
+            request["metadata_nonfinite"] = args["operation_metadata_nonfinite"].clone();
             crate::continuation_store::evaluate(&request)
         }
         "claim_check" => Ok(crate::continuation_store::claim_check(args)),

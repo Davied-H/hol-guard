@@ -11,7 +11,8 @@ import sqlite3
 import subprocess
 import sys
 import types
-from datetime import datetime, timezone
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 BASE = "c339d9db720c85664f6bbdc08167e5b750a713bc"
@@ -264,3 +265,79 @@ document = {"schema": "guard.continuation-parity.v1", "source_revision": BASE, "
 target = ROOT / "rust/crates/guard-runtime/tests/fixtures/continuation_authority_vectors.json"
 target.write_text(json.dumps(document, indent=2, ensure_ascii=True) + "\n")
 print(f"froze {len(cases)} original outcomes")
+
+
+def record_lease_traces():
+    method = next(
+        item
+        for node in ast.parse(store_source).body
+        if isinstance(node, ast.ClassDef) and node.name == "StoreContinuationMixin"
+        for item in node.body
+        if isinstance(item, ast.FunctionDef) and item.name == "claim_continuation_attempt"
+    )
+    fixed = types.ModuleType("fixture")
+    fixed.hex = "00112233445566778899aabbccddeeff"
+    lease_bindings = {"datetime": datetime, "timedelta": timedelta, "uuid4": lambda: fixed}
+    exec(compile(ast.Module(body=[method], type_ignores=[]), store_path, "exec"), lease_bindings)
+    schema = "create table guard_continuation_claims (request_id text,offer_hash text,action text,state text,claimed_at text,lease_expires_at text,claim_id text,evidence_id text,primary key(request_id,offer_hash,action))"
+
+    class LeaseOwner:
+        def __init__(self, connection):
+            self.connection = connection
+
+        @contextmanager
+        def _connect(self):
+            with self.connection:
+                yield self.connection
+
+    traces = []
+    clocks = (
+        "2026-01-01T00:00:00+00:00",
+        "2026-01-01T00:00:00Z",
+        "2026-01-01T05:30:00+05:30",
+        "2026-01-01T00:00:00",
+        "bad",
+    )
+    existing = (
+        (None, None),
+        ("claimed", None),
+        ("claimed", "2025-12-31T23:59:59Z"),
+        ("claimed", "2026-01-01T00:01:00Z"),
+        ("claimed", "2026-01-01T00:01:00"),
+        ("claimed", "bad"),
+        ("waiting", None),
+        ("completed", None),
+    )
+    for clock, seconds, (state, expiry) in itertools.product(clocks, (-1, 0, 0.0000005, 0.0000015, 0.25, 30), existing):
+        connection = sqlite3.connect(":memory:")
+        connection.row_factory = sqlite3.Row
+        connection.execute(schema)
+        seed = []
+        if state is not None:
+            seed = [
+                ["request", "offer", "allow_once", state, "2025-01-01T00:00:00Z", expiry, "old-claim", "old-evidence"]
+            ]
+            connection.execute("insert into guard_continuation_claims values (?,?,?,?,?,?,?,?)", seed[0])
+            connection.commit()
+        args = {
+            "request_id": "request",
+            "offer_hash": "offer",
+            "action": "allow_once",
+            "now": clock,
+            "lease_seconds": seconds,
+        }
+        try:
+            result = lease_bindings["claim_continuation_attempt"](LeaseOwner(connection), **args)
+            outcome = {"claim_id": result}
+        except (ValueError, OverflowError) as error:
+            outcome = {"error": str(error), "exception": type(error).__name__}
+        rows = [list(row) for row in connection.execute("select * from guard_continuation_claims order by request_id")]
+        traces.append(
+            {"seed": seed, "args": {**args, "new_claim_id": "claim-" + fixed.hex}, "expected": outcome, "rows": rows}
+        )
+        connection.close()
+    output = ROOT / "rust/crates/guard-runtime/tests/fixtures/continuation_lease_traces.json"
+    output.write_text(json.dumps({"source_revision": BASE, "schema_sql": schema, "cases": traces}, indent=2) + "\n")
+
+
+record_lease_traces()
