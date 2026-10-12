@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-use base64::{engine::general_purpose::STANDARD, Engine};
+use base64ct::{Base64, Encoding};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
@@ -141,7 +141,7 @@ pub(super) fn operation(
                 .as_str()
                 .filter(|s| s.len() <= CHUNK * 2)
                 .ok_or(INVALID)?;
-            let chunk = STANDARD.decode(encoded).map_err(|_| INVALID)?;
+            let chunk = Base64::decode_vec(encoded).map_err(|_| INVALID)?;
             if chunk.is_empty() || chunk.len() > CHUNK {
                 return Err(INVALID);
             }
@@ -218,7 +218,7 @@ pub(super) fn operation(
             }
             let end = offset.saturating_add(CHUNK).min(bytes.len());
             let result = json!({"wire_download":{"handle":token,"offset":offset,"total":bytes.len(),
-                "sha256":digest,"bytes":STANDARD.encode(&bytes[offset..end])}});
+                "sha256":digest,"bytes":Base64::encode_string(&bytes[offset..end])}});
             entry.touched = Instant::now();
             if end == bytes.len() {
                 cache.remove(token);
@@ -244,7 +244,7 @@ pub(super) fn result_wire(
     let token = new_handle()?;
     let digest = hex::encode(Sha256::digest(&bytes));
     let response = json!({"wire_download":{"handle":token,"offset":0,"total":bytes.len(),
-        "sha256":digest,"bytes":STANDARD.encode(&bytes[..CHUNK])}});
+        "sha256":digest,"bytes":Base64::encode_string(&bytes[..CHUNK])}});
     budget.check()?;
     let mut cache = cache().lock().map_err(|_| INVALID)?;
     prune(&mut cache);

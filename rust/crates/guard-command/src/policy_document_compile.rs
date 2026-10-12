@@ -218,8 +218,7 @@ fn selectors(matcher: &Value, key: &str, id: &str) -> Result<Vec<Value>, Error> 
 fn artifact_selectors(matcher: &Value, id: &str) -> Result<Vec<Value>, Error> {
     let artifacts = selectors(matcher, "artifacts", id)?;
     let tools = selectors(matcher, "tools", id)?;
-    if artifacts != [Value::Null] && tools != [Value::Null]
-        || tools != [Value::Null] && matcher.get("publishers").is_some()
+    if tools != [Value::Null] && (artifacts != [Value::Null] || matcher.get("publishers").is_some())
     {
         return Err(error("unsupported_policy_match", id));
     }

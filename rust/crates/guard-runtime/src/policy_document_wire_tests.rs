@@ -54,7 +54,7 @@ fn large_policy_input_and_output_round_trip_without_evaluating_partial_uploads()
     assert_eq!(
         request(
             "wire_append",
-            json!({"handle":token,"offset":1,"bytes":STANDARD.encode(b"x")}),
+            json!({"handle":token,"offset":1,"bytes":Base64::encode_string(b"x")}),
             &home
         )["status"],
         "error"
@@ -62,7 +62,7 @@ fn large_policy_input_and_output_round_trip_without_evaluating_partial_uploads()
     assert_eq!(
         request(
             "wire_append",
-            json!({"handle":token,"offset":0,"bytes":STANDARD.encode(b"x")}),
+            json!({"handle":token,"offset":0,"bytes":Base64::encode_string(b"x")}),
             &(home.clone() + "-other")
         )["status"],
         "error"
@@ -70,7 +70,7 @@ fn large_policy_input_and_output_round_trip_without_evaluating_partial_uploads()
     for (index, chunk) in input.chunks(CHUNK).enumerate() {
         let result = run(
             "wire_append",
-            json!({"handle":token,"offset":index*CHUNK,"bytes":STANDARD.encode(chunk)}),
+            json!({"handle":token,"offset":index*CHUNK,"bytes":Base64::encode_string(chunk)}),
             &home,
         );
         assert_eq!(result["wire_upload"]["offset"], index * CHUNK + chunk.len());
@@ -84,7 +84,7 @@ fn large_policy_input_and_output_round_trip_without_evaluating_partial_uploads()
     loop {
         let page = &result["wire_download"];
         assert_eq!(page["offset"], bytes.len());
-        bytes.extend(STANDARD.decode(page["bytes"].as_str().unwrap()).unwrap());
+        bytes.extend(Base64::decode_vec(page["bytes"].as_str().unwrap()).unwrap());
         if page["total"] == bytes.len() {
             break;
         }
