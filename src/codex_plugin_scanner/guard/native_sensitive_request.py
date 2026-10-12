@@ -42,7 +42,19 @@ _TUPLE_FIELDS = frozenset(
         "shell_execution_effective_cwds",
         "pytest_config_sources",
         "pytest_config_reason_codes",
-        "interpreter_executable_identities",
+    }
+)
+_REQUIRED_TEXT = frozenset({"tool_name", "normalized_tool_name", "command_text", "action_class", "reason"})
+_OPTIONAL_TEXT = frozenset(
+    {
+        "raw_command_text",
+        "shell_execution_context_hash",
+        "shell_execution_context_reason_code",
+        "guard_default_action",
+        "reason_code",
+        "restricted_profile_version",
+        "pytest_config_identity_sha256",
+        "script_read_identity_sha256",
     }
 )
 _SENSITIVITIES = frozenset({"high", "critical"})
@@ -179,16 +191,30 @@ def _evaluation_view(evaluation: CompositeCommandEvaluation | None) -> dict[str,
     }
 
 
+def _string_tuple(value: object) -> tuple[str, ...]:
+    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+        raise _invalid()
+    return tuple(value)
+
+
 def _tool_action_match(value: object, canonical: CanonicalCommand | None) -> ToolActionRequestMatch:
     wire = _object(value, _TOOL_ACTION_FIELDS)
     values: dict[str, Any] = {}
     for name, item in wire.items():
+        if name == "canonical_command":
+            continue
         if name in _TUPLE_FIELDS:
-            if not isinstance(item, list):
+            values[name] = _string_tuple(item)
+        elif name == "interpreter_executable_identities":
+            if not isinstance(item, list) or any(not isinstance(entry, dict) for entry in item):
                 raise _invalid()
             values[name] = tuple(item)
+        elif name in _REQUIRED_TEXT:
+            values[name] = _text(item)
+        elif name in _OPTIONAL_TEXT:
+            values[name] = _optional_text(item)
         else:
-            values[name] = item
+            raise _invalid()
     command_wire = wire["canonical_command"]
     if command_wire is not None:
         if not isinstance(command_wire, dict):

@@ -70,6 +70,49 @@ fn ssh_private_key_path_is_classified() {
 }
 
 #[test]
+fn tool_action_wire_keeps_substitution_and_heredoc_text() {
+    use std::path::Path;
+
+    let command = crate::command_model::parse_shell_command(
+        "cat $(echo ~/.ssh/id_rsa); sh <<'EOF'\nsecret\nEOF",
+        None,
+        Some(Path::new("/home/user")),
+        "posix",
+        "shell_string",
+        "guard-shell",
+        true,
+    );
+    assert!(command
+        .embedded_commands
+        .iter()
+        .any(|item| { item.kind == "substitution" && item.text.contains("echo ~/.ssh/id_rsa") }));
+    assert!(command
+        .embedded_commands
+        .iter()
+        .any(|item| item.kind == "heredoc" && item.text.contains("secret")));
+    let mut found = crate::sfrs_dispatcher_request::ToolActionRequestMatch::new(
+        "Bash",
+        "bash",
+        &command.raw_text,
+        "file_read",
+        "ssh key",
+    );
+    found.canonical_command = Some(command.clone());
+    let wire = super::tool_action_wire(&found).expect("wire");
+    let embedded = wire["canonical_command"]["embedded_commands"]
+        .as_array()
+        .expect("embedded");
+    assert_eq!(embedded.len(), command.embedded_commands.len());
+    for (slot, item) in embedded.iter().zip(&command.embedded_commands) {
+        assert_eq!(slot["text"], json!(item.text), "{}", item.kind);
+    }
+    assert_eq!(
+        wire["canonical_command"]["raw_text"],
+        json!(command.raw_text)
+    );
+}
+
+#[test]
 fn ordinary_source_path_is_not_sensitive() {
     let found = ask(
         "classify_path",

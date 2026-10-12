@@ -284,6 +284,21 @@ fn tool_action_wire(found: &ToolActionRequestMatch) -> Result<Value, &'static st
     {
         if let Some(fields) = slot.as_object_mut() {
             fields.insert("raw_text".to_owned(), json!(command.raw_text));
+            let Some(embedded) = fields
+                .get_mut("embedded_commands")
+                .and_then(Value::as_array_mut)
+            else {
+                return Err(INVALID);
+            };
+            if embedded.len() != command.embedded_commands.len() {
+                return Err(INVALID);
+            }
+            for (slot, embedded_command) in embedded.iter_mut().zip(&command.embedded_commands) {
+                let Some(object) = slot.as_object_mut() else {
+                    return Err(INVALID);
+                };
+                object.insert("text".to_owned(), json!(embedded_command.text));
+            }
         }
     }
     Ok(wire)
