@@ -399,8 +399,9 @@ fn evaluate_envelope(
                         execution_environment,
                         super::git_helper_context::stdout_piped(model, index),
                     );
-                    !segment.environment_names.is_empty()
-                        || !super::directory_targets::drive_targets_quoted(segment)
+                    segment.environment_names.iter().any(|name| {
+                        !crate::command_compatibility::inert_environment_name(name)
+                    }) || !super::directory_targets::drive_targets_quoted(segment)
                         || inspection == Some(false)
                         // Only inspection operations have a configuration proof
                         // to invalidate. Other Git operations retain their own

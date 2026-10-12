@@ -92,7 +92,9 @@ pub(super) fn unwrap_wrappers(
 
 /// `command X`, `time X` and `env NAME=value... X` run `X` with no other
 /// change. Bare `env X` is left alone: it only bypasses shell functions, and
-/// extension floors key on that spelling.
+/// extension floors key on that spelling. An `env` prefix is transparent only
+/// when every assignment is inert. Any other name can retarget the program,
+/// so the `env` executable stays in place and the command remains uncertain.
 fn transparent_prefix(tokens: &[String], index: usize) -> Option<(usize, Vec<String>)> {
     let mut next = index + 1;
     let mut names = Vec::new();
@@ -100,6 +102,9 @@ fn transparent_prefix(tokens: &[String], index: usize) -> Option<(usize, Vec<Str
         "command" | "time" => {}
         "env" | "/usr/bin/env" | "/bin/env" => {
             while let Some(name) = tokens.get(next).and_then(|value| assignment_name(value)) {
+                if !crate::command_compatibility::inert_environment_name(name) {
+                    return None;
+                }
                 names.push(name.to_owned());
                 next += 1;
             }
