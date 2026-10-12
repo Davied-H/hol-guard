@@ -6,6 +6,7 @@ use serde_json::Value;
 
 use crate::codex_tool_output_op::ResidentInspectionHost;
 use crate::runner_authority_op::KindResult;
+use crate::shell_request_inspection_host::ShellInspectionHost;
 
 pub(crate) fn dispatch(args: &Value) -> KindResult {
     let entry = args["entry"]
@@ -44,7 +45,9 @@ pub(crate) fn dispatch(args: &Value) -> KindResult {
     {
         return Err("native_shell_request_host_invalid");
     }
-    let host = ResidentInspectionHost { facts: &facts };
+    let host = ShellInspectionHost {
+        base: ResidentInspectionHost { facts: &facts },
+    };
     let context = Ctx::new(&host, &facts.process_cwd, &facts.home);
     guard_command::shell_request_authority::dispatch(entry, &args["arguments"], &context)
 }

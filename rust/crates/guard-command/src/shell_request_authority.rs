@@ -65,7 +65,7 @@ pub fn dispatch(entry: &str, args: &Value, context: &Ctx) -> Result<Value, &'sta
             return Ok(json!({"flags":flags(text(args,"command_text")?,depth)}));
         }
         "_gh_pr_create_uses_safe_static_body_file" => json!(
-            crate::sfrs_gh_body_safety::gh_pr_create_uses_safe_static_body_file(
+            crate::sfrs_gh_static_body_safety::gh_pr_create_uses_safe_static_body_file(
                 text(args, "command_text")?,
                 args["cwd"].as_str().map(Path::new),
                 args["home_dir"].as_str().map(Path::new),
@@ -73,7 +73,7 @@ pub fn dispatch(entry: &str, args: &Value, context: &Ctx) -> Result<Value, &'sta
             )
         ),
         "_gh_pr_edit_uses_safe_static_body_file" => json!(
-            crate::sfrs_gh_body_safety::gh_pr_edit_uses_safe_static_body_file(
+            crate::sfrs_gh_static_body_safety::gh_pr_edit_uses_safe_static_body_file(
                 text(args, "command_text")?,
                 args["cwd"].as_str().map(Path::new),
                 args["home_dir"].as_str().map(Path::new),
