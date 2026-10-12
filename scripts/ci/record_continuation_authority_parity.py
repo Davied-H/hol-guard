@@ -261,6 +261,171 @@ for state, stored_claim, stored_evidence, claim_id in itertools.product(
         }
     )
     connection.close()
+TARGET = "target-12345678"
+for harness, attached, deadline, verified, headless in itertools.product(
+    ("codex", " Codex ", "", "  ", "pi", "OMP", "hermes", "other"),
+    (False, True),
+    (None, NOW + timedelta(hours=1), NOW - timedelta(hours=1), NOW),
+    (False, True),
+    (False, True),
+):
+    offer = c.capability_offer(
+        correlation_id=CORRELATION,
+        harness=harness,
+        original_hook_attached=attached,
+        wait_deadline=deadline,
+        opaque_target_id=TARGET,
+        session_target_verified=verified,
+        headless=headless,
+        now=lambda: NOW,
+    )
+    cases.append(
+        {
+            "args": {
+                "call": "offer",
+                "correlation_id": CORRELATION,
+                "harness": harness,
+                "original_hook_attached": attached,
+                "wait_deadline": wire(deadline),
+                "opaque_target_id": TARGET,
+                "session_target_verified": verified,
+                "headless": headless,
+                "now": NOW.isoformat(),
+            },
+            "expected": {"offer": wire(offer)},
+        }
+    )
+
+REPLAY_OFFERS = (
+    c.capability_offer(
+        correlation_id=CORRELATION,
+        harness="codex",
+        original_hook_attached=True,
+        wait_deadline=NOW + timedelta(hours=1),
+        now=lambda: NOW,
+    ),
+    c.capability_offer(
+        correlation_id=CORRELATION,
+        harness="codex",
+        original_hook_attached=False,
+        wait_deadline=None,
+        opaque_target_id=TARGET,
+        session_target_verified=True,
+        now=lambda: NOW,
+    ),
+    c.capability_offer(correlation_id=CORRELATION, harness="pi", original_hook_attached=False, wait_deadline=None),
+)
+
+
+def replay_case(prior, offer, action):
+    expected = {"result": wire(p.previous_result(prior, offer=offer, action=action))}
+    cases.append(
+        {"args": {"call": "replay", "prior": prior, "offer": wire(offer), "action": action}, "expected": expected}
+    )
+
+
+def replay_prior(offer, action, **overrides):
+    prior = {
+        "continuation_offer_hash": p.offer_hash(offer),
+        "continuation_action": action,
+        "continuation_status": "resumed",
+        "continuation_completed_at": "2026-01-01T00:00:00+00:00",
+        "continuation_evidence": [{"evidenceId": "evidence-1"}],
+        "continuation_reason": "decision_allowed",
+    }
+    prior.update(overrides)
+    return prior
+
+
+for offer in REPLAY_OFFERS:
+    for action in ("allow_once", "block"):
+        replay_case(None, offer, action)
+        replay_case([], offer, action)
+        replay_case({}, offer, action)
+        replay_case(replay_prior(offer, action), offer, action)
+        replay_case(replay_prior(offer, "block" if action == "allow_once" else "allow_once"), offer, action)
+        replay_case(replay_prior(offer, action, continuation_offer_hash="0" * 64), offer, action)
+        replay_case(replay_prior(offer, action, continuation_offer_hash=None), offer, action)
+offer = REPLAY_OFFERS[0]
+for status, completed in itertools.product(
+    (
+        "resumed",
+        "already_resumed",
+        "manual_retry_required",
+        "blocked_not_resumed",
+        "unsupported",
+        "failed",
+        "waiting",
+        " resumed ",
+        "sent",
+        "",
+        None,
+        7,
+    ),
+    (
+        "2026-01-01T00:00:00+00:00",
+        "2026-01-01T00:00:00Z",
+        " 2026-01-01T05:30:00+05:30 ",
+        "2025-12-31T16:00:00-08:00",
+        "2026-01-01T00:00:00",
+        "2026-01-01T00:00:00.123456Z",
+        "2026-01-01T00:00:00.120000+00:00",
+        "2026-01-01 00:00:00+00:00",
+        "2026-01-01",
+        "bad",
+        "",
+        None,
+        1767225600,
+    ),
+):
+    replay_case(
+        replay_prior(offer, "allow_once", continuation_status=status, continuation_completed_at=completed),
+        offer,
+        "allow_once",
+    )
+for evidence, reason in itertools.product(
+    (
+        [],
+        [{"evidenceId": "evidence-1"}],
+        ["x", {"evidenceId": " evidence-2 "}],
+        [{"evidenceId": ""}, {"evidenceId": "evidence-3"}],
+        [{"evidenceId": 5}],
+        {"evidenceId": "evidence-4"},
+        None,
+    ),
+    (None, "", "  ", " spaced reason ", "r" * 200, 12),
+):
+    replay_case(
+        replay_prior(offer, "allow_once", continuation_evidence=evidence, continuation_reason=reason),
+        offer,
+        "allow_once",
+    )
+for prior in (
+    None,
+    {},
+    [],
+    {"attempt_count": None},
+    {"attempt_count": True},
+    {"attempt_count": False},
+    {"attempt_count": -1},
+    {"attempt_count": 0},
+    {"attempt_count": 3},
+    {"attempt_count": 3.0},
+    {"attempt_count": "3"},
+):
+    cases.append({"args": {"call": "attempt", "prior": prior}, "expected": {"attempt_count": p.attempt_count(prior)}})
+for value in (
+    "waiting",
+    "resumed",
+    "already_resumed",
+    "blocked_not_resumed",
+    "manual_retry_required",
+    "unsupported",
+    "failed",
+    "other",
+    "",
+):
+    cases.append({"args": {"call": "status", "value": value}, "expected": {"status": p.public_status(value)}})
 document = {"schema": "guard.continuation-parity.v1", "source_revision": BASE, "source_sha256": hashes, "cases": cases}
 target = ROOT / "rust/crates/guard-runtime/tests/fixtures/continuation_authority_vectors.json"
 target.write_text(json.dumps(document, indent=2, ensure_ascii=True) + "\n")

@@ -94,7 +94,9 @@ fn replay(args: &Value) -> KindResult {
     };
     let completed = text(&value["continuation_completed_at"])
         .filter(|value| has_time_zone(value))
-        .and_then(guard_contracts::canonical_utc_timestamp);
+        .and_then(guard_contracts::canonical_utc_timestamp)
+        // Python `isoformat()` spelling: whole seconds drop the fraction.
+        .and_then(|value| crate::guard_store_json::add_seconds_isoformat(&value, 0));
     let evidence = value["continuation_evidence"]
         .as_array()
         .and_then(|values| values.iter().find(|v| v.is_object()))
@@ -123,10 +125,16 @@ pub(crate) fn has_time_zone(value: &str) -> bool {
     })
 }
 fn offer(args: &Value) -> KindResult {
-    let harness = text(&args["harness"]).unwrap_or("unknown").to_lowercase();
+    let harness = args["harness"]
+        .as_str()
+        .map(super::guard_store_json::py_strip)
+        .ok_or(ERR_INVALID)?
+        .to_lowercase();
     let deadline = &args["wait_deadline"];
     let attached = args["original_hook_attached"] == true;
-    let live = attached
+    // Mirror the old short-circuit: the deadline is only compared for an attached Codex hook.
+    let live = harness == "codex"
+        && attached
         && !deadline.is_null()
         && guard_contracts::utc_timestamp_micros(deadline.as_str().ok_or(ERR_INVALID)?)
             .ok_or(ERR_INVALID)?
