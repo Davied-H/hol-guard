@@ -2,9 +2,17 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
-from ci.gauntlet.agent_prompt import COMMANDS_HEADER, command_lines, fixture_authorization, scenario_prompt
+from ci.gauntlet.agent_prompt import (
+    COMMANDS_HEADER,
+    JSON_COMMANDS_HEADER,
+    command_block,
+    fixture_authorization,
+    scenario_prompt,
+)
 from ci.gauntlet.catalog import load_catalog
 from ci.gauntlet.fixtures import create_fixture
 
@@ -31,10 +39,30 @@ def test_rendered_command_arguments_survive_prompt_serialization(tmp_path, scena
 
 
 @pytest.mark.parametrize("command", ["", " ls", "ls ", "echo a\necho b", "echo a\recho b"])
-def test_command_lines_rejects_text_that_one_plain_line_would_change(command):
-    """A command list has no escaping, so text a line cannot carry exactly is refused."""
-    with pytest.raises(ValueError, match="one plain line"):
-        command_lines(["ls", command])
+def test_a_command_one_plain_line_would_change_keeps_the_json_list(command):
+    """A plain line has no escaping, so text it cannot carry exactly is listed as JSON instead."""
+    block = command_block(["ls", command])
+    assert block.startswith(JSON_COMMANDS_HEADER)
+    assert json.loads(block.removeprefix(JSON_COMMANDS_HEADER)) == ["ls", command]
+
+
+def test_a_newline_in_the_work_root_still_builds_the_prompt(tmp_path):
+    """A rendered path with a line break falls back to JSON rather than aborting the case."""
+    fixture = create_fixture(tmp_path / "line\nbreak")
+    scenario = next(item for item in load_catalog() if any("{{home}}" in command for command in item.commands))
+    rendered = scenario.render({"home": str(fixture.home), "workspace": str(fixture.workspace), "collector_url": ""})
+    prompt = scenario_prompt(rendered)
+    assert tuple(json.loads(prompt.split(JSON_COMMANDS_HEADER, 1)[1])) == rendered.commands
+
+
+def test_watch_guidance_stays_outside_the_command_block():
+    """Only the Watch command follows the header, so its timeout guidance is never run as Bash."""
+    from ci.gauntlet.case_helpers import _scenario_prompt
+
+    watch = next(item for item in load_catalog() if item.oracle == "watch-command")
+    head, block = _scenario_prompt(watch).split(COMMANDS_HEADER, 1)
+    assert tuple(block.split("\n")) == watch.commands
+    assert "Set timeout to 120 seconds explicitly." in head
 
 
 def test_authorization_names_only_generated_fixture_scope(tmp_path):
