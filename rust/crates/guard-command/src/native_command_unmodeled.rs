@@ -1,15 +1,18 @@
-//! Keep commands the canonical parser cannot model reviewable where safe.
+//! Keep ordinary shell structure the canonical parser cannot model reviewable.
 //!
-//! Loops, heredocs, shell wrappers and environment prefixes defeat the exact
-//! model that extension matchers need. Treating that as an evaluation failure
-//! blocked them outright, so a fully permitted `gh` call inside a `for` loop
-//! could not even be approved. They are now treated like an uncertain
-//! observation: they take the strongest floor of every active extension that
-//! could own part of them, and never less than review. An extension could own
-//! the command when the text names one of its programs, when it cannot be
-//! recognized by name, or when the text runs an interpreter or synthesizes a
-//! program name the scan cannot see. Signed or managed policy keeps the
-//! evaluation failure.
+//! Loops, conditionals and heredocs defeat the exact model that extension
+//! matchers need. Treating that as an evaluation failure blocked them
+//! outright, so a fully permitted `gh` call inside a `for` loop, or a
+//! `gh pr comment` fed by a heredoc, could not even be approved. Those two
+//! shapes are now treated like an uncertain observation: they take the
+//! strongest floor of every active extension whose programs the text names,
+//! or that cannot be recognized by name, and never less than review.
+//!
+//! Everything that could hide a program or move data keeps the evaluation
+//! failure: wrappers, nested executors, command substitution, redirects
+//! other than one input heredoc, `PATH` overrides, interpreters and program
+//! names built from expansions or globs, as do signed or managed policy and
+//! global lockdown.
 
 use std::collections::BTreeSet;
 use std::time::Instant;
@@ -104,7 +107,7 @@ impl CompiledNativeCommandControls {
 
     /// The strongest floor of every active extension that could own part of
     /// the command, and never less than review. `None` keeps the evaluation
-    /// failure where signed or managed policy governs the controls.
+    /// failure.
     fn unmodeled_floor(&self, command: &CanonicalCommandV1) -> Option<&'static str> {
         if self.global_block
             || self.binding.managed_revision != 0
@@ -116,13 +119,18 @@ impl CompiledNativeCommandControls {
         {
             return None;
         }
+        if !reviewable_structure(command) {
+            return None;
+        }
         let text = &command.normalized_text;
-        let named = named_words(text);
         let literal = unquoted_literal(text);
-        let opaque = synthesizes_program(&literal) || {
-            let interpreted = named_words(&literal);
-            INTERPRETERS.iter().any(|name| interpreted.contains(*name))
-        };
+        let interpreted = named_words(&literal);
+        if synthesizes_program(&literal)
+            || INTERPRETERS.iter().any(|name| interpreted.contains(*name))
+        {
+            return None;
+        }
+        let named = named_words(text);
         let mut floor = "review";
         for (index, extension) in self.program.extensions.iter().enumerate() {
             if !self.active_extensions.contains(&extension.extension_id) {
@@ -132,11 +140,10 @@ impl CompiledNativeCommandControls {
                 .iter()
                 .find(|(id, _)| *id == extension.extension_id)
                 .map(|(_, executables)| *executables);
-            let owns = opaque
-                || self
-                    .program
-                    .extension_names(index, compatibility)
-                    .is_none_or(|names| names.is_empty() || !names.is_disjoint(&named));
+            let owns = self
+                .program
+                .extension_names(index, compatibility)
+                .is_none_or(|names| names.is_empty() || !names.is_disjoint(&named));
             if owns && rank(self.extension_floor(index)) > rank(floor) {
                 floor = self.extension_floor(index);
             }
@@ -173,6 +180,65 @@ impl CompiledNativeCommandControls {
             .max_by_key(|floor| rank(floor))
             .unwrap_or("review")
     }
+}
+
+/// Loops and conditionals, or one heredoc that only feeds standard input,
+/// with nothing in the shell text that redirects, substitutes or overrides
+/// `PATH`.
+fn reviewable_structure(command: &CanonicalCommandV1) -> bool {
+    if command.path_overridden || command.confidence != "uncertain" {
+        return false;
+    }
+    match command.uncertainty_reason.as_deref() {
+        Some("compound_shell_not_yet_supported") => {
+            !moves_data(&unquoted_literal(&command.normalized_text))
+        }
+        Some("command_redirect_not_yet_supported") => input_heredoc(&command.normalized_text),
+        _ => false,
+    }
+}
+
+/// Whether shell text redirects, substitutes or sets the environment of a
+/// command, such as `PATH`, outside single quotes.
+fn moves_data(literal: &str) -> bool {
+    literal.contains(['<', '>', '`'])
+        || literal.contains("$(")
+        || command_words(literal).any(|word| {
+            is_assignment(word)
+                || matches!(
+                    word,
+                    "export" | "declare" | "typeset" | "readonly" | "local" | "unset" | "alias"
+                )
+        })
+}
+
+/// One heredoc on the first line, ending the text, whose body cannot run
+/// commands: its delimiter is quoted, or the body expands nothing.
+fn input_heredoc(text: &str) -> bool {
+    let Some((line, rest)) = text.split_once('\n') else {
+        return false;
+    };
+    let Some((before, after)) = line.split_once("<<") else {
+        return false;
+    };
+    let after = after.strip_prefix('-').unwrap_or(after).trim();
+    let quoted = after.starts_with(['\'', '"']);
+    let delimiter = after.trim_matches(['\'', '"']);
+    if delimiter.is_empty()
+        || !delimiter
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_')
+        || moves_data(&unquoted_literal(before))
+    {
+        return false;
+    }
+    let mut lines: Vec<&str> = rest.lines().collect();
+    if lines.pop().map(str::trim) != Some(delimiter)
+        || lines.iter().any(|body| body.trim() == delimiter)
+    {
+        return false;
+    }
+    quoted || lines.iter().all(|body| !body.contains(['$', '`', '\\']))
 }
 
 /// Every word the shell could read as a program name or keyword token, with
@@ -245,6 +311,19 @@ fn unquoted_literal(text: &str) -> String {
 /// Whether a command position holds an expansion, glob or `.` source, which
 /// can run a program whose name appears nowhere in the text.
 fn synthesizes_program(literal: &str) -> bool {
+    command_words(literal)
+        .filter(|word| !is_assignment(word))
+        .any(|word| {
+            !matches!(
+                word,
+                "for" | "case" | "select" | "in" | "done" | "fi" | "esac" | "[" | "[["
+            ) && (word == "." || word.contains(['$', '*', '?', '[']))
+        })
+}
+
+/// The leading assignments and first word of each simple command, after
+/// any shell keyword that takes a command position.
+fn command_words(literal: &str) -> impl Iterator<Item = &str> {
     literal
         .split(|character: char| {
             matches!(
@@ -252,15 +331,18 @@ fn synthesizes_program(literal: &str) -> bool {
                 ';' | '&' | '|' | '(' | ')' | '{' | '}' | '\n' | '`'
             )
         })
-        .any(|piece| {
-            let mut words = piece
+        .flat_map(|piece| {
+            let words = piece
                 .split_whitespace()
-                .skip_while(|word| SHELL_PREFIXES.contains(word) || is_assignment(word));
-            match words.next() {
-                Some("for" | "case" | "select" | "in" | "done" | "fi" | "esac" | "[" | "[[")
-                | None => false,
-                Some(word) => word == "." || word.contains(['$', '*', '?', '[']),
+                .skip_while(|word| SHELL_PREFIXES.contains(word));
+            let mut leading = Vec::new();
+            for word in words {
+                leading.push(word);
+                if !is_assignment(word) {
+                    break;
+                }
             }
+            leading
         })
 }
 

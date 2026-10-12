@@ -188,7 +188,7 @@ fn a_redirect_never_lowers_the_floor_of_the_command_it_wraps() {
     }
     assert_eq!(
         evaluate("fd -X rm {} > /tmp/out.log").minimum_action,
-        evaluate("fd -X rm {}").minimum_action
+        "block"
     );
 }
 
