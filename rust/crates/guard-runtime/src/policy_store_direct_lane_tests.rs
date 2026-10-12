@@ -243,3 +243,36 @@ fn malformed_binding_rejects_the_push_without_installing_it() {
         Some(DirectLaneDefer::Unbound)
     );
 }
+
+#[test]
+fn defer_reasons_name_the_daemon_path() {
+    assert_eq!(
+        DirectLaneDefer::Unsupported.code(),
+        "direct_lane_unsupported"
+    );
+    assert_eq!(DirectLaneDefer::Unbound.code(), "direct_lane_unbound");
+    assert_eq!(
+        DirectLaneDefer::SnapshotUnavailable.code(),
+        "direct_lane_snapshot_unavailable"
+    );
+    assert_eq!(
+        DirectLaneDefer::AckMissing.code(),
+        "direct_lane_ack_missing"
+    );
+    assert_eq!(
+        DirectLaneDefer::AckMismatch.code(),
+        "direct_lane_ack_mismatch"
+    );
+    assert_eq!(
+        DirectLaneDefer::AckExpired.code(),
+        "direct_lane_ack_expired"
+    );
+    assert_eq!(
+        DirectLaneDefer::WorkspaceUnknown.code(),
+        "direct_lane_workspace_unknown"
+    );
+    assert_eq!(
+        DirectLaneDefer::InputChanged.code(),
+        "direct_lane_input_changed"
+    );
+}

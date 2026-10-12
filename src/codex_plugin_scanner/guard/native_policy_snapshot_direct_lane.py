@@ -206,6 +206,8 @@ def _ensure_private_directory(directory: Path) -> None:
     if not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != os.getuid():
         raise OSError("direct lane ACK directory is not private")
     if stat.S_IMODE(metadata.st_mode) & 0o077:
+        # Owner-only. A directory needs the execute bit, and 0o644 would leave it readable.
+        # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
         os.chmod(directory, 0o700)
 
 
