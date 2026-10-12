@@ -192,9 +192,7 @@ def _caller_incomplete_identity(reason: SkillDirectoryIdentityFailure) -> SkillD
         "entryCount": 0,
         "totalBytes": 0,
     }
-    encoded = json.dumps(material, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode(
-        "ascii"
-    )
+    encoded = json.dumps(material, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("ascii")
     return SkillDirectoryIdentity(
         schema_version=SKILL_DIRECTORY_IDENTITY_SCHEMA,
         status="incomplete",
