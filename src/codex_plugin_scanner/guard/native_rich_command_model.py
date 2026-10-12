@@ -50,9 +50,9 @@ class NativeCommandModelError(RuntimeError, ValueError):
 
     def __init__(self, message: str) -> None:
         super().__init__(message)
-        from .native_local_cli_identity import _failed
+        from .native_local_cli_identity import record_local_cli_identity_failure
 
-        _failed(message)
+        record_local_cli_identity_failure(message)
 
 
 def _shape(value: Any, spec: Any) -> bool:
