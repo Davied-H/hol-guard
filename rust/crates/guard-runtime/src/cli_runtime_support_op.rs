@@ -188,9 +188,6 @@ pub(super) fn evaluate(operation: &str, params: &Value) -> Result<Value, &'stati
             .and_then(Value::as_str)
             .and_then(guard_command::normalized_remote_mcp_url)
             .map_or(Value::Null, Value::String),
-        "normalize_payload" | "normalize_arguments" | "normalize_argument" | "first_tool_call" => {
-            crate::cli_hook_input::evaluate(operation, params)?
-        }
         "server_fields" => server_fields(params.get("config").ok_or(INVALID)?)?,
         "tool_metadata" => tool_metadata(params)?,
         "tool_token" => {

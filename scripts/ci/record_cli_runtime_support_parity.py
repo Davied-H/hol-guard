@@ -178,67 +178,6 @@ def main() -> None:
             {"operation": "tool_token", "params": {"value": value}, "expected": legacy._copilot_mcp_tool_token(value)}
         )
     sources = {source.relative_to(ROOT).as_posix(): hashlib.sha256(original.encode()).hexdigest()}
-    loader_path = "src/codex_plugin_scanner/guard/cli/commands_support_hook_payload_loader.py"
-    loader_source = pinned_source(loader_path)
-    kimi_source = pinned_source("src/codex_plugin_scanner/guard/adapters/kimi_hooks.py")
-    input_bindings = {"json": json, "_canonical_harness_name": lambda value: value}
-    kimi = compile_nodes(kimi_source, {"normalize_kimi_prompt"}, input_bindings)
-    loader = compile_nodes(
-        loader_source,
-        {"normalize_hook_payload", "normalize_hook_arguments", "normalize_hook_argument_value", "first_hook_tool_call"},
-        vars(kimi),
-    )
-    values = [
-        None,
-        False,
-        12,
-        {},
-        [],
-        "",
-        "  ",
-        "null",
-        "false",
-        "1",
-        '"quoted"',
-        '{"x": 1}',
-        "[1]",
-        " broken ",
-        {"x": "raw"},
-    ]
-    for value in values:
-        cases.append(
-            {
-                "operation": "normalize_argument",
-                "params": {"value": value},
-                "expected": loader.normalize_hook_argument_value(value),
-            }
-        )
-    for value, alternative in itertools.product(values, values):
-        cases.append(
-            {
-                "operation": "normalize_arguments",
-                "params": {"values": [value, alternative]},
-                "expected": loader.normalize_hook_arguments(value, alternative),
-            }
-        )
-    for harness, payload in itertools.product(
-        [None, "copilot", "kimi"],
-        [
-            {},
-            {"toolName": "echo", "toolArgs": "{}", "hookEventName": "PreToolUse"},
-            {"tool_name": "wanted", "toolCalls": [{"name": "other", "args": "[]"}, {"name": "wanted", "args": "{}"}]},
-            {"tool_input": None, "arguments": "[1]", "prompt": [{"text": "one"}, {"type": "image"}, {"text": "two"}]},
-            {"prompt": [{"type": "image"}]},
-        ],
-    ):
-        cases.append(
-            {
-                "operation": "normalize_payload",
-                "params": {"payload": payload, "harness": harness},
-                "expected": loader.normalize_hook_payload(payload, harness=harness),
-            }
-        )
-    sources[loader_path] = hashlib.sha256(loader_source.encode()).hexdigest()
     url_path = "src/codex_plugin_scanner/guard/runtime/mcp_server_contribution.py"
     url_source = pinned_source(url_path)
     names = {

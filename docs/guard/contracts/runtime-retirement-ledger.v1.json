@@ -4657,25 +4657,12 @@
    "parity_fixture": "rust/crates/guard-command/tests/fixtures/restricted_pytest_parity.json"
   },
   {
-   "path": "src/codex_plugin_scanner/guard/cli/commands_support_hook_payload_loader.py",
-   "base_commit": "d75f7f7c59",
-   "source_sha256": "0623badd87e9b47eaef60ca37f908a890e6a44658d7422fd6b950f6385116be2",
-   "remaining_role": "Public DTO and bound native transport facade; configuration selection, identity composition, URL and hook-input normalization bodies removed.",
-   "native_replacements": [
-    "rust/crates/guard-runtime/src/cli_copilot_resolution.rs",
-    "rust/crates/guard-runtime/src/cli_hook_input.rs",
-    "rust/crates/guard-command/src/contributed_mcp_url.rs"
-   ],
-   "parity_fixture": "rust/crates/guard-runtime/tests/fixtures/cli_runtime_support_vectors.json"
-  },
-  {
    "path": "src/codex_plugin_scanner/guard/cli/commands_support_runtime_resolution.py",
    "base_commit": "d75f7f7c59",
    "source_sha256": "8336a2fff0dfde8c6666251bf7754d6e4ea3799272d1ffdcc2ad41073f95a944",
-   "remaining_role": "Public DTO and bound native transport facade; configuration selection, identity composition, URL and hook-input normalization bodies removed.",
+   "remaining_role": "Public DTO and bound native transport facade; configuration selection, identity composition, and URL normalization bodies removed.",
    "native_replacements": [
     "rust/crates/guard-runtime/src/cli_copilot_resolution.rs",
-    "rust/crates/guard-runtime/src/cli_hook_input.rs",
     "rust/crates/guard-command/src/contributed_mcp_url.rs"
    ],
    "parity_fixture": "rust/crates/guard-runtime/tests/fixtures/cli_runtime_support_vectors.json"
@@ -4684,10 +4671,9 @@
    "path": "src/codex_plugin_scanner/guard/runtime/mcp_server_contribution.py",
    "base_commit": "d75f7f7c59",
    "source_sha256": "545d2a53a975c58a54268403e454bb5905ed95e8d626c2d6eeb57a0095b03440",
-   "remaining_role": "Public DTO and bound native transport facade; configuration selection, identity composition, URL and hook-input normalization bodies removed.",
+   "remaining_role": "Public DTO and bound native transport facade; configuration selection, identity composition, and URL normalization bodies removed.",
    "native_replacements": [
     "rust/crates/guard-runtime/src/cli_copilot_resolution.rs",
-    "rust/crates/guard-runtime/src/cli_hook_input.rs",
     "rust/crates/guard-command/src/contributed_mcp_url.rs"
    ],
    "parity_fixture": "rust/crates/guard-runtime/tests/fixtures/cli_runtime_support_vectors.json"

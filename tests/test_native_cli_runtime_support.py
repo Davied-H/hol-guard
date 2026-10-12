@@ -29,7 +29,7 @@ def test_transport_never_recovers_from_native_unavailability(monkeypatch: pytest
 
     monkeypatch.setattr(client, "native_runner_authority", unavailable)
     with pytest.raises(ValueError, match="native_runner_authority_unavailable"):
-        client.cli_runtime_support("normalize_payload", {"payload": {}, "harness": "pi"})
+        client.cli_runtime_support("remote_url", {"value": "https://example.com/mcp"})
 
 
 def test_retired_bodies_are_absent_and_originals_are_identified() -> None:

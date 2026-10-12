@@ -645,22 +645,7 @@
    ],
    "native_replacements": [
     "rust/crates/guard-runtime/src/cli_runtime_support_op.rs",
-    "rust/crates/guard-runtime/src/cli_copilot_resolution.rs",
-    "rust/crates/guard-runtime/src/cli_hook_input.rs"
-   ]
-  },
-  {
-   "path": "src/codex_plugin_scanner/guard/cli/commands_support_hook_payload_loader.py",
-   "source_sha256": "0623badd87e9b47eaef60ca37f908a890e6a44658d7422fd6b950f6385116be2",
-   "forbidden_symbols": [
-    "normalized_expected_tool_name",
-    "fallback_tool_call",
-    "normalized"
-   ],
-   "native_replacements": [
-    "rust/crates/guard-runtime/src/cli_runtime_support_op.rs",
-    "rust/crates/guard-runtime/src/cli_copilot_resolution.rs",
-    "rust/crates/guard-runtime/src/cli_hook_input.rs"
+    "rust/crates/guard-runtime/src/cli_copilot_resolution.rs"
    ]
   },
   {
@@ -673,8 +658,7 @@
    ],
    "native_replacements": [
     "rust/crates/guard-runtime/src/cli_runtime_support_op.rs",
-    "rust/crates/guard-runtime/src/cli_copilot_resolution.rs",
-    "rust/crates/guard-runtime/src/cli_hook_input.rs"
+    "rust/crates/guard-runtime/src/cli_copilot_resolution.rs"
    ]
   }
  ]
