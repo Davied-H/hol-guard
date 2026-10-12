@@ -6,11 +6,11 @@
 //! A syntax error is a distinct outcome from input CPython would raise on
 //! instead of returning (nesting past the recursion limit, an integer past the
 //! digit limit): callers refuse the second kind. A lone `\uXXXX` surrogate
-//! escape is not one of those refusals. Rust `char` cannot store the unpaired
-//! surrogate CPython keeps, so the escape decodes to U+FFFD and parsing
-//! continues.
-
-use std::collections::HashSet;
+//! escape is not one of those refusals in a value. Rust `char` cannot store
+//! the unpaired surrogate CPython keeps, so the escape decodes to U+FFFD and
+//! parsing continues. An object key carrying one is refused instead: two keys
+//! that differ only in the surrogate would merge onto U+FFFD and the later
+//! member would silently replace a member CPython lists separately.
 
 use serde_json::Value;
 
@@ -227,6 +227,7 @@ fn parse_with(text: &str, unique: bool) -> Result<PyVal, JsonFailure> {
         text: text.as_bytes(),
         position: 0,
         unique,
+        saw_lone_surrogate: false,
     };
     parser.skip_space();
     let value = parser.value(0)?;
@@ -241,6 +242,7 @@ struct Parser<'a> {
     text: &'a [u8],
     position: usize,
     unique: bool,
+    saw_lone_surrogate: bool,
 }
 
 impl Parser<'_> {
@@ -393,8 +395,13 @@ impl Parser<'_> {
                                     self.position = mark;
                                 }
                             }
-                            let character =
-                                char::from_u32(code).unwrap_or(char::REPLACEMENT_CHARACTER);
+                            let character = match char::from_u32(code) {
+                                Some(character) => character,
+                                None => {
+                                    self.saw_lone_surrogate = true;
+                                    char::REPLACEMENT_CHARACTER
+                                }
+                            };
                             let mut buffer = [0_u8; 4];
                             out.extend_from_slice(character.encode_utf8(&mut buffer).as_bytes());
                         }
@@ -421,6 +428,7 @@ impl Parser<'_> {
         loop {
             self.skip_space();
             items.push(self.value(depth + 1)?);
+            self.saw_lone_surrogate = false;
             self.skip_space();
             match self.peek() {
                 Some(b',') => self.position += 1,
@@ -455,6 +463,9 @@ impl Parser<'_> {
                 return Err(JsonFailure::Syntax);
             }
             let key = self.string()?;
+            if std::mem::take(&mut self.saw_lone_surrogate) {
+                return Err(JsonFailure::Unrepresentable);
+            }
             self.skip_space();
             if self.peek() != Some(b':') {
                 return Err(JsonFailure::Syntax);
@@ -462,6 +473,7 @@ impl Parser<'_> {
             self.position += 1;
             self.skip_space();
             let value = self.value(depth + 1)?;
+            self.saw_lone_surrogate = false;
             match positions.get(key.as_str()) {
                 Some(&index) => {
                     if self.unique {
