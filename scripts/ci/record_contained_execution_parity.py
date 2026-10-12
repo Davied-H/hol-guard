@@ -299,6 +299,12 @@ def record() -> dict:
                 plan,
                 private_root=root / "private",
             )
+            # Relocate only fixture-parent metadata when replaying on hosts
+            # whose temporary directory has a different ancestor depth.
+            ancestor_metadata = " ".join(f'(literal "{parent}")' for parent in root.parents if parent != Path("/"))
+            cases[-1]["expected"]["value"] = cases[-1]["expected"]["value"].replace(
+                ancestor_metadata, "$FIXTURE_ANCESTORS"
+            )
             system_files = [p for p in model._MACOS_READ_FILES if p.exists()]
             if profile in {"node-test-readonly-v1", "vitest-readonly-v1", "node-build-output-v1"}:
                 system_files += [

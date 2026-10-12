@@ -5,7 +5,23 @@ use std::time::{Duration, Instant};
 
 fn expand(value: &Value, root: &str) -> Value {
     match value {
-        Value::String(text) => json!(text.replace("$ROOT", root)),
+        Value::String(text) => {
+            let ancestors = Path::new(root)
+                .ancestors()
+                .skip(1)
+                .filter(|p| *p != Path::new("/"))
+                .map(|p| {
+                    format!(
+                        "(literal {})",
+                        super::credentials::seatbelt_string(&p.to_string_lossy())
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(" ");
+            json!(text
+                .replace("$FIXTURE_ANCESTORS", &ancestors)
+                .replace("$ROOT", root))
+        }
         Value::Array(items) => json!(items.iter().map(|v| expand(v, root)).collect::<Vec<_>>()),
         Value::Object(items) => Value::Object(
             items

@@ -141,14 +141,14 @@ pub fn vitest_arguments(command: &[String]) -> Result<Vec<String>, RestrictedPyt
     let name = basename(&argv);
     let runtime = node_runtime_args(&argv)?;
     let invocation = bun_vitest_invocation(&argv);
-    let args = if matches!(name, "bun" | "bunx") && invocation.is_some() {
-        invocation.unwrap().1
+    let args = if let Some((_, args)) = invocation.filter(|_| matches!(name, "bun" | "bunx")) {
+        args
     } else if matches!(name, "bunx" | "npx") {
         let mut args = &argv[1..];
         if args.first().is_some_and(|v| v == "--no-install") {
             args = &args[1..];
         }
-        if !args.first().is_some_and(|v| v == "vitest") {
+        if args.first().is_none_or(|v| v != "vitest") {
             return invalid_vitest();
         }
         args[1..].to_vec()
@@ -163,7 +163,7 @@ pub fn vitest_arguments(command: &[String]) -> Result<Vec<String>, RestrictedPyt
     } else {
         return invalid_vitest();
     };
-    if !args.first().is_some_and(|v| v == "run")
+    if args.first().is_none_or(|v| v != "run")
         || args
             .iter()
             .any(|v| matches!(v.as_str(), ";" | "&&" | "||" | "|" | "|&" | "&"))
