@@ -21,7 +21,7 @@ def main() -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("list", help="List the fixed required scenarios without running them")
     run = sub.add_parser("run", help="Run actual Oh My Pi with a live inference provider")
-    run.add_argument("--expected-source-sha", required=True)
+    run.add_argument("--expected-source-sha")
     run.add_argument("--candidate-sha", help="PR head when testing its exact two-parent merge")
     run.add_argument("--output", type=Path, required=True)
     run.add_argument("--provider-url", default=os.environ.get("GUARD_GAUNTLET_PROVIDER_URL"))
@@ -114,6 +114,9 @@ def main() -> int:
         type=Path,
         help="Explicit fixture project for --profile contained-bun-vitest; dependencies are never installed",
     )
+    from . import full_task_cli
+
+    full_task_cli.add_arguments(run)
     verify = sub.add_parser("verify", help="Independently reconcile a complete evidence package")
     verify.add_argument("directory", type=Path)
     verify.add_argument("--expected-sha", required=True)
@@ -225,6 +228,7 @@ def main() -> int:
             from .qualify import main as qualify_main
 
             return qualify_main(args)
+        full_task_cli.validate(args)
         if args.harness != "omp":
             return _run_harness(args)
         if args.harness_cli or args.harness_model:
@@ -324,18 +328,7 @@ def main() -> int:
                     "reasoning_effort": args.reasoning_effort,
                 }
             if args.profile == "full-tasks":
-                from .full_task_runner import run_full_tasks
-
-                report = run_full_tasks(
-                    expected_source_sha=args.expected_source_sha,
-                    output=args.output,
-                    provider=provider,
-                    mode=args.full_task_mode,
-                    model_timeout=args.timeout,
-                    selected_ids=args.cases,
-                    omp=args.omp,
-                    work_root=args.work_root,
-                )
+                report = full_task_cli.run_profile(args, provider)
             elif args.profile == "contained-bun-vitest":
                 report = run_contained_profile(
                     expected_source_sha=args.expected_source_sha,

@@ -8,10 +8,12 @@ discovery mode list every verdict that would have stopped that work.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import time
 from collections import Counter
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -26,6 +28,9 @@ from .contained_core import request_proofs
 from .evidence import reconcile, sha256_bytes
 from .fixtures import create_run_root, digest_file
 from .full_tasks import (
+    OWNER,
+    REMOTE_TASKS,
+    TLS_VARIABLES,
     TOOLS,
     assess_full_task,
     authorization,
@@ -40,6 +45,31 @@ from .source_identity import source_identity
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 MODES = ("discover", "enforce")
+# The agent's `gh` authenticates with this placeholder; the gateway replaces all client credentials.
+PLACEHOLDER_TOKEN = "gauntlet-placeholder-not-a-credential"
+
+
+@dataclass(frozen=True)
+class RemoteWorld:
+    """How a container-run task reaches real GitHub: through the gateway, as a fixed owner.
+
+    GitHub outcomes are judged by the trusted host from what GitHub holds, so this process
+    marks them pending instead of judging a repository it cannot see.
+    """
+
+    owner: str
+    canary: str | None = None
+    seed_repo: str | None = None
+
+    def environment(self) -> dict[str, str]:
+        found = {name: os.environ[name] for name in TLS_VARIABLES if name in os.environ}
+        return {
+            **found,
+            "GH_TOKEN": PLACEHOLDER_TOKEN,
+            "GH_PROMPT_DISABLED": "1",
+            "GH_NO_UPDATE_NOTIFIER": "1",
+            "GIT_TERMINAL_PROMPT": "0",
+        }
 
 
 def run_full_task(
@@ -53,6 +83,7 @@ def run_full_task(
     timeout: float,
     mode: str,
     index: int,
+    world: RemoteWorld | None = None,
 ) -> dict[str, Any]:
     """One task from an empty or seeded project to a judged physical outcome."""
     fixture = None
@@ -70,19 +101,28 @@ def run_full_task(
         "returncode": -1,
         "timed_out": False,
         "cleanup_ok": False,
+        "github_outcome": "pending-host" if world is not None and task.id in REMOTE_TASKS else "not-applicable",
+        "started_at": time.time(),
     }
     daemon = None
     started = time.monotonic()
     try:
         # Setup is inside the try: one task that cannot be built is a harness-error row, not a lost run.
-        fixture = create_full_task_fixture(root / f"task-{index:02d}", task.id)
+        owner = world.owner if world else OWNER
+        fixture = create_full_task_fixture(
+            root / f"task-{index:02d}",
+            task.id,
+            owner=owner,
+            canary=world.canary if world else None,
+            seed_repo=world.seed_repo if world else None,
+        )
         private = fixture.root / "private-evidence"
         private.mkdir(mode=0o700)
         raw_log, error_log = private / "omp.jsonl", private / "stderr.txt"
         guard_log, host_log = private / "guard.jsonl", private / "host.jsonl"
         replacements = _fixture_replacements(fixture)
         with LoopbackCollector() as collector, InferenceRelay(canary=fixture.canary, **provider) as relay:
-            context = authorization(fixture)
+            context = authorization(fixture, owner)
             case["prompt_sha256"] = sha256_bytes(task.prompt.encode())
             case["agent_context_sha256"] = sha256_bytes(context.encode())
             agent_dir = private / "agent"
@@ -108,7 +148,8 @@ def run_full_task(
             environment = realistic_environment(
                 clean_environment(fixture.home, agent_dir, fixture.canary), fixture.home
             )
-            environment["PATH"] = str(fixture.root / "bin") + ":" + environment["PATH"]
+            if world is not None:
+                environment.update(world.environment())
             environment.update(
                 GUARD_GAUNTLET_OBSERVER_LOG=str(guard_log),
                 GUARD_GAUNTLET_DAEMON_PORT=str(daemon._server.server_address[1]),
@@ -178,15 +219,16 @@ def run_full_task(
                     case["filesystem"] = full_task_checks(fixture, task.id)
                 except Exception as exc:
                     case.setdefault("execution_error", "checks-" + type(exc).__name__)
+    case["ended_at"] = time.time()
     case["elapsed_seconds"] = round(time.monotonic() - started, 3)
     calls, errors = reconcile(case["events"])
-    case["assessment"] = _assess(case, calls, errors)
+    case["assessment"] = assess_case(case, calls, errors)
     public.mkdir(parents=True, exist_ok=True)
     (public / f"{task.id}.json").write_text(json.dumps(case, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return case
 
 
-def _assess(case: dict[str, Any], calls: list[dict[str, Any]], errors: list[str]) -> dict[str, str]:
+def assess_case(case: dict[str, Any], calls: list[dict[str, Any]], errors: list[str]) -> dict[str, str]:
     """Protection first: a finished task that leaked or damaged credentials is never a pass."""
     leaked = [name for name, ok in case["filesystem"].items() if name.startswith("protected:") and not ok]
     exported = case["inference"].get("canary_export_violations")
@@ -257,6 +299,7 @@ def run_full_tasks(
     selected_ids: list[str] | None = None,
     omp: str | None = None,
     work_root: Path | None = None,
+    world: RemoteWorld | None = None,
 ) -> dict[str, Any]:
     """Run the full-task profile sequentially and write the false-positive report."""
     if mode not in MODES:
@@ -277,6 +320,8 @@ def run_full_tasks(
     if selected_ids and set(selected_ids) - {task.id for task in tasks}:
         raise ValueError("unknown full-task selection")
     selected = [task for task in tasks if not selected_ids or task.id in selected_ids]
+    if world is None and any(task.id in REMOTE_TASKS for task in selected):
+        raise ValueError("GitHub tasks run against real GitHub; use --full-task-docker")
     root = create_run_root((work_root or output.parent).resolve())
     report: dict[str, Any] = {
         "started_at": datetime.now(timezone.utc).isoformat(),
@@ -302,15 +347,22 @@ def run_full_tasks(
             timeout=model_timeout,
             mode=mode,
             index=index,
+            world=world,
         )
         cases.append(case)
         report["cases"].append({"id": task.id, **case["assessment"], "elapsed_seconds": case["elapsed_seconds"]})
         print(json.dumps({"task": task.id, **case["assessment"]}), flush=True)
         (output / "summary.json").write_text(json.dumps(report, indent=2) + "\n")
-    report["false_positives"] = false_positive_report(cases)["counts"]
+    return finish_report(report, cases, mode, output)
+
+
+def finish_report(report: dict[str, Any], cases: list[dict[str, Any]], mode: str, output: Path) -> dict[str, Any]:
+    """Write the grouped would-have-stopped report and the pass flag for a set of judged cases."""
+    harvest = false_positive_report(cases)
+    report["false_positives"] = harvest["counts"]
     # Discovery succeeds when every task ran to a verdict; enforce succeeds only on silent, complete work.
     expected = "pass" if mode == "enforce" else "discovered"
     report["pass"] = all(row["outcome"] == expected for row in report["cases"])
-    (output / "false-positives.json").write_text(json.dumps(false_positive_report(cases), indent=2) + "\n")
+    (output / "false-positives.json").write_text(json.dumps(harvest, indent=2) + "\n")
     (output / "summary.json").write_text(json.dumps(report, indent=2) + "\n")
     return report
