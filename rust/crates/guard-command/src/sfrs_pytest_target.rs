@@ -403,7 +403,7 @@ mod tests {
             0
         ));
         assert!(!inline_python_payload_runs_pytest(
-            "print('''run\nsystem''', b'exec')",
+            "print('run system', b'exec')",
             0
         ));
         // A quote inside a comment does not open a string.

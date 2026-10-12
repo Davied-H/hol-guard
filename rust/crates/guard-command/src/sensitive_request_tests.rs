@@ -137,6 +137,38 @@ fn canonical_claim_must_match_the_resident_parse() {
 }
 
 #[test]
+fn native_evaluation_claim_without_redirects_binds() {
+    use std::path::Path;
+
+    let text = "echo hi 2> /dev/null; sh -c 'echo $(date)'";
+    let (cwd, home) = (Path::new("/work"), Path::new("/home/user"));
+    let mut native = crate::command_model::parse_shell_command(
+        text,
+        Some(cwd),
+        Some(home),
+        "posix",
+        "shell_string",
+        "guard-shell",
+        true,
+    );
+    let full = native.security_identity();
+    native.redirects.clear();
+    native.embedded_commands.clear();
+    let stripped = native.security_identity();
+    assert_ne!(full, stripped);
+    for identity in [full, stripped] {
+        let input = json!({
+            "tool_name": "Bash",
+            "arguments": {"command": text},
+            "cwd": "/work",
+            "home_dir": "/home/user",
+            "canonical": {"raw_text": text, "security_identity": identity},
+        });
+        assert!(ask("tool_action", &input).is_ok(), "{identity}");
+    }
+}
+
+#[test]
 fn malformed_evaluation_is_rejected() {
     let input = json!({
         "tool_name": "Bash",

@@ -196,7 +196,16 @@ fn bound_canonical(
     let dialect = claim_setting(claim, "dialect", "posix", Some(DIALECTS))?;
     let transport = claim_setting(claim, "transport", "shell_string", Some(TRANSPORTS))?;
     let provenance = claim_setting(claim, "extraction_provenance", "guard-shell", None)?;
-    let command = parse_shell_command(raw_text, cwd, home, dialect, transport, provenance, true);
+    let mut command =
+        parse_shell_command(raw_text, cwd, home, dialect, transport, provenance, true);
+    if command.security_identity() == identity {
+        return Ok(Some(command));
+    }
+    // A native evaluation's command carries no redirects or embedded
+    // commands (`_canonical_command_from_native`); the classifier then reads
+    // the same executable structure the caller holds.
+    command.redirects.clear();
+    command.embedded_commands.clear();
     if command.security_identity() != identity {
         return Err("native_sensitive_request_canonical_unbound");
     }
