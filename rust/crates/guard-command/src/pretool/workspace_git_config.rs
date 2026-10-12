@@ -118,7 +118,17 @@ pub(crate) fn helper_write_denials(config: &str, workspace: &Path) -> Option<Vec
             // slash. Later words are arguments a shell may resolve in the
             // repository, so each one is denied whether or not it exists yet:
             // the sandbox could otherwise create it for a later host command.
-            let words = value.trim_start_matches('!').split_whitespace();
+            // Shell separators and grouping split words too, so `./x.sh;` and
+            // `./a&&git` deny `x.sh` and `a`. An expansion names a path this
+            // reader cannot resolve, so it keeps the command at review.
+            if value.contains(['$', '`', '\\']) {
+                return None;
+            }
+            let words = value
+                .trim_start_matches(|c| c == '"' || c == '\'')
+                .trim_start_matches('!')
+                .split(|c: char| c.is_whitespace() || ";&|(){}<>".contains(c))
+                .filter(|word| !word.is_empty());
             for (index, word) in words.enumerate() {
                 let word = word.trim_matches(|c| c == '"' || c == '\'');
                 let word = match word.split_once('=') {
@@ -169,6 +179,19 @@ mod tests {
             denials("[include]\n\tpath = /etc/gitconfig.d/team\n", ws),
             Some(vec![])
         );
+    }
+
+    #[test]
+    fn shell_punctuation_splits_helper_words() {
+        let ws = Path::new("/w/repo");
+        let config = "[alias]\n\tx = \"!f() { ./tools/x.sh; }; f\"\n\ty = !./tools/a&&git status\n";
+        let got = denials(config, ws).unwrap();
+        assert!(got.contains(&ws.join("tools/x.sh")), "{got:?}");
+        assert!(got.contains(&ws.join("tools/a")), "{got:?}");
+        for expansion in ["!$PWD/tools/x.sh", "!`pwd`/x.sh", "!sh tools\\\\x"] {
+            let config = format!("[alias]\n\tx = {expansion}\n");
+            assert_eq!(denials(&config, ws), None, "{expansion}");
+        }
     }
 
     #[test]
