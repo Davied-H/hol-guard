@@ -43,6 +43,7 @@ QUERIES = frozenset(
         "PullRequestForBranch",
         "PullRequestByNumber",
         "PullRequestList",
+        "PullRequestProjectItems",
     }
 )
 MUTATIONS = frozenset({"RepositoryCreate", "PullRequestCreate"})

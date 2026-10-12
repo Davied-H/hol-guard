@@ -24,7 +24,12 @@ PLATFORM = "linux/amd64"
 ARM_PLATFORM = "linux/arm64"
 ARM_WHEEL_TAG = "manylinux_2_17_aarch64"
 SLUG = "hashgraph-online/hol-guard"
-GATEWAY_FILES = ("full_task_gateway.py", "full_task_gateway_policy.py", "full_task_graphql.py")
+GATEWAY_FILES = (
+    "full_task_gateway.py",
+    "full_task_gateway_policy.py",
+    "full_task_graphql.py",
+    "full_task_graphql_schema.py",
+)
 # Where the read-only inputs mount in the agent container; a wheel requirement is a path there.
 WHEELHOUSE_MOUNT = "/inputs/wheelhouse"
 SHA = re.compile(r"[0-9a-f]{40}")

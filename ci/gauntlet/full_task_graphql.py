@@ -16,6 +16,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from .full_task_graphql_schema import FRAGMENT_TYPES, MUTATION_PAYLOADS, SCHEMA
+
 MAX_TOKENS = 20000
 MAX_DEPTH = 16
 TOKEN = re.compile(
@@ -28,44 +30,6 @@ MUTATION_ROOTS = {
     "PullRequestCreate": frozenset({"createPullRequest"}),
 }
 VIEWER_FIELDS = frozenset({"login", "id", "name", "url", "databaseId", "__typename"})
-REPO_SCALARS = frozenset(
-    {
-        "id", "databaseId", "name", "nameWithOwner", "url", "sshUrl", "isPrivate", "visibility", "description",
-        "isFork", "isArchived", "isEmpty", "createdAt", "pushedAt", "updatedAt", "homepageUrl", "viewerPermission",
-        "hasIssuesEnabled", "hasWikiEnabled", "mergeCommitAllowed", "squashMergeAllowed", "rebaseMergeAllowed",
-        "__typename",
-    }
-)  # fmt: skip
-PR_SCALARS = frozenset(
-    {
-        "id", "number", "url", "title", "state", "headRefName", "baseRefName", "isDraft", "createdAt", "__typename",
-    }
-)  # fmt: skip
-# Fail-closed schema: type name -> {field name: child type, or None for a scalar}. A field that is not
-# listed for its parent type is rejected at every depth. Keys are real field names, never aliases.
-SCHEMA: dict[str, dict[str, str | None]] = {
-    "Repository": {
-        **dict.fromkeys(REPO_SCALARS),
-        "defaultBranchRef": "Ref",
-        "owner": "Owner",
-        "pullRequest": "PullRequest",
-        "pullRequests": "PullRequestConnection",
-    },
-    "Ref": {"name": None, "target": "GitObject", "__typename": None},
-    "GitObject": {"oid": None, "__typename": None},
-    "Owner": {"login": None, "id": None, "url": None, "__typename": None},
-    "PullRequest": dict.fromkeys(PR_SCALARS),
-    "PullRequestConnection": {
-        "totalCount": None,
-        "nodes": "PullRequest",
-        "pageInfo": "PageInfo",
-        "__typename": None,
-    },
-    "PageInfo": {"hasNextPage": None, "endCursor": None, "__typename": None},
-    "CreateRepositoryPayload": {"repository": "Repository", "__typename": None},
-    "CreatePullRequestPayload": {"pullRequest": "PullRequest", "__typename": None},
-}
-MUTATION_PAYLOADS = {"createRepository": "CreateRepositoryPayload", "createPullRequest": "CreatePullRequestPayload"}
 ID_KEYS = frozenset({"repositoryid", "headrepositoryid", "baserepositoryid", "repoid"})
 CROSS_OWNER_KEYS = frozenset({"ownerid", "teamid", "templaterepositoryid", "organizationid"})
 
@@ -305,21 +269,25 @@ class Checker:
                 else:
                     self.reference_walk(item)
 
+    @staticmethod
+    def type_fits(condition: str, parent: str) -> bool:
+        return condition == parent or condition in FRAGMENT_TYPES.get(parent, ())
+
     def expand(self, selections: list[Any], parent: str, seen: tuple[str, ...] = ()) -> list[Field]:
-        """Flatten fragments; a type condition must be exactly the parent type, anything else is refused."""
+        """Flatten fragments; a type condition must be the parent type or one listed for it in FRAGMENT_TYPES."""
         fields: list[Field] = []
         for item in selections:
             if isinstance(item, Field):
                 fields.append(item)
             elif isinstance(item, Inline):
-                if item.type_name not in (None, parent):
+                if item.type_name is not None and not self.type_fits(item.type_name, parent):
                     raise GraphQLRejectedError("graphql-fragment-type")
                 fields.extend(self.expand(item.selections, parent, seen))
             else:
                 if item.name in seen or item.name not in self.fragments:
                     raise GraphQLRejectedError("graphql-fragment")
                 type_name, body = self.fragments[item.name]
-                if type_name != parent:
+                if not self.type_fits(type_name, parent):
                     raise GraphQLRejectedError("graphql-fragment-type")
                 fields.extend(self.expand(body, parent, (*seen, item.name)))
         return fields

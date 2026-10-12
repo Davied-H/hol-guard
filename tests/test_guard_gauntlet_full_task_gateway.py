@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -235,10 +236,10 @@ def test_graphql_fragments_are_checked_like_fields() -> None:
     query = (
         "query RepositoryInfo($owner:String!,$name:String!)"
         "{ repository(owner:$owner,name:$name){ ...Parts } } "
-        "fragment Parts on Repository { id name owner { login } parent { id } }"
+        "fragment Parts on Repository { id name owner { login } collaborators { nodes { login } } }"
     )
     assert not graphql(query, {"owner": OWNER, "name": "seed-repo"}).allow
-    fine = query.replace(" parent { id }", " defaultBranchRef { name }")
+    fine = query.replace(" collaborators { nodes { login } }", " defaultBranchRef { name }")
     assert graphql(fine, {"owner": OWNER, "name": "seed-repo"}).allow
 
 
@@ -259,15 +260,28 @@ NESTED_HEAD = "query RepositoryInfo($owner:String!,$name:String!){ repository(ow
     [
         "collaborators{nodes{repositoriesContributedTo(first:100){nodes{nameWithOwner isPrivate}}}}",
         "pullRequests(first:5){nodes{author{... on User{repositories(first:9){nodes{name}}}}}}",
-        "pullRequests(first:5){nodes{headRepository{nameWithOwner}}}",
-        "pullRequests(first:5){nodes{baseRepository{nameWithOwner}}}",
+        "pullRequests(first:5){nodes{author{... on User{repositoriesContributedTo(first:9){nodes{name}}}}}}",
+        "pullRequests(first:5){nodes{headRepository{owner{... on User{repositories(first:9){nodes{name}}}}}}}",
+        "pullRequests(first:5){nodes{headRepository{parent{id}}}}",
+        "pullRequests(first:5){nodes{headRepository{collaborators{nodes{login}}}}}",
+        "pullRequests(first:5){nodes{headRepository{pullRequests(first:5){nodes{number}}}}}",
+        "pullRequests(first:5){nodes{reviews(first:5){nodes{author{... on User{gists(first:5){nodes{name}}}}}}}}",
+        "pullRequests(first:5){nodes{comments(first:5){nodes{author{followers(first:5){nodes{login}}}}}}}}",
+        "pullRequests(first:5){nodes{author{organizations(first:5){nodes{login}}}}}",
+        "pullRequests(first:5){nodes{author{starredRepositories(first:5){nodes{name}}}}}",
+        "pullRequests(first:5){nodes{author{contributionsCollection{totalCommitContributions}}}}",
+        "pullRequests(first:5){nodes{reviewRequests(first:5){nodes{requestedReviewer{"
+        "... on Team{repositories(first:5){nodes{name}}}}}}}}",
+        "repositoryTopics(first:5){nodes{topic{relatedTopics{name}}}}",
+        "languages(first:5){nodes{name} edges{node{name}}}",
         "owner{... on User{repositoriesContributedTo(first:9){nodes{name}}}}",
         "owner{repositories(first:9){nodes{name}}}",
         "a: owner{ b: repositoriesContributedTo(first:100){nodes{name}} }",
         "alias: repositoriesContributedTo(first:100){nodes{name}}",
-        "id: parent{ id }",
+        "id: parent{ parent{ id } }",
+        "parent{ forks(first:1){nodes{id}} }",
         "forks(first:9){nodes{name}}",
-        "pullRequest(number:1){ headRepositoryOwner{login} }",
+        "pullRequest(number:1){ headRepositoryOwner{ repositories(first:9){nodes{name}} } }",
         "defaultBranchRef{ target{ ... on Commit{ history(first:5){nodes{author{user{login}}}} } } }",
         "defaultBranchRef{ name target{ oid unknownField } }",
         "name{ id }",
@@ -304,3 +318,36 @@ def test_graphql_mutation_payload_is_an_allowlist() -> None:
     assert not graphql(bad, {"input": {"name": "x"}}).allow
     ok = CREATE.replace("{ id }", "{ id name owner{login} url }")
     assert graphql(ok, {"input": {"name": "x"}}).allow
+
+
+GH_QUERIES = json.loads(
+    (Path(__file__).parent / "fixtures" / "guard_gauntlet_gh_graphql.json").read_text(encoding="utf-8")
+)["queries"]
+GH_VARIABLES = {"owner": OWNER, "name": "seed-repo", "repo": "seed-repo", "input": {"name": "x"}, "number": 1}
+
+
+@pytest.mark.parametrize("operation", sorted(set(GH_QUERIES) - {"PullRequest_fields", "PullRequest_fields2"}))
+def test_graphql_accepts_the_queries_real_gh_sends(operation: str) -> None:
+    """Bodies captured from gh repo create/view, pr create/view/list and auth status."""
+    for query in GH_QUERIES[operation]:
+        variables = {**GH_VARIABLES, "pr_number": 1, "headRefName": "feat", "states": None}
+        decision = graphql(query, variables)
+        assert decision.allow, (operation, decision.reason)
+
+
+def test_graphql_denies_schema_introspection_from_gh_pr_status() -> None:
+    for operation in ("PullRequest_fields", "PullRequest_fields2"):
+        assert not graphql(GH_QUERIES[operation][0], GH_VARIABLES).allow
+
+
+def test_graphql_allows_gh_shaped_actor_and_repository_refs() -> None:
+    selection = (
+        "pullRequests(first:5){nodes{author{login ... on User{id name} ... on Bot{login}} "
+        "headRepository{nameWithOwner id url isPrivate owner{login}} baseRepository{name} "
+        "reviews(first:5){totalCount pageInfo{hasNextPage} nodes{id author{login} body state createdAt url}} "
+        "comments(first:5){nodes{id author{login} body url}}}} "
+        "parent{id name nameWithOwner url isPrivate owner{login}} "
+        "licenseInfo{name spdxId} primaryLanguage{name} languages(first:5){nodes{name}} "
+        "repositoryTopics(first:5){nodes{topic{name}}} stargazerCount forkCount homepageUrl description"
+    )
+    assert graphql(NESTED_HEAD + selection + " } }", NESTED_VARS).allow
