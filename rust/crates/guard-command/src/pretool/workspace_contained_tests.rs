@@ -88,6 +88,27 @@ fn git_init_converts_only_in_a_fresh_workspace() {
     );
     assert_ne!(reason("omp", "git init", &existing, true), CONTAINED);
     assert_ne!(reason("omp", "git init sub", &fresh, true), CONTAINED);
+    // Earlier work may precede the init when only `&&` joins them.
+    assert_eq!(
+        reason(
+            "omp",
+            "mkdir src && git init -b main && git add -A",
+            &fresh,
+            true
+        ) == CONTAINED,
+        expected
+    );
+    for command in [
+        // A prefix runs in its own shell, so shell state cannot carry over.
+        "cd src && git init",
+        "export NAME=x && git init",
+        "true || git init",
+        "true; git init",
+        "true | git init",
+        "git init && mkdir src && git init",
+    ] {
+        assert_ne!(reason("omp", command, &fresh, true), CONTAINED, "{command}");
+    }
 }
 
 #[test]

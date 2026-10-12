@@ -47,6 +47,7 @@ def plan(workspace: Path, text: str = COMMAND, **changes: object) -> dict[str, o
         "write_denials": [],
         "sandbox_path": "/usr/bin:/bin",
         "bootstrap_git": None,
+        "prefix_command": None,
         "denied_capabilities": [],
     }
     return value | changes
@@ -126,6 +127,7 @@ def test_changed_evidence_before_launch_never_starts(monkeypatch: pytest.MonkeyP
         {"allowed_executables": ["/bin/sh"]},
         {"profile_version": "pytest-readonly-v2"},
         {"command_sha256": "0" * 64},
+        {"prefix_command": "./todo.py"},
     ],
 )
 def test_a_plan_that_differs_from_the_authorized_command_is_rejected(
@@ -188,6 +190,54 @@ def test_matching_plan_launches_in_the_sandbox_backend(monkeypatch: pytest.Monke
     assert sent[0]["XDG_CONFIG_HOME"] == str(tmp_path / "cfg")
     assert sent[0]["GIT_CONFIG_GLOBAL"] == str(tmp_path / "g")
     assert "PATH" not in sent[0]
+
+
+INIT_COMMAND = "mkdir src && git init -b main && git add -A"
+
+
+@pytest.mark.parametrize(("prefix_exit", "expected"), [(0, ["mkdir src", "init", "git add -A"]), (3, ["mkdir src"])])
+def test_work_before_git_init_runs_contained_and_gates_the_init(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, prefix_exit: int, expected: list[str]
+) -> None:
+    events: list[str] = []
+    init_plan = plan(tmp_path, "git add -A", bootstrap_git=["-b", "main"], prefix_command="mkdir src")
+    monkeypatch.setattr(
+        workspace_sink,
+        "restricted_native",
+        lambda operation, fields, expected: "(version 1)" if operation == "macos_profile" else init_plan,
+    )
+    monkeypatch.setattr(workspace_sink, "trusted_git_binary_for_cwd", lambda cwd: None)
+    monkeypatch.setattr(workspace_sink, "_restricted_environment", lambda source, **kwargs: {})
+    monkeypatch.setattr(workspace_sink, "_bootstrap_init", lambda arguments, **kwargs: events.append("init"))
+
+    def launch(argv: list[str], **kwargs: object) -> int:
+        events.append(argv[-1])
+        return prefix_exit if argv[-1] == "mkdir src" else 0
+
+    monkeypatch.setattr(workspace_sink, "_run_backend_process", launch)
+    exit_code = workspace_sink.run_workspace_contained(
+        payload(INIT_COMMAND),
+        workspace=tmp_path,
+        cwd=tmp_path,
+        authorize=lambda original: receipt(),
+        first_receipt=receipt(),
+    )
+    assert exit_code == prefix_exit
+    assert events == expected
+
+
+def test_a_prefix_outside_the_authorized_command_is_rejected(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    for prefix in ("rm -rf src", "mkdir src && git init -b main && git add -A"):
+        bad = plan(tmp_path, "git add -A", bootstrap_git=["-b", "main"], prefix_command=prefix)
+        monkeypatch.setattr(workspace_sink, "restricted_native", lambda *args, bad=bad, **kwargs: bad)
+        with pytest.raises(RestrictedPytestError):
+            workspace_sink.run_workspace_contained(
+                payload(INIT_COMMAND),
+                workspace=tmp_path,
+                cwd=tmp_path,
+                authorize=lambda original: receipt(),
+                first_receipt=receipt(),
+            )
 
 
 def test_adapters_map_the_workspace_reason_to_its_profile() -> None:

@@ -233,10 +233,17 @@ pub(super) fn compose(
             lines.push(regex_rule("file-write*", &pattern));
         }
     }
-    // The repository's own `HEAD`, which checkout and branch switches rewrite.
+    // The repository's own `HEAD`, which checkout and branch switches
+    // rewrite, and its reflog, which every commit appends to.
     lines.push(format!(
         "(allow file-write* {})",
-        filter(&[workspace.join(".git/HEAD")], "literal")
+        filter(
+            &[
+                workspace.join(".git/HEAD"),
+                workspace.join(".git/logs/HEAD")
+            ],
+            "literal"
+        )
     ));
     for pattern in denial_patterns(workspace, &input.write_denials)? {
         lines.push(regex_rule("file-write*", &pattern));

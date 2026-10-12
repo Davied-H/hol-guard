@@ -83,6 +83,17 @@ fn unmodeled_commands_with_literal_redirects_are_reviewable() {
     ] {
         assert_eq!(decision(&controls, command).0, "review", "{command}");
     }
+    // No link can retarget `/dev/null`, so link makers keep the review path.
+    for command in [
+        "git checkout main 2>/dev/null && gh pr view 12",
+        "ln -s a b 2>/dev/null; gh pr view 12 >/dev/null",
+    ] {
+        assert_ne!(
+            decision(&controls, command).1,
+            "native_command_extension_evaluation_failed",
+            "{command}"
+        );
+    }
 }
 
 #[test]
@@ -176,6 +187,10 @@ fn unmodeled_commands_that_move_data_or_hide_programs_keep_the_evaluation_failur
         "/bin/ln -sf ../.git w/l; gh pr view 12 > w/l/config",
         "cp -s guard-runtime/policy.json w/p && gh pr view 12 > w/p",
         "cp --sym guard-runtime/policy.json w/p && gh pr view 12 > w/p",
+        "cp -l guard-runtime/policy.json w/p && gh pr view 12 > w/p",
+        "cp --link guard-runtime/policy.json w/p && gh pr view 12 > w/p",
+        "git checkout links && gh pr view 12 > w/l/policy.json",
+        "git worktree add w links && gh pr view 12 > w/l/policy.json",
         "LN.exe -s guard-runtime w/l && gh pr view 12 > w/l/policy.json",
         "cp -a links w && gh pr view 12 > w/l/policy.json",
         "cp -r links w && gh pr view 12 > w/l/policy.json",
