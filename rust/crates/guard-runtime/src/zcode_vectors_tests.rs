@@ -258,7 +258,9 @@ fn object_values_with_lone_surrogates_stay_readable() {
     let answer = detect(&args).expect("a surrogate value must stay readable");
     let artifacts = answer["artifacts"].as_array().expect("artifacts");
     assert!(
-        artifacts.iter().any(|artifact| artifact["command"] == "tool"),
+        artifacts
+            .iter()
+            .any(|artifact| artifact["command"] == "tool"),
         "server command missing from {answer}"
     );
     release(&root);
