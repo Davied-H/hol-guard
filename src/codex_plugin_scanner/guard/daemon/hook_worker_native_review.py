@@ -51,7 +51,8 @@ def superseded_post_tool_snapshot(
     A contained test run or other short-lived CLI hook publishes its own
     snapshot while the tool runs, so the PostToolUse that follows can find the
     worker's binding no longer current. Refresh once within the original
-    deadline; any other failure keeps the existing unavailable answer.
+    deadline; any other failure, including a refresh that cannot complete,
+    keeps the existing unavailable answer.
     """
     if (
         event_name != "PostToolUse"
@@ -67,8 +68,11 @@ def superseded_post_tool_snapshot(
     if not callable(request_refresh):
         return None
     generation = policy_snapshot.get("generation")
-    request_refresh(generation if isinstance(generation, int) and not isinstance(generation, bool) else None)
-    refreshed = worker._native_policy_snapshot(workspace, deadline=deadline)
+    try:
+        request_refresh(generation if isinstance(generation, int) and not isinstance(generation, bool) else None)
+        refreshed = worker._native_policy_snapshot(workspace, deadline=deadline)
+    except (OSError, TimeoutError, NativePolicySnapshotError):
+        return None
     return refreshed if refreshed is not None and time.monotonic() < deadline else None
 
 

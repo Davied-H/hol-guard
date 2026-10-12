@@ -14,6 +14,7 @@ from codex_plugin_scanner.guard.daemon import hook_worker_native_review as revie
 from codex_plugin_scanner.guard.daemon.hook_worker import HookWorker
 from codex_plugin_scanner.guard.native_hook_edge import review_raw_hook_native
 from codex_plugin_scanner.guard.native_policy_snapshot import NativePolicySnapshotPublisher
+from codex_plugin_scanner.guard.native_policy_snapshot_constants import NativePolicySnapshotError
 from codex_plugin_scanner.guard.native_resident_client import (
     native_resident_client_failure_code,
     record_native_resident_client_failure_code,
@@ -430,4 +431,16 @@ def test_post_tool_refresh_needs_deadline_and_publisher(
     reasons, calls = _post_tool_rejections(worker, tmp_path, monkeypatch, codes, deadline)
     assert len(calls) == 1
     worker.policy_snapshot_publisher.request_control_binding_refresh.assert_not_called()
+    assert reasons == ["native_post_tool_unavailable"]
+
+
+@pytest.mark.parametrize("error", [OSError("resident gone"), TimeoutError(), NativePolicySnapshotError("not ready")])
+def test_post_tool_refresh_failure_keeps_unavailable_answer(
+    worker: HookWorker, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: Exception
+) -> None:
+    monkeypatch.setattr(worker, "_native_policy_snapshot", Mock(side_effect=error))
+    codes = [review.SNAPSHOT_NOT_CURRENT_ERROR]
+    reasons, calls = _post_tool_rejections(worker, tmp_path, monkeypatch, codes, time.monotonic() + 2)
+    assert len(calls) == 1
+    worker.policy_snapshot_publisher.request_control_binding_refresh.assert_called_once_with(3)
     assert reasons == ["native_post_tool_unavailable"]
