@@ -228,13 +228,19 @@ pub fn compatibility_observations_with_context(
         {
             return Err("native_command_compatibility_context_unsupported");
         }
-        // An assignment prefix such as `GIT_DIR=` or `GH_HOST=` can steer the
-        // program away from what its arguments say. The segment is still
-        // attributed to its owners, but only as uncertainty, so it takes their
-        // floor (never below review) and no permission can allow it. Segments
-        // no owner recognizes keep the native classifier's own verdict instead
-        // of failing the whole evaluation.
-        if !segment.environment_names.is_empty() {
+        // A non-inert assignment (`GIT_DIR=`, `GH_HOST=`, `APP_FLAG=`) can
+        // steer the program away from what its arguments say. That segment
+        // stays attributed to its owners only as uncertainty: it takes their
+        // floor and no permission can allow it. Inert names (`CI`, `LANG`,
+        // `LC_*`) do not steer, so the segment keeps the same permission
+        // decision as the unprefixed command. Segments no owner recognizes
+        // keep the native classifier's own verdict instead of failing the
+        // whole evaluation.
+        if segment
+            .environment_names
+            .iter()
+            .any(|name| !environment::inert_environment_name(name))
+        {
             steered.push(index);
         }
         match basename(segment).as_str() {
