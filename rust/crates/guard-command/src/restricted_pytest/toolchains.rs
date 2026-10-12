@@ -24,8 +24,7 @@ fn owned_and_sealed(path: &Path) -> bool {
     let Ok(metadata) = path.metadata() else {
         return false;
     };
-    // SAFETY: geteuid has no preconditions and cannot fail.
-    let uid = unsafe { libc::geteuid() };
+    let uid = nix::unistd::geteuid().as_raw();
     metadata.is_dir()
         && (metadata.uid() == 0 || metadata.uid() == uid)
         && metadata.mode() & 0o022 == 0

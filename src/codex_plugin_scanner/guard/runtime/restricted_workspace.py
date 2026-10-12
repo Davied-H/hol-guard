@@ -82,6 +82,12 @@ def _validated_plan(plan: object, command: str, workspace: Path) -> dict[str, ob
     return plan
 
 
+def _plan_paths(value: object) -> list[Path]:
+    if not isinstance(value, list):
+        raise _reject("Invalid workspace sandbox plan.")
+    return [Path(str(item)) for item in value]
+
+
 def _identity(cwd: Path, git: Path) -> dict[str, str]:
     """Author and committer from the host's global Git configuration."""
     result: dict[str, str] = {}
@@ -178,7 +184,13 @@ def run_workspace_contained(
         raise _reject("Guard could not re-authorize this workspace sandbox execution.")
     if second.get("command_binding_digest") != first_receipt.get("command_binding_digest"):
         raise _reject("The command evidence changed before launch.")
-    argv_text = plan["command"][2]  # type: ignore[index]
+    sandbox_command = plan["command"]
+    if not isinstance(sandbox_command, list):
+        raise _reject("Invalid workspace sandbox plan.")
+    sandbox_argv = [str(item) for item in sandbox_command]
+    argv_text = sandbox_argv[2]
+    exec_roots = _plan_paths(plan["exec_roots"])
+    write_denials = _plan_paths(plan["write_denials"])
     with tempfile.TemporaryDirectory(prefix="hol-guard-workspace-") as temporary_directory:
         private_root = Path(temporary_directory).resolve()
         private_home = private_root / "home"
@@ -216,14 +228,14 @@ def run_workspace_contained(
                 "allowed_executables": [],
                 "read_only_roots": [],
                 "output_roots": [],
-                "exec_roots": [Path(str(item)) for item in plan["exec_roots"]],  # type: ignore[attr-defined]
-                "write_denials": [Path(str(item)) for item in plan["write_denials"]],  # type: ignore[attr-defined]
-                "command": plan["command"],
+                "exec_roots": exec_roots,
+                "write_denials": write_denials,
+                "command": sandbox_argv,
                 "backend_executable": Path(str(plan["backend_executable"])),
             },
             str,
         )
-        argv = [str(plan["backend_executable"]), "-p", profile, "--", *plan["command"]]  # type: ignore[misc]
+        argv = [str(plan["backend_executable"]), "-p", profile, "--", *sandbox_argv]
         return _run_backend_process(
             argv,
             env=launch_env,

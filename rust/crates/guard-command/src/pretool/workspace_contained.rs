@@ -14,6 +14,9 @@ use std::path::Path;
 pub(crate) const REASON: &str = "native_workspace_containment_required";
 pub(crate) const PROFILE: &str = "workspace-contained-v1";
 
+#[path = "workspace_contained_package.rs"]
+mod package;
+
 // Privilege and permission changes. This is an exclusion, not an allowlist.
 const PRIVILEGE_DENY: &[&str] = &[
     "sudo",
@@ -58,7 +61,6 @@ const UNRECOVERABLE_RULES: &[&str] = &[
 const REMOTE_RULES: &[&str] = &["command.git.force-push", "command.git.remote-branch-delete"];
 const SHELL_DESTRUCTION: &str = "command.shell-mutations.destructive-shell";
 const CONTAINABLE_RISKS: &[&str] = &["local_secret_read", "destructive_shell"];
-
 /// What the sandbox executes for one authorized command.
 pub(crate) struct Shape {
     /// Arguments for a trusted `git init`, run before the sandbox starts
@@ -178,7 +180,11 @@ pub(crate) fn command_shape(
     })
 }
 
-fn extensions_contain(result: &PreToolResultV1, controls: &CompiledNativeCommandControls) -> bool {
+fn extensions_contain(
+    result: &PreToolResultV1,
+    controls: &CompiledNativeCommandControls,
+    package: bool,
+) -> bool {
     // Without the loaded extension program there is no network or risk
     // evidence, so the command stays at review.
     let Some(extensions) = result.command_extensions.as_ref() else {
@@ -186,7 +192,14 @@ fn extensions_contain(result: &PreToolResultV1, controls: &CompiledNativeCommand
     };
     extensions.binding.uncertainty_count == 0
         && extensions.evaluation_error.is_none()
-        && extensions.permission_observations.is_empty()
+        // The Node package-firewall permission marks package-manager use, not
+        // a proven risk. A disabled one already blocked before this point.
+        && extensions.permission_observations.iter().all(|observation| {
+            package
+                && observation.mcp_tool.is_none()
+                && observation.extension_id == package::NODE_PACKAGE_EXTENSION
+                && observation.uncertainty_reasons.is_empty()
+        })
         && extensions.observations.iter().all(|observation| {
             observation.uncertainty_reasons.is_empty()
                 && !UNRECOVERABLE_RULES.contains(&observation.rule_id.as_str())
@@ -285,28 +298,35 @@ pub(super) fn convert(
             harness,
             "omp" | "oh-my-pi" | "zcode" | "claude-code" | "codex"
         )
-        || result.action.action_type != PreToolActionTypeV1::Command
+        || !matches!(
+            result.action.action_type,
+            PreToolActionTypeV1::Command | PreToolActionTypeV1::Package
+        )
         || result.action.sensitive_target
     {
         return;
     }
-    let generic =
-        result.reason_code == "native_command_review_required" && result.minimum_action == "review";
+    let package = result.action.action_type == PreToolActionTypeV1::Package;
+    let floor_reason = if package {
+        "native_package_review"
+    } else {
+        "native_command_review_required"
+    };
+    let generic = result.reason_code == floor_reason && result.minimum_action == "review";
     // The Git floor existed because unsandboxed helpers could run; inside the
     // sandbox the configuration is write-denied and helpers stay contained.
     let git_floor = result.reason_code == "native_git_execution_context_review"
         && pre_floor.1 == "review"
-        && matches!(
-            pre_floor.0.as_str(),
-            "native_command_review_required" | "native_git_helper_context_review"
-        );
+        && (pre_floor.0 == floor_reason || pre_floor.0 == "native_git_helper_context_review");
     if !generic && !git_floor {
         return;
     }
     let (Some(model), Some(controls), Some(cwd)) = (model, controls, context.cwd) else {
         return;
     };
-    if !extensions_contain(result, controls) {
+    if !extensions_contain(result, controls, package)
+        || (package && !package::local_package_work(model))
+    {
         return;
     }
     let Some(workspace) = crate::restricted_pytest::workspace_admissible(
@@ -315,6 +335,22 @@ pub(super) fn convert(
     ) else {
         return;
     };
+    // Installs, one-shot executions and lockfile syncs stay with supply-chain
+    // admission even when the verb check above missed their spelling.
+    if package
+        && command_text.is_none_or(|text| {
+            crate::package_intent_parser::parse_package_intent(
+                text,
+                Some(&workspace),
+                context.home_dir.map(Path::new),
+                None,
+                None,
+            )
+            .is_some()
+        })
+    {
+        return;
+    }
     let Ok(config) = super::workspace_git_config::repository_config(&workspace) else {
         return;
     };

@@ -82,6 +82,7 @@ pub fn bounded_task_metadata_output(payload: &serde_json::Value, harness: &str) 
 }
 #[path = "generic_tools.rs"]
 mod tools;
+pub(in crate::pretool) use tools::is_package_tool;
 
 /// Evaluate the complete raw PreToolUse payload in native code. This stays
 /// separate from `evaluate_pre_tool`, the compatibility command-model

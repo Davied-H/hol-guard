@@ -56,6 +56,12 @@ fn unproven_local_commands_run_in_the_workspace_sandbox_on_macos() {
         "npm run build && git diff",
         "rm -rf dist node_modules",
         "rm -rf ./build/ && npm run build",
+        "npm run lint",
+        "npm -v",
+        "yarn build",
+        "pnpm run test:unit",
+        "bun run build",
+        "/Users/nobody/.nvm/versions/node/v25.2.1/bin/npm run build",
     ] {
         let got = reason("omp", command, &ws, true);
         if cfg!(target_os = "macos") {
@@ -108,6 +114,21 @@ fn commands_with_network_privilege_or_escape_stay_at_review() {
         "rm -rf src/..",
         "rm -rf ~",
         "rm -rf $HOME",
+        "yarn",
+        "npm i zod",
+        "npm isntall zod",
+        "npm install-test",
+        "yarn add zod",
+        "yarn workspace web add zod",
+        "pnpm dlx create-vite",
+        "npm exec foo",
+        "npx foo",
+        "bun x foo",
+        "npm init vite",
+        "npm publish",
+        "npm run build && npm install zod",
+        "pip list",
+        "cargo build",
     ] {
         assert_ne!(reason("omp", command, &ws, true), CONTAINED, "{command}");
     }

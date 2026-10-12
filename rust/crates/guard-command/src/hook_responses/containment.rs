@@ -6,7 +6,8 @@
 use serde_json::{json, Map, Value};
 
 const GIT_RULES: [&str; 3] = ["command.git.diff", "command.git.log", "command.git.show"];
-const NODE_PERMISSION_CODES: [&str; 4] = [
+const NODE_PERMISSION_CODES: [&str; 5] = [
+    "native_workspace_containment_required",
     "native_vitest_readonly_containment_required",
     "native_package_test_readonly_containment_required",
     "native_node_tool_readonly_containment_required",
