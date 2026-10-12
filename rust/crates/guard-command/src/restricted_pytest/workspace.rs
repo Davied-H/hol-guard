@@ -107,6 +107,7 @@ fn prepare(input: &Input) -> Result<Value, RestrictedPytestError> {
         "write_denials": write_denials,
         "sandbox_path": sandbox_path,
         "bootstrap_git": shape.bootstrap,
+        "prefix_command": shape.prefix,
         "denied_capabilities": [
             "network", "host-home-read", "host-secret-environment", "docker-socket",
             "workspace-credential-read", "git-execution-config-write", "privileged-operation"

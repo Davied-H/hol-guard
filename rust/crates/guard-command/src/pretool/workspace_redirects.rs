@@ -35,12 +35,26 @@ enum Quote {
 /// another form: process substitution, a computed or home-relative target, a
 /// descriptor above 2, a herestring, or a heredoc fed to anything but `cat`.
 pub(crate) fn project(raw: &str) -> Option<String> {
+    project_mapped(raw).map(|(projected, _)| projected)
+}
+
+/// [`project`] with, for each byte of the projection, the index of the raw
+/// character it came from. Bytes the projection inserts take the index of the
+/// redirect they replace.
+fn project_mapped(raw: &str) -> Option<(String, Vec<usize>)> {
     let chars: Vec<char> = raw.chars().collect();
     let mut out = String::with_capacity(raw.len());
+    let mut map: Vec<usize> = Vec::with_capacity(raw.len());
     let mut heredocs: Vec<(String, bool)> = Vec::new();
     let (mut quote, mut escaped, mut removed) = (Quote::None, false, false);
     let mut index = 0usize;
+    let mut origin = 0usize;
     while index < chars.len() {
+        // Bytes kept from earlier iterations are never rewritten, so only
+        // the ones the last iteration appended need an origin.
+        map.truncate(out.len());
+        map.resize(out.len(), origin);
+        origin = index;
         let current = chars[index];
         if escaped {
             escaped = false;
@@ -97,14 +111,25 @@ pub(crate) fn project(raw: &str) -> Option<String> {
         out.push(current);
         index += 1;
     }
-    (removed && quote == Quote::None && !escaped && heredocs.is_empty())
-        .then(|| out.trim().to_owned())
+    map.truncate(out.len());
+    map.resize(out.len(), origin);
+    if !removed || quote != Quote::None || escaped || !heredocs.is_empty() {
+        return None;
+    }
+    let lead = out.len() - out.trim_start().len();
+    let projected = out.trim();
+    let map = map[lead..lead + projected.len()].to_vec();
+    Some((projected.to_owned(), map))
 }
 
 /// The shape the projected command earns, with a bootstrapped `git init`
 /// sliced from the raw bytes that will run. `None` when the init segment
 /// itself carried a redirect, so the raw text cannot be split the same way.
 pub(crate) fn contained_shape(raw: &str, projected: &str, workspace: &Path) -> Option<Shape> {
+    let (mapped, map) = project_mapped(raw)?;
+    if mapped != projected {
+        return None;
+    }
     let model = crate::parse_command(&CommandModelRequestV1 {
         command: projected.to_owned(),
         dialect: "posix".into(),
@@ -113,14 +138,29 @@ pub(crate) fn contained_shape(raw: &str, projected: &str, workspace: &Path) -> O
     })
     .ok()?;
     let mut shape = crate::pretool::command_shape(&model, workspace, Some(projected))?;
-    if let Some(rest) = shape.remainder.take() {
-        let prefix = projected.trim().strip_suffix(rest.as_str())?;
-        let raw_rest = raw.trim().strip_prefix(prefix)?.trim();
-        if rest.is_empty() != raw_rest.is_empty() {
-            return None;
-        }
-        shape.remainder = Some(raw_rest.to_owned());
+    let Some((start, end)) = shape.init_span else {
+        return Some(shape);
+    };
+    let origin = |position: usize| {
+        let byte = projected.char_indices().nth(position)?.0;
+        map.get(byte).copied()
+    };
+    let (raw_start, raw_end) = (origin(start)?, origin(end.checked_sub(1)?)? + 1);
+    let raw_chars: Vec<char> = raw.chars().collect();
+    let init: String = raw_chars.get(raw_start..raw_end)?.iter().collect();
+    let expected: String = projected.chars().skip(start).take(end - start).collect();
+    if init != expected {
+        return None;
     }
+    let (prefix, rest) =
+        crate::pretool::workspace_contained::split_at_init(raw, raw_start, raw_end)?;
+    if shape.prefix.is_some() != prefix.is_some()
+        || shape.remainder.as_ref().is_some_and(String::is_empty) != rest.is_empty()
+    {
+        return None;
+    }
+    shape.prefix = prefix;
+    shape.remainder = Some(rest);
     Some(shape)
 }
 

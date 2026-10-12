@@ -84,4 +84,35 @@ fn a_bootstrapped_init_keeps_the_raw_remainder() {
     // A redirect on the init itself cannot be split from the raw bytes.
     let raw = "git init > /dev/null && git add -A";
     assert!(contained_shape(raw, &project(raw).unwrap(), &ws).is_none());
+    let raw = "mkdir src && git init 2> err.txt && git add -A";
+    assert!(contained_shape(raw, &project(raw).unwrap(), &ws).is_none());
+}
+
+#[test]
+fn work_before_a_bootstrapped_init_is_sliced_from_the_raw_bytes() {
+    let ws = fresh_workspace("bootstrap-prefix");
+    let raw = "printf '.todo.json\\n__pycache__/\\n' > .gitignore && git init -b main -q && git add -A && git commit -qm 'Initial commit'";
+    let shape = contained_shape(raw, &project(raw).unwrap(), &ws).unwrap();
+    assert_eq!(
+        shape.bootstrap.as_deref(),
+        Some(&["-b".to_owned(), "main".to_owned(), "-q".to_owned()][..])
+    );
+    assert_eq!(
+        shape.prefix.as_deref(),
+        Some("printf '.todo.json\\n__pycache__/\\n' > .gitignore")
+    );
+    assert_eq!(
+        shape.remainder.as_deref(),
+        Some("git add -A && git commit -qm 'Initial commit'")
+    );
+    // Offsets count characters, not bytes, on both sides of the split.
+    let raw = "printf 'caf\u{e9}' > a.txt  &&  echo \u{e9}t\u{e9} > b.txt && git init && cat a.txt > c.txt";
+    let shape = contained_shape(raw, &project(raw).unwrap(), &ws).unwrap();
+    assert_eq!(
+        shape.prefix.as_deref(),
+        Some("printf 'caf\u{e9}' > a.txt  &&  echo \u{e9}t\u{e9} > b.txt")
+    );
+    assert_eq!(shape.remainder.as_deref(), Some("cat a.txt > c.txt"));
+    let raw = "cat <<'EOF' > notes.txt\nhello && git init\nEOF\ngit init";
+    assert!(contained_shape(raw, &project(raw).unwrap(), &ws).is_none());
 }
