@@ -212,6 +212,15 @@ mod guard_store_wfcap_wire;
 #[cfg(test)]
 mod guard_store_workflow_capability_vectors_tests;
 mod hardening;
+mod hermes_detect;
+mod hermes_inspect;
+mod hermes_skills;
+mod hermes_text;
+#[cfg(all(test, unix))]
+mod hermes_vectors_tests;
+mod hermes_yaml;
+mod hermes_yaml_construct;
+mod hermes_yaml_resolve;
 mod hook_adapter_op;
 mod hook_artifact_compose_op;
 mod hook_artifact_compose_reuse;
