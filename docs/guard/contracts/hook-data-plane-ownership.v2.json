@@ -382,6 +382,8 @@
     "src/codex_plugin_scanner/guard/native_mcp_sensitive_read.py",
     "src/codex_plugin_scanner/guard/native_mcp_runtime_evidence.py",
     "src/codex_plugin_scanner/guard/native_mcp_tool_evidence.py",
+    "src/codex_plugin_scanner/guard/native_mcp_tool_call_identity.py",
+    "src/codex_plugin_scanner/guard/native_mcp_stdio_exchange.py",
     "src/codex_plugin_scanner/guard/native_package_approval_hash.py",
     "src/codex_plugin_scanner/guard/native_package_policy_resolve.py",
     "src/codex_plugin_scanner/guard/native_supply_chain_posture.py",
@@ -393,6 +395,7 @@
     "src/codex_plugin_scanner/guard/native_supply_chain_eval.py",
     "src/codex_plugin_scanner/guard/native_supply_chain_egress.py",
     "src/codex_plugin_scanner/guard/native_supply_chain_archive.py",
+    "src/codex_plugin_scanner/guard/native_shim_admin.py",
     "src/codex_plugin_scanner/guard/native_archive_acquisition.py",
     "src/codex_plugin_scanner/guard/native_direct_tool_context.py",
     "src/codex_plugin_scanner/guard/native_cli_runtime_support.py",
@@ -407,12 +410,13 @@
     "src/codex_plugin_scanner/guard/native_local_cli_grant.py",
     "src/codex_plugin_scanner/guard/native_guard_store.py",
     "src/codex_plugin_scanner/guard/native_skill_directory_identity.py",
+    "src/codex_plugin_scanner/guard/native_package_context_build.py",
     "src/codex_plugin_scanner/guard/native_path_anchor.py",
     "src/codex_plugin_scanner/guard/local_cli_grant_decision.py",
     "src/codex_plugin_scanner/guard/native_request_context.py",
     "src/codex_plugin_scanner/guard/native_restricted_pytest.py"
    ],
-   "current": "mechanical bounded guard-hook-envelope.v2 and guard-archive-inspection.v1 serialization, package-bound native invocation, typed result decoding, and harness response projection; the archive-inspection lease is owned inside the native worker",
+   "current": "mechanical bounded guard-hook-envelope.v2 and guard-archive-inspection.v1 serialization, package-bound native invocation, typed result decoding, and harness response projection; the archive-inspection lease is owned inside the native worker; skill-directory identity and discovery use the existing resident operation with lossless OS paths, request-bound replies and a monotonic transport budget",
    "target": "minimal launcher, serialization, and response projection only"
   },
   {

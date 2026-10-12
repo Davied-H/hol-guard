@@ -21,7 +21,7 @@ use guard_contracts::{
     McpStdioSessionRecvRequestV1, McpStdioSessionSendRequestV1, McpToolCallIdentityRequestV1,
     McpToolEvidenceRequestV1, McpToolPolicyDecideRequestV1, NativeExactActionRequestV1,
     NativeHookRequestV1, PackageAdvisoryIdsRequestV1, PackageApprovalHashRequestV1,
-    PackageAuditProjectionRequestV1, PackageAuthorityDecideRequestV1,
+    PackageAuditProjectionRequestV1, PackageAuthorityDecideRequestV1, PackageContextBuildRequestV1,
     PackageEvaluationComposeRequestV1, PackageIntentParseRequestV1, PackagePolicyResolveRequestV1,
     PackagePostureRequestV1, PolicyBundleAuthorityRequestV1, PolicyDecisionLookupRequestV1,
     PromptAnalyzeRequestV1, ProtectRequestRequestV1, RequestContextRequestV1,
@@ -105,8 +105,8 @@ pub(crate) fn capabilities() -> RuntimeCapabilitiesV1 {
         // not be advertised elsewhere, or callers route work the binary cannot honor.
         features.push(guard_contracts::CONTAINED_EXECUTION_FEATURE.into());
         features.push(guard_contracts::MCP_STDIO_SESSION_FEATURE.into());
-        features.push(guard_contracts::SKILL_DIRECTORY_IDENTITY_FEATURE.into());
     }
+    features.push(guard_contracts::SKILL_DIRECTORY_IDENTITY_FEATURE.into());
     let (program_digest, catalog_digest, trust_digest) =
         guard_command::native_command_program::packaged_program_digests();
     RuntimeCapabilitiesV1 {
@@ -173,6 +173,7 @@ pub(crate) enum ResidentOperationV1 {
     #[allow(dead_code)]
     ContainedExecute(ContainedExecuteRequestV1),
     ShimAdmin(ShimAdminRequestV2),
+    PackageContextBuild(PackageContextBuildRequestV1),
     McpStdioProbe(McpStdioProbeRequestV1),
     McpStdioCancel(McpStdioCancelRequest),
     McpStdioSessionOpen(McpStdioSessionOpenRequestV1),

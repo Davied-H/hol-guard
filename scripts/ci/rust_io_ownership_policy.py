@@ -123,6 +123,8 @@ _TRANSPORT_INTEGRITY_PATHS: Final = frozenset(
         "src/codex_plugin_scanner/guard/native_git_execution_safety.py",
         "src/codex_plugin_scanner/guard/native_compound_git_inspection.py",
         "src/codex_plugin_scanner/guard/native_policy_bundle.py",
+        # Gathers ambient facts for and decodes the resident package-shim admin envelope; results stay Rust.
+        "src/codex_plugin_scanner/guard/native_shim_admin.py",
         # Decodes the bounded resident MCP proxy decision envelope; verdicts stay Rust.
         "src/codex_plugin_scanner/guard/native_mcp_proxy_decision.py",
         # Decodes the bounded resident daemon-lifecycle verdict; decisions stay Rust.
@@ -209,6 +211,8 @@ _TRANSPORT_DECODE_PATHS: Final = frozenset(
         "src/codex_plugin_scanner/guard/native_compound_git_inspection.py",
         "src/codex_plugin_scanner/guard/native_codex_tool_output.py",
         "src/codex_plugin_scanner/guard/native_policy_bundle.py",
+        # Gathers ambient facts for and decodes the resident package-shim admin envelope; results stay Rust.
+        "src/codex_plugin_scanner/guard/native_shim_admin.py",
         # Decodes the bounded resident MCP proxy decision envelope; verdicts stay Rust.
         "src/codex_plugin_scanner/guard/native_mcp_proxy_decision.py",
         # Decodes the bounded resident daemon-lifecycle verdict; decisions stay Rust.
@@ -229,6 +233,9 @@ _TRANSPORT_DECODE_PATHS: Final = frozenset(
         "src/codex_plugin_scanner/guard/runtime/runner_native_authority.py",
         # Decodes the bounded resident MCP tool-evidence response envelope.
         "src/codex_plugin_scanner/guard/native_mcp_tool_evidence.py",
+        # Normalizes the request to plain JSON types and decodes the bounded
+        # resident tool-call identity envelope; identity and hashing stay Rust.
+        "src/codex_plugin_scanner/guard/native_mcp_tool_call_identity.py",
         # JSON-safe DTO copy shared by the native runner-authority and MCP
         # tool-evidence projections; it carries no decision.
         "src/codex_plugin_scanner/guard/runtime/json_safe_copy.py",
@@ -348,8 +355,6 @@ _PENDING_AUTHORITY_PATHS: Final = frozenset(
         "src/codex_plugin_scanner/guard/cli/commands_support_runtime_policy.py",
         "src/codex_plugin_scanner/guard/cli/commands_support_runtime_resolution.py",
         "src/codex_plugin_scanner/guard/package_execution_context.py",
-        "src/codex_plugin_scanner/guard/package_execution_context_configuration.py",
-        "src/codex_plugin_scanner/guard/package_execution_context_inputs.py",
         "src/codex_plugin_scanner/guard/package_shim_frozen.py",
         "src/codex_plugin_scanner/guard/package_shim_status.py",
         "src/codex_plugin_scanner/guard/runtime/_shell_execution_context_support.py",
