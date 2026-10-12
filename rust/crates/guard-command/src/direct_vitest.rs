@@ -296,7 +296,7 @@ fn safe_node_heap_assignment(token: &str) -> bool {
 }
 
 #[path = "direct_tool_metadata.rs"]
-pub(crate) mod direct_tool_metadata;
+mod direct_tool_metadata;
 use direct_tool_metadata::*;
 
 #[path = "direct_tool_paths.rs"]

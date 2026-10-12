@@ -144,8 +144,6 @@ fn decide_with(
             cwd: cwd.to_str(),
             cdpath_unset: false,
             rustup_override_absent: false,
-            js_loader_override_absent: false,
-            bun_config_absent: false,
             shell_home_matches: false,
         },
         Some(&environment),

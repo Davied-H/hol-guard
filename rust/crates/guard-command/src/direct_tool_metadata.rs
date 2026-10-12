@@ -34,7 +34,7 @@ pub(super) fn bun_runtime_config_exists(
 }
 
 /// `_bunfig_is_install_only` (:206-237).
-pub(crate) fn bunfig_is_install_only(path: &Path) -> bool {
+pub(super) fn bunfig_is_install_only(path: &Path) -> bool {
     let metadata = match path.metadata() {
         Ok(metadata) => metadata,
         Err(_) => return false,

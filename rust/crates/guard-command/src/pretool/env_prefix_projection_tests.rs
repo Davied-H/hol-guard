@@ -24,7 +24,6 @@ fn inert_prefixes_are_removed_in_place() {
             "git status && LC_ALL=C rg -n 'a b' src | head -5",
             "git status && rg -n 'a b' src | head -5",
         ),
-        ("REPORT_WINDOW=7d ls 2>/dev/null", "ls 2>/dev/null"),
         ("TZ=\"UTC\" date", "date"),
     ] {
         assert_eq!(project(command).as_deref(), Some(expected), "{command}");
@@ -33,7 +32,15 @@ fn inert_prefixes_are_removed_in_place() {
 
 #[test]
 fn commands_without_inert_prefix_are_not_projected() {
-    for command in ["ls src", "git status && rg x", "echo FOO=1", "ls >FOO=1"] {
+    for command in [
+        "ls src",
+        "git status && rg x",
+        "echo FOO=1",
+        "ls >FOO=1",
+        // Any program may read an unknown name; it is reviewed, not inert.
+        "REPORT_WINDOW=7d ls",
+        "NODE_ENV=test node --test",
+    ] {
         assert_eq!(project(command), None, "{command}");
     }
 }

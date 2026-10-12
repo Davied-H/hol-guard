@@ -292,8 +292,6 @@ fn evaluate_validated_envelope(
                     cwd: envelope.source.cwd.as_deref(),
                     cdpath_unset: false,
                     rustup_override_absent: false,
-                    js_loader_override_absent: false,
-                    bun_config_absent: false,
                     shell_home_matches: false,
                 },
                 Some(

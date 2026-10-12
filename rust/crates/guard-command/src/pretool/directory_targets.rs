@@ -328,26 +328,6 @@ impl<'a> super::PathContext<'a> {
             None => !std::env::vars_os()
                 .any(|(name, value)| !value.is_empty() && rustup_selector(&name.to_string_lossy())),
         };
-        // NODE_OPTIONS and BUN_OPTIONS can preload a module into `node -e`
-        // or `bun -e`; any other NODE_*/BUN_* name stays unproven too.
-        let js_loader_override_absent = match execution_environment {
-            Some(environment) => {
-                environment.has_valid_shape()
-                    && !environment
-                        .environment_names
-                        .iter()
-                        .any(|name| js_loader_selector(name))
-            }
-            None => !std::env::vars_os().any(|(name, value)| {
-                !value.is_empty() && js_loader_selector(&name.to_string_lossy())
-            }),
-        };
-        let xdg_config_home = match execution_environment {
-            Some(environment) => environment.xdg_config_home.clone(),
-            None => std::env::var("XDG_CONFIG_HOME").ok(),
-        };
-        let bun_config_absent =
-            !bun_preload_config_exists(home_dir, cwd, xdg_config_home.as_deref());
         // The shell expands `~` from its own HOME: the stamped one, or the
         // runtime's when no environment was stamped.
         let shell_home = match execution_environment {
@@ -369,73 +349,9 @@ impl<'a> super::PathContext<'a> {
             cwd,
             cdpath_unset,
             rustup_override_absent,
-            js_loader_override_absent,
-            bun_config_absent,
             shell_home_matches,
         }
     }
-}
-
-impl super::PathContext<'_> {
-    /// This context after a proven `cd`: a `bunfig.toml` at or above the new
-    /// directory can preload code into `bun`, so the session-level check no
-    /// longer covers it.
-    pub(crate) fn in_directory<'b>(&self, cwd: &'b str) -> super::PathContext<'b>
-    where
-        Self: 'b,
-    {
-        super::PathContext {
-            home_dir: self.home_dir,
-            cdpath_unset: self.cdpath_unset,
-            rustup_override_absent: self.rustup_override_absent,
-            js_loader_override_absent: self.js_loader_override_absent,
-            bun_config_absent: self.bun_config_absent
-                && (self.cwd == Some(cwd) || !directory_bunfig_exists(cwd)),
-            shell_home_matches: self.shell_home_matches,
-            cwd: Some(cwd),
-        }
-    }
-}
-
-fn js_loader_selector(name: &str) -> bool {
-    let upper = name.to_ascii_uppercase();
-    (upper.starts_with("NODE_") || upper.starts_with("BUN_")) && upper != "BUN_INSTALL"
-}
-
-/// Bun reads `bunfig.toml` from the working directory upward and a global
-/// `.bunfig.toml`; any of them except an install-only file can preload code.
-/// Unknown home or working directory counts as present.
-fn bun_preload_config_exists(
-    home_dir: Option<&str>,
-    cwd: Option<&str>,
-    xdg_config_home: Option<&str>,
-) -> bool {
-    let (Some(home_dir), Some(cwd)) = (home_dir, cwd) else {
-        return true;
-    };
-    if directory_bunfig_exists(cwd) {
-        return true;
-    }
-    let home = std::path::Path::new(home_dir);
-    let mut candidates = vec![home.join(".bunfig.toml")];
-    candidates.push(home.join(".config").join(".bunfig.toml"));
-    if let Some(xdg) = xdg_config_home.filter(|value| !value.trim().is_empty()) {
-        candidates.push(std::path::Path::new(xdg.trim()).join(".bunfig.toml"));
-    }
-    candidates
-        .iter()
-        .any(|candidate| preload_capable_bunfig(candidate))
-}
-
-fn directory_bunfig_exists(cwd: &str) -> bool {
-    std::path::Path::new(cwd)
-        .ancestors()
-        .any(|directory| preload_capable_bunfig(&directory.join("bunfig.toml")))
-}
-
-fn preload_capable_bunfig(candidate: &std::path::Path) -> bool {
-    std::fs::symlink_metadata(candidate).is_ok()
-        && !crate::direct_vitest::direct_tool_metadata::bunfig_is_install_only(candidate)
 }
 
 fn rustup_selector(name: &str) -> bool {
@@ -480,7 +396,3 @@ mod tests {
 #[cfg(test)]
 #[path = "tests_relative_cd.rs"]
 mod tests_relative_cd;
-
-#[cfg(test)]
-#[path = "tests_js_constant_eval.rs"]
-mod tests_js_constant_eval;

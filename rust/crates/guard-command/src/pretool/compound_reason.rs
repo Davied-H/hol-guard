@@ -34,9 +34,9 @@ pub(super) fn unproven_steps_reason(
     {
         return None;
     }
-    let proof_context = match cwd.as_deref() {
-        Some(cwd) => context.in_directory(cwd),
-        None => context,
+    let proof_context = super::PathContext {
+        cwd: cwd.as_deref().or(context.cwd),
+        ..context
     };
     let unproven: Vec<usize> = model
         .segments

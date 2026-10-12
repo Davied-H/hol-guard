@@ -71,7 +71,13 @@ pub(super) fn exact_safe_cwd_compound(
             &operation,
             &operation.segments[0],
             false,
-            context.in_directory(&cwd),
+            crate::pretool::PathContext {
+                home_dir: context.home_dir,
+                cdpath_unset: context.cdpath_unset,
+                rustup_override_absent: context.rustup_override_absent,
+                shell_home_matches: context.shell_home_matches,
+                cwd: Some(&cwd),
+            },
         );
     }
     model.segments[1..].iter().all(|segment| {
@@ -116,7 +122,13 @@ pub(super) fn exact_safe_cwd_compound(
             model,
             segment,
             allow_git_helper_context,
-            context.in_directory(&cwd),
+            crate::pretool::PathContext {
+                home_dir: context.home_dir,
+                cdpath_unset: context.cdpath_unset,
+                rustup_override_absent: context.rustup_override_absent,
+                shell_home_matches: context.shell_home_matches,
+                cwd: Some(&cwd),
+            },
         )
     })
 }
@@ -166,9 +178,12 @@ pub(crate) fn benign_command_segments(
     {
         return Vec::new();
     }
-    let proof_context = match cwd.as_deref() {
-        Some(cwd) => context.in_directory(cwd),
-        None => context,
+    let proof_context = crate::pretool::PathContext {
+        home_dir: context.home_dir,
+        cdpath_unset: context.cdpath_unset,
+        rustup_override_absent: context.rustup_override_absent,
+        shell_home_matches: context.shell_home_matches,
+        cwd: cwd.as_deref().or(context.cwd),
     };
     let segment_benign: Vec<bool> = model
         .segments
@@ -339,13 +354,6 @@ pub(super) fn exact_safe_segment_with_context(
                 && super::directory_targets::drive_targets_quoted(segment)
         }
         "pwd" | "true" | "echo" | "printf" | "which" | "whoami" | "uname" => true,
-        // A constant program has no import, file, network, environment or
-        // process effect, provided no option or config can preload a module.
-        "bun" => {
-            context.js_loader_override_absent
-                && context.bun_config_absent
-                && javascript_constant_program(&segment.arguments)
-        }
         "type" | "command" => {
             super::lookup_reads::safe_lookup_arguments(basename, &segment.arguments)
         }
@@ -383,7 +391,11 @@ pub(super) fn exact_safe_segment_with_context(
             model.segments.len() == 1
                 && (basename != "ln" && basename != "rm"
                     || super::directory_targets::home_targets_unquoted(segment))
-                && safe_reads::safe_file_mutation_arguments(basename, &segment.arguments, context)
+                && (safe_reads::safe_file_mutation_arguments(basename, &segment.arguments, context)
+                    // A session run from the directory above its checkouts can
+                    // still share a dependency directory between two of them.
+                    || (basename == "ln"
+                        && super::symlink_writes::safe_symlink_arguments(segment, context)))
         }
         // Admit stdin only when every producer in the pipeline is also proven safe.
         "head" | "tail" => safe_reads::safe_head_tail_arguments(
@@ -431,26 +443,12 @@ pub(super) fn exact_safe_segment_with_context(
         "sed" => {
             safe_reads::safe_sed_arguments(&segment.arguments, segment.pipeline_index > 0, context)
         }
-        "python" | "python3" => {
+        "python" | "python3" | "node" | "nodejs" => {
             super::safe_scalar::version_probe_arguments(basename, &segment.arguments)
                 || pure_expression::safe_inline_expression(basename, &segment.arguments)
         }
-        "node" | "nodejs" => {
-            super::safe_scalar::version_probe_arguments(basename, &segment.arguments)
-                || (context.js_loader_override_absent
-                    && (pure_expression::safe_inline_expression(basename, &segment.arguments)
-                        || javascript_constant_program(&segment.arguments)))
-        }
         _ => false,
     }
-}
-
-fn javascript_constant_program(arguments: &[String]) -> bool {
-    matches!(
-        arguments,
-        [flag, code] if matches!(flag.as_str(), "-e" | "--eval" | "-p" | "--print")
-            && pure_expression::javascript_pure_program(code)
-    )
 }
 
 /// Trailing `2>&1` redirects only join stderr to the segment's own stdout, so

@@ -303,3 +303,41 @@ fn worktree_maintenance_is_quiet_without_force_or_lock() {
     session.config(&["core.fsmonitor", "/tmp/fsmonitor"]);
     session.assert_not_allow(&remove);
 }
+
+#[test]
+fn dependency_symlink_is_quiet_only_between_checkouts_of_one_repository() {
+    let session = session("symlink");
+    let primary = session.primary.display();
+    let worktree = session.worktree.display();
+    let link = format!("ln -s {primary}/node_modules {worktree}/node_modules");
+    session.assert_allow(&link, "native_exact_safe_command");
+    let unrelated = session.home.join("unrelated");
+    std::fs::create_dir_all(unrelated.join("node_modules")).unwrap();
+    std::fs::create_dir_all(session.primary.join(".cache")).unwrap();
+    for command in [
+        format!("ln -sf {primary}/node_modules {worktree}/node_modules"),
+        format!("ln -sn {primary}/node_modules {worktree}/node_modules"),
+        format!("ln -s -f {primary}/node_modules {worktree}/node_modules"),
+        format!("ln {primary}/node_modules {worktree}/node_modules"),
+        format!("ln -s {primary}/node_modules {worktree}/.envrc"),
+        format!("ln -s {primary}/node_modules {worktree}/src/node_modules"),
+        format!("ln -s {primary}/missing {worktree}/node_modules"),
+        format!("ln -s {primary}/tracked.txt {worktree}/tracked-link"),
+        format!("ln -s {primary}/.git {worktree}/git-dir"),
+        format!("ln -s {primary}/.cache {worktree}/cache"),
+        format!("ln -s {primary} {worktree}/primary"),
+        format!(
+            "ln -s {}/node_modules {worktree}/node_modules",
+            unrelated.display()
+        ),
+        format!("ln -s {primary}/node_modules {worktree}/tracked.txt"),
+        format!(
+            "ln -s {primary}/node_modules {}/node_modules",
+            unrelated.display()
+        ),
+        format!("ln -s {}/.ssh {worktree}/keys", session.home.display()),
+        format!("ln -s {primary}/node_modules {worktree}/node_modules && id"),
+    ] {
+        session.assert_not_allow(&command);
+    }
+}

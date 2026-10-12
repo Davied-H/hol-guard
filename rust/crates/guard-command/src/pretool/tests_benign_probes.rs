@@ -83,8 +83,6 @@ fn chained_sleeps_past_the_bound_cover_no_segment() {
                     cwd: Some("/tmp"),
                     cdpath_unset: false,
                     rustup_override_absent: false,
-                    js_loader_override_absent: false,
-                    bun_config_absent: false,
                     shell_home_matches: false,
                 },
             )
@@ -101,8 +99,6 @@ fn chained_sleeps_past_the_bound_cover_no_segment() {
                 cwd: Some("/tmp"),
                 cdpath_unset: false,
                 rustup_override_absent: false,
-                js_loader_override_absent: false,
-                bun_config_absent: false,
                 shell_home_matches: false,
             },
         ),
@@ -250,8 +246,6 @@ fn a_stderr_merge_does_not_invent_an_ls_target() {
         cwd: Some(root),
         cdpath_unset: false,
         rustup_override_absent: false,
-        js_loader_override_absent: false,
-        bun_config_absent: false,
         shell_home_matches: false,
     };
     let cover = |command: &str| {

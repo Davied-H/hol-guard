@@ -12,12 +12,6 @@ pub struct PathContext<'a> {
     /// No inherited `RUSTUP_TOOLCHAIN` or `RUSTUP_HOME` can change which
     /// toolchain the rustup proxy runs. Literal contexts leave this false.
     pub rustup_override_absent: bool,
-    /// No inherited `NODE_*` or `BUN_*` setting (other than `BUN_INSTALL`)
-    /// can preload code into `node -e` or `bun -e`. Literal contexts leave this false.
-    pub js_loader_override_absent: bool,
-    /// No `bunfig.toml` in the working directory or its ancestors and no
-    /// global `.bunfig.toml` can preload code into `bun -e`.
-    pub bun_config_absent: bool,
     /// The shell expands `~` to `home_dir`: its HOME names the same
     /// directory. Literal contexts leave this false.
     pub shell_home_matches: bool,
@@ -72,6 +66,7 @@ mod search_scope_ignore;
 mod segment_proof;
 mod shell_script;
 mod stdin_filters;
+mod symlink_writes;
 mod version_probes;
 mod worktree_add;
 mod worktree_maintenance;

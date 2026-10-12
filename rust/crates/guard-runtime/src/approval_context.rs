@@ -270,8 +270,6 @@ pub(super) fn derive_context_with_snapshot(
             cwd: envelope.source.cwd.as_deref(),
             cdpath_unset: false,
             rustup_override_absent: false,
-            js_loader_override_absent: false,
-            bun_config_absent: false,
             shell_home_matches: false,
         },
         Some(

@@ -4,7 +4,8 @@
   "known_gaps": {
     "pytest-module-quiet": "native_command_review_required",
     "python-run-test-script": "native_command_review_required",
-    "vitest-local-bin": "native_command_review_required"
+    "vitest-local-bin": "native_command_review_required",
+    "session-git-c-wt-push-feature": "native_command_review_required"
   },
   "cases": [
     {

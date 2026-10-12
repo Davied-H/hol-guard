@@ -14,115 +14,6 @@ const MAX_PROJECTED_CHARS: usize = 32_768;
 /// Command separators after which a new simple command starts.
 const COMMAND_SEPARATORS: [&str; 6] = ["|", "||", "&&", ";", "&", "|&"];
 
-/// Names whose value redirects execution, config, credentials, code loading,
-/// pagers or network routing for the tools Guard proves.
-const DENIED_NAMES: [&str; 44] = [
-    "BASH_ENV",
-    "BROWSER",
-    "CDPATH",
-    "CLASSPATH",
-    "CURL_CA_BUNDLE",
-    "DOCKER_CONFIG",
-    "DOCKER_HOST",
-    "EDITOR",
-    "ENV",
-    "FPATH",
-    "GLOBIGNORE",
-    "HOME",
-    "IFS",
-    "INPUTRC",
-    "JAVA_TOOL_OPTIONS",
-    "KUBECONFIG",
-    "LESS",
-    "LESSCLOSE",
-    "LESSKEY",
-    "LESSOPEN",
-    "MAIL",
-    "MANPAGER",
-    "MANPATH",
-    "MAKEFLAGS",
-    "MFLAGS",
-    "NETRC",
-    "PAGER",
-    "PATH",
-    "PROMPT_COMMAND",
-    "PS4",
-    "REQUESTS_CA_BUNDLE",
-    "RIPGREP_CONFIG_PATH",
-    "RUBYLIB",
-    "RUBYOPT",
-    "SHELL",
-    "SHELLOPTS",
-    "SSL_CERT_DIR",
-    "SSL_CERT_FILE",
-    "SUDO_ASKPASS",
-    "TAR_OPTIONS",
-    "VISUAL",
-    "WGETRC",
-    "ZDOTDIR",
-    "_JAVA_OPTIONS",
-];
-
-const DENIED_PREFIXES: [&str; 57] = [
-    "ANTHROPIC_",
-    "AWS_",
-    "AZURE_",
-    "BASH_FUNC_",
-    "BUN_",
-    "CARGO_",
-    "CLAUDE",
-    "CLOUDSDK_",
-    "CODEX_",
-    "CONDA",
-    "COREPACK_",
-    "CURL",
-    "DENO_",
-    "DOTNET_",
-    "DYLD_",
-    "ESBUILD_",
-    "GCLOUD_",
-    "GH_",
-    "GIT",
-    "GNUPG",
-    "GO",
-    "GOOGLE_",
-    "GPG",
-    "GREP_",
-    "GUARD_",
-    "HOL_",
-    "JAVA",
-    "JDK_",
-    "JQ_",
-    "KUBE",
-    "LD_",
-    "LUA_",
-    "NODE_",
-    "NPM_",
-    "OPENAI_",
-    "OPENSSL",
-    "PERL",
-    "PHP",
-    "PIP_",
-    "PNPM_",
-    "PYTEST",
-    "PYTHON",
-    "RUST",
-    "SSH_",
-    "SSL_",
-    "SSLKEYLOG",
-    "SUDO_",
-    "SWC_",
-    "TERRAFORM_",
-    "TF_",
-    "UV_",
-    "VIRTUAL_ENV",
-    "XDG_",
-    "YARN_",
-    "ZIP",
-    "ZCODE",
-    "ZSH",
-];
-
 /// Exact settings that only quiet a tool, accepted despite a denied prefix.
 const QUIETING_SETTINGS: [(&str, &str); 11] = [
     ("GH_NO_UPDATE_NOTIFIER", "1"),
@@ -152,17 +43,6 @@ const PRESENTATION_NAMES: [&str; 12] = [
     "NO_COLOR",
     "TERM",
     "TZ",
-];
-
-/// Name fragments of settings that point a tool at code, config, files,
-/// options or network endpoints. Tools other than the ones Guard proves read
-/// such settings too (`OPENSSL_CONF`, `SSLKEYLOGFILE`, `PYTEST_ADDOPTS`), so
-/// any name carrying one is never inert.
-const LOADER_MARKERS: [&str; 34] = [
-    "ADDR", "AGENT", "ARGS", "BINARY", "CERT", "CMD", "COMMAND", "CONF", "DIR", "EDITOR",
-    "ENDPOINT", "ENGINE", "EXEC", "FILE", "FLAGS", "HOME", "HOOK", "HOST", "IMPORT", "INIT",
-    "KEYLOG", "LIB", "LOAD", "MODULE", "OPTIONS", "OPTS", "PAGER", "PATH", "PLUGIN", "PROGRAM",
-    "PROVIDER", "REGISTRY", "SCRIPT", "SOCKET",
 ];
 
 const MAX_SCALAR_CHARS: usize = 128;
@@ -450,16 +330,9 @@ fn inert_assignment(name: &str, value: &str) -> bool {
     {
         return true;
     }
-    // Any other setting is inert only when it names no code, config, file or
-    // endpoint and its value is a plain word that cannot be a path or option.
-    !denied_name(&upper)
-        && !upper.ends_with("PROXY")
-        && !upper.ends_with("RC")
-        && !CREDENTIAL_MARKERS
-            .iter()
-            .any(|marker| upper.contains(marker))
-        && !LOADER_MARKERS.iter().any(|marker| upper.contains(marker))
-        && plain_scalar(value)
+    // Any program may read any other name, so other settings are reviewed
+    // through the projection instead of passing as inert.
+    false
 }
 
 fn plain_scalar(value: &str) -> bool {
@@ -504,13 +377,6 @@ fn assignment_name_shape(name: &str) -> bool {
         .next()
         .is_some_and(|first| first == '_' || first.is_ascii_alphabetic())
         && characters.all(|value| value == '_' || value.is_ascii_alphanumeric())
-}
-
-fn denied_name(upper: &str) -> bool {
-    DENIED_NAMES.contains(&upper)
-        || DENIED_PREFIXES
-            .iter()
-            .any(|prefix| upper.starts_with(prefix))
 }
 
 fn next_word_start(chars: &[char], mut index: usize) -> usize {
