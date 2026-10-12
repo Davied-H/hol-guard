@@ -83,7 +83,7 @@ def test_wrappers_send_the_recorded_wire_arguments(
     def capture(**kwargs: Any) -> tuple[object, None]:
         captured.append((kwargs["method"], json.loads(json.dumps(kwargs["args"]))))
         if step["error"] is not None:
-            native_guard_store._raise_for_code(
+            native_guard_store.raise_for_store_code(
                 ERROR_CODES[step["error"]["type"]], {"message": step["error"]["message"]}
             )
         return step["native_payload"], None

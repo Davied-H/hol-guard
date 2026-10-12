@@ -82,12 +82,12 @@ def test_unavailable_error_is_never_swallowed_by_non_status_callers(
 
 def test_invalid_reason_from_the_resident_is_surfaced() -> None:
     with pytest.raises(NativeGuardStoreUnavailable) as raised:
-        native_guard_store._raise_for_code(
+        native_guard_store.raise_for_store_code(
             "native_guard_store_invalid", {"message": "native_guard_store_unknown_method"}
         )
     assert raised.value.reason == "native_guard_store_unknown_method"
     with pytest.raises(NativeGuardStoreUnavailable) as raised:
-        native_guard_store._raise_for_code("native_guard_store_invalid", {"message": "free text, not a code"})
+        native_guard_store.raise_for_store_code("native_guard_store_invalid", {"message": "free text, not a code"})
     assert raised.value.reason == "native_guard_store_invalid"
 
 
@@ -159,7 +159,7 @@ def test_busy_native_call_counts_as_busy_locked(tmp_path: Path, monkeypatch: pyt
     store = GuardStore(tmp_path / "guard-home")
 
     def busy(**_kwargs: Any) -> tuple[Any, int | None]:
-        native_guard_store._raise_for_code("native_guard_store_busy", None)
+        native_guard_store.raise_for_store_code("native_guard_store_busy", None)
         raise AssertionError("unreachable")
 
     monkeypatch.setattr(store_review_event_outbox, "native_guard_store_call", busy)

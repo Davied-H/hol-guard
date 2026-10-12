@@ -18,7 +18,7 @@ from typing import Any
 import pytest
 
 from codex_plugin_scanner.guard import store_review_event_outbox
-from codex_plugin_scanner.guard.native_guard_store import _raise_for_code
+from codex_plugin_scanner.guard.native_guard_store import raise_for_store_code
 from codex_plugin_scanner.guard.store import GuardStore
 from codex_plugin_scanner.guard.store_command_activity_wire import shadow_wire
 
@@ -91,7 +91,7 @@ def test_wrappers_send_the_recorded_wire_arguments(
         if error is not None and error["type"] == NOT_FOUND:
             return {"not_found": True}, None
         if error is not None:
-            _raise_for_code(ERROR_CODES[error["type"]], {"message": error["message"]})
+            raise_for_store_code(ERROR_CODES[error["type"]], {"message": error["message"]})
         return step["native_payload"], None
 
     monkeypatch.setattr(store_review_event_outbox, "native_guard_store_call", capture)
