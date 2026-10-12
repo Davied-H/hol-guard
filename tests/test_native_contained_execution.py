@@ -86,6 +86,7 @@ def test_mapping_codec_preserves_full_index_without_python_inspection(monkeypatc
         assert json.loads(raw)["read_files"] == list(map(str, paths))
         result = b"[]"
         path.with_name("mapping-result.json").write_bytes(result)
+        path.with_name("mapping-result.json").chmod(0o600)
         return {"value": {"decoded_bytes": len(result), "sha256": hashlib.sha256(result).hexdigest()}}
 
     monkeypatch.setattr(transport, "_call", call)
@@ -109,6 +110,7 @@ def test_large_mapping_response_reaches_namespace_preparation_caller(monkeypatch
         assert len(json.dumps(action).encode()) < 2 * 1024 * 1024
         output = Path(action["body"]["input"]["mapping_snapshot"]).with_name("mapping-result.json")
         output.write_bytes(raw)
+        output.chmod(0o600)
         outputs.append(output)
         return {"value": {"decoded_bytes": len(raw), "sha256": hashlib.sha256(raw).hexdigest()}}
 
@@ -117,11 +119,12 @@ def test_large_mapping_response_reaches_namespace_preparation_caller(monkeypatch
     assert not outputs[0].exists()
 
 
-@pytest.mark.parametrize("corruption", ["digest", "length", "budget"])
+@pytest.mark.parametrize("corruption", ["digest", "length", "budget", "permissions"])
 def test_mapping_result_transport_corruption_fails_closed(monkeypatch, corruption):
     def call(action, **kwargs):
         output = Path(action["body"]["input"]["mapping_snapshot"]).with_name("mapping-result.json")
         output.write_bytes(b"[]")
+        output.chmod(0o644 if corruption == "permissions" else 0o600)
         length = 3 if corruption == "length" else (32 * 1024 * 1024 + 1 if corruption == "budget" else 2)
         digest = "0" * 64 if corruption == "digest" else hashlib.sha256(b"[]").hexdigest()
         return {"value": {"decoded_bytes": length, "sha256": digest}}

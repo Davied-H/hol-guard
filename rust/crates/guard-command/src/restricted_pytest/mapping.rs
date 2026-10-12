@@ -98,7 +98,7 @@ impl Inspector<'_> {
         let dependencies = if read == 4 && prefix == *b"\x7fELF" {
             let system = ["/usr/lib", "/usr/lib64", "/lib", "/lib64"]
                 .iter()
-                .any(|p| path_is_within(path, Path::new(p)));
+                .any(|p| path.starts_with(p));
             mapping_elf::inspect(&mut file, &before, library, system)
                 .map_err(|_| "Unverified executable mapping.")?
                 .1
@@ -196,14 +196,6 @@ fn collect(input: &Input, deadline: Instant) -> Result<Value> {
     static LIBRARY: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\.so(?:\.[0-9]+)*$").unwrap());
     for module in input.read_files.difference(&input.images) {
         check(deadline)?;
-        if !(path_is_within(module, &input.workspace)
-            || input
-                .runtime_roots
-                .iter()
-                .any(|p| path_is_within(module, p)))
-        {
-            continue;
-        }
         if !(module
             .file_name()
             .and_then(OsStr::to_str)
@@ -212,10 +204,17 @@ fn collect(input: &Input, deadline: Instant) -> Result<Value> {
         {
             continue;
         }
-        if let Ok(component) = inspector.closure(vec![module.clone()]) {
-            records.extend(component);
+        if !(module.starts_with(&input.workspace)
+            || input.runtime_roots.iter().any(|p| module.starts_with(p)))
+        {
+            continue;
+        }
+        match inspector.closure(vec![module.clone()]) {
+            Ok(component) => records.extend(component),
+            Err(_) => check(deadline)?,
         }
     }
+    check(deadline)?;
     Ok(json!(records.into_values().collect::<Vec<_>>()))
 }
 

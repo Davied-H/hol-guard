@@ -40,11 +40,17 @@ impl Drop for Fixture {
     }
 }
 
+fn fixture(prefix: &str) -> Fixture {
+    let mut random = [0u8; 16];
+    getrandom::fill(&mut random).unwrap();
+    let root = env::temp_dir().join(format!("{prefix}-{}", hex::encode(random)));
+    fs::create_dir(&root).unwrap();
+    Fixture(root.canonicalize().unwrap())
+}
+
 #[test]
 fn recorded_original_contained_execution_outcomes() {
-    let root = env::temp_dir().join(format!("guard-contained-parity-{}", std::process::id()));
-    fs::create_dir(&root).unwrap();
-    let fixture = Fixture(root.canonicalize().unwrap());
+    let fixture = fixture("guard-contained-parity");
     let workspace = fixture.0.join("project");
     fs::create_dir_all(workspace.join("bin")).unwrap();
     fs::create_dir(workspace.join("tests")).unwrap();
@@ -127,11 +133,18 @@ fn mapping_deadline_and_packed_input_fail_closed() {
 }
 
 #[test]
+fn large_ordinary_file_index_keeps_the_mapping_deadline_for_image_inspection() {
+    let input = json!({"images":[],"read_files":(0..100000).map(|i|
+        format!("/guard-fixture/workspace/a/b/c/d/e/f/ordinary-{i}.txt")).collect::<Vec<_>>(),
+        "runtime_roots":["/guard-fixture/runtime"],"workspace":"/guard-fixture/workspace"});
+    let result = evaluate_with_deadline("mapping_evidence", &input, Instant::now() + Duration::from_secs(5));
+    assert_eq!(result, json!({"value":[]}));
+}
+
+#[test]
 fn mapping_snapshot_is_descriptor_bound_and_can_exceed_an_ipc_frame() {
     use sha2::{Digest, Sha256};
-    let root = env::temp_dir().join(format!("hol-guard-mapping-parity-{}", std::process::id()));
-    fs::create_dir(&root).unwrap();
-    let fixture = Fixture(root.canonicalize().unwrap());
+    let fixture = fixture("hol-guard-mapping-parity");
     fs::set_permissions(&fixture.0, fs::Permissions::from_mode(0o700)).unwrap();
     let path = fixture.0.join("mapping-index.json");
     let payload = json!({"read_files":(0..100000).map(|i|format!("/guard-fixture/library/module-{i}.so")).collect::<Vec<_>>()});

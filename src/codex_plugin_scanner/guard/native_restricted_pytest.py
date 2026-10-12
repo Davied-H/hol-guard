@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import stat
 import tempfile
 from collections.abc import Mapping
 from pathlib import Path
@@ -93,6 +94,9 @@ def restricted_native(operation: str, fields: Mapping[str, Any], expected: type 
                     snapshot.with_name("mapping-result.json"), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
                 )
                 with os.fdopen(descriptor, "rb") as stream:
+                    status = os.fstat(stream.fileno())
+                    if not stat.S_ISREG(status.st_mode) or status.st_uid != os.getuid() or status.st_mode & 0o077:
+                        raise ValueError("Invalid mapping result snapshot.")
                     raw = stream.read(envelope["decoded_bytes"] + 1)
                 if len(raw) != envelope["decoded_bytes"] or hashlib.sha256(raw).hexdigest() != envelope["sha256"]:
                     raise ValueError("Invalid mapping result envelope.")
