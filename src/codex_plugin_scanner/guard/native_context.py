@@ -86,6 +86,9 @@ _RESULT_CODES = {
     "native_mcp_risk_serialization_failed",
     "canonical_json_unencodable",
     "native_mcp_arguments_invalid",
+    "native_hook_approval_context_invalid",
+    "native_hook_approval_context_path_unresolved",
+    "native_hook_approval_context_random_failed",
 }
 
 # Filesystem authority: launch/executable identities hash on-disk bytes and

@@ -134,9 +134,8 @@ def runtime_hook_approval_context_inputs(
 
     from .runtime.extension_control_runtime import current_extension_control_binding_digest
 
-    return {
+    inputs: dict[str, object] = {
         "host": _host(),
-        "ambient_env": dict(os.environ),
         "extension_control_digest": current_extension_control_binding_digest(),
         "artifact": {
             "args": list(artifact.args),
@@ -166,6 +165,11 @@ def runtime_hook_approval_context_inputs(
         "current_action": current_action,
         "sandbox_analysis": config.sandbox_analysis,
     }
+    if not _launch_free(inputs):
+        # Only a launch identity reads the environment; launch-free contexts
+        # never transported it.
+        inputs["ambient_env"] = dict(os.environ)
+    return inputs
 
 
 def generic_hook_approval_context_inputs(
@@ -239,8 +243,7 @@ def native_hook_approval_context_token(kind: str, inputs: dict[str, object]) -> 
     result = native_context_digest(kind, {"inputs": inputs}, guard_home=guard_home)
     if result is None:
         if kind == "runtime_hook_approval_context" and _launch_free(inputs):
-            material = {key: value for key, value in inputs.items() if key != "ambient_env"}
-            return _unbound_context_digest("approval-context-token", material=material)
+            return _unbound_context_digest("approval-context-token", material=inputs)
         raise ValueError("native_hook_approval_context_unavailable")
     token = result.get("token")
     if result.get("status") != "ok" or not isinstance(token, str):

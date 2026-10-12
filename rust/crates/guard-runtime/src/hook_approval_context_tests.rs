@@ -106,3 +106,40 @@ fn malformed_inputs_are_rejected() {
     assert!(runtime_hook_components(&json!([]), &mut effects).is_err());
     assert!(generic_hook_components(&json!({"host": {}}), &mut effects).is_err());
 }
+
+/// A gone process cwd does not matter when the hook names its workspace.
+#[cfg(unix)]
+#[test]
+fn explicit_workspace_composes_without_host_cwd() {
+    let mut checked = 0;
+    for vector in vectors() {
+        let inputs = &vector["inputs"];
+        let workspace = inputs["runtime_workspace"].as_str().unwrap_or_default();
+        let metadata = &inputs["metadata"];
+        if vector["kind"] != "runtime"
+            || vector["error"] == json!(true)
+            || !workspace.starts_with('/')
+            || !metadata["shell_execution_context_hash"].is_null()
+            || !metadata["shell_execution_context_hashes"].is_null()
+            || !metadata["shell_execution_effective_cwds"].is_null()
+        {
+            continue;
+        }
+        let mut detached = inputs.clone();
+        detached["host"]["cwd"] = Value::Null;
+        let mut counter = 0u32;
+        let mut nonce = || {
+            counter += 1;
+            Ok(format!("{counter:032x}"))
+        };
+        let mut effects = Effects {
+            launch: &fixture_launch,
+            nonce: &mut nonce,
+        };
+        let components = runtime_hook_components(&detached, &mut effects)
+            .unwrap_or_else(|code| panic!("{}: {code}", vector["name"]));
+        assert_eq!(components.identity, vector["components"]["identity"]);
+        checked += 1;
+    }
+    assert!(checked > 0);
+}

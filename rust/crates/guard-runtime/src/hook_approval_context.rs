@@ -8,16 +8,21 @@
 //! evaluation's raw facts and receives only the token.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
 
-use guard_command::hook_adapter_paths::{expanduser, safe_resolve, PathEnv, PurePath};
 use guard_contracts::ContextDigestComponentsV1;
 use serde_json::{json, Map, Value};
 
 use crate::context_digest::{
     build_context_token, configured_values_hash, python_strip, CONFIGURED_ENV_HASH_DOMAIN,
 };
-use crate::resident_diagnostics::{observe_value, Phase};
+
+mod support;
+
+use support::{
+    capabilities, envelope, extension_control_digest, field, field_of, optional_normalized,
+    optional_string, policy, py_or, sandbox_required, string_map, text, truthy,
+    with_native_effects, Paths,
+};
 
 const ERR_INPUT: &str = "native_hook_approval_context_invalid";
 const ERR_PATH: &str = "native_hook_approval_context_path_unresolved";
@@ -85,33 +90,6 @@ pub(crate) fn generic_hook_token(inputs: &Value) -> Result<String, &'static str>
     with_native_effects(|effects| build_context_token(&generic_hook_components(inputs, effects)?))
 }
 
-fn with_native_effects<T>(run: impl FnOnce(&mut Effects<'_>) -> T) -> T {
-    let mut nonce = || {
-        let mut bytes = [0u8; 16];
-        getrandom::fill(&mut bytes).map_err(|_| ERR_RANDOM)?;
-        Ok(hex::encode(bytes))
-    };
-    run(&mut Effects {
-        launch: &native_launch,
-        nonce: &mut nonce,
-    })
-}
-
-fn native_launch(request: &LaunchRequest<'_>) -> Value {
-    observe_value(Phase::ContextRuntimeLaunchIdentity, || {
-        guard_command::launch_identity::build_runtime_launch_identity(
-            request.command,
-            request.args,
-            request.structured_command,
-            false,
-            request.search_path,
-            Some(Path::new(request.cwd)),
-            request.home_dir.map(Path::new),
-            Some(request.launch_env),
-        )
-    })
-}
-
 /// `_runtime_hook_approval_context_token`.
 pub(crate) fn runtime_hook_components(
     inputs: &Value,
@@ -144,7 +122,13 @@ pub(crate) fn runtime_hook_components(
     let effective_cwd = match effective_cwds.last() {
         Some(cwd) => Value::String(cwd.clone()),
         None if shell_present => Value::Null,
-        None => Value::String(paths.normalized(runtime_workspace.unwrap_or(paths.cwd()?))?),
+        None => {
+            let workspace = match runtime_workspace {
+                Some(workspace) => workspace,
+                None => paths.cwd()?,
+            };
+            Value::String(paths.normalized(workspace)?)
+        }
     };
     let configured_workspace = optional_normalized(&paths, text(input, "configured_workspace")?)?;
     let envelope = envelope(input)?;
@@ -484,151 +468,6 @@ fn generic_launch(
         }),
     };
     Ok(json!({"command": command, "command_source": source, "resolved_launch": resolved}))
-}
-
-/// Python `_normalized_runtime_context_path`:
-/// `str(p.expanduser().resolve(strict=False))`, else `.absolute()`.
-struct Paths {
-    env: PathEnv,
-}
-
-impl Paths {
-    fn from_host(host: &Value) -> Result<Self, &'static str> {
-        let host = host.as_object().ok_or(ERR_INPUT)?;
-        Ok(Self {
-            env: PathEnv {
-                tilde_home: text(host, "tilde_home")?.map(str::to_owned),
-                default_home: None,
-                cwd: text(host, "cwd")?.map(str::to_owned),
-            },
-        })
-    }
-
-    fn cwd(&self) -> Result<&str, &'static str> {
-        self.env.cwd.as_deref().ok_or(ERR_PATH)
-    }
-
-    fn normalized(&self, text: &str) -> Result<String, &'static str> {
-        let expanded = match expanduser(PurePath::host(text), &self.env) {
-            Ok(path) => path.text(),
-            Err(_) => named_user_home(text).ok_or(ERR_PATH)?,
-        };
-        let resolved = safe_resolve(&expanded, &self.env).map_err(|_| ERR_PATH)?;
-        if PurePath::host(&resolved).is_absolute() {
-            return Ok(PurePath::host(&resolved).text());
-        }
-        Ok(PurePath::host(&format!("{}/{resolved}", self.cwd()?)).text())
-    }
-}
-
-/// `~user` expansion through the password database; unknown users fail as
-/// Python's `RuntimeError("Could not determine home directory.")` did.
-#[cfg(unix)]
-fn named_user_home(text: &str) -> Option<String> {
-    let normalized = PurePath::host(text).text();
-    let rest = normalized.strip_prefix('~')?;
-    let (name, tail) = rest.split_once('/').unwrap_or((rest, ""));
-    if name.is_empty() {
-        return None;
-    }
-    let user = nix::unistd::User::from_name(name).ok()??;
-    let home = user.dir.to_str()?.trim_end_matches('/');
-    Some(PurePath::host(&format!("{home}/{tail}")).text())
-}
-
-#[cfg(not(unix))]
-fn named_user_home(_text: &str) -> Option<String> {
-    None
-}
-
-fn optional_normalized(paths: &Paths, text: Option<&str>) -> Result<Option<String>, &'static str> {
-    text.map(|text| paths.normalized(text)).transpose()
-}
-
-fn envelope(input: &Map<String, Value>) -> Result<Option<&Map<String, Value>>, &'static str> {
-    match field(input, "envelope") {
-        Value::Null => Ok(None),
-        Value::Object(envelope) => Ok(Some(envelope)),
-        _ => Err(ERR_INPUT),
-    }
-}
-
-fn capabilities(envelope: &Map<String, Value>, keys: &[&str]) -> Value {
-    Value::Object(
-        keys.iter()
-            .map(|key| ((*key).to_owned(), field(envelope, key).clone()))
-            .collect(),
-    )
-}
-
-fn policy(input: &Map<String, Value>) -> Value {
-    json!({
-        "config": field(input, "policy_config"),
-        "evaluator_policy_version": field(input, "evaluator_policy_version"),
-        "composition": field(input, "composition"),
-    })
-}
-
-fn sandbox_required(input: &Map<String, Value>) -> bool {
-    field(input, "current_action").as_str() == Some("sandbox-required")
-}
-
-fn extension_control_digest(input: &Map<String, Value>) -> Result<String, &'static str> {
-    text(input, "extension_control_digest")?
-        .map(str::to_owned)
-        .ok_or(ERR_INPUT)
-}
-
-fn string_map(value: &Value) -> Result<BTreeMap<String, String>, &'static str> {
-    value
-        .as_object()
-        .ok_or(ERR_INPUT)?
-        .iter()
-        .map(|(key, value)| Ok((key.clone(), value.as_str().ok_or(ERR_INPUT)?.to_owned())))
-        .collect()
-}
-
-fn field<'a>(object: &'a Map<String, Value>, key: &str) -> &'a Value {
-    object.get(key).unwrap_or(&Value::Null)
-}
-
-fn field_of<'a>(value: &'a Value, key: &str) -> &'a Value {
-    value.get(key).unwrap_or(&Value::Null)
-}
-
-fn text<'a>(object: &'a Map<String, Value>, key: &str) -> Result<Option<&'a str>, &'static str> {
-    match field(object, key) {
-        Value::Null => Ok(None),
-        Value::String(text) => Ok(Some(text)),
-        _ => Err(ERR_INPUT),
-    }
-}
-
-/// Python truthiness of a JSON value.
-fn truthy(value: Option<&Value>) -> bool {
-    match value {
-        None | Some(Value::Null) => false,
-        Some(Value::Bool(flag)) => *flag,
-        Some(Value::Number(number)) => number.as_f64() != Some(0.0),
-        Some(Value::String(text)) => !text.is_empty(),
-        Some(Value::Array(items)) => !items.is_empty(),
-        Some(Value::Object(entries)) => !entries.is_empty(),
-    }
-}
-
-/// Python `a or b`.
-fn py_or(first: Option<&Value>, second: Option<&Value>) -> Value {
-    if truthy(first) {
-        first.cloned().unwrap_or(Value::Null)
-    } else {
-        second.cloned().unwrap_or(Value::Null)
-    }
-}
-
-/// `_optional_string`: a non-blank string, stripped.
-fn optional_string(value: &Value) -> Option<String> {
-    let text = python_strip(value.as_str()?);
-    (!text.is_empty()).then(|| text.to_owned())
 }
 
 #[cfg(test)]
