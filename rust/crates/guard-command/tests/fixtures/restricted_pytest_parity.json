@@ -4686,6 +4686,28 @@
     {
       "operation": "restricted_pythonpath",
       "input": {
+        "value": "missing/../sub",
+        "workspace": "$ROOT/project",
+        "cwd": "$ROOT/project"
+      },
+      "expected": {
+        "value": "$ROOT/project/sub"
+      }
+    },
+    {
+      "operation": "restricted_pythonpath",
+      "input": {
+        "value": "alias/missing/../",
+        "workspace": "$ROOT/project",
+        "cwd": "$ROOT/project"
+      },
+      "expected": {
+        "value": "$ROOT/project/sub"
+      }
+    },
+    {
+      "operation": "restricted_pythonpath",
+      "input": {
         "value": "sub:alias",
         "workspace": "$ROOT/project",
         "cwd": "$ROOT/project"

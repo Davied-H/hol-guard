@@ -138,29 +138,43 @@ fn resolve_nonstrict(path: &Path) -> Result<PathBuf, std::io::Error> {
     } else {
         env::current_dir()?.join(path)
     };
-    let mut current = absolute.as_path();
-    let mut tail = Vec::new();
-    loop {
-        match fs::canonicalize(current) {
-            Ok(mut resolved) => {
-                for part in tail.iter().rev() {
-                    resolved.push(part);
+    let parts = |path: &Path| {
+        path.components()
+            .filter_map(|part| match part {
+                std::path::Component::Normal(value) => Some(value.to_os_string()),
+                std::path::Component::ParentDir => Some(std::ffi::OsString::from("..")),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    let mut pending: std::collections::VecDeque<_> = parts(&absolute).into();
+    let mut resolved = PathBuf::from("/");
+    let mut links = 0;
+    while let Some(part) = pending.pop_front() {
+        if part == ".." {
+            resolved.pop();
+            continue;
+        }
+        let candidate = resolved.join(part);
+        match fs::symlink_metadata(&candidate) {
+            Ok(metadata) if metadata.is_symlink() => {
+                links += 1;
+                if links > 40 {
+                    return Err(std::io::Error::from_raw_os_error(libc::ELOOP));
                 }
-                return Ok(normpath(&resolved));
+                let target = fs::read_link(&candidate)?;
+                if target.is_absolute() {
+                    resolved = PathBuf::from("/");
+                }
+                for part in parts(&target).into_iter().rev() {
+                    pending.push_front(part);
+                }
             }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                let Some(name) = current.file_name() else {
-                    return Err(error);
-                };
-                tail.push(name.to_os_string());
-                let Some(parent) = current.parent() else {
-                    return Err(error);
-                };
-                current = parent;
-            }
-            Err(error) => return Err(error),
+            Err(error) if error.raw_os_error() == Some(libc::ELOOP) => return Err(error),
+            _ => resolved = candidate,
         }
     }
+    Ok(resolved)
 }
 
 /// `shutil.which(value)`: locate `value` on `PATH` honoring PATHEXT-free

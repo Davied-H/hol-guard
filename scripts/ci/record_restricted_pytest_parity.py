@@ -154,7 +154,18 @@ def record() -> dict:
                 value,
                 cwd=workspace,
             )
-        for value in ("", ".", "sub", "alias", "alias/missing", "sub:alias", "../", "sub::sub"):
+        for value in (
+            "",
+            ".",
+            "sub",
+            "alias",
+            "alias/missing",
+            "missing/../sub",
+            "alias/missing/../",
+            "sub:alias",
+            "../",
+            "sub::sub",
+        ):
             add(
                 "restricted_pythonpath",
                 {"value": value, "workspace": workspace, "cwd": workspace},
