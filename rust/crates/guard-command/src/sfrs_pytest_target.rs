@@ -261,6 +261,7 @@ const STRING_ROUTE_WORDS: &[&str] = &[
     "system",
     "popen",
     "call",
+    "check_call",
     "check_output",
     "run",
     "eval",
@@ -416,6 +417,10 @@ mod tests {
             0
         ));
         // Routes in code still count with the target inside a literal.
+        assert!(inline_python_payload_runs_pytest(
+            "import subprocess; subprocess.check_call('pytest')",
+            0
+        ));
         assert!(inline_python_payload_runs_pytest(
             "import os; os.system('pytest')",
             0

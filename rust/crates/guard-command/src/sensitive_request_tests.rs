@@ -30,6 +30,21 @@ fn ask(query: &str, input: &Value) -> Result<Value, &'static str> {
     evaluate(query, input, &ctx, None)
 }
 
+/// `input` with a neutral native evaluation of the command `identity` names.
+fn with_evaluation(input: &Value, identity: &str) -> Value {
+    let mut input = input.clone();
+    input["evaluation"] = json!({
+        "security_identity": identity,
+        "minimum_action": "monitor",
+        "match_default_modes": [],
+        "reason_codes": [],
+        "explicitly_enabled_permission_ids": [],
+        "controlling_action_class": null,
+        "controlling_reason": null,
+    });
+    input
+}
+
 #[test]
 fn unknown_queries_and_non_object_inputs_are_rejected() {
     assert_eq!(
@@ -164,7 +179,11 @@ fn native_evaluation_claim_without_redirects_binds() {
             "home_dir": "/home/user",
             "canonical": {"raw_text": text, "security_identity": identity},
         });
-        let found = ask("tool_action", &input).expect(&identity);
+        let found = ask("tool_action", &with_evaluation(&input, &identity)).expect(&identity);
+        assert!(
+            found.get("error").is_none(),
+            "{identity} evaluation: {found}"
+        );
         let command = &found["match"]["canonical_command"];
         assert!(
             command["redirects"]
@@ -238,6 +257,15 @@ fn uncertain_native_model_claim_binds_to_the_full_parse() {
         "canonical": {"raw_text": text, "security_identity": model.security_identity},
     });
     let found = ask("tool_action", &input).expect("bound");
+    let evaluated = ask(
+        "tool_action",
+        &with_evaluation(&input, &model.security_identity),
+    )
+    .expect("bound with evaluation");
+    assert!(
+        evaluated.get("error").is_none(),
+        "the evaluation of the claim did not apply: {evaluated}"
+    );
     if let Some(command) = found["match"].get("canonical_command") {
         assert!(
             command["redirects"]

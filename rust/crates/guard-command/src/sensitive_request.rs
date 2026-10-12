@@ -178,13 +178,13 @@ fn claim_setting<'a>(
 }
 
 /// The caller's canonical command, rebuilt here with the caller's parse
-/// settings. It binds only when the identity the caller holds agrees with the
-/// resident's own parse.
+/// settings, with the claimed identity it bound under. It binds only when
+/// that identity agrees with the resident's own parse.
 fn bound_canonical(
     input: &Value,
     cwd: Option<&Path>,
     home: Option<&Path>,
-) -> Result<Option<CanonicalCommand>, &'static str> {
+) -> Result<Option<(CanonicalCommand, String)>, &'static str> {
     let claim = match input.get("canonical") {
         None | Some(Value::Null) => return Ok(None),
         Some(claim) => claim,
@@ -199,7 +199,7 @@ fn bound_canonical(
     let provenance = claim_setting(claim, "extraction_provenance", "guard-shell", None)?;
     let command = parse_shell_command(raw_text, cwd, home, dialect, transport, provenance, true);
     if command.security_identity() == identity {
-        return Ok(Some(command));
+        return Ok(Some((command, identity.to_owned())));
     }
     // Native evaluation stores this parse with redirects and embedded
     // commands removed. Accept that identity, then classify the full parse
@@ -212,7 +212,7 @@ fn bound_canonical(
         || native_model_identity(raw_text, dialect, transport, provenance).as_deref()
             == Some(identity)
     {
-        return Ok(Some(command));
+        return Ok(Some((command, identity.to_owned())));
     }
     Err("native_sensitive_request_canonical_unbound")
 }
@@ -291,8 +291,16 @@ fn tool_action(
     ctx: &Ctx,
     controls: Option<&ToolActionControls>,
 ) -> Result<Value, &'static str> {
-    let canonical = bound_canonical(input, cwd, home)?;
-    let view = evaluation_view(input)?;
+    let bound = bound_canonical(input, cwd, home)?;
+    let mut view = evaluation_view(input)?;
+    // An evaluation of the accepted claim applies to the full parse that
+    // replaced it; any other identity still fails the classifier's check.
+    if let (Some((command, claimed)), Some(view)) = (&bound, view.as_mut()) {
+        if &view.security_identity == claimed {
+            view.security_identity = command.security_identity();
+        }
+    }
+    let canonical = bound.map(|(command, _)| command);
     let tool = ovalue_from_json(field(input, "tool_name"));
     let arguments = field(input, "arguments");
     let inputs = ExtractInputs {
