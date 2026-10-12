@@ -167,7 +167,7 @@ class NativePolicySnapshotPublicationMixin:
                 # keeps the lane closed; publication reports its own errors.
                 try:
                     direct_lane = direct_lane_binding(
-                        inputs=publisher._current_input_fingerprint()[0],
+                        inputs=publisher._current_policy_input_stats(),
                         workspaces=compiled_workspaces,
                     )
                 except (OSError, RuntimeError, ValueError, sqlite3.Error):

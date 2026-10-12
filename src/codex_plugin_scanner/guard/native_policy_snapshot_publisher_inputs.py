@@ -40,9 +40,11 @@ class NativePolicySnapshotPublisherInputs(NativePolicySnapshotDirectLaneAck):
     _published_policy_fingerprint: tuple[str, str, str] | None  # pyright: ignore[reportUninitializedInstanceVariable]
     _observed_policy_fingerprint: tuple[str, str, str] | None  # pyright: ignore[reportUninitializedInstanceVariable]
 
-    def _current_input_fingerprint(
+    def _current_policy_input_stats(
         self,
-    ) -> tuple[tuple[tuple[str, tuple[int, int, int, int] | None], ...], tuple[tuple[str, int, int], ...]]:
+    ) -> tuple[tuple[str, tuple[int, int, int, int] | None], ...]:
+        """Stat policy inputs without sampling the resident generation fence."""
+
         values: list[tuple[str, tuple[int, int, int, int] | None]] = []
         # The database and both journal modes are watched for cross-process
         # changes. WAL-only writes are included because they can contain an
@@ -77,7 +79,12 @@ class NativePolicySnapshotPublisherInputs(NativePolicySnapshotDirectLaneAck):
                         (metadata.st_mtime_ns, metadata.st_size, metadata.st_ino, metadata.st_ctime_ns),
                     )
                 )
-        return tuple(values), self._current_resident_fingerprint()
+        return tuple(values)
+
+    def _current_input_fingerprint(
+        self,
+    ) -> tuple[tuple[tuple[str, tuple[int, int, int, int] | None], ...], tuple[tuple[str, int, int], ...]]:
+        return self._current_policy_input_stats(), self._current_resident_fingerprint()
 
     def _current_resident_fingerprint(self) -> tuple[tuple[str, int, int], ...]:
         """Observe resident generation metadata without policy/config reads."""
