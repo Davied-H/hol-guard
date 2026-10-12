@@ -99,6 +99,9 @@ fn lookups_and_help_proceed() {
             "hol-guard help",
             "hol-guard doctor --help",
             "hol-guard daemon status --help",
+            "hol-guard update --help 2>&1 | head -20",
+            "hol-guard command --help 2>&1 | head -25",
+            "hol-guard run --help 2>&1 | head -20",
         ] {
             let result = classify(&home, harness, command);
             assert_eq!(result.decision, "allow", "{harness}: {command}");
@@ -122,6 +125,7 @@ fn executing_or_unproven_lookup_forms_still_ask() {
             "hol-guard npm --help",
             "hol-guard __guard-claude-hook --help",
             "hol-guard uninstall",
+            "hol-guard update 2>&1 | tail -8",
             "hol-guard settings set mode off --help x",
         ] {
             let result = classify(&home, harness, command);

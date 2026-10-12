@@ -65,8 +65,14 @@ fn help_request(words: &[&str]) -> bool {
 const HELP_SUBCOMMANDS: &[&str] = &[
     "abom",
     "advisories",
+    "allow",
+    "approvals",
     "apps",
+    "bootstrap",
+    "command",
     "daemon",
+    "dashboard",
+    "deny",
     "detect",
     "diff",
     "doctor",
@@ -77,10 +83,13 @@ const HELP_SUBCOMMANDS: &[&str] = &[
     "history",
     "hooks",
     "import",
+    "init",
     "install",
     "inventory",
     "list",
     "mcp",
+    "policies",
+    "policy",
     "receipts",
     "repair",
     "risk",
@@ -97,6 +106,8 @@ const HELP_SUBCOMMANDS: &[&str] = &[
     "stop",
     "sync",
     "trust",
+    "uninstall",
+    "update",
     "validate",
 ];
 
@@ -127,6 +138,8 @@ mod tests {
             "doctor --help",
             "daemon status -h",
             "secrets --help",
+            "update --help",
+            "help update",
         ] {
             assert!(safe_hol_guard_arguments(&arguments(command)), "{command}");
         }
