@@ -155,6 +155,38 @@ def test_quoted_words_are_single_arguments(tmp_path: Path, command: str, core: s
     assert peel_contained_wrapper(command, workspace=tmp_path) == (core, tmp_path, output)
 
 
+def test_sandbox_merge_keeps_alternating_writes_in_order(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    script = tmp_path / "alternate.py"
+    script.write_text(
+        "import sys\n"
+        "sys.stdout.write('A\\n')\n"
+        "sys.stdout.flush()\n"
+        "sys.stderr.write('B\\n')\n"
+        "sys.stderr.flush()\n"
+        "sys.stdout.write('C\\n')\n"
+        "sys.stdout.flush()\n",
+        encoding="utf-8",
+    )
+    import os
+    import sys
+
+    from codex_plugin_scanner.guard.runtime.restricted_pytest_sandbox import _run_backend_process
+
+    def run(*, merge_stderr: bool) -> tuple[int, str, str]:
+        code = _run_backend_process(
+            [sys.executable, str(script)],
+            env={"PATH": os.environ.get("PATH", ""), "PYTHONDONTWRITEBYTECODE": "1"},
+            timeout_seconds=30,
+            cwd=tmp_path,
+            merge_stderr=merge_stderr,
+        )
+        captured = capsys.readouterr()
+        return code, captured.out, captured.err
+
+    assert run(merge_stderr=True) == (0, "A\nB\nC\n", "")
+    assert run(merge_stderr=False) == (0, "A\nC\n", "B\n")
+
+
 def emit() -> None:
     import sys
 
@@ -170,7 +202,7 @@ def test_output_filter_runs_in_process(capsys: pytest.CaptureFixture[str]) -> No
     captured = capsys.readouterr()
     assert captured.out == "out 2\nout 3\n"
     assert captured.err == "err 0\nerr 1\nerr 2\n"
-    # With 2>&1 the sandbox's stdout precedes its stderr, then the bound applies.
+    # In-process writes keep call order. emit() finishes stdout before stderr.
     with bounded_output(OutputFilter("tail", 4, merge_stderr=True)):
         emit()
     assert capsys.readouterr() == ("out 3\nerr 0\nerr 1\nerr 2\n", "")

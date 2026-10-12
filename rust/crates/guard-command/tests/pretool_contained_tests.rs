@@ -140,6 +140,8 @@ fn unittest_and_final_status_echo_share_the_readonly_boundary() {
         r#"python3 -m unittest; echo "$(id)$?""#,
         r#"python3 -m unittest; echo "exit=$?" "$?""#,
         "python3 -m unittest 2>&1 > out.txt",
+        r#"python3 -m unittest; echo 'exit=$?'"#,
+        r#"python3 -m unittest; echo exit=\$?"#,
         r#"rm -rf build; echo "exit=$?""#,
         "sudo python3 -m unittest",
         "PYTHONPATH=/tmp python3 -m unittest",

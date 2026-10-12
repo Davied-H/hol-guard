@@ -117,6 +117,7 @@ def run_authorized_contained_test(
     timeout_seconds: int,
     cwd: Path | None = None,
     home_dir: Path | None = None,
+    merge_stderr: bool = False,
 ) -> int:
     """Recheck native authority for the original input before protected execution.
 
@@ -159,6 +160,7 @@ def run_authorized_contained_test(
                 timeout_seconds=timeout_seconds,
                 cwd=directory,
                 home_dir=home_dir,
+                merge_stderr=output is not None and output.merge_stderr,
             )
         status_line = output.status_line(exit_code) if output is not None else None
         if status_line is None:
@@ -300,17 +302,23 @@ def run_authorized_contained_test(
         if not required(authorize(underlying)):
             raise _reject()
         return run_restricted_inline_eval(
-            inline_plan, timeout_seconds=timeout_seconds, authorize_capability=authorize_capability
+            inline_plan,
+            timeout_seconds=timeout_seconds,
+            authorize_capability=authorize_capability,
+            merge_stderr=merge_stderr,
         )
     if node_tool_plan is not None:
         underlying = {**payload, "tool_input": {**tool_input, "command": shlex.join(node_tool_plan.command)}}
         if not required(authorize(underlying)):
             raise _reject()
         return restricted_node_tool.run_restricted_node_tool(
-            node_tool_plan, timeout_seconds=timeout_seconds, authorize_capability=authorize_capability
+            node_tool_plan,
+            timeout_seconds=timeout_seconds,
+            authorize_capability=authorize_capability,
+            merge_stderr=merge_stderr,
         )
     if git_plan is not None:
-        return restricted_git.run_restricted_git(git_plan, timeout_seconds=timeout_seconds)
+        return restricted_git.run_restricted_git(git_plan, timeout_seconds=timeout_seconds, merge_stderr=merge_stderr)
     if vitest_plan is not None:
         # Check the resolved Node/script action too: wrapper consent must not
         # override an extension deny for the underlying executable.
@@ -326,6 +334,7 @@ def run_authorized_contained_test(
             timeout_seconds=timeout_seconds,
             prepared_plan=vitest_plan,
             authorize_capability=authorize_capability,
+            merge_stderr=merge_stderr,
         )
     if node_test_plan is not None:
         underlying = {**payload, "tool_input": {**tool_input, "command": shlex.join(node_test_plan.command)}}
@@ -338,6 +347,7 @@ def run_authorized_contained_test(
             timeout_seconds=timeout_seconds,
             prepared_plan=node_test_plan,
             authorize_capability=authorize_capability,
+            merge_stderr=merge_stderr,
         )
     return run_restricted_pytest(
         command,
@@ -345,4 +355,5 @@ def run_authorized_contained_test(
         cwd=cwd,
         timeout_seconds=timeout_seconds,
         read_only_workspace=True,
+        merge_stderr=merge_stderr,
     )

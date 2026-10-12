@@ -18,17 +18,48 @@ fn output_filter(segment: &CommandSegmentV1) -> bool {
 }
 
 /// A final `; echo "exit=$?"`: the sink prints the label and status itself.
-fn status_echo(segment: &CommandSegmentV1) -> bool {
+///
+/// The shell prints a single-quoted or backslash-escaped `$?` literally, and
+/// the Python sink cannot peel those forms. Accept only the source syntax the
+/// sink peels, so those commands stay on the normal review path.
+fn status_echo(model: &CanonicalCommandV1, segment: &CommandSegmentV1) -> bool {
     segment.environment_names.is_empty()
         && segment.wrapper_chain.is_empty()
         && !segment.path_overridden
         && segment.pipeline_index == 0
         && segment.executable.as_deref() == Some("echo")
-        && matches!(segment.arguments.as_slice(), [argument] if argument
-            .strip_suffix("$?")
-            .is_some_and(|label| label.len() <= 32
-                && label.bytes().all(|byte| byte.is_ascii_alphanumeric()
-                    || matches!(byte, b'_' | b'=' | b':' | b' ' | b'-'))))
+        && segment.arguments.len() == 1
+        && text(model, segment.span.start, segment.span.end)
+            .is_some_and(|source| status_echo_syntax(&source))
+}
+
+fn status_echo_syntax(source: &str) -> bool {
+    let Some(rest) = source.trim().strip_prefix("echo") else {
+        return false;
+    };
+    if !rest.starts_with([' ', '\t']) {
+        return false;
+    }
+    let argument = rest.trim();
+    let (label, quoted) = if let Some(inner) = argument
+        .strip_prefix('"')
+        .and_then(|body| body.strip_suffix('"'))
+    {
+        (inner, true)
+    } else if argument.contains(['\'', '\\', '"']) {
+        return false;
+    } else {
+        (argument, false)
+    };
+    let Some(label) = label.strip_suffix("$?") else {
+        return false;
+    };
+    label.len() <= 32
+        && label.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric()
+                || matches!(byte, b'_' | b'=' | b':' | b'-')
+                || (quoted && byte == b' ')
+        })
 }
 
 // Parser spans count Unicode characters, not UTF-8 byte offsets.
@@ -98,7 +129,9 @@ pub(super) fn contained_core(
         start = 1;
     }
     let status = segments.len() >= start + 2
-        && segments.last().is_some_and(status_echo)
+        && segments
+            .last()
+            .is_some_and(|segment| status_echo(model, segment))
         && text(
             model,
             segments[segments.len() - 2].span.end,

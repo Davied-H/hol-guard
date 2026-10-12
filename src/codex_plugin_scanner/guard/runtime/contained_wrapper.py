@@ -213,11 +213,16 @@ def peel_contained_wrapper(
 def bounded_output(output: OutputFilter | None) -> Iterator[None]:
     """Apply head/tail in-process; no external filter runs outside containment.
 
-    The sandbox captures stdout and stderr separately, so with `2>&1` the merged
-    stream is the run's stdout followed by its stderr, not their interleaving.
+    A bare `2>&1` is one file descriptor in the sandbox, so this wrapper does
+    not buffer that full stream. Head and tail still keep only the requested
+    lines of the replay.
     """
     if output is None or (output.kind == "all" and not output.merge_stderr):
         yield
+        return
+    if output.kind == "all":
+        with contextlib.redirect_stderr(sys.stdout):
+            yield
         return
     destination = sys.stdout
     captured = io.StringIO()
@@ -227,9 +232,7 @@ def bounded_output(output: OutputFilter | None) -> Iterator[None]:
             yield
     finally:
         lines = captured.getvalue().splitlines(keepends=True)
-        if output.kind == "all":
-            kept = lines
-        elif output.kind == "head":
+        if output.kind == "head":
             kept = lines[: output.count]
         else:
             kept = lines[len(lines) - output.count :] if output.count else []
