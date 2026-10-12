@@ -181,6 +181,49 @@ pub(crate) fn parse_context_token(token: &Value) -> Option<ParsedContextToken> {
     })
 }
 
+/// The approval digest row (no config) or the approval-context token (config
+/// present) for one MCP tool call, with its Cloud risk categories.
+pub(crate) fn build_mcp_tool_approval(
+    request: &guard_contracts::McpToolApprovalHashRequestV1,
+) -> Result<guard_command::mcp_tool_approval::ToolApprovalHash, &'static str> {
+    let Some(config) = &request.config else {
+        return guard_command::mcp_tool_approval::build_tool_approval_digest(request);
+    };
+    let material = guard_command::mcp_tool_approval::tool_approval_token_material(request, config)?;
+    let extension_control_digest = request
+        .extension_control_digest
+        .as_deref()
+        .ok_or("native_context_component_invalid")?;
+    let token = build_context_token_fields(
+        &material.identity,
+        &Value::String(material.content_digest.clone()),
+        &material.capabilities,
+        &material.sandbox,
+        extension_control_digest,
+        |out| {
+            guard_command::mcp_tool_policy::write_tool_policy_context(
+                &guard_contracts::McpToolApprovalContextRequestV1 {
+                    config: config.clone(),
+                    harness: request.harness.clone(),
+                    artifact_id: request.artifact_id.clone(),
+                    publisher: request.publisher.clone(),
+                    identity: material.identity.clone(),
+                    content: Value::String(material.content_digest.clone()),
+                    capabilities: material.capabilities.clone(),
+                    sandbox: material.sandbox.clone(),
+                    extension_control_digest: extension_control_digest.to_owned(),
+                },
+                out,
+            )
+        },
+    )?;
+    Ok(guard_command::mcp_tool_approval::ToolApprovalHash {
+        token_or_digest: token,
+        risk_categories: material.risk_categories,
+        browser_intent_was_applied: material.browser_intent_was_applied,
+    })
+}
+
 pub(crate) fn build_context_token(
     components: &ContextDigestComponentsV1,
 ) -> Result<String, &'static str> {
@@ -603,46 +646,15 @@ fn evaluate_request(
                 request,
             )?);
         }
-        ContextDigestKindV1::BuildMcpToolApprovalHash { request } => match &request.config {
-            None => {
-                let hash = guard_command::mcp_tool_approval::build_tool_approval_digest(request)?;
-                result.digest = Some(hash.token_or_digest);
-                result.mcp_tool_risk = Some(hash.risk_categories);
+        ContextDigestKindV1::BuildMcpToolApprovalHash { request } => {
+            let built = build_mcp_tool_approval(request)?;
+            if request.config.is_some() {
+                result.token = Some(built.token_or_digest);
+            } else {
+                result.digest = Some(built.token_or_digest);
             }
-            Some(config) => {
-                let material = guard_command::mcp_tool_approval::tool_approval_token_material(
-                    request, config,
-                )?;
-                let extension_control_digest = request
-                    .extension_control_digest
-                    .as_deref()
-                    .ok_or("native_context_component_invalid")?;
-                result.token = Some(build_context_token_fields(
-                    &material.identity,
-                    &Value::String(material.content_digest.clone()),
-                    &material.capabilities,
-                    &material.sandbox,
-                    extension_control_digest,
-                    |out| {
-                        guard_command::mcp_tool_policy::write_tool_policy_context(
-                            &guard_contracts::McpToolApprovalContextRequestV1 {
-                                config: config.clone(),
-                                harness: request.harness.clone(),
-                                artifact_id: request.artifact_id.clone(),
-                                publisher: request.publisher.clone(),
-                                identity: material.identity.clone(),
-                                content: Value::String(material.content_digest.clone()),
-                                capabilities: material.capabilities.clone(),
-                                sandbox: material.sandbox.clone(),
-                                extension_control_digest: extension_control_digest.to_owned(),
-                            },
-                            out,
-                        )
-                    },
-                )?);
-                result.mcp_tool_risk = Some(material.risk_categories);
-            }
-        },
+            result.mcp_tool_risk = Some(built.risk_categories);
+        }
         ContextDigestKindV1::McpToolApprovalDigest { request } => {
             result.digest = Some(guard_command::mcp_decision::mcp_tool_approval_digest(
                 request,
