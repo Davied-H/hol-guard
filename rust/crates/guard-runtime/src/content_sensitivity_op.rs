@@ -2,6 +2,7 @@
 
 use guard_contracts::RequestContextContentSensitivityV1;
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 
 use crate::request_context_op::Budget;
 
@@ -42,7 +43,12 @@ pub(crate) fn evaluate(
         let harness = input["binding"]["harness"]
             .as_str()
             .ok_or("native_request_context_content_receipt_invalid")?;
+        let output = input["structured_output_json"]
+            .as_str()
+            .ok_or("native_request_context_content_receipt_invalid")?;
+        let output_digest = format!("{:x}", Sha256::digest(output.as_bytes()));
         if receipt.harness != harness
+            || receipt.reviewed_output_sha256.as_deref() != Some(output_digest.as_str())
             || receipt.event_name != "PostToolUse"
             || receipt.decision != "allow"
             || receipt.model_output_action != "allow_original"

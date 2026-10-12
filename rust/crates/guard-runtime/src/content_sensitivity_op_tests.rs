@@ -102,6 +102,7 @@ fn python_allow_and_unsigned_receipt_cannot_authorize_forwarding() {
 
 #[test]
 fn authenticated_forwarding_works_with_and_without_a_loaded_policy_store() {
+    use sha2::{Digest, Sha256};
     use std::io::Write;
     let suffix = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -150,6 +151,10 @@ fn authenticated_forwarding_works_with_and_without_a_loaded_policy_store() {
         "source_ref_external_allowed":false,"reviewed_output_sha256":null,"observe_mode":false,"deadline_budget_ms":100
     })).unwrap();
     let store = crate::policy_store::PolicySnapshotStore::new(&state, &"e".repeat(64)).unwrap();
+    receipt.reviewed_output_sha256 = Some(format!(
+        "{:x}",
+        Sha256::digest(input["structured_output_json"].as_str().unwrap().as_bytes())
+    ));
     for harness in ["pi", "omp"] {
         input["harness"] = json!(harness);
         input["binding"]["harness"] = json!(harness);
@@ -171,6 +176,14 @@ fn authenticated_forwarding_works_with_and_without_a_loaded_policy_store() {
             assert_eq!(response["payload"]["result"]["ok"]["action"], "forward");
         }
         if let RequestContextKindV1::ContentSensitivity(body) = &mut request.action {
+            body.input["structured_output_json"] = json!("{\"note\":\"different clean output\"}");
+        }
+        assert_eq!(
+            run(&request)["code"],
+            "native_request_context_content_receipt_invalid"
+        );
+        if let RequestContextKindV1::ContentSensitivity(body) = &mut request.action {
+            body.input["structured_output_json"] = input["structured_output_json"].clone();
             body.input["validated_receipt"]["decision_id"] = json!("0".repeat(64));
         }
         assert_eq!(

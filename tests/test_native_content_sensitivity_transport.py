@@ -49,6 +49,8 @@ def _resident(monkeypatch: pytest.MonkeyPatch, mutation: str | None = None) -> l
         }
         if request["action"]["body"]["query"] == "resolution":
             response["payload"]["result"] = {"ok": {"binding": None, "required": False, "reason_code": None}}
+        elif request["action"]["body"]["query"] == "path":
+            response["payload"]["result"] = {"ok": None}
         if mutation == "request":
             response["request_id"] = "different-request"
         elif mutation == "digest":
@@ -346,3 +348,18 @@ def test_pure_resolution_memo_binds_input_runtime_and_home_without_caching_grant
     with pytest.raises(client.NativeContentSensitivityError):
         client.content_query("resolution", body)
     assert len(calls) == 5
+
+
+def test_repeated_path_dto_is_cached_only_for_exact_input_and_admitted_runtime(monkeypatch):
+    calls = _resident(monkeypatch)
+    body = {"path": "ordinary.txt", "cwd": "/fixture", "home_dir": "/fixture/home"}
+    assert client.content_query("path", body) is None
+    assert client.content_query("path", body) is None
+    assert len(calls) == 1
+    client.content_query("path", {**body, "cwd": "/other"})
+    client.native_runtime_status().identity.sha256 = "c" * 64
+    client.content_query("path", body)
+    assert len(calls) == 3
+    client.native_runtime_status().available = False
+    with pytest.raises(client.NativeContentSensitivityError):
+        client.content_query("path", body)
