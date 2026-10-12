@@ -93,6 +93,10 @@ fn interpreter_runnable(facts: &ShimFacts, wrapper: &[u8]) -> ShimResult<bool> {
     if needs_shell_wrapper(facts) || is_transient_appimage_path(facts, &interpreter)? {
         return Ok(false);
     }
+    // Like the trusted-CLI check, the interpreter must exist and be runnable now.
+    if !facts.is_file(&interpreter) || (!facts.windows && !facts.is_executable(&interpreter)) {
+        return Ok(false);
+    }
     Ok(!path_aliases(facts, &interpreter).is_disjoint(&path_aliases(facts, &facts.executable)))
 }
 
@@ -421,6 +425,11 @@ mod tests {
             b"#!/tmp/not-the-guard-interpreter\n"
         ));
         assert!(!runnable(path, true, wrapper.as_bytes()));
+        assert!(!runnable(
+            "/Users/missing/python3",
+            false,
+            b"#!/Users/missing/python3\n"
+        ));
         let spaced = "/Users/py bin/python3";
         assert!(!runnable(spaced, false, format!("#!{spaced}\n").as_bytes()));
         assert!(!runnable(
