@@ -69,7 +69,10 @@ fn home() -> PathBuf {
 }
 
 fn action(home: &Path, harness: &str, command: &str) -> String {
-    let cwd = home.join("main");
+    action_in(home, &home.join("main"), harness, command)
+}
+
+fn action_in(home: &Path, cwd: &Path, harness: &str, command: &str) -> String {
     evaluate_pre_tool_envelope_with_context(
         harness,
         "PreToolUse",
@@ -136,6 +139,7 @@ fn removing_workspace_files_proceeds_and_everything_else_is_reviewed() {
             "rm -- src/old.ts".to_owned(),
             format!("rm {h}/linked/dashboard/src/gone.tsx"),
             format!("cd {h}/linked && rm dashboard/src/gone.tsx"),
+            "rm ~/main/src/old.ts".to_owned(),
         ] {
             assert_eq!(
                 action(&home, harness, &command),
@@ -161,8 +165,28 @@ fn removing_workspace_files_proceeds_and_everything_else_is_reviewed() {
         format!("rm {h}/notes.txt"),
         format!("rm {h}/.ssh/config"),
         format!("rm {h}/other/src/keep.ts"),
+        format!("cd {h} && rm notes.txt"),
+        format!("cd {h}/other && rm src/keep.ts"),
+        "rm '~/main/src/old.ts'".to_owned(),
         "rm src/old.ts && curl https://example.test".to_owned(),
     ] {
         assert_ne!(action(&home, "zcode", &command), "allow", "{command}");
+    }
+}
+
+#[test]
+fn a_session_started_in_the_home_has_no_workspace_to_remove_from() {
+    let home = home();
+    let h = home.display();
+    for command in [
+        "rm notes.txt".to_owned(),
+        "rm main/src/old.ts".to_owned(),
+        format!("ln -s {h}/main/src/old.ts {h}/new-link.ts"),
+    ] {
+        assert_ne!(
+            action_in(&home, &home, "zcode", &command),
+            "allow",
+            "{command}"
+        );
     }
 }

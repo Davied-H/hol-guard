@@ -20,7 +20,11 @@ pub(super) fn safe_symlink_arguments(
     destination: &str,
     context: super::PathContext<'_>,
 ) -> bool {
-    if source.starts_with('-') || destination.starts_with('-') || source.trim() != source {
+    if source.starts_with('-')
+        || destination.starts_with('-')
+        || source.trim() != source
+        || !workspace_below_home(context)
+    {
         return false;
     }
     let Some(expanded) = expand_home_read_path(source, context.home_dir).or_else(|| {
@@ -54,6 +58,9 @@ pub(super) fn safe_symlink_arguments(
 /// the entry that is removed. Directories, recursion and home-wide paths
 /// stay under review.
 pub(super) fn safe_remove_arguments(arguments: &[String], context: super::PathContext<'_>) -> bool {
+    if !workspace_below_home(context) {
+        return false;
+    }
     let mut options = true;
     let mut operands = 0;
     for argument in arguments {
@@ -95,4 +102,17 @@ fn removable_regular_file(value: &str, context: super::PathContext<'_>) -> bool 
         .is_ok_and(|metadata| metadata.file_type().is_file())
         && existing_regular_read_target(value, context.home_dir, context.cwd)
         && bounded_file_write_target(value, context.home_dir, context.cwd)
+}
+
+/// A session started in the home directory, or above it, has no workspace
+/// boundary: every visible file in the home would count as a workspace file.
+fn workspace_below_home(context: super::PathContext<'_>) -> bool {
+    let (Some(home), Some(cwd)) = (context.home_dir, context.cwd) else {
+        return false;
+    };
+    let cwd = expand_home_read_path(cwd, Some(home)).unwrap_or_else(|| cwd.to_owned());
+    match (std::fs::canonicalize(home), std::fs::canonicalize(cwd)) {
+        (Ok(home), Ok(cwd)) => !home.starts_with(cwd),
+        _ => false,
+    }
 }

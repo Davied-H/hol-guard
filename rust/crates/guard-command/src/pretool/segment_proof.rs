@@ -55,6 +55,14 @@ pub(super) fn exact_safe_cwd_compound(
             Some("cp" | "mkdir" | "touch" | "mv" | "ln" | "rm")
         )
     {
+        // `rm` and `ln` delete or publish a path. Re-anchoring them is safe
+        // only inside the original workspace or a linked worktree of it.
+        // `cd ~` and `cd /tmp` must not become the new write boundary.
+        if matches!(model.segments[1].executable.as_deref(), Some("ln" | "rm"))
+            && !mutation_directory_stays_in_workspace(&cwd, context)
+        {
+            return false;
+        }
         // A verified successful cd has no filesystem side effects. Reuse the
         // standalone mutation proof without admitting a later write chain.
         let mut operation = model.clone();
@@ -123,6 +131,28 @@ pub(super) fn exact_safe_cwd_compound(
             },
         )
     })
+}
+
+/// `ln` and `rm` may follow `cd` only when the new directory is the original
+/// workspace, a directory inside it, or a linked worktree of the same
+/// repository. A directory that is the home, or that contains the home, is
+/// not that workspace.
+fn mutation_directory_stays_in_workspace(cwd: &str, context: super::PathContext<'_>) -> bool {
+    let Some(original) = context
+        .cwd
+        .and_then(|root| std::fs::canonicalize(root).ok())
+    else {
+        return false;
+    };
+    let target = std::path::Path::new(cwd);
+    let home = context
+        .home_dir
+        .and_then(|home| std::fs::canonicalize(home).ok());
+    if home.as_ref().is_some_and(|home| home.starts_with(target)) {
+        return false;
+    }
+    target.starts_with(&original)
+        || super::worktree_writes::same_repository_worktree(&original, target)
 }
 
 pub(crate) fn benign_command_segments(
@@ -350,6 +380,8 @@ pub(super) fn exact_safe_segment_with_context(
         }
         "mktemp" | "mkdir" | "touch" | "mv" | "ln" | "rm" => {
             model.segments.len() == 1
+                && (basename != "ln" && basename != "rm"
+                    || super::directory_targets::home_targets_unquoted(segment))
                 && safe_reads::safe_file_mutation_arguments(basename, &segment.arguments, context)
         }
         // Admit stdin only when every producer in the pipeline is also proven safe.
