@@ -194,6 +194,7 @@ pub(super) fn inspection_arguments<'a>(
                 | "ls-files"
                 | "remote"
                 | "worktree"
+                | "config"
         )
     )
     .then_some(remaining)

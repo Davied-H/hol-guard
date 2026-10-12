@@ -149,7 +149,7 @@ fn configuration_writes_and_credentials_still_ask() {
         "[github]\n\ttoken = synthetic\n",
         "[remote \"origin\"]\n\turl = https://user:synthetic@example.com/repo.git\n",
     ] {
-        let home = home();
+        let home = self::home();
         let config = home.join("project/.git/config");
         let mut text = std::fs::read_to_string(&config).unwrap();
         text.push_str(entry);
