@@ -55,10 +55,25 @@ def _native_status(features: tuple[str, ...], path: Path) -> object:
 
 
 def _hook_argv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, features: tuple[str, ...]) -> tuple[str, ...]:
+    from dataclasses import fields
+
     from codex_plugin_scanner.guard import native_runtime
+    from codex_plugin_scanner.guard.config import GuardConfig
 
     runtime = tmp_path / "hol-guard-runtime"
-    monkeypatch.setattr(native_runtime, "native_runtime_status", lambda: _native_status(features, runtime))
+    timeout = next(field.default for field in fields(GuardConfig) if field.name == "approval_wait_timeout_seconds")
+    monkeypatch.setattr(
+        native_runtime,
+        "native_runtime_status",
+        lambda *, deadline_monotonic=None: _native_status(features, runtime),
+    )
+    # The timeout read goes through the native config loader. This test checks
+    # the hook argv, so it supplies the shipped default instead of a runtime.
+    monkeypatch.setattr(
+        codex_adapter,
+        "load_guard_config",
+        lambda *_args, **_kwargs: type("_Config", (), {"approval_wait_timeout_seconds": timeout})(),
+    )
     context = HarnessContext(home_dir=tmp_path / "h", workspace_dir=None, guard_home=tmp_path / "g")
     return codex_adapter._hook_command_parts_for_home_mode(
         context,

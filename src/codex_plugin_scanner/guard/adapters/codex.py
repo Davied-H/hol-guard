@@ -421,11 +421,14 @@ def _current_install_legacy_bindings(context: HarnessContext, hooks: dict[str, o
     """Select exact current bridge entries for explicit legacy re-adoption only."""
 
     current_argv = list(_hook_command_parts(context))
+    # python_bridge_argv keeps the object sequence it was given. This argv is
+    # a string command, so only those strings identify the legacy registration.
+    legacy_tail = [part for part in python_bridge_argv(current_argv)[1:] if isinstance(part, str)]
     return exact_legacy_hook_bindings(
         hooks,
         expected_bindings=_manifest_event_bindings(context),
         current_argv=current_argv,
-        legacy_argv=[sys.executable, *python_bridge_argv(current_argv)[1:]],
+        legacy_argv=[sys.executable, *legacy_tail],
         legacy_status_messages=_LEGACY_MANAGED_HOOK_STATUS_MESSAGES,
     )
 
