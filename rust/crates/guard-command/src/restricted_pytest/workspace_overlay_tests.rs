@@ -147,19 +147,46 @@ fn a_planted_bare_repository_is_denied() {
         ".git/refs/remotes/o/commondir",
     ] {
         let l = layers("reflog-repository");
+        write(&l.workspace.join(".git/HEAD"), "ref: refs/heads/main\n");
         write(&l.upper.join(".git/logs/HEAD"), "0 1 commit: x\n");
         write(&l.upper.join(planted), "x");
         assert!(apply(&l.upper, &l.workspace, &[]).is_err(), "{planted}");
         assert!(!l.workspace.join(planted).exists(), "{planted}");
     }
     let l = layers("branch-reflog");
+    write(&l.workspace.join(".git/HEAD"), "ref: refs/heads/main\n");
     write(&l.upper.join(".git/logs/HEAD"), "0 1 commit: x\n");
     write(
         &l.upper.join(".git/logs/refs/heads/main"),
         "0 1 commit: x\n",
     );
     write(&l.upper.join(".git/refs/heads/main"), "0123\n");
+    write(&l.upper.join(".git/refs/heads/fix/config"), "0123\n");
     apply(&l.upper, &l.workspace, &[]).unwrap();
+    assert!(l.workspace.join(".git/refs/heads/fix/config").exists());
+}
+
+#[test]
+fn replacing_a_directory_above_a_denial_is_denied() {
+    let l = layers("denial-ancestor");
+    write(&l.workspace.join(".git/HEAD"), "ref: refs/heads/main\n");
+    write(&l.workspace.join("tools/mon"), "safe");
+    write(&l.upper.join("evil/mon"), "#!/bin/sh\n");
+    std::os::unix::fs::symlink("evil", l.upper.join("tools")).unwrap();
+    let denials = [l.workspace.join("tools/mon")];
+    assert!(apply(&l.upper, &l.workspace, &denials).is_err());
+    assert_eq!(
+        fs::read_to_string(l.workspace.join("tools/mon")).unwrap(),
+        "safe"
+    );
+    assert!(!l.workspace.join("evil").exists());
+    // A sibling of the denial can still change.
+    let l = layers("denial-sibling");
+    write(&l.workspace.join("tools/mon"), "safe");
+    write(&l.upper.join("tools/other.txt"), "x");
+    let denials = [l.workspace.join("tools/mon")];
+    apply(&l.upper, &l.workspace, &denials).unwrap();
+    assert!(l.workspace.join("tools/other.txt").exists());
 }
 
 #[test]
@@ -225,6 +252,16 @@ fn opaque_directories_replace_their_lower_contents() {
         fs::read_to_string(l.workspace.join("d/new.txt")).unwrap(),
         "y"
     );
+
+    // A directory under an opaque one is recreated, even when the
+    // workspace has a directory at that path.
+    let l = layers("opaque-nested");
+    write(&l.workspace.join("d/sub/old.txt"), "x");
+    opaque(&l.upper.join("d"));
+    write(&l.upper.join("d/sub/new.txt"), "y");
+    apply(&l.upper, &l.workspace, &[]).unwrap();
+    assert!(!l.workspace.join("d/sub/old.txt").exists());
+    assert!(l.workspace.join("d/sub/new.txt").exists());
 
     let l = layers("opaque-repo");
     write(&l.workspace.join("d/.git/config"), "[core]\n");

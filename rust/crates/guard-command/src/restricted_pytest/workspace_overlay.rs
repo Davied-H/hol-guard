@@ -103,10 +103,16 @@ impl Denials {
         })
     }
 
+    /// A denial, or a directory between the workspace and one: replacing
+    /// that directory would redirect the denied path, as the macOS profile
+    /// also prevents.
     fn denies(&self, path: &Path) -> bool {
         let text = path.to_string_lossy();
         self.patterns.iter().any(|pattern| pattern.is_match(&text))
-            || self.prefixes.iter().any(|prefix| path.starts_with(prefix))
+            || self
+                .prefixes
+                .iter()
+                .any(|prefix| path.starts_with(prefix) || prefix.starts_with(path))
             || (self.head.is_match(&text) && !self.own_heads.iter().any(|own| path == own))
     }
 }
@@ -137,8 +143,10 @@ fn overlay_attribute(_path: &Path, _name: &str) -> Option<Vec<u8>> {
 /// redirect, metacopy or attribute whiteout, or an unknown opaque value.
 fn changes(upper: &Path, workspace: &Path) -> Result<Vec<Change>, RestrictedPytestError> {
     let mut result = Vec::new();
-    let mut pending = vec![PathBuf::new()];
-    while let Some(relative) = pending.pop() {
+    // Below a new or opaque directory the kernel never reads the lower
+    // layer, so a lower directory at the same path says nothing.
+    let mut pending = vec![(PathBuf::new(), false)];
+    while let Some((relative, replaced)) = pending.pop() {
         let entries: Vec<_> = fs::read_dir(upper.join(&relative))
             .map_err(|_| failed())?
             .map(|entry| entry.map(|entry| entry.file_name()))
@@ -165,7 +173,7 @@ fn changes(upper: &Path, workspace: &Path) -> Result<Vec<Change>, RestrictedPyte
                 match overlay_attribute(&path, "opaque").as_deref() {
                     Some(b"y") => Kind::NewDirectory,
                     Some(_) => return Err(failed()),
-                    None if lower_dir => Kind::Directory,
+                    None if lower_dir && !replaced => Kind::Directory,
                     None => Kind::NewDirectory,
                 }
             } else if file_type.is_file() {
@@ -176,7 +184,7 @@ fn changes(upper: &Path, workspace: &Path) -> Result<Vec<Change>, RestrictedPyte
                 return Err(denied());
             };
             if file_type.is_dir() {
-                pending.push(relative.clone());
+                pending.push((relative.clone(), kind == Kind::NewDirectory));
             }
             result.push(Change { relative, kind });
             if result.len() > MAX_ENTRIES {
