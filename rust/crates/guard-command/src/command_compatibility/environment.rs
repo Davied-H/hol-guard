@@ -6,6 +6,7 @@
 //! (`NODE_PATH`, `RUSTFLAGS`, `GOFLAGS`, `CC`, `LD_PRELOAD`, ...). No denylist
 //! can name all of those, so only an allowlist of inert names is accepted.
 
+#[cfg(test)]
 use crate::CommandSegmentV1;
 
 /// Names that only adjust output, locale or a build mode.
@@ -32,6 +33,7 @@ pub(crate) fn inert_environment_name(name: &str) -> bool {
     ) || name.starts_with("LC_")
 }
 
+#[cfg(test)]
 pub(super) fn supported(segment: &CommandSegmentV1) -> bool {
     segment
         .environment_names

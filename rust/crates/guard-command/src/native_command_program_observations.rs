@@ -24,9 +24,6 @@ impl NativeCommandProgram {
         deadline: Option<Instant>,
         context: crate::pretool::PathContext<'_>,
     ) -> Result<NativeCommandObservationBatchV1, &'static str> {
-        if self.reconfigures_owned_program(command, active_extensions) {
-            return Err("native_command_compatibility_context_unsupported");
-        }
         let compatibility = crate::command_compatibility::compatibility_observations_with_context(
             command, deadline, context,
         )?;
@@ -36,17 +33,21 @@ impl NativeCommandProgram {
             // in one segment cannot suppress its destructive sibling, and a
             // CLI's help predicate cannot erase a separate capability whose
             // semantics deliberately still require review for trailing help.
+            // An uncertain match is never suppressed: a steered segment's
+            // safe-looking flags do not prove what the program will do.
+            let uncertain = matched.uncertainty;
             matched.segment_indexes.retain(|segment| {
-                !batch.observations.iter().any(|observation| {
-                    safe_variant_covers_compatibility(matched.rule_id, &observation.rule_id)
-                        && !observation.effective_segment_indexes.contains(segment)
-                        && observation.safe_variants.iter().any(|variant| {
-                            variant
-                                .matcher_evidence
-                                .iter()
-                                .any(|evidence| evidence.segment_index == *segment)
-                        })
-                })
+                uncertain
+                    || !batch.observations.iter().any(|observation| {
+                        safe_variant_covers_compatibility(matched.rule_id, &observation.rule_id)
+                            && !observation.effective_segment_indexes.contains(segment)
+                            && observation.safe_variants.iter().any(|variant| {
+                                variant
+                                    .matcher_evidence
+                                    .iter()
+                                    .any(|evidence| evidence.segment_index == *segment)
+                            })
+                    })
             });
             if matched.segment_indexes.is_empty() {
                 continue;

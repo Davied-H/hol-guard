@@ -71,6 +71,16 @@ impl CompatibilityObservations {
         });
     }
 
+    fn mark_uncertain(&mut self, segments: &[usize]) {
+        let steered = |indexes: &[usize]| indexes.iter().any(|index| segments.contains(index));
+        for item in &mut self.rule_matches {
+            item.uncertainty |= steered(&item.segment_indexes);
+        }
+        for item in &mut self.permission_matches {
+            item.uncertainty |= steered(&item.segment_indexes);
+        }
+    }
+
     fn normalize(&mut self) {
         let mut rules: BTreeMap<&'static str, (Vec<usize>, bool)> = BTreeMap::new();
         for item in self.rule_matches.drain(..) {
@@ -204,6 +214,7 @@ pub fn compatibility_observations_with_context(
         return Err("native_command_compatibility_model_unsupported");
     }
     let mut result = CompatibilityObservations::default();
+    let mut steered = Vec::new();
     for (index, segment) in command.segments.iter().enumerate() {
         deadline_check(deadline)?;
         if segment.executable.is_none()
@@ -212,11 +223,19 @@ pub fn compatibility_observations_with_context(
                 .wrapper_chain
                 .iter()
                 .any(|wrapper| !matches!(wrapper.as_str(), "sudo" | "timeout"))
-            || !environment::supported(segment)
             || segment.text.contains('\0')
             || segment.arguments.iter().any(|value| value.contains('\0'))
         {
             return Err("native_command_compatibility_context_unsupported");
+        }
+        // An assignment prefix such as `GIT_DIR=` or `GH_HOST=` can steer the
+        // program away from what its arguments say. The segment is still
+        // attributed to its owners, but only as uncertainty, so it takes their
+        // floor (never below review) and no permission can allow it. Segments
+        // no owner recognizes keep the native classifier's own verdict instead
+        // of failing the whole evaluation.
+        if !segment.environment_names.is_empty() {
+            steered.push(index);
         }
         match basename(segment).as_str() {
             "git" => git::observe_with_context(segment, index, &mut result, context),
@@ -226,6 +245,7 @@ pub fn compatibility_observations_with_context(
         domains::observe(command, segment, index, &mut result);
     }
     deadline_check(deadline)?;
+    result.mark_uncertain(&steered);
     result.normalize();
     Ok(result)
 }

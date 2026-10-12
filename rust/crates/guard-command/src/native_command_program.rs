@@ -348,39 +348,6 @@ impl NativeCommandProgram {
         Some(names)
     }
 
-    /// A prefix such as `CONFIG_DIR=/tmp/x` can point a program at other
-    /// configuration, so rules over that program's arguments no longer
-    /// describe what it does. Inert names (`CI`, `NODE_ENV`, locale) cannot.
-    pub(crate) fn reconfigures_owned_program(
-        &self,
-        command: &CanonicalCommandV1,
-        active_extensions: &BTreeSet<String>,
-    ) -> bool {
-        let prefixed: BTreeSet<String> = command
-            .segments
-            .iter()
-            .filter(|segment| {
-                segment
-                    .environment_names
-                    .iter()
-                    .any(|name| !crate::command_compatibility::inert_environment_name(name))
-            })
-            .filter_map(|segment| segment.executable.as_deref())
-            .map(|value| lowercase_for_ascii_comparison(basename(value)))
-            .collect();
-        !prefixed.is_empty()
-            && self
-                .extensions
-                .iter()
-                .enumerate()
-                .filter(|(_, extension)| active_extensions.contains(&extension.extension_id))
-                // A rule without an executable gate can own any program.
-                .any(|(index, _)| {
-                    self.extension_names(index, Some(&[]))
-                        .is_none_or(|names| !names.is_disjoint(&prefixed))
-                })
-    }
-
     /// Executables one of which a match of `node` must run. Alternatives need
     /// all of theirs; a conjunction needs any one child's. Matchers without a
     /// declared executable gate have no such set.
