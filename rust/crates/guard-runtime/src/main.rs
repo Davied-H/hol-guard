@@ -55,6 +55,7 @@ mod claim_reuse_binding;
 mod claim_reuse_binding_tests;
 #[cfg(test)]
 mod claim_reuse_vectors_tests;
+mod claude_guard_question;
 mod cli_copilot_resolution;
 mod cli_runtime_support_op;
 mod cloud_action_envelope;
@@ -92,6 +93,13 @@ mod compound_git_paths;
 mod compound_git_segments;
 mod consumer_artifact_compose_op;
 mod consumer_artifact_compose_runtime;
+mod consumer_artifact_project_op;
+mod consumer_capabilities;
+mod consumer_capability_delta;
+mod consumer_evidence;
+mod consumer_incident;
+mod consumer_result;
+mod consumer_url;
 #[cfg(unix)]
 mod contained_op;
 mod content_sensitivity_op;
@@ -239,6 +247,16 @@ mod guard_store_wfcap_wire;
 #[cfg(test)]
 mod guard_store_workflow_capability_vectors_tests;
 mod hardening;
+mod hermes_detect;
+mod hermes_inspect;
+mod hermes_printable;
+mod hermes_skills;
+mod hermes_text;
+#[cfg(all(test, unix))]
+mod hermes_vectors_tests;
+mod hermes_yaml;
+mod hermes_yaml_construct;
+mod hermes_yaml_resolve;
 mod hook_adapter_op;
 mod hook_approval_context;
 mod hook_artifact_compose_op;
@@ -254,6 +272,7 @@ mod hook_decision_native_facts;
 mod hook_decision_native_facts_tests;
 mod hook_decision_op;
 mod hook_decision_settle;
+mod hook_policy_config;
 mod hook_process_spawn;
 mod hook_render_op;
 mod local_cli_grant_op;

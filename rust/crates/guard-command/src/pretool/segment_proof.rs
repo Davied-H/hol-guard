@@ -104,6 +104,9 @@ pub(super) fn exact_safe_cwd_compound(
                     | "sort"
                     | "uniq"
                     | "cut"
+                    | "du"
+                    | "df"
+                    | "diff"
             )
         ) && exact_safe_segment_with_context(
             model,
@@ -218,6 +221,8 @@ pub(crate) fn benign_command_segments(
                         | "stat"
                         | "test"
                         | "find"
+                        | "du"
+                        | "diff"
                 );
             let ls_has_explicit_target = basename != "ls" || {
                 let mut skip_next = false;
@@ -311,15 +316,6 @@ pub(super) fn exact_safe_segment_with_context(
         "date" => safe_reads::safe_date_arguments(&segment.arguments),
         "sleep" => safe_reads::safe_sleep_arguments(&segment.arguments),
         "uptime" => segment.arguments.is_empty(),
-        // A template-free `mktemp` creates one new, empty, owner-only entry
-        // under the temporary directory and prints its name.
-        "mktemp" => {
-            segment.arguments.len() <= 2
-                && segment
-                    .arguments
-                    .iter()
-                    .all(|argument| matches!(argument.as_str(), "-d" | "-q" | "-dq" | "-qd"))
-        }
         "pgrep" => super::safe_scalar::safe_pgrep_arguments(&segment.arguments),
         "ls" => {
             super::listing_reads::safe_listing_segment(&segment.text, &segment.arguments, context)
@@ -332,6 +328,9 @@ pub(super) fn exact_safe_segment_with_context(
                 || safe_reads::safe_plain_file_arguments(&segment.arguments, context)
         }
         "base64" => super::base64_reads::safe_base64_arguments(&segment.arguments, context),
+        "du" => super::metadata_reads::safe_du_arguments(&segment.arguments, context),
+        "df" => super::metadata_reads::safe_df_arguments(&segment.arguments),
+        "diff" => super::metadata_reads::safe_diff_arguments(&segment.arguments, context),
         "stat" => matches!(segment.arguments.as_slice(), [target]
             if !target.starts_with('-')
                 && safe_reads::bounded_read_target(target, context.home_dir, context.cwd, false)),
@@ -343,7 +342,7 @@ pub(super) fn exact_safe_segment_with_context(
                         context,
                     ))
         }
-        "mkdir" | "touch" | "mv" => {
+        "mktemp" | "mkdir" | "touch" | "mv" => {
             model.segments.len() == 1
                 && safe_reads::safe_file_mutation_arguments(basename, &segment.arguments, context)
         }
