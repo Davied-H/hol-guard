@@ -146,6 +146,7 @@ mod sfrs_benign_reads;
 #[cfg(unix)]
 mod sfrs_benign_tool_action;
 mod sfrs_constants;
+mod sfrs_credential_exfil;
 #[cfg(unix)]
 mod sfrs_developer_graph;
 #[cfg(all(test, unix))]
@@ -158,6 +159,8 @@ mod sfrs_developer_vectors;
 mod sfrs_docker_args;
 #[cfg(test)]
 mod sfrs_docker_vectors;
+mod sfrs_encoded_commands;
+mod sfrs_encoded_payloads;
 mod sfrs_environment_secret;
 mod sfrs_file_identity;
 #[cfg(all(test, unix))]
@@ -213,6 +216,9 @@ mod sfrs_kubernetes_support;
 mod sfrs_kubernetes_vectors;
 #[cfg(all(test, unix))]
 mod sfrs_leaf_vectors;
+#[cfg(all(test, unix))]
+mod sfrs_net_vectors;
+mod sfrs_network_upload;
 mod sfrs_patterns;
 mod sfrs_perl_read_only;
 #[cfg(all(test, unix))]
@@ -260,10 +266,12 @@ mod sfrs_source_edit_context;
 mod sfrs_static_safety;
 #[cfg(test)]
 mod sfrs_static_vectors;
+mod sfrs_stdin_sources;
 mod sfrs_substitution;
 #[cfg(test)]
 mod sfrs_token_vectors;
 mod sfrs_tool_request;
+mod sfrs_upload_arguments;
 mod shell_command_wrappers;
 pub mod shell_execution_context;
 mod shell_execution_context_support;
