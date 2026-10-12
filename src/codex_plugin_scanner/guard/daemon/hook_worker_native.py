@@ -93,6 +93,8 @@ def _claude_native_prompt_brand(
         metadata={"prompt_request_classes": request_classes},
     )
     policy_action = str(native_result.get("minimum_action") or "")
+    if policy_action not in {"require-reapproval", "block", "sandbox-required"}:
+        return response
     native_reason = str(native_result.get("reason") or "")
     system_message = _claude_prompt_system_message(
         event_name="UserPromptSubmit",

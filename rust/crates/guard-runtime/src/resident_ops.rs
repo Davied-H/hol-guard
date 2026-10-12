@@ -448,6 +448,9 @@ pub(crate) fn evaluate_resident_bytes(
             ResidentOperationV1::PromptAnalyze(request) => {
                 crate::prompt_analyze_op::evaluate_prompt_analyze(&request)
             }
+            ResidentOperationV1::GuardSupport(request) => {
+                crate::guard_support_op::evaluate_guard_support(&request)
+            }
             // Static catalog metadata only: no policy store, guard home or
             // effective-control state is read (ADR 0014).
             ResidentOperationV1::CatalogRead(request) => encode_response(
@@ -516,6 +519,7 @@ fn operation_guard_home(operation: &ResidentOperationV1) -> Option<&str> {
         ResidentOperationV1::PackageContextBuild(request) => Some(&request.guard_home),
         ResidentOperationV1::McpStdioProbe(request) => Some(&request.guard_home),
         ResidentOperationV1::PromptAnalyze(request) => Some(&request.guard_home),
+        ResidentOperationV1::GuardSupport(request) => Some(&request.guard_home),
         ResidentOperationV1::McpRuntimeEvidence(request) => Some(&request.guard_home),
         ResidentOperationV1::RuntimeDetectorRun(request) => Some(&request.guard_home),
         ResidentOperationV1::RunnerAuthority(request) => Some(&request.guard_home),

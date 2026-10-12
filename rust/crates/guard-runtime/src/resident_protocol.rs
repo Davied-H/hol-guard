@@ -219,6 +219,7 @@ pub(crate) enum ResidentOperationV1 {
     SkillDirectoryIdentity(SkillDirectoryIdentityRequestV1),
     #[allow(dead_code)]
     PromptAnalyze(PromptAnalyzeRequestV1),
+    GuardSupport(guard_contracts::GuardSupportRequestV1),
     CatalogRead(guard_command::catalog_read_model::CatalogReadRequestV1),
     DataFlowAnalyze(DataFlowAnalyzeRequestV1),
     Health(Value),

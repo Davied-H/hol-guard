@@ -18,11 +18,11 @@ from codex_plugin_scanner.guard.action_lattice import (
 )
 from codex_plugin_scanner.guard.config import (
     GuardConfig,
-    _coerce_risk_action_map,
     load_guard_config,
 )
 from codex_plugin_scanner.guard.mdm.policy import _merge_strongest_actions, _strongest_security_value
 from codex_plugin_scanner.guard.models import GUARD_ACTION_VALUES, GuardAction
+from codex_plugin_scanner.guard.native_guard_support import coerce_loaded
 from codex_plugin_scanner.guard.policy.engine import decide_action
 from codex_plugin_scanner.guard.runtime.composition_rules import compose_action_from_signals
 from codex_plugin_scanner.guard.runtime.package_request_evaluation import PackageRequestEvaluation
@@ -158,7 +158,8 @@ def test_present_invalid_local_config_actions_do_not_fall_back_to_warn(tmp_path)
 
 @pytest.mark.parametrize("invalid_value", (None, 7, False, {}, {"action": None}, {"default_action": 7}))
 def test_present_invalid_action_map_values_do_not_disappear(invalid_value: object) -> None:
-    assert _coerce_risk_action_map({"network_egress": invalid_value}) == {"network_egress": "require-reapproval"}
+    loaded = coerce_loaded([{"kind": "risk_actions", "value": {"network_egress": invalid_value}}])
+    assert loaded == [{"network_egress": "require-reapproval"}]
 
 
 @pytest.mark.parametrize("protected_action", ("require-reapproval", "sandbox-required"))

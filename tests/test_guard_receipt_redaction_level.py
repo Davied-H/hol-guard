@@ -7,8 +7,8 @@ import pytest
 from codex_plugin_scanner.guard.config import (
     VALID_RECEIPT_REDACTION_LEVELS,
     _coerce_editable_setting,
-    _coerce_loaded_receipt_redaction_level,
 )
+from codex_plugin_scanner.guard.native_guard_support import coerce_loaded
 from codex_plugin_scanner.guard.receipts.manager import _redacted_envelope_dict
 from codex_plugin_scanner.guard.runtime.actions import GuardActionEnvelope
 
@@ -46,18 +46,22 @@ def _make_envelope(
     )
 
 
+def _loaded_level(value: object) -> object:
+    return coerce_loaded([{"kind": "receipt_redaction_level", "value": value}])[0]
+
+
 class TestRedactionLevelConfig:
     def test_valid_levels(self):
         assert frozenset({"full", "partial", "none"}) == VALID_RECEIPT_REDACTION_LEVELS
 
     def test_coerce_loaded_default(self):
-        assert _coerce_loaded_receipt_redaction_level(None) == "full"
-        assert _coerce_loaded_receipt_redaction_level("invalid") == "full"
+        assert _loaded_level(None) == "full"
+        assert _loaded_level("invalid") == "full"
 
     def test_coerce_loaded_valid(self):
-        assert _coerce_loaded_receipt_redaction_level("full") == "full"
-        assert _coerce_loaded_receipt_redaction_level("partial") == "partial"
-        assert _coerce_loaded_receipt_redaction_level("none") == "none"
+        assert _loaded_level("full") == "full"
+        assert _loaded_level("partial") == "partial"
+        assert _loaded_level("none") == "none"
 
     def test_coerce_editable_valid(self):
         assert _coerce_editable_setting("receipt_redaction_level", "full") == "full"

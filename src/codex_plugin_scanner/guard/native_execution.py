@@ -60,6 +60,7 @@ _MCP_SESSION_ACCEPTED_STATUS = {
     "mcp_stdio_session_cancel": frozenset({"cancelled", "error"}),
 }
 _PROMPT_ANALYZE_FEATURE = "prompt-analyze-v1"
+_GUARD_SUPPORT_FEATURE = "guard-support-v1"
 
 
 def _request_id(prefix: str) -> str:
@@ -137,6 +138,7 @@ def _resident_request(
         return None
     result_schema = {
         "prompt_analyze": "guard-prompt-analyze-result.v1",
+        "guard_support": "guard-support-result.v1",
         "mcp_stdio_probe": "guard-mcp-stdio-probe-result.v1",
         "contained_node_execute": "guard-contained-node-execute-result.v1",
         "contained_typescript_execute": "guard-contained-typescript-execute-result.v1",
@@ -670,6 +672,37 @@ def prompt_analyze_native(
         guard_home=guard_home,
         timeout_seconds=timeout_seconds,
         required_feature=_PROMPT_ANALYZE_FEATURE,
+    )
+    if decoded is None:
+        return None
+    return decoded.get("result")
+
+
+def guard_support_native(
+    subop: str,
+    payload: Mapping[str, object],
+    *,
+    guard_home: Path,
+    timeout_seconds: float = 10.0,
+) -> object:
+    """Subop-multiplexed `guard_support` resident op: settings writes and hook copy.
+
+    Returns the decoded ``result`` payload, or ``None`` on transport failure or
+    a missing feature. The caller must stop; there is no Python evaluator.
+    """
+    request: dict[str, object] = {
+        "schema": "guard-support-request.v1",
+        "request_id": _request_id("guard_support"),
+        "subop": subop,
+        "payload": dict(payload),
+        "guard_home": str(guard_home),
+    }
+    decoded = _resident_request(
+        operation="guard_support",
+        request=request,
+        guard_home=guard_home,
+        timeout_seconds=timeout_seconds,
+        required_feature=_GUARD_SUPPORT_FEATURE,
     )
     if decoded is None:
         return None

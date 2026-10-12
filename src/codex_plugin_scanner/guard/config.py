@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import importlib
-import json
-import re
 import shutil
 import sqlite3
 import sys
@@ -22,7 +20,7 @@ if TYPE_CHECKING:
 else:  # pragma: no cover - runtime compatibility
     tomllib = importlib.import_module("tomllib" if sys.version_info >= (3, 11) else "tomli")
 
-from .action_lattice import coerce_guard_action, normalize_guard_action
+from . import native_guard_support
 from .approval_gate import ApprovalGateGrant, public_config, require_settings_write
 from .approval_wait_limits import MAX_APPROVAL_WAIT_TIMEOUT_SECONDS
 from .config_file_io import ConfigFileTrustError, read_config_file_bytes
@@ -278,75 +276,10 @@ VALID_RECEIPT_REDACTION_LEVELS = frozenset({"full", "partial", "none"})
 
 VALID_APPROVAL_SURFACE_POLICIES = {"attention-aware", "auto-open-once", "native-only", "approval-center"}
 VALID_APPROVAL_BROWSER_SEVERITIES = frozenset({"info", "low", "medium", "high", "critical"})
-BARE_TOML_KEY = re.compile(r"^[A-Za-z0-9_-]+$")
-WORKSPACE_BLOCKED_POLICY_KEYS = frozenset(
-    {
-        "blocked_request_mode",
-        "mode",
-        "presentation_mode",
-        "presentation_mode_explicit",
-        "presentation_schema_version",
-        "presentation_revision",
-        "presentation_density",
-        "display_density",
-        "density",
-        "protection_posture",
-        "watch_auto_revert_hours",
-        "harness_postures",
-        "harness_watch_entered_at",
-        "default_action",
-        "unknown_publisher_action",
-        "changed_hash_action",
-        "new_network_domain_action",
-        "subprocess_action",
-        "security_level",
-        "risk_actions",
-        "harness_risk_actions",
-        "harnesses",
-        "publishers",
-        "artifacts",
-    }
-)
 
 
 class GuardHomeMigrationError(RuntimeError):
     """Raised when legacy Guard state cannot be migrated safely."""
-
-
-def _coerce_risk_action_map(payload: object) -> dict[str, GuardAction]:
-    if not isinstance(payload, dict):
-        return {}
-    action_map: dict[str, GuardAction] = {}
-    for key, value in payload.items():
-        if not isinstance(key, str) or key not in VALID_RISK_ACTION_KEYS:
-            continue
-        action = _action_map_value(value)
-        resolved_action = normalize_guard_action(action, unknown_action="require-reapproval")
-        action_map[key] = resolved_action
-    return action_map
-
-
-def _action_map_value(value: object) -> object:
-    if not isinstance(value, dict):
-        return value
-    if "action" in value:
-        return value.get("action")
-    if "default_action" in value:
-        return value.get("default_action")
-    return value
-
-
-def _coerce_harness_risk_action_map(payload: object) -> dict[str, dict[str, GuardAction]]:
-    if not isinstance(payload, dict):
-        return {}
-    action_map: dict[str, dict[str, GuardAction]] = {}
-    for harness, value in payload.items():
-        if not isinstance(harness, str) or not harness.strip():
-            continue
-        harness_actions = _coerce_risk_action_map(value)
-        if harness_actions:
-            action_map[harness] = harness_actions
-    return action_map
 
 
 @dataclass(frozen=True, slots=True)
@@ -478,12 +411,6 @@ def _read_toml(path: Path, *, require_canonical_directory: bool = False) -> dict
     if contents is None:
         return {}
     return tomllib.loads(contents.decode("utf-8"))
-
-
-def _coerce_loaded_receipt_redaction_level(value: object) -> str:
-    if isinstance(value, str) and value in VALID_RECEIPT_REDACTION_LEVELS:
-        return value
-    return "full"
 
 
 def load_guard_config(
@@ -638,7 +565,7 @@ def _update_guard_settings_locked(
     presentation_preference_keys = {"presentation_mode", "presentation_mode_explicit"}
     supplied_presentation = presentation_keys & payload.keys()
     coerced_presentation: dict[str, object] = {
-        key: _coerce_editable_setting(key, payload[key]) for key in supplied_presentation
+        key: _coerce_editable_setting(key, payload[key], guard_home) for key in supplied_presentation
     }
     has_presentation_preference = bool(presentation_preference_keys & payload.keys())
     if "presentation_revision" in payload and not has_presentation_preference:
@@ -679,7 +606,7 @@ def _update_guard_settings_locked(
             if presentation_change:
                 next_payload[key] = coerced_presentation[key]
             continue
-        next_payload[key] = _coerce_editable_setting(key, value)
+        next_payload[key] = _coerce_editable_setting(key, value, guard_home)
     if presentation_change:
         next_payload["presentation_mode_explicit"] = True
         next_payload["presentation_schema_version"] = PRESENTATION_SCHEMA_VERSION
@@ -781,141 +708,16 @@ def reset_guard_settings(
     return updated
 
 
-def _coerce_editable_setting(key: str, value: object) -> object:
+def _coerce_editable_setting(key: str, value: object, guard_home: Path | None = None) -> object:
     if key == "presentation_mode":
         return coerce_presentation_mode_write(value)
-    if key == "presentation_mode_explicit":
-        if isinstance(value, bool):
-            return value
-        raise ValueError("presentation_mode_explicit must be true or false.")
-    if key == "presentation_schema_version":
-        if value == PRESENTATION_SCHEMA_VERSION:
-            return value
-        raise ValueError("Unsupported presentation schema version.")
-    if key == "mode":
-        if isinstance(value, str) and value in VALID_GUARD_MODES:
-            return value
-        raise ValueError("Invalid Guard mode.")
     if key == "protection_posture":
         return coerce_protection_posture(value)
-    if key == "protection_posture_explicit":
-        if isinstance(value, bool):
-            return value
-        raise ValueError("protection_posture_explicit must be true or false.")
     if key == HARNESS_POSTURES_KEY:
         return coerce_harness_posture_patch(value)
-    if key == "watch_auto_revert_hours":
-        if isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 168:
-            return value
-        raise ValueError("Watch auto-revert hours must be between 0 and 168.")
-    if key == "security_level":
-        return _coerce_security_level(value)
-    if key == "risk_actions":
-        return _coerce_risk_action_payload(value)
-    if key == "harness_risk_actions":
-        return _coerce_harness_risk_action_payload(value)
-    if key.endswith("_action"):
-        if isinstance(value, str) and value in VALID_GUARD_ACTIONS:
-            return value
-        raise ValueError("Invalid Guard action.")
-    if key == "approval_surface_policy":
-        if isinstance(value, str) and value in VALID_APPROVAL_SURFACE_POLICIES:
-            return "attention-aware" if value == "auto-open-once" else value
-        raise ValueError("Invalid approval surface policy.")
-    if key == "blocked_request_mode":
-        if isinstance(value, str) and value in {"safe-alternative", "ask"}:
-            return value
-        raise ValueError("Choose safe-alternative or ask for blocked requests.")
-    if key == "approval_browser_delay_seconds":
-        if isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 300:
-            return value
-        raise ValueError("Browser attention delay must be between 0 and 300 seconds.")
-    if key == "approval_browser_immediate_severity":
-        if isinstance(value, str) and value in VALID_APPROVAL_BROWSER_SEVERITIES:
-            return value
-        raise ValueError("Invalid immediate browser attention severity.")
-    if key == "approval_wait_timeout_seconds":
-        if isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= MAX_APPROVAL_WAIT_TIMEOUT_SECONDS:
-            return value
-        raise ValueError(f"Approval wait timeout must be between 0 and {MAX_APPROVAL_WAIT_TIMEOUT_SECONDS} seconds.")
-    if key in {"desktop_notifications", "telemetry", "sync", "billing"}:
-        if isinstance(value, bool):
-            return value
-        raise ValueError(f"{key} must be true or false.")
-    if key == "update_channel":
-        if isinstance(value, str) and value in VALID_UPDATE_CHANNELS:
-            return value
-        raise ValueError("Update channel must be stable or alpha.")
-    if key == "receipt_redaction_level":
-        if isinstance(value, str) and value in VALID_RECEIPT_REDACTION_LEVELS:
-            return value
-        raise ValueError(f"Invalid receipt redaction level: {value!r}")
-    raise ValueError(f"Unsupported Guard setting: {key}")
-
-
-def _coerce_security_level(value: object) -> str:
-    if isinstance(value, str) and value in VALID_SECURITY_LEVELS:
-        return value
-    raise ValueError("Invalid Guard security level.")
-
-
-def _coerce_loaded_security_level(value: object) -> str:
-    if isinstance(value, str) and value in VALID_SECURITY_LEVELS:
-        return value
-    return DEFAULT_SECURITY_LEVEL
-
-
-def _coerce_loaded_guard_mode(value: object, fallback: GuardMode) -> GuardMode:
-    if value == "observe":
-        return "observe"
-    if value == "prompt":
-        return "prompt"
-    if value == "enforce":
-        return "enforce"
-    return fallback
-
-
-def _coerce_loaded_guard_action(value: object, fallback: GuardAction | None) -> GuardAction | None:
-    if value is None:
-        return fallback
-    return normalize_guard_action(value, unknown_action="require-reapproval")
-
-
-def _coerce_loaded_guard_action_or_default(value: object, fallback: GuardAction) -> GuardAction:
-    resolved = _coerce_loaded_guard_action(value, None)
-    return resolved if resolved is not None else fallback
-
-
-def _coerce_loaded_bool(value: object) -> bool:
-    return value if isinstance(value, bool) else False
-
-
-_VALID_SANDBOX_MODES = {"off", "suspicious", "strict"}
-
-
-def _coerce_risk_action_payload(value: object) -> dict[str, GuardAction]:
-    if not isinstance(value, dict):
-        raise ValueError("Risk actions must be a table.")
-    action_map: dict[str, GuardAction] = {}
-    for key, action in value.items():
-        if not isinstance(key, str) or key not in VALID_RISK_ACTION_KEYS:
-            raise ValueError("Invalid Guard risk action.")
-        resolved_action = coerce_guard_action(action)
-        if resolved_action is None:
-            raise ValueError("Invalid Guard risk action.")
-        action_map[key] = resolved_action
-    return action_map
-
-
-def _coerce_harness_risk_action_payload(value: object) -> dict[str, dict[str, GuardAction]]:
-    if not isinstance(value, dict):
-        raise ValueError("Harness risk actions must be a table.")
-    harness_actions: dict[str, dict[str, GuardAction]] = {}
-    for harness, risk_payload in value.items():
-        if not isinstance(harness, str) or not harness.strip():
-            raise ValueError("Invalid Guard harness.")
-        harness_actions[harness] = _coerce_risk_action_payload(risk_payload)
-    return harness_actions
+    return native_guard_support.coerce_setting(
+        key, value, max_wait_seconds=MAX_APPROVAL_WAIT_TIMEOUT_SECONDS, guard_home=guard_home
+    )
 
 
 def _posture_or_level_defaults(config: GuardConfig) -> dict[str, GuardAction]:
@@ -1052,60 +854,16 @@ def _incoming_selects_protection_posture(
 
 def _write_guard_config(path: Path, payload: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    lines = _toml_lines_for_table(payload, ())
-    path.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
+    path.write_text(native_guard_support.render_toml(payload, guard_home=path.parent), encoding="utf-8")
 
 
-def _toml_lines_for_table(payload: Mapping[str, object], path: tuple[str, ...]) -> list[str]:
-    lines: list[str] = []
-    scalar_items: list[tuple[str, object]] = []
-    table_items: list[tuple[str, dict[str, object]]] = []
-    for key, value in sorted(payload.items(), key=lambda item: item[0]):
-        nested_table = _string_object_table(value)
-        if nested_table is not None:
-            table_items.append((key, nested_table))
-            continue
-        scalar_items.append((key, value))
-    if path:
-        lines.append(f"[{'.'.join(_toml_key(item) for item in path)}]")
-    for key, value in scalar_items:
-        lines.append(f"{_toml_key(key)} = {_toml_literal(value)}")
-    for key, value in table_items:
-        nested_lines = _toml_lines_for_table(value, (*path, key))
-        if lines and nested_lines:
-            lines.append("")
-        lines.extend(nested_lines)
-    return lines
-
-
-def _toml_key(value: str) -> str:
-    if BARE_TOML_KEY.match(value):
-        return value
-    return json.dumps(value)
-
-
-def _toml_literal(value: object) -> str:
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, int):
-        return str(value)
-    if isinstance(value, float):
-        return repr(value)
-    if isinstance(value, str):
-        return json.dumps(value)
-    if isinstance(value, list):
-        return "[" + ", ".join(_toml_literal(item) for item in value) + "]"
-    nested_table = _string_object_table(value)
-    if nested_table is not None:
-        return _toml_inline_table(nested_table)
-    return json.dumps(str(value))
-
-
-def _toml_inline_table(value: Mapping[str, object]) -> str:
-    items: list[str] = []
-    for key, item in sorted(value.items(), key=lambda entry: entry[0]):
-        items.append(f"{_toml_key(key)} = {_toml_literal(item)}")
-    return "{ " + ", ".join(items) + " }"
+_SYNCED_ACTION_FIELDS = (
+    ("defaultAction", "default_action"),
+    ("unknownPublisherAction", "unknown_publisher_action"),
+    ("changedHashAction", "changed_hash_action"),
+    ("newNetworkDomainAction", "new_network_domain_action"),
+    ("subprocessAction", "subprocess_action"),
+)
 
 
 def overlay_synced_guard_policy(
@@ -1118,22 +876,18 @@ def overlay_synced_guard_policy(
     raw_mode = payload.get("mode")
     if config.mode != "observe" and isinstance(raw_mode, str) and raw_mode in VALID_GUARD_MODES:
         next_mode = raw_mode
-    default_action = _coerce_action_value(payload.get("defaultAction"), config.default_action)
-    unknown_publisher_action = _coerce_action_value(
-        payload.get("unknownPublisherAction"),
-        config.unknown_publisher_action,
-    )
-    changed_hash_action = _coerce_action_value(
-        payload.get("changedHashAction"),
-        config.changed_hash_action,
-    )
-    new_network_domain_action = _coerce_action_value(
-        payload.get("newNetworkDomainAction"),
-        config.new_network_domain_action,
-    )
-    subprocess_action = _coerce_action_value(
-        payload.get("subprocessAction"),
-        config.subprocess_action,
+    (
+        default_action,
+        unknown_publisher_action,
+        changed_hash_action,
+        new_network_domain_action,
+        subprocess_action,
+    ) = native_guard_support.coerce_loaded(
+        [
+            {"kind": "action", "value": payload.get(key), "fallback": getattr(config, attr)}
+            for key, attr in _SYNCED_ACTION_FIELDS
+        ],
+        guard_home=config.guard_home,
     )
     sync_enabled = payload.get("syncEnabled")
     cloud_redaction_level = payload.get("receiptRedactionLevel")
@@ -1153,6 +907,15 @@ def overlay_synced_guard_policy(
         ),
     )
     return _reapply_managed_config(overlaid)
+
+
+_MANAGED_ACTION_FIELDS = (
+    "default_action",
+    "unknown_publisher_action",
+    "changed_hash_action",
+    "new_network_domain_action",
+    "subprocess_action",
+)
 
 
 def _reapply_managed_config(config: GuardConfig) -> GuardConfig:
@@ -1175,8 +938,38 @@ def _reapply_managed_config(config: GuardConfig) -> GuardConfig:
     if config.protection_posture_explicit:
         local["protection_posture"] = config.protection_posture
     composed = apply_managed_policy(local, config.managed_policy)
-    composed_mode = _coerce_loaded_guard_mode(composed.get("mode"), config.mode)
-    composed_level = _coerce_loaded_security_level(composed.get("security_level"))
+    (
+        composed_mode,
+        composed_level,
+        default_action,
+        unknown_publisher_action,
+        changed_hash_action,
+        new_network_domain_action,
+        subprocess_action,
+        risk_actions,
+        harness_risk_actions,
+        telemetry,
+        sync,
+        receipt_redaction_level,
+    ) = native_guard_support.coerce_loaded(
+        [
+            {"kind": "mode", "value": composed.get("mode"), "fallback": config.mode},
+            {"kind": "security_level", "value": composed.get("security_level")},
+            *(
+                {"kind": "action", "value": composed.get(attr), "fallback": getattr(config, attr)}
+                for attr in _MANAGED_ACTION_FIELDS
+            ),
+            {"kind": "risk_actions", "value": composed.get("risk_actions")},
+            {"kind": "harness_risk_actions", "value": composed.get("harness_risk_actions")},
+            {"kind": "bool", "value": composed.get("telemetry", config.telemetry)},
+            {"kind": "bool", "value": composed.get("sync", config.sync)},
+            {
+                "kind": "receipt_redaction_level",
+                "value": composed.get("receipt_redaction_level", config.receipt_redaction_level),
+            },
+        ],
+        guard_home=config.guard_home,
+    )
     composed_posture = coerce_loaded_protection_posture(composed.get("protection_posture"))
     managed_locks_level = "security_level" in config.managed_locked_settings
     if managed_locks_level:
@@ -1194,26 +987,16 @@ def _reapply_managed_config(config: GuardConfig) -> GuardConfig:
         protection_posture=next_posture,
         protection_posture_explicit=next_explicit,
         security_level=composed_level,
-        default_action=_coerce_loaded_guard_action_or_default(composed.get("default_action"), config.default_action),
-        unknown_publisher_action=_coerce_loaded_guard_action_or_default(
-            composed.get("unknown_publisher_action"), config.unknown_publisher_action
-        ),
-        changed_hash_action=_coerce_loaded_guard_action_or_default(
-            composed.get("changed_hash_action"), config.changed_hash_action
-        ),
-        new_network_domain_action=_coerce_loaded_guard_action_or_default(
-            composed.get("new_network_domain_action"), config.new_network_domain_action
-        ),
-        subprocess_action=_coerce_loaded_guard_action_or_default(
-            composed.get("subprocess_action"), config.subprocess_action
-        ),
-        risk_actions=_coerce_risk_action_map(composed.get("risk_actions")),
-        harness_risk_actions=_coerce_harness_risk_action_map(composed.get("harness_risk_actions")),
-        telemetry=_coerce_loaded_bool(composed.get("telemetry", config.telemetry)),
-        sync=_coerce_loaded_bool(composed.get("sync", config.sync)),
-        receipt_redaction_level=_coerce_loaded_receipt_redaction_level(
-            composed.get("receipt_redaction_level", config.receipt_redaction_level)
-        ),
+        default_action=default_action,
+        unknown_publisher_action=unknown_publisher_action,
+        changed_hash_action=changed_hash_action,
+        new_network_domain_action=new_network_domain_action,
+        subprocess_action=subprocess_action,
+        risk_actions=risk_actions,
+        harness_risk_actions=harness_risk_actions,
+        telemetry=telemetry,
+        sync=sync,
+        receipt_redaction_level=receipt_redaction_level,
     )
 
 
@@ -1224,16 +1007,6 @@ def _nested_setting_value(payload: dict[str, object], path: str, missing: object
             return missing
         current = current[part]
     return current
-
-
-def _coerce_action_value(value: object, fallback: GuardAction) -> GuardAction:
-    return _coerce_loaded_guard_action_or_default(value, fallback)
-
-
-def _string_object_table(value: object) -> dict[str, object] | None:
-    if not isinstance(value, dict):
-        return None
-    return {key: item for key, item in value.items() if isinstance(key, str)}
 
 
 def _existing_legacy_guard_home(user_home: Path) -> Path | None:
@@ -1346,26 +1119,6 @@ def _prune_retired_guard_db_sync_state(database_path: Path) -> None:
 def _raise_when_backup_deadline_elapsed(deadline: float) -> None:
     if time.monotonic() >= deadline:
         raise TimeoutError("guard.db migration timed out")
-
-
-def _sanitize_workspace_guard_config(payload: dict[str, object]) -> dict[str, object]:
-    return {key: value for key, value in payload.items() if key not in WORKSPACE_BLOCKED_POLICY_KEYS}
-
-
-def _merge_config_payload(base: dict[str, object], override: dict[str, object]) -> dict[str, object]:
-    merged = dict(base)
-    for key, value in override.items():
-        existing = merged.get(key)
-        if isinstance(existing, dict) and isinstance(value, dict):
-            nested_existing = {name: nested_value for name, nested_value in existing.items() if isinstance(name, str)}
-            nested_override = {name: nested_value for name, nested_value in value.items() if isinstance(name, str)}
-            if "action" in nested_override or "default_action" in nested_override:
-                nested_existing.pop("action", None)
-                nested_existing.pop("default_action", None)
-            merged[key] = _merge_config_payload(nested_existing, nested_override)
-            continue
-        merged[key] = value
-    return merged
 
 
 def _guard_home_has_state(path: Path) -> bool:

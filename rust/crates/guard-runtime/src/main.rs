@@ -238,6 +238,13 @@ mod guard_store_wfcap_state;
 mod guard_store_wfcap_wire;
 #[cfg(test)]
 mod guard_store_workflow_capability_vectors_tests;
+mod guard_support_coerce;
+mod guard_support_op;
+mod guard_support_reason;
+#[cfg(test)]
+mod guard_support_tests;
+mod guard_support_text;
+mod guard_support_toml;
 mod hardening;
 mod hook_adapter_op;
 mod hook_approval_context;

@@ -93,7 +93,6 @@ if TYPE_CHECKING:
     from .commands_support_interaction import _record_harness_usage_for_hook
     from .commands_support_prompts import (
         _copilot_hook_reason,
-        _decision_v2_harness_message,
         _emit_copilot_hook_response,
     )
     from .commands_support_runtime_policy import _localize_pending_approval_copy
@@ -168,6 +167,12 @@ _GENERIC_HOOK_NON_CONTENT_FIELDS = frozenset(
         "user_override",
     }
 )
+
+
+def _decision_harness_message(payload: Mapping[str, object]) -> str | None:
+    decision = payload.get("decision_v2_json")
+    message = decision.get("harness_message") if isinstance(decision, Mapping) else None
+    return message.strip() if isinstance(message, str) and message.strip() else None
 
 
 def _generic_hook_payload_digest(payload: Mapping[str, object]) -> str:
@@ -1060,7 +1065,7 @@ def run_native_generic_payload(
     incoming_reason = (
         blocked_request_guidance
         or composition["daemon_failure_reason"]
-        or _decision_v2_harness_message(payload_map)
+        or _decision_harness_message(payload_map)
         or payload_map.get("permission_decision_reason")
     )
     hook_envelope: dict[str, object] = {
