@@ -48,13 +48,9 @@ if TYPE_CHECKING:
 
 # ruff: noqa: F403,F405
 from .action_lattice import guard_action_severity
-from .memory_pattern_fingerprint import (
-    build_exact_command_memory_artifact_id,
-    build_exact_shell_command_memory_artifact_id,
-    build_memory_pattern_fingerprint,
-)
 from .native_approval_proof import approval_reuse_claim_disposition as native_claim_disposition
 from .native_execution import _resident_request
+from .native_memory_pattern import memory_pattern_verdict
 from .native_policy_snapshot_constants import NATIVE_POLICY_VERIFIER_KEY_NAME, NativePolicySnapshotError
 from .native_policy_snapshot_windows_key import provision_native_policy_verifier_key
 from .native_policy_snapshot_windows_support import _runtime_state_directory
@@ -75,23 +71,6 @@ APPROVAL_REUSE_DIAGNOSTIC_UNAVAILABLE_REASON = "approval_reuse_integrity_failure
 
 POLICY_DECISION_LOOKUP_FEATURE = "policy-decision-lookup-v1"
 _RESIDENT_VERDICT_ATTEMPTS = 6
-
-
-def _memory_artifact_is_shell_command(
-    artifact_type: str | None,
-    artifact_name: str | None,
-) -> bool:
-    normalized_type = artifact_type.strip().casefold() if isinstance(artifact_type, str) else ""
-    if normalized_type in {"bash", "shell", "shell_command"}:
-        return True
-    if normalized_type != "tool_action_request" or not isinstance(artifact_name, str):
-        return False
-    normalized_name = artifact_name.strip().casefold()
-    return normalized_name in {"bash", "shell"} or normalized_name.startswith(("bash ", "shell "))
-
-
-def _distinct_non_null(values: Sequence[str | None]) -> tuple[str, ...]:
-    return tuple(dict.fromkeys(value for value in values if value is not None))
 
 
 @dataclass(frozen=True)
@@ -134,31 +113,20 @@ def memory_lookup_candidates(
     memory_artifact_type: str | None,
     memory_artifact_name: str | None,
 ) -> tuple[tuple[str, ...], str | None]:
-    """Exact-command ids and the memory-pattern id probed after the direct artifact."""
+    """Exact-command ids and the memory-pattern id probed after the direct artifact.
 
-    exact_ids: tuple[str, ...] = ()
-    if _memory_artifact_is_shell_command(memory_artifact_type, memory_artifact_name):
-        exact_ids = tuple(
-            candidate
-            for candidate in _distinct_non_null(
-                (
-                    build_exact_shell_command_memory_artifact_id(memory_command),
-                    build_exact_command_memory_artifact_id(memory_command),
-                )
-            )
-            if candidate != artifact_id
-        )
-    memory_pattern = build_memory_pattern_fingerprint(
+    The resident builds both; a native failure raises rather than skipping the
+    remembered-decision probes.
+    """
+
+    verdict = memory_pattern_verdict(
         command=memory_command,
         artifact_type=memory_artifact_type,
         artifact_id=artifact_id,
         artifact_name=memory_artifact_name,
         harness=harness,
     )
-    memory_id = (
-        None if memory_pattern is None else f"memory:{harness}:{memory_pattern.kind}:{memory_pattern.fingerprint}"
-    )
-    return exact_ids, (None if memory_id == artifact_id else memory_id)
+    return verdict.exact_artifact_ids, verdict.memory_artifact_id
 
 
 def _most_restrictive_policy_lookup(
