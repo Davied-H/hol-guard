@@ -5,9 +5,10 @@ use crate::{assignment_name, executable_basename, CommandSegmentV1, RawSegment};
 /// Strips `sudo`/`timeout` wrappers and `command`/`time`/`env` prefixes.
 ///
 /// `sudo` and `timeout` change how the program runs, so they stay in the
-/// wrapper chain. The prefixes run the next word as the program itself: `env`
-/// assignments join `environment_names` exactly as a bare `NAME=value` prefix
-/// would. Any option on a prefix leaves it as the executable, which keeps
+/// wrapper chain. `command` and `time` run the next word as the program.
+/// `env` does that only when every assignment is inert; those names join
+/// `environment_names`. A non-inert name leaves `env` as the executable.
+/// Any option on a prefix leaves it as the executable, which keeps
 /// `command -v`, `time -p` and `env -i` on their existing paths.
 pub(super) fn unwrap_wrappers(
     tokens: &[String],
@@ -307,7 +308,6 @@ mod tests {
             ("command bun run build", "bun", &[][..]),
             ("time bun run build", "bun", &[]),
             ("command git push origin main", "git", &[]),
-            ("env NODE_PATH=x bun s.ts", "bun", &["NODE_PATH"]),
             (
                 "CI=1 env NODE_ENV=production command bun run build",
                 "bun",
@@ -322,7 +322,11 @@ mod tests {
             assert_eq!(segment.executable.as_deref(), Some(executable), "{command}");
             assert_eq!(segment.environment_names, names, "{command}");
         }
-        assert!(parse("env PATH=/tmp/x bun run build").path_overridden);
+        for command in ["env PATH=/tmp/x bun run build", "env NODE_PATH=x bun s.ts"] {
+            let model = parse(command);
+            assert_eq!(model.confidence, "uncertain", "{command}");
+            assert!(!model.path_overridden, "{command}");
+        }
         let model = parse("sudo env CI=1 rm -rf build");
         assert_eq!(model.confidence, "exact");
         assert_eq!(model.wrapper_chain, ["sudo"]);
