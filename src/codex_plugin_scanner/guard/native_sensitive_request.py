@@ -58,6 +58,8 @@ _OPTIONAL_TEXT = frozenset(
     }
 )
 _SENSITIVITIES = frozenset({"high", "critical"})
+# Names the native classifiers read that neither shared snapshot carries.
+_CLASSIFIER_ENVIRONMENT_NAMES = ("GH_HOST", "GH_PAGER", "PAGER", "RIPGREP_CONFIG_PATH")
 
 
 class NativeSensitiveRequestError(RuntimeError):
@@ -87,6 +89,9 @@ def _ask(query: str, input_value: dict[str, Any], *, cwd: Path | None, home_dir:
     facts = _facts(cwd or Path.cwd(), home_dir or Path.home())
     environment = dict(_environment_snapshot())
     environment.update(cast("dict[str, str]", facts["environment"]))
+    environment.update(
+        (name, value) for name in _CLASSIFIER_ENVIRONMENT_NAMES if (value := os.environ.get(name)) is not None
+    )
     facts["environment"] = environment
     payload = _call(
         {

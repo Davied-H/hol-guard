@@ -148,9 +148,11 @@ impl InspectionHost for SensitiveRequestHost<'_> {
     fn path_exists(&self, path: &str) -> bool {
         Path::new(path).exists()
     }
+    /// Non-strict like `os.path.realpath`: callers ask about paths that must
+    /// not exist yet. A relative path has no request cwd here and is refused.
     fn real_path(&self, path: &str) -> Option<String> {
-        let resolved = Path::new(path).canonicalize().ok()?;
-        resolved.to_str().map(str::to_owned)
+        path.starts_with('/')
+            .then(|| crate::oci_path::resolve_lenient(path))
     }
 }
 

@@ -208,9 +208,7 @@ def test_native_grep_is_not_read_only_when_classification_is_down(
     assert search.native_post_tool_search_is_read_only(payload=payload, cwd=tmp_path, home_dir=tmp_path) is False
 
 
-def test_command_list_outage_blocks_the_post_tool_artifact(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_command_list_outage_blocks_the_post_tool_artifact(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     from codex_plugin_scanner.guard.cli import commands_support_codex_commands as codex
     from codex_plugin_scanner.guard.cli import commands_support_runtime_artifacts as artifacts
 

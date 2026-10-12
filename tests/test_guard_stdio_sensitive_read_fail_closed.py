@@ -57,9 +57,7 @@ def test_sensitive_read_is_blocked_when_the_resident_is_unavailable(
     assert session["events"][0]["approval_reuse_reason_code"] == "native_unavailable"
 
 
-def test_classifier_outage_blocks_the_call_instead_of_escaping(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_classifier_outage_blocks_the_call_instead_of_escaping(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     def unavailable(*_args: object, **_kwargs: object) -> None:
         raise NativeSensitiveRequestError("native_sensitive_request_unavailable")
 
