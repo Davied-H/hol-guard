@@ -149,7 +149,7 @@ pub(crate) fn workspace_write_denials(
                 if relative && !path.starts_with(base) {
                     return None;
                 }
-                deny(&mut denials, path, workspace)?;
+                deny_linked(&mut denials, path, workspace)?;
             }
         }
     }
@@ -225,6 +225,16 @@ fn deny(denials: &mut Vec<PathBuf>, path: PathBuf, workspace: &Path) -> Option<(
         return None;
     }
     Some(())
+}
+
+/// [`deny`] for both the path as written and the path its links lead to.
+/// Host Git follows links while the sandbox checks real paths, so a link
+/// outside the workspace can lead in, and a link inside it could be swapped
+/// for a directory. `None` when the links cannot be resolved.
+fn deny_linked(denials: &mut Vec<PathBuf>, path: PathBuf, workspace: &Path) -> Option<()> {
+    let real = resolve(&path)?;
+    deny(denials, path, workspace)?;
+    deny(denials, real, workspace)
 }
 
 fn normalize(path: &Path) -> PathBuf {
@@ -372,7 +382,7 @@ fn helper_denials(config: &str, root: &Path, workspace: &Path) -> Option<Vec<Pat
         for path in candidates {
             // An unbounded list, or a path that is or holds the workspace,
             // cannot be denied; keep the command at review.
-            deny(&mut denials, path, workspace)?;
+            deny_linked(&mut denials, path, workspace)?;
         }
     }
     Some(denials)
