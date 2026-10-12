@@ -245,5 +245,13 @@ fn hook_directories_are_denied_where_their_links_lead() {
         workspace_write_denials(&app, Some(&home)),
         Some(vec![app.join(".hooks"), app.join("real")])
     );
+    // A dangling link keeps the command at review: the sandbox could create
+    // its target. So does a global file linked to a missing workspace file.
+    std::fs::remove_dir(app.join("real")).unwrap();
+    assert_eq!(workspace_write_denials(&app, Some(&home)), None);
+    std::fs::write(repo.join(".git/config"), "[core]\n").unwrap();
+    std::fs::remove_file(home.join(".githooks")).unwrap();
+    std::os::unix::fs::symlink(app.join("missing"), home.join(".gitconfig")).unwrap();
+    assert_eq!(workspace_write_denials(&app, Some(&home)), None);
     let _ = std::fs::remove_dir_all(&root);
 }
