@@ -829,7 +829,7 @@ def evaluate_detection(
                 store.save_snapshot(
                     detection.harness,
                     artifact.artifact_id,
-                    {**diff["current_snapshot"], "artifact_hash": diff["current_hash"]},
+                    {**current_snapshot, "artifact_hash": diff["current_hash"]},
                     str(diff["current_hash"]),
                     now,
                 )
@@ -1000,7 +1000,7 @@ def evaluate_detection(
                 store.save_snapshot(
                     detection.harness,
                     artifact.artifact_id,
-                    {**diff["current_snapshot"], "artifact_hash": diff["current_hash"]},
+                    {**current_snapshot, "artifact_hash": diff["current_hash"]},
                     str(diff["current_hash"]),
                     now,
                 )

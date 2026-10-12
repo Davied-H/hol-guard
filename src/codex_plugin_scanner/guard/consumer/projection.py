@@ -50,14 +50,17 @@ def wire_artifact(artifact: GuardArtifact) -> dict[str, object]:
     }
 
 
+def _event_artifact_id(event: Mapping[str, object]) -> object:
+    payload = event.get("payload")
+    return payload.get("artifact_id") if isinstance(payload, dict) else None
+
+
 def _history(store: GuardStore, harness: str, artifact_id: str, publisher: str | None) -> dict[str, object]:
     item = store.find_inventory_item(artifact_id)
     names = [
         event["event_name"]
         for event in store.list_events(limit=_EVENT_SCAN_LIMIT)
-        if isinstance(event.get("payload"), dict)
-        and event["payload"].get("artifact_id") == artifact_id
-        and isinstance(event.get("event_name"), str)
+        if _event_artifact_id(event) == artifact_id and isinstance(event.get("event_name"), str)
     ]
     advisories = [
         {

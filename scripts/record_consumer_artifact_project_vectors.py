@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import gzip
+import importlib
 import itertools
 import json
 import random
@@ -268,7 +269,10 @@ def _snapshot(service: Any, before: Any, edit: str) -> dict[str, Any]:
 
 
 def _evidence_case(name: str, current: Any, before: Any, edit: str, history_name: str) -> dict[str, Any]:
-    from codex_plugin_scanner.guard.capabilities import compute_capability_delta, normalize_artifact_capabilities
+    # The module only exists in the base checkout this recorder runs against.
+    capabilities = importlib.import_module("codex_plugin_scanner.guard.capabilities")
+    compute_capability_delta = capabilities.compute_capability_delta
+    normalize_artifact_capabilities = capabilities.normalize_artifact_capabilities
     from codex_plugin_scanner.guard.consumer import service
 
     history = HISTORIES[history_name]
@@ -320,7 +324,9 @@ def _evidence_cases() -> list[dict[str, Any]]:
         current = _make(base)
         before = None if change is None else _make(base, change)
         history_name = ("none", "item", "known-good", "flagged")[len(cases) % 4]
-        cases.append(_evidence_case(f"{artifact_name}/{before_name}/{history_name}", current, before, "keep", history_name))
+        cases.append(
+            _evidence_case(f"{artifact_name}/{before_name}/{history_name}", current, before, "keep", history_name)
+        )
     rng = random.Random(4217)
     for artifact_name, base in ARTIFACTS.items():
         for edit in SNAPSHOT_EDITS[1:]:
@@ -371,7 +377,7 @@ def _incident_cases() -> list[dict[str, Any]]:
     artifact_names = list(ARTIFACTS)
     for index in range(900):
         kind = rng.choice(_TYPES)
-        artifact_name = rng.choice(artifact_names + [None, None])
+        artifact_name = rng.choice([*artifact_names, None, None])
         artifact = None if artifact_name is None else _make(ARTIFACTS[artifact_name])
         fields: dict[str, Any] = {
             "harness": rng.choice(_HARNESSES),
