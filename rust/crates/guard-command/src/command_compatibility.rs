@@ -13,12 +13,15 @@ use std::time::Instant;
 mod catalog;
 #[path = "command_compatibility/domains.rs"]
 mod domains;
+#[path = "command_compatibility/environment.rs"]
+mod environment;
 #[path = "command_compatibility/git.rs"]
 mod git;
 #[path = "command_compatibility/github.rs"]
 mod github;
 
 pub use catalog::compatibility_rule_ids;
+pub(crate) use environment::inert_environment_name;
 
 pub(crate) fn github_arguments_are_read_only(arguments: &[String], text: &str) -> bool {
     github::arguments_are_read_only(arguments, text)
@@ -209,7 +212,7 @@ pub fn compatibility_observations_with_context(
                 .wrapper_chain
                 .iter()
                 .any(|wrapper| !matches!(wrapper.as_str(), "sudo" | "timeout"))
-            || !segment.environment_names.is_empty()
+            || !environment::supported(segment)
             || segment.text.contains('\0')
             || segment.arguments.iter().any(|value| value.contains('\0'))
         {

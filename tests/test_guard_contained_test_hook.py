@@ -209,3 +209,18 @@ def test_node_requires_its_own_fresh_profile(
                 original, workspace=tmp_path, timeout_seconds=20, authorize=lambda value: response
             )
         assert executed == []
+
+
+@pytest.mark.parametrize(
+    ("words", "expected"),
+    [
+        (["command", "bun", "run", "build"], ["bun", "run", "build"]),
+        (["time", "command", "bun", "test"], ["bun", "test"]),
+        (["command", "-p", "bun"], ["command", "-p", "bun"]),
+        (["time", "-p", "bun"], ["time", "-p", "bun"]),
+        (["command"], ["command"]),
+        (["env", "CI=1", "bun"], ["env", "CI=1", "bun"]),
+    ],
+)
+def test_command_and_time_prefixes_run_the_named_program(words, expected):
+    assert sink._without_command_prefix(words) == expected

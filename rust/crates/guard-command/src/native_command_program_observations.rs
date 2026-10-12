@@ -24,6 +24,9 @@ impl NativeCommandProgram {
         deadline: Option<Instant>,
         context: crate::pretool::PathContext<'_>,
     ) -> Result<NativeCommandObservationBatchV1, &'static str> {
+        if self.reconfigures_owned_program(command, active_extensions) {
+            return Err("native_command_compatibility_context_unsupported");
+        }
         let compatibility = crate::command_compatibility::compatibility_observations_with_context(
             command, deadline, context,
         )?;

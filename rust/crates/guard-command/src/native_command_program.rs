@@ -348,6 +348,58 @@ impl NativeCommandProgram {
         Some(names)
     }
 
+    /// A prefix such as `CONFIG_DIR=/tmp/x` can point a program at other
+    /// configuration, so rules over that program's arguments no longer
+    /// describe what it does. Inert names (`CI`, `NODE_ENV`, locale) cannot.
+    pub(crate) fn reconfigures_owned_program(
+        &self,
+        command: &CanonicalCommandV1,
+        active_extensions: &BTreeSet<String>,
+    ) -> bool {
+        let prefixed: BTreeSet<String> = command
+            .segments
+            .iter()
+            .filter(|segment| {
+                segment
+                    .environment_names
+                    .iter()
+                    .any(|name| !crate::command_compatibility::inert_environment_name(name))
+            })
+            .filter_map(|segment| segment.executable.as_deref())
+            .map(|value| lowercase_for_ascii_comparison(basename(value)))
+            .collect();
+        !prefixed.is_empty()
+            && self
+                .extensions
+                .iter()
+                .enumerate()
+                .filter(|(_, extension)| active_extensions.contains(&extension.extension_id))
+                .any(|(index, _)| !self.declared_names(index).is_disjoint(&prefixed))
+    }
+
+    /// Every program an extension names, either as a declared executable or
+    /// as one a rule's matcher requires.
+    fn declared_names(&self, extension_index: usize) -> BTreeSet<String> {
+        let mut names: BTreeSet<String> = self.extensions[extension_index]
+            .executables
+            .iter()
+            .map(|name| lowercase_for_ascii_comparison(basename(name)))
+            .collect();
+        for rule in self
+            .rules
+            .iter()
+            .filter(|rule| rule.extension_index == extension_index)
+        {
+            if let Some(required) = rule
+                .matcher
+                .and_then(|node| self.required_executables(node, 0))
+            {
+                names.extend(required);
+            }
+        }
+        names
+    }
+
     /// Executables one of which a match of `node` must run. Alternatives need
     /// all of theirs; a conjunction needs any one child's. Matchers without a
     /// declared executable gate have no such set.

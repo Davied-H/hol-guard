@@ -109,6 +109,19 @@ def read_contained_test_request(path: Path, expected_sha256: str, *, workspace: 
         raise _reject() from error
 
 
+def _without_command_prefix(command: list[str]) -> list[str]:
+    """Drop `command`/`time` prefixes, which run the next word unchanged.
+
+    The native model reads `command bun run build` as `bun run build`. An
+    option such as `command -v` keeps the prefix, so the core is rejected.
+    """
+    for _ in range(4):
+        if len(command) < 2 or command[0] not in {"command", "time"} or command[1].startswith("-"):
+            break
+        command = command[1:]
+    return command
+
+
 def run_authorized_contained_test(
     payload: dict[str, object],
     *,
@@ -170,7 +183,7 @@ def run_authorized_contained_test(
         sys.stdout.flush()
         return 0
     try:
-        command = shlex.split(tool_input["command"], posix=True)
+        command = _without_command_prefix(shlex.split(tool_input["command"], posix=True))
     except ValueError as error:
         raise _reject() from error
     package_test = is_package_test(command)

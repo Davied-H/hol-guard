@@ -518,7 +518,7 @@ fn parse_posix_command(request: &CommandModelRequestV1) -> Result<CanonicalComma
             executable_index += 1;
         }
         let (executable_index, wrapper_chain) =
-            match parser_wrappers::unwrap_sudo(&tokens, executable_index) {
+            match parser_wrappers::unwrap_wrappers(&tokens, executable_index, &mut environment_names) {
                 Ok(value) => value,
                 Err(reason) => return Ok(uncertain(request, raw, reason)),
             };
