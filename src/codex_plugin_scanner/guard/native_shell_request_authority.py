@@ -53,22 +53,17 @@ def shell_request_authority(entry: str, arguments: dict[str, Any]) -> Any:
             if cached is not None:
                 _FLAGS.move_to_end(key)
                 return cached[entry]
-    payload = native_runner_authority(
-        "shell_request_authority",
-        {
-            "entry": "pr_flags" if entry in flag_entries else entry,
-            "arguments": _wire(arguments),
-            "facts": {
-                "process_cwd": os.getcwd(),
-                "home": str(Path.home()),
-                "account_home": _account_home_directory(),
-                "groups": _process_groups(),
-                "environment": _environment_snapshot(),
-                "git_executable": shutil.which("git"),
-            },
-        },
-        home,
-    )
+    request = {"entry": "pr_flags" if entry in flag_entries else entry, "arguments": _wire(arguments)}
+    if entry in {"classify_github_shell_capabilities", "_github_pipeline_companion_is_read_only"}:
+        request["facts"] = {
+            "process_cwd": os.getcwd(),
+            "home": str(Path.home()),
+            "account_home": _account_home_directory(),
+            "groups": _process_groups(),
+            "environment": _environment_snapshot(),
+            "git_executable": shutil.which("git"),
+        }
+    payload = native_runner_authority("shell_request_authority", request, home)
     flags = payload.get("flags")
     if isinstance(flags, dict):
         with _LOCK:

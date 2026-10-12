@@ -8,8 +8,28 @@ use crate::codex_tool_output_op::ResidentInspectionHost;
 use crate::runner_authority_op::KindResult;
 
 pub(crate) fn dispatch(args: &Value) -> KindResult {
-    let facts: CodexToolOutputFactsV1 = serde_json::from_value(args["facts"].clone())
-        .map_err(|_| "native_shell_request_host_invalid")?;
+    let entry = args["entry"]
+        .as_str()
+        .ok_or("native_shell_request_entry_invalid")?;
+    let facts: CodexToolOutputFactsV1 = if args["facts"].is_null() {
+        if matches!(
+            entry,
+            "classify_github_shell_capabilities" | "_github_pipeline_companion_is_read_only"
+        ) {
+            return Err("native_shell_request_host_invalid");
+        }
+        CodexToolOutputFactsV1 {
+            process_cwd: "/".to_owned(),
+            home: "/".to_owned(),
+            account_home: None,
+            groups: Vec::new(),
+            environment: Default::default(),
+            git_executable: None,
+        }
+    } else {
+        serde_json::from_value(args["facts"].clone())
+            .map_err(|_| "native_shell_request_host_invalid")?
+    };
     if facts.environment.len() > 128
         || facts.groups.len() > 256
         || [&facts.process_cwd, &facts.home]
@@ -21,9 +41,6 @@ pub(crate) fn dispatch(args: &Value) -> KindResult {
     {
         return Err("native_shell_request_host_invalid");
     }
-    let entry = args["entry"]
-        .as_str()
-        .ok_or("native_shell_request_entry_invalid")?;
     let host = ResidentInspectionHost { facts: &facts };
     let context = Ctx::new(&host, &facts.process_cwd, &facts.home);
     guard_command::shell_request_authority::dispatch(entry, &args["arguments"], &context)
