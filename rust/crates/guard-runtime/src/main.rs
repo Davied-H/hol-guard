@@ -323,6 +323,7 @@ mod resident_state_encoding;
 mod resident_transport;
 mod resident_transport_service;
 mod resident_update_lock;
+mod restricted_pytest_op;
 mod runner_authority_detector;
 mod runner_authority_evaluation;
 mod runner_authority_op;

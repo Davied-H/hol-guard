@@ -597,6 +597,7 @@ mod restricted_archive_stream;
 pub mod restricted_archive_transport;
 mod restricted_archive_write;
 #[cfg(unix)]
+#[cfg(unix)]
 pub mod restricted_pytest;
 pub mod resume_template;
 pub mod safe_decode;
