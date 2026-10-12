@@ -444,6 +444,7 @@
     "src/codex_plugin_scanner/guard/native_resident_watchdog.py",
     "src/codex_plugin_scanner/guard/native_runtime.py",
     "src/codex_plugin_scanner/guard/native_runtime_request_scope.py",
+    "src/codex_plugin_scanner/guard/native_runtime_process_cache.py",
     "src/codex_plugin_scanner/guard/native_runtime_status_share.py",
     "src/codex_plugin_scanner/guard/native_binary_identity.py",
     "src/codex_plugin_scanner/guard/native_runtime_values.py",
@@ -488,8 +489,7 @@
     "src/codex_plugin_scanner/guard/daemon/hook_native_review_approval.py",
     "src/codex_plugin_scanner/guard/daemon/hook_native_review_binding.py",
     "src/codex_plugin_scanner/guard/daemon/hook_native_saved_approval.py",
-    "src/codex_plugin_scanner/guard/daemon/hook_native_exact_identity.py",
-    "src/codex_plugin_scanner/guard/daemon/hook_native_launch_identity.py",
+    "src/codex_plugin_scanner/guard/daemon/hook_native_exact_action.py",
     "src/codex_plugin_scanner/guard/daemon/hook_native_local_cli.py",
     "src/codex_plugin_scanner/guard/daemon/hook_native_review_fence.py",
     "src/codex_plugin_scanner/guard/**/continuation*.py"
