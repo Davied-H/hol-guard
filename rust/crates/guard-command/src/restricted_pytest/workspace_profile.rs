@@ -68,13 +68,14 @@ fn ci(value: &str) -> Result<String, RestrictedPytestError> {
     let mut result = String::new();
     for c in value.chars() {
         match c {
-            '\\' | '\n' | '\r' | '\0' => return Err(invalid()),
+            // `[^]` would open a negated class, so `^` is rejected outright.
+            '\\' | '\n' | '\r' | '\0' | '^' => return Err(invalid()),
             c if c.is_ascii_alphabetic() => result.push_str(&format!(
                 "[{}{}]",
                 c.to_ascii_lowercase(),
                 c.to_ascii_uppercase()
             )),
-            '.' | '+' | '*' | '?' | '(' | ')' | '{' | '}' | '|' | '^' | '$' | '[' => {
+            '.' | '+' | '*' | '?' | '(' | ')' | '{' | '}' | '|' | '$' | '[' => {
                 result.push('[');
                 result.push(c);
                 result.push(']');
