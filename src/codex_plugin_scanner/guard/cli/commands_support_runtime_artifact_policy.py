@@ -61,6 +61,11 @@ def _runtime_artifact_has_explicit_permission_allow(artifact: GuardArtifact) -> 
     )
 
 
+def _typed_text(value: object) -> str | None:
+    # A non-string setting normalizes to the unknown action natively, as it did here.
+    return value if value is None or isinstance(value, str) else ""
+
+
 def runtime_policy_config_facts(config: GuardConfig, harness: str) -> dict[str, object]:
     canonical_harness = _canonical_harness_name(harness)
     return {
@@ -89,8 +94,8 @@ def runtime_policy_artifact_facts(config: GuardConfig, artifact: GuardArtifact, 
     confidence = _artifact_risk_confidence(artifact)
     return {
         "hard_block": _prompt_requires_hard_block(artifact),
-        "configured_override": config.resolve_action_override(
-            _canonical_harness_name(harness), artifact.artifact_id, artifact.publisher
+        "configured_override": _typed_text(
+            config.resolve_action_override(_canonical_harness_name(harness), artifact.artifact_id, artifact.publisher)
         ),
         "command_action_floor": _runtime_artifact_command_action_floor(artifact),
         "explicit_permission_allow": _runtime_artifact_has_explicit_permission_allow(artifact),
@@ -101,7 +106,7 @@ def runtime_policy_artifact_facts(config: GuardConfig, artifact: GuardArtifact, 
             and isinstance(metadata.get("restricted_profile_version"), str)
         ),
         "shell_local_script_review": metadata.get("reason_code") == "shell_local_script_execution_review",
-        "guard_default_action": default_action if default_action is None or isinstance(default_action, str) else "",
+        "guard_default_action": _typed_text(default_action),
         "confidence_text": str(confidence or ""),
         "confidence_strong": is_high_confidence(confidence),
         "writes_launch_agent": _artifact_writes_launch_agent(artifact),

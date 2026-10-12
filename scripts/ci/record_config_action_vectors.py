@@ -80,7 +80,7 @@ def _pick_map(rng: random.Random, keys: tuple[str, ...], width: int) -> dict[str
 def random_case(rng: random.Random) -> dict[str, object]:
     posture = rng.choice(("protected", "protected", "extra_careful", "watch"))
     config: dict[str, object] = {
-        "default_action": rng.choice(ACTIONS[:3]),
+        "default_action": rng.choice((*ACTIONS[:3], "???")),
         "security_level": rng.choice(("balanced", "balanced", "paranoid", "relaxed", "unknown-level")),
         "protection_posture": posture,
         "protection_posture_explicit": rng.random() < 0.6,
@@ -94,7 +94,7 @@ def random_case(rng: random.Random) -> dict[str, object]:
         "harness_postures": {HARNESS: rng.choice(("extra_careful", "protected", "watch"))}
         if rng.random() < 0.3
         else None,
-        "artifact_actions": {"case:artifact": rng.choice(ACTIONS)} if rng.random() < 0.12 else None,
+        "artifact_actions": {"case:artifact": rng.choice((*ACTIONS, "???", "", 7))} if rng.random() < 0.18 else None,
         "publisher_actions": {"acme": rng.choice(ACTIONS)} if rng.random() < 0.08 else None,
         "harness_actions": {HARNESS: rng.choice(ACTIONS)} if rng.random() < 0.08 else None,
     }
@@ -137,6 +137,10 @@ def random_case(rng: random.Random) -> dict[str, object]:
         "config": {key: value for key, value in config.items() if value is not None},
         "artifact": {"artifact_id": artifact_id, "artifact_type": kind, "publisher": publisher, "metadata": metadata},
     }
+
+
+def _typed_override(value: object) -> object:
+    return value if value is None or isinstance(value, str) else ""
 
 
 def record() -> list[dict[str, object]]:
