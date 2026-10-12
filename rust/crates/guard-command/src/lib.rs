@@ -147,7 +147,6 @@ mod sfrs_benign_reads;
 mod sfrs_benign_tool_action;
 mod sfrs_constants;
 mod sfrs_credential_exfil;
-#[cfg(unix)]
 mod sfrs_developer_graph;
 #[cfg(all(test, unix))]
 mod sfrs_developer_graph_vectors;
@@ -181,7 +180,6 @@ mod sfrs_gh_control_flow;
 mod sfrs_gh_definitions;
 mod sfrs_gh_environment;
 mod sfrs_gh_ephemeral_body;
-#[cfg(unix)]
 mod sfrs_gh_pr_expansion;
 mod sfrs_gh_pyshim;
 mod sfrs_gh_redirections;
@@ -192,7 +190,6 @@ mod sfrs_gh_shell_vectors;
 mod sfrs_git_audit;
 mod sfrs_git_cached_diff;
 mod sfrs_git_fetch;
-#[cfg(unix)]
 mod sfrs_git_index;
 #[cfg(unix)]
 mod sfrs_git_routines;
@@ -200,6 +197,8 @@ mod sfrs_git_routines;
 mod sfrs_github_body_vectors;
 #[cfg(test)]
 mod sfrs_github_vectors;
+#[cfg(all(test, unix))]
+mod sfrs_host_divergence;
 #[cfg(all(test, unix))]
 mod sfrs_index_vectors;
 mod sfrs_interpreter_heredoc;
@@ -253,7 +252,6 @@ mod sfrs_pytest_target;
 mod sfrs_pytest_vectors;
 mod sfrs_pytest_wrappers;
 mod sfrs_python_imports;
-#[cfg(unix)]
 mod sfrs_quote_parsing;
 mod sfrs_quote_tokens;
 #[cfg(all(test, unix))]
@@ -278,7 +276,6 @@ mod sfrs_self_approval;
 mod sfrs_shell_tokens;
 mod sfrs_shlex;
 mod sfrs_source_edit;
-#[cfg(unix)]
 mod sfrs_source_edit_context;
 mod sfrs_static_safety;
 #[cfg(test)]

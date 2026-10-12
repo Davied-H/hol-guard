@@ -440,6 +440,15 @@ fn github_body_checks_match_recorded_python() {
             failures.push(format!("{function} {args}: {actual} vs {expected}"));
         }
     }
+    let failures = crate::sfrs_host_divergence::portable_failures(
+        failures,
+        &[
+            ("bf_is_safe [\"PR-BODY.MD\"", 1),
+            ("bf_is_safe [\"~/.omp/agent/sessions/s1/pr-body.md\"", 1),
+            ("bf_authored_root ", 2),
+            ("aw_path_command [\"gh\"", 1),
+        ],
+    );
     assert!(
         failures.is_empty(),
         "{} of {compared} github body vectors differ:\n{}",

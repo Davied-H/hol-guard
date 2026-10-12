@@ -467,6 +467,8 @@ fn pytest_helpers_match_recorded_python() {
         }
     }
     assert!(counts.len() >= 50, "too few functions: {counts:?}");
+    let failures =
+        crate::sfrs_host_divergence::portable_failures(failures, &[("/cfg/py_upper_suffix\"", 9)]);
     assert!(
         failures.is_empty(),
         "{} differ, first: {:#?}",

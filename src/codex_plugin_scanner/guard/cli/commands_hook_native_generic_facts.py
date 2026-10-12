@@ -150,8 +150,15 @@ def composition_inputs(
 ) -> dict[str, object]:
     """Payload and configuration facts for the resident composition query."""
 
+    from .commands_support_runtime_artifacts import _hook_event_name
+
     prompt = payload.get("prompt")
-    native_request = _native_request(payload, runtime_workspace, home_dir)
+    # Only PreToolUse verdicts read the raw tool call; other events skip the host probes.
+    native_request = (
+        _native_request(payload, runtime_workspace, home_dir)
+        if _hook_event_name(dict(payload)) == "PreToolUse"
+        else None
+    )
     inputs: dict[str, object] = {
         "harness": harness,
         "canonical_harness": canonical_harness,

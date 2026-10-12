@@ -214,22 +214,26 @@ def test_composition_inputs_forward_raw_tool_call_without_verdicts(tmp_path: Pat
         hook_classifiers,
     )
 
-    payload = {"tool_name": "Read", "tool_input": {"file_path": "a.txt"}}
-    inputs = composition_inputs(
-        cli_action=None,
-        canonical_harness="codex",
-        configured_action="review",
-        has_command_text=True,
-        has_configured_override=False,
-        has_narrow_override=False,
-        harness="codex",
-        home_dir=tmp_path,
-        native_edge_result=None,
-        payload=payload,
-        runtime_artifact_checked=False,
-        runtime_workspace=tmp_path,
-    )
-    request = inputs["native_request"]
+    payload = {"hook_event_name": "PreToolUse", "tool_name": "Read", "tool_input": {"file_path": "a.txt"}}
+
+    def inputs_for(event_payload: dict[str, object]) -> dict[str, object]:
+        return composition_inputs(
+            cli_action=None,
+            canonical_harness="codex",
+            configured_action="review",
+            has_command_text=True,
+            has_configured_override=False,
+            has_narrow_override=False,
+            harness="codex",
+            home_dir=tmp_path,
+            native_edge_result=None,
+            payload=event_payload,
+            runtime_artifact_checked=False,
+            runtime_workspace=tmp_path,
+        )
+
+    assert "native_request" not in inputs_for({**payload, "hook_event_name": "PostToolUse"})
+    request = inputs_for(payload)["native_request"]
     assert isinstance(request, dict)
     assert request["tool_name"] == "Read"
     assert request["tool_input"] == {"file_path": "a.txt"}
