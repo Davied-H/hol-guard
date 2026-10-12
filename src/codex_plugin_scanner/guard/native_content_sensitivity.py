@@ -26,6 +26,7 @@ from .strict_json_pairs import unique_json_object
 
 _RESULT_SCHEMA = "guard-request-context-result.v1"
 _status_memo: tuple[float, object, NativeRuntimeStatus, tuple[int, ...], object] | None = None
+_resolution_memo: dict[tuple[bytes, str, str, int | None], bytes] = {}
 
 
 class NativeContentSensitivityError(RuntimeError, ValueError):
@@ -106,13 +107,20 @@ def content_query(query: str, body: dict[str, Any], *, deadline_monotonic: float
     ):
         raise NativeContentSensitivityError("native_content_sensitivity_unavailable")
     home = _resolve_digest_home(None)
+    owner_uid = None if sys.platform == "win32" else os.geteuid()
+    memo_key = (body_bytes, status.identity.sha256, str(home), owner_uid)
+    if query == "resolution" and (cached := _resolution_memo.get(memo_key)) is not None:
+        result = json.loads(cached)
+        if time.monotonic() >= deadline:
+            raise NativeContentSensitivityDeadlineError("native_content_sensitivity_deadline_exceeded")
+        return result
     request: dict[str, Any] = {
         "schema": "guard-request-context-request.v1",
         "request_id": f"content-sensitivity-{uuid4().hex}",
         "guard_home": str(home),
         "source": "hook",
         "budget_ms": max(1, int((deadline - time.monotonic()) * 1000)),
-        "owner_uid": None if sys.platform == "win32" else os.geteuid(),
+        "owner_uid": owner_uid,
         "action": {"kind": "content_sensitivity", "body": {"query": query, "input": body}},
     }
     try:
@@ -187,6 +195,12 @@ def content_query(query: str, body: dict[str, Any], *, deadline_monotonic: float
     native_record_resident_success(status.identity.sha256, home)
     if "error" in result:
         raise ValueError(result["error"])
+    # Resolution is a pure native DTO of this exact configuration and harness,
+    # not a forwarding grant. Scans, receipts and mediation never use this memo.
+    if query == "resolution" and len(body_bytes) <= 65536:
+        if len(_resolution_memo) >= 64:
+            _resolution_memo.pop(next(iter(_resolution_memo)), None)
+        _resolution_memo[memo_key] = json.dumps(result["ok"], ensure_ascii=False).encode("utf-8")
     return result["ok"]
 
 

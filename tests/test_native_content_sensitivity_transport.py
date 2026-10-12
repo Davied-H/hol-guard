@@ -6,6 +6,7 @@ import base64
 import gzip
 import json
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -15,6 +16,7 @@ from codex_plugin_scanner.guard import native_content_sensitivity as client
 
 
 def _resident(monkeypatch: pytest.MonkeyPatch, mutation: str | None = None) -> list[dict[str, object]]:
+    client._resolution_memo.clear()
     identity = SimpleNamespace(path=Path("fixture-runtime"), sha256="a" * 64)
     status = SimpleNamespace(
         available=True,
@@ -45,6 +47,8 @@ def _resident(monkeypatch: pytest.MonkeyPatch, mutation: str | None = None) -> l
                 "result": {"ok": [] if request["action"]["body"]["query"] == "content" else "b" * 64},
             },
         }
+        if request["action"]["body"]["query"] == "resolution":
+            response["payload"]["result"] = {"ok": {"binding": None, "required": False, "reason_code": None}}
         if mutation == "request":
             response["request_id"] = "different-request"
         elif mutation == "digest":
@@ -136,8 +140,9 @@ def test_state_only_snapshot_never_requires_native_classification(monkeypatch, t
 
     entries = [SimpleNamespace(name=".git"), SimpleNamespace(name=".guard")]
 
+    @contextmanager
     def bounded(*args):
-        yield from entries
+        yield iter(entries)
 
     def unavailable(*args, **kwargs):
         raise client.NativeContentSensitivityError("offline")
@@ -155,8 +160,9 @@ def test_mixed_snapshot_classifies_only_eligible_entries_in_original_order(monke
 
     entries = [SimpleNamespace(name=name) for name in [".GIT", "ordinary", ".env", ".guard"]]
 
+    @contextmanager
     def bounded(*args):
-        yield from entries
+        yield iter(entries)
 
     calls = []
 
@@ -171,6 +177,21 @@ def test_mixed_snapshot_classifies_only_eligible_entries_in_original_order(monke
         zip(entries, [False, False, True, False], strict=True)
     )
     assert calls == [["ordinary", ".env"]]
+
+
+def test_partial_snapshot_batch_keeps_directory_descriptor_alive(monkeypatch, tmp_path):
+    from codex_plugin_scanner.guard.runtime import workspace_snapshot_inputs as snapshots
+
+    (tmp_path / "ordinary.txt").write_text("ordinary")
+    (tmp_path / "second.txt").write_text("second")
+    stat = tmp_path.stat()
+    monkeypatch.setattr(snapshots, "classify_secret_paths_batch", lambda paths, **kwargs: [None] * len(paths))
+    records = []
+    for entry, protected in snapshots._classified_entries(
+        tmp_path, (stat.st_dev, stat.st_ino), tmp_path, time.monotonic(), [0]
+    ):
+        records.append((entry.name, entry.stat(follow_symlinks=False).st_size, protected))
+    assert sorted(records) == [("ordinary.txt", 8, False), ("second.txt", 6, False)]
 
 
 @pytest.mark.parametrize("text", ["x" * (5 * 1024 * 1024), '\\"' * (5 * 512 * 1024), "界" * (5 * 1024 * 1024 // 3)])
@@ -304,3 +325,24 @@ def test_status_probe_has_request_deadline_and_memo_expires_on_binary_or_manifes
     monkeypatch.setattr(client, "_scoped_manifest_still_valid", lambda _: False)
     client.content_query("content_version", {}, deadline_monotonic=deadline)
     assert len(probes) == 3
+
+
+def test_pure_resolution_memo_binds_input_runtime_and_home_without_caching_grants(monkeypatch):
+    calls = _resident(monkeypatch)
+    body = {"config": {}, "harness": "pi"}
+    result = client.content_query("resolution", body)
+    result["required"] = True
+    assert client.content_query("resolution", body)["required"] is False
+    assert len(calls) == 1
+    client.content_query("resolution", {"config": {}, "harness": "omp"})
+    client.content_query("resolution", {"config": {"managed_policy_status": "invalid"}, "harness": "pi"})
+    status = client.native_runtime_status()
+    status.identity.sha256 = "c" * 64
+    client.content_query("resolution", body)
+    monkeypatch.setattr(client, "_resolve_digest_home", lambda _: Path("different-home").absolute())
+    client.content_query("resolution", body)
+    assert len(calls) == 5
+    status.available = False
+    with pytest.raises(client.NativeContentSensitivityError):
+        client.content_query("resolution", body)
+    assert len(calls) == 5
