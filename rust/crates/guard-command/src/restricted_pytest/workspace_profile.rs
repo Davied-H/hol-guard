@@ -97,7 +97,7 @@ fn alternatives(names: &[&str]) -> Result<String, RestrictedPytestError> {
 /// Git execution configuration at any depth, so nested repositories are
 /// covered. The trailing `?$` also denies creating, renaming or deleting the
 /// `.git` entry itself, which blocks gitfile redirects and directory swaps.
-pub(super) fn git_exec_pattern(workspace: &Path) -> Result<String, RestrictedPytestError> {
+pub(crate) fn git_exec_pattern(workspace: &Path) -> Result<String, RestrictedPytestError> {
     let root = ci(&workspace.to_string_lossy())?;
     let git = ci(".git")?;
     let config = format!("{}({}|{})?", ci("config")?, ci(".worktree")?, ci(".lock")?);
@@ -108,7 +108,7 @@ pub(super) fn git_exec_pattern(workspace: &Path) -> Result<String, RestrictedPyt
     ))
 }
 
-pub(super) fn protected_patterns(workspace: &Path) -> Result<Vec<String>, RestrictedPytestError> {
+pub(crate) fn protected_patterns(workspace: &Path) -> Result<Vec<String>, RestrictedPytestError> {
     let root = ci(&workspace.to_string_lossy())?;
     Ok(vec![
         format!(

@@ -1,0 +1,222 @@
+use super::*;
+
+struct Layers {
+    workspace: PathBuf,
+    upper: PathBuf,
+}
+
+fn layers(name: &str) -> Layers {
+    let root = std::env::temp_dir().join(format!("guard-ov-{}-{name}", std::process::id()));
+    let _ = fs::remove_dir_all(&root);
+    let workspace = root.join("ws");
+    let upper = root.join("upper");
+    fs::create_dir_all(&workspace).unwrap();
+    fs::create_dir_all(&upper).unwrap();
+    Layers {
+        workspace: workspace.canonicalize().unwrap(),
+        upper: upper.canonicalize().unwrap(),
+    }
+}
+
+fn write(path: &Path, text: &str) {
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, text).unwrap();
+}
+
+#[cfg(target_os = "linux")]
+fn whiteout(path: &Path) {
+    use std::os::unix::ffi::OsStrExt;
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let path = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+    // SAFETY: `path` is NUL-terminated; a 0/0 character device is the
+    // overlay whiteout, which unprivileged users may create.
+    assert_eq!(
+        unsafe { libc::mknod(path.as_ptr(), libc::S_IFCHR | 0o600, 0) },
+        0
+    );
+}
+
+#[cfg(target_os = "linux")]
+fn opaque(path: &Path) {
+    use std::os::unix::ffi::OsStrExt;
+    fs::create_dir_all(path).unwrap();
+    let path = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+    let name = std::ffi::CString::new("user.overlay.opaque").unwrap();
+    // SAFETY: both strings are NUL-terminated and the value is one byte.
+    let set = unsafe { libc::setxattr(path.as_ptr(), name.as_ptr(), b"y".as_ptr().cast(), 1, 0) };
+    assert_eq!(set, 0);
+}
+
+#[test]
+fn ordinary_changes_are_applied() {
+    let l = layers("ordinary");
+    write(&l.workspace.join("a.txt"), "old");
+    write(&l.workspace.join(".git/HEAD"), "ref: refs/heads/main\n");
+    write(&l.upper.join("a.txt"), "new");
+    write(&l.upper.join("src/main.py"), "print(1)\n");
+    write(&l.upper.join(".git/index"), "index");
+    std::os::unix::fs::symlink("a.txt", l.upper.join("link")).unwrap();
+    fs::set_permissions(l.upper.join("src"), fs::Permissions::from_mode(0o755)).unwrap();
+    assert_eq!(apply(&l.upper, &l.workspace, &[]).unwrap(), 6);
+    assert_eq!(
+        fs::read_to_string(l.workspace.join("a.txt")).unwrap(),
+        "new"
+    );
+    assert_eq!(
+        fs::read_to_string(l.workspace.join("src/main.py")).unwrap(),
+        "print(1)\n"
+    );
+    assert_eq!(
+        fs::read_to_string(l.workspace.join(".git/index")).unwrap(),
+        "index"
+    );
+    assert_eq!(
+        fs::read_link(l.workspace.join("link")).unwrap(),
+        Path::new("a.txt")
+    );
+    let mode = l.workspace.join("src").metadata().unwrap().mode() & 0o777;
+    assert_eq!(mode, 0o755);
+    let leftovers: Vec<_> = fs::read_dir(&l.workspace)
+        .unwrap()
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".hol-guard-")
+        })
+        .collect();
+    assert!(leftovers.is_empty());
+}
+
+#[test]
+fn one_protected_change_discards_the_whole_run() {
+    for (index, protected) in [
+        ".git/hooks/pre-commit",
+        ".git/config",
+        "sub/.git/config",
+        ".env",
+        "config/.env.local",
+        "deploy.key",
+        ".ssh/id_ed25519",
+        ".claude/settings.json",
+        ".vscode/tasks.json",
+        "AGENTS.md",
+        ".github/workflows/ci.yml",
+        "tools/mon",
+    ]
+    .iter()
+    .enumerate()
+    {
+        let l = layers(&format!("protected-{index}"));
+        write(&l.workspace.join(".git/HEAD"), "ref: refs/heads/main\n");
+        fs::create_dir_all(l.workspace.join(".git/hooks")).unwrap();
+        write(&l.upper.join("ok.txt"), "x");
+        write(&l.upper.join(protected), "x");
+        let denials = [l.workspace.join("tools/mon")];
+        let error = apply(&l.upper, &l.workspace, &denials).unwrap_err();
+        assert_eq!(error.reason_code, WRITE_DENIED_REASON_CODE, "{protected}");
+        assert!(!l.workspace.join("ok.txt").exists(), "{protected}");
+    }
+}
+
+#[test]
+fn creating_a_repository_entry_is_denied() {
+    let l = layers("nested-git");
+    fs::create_dir_all(l.upper.join("vendor/.git")).unwrap();
+    assert!(apply(&l.upper, &l.workspace, &[]).is_err());
+    assert!(!l.workspace.join("vendor").exists());
+}
+
+#[test]
+fn a_file_replacing_a_directory_checks_what_it_removes() {
+    let l = layers("replace-dir");
+    write(&l.workspace.join("pkg/.git/config"), "[core]\n");
+    write(&l.upper.join("pkg"), "file");
+    assert!(apply(&l.upper, &l.workspace, &[]).is_err());
+    assert!(l.workspace.join("pkg/.git/config").exists());
+    let l = layers("replace-plain-dir");
+    write(&l.workspace.join("build/out.js"), "x");
+    write(&l.upper.join("build"), "file");
+    apply(&l.upper, &l.workspace, &[]).unwrap();
+    assert_eq!(
+        fs::read_to_string(l.workspace.join("build")).unwrap(),
+        "file"
+    );
+}
+
+#[test]
+fn special_files_are_refused() {
+    let l = layers("fifo");
+    let path = std::ffi::CString::new(
+        l.upper
+            .join("pipe")
+            .to_string_lossy()
+            .into_owned()
+            .into_bytes(),
+    )
+    .unwrap();
+    // SAFETY: `path` is NUL-terminated.
+    assert_eq!(unsafe { libc::mkfifo(path.as_ptr(), 0o600) }, 0);
+    assert!(apply(&l.upper, &l.workspace, &[]).is_err());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn whiteouts_delete_and_check_the_removed_tree() {
+    let l = layers("whiteout");
+    write(&l.workspace.join("gone.txt"), "x");
+    write(&l.workspace.join("dist/app.js"), "x");
+    whiteout(&l.upper.join("gone.txt"));
+    whiteout(&l.upper.join("dist"));
+    assert_eq!(apply(&l.upper, &l.workspace, &[]).unwrap(), 2);
+    assert!(!l.workspace.join("gone.txt").exists());
+    assert!(!l.workspace.join("dist").exists());
+
+    let l = layers("whiteout-repo");
+    write(&l.workspace.join("sub/.git/hooks/post-checkout"), "x");
+    write(&l.workspace.join("other.txt"), "x");
+    whiteout(&l.upper.join("sub"));
+    whiteout(&l.upper.join("other.txt"));
+    assert!(apply(&l.upper, &l.workspace, &[]).is_err());
+    assert!(l.workspace.join("sub/.git/hooks/post-checkout").exists());
+    assert!(l.workspace.join("other.txt").exists());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn opaque_directories_replace_their_lower_contents() {
+    let l = layers("opaque");
+    write(&l.workspace.join("d/old.txt"), "x");
+    opaque(&l.upper.join("d"));
+    write(&l.upper.join("d/new.txt"), "y");
+    apply(&l.upper, &l.workspace, &[]).unwrap();
+    assert!(!l.workspace.join("d/old.txt").exists());
+    assert_eq!(
+        fs::read_to_string(l.workspace.join("d/new.txt")).unwrap(),
+        "y"
+    );
+
+    let l = layers("opaque-repo");
+    write(&l.workspace.join("d/.git/config"), "[core]\n");
+    opaque(&l.upper.join("d"));
+    assert!(apply(&l.upper, &l.workspace, &[]).is_err());
+    assert!(l.workspace.join("d/.git/config").exists());
+}
+
+#[test]
+fn requests_must_keep_the_layers_apart() {
+    let l = layers("request");
+    let reply = evaluate(
+        "apply_workspace_overlay",
+        &json!({"workspace": l.workspace, "upper": l.workspace.join("u"), "write_denials": []}),
+    )
+    .unwrap();
+    assert_eq!(reply["reason_code"], PYTEST_INVALID_COMMAND_REASON_CODE);
+    let reply = evaluate(
+        "apply_workspace_overlay",
+        &json!({"workspace": l.workspace, "upper": l.upper, "write_denials": [], "search_path": ""}),
+    )
+    .unwrap();
+    assert_eq!(reply["value"]["applied"], 0);
+}
