@@ -8,12 +8,17 @@ verdict, and its boolean is a fact, not a decision.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
 _EVENT_KEYS = ("event", "hook_event_name", "hookEventName", "hook_name")
+# The resident refuses a tool input above 64 KiB, and the hook-decision envelope
+# is capped at 256 KiB; an oversized request is omitted rather than sent.
+_MAX_TOOL_INPUT_BYTES = 64 * 1024
+_MAX_NATIVE_REQUEST_BYTES = 128 * 1024
 
 
 def hook_classifiers(
@@ -106,9 +111,12 @@ def _native_request(
         }
     except (OSError, RuntimeError):
         return None
+    tool_input = payload.get("tool_input", payload.get("arguments"))
+    if _encoded_size(tool_input) > _MAX_TOOL_INPUT_BYTES:
+        return None
     request: dict[str, object] = {
         "tool_name": payload.get("tool_name"),
-        "tool_input": payload.get("tool_input", payload.get("arguments")),
+        "tool_input": tool_input,
         "cwd": None if runtime_workspace is None else str(runtime_workspace),
         "home_dir": None if home_dir is None else str(home_dir),
         "host": host,
@@ -116,7 +124,14 @@ def _native_request(
     control_snapshot = _control_snapshot()
     if control_snapshot is not None:
         request["control_snapshot"] = control_snapshot
-    return request
+    return request if _encoded_size(request) <= _MAX_NATIVE_REQUEST_BYTES else None
+
+
+def _encoded_size(value: object) -> int:
+    try:
+        return len(json.dumps(value, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))
+    except (TypeError, ValueError):
+        return _MAX_NATIVE_REQUEST_BYTES + 1
 
 
 def _control_snapshot() -> dict[str, object] | None:

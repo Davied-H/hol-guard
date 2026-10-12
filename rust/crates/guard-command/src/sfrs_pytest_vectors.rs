@@ -379,7 +379,7 @@ fn run_binary(function: &str, a: &[Value], ctx: &Ctx) -> Option<Value> {
             bin::looks_like_safe_python_module_invocation(&parts(), cwd(&a[1]), ctx).into()
         }
         "looks_like_bounded_python_script_invocation" => {
-            bin::looks_like_bounded_python_script_invocation(&parts(), cwd(&a[1])).into()
+            bin::looks_like_bounded_python_script_invocation(&parts(), cwd(&a[1]), ctx).into()
         }
         "looks_like_supported_python_invocation" => {
             bin::looks_like_supported_python_invocation(&parts(), cwd(&a[1]), ctx).into()
@@ -388,7 +388,7 @@ fn run_binary(function: &str, a: &[Value], ctx: &Ctx) -> Option<Value> {
             bin::looks_like_safe_pytest_binary_invocation(&parts(), cwd(&a[1]), ctx).into()
         }
         "bounded_python_script_path" => optional(
-            bin::bounded_python_script_path(&strings(&a[0]), Path::new(text(&a[1])))
+            bin::bounded_python_script_path(&strings(&a[0]), Path::new(text(&a[1])), ctx)
                 .map(|path| path.to_string_lossy().into_owned()),
         ),
         "pytest_binary_segment_is_safe" => {

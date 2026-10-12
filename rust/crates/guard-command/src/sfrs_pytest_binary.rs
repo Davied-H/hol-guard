@@ -134,6 +134,7 @@ pub(crate) fn looks_like_safe_python_module_invocation(
 pub(crate) fn looks_like_bounded_python_script_invocation(
     parts: &[String],
     cwd: Option<&Path>,
+    ctx: &Ctx,
 ) -> bool {
     let Some(cwd) = cwd else { return false };
     let Some(segments) = segment_commands(parts) else {
@@ -146,7 +147,7 @@ pub(crate) fn looks_like_bounded_python_script_invocation(
     for (segment, command_name, command_index) in &segments {
         let segment_args = &segment[command_index + 1..];
         if is_python_interpreter_command(command_name) {
-            if saw_script || bounded_python_script_path(segment_args, cwd).is_none() {
+            if saw_script || bounded_python_script_path(segment_args, cwd, ctx).is_none() {
                 return false;
             }
             saw_script = true;
@@ -166,15 +167,15 @@ pub(crate) fn looks_like_supported_python_invocation(
     cwd: Option<&Path>,
     ctx: &Ctx,
 ) -> bool {
-    looks_like_bounded_python_script_invocation(parts, cwd)
+    looks_like_bounded_python_script_invocation(parts, cwd, ctx)
         || looks_like_safe_python_module_invocation(parts, cwd, ctx)
 }
 
-/// `Path(operand).expanduser()`; a user-name home is not looked up and
-/// leaves the operand relative, which the caller then rejects.
-fn expand_user(operand: &str) -> PathBuf {
+/// `Path(operand).expanduser()` with the caller's `HOME`; a user-name home is
+/// not looked up and leaves the operand relative, which the caller then rejects.
+fn expand_user(operand: &str, ctx: &Ctx) -> PathBuf {
     if operand == "~" || operand.starts_with("~/") {
-        if let Some(home) = std::env::var_os("HOME").filter(|home| !home.is_empty()) {
+        if let Some(home) = ctx.host.env("HOME").filter(|home| !home.is_empty()) {
             let rest = operand[1..].trim_start_matches('/');
             return PathBuf::from(home).join(rest);
         }
@@ -183,7 +184,11 @@ fn expand_user(operand: &str) -> PathBuf {
 }
 
 /// `_bounded_python_script_path`.
-pub(crate) fn bounded_python_script_path(args: &[String], cwd: &Path) -> Option<PathBuf> {
+pub(crate) fn bounded_python_script_path(
+    args: &[String],
+    cwd: &Path,
+    ctx: &Ctx,
+) -> Option<PathBuf> {
     let args = shell_args_without_trailing_redirections(args);
     let mut index = 0;
     while index < args.len() {
@@ -221,7 +226,7 @@ pub(crate) fn bounded_python_script_path(args: &[String], cwd: &Path) -> Option<
     {
         return None;
     }
-    let mut candidate = expand_user(operand);
+    let mut candidate = expand_user(operand, ctx);
     if !candidate.is_absolute() {
         candidate = cwd.join(candidate);
     }

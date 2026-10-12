@@ -30,6 +30,9 @@ from typing import Any
 
 _OUT = Path(os.environ.get("SFRS_VECTOR_OUT", "/tmp/sfrs-vectors-raw.jsonl"))
 _ROOT = os.environ.get("SFRS_VECTOR_ROOT", "")
+# The recording shell's own ripgrep config is not a case input; only a value a
+# test sets is recorded.
+_AMBIENT_RIPGREP_CONFIG = os.environ.get("RIPGREP_CONFIG_PATH")
 _MAX_ENTRIES = 400
 _MAX_FILE_BYTES = 65536
 _MAX_DEPTH = 5
@@ -225,7 +228,7 @@ def _env_snapshot() -> dict[str, str | None]:
     home = os.environ.get("HOME")
     snapshot: dict[str, str | None] = {"HOME": home if home is not None and _under_root(home) else None}
     ripgrep_config = os.environ.get("RIPGREP_CONFIG_PATH")
-    if ripgrep_config:
+    if ripgrep_config and ripgrep_config != _AMBIENT_RIPGREP_CONFIG:
         snapshot["RIPGREP_CONFIG_PATH"] = ripgrep_config
     path_entries = os.environ.get("PATH", "").split(os.pathsep)
     if any(entry and _under_root(entry) for entry in path_entries):
