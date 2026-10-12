@@ -21,8 +21,17 @@ fn home() -> PathBuf {
     let home = root.join("home");
     std::fs::create_dir_all(home.join("project/sub")).unwrap();
     std::fs::create_dir_all(home.join("bin")).unwrap();
-    std::fs::write(home.join("bin/bun"), "#!/bin/sh\n").unwrap();
+    let bun = home.join("bin/bun");
+    std::fs::write(&bun, "#!/bin/sh\n").unwrap();
+    set_executable(&bun);
     std::fs::canonicalize(home).unwrap()
+}
+
+fn set_executable(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let mut permissions = std::fs::metadata(path).unwrap().permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(path, permissions).unwrap();
 }
 
 fn environment(
@@ -136,6 +145,9 @@ fn any_preload_source_keeps_the_review() {
         ".config/.bunfig.toml",
     ] {
         let file = home.join(config);
+        if let Some(parent) = file.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
         std::fs::write(&file, "preload = [\"./x.js\"]\n").unwrap();
         let result = classify(&home, "project/sub", Some(&plain), "zcode", command);
         assert_ne!(result.decision, "allow", "{config}");
@@ -143,6 +155,66 @@ fn any_preload_source_keeps_the_review() {
     }
     assert_eq!(
         classify(&home, "project/sub", Some(&plain), "zcode", command).decision,
+        "allow"
+    );
+    // A relative or empty PATH entry can hide a repository `bun`.
+    let relative = format!(".:{}", home.join("bin").display());
+    let relative = environment(&home, Path::new(&relative), &["HOME", "PATH"]);
+    assert_ne!(
+        classify(&home, "project", Some(&relative), "zcode", command).decision,
+        "allow"
+    );
+    // The shell skips a non-executable file and can then run a project `bun`.
+    let decoy = home.join("decoy");
+    std::fs::create_dir_all(&decoy).unwrap();
+    std::fs::write(decoy.join("bun"), "#!/bin/sh\n").unwrap();
+    let project_bun = home.join("project/bun");
+    std::fs::write(&project_bun, "#!/bin/sh\n").unwrap();
+    set_executable(&project_bun);
+    let skipped = format!("{}:{}", decoy.display(), home.join("project").display());
+    let skipped = environment(&home, Path::new(&skipped), &["HOME", "PATH"]);
+    assert_ne!(
+        classify(&home, "project", Some(&skipped), "zcode", command).decision,
+        "allow"
+    );
+    // `bun` above the cwd and inside the repository is still the project's.
+    std::fs::create_dir_all(home.join("project/.git")).unwrap();
+    let repo_bin = home.join("project/node_modules/.bin");
+    std::fs::create_dir_all(&repo_bin).unwrap();
+    let repo_bun = repo_bin.join("bun");
+    std::fs::write(&repo_bun, "#!/bin/sh\n").unwrap();
+    set_executable(&repo_bun);
+    let repo = environment(&home, &repo_bin, &["HOME", "PATH"]);
+    assert_ne!(
+        classify(&home, "project/sub", Some(&repo), "zcode", command).decision,
+        "allow"
+    );
+    for name in ["LD_PRELOAD", "LD_AUDIT", "DYLD_INSERT_LIBRARIES"] {
+        let injected = environment(&home, &home.join("bin"), &["HOME", "PATH", name]);
+        assert_ne!(
+            classify(&home, "project", Some(&injected), "zcode", command).decision,
+            "allow",
+            "{name}"
+        );
+    }
+    let stamped = home.join("stamped-home");
+    std::fs::create_dir_all(stamped.join(".config")).unwrap();
+    std::fs::write(
+        stamped.join(".config/.bunfig.toml"),
+        "preload = [\"./x.js\"]\n",
+    )
+    .unwrap();
+    let mut stamped_environment = environment(&home, &home.join("bin"), &["HOME", "PATH"]);
+    stamped_environment.home = Some(stamped.to_str().unwrap().to_owned());
+    assert_ne!(
+        classify(
+            &home,
+            "project",
+            Some(&stamped_environment),
+            "zcode",
+            command
+        )
+        .decision,
         "allow"
     );
 }
@@ -154,13 +226,26 @@ fn node_prints_accept_the_same_constants() {
     for command in [
         "node -e \"console.log('node-ok', 1+1)\"",
         "node -e 'console.log(process.version)'",
-        "python3 -c \"print('py-ok', 2)\"",
     ] {
         let result = classify(&home, "project", Some(&plain), "codex", command);
         assert_eq!(result.decision, "allow", "{command}");
     }
+    let preloaded = environment(&home, &home.join("bin"), &["HOME", "PATH", "NODE_OPTIONS"]);
+    assert_ne!(
+        classify(
+            &home,
+            "project",
+            Some(&preloaded),
+            "codex",
+            "node -e 'console.log(process.version)'"
+        )
+        .decision,
+        "allow"
+    );
     for command in [
         "node -e \"console.log(Bun.version)\"",
+        "python3 -c \"print('py-ok', 2)\"",
+        "python3 -c \"print('aws batch delete-job --job-id example')\"",
         "python3 -c \"print('ok', open('.env').read())\"",
         "python3 -c \"print(process.version)\"",
     ] {

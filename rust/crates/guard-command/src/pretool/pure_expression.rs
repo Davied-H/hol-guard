@@ -102,10 +102,13 @@ pub(super) fn safe_inline_expression(executable: &str, arguments: &[String]) -> 
         return false;
     };
     let arguments = top_level_arguments(source);
+    // A Python string print stays under review. The text can be a quoted
+    // command, and this proof does not attest the interpreter or its startup.
+    let strings_are_data = matches!(executable, "node" | "nodejs" | "bun");
     arguments.len() <= 8
         && arguments.iter().all(|argument| {
             numeric_source(argument)
-                || plain_string_literal(argument)
+                || (strings_are_data && plain_string_literal(argument))
                 || runtime_fact(executable, argument)
         })
 }

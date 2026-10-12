@@ -41,23 +41,67 @@ pub(super) fn exact_safe_command(
         && !environment
             .environment_names
             .iter()
-            .any(|name| name.eq_ignore_ascii_case("BUN_OPTIONS"))
-        && resolved_outside_workspace(&environment.path, &cwd)
+            .any(stamped_loader_name)
+        && resolved_outside_workspace(&environment.path, &cwd, &home)
         && !preload_config_present(environment, &home, &cwd)
 }
 
-/// The `bun` the shell runs comes from an absolute `PATH` entry outside the
-/// working directory, so the repository cannot supply its own `bun`.
-fn resolved_outside_workspace(path: &str, cwd: &Path) -> bool {
+/// `BUN_OPTIONS` and dynamic-loader injection run code before the print.
+fn stamped_loader_name(name: &String) -> bool {
+    name.eq_ignore_ascii_case("BUN_OPTIONS")
+        || matches!(
+            name.to_ascii_uppercase().as_str(),
+            "LD_PRELOAD" | "LD_AUDIT" | "DYLD_INSERT_LIBRARIES"
+        )
+}
+
+/// The `bun` the shell executes comes from an absolute `PATH` entry, and that
+/// file is outside the repository that contains the working directory.
+fn resolved_outside_workspace(path: &str, cwd: &Path, home: &Path) -> bool {
+    let root = repository_root(cwd, home);
     for directory in std::env::split_paths(path) {
+        // An empty or relative entry is resolved by the shell against the
+        // command cwd. Skipping it would let a later absolute `bun` hide one
+        // the repository supplies.
+        if !directory.is_absolute() {
+            return false;
+        }
         let candidate = directory.join("bun");
-        if !candidate.is_file() {
+        if !executable_file(&candidate) {
             continue;
         }
-        return directory.is_absolute()
-            && std::fs::canonicalize(&candidate).is_ok_and(|binary| !binary.starts_with(cwd));
+        return std::fs::canonicalize(&candidate).is_ok_and(|binary| !binary.starts_with(root));
     }
     false
+}
+
+/// Outermost `.git` ancestor of `cwd` that does not contain the session home.
+///
+/// The session home often lives inside a checkout. That checkout's `.git` is
+/// not the repository the command is running in.
+fn repository_root<'a>(cwd: &'a Path, home: &'a Path) -> &'a Path {
+    cwd.ancestors()
+        .filter(|ancestor| {
+            !home.starts_with(ancestor) && std::fs::symlink_metadata(ancestor.join(".git")).is_ok()
+        })
+        .last()
+        .unwrap_or(cwd)
+}
+
+fn executable_file(candidate: &Path) -> bool {
+    let Ok(metadata) = std::fs::metadata(candidate) else {
+        return false;
+    };
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        metadata.is_file() && metadata.permissions().mode() & 0o111 != 0
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = metadata;
+        false
+    }
 }
 
 /// Any Bun configuration that could name a preload. Bun reads `bunfig.toml`
@@ -85,6 +129,9 @@ fn preload_config_present(
         candidates.push(Path::new(xdg).join(".bunfig.toml"));
     } else {
         candidates.push(home.join(".config/.bunfig.toml"));
+        if let Some(shell_home) = environment.home.as_deref() {
+            candidates.push(Path::new(shell_home).join(".config/.bunfig.toml"));
+        }
     }
     candidates.iter().any(|candidate| {
         std::fs::symlink_metadata(candidate).map_or_else(
