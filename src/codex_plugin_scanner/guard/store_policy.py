@@ -71,6 +71,7 @@ APPROVAL_REUSE_DIAGNOSTIC_UNAVAILABLE_REASON = "approval_reuse_integrity_failure
 
 POLICY_DECISION_LOOKUP_FEATURE = "policy-decision-lookup-v1"
 _RESIDENT_VERDICT_ATTEMPTS = 6
+_DEGRADED_AUTHORITY_REVISION = -1
 
 
 @dataclass(frozen=True)
@@ -103,6 +104,21 @@ def _degraded_lookup_evidence(
         degraded_trust_status=TrustStatus.from_policy_integrity_state(integrity_state).to_dict(),
         has_saved_rows=has_saved_rows,
     )
+
+
+def _remembered_rules_disabled(lookup: PolicyDecisionLookupResult) -> bool:
+    """Whether the lookup is the empty answer of a home that serves no authority."""
+
+    return (
+        lookup["decision"] is None
+        and lookup["authority_revision"] == _DEGRADED_AUTHORITY_REVISION
+        and lookup["trust_status"].get("remembered_rules") == "disabled_degraded"
+    )
+
+
+def _remembered_rules_disabled(lookup: PolicyDecisionLookupResult) -> bool:
+    trust = lookup.get("trust_status")
+    return isinstance(trust, dict) and trust.get("remembered_rules") == "disabled_degraded"
 
 
 def memory_lookup_candidates(
@@ -947,6 +963,10 @@ class StorePolicyMixin:
             consume_one_shot=consume_one_shot,
         )
         candidate_lookups = [direct_lookup]
+        # A degraded store honors no saved decision, so the remembered-decision
+        # probes cannot change the answer and need no resident fingerprint.
+        if _remembered_rules_disabled(direct_lookup):
+            return direct_lookup
         if consume_one_shot and (
             direct_lookup["decision"] is not None or direct_lookup.get("ignored_local_integrity") is not None
         ):
@@ -1061,7 +1081,7 @@ class StorePolicyMixin:
                 "decision": None,
                 "ignored_local_integrity": None,
                 "trust_status": evidence.degraded_trust_status,
-                "authority_revision": -1,
+                "authority_revision": _DEGRADED_AUTHORITY_REVISION,
             }
 
         request: dict[str, object] = {
