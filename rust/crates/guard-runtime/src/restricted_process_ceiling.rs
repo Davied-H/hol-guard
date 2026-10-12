@@ -54,6 +54,27 @@ fn status_bytes(reader: impl std::io::Read) -> Result<Option<Vec<u8>>, ()> {
 }
 
 #[cfg(target_os = "linux")]
+fn status_threads(bytes: &[u8], uid: u32) -> Result<Option<u64>, ()> {
+    let field = |prefix: &[u8]| {
+        bytes
+            .split(|byte| *byte == b'\n')
+            .find_map(|line| line.strip_prefix(prefix))
+            .and_then(|line| std::str::from_utf8(line).ok())
+    };
+    let real_uid = field(b"Uid:")
+        .and_then(|v| v.split_whitespace().next())
+        .and_then(|v| v.parse::<u32>().ok())
+        .ok_or(())?;
+    if real_uid != uid {
+        return Ok(None);
+    }
+    field(b"Threads:")
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .map(Some)
+        .ok_or(())
+}
+
+#[cfg(target_os = "linux")]
 fn measure(deadline: Instant) -> Result<u64, ()> {
     use std::fs::File;
     let uid = nix::unistd::getuid().as_raw();
@@ -82,21 +103,9 @@ fn measure(deadline: Instant) -> Result<u64, ()> {
         let Some(bytes) = status_bytes(file)? else {
             continue;
         };
-        let text = std::str::from_utf8(&bytes).map_err(|_| ())?;
-        let real_uid = text
-            .lines()
-            .find_map(|v| v.strip_prefix("Uid:"))
-            .and_then(|v| v.split_whitespace().next())
-            .and_then(|v| v.parse::<u32>().ok())
-            .ok_or(())?;
-        if real_uid != uid {
+        let Some(threads) = status_threads(&bytes, uid)? else {
             continue;
-        }
-        let threads = text
-            .lines()
-            .find_map(|v| v.strip_prefix("Threads:"))
-            .and_then(|v| v.trim().parse::<u64>().ok())
-            .ok_or(())?;
+        };
         total = total.checked_add(threads).ok_or(())?;
     }
     if total == 0 || Instant::now() >= deadline {
@@ -152,5 +161,21 @@ mod tests {
                 .unwrap(),
             b"Uid:\t1000\nThreads:\t2\n"
         );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn process_names_do_not_change_numeric_status_evidence() {
+        let status = b"Name:\tbroken-\xf0\x9f\nUid:\t1000\t1000\t1000\t1000\nThreads:\t2\n";
+        assert_eq!(status_threads(status, 1000), Ok(Some(2)));
+        assert_eq!(status_threads(status, 1001), Ok(None));
+        assert_eq!(
+            status_threads(b"Name:\xff\nUid:\t1001\nThreads:\xff\n", 1000),
+            Ok(None)
+        );
+        assert!(status_threads(b"Name:\xff\nThreads:\t2\n", 1000).is_err());
+        assert!(status_threads(b"Uid:\xff\nThreads:\t2\n", 1000).is_err());
+        assert!(status_threads(b"Uid:\t1000\nThreads:\xff\n", 1000).is_err());
+        assert!(status_threads(b"Uid:\t1000\n", 1000).is_err());
     }
 }
