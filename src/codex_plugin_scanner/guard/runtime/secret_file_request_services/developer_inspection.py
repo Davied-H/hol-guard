@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
@@ -28,19 +28,26 @@ class DeveloperShellSegmentEffect:
     effect: DeveloperShellEffect
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class DeveloperShellEffectGraph:
     """Complete, ordered proof that every shell segment is a bounded observer."""
 
+    __slots__ = ("context", "segments", "_native_observation")
     context: ShellExecutionContext
     segments: tuple[DeveloperShellSegmentEffect, ...]
 
-    _native_observation: bool | None = field(default=None, init=False, compare=False, repr=False)
+    def __getstate__(self) -> list[object]:
+        return [self.context, self.segments]
+
+    def __setstate__(self, state: list[object]) -> None:
+        object.__setattr__(self, "context", state[0])
+        object.__setattr__(self, "segments", state[1])
 
     @property
     def has_observation(self) -> bool:
-        if self._native_observation is not None:
-            return self._native_observation
+        observation = getattr(self, "_native_observation", None)
+        if observation is not None:
+            return observation
         return developer_inspection_authority(
             "_graph_has_observation", {"context": self.context, "segments": self.segments}
         )

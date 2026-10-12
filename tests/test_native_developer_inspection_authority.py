@@ -1,5 +1,7 @@
 """Hosted transport regressions for native whole-command developer proofs."""
 
+import pickle
+from dataclasses import asdict
 from pathlib import Path
 
 import pytest
@@ -69,6 +71,8 @@ def test_graph_observation_is_presented_from_native_authority(bridge):
     assert graph.has_observation is False
     assert graph.context.native is not None
     assert len(calls) == 1
+    assert set(asdict(graph)) == {"context", "segments"}
+    assert pickle.loads(pickle.dumps(graph)) == graph
 
 
 def test_filesystem_proofs_are_never_cached(bridge):
