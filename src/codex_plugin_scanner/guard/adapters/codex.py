@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sys
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
@@ -216,6 +217,11 @@ def _daemon_start_command(
 
 
 def _native_bridge_executable() -> Path | None:
+    # HOL_GUARD_CODEX_HOOK_BRIDGE=python keeps the Python bridge argv. Contract
+    # tests set it so a subprocess install and the parent verifier agree. The
+    # Python bridge is the same fallback used when the native runtime is absent.
+    if os.environ.get("HOL_GUARD_CODEX_HOOK_BRIDGE") == "python":
+        return None
     return native_hook_bridge_executable(NATIVE_CODEX_HOOK_FEATURE)
 
 

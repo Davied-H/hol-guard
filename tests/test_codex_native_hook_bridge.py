@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import io
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -95,6 +97,64 @@ def test_hook_uses_the_native_bridge_when_the_runtime_offers_it(
     assert python_bridge_argv(list(argv)) == list(argv[2:])
     # The trust hash names the Python bridge either way.
     assert bridge_argv_sha256(list(argv)) == bridge_argv_sha256(list(argv[2:]))
+
+
+@pytest.mark.native_codex_hook_bridge
+@pytest.mark.skipif(sys.platform == "win32", reason="the native Codex bridge is POSIX-only")
+def test_python_bridge_pin_keeps_the_python_argv_when_native_is_offered(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOL_GUARD_CODEX_HOOK_BRIDGE", "python")
+    argv = _hook_argv(tmp_path, monkeypatch, (NATIVE_CODEX_HOOK_FEATURE,))
+
+    assert argv[:2] == (sys.executable, "-I")
+    assert python_bridge_argv(list(argv)) == list(argv)
+
+
+def test_python_bridge_pin_skips_native_selection_in_a_fresh_process() -> None:
+    """A subprocess installer must see the same Python bridge pin as the parent."""
+
+    child = r"""
+import sys
+from codex_plugin_scanner.guard import native_runtime
+from codex_plugin_scanner.guard.adapters.codex import _native_bridge_executable
+
+def boom(*, deadline_monotonic=None):
+    raise RuntimeError("native status consulted")
+
+native_runtime.native_runtime_status = boom
+try:
+    result = _native_bridge_executable()
+except RuntimeError as error:
+    if str(error) != "native status consulted":
+        raise
+    sys.exit(2)
+sys.exit(0 if result is None else 3)
+"""
+    src = Path(__file__).resolve().parents[1] / "src"
+    base = os.environ.copy()
+    base["PYTHONPATH"] = str(src)
+    pinned = {**base, "HOL_GUARD_CODEX_HOOK_BRIDGE": "python"}
+    pinned_child = subprocess.run(
+        [sys.executable, "-c", child],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=pinned,
+        timeout=30,
+    )
+    assert pinned_child.returncode == 0, pinned_child.stderr
+    unpinned = base.copy()
+    unpinned.pop("HOL_GUARD_CODEX_HOOK_BRIDGE", None)
+    unpinned_child = subprocess.run(
+        [sys.executable, "-c", child],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=unpinned,
+        timeout=30,
+    )
+    assert unpinned_child.returncode == 2, unpinned_child.stderr
 
 
 @pytest.mark.native_codex_hook_bridge
