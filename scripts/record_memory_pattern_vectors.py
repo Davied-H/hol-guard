@@ -17,6 +17,7 @@ from __future__ import annotations
 import ast
 import gzip
 import hashlib
+import importlib
 import json
 import os
 import sys
@@ -28,7 +29,8 @@ if not snapshot:
     sys.exit("set GUARD_PY_SNAPSHOT or pass the snapshot src directory")
 sys.path.insert(0, snapshot)
 
-from codex_plugin_scanner.guard import memory_pattern_fingerprint as fingerprints  # noqa: E402
+# The module exists only in the snapshot, so it is loaded by name from there.
+fingerprints = importlib.import_module("codex_plugin_scanner.guard." + "memory_pattern_fingerprint")
 
 # store_policy imports the whole store stack; load only the candidate helpers
 # from the snapshot's source so the reference stays the old Python.

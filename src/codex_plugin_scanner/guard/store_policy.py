@@ -112,6 +112,7 @@ def memory_lookup_candidates(
     memory_command: str | None,
     memory_artifact_type: str | None,
     memory_artifact_name: str | None,
+    guard_home: Path | None = None,
 ) -> tuple[tuple[str, ...], str | None]:
     """Exact-command ids and the memory-pattern id probed after the direct artifact.
 
@@ -125,6 +126,7 @@ def memory_lookup_candidates(
         artifact_id=artifact_id,
         artifact_name=memory_artifact_name,
         harness=harness,
+        guard_home=guard_home,
     )
     return verdict.exact_artifact_ids, verdict.memory_artifact_id
 
@@ -955,6 +957,7 @@ class StorePolicyMixin:
             memory_command=memory_command,
             memory_artifact_type=memory_artifact_type,
             memory_artifact_name=memory_artifact_name,
+            guard_home=Path(self.guard_home),
         )
         for exact_command_artifact_id in exact_command_artifact_ids:
             exact_command_lookup = self.resolve_policy_decision_lookup(

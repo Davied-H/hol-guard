@@ -14,11 +14,14 @@ event transport — no new outbox table or auth path.
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from typing import Literal
 
 from .native_memory_pattern import NativeMemoryPatternError, memory_pattern_verdict
+
+_LOGGER = logging.getLogger(__name__)
 
 MEMORY_DECISION_EVENT_CONTRACT_VERSION = "guard.memory-decision.v1"
 
@@ -178,9 +181,10 @@ def build_memory_decision_event(
             artifact_name=artifact_name,
             harness=harness,
         ).pattern
-    except NativeMemoryPatternError:
+    except NativeMemoryPatternError as error:
         # The Cloud event is evidence, not authority: without the resident it
         # carries no fingerprint rather than one rebuilt in Python.
+        _LOGGER.warning("memory decision event %s has no fingerprint: %s", request_id, error)
         pattern = None
 
     return GuardMemoryDecisionEventV1(

@@ -10,9 +10,10 @@ request fields and checks the result's shape; it never rebuilds a fingerprint.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import NamedTuple
 
-from .native_context import _resolve_digest_home, native_context_digest
+from .native_context import _resolve_digest_home, native_context_digest, native_context_failure_reason
 
 _KINDS = frozenset(
     {
@@ -53,11 +54,14 @@ def memory_pattern_verdict(
     artifact_id: str | None,
     artifact_name: str | None,
     harness: str | None,
+    guard_home: Path | None = None,
 ) -> MemoryPatternVerdict:
     """Ask the resident for the decision's fingerprint and lookup candidates.
 
-    Raises :class:`NativeMemoryPatternError` when the resident is unavailable
-    or its answer is malformed; callers decide whether that fails closed.
+    ``guard_home`` is the querying store's home; without one the bound or
+    default home answers. Raises :class:`NativeMemoryPatternError` when the
+    resident is unavailable or its answer is malformed; callers decide whether
+    that fails closed.
     """
 
     result = native_context_digest(
@@ -69,14 +73,24 @@ def memory_pattern_verdict(
             "artifact_name": _text_or_none(artifact_name),
             "harness": _text_or_none(harness),
         },
-        guard_home=_resolve_digest_home(None),
+        guard_home=_resolve_digest_home(guard_home),
     )
     if not isinstance(result, dict) or result.get("status") != "ok":
-        raise NativeMemoryPatternError("native_memory_pattern_unavailable")
+        raise NativeMemoryPatternError(f"native_memory_pattern_unavailable: {_failure_reason(result)}")
     verdict = _parse_verdict(result.get("memory_pattern"))
     if verdict is None:
         raise NativeMemoryPatternError("native_memory_pattern_malformed")
     return verdict
+
+
+def _failure_reason(result: object) -> str:
+    """The transport's reason for no answer, or the resident's error code."""
+
+    if result is None:
+        return native_context_failure_reason() or "native_context_unavailable"
+    if isinstance(result, dict) and isinstance(result.get("code"), str):
+        return result["code"]
+    return "native_memory_pattern_status_invalid"
 
 
 def _parse_verdict(value: object) -> MemoryPatternVerdict | None:
