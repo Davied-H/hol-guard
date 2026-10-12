@@ -82,6 +82,7 @@ def _hook_argv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, features: tuple[
     )
 
 
+@pytest.mark.native_codex_hook_bridge
 @pytest.mark.skipif(sys.platform == "win32", reason="the native Codex bridge is POSIX-only")
 def test_hook_uses_the_native_bridge_when_the_runtime_offers_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -96,6 +97,7 @@ def test_hook_uses_the_native_bridge_when_the_runtime_offers_it(
     assert bridge_argv_sha256(list(argv)) == bridge_argv_sha256(list(argv[2:]))
 
 
+@pytest.mark.native_codex_hook_bridge
 def test_hook_keeps_the_python_bridge_without_the_native_feature(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

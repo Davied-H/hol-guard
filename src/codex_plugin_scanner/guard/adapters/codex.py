@@ -215,6 +215,10 @@ def _daemon_start_command(
     )
 
 
+def _native_bridge_executable() -> Path | None:
+    return native_hook_bridge_executable(NATIVE_CODEX_HOOK_FEATURE)
+
+
 def _hook_command_parts_for_home_mode(
     context: HarnessContext,
     *,
@@ -259,7 +263,7 @@ def _hook_command_parts_for_home_mode(
     python_argv = (python_executable, "-I", str(bridge_path), config_argument)
     # The native runtime answers ordinary hooks without starting Python and
     # hands every other case to this same Python bridge argv.
-    native_bridge = native_hook_bridge_executable(NATIVE_CODEX_HOOK_FEATURE)
+    native_bridge = _native_bridge_executable()
     if native_bridge is None:
         return python_argv
     return (str(native_bridge), NATIVE_CODEX_HOOK_COMMAND, *python_argv)
