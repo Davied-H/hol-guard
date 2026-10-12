@@ -303,7 +303,13 @@ def skill_cases() -> list[dict]:
         ),
         case(
             "skill_frontmatter_nonascii_cjk",
-            [skill("cat", "cjk", "---\nname:\n  - 日本語\n  - {キー: 値, k: [中文, 한국어]}\ndescription:\n  - 説明: テスト\n  - 'it''s é'\n---\n")],
+            [
+                skill(
+                    "cat",
+                    "cjk",
+                    "---\nname:\n  - 日本語\n  - {キー: 値, k: [中文, 한국어]}\ndescription:\n  - 説明: テスト\n  - 'it''s é'\n---\n",
+                )
+            ],
         ),
         case(
             "skill_frontmatter_nonascii_accents",
@@ -311,7 +317,7 @@ def skill_cases() -> list[dict]:
                 skill(
                     "cat",
                     "acc",
-                    "---\nname: café\ndescription:\n  - {naïve: [résumé, \"ü\\\"q\"], ñ: 3}\n  - [Ångström, 2.5, null]\nrelated_skills:\n  - {é: [à, è]}\n---\n",
+                    '---\nname: café\ndescription:\n  - {naïve: [résumé, "ü\\"q"], ñ: 3}\n  - [Ångström, 2.5, null]\nrelated_skills:\n  - {é: [à, è]}\n---\n',
                 )
             ],
         ),
@@ -329,11 +335,23 @@ def skill_cases() -> list[dict]:
         ),
         case(
             "skill_frontmatter_nonascii_metadata_related",
-            [skill("cat", "meta", "---\nname: m\nmetadata:\n  hermes:\n    related_skills:\n      - {日: [本, \"\\u200b\"]}\n      - ✓\n---\n")],
+            [
+                skill(
+                    "cat",
+                    "meta",
+                    '---\nname: m\nmetadata:\n  hermes:\n    related_skills:\n      - {日: [本, "\\u200b"]}\n      - ✓\n---\n',
+                )
+            ],
         ),
         case(
             "skill_frontmatter_nonascii_quotes",
-            [skill("cat", "qt", "---\nname:\n  - \"é'\\\"\"\n  - 'é'\n  - \"it's é\"\ndescription:\n  - {\"é'\": \"ü\"}\n---\n")],
+            [
+                skill(
+                    "cat",
+                    "qt",
+                    '---\nname:\n  - "é\'\\""\n  - \'é\'\n  - "it\'s é"\ndescription:\n  - {"é\'": "ü"}\n---\n',
+                )
+            ],
         ),
         case(
             "skill_frontmatter_nested_ascii",

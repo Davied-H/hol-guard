@@ -169,7 +169,10 @@ def cli_config_cases() -> list[dict]:
         case("config_invalid_utf8", [raw(f"{CLI}/config.json", b'{"a":"\xff"}')]),
         case("config_deeply_nested", [file(f"{CLI}/config.json", "[" * 100000)]),
         case("config_deeply_nested_closed", [file(f"{CLI}/config.json", "[" * 100000 + "]" * 100000)]),
-        case("config_moderately_nested", [file(f"{CLI}/config.json", '{"mcp":{"servers":{}},"x":' + "[" * 400 + "]" * 400 + "}")]),
+        case(
+            "config_moderately_nested",
+            [file(f"{CLI}/config.json", '{"mcp":{"servers":{}},"x":' + "[" * 400 + "]" * 400 + "}")],
+        ),
         case("config_unreadable", [file(f"{CLI}/config.json", '{"mcp":{}}', 0o000)]),
         case("config_is_directory", dirs=[f"{CLI}/config.json"]),
         case("mcp_servers_matrix", [config({"mcp": {"servers": MCP_SERVERS}})]),
@@ -177,9 +180,17 @@ def cli_config_cases() -> list[dict]:
         case("mcp_servers_not_dict", [config({"mcp": {"servers": []}})]),
         case(
             "mcp_duplicate_keys_last_wins",
-            [file(f"{CLI}/config.json", '{"mcp":{"servers":{"a":{"command":"x"},"b":{"command":"y"},"a":{"command":"z"}}}}')],
+            [
+                file(
+                    f"{CLI}/config.json",
+                    '{"mcp":{"servers":{"a":{"command":"x"},"b":{"command":"y"},"a":{"command":"z"}}}}',
+                )
+            ],
         ),
-        case("mcp_unicode_names", [config({"mcp": {"servers": {"ünï-çøde": {"command": "câ", "args": ["ü"], "env": {"É": "ü"}}}}})]),
+        case(
+            "mcp_unicode_names",
+            [config({"mcp": {"servers": {"ünï-çøde": {"command": "câ", "args": ["ü"], "env": {"É": "ü"}}}}})],
+        ),
         case(
             "plugins_enabled_truthiness",
             [
@@ -187,8 +198,22 @@ def cli_config_cases() -> list[dict]:
                     {
                         "plugins": {
                             "enabledPlugins": {
-                                "a@m": True, "b@m": False, "c@m": 0, "d@m": 1, "e@m": "", "f@m": None,
-                                "g@m": {}, "h@m": [], "i@m": "x", "j@m": 0.0, "k@m": {"a": 1}, "l@m": [0], "m@m": -1.5, "n@m": -0.0, "o@m": -3, "p@m": 1e-320,
+                                "a@m": True,
+                                "b@m": False,
+                                "c@m": 0,
+                                "d@m": 1,
+                                "e@m": "",
+                                "f@m": None,
+                                "g@m": {},
+                                "h@m": [],
+                                "i@m": "x",
+                                "j@m": 0.0,
+                                "k@m": {"a": 1},
+                                "l@m": [0],
+                                "m@m": -1.5,
+                                "n@m": -0.0,
+                                "o@m": -3,
+                                "p@m": 1e-320,
                             }
                         }
                     }
@@ -214,16 +239,50 @@ def cli_config_cases() -> list[dict]:
         ),
         case(
             "hooks_number_kinds_dedupe",
-            [config({"hooks": {"events": {"Stop": [{"command": "a", "m": 1}, {"command": "a", "m": 1.0}, {"command": "a", "m": True}]}}})],
+            [
+                config(
+                    {
+                        "hooks": {
+                            "events": {
+                                "Stop": [
+                                    {"command": "a", "m": 1},
+                                    {"command": "a", "m": 1.0},
+                                    {"command": "a", "m": True},
+                                ]
+                            }
+                        }
+                    }
+                )
+            ],
         ),
-        case("setting_json_also_read", [config({"mcp": {"servers": {"a": {"command": "x"}}}}, "setting.json"), config({"plugins": {"enabledPlugins": {"p@m": True}}})]),
+        case(
+            "setting_json_also_read",
+            [
+                config({"mcp": {"servers": {"a": {"command": "x"}}}}, "setting.json"),
+                config({"plugins": {"enabledPlugins": {"p@m": True}}}),
+            ],
+        ),
         case(
             "project_config_scope",
-            [doc(f"{WORK}/.zcode/cli/config.json", {"mcp": {"servers": {"proj": {"command": "x"}}}}), config({"mcp": {"servers": {"glob": {"command": "y"}}}})],
+            [
+                doc(f"{WORK}/.zcode/cli/config.json", {"mcp": {"servers": {"proj": {"command": "x"}}}}),
+                config({"mcp": {"servers": {"glob": {"command": "y"}}}}),
+            ],
         ),
-        case("project_config_without_workspace", [doc(f"{WORK}/.zcode/cli/config.json", {"mcp": {"servers": {"proj": {"command": "x"}}}})], no_workspace=True),
+        case(
+            "project_config_without_workspace",
+            [doc(f"{WORK}/.zcode/cli/config.json", {"mcp": {"servers": {"proj": {"command": "x"}}}})],
+            no_workspace=True,
+        ),
         case("workspace_is_home", [config({"mcp": {"servers": {"dup": {"command": "x"}}}})], workspace_is_home=True),
-        case("zcode_home_override", [doc("zhome/.zcode/cli/config.json", {"mcp": {"servers": {"zh": {"command": "x"}}}}), config({"mcp": {"servers": {"home": {"command": "y"}}}})], zcode_home="zhome"),
+        case(
+            "zcode_home_override",
+            [
+                doc("zhome/.zcode/cli/config.json", {"mcp": {"servers": {"zh": {"command": "x"}}}}),
+                config({"mcp": {"servers": {"home": {"command": "y"}}}}),
+            ],
+            zcode_home="zhome",
+        ),
     ]
     return out
 
@@ -232,9 +291,25 @@ def plugin_cache_cases() -> list[dict]:
     root = plugin()
     full = [
         manifest(root, {"name": "pl", "version": "1.0.0", "author": {"name": "Ada"}}),
-        doc(f"{root}/.zcode-plugin-seed.json", {"marketplace": "mk", "source": "git", "pluginVersion": "1.0.0", "hash": "abc"}),
-        doc(f"{root}/.mcp.json", {"mcpServers": {"srv": {"command": "node", "args": ["s.js"], "env": {"K": "v"}}, "web": {"url": "https://example.invalid/x"}, "bad": 1, "none": {}}}),
-        doc(f"{root}/hooks/hooks.json", {"hooks": {"PreToolUse": [HOOK_ENTRY, {"command": "plain"}], "Custom": [{"command": "c"}], "Bad": "x"}}),
+        doc(
+            f"{root}/.zcode-plugin-seed.json",
+            {"marketplace": "mk", "source": "git", "pluginVersion": "1.0.0", "hash": "abc"},
+        ),
+        doc(
+            f"{root}/.mcp.json",
+            {
+                "mcpServers": {
+                    "srv": {"command": "node", "args": ["s.js"], "env": {"K": "v"}},
+                    "web": {"url": "https://example.invalid/x"},
+                    "bad": 1,
+                    "none": {},
+                }
+            },
+        ),
+        doc(
+            f"{root}/hooks/hooks.json",
+            {"hooks": {"PreToolUse": [HOOK_ENTRY, {"command": "plain"}], "Custom": [{"command": "c"}], "Bad": "x"}},
+        ),
         doc(f"{root}/hooks/hooks-cursor.json", {"hooks": {"Stop": [{"command": "cursor-stop"}]}}),
         file(f"{root}/skills/a/SKILL.md", "a"),
         file(f"{root}/skills/a/b/SKILL.md", "b"),
@@ -259,18 +334,46 @@ def plugin_cache_cases() -> list[dict]:
         case("plugin_manifest_missing_name_uses_version_dir", [manifest(plugin("2.0.0"), {"version": 3})]),
         case("plugin_manifest_empty_name", [manifest(root, {"name": ""})]),
         case("plugin_author_string", [manifest(root, {"name": "pl", "author": "Grace"})]),
-        case("plugin_author_other", [manifest(root, {"name": "pl", "author": 5}), manifest(plugin("2.0.0"), {"name": "q", "author": {"name": 1}})]),
+        case(
+            "plugin_author_other",
+            [
+                manifest(root, {"name": "pl", "author": 5}),
+                manifest(plugin("2.0.0"), {"name": "q", "author": {"name": 1}}),
+            ],
+        ),
         case("plugin_manifest_empty_object", [manifest(root, {})]),
         case("plugin_manifest_invalid", [file(f"{root}/.zcode-plugin/plugin.json", "nope")]),
         case("plugin_manifest_invalid_utf8", [raw(f"{root}/.zcode-plugin/plugin.json", b"\xff\xfe")]),
         case("plugin_manifest_unreadable", [file(f"{root}/.zcode-plugin/plugin.json", '{"name":"x"}', 0o000)]),
-        case("plugin_seed_empty_marketplace", [manifest(root, {"name": "pl"}), doc(f"{root}/.zcode-plugin-seed.json", {"marketplace": "", "source": "s"})]),
-        case("plugin_seed_non_strings", [manifest(root, {"name": "pl"}), doc(f"{root}/.zcode-plugin-seed.json", {"marketplace": 1, "source": [], "pluginVersion": 2, "hash": None})]),
+        case(
+            "plugin_seed_empty_marketplace",
+            [
+                manifest(root, {"name": "pl"}),
+                doc(f"{root}/.zcode-plugin-seed.json", {"marketplace": "", "source": "s"}),
+            ],
+        ),
+        case(
+            "plugin_seed_non_strings",
+            [
+                manifest(root, {"name": "pl"}),
+                doc(
+                    f"{root}/.zcode-plugin-seed.json",
+                    {"marketplace": 1, "source": [], "pluginVersion": 2, "hash": None},
+                ),
+            ],
+        ),
         case("plugin_seed_invalid", [manifest(root, {"name": "pl"}), file(f"{root}/.zcode-plugin-seed.json", "x")]),
         case("plugin_seed_empty_object", [manifest(root, {"name": "pl"}), doc(f"{root}/.zcode-plugin-seed.json", {})]),
-        case("plugin_mcp_empty_servers", [manifest(root, {"name": "pl"}), doc(f"{root}/.mcp.json", {"mcpServers": {}})]),
-        case("plugin_mcp_servers_not_dict", [manifest(root, {"name": "pl"}), doc(f"{root}/.mcp.json", {"mcpServers": []})]),
-        case("plugin_mcp_without_manifest_ignored", [doc(f"{root}/.mcp.json", {"mcpServers": {"a": {"command": "x"}}})]),
+        case(
+            "plugin_mcp_empty_servers", [manifest(root, {"name": "pl"}), doc(f"{root}/.mcp.json", {"mcpServers": {}})]
+        ),
+        case(
+            "plugin_mcp_servers_not_dict",
+            [manifest(root, {"name": "pl"}), doc(f"{root}/.mcp.json", {"mcpServers": []})],
+        ),
+        case(
+            "plugin_mcp_without_manifest_ignored", [doc(f"{root}/.mcp.json", {"mcpServers": {"a": {"command": "x"}}})]
+        ),
         case("plugin_hooks_non_dict", [manifest(root, {"name": "pl"}), doc(f"{root}/hooks/hooks.json", {"hooks": []})]),
         case("plugin_hooks_empty", [manifest(root, {"name": "pl"}), doc(f"{root}/hooks/hooks.json", {})]),
         case(
@@ -297,14 +400,27 @@ def plugin_cache_cases() -> list[dict]:
         case(
             "plugin_skill_symlinks",
             [manifest(root, {"name": "pl"}), file("elsewhere/SKILL.md", "x"), file("elsewhere/inner/SKILL.md", "y")],
-            [link(f"{root}/skills/linked-dir", "<ROOT>/elsewhere"), link(f"{root}/skills/file-link/SKILL.md", "<ROOT>/elsewhere/SKILL.md")],
+            [
+                link(f"{root}/skills/linked-dir", "<ROOT>/elsewhere"),
+                link(f"{root}/skills/file-link/SKILL.md", "<ROOT>/elsewhere/SKILL.md"),
+            ],
         ),
-        case("plugin_loose_files_ignored", [manifest(root, {"name": "pl"}), file(f"{CACHE}/stray.txt"), file(f"{CACHE}/mk/stray.txt")]),
+        case(
+            "plugin_loose_files_ignored",
+            [manifest(root, {"name": "pl"}), file(f"{CACHE}/stray.txt"), file(f"{CACHE}/mk/stray.txt")],
+        ),
         case(
             "plugin_project_cache",
-            [manifest(plugin(base=f"{WORK}/.zcode/cli/plugins/cache"), {"name": "proj"}), manifest(root, {"name": "glob"})],
+            [
+                manifest(plugin(base=f"{WORK}/.zcode/cli/plugins/cache"), {"name": "proj"}),
+                manifest(root, {"name": "glob"}),
+            ],
         ),
-        case("plugin_project_cache_without_workspace", [manifest(plugin(base=f"{WORK}/.zcode/cli/plugins/cache"), {"name": "proj"})], no_workspace=True),
+        case(
+            "plugin_project_cache_without_workspace",
+            [manifest(plugin(base=f"{WORK}/.zcode/cli/plugins/cache"), {"name": "proj"})],
+            no_workspace=True,
+        ),
         case("plugin_marketplace_dir_unreadable", [manifest(root, {"name": "pl"})], dir_modes={f"{CACHE}/mk": 0o000}),
         case("plugin_cache_root_is_file", [file(f"{CLI}/plugins/cache", "x")]),
     ]
@@ -324,14 +440,30 @@ def marketplace_cases() -> list[dict]:
             ],
             dirs=[f"{MARKETS}/empty"],
         ),
-        case("marketplace_project_scope", [doc(f"{WORK}/.zcode/cli/plugins/marketplaces/pm/marketplace.json", {"name": "P"}), doc(f"{MARKETS}/gm/marketplace.json", {"name": "G"})]),
+        case(
+            "marketplace_project_scope",
+            [
+                doc(f"{WORK}/.zcode/cli/plugins/marketplaces/pm/marketplace.json", {"name": "P"}),
+                doc(f"{MARKETS}/gm/marketplace.json", {"name": "G"}),
+            ],
+        ),
         case("marketplace_invalid_utf8", [raw(f"{MARKETS}/bad/marketplace.json", b"\xc3\x28")]),
         case("marketplace_root_unreadable", dirs=[MARKETS], dir_modes={MARKETS: 0o000}),
-        case("marketplace_symlinked_file", [doc("real/marketplace.json", {"name": "linked"})], [link(f"{MARKETS}/ln/marketplace.json", "<ROOT>/real/marketplace.json")]),
+        case(
+            "marketplace_symlinked_file",
+            [doc("real/marketplace.json", {"name": "linked"})],
+            [link(f"{MARKETS}/ln/marketplace.json", "<ROOT>/real/marketplace.json")],
+        ),
         case(
             "everything_together",
             [
-                config({"mcp": {"servers": {"c": {"command": "x"}}}, "plugins": {"enabledPlugins": {"p@m": True}}, "hooks": HOOKS_NESTED}),
+                config(
+                    {
+                        "mcp": {"servers": {"c": {"command": "x"}}},
+                        "plugins": {"enabledPlugins": {"p@m": True}},
+                        "hooks": HOOKS_NESTED,
+                    }
+                ),
                 doc(f"{HOME}/.zcode/v2/config.json", {}),
                 manifest(plugin(), {"name": "pl", "author": "A"}),
                 doc(f"{MARKETS}/m/marketplace.json", {"name": "M", "plugins": [1]}),
@@ -405,7 +537,9 @@ def run_case(spec: dict) -> dict:
         adapter = ZCodeHarnessAdapter()
         args = {
             "harness": "zcode",
-            "configs": [{"path": str(p), "scope": adapter._scope_for(context, p)} for p in adapter._config_candidates(context)],
+            "configs": [
+                {"path": str(p), "scope": adapter._scope_for(context, p)} for p in adapter._config_candidates(context)
+            ],
             "v2_config": str(adapter._zcode_home_dir(context) / ".zcode/v2/config.json"),
             "plugin_roots": [{"path": str(p), "scope": s} for p, s in adapter._plugins_candidates(context)],
             "marketplace_roots": [{"path": str(p), "scope": s} for p, s in adapter._marketplaces_candidates(context)],
