@@ -24,6 +24,7 @@ pub(crate) use workspace_contained::command_shape;
 pub(crate) use workspace_contained::PROFILE as WORKSPACE_PROFILE;
 pub(crate) mod directory_targets;
 pub(crate) mod workspace_git_config;
+pub(crate) mod workspace_git_environment;
 pub(crate) use directory_targets::safe_directory_target;
 mod base64_reads;
 mod bun_eval;

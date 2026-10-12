@@ -2,11 +2,13 @@
 use super::*;
 use crate::pretool::generic::workspace_redirects;
 use crate::pretool::workspace_git_config::workspace_write_denials;
+use crate::pretool::workspace_git_environment::GitVariables;
 use crate::pretool::{command_shape, WORKSPACE_PROFILE};
 use crate::{parse_command, CommandModelRequestV1};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
 
 #[derive(Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -18,6 +20,8 @@ struct Input {
     backend_executable: Option<PathBuf>,
     search_path: String,
     home: Option<PathBuf>,
+    /// The caller's exported Git configuration variables, by value.
+    git_environment: BTreeMap<String, String>,
 }
 
 fn invalid(message: &str) -> RestrictedPytestError {
@@ -80,7 +84,12 @@ fn prepare(input: &Input) -> Result<Value, RestrictedPytestError> {
         }
     }
     .ok_or_else(|| invalid("The command is not eligible for the workspace sandbox."))?;
-    let write_denials = workspace_write_denials(&workspace, input.home.as_deref())
+    let variables: GitVariables = input
+        .git_environment
+        .iter()
+        .map(|(name, value)| (name.clone(), Some(value.clone())))
+        .collect();
+    let write_denials = workspace_write_denials(&workspace, input.home.as_deref(), &variables)
         .ok_or_else(|| invalid("The repository configuration is not eligible."))?;
     let text = shape
         .remainder

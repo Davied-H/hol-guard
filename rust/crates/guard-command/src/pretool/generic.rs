@@ -524,6 +524,7 @@ fn evaluate_envelope(
             cwd,
             ..context
         },
+        execution_environment,
         harness,
         event,
         signals.command.as_deref(),

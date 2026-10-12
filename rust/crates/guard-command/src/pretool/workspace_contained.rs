@@ -8,7 +8,7 @@
 use super::PathContext;
 use crate::native_command_controls::CompiledNativeCommandControls;
 use crate::CanonicalCommandV1;
-use guard_contracts::{PreToolActionTypeV1, PreToolResultV1};
+use guard_contracts::{GuardExecutionEnvironmentV1, PreToolActionTypeV1, PreToolResultV1};
 use std::path::Path;
 
 #[cfg(unix)]
@@ -330,6 +330,7 @@ pub(super) fn convert(
     model: Option<&CanonicalCommandV1>,
     controls: Option<&CompiledNativeCommandControls>,
     context: PathContext<'_>,
+    execution_environment: Option<&GuardExecutionEnvironmentV1>,
     harness: &str,
     event: &str,
     command_text: Option<&str>,
@@ -386,11 +387,15 @@ pub(super) fn convert(
     {
         return;
     }
-    if super::workspace_git_config::workspace_write_denials(
-        &workspace,
-        context.home_dir.map(Path::new),
-    )
-    .is_none()
+    if super::workspace_git_environment::session_git_variables(execution_environment)
+        .and_then(|variables| {
+            super::workspace_git_config::workspace_write_denials(
+                &workspace,
+                context.home_dir.map(Path::new),
+                &variables,
+            )
+        })
+        .is_none()
         || command_shape(model, &workspace, command_text).is_none()
         || destroys_workspace(result, model, &workspace)
     {

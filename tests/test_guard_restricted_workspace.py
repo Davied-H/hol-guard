@@ -148,9 +148,14 @@ def macos_host(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_matching_plan_launches_in_the_sandbox_backend(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     calls: list[str] = []
+    sent: list[object] = []
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(tmp_path / "g"))
 
     def fake_native(operation: str, fields: object, expected: object) -> object:
         calls.append(operation)
+        if isinstance(fields, dict) and operation == "prepare_workspace_contained":
+            sent.append(fields["git_environment"])
         return "(version 1)" if operation == "macos_profile" else plan(tmp_path)
 
     launched: list[tuple[list[str], dict[str, str]]] = []
@@ -179,6 +184,10 @@ def test_matching_plan_launches_in_the_sandbox_backend(monkeypatch: pytest.Monke
     assert env["GIT_CONFIG_NOSYSTEM"] == "1"
     assert env["GIT_TERMINAL_PROMPT"] == "0"
     assert calls == ["prepare_workspace_contained", "macos_profile"]
+    # Global Git configuration is located from the caller's variables, not the resident's.
+    assert sent[0]["XDG_CONFIG_HOME"] == str(tmp_path / "cfg")
+    assert sent[0]["GIT_CONFIG_GLOBAL"] == str(tmp_path / "g")
+    assert "PATH" not in sent[0]
 
 
 def test_adapters_map_the_workspace_reason_to_its_profile() -> None:

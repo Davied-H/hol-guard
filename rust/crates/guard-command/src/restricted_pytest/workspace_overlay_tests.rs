@@ -126,6 +126,19 @@ fn creating_a_repository_entry_is_denied() {
 }
 
 #[test]
+fn a_planted_bare_repository_is_denied() {
+    let l = layers("bare-head");
+    write(&l.upper.join("vendor/x/HEAD"), "ref: refs/heads/main\n");
+    write(&l.upper.join("vendor/x/config"), "[core]\n");
+    assert!(apply(&l.upper, &l.workspace, &[]).is_err());
+    assert!(!l.workspace.join("vendor").exists());
+    let l = layers("own-head");
+    write(&l.workspace.join(".git/HEAD"), "ref: refs/heads/main\n");
+    write(&l.upper.join(".git/HEAD"), "ref: refs/heads/feature\n");
+    apply(&l.upper, &l.workspace, &[]).unwrap();
+}
+
+#[test]
 fn a_file_replacing_a_directory_checks_what_it_removes() {
     let l = layers("replace-dir");
     write(&l.workspace.join("pkg/.git/config"), "[core]\n");
