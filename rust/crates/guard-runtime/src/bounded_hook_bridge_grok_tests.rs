@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 
 use super::*;
 use crate::bounded_hook_bridge_grok_script::{
-    invocation, normalize, ported_constants, python_path, Invocation, ScriptConstants,
+    invocation, normalize, ported_constants, python_home, python_path, Invocation, ScriptConstants,
 };
 use crate::claude_hook_bridge_fixture::{write_private, write_response, GuardHome, Request};
 

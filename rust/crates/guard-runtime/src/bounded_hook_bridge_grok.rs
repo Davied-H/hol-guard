@@ -215,7 +215,7 @@ impl Client {
                 return None;
             }
             if !is("native_required", false)
-                && !(is("workspace_acknowledged", true) && is("worker_ready", true))
+                && (!is("workspace_acknowledged", true) || !is("worker_ready", true))
             {
                 return None;
             }

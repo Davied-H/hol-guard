@@ -152,7 +152,7 @@ pub(crate) fn python_path(text: &str) -> Option<String> {
 /// `str(Path.home())` from `HOME`, which the client evaluates even when the
 /// hook names `--home`. `None` when `HOME` is unset or not a plain absolute
 /// path, so the client decides.
-fn python_home() -> Option<String> {
+pub(crate) fn python_home() -> Option<String> {
     let home = std::env::var_os("HOME")?;
     python_path(home.to_str()?)
 }
