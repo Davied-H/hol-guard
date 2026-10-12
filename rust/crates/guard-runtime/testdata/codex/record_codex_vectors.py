@@ -90,6 +90,12 @@ def encoded(command: str) -> str:
     return json.dumps(command)[1:-1]
 
 
+def placeholders(data: bytes, command: str, root: Path) -> bytes:
+    """File bytes with the managed command (as embedded in JSON text) and the root as placeholders."""
+    scrubbed = data.replace(encoded(command).encode(), b"<CMD>").replace(command.encode(), b"<CMD>")
+    return scrubbed.replace(str(root).encode(), b"<ROOT>")
+
+
 def materialize(root: Path, spec: dict, command: str) -> None:
     (root / HOME).mkdir(parents=True)
     locked: list[tuple[Path, int]] = []
@@ -166,9 +172,7 @@ def request_for(context: HarnessContext, spec: dict, root: Path, command: str) -
         "contents": None
         if contents is None
         else {
-            str(path): None
-            if data is None
-            else data.replace(command.encode(), b"<CMD>").replace(str(root).encode(), b"<ROOT>").hex()
+            str(path): None if data is None else placeholders(data, command, root).hex()
             for path, data in contents.items()
         },
     }
