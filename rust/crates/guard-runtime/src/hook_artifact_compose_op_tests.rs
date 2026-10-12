@@ -93,7 +93,7 @@ fn config_action_matches_recorded_python_vectors() {
         query["kind"] = json!("config_action");
         let query: HookArtifactComposeQueryV1 =
             serde_json::from_value(query).unwrap_or_else(|error| panic!("{name}: {error}"));
-        assert_eq!(compose(&query), vector["expected"], "{name}");
+        assert_eq!(compose(&query).unwrap(), vector["expected"], "{name}");
         // The previous Python hook evaluation sent this configured data-flow
         // action; an unrecognised value never became an action.
         let config: PolicyConfigFactsV1 =
