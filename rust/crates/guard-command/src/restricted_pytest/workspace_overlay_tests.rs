@@ -25,26 +25,23 @@ fn write(path: &Path, text: &str) {
 
 #[cfg(target_os = "linux")]
 fn whiteout(path: &Path) {
-    use std::os::unix::ffi::OsStrExt;
+    use nix::sys::stat::{mknod, Mode, SFlag};
     fs::create_dir_all(path.parent().unwrap()).unwrap();
-    let path = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
-    // SAFETY: `path` is NUL-terminated; a 0/0 character device is the
-    // overlay whiteout, which unprivileged users may create.
-    assert_eq!(
-        unsafe { libc::mknod(path.as_ptr(), libc::S_IFCHR | 0o600, 0) },
-        0
-    );
+    // A 0/0 character device is the overlay whiteout, which unprivileged
+    // users may create.
+    mknod(path, SFlag::S_IFCHR, Mode::from_bits_truncate(0o600), 0).unwrap();
 }
 
 #[cfg(target_os = "linux")]
 fn opaque(path: &Path) {
-    use std::os::unix::ffi::OsStrExt;
     fs::create_dir_all(path).unwrap();
-    let path = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
-    let name = std::ffi::CString::new("user.overlay.opaque").unwrap();
-    // SAFETY: both strings are NUL-terminated and the value is one byte.
-    let set = unsafe { libc::setxattr(path.as_ptr(), name.as_ptr(), b"y".as_ptr().cast(), 1, 0) };
-    assert_eq!(set, 0);
+    rustix::fs::lsetxattr(
+        path,
+        "user.overlay.opaque",
+        b"y",
+        rustix::fs::XattrFlags::empty(),
+    )
+    .unwrap();
 }
 
 #[test]
@@ -148,16 +145,11 @@ fn a_file_replacing_a_directory_checks_what_it_removes() {
 #[test]
 fn special_files_are_refused() {
     let l = layers("fifo");
-    let path = std::ffi::CString::new(
-        l.upper
-            .join("pipe")
-            .to_string_lossy()
-            .into_owned()
-            .into_bytes(),
+    nix::unistd::mkfifo(
+        &l.upper.join("pipe"),
+        nix::sys::stat::Mode::from_bits_truncate(0o600),
     )
     .unwrap();
-    // SAFETY: `path` is NUL-terminated.
-    assert_eq!(unsafe { libc::mkfifo(path.as_ptr(), 0o600) }, 0);
     assert!(apply(&l.upper, &l.workspace, &[]).is_err());
 }
 

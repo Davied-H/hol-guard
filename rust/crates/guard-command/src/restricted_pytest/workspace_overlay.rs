@@ -99,28 +99,14 @@ impl Denials {
 /// An overlay private attribute on `path`, without following a symlink.
 #[cfg(target_os = "linux")]
 fn overlay_attribute(path: &Path, name: &str) -> Option<Vec<u8>> {
-    use std::ffi::CString;
-    use std::os::unix::ffi::OsStrExt;
-    let path = CString::new(path.as_os_str().as_bytes()).ok()?;
     for namespace in ["user", "trusted"] {
-        let attribute = CString::new(format!("{namespace}.overlay.{name}")).ok()?;
+        let attribute = format!("{namespace}.overlay.{name}");
         let mut value = [0u8; 16];
-        // SAFETY: both strings are NUL-terminated and `value` is writable for
-        // its full length, which is the size passed.
-        let length = unsafe {
-            libc::lgetxattr(
-                path.as_ptr(),
-                attribute.as_ptr(),
-                value.as_mut_ptr().cast(),
-                value.len(),
-            )
-        };
-        if length >= 0 {
-            return Some(value[..length as usize].to_vec());
-        }
-        // Too long to read here still means the attribute is present.
-        if std::io::Error::last_os_error().raw_os_error() == Some(libc::ERANGE) {
-            return Some(Vec::new());
+        match rustix::fs::lgetxattr(path, attribute.as_str(), &mut value[..]) {
+            Ok(length) => return Some(value[..length].to_vec()),
+            // Too long to read here still means the attribute is present.
+            Err(rustix::io::Errno::RANGE) => return Some(Vec::new()),
+            Err(_) => {}
         }
     }
     None
