@@ -12,8 +12,6 @@
 //! that differ only in the surrogate would merge onto U+FFFD and the later
 //! member would silently replace a member CPython lists separately.
 
-use std::collections::HashSet;
-
 use serde_json::Value;
 
 const MAX_DEPTH: usize = 900;

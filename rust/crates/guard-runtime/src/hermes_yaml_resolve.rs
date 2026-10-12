@@ -248,11 +248,11 @@ pub(crate) fn timestamp_parts(text: &str, resolver: bool) -> Option<Timestamp> {
     if !expect(&mut chars, '-') {
         return None;
     }
-    let month = take_digits(&mut chars, if resolver { 2 } else { 1 }, 2)?;
+    let month = take_digits(&mut chars, 1, 2)?;
     if !expect(&mut chars, '-') {
         return None;
     }
-    let day = take_digits(&mut chars, if resolver { 2 } else { 1 }, 2)?;
+    let day = take_digits(&mut chars, 1, 2)?;
     let mut stamp = Timestamp {
         year: year.parse().ok()?,
         month: month.parse().ok()?,
@@ -262,11 +262,12 @@ pub(crate) fn timestamp_parts(text: &str, resolver: bool) -> Option<Timestamp> {
         offset: None,
     };
     if chars.peek().is_none() {
+        // Date-only resolution keeps PyYAML's two-digit month and day.
+        // A following time uses the long form, which allows one digit.
+        if resolver && (month.len() != 2 || day.len() != 2) {
+            return None;
+        }
         return Some(stamp);
-    }
-    // The resolver's long form allows one-digit month and day.
-    if resolver && (month.len() == 1 || day.len() == 1) {
-        // fall through: the long form below still applies
     }
     match chars.peek() {
         Some('T' | 't') => {

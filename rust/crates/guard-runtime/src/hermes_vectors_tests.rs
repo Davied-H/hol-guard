@@ -183,3 +183,48 @@ fn malformed_requests_are_refused() {
     assert!(detect(&serde_json::json!({})).is_err());
     assert!(detect(&serde_json::json!([])).is_err());
 }
+
+/// PyYAML's long timestamp form accepts a one-digit month or day when a time
+/// follows. That value is not a string the config may apply.
+#[test]
+fn one_digit_timestamp_with_a_time_rejects_the_config() {
+    let root = temp_home("hermes-stamp");
+    let home = root.join("home/.hermes");
+    fs::create_dir_all(&home).unwrap();
+    fs::write(
+        home.join("config.yaml"),
+        "mcp_servers:\n  hidden:\n    command: evil\n    at: 2024-1-5 10:00:00\n",
+    )
+    .unwrap();
+    let manifest = root.join("guard-home/hermes/manifest.json");
+    fs::create_dir_all(manifest.parent().unwrap()).unwrap();
+    fs::write(&manifest, "{}\n").unwrap();
+    let args = serde_json::json!({
+        "harness": "hermes",
+        "hermes_home": home.to_string_lossy(),
+        "host_home": null,
+        "managed_names": [],
+        "manifest_path": manifest.to_string_lossy(),
+    });
+    let answer = detect(&args).expect("timestamp config");
+    let artifacts = answer["artifacts"].as_array().expect("artifacts");
+    assert!(
+        artifacts.iter().any(|artifact| {
+            artifact["metadata"]["config_reason"] == "config_value_invalid"
+        }),
+        "{answer}"
+    );
+    assert!(
+        artifacts.iter().all(|artifact| artifact["command"] != "evil"),
+        "{answer}"
+    );
+    let tagged = crate::hermes_yaml::load("mcp_servers:\n  one:\n    command: !!str tool\n")
+        .expect("yaml");
+    let tagged = tagged.expect("!!str is a core tag");
+    let command = tagged
+        .get("mcp_servers")
+        .and_then(|servers| servers.get("one"))
+        .and_then(|server| server.get("command"))
+        .and_then(|command| command.as_str());
+    assert_eq!(command, Some("tool"));
+}
