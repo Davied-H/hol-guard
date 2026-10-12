@@ -5,7 +5,10 @@
 //!
 //! A syntax error is a distinct outcome from input CPython would raise on
 //! instead of returning (nesting past the recursion limit, an integer past the
-//! digit limit, a lone surrogate): callers refuse the second kind.
+//! digit limit): callers refuse the second kind. A lone `\uXXXX` surrogate
+//! escape is not one of those refusals. Rust `char` cannot store the unpaired
+//! surrogate CPython keeps, so the escape decodes to U+FFFD and parsing
+//! continues.
 
 use serde_json::Value;
 
@@ -372,7 +375,7 @@ impl Parser<'_> {
                                 }
                             }
                             let character =
-                                char::from_u32(code).ok_or(JsonFailure::Unrepresentable)?;
+                                char::from_u32(code).unwrap_or(char::REPLACEMENT_CHARACTER);
                             let mut buffer = [0_u8; 4];
                             out.extend_from_slice(character.encode_utf8(&mut buffer).as_bytes());
                         }
@@ -417,6 +420,10 @@ impl Parser<'_> {
         }
         self.position += 1;
         let mut entries: Vec<(String, PyVal)> = Vec::new();
+        // Key -> entries index, so a duplicate member replaces the value at its
+        // original position without rescanning every parsed key.
+        let mut positions: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
         self.skip_space();
         if self.peek() == Some(b'}') {
             self.position += 1;
@@ -435,9 +442,12 @@ impl Parser<'_> {
             self.position += 1;
             self.skip_space();
             let value = self.value(depth + 1)?;
-            match entries.iter_mut().find(|(name, _)| *name == key) {
-                Some(existing) => existing.1 = value,
-                None => entries.push((key, value)),
+            match positions.get(key.as_str()) {
+                Some(&index) => entries[index].1 = value,
+                None => {
+                    positions.insert(key.clone(), entries.len());
+                    entries.push((key, value));
+                }
             }
             self.skip_space();
             match self.peek() {

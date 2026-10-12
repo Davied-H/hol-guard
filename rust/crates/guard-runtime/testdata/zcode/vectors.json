@@ -3592,6 +3592,76 @@
    "artifacts": [
     {
      "args": [],
+     "artifact_id": "zcode:global:plugin:pl",
+     "artifact_type": "plugin",
+     "command": null,
+     "config_path": "<ROOT>/home/.zcode/cli/plugins/cache/mk/pl/1.0.0/.zcode-plugin/plugin.json",
+     "harness": "zcode",
+     "metadata": {},
+     "name": "pl",
+     "publisher": null,
+     "source_scope": "global",
+     "transport": null,
+     "url": null
+    }
+   ],
+   "dir_modes": {},
+   "dirs": [],
+   "files": [
+    {
+     "mode": 420,
+     "path": "home/.zcode/cli/plugins/cache/mk/pl/1.0.0/.zcode-plugin/plugin.json",
+     "text": "{\"name\": \"pl\", \"description\": \"\\ud800\"}"
+    }
+   ],
+   "found_paths": [
+    "<ROOT>/home/.zcode/cli/plugins/cache/mk/pl/1.0.0/.zcode-plugin/plugin.json"
+   ],
+   "name": "plugin_manifest_surrogate_unused_field",
+   "symlinks": []
+  },
+  {
+   "args": {
+    "configs": [
+     {
+      "path": "<ROOT>/home/.zcode/cli/config.json",
+      "scope": "global"
+     },
+     {
+      "path": "<ROOT>/home/.zcode/cli/setting.json",
+      "scope": "global"
+     },
+     {
+      "path": "<ROOT>/work/.zcode/cli/config.json",
+      "scope": "project"
+     }
+    ],
+    "harness": "zcode",
+    "marketplace_roots": [
+     {
+      "path": "<ROOT>/home/.zcode/cli/plugins/marketplaces",
+      "scope": "global"
+     },
+     {
+      "path": "<ROOT>/work/.zcode/cli/plugins/marketplaces",
+      "scope": "project"
+     }
+    ],
+    "plugin_roots": [
+     {
+      "path": "<ROOT>/home/.zcode/cli/plugins/cache",
+      "scope": "global"
+     },
+     {
+      "path": "<ROOT>/work/.zcode/cli/plugins/cache",
+      "scope": "project"
+     }
+    ],
+    "v2_config": "<ROOT>/home/.zcode/v2/config.json"
+   },
+   "artifacts": [
+    {
+     "args": [],
      "artifact_id": "zcode:global:plugin:2.0.0",
      "artifact_type": "plugin",
      "command": null,
