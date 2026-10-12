@@ -176,6 +176,8 @@ def _resident_request(
             "hook_authority_state",
             "hook_render",
             "protect_request",
+            "hook_artifact_compose",
+            "consumer_artifact_compose",
         }:
             accepted = frozenset({"ok", "error"})
         elif operation == "mcp_tool_policy_decide":
