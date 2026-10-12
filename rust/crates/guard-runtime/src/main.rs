@@ -70,14 +70,23 @@ mod cloud_request_text;
 mod cloud_request_vectors_tests;
 mod cloud_sync_privacy;
 mod codex_app_server_socket;
+mod codex_detect;
+mod codex_hook_artifacts;
+mod codex_hooks;
+mod codex_identity;
+mod codex_proxy;
 mod codex_request_resume_busy;
 mod codex_request_resume_op;
 mod codex_request_resume_store;
+mod codex_sources;
 mod codex_thread_continue_op;
 mod codex_tool_output_git;
 mod codex_tool_output_op;
 #[cfg(all(test, unix))]
 mod codex_tool_output_vectors_tests;
+mod codex_value;
+#[cfg(all(test, unix))]
+mod codex_vectors_tests;
 mod command_effect;
 mod compound_git_args;
 mod compound_git_chain;
@@ -138,6 +147,9 @@ mod daemon_route_paths;
 mod daemon_route_resolve;
 mod daemon_route_session;
 mod data_flow_analyze_op;
+mod decision_authority_op;
+#[cfg(test)]
+mod decision_authority_vectors_tests;
 mod direct_tool_context_op;
 #[cfg(test)]
 mod direct_tool_context_tests;
@@ -411,6 +423,12 @@ mod secrets_cli;
 mod sfrs_support;
 mod shell_helpers_op;
 mod shim_op;
+mod signal_projection_approval;
+mod signal_projection_decode;
+mod signal_projection_op;
+mod signal_projection_receipt;
+#[cfg(test)]
+mod signal_projection_vectors_tests;
 mod skill_directory_identity_op;
 mod skill_identity_canon;
 mod skill_identity_discovery;

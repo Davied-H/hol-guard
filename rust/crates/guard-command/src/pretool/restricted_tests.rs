@@ -43,6 +43,17 @@ fn python_test_script_args(arguments: &[String]) -> bool {
     })
 }
 
+/// `python3 -m unittest`: imports workspace test modules, which read-only is
+/// no more capable than inline evaluation, so it shares that boundary.
+fn python_unittest_args(arguments: &[String]) -> bool {
+    python_after_isolation_flags(arguments).is_some_and(|rest| {
+        matches!(rest, [flag, module, ..] if flag == "-m" && module == "unittest")
+            && rest[2..]
+                .iter()
+                .all(|argument| !argument.contains(['<', '>', '|', '&', ';', '`', '$']))
+    })
+}
+
 fn test_script_name(script: &str) -> bool {
     let name = script.rsplit('/').next().unwrap_or(script);
     let Some(stem) = name.strip_suffix(".py") else {
@@ -53,6 +64,85 @@ fn test_script_name(script: &str) -> bool {
         && (stem.starts_with("test_")
             || stem.ends_with("_test")
             || matches!(stem, "test" | "tests" | "runtests" | "run_tests"))
+}
+
+/// `math.test.ts`, `api.spec.mjs`, `test_calc.js`: the usual JavaScript and
+/// TypeScript test file names.
+fn node_test_script_name(script: &str) -> bool {
+    let name = script.rsplit('/').next().unwrap_or(script);
+    let Some((stem, extension)) = name.rsplit_once('.') else {
+        return false;
+    };
+    matches!(
+        extension,
+        "js" | "mjs" | "cjs" | "jsx" | "ts" | "mts" | "cts" | "tsx"
+    ) && stem
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.'))
+        && (stem.ends_with(".test")
+            || stem.ends_with(".spec")
+            || stem.starts_with("test_")
+            || stem.ends_with("_test")
+            || matches!(stem, "test" | "tests"))
+}
+
+/// Type stripping and warning filters change how Node loads and reports a
+/// script, not what the script can reach.
+fn node_after_script_flags(arguments: &[String]) -> &[String] {
+    let mut rest = arguments;
+    while let [flag, tail @ ..] = rest {
+        let neutral = matches!(
+            flag.as_str(),
+            "--experimental-strip-types" | "--experimental-transform-types" | "--no-warnings"
+        ) || flag.strip_prefix("--disable-warning=").is_some_and(|code| {
+            !code.is_empty()
+                && code.len() <= 64
+                && code
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+        });
+        if !neutral {
+            break;
+        }
+        rest = tail;
+    }
+    rest
+}
+
+/// `node --experimental-strip-types math.test.ts`: a test-named workspace
+/// script shares the inline evaluation boundary, as Python test scripts do.
+fn node_test_script_args(arguments: &[String]) -> bool {
+    matches!(node_after_script_flags(arguments), [script, ..]
+        if workspace_relative(script) && node_test_script_name(script))
+}
+
+/// `tsx math.test.ts` in its installed forms. The sink loads the file through
+/// the package's own loader inside the Vitest transform boundary.
+fn tsx_test_script_args(name: &str, arguments: &[String]) -> bool {
+    let rest = match (name, arguments) {
+        ("tsx", rest) => rest,
+        ("npx", [flag, tool, rest @ ..]) if flag == "--no-install" && tool == "tsx" => rest,
+        ("npx", [tool, rest @ ..]) if tool == "tsx" => rest,
+        ("node" | "nodejs", [entry, rest @ ..])
+            if entry
+                .replace('\\', "/")
+                .ends_with("/node_modules/tsx/dist/cli.mjs") =>
+        {
+            rest
+        }
+        // The sink's own launch form, which the hook authorizes again before
+        // running it. Typed directly, the sink does not prepare it.
+        ("node" | "nodejs", [flag, loader, rest @ ..])
+            if flag == "--import"
+                && loader
+                    .replace('\\', "/")
+                    .ends_with("/node_modules/tsx/dist/loader.mjs") =>
+        {
+            rest
+        }
+        _ => return false,
+    };
+    matches!(rest, [script, ..] if workspace_relative(script) && node_test_script_name(script))
 }
 
 /// Classify a direct pytest invocation for delegation, never direct allowance.
@@ -148,11 +238,19 @@ pub(super) fn readonly_test_reason(model: &CanonicalCommandV1) -> Option<&'stati
     match (super::executable_basename(executable), arguments) {
         (name, args)
             if python_runtime_name(name)
-                && (python_inline_eval_args(args) || python_test_script_args(args)) =>
+                && (python_inline_eval_args(args)
+                    || python_test_script_args(args)
+                    || python_unittest_args(args)) =>
         {
             return Some("native_python_eval_readonly_containment_required");
         }
         ("node" | "nodejs", [flag, _program]) if matches!(flag.as_str(), "-e" | "--eval") => {
+            return Some("native_node_eval_readonly_containment_required");
+        }
+        (name, args) if tsx_test_script_args(name, args) => {
+            return Some("native_vitest_readonly_containment_required");
+        }
+        ("node" | "nodejs", args) if node_test_script_args(args) => {
             return Some("native_node_eval_readonly_containment_required");
         }
         _ => {}
