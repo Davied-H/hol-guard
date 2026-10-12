@@ -203,3 +203,14 @@ fn a_document_under_two_skill_roots_needs_only_one_to_admit_it() {
         "allow"
     );
 }
+
+#[test]
+fn a_skills_link_to_the_home_directory_lists_nothing() {
+    let home = home("home-link");
+    std::fs::remove_dir_all(home.join(".agents/skills")).unwrap();
+    std::os::unix::fs::symlink(&home, home.join(".agents/skills")).unwrap();
+    assert_ne!(
+        action(&home, "zcode", "find ~/.agents/skills/. -maxdepth 2"),
+        "allow"
+    );
+}

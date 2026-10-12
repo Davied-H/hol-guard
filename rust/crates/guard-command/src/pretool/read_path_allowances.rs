@@ -150,6 +150,11 @@ fn skill_tree_parts<'a>(
         if root != ".agents/skills" && skills != home.join(root) {
             return None;
         }
+        // A link to the home directory or one of its ancestors would make the
+        // whole home a skill tree.
+        if home.starts_with(&skills) {
+            return None;
+        }
         let relative = canonical.strip_prefix(skills).ok()?;
         // Codex ships its bundled skills under `skills/.system`; that one
         // top-level directory is a skill namespace, not hidden application state.
