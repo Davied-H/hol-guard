@@ -58,7 +58,9 @@ fn stamped_loader_name(name: &str) -> bool {
 /// The `bun` the shell executes comes from an absolute `PATH` entry, and that
 /// file is outside the repository that contains the working directory.
 fn resolved_outside_workspace(path: &str, cwd: &Path, home: &Path) -> bool {
-    let root = repository_root(cwd, home);
+    let Some(root) = repository_root(cwd, home) else {
+        return false;
+    };
     for directory in std::env::split_paths(path) {
         // An empty or relative entry is resolved by the shell against the
         // command cwd. Skipping it would let a later absolute `bun` hide one
@@ -77,15 +79,21 @@ fn resolved_outside_workspace(path: &str, cwd: &Path, home: &Path) -> bool {
 
 /// Outermost `.git` ancestor of `cwd` that does not contain the session home.
 ///
-/// The session home often lives inside a checkout. That checkout's `.git` is
-/// not the repository the command is running in.
-fn repository_root<'a>(cwd: &'a Path, home: &'a Path) -> &'a Path {
-    cwd.ancestors()
-        .filter(|ancestor| {
-            !home.starts_with(ancestor) && std::fs::symlink_metadata(ancestor.join(".git")).is_ok()
-        })
-        .last()
-        .unwrap_or(cwd)
+/// A checkout that contains the session home is not a safe workspace bound.
+/// Refusing that layout keeps a `bun` elsewhere in the same repository under
+/// review. With no repository at all, the working directory is the bound.
+fn repository_root<'a>(cwd: &'a Path, home: &'a Path) -> Option<&'a Path> {
+    let repos: Vec<&Path> = cwd
+        .ancestors()
+        .filter(|ancestor| std::fs::symlink_metadata(ancestor.join(".git")).is_ok())
+        .collect();
+    if repos.is_empty() {
+        return Some(cwd);
+    }
+    repos
+        .into_iter()
+        .rev()
+        .find(|ancestor| !home.starts_with(ancestor))
 }
 
 fn executable_file(candidate: &Path) -> bool {

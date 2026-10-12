@@ -20,6 +20,7 @@ fn home() -> PathBuf {
         ));
     let home = root.join("home");
     std::fs::create_dir_all(home.join("project/sub")).unwrap();
+    std::fs::create_dir_all(home.join("project/.git")).unwrap();
     std::fs::create_dir_all(home.join("bin")).unwrap();
     let bun = home.join("bin/bun");
     std::fs::write(&bun, "#!/bin/sh\n").unwrap();
@@ -251,5 +252,40 @@ fn node_prints_accept_the_same_constants() {
     ] {
         let result = classify(&home, "project", Some(&plain), "codex", command);
         assert_ne!(result.decision, "allow", "{command}");
+    }
+}
+
+#[test]
+fn a_repository_that_contains_the_session_home_is_not_proven() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/pretool-bun-eval")
+        .join(format!(
+            "contained-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+    let repo = root.join("workspace");
+    let bin = repo.join("node_modules/.bin");
+    std::fs::create_dir_all(repo.join("sub")).unwrap();
+    std::fs::create_dir_all(repo.join(".home")).unwrap();
+    std::fs::create_dir_all(&bin).unwrap();
+    std::fs::create_dir_all(repo.join(".git")).unwrap();
+    let bun = bin.join("bun");
+    std::fs::write(&bun, "#!/bin/sh\n").unwrap();
+    set_executable(&bun);
+    let command = PRINTS[0];
+    let repo_home = std::fs::canonicalize(&repo).unwrap();
+    let nested_home = std::fs::canonicalize(repo.join(".home")).unwrap();
+    for (home, cwd) in [(&repo_home, "sub"), (&nested_home, "../sub")] {
+        let plain = environment(home, &bin, &["HOME", "PATH"]);
+        assert_ne!(
+            classify(home, cwd, Some(&plain), "zcode", command).decision,
+            "allow",
+            "{}",
+            home.display()
+        );
     }
 }
