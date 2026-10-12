@@ -157,7 +157,7 @@ def test_handoff_environment_is_read_once_and_only_shortens(monkeypatch: pytest.
     assert elapsed(20.0) == 0.0
 
 
-@pytest.mark.parametrize("raw", ["-5", "1.5", "", " 7", "١"])
+@pytest.mark.parametrize("raw", ["-5", "1.5", "", " 7", "\u0661"])
 def test_malformed_elapsed_time_is_ignored(monkeypatch: pytest.MonkeyPatch, raw: str) -> None:
     monkeypatch.setenv(_ELAPSED_ENV, raw)
 
