@@ -102,22 +102,19 @@ def prepare_verified_custom_extension_continuity(
     previous = store.get_sync_payload(CUSTOM_EXTENSION_CONTINUITY_STATE_KEY)
     locals_ = [item for item in store.list_local_cli_items() if isinstance(item.get("cli_id"), str)]
     removals = store.get_sync_payload(CUSTOM_EXTENSION_CONTINUITY_REMOVALS_STATE_KEY)
-    answer = _native_continuity(
-        {
-            "operation": "plan",
-            "continuity": payload[CUSTOM_EXTENSION_CONTINUITY_FIELD],
-            "workspace_id": validated_policy_bundle.get("workspaceId"),
-            "device_id": device_id,
-            "now": now,
-            "authority_revision": authority_revision,
-            "previous": previous,
-            "previous_item_order": _item_order(previous),
-            "removals": removals,
-            "locals": [_local_request(item) for item in locals_],
-            "details": {str(item["cli_id"]): _detail_request(store, str(item["cli_id"])) for item in locals_},
-        },
-        _PLAN_KEYS,
-    )
+    request: dict[str, object] = {
+        "operation": "plan",
+        "continuity": payload[CUSTOM_EXTENSION_CONTINUITY_FIELD],
+        "workspace_id": validated_policy_bundle.get("workspaceId"),
+        "device_id": device_id,
+        "now": now,
+        "authority_revision": authority_revision,
+        "previous": previous,
+        "previous_item_order": _item_order(previous),
+        "removals": removals,
+        "locals": [_local_request(item) for item in locals_],
+    }
+    answer = _plan_with_details(store, request, {str(item["cli_id"]) for item in locals_})
     state = answer["state"]
     updates = answer["authority_updates"]
     events = answer["events"]
@@ -238,7 +235,12 @@ def record_local_custom_extension_mutation(
         raise CustomExtensionContinuityError("local continuity state changed during local mutation") from error
 
 
-def _native_continuity(request: dict[str, object], keys: frozenset[str]) -> dict[str, object]:
+def _native_continuity(
+    request: dict[str, object],
+    keys: frozenset[str],
+    *,
+    allow_need_details: bool = False,
+) -> dict[str, object]:
     result = native_context_digest(
         "custom_extension_continuity",
         {"request": request},
@@ -252,6 +254,8 @@ def _native_continuity(request: dict[str, object], keys: frozenset[str]) -> dict
     refusal = answer.get("error")
     if refusal is not None:
         raise CustomExtensionContinuityError(refusal if isinstance(refusal, str) else "continuity refused")
+    if allow_need_details and set(answer) == {"need_details"}:
+        return answer
     if set(answer) != keys:
         raise _malformed()
     return answer
@@ -270,6 +274,25 @@ def _local_request(item: Mapping[str, object]) -> dict[str, object]:
         if isinstance(commands, list)
         else [],
     }
+
+
+def _plan_with_details(store: GuardStore, request: dict[str, object], local_ids: set[str]) -> dict[str, object]:
+    """Ask for a plan, loading grant and command details only for the locals it reads."""
+
+    details: dict[str, object] = {}
+    for _ in range(len(local_ids) + 1):
+        answer = _native_continuity({**request, "details": details}, _PLAN_KEYS, allow_need_details=True)
+        wanted = answer.get("need_details")
+        if wanted is None:
+            return answer
+        if (
+            not isinstance(wanted, list)
+            or not wanted
+            or not all(isinstance(cli_id, str) and cli_id in local_ids and cli_id not in details for cli_id in wanted)
+        ):
+            raise _malformed()
+        details.update({cli_id: _detail_request(store, cli_id) for cli_id in wanted})
+    raise _malformed()
 
 
 def _detail_request(store: GuardStore, cli_id: str) -> dict[str, object]:

@@ -9,6 +9,7 @@
 //! Stored payloads come back with sorted keys. Item order inside `items`
 //! maps is returned separately so the client can keep the stored order.
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{json, Map, Value};
@@ -77,6 +78,8 @@ struct Authority<'a> {
     /// Locals keyed by `cli_id` in first-seen order, last row winning.
     locals: Vec<(&'a str, &'a Map<String, Value>)>,
     details: &'a Map<String, Value>,
+    /// Locals whose details were read but not sent; the plan asks for them.
+    missing: RefCell<BTreeSet<String>>,
 }
 
 impl<'a> Authority<'a> {
@@ -88,7 +91,13 @@ impl<'a> Authority<'a> {
     }
 
     fn detail(&self, cli_id: &str, key: &str) -> Option<&'a Value> {
-        self.details.get(cli_id)?.get(key)
+        let Some(detail) = self.details.get(cli_id) else {
+            if self.local(cli_id).is_some() {
+                self.missing.borrow_mut().insert(cli_id.to_owned());
+            }
+            return None;
+        };
+        detail.get(key)
     }
 
     fn grant(&self, cli_id: &str) -> Option<&'a Map<String, Value>> {
@@ -154,14 +163,30 @@ impl Plan {
     }
 }
 
+/// Plan against the sent details. The client starts with none; when the plan
+/// reads details of a local that were not sent, the answer is
+/// `{"need_details": [cli_id, ...]}` and the client asks again with them, so
+/// only the locals the plan touches are loaded from the store.
 fn plan(request: &Value) -> Planned<Value> {
-    let continuity = request.get("continuity").ok_or(Fail::Request)?;
     let snapshot = snapshot(request)?;
+    let answer = plan_snapshot(request, &snapshot);
+    if matches!(answer, Err(Fail::Request)) {
+        return answer;
+    }
+    let missing = snapshot.authority.missing.take();
+    if !missing.is_empty() {
+        return Ok(json!({ "need_details": missing }));
+    }
+    answer
+}
+
+fn plan_snapshot(request: &Value, snapshot: &Snapshot<'_>) -> Planned<Value> {
+    let continuity = request.get("continuity").ok_or(Fail::Request)?;
     let is_v2 = continuity
         .as_object()
         .is_some_and(|value| value.get("schemaVersion").and_then(Value::as_str) == Some(SCHEMA_V2));
     if !is_v2 {
-        return plan_v1(continuity, &snapshot);
+        return plan_v1(continuity, snapshot);
     }
     let workspace = request
         .get("workspace_id")
@@ -173,7 +198,7 @@ fn plan(request: &Value) -> Planned<Value> {
         Some(_) => return Err(Fail::Request),
     };
     match (workspace, device) {
-        (Some(workspace), Some(device)) => plan_v2(continuity, &snapshot, workspace, device),
+        (Some(workspace), Some(device)) => plan_v2(continuity, snapshot, workspace, device),
         _ => refuse("v2 continuity requires workspace and device binding"),
     }
 }
@@ -206,6 +231,7 @@ fn snapshot(request: &Value) -> Planned<Snapshot<'_>> {
                 .get("details")
                 .and_then(Value::as_object)
                 .ok_or(Fail::Request)?,
+            missing: RefCell::new(BTreeSet::new()),
         },
         previous: request.get("previous").unwrap_or(&Value::Null),
         previous_order: string_list(request.get("previous_item_order"))?,
