@@ -43,6 +43,7 @@ fn execution_environment_binds_identity_without_rejecting_unrelated_hooks() {
         pager_disabled: false,
         xdg_config_home: None,
         git_config_no_system: false,
+        library_search_paths: Default::default(),
     });
     assert!(validate_envelope_shape(&request).is_ok());
     assert_ne!(original_request, request_identity(&request).unwrap().1);
@@ -130,6 +131,7 @@ fn envelope(event: &str, payload: Value) -> GuardHookEnvelopeV2 {
             source_ref_external_allowed: false,
             execution_environment: None,
         },
+        recording_only: false,
     }
 }
 

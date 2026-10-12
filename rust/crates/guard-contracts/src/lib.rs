@@ -11,10 +11,18 @@ mod approval_reuse;
 pub use approval_reuse::*;
 mod github_cli_classify;
 pub use github_cli_classify::*;
+mod github_workflow_prepare;
+pub use github_workflow_prepare::*;
+mod protect_request;
+pub use protect_request::*;
 mod git_execution_safety;
 pub use git_execution_safety::*;
 mod compound_git_inspection;
 pub use compound_git_inspection::*;
+mod approval_bulk_eligibility;
+pub use approval_bulk_eligibility::*;
+mod codex_request_resume;
+pub use codex_request_resume::*;
 mod approval_queue_identity;
 pub use approval_queue_identity::*;
 mod approval_resolution_plan;
@@ -43,6 +51,9 @@ mod workspace_review_contracts;
 pub use workspace_review_contracts::*;
 mod archive_inspection;
 pub use archive_inspection::*;
+
+mod archive_acquisition;
+pub use archive_acquisition::*;
 mod execution_environment;
 pub use execution_environment::*;
 mod context_digest;
@@ -51,20 +62,28 @@ mod local_cli_identity;
 pub use local_cli_identity::*;
 mod approval_scope;
 pub use approval_scope::*;
+mod hook_render;
+pub use hook_render::*;
 mod approval_proof;
 mod cursor_observer_proof;
+mod hook_authority_state;
 pub use approval_proof::*;
 pub use cursor_observer_proof::*;
+pub use hook_authority_state::*;
 mod hook_adapter;
 pub use hook_adapter::*;
 mod hook_artifact_compose;
 pub use hook_artifact_compose::*;
+mod consumer_artifact_compose;
+pub use consumer_artifact_compose::*;
 mod local_cli_grant;
 pub use local_cli_grant::*;
 mod contributed_mcp_decision;
 pub use contributed_mcp_decision::*;
 mod local_mcp_grant;
 pub use local_mcp_grant::*;
+mod cisco_preflight;
+pub use cisco_preflight::*;
 mod mcp_proxy_decision;
 pub use mcp_proxy_decision::*;
 mod daemon_lifecycle_decision;
@@ -77,8 +96,8 @@ mod skill_directory_identity;
 pub use skill_directory_identity::*;
 mod browser_mcp_intent;
 pub use browser_mcp_intent::*;
-mod false_positive_rules;
-pub use false_positive_rules::*;
+mod runtime_detector_run;
+pub use runtime_detector_run::*;
 mod runner_authority;
 pub use runner_authority::*;
 mod mcp_runtime_evidence;
@@ -89,6 +108,8 @@ mod mcp_tool_policy;
 pub use mcp_tool_policy::*;
 mod mcp_tool_policy_decide;
 pub use mcp_tool_policy_decide::*;
+mod mcp_tool_call_identity;
+pub use mcp_tool_call_identity::*;
 mod mcp_stdio_session;
 pub use mcp_stdio_session::*;
 mod command_effect;
@@ -111,6 +132,8 @@ mod daemon_handler;
 pub use daemon_handler::*;
 mod daemon_route;
 pub use daemon_route::*;
+mod native_exact_action;
+pub use native_exact_action::*;
 
 mod workflow_capability;
 pub use workflow_capability::*;
@@ -130,11 +153,17 @@ pub use authoritative_decision::*;
 
 mod package_authority;
 pub use package_authority::*;
+mod package_audit_projection;
+pub use package_audit_projection::*;
 mod supply_chain_egress;
 pub use supply_chain_egress::*;
 
 mod contained_execution;
 pub use contained_execution::*;
+mod shim_admin;
+pub use shim_admin::*;
+mod package_context_build;
+pub use package_context_build::*;
 mod data_flow_analyze;
 pub use data_flow_analyze::*;
 mod prompt_requests;
@@ -184,6 +213,10 @@ pub struct GuardHookEnvelopeV2 {
     pub policy_generation: u64,
     pub policy_snapshot: Value,
     pub source: GuardHookSourceMetadataV2,
+    /// Acknowledged Watch posture. It only selects a continuing response
+    /// envelope; it never changes the verdict, receipt, or request identity.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub recording_only: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -205,6 +238,10 @@ pub struct GuardHookEdgeResultV2 {
     pub event_name: String,
     pub payload_kind: GuardHookPayloadKindV2,
     pub result: Value,
+    /// The harness-specific JSON a hook must print for `result`, rendered by
+    /// the resident so no other layer interprets the verdict.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub harness_response: Option<Value>,
     /// Rust-owned decision evidence.  The Python edge may only transport it
     /// to a non-authoritative asynchronous consumer.
     pub receipt: NativeHookDecisionReceiptV1,

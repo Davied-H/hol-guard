@@ -4783,6 +4783,10 @@ args = ["-lc", "echo hi"]
         assert output["status"] == "current"
         assert "managed_install" not in output
         assert any("Could not repair Codex protection during update" in note for note in output["notes"])
+        assert any(
+            "Could not repair Codex protection during update" in failure
+            for failure in output["protection_repair_failures"]
+        )
 
     @pytest.mark.usefixtures("native_prompt_runtime")
     def test_guard_update_reports_codex_repair_write_failures(self, tmp_path, monkeypatch, capsys):
@@ -5072,7 +5076,7 @@ args = ["-lc", "echo hi"]
         monkeypatch.setattr("codex_plugin_scanner.guard.adapters.codex._command_available", lambda command: True)
         monkeypatch.setattr(
             GuardStore,
-            "get_latest_guard_connect_state",
+            "get_effective_guard_connect_state",
             lambda self, *, now: {
                 "status": "retry_required",
                 "milestone": "first_sync_failed",

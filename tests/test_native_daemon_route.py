@@ -20,7 +20,8 @@ from codex_plugin_scanner.guard import native_daemon_route as route
 from codex_plugin_scanner.guard import native_resident_decision as shared
 from codex_plugin_scanner.guard.approval_scope_support import APPROVAL_SCOPE_CONTRACT_VERSION_PREFIX
 from codex_plugin_scanner.guard.daemon import server as daemon_server
-from codex_plugin_scanner.guard.daemon.server import _HEADLESS_APP_ACTIONS, _GuardDaemonHandler
+from codex_plugin_scanner.guard.daemon.server import _GuardDaemonHandler
+from codex_plugin_scanner.guard.daemon.server_control_headless import _HEADLESS_APP_ACTIONS
 
 pytestmark = pytest.mark.native_route_unpinned
 
@@ -284,6 +285,26 @@ def test_waiting_for_an_ask_slot_past_the_deadline_fails_closed(monkeypatch: pyt
     with pytest.raises(route.NativeDaemonRouteError) as caught:
         route.native_route_facts("POST", "/v1/runtime")
     assert caught.value.code == "native_daemon_route_unavailable"
+
+
+def test_exact_action_asks_do_not_use_the_shared_route_slots(monkeypatch: pytest.MonkeyPatch) -> None:
+    _resident(monkeypatch, lambda request: pytest.fail("resident must not be asked"))
+    monkeypatch.setattr(route, "_OPERATION", dataclasses.replace(route._OPERATION, timeout_seconds=0.05))
+    exact_slots = threading.BoundedSemaphore(1)
+    # Route slots exhausted by long exact-action work must not block a route ask, and vice versa.
+    assert exact_slots.acquire(blocking=False)
+    seen: list[object] = []
+
+    def request(**kwargs: object) -> dict[str, object] | None:
+        seen.append(kwargs)
+        return None
+
+    with pytest.raises(route.NativeDaemonRouteError):
+        route._decide({"kind": "x"}, None, {}, slots=exact_slots)
+    assert seen == []
+    assert route._ASK_SLOTS.acquire(blocking=False)
+    route._ASK_SLOTS.release()
+    assert route.EXACT_ACTION_ASK_SLOTS is not route._ASK_SLOTS
 
 
 def test_slot_wait_and_resident_ask_share_one_deadline(monkeypatch: pytest.MonkeyPatch) -> None:

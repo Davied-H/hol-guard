@@ -124,3 +124,80 @@ fn read_only_eval_output_preserves_scans_and_installed_policy_floors() {
     assert!(super::super::eval_output::bounded_output_action(&request).is_none());
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn constant_eval_proof_carries_no_execution_risk() {
+    use super::super::policy_enforcement_facts::risk_classes;
+    assert!(risk_classes(
+        PreToolActionTypeV1::Harness,
+        false,
+        "native_pure_constant_eval",
+        &[]
+    )
+    .is_empty());
+    assert!(risk_classes(
+        PreToolActionTypeV1::McpTool,
+        false,
+        "native_pure_constant_eval",
+        &[]
+    )
+    .is_empty());
+    assert_eq!(
+        risk_classes(PreToolActionTypeV1::McpTool, false, "native_mcp_other", &[]),
+        vec!["mcp_dangerous_tool"]
+    );
+    assert_eq!(
+        risk_classes(
+            PreToolActionTypeV1::Harness,
+            false,
+            "native_omp_eval_other",
+            &[]
+        ),
+        vec!["execution"]
+    );
+}
+
+#[test]
+fn constant_eval_mcp_tool_needs_no_publisher_identity() {
+    let payload = json!({
+        "tool_name": "mcp__node_repl__js",
+        "tool_input": {"code": "1+1", "timeout_ms": 1000, "title": "calc"}
+    });
+    let mut proven = generic_result("allow");
+    proven.action.harness = "zcode".into();
+    proven.action.action_type = PreToolActionTypeV1::McpTool;
+    proven.action.operation = PreToolOperationV1::Call;
+    proven.reason_code = "native_pure_constant_eval".into();
+    let allowed =
+        apply_pre_tool_policy(&snapshot(policy("allow")), &payload, proven.clone()).unwrap();
+    assert_eq!(allowed.decision, "allow");
+    assert_eq!(allowed.reason_code, "native_pure_constant_eval");
+
+    let mut unproven = proven;
+    unproven.reason_code = "native_test".into();
+    let reviewed = apply_pre_tool_policy(&snapshot(policy("allow")), &payload, unproven).unwrap();
+    assert_eq!(reviewed.decision, "deny");
+    assert_eq!(reviewed.reason_code, "native_policy_review_required");
+}
+
+#[test]
+fn constant_eval_with_an_object_publisher_keeps_the_unknown_publisher_floor() {
+    for key in ["publisher", "artifact"] {
+        let payload = json!({
+            "tool_name": "mcp__node_repl__js",
+            "tool_input": {"code": "1+1", "timeout_ms": 1000, "title": "calc"},
+            key: {"name": "unverified"}
+        });
+        let mut proven = generic_result("allow");
+        proven.action.harness = "zcode".into();
+        proven.action.action_type = PreToolActionTypeV1::McpTool;
+        proven.action.operation = PreToolOperationV1::Call;
+        proven.reason_code = "native_pure_constant_eval".into();
+        let reviewed = apply_pre_tool_policy(&snapshot(policy("allow")), &payload, proven).unwrap();
+        assert_eq!(reviewed.decision, "deny", "{key}");
+        assert_eq!(
+            reviewed.reason_code, "native_policy_review_required",
+            "{key}"
+        );
+    }
+}

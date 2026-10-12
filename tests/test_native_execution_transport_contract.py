@@ -167,6 +167,50 @@ def test_versioned_operation_replies_validate_schema_before_status(
         transport.failed.assert_called_once()
 
 
+def test_hook_render_bound_error_is_not_a_resident_outage(transport, tmp_path):
+    transport.status.capabilities.features = ("resident-protocol-v2", "hook-render-v2")
+    reply = {
+        "schema": "guard-hook-render-result.v1",
+        "status": "error",
+        "code": "native_hook_render_invalid",
+        "request_id": "hook-render-1",
+        "request_sha256": "sha256:" + "ab" * 32,
+    }
+    transport.client.return_value = json.dumps(reply).encode()
+    actual = bridge._resident_request(
+        operation="hook_render",
+        request={"schema": "guard-hook-render-request.v1"},
+        guard_home=tmp_path,
+        timeout_seconds=1.0,
+        required_feature="hook-render-v2",
+        response_schema="guard-hook-render-result.v1",
+        record_success=False,
+    )
+    assert actual == reply
+    transport.failed.assert_not_called()
+    transport.succeeded.assert_not_called()
+
+
+def test_hook_render_unknown_status_still_records_a_failure(transport, tmp_path):
+    transport.status.capabilities.features = ("resident-protocol-v2", "hook-render-v2")
+    reply = {"schema": "guard-hook-render-result.v1", "status": "boom", "code": "native_hook_render_invalid"}
+    transport.client.return_value = json.dumps(reply).encode()
+    assert (
+        bridge._resident_request(
+            operation="hook_render",
+            request={},
+            guard_home=tmp_path,
+            timeout_seconds=1.0,
+            required_feature="hook-render-v2",
+            response_schema="guard-hook-render-result.v1",
+            record_success=False,
+        )
+        is None
+    )
+    transport.failed.assert_called_once_with("a" * 64, tmp_path, reason="native_hook_render_status")
+    transport.succeeded.assert_not_called()
+
+
 @pytest.mark.parametrize("result", [{"status": "ok", "tools": []}, {"status": "failed", "reason": "timeout"}])
 def test_mcp_probe_accepts_native_result_without_outer_status(transport, tmp_path, result):
     transport.status.capabilities.features = ("resident-protocol-v2", "mcp-stdio-probe-v1")
@@ -183,3 +227,94 @@ def test_mcp_probe_accepts_native_result_without_outer_status(transport, tmp_pat
         )
         == reply
     )
+
+
+def test_hook_authority_state_bound_error_is_not_a_resident_failure(transport, tmp_path):
+    transport.status.capabilities.features = (
+        "resident-protocol-v2",
+        "hook-authority-state-v1",
+    )
+    reply = {
+        "schema": "guard-hook-authority-state-result.v1",
+        "status": "error",
+        "code": "native_hook_authority_state_store_unavailable",
+    }
+    transport.client.return_value = json.dumps(reply).encode()
+    actual = bridge._resident_request(
+        operation="hook_authority_state",
+        request={"request_id": "hook-authority-state-error"},
+        guard_home=tmp_path,
+        timeout_seconds=5.0,
+        required_feature="hook-authority-state-v1",
+        response_schema="guard-hook-authority-state-result.v1",
+        record_success=False,
+    )
+    assert actual == reply
+    transport.failed.assert_not_called()
+    transport.succeeded.assert_not_called()
+
+
+@pytest.mark.parametrize("runner", ["node", "typescript", "package_script", "workspace_write"])
+def test_contained_runner_replies_are_accepted_without_outer_status(transport, tmp_path, runner):
+    reply = {"schema": f"guard-contained-{runner.replace('_', '-')}-execute-result.v1", "result": {"stdout": ""}}
+    transport.client.return_value = json.dumps(reply).encode()
+    assert (
+        bridge._resident_request(
+            operation=f"contained_{runner}_execute",
+            request={},
+            guard_home=tmp_path,
+            timeout_seconds=1.0,
+            required_feature="contained-execution-v1",
+        )
+        == reply
+    )
+    transport.succeeded.assert_called_once_with("a" * 64, tmp_path)
+
+
+def test_contained_runner_transport_budget_covers_resident_overhead(transport, tmp_path):
+    transport.client.return_value = b'{"schema":"guard-contained-node-execute-result.v1","result":null}'
+    bridge._contained_runner_request(
+        op_prefix="contained_node_execute",
+        request_schema="guard-contained-node-execute-request.v1",
+        workspace=tmp_path,
+        manager="npx",
+        argv=("--no-install", "vitest", "run"),
+        guard_home=tmp_path,
+        shim_directory=tmp_path,
+        environment={},
+        timeout_seconds=100.0,
+        evidence=None,
+    )
+    envelope = json.loads(transport.client.call_args.kwargs["payload"])
+    assert envelope["deadline_budget_ms"] >= 100_000 + 60_000
+    assert transport.client.call_args.kwargs["timeout_seconds"] >= 160.0
+
+
+@pytest.mark.parametrize(
+    "frame,expected",
+    [
+        ({"error": "native_client_auth_timeout_failed", "retryable": False}, "native_client_auth_timeout_failed"),
+        ({"error": "not-a-finite-code", "retryable": False}, None),
+        ({"error": 7}, None),
+    ],
+)
+def test_framed_resident_refusal_keeps_its_finite_code(transport, tmp_path, frame, expected):
+    from codex_plugin_scanner.guard.native_resident_client import (
+        native_resident_client_failure_code,
+        record_native_resident_client_failure_code,
+    )
+
+    record_native_resident_client_failure_code(None)
+    transport.client.return_value = json.dumps(frame).encode()
+    response = bridge._resident_request(
+        operation="daemon_lifecycle_decide",
+        request={},
+        guard_home=tmp_path,
+        timeout_seconds=4.5,
+        required_feature="contained-execution-v1",
+        response_schema="guard-daemon-lifecycle-decision-result.v1",
+        record_success=False,
+    )
+    assert response is None
+    assert native_resident_client_failure_code() == expected
+    transport.failed.assert_called_once_with("a" * 64, tmp_path, reason="native_daemon_lifecycle_decide_schema")

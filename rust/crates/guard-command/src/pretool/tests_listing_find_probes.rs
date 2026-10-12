@@ -37,6 +37,8 @@ fn fixture() -> Fixture {
     let (home, ws) = (base.join("home"), base.join("ws"));
     for file in [
         "app/registry/[slug]/page.tsx",
+        "app/registry/[.x]/page.tsx",
+        "app/registry/[!x]/page.tsx",
         "app/registry/alpha/page.tsx",
         "app/password-reset-email.tsx",
         "app/secret-sandbox-x/page.tsx",
@@ -51,6 +53,10 @@ fn fixture() -> Fixture {
         "package.json",
         "node_modules/wrangler/bin/wrangler.js",
         ".ssh/id_rsa",
+        ".env",
+        "[,-0]env/page.tsx",
+        "private[[:punct:]]key/page.tsx",
+        "private-key/material.pem",
     ] {
         write(&ws, file);
     }
@@ -88,6 +94,12 @@ fn recursive_listing_and_globs_stay_inside_clean_trees() {
         "ls \"app/registry/[slug]\"",
         "ls -R 'app/registry/[slug]'",
         "ls src/*.ts",
+        // Bash passes an unmatched bracket word through literally.
+        "ls app/registry/[slug]",
+        "ls -la app/registry/[slug]",
+        "ls app/registry/[slug] src",
+        // The unmatched bracket drops out under nullglob; `src` remains.
+        "ls -R app/registry/[slug] src",
     ] {
         assert!(allowed_in(&fixture, ws, command), "{command}");
     }
@@ -114,6 +126,17 @@ fn recursive_listing_and_globs_stay_inside_clean_trees() {
         "ls ~/*",
         "ls nothing/*",
         "ls src/{a,b}",
+        // An unmatched bracket operand is read literally only when no class
+        // could match a dotfile and recursion could not fall back to the cwd.
+        "ls -R app/registry/[slug]",
+        "ls app/registry/[!x]",
+        "ls app/registry/[.x]",
+        "ls nothing/[slug]",
+        // `[,-0]` includes `.`, so dotglob can select `.env`.
+        "ls [,-0]env",
+        // `[[:punct:]]` is not a literal directory to the shell; it selects
+        // `private-key` while a same-spelled directory looks harmless.
+        "ls private[[:punct:]]key",
         // Quoted wildcard is a literal name, and an unquoted class mixed with
         // a quoted one is ambiguous.
         "ls 'src/*'",
@@ -252,8 +275,8 @@ fn version_probes_admit_lone_flags_and_keep_npx_review() {
         "pytest --version",
         "pytest --version tests",
         "go version",
-        "cargo --version",
-        "rustc -V",
+        "cargo --version --verbose",
+        "cargo +nightly --version",
         "python3 script.py",
         "node script.mjs",
         "npm test",
@@ -414,4 +437,47 @@ fn graphql_text_in_write_content_does_not_change_a_workspace_write() {
         );
         assert_eq!(result.minimum_action, "allow", "{content}");
     }
+}
+
+#[test]
+fn rg_glob_operands_are_proven_by_their_expansion() {
+    let fixture = fixture();
+    let ws = fixture.workspace.as_str();
+    for command in [
+        "rg -n main src/*.ts src/**/*.ts",
+        "rg -n \"main\" src/**/*.ts",
+        "rg -n alpha app/*/page.tsx",
+        "rg -n alpha app/**/page.tsx",
+        "ls app/*/page.tsx",
+        "ls app/**/page.tsx",
+    ] {
+        assert!(allowed_in(&fixture, ws, command), "{command}");
+    }
+    for command in [
+        // An expansion that reaches credential names or key material.
+        "rg -n plan docs/**/*.md",
+        "rg -n key keys/**",
+        "rg -n key **/*.pem",
+        // No expansion, an escape, or a pattern the shell may read differently.
+        "rg -n main nothing/**/*.ts",
+        "rg -n main ../**/*.ts",
+        "rg -n main src/**/*.t#",
+        "rg --hidden -n main src/**/*.ts",
+        // rg searches inside a matched directory, so its contents need proof.
+        "rg -n key k*",
+        "rg -n plan d*",
+        "rg -n env b*",
+    ] {
+        assert!(!allowed_in(&fixture, ws, command), "{command}");
+    }
+    write(std::path::Path::new(ws), "lib/deep/server.pem");
+    // A final globstar can expand to nested entries even for `ls`.
+    assert!(!allowed_in(&fixture, ws, "ls lib/**"));
+    assert!(!allowed_in(&fixture, ws, "rg -n key lib/*"));
+    std::fs::remove_dir_all(std::path::Path::new(ws).join("lib")).unwrap();
+    assert!(allowed_in(&fixture, ws, "rg -n main */main.ts"));
+    std::os::unix::fs::symlink("src", std::path::Path::new(ws).join("linked")).unwrap();
+    // A shell without globstar follows a directory link through `*`.
+    assert!(!allowed_in(&fixture, ws, "rg -n main */main.ts"));
+    assert!(!allowed_in(&fixture, ws, "rg -n main **/main.ts"));
 }

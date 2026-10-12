@@ -8,6 +8,7 @@ review-path call sites, and every probe re-hashes the whole runtime binary.
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 import os
@@ -15,15 +16,19 @@ import threading
 import urllib.request
 from collections.abc import Iterator
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 import codex_plugin_scanner.guard.native_runtime as native_runtime_module
+from codex_plugin_scanner.guard.daemon.hook_worker import HookWorker
 from codex_plugin_scanner.guard.native_runtime import native_runtime_status
 from codex_plugin_scanner.guard.native_runtime_request_scope import (
+    _REQUEST_CANDIDATES,
     _REQUEST_STATUS,
     native_status_request_scope,
 )
+from codex_plugin_scanner.guard.native_runtime_status_share import share_verified_runtime_status
 
 
 def _capabilities() -> native_runtime_module.NativeRuntimeCapabilities:
@@ -358,3 +363,221 @@ def test_daemon_hook_dispatch_enters_the_request_scope(
     assert len(observed) == 1
     assert isinstance(observed[0], dict)
     assert _REQUEST_STATUS.get() is None
+
+
+def test_hook_dispatch_opens_the_scope_before_route_classification(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Route facts for a hook POST already see the request scope; other POSTs do not."""
+    from codex_plugin_scanner.guard.daemon import GuardDaemonServer
+    from codex_plugin_scanner.guard.daemon import server as server_module
+    from codex_plugin_scanner.guard.native_daemon_route import NativeDaemonRouteError
+    from codex_plugin_scanner.guard.store import GuardStore
+
+    observed: list[tuple[str, bool]] = []
+
+    def record_scope(command: str, path: str, *, guard_home: Path) -> None:
+        del command, guard_home
+        observed.append((path, _REQUEST_CANDIDATES.get() is not None))
+        raise NativeDaemonRouteError("request-scope probe")
+
+    monkeypatch.setattr(server_module, "native_route_facts", record_scope)
+    store = GuardStore(tmp_path / "guard-home")
+    daemon = GuardDaemonServer(store, host="127.0.0.1", port=0)
+    daemon.start()
+    try:
+        for path in ("/v1/hooks/pi", "/v1/healthz/verify"):
+            request = urllib.request.Request(
+                f"http://127.0.0.1:{daemon.port}{path}",
+                data=json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Bash"}).encode(),
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Guard-Token": daemon._server.auth_token,
+                },
+                method="POST",
+            )
+            with pytest.raises(urllib.request.HTTPError) as excinfo:
+                urllib.request.urlopen(request, timeout=10)
+            assert excinfo.value.code == 503
+    finally:
+        daemon.stop()
+
+    assert observed == [("/v1/hooks/pi", True), ("/v1/healthz/verify", False)]
+
+
+def _verified_status(binary: Path) -> native_runtime_module.NativeRuntimeStatus:
+    return native_runtime_module.NativeRuntimeStatus(
+        mode="force",
+        available=True,
+        compatible=True,
+        reason="native_ready",
+        identity=_identity_for(binary),
+        capabilities=_capabilities(),
+    )
+
+
+def test_shared_verified_status_spares_the_request_a_second_hash(
+    status_probe: tuple[Path, list[Path]],
+) -> None:
+    binary, calls = status_probe
+    verified = _verified_status(binary)
+    with native_status_request_scope():
+        share_verified_runtime_status(verified)
+        assert native_runtime_status() is verified
+    assert calls == []
+
+
+def test_shared_status_is_rechecked_against_the_binary(
+    status_probe: tuple[Path, list[Path]],
+) -> None:
+    binary, calls = status_probe
+    verified = _verified_status(binary)
+    with native_status_request_scope():
+        share_verified_runtime_status(verified)
+        binary.write_bytes(b"request-scope-runtime-replaced")
+        assert native_runtime_status() is not verified
+    assert calls == [binary]
+
+
+def test_sharing_a_status_outside_a_request_changes_nothing(
+    status_probe: tuple[Path, list[Path]],
+) -> None:
+    binary, calls = status_probe
+    share_verified_runtime_status(_verified_status(binary))
+    assert native_runtime_status().reason == "native_ready"
+    assert calls == [binary]
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"compatible": False, "reason": "native_version_mismatch"},
+        {"mode": "auto"},
+        {"identity": None},
+    ],
+    ids=["incompatible", "other-mode", "unvalidated"],
+)
+def test_unusable_status_is_not_shared(
+    status_probe: tuple[Path, list[Path]],
+    change: dict[str, object],
+) -> None:
+    binary, calls = status_probe
+    unusable = dataclasses.replace(_verified_status(binary), **change)
+    with native_status_request_scope():
+        share_verified_runtime_status(unusable)
+        assert native_runtime_status() is not unusable
+    assert calls == [binary]
+
+
+def test_status_for_a_binary_outside_the_candidates_is_not_shared(
+    status_probe: tuple[Path, list[Path]],
+    tmp_path: Path,
+) -> None:
+    binary, calls = status_probe
+    other = tmp_path / "other-runtime"
+    other.write_bytes(b"other-runtime")
+    stranger = _verified_status(other)
+    with native_status_request_scope():
+        share_verified_runtime_status(stranger)
+        assert native_runtime_status().identity == _identity_for(binary)
+    assert calls == [binary]
+
+
+def test_status_for_a_fallback_candidate_is_not_shared(
+    status_probe: tuple[Path, list[Path]],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    binary, calls = status_probe
+    preferred = tmp_path / "preferred-runtime"
+    preferred.write_bytes(b"preferred-runtime")
+    monkeypatch.setattr(native_runtime_module, "_runtime_candidates", lambda: (preferred, binary))
+    fallback = _verified_status(binary)
+    with native_status_request_scope():
+        share_verified_runtime_status(fallback)
+        assert native_runtime_status().identity == _identity_for(preferred)
+    assert calls == [preferred]
+
+
+def test_worker_shares_the_publisher_status_with_its_request(
+    status_probe: tuple[Path, list[Path]],
+) -> None:
+    binary, calls = status_probe
+    verified = _verified_status(binary)
+    worker = SimpleNamespace(policy_snapshot_publisher=SimpleNamespace(current_runtime_status=lambda: verified))
+    with native_status_request_scope():
+        assert HookWorker._native_runtime_status(worker) is verified
+        assert native_runtime_status() is verified
+    assert calls == []
+
+
+def _counting_discovery(monkeypatch: pytest.MonkeyPatch) -> list[None]:
+    """Wrap the real discovery so calls are counted; no real runtime needed."""
+
+    calls: list[None] = []
+    real = native_runtime_module._discover_runtime_candidates
+
+    def discover() -> tuple[Path, ...]:
+        calls.append(None)
+        return real()
+
+    monkeypatch.setattr(native_runtime_module, "_discover_runtime_candidates", discover)
+    return calls
+
+
+def test_scope_discovers_the_candidates_once_per_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOL_GUARD_NATIVE", "force")
+    calls = _counting_discovery(monkeypatch)
+    with native_status_request_scope():
+        first = native_runtime_module._runtime_candidates()
+        second = native_runtime_module._runtime_candidates()
+    assert first == second
+    assert len(calls) == 1
+    assert _REQUEST_CANDIDATES.get() is None
+    assert native_runtime_module._runtime_candidates() == first
+    assert len(calls) == 2
+
+
+def test_scope_rediscovers_when_the_binary_override_changes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOL_GUARD_NATIVE", "force")
+    first_override = tmp_path / "first-runtime"
+    second_override = tmp_path / "second-runtime"
+    first_override.write_bytes(b"first-runtime")
+    second_override.write_bytes(b"second-runtime")
+    monkeypatch.setenv("HOL_GUARD_NATIVE_BINARY", str(first_override))
+    calls = _counting_discovery(monkeypatch)
+    with native_status_request_scope():
+        first = native_runtime_module._runtime_candidates()
+        monkeypatch.setenv("HOL_GUARD_NATIVE_BINARY", str(second_override))
+        second = native_runtime_module._runtime_candidates()
+    assert len(calls) == 2
+    assert first[0] == first_override
+    assert second[0] == second_override
+
+
+def test_candidates_discover_on_every_call_outside_a_scope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOL_GUARD_NATIVE", "force")
+    calls = _counting_discovery(monkeypatch)
+    native_runtime_module._runtime_candidates()
+    native_runtime_module._runtime_candidates()
+    assert len(calls) == 2
+
+
+def test_nested_scopes_share_the_candidate_memo(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HOL_GUARD_NATIVE", "force")
+    calls = _counting_discovery(monkeypatch)
+    with native_status_request_scope(), native_status_request_scope():
+        native_runtime_module._runtime_candidates()
+        native_runtime_module._runtime_candidates()
+    assert len(calls) == 1
+    assert _REQUEST_CANDIDATES.get() is None

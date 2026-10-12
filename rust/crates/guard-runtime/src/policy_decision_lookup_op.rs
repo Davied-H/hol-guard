@@ -1320,12 +1320,7 @@ fn evaluate(request: &PolicyDecisionLookupRequestV1) -> Result<Value, String> {
     }
     let current_time = canonical_utc_timestamp(&request.now)
         .ok_or_else(|| "native_policy_decision_lookup_invalid_now".to_owned())?;
-    let mut conn = Connection::open(&request.store_path)
-        .map_err(|_| "native_policy_decision_lookup_store_unavailable".to_owned())?;
-    conn.busy_timeout(std::time::Duration::from_secs(5))
-        .map_err(|_| "native_policy_decision_lookup_store_unavailable".to_owned())?;
-    conn.execute("pragma foreign_keys = on", [])
-        .map_err(|_| "native_policy_decision_lookup_store_unavailable".to_owned())?;
+    let mut conn = open_lookup_connection(&request.store_path)?;
     if request.consume_one_shot {
         // Serialize selection with consumption. Rollback-on-drop also keeps a
         // one-shot usable when its required audit write or commit fails.
@@ -1340,6 +1335,32 @@ fn evaluate(request: &PolicyDecisionLookupRequestV1) -> Result<Value, String> {
     } else {
         evaluate_in_connection(request, &conn, &current_time)
     }
+}
+
+/// Open the store the way a stand-alone lookup does, for callers that probe it
+/// several times in one request.
+pub(crate) fn open_lookup_connection(store_path: &str) -> Result<Connection, String> {
+    let unavailable = || "native_policy_decision_lookup_store_unavailable".to_owned();
+    let conn = Connection::open(store_path).map_err(|_| unavailable())?;
+    conn.busy_timeout(std::time::Duration::from_secs(5))
+        .map_err(|_| unavailable())?;
+    conn.execute("pragma foreign_keys = on", [])
+        .map_err(|_| unavailable())?;
+    Ok(conn)
+}
+
+/// One non-consuming probe on an already open store: the `lookup_result`
+/// payload a stand-alone `consume_one_shot: false` request would return.
+pub(crate) fn evaluate_non_consuming(
+    request: &PolicyDecisionLookupRequestV1,
+    conn: &Connection,
+) -> Result<Value, String> {
+    if request.consume_one_shot || request.schema != POLICY_DECISION_LOOKUP_REQUEST_SCHEMA {
+        return Err("native_policy_decision_lookup_invalid".to_owned());
+    }
+    let current_time = canonical_utc_timestamp(&request.now)
+        .ok_or_else(|| "native_policy_decision_lookup_invalid_now".to_owned())?;
+    evaluate_in_connection(request, conn, &current_time)
 }
 
 fn evaluate_in_connection(
@@ -1407,12 +1428,16 @@ fn evaluate_in_connection(
     let mut reported_local_once_failures: Vec<Value> = Vec::new();
     let local_once_hashes: Vec<String> = {
         let mut v = Vec::new();
-        for h in [
-            artifact_hash.map(str::to_string),
-            runtime_exact_match_key.clone(),
-        ]
-        .into_iter()
-        .flatten()
+        // The exact peek matches only the caller-supplied hash; the id-derived
+        // runtime-exact fallback belongs to ordinary policy lookups.
+        let runtime_fallback = if request.local_once_only {
+            None
+        } else {
+            runtime_exact_match_key.clone()
+        };
+        for h in [artifact_hash.map(str::to_string), runtime_fallback]
+            .into_iter()
+            .flatten()
         {
             if !v.contains(&h) {
                 v.push(h);
@@ -1476,6 +1501,23 @@ fn evaluate_in_connection(
             local_once_hash = Some(lo_hash.clone());
             break;
         }
+    }
+    if request.local_once_only {
+        // The exact local-once peek never reads policy rows or consumes.
+        flush_events(conn, &events, current_time)
+            .map_err(|_| "native_policy_decision_lookup_write_failed".to_owned())?;
+        let trust_status = trust_status_from_state(&integrity_state);
+        if let Some(ref mut ignored) = ignored_local_integrity {
+            ignored["trust_status"] = trust_status.clone();
+        }
+        return Ok(lookup_result(
+            conn,
+            local_once_decision,
+            ignored_local_integrity,
+            trust_status,
+            false,
+            starting_revision,
+        ));
     }
     if local_once_decision.is_some() {
         selected_payload = local_once_decision.clone();
@@ -1969,4 +2011,4 @@ fn consuming_policy_rows(
 
 #[cfg(test)]
 #[path = "policy_decision_lookup_tests.rs"]
-mod tests;
+pub(crate) mod tests;

@@ -1302,7 +1302,8 @@ def test_ensure_guard_daemon_uses_one_start_deadline_across_candidate_ports(tmp_
         assert launched_ports == [] and waited == [] and retirement_deadlines == []
     else:
         assert launched_ports == ["5410"]
-        assert waited == [2.0 if scenario == "outer_deadline" else 5.0]
+        # The wait leaves a quarter of the budget, at most 3s, for classification.
+        assert waited == [1.5 if scenario == "outer_deadline" else 3.75]
         assert retirement_deadlines == [102.0 if scenario == "outer_deadline" else 105.0]
 
 
@@ -1904,7 +1905,14 @@ def test_ensure_guard_daemon_reaps_stale_ephemeral_daemon_states(tmp_path, monke
     def fake_pid_is_running(_pid):
         return pid_running["value"]
 
-    def fake_kill(pid, _signal):
+    real_kill = os.kill
+
+    def fake_kill(pid, signal_number):
+        # Only the stale daemon is fake. Closing a native resident stream that an earlier test left
+        # in the client pool terminates a real child, which must not mark the stale daemon dead.
+        if pid != 11111:
+            real_kill(pid, signal_number)
+            return
         killed.append(pid)
         pid_running["value"] = False
 

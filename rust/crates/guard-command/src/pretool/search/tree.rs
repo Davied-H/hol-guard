@@ -37,11 +37,99 @@ pub(in crate::pretool) const SECRET_EXTENSIONS: &[&str] = &[
     "pem", "p12", "pfx", "jks", "keystore", "asc", "gpg", "kdbx", "ppk",
 ];
 
+/// Names-only recursive listing (`ls -R`).
 pub(in crate::pretool) fn safe_recursive_target(value: &str, context: ReadContext<'_>) -> bool {
+    safe_walk_target(value, context, &[], &[])
+}
+
+/// Recursive content search (`grep -r`, `rg`). Oh My Pi agent-state trees are
+/// excluded: the per-file exclusions that deny direct reads there do not
+/// apply to a walk, so a search could return a file a direct read denies.
+pub(in crate::pretool) fn safe_recursive_search_target(
+    value: &str,
+    context: ReadContext<'_>,
+) -> bool {
     safe_recursive_target_excluding(value, context, &[], &[])
 }
 
 pub(super) fn safe_recursive_target_excluding(
+    value: &str,
+    context: ReadContext<'_>,
+    excluded_files: &[&str],
+    excluded_directories: &[&str],
+) -> bool {
+    if expanded_operand(value, context).is_some_and(|root| inside_agent_state(&root, context)) {
+        return false;
+    }
+    safe_walk_target(value, context, excluded_files, excluded_directories)
+}
+
+/// An absolute or `~` `rg` root that names a real directory below the cwd is
+/// the same search as its cwd-relative spelling, which `rg` already confines
+/// to non-hidden, non-ignored entries without following links. Agents working
+/// from a multi-repository parent spell child repositories this way, and the
+/// metadata walk would refuse them for their `.git` directory alone.
+///
+/// Every component below the cwd must be a non-hidden real directory, so the
+/// root cannot reach a dot directory or leave the cwd through a link, and the
+/// relative spelling must clear the same screens as a typed relative operand.
+pub(in crate::pretool) fn rg_root_inside_cwd(value: &str, context: ReadContext<'_>) -> bool {
+    home_relative(context.cwd.unwrap_or_default(), context.home_dir)
+        .and_then(|cwd| std::fs::canonicalize(cwd).ok())
+        .is_some_and(|cwd| root_below(value, context, &cwd, false))
+}
+
+/// `fd` prints names, never contents, and skips hidden and ignored entries
+/// without following links. A names-only listing may therefore start at any
+/// non-hidden directory strictly below home, such as the parent that holds the
+/// current repository and its siblings, under the same component screens.
+pub(in crate::pretool) fn listing_root_below_home(value: &str, context: ReadContext<'_>) -> bool {
+    context
+        .home_dir
+        .and_then(|home| std::fs::canonicalize(home).ok())
+        .is_some_and(|home| root_below(value, context, &home, true))
+}
+
+fn root_below(value: &str, context: ReadContext<'_>, base: &Path, strict: bool) -> bool {
+    if !value.starts_with(['/', '~'])
+        || value.len() > 4096
+        || value.contains(HAZARDS)
+        || value.contains(['*', '?', '[', ']', '{', '}'])
+        || value.split('/').any(|part| part == "..")
+        || !super::super::safe_reads::verified_path_context(context.home_dir, context.cwd)
+    {
+        return false;
+    }
+    let Some(root) = expanded_operand(value, context) else {
+        return false;
+    };
+    let Ok(canonical) = std::fs::canonicalize(&root) else {
+        return false;
+    };
+    let Ok(relative) = canonical.strip_prefix(base) else {
+        return false;
+    };
+    let relative = relative.to_string_lossy().replace('\\', "/");
+    canonical == root
+        && canonical.is_dir()
+        && !(strict && relative.is_empty())
+        && relative
+            .split('/')
+            .filter(|part| !part.is_empty())
+            .all(|part| !part.starts_with('.'))
+        && !inside_agent_state(&canonical, context)
+        && (relative.is_empty()
+            || !(super::sensitive_path_argument(&relative)
+                || super::glob_can_select_sensitive_path(&relative)))
+}
+
+fn inside_agent_state(path: &std::path::Path, context: ReadContext<'_>) -> bool {
+    std::fs::canonicalize(path).is_ok_and(|canonical| {
+        super::super::read_paths::inside_agent_state_tree(&canonical, context.home_dir)
+    })
+}
+
+fn safe_walk_target(
     value: &str,
     context: ReadContext<'_>,
     excluded_files: &[&str],
@@ -80,12 +168,45 @@ pub(in crate::pretool) fn safe_glob_operand(
     let Some(matches) = expand_glob(value, context) else {
         return false;
     };
+    // With globstar a final `**` also expands to every nested entry, so the
+    // matched directories must be proven like a recursive read.
+    let final_globstar = value
+        .rsplit('/')
+        .find(|part| !part.is_empty())
+        .is_some_and(|part| part.len() > 1 && part.bytes().all(|byte| byte == b'*'));
     matches.into_iter().all(|path| {
-        if recursive {
+        if recursive || final_globstar {
             walk(path, &[], &[])
         } else {
             true
         }
+    })
+}
+
+/// An unquoted bracket operand that matches nothing. Bash passes such a word
+/// through literally, so `ls app/[slug]` lists the Next.js route directory
+/// named `[slug]`; zsh's `nomatch` fails the command instead. The literal
+/// directory must clear the quoted-literal screens. A class that could match
+/// a leading dot under `dotglob`, including through a range, does not qualify,
+/// nor does syntax this matcher would close at the wrong `]`.
+pub(in crate::pretool) fn safe_unmatched_bracket_operand(
+    value: &str,
+    context: ReadContext<'_>,
+    recursive: bool,
+) -> bool {
+    !value.contains(['*', '?', '!'])
+        && !super::glob_class::bracket_fallback_unsafe(value)
+        && expand_glob_matches(value, context).is_some_and(|matches| matches.is_empty())
+        && safe_literal_bracket_tree(value, context, recursive)
+}
+
+/// Content-search glob operand: every match is walked, and matches inside an
+/// Oh My Pi agent-state tree are refused as for a literal search root.
+pub(in crate::pretool) fn safe_glob_search_operand(value: &str, context: ReadContext<'_>) -> bool {
+    expand_glob(value, context).is_some_and(|matches| {
+        matches
+            .into_iter()
+            .all(|path| !inside_agent_state(&path, context) && walk(path, &[], &[]))
     })
 }
 
@@ -97,7 +218,7 @@ fn home_relative(value: &str, home: Option<&str>) -> Option<PathBuf> {
     }
 }
 
-fn expanded_operand(value: &str, context: ReadContext<'_>) -> Option<PathBuf> {
+pub(super) fn expanded_operand(value: &str, context: ReadContext<'_>) -> Option<PathBuf> {
     let expanded = if value == "~" || value.starts_with("~/") {
         home_relative(value, context.home_dir)?
     } else if Path::new(value).is_absolute() {
@@ -110,7 +231,7 @@ fn expanded_operand(value: &str, context: ReadContext<'_>) -> Option<PathBuf> {
 }
 
 /// Characters that make a word mean more than one literal path.
-const HAZARDS: [char; 11] = ['$', '`', '|', ';', '&', '<', '>', '\n', '\r', '\0', '\\'];
+pub(super) const HAZARDS: [char; 11] = ['$', '`', '|', ';', '&', '<', '>', '\n', '\r', '\0', '\\'];
 
 /// A relative, quoted operand naming an existing real directory.
 fn checked_directory(value: &str, context: ReadContext<'_>) -> Option<PathBuf> {
@@ -141,7 +262,7 @@ fn hidden_allowed(name: &str) -> bool {
     BENIGN_HIDDEN_NAMES.contains(&name.to_ascii_lowercase().as_str())
 }
 
-fn descendant_allowed(path: &Path, root: &Path, is_file: bool) -> bool {
+pub(super) fn descendant_allowed(path: &Path, root: &Path, is_file: bool) -> bool {
     let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
         return false;
     };
@@ -208,33 +329,55 @@ fn walk(root: PathBuf, excluded_files: &[&str], excluded_directories: &[&str]) -
 }
 
 /// Expand a relative glob below the cwd. `None` when any step is ambiguous:
-/// absolute or `~` operands, dot components, `..`, links, no match, or too
-/// many matches.
+/// absolute or `~` operands, dot components, `..`, links to directories, no
+/// match, or too many matches.
+///
+/// A component made only of `*` (such as `**`) is expanded as the union of
+/// what shells do with it: zero or more nested directories with `globstar`,
+/// and a single `*` without it. A wildcard before the last component only
+/// descends into directories, as the shell does.
 fn expand_glob(value: &str, context: ReadContext<'_>) -> Option<Vec<PathBuf>> {
+    expand_glob_matches(value, context).filter(|matches| !matches.is_empty())
+}
+
+/// [`expand_glob`] that reports a pattern matching nothing as an empty list,
+/// so a caller can tell it apart from an unsafe match.
+fn expand_glob_matches(value: &str, context: ReadContext<'_>) -> Option<Vec<PathBuf>> {
     if value.is_empty()
         || value.len() > 4096
         || value.contains(HAZARDS)
-        || value.contains(['{', '}'])
+        || value.contains(['{', '}', '#', '^', '(', ')'])
         || value.starts_with(['/', '~', '-'])
         || !super::super::safe_reads::verified_path_context(context.home_dir, context.cwd)
     {
         return None;
     }
     let base = real_allowed_directory(&home_relative(context.cwd?, context.home_dir)?, context)?;
-    let mut current = vec![base];
-    let mut inspected = 0_usize;
-    for component in value
+    let components: Vec<&str> = value
         .split('/')
         .filter(|part| !part.is_empty() && *part != ".")
-    {
-        if component == ".." || component.starts_with('.') {
+        .collect();
+    let mut current = vec![base];
+    let mut inspected = 0_usize;
+    for (index, component) in components.iter().enumerate() {
+        if *component == ".." || component.starts_with('.') {
             return None;
         }
+        let last = index + 1 == components.len();
         let is_pattern = component.contains(['*', '?', '[']);
         let mut next = Vec::new();
         for directory in &current {
             if !is_pattern {
-                next.push(directory.join(component));
+                // The shell keeps only literal continuations that exist.
+                let path = directory.join(component);
+                let exists = std::fs::symlink_metadata(&path).is_ok();
+                if (last && exists) || traversable(&path)? {
+                    next.push(path);
+                }
+                continue;
+            }
+            if !last && component.len() > 1 && component.bytes().all(|byte| byte == b'*') {
+                nested_directories(directory, &mut next, &mut inspected)?;
                 continue;
             }
             for entry in std::fs::read_dir(directory).ok()? {
@@ -244,8 +387,12 @@ fn expand_glob(value: &str, context: ReadContext<'_>) -> Option<Vec<PathBuf>> {
                 }
                 let name = entry.ok()?.file_name();
                 let name = name.to_str()?;
-                if !name.starts_with('.') && glob_matches(component.as_bytes(), name.as_bytes()) {
-                    next.push(directory.join(name));
+                if name.starts_with('.') || !glob_matches(component.as_bytes(), name.as_bytes()) {
+                    continue;
+                }
+                let path = directory.join(name);
+                if last || traversable(&path)? {
+                    next.push(path);
                 }
             }
         }
@@ -291,5 +438,50 @@ fn expand_glob(value: &str, context: ReadContext<'_>) -> Option<Vec<PathBuf>> {
         }
         matches.push(path);
     }
-    (!matches.is_empty()).then_some(matches)
+    Some(matches)
+}
+
+/// Whether the shell continues below this path: `Some(true)` for a real
+/// directory, `Some(false)` for anything it skips, `None` for a link to a
+/// directory, which a shell without `globstar` would follow.
+fn traversable(path: &Path) -> Option<bool> {
+    let Ok(metadata) = std::fs::symlink_metadata(path) else {
+        return Some(false);
+    };
+    if metadata.file_type().is_symlink() {
+        return std::fs::metadata(path)
+            .map_or(Some(false), |target| (!target.is_dir()).then_some(false));
+    }
+    Some(metadata.is_dir())
+}
+
+/// `directory` and every non-hidden real directory below it.
+fn nested_directories(
+    directory: &Path,
+    found: &mut Vec<PathBuf>,
+    inspected: &mut usize,
+) -> Option<()> {
+    let mut pending = vec![(directory.to_path_buf(), 0_usize)];
+    while let Some((path, depth)) = pending.pop() {
+        if depth > MAX_WALK_DEPTH || found.len() >= MAX_GLOB_MATCHES {
+            return None;
+        }
+        for entry in std::fs::read_dir(&path).ok()? {
+            *inspected += 1;
+            if *inspected > MAX_GLOB_ENTRIES {
+                return None;
+            }
+            let entry = entry.ok()?;
+            let name = entry.file_name();
+            if name.to_str()?.starts_with('.') {
+                continue;
+            }
+            let child = entry.path();
+            if traversable(&child)? {
+                pending.push((child, depth + 1));
+            }
+        }
+        found.push(path);
+    }
+    Some(())
 }

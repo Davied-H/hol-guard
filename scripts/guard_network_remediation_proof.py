@@ -56,7 +56,7 @@ EXPECTED_TASK_EVIDENCE: Final[Mapping[str, tuple[str, ...]]] = {
     ),
     "REM-124": (
         "tests/test_guard_compound_developer_inspection.py",
-        "tests/test_guard_compound_readonly_auto_allow.py",
+        "rust/crates/guard-runtime/src/hook_decision_benign_tool_action_tests.rs",
         "tests/test_guard_trusted_local_tools.py",
     ),
     "REM-125": (
@@ -76,7 +76,7 @@ EXPECTED_TASK_EVIDENCE: Final[Mapping[str, tuple[str, ...]]] = {
         "tests/test_guard_linux_network_observer.py",
     ),
     "REM-129": (
-        ".github/workflows/guard-gvisor-reference.yml",
+        ".github/workflows/nightly-native.yml",
         "tests/test_guard_gvisor_reference_runtime.py",
         "tests/test_guard_kubernetes_runtime.py",
     ),

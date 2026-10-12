@@ -24,9 +24,16 @@ from .native_resident_client import native_resident_client_request
 from .native_response_decoder import native_error as _native_error
 from .native_response_decoder import response_from_payload as _response_from_payload
 from .native_route_receipt import record_native_hook_result
+from .native_runtime_process_cache import (
+    forget_process_status,
+    process_snapshot,
+    process_status,
+    remember_process_status,
+)
 from .native_runtime_request_scope import (
     _resolved_candidate_path,
     remember_scoped_status,
+    scoped_candidates,
     scoped_status,
 )
 from .native_runtime_resilience import (
@@ -85,6 +92,13 @@ def _bundled_runtime_candidate() -> Path:
 
 
 def _runtime_candidates() -> tuple[Path, ...]:
+    return scoped_candidates(
+        (native_mode(), os.environ.get(_NATIVE_BINARY_ENV)),
+        _discover_runtime_candidates,
+    )
+
+
+def _discover_runtime_candidates() -> tuple[Path, ...]:
     mode = native_mode()
     candidates: list[Path] = []
     override = os.environ.get(_NATIVE_BINARY_ENV)
@@ -255,6 +269,7 @@ def _run_native_process(
     *,
     input_text: str,
     timeout_seconds: float,
+    output_limit: int = _MAX_RESPONSE_BYTES,
 ) -> str | None:
     result = run_isolated_hook_process(
         (str(path), *args),
@@ -262,7 +277,7 @@ def _run_native_process(
         cwd=path.parent,
         environment=_isolated_environment(),
         timeout_seconds=timeout_seconds,
-        output_limit=_MAX_RESPONSE_BYTES,
+        output_limit=output_limit,
     )
     if result.returncode != 0 or result.timed_out or result.output_limit_exceeded or result.containment_failed:
         return None
@@ -288,6 +303,7 @@ def _clear_capabilities_probe_state() -> None:
     with _capabilities_probe_lock:
         _capabilities_cache.clear()
         _capabilities_retry_after.clear()
+    forget_process_status()
 
 
 def _capabilities_for_identity(
@@ -360,16 +376,29 @@ def _scoped_manifest_still_valid(status: NativeRuntimeStatus) -> bool:
     return error is None and current == manifest
 
 
+def _status_request_key(candidates: tuple[Path, ...]) -> tuple[str, tuple[str, ...]]:
+    return native_mode(), tuple(str(candidate) for candidate in candidates)
+
+
 def native_runtime_status(*, deadline_monotonic: float | None = None) -> NativeRuntimeStatus:
     candidates = _runtime_candidates()
-    key = (native_mode(), tuple(str(candidate) for candidate in candidates))
+    key = _status_request_key(candidates)
     if (cached := scoped_status(key)) is not None:
         identity = cached.identity
-        resolved = {_resolved_candidate_path(candidate) for candidate in candidates}
-        if identity is not None and identity.path in resolved and _scoped_manifest_still_valid(cached):
+        if (
+            identity is not None
+            and any(_resolved_candidate_path(candidate) == identity.path for candidate in candidates)
+            and _scoped_manifest_still_valid(cached)
+        ):
             return cached
+    expired = deadline_monotonic is not None and time.monotonic() >= deadline_monotonic
+    if not expired and (process := process_status(key, candidates)) is not None:
+        remember_scoped_status(key, process)
+        return process
+    before = process_snapshot(candidates)
     status = _compute_runtime_status(candidates, deadline_monotonic=deadline_monotonic)
     remember_scoped_status(key, status)
+    remember_process_status(key, status, before)
     return status
 
 

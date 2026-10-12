@@ -42,6 +42,7 @@ pub(super) fn verified_cwd_compound_context(
 
 pub(super) fn exact_safe_cwd_compound(
     model: &CanonicalCommandV1,
+    allow_git_helper_context: bool,
     context: super::PathContext<'_>,
 ) -> bool {
     let Some(cwd) = verified_cwd_compound_context(model, context) else {
@@ -64,6 +65,7 @@ pub(super) fn exact_safe_cwd_compound(
             crate::pretool::PathContext {
                 home_dir: context.home_dir,
                 cdpath_unset: context.cdpath_unset,
+                rustup_override_absent: context.rustup_override_absent,
                 cwd: Some(&cwd),
             },
         );
@@ -106,10 +108,11 @@ pub(super) fn exact_safe_cwd_compound(
         ) && exact_safe_segment_with_context(
             model,
             segment,
-            false,
+            allow_git_helper_context,
             crate::pretool::PathContext {
                 home_dir: context.home_dir,
                 cdpath_unset: context.cdpath_unset,
+                rustup_override_absent: context.rustup_override_absent,
                 cwd: Some(&cwd),
             },
         )
@@ -138,6 +141,7 @@ pub(crate) fn benign_command_segments(
     let proof_context = crate::pretool::PathContext {
         home_dir: context.home_dir,
         cdpath_unset: context.cdpath_unset,
+        rustup_override_absent: context.rustup_override_absent,
         cwd: cwd.as_deref().or(context.cwd),
     };
     let segment_benign: Vec<bool> = model
@@ -278,10 +282,12 @@ pub(super) fn exact_safe_segment_with_context(
         return false;
     };
     let basename = executable_basename(executable);
-    let inert_search = matches!(basename, "rg" | "grep")
+    let inert_search = matches!(basename, "rg" | "grep" | "fd")
         && search::safe_search_arguments_with_context(basename, &segment.arguments, context);
-    if (!inert_search && sensitive_command(&segment.text))
-        || (!matches!(basename, "rg" | "grep")
+    if (!inert_search
+        && !super::source_file_read_segment(segment)
+        && sensitive_command(&segment.text))
+        || (!matches!(basename, "rg" | "grep" | "fd")
             && segment
                 .arguments
                 .iter()
@@ -301,6 +307,7 @@ pub(super) fn exact_safe_segment_with_context(
                 && super::directory_targets::drive_targets_quoted(segment)
         }
         "pwd" | "true" | "echo" | "printf" | "which" | "whoami" | "uname" => true,
+        "cargo" | "rustc" => super::rust_toolchain::safe_version_probe(&segment.arguments, context),
         "date" => safe_reads::safe_date_arguments(&segment.arguments),
         "sleep" => safe_reads::safe_sleep_arguments(&segment.arguments),
         "uptime" => segment.arguments.is_empty(),
@@ -321,7 +328,11 @@ pub(super) fn exact_safe_segment_with_context(
                 && safe_reads::bounded_read_target(target, context.home_dir, context.cwd, false)),
         "cp" => {
             model.segments.len() == 1
-                && safe_reads::safe_copy_arguments(&segment.arguments, context)
+                && (safe_reads::safe_copy_arguments(&segment.arguments, context)
+                    || super::recursive_copy::safe_recursive_copy_arguments(
+                        &segment.arguments,
+                        context,
+                    ))
         }
         "mktemp" | "mkdir" | "touch" | "mv" => {
             model.segments.len() == 1
@@ -336,12 +347,15 @@ pub(super) fn exact_safe_segment_with_context(
         "git" => {
             safe_git_arguments(&segment.arguments, allow_git_helper_context, context)
                 && super::directory_targets::drive_targets_quoted(segment)
+                && super::directory_targets::home_targets_unquoted(segment)
         }
         "gh" => safe_gh_arguments(&segment.arguments, &segment.text),
         "wrangler" => super::wrangler_reads::safe_wrangler_arguments(&segment.arguments),
-        "hol-guard" => {
-            super::guard_diagnostics::safe_hol_guard_segment(&segment.arguments, context.cwd)
-        }
+        "hol-guard" => super::guard_diagnostics::safe_hol_guard_segment(
+            &segment.arguments,
+            context.cwd,
+            segment.pipeline_index,
+        ),
         "jq" => {
             segment.pipeline_index > 0 && safe_reads::safe_jq_stdin_arguments(&segment.arguments)
         }
@@ -359,8 +373,13 @@ pub(super) fn exact_safe_segment_with_context(
             segment.pipeline_index > 0
                 && super::stdin_filters::safe_arguments(basename, &segment.arguments)
         }
-        "rg" | "grep" => {
+        "rg" | "grep" | "fd" => {
             search::safe_search_arguments_with_context(basename, &segment.arguments, context)
+                && super::directory_targets::search_home_targets_safe(
+                    segment,
+                    context.cwd,
+                    context.home_dir,
+                )
         }
         "sed" => {
             safe_reads::safe_sed_arguments(&segment.arguments, segment.pipeline_index > 0, context)

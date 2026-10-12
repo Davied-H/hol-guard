@@ -31,15 +31,18 @@ from codex_plugin_scanner.guard.daemon.hook_worker import HookWorker
 from codex_plugin_scanner.guard.hook_execution_environment import collect_hook_execution_environment
 from codex_plugin_scanner.guard.store import GuardStore
 from tests.benign_fp_gate_fixture import BenignFixture, build_fixture
+from tests.gauntlet_replay import cursor_hook_fields
 
 pytestmark = pytest.mark.usefixtures("native_hook_force")
 
+# Mirrors SILENT_WARNING_CODES in the native hook renderer (hook_responses.rs).
+_SILENT_WARNING_CODES = frozenset({"native_policy_observed", "native_policy_warning"})
 _CASES_PATH = Path(__file__).parent / "fixtures" / "benign_false_positive_gate.json"
 _DOCUMENT = json.loads(_CASES_PATH.read_text(encoding="utf-8"))
 _PENDING_FIX: dict[str, str] = _DOCUMENT["pending_fix"]
 
-_SHELL_TOOL = {"codex": "Bash", "zcode": "Bash", "claude-code": "Bash", "omp": "bash"}
-_READ_TOOL = {"zcode": "Read", "claude-code": "Read", "omp": "read"}
+_SHELL_TOOL = {"codex": "Bash", "zcode": "Bash", "claude-code": "Bash", "omp": "bash", "cursor": "Shell"}
+_READ_TOOL = {"zcode": "Read", "claude-code": "Read", "omp": "read", "cursor": "Read"}
 _GLOB_TOOL = {"claude-code": "Glob", "omp": "glob"}
 _GREP_TOOL = {"claude-code": "Grep", "omp": "grep"}
 _WRITE_TOOL = {"zcode": "Write", "claude-code": "Write", "omp": "write"}
@@ -53,11 +56,14 @@ _FIXED_TOOLS = {
     "todo_write": "todo_write",
     "ls": "ls",
 }
-# A pending marker names the open work that owns the case. "advisory-warn" is an
-# intrinsic allow the installed policy floor raises to a non-blocking warning;
-# "unassigned" still prompts and has no owner yet. A merged PR is never a marker:
-# once its fix lands the case either passes or needs a new owner.
-_ALLOWED_PR = {"advisory-warn", "unassigned"}
+# A pending marker names the open work that owns the case. "unassigned" still
+# prompts and has no owner yet. A merged PR is never a marker: once its fix
+# lands the case either passes or needs a new owner.
+_ALLOWED_PR = {"unassigned"}
+# Cursor coverage mirrors two existing pending claude-code entries.
+_PENDING_CEILING = 12
+_RENDERED_KEYS = ("reason", "notice", "message", "systemMessage", "stopReason")
+_RENDERED_SPECIFIC_KEYS = ("permissionDecisionReason", "additionalContext")
 # Pending entries are recorded against the Linux CI host. Git helper context and
 # temp-directory proofs differ on other hosts, so only CI fails a stale entry.
 # Pending markers record the Linux CI result. macOS sends some Oh My Pi and Z Code reads
@@ -123,6 +129,8 @@ def _tool_input(case: GateCase, fixture: BenignFixture) -> dict[str, object]:
         resolved = {**resolved, "description": "Synthetic benign probe"}
     if case.harness in {"claude-code", "zcode"} and case.tool == "read":
         resolved = {"file_path": resolved["path"]}
+    if case.harness == "cursor" and case.tool == "read":
+        resolved = {"file_path": resolved["path"], "path": resolved["path"]}
     if case.harness in {"claude-code", "zcode"} and case.tool == "write":
         resolved = {"file_path": resolved["path"], "content": resolved["content"]}
     return resolved
@@ -170,6 +178,8 @@ def _review(case: GateCase, fixture: BenignFixture, worker: HookWorker) -> tuple
         "cwd": str(fixture.cwd(case.cwd)),
         "guard_execution_environment": collect_hook_execution_environment(),
     }
+    if case.harness == "cursor":
+        payload.update(cursor_hook_fields(case.tool, payload))
     result = worker.review_http_payload(
         payload=payload,
         params={},
@@ -201,14 +211,26 @@ def _decision(result: dict[str, object]) -> str:
     return "allow"
 
 
+def _rendered_text(result: dict[str, object]) -> bool:
+    """True when the harness response carries text the agent or user would see."""
+    specific = result.get("hookSpecificOutput")
+    specific = specific if isinstance(specific, dict) else {}
+    return any(result.get(key) for key in _RENDERED_KEYS) or any(specific.get(key) for key in _RENDERED_SPECIFIC_KEYS)
+
+
 def _quiet_allow(result: dict[str, object], approvals: int) -> bool:
+    """Allowed with no approval row and nothing rendered.
+
+    A warn whose reason is a silent code (the policy floor on a proven action)
+    is quiet: the receipt records it, but the harness shows nothing.
+    """
     reason = _reason(result)
-    return (
-        _decision(result) == "allow"
-        and approvals == 0
-        and result.get("policy_action") in (None, "allow")
-        and not result.get("notice")
-        and not (reason.startswith("native_") and (reason.endswith("_review") or reason.endswith("_warning")))
+    if _decision(result) != "allow" or approvals != 0 or _rendered_text(result):
+        return False
+    if result.get("policy_action") == "warn" and reason in _SILENT_WARNING_CODES:
+        return True
+    return result.get("policy_action") in (None, "allow") and not (
+        reason.startswith("native_") and (reason.endswith("_review") or reason.endswith("_warning"))
     )
 
 
@@ -276,7 +298,7 @@ def test_pending_fix_entries_name_real_benign_cases() -> None:
 
 
 def test_every_harness_and_tool_family_is_exercised() -> None:
-    assert {case.harness for case in _CASES} == {"codex", "zcode", "claude-code", "omp"}
+    assert {case.harness for case in _CASES} == {"codex", "zcode", "claude-code", "omp", "cursor"}
     omp_tools = {_tool_name(case) for case in _CASES if case.harness == "omp"}
     assert {"bash", "read", "glob", "grep", "eval", "task", "wait"} <= omp_tools
     assert sum(case.expect == "not_allow" for case in _CASES) >= 6
@@ -287,12 +309,22 @@ def test_pending_entries_are_consistent_and_name_their_fix() -> None:
     assert set(_PENDING_PR.values()) <= _ALLOWED_PR, sorted(set(_PENDING_PR.values()) - _ALLOWED_PR)
     assert set(_PENDING_ALWAYS) <= set(_PENDING_FIX)
     assert set(_PENDING_ALWAYS.values()) <= _ALLOWED_PR, sorted(set(_PENDING_ALWAYS.values()) - _ALLOWED_PR)
-    mislabeled = sorted(
-        case_id
-        for case_id, marker in _PENDING_PR.items()
-        if (marker == "advisory-warn") != (_PENDING_FIX[case_id] == "native_policy_warning")
+    # The policy floor's warning on a proven action renders nothing, so the gate
+    # counts it as quiet. A pending entry can only name a real interruption.
+    silent = sorted(case_id for case_id, reason in _PENDING_FIX.items() if reason in _SILENT_WARNING_CODES)
+    assert not silent, silent
+    assert "advisory-warn" not in _PENDING_PR.values()
+
+
+def test_pending_backlog_only_shrinks() -> None:
+    """Every pending entry is a benign task that still interrupts the user.
+
+    Lower the ceiling when a fix lands. Raising it means shipping a known false
+    positive, which needs the reason in the PR description.
+    """
+    assert len(_PENDING_FIX) <= _PENDING_CEILING, (
+        f"{len(_PENDING_FIX)} pending benign cases exceeds the ceiling of {_PENDING_CEILING}"
     )
-    assert not mislabeled, mislabeled
 
 
 def test_every_confirmed_false_positive_class_has_a_gate_case() -> None:

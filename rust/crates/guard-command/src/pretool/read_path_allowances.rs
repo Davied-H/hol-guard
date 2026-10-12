@@ -133,43 +133,92 @@ pub(in crate::pretool) fn agent_skill_document(
     false
 }
 
-/// OMP's document trees may be inspected, but its adjacent auth/config state
-/// may not. Directory callers still prove the reachable tree before search.
-pub(in crate::pretool) fn omp_agent_document_path(
+/// Oh My Pi keeps session artifacts and user skills under `~/.agent`. Reads
+/// below `artifacts/` and listings of the `skills/` or `artifacts/` trees are
+/// routine agent state. The state root must resolve to itself (no link can
+/// redirect it), every component below it must be visible, artifact files
+/// are documents (`.md`), and the caller has already screened credential
+/// names and sensitive families.
+pub(in crate::pretool) fn agent_home_state(
     canonical: &std::path::Path,
     home_dir: Option<&str>,
 ) -> bool {
     let Some(home) = home_dir.and_then(|root| std::fs::canonicalize(root).ok()) else {
         return false;
     };
-    if guard_secure_fs::contains_symlink_component(canonical) {
-        return false;
-    }
-    let Ok(relative) = canonical.strip_prefix(&home) else {
+    ["skills", "artifacts"].into_iter().any(|name| {
+        let root = home.join(".agent").join(name);
+        std::fs::canonicalize(&root).is_ok_and(|resolved| resolved == root)
+            && canonical.strip_prefix(&root).is_ok_and(|relative| {
+                let Some(parts) = visible_components(relative) else {
+                    return false;
+                };
+                if canonical.is_dir() {
+                    return true;
+                }
+                name == "artifacts"
+                    && !parts.is_empty()
+                    && canonical
+                        .extension()
+                        .is_some_and(|extension| extension == "md")
+            })
+    })
+}
+
+/// True when `canonical` is, or lies inside, an Oh My Pi agent-state tree
+/// (`~/.agent/skills`, `~/.agent/artifacts`). Content searches must not walk
+/// these trees: the per-file exclusions that deny direct reads of non-document
+/// files there (for example `artifacts/data.json`) do not apply to a walk.
+pub(in crate::pretool) fn inside_agent_state_tree(
+    canonical: &std::path::Path,
+    home_dir: Option<&str>,
+) -> bool {
+    let Some(home) = home_dir.and_then(|root| std::fs::canonicalize(root).ok()) else {
         return false;
     };
-    let Some(parts) = relative
-        .components()
-        .map(|part| match part {
-            std::path::Component::Normal(value) => value.to_str(),
-            _ => None,
-        })
-        .collect::<Option<Vec<_>>>()
-    else {
-        return false;
-    };
-    if parts.first() != Some(&".agent")
-        || !matches!(parts.get(1), Some(&"skills" | &"artifacts"))
-        || parts[2..].iter().any(|value| value.starts_with('.'))
-    {
-        return false;
+    let agent = home.join(".agent");
+    ["skills", "artifacts"]
+        .into_iter()
+        .any(|name| canonical.starts_with(agent.join(name)))
+}
+
+/// True when a content search rooted at `root` inside an agent-state tree can
+/// reach only files a direct read would allow (visible `.md` documents). The
+/// walk is bounded and refuses links and hidden entries, so a search over
+/// `~/.agent/artifacts` holding reports proceeds while one that would reach
+/// `artifacts/data.json` or `artifacts/.cache` still asks.
+pub(in crate::pretool) fn agent_state_tree_holds_only_documents(
+    root: &std::path::Path,
+    home_dir: Option<&str>,
+) -> bool {
+    let mut pending = vec![root.to_path_buf()];
+    let mut seen = 0usize;
+    while let Some(directory) = pending.pop() {
+        let Ok(entries) = std::fs::read_dir(&directory) else {
+            return false;
+        };
+        for entry in entries {
+            seen += 1;
+            let Ok(entry) = entry else {
+                return false;
+            };
+            let Ok(kind) = entry.file_type() else {
+                return false;
+            };
+            let path = entry.path();
+            if seen > 4096 || entry.file_name().to_string_lossy().starts_with('.') {
+                return false;
+            }
+            if kind.is_dir() {
+                pending.push(path);
+            } else if !(kind.is_file()
+                && (agent_home_state(&path, home_dir) || agent_skill_document(&path, home_dir)))
+            {
+                return false;
+            }
+        }
     }
-    canonical.is_dir()
-        || (parts.len() >= 3
-            && canonical.is_file()
-            && canonical
-                .extension()
-                .is_some_and(|extension| extension == "md"))
+    agent_home_state(root, home_dir)
 }
 
 /// `~/.hol-support/SAFETY.md` is the harness-facing safety guide that agents
@@ -266,4 +315,72 @@ pub(in crate::pretool) fn codex_notes_document(
                 visible_components(relative).is_some_and(|parts| !parts.is_empty())
             })
     })
+}
+
+/// Git ref files in a repository below the verified workspace or user home,
+/// or in the common git directory of the linked worktree the session runs in
+/// (often a sibling checkout outside both): `.git/HEAD`, `.git/refs/{heads,tags,remotes}/**` and a linked worktree's
+/// `.git/worktrees/<name>/HEAD`. They hold a ref name or object id only.
+/// `.git/config`, hooks, logs and every other entry stay guarded. A linked
+/// worktree's common directory supplies the `.git` marker, so a hidden
+/// ancestor of that sibling checkout does not hide it. Home and cwd
+/// repositories still use the first hidden component, and every component
+/// after the marker must be visible. Only regular files qualify, so a ref
+/// directory cannot carry the exception to a search that walks its children.
+pub(in crate::pretool) fn git_ref_document(
+    canonical: &std::path::Path,
+    home_dir: Option<&str>,
+    cwd: Option<&str>,
+) -> bool {
+    let common = cwd.and_then(|cwd| {
+        crate::pretool::worktree_writes::linked_worktree_common_dir(std::path::Path::new(cwd))
+    });
+    let inside_common = common
+        .as_ref()
+        .is_some_and(|common| canonical.starts_with(common));
+    let inside = inside_common
+        || [home_dir, cwd]
+            .into_iter()
+            .flatten()
+            .filter_map(|root| std::fs::canonicalize(root).ok())
+            .any(|root| canonical.starts_with(root));
+    let Some(parts) = canonical
+        .components()
+        .filter_map(|component| match component {
+            std::path::Component::Normal(part) => Some(part.to_str()),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>()
+    else {
+        return false;
+    };
+    let marker = if inside_common {
+        common
+            .as_ref()
+            .and_then(|common| common_git_marker(common, &parts))
+    } else {
+        parts.iter().position(|part| part.starts_with('.'))
+    };
+    let Some(marker) = marker else {
+        return false;
+    };
+    let visible = |parts: &[&str]| parts.iter().all(|part| !part.starts_with('.'));
+    inside
+        && canonical.is_file()
+        && parts[marker] == ".git"
+        && visible(&parts[marker + 1..])
+        && match &parts[marker + 1..] {
+            ["HEAD"] => true,
+            ["worktrees", _, "HEAD"] => true,
+            ["refs", "heads" | "tags" | "remotes", rest @ ..] => !rest.is_empty(),
+            _ => false,
+        }
+}
+
+fn common_git_marker(common: &std::path::Path, parts: &[&str]) -> Option<usize> {
+    let count = common
+        .components()
+        .filter(|component| matches!(component, std::path::Component::Normal(_)))
+        .count();
+    (count > 0 && parts.get(count - 1) == Some(&".git")).then_some(count - 1)
 }

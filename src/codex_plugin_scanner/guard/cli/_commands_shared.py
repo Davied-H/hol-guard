@@ -117,10 +117,7 @@ from ..local_supply_chain import (
     _resolve_guard_sync_auth_context,
     apply_stored_package_policy_override,
     build_local_supply_chain_posture,
-    build_supply_chain_explain_payload,
     build_supply_chain_status_payload,
-    build_workspace_audit_payload,
-    build_workspace_scan_payload,
     evaluate_package_request_artifact,
     package_request_policy_hash,
     resolve_package_firewall_entitlement_with_refresh,
@@ -134,6 +131,12 @@ from ..mcp_tool_calls import (
     evaluate_tool_call,
 )
 from ..models import GUARD_ACTION_VALUES, SEVERITY_RANK, GuardArtifact, HarnessDetection, PolicyDecision
+from ..native_cisco_preflight import (
+    build_cisco_deep_scan_payload,
+    cisco_risk_signal_v3_to_v2,
+    policy_action_for_cisco_signals,
+    scan_action_for_cisco_evidence,
+)
 from ..native_prompt import extract_prompt_requests
 from ..package_firewall_entitlement import (
     package_firewall_action_states,
@@ -145,12 +148,6 @@ from ..protect import build_protect_payload
 from ..receipts import build_receipt
 from ..risk import artifact_risk_signals, artifact_risk_signals_v2, artifact_risk_summary
 from ..runtime.actions import GuardActionEnvelope, command_text_from_tool_payload, normalize_harness_payload
-from ..runtime.cisco_preflight import (
-    build_cisco_deep_scan_payload,
-    cisco_risk_signal_v3_to_v2,
-    policy_action_for_cisco_signals,
-    scan_action_for_cisco_evidence,
-)
 from ..runtime.compound_git_inspection import is_low_risk_compound_git_inspection
 from ..runtime.false_positive_rules import (
     SOURCE_INSPECTION_BENIGN_DOTFILES,
@@ -188,7 +185,6 @@ from ..runtime.secret_file_requests import (
     extract_sensitive_file_read_request_from_action,
     extract_sensitive_file_write_request,
     extract_sensitive_tool_action_request,
-    is_explicitly_benign_tool_action_request,
     literal_cd_execution_context,
     low_risk_compound_developer_execution_context,
     shell_execution_context_starts_with_literal_cd,
@@ -250,20 +246,8 @@ class GuardBrowserOpener(Protocol):
 _GUARD_CLIENT_VERSION = "2.0.0"
 _SERVICE_RUNTIME_PROFILE_STATE_KEY = "service_runtime_profile"
 _SERVICE_RUNTIME_CHOICES = ("hermes", "openclaw", "custom")
-_SERVICE_RUNTIME_SURFACE = "agent-sdk"
 _NAMED_SECURITY_LEVELS = {"relaxed", "balanced", "strict", "gentle", "paranoid"}
-_HOOK_DAEMON_FAILURE_STATUSES = frozenset({"unreachable", "error", "failed", "404"})
-_HOOK_DAEMON_FAIL_MODES = frozenset({"strict", "permissive"})
 _HOOK_DAEMON_UNREACHABLE_REASON_MARKER = "daemon was unreachable"
-_HOOK_DAEMON_STRICT_REASON = (
-    "HOL Guard fail safe: the local Guard daemon was unreachable, so this hook blocked the action."
-)
-_HOOK_DAEMON_PERMISSIVE_REASON = (
-    "HOL Guard daemon was unreachable; permissive mode allowed this action and recorded the degraded state."
-)
-_HOOK_DAEMON_PRESERVED_DENY_REASON = (
-    "HOL Guard daemon was unreachable; preserving the existing deny decision for this action."
-)
 _CODEX_BROWSER_APPROVAL_WAIT_MAX_SECONDS = 8
 _GUARD_HELP_GROUPS = (
     "HOL Guard AI Antivirus command center:\n"

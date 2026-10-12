@@ -85,9 +85,15 @@ pub(crate) fn evaluate_resident_bytes(
         ResidentRequestV1::Edge(request) => {
             let policy_store =
                 policy_store.ok_or_else(|| "native_policy_snapshot_unavailable".to_owned())?;
-            crate::edge::evaluate_envelope_with_store(request, policy_store)
+            crate::edge::evaluate_envelope_with_store(*request, policy_store)
         }
         ResidentRequestV1::Operation(request) => match *request {
+            ResidentOperationV1::ArchiveAcquisition(request) => {
+                crate::archive_acquisition_op::evaluate_archive_acquisition_request(&request)
+            }
+            ResidentOperationV1::RichCommandModel(request) => {
+                crate::rich_command_model_op::evaluate(&request)
+            }
             ResidentOperationV1::CommandModel(request) => {
                 crate::oneshot::evaluate_command_model_request(&request)
             }
@@ -215,15 +221,34 @@ pub(crate) fn evaluate_resident_bytes(
             ResidentOperationV1::GithubCliClassify(request) => {
                 crate::github_cli_classify_op::evaluate_github_cli_classify_request(&request)
             }
+            ResidentOperationV1::GithubWorkflowPrepare(request) => {
+                crate::github_workflow_prepare_op::evaluate_github_workflow_prepare_request(
+                    &request,
+                )
+            }
+            ResidentOperationV1::ProtectRequest(request) => {
+                crate::protect_request_op::evaluate_protect_request_op(&request)
+            }
             ResidentOperationV1::ApprovalReuseDiagnostic(request) => {
                 crate::approval_reuse_diagnostic_op::evaluate_approval_reuse_diagnostic_request(
                     &request,
                 )
             }
+            ResidentOperationV1::ApprovalBulkEligibility(request) => {
+                crate::approval_bulk_eligibility_op::evaluate_approval_bulk_eligibility_request(
+                    &request,
+                )
+            }
+            ResidentOperationV1::CodexRequestResume(request) => {
+                crate::codex_request_resume_op::evaluate_codex_request_resume_request(&request)
+            }
             ResidentOperationV1::ApprovalQueueIdentity(request) => {
                 crate::approval_queue_identity_op::evaluate_approval_queue_identity_request(
                     &request,
                 )
+            }
+            ResidentOperationV1::HookRender(request) => {
+                crate::hook_render_op::evaluate_hook_render_request(&request)
             }
             ResidentOperationV1::ApprovalScope(request) => {
                 crate::approval_scope_op::evaluate_approval_scope_request(&request)
@@ -271,6 +296,9 @@ pub(crate) fn evaluate_resident_bytes(
             ResidentOperationV1::PolicyBundleAuthority(request) => {
                 crate::policy_bundle_op::evaluate_policy_bundle_authority_request(&request)
             }
+            ResidentOperationV1::CiscoPreflight(request) => {
+                crate::cisco_preflight_op::evaluate_cisco_preflight(&request)
+            }
             ResidentOperationV1::McpProxyDecide(request) => {
                 crate::mcp_proxy_decision_op::evaluate_mcp_proxy_decision(&request)
             }
@@ -283,17 +311,26 @@ pub(crate) fn evaluate_resident_bytes(
             ResidentOperationV1::LocalCliGrantDecide(request) => {
                 crate::local_cli_grant_op::evaluate_local_cli_grant_request(&request)
             }
+            ResidentOperationV1::ShellHelpers(request) => {
+                crate::shell_helpers_op::evaluate(&request)
+            }
             ResidentOperationV1::ApprovalProofDecide(request) => {
                 crate::approval_proof_op::evaluate_approval_proof_request(&request)
             }
             ResidentOperationV1::CursorObserverProof(request) => {
                 crate::cursor_observer_proof_op::evaluate_cursor_observer_proof_request(&request)
             }
+            ResidentOperationV1::HookAuthorityState(request) => {
+                crate::hook_authority_state_op::evaluate_hook_authority_state_request(&request)
+            }
             ResidentOperationV1::HookDecide(request) => {
                 crate::hook_decision_op::evaluate_hook_decision_request(&request)
             }
             ResidentOperationV1::DaemonHandler(request) => {
                 crate::daemon_handler_op::evaluate_daemon_handler_request(&request)
+            }
+            ResidentOperationV1::NativeExactAction(request) => {
+                crate::native_exact_action_op::evaluate_native_exact_action_request(&request)
             }
             ResidentOperationV1::DaemonRoute(request) => {
                 crate::daemon_route_op::evaluate_daemon_route_request(&request)
@@ -304,13 +341,20 @@ pub(crate) fn evaluate_resident_bytes(
             ResidentOperationV1::HookArtifactCompose(request) => {
                 crate::hook_artifact_compose_op::evaluate_hook_artifact_compose_request(&request)
             }
+            ResidentOperationV1::ConsumerArtifactCompose(request) => {
+                crate::consumer_artifact_compose_op::evaluate_consumer_artifact_compose_request(
+                    &request,
+                )
+            }
             ResidentOperationV1::LocalMcpGrantDecide(request) => {
                 crate::local_mcp_grant_op::evaluate_local_mcp_grant_request(&request)
             }
             ResidentOperationV1::RequestContextBuild(request) => {
-                crate::request_context_op::evaluate_request_context_request(&request)
+                crate::request_context_op::evaluate_request_context_request_with_store(
+                    &request,
+                    policy_store,
+                )
             }
-            #[cfg(unix)]
             ResidentOperationV1::SkillDirectoryIdentity(request) => {
                 crate::skill_directory_identity_op::evaluate_skill_directory_identity_request(
                     &request,
@@ -324,6 +368,9 @@ pub(crate) fn evaluate_resident_bytes(
             ResidentOperationV1::McpToolPolicyDecide(request) => {
                 crate::mcp_tool_policy_decide_op::evaluate_mcp_tool_policy_decide_request(&request)
             }
+            ResidentOperationV1::McpToolCallIdentity(request) => {
+                crate::mcp_tool_call_identity_op::evaluate_mcp_tool_call_identity_request(&request)
+            }
             ResidentOperationV1::PackageAdvisoryIds(request) => {
                 crate::package_authority_op::evaluate_package_advisory_ids(&request)
             }
@@ -335,6 +382,9 @@ pub(crate) fn evaluate_resident_bytes(
             }
             ResidentOperationV1::PackagePosture(request) => {
                 crate::package_posture_op::evaluate_package_posture(&request)
+            }
+            ResidentOperationV1::PackageAuditProjection(request) => {
+                crate::package_audit_projection_op::evaluate_package_audit_projection(&request)
             }
             ResidentOperationV1::WorkspaceInventory(request) => {
                 crate::workspace_inventory_op::evaluate_workspace_inventory(&request)
@@ -359,12 +409,11 @@ pub(crate) fn evaluate_resident_bytes(
             ResidentOperationV1::ContainedExecute(request) => {
                 crate::contained_op::evaluate_contained_execute(&request)
             }
-            #[cfg(unix)]
-            ResidentOperationV1::ContainedTestHook(request) => {
-                crate::contained_op::evaluate_contained_test_hook(&request)
-            }
             ResidentOperationV1::ShimAdmin(request) => {
                 crate::shim_op::evaluate_shim_admin(&request)
+            }
+            ResidentOperationV1::PackageContextBuild(request) => {
+                crate::package_context_build_op::evaluate_package_context_build(&request)
             }
             ResidentOperationV1::McpStdioProbe(request) => {
                 crate::mcp_probe_op::evaluate_mcp_stdio_probe(&request)
@@ -387,8 +436,8 @@ pub(crate) fn evaluate_resident_bytes(
             ResidentOperationV1::McpRuntimeEvidence(request) => {
                 crate::mcp_runtime_evidence_op::evaluate_mcp_runtime_evidence(&request)
             }
-            ResidentOperationV1::FalsePositiveRules(request) => {
-                crate::false_positive_rules_op::evaluate_false_positive_rules(&request)
+            ResidentOperationV1::RuntimeDetectorRun(request) => {
+                crate::runtime_detector_run_op::evaluate_runtime_detector_run(&request)
             }
             ResidentOperationV1::RunnerAuthority(request) => {
                 crate::runner_authority_op::evaluate_runner_authority(&request)
@@ -408,13 +457,11 @@ pub(crate) fn evaluate_resident_bytes(
                 crate::data_flow_analyze_op::evaluate_data_flow_analyze(&request)
             }
             #[cfg(not(unix))]
-            ResidentOperationV1::SkillDirectoryIdentity(_)
-            | ResidentOperationV1::ContainedNodeExecute(_)
+            ResidentOperationV1::ContainedNodeExecute(_)
             | ResidentOperationV1::ContainedTypescriptExecute(_)
             | ResidentOperationV1::ContainedPackageScriptExecute(_)
             | ResidentOperationV1::ContainedWorkspaceWriteExecute(_)
-            | ResidentOperationV1::ContainedExecute(_)
-            | ResidentOperationV1::ContainedTestHook(_) => {
+            | ResidentOperationV1::ContainedExecute(_) => {
                 Err("native_operation_unavailable_on_this_platform".to_owned())
             }
             ResidentOperationV1::Health(_request) => encode_response(&serde_json::json!({
@@ -442,6 +489,7 @@ pub(crate) fn evaluate_resident_bytes(
 /// The Guard home an operation acts on, for operations that open per-home state.
 fn operation_guard_home(operation: &ResidentOperationV1) -> Option<&str> {
     match operation {
+        ResidentOperationV1::ArchiveAcquisition(request) => Some(&request.guard_home),
         ResidentOperationV1::ApprovalReuseDiagnostic(request) => Some(&request.guard_home),
         ResidentOperationV1::ClaimApprovalReuseDecisions(request) => Some(&request.guard_home),
         ResidentOperationV1::GuardStore(request) => Some(&request.guard_home),
@@ -450,11 +498,13 @@ fn operation_guard_home(operation: &ResidentOperationV1) -> Option<&str> {
         ResidentOperationV1::ApplyStoredPackagePolicy(request) => Some(&request.guard_home),
         ResidentOperationV1::PackageAuthorityDecide(request) => Some(&request.guard_home),
         ResidentOperationV1::CursorObserverProof(request) => Some(&request.guard_home),
+        ResidentOperationV1::HookAuthorityState(request) => Some(&request.guard_home),
         ResidentOperationV1::PackageAdvisoryIds(request) => Some(&request.guard_home),
         ResidentOperationV1::PackageEvaluationCompose(request) => Some(&request.guard_home),
         ResidentOperationV1::PackageApprovalHash(request) => Some(&request.guard_home),
         ResidentOperationV1::PackagePolicyResolve(request) => Some(&request.guard_home),
         ResidentOperationV1::PackagePosture(request) => Some(&request.guard_home),
+        ResidentOperationV1::PackageAuditProjection(request) => Some(&request.guard_home),
         ResidentOperationV1::WorkspaceInventory(request) => Some(&request.guard_home),
         ResidentOperationV1::PolicyDecisionLookup(request) => Some(&request.guard_home),
         ResidentOperationV1::ContainedNodeExecute(request) => Some(&request.guard_home),
@@ -462,19 +512,22 @@ fn operation_guard_home(operation: &ResidentOperationV1) -> Option<&str> {
         ResidentOperationV1::ContainedPackageScriptExecute(request) => Some(&request.guard_home),
         ResidentOperationV1::ContainedWorkspaceWriteExecute(request) => Some(&request.guard_home),
         ResidentOperationV1::ContainedExecute(request) => Some(&request.guard_home),
-        ResidentOperationV1::ContainedTestHook(request) => Some(&request.guard_home),
         ResidentOperationV1::ShimAdmin(request) => Some(&request.guard_home),
+        ResidentOperationV1::PackageContextBuild(request) => Some(&request.guard_home),
         ResidentOperationV1::McpStdioProbe(request) => Some(&request.guard_home),
         ResidentOperationV1::PromptAnalyze(request) => Some(&request.guard_home),
         ResidentOperationV1::McpRuntimeEvidence(request) => Some(&request.guard_home),
-        ResidentOperationV1::FalsePositiveRules(request) => Some(&request.guard_home),
+        ResidentOperationV1::RuntimeDetectorRun(request) => Some(&request.guard_home),
         ResidentOperationV1::RunnerAuthority(request) => Some(&request.guard_home),
         ResidentOperationV1::LocalCliGrantDecide(request) => Some(&request.guard_home),
         ResidentOperationV1::McpToolEvidence(request) => Some(&request.guard_home),
         ResidentOperationV1::LocalMcpGrantDecide(request) => Some(&request.guard_home),
         ResidentOperationV1::ContributedMcpDecide(request) => Some(&request.guard_home),
+        ResidentOperationV1::RichCommandModel(request) => Some(&request.guard_home),
         ResidentOperationV1::RequestContextBuild(request) => Some(&request.guard_home),
         ResidentOperationV1::SkillDirectoryIdentity(request) => Some(&request.guard_home),
+        ResidentOperationV1::ProtectRequest(request) => Some(&request.guard_home),
+        ResidentOperationV1::CodexRequestResume(request) => Some(&request.guard_home),
         _ => None,
     }
 }
@@ -490,10 +543,19 @@ fn operation_store_path(operation: &ResidentOperationV1) -> Option<&str> {
         ResidentOperationV1::PackageAuthorityDecide(request) => Some(&request.store_path),
         ResidentOperationV1::PackageAdvisoryIds(request) => Some(&request.store_path),
         ResidentOperationV1::PackageApprovalHash(request) => request.store_path.as_deref(),
+        ResidentOperationV1::PackageAuditProjection(request) => match &request.query {
+            guard_contracts::PackageAuditQueryV1::Receipt(query) => query.store_path.as_deref(),
+            guard_contracts::PackageAuditQueryV1::Aliases(query) => Some(&query.store_path),
+            guard_contracts::PackageAuditQueryV1::CloudPayload(query) => Some(&query.store_path),
+            _ => None,
+        },
         ResidentOperationV1::PolicyDecisionLookup(request) => Some(&request.store_path),
         ResidentOperationV1::LocalCliGrantDecide(request) => Some(&request.store_path),
         ResidentOperationV1::LocalMcpGrantDecide(request) => Some(&request.store_path),
         ResidentOperationV1::ContributedMcpDecide(request) => Some(&request.store_path),
+        ResidentOperationV1::HookAuthorityState(request) => Some(&request.store_path),
+        ResidentOperationV1::ProtectRequest(request) => request.store_path.as_deref(),
+        ResidentOperationV1::CodexRequestResume(request) => Some(&request.store_path),
         _ => None,
     }
 }

@@ -50,6 +50,8 @@ from ..windows_paths import (
     windows_process_liveness,
     windows_terminate_process_if_creation_time,
 )
+from .auth_token import auth_token_path as _auth_token_path
+from .auth_token import load_guard_daemon_auth_token as load_guard_daemon_auth_token
 from .discovery import (
     authenticate_daemon_state,
     daemon_discovery_key_path,
@@ -69,7 +71,15 @@ from .start_classification import (
     collect_spawned_daemon_signals,
     daemon_still_starting_evidence_present,
 )
+from .start_heartbeat import (
+    SLOW_START_MAX_SECONDS,
+    START_HEARTBEAT_CODE,
+    START_HEARTBEAT_ENV,
+    clear_start_heartbeat,
+    start_heartbeat_path,
+)
 from .start_lock import guard_daemon_start_lock as _guard_daemon_start_lock
+from .startup_phase import timed_phase
 
 GUARD_DAEMON_COMPATIBILITY_VERSION = 2
 GUARD_DAEMON_POST_UPDATE_START_TIMEOUT_SECONDS = 30.0
@@ -97,6 +107,8 @@ _GUARD_DAEMON_START_PROGRESS_MAX_BYTES = 4096
 _GUARD_DAEMON_WAKE_RESERVATION_MAX_BYTES = 4096
 _GUARD_DAEMON_RECOVERY_RESERVATION_MAX_BYTES = 4096
 _GUARD_DAEMON_RECOVERY_WORKER_TIMEOUT_SECONDS = 30.0
+_START_CLASSIFICATION_RESERVE_SECONDS = 3.0
+_START_CLASSIFICATION_RESERVE_FRACTION = 0.25
 _GUARD_DAEMON_PROCESS_QUERY_TIMEOUT_SECONDS = 5.0
 _GUARD_DAEMON_PROCESS_QUERY_OUTPUT_LIMIT_BYTES = 1024 * 1024
 _GUARD_DAEMON_PROCESS_QUERY_MONITOR_INTERVAL_SECONDS = 0.01
@@ -109,6 +121,9 @@ _WINDOWS_CREATE_BREAKAWAY_FROM_JOB = 0x01000000
 _GUARD_DAEMON_POSIX_PS_PATHS = ("/bin/ps", "/usr/bin/ps")
 _GUARD_DAEMON_BOOTSTRAP = (
     "import json,runpy,sys; "
+    # Signal liveness before the slow Guard imports so a cold start is not
+    # mistaken for a stuck child.
+    f"exec({START_HEARTBEAT_CODE!r}); "
     "trusted_prefix=sys.argv.pop(1); "
     "trusted_exec_prefix=sys.argv.pop(1); "
     "trusted_paths=json.loads(sys.argv.pop(1)); "
@@ -686,6 +701,8 @@ def _ensure_guard_daemon_body(
                 )
             if time.monotonic() >= start_deadline:
                 break
+            clear_start_heartbeat(guard_home)
+            launcher_env = {**launcher_env, START_HEARTBEAT_ENV: str(start_heartbeat_path(guard_home))}
             spawned_at_ns = time.time_ns()
             if os.name == "nt":
                 process = subprocess.Popen(
@@ -718,12 +735,12 @@ def _ensure_guard_daemon_body(
                     port=candidate_port,
                 )
                 _release_guard_daemon_launch_gate(process)
-                remaining_start_time = max(0.0, start_deadline - time.monotonic())
-                url = _wait_for_started_guard_daemon_url(
+                wait_deadline = _spawned_daemon_wait_deadline(start_deadline)
+                url = _wait_for_spawned_guard_daemon_url(
                     guard_home,
-                    timeout=remaining_start_time,
                     process=process,
                     executable=executable,
+                    wait_deadline=wait_deadline,
                 )
                 if url is not None:
                     if not _clear_spawned_guard_daemon_pending_launch(
@@ -745,6 +762,7 @@ def _ensure_guard_daemon_body(
                         pending_launch_present=False,
                         lock_held_by_spawned_tree=False,
                         journal_start_requested_after=False,
+                        start_heartbeat_present=False,
                     )
                 )
                 spawn_state = classify_spawned_daemon(
@@ -752,6 +770,7 @@ def _ensure_guard_daemon_body(
                     pending_launch_present=signals.pending_launch_present,
                     lock_held_by_spawned_tree=signals.lock_held_by_spawned_tree,
                     journal_start_requested_after=signals.journal_start_requested_after,
+                    start_heartbeat_present=signals.start_heartbeat_present,
                 )
                 if spawn_state == "progressing" and _record_guard_daemon_start_progress(
                     guard_home,
@@ -769,6 +788,11 @@ def _ensure_guard_daemon_body(
                     guard_home, process=process, creation_time=pending_creation_time
                 ):
                     raise RuntimeError("Guard daemon pending launch state could not be cleared safely.")
+                if time.monotonic() >= wait_deadline:
+                    # Only the classification reserve is left; it cannot start
+                    # another candidate, so a child that used its full wait ends
+                    # the attempt. A child that exited early still frees the loop.
+                    break
             except GuardDaemonStillStartingError:
                 raise
             except BaseException:
@@ -1354,15 +1378,6 @@ def _load_authenticated_daemon_identity(guard_home: Path) -> tuple[dict[str, obj
     return payload, auth_token
 
 
-def load_guard_daemon_auth_token(guard_home: Path) -> str | None:
-    token = read_private_regular_text(
-        _auth_token_path(guard_home),
-        max_bytes=4096,
-        require_private_parent=True,
-    )
-    return token or None
-
-
 def ensure_guard_daemon_auth_token(guard_home: Path) -> str:
     """Return the guard home's daemon auth token, creating it only when absent.
 
@@ -1834,7 +1849,9 @@ def _load_state(guard_home: Path) -> dict[str, object] | None:
 def _looks_like_guard_daemon_state(payload: dict[str, object], *, guard_home: Path) -> bool:
     shape = _native_fields(payload, ("compatibility_version", "source_root", "runtime_fingerprint", "guard_home"))
     query = {"payload": shape, "guard_home": str(guard_home)}
-    return bool(_lifecycle("state_shape", query, home=guard_home)["result"])
+    # Pure verdict. Binding it to the stale home would start a resident there,
+    # and that failure would skip retirement of every other ephemeral daemon.
+    return bool(_lifecycle("state_shape", query)["result"])
 
 
 def _state_path(guard_home: Path) -> Path:
@@ -2175,9 +2192,26 @@ def _clear_guard_daemon_start_progress(guard_home: Path) -> None:
 def _guard_daemon_start_progress_is_live(guard_home: Path, record: GuardDaemonStartProgress) -> bool:
     """Whether the record still names a live, identity-proven daemon for this home."""
 
+    now_ns = time.time_ns()
+    if _start_progress_record_is_live(guard_home, record, now_ns=now_ns):
+        return True
+    # A slow machine can still be importing after the recorded window. Keep the
+    # same identity checks but judge age by the bounded slow-start window, and
+    # only while the spawned tree still shows start evidence.
+    spawned_at_ns = record.get("spawned_at_ns")
+    if (
+        type(spawned_at_ns) is not int
+        or not 0 < now_ns - spawned_at_ns < int(SLOW_START_MAX_SECONDS * 1_000_000_000)
+        or not _start_progress_record_is_live(guard_home, record, now_ns=record["recorded_at_ns"])
+    ):
+        return False
+    return daemon_still_starting_evidence_present(guard_home, root_pid=record["pid"], spawned_at_ns=spawned_at_ns)
+
+
+def _start_progress_record_is_live(guard_home: Path, record: GuardDaemonStartProgress, *, now_ns: int) -> bool:
     query = {
         "record": _native_fields(record, ("pid", "process_start_token", "recorded_at_ns")),
-        "now_ns": time.time_ns(),
+        "now_ns": now_ns,
         "worker_ready_floor": _START_TIMEOUT_FLOOR_SECONDS,
     }
     return bool(_lifecycle("start_progress_live", query, home=guard_home, facts_home=guard_home)["live"])
@@ -2227,10 +2261,6 @@ def _guard_daemon_pending_launch_state_is_resolved(guard_home: Path) -> bool:
         if pending is not None:
             return False
     return _daemon_lifecycle_artifact_is_exact_tombstone(path)
-
-
-def _auth_token_path(guard_home: Path) -> Path:
-    return guard_home / "daemon-auth-token"
 
 
 def _remove_invalid_daemon_discovery_key(guard_home: Path) -> bool:
@@ -2301,181 +2331,8 @@ def _set_windows_private_directory(path: Path) -> None:
         return
 
 
-def _schedule_stale_ephemeral_guard_daemon_reap(*, exclude_guard_home: Path | None = None) -> None:
-    with _EPHEMERAL_REAP_SCHEDULE_LOCK:
-        if globals().get("_EPHEMERAL_REAP_IN_FLIGHT") is True:
-            return
-        now = time.monotonic()
-        last_reap_at = globals().get("_LAST_EPHEMERAL_REAP_AT", 0.0)
-        if not isinstance(last_reap_at, (int, float)):
-            last_reap_at = 0.0
-        if now - float(last_reap_at) < _EPHEMERAL_GUARD_DAEMON_REAP_INTERVAL_SECONDS:
-            return
-        previous_reap_at = float(last_reap_at)
-        globals()["_EPHEMERAL_REAP_IN_FLIGHT"] = True
-        globals()["_LAST_EPHEMERAL_REAP_AT"] = now
-
-    reaper = _reap_stale_ephemeral_guard_daemons
-
-    def reap() -> None:
-        try:
-            reaper(
-                exclude_guard_home=exclude_guard_home,
-                force=True,
-            )
-        except Exception:
-            # A later interval can retry this best-effort cleanup.
-            pass
-        finally:
-            with _EPHEMERAL_REAP_SCHEDULE_LOCK:
-                globals()["_EPHEMERAL_REAP_IN_FLIGHT"] = False
-
-    thread = threading.Thread(
-        target=reap,
-        name="guard-daemon-stale-reaper",
-        daemon=True,
-    )
-    try:
-        thread.start()
-    except RuntimeError:
-        with _EPHEMERAL_REAP_SCHEDULE_LOCK:
-            globals()["_EPHEMERAL_REAP_IN_FLIGHT"] = False
-            globals()["_LAST_EPHEMERAL_REAP_AT"] = previous_reap_at
-
-
-def _reap_stale_ephemeral_guard_daemons(
-    *,
-    exclude_guard_home: Path | None = None,
-    force: bool = False,
-) -> None:
-    now = time.monotonic()
-    last_reap_at = globals().get("_LAST_EPHEMERAL_REAP_AT", 0.0)
-    if not isinstance(last_reap_at, (int, float)):
-        last_reap_at = 0.0
-    if not force and now - float(last_reap_at) < _EPHEMERAL_GUARD_DAEMON_REAP_INTERVAL_SECONDS:
-        return
-    if not force:
-        globals()["_LAST_EPHEMERAL_REAP_AT"] = now
-    temp_root = Path(tempfile.gettempdir())
-    candidate_paths = list(_ephemeral_guard_daemon_state_paths(temp_root))
-    exclude_resolved = exclude_guard_home.resolve() if exclude_guard_home is not None else None
-    for state_path in candidate_paths[:_EPHEMERAL_GUARD_DAEMON_MAX_STATES]:
-        guard_home = state_path.parent
-        try:
-            resolved_guard_home = guard_home.resolve()
-        except OSError:
-            continue
-        if exclude_resolved is not None and resolved_guard_home == exclude_resolved:
-            continue
-        if not _guard_home_is_ephemeral(resolved_guard_home):
-            continue
-        state_age_seconds = _state_path_age_seconds(state_path)
-        if state_age_seconds < _EPHEMERAL_GUARD_DAEMON_STALE_SECONDS:
-            continue
-        payload = _load_state(guard_home)
-        if not _ephemeral_guard_home_is_inactive(
-            guard_home,
-            fallback_age_seconds=state_age_seconds,
-            state_payload=payload,
-        ):
-            continue
-        if not isinstance(payload, dict) or not _looks_like_guard_daemon_state(payload, guard_home=guard_home):
-            continue
-        pid = payload.get("pid")
-        if not isinstance(pid, int) or pid <= 0:
-            continue
-        # Live daemons are handled by the single bounded process inventory below.
-        # Probing every stale state independently creates an unbounded process
-        # query fan-out when a temp root contains many prior test runs.
-        if not _guard_daemon_pid_is_running(pid):
-            clear_guard_daemon_state(guard_home)
-    for pid, guard_home, elapsed_seconds in _running_ephemeral_guard_daemon_processes():
-        if elapsed_seconds < _EPHEMERAL_GUARD_DAEMON_STALE_SECONDS:
-            continue
-        try:
-            resolved_guard_home = guard_home.resolve()
-        except OSError:
-            continue
-        if exclude_resolved is not None and resolved_guard_home == exclude_resolved:
-            continue
-        if not _ephemeral_guard_home_is_inactive(guard_home, fallback_age_seconds=elapsed_seconds):
-            continue
-        if _retire_guard_daemon_pid(pid, expected_guard_home=guard_home):
-            clear_guard_daemon_state(guard_home)
-
-
-def _ephemeral_guard_daemon_state_paths(temp_root: Path) -> list[Path]:
-    results: list[Path] = []
-    for root in _pytest_temp_roots(temp_root):
-        _collect_daemon_state_paths(root, results, limit=_EPHEMERAL_GUARD_DAEMON_MAX_STATES)
-        if len(results) >= _EPHEMERAL_GUARD_DAEMON_MAX_STATES:
-            break
-    return sorted(results)
-
-
-def _pytest_temp_roots(temp_root: Path) -> list[Path]:
-    roots: list[Path] = []
-    try:
-        if _path_name_looks_like_pytest_temp_root(temp_root.name):
-            roots.append(temp_root)
-        with os.scandir(temp_root) as entries:
-            for entry in entries:
-                if not entry.is_dir(follow_symlinks=False):
-                    continue
-                if _path_name_looks_like_pytest_temp_root(entry.name):
-                    roots.append(Path(entry.path))
-    except OSError:
-        return []
-    return sorted(roots)
-
-
-def _path_name_looks_like_pytest_temp_root(name: str) -> bool:
-    return name.startswith("pytest-") or "pytest-of-" in name
-
-
-def _collect_daemon_state_paths(root: Path, results: list[Path], *, limit: int) -> None:
-    pending: list[Path] = [root]
-    while pending and len(results) < limit:
-        current = pending.pop()
-        try:
-            with os.scandir(current) as entries:
-                directories: list[Path] = []
-                files: list[Path] = []
-                for entry in entries:
-                    if entry.is_dir(follow_symlinks=False):
-                        directories.append(Path(entry.path))
-                    elif entry.is_file(follow_symlinks=False) and entry.name == "daemon-state.json":
-                        files.append(Path(entry.path))
-        except OSError:
-            continue
-        for path in sorted(files):
-            results.append(path)
-            if len(results) >= limit:
-                return
-        pending.extend(reversed(sorted(directories)))
-
-
-def _state_path_age_seconds(state_path: Path) -> float:
-    try:
-        return max(0.0, time.time() - state_path.stat().st_mtime)
-    except OSError:
-        return 0.0
-
-
 def _guard_home_is_ephemeral(guard_home: Path) -> bool:
     return bool(_lifecycle("ephemeral_home", {"guard_home": str(guard_home)})["ephemeral"])
-
-
-def _ephemeral_guard_home_is_inactive(
-    guard_home: Path,
-    *,
-    fallback_age_seconds: float,
-    state_payload: dict[str, object] | None = None,
-) -> bool:
-    payload = state_payload if isinstance(state_payload, dict) else _load_state(guard_home)
-    state = None if not isinstance(payload, dict) else {"pid": _native_int(payload.get("pid"))}
-    query = {"state": state, "fallback_age_seconds": float(fallback_age_seconds)}
-    return bool(_lifecycle("ephemeral_inactive", query, facts_home=guard_home)["inactive"])
 
 
 def _runtime_state_age_seconds(guard_home: Path) -> float | None:
@@ -2497,243 +2354,6 @@ def _runtime_state_age_seconds(guard_home: Path) -> float | None:
     if heartbeat.tzinfo is None:
         heartbeat = heartbeat.replace(tzinfo=timezone.utc)
     return max(0.0, (datetime.now(timezone.utc) - heartbeat).total_seconds())
-
-
-def _spawn_bounded_process_query(command: list[str]) -> subprocess.Popen[bytes]:
-    child_environment = _process_query_environment(command)
-    if os.name == "nt":
-        return subprocess.Popen(
-            command,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            bufsize=0,
-            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
-            env=child_environment,
-        )
-    return subprocess.Popen(
-        command,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        bufsize=0,
-        start_new_session=True,
-        env=child_environment,
-    )
-
-
-def _process_query_environment(command: list[str]) -> dict[str, str]:
-    """Return an environment that cannot redirect trusted process-query tools."""
-
-    if os.name != "nt":
-        return {"LANG": "C", "LC_ALL": "C"}
-    if not command:
-        return {}
-    system_directory = ntpath.dirname(ntpath.dirname(ntpath.dirname(command[0])))
-    windows_directory = ntpath.dirname(system_directory)
-    return {
-        "ComSpec": ntpath.join(system_directory, "cmd.exe"),
-        "PATH": system_directory,
-        "SystemRoot": windows_directory,
-        "WINDIR": windows_directory,
-    }
-
-
-def _trusted_posix_ps_path() -> str | None:
-    """Resolve ``ps`` only from fixed operating-system locations."""
-
-    if os.name == "nt":
-        return None
-    for raw_path in _GUARD_DAEMON_POSIX_PS_PATHS:
-        candidate = Path(raw_path)
-        try:
-            resolved = candidate.resolve(strict=True)
-            metadata = resolved.stat()
-        except (OSError, RuntimeError):
-            continue
-        if stat.S_ISREG(metadata.st_mode) and os.access(resolved, os.X_OK):
-            return str(resolved)
-    return None
-
-
-def _linux_proc_process_entries(proc_root: Path = Path("/proc")) -> list[tuple[int, str]] | None:
-    """Read a bounded process inventory from Linux procfs without requiring procps."""
-
-    entries: list[tuple[int, str]] = []
-    remaining_bytes = _GUARD_DAEMON_PROCESS_QUERY_OUTPUT_LIMIT_BYTES
-    try:
-        process_dirs = proc_root.iterdir()
-        for process_dir in process_dirs:
-            if not process_dir.name.isdigit():
-                continue
-            pid = int(process_dir.name)
-            if pid <= 0:
-                continue
-            try:
-                with (process_dir / "cmdline").open("rb") as stream:
-                    raw_command = stream.read(remaining_bytes + 1)
-            except FileNotFoundError:
-                continue
-            except OSError:
-                return None
-            if len(raw_command) > remaining_bytes:
-                return None
-            remaining_bytes -= len(raw_command)
-            if not raw_command:
-                continue
-            command = raw_command.rstrip(b"\0").replace(b"\0", b" ").decode("utf-8", errors="replace").strip()
-            if command:
-                entries.append((pid, command))
-    except OSError:
-        return None
-    return entries
-
-
-def _terminate_bounded_process_query(process: subprocess.Popen[bytes]) -> None:
-    pid = getattr(process, "pid", None)
-    wait = getattr(process, "wait", None)
-    poll = getattr(process, "poll", None)
-    if os.name == "nt":
-        terminate = getattr(process, "terminate", None)
-        if callable(terminate):
-            with suppress(OSError):
-                terminate()
-    elif isinstance(pid, int) and pid > 0:
-        with suppress(OSError):
-            os.killpg(pid, signal.SIGTERM)
-    if callable(wait):
-        with suppress(subprocess.TimeoutExpired):
-            _ = wait(timeout=_GUARD_DAEMON_PROCESS_QUERY_TERMINATE_GRACE_SECONDS)
-    if callable(poll) and poll() is not None:
-        return
-    if os.name == "nt":
-        kill = getattr(process, "kill", None)
-        if callable(kill):
-            with suppress(OSError):
-                kill()
-    elif isinstance(pid, int) and pid > 0:
-        with suppress(OSError):
-            os.killpg(pid, signal.SIGKILL)
-    if callable(wait):
-        with suppress(subprocess.TimeoutExpired):
-            _ = wait(timeout=_GUARD_DAEMON_PROCESS_QUERY_TERMINATE_GRACE_SECONDS)
-
-
-def _capture_bounded_process_query_stdout(
-    stream: BinaryIO,
-    captured: bytearray,
-    output_limit_bytes: int,
-    overflow: threading.Event,
-    errors: list[OSError | ValueError],
-) -> None:
-    try:
-        while True:
-            remaining = output_limit_bytes - len(captured)
-            chunk = stream.read(min(64 * 1024, remaining + 1))
-            if not chunk:
-                return
-            if len(chunk) > remaining:
-                captured.extend(chunk[:remaining])
-                overflow.set()
-                return
-            captured.extend(chunk)
-    except (OSError, ValueError) as error:
-        errors.append(error)
-    finally:
-        with suppress(OSError, ValueError):
-            stream.close()
-
-
-def _bounded_process_query_stdout(
-    command: list[str],
-    *,
-    timeout_seconds: float = _GUARD_DAEMON_PROCESS_QUERY_TIMEOUT_SECONDS,
-    output_limit_bytes: int = _GUARD_DAEMON_PROCESS_QUERY_OUTPUT_LIMIT_BYTES,
-) -> str | None:
-    """Return bounded child stdout, or ``None`` after failure, timeout, or overflow."""
-
-    if timeout_seconds <= 0 or output_limit_bytes < 0:
-        return None
-    try:
-        process = _spawn_bounded_process_query(command)
-    except (OSError, subprocess.SubprocessError, ValueError):
-        return None
-    stdout = getattr(process, "stdout", None)
-    if stdout is None:
-        _terminate_bounded_process_query(process)
-        return None
-
-    captured = bytearray()
-    overflow = threading.Event()
-    errors: list[OSError | ValueError] = []
-    reader = threading.Thread(
-        target=_capture_bounded_process_query_stdout,
-        args=(stdout, captured, output_limit_bytes, overflow, errors),
-        name="guard-daemon-process-query",
-        daemon=True,
-    )
-    timed_out = False
-    reader_started = False
-    deadline = time.monotonic() + timeout_seconds
-    try:
-        reader.start()
-        reader_started = True
-        while process.poll() is None:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                timed_out = True
-                break
-            if overflow.wait(min(_GUARD_DAEMON_PROCESS_QUERY_MONITOR_INTERVAL_SECONDS, remaining)):
-                break
-        if process.poll() is not None and reader.is_alive():
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                timed_out = True
-            else:
-                reader.join(timeout=remaining)
-                if reader.is_alive() or time.monotonic() >= deadline:
-                    timed_out = True
-    except BaseException:
-        _terminate_bounded_process_query(process)
-        raise
-    finally:
-        if timed_out or overflow.is_set() or process.poll() is None or reader.is_alive():
-            _terminate_bounded_process_query(process)
-        if reader_started:
-            reader.join(timeout=_GUARD_DAEMON_PROCESS_QUERY_TERMINATE_GRACE_SECONDS)
-            if reader.is_alive():
-                with suppress(OSError, ValueError):
-                    stdout.close()
-                reader.join(timeout=_GUARD_DAEMON_PROCESS_QUERY_TERMINATE_GRACE_SECONDS)
-
-    if timed_out or overflow.is_set() or errors or reader.is_alive():
-        return None
-    try:
-        returncode = process.wait(timeout=_GUARD_DAEMON_PROCESS_QUERY_TERMINATE_GRACE_SECONDS)
-    except subprocess.TimeoutExpired:
-        _terminate_bounded_process_query(process)
-        return None
-    if returncode != 0:
-        return None
-    try:
-        return bytes(captured).decode("utf-8", errors="strict")
-    except UnicodeDecodeError:
-        return None
-
-
-def _running_ephemeral_guard_daemon_processes() -> list[tuple[int, Path, float]]:
-    if os.name == "nt":
-        return []
-    ps_path = _trusted_posix_ps_path()
-    if ps_path is None:
-        return []
-    output = _bounded_process_query_stdout([ps_path, "-axo", "pid=,etime=,command="])
-    if output is None:
-        return []
-    verdict = _lifecycle("ephemeral_processes", {"ps_output": output})
-    if "raises" in verdict:
-        raise ValueError("unparseable process elapsed time")
-    return [(int(pid), Path(home), float(elapsed)) for pid, home, elapsed in verdict["processes"]]
 
 
 def _guard_home_from_command(command: str) -> Path | None:
@@ -2788,10 +2408,11 @@ def _guard_daemon_process_inventory_for_guard_home(
         executable_name = ntpath.basename(sys.executable).strip().lower()
         if executable_name:
             candidate_names.add(executable_name)
-        entries = windows_processes.windows_process_command_line_inventory(
-            candidate_executable_names=frozenset(candidate_names),
-            max_command_line_bytes=_GUARD_DAEMON_PROCESS_QUERY_OUTPUT_LIMIT_BYTES,
-        )
+        with timed_phase("process_inventory_enumerate"):
+            entries = windows_processes.windows_process_command_line_inventory(
+                candidate_executable_names=frozenset(candidate_names),
+                max_command_line_bytes=_GUARD_DAEMON_PROCESS_QUERY_OUTPUT_LIMIT_BYTES,
+            )
         if entries is None:
             return None
     else:
@@ -2819,7 +2440,8 @@ def _guard_daemon_process_inventory_for_guard_home(
         query["ps_output"] = output
     else:
         query["entries"] = [[pid, command_line] for pid, command_line in entries or []]
-    verdict = _lifecycle("process_inventory", query, home=guard_home, facts_home=guard_home)
+    with timed_phase("process_inventory_verdict"):
+        verdict = _lifecycle("process_inventory", query, home=guard_home, facts_home=guard_home)
     if not verdict["known"]:
         return None
     return [(int(pid), int(port)) for pid, port in verdict["processes"]]
@@ -3228,6 +2850,40 @@ def _retire_guard_daemon_pid(
     return wait_for_death()
 
 
+def _spawned_daemon_wait_deadline(start_deadline: float) -> float:
+    """Return when the readiness wait must stop to leave time for classification.
+
+    Classification queries the spawned process tree under the same lifecycle
+    deadline. When the wait spends the whole budget those queries time out, and
+    the error path terminates a child that was still starting normally, so a
+    slow host never completes a start.
+    """
+
+    remaining = max(0.0, start_deadline - time.monotonic())
+    reserve = min(_START_CLASSIFICATION_RESERVE_SECONDS, remaining * _START_CLASSIFICATION_RESERVE_FRACTION)
+    return start_deadline - reserve
+
+
+def _wait_for_spawned_guard_daemon_url(
+    guard_home: Path,
+    *,
+    process: subprocess.Popen[bytes],
+    executable: Path | None,
+    wait_deadline: float,
+) -> str | None:
+    try:
+        return _wait_for_started_guard_daemon_url(
+            guard_home,
+            timeout=max(0.0, wait_deadline - time.monotonic()),
+            process=process,
+            executable=executable,
+        )
+    except TimeoutError:
+        # An expired poll is not evidence that the child is stuck; let the
+        # classifier decide whether it is dead, blocked, or still starting.
+        return None
+
+
 def _wait_for_started_guard_daemon_url(
     guard_home: Path,
     *,
@@ -3444,3 +3100,28 @@ def _live_or_newer_daemon_url(guard_home: Path, *, executable: Path | None, pref
     from .runtime_peer import live_or_newer_daemon_url as resolve_live
 
     return resolve_live(guard_home, executable=executable, preferred_port=preferred_port, current_version=__version__)
+
+
+# Re-exported so ``manager`` stays the single patch surface; the janitor module
+# resolves every collaborator through ``manager`` at call time.
+from .manager_ephemeral_reap import (  # noqa: E402, F401
+    _collect_daemon_state_paths,
+    _ephemeral_guard_daemon_state_paths,
+    _ephemeral_guard_home_is_inactive,
+    _path_name_looks_like_pytest_temp_root,
+    _pytest_temp_roots,
+    _reap_one_stale_ephemeral_state_file,
+    _reap_stale_ephemeral_guard_daemons,
+    _running_ephemeral_guard_daemon_processes,
+    _schedule_stale_ephemeral_guard_daemon_reap,
+    _state_path_age_seconds,
+)
+from .manager_process_query import (  # noqa: E402, F401
+    _bounded_process_query_stdout,
+    _capture_bounded_process_query_stdout,
+    _linux_proc_process_entries,
+    _process_query_environment,
+    _spawn_bounded_process_query,
+    _terminate_bounded_process_query,
+    _trusted_posix_ps_path,
+)

@@ -56,7 +56,71 @@ pub(super) fn claude_grep_directory_scope_proven(
     let Some(root) = verified_directory_root(target, home_dir, cwd) else {
         return false;
     };
-    walk_scope(&root, &filter, true, false).is_ok()
+    !super::read_paths::inside_agent_state_tree(&root, home_dir)
+        && walk_scope(&root, &filter, true).is_ok()
+}
+
+/// True when a Claude `Glob` returns only names under a verified directory
+/// whose whole reachable tree holds no sensitive file. The pattern must stay
+/// inside that directory: relative, no `..`, no alternation or escapes.
+pub(super) fn claude_glob_scope_proven(
+    payload: &Value,
+    home_dir: Option<&str>,
+    cwd: Option<&str>,
+) -> bool {
+    let Some(root) = payload.as_object() else {
+        return false;
+    };
+    if root.get("tool_name").and_then(Value::as_str) != Some("Glob")
+        || ["toolInput", "tool_args", "arguments", "input", "parameters"]
+            .iter()
+            .any(|key| root.contains_key(*key))
+    {
+        return false;
+    }
+    let Some(input) = root.get("tool_input").and_then(Value::as_object) else {
+        return false;
+    };
+    if input
+        .keys()
+        .any(|key| !matches!(key.as_str(), "pattern" | "path"))
+    {
+        return false;
+    }
+    let Some(pattern) = input.get("pattern").and_then(Value::as_str) else {
+        return false;
+    };
+    if pattern.is_empty()
+        || pattern.len() > 1024
+        || pattern.starts_with(['/', '~', '\\'])
+        || pattern.contains(['\0', '\n', '\r', '$', '`', '\\', '{', '}', '(', ')', '!'])
+        || pattern.split('/').any(|part| part == "..")
+        || pattern.as_bytes().get(1) == Some(&b':')
+    {
+        return false;
+    }
+    let target = match input.get("path") {
+        None => ".",
+        Some(Value::String(path)) if !path.is_empty() => path.as_str(),
+        Some(_) => return false,
+    };
+    unfiltered_directory_scope_proven(target, home_dir, cwd)
+}
+
+/// Content search (`grep`) variant of the unfiltered proof. Inside agent-state
+/// trees (`~/.agent/skills`, `~/.agent/artifacts`) the per-file rules that
+/// deny direct reads do not apply to a directory walk, so the walk must reach
+/// only documents a direct read would allow.
+pub(super) fn content_search_scope_proven(
+    target: &str,
+    home_dir: Option<&str>,
+    cwd: Option<&str>,
+) -> bool {
+    unfiltered_directory_root(target, home_dir, cwd).is_some_and(|root| {
+        (!super::read_paths::inside_agent_state_tree(&root, home_dir)
+            || super::read_paths::agent_state_tree_holds_only_documents(&root, home_dir))
+            && unfiltered_walk_proven(&root)
+    })
 }
 
 /// Host-neutral variant for hosts whose search semantics are not modeled
@@ -68,43 +132,40 @@ pub(super) fn unfiltered_directory_scope_proven(
     home_dir: Option<&str>,
     cwd: Option<&str>,
 ) -> bool {
-    let Some(filter) = SearchFilter::from_input(&Map::new()) else {
-        return false;
-    };
+    unfiltered_directory_root(target, home_dir, cwd)
+        .is_some_and(|root| unfiltered_walk_proven(&root))
+}
+
+fn unfiltered_walk_proven(root: &Path) -> bool {
+    SearchFilter::from_input(&Map::new())
+        .is_some_and(|filter| walk_scope(root, &filter, false).is_ok())
+}
+
+/// Canonical directory an unfiltered search walks, with `~/` expanded the
+/// way the host does. Both the walk and the agent-state gate use this root.
+fn unfiltered_directory_root(
+    target: &str,
+    home_dir: Option<&str>,
+    cwd: Option<&str>,
+) -> Option<PathBuf> {
     if !super::safe_reads::bounded_omp_directory_read_target(target, home_dir, cwd) {
-        return false;
+        return None;
     }
     let candidate = if Path::new(target).is_absolute() {
         PathBuf::from(target)
     } else if let Some(stripped) = target.strip_prefix("~/") {
-        match home_dir {
-            Some(home) => Path::new(home).join(stripped),
-            None => return false,
-        }
+        Path::new(home_dir?).join(stripped)
     } else if target == "~" {
-        return false;
+        return None;
     } else {
-        match cwd {
-            Some(cwd) => Path::new(cwd).join(target),
-            None => return false,
-        }
+        Path::new(cwd?).join(target)
     };
     if guard_secure_fs::contains_symlink_component(&candidate) {
-        return false;
+        return None;
     }
     std::fs::canonicalize(candidate)
         .ok()
         .filter(|root| root.is_dir())
-        .is_some_and(|root| {
-            let agent_documents = home_dir
-                .and_then(|home| std::fs::canonicalize(home).ok())
-                .is_some_and(|home| {
-                    [".agent/skills", ".agent/artifacts"]
-                        .iter()
-                        .any(|tree| root.starts_with(home.join(tree)))
-                });
-            walk_scope(&root, &filter, false, agent_documents).is_ok()
-        })
 }
 
 fn claude_grep_input(payload: &Value) -> Option<&Map<String, Value>> {
@@ -233,7 +294,6 @@ fn walk_scope(
     root: &Path,
     filter: &SearchFilter,
     honor_ignores: bool,
-    agent_documents: bool,
 ) -> Result<(), ScopeUnproven> {
     let repository = repository_root(root).filter(|_| honor_ignores);
     let mut tiers = IgnoreTiers::default();
@@ -285,9 +345,6 @@ fn walk_scope(
             }
             // Metadata only: never follow links or open a candidate secret.
             let metadata = std::fs::symlink_metadata(&path).map_err(|_| ScopeUnproven)?;
-            if agent_documents && (name.starts_with('.') || metadata.file_type().is_symlink()) {
-                return Err(ScopeUnproven);
-            }
             if metadata.file_type().is_symlink() {
                 // Claude's Grep does not follow links. Still refuse a link
                 // whose name or file target is sensitive, in case it would.

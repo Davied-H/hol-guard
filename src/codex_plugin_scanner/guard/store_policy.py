@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 from .managed_controls_policy_bundle import (
@@ -93,6 +94,73 @@ def _distinct_non_null(values: Sequence[str | None]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(value for value in values if value is not None))
 
 
+@dataclass(frozen=True)
+class PolicyLookupEvidence:
+    """Integrity evidence for one or more lookups against the same store state."""
+
+    now: str
+    integrity_state: dict[str, Any]
+    integrity_key_b64: str | None = None
+    integrity_key_id: str | None = None
+    local_once_integrity_key_b64: str | None = None
+    local_once_integrity_key_id: str | None = None
+    policy_bundle_decision_identities: list[list[Any]] | None = None
+    # Set when the home can serve no authority: every lookup is an empty
+    # degraded result carrying this trust status.
+    degraded_trust_status: dict[str, Any] | None = None
+    # The store holds no saved policy or local-once row, so a miss has nothing to diagnose.
+    has_saved_rows: bool = True
+
+
+def _degraded_lookup_evidence(
+    now: str,
+    integrity_state: dict[str, Any],
+    *,
+    has_saved_rows: bool,
+) -> PolicyLookupEvidence:
+    return PolicyLookupEvidence(
+        now=now,
+        integrity_state=integrity_state,
+        degraded_trust_status=TrustStatus.from_policy_integrity_state(integrity_state).to_dict(),
+        has_saved_rows=has_saved_rows,
+    )
+
+
+def memory_lookup_candidates(
+    harness: str,
+    artifact_id: str | None,
+    *,
+    memory_command: str | None,
+    memory_artifact_type: str | None,
+    memory_artifact_name: str | None,
+) -> tuple[tuple[str, ...], str | None]:
+    """Exact-command ids and the memory-pattern id probed after the direct artifact."""
+
+    exact_ids: tuple[str, ...] = ()
+    if _memory_artifact_is_shell_command(memory_artifact_type, memory_artifact_name):
+        exact_ids = tuple(
+            candidate
+            for candidate in _distinct_non_null(
+                (
+                    build_exact_shell_command_memory_artifact_id(memory_command),
+                    build_exact_command_memory_artifact_id(memory_command),
+                )
+            )
+            if candidate != artifact_id
+        )
+    memory_pattern = build_memory_pattern_fingerprint(
+        command=memory_command,
+        artifact_type=memory_artifact_type,
+        artifact_id=artifact_id,
+        artifact_name=memory_artifact_name,
+        harness=harness,
+    )
+    memory_id = (
+        None if memory_pattern is None else f"memory:{harness}:{memory_pattern.kind}:{memory_pattern.fingerprint}"
+    )
+    return exact_ids, (None if memory_id == artifact_id else memory_id)
+
+
 def _most_restrictive_policy_lookup(
     lookups: Sequence[PolicyDecisionLookupResult],
 ) -> PolicyDecisionLookupResult:
@@ -156,11 +224,6 @@ class StorePolicyMixin:
         user-writable marker cannot preserve a replacement local anchor.
         """
 
-        state_keys = (
-            "managed_policy_bundle_keyring_provenance",
-            "managed_policy_bundle_keyring_mirror",
-            "policy_bundle_keyring",
-        )
         normalized_now = _canonical_utc_timestamp(now)
         configured = managed_keyring is not None and quarantined_local_keyring is not None and provenance is not None
         if (
@@ -168,43 +231,14 @@ class StorePolicyMixin:
             and not configured
         ):
             raise ValueError("managed_policy_bundle_keyring_reconcile_incomplete")
-        with self._connect() as connection:
-            connection.execute("begin immediate")
-            if not configured:
-                marker = connection.execute(
-                    "select 1 from sync_state where state_key = ?",
-                    (state_keys[0],),
-                ).fetchone()
-                if marker is None and not force_clear:
-                    connection.rollback()
-                    return False
-                placeholders = ",".join("?" for _ in state_keys)
-                connection.execute(
-                    f"delete from sync_state where state_key in ({placeholders})",
-                    state_keys,
-                )
-                return True
-            assert managed_keyring is not None
-            assert quarantined_local_keyring is not None
-            assert provenance is not None
-            payloads = {
-                state_keys[0]: dict(provenance),
-                state_keys[1]: dict(managed_keyring),
-                state_keys[2]: dict(quarantined_local_keyring),
-            }
-            encoded = {state_key: json.dumps(payload, allow_nan=False) for state_key, payload in payloads.items()}
-            for state_key, payload_json in encoded.items():
-                connection.execute(
-                    """
-                    insert into sync_state (state_key, payload_json, updated_at)
-                    values (?, ?, ?)
-                    on conflict(state_key) do update set
-                      payload_json = excluded.payload_json,
-                      updated_at = excluded.updated_at
-                    """,
-                    (state_key, payload_json, normalized_now),
-                )
-        return True
+        arguments: dict[str, object] = {"configured": configured, "force_clear": force_clear, "now": normalized_now}
+        if provenance is not None and managed_keyring is not None and quarantined_local_keyring is not None:
+            arguments.update(
+                provenance_json=json.dumps(dict(provenance), allow_nan=False),
+                managed_keyring_json=json.dumps(dict(managed_keyring), allow_nan=False),
+                local_keyring_json=json.dumps(dict(quarantined_local_keyring), allow_nan=False),
+            )
+        return bool(self._native_store_call("managed_keyring_reconcile", arguments))
 
     def _cached_policy_bundle_decision_identities(
         self,
@@ -947,41 +981,31 @@ class StorePolicyMixin:
             direct_lookup["decision"] is not None or direct_lookup.get("ignored_local_integrity") is not None
         ):
             return direct_lookup
-        if _memory_artifact_is_shell_command(memory_artifact_type, memory_artifact_name):
-            exact_command_artifact_ids = (
-                build_exact_shell_command_memory_artifact_id(memory_command),
-                build_exact_command_memory_artifact_id(memory_command),
-            )
-            for exact_command_artifact_id in _distinct_non_null(exact_command_artifact_ids):
-                if exact_command_artifact_id == artifact_id:
-                    continue
-                exact_command_lookup = self.resolve_policy_decision_lookup(
-                    harness,
-                    exact_command_artifact_id,
-                    artifact_hash=artifact_hash,
-                    workspace=workspace,
-                    publisher=publisher,
-                    now=now,
-                    runtime_exact_match_context=runtime_exact_match_context,
-                    consume_one_shot=consume_one_shot,
-                )
-                candidate_lookups.append(exact_command_lookup)
-                if consume_one_shot and (
-                    exact_command_lookup["decision"] is not None
-                    or exact_command_lookup.get("ignored_local_integrity") is not None
-                ):
-                    return exact_command_lookup
-        memory_pattern = build_memory_pattern_fingerprint(
-            command=memory_command,
-            artifact_type=memory_artifact_type,
-            artifact_id=artifact_id,
-            artifact_name=memory_artifact_name,
-            harness=harness,
+        exact_command_artifact_ids, memory_artifact_id = memory_lookup_candidates(
+            harness,
+            artifact_id,
+            memory_command=memory_command,
+            memory_artifact_type=memory_artifact_type,
+            memory_artifact_name=memory_artifact_name,
         )
-        if memory_pattern is None:
-            return _most_restrictive_policy_lookup(candidate_lookups)
-        memory_artifact_id = f"memory:{harness}:{memory_pattern.kind}:{memory_pattern.fingerprint}"
-        if memory_artifact_id == artifact_id:
+        for exact_command_artifact_id in exact_command_artifact_ids:
+            exact_command_lookup = self.resolve_policy_decision_lookup(
+                harness,
+                exact_command_artifact_id,
+                artifact_hash=artifact_hash,
+                workspace=workspace,
+                publisher=publisher,
+                now=now,
+                runtime_exact_match_context=runtime_exact_match_context,
+                consume_one_shot=consume_one_shot,
+            )
+            candidate_lookups.append(exact_command_lookup)
+            if consume_one_shot and (
+                exact_command_lookup["decision"] is not None
+                or exact_command_lookup.get("ignored_local_integrity") is not None
+            ):
+                return exact_command_lookup
+        if memory_artifact_id is None:
             return _most_restrictive_policy_lookup(candidate_lookups)
         memory_lookup = self.resolve_policy_decision_lookup(
             harness,
@@ -1002,6 +1026,40 @@ class StorePolicyMixin:
             )
         return _most_restrictive_policy_lookup(candidate_lookups)
 
+    def peek_local_once_approval(
+        self,
+        *,
+        harness: str,
+        artifact_id: str | None,
+        artifact_hash: str | None,
+        workspace: str | None,
+        publisher: str | None,
+        now: str,
+    ) -> dict[str, object] | None:
+        """Return exact unexpired approval evidence without consuming it.
+
+        The resident owns the exact local-once match, its integrity check and
+        the legacy-provenance refusal; this only ships the request.
+        """
+
+        if not artifact_id or not artifact_hash:
+            return None
+        # Bypass the portable-workspace composition: the exact peek is bound to
+        # the caller's workspace, never a git-derived one.
+        lookup = StorePolicyMixin.resolve_policy_decision_lookup(
+            self,
+            harness,
+            artifact_id,
+            artifact_hash=artifact_hash,
+            workspace=workspace,
+            publisher=publisher,
+            now=now,
+            consume_one_shot=False,
+            local_once_only=True,
+        )
+        decision = lookup["decision"]
+        return dict(decision) if isinstance(decision, Mapping) else None
+
     def resolve_policy_decision_lookup(
         self,
         harness: str,
@@ -1012,6 +1070,7 @@ class StorePolicyMixin:
         now: str | None = None,
         runtime_exact_match_context: str | None = None,
         consume_one_shot: bool = True,
+        local_once_only: bool = False,
     ) -> PolicyDecisionLookupResult:
         """Resolve the effective policy decision via the native resident op.
 
@@ -1023,6 +1082,72 @@ class StorePolicyMixin:
         procures the OS-keyring-facing integrity material and the post-refresh
         integrity state, ships them as evidence DTO fields, and decodes the
         result. Native failure is terminal — there is no Python fallback.
+        """
+        evidence = self.policy_lookup_evidence(now=now, local_once_only=local_once_only)
+        current_time = evidence.now
+        if evidence.degraded_trust_status is not None:
+            return {
+                "decision": None,
+                "ignored_local_integrity": None,
+                "trust_status": evidence.degraded_trust_status,
+                "authority_revision": -1,
+            }
+
+        request: dict[str, object] = {
+            "schema": "guard-policy-decision-lookup-request.v1",
+            "request_id": f"policy-decision-lookup-{uuid4().hex}",
+            "store_path": str(self.path),
+            "guard_home": str(self.guard_home),
+            "harness": harness,
+            "artifact_id": artifact_id,
+            "artifact_hash": artifact_hash,
+            "workspace": workspace,
+            "publisher": publisher,
+            "now": current_time,
+            "runtime_exact_match_context": runtime_exact_match_context,
+            "consume_one_shot": bool(consume_one_shot),
+            "integrity_state": evidence.integrity_state,
+            "integrity_key_b64": evidence.integrity_key_b64,
+            "integrity_key_id": evidence.integrity_key_id,
+            "local_once_integrity_key_b64": evidence.local_once_integrity_key_b64,
+            "local_once_integrity_key_id": evidence.local_once_integrity_key_id,
+        }
+        if local_once_only:
+            request["local_once_only"] = True
+        if evidence.policy_bundle_decision_identities:
+            request["policy_bundle_decision_identities"] = evidence.policy_bundle_decision_identities
+
+        response = _resident_request(
+            operation="policy_decision_lookup",
+            request=request,
+            guard_home=self.guard_home,
+            timeout_seconds=10.0,
+            required_feature=POLICY_DECISION_LOOKUP_FEATURE,
+            response_schema="guard-policy-decision-lookup-result.v1",
+        )
+        if response is None:
+            raise ValueError("native_policy_decision_lookup_unavailable")
+        if response.get("status") != "ok" or not isinstance(response.get("payload"), dict):
+            # The native op encodes failures as status="error" + payload=<code>;
+            # surface that code so callers can distinguish transport vs. store
+            # errors, and never re-prefix an already-namespaced code.
+            raw = response.get("code", response.get("payload"))
+            code = raw if isinstance(raw, str) and raw else "failed"
+            raise ValueError(
+                code if code.startswith("native_policy_decision_lookup_") else f"native_policy_decision_lookup_{code}"
+            )
+        return cast("PolicyDecisionLookupResult", response["payload"])
+
+    def policy_lookup_evidence(
+        self,
+        *,
+        now: str | None = None,
+        local_once_only: bool = False,
+    ) -> PolicyLookupEvidence:
+        """Procure the keyring-facing integrity evidence a lookup ships to Rust.
+
+        Python keeps this because the OS keyring and the integrity-state refresh
+        stay here; the evidence is the same for every candidate of one call.
         """
         current_time = _canonical_utc_timestamp(now or _now())
 
@@ -1047,6 +1172,12 @@ class StorePolicyMixin:
             has_local_once_approvals = (
                 connection.execute("select 1 from guard_local_once_approvals limit 1").fetchone() is not None
             )
+            has_saved_rows = has_local_policy or has_remote_policy or has_local_once_approvals
+            if local_once_only:
+                # The exact peek is read-only: it never refreshes the policy
+                # integrity state or mints key material.
+                has_local_policy = False
+                has_remote_policy = False
             integrity_state = (
                 self._refresh_policy_integrity_state(
                     connection,
@@ -1079,7 +1210,11 @@ class StorePolicyMixin:
         # local-once row whose signature was issued under the keyring) so a
         # lookup against a never-provisioned store does not mint an unused key.
         resident_key, resident_key_id = self._policy_integrity_secret_material(create=False)
-        if resident_key is None and (verifier_exists or has_remote_policy or has_local_once_approvals):
+        if (
+            resident_key is None
+            and not local_once_only
+            and (verifier_exists or has_remote_policy or has_local_once_approvals)
+        ):
             resident_key, resident_key_id = self._policy_integrity_secret_material(create=True)
         if has_local_policy:
             integrity_key, integrity_key_id = resident_key, resident_key_id
@@ -1108,22 +1243,12 @@ class StorePolicyMixin:
                 # failed on the same home.
                 verifier_exists = verifier_path.is_file() if verifier_path is not None else False
                 if not verifier_exists:
-                    return {
-                        "decision": None,
-                        "ignored_local_integrity": None,
-                        "trust_status": TrustStatus.from_policy_integrity_state(integrity_state).to_dict(),
-                        "authority_revision": -1,
-                    }
+                    return _degraded_lookup_evidence(current_time, integrity_state, has_saved_rows=has_saved_rows)
             except (OSError, RuntimeError, TypeError, ValueError):
                 verifier_exists = verifier_path.is_file() if verifier_path is not None else False
                 if not verifier_exists:
-                    return {
-                        "decision": None,
-                        "ignored_local_integrity": None,
-                        "trust_status": TrustStatus.from_policy_integrity_state(integrity_state).to_dict(),
-                        "authority_revision": -1,
-                    }
-        elif verifier_path is None or (not verifier_exists and not has_local_once_approvals):
+                    return _degraded_lookup_evidence(current_time, integrity_state, has_saved_rows=has_saved_rows)
+        elif verifier_path is None or (not verifier_exists and (local_once_only or not has_local_once_approvals)):
             # An untrusted guard home (verifier_path is None) can never persist
             # a verifier key, and a store with no integrity keyring, no
             # persisted verifier, and no local-once approvals has no authority
@@ -1132,68 +1257,32 @@ class StorePolicyMixin:
             # be provisioned. When local-once rows exist (even unsigned legacy
             # ones) the resident still needs the request to emit
             # ignored_local_integrity evidence.
-            return {
-                "decision": None,
-                "ignored_local_integrity": None,
-                "trust_status": TrustStatus.from_policy_integrity_state(integrity_state).to_dict(),
-                "authority_revision": -1,
-            }
+            return _degraded_lookup_evidence(current_time, integrity_state, has_saved_rows=has_saved_rows)
 
-        request: dict[str, object] = {
-            "schema": "guard-policy-decision-lookup-request.v1",
-            "request_id": f"policy-decision-lookup-{uuid4().hex}",
-            "store_path": str(self.path),
-            "guard_home": str(self.guard_home),
-            "harness": harness,
-            "artifact_id": artifact_id,
-            "artifact_hash": artifact_hash,
-            "workspace": workspace,
-            "publisher": publisher,
-            "now": current_time,
-            "runtime_exact_match_context": runtime_exact_match_context,
-            "consume_one_shot": bool(consume_one_shot),
-            "integrity_state": integrity_state,
-            "integrity_key_b64": (
+        return PolicyLookupEvidence(
+            now=current_time,
+            integrity_state=integrity_state,
+            integrity_key_b64=(
                 base64.urlsafe_b64encode(integrity_key).rstrip(b"=").decode("ascii")
                 if integrity_key is not None
                 else None
             ),
-            "integrity_key_id": integrity_key_id,
-            "local_once_integrity_key_b64": (
+            integrity_key_id=integrity_key_id,
+            local_once_integrity_key_b64=(
                 base64.urlsafe_b64encode(local_once_key).rstrip(b"=").decode("ascii")
                 if local_once_key is not None
                 else None
             ),
-            "local_once_integrity_key_id": local_once_key_id,
-        }
-        bundle_identities = self._cached_policy_bundle_decision_identities(
+            local_once_integrity_key_id=local_once_key_id,
+            policy_bundle_decision_identities=self._lookup_bundle_identities(current_time),
+            has_saved_rows=has_saved_rows,
+        )
+
+    def _lookup_bundle_identities(self, current_time: str) -> list[list[Any]] | None:
+        identities = self._cached_policy_bundle_decision_identities(
             now=_parse_utc_timestamp(current_time).timestamp(),
         )
-        if bundle_identities:
-            request["policy_bundle_decision_identities"] = [
-                [field for field in identity] for identity in bundle_identities
-            ]
-
-        response = _resident_request(
-            operation="policy_decision_lookup",
-            request=request,
-            guard_home=self.guard_home,
-            timeout_seconds=10.0,
-            required_feature=POLICY_DECISION_LOOKUP_FEATURE,
-            response_schema="guard-policy-decision-lookup-result.v1",
-        )
-        if response is None:
-            raise ValueError("native_policy_decision_lookup_unavailable")
-        if response.get("status") != "ok" or not isinstance(response.get("payload"), dict):
-            # The native op encodes failures as status="error" + payload=<code>;
-            # surface that code so callers can distinguish transport vs. store
-            # errors, and never re-prefix an already-namespaced code.
-            raw = response.get("code", response.get("payload"))
-            code = raw if isinstance(raw, str) and raw else "failed"
-            raise ValueError(
-                code if code.startswith("native_policy_decision_lookup_") else f"native_policy_decision_lookup_{code}"
-            )
-        return cast("PolicyDecisionLookupResult", response["payload"])
+        return [[field for field in identity] for identity in identities] if identities else None
 
     def resolve_policy_decision(
         self,
@@ -1223,6 +1312,7 @@ class StorePolicyMixin:
         decision: Mapping[str, object],
         *,
         now: str | None = None,
+        consume_local_once: bool = False,
     ) -> bool:
         """Atomically validate and claim an accepted saved ``allow`` decision.
 
@@ -1231,7 +1321,7 @@ class StorePolicyMixin:
         then enforce the recomputed current action without saved evidence.
         """
 
-        return self.claim_approval_reuse_decisions((decision,), now=now)
+        return self.claim_approval_reuse_decisions((decision,), now=now, consume_local_once=consume_local_once)
 
     def approval_reuse_claim_disposition(
         self,
@@ -1250,6 +1340,7 @@ class StorePolicyMixin:
         decisions: Sequence[Mapping[str, object]],
         *,
         now: str | None = None,
+        consume_local_once: bool = False,
     ) -> bool:
         """Validate and claim a group of saved allows in one transaction.
 
@@ -1274,6 +1365,7 @@ class StorePolicyMixin:
             decisions=decisions,
             now=current_time,
             evidence=self._claim_integrity_evidence(decisions, current_time),
+            consume_local_once=consume_local_once,
         )
 
     def _claim_integrity_evidence(

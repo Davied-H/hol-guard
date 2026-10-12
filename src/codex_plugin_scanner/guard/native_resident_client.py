@@ -24,7 +24,15 @@ from .codex_hook_launch_runtime import (
     run_isolated_hook_process as _legacy_run_isolated_hook_process,
 )
 from .fork_safety import forget_in_child
-from .native_approval_errors import NATIVE_RESIDENT_LIFECYCLE_ERROR_CODES
+from .native_approval_errors import FINITE_FAILURE_CODES, NATIVE_RESIDENT_LIFECYCLE_ERROR_CODES
+from .native_resident_revival import (
+    RESTART_BLOCKED_CODE,
+    arm_restart_hold,
+    clear_restart_hold,
+    is_restart_blocked_frame,
+    restart_blocked_frame,
+    restart_hold_active,
+)
 from .native_resident_stream import _PersistentNativeClient, _StreamFailure
 from .path_resolution_cache import cached_realpath
 
@@ -36,8 +44,11 @@ _MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 _RESIDENT_REQUEST_LOG = "HOL_GUARD_RESIDENT_REQUEST_LOG"
 
 
-def _record_resident_request() -> None:
+def _record_resident_request(payload: bytes = b"") -> None:
     """Append one line when a test asks every process to count resident calls.
+
+    The line is the operation name when the payload is a resident envelope, so
+    a test can assert which ops a workload used; otherwise it is ``1``.
 
     Hook workers are spawned processes, so an in-process monkeypatch cannot see
     their round trips. The variable is unset in production and the write then
@@ -47,9 +58,16 @@ def _record_resident_request() -> None:
     path = os.environ.get(_RESIDENT_REQUEST_LOG)
     if not path:
         return
+    label = b"1"
+    try:
+        operation = json.loads(payload).get("operation")
+        if isinstance(operation, str) and operation.isidentifier():
+            label = operation.encode("ascii", "replace")
+    except (ValueError, AttributeError, UnicodeDecodeError):
+        pass
     descriptor = os.open(path, os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o600)
     try:
-        os.write(descriptor, b"1\n")
+        os.write(descriptor, label + b"\n")
     finally:
         os.close(descriptor)
 
@@ -78,6 +96,17 @@ def native_resident_client_failure_code() -> str | None:
 def record_native_resident_client_failure_code(code: str | None) -> None:
     """Record a privacy-safe failure code for the current native client request."""
     _LAST_FAILURE_CODE.set(code)
+
+
+def record_native_resident_error_frame(decoded: Mapping[str, object]) -> None:
+    """Keep the code from a framed resident refusal such as ``{"error": code}``.
+
+    The client stream answers a failed resident round trip with a framed error instead of exiting, so
+    the transport succeeds and the code would otherwise be dropped as an unexpected schema.
+    """
+    code = decoded.get("error")
+    if isinstance(code, str) and len(code) <= _MAX_FAILURE_CODE_LENGTH and code in FINITE_FAILURE_CODES:
+        _LAST_FAILURE_CODE.set(code)
 
 
 def _allowlisted_failure_code(stderr: str) -> str | None:
@@ -135,6 +164,7 @@ class _PersistentNativeClientPool:
     def __init__(self, *, executable: Path, state_dir: Path, environment: Mapping[str, str]) -> None:
         self._executable = executable
         self._state_dir = state_dir
+        self._hold_key = (str(executable), str(state_dir))
         self._environment = environment
         self._clients: set[_PersistentNativeClient] = set()
         self._retiring: set[_PersistentNativeClient] = set()
@@ -179,13 +209,24 @@ class _PersistentNativeClientPool:
         return None
 
     def request(self, payload: bytes, *, deadline_monotonic: float) -> bytes | None:
+        if restart_hold_active(self._hold_key) and not self.has_idle_client():
+            # The Rust client just refused to respawn a crash-looping resident.
+            # Answer the same bounded refusal instead of spawning a client per call.
+            _LAST_FAILURE_CODE.set(RESTART_BLOCKED_CODE)
+            return restart_blocked_frame()
         client = self._lease(deadline_monotonic=deadline_monotonic)
         if client is None:
             return None
         response: bytes | None = None
         try:
-            _record_resident_request()
+            _record_resident_request(payload)
             response = client.request(payload, deadline_monotonic=deadline_monotonic)
+            if response is not None:
+                if is_restart_blocked_frame(response):
+                    arm_restart_hold(self._hold_key)
+                    _LAST_FAILURE_CODE.set(RESTART_BLOCKED_CODE)
+                else:
+                    clear_restart_hold(self._hold_key)
             return response
         finally:
             close_client = False
@@ -380,6 +421,22 @@ def _track_resident(executable: Path, state_dir: Path, environment: Mapping[str,
         return
     with _RESIDENTS_LOCK:
         _RESIDENTS[(executable, state_dir)] = dict(environment)
+
+
+def tracked_native_resident_state_dirs(guard_home: Path) -> tuple[Path, ...]:
+    """State roots of residents this process has used for ``guard_home`` and not stopped."""
+
+    resolved = guard_home.expanduser().resolve()
+    with _RESIDENTS_LOCK:
+        return tuple(
+            state_dir for (_executable, state_dir) in _RESIDENTS if _state_dir_in_guard_home(state_dir, resolved)
+        )
+
+
+def resident_state_files(state_dir: Path) -> tuple[Path, ...]:
+    """Published resident generation files under one native state root."""
+
+    return _state_files(state_dir)
 
 
 def stop_native_resident(
@@ -609,6 +666,9 @@ __all__ = [
     "native_resident_client_request",
     "native_resident_client_transport",
     "record_native_resident_client_failure_code",
+    "record_native_resident_error_frame",
+    "resident_state_files",
     "retire_native_resident_for_update",
     "stop_native_resident",
+    "tracked_native_resident_state_dirs",
 ]

@@ -206,9 +206,7 @@ def test_supported_manager_list_is_validated(monkeypatch, tmp_path, native, expe
 @pytest.mark.parametrize(
     "translator",
     [
-        native_execution._contained_node_result,
-        native_execution._contained_typescript_result,
-        native_execution._contained_package_script_result,
+        native_execution._contained_runner_result,
         native_execution._contained_workspace_write_result,
     ],
 )
@@ -231,6 +229,8 @@ def test_package_script_native_returns_dataclass_not_unvalidated_dict(monkeypatc
         "bun",
         ["run", "test"],
         guard_home=tmp_path,
+        shim_directory=tmp_path,
+        environment={},
     )
     assert isinstance(result, ContainedPackageScriptResult)
     assert isinstance(result.proof, PositiveProof)
@@ -242,6 +242,8 @@ def test_package_script_native_returns_dataclass_not_unvalidated_dict(monkeypatc
             "bun",
             ["run", "test"],
             guard_home=tmp_path,
+            shim_directory=tmp_path,
+            environment={},
         )
         is None
     )

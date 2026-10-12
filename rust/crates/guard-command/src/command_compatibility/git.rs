@@ -182,7 +182,18 @@ pub(super) fn inspection_arguments<'a>(
     let remaining = arguments.get(index..)?;
     matches!(
         remaining.first().map(String::as_str),
-        Some("status" | "diff" | "log" | "show" | "rev-parse" | "ls-files" | "remote" | "worktree")
+        Some(
+            "status"
+                | "diff"
+                | "log"
+                | "show"
+                | "branch"
+                | "hash-object"
+                | "rev-parse"
+                | "ls-files"
+                | "remote"
+                | "worktree"
+        )
     )
     .then_some(remaining)
 }
@@ -210,7 +221,8 @@ pub(super) fn observe_with_context(
     };
     let command = arguments[command_index].as_str();
     let inspection = inspection_arguments(arguments, context)
-        .filter(|_| crate::pretool::directory_targets::drive_targets_quoted(segment));
+        .filter(|_| crate::pretool::directory_targets::drive_targets_quoted(segment))
+        .filter(|_| crate::pretool::directory_targets::home_targets_unquoted(segment));
     let plumbing = (command_index == 0 && read_only_plumbing(arguments))
         || inspection.is_some_and(read_only_plumbing);
     if plumbing {
@@ -218,7 +230,19 @@ pub(super) fn observe_with_context(
         // extension can still block it.
         result.permission("command.git.permission.ls-files", index, false);
     }
+    // A proven pure listing is read-only inspection, not branch mutation.
+    let branch_listing = command == "branch"
+        && inspection.is_some_and(|remaining| {
+            crate::pretool::git_branch_listing::is_listing(&remaining[1..])
+        });
+    // Printing object ids of named files writes nothing to the repository.
+    let hash_read = command == "hash-object"
+        && inspection.is_some_and(|remaining| {
+            crate::pretool::git_hash_object::read_operands(&remaining[1..]).is_some()
+        });
     if plumbing
+        || branch_listing
+        || hash_read
         || (command_index == 0 && bounded_inspection(arguments))
         || inspection.is_some_and(bounded_inspection)
     {

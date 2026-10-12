@@ -21,10 +21,15 @@ resolver = "2"
 
 [profile.release]
 opt-level = "s"
-# Deduplicate native dependency code across crate boundaries in packaged binaries.
-lto = "thin"
 # Executable behavior is unchanged; omit symbol tables from distributed binaries.
 strip = "symbols"
+# Whole-program optimization keeps the shipped runtime inside the wheel size
+# budgets (about 20% smaller than per-crate codegen). Unwinding stays enabled:
+# the runtime relies on catch_unwind. Pull request test builds restore the faster
+# per-crate settings through CARGO_PROFILE_RELEASE_* in ci.yml. The
+# native-release-size job unsets those overrides before it measures binaries.
+lto = "fat"
+codegen-units = 1
 
 [workspace.package]
 version = "0.1.0"
@@ -42,7 +47,7 @@ ring = "0.17.14"
 rsa = "0.9.8"
 getrandom = { version = "0.3.3", features = ["std"] }
 libc = "0.2.175"
-nix = { version = "0.31.3", features = ["fs", "poll", "process", "signal", "socket"] }
+nix = { version = "0.31.3", features = ["dir", "fs", "poll", "process", "signal", "socket"] }
 regex = "1.11.2"
 fancy-regex = "0.19"
 rusqlite = { version = "0.40.2", features = ["bundled"] }

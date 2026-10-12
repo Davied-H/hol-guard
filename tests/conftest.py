@@ -11,7 +11,12 @@ from pathlib import Path
 
 import pytest
 
+from tests.daemon_control_patching import patch_daemon_global
 from tests.guard_test_invariants import TEST_INVARIANTS, invariant_markers_for_nodeid
+from tests.home_isolation import isolate_user_home
+
+# Before any Guard module computes a default home or a test spawns a helper.
+isolate_user_home()
 
 pytest_plugins = [
     "tests.bundle_first_cloud",
@@ -68,6 +73,15 @@ def _default_unit_test_native_mode(monkeypatch: pytest.MonkeyPatch) -> bool:
         monkeypatch.setenv("HOL_GUARD_NATIVE", "force" if regression else "auto")
         return not regression
     return False
+
+
+@pytest.fixture(autouse=True)
+def _reset_aibom_mcp_native_backoff() -> None:
+    """One outage's MCP-enrichment backoff must not leak into the next test."""
+
+    from codex_plugin_scanner.guard import aibom_detection
+
+    aibom_detection._mcp_native_backoff_until = 0.0
 
 
 @pytest.fixture(autouse=True)
@@ -297,8 +311,8 @@ def _isolate_daemon_background_refresh_workers(
         if request.node.get_closest_marker(marker) is None:
             monkeypatch.setattr(daemon_server.GuardDaemonServer, method_name, lambda _self: None)
     if request.node.get_closest_marker("daemon_headless_queue") is None:
-        monkeypatch.setattr(
-            daemon_server,
+        patch_daemon_global(
+            monkeypatch,
             "_queue_headless_cloud_sync",
             lambda *, store: {
                 "status": "not_configured",

@@ -134,6 +134,63 @@ pub(crate) fn drive_targets_quoted(segment: &crate::CommandSegmentV1) -> bool {
         || !shell_alters_backslash(&segment.text)
 }
 
+/// Whether every argument that begins with `~` reaches the program after the
+/// shell expands it to home, as the path proofs assume. A quoted or escaped
+/// `~` stays a literal relative path that names a different directory, so a
+/// segment that spells one is refused rather than proved against home.
+pub(crate) fn home_targets_unquoted(segment: &crate::CommandSegmentV1) -> bool {
+    !segment
+        .arguments
+        .iter()
+        .any(|argument| argument.starts_with('~'))
+        || !shell_keeps_tilde_literal(&segment.text)
+}
+
+/// Search reads also accept a quoted `~` when the working directory has no
+/// `~` entry: the literal relative path then names nothing, so the search
+/// reads nothing, and the home spelling has already cleared the read screens.
+pub(crate) fn search_home_targets_safe(
+    segment: &crate::CommandSegmentV1,
+    cwd: Option<&str>,
+    home_dir: Option<&str>,
+) -> bool {
+    home_targets_unquoted(segment)
+        || cwd
+            .map(|cwd| {
+                super::read_paths::expand_home_read_path(cwd, home_dir)
+                    .unwrap_or_else(|| cwd.to_owned())
+            })
+            .filter(|cwd| std::path::Path::new(cwd).is_absolute())
+            .is_some_and(|cwd| {
+                matches!(
+                    std::fs::symlink_metadata(std::path::Path::new(&cwd).join("~")),
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound
+                )
+            })
+}
+
+fn shell_keeps_tilde_literal(text: &str) -> bool {
+    let mut quote = None;
+    let mut escaped = false;
+    for character in text.chars() {
+        if escaped {
+            escaped = false;
+            if character == '~' {
+                return true;
+            }
+            continue;
+        }
+        match (quote, character) {
+            (Some(_), '~') => return true,
+            (None | Some('"'), '\\') => escaped = true,
+            (None, '\'' | '"') => quote = Some(character),
+            (Some(open), _) if character == open => quote = None,
+            _ => {}
+        }
+    }
+    false
+}
+
 /// A backslash the shell would remove or reinterpret: any unquoted backslash,
 /// or one inside double quotes that escapes the next character.
 fn shell_alters_backslash(text: &str) -> bool {
@@ -202,12 +259,31 @@ impl<'a> super::PathContext<'a> {
                     .iter()
                     .any(|name| name == "CDPATH")
         });
+        // rustup reads these before any toolchain file, and either one can
+        // name a toolchain directory. Without a stamped environment, the
+        // runtime's own environment is what a probe would inherit.
+        let rustup_override_absent = match execution_environment {
+            Some(environment) => {
+                environment.has_valid_shape()
+                    && !environment
+                        .environment_names
+                        .iter()
+                        .any(|name| rustup_selector(name))
+            }
+            None => !std::env::vars_os()
+                .any(|(name, value)| !value.is_empty() && rustup_selector(&name.to_string_lossy())),
+        };
         Self {
             home_dir,
             cwd,
             cdpath_unset,
+            rustup_override_absent,
         }
     }
+}
+
+fn rustup_selector(name: &str) -> bool {
+    name.eq_ignore_ascii_case("RUSTUP_TOOLCHAIN") || name.eq_ignore_ascii_case("RUSTUP_HOME")
 }
 
 #[cfg(test)]

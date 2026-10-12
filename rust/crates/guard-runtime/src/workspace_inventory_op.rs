@@ -26,6 +26,7 @@ use crate::workspace_inventory_files::{
     basename, expanduser, read_sbom_text, read_text, read_workspace_audit_text, resolve_sbom_paths,
     workspace_files,
 };
+use crate::workspace_scan_targets::{scan_targets, target_for_spec};
 
 const MANIFEST_BYTE_LIMIT: usize = 2_097_152;
 const MANIFEST_DEADLINE_MS: u64 = 50;
@@ -275,11 +276,11 @@ fn snapshot_digest(material: &Value) -> Result<String, String> {
     ))
 }
 
-/// One page of the inventory starting at `offset` plus the offset of the next
-/// page, or `None` when the page reaches the end. A single item that cannot
-/// fit in a resident reply is an error. It is not omitted, and an offset past
-/// the inventory is not reported as an empty success.
-fn inventory_page(items: &[Value], offset: usize) -> Result<(Vec<Value>, Option<usize>), String> {
+/// One page of inventory items (or scan targets) starting at `offset` plus the
+/// offset of the next page, or `None` when the page reaches the end. A single
+/// item that cannot fit in a resident reply is an error. It is not omitted, and
+/// an offset past the inventory is not reported as an empty success.
+fn page_values(items: &[Value], offset: usize) -> Result<(Vec<Value>, Option<usize>), String> {
     let total = items.len();
     if offset > total || (offset == total && total > 0) {
         return Err(invalid());
@@ -303,36 +304,47 @@ fn inventory_page(items: &[Value], offset: usize) -> Result<(Vec<Value>, Option<
     Ok((page, (index < total).then_some(index)))
 }
 
-fn inventory_payload(request: &WorkspaceInventoryRequestV1) -> Result<Value, String> {
-    let after_dir = request.workspace_dir.as_str();
-    let (manifest_paths, lockfile_paths) = workspace_files(after_dir);
-    if request.files_only {
-        if request.inventory_offset > 0 {
-            return Err(invalid());
-        }
-        let digest = snapshot_digest(&json!({
-            "manifest_paths": manifest_paths,
-            "lockfile_paths": lockfile_paths,
-            "sbom_paths": [],
-            "inventory": [],
-            "diff": null,
-            "lockfile_warnings": [],
-        }))?;
-        return Ok(json!({
-            "manifest_paths": manifest_paths,
-            "lockfile_paths": lockfile_paths,
-            "sbom_paths": [],
-            "inventory": [],
-            "inventory_digest": digest,
-            "next_offset": null,
-            "diff": null,
-            "lockfile_warnings": [],
-        }));
+/// Largest explicit package target a reply carries. The target repeats the
+/// spec several times, so an oversized spec is refused before the reply is built
+/// rather than failing at response encoding.
+const PACKAGE_TARGET_MAX_BYTES: usize = 262_144;
+
+fn package_target(request: &WorkspaceInventoryRequestV1) -> Result<Value, String> {
+    let Some(package) = request.package_spec.as_ref() else {
+        return Ok(Value::Null);
+    };
+    let target = target_for_spec(&package.ecosystem, &package.spec).to_execution_dict();
+    let encoded = serde_json::to_vec(&target).map_err(|_| invalid())?;
+    if encoded.len() > PACKAGE_TARGET_MAX_BYTES {
+        return Err("workspace_inventory_exceeds_resident_response".to_owned());
     }
-    let sbom_paths = resolve_sbom_paths(after_dir, &request.sbom_paths);
+    Ok(target)
+}
+
+/// The full inventory of one workspace and the digest that pins it. Page 1
+/// of the inventory op and the Cloud audit payload both derive it, so the
+/// payload can be checked against the exact snapshot the caller reported.
+pub(crate) struct InventorySnapshot {
+    pub(crate) manifest_paths: Vec<String>,
+    pub(crate) lockfile_paths: Vec<String>,
+    pub(crate) sbom_paths: Vec<String>,
+    pub(crate) items: Vec<Value>,
+    pub(crate) diff: Value,
+    pub(crate) warnings: Vec<Value>,
+    pub(crate) digest: String,
+}
+
+pub(crate) fn inventory_snapshot(
+    after_dir: &str,
+    before_dir: Option<&str>,
+    requested_sbom_paths: &[String],
+    include_lockfile_warnings: bool,
+) -> Result<InventorySnapshot, String> {
+    let (manifest_paths, lockfile_paths) = workspace_files(after_dir);
+    let sbom_paths = resolve_sbom_paths(after_dir, requested_sbom_paths);
     let workspace = expanduser(after_dir);
     let mut reader = DependencyReader::new(&workspace);
-    let (mut inventory, diff) = match request.before_workspace_dir.as_deref() {
+    let (mut inventory, diff) = match before_dir {
         Some(before_dir) => {
             let (map, summary) =
                 diff_inventory(before_dir, after_dir, &manifest_paths, &lockfile_paths)?;
@@ -344,7 +356,7 @@ fn inventory_payload(request: &WorkspaceInventoryRequestV1) -> Result<Value, Str
         ),
     };
     merge_sboms(&mut inventory, after_dir, &sbom_paths);
-    let warnings = if request.include_lockfile_warnings {
+    let warnings = if include_lockfile_warnings {
         lockfile_warnings(&mut reader, &workspace, &lockfile_paths)
     } else {
         Vec::new()
@@ -362,20 +374,82 @@ fn inventory_payload(request: &WorkspaceInventoryRequestV1) -> Result<Value, Str
         "diff": diff,
         "lockfile_warnings": warnings,
     }))?;
+    Ok(InventorySnapshot {
+        manifest_paths,
+        lockfile_paths,
+        sbom_paths,
+        items,
+        diff,
+        warnings,
+        digest,
+    })
+}
+
+fn inventory_payload(request: &WorkspaceInventoryRequestV1) -> Result<Value, String> {
+    let after_dir = request.workspace_dir.as_str();
+    let package_target = package_target(request)?;
+    if request.files_only {
+        if request.inventory_offset > 0 {
+            return Err(invalid());
+        }
+        let (manifest_paths, lockfile_paths) = workspace_files(after_dir);
+        let digest = snapshot_digest(&json!({
+            "manifest_paths": manifest_paths,
+            "lockfile_paths": lockfile_paths,
+            "sbom_paths": [],
+            "inventory": [],
+            "diff": null,
+            "lockfile_warnings": [],
+        }))?;
+        return Ok(json!({
+            "manifest_paths": manifest_paths,
+            "lockfile_paths": lockfile_paths,
+            "sbom_paths": [],
+            "inventory": [],
+            "inventory_digest": digest,
+            "next_offset": null,
+            "diff": null,
+            "lockfile_warnings": [],
+            "scan_targets": [],
+            "package_target": package_target,
+        }));
+    }
+    let InventorySnapshot {
+        manifest_paths,
+        lockfile_paths,
+        sbom_paths,
+        items,
+        diff,
+        warnings,
+        digest,
+    } = inventory_snapshot(
+        after_dir,
+        request.before_workspace_dir.as_deref(),
+        &request.sbom_paths,
+        request.include_lockfile_warnings,
+    )?;
     if request.inventory_offset > 0 && request.inventory_digest.as_deref() != Some(digest.as_str())
     {
         return Err(invalid());
     }
-    let (page, next_offset) = inventory_page(&items, request.inventory_offset)?;
+    let (inventory, targets, next_offset) = if request.targets_only {
+        let (targets, next_offset) = page_values(&scan_targets(&items)?, request.inventory_offset)?;
+        (Vec::new(), targets, next_offset)
+    } else {
+        let (page, next_offset) = page_values(&items, request.inventory_offset)?;
+        (page, Vec::new(), next_offset)
+    };
     Ok(json!({
         "manifest_paths": manifest_paths,
         "lockfile_paths": lockfile_paths,
         "sbom_paths": sbom_paths,
-        "inventory": page,
+        "inventory": inventory,
         "inventory_digest": digest,
         "next_offset": next_offset,
         "diff": diff,
         "lockfile_warnings": warnings,
+        "scan_targets": targets,
+        "package_target": package_target,
     }))
 }
 

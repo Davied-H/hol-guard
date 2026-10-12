@@ -19,6 +19,15 @@ pub(super) fn bounded_native_file_write_target(
     bounded_write_target(value, home_dir, cwd, false, true)
 }
 
+/// A new directory path inside the workspace, screened like `mkdir`.
+pub(super) fn bounded_new_directory_write_target(
+    value: &str,
+    home_dir: Option<&str>,
+    cwd: Option<&str>,
+) -> bool {
+    bounded_write_target(value, home_dir, cwd, true, false)
+}
+
 /// A single absolute file write into a temporary directory the user owns.
 /// It never widens the workspace or home boundaries; see the copy carve-out.
 pub(super) fn bounded_native_temporary_write_target(
@@ -32,6 +41,7 @@ pub(super) fn bounded_native_temporary_write_target(
             home_dir,
             cwd,
             cdpath_unset: false,
+            rustup_override_absent: false,
         },
     )
 }
@@ -372,11 +382,14 @@ fn home_execution_control_target(
             _ => None,
         })
         .collect();
+    let shared_library = parts.last().is_some_and(|part| shared_library_part(part))
+        || parts.iter().any(|part| part.ends_with(".framework"));
     parts.iter().any(|part| {
         matches!(part.as_str(), "bin" | "appdata" | "site-packages" | "dist-packages")
             || part.ends_with(".pth")
             || matches!(part.as_str(), "sitecustomize.py" | "usercustomize.py")
-    }) || parts.windows(2).any(|pair| {
+    }) || shared_library
+        || parts.windows(2).any(|pair| {
         matches!(
             pair,
             [first, second]
@@ -386,6 +399,24 @@ fn home_execution_control_target(
                     || (first == ".github" && second == "workflows")
         )
     })
+}
+
+/// A shared library or framework bundle the dynamic loader can pick up from
+/// an exported search path such as `LD_LIBRARY_PATH` or `DYLD_LIBRARY_PATH`:
+/// `libz.so`, `libz.so.1.3`, `libz.dylib`, `z.dll` or a `.framework` bundle.
+/// The caller applies this to the written filename. A parent directory named
+/// `project.so` does not make an ordinary child a library. A file inside a
+/// `.framework` bundle stays a bundle member because the loader reads the bundle.
+fn shared_library_part(part: &str) -> bool {
+    part.ends_with(".dylib")
+        || part.ends_with(".dll")
+        || part.ends_with(".framework")
+        || part.rsplit_once(".so").is_some_and(|(stem, version)| {
+            !stem.is_empty()
+                && version
+                    .split('.')
+                    .all(|piece| piece.bytes().all(|byte| byte.is_ascii_digit()))
+        })
 }
 
 fn home_spelling_matches_target(

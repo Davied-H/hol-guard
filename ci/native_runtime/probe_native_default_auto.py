@@ -263,13 +263,29 @@ def _exercise_mode_invariants(
                 raise RuntimeError(f"native_default_auto_probe_failed: invalid mode response: {response}")
             # Legacy values are accepted but resolve to auto: the native
             # resident must decide exactly as it does with the variable unset.
+            # Current Claude PostToolUse contract: a non-blocking native
+            # outcome carries ``policy_action`` (allow/warn) plus the
+            # PostToolUse hook-specific envelope. It carries no ``continue``
+            # (that key only appears on terminal block responses) and no
+            # ``decision``; any block/stop key would mean the tool output was
+            # refused rather than passed through.
+            specific = response.get("hookSpecificOutput")
             _require(
-                response.get("continue") is True
-                and all(response.get(key) == baseline.get(key) for key in ("decision", "policy_action", "reason_code")),
+                response.get("policy_action") in {"allow", "warn"}
+                and isinstance(specific, dict)
+                and specific.get("hookEventName") == "PostToolUse"
+                and "decision" not in response
+                and "continue" not in response
+                and "stopReason" not in response
+                and all(
+                    response.get(key) == baseline.get(key)
+                    for key in ("decision", "policy_action", "reason_code", "hookSpecificOutput")
+                ),
                 {"mode": mode, "response": response, "baseline": baseline},
             )
             mode_invariants[mode] = {
                 "decision": response.get("decision"),
+                "policy_action": response.get("policy_action"),
                 "reason_code": response.get("reason_code"),
                 "python_oracle": getattr(daemon._server.hook_worker, "test_oracle", None) is not None,
             }
@@ -326,12 +342,14 @@ def _installed_hook_corpus(root: Path) -> dict[str, object]:
             timeout_seconds=45.0 if os.name == "nt" else 5.0,
         )
         writer = daemon._server.runtime_hook_evidence_writer
-        mode_invariants = _exercise_mode_invariants(daemon, guard_home, workspace)
+        # Count the route corpus receipts before the mode invariants send their
+        # own PostToolUse requests, which write receipts of their own.
         evidence_stats = wait_for_receipt_corpus(
             writer,
             expected=len(route_receipts),
             timeout_seconds=45.0 if os.name == "nt" else 5.0,
         )
+        mode_invariants = _exercise_mode_invariants(daemon, guard_home, workspace)
     finally:
         daemon.stop()
     if not isinstance(worker_stats, Mapping) or not isinstance(evidence_stats, Mapping):

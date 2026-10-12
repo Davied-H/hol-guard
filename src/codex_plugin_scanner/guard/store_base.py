@@ -119,16 +119,8 @@ from .store_approvals import (
     resolve_request_with_queue_result as persist_queue_resolution,
 )
 from .store_connect import (
-    build_connect_state_response,
     connect_request_schema_statement,
     connect_state_schema_statement,
-    load_connect_state,
-)
-from .store_connect import (
-    get_latest_connect_state as load_latest_connect_state,
-)
-from .store_connect import (
-    mark_connect_result as persist_connect_result,
 )
 from .store_review_event_outbox_binding import bind_review_events_for_request
 from .store_evidence import (
@@ -141,22 +133,7 @@ from .store_evidence import (
 from .store_evidence import (
     store_evidence as _store_evidence_impl,
 )
-from .store_policy_source_context import (
-    PolicySourceContextIndex,
-    build_policy_source_context_index,
-    lookup_policy_source_context,
-)
-from .store_receipt_rollups import (
-    backfill_receipt_rollups,
-    count_receipts_from_rollups,
-    load_receipt_analytics,
-    receipt_rollup_index_statements,
-    receipt_rollup_schema_statements,
-    receipt_rollups_initialized,
-    receipt_rollups_need_backfill,
-    record_receipt_insert,
-    record_receipt_policy_decision_change,
-)
+from .store_receipt_rollup_schema import receipt_rollup_index_statements, receipt_rollup_schema_statements
 from .store_resume import (
     delete_request_resumes as purge_request_resumes,
 )
@@ -1555,63 +1532,6 @@ def _is_runtime_scoped_exact_match_key(value: str | None) -> bool:
 
 def _is_approval_context_token(value: object) -> bool:
     return parse_approval_context_token(value) is not None
-
-
-def _scoped_runtime_row_requires_exact_match(
-    *,
-    scope: str,
-    stored_artifact_id: str | None,
-    stored_artifact_hash: str | None,
-    source: str,
-    requested_artifact_id: str | None,
-    requested_artifact_hash: str | None = None,
-    requested_runtime_exact_match_key: str | None = None,
-    requested_portable_exact_match_key: str | None = None,
-    requested_global_exact_match_key: str | None = None,
-) -> bool:
-    if scope not in {"harness", "global"}:
-        return False
-    if source in REMOTE_POLICY_SOURCES:
-        return False
-    family_key = _artifact_family_key(stored_artifact_id)
-    if family_key is None or _family_key_value(family_key) not in _SCOPED_RUNTIME_EXACT_FAMILIES:
-        return False
-    expected_exact_keys = {
-        key
-        for key in (
-            requested_artifact_hash if _is_approval_context_token(requested_artifact_hash) else None,
-            _runtime_scoped_exact_match_key(requested_artifact_id),
-            requested_runtime_exact_match_key,
-            requested_portable_exact_match_key,
-            requested_global_exact_match_key,
-        )
-        if key is not None
-    }
-    if not expected_exact_keys:
-        return True
-    return stored_artifact_hash not in expected_exact_keys
-
-
-def _warn_only_policy_integrity_status(status: str, state: Mapping[str, object], *, source: str = "local") -> bool:
-    if state.get("enforcement") != "warn":
-        return False
-    if source != "approval-gate":
-        return False
-    if status == "missing_integrity":
-        return True
-    if status != "degraded_mode":
-        return False
-    reasons = state.get("degraded_reasons")
-    if not isinstance(reasons, list):
-        return False
-    if not reasons:
-        return False
-    allowed_reasons = {
-        "system_keyring_unavailable",
-        "policy_integrity_key_unavailable",
-        "policy_integrity_control_unavailable",
-    }
-    return all(isinstance(reason, str) and reason in allowed_reasons for reason in reasons)
 
 
 def _policy_integrity_ready_for_local_write(payload: Mapping[str, object]) -> bool:
