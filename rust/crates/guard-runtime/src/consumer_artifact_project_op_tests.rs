@@ -15,7 +15,9 @@ const VECTORS: &[u8] =
 fn matches_recorded_vectors() {
     let vectors = gunzip_json(VECTORS);
     let cases = vectors.as_array().expect("cases");
-    assert!(cases.len() >= 1600);
+    assert!(cases.len() >= 1700);
+    let structured = |case: &&Value| case["name"].as_str().unwrap().starts_with("structured-");
+    assert!(cases.iter().filter(structured).count() >= 90);
     for case in cases {
         let name = case["name"].as_str().unwrap();
         let query: ConsumerArtifactProjectQueryV1 = serde_json::from_value(case["query"].clone())

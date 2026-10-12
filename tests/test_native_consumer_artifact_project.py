@@ -59,7 +59,7 @@ def test_vectors_cover_every_query_kind() -> None:
     assert {vector["query"]["kind"] for vector in _VECTORS} == set(project._FIELDS)
 
 
-def _artifact_from_wire(wire: Mapping[str, object]) -> GuardArtifact:
+def _artifact_from_wire(wire: Mapping[str, object], source_metadata: dict[str, object] | None = None) -> GuardArtifact:
     return GuardArtifact(
         artifact_id=str(wire["artifact_id"]),
         name=str(wire["name"]),
@@ -72,7 +72,7 @@ def _artifact_from_wire(wire: Mapping[str, object]) -> GuardArtifact:
         url=cast("str | None", wire["url"]),
         transport=cast("str | None", wire["transport"]),
         publisher=cast("str | None", wire["publisher"]),
-        metadata=dict(cast("dict[str, object]", wire["metadata"])),
+        metadata=dict(source_metadata if source_metadata is not None else cast("dict[str, object]", wire["metadata"])),
     )
 
 
@@ -82,9 +82,23 @@ def test_wire_artifact_matches_the_recorded_vector_artifacts() -> None:
         wire = vector["query"].get("artifact")
         if not isinstance(wire, dict):
             continue
-        assert projection.wire_artifact(_artifact_from_wire(wire)) == wire, vector["name"]
+        source = vector.get("source_metadata")
+        artifact = _artifact_from_wire(wire, cast("dict[str, object] | None", source))
+        assert projection.wire_artifact(artifact) == wire, vector["name"]
         checked += 1
     assert checked > 100
+
+
+def test_structured_summary_vectors_keep_launch_and_incident_copy_on_string_summaries() -> None:
+    structured = [vector for vector in _VECTORS if vector["name"].startswith("structured-")]
+    assert len(structured) >= 90
+    for vector in structured:
+        metadata = vector["query"]["artifact"]["metadata"]
+        source = vector["source_metadata"]
+        for key in ("request_summary", "prompt_summary", "runtime_request_summary"):
+            if key in source and not isinstance(source[key], str):
+                assert key not in metadata, vector["name"]
+                assert key in metadata["capability_text_summaries"], vector["name"]
 
 
 def test_wire_artifact_sends_structured_summaries_only_as_capability_text() -> None:

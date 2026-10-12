@@ -40,116 +40,11 @@ from record_consumer_artifact_project_data import (
     RISKS,
     SCOPES,
     SNAPSHOT_EDITS,
+    STRUCTURED_BASES,
+    STRUCTURED_SUMMARIES,
     TYPES,
 )
-
-
-def _make(base: dict[str, Any], overrides: dict[str, Any] | None = None) -> Any:
-    from codex_plugin_scanner.guard.models import GuardArtifact
-
-    fields = {
-        "artifact_id": ID,
-        "name": "tool",
-        "harness": "codex",
-        "source_scope": "project",
-        "config_path": PATH,
-        **base,
-        **(overrides or {}),
-    }
-    return GuardArtifact(**fields)
-
-
-def _wire_artifact(artifact: Any) -> dict[str, Any]:
-    keys = (
-        "request_summary",
-        "runtime_request_summary",
-        "prompt_summary",
-        "env_keys",
-        "codex_hook_identity",
-        "watch_only_observation",
-        "watch_only_authoritative_action",
-    )
-    metadata = {key: artifact.metadata[key] for key in keys if key in artifact.metadata}
-    if "mcp_tool_identity" in artifact.metadata:
-        metadata["mcp_tool_identity"] = True
-    return {
-        "artifact_id": artifact.artifact_id,
-        "name": artifact.name,
-        "harness": artifact.harness,
-        "artifact_type": artifact.artifact_type,
-        "source_scope": artifact.source_scope,
-        "config_path": artifact.config_path,
-        "command": artifact.command,
-        "args": list(artifact.args),
-        "url": artifact.url,
-        "transport": artifact.transport,
-        "publisher": artifact.publisher,
-        "metadata": metadata,
-    }
-
-
-class _Store:
-    def __init__(self, history: dict[str, Any]) -> None:
-        self.history = history
-
-    def find_inventory_item(self, _artifact_id: str) -> dict[str, Any] | None:
-        return self.history["item"]
-
-    def receipt_decision_counts(self, _harness: str, _artifact_id: str) -> dict[str, int]:
-        return dict(self.history["counts"])
-
-    def list_events(self, limit: int = 100) -> list[dict[str, Any]]:
-        return list(self.history["events"])[:limit]
-
-    def list_cached_advisories(self, limit: int = 100) -> list[dict[str, Any]]:
-        return list(self.history["advisories"])[:limit]
-
-
-def _wire_history(history: dict[str, Any], publisher: str | None) -> dict[str, Any]:
-    item = history["item"]
-    wire_item = (
-        {key: item[key] if isinstance(item.get(key), str) else None for key in ("first_seen_at", "last_seen_at")}
-        if isinstance(item, dict)
-        else None
-    )
-    names = [
-        event["event_name"]
-        for event in history["events"]
-        if isinstance(event.get("payload"), dict)
-        and event["payload"].get("artifact_id") == ID
-        and isinstance(event.get("event_name"), str)
-    ]
-    advisories = [
-        {
-            "severity": str(item.get("severity", "")),
-            "signature_verified": bool(item.get("signatureVerified")),
-            "attestation_verified": bool(item.get("attestationVerified")),
-            "advisory_id": str(item["advisoryId"])
-            if isinstance(item.get("advisoryId"), str) and item["advisoryId"]
-            else None,
-        }
-        for item in history["advisories"]
-        if publisher is not None and item.get("publisher") == publisher
-    ]
-    return {
-        "inventory_item": wire_item,
-        "decision_counts": dict(history["counts"]),
-        "event_names": names,
-        "advisories": advisories,
-    }
-
-
-def _snapshot(service: Any, before: Any, edit: str) -> dict[str, Any]:
-    snapshot = {**service._serialize_artifact(before), "artifact_hash": service.artifact_hash(before)}
-    if edit == "drop-env-keys":
-        snapshot.pop("env_keys", None)
-    elif edit == "drop-hash":
-        snapshot.pop("artifact_hash")
-    elif edit == "other-hash":
-        snapshot["artifact_hash"] = "f" * 64
-    elif edit == "hook-identity-drift":
-        snapshot["metadata"] = {**snapshot["metadata"], "codex_hook_identity": "hook-1"}
-    return snapshot
+from record_consumer_artifact_project_wire import Store, make, snapshot, wire_artifact, wire_history
 
 
 def _evidence_case(name: str, current: Any, before: Any, edit: str, history_name: str) -> dict[str, Any]:
@@ -160,8 +55,8 @@ def _evidence_case(name: str, current: Any, before: Any, edit: str, history_name
     from codex_plugin_scanner.guard.consumer import service
 
     history = HISTORIES[history_name]
-    store = _Store(history)
-    previous = _snapshot(service, before, edit) if before is not None else None
+    store = Store(history)
+    previous = snapshot(service, before, edit) if before is not None else None
     previous_caps = normalize_artifact_capabilities(before) if before is not None else None
     diff = service.diff_artifact(previous, current)
     capabilities = normalize_artifact_capabilities(current)
@@ -191,13 +86,13 @@ def _evidence_case(name: str, current: Any, before: Any, edit: str, history_name
     }
     query = {
         "kind": "artifact_evidence",
-        "artifact": _wire_artifact(current),
+        "artifact": wire_artifact(current),
         "current_payload": payload,
         "payload_keys": list(payload),
         "current_hash": diff["current_hash"],
         "previous_snapshot": previous,
         "previous_capabilities": previous_caps.to_dict() if previous_caps is not None else None,
-        "history": _wire_history(history, current.publisher),
+        "history": wire_history(history, current.publisher),
     }
     return {"name": name, "query": query, "expected": expected}
 
@@ -205,8 +100,8 @@ def _evidence_case(name: str, current: Any, before: Any, edit: str, history_name
 def _evidence_cases() -> list[dict[str, Any]]:
     cases = []
     for (artifact_name, base), (before_name, change) in itertools.product(ARTIFACTS.items(), BEFORES.items()):
-        current = _make(base)
-        before = None if change is None else _make(base, change)
+        current = make(base)
+        before = None if change is None else make(base, change)
         history_name = ("none", "item", "known-good", "flagged")[len(cases) % 4]
         cases.append(
             _evidence_case(f"{artifact_name}/{before_name}/{history_name}", current, before, "keep", history_name)
@@ -215,9 +110,9 @@ def _evidence_cases() -> list[dict[str, Any]]:
     for artifact_name, base in ARTIFACTS.items():
         for edit in SNAPSHOT_EDITS[1:]:
             for history_name in HISTORIES:
-                before = _make(base, {"args": ("prev",)} if rng.random() < 0.5 else {})
+                before = make(base, {"args": ("prev",)} if rng.random() < 0.5 else {})
                 name = f"{artifact_name}/{edit}/{history_name}"
-                cases.append(_evidence_case(name, _make(base, {"publisher": "acme"}), before, edit, history_name))
+                cases.append(_evidence_case(name, make(base, {"publisher": "acme"}), before, edit, history_name))
     return cases
 
 
@@ -230,7 +125,7 @@ def _incident_cases() -> list[dict[str, Any]]:
     for index in range(900):
         kind = rng.choice(TYPES)
         artifact_name = rng.choice([*artifact_names, None, None])
-        artifact = None if artifact_name is None else _make(ARTIFACTS[artifact_name])
+        artifact = None if artifact_name is None else make(ARTIFACTS[artifact_name])
         fields: dict[str, Any] = {
             "harness": rng.choice(HARNESSES),
             "artifact": artifact,
@@ -248,7 +143,7 @@ def _incident_cases() -> list[dict[str, Any]]:
         query = {
             "kind": "incident_context",
             **{key: value for key, value in fields.items() if key != "artifact"},
-            "artifact": _wire_artifact(artifact) if artifact is not None else None,
+            "artifact": wire_artifact(artifact) if artifact is not None else None,
         }
         cases.append({"name": f"incident-{index}", "query": query, "expected": dict(expected)})
     return cases
@@ -289,102 +184,106 @@ def _decision(rng: random.Random, action: str) -> Any:
     )
 
 
-def _result_cases() -> list[dict[str, Any]]:
+def _result_case(rng: random.Random, index: int, artifact: Any) -> dict[str, Any]:
     from codex_plugin_scanner.guard.incident import build_incident_context
 
-    rng = random.Random(2209)
-    cases = []
-    for index in range(120):
-        artifact = _make(ARTIFACTS[rng.choice(list(ARTIFACTS))])
-        action = rng.choice(ACTIONS)
-        decision = _decision(rng, action)
-        evidence = _evidence_case("e", artifact, None, "keep", rng.choice(list(HISTORIES)))["expected"]
-        verdict, runtime = _verdict(rng), _runtime(rng)
-        risk_summary = rng.choice(RISKS[1:])
-        scanner_action = rng.choice((None, "warn", "allow"))
-        signals = rng.choice(([], [{"signal_id": "s1", "severity": 5}]))
-        risk_signals = rng.choice(([], ["plain reason"]))
-        workspace = rng.choice((None, "/work/space"))
-        from codex_plugin_scanner.guard.consumer import service
+    action = rng.choice(ACTIONS)
+    decision = _decision(rng, action)
+    evidence = _evidence_case("e", artifact, None, "keep", rng.choice(list(HISTORIES)))["expected"]
+    verdict, runtime = _verdict(rng), _runtime(rng)
+    risk_summary = rng.choice(RISKS[1:])
+    scanner_action = rng.choice((None, "warn", "allow"))
+    signals = rng.choice(([], [{"signal_id": "s1", "severity": 5}]))
+    risk_signals = rng.choice(([], ["plain reason"]))
+    workspace = rng.choice((None, "/work/space"))
+    from codex_plugin_scanner.guard.consumer import service
 
-        launch = service._launch_target_from_artifact(artifact)
-        incident = build_incident_context(
-            harness="codex",
-            artifact=artifact,
-            artifact_id=artifact.artifact_id,
-            artifact_name=artifact.name,
-            artifact_type=artifact.artifact_type,
-            source_scope=artifact.source_scope,
-            config_path=artifact.config_path,
-            changed_fields=list(evidence["changed_fields"]),
-            policy_action=decision.action,
-            launch_target=launch,
-            risk_summary=risk_summary,
-        )
-        override = runtime["trusted_request_override"] is True
-        row = {
-            "artifact_id": artifact.artifact_id,
-            "artifact_name": artifact.name,
-            "changed": evidence["changed"],
-            "changed_fields": evidence["changed_fields"],
-            **decision.to_artifact_projection(),
-            "artifact_hash": evidence["current_hash"],
-            "approval_context_hash": f"ctx-{index}",
-            "effective_workspace": workspace,
-            "approval_reuse_status": runtime["approval_reuse"]["status"],
-            "approval_reuse_reason_code": runtime["approval_reuse"]["reason_code"],
-            "approval_reuse": dict(runtime["approval_reuse"]),
-            "scanner_evidence": list(runtime["scanner_evidence"]),
-            "trusted_request_override": {
-                "applied": override,
-                "reason_code": "trusted_request_override_exact_context" if override else None,
-            },
-            **({"approval_claim": runtime["approval_claim"]} if runtime["approval_claim"] is not None else {}),
-            "scoring_recommendation": {
-                "non_authoritative": True,
-                "action": verdict["action"],
-                "mapped_guard_action": scanner_action,
-                "reasons": list(verdict["reasons"]),
-                "confidence": verdict["confidence"],
-                "severity": verdict["severity"],
-                "evidence_sources": list(verdict["evidence_sources"]),
-            },
-            "risk_signals": list(risk_signals),
-            "risk_summary": risk_summary,
-            "signals": signals,
+    launch = service._launch_target_from_artifact(artifact)
+    incident = build_incident_context(
+        harness="codex",
+        artifact=artifact,
+        artifact_id=artifact.artifact_id,
+        artifact_name=artifact.name,
+        artifact_type=artifact.artifact_type,
+        source_scope=artifact.source_scope,
+        config_path=artifact.config_path,
+        changed_fields=list(evidence["changed_fields"]),
+        policy_action=decision.action,
+        launch_target=launch,
+        risk_summary=risk_summary,
+    )
+    override = runtime["trusted_request_override"] is True
+    row = {
+        "artifact_id": artifact.artifact_id,
+        "artifact_name": artifact.name,
+        "changed": evidence["changed"],
+        "changed_fields": evidence["changed_fields"],
+        **decision.to_artifact_projection(),
+        "artifact_hash": evidence["current_hash"],
+        "approval_context_hash": f"ctx-{index}",
+        "effective_workspace": workspace,
+        "approval_reuse_status": runtime["approval_reuse"]["status"],
+        "approval_reuse_reason_code": runtime["approval_reuse"]["reason_code"],
+        "approval_reuse": dict(runtime["approval_reuse"]),
+        "scanner_evidence": list(runtime["scanner_evidence"]),
+        "trusted_request_override": {
+            "applied": override,
+            "reason_code": "trusted_request_override_exact_context" if override else None,
+        },
+        **({"approval_claim": runtime["approval_claim"]} if runtime["approval_claim"] is not None else {}),
+        "scoring_recommendation": {
+            "non_authoritative": True,
+            "action": verdict["action"],
+            "mapped_guard_action": scanner_action,
+            "reasons": list(verdict["reasons"]),
             "confidence": verdict["confidence"],
             "severity": verdict["severity"],
             "evidence_sources": list(verdict["evidence_sources"]),
-            "provenance_state": verdict["provenance_state"],
-            "provenance": evidence["provenance"],
-            "history_context": evidence["history_context"],
-            "capability_snapshot": evidence["capability_snapshot"],
-            "capability_delta": evidence["capability_delta"],
-            "remediation": list(verdict["recommended_next_actions"]),
-            "suppressibility": verdict["suppressible"],
-            "review_priority": verdict["review_priority"],
-            "artifact_type": artifact.artifact_type,
-            "config_path": artifact.config_path,
-            "source_scope": artifact.source_scope,
-            **{key: incident[key] for key in _INCIDENT_KEYS},
-        }
-        query = {
-            "kind": "artifact_result",
-            "harness": "codex",
-            "artifact": _wire_artifact(artifact),
-            "evidence": evidence,
-            "projection": decision.to_artifact_projection(),
-            "verdict": verdict,
-            "scanner_action": scanner_action,
-            "runtime": runtime,
-            "signals": signals,
-            "risk_signals": risk_signals,
-            "risk_summary": risk_summary,
-            "approval_context_hash": f"ctx-{index}",
-            "effective_workspace": workspace,
-            "policy_action": decision.action,
-        }
-        cases.append({"name": f"result-{index}", "query": query, "expected": row})
+        },
+        "risk_signals": list(risk_signals),
+        "risk_summary": risk_summary,
+        "signals": signals,
+        "confidence": verdict["confidence"],
+        "severity": verdict["severity"],
+        "evidence_sources": list(verdict["evidence_sources"]),
+        "provenance_state": verdict["provenance_state"],
+        "provenance": evidence["provenance"],
+        "history_context": evidence["history_context"],
+        "capability_snapshot": evidence["capability_snapshot"],
+        "capability_delta": evidence["capability_delta"],
+        "remediation": list(verdict["recommended_next_actions"]),
+        "suppressibility": verdict["suppressible"],
+        "review_priority": verdict["review_priority"],
+        "artifact_type": artifact.artifact_type,
+        "config_path": artifact.config_path,
+        "source_scope": artifact.source_scope,
+        **{key: incident[key] for key in _INCIDENT_KEYS},
+    }
+    query = {
+        "kind": "artifact_result",
+        "harness": "codex",
+        "artifact": wire_artifact(artifact),
+        "evidence": evidence,
+        "projection": decision.to_artifact_projection(),
+        "verdict": verdict,
+        "scanner_action": scanner_action,
+        "runtime": runtime,
+        "signals": signals,
+        "risk_signals": risk_signals,
+        "risk_summary": risk_summary,
+        "approval_context_hash": f"ctx-{index}",
+        "effective_workspace": workspace,
+        "policy_action": decision.action,
+    }
+    return {"name": f"result-{index}", "query": query, "expected": row}
+
+
+def _result_cases() -> list[dict[str, Any]]:
+    rng = random.Random(2209)
+    cases = []
+    for index in range(120):
+        artifact = make(ARTIFACTS[rng.choice(list(ARTIFACTS))])
+        cases.append(_result_case(rng, index, artifact))
     return cases
 
 
@@ -510,13 +409,61 @@ def _removed_cases() -> list[dict[str, Any]]:
     return cases
 
 
+def _structured_cases() -> list[dict[str, Any]]:
+    """Non-string summaries: capability text sees them, launch and incident copy do not."""
+
+    from codex_plugin_scanner.guard.consumer import service
+    from codex_plugin_scanner.guard.incident import build_incident_context
+
+    rng = random.Random(5150)
+    cases = []
+    index = 1000
+    for (label, summaries), (base_name, base) in itertools.product(
+        STRUCTURED_SUMMARIES.items(), STRUCTURED_BASES.items()
+    ):
+        artifact = make(base, {"metadata": dict(summaries)})
+        stem = f"{label}-{base_name}"
+        evidence = _evidence_case(f"structured-evidence-{stem}", artifact, None, "keep", "none")
+        launch = service._launch_target_from_artifact(artifact)
+        incidents = []
+        for launch_target in (None, launch):
+            fields: dict[str, Any] = {
+                "harness": "codex",
+                "artifact": artifact,
+                "artifact_id": artifact.artifact_id,
+                "artifact_name": artifact.name,
+                "artifact_type": artifact.artifact_type,
+                "source_scope": artifact.source_scope,
+                "config_path": artifact.config_path,
+                "changed_fields": ["args"],
+                "policy_action": rng.choice(ACTIONS),
+                "launch_target": launch_target,
+                "risk_summary": None,
+            }
+            expected = build_incident_context(**fields)
+            query = {
+                "kind": "incident_context",
+                **{key: value for key, value in fields.items() if key != "artifact"},
+                "artifact": wire_artifact(artifact),
+            }
+            name = f"structured-incident-{stem}-{launch_target is None}"
+            incidents.append({"name": name, "query": query, "expected": dict(expected)})
+        result = _result_case(rng, index, artifact)
+        result["name"] = f"structured-result-{stem}"
+        index += 1
+        for case in (evidence, *incidents, result):
+            case["source_metadata"] = dict(summaries)
+            cases.append(case)
+    return cases
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-src", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     sys.path.insert(0, str(args.base_src))
-    cases = [*_evidence_cases(), *_incident_cases(), *_result_cases(), *_removed_cases()]
+    cases = [*_evidence_cases(), *_incident_cases(), *_result_cases(), *_removed_cases(), *_structured_cases()]
     document = json.dumps(cases, separators=(",", ":"), sort_keys=True, ensure_ascii=False).encode("utf-8")
     # mtime=0 keeps the archive byte-identical across recordings.
     args.output.write_bytes(gzip.compress(document, mtime=0))

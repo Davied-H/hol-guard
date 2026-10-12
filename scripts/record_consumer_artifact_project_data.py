@@ -167,3 +167,23 @@ LAUNCHES = (
     "multi\nline target",
 )
 RISKS = (None, "", "Reads secret files.", "Connects to a new host.", "x" * 90)
+
+SUMMARY_KEYS = ("request_summary", "runtime_request_summary", "prompt_summary")
+
+# Non-string summaries: the old Python read these as text for capabilities
+# (``str(value or "")``) but skipped them for the launch target and incident copy.
+STRUCTURED_SUMMARIES: dict[str, dict[str, Any]] = {
+    "dict": {"request_summary": {"a": 1}, "prompt_summary": "Prompt text for the run"},
+    "list": {"request_summary": ["x", "y"], "prompt_summary": ["z"]},
+    "int": {"request_summary": 7, "prompt_summary": 0},
+    "none": {"request_summary": None, "prompt_summary": None},
+    "falsy": {"request_summary": [], "prompt_summary": {}},
+    "float": {"request_summary": 3.5, "runtime_request_summary": 0.0},
+    "secret-text": {"request_summary": {"path": "~/.ssh/config"}, "runtime_request_summary": ["cat", ".npmrc"]},
+    "string-after-structured": {"request_summary": 5, "prompt_summary": "real prompt", "runtime_request_summary": 1},
+}
+STRUCTURED_BASES: dict[str, dict[str, Any]] = {
+    "command": {"artifact_type": "mcp_server", "command": "node", "args": ("server.js",), "transport": "stdio"},
+    "url": {"artifact_type": "mcp_server", "url": "https://api.example.com/mcp", "transport": "http"},
+    "neither": {"artifact_type": "prompt_request", "args": ()},
+}
