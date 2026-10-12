@@ -102,6 +102,10 @@ pub(super) fn write(input: &Value, value: &Value) -> Result<Value, &'static str>
         Mode::from_bits_truncate(0o600),
     )
     .map_err(|_| error)?;
-    fs::File::from(descriptor).write_all(&bytes).map_err(|_| error)?;
-    Ok(serde_json::json!({"decoded_bytes":bytes.len(),"sha256":format!("{:x}",Sha256::digest(&bytes))}))
+    fs::File::from(descriptor)
+        .write_all(&bytes)
+        .map_err(|_| error)?;
+    Ok(
+        serde_json::json!({"decoded_bytes":bytes.len(),"sha256":format!("{:x}",Sha256::digest(&bytes))}),
+    )
 }
