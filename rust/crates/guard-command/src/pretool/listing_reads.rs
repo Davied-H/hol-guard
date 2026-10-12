@@ -202,6 +202,7 @@ pub(super) fn absent_listing_operand(value: &str, context: super::PathContext<'_
                         .all(|part: &&std::ffi::OsStr| !part.to_string_lossy().starts_with('.'))
                     && ancestor.to_str().is_some_and(|parent| {
                         safe_reads::bounded_read_target(parent, context.home_dir, context.cwd, true)
+                            || search::skill_listing_root(parent, context)
                     });
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {

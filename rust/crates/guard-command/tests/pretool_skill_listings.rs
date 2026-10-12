@@ -126,6 +126,8 @@ fn listing_a_missing_path_proceeds_outside_hidden_locations() {
             "ls ~/work/scripts/nested".to_owned(),
             format!("ls {h}/work/project/dist"),
             "ls missing-dir".to_owned(),
+            // A missing entry inside a skill directory.
+            "ls ~/.agents/skills/review-loop/missing".to_owned(),
         ] {
             assert_eq!(
                 action(&home, harness, &command),
@@ -141,7 +143,29 @@ fn listing_a_missing_path_proceeds_outside_hidden_locations() {
         "ls ~/work/missing/.env",
         "ls ~/work/missing/id_rsa",
         "ls ~/work/missing/../.ssh",
+        "ls ~/.agents/skills/review-loop/.cache/missing",
+        "ls ~/.codex/missing",
     ] {
         assert_ne!(action(&home, "zcode", command), "allow", "{command}");
     }
+}
+
+#[test]
+fn a_document_under_two_skill_roots_needs_only_one_to_admit_it() {
+    let home = home("two-roots");
+    // `.agents/skills` may link into another skill root, one level down.
+    // The document is one component below the link but a full skill
+    // document below `.claude/skills`.
+    std::fs::create_dir_all(home.join(".claude/skills/notes")).unwrap();
+    std::fs::write(home.join(".claude/skills/notes/SKILL.md"), "# Notes\n").unwrap();
+    std::fs::remove_dir_all(home.join(".agents/skills")).unwrap();
+    std::os::unix::fs::symlink(
+        home.join(".claude/skills/notes"),
+        home.join(".agents/skills"),
+    )
+    .unwrap();
+    assert_eq!(
+        action(&home, "zcode", "cat ~/.claude/skills/notes/SKILL.md"),
+        "allow"
+    );
 }

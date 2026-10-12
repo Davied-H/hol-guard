@@ -81,7 +81,9 @@ pub(in crate::pretool) fn agent_skill_document(
     {
         return false;
     }
-    skill_tree_parts(canonical, &home).is_some_and(|(root, parts)| {
+    // A linked `.agents/skills` can put one path under two roots; any root
+    // whose own depth rule admits the document is enough.
+    skill_tree_parts(canonical, &home).any(|(root, parts)| {
         // Cache entries are marketplace/plugin/version/skills/skill/document.
         if root == ".zcode/cli/plugins/cache" {
             parts.len() >= 6 && parts[3] == "skills"
@@ -106,7 +108,7 @@ pub(in crate::pretool) fn agent_skill_listing_directory(
     canonical.is_dir()
         && ((canonical == agents
             && std::fs::symlink_metadata(&agents).is_ok_and(|metadata| metadata.is_dir()))
-            || skill_tree_parts(canonical, &home).is_some())
+            || skill_tree_parts(canonical, &home).next().is_some())
 }
 
 const SKILL_ROOTS: [&str; 6] = [
@@ -119,12 +121,13 @@ const SKILL_ROOTS: [&str; 6] = [
     ".zcode/cli/plugins/cache",
 ];
 
-/// The skill root holding `canonical` and the visible components below it.
+/// Every skill root holding `canonical`, each with the visible components
+/// below it.
 fn skill_tree_parts<'a>(
     canonical: &'a std::path::Path,
-    home: &std::path::Path,
-) -> Option<(&'static str, Vec<&'a std::ffi::OsStr>)> {
-    SKILL_ROOTS.into_iter().find_map(|root| {
+    home: &'a std::path::Path,
+) -> impl Iterator<Item = (&'static str, Vec<&'a std::ffi::OsStr>)> + 'a {
+    SKILL_ROOTS.into_iter().filter_map(move |root| {
         let skills = std::fs::canonicalize(home.join(root)).ok()?;
         // Retain the existing managed .agents root-link support. New roots,
         // including the singular .agent spelling, must resolve to themselves
