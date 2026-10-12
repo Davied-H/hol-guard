@@ -147,6 +147,7 @@ _TRANSPORT_AUTHORITY_PATHS: Final = frozenset(
 )
 _TRANSPORT_DECODE_PATHS: Final = frozenset(
     {
+        "src/codex_plugin_scanner/guard/native_developer_inspection_authority.py",
         # Strict DTO decoding of request-bound rich parser replies; semantics are native.
         "src/codex_plugin_scanner/guard/native_rich_command_model.py",
         "src/codex_plugin_scanner/guard/native_hook_edge.py",
