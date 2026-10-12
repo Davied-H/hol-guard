@@ -116,7 +116,7 @@ for capability, action, cancelled in itertools.product(
     coordinator = c.ContinuationCoordinator(
         record_attempt=lambda *a: None, notify_manual_retry=lambda *a: None, now=lambda: NOW
     )
-    outcome = coordinator._terminal_result(offer, action=action, cancelled=lambda: cancelled)
+    outcome = coordinator._terminal_result(offer, action=action, cancelled=lambda value=cancelled: value)
     if outcome is not None:
         outcome = dataclasses.replace(outcome, evidence_id="evidence-12345678")
     cases.append(
