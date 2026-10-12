@@ -32,9 +32,10 @@ def _run(command: list[str], *, env: dict[str, str] | None = None) -> str:
     merged["PYTHONPATH"] = os.pathsep.join([str(ROOT / "src"), str(ROOT), merged.get("PYTHONPATH", "")]).rstrip(
         os.pathsep
     )
-    if RUNTIME.is_file():
-        # Contribution validation normalizes remote MCP URLs in the native resident.
-        merged.setdefault("HOL_GUARD_NATIVE_BINARY", str(RUNTIME))
+    # Contribution validation normalizes remote MCP URLs in the native resident.
+    if RUNTIME.is_file() and "HOL_GUARD_NATIVE_BINARY" not in merged:
+        merged["HOL_GUARD_NATIVE"] = "force"
+        merged["HOL_GUARD_NATIVE_BINARY"] = str(RUNTIME)
     if env:
         merged.update(env)
     completed = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, env=merged, timeout=900, check=False)
