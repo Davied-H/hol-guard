@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -99,7 +100,9 @@ def test_legacy_aliases_parse_but_policy_without_fields_needs_no_capabilities() 
     assert not _parse(document, capabilities=frozenset()).has_extension_semantics
 
 
-def test_daemon_skips_managed_activation_for_v2_without_extension_semantics(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_daemon_skips_managed_activation_for_v2_without_extension_semantics(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     document = _document()
     document.pop("x-hol-extension-controls")
     document["spec"]["rules"][0].pop("x-hol-extension-targets")
@@ -110,7 +113,7 @@ def test_daemon_skips_managed_activation_for_v2_without_extension_semantics(monk
     )
 
     candidate, capabilities, delivery, error = daemon_policy_delivery.daemon_managed_controls_candidate(
-        store=cast(Any, object()),
+        store=cast(Any, SimpleNamespace(guard_home=tmp_path)),
         payload={},
         policy_bundle={"contractVersion": "guard-policy-bundle.v2", "payload": document},
         device_id="device-without-extension-semantics",
