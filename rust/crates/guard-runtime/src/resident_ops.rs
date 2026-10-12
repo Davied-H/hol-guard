@@ -91,6 +91,9 @@ pub(crate) fn evaluate_resident_bytes(
             ResidentOperationV1::ArchiveAcquisition(request) => {
                 crate::archive_acquisition_op::evaluate_archive_acquisition_request(&request)
             }
+            ResidentOperationV1::RichCommandModel(request) => {
+                crate::rich_command_model_op::evaluate(&request)
+            }
             ResidentOperationV1::CommandModel(request) => {
                 crate::oneshot::evaluate_command_model_request(&request)
             }
@@ -218,6 +221,11 @@ pub(crate) fn evaluate_resident_bytes(
             ResidentOperationV1::GithubCliClassify(request) => {
                 crate::github_cli_classify_op::evaluate_github_cli_classify_request(&request)
             }
+            ResidentOperationV1::GithubWorkflowPrepare(request) => {
+                crate::github_workflow_prepare_op::evaluate_github_workflow_prepare_request(
+                    &request,
+                )
+            }
             ResidentOperationV1::ProtectRequest(request) => {
                 crate::protect_request_op::evaluate_protect_request_op(&request)
             }
@@ -303,6 +311,9 @@ pub(crate) fn evaluate_resident_bytes(
             ResidentOperationV1::LocalCliGrantDecide(request) => {
                 crate::local_cli_grant_op::evaluate_local_cli_grant_request(&request)
             }
+            ResidentOperationV1::ShellHelpers(request) => {
+                crate::shell_helpers_op::evaluate(&request)
+            }
             ResidentOperationV1::ApprovalProofDecide(request) => {
                 crate::approval_proof_op::evaluate_approval_proof_request(&request)
             }
@@ -357,6 +368,9 @@ pub(crate) fn evaluate_resident_bytes(
             }
             ResidentOperationV1::McpToolPolicyDecide(request) => {
                 crate::mcp_tool_policy_decide_op::evaluate_mcp_tool_policy_decide_request(&request)
+            }
+            ResidentOperationV1::McpToolCallIdentity(request) => {
+                crate::mcp_tool_call_identity_op::evaluate_mcp_tool_call_identity_request(&request)
             }
             ResidentOperationV1::PackageAdvisoryIds(request) => {
                 crate::package_authority_op::evaluate_package_advisory_ids(&request)
@@ -507,6 +521,7 @@ fn operation_guard_home(operation: &ResidentOperationV1) -> Option<&str> {
         ResidentOperationV1::McpToolEvidence(request) => Some(&request.guard_home),
         ResidentOperationV1::LocalMcpGrantDecide(request) => Some(&request.guard_home),
         ResidentOperationV1::ContributedMcpDecide(request) => Some(&request.guard_home),
+        ResidentOperationV1::RichCommandModel(request) => Some(&request.guard_home),
         ResidentOperationV1::RequestContextBuild(request) => Some(&request.guard_home),
         ResidentOperationV1::SkillDirectoryIdentity(request) => Some(&request.guard_home),
         ResidentOperationV1::ProtectRequest(request) => Some(&request.guard_home),
