@@ -119,6 +119,36 @@ pub(super) fn bare_head_pattern(root: &Path) -> Result<String, RestrictedPytestE
     ))
 }
 
+/// Git keeps a `HEAD` in `.git/logs` (the reflog) and in each remote under
+/// `.git/refs/remotes`. Adding `objects`, `commondir` or `config` beside one
+/// would complete a bare repository there, so none may be written.
+pub(super) fn ref_store_repository_pattern(root: &Path) -> Result<String, RestrictedPytestError> {
+    let config = format!("{}({}|{})?", ci("config")?, ci(".worktree")?, ci(".lock")?);
+    Ok(format!(
+        "^{}/(.*/)?{}/({}|{})/(.*/)?({config}|{}|{}|{})(/.*)?$",
+        ci(&root.to_string_lossy())?,
+        ci(".git")?,
+        ci("logs")?,
+        ci("refs")?,
+        ci("objects")?,
+        ci("commondir")?,
+        ci("gitdir")?,
+    ))
+}
+
+/// The directories under `.git` that hold such a `HEAD`, and those between
+/// them and `.git`. Seatbelt checks only the paths an operation names, so
+/// renaming one would carry its `HEAD` past `bare_head_pattern`. Denying
+/// unlink still lets Git create them.
+pub(super) fn head_carrier_pattern(root: &Path) -> Result<String, RestrictedPytestError> {
+    let (logs, refs, remotes) = (ci("logs")?, ci("refs")?, ci("remotes")?);
+    Ok(format!(
+        "^{}/(.*/)?{}/({logs}(/{refs}(/{remotes}(/[^/]+)?)?)?|{refs}(/{remotes}(/[^/]+)?)?)$",
+        ci(&root.to_string_lossy())?,
+        ci(".git")?,
+    ))
+}
+
 pub(super) fn protected_patterns(workspace: &Path) -> Result<Vec<String>, RestrictedPytestError> {
     let root = ci(&workspace.to_string_lossy())?;
     Ok(vec![
@@ -229,6 +259,14 @@ pub(super) fn compose(
     for root in [workspace, &input.private_root] {
         lines.push(regex_rule("file-write*", &git_exec_pattern(root)?));
         lines.push(regex_rule("file-write*", &bare_head_pattern(root)?));
+        lines.push(regex_rule(
+            "file-write*",
+            &ref_store_repository_pattern(root)?,
+        ));
+        lines.push(regex_rule(
+            "file-write-unlink",
+            &head_carrier_pattern(root)?,
+        ));
         for pattern in protected_patterns(root)? {
             lines.push(regex_rule("file-write*", &pattern));
         }

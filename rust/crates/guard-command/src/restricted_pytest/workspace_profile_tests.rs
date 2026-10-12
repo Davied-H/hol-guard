@@ -182,3 +182,62 @@ fn nothing_protected_can_be_built_elsewhere_and_moved_in() {
         .unwrap();
     assert!(closed < reopen);
 }
+
+#[test]
+fn reopened_reflog_cannot_become_a_bare_repository() {
+    let ws = Path::new("/w/proj");
+    let store = Regex::new(&workspace_profile::ref_store_repository_pattern(ws).unwrap()).unwrap();
+    for denied in [
+        "/w/proj/.git/logs/config",
+        "/w/proj/.git/logs/objects",
+        "/w/proj/.git/logs/objects/ab/cd",
+        "/w/proj/.git/LOGS/Commondir",
+        "/w/proj/.git/refs/remotes/o/config.lock",
+        "/w/proj/.git/logs/refs/remotes/o/gitdir",
+        "/w/proj/sub/.git/refs/objects",
+    ] {
+        assert!(store.is_match(denied), "{denied}");
+    }
+    for allowed in [
+        "/w/proj/.git/logs/HEAD",
+        "/w/proj/.git/logs/refs/heads/main",
+        "/w/proj/.git/refs/heads/feat/x",
+        "/w/proj/.git/objects/ab/cd",
+        "/w/proj/.git/config",
+        "/w/proj/src/logs/config",
+    ] {
+        assert!(!store.is_match(allowed), "{allowed}");
+    }
+    let carrier = Regex::new(&workspace_profile::head_carrier_pattern(ws).unwrap()).unwrap();
+    for denied in [
+        "/w/proj/.git/logs",
+        "/w/proj/.git/logs/refs",
+        "/w/proj/.git/logs/refs/remotes/origin",
+        "/w/proj/.git/refs",
+        "/w/proj/.git/Refs/remotes",
+        "/w/proj/.git/refs/remotes/origin",
+    ] {
+        assert!(carrier.is_match(denied), "{denied}");
+    }
+    for allowed in [
+        "/w/proj/.git/refs/heads",
+        "/w/proj/.git/logs/refs/heads",
+        "/w/proj/.git/logs/HEAD",
+        "/w/proj/.git/refs/remotes/origin/main",
+    ] {
+        assert!(!carrier.is_match(allowed), "{allowed}");
+    }
+    let profile = workspace_profile::compose(&input("/w/proj"), &[], &[]).unwrap();
+    for root in [ws, Path::new("/private/tmp/guard-private")] {
+        let store = workspace_profile::ref_store_repository_pattern(root).unwrap();
+        let carrier = workspace_profile::head_carrier_pattern(root).unwrap();
+        assert!(profile.contains(&format!(
+            "(deny file-write* (regex {}))",
+            seatbelt_string(&store)
+        )));
+        assert!(profile.contains(&format!(
+            "(deny file-write-unlink (regex {}))",
+            seatbelt_string(&carrier)
+        )));
+    }
+}
