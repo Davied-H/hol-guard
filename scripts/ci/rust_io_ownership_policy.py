@@ -226,6 +226,8 @@ _TRANSPORT_DECODE_PATHS: Final = frozenset(
         "src/codex_plugin_scanner/guard/native_runner_authority.py",
         # Fused CLI input/identity DTO from the existing bound resident stream.
         "src/codex_plugin_scanner/guard/native_cli_runtime_support.py",
+        "src/codex_plugin_scanner/guard/native_decisions.py",
+        "src/codex_plugin_scanner/guard/native_signal_projection.py",
         "src/codex_plugin_scanner/guard/runtime/runner_native_authority.py",
         # Decodes the bounded resident MCP tool-evidence response envelope.
         "src/codex_plugin_scanner/guard/native_mcp_tool_evidence.py",

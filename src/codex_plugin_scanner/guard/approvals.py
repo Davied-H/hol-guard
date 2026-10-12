@@ -42,7 +42,7 @@ from .cli.connect_flow import (
 from .config import load_guard_config, maybe_auto_revert_watch
 from .continuation_runtime import continuation_offer_payload
 from .daemon.manager import load_guard_daemon_auth_token
-from .decision_boundaries import canonical_approval_surfaces
+from .decision_boundaries import canonical_approval_artifact
 from .desktop_notifications import (
     DesktopApprovalNotification,
     notify_pending_approval_once,
@@ -77,7 +77,7 @@ from .redaction import redact_text
 from .risk import artifact_risk_signals, artifact_risk_summary
 from .runtime.approval_context import parse_approval_context_token
 from .runtime.command_capability import command_capability_status
-from .runtime.decisions import AUTHORITATIVE_DECISION_INCONSISTENT, authoritative_decision_from_artifact
+from .runtime.decisions import AUTHORITATIVE_DECISION_INCONSISTENT
 from .runtime.extension_allow_hint import validated_extension_allow_hint
 from .runtime.github_workflow_runtime import (
     issue_github_workflow_capability_for_resolution,
@@ -468,12 +468,8 @@ def queue_blocked_approvals(
             "action_envelope_json": action_envelope_json,
         }
         try:
-            _ = authoritative_decision_from_artifact(boundary_item)
-            canonical_decision = canonical_approval_surfaces(
-                policy_action,
-                item.get("decision_v2_json"),
-                action_envelope_json,
-                reject_contradiction=True,
+            canonical_decision = canonical_approval_artifact(
+                boundary_item, guard_home=getattr(store, "guard_home", None)
             )
         except (TypeError, ValueError) as error:
             raise ValueError(AUTHORITATIVE_DECISION_INCONSISTENT) from error

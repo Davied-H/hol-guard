@@ -4732,6 +4732,33 @@
    "parity_fixture": "tests/fixtures/shell-helper-python.v1.json"
   },
   {
+   "path": "src/codex_plugin_scanner/guard/decision_projection_boundaries.py",
+   "base_commit": "55e051a711550e55d0dad5991c5bc63918946bfa",
+   "source_sha256": "7882c11404caa5388afbf8f2262b6fa1804b76ad824a59f8f823387f80cad8cd",
+   "remaining_role": "Immutable public approval DTO and resident transport; native owner validates and canonicalizes action, signals and presentation fields.",
+   "native_replacements": ["rust/crates/guard-runtime/src/signal_projection_approval.rs"],
+   "parity_fixture": "tests/fixtures/signal_projection_vectors.json"
+  },
+  {
+   "path": "src/codex_plugin_scanner/guard/decision_boundaries.py",
+   "base_commit": "55e051a711550e55d0dad5991c5bc63918946bfa",
+   "source_sha256": "411d6e1e3a400955c466de1338c3725c60fb8458d321342c7f448cd3c64eca2f",
+   "remaining_role": "Immutable receipt/approval DTOs and bounded batch framing; Rust validates aliases, preserves Watch observations and synchronizes canonical surfaces.",
+   "native_replacements": ["rust/crates/guard-runtime/src/signal_projection_receipt.rs", "rust/crates/guard-runtime/src/signal_projection_op.rs"],
+   "parity_fixture": "tests/fixtures/signal_projection_vectors.json"
+  },
+  {
+   "path": "src/codex_plugin_scanner/guard/runtime/decisions.py",
+   "base_commit": "55e051a711550e55d0dad5991c5bc63918946bfa",
+   "source_sha256": "deff9f12e7d0be568f1e0531627d3b41479fdce4690f118d7293053bbb53bded",
+   "remaining_role": "Immutable public DTOs, serialization and resident transport only; native decision builders and action/schema/composition/approval/scanner validators replace Python semantic bodies.",
+   "native_replacements": [
+    "rust/crates/guard-command/src/decisions.rs",
+    "rust/crates/guard-runtime/src/decision_authority_op.rs"
+   ],
+   "parity_fixture": "tests/fixtures/decision_authority_vectors.json"
+  },
+  {
    "path": "src/codex_plugin_scanner/guard/runtime/direct_vitest.py",
    "base_commit": "8d96ae755a1d4906394d387cd3af4068c533a848",
    "source_sha256": "811b2826b08f1ebb7dd1767b98ac0b28b357bb412ee4fe81387c47c9798644d7",
