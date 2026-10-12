@@ -311,6 +311,15 @@ pub(super) fn exact_safe_segment_with_context(
         "date" => safe_reads::safe_date_arguments(&segment.arguments),
         "sleep" => safe_reads::safe_sleep_arguments(&segment.arguments),
         "uptime" => segment.arguments.is_empty(),
+        // A template-free `mktemp` creates one new, empty, owner-only entry
+        // under the temporary directory and prints its name.
+        "mktemp" => {
+            segment.arguments.len() <= 2
+                && segment
+                    .arguments
+                    .iter()
+                    .all(|argument| matches!(argument.as_str(), "-d" | "-q" | "-dq" | "-qd"))
+        }
         "pgrep" => super::safe_scalar::safe_pgrep_arguments(&segment.arguments),
         "ls" => {
             super::listing_reads::safe_listing_segment(&segment.text, &segment.arguments, context)
