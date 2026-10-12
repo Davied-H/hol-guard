@@ -98,6 +98,34 @@ pub struct PackageAuditWorkspaceCandidatesQueryV1 {
     pub candidates: bool,
 }
 
+/// One package-protect projection: the resident owns the verdict, receipt and
+/// every user-facing surface; the caller supplies the intent, artifact,
+/// execution context and evaluation it assembled and persists the result.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PackageAuditProtectProjectionQueryV1 {
+    /// Intent identity with exact (unsanitized) target dictionaries.
+    pub intent: Value,
+    /// `artifact_id`, `name` and `source_scope`.
+    pub artifact: Value,
+    /// `PackageExecutionContext.to_evidence()` as built for this request.
+    pub execution_context: Value,
+    pub artifact_hash: String,
+    #[serde(default)]
+    pub additional_policy_context: Option<Value>,
+    pub observe_mode: bool,
+    pub invoking_harness: String,
+    /// `PackageRequestEvaluation.to_dict()`.
+    pub evaluation: Value,
+    pub command: Vec<String>,
+    /// Absent blocks exactly when the execution policy action is not permitted.
+    #[serde(default)]
+    pub blocking: Option<bool>,
+    pub executed: bool,
+    /// True projects the observe-mode execution action; false the observed one.
+    pub project_execution_action: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "query", rename_all = "snake_case")]
 pub enum PackageAuditQueryV1 {
@@ -109,6 +137,7 @@ pub enum PackageAuditQueryV1 {
     Aliases(PackageAuditAliasesQueryV1),
     CiGate(PackageAuditCiGateQueryV1),
     EmptyOutcome(PackageAuditEmptyOutcomeQueryV1),
+    ProtectProjection(PackageAuditProtectProjectionQueryV1),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

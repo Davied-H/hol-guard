@@ -153,6 +153,9 @@ fn project(request: &PackageAuditProjectionRequestV1) -> Result<Value, String> {
             .collect();
             Ok(json!({ "workspaces": candidates }))
         }
+        PackageAuditQueryV1::ProtectProjection(query) => {
+            crate::package_protect_projection_op::protect_projection(query)
+        }
         PackageAuditQueryV1::EmptyOutcome(query) => {
             let (outcome, message) = resolve_empty_audit_outcome(
                 &query.manifest_paths,
