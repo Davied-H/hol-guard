@@ -109,6 +109,16 @@ pub(super) fn git_exec_pattern(workspace: &Path) -> Result<String, RestrictedPyt
     ))
 }
 
+/// A file named `HEAD` lets a later host Git take its directory for a bare
+/// repository and load the `config` beside it, so none may be planted.
+pub(super) fn bare_head_pattern(root: &Path) -> Result<String, RestrictedPytestError> {
+    Ok(format!(
+        "^{}/(.*/)?{}$",
+        ci(&root.to_string_lossy())?,
+        ci("HEAD")?
+    ))
+}
+
 pub(super) fn protected_patterns(workspace: &Path) -> Result<Vec<String>, RestrictedPytestError> {
     let root = ci(&workspace.to_string_lossy())?;
     Ok(vec![
@@ -207,11 +217,27 @@ pub(super) fn compose(
             "(allow file-write* {} (literal \"/dev/null\"))",
             filter(&[workspace.clone(), input.private_root.clone()], "subpath")
         ),
-        regex_rule("file-write*", &git_exec_pattern(workspace)?),
+        // Moving the workspace itself would put it beyond every rule below.
+        format!(
+            "(deny file-write* {})",
+            filter(std::slice::from_ref(workspace), "literal")
+        ),
     ];
-    for pattern in protected_patterns(workspace)? {
-        lines.push(regex_rule("file-write*", &pattern));
+    // Seatbelt checks only the paths an operation names, so a repository or
+    // protected file built or edited in the private root could be moved into
+    // the workspace. Both roots therefore get the same rules.
+    for root in [workspace, &input.private_root] {
+        lines.push(regex_rule("file-write*", &git_exec_pattern(root)?));
+        lines.push(regex_rule("file-write*", &bare_head_pattern(root)?));
+        for pattern in protected_patterns(root)? {
+            lines.push(regex_rule("file-write*", &pattern));
+        }
     }
+    // The repository's own `HEAD`, which checkout and branch switches rewrite.
+    lines.push(format!(
+        "(allow file-write* {})",
+        filter(&[workspace.join(".git/HEAD")], "literal")
+    ));
     for pattern in denial_patterns(workspace, &input.write_denials)? {
         lines.push(regex_rule("file-write*", &pattern));
     }
