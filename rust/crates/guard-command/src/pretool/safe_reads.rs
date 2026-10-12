@@ -39,7 +39,7 @@ pub(super) fn safe_listing_arguments(
             return !argument.contains('R');
         }
         command_read_target(argument, context, true)
-            || super::search::agent_home_listing_root(argument, context, false)
+            || super::search::agent_root_listing(argument, context, false)
     })
 }
 

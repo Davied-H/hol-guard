@@ -40,7 +40,7 @@ pub(in crate::pretool) const SECRET_EXTENSIONS: &[&str] = &[
 /// Names-only recursive listing (`ls -R`).
 pub(in crate::pretool) fn safe_recursive_target(value: &str, context: ReadContext<'_>) -> bool {
     safe_walk_target(value, context, &[], &[], false)
-        || super::agent_listing::agent_home_listing_root(value, context, true)
+        || super::agent_root::agent_root_listing(value, context, true)
 }
 
 /// Recursive content search (`grep -r`, `rg`). Oh My Pi agent-state trees are
