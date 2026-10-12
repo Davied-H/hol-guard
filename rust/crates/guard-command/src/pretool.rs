@@ -19,7 +19,7 @@ pub struct PathContext<'a> {
 
 mod contained_wrapper;
 mod workspace_contained;
-pub(crate) use workspace_contained::{command_shape, PROFILE as WORKSPACE_PROFILE};
+pub(crate) use workspace_contained::{command_shape, init_arguments, PROFILE as WORKSPACE_PROFILE};
 pub(crate) mod directory_targets;
 pub(crate) mod workspace_git_config;
 pub(crate) mod workspace_git_environment;
