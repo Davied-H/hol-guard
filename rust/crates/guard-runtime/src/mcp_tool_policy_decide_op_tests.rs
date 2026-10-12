@@ -24,6 +24,7 @@ fn request(subject: &Value, claim: bool, observations: &[Value]) -> McpToolPolic
             })
             .collect(),
         proxy: None,
+        lookup: None,
     }
 }
 

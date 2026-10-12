@@ -177,6 +177,7 @@ def _round_trip(
     claim_saved_approval: bool,
     observations: list[dict[str, object]],
     proxy_input: Mapping[str, object] | None = None,
+    lookup_input: Mapping[str, object] | None = None,
 ) -> dict[str, Any]:
     request: dict[str, object] = {
         "schema": _REQUEST_SCHEMA,
@@ -187,6 +188,8 @@ def _round_trip(
     }
     if proxy_input is not None:
         request["proxy"] = dict(proxy_input)
+    if lookup_input is not None:
+        request["lookup"] = dict(lookup_input)
     try:
         digest = "sha256:" + _canonical_request_sha256(request)
     except (TypeError, ValueError):
@@ -341,6 +344,26 @@ class _Effects:
         return {"outcome": "claimed" if claimed is True else "declined"}
 
 
+def _lookup_input(store: GuardStore, subject: Mapping[str, object]) -> dict[str, object] | None:
+    """Evidence for the resident's in-process saved-policy read, or ``None``.
+
+    Any failure leaves the read to the ``policy_lookup`` effect, which raises the
+    same error from the same place it always did.
+    """
+    artifact = cast("Mapping[str, Any]", subject["artifact"])
+    try:
+        return store.mcp_policy_lookup_input(
+            cast("str", subject["harness"]),
+            cast("str", subject["artifact_id"]),
+            workspace=cast("str | None", subject["workspace"]),
+            memory_command=artifact.get("command"),
+            memory_artifact_type=cast("str | None", subject["artifact_type"]),
+            memory_artifact_name=artifact.get("name"),
+        )
+    except Exception:
+        return None
+
+
 def native_evaluate_tool_call(
     *,
     store: GuardStore,
@@ -365,6 +388,7 @@ def native_evaluate_tool_call(
     authority: FreshAuthority | None = None
     effects = _Effects(store)
     try:
+        lookup_input = _lookup_input(store, subject)
         for _ in range(_MAX_ROUNDS):
             reply = _round_trip(
                 guard_home,
@@ -372,6 +396,7 @@ def native_evaluate_tool_call(
                 claim_saved_approval=claim_saved_approval,
                 observations=observations,
                 proxy_input=proxy_input,
+                lookup_input=lookup_input,
             )
             if reply["status"] == "ok":
                 try:

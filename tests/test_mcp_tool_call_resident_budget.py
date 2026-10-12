@@ -22,9 +22,10 @@ from tests.test_guard_runtime_mcp_saved_blocks import _child_command, _context, 
 pytestmark = [pytest.mark.usefixtures("bundle_first_cloud"), pytest.mark.usefixtures("package_intent_native")]
 
 # Resident ops one benign warm allow may spend, excluding the `tools/list` setup.
-_TOTAL_BUDGET = 10
+_TOTAL_BUDGET = 7
 _PER_OPERATION_BUDGET = {
-    "mcp_tool_policy_decide": 2,
+    "mcp_tool_policy_decide": 1,
+    "policy_decision_lookup": 0,
     "mcp_proxy_decide": 0,
     "guard_store": 2,
 }

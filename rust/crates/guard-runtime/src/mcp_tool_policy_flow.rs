@@ -13,8 +13,8 @@ use guard_command::effect_decision::GuardAction;
 use guard_command::mcp_tool_policy::evaluate_tool_policy;
 use guard_command::mcp_tool_signals::{evaluate_risk_evidence, risk_arguments};
 use guard_contracts::{
-    BrowserAutomationIntentV1, McpToolPolicyObservationV1, McpToolPolicyRequestV1,
-    McpToolPolicySubjectV1, McpToolRiskInputV1,
+    BrowserAutomationIntentV1, McpPolicyLookupInputV1, McpToolPolicyObservationV1,
+    McpToolPolicyRequestV1, McpToolPolicySubjectV1, McpToolRiskInputV1,
 };
 use serde_json::{json, Map, Value};
 
@@ -23,6 +23,7 @@ use crate::mcp_tool_policy_composio::{provider_floor_blocks, requires_action_rev
 use crate::mcp_tool_policy_decision::{with_reuse, Current, Decision};
 use crate::mcp_tool_policy_extension::extension_decision;
 use crate::mcp_tool_policy_grants::{browser_intent, exact_match_context, grant_selectors};
+use crate::mcp_tool_policy_lookup::policy_lookup;
 
 pub(crate) const ERR_OBSERVATION: &str = "native_mcp_tool_policy_decide_observation_invalid";
 const ERR_ACTION: &str = "native_mcp_tool_policy_decide_action_invalid";
@@ -59,6 +60,8 @@ impl Phase {
 
 pub(crate) struct Ctx<'a> {
     pub(crate) observations: &'a [McpToolPolicyObservationV1],
+    /// Evidence to read the saved policy in-process for the initial pass.
+    pub(crate) lookup: Option<&'a McpPolicyLookupInputV1>,
 }
 
 impl Ctx<'_> {
@@ -275,19 +278,28 @@ fn saved_evidence(
     subject: &McpToolPolicySubjectV1,
     intent: Option<&BrowserAutomationIntentV1>,
 ) -> Flow<Option<Saved>> {
-    let lookup = ctx.ask(json!({
-        "kind": "policy_lookup",
-        "phase": phase.as_str(),
-        "harness": subject.harness,
-        "artifact_id": subject.artifact_id,
-        "artifact_hash": subject.artifact_hash,
-        "workspace": subject.workspace,
-        "publisher": subject.publisher,
-        "runtime_exact_match_context": exact_match_context(intent),
-        "memory_command": subject.artifact.command,
-        "memory_artifact_type": subject.artifact_type,
-        "memory_artifact_name": subject.artifact.name,
-    }))?;
+    let read;
+    let lookup = match (ctx.lookup, phase) {
+        // Only the initial pass reads the store itself: a fresh pass judges a
+        // refreshed subject the caller's evidence was not built for.
+        (Some(input), Phase::Initial) => {
+            read = policy_lookup(input, subject, exact_match_context(intent))?;
+            &read
+        }
+        _ => ctx.ask(json!({
+            "kind": "policy_lookup",
+            "phase": phase.as_str(),
+            "harness": subject.harness,
+            "artifact_id": subject.artifact_id,
+            "artifact_hash": subject.artifact_hash,
+            "workspace": subject.workspace,
+            "publisher": subject.publisher,
+            "runtime_exact_match_context": exact_match_context(intent),
+            "memory_command": subject.artifact.command,
+            "memory_artifact_type": subject.artifact_type,
+            "memory_artifact_name": subject.artifact.name,
+        }))?,
+    };
     let row = row_of(field(lookup, "decision")?)?;
     let Some(ignored) = field(lookup, "ignored_local_integrity")?.as_bool() else {
         return invalid();

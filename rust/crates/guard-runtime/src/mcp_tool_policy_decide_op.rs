@@ -45,6 +45,7 @@ fn decide(request: &McpToolPolicyDecideRequestV1) -> Flow<Decision> {
     }
     let ctx = Ctx {
         observations: &request.observations,
+        lookup: request.lookup.as_ref(),
     };
     match evaluate_pass(
         &ctx,

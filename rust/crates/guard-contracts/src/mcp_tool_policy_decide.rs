@@ -105,6 +105,47 @@ pub struct McpToolPolicyProxyInputV1 {
     pub tool_name: String,
 }
 
+/// Evidence for the saved-policy lookup, so the resident reads the store in
+/// the same call instead of naming a `policy_lookup` effect.
+///
+/// The keyring-facing integrity material and the integrity state are
+/// caller-shipped exactly as for the `policy_decision_lookup` op; the resident
+/// owns everything else: the per-call request fields, the portable-workspace
+/// composition and the most-restrictive choice over `candidate_artifact_ids`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct McpPolicyLookupInputV1 {
+    pub store_path: String,
+    pub guard_home: String,
+    /// Canonical lookup timestamp, shared by every candidate probe.
+    pub now: String,
+    /// Direct artifact id first, then exact-command and memory-pattern ids.
+    pub candidate_artifact_ids: Vec<String>,
+    /// Git-derived portable workspace, when the workspace has one.
+    #[serde(default)]
+    pub portable_workspace: Option<String>,
+    #[serde(default)]
+    pub integrity_state: Option<Value>,
+    #[serde(default)]
+    pub integrity_key_b64: Option<String>,
+    #[serde(default)]
+    pub integrity_key_id: Option<String>,
+    #[serde(default)]
+    pub local_once_integrity_key_b64: Option<String>,
+    #[serde(default)]
+    pub local_once_integrity_key_id: Option<String>,
+    #[serde(default)]
+    pub policy_bundle_decision_identities: Option<Vec<Vec<Value>>>,
+    /// The caller could not establish integrity authority for this home; every
+    /// probe is an empty degraded lookup carrying this trust status.
+    #[serde(default)]
+    pub degraded_trust_status: Option<Value>,
+    /// The store holds no saved policy or local-once rows, so a miss has
+    /// nothing to diagnose and needs no `reuse_diagnostic` effect.
+    #[serde(default)]
+    pub diagnostic_empty: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct McpToolPolicyDecideRequestV1 {
@@ -116,6 +157,8 @@ pub struct McpToolPolicyDecideRequestV1 {
     pub observations: Vec<McpToolPolicyObservationV1>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub proxy: Option<McpToolPolicyProxyInputV1>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lookup: Option<McpPolicyLookupInputV1>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
