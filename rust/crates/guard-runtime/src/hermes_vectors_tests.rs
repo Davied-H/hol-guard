@@ -119,9 +119,7 @@ fn check(
     root_text: &str,
     result: Result<Value, &'static str>,
 ) -> Result<(), String> {
-    // Python's `str()` of a nested non-ASCII mapping needs CPython's printable
-    // table; the resident refuses instead of guessing.
-    if case["refused"] == true || case["rust_refuses"] == true {
+    if case["refused"] == true {
         return match result {
             Err(_) => Ok(()),
             Ok(_) => Err(format!("{name}: expected a refusal, the resident answered")),

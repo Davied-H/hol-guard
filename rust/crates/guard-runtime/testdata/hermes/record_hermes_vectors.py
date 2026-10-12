@@ -139,8 +139,6 @@ def run_case(spec: dict) -> dict:
         except (ValueError, RecursionError, OSError):
             outcome = {"refused": True}
         record = {key: spec[key] for key in ("name", "files", "symlinks", "dirs", "dir_modes")}
-        if spec.get("rust_refuses"):
-            record["rust_refuses"] = True
         record["args"] = scrub(args, root)
         record.update(scrub(outcome, root))
         return record

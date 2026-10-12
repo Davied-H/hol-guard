@@ -9,9 +9,8 @@ use regex::Regex;
 
 use super::context_digest::python_strip;
 use super::hermes_inspect::parse_yaml_mapping;
+use super::hermes_printable::is_printable;
 use super::pyjson::{float_repr, PyVal};
-
-pub(crate) const ERR_REPR: &str = "native_runner_authority_hermes_value_unrepresentable";
 
 const SCANNABLE_EXTENSIONS: [&str; 14] = [
     ".md", ".txt", ".py", ".sh", ".bash", ".js", ".ts", ".yaml", ".yml", ".json", ".toml", ".cfg",
@@ -126,12 +125,8 @@ pub(crate) fn looks_like_secret(value: &str) -> bool {
         || regex(&CELL, r"^[A-Za-z0-9+/=_-]{20,}$").is_match(value)
 }
 
-/// `repr(str)` for ASCII text. Text beyond ASCII needs CPython's printable
-/// table and is refused instead of guessed.
-fn repr_str(text: &str) -> Result<String, &'static str> {
-    if !text.is_ascii() {
-        return Err(ERR_REPR);
-    }
+/// `repr(str)`; characters `str.isprintable()` rejects are escaped.
+fn repr_str(text: &str) -> String {
     let quote = if text.contains('\'') && !text.contains('"') {
         '"'
     } else {
@@ -149,54 +144,58 @@ fn repr_str(text: &str) -> Result<String, &'static str> {
                 out.push('\\');
                 out.push(ch);
             }
-            ch if (ch as u32) < 0x20 || ch as u32 == 0x7f => {
-                out.push_str(&format!("\\x{:02x}", ch as u32));
+            ch if !is_printable(ch) => {
+                let code = ch as u32;
+                if code < 0x100 {
+                    out.push_str(&format!("\\x{code:02x}"));
+                } else if code < 0x10000 {
+                    out.push_str(&format!("\\u{code:04x}"));
+                } else {
+                    out.push_str(&format!("\\U{code:08x}"));
+                }
             }
             ch => out.push(ch),
         }
     }
     out.push(quote);
-    Ok(out)
+    out
 }
 
 /// `repr(value)` for a parsed YAML value.
-fn repr(value: &PyVal) -> Result<String, &'static str> {
-    Ok(match value {
+fn repr(value: &PyVal) -> String {
+    match value {
         PyVal::Null => "None".to_owned(),
         PyVal::Bool(true) => "True".to_owned(),
         PyVal::Bool(false) => "False".to_owned(),
         PyVal::Int(digits) => digits.clone(),
         PyVal::Float(number) => float_repr(*number),
-        PyVal::Str(text) => repr_str(text)?,
+        PyVal::Str(text) => repr_str(text),
         PyVal::List(items) => {
-            let parts: Result<Vec<String>, _> = items.iter().map(repr).collect();
-            format!("[{}]", parts?.join(", "))
+            let parts: Vec<String> = items.iter().map(repr).collect();
+            format!("[{}]", parts.join(", "))
         }
         PyVal::Dict(entries) => {
-            let mut parts = Vec::with_capacity(entries.len());
-            for (key, item) in entries {
-                parts.push(format!("{}: {}", repr_str(key)?, repr(item)?));
-            }
+            let parts: Vec<String> = entries
+                .iter()
+                .map(|(key, item)| format!("{}: {}", repr_str(key), repr(item)))
+                .collect();
             format!("{{{}}}", parts.join(", "))
         }
-    })
+    }
 }
 
 /// `str(value)`.
-fn text_of(value: &PyVal) -> Result<String, &'static str> {
+fn text_of(value: &PyVal) -> String {
     match value {
-        PyVal::Str(text) => Ok(text.clone()),
+        PyVal::Str(text) => text.clone(),
         other => repr(other),
     }
 }
 
 /// `_flatten_yaml_value`.
-fn flatten(value: &PyVal) -> Result<String, &'static str> {
+fn flatten(value: &PyVal) -> String {
     match value {
-        PyVal::List(items) => {
-            let parts: Result<Vec<String>, _> = items.iter().map(text_of).collect();
-            Ok(parts?.join(", "))
-        }
+        PyVal::List(items) => items.iter().map(text_of).collect::<Vec<_>>().join(", "),
         other => text_of(other),
     }
 }
@@ -206,12 +205,11 @@ pub(crate) struct Frontmatter(Vec<(String, PyVal)>);
 
 impl Frontmatter {
     /// `frontmatter.get(key)` after `_flatten_yaml_value`.
-    pub(crate) fn flat(&self, key: &str) -> Result<Option<String>, &'static str> {
+    pub(crate) fn flat(&self, key: &str) -> Option<String> {
         self.0
             .iter()
             .find(|(name, _)| name == key)
             .map(|(_, value)| flatten(value))
-            .transpose()
     }
 }
 
@@ -240,13 +238,14 @@ mod tests {
     }
 
     #[test]
-    fn repr_matches_cpython_for_ascii() {
+    fn repr_matches_cpython() {
         let nested = PyVal::Dict(vec![(
             "k".to_owned(),
             PyVal::List(vec![PyVal::Str("it's".to_owned()), PyVal::Null]),
         )]);
-        assert_eq!(repr(&nested).unwrap(), "{'k': [\"it's\", None]}");
-        assert!(repr(&PyVal::Str("é".to_owned())).is_err());
+        assert_eq!(repr(&nested), "{'k': [\"it's\", None]}");
+        let wide = PyVal::Str("é中\u{200b}\u{a0}\u{10ffff}\u{1f600}\x01".to_owned());
+        assert_eq!(repr(&wide), "'é中\\u200b\\xa0\\U0010ffff\u{1f600}\\x01'");
     }
 
     #[test]

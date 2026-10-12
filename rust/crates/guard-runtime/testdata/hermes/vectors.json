@@ -5090,7 +5090,341 @@
     "<ROOT>/home/.hermes/skills/cat/na/SKILL.md"
    ],
    "name": "skill_frontmatter_nonascii_nested",
-   "rust_refuses": true,
+   "symlinks": [],
+   "warnings": []
+  },
+  {
+   "args": {
+    "harness": "hermes",
+    "hermes_home": "<ROOT>/home/.hermes",
+    "host_home": null,
+    "managed_names": [],
+    "manifest_path": "<ROOT>/guard-home/hermes/manifest.json"
+   },
+   "artifacts": [
+    {
+     "args": [],
+     "artifact_id": "hermes:skill:cat:cjk",
+     "artifact_type": "skill",
+     "command": "<ROOT>/home/.hermes/skills/cat/cjk/SKILL.md",
+     "config_path": "<ROOT>/home/.hermes/skills/cat/cjk/SKILL.md",
+     "harness": "hermes",
+     "metadata": {
+      "analysis_truncated": false,
+      "category": "cat",
+      "content_hash": "sha256:f031a3e857376f0693be9d5a434e9b9fa308f488a5548cd2119141e18a474864",
+      "description": "{'説明': 'テスト'}, it's é",
+      "directory_hash": "sha256:385d891ac07c1fa74bbc40fad39f5c405d1081c07e3cfd3d4dbba8315127eb8d",
+      "env_mentions": [],
+      "has_code_blocks": false,
+      "inspection_complete": true,
+      "inspection_readable": true,
+      "preview_bytes": 120,
+      "related_skills": "",
+      "size_bytes": 120,
+      "skillDirectoryIdentity": {
+       "contentHash": "sha256:385d891ac07c1fa74bbc40fad39f5c405d1081c07e3cfd3d4dbba8315127eb8d",
+       "entryCount": 1,
+       "reusable": true,
+       "schemaVersion": "guard.skill-directory-identity.v1",
+       "status": "complete",
+       "totalBytes": 120
+      },
+      "versionInfo": {
+       "changedFields": [],
+       "contentHash": "sha256:385d891ac07c1fa74bbc40fad39f5c405d1081c07e3cfd3d4dbba8315127eb8d",
+       "hashBasis": "skill-directory-v1",
+       "versionLabel": "cat/cjk"
+      }
+     },
+     "name": "日本語, {'キー': '値', 'k': ['中文', '한국어']}",
+     "publisher": null,
+     "source_scope": "global",
+     "transport": null,
+     "url": null
+    }
+   ],
+   "dir_modes": {},
+   "dirs": [],
+   "files": [
+    {
+     "mode": 420,
+     "path": "home/.hermes/skills/cat/cjk/SKILL.md",
+     "text": "---\nname:\n  - 日本語\n  - {キー: 値, k: [中文, 한국어]}\ndescription:\n  - 説明: テスト\n  - 'it''s é'\n---\n"
+    }
+   ],
+   "found_paths": [
+    "<ROOT>/home/.hermes/skills/cat/cjk/SKILL.md"
+   ],
+   "name": "skill_frontmatter_nonascii_cjk",
+   "symlinks": [],
+   "warnings": []
+  },
+  {
+   "args": {
+    "harness": "hermes",
+    "hermes_home": "<ROOT>/home/.hermes",
+    "host_home": null,
+    "managed_names": [],
+    "manifest_path": "<ROOT>/guard-home/hermes/manifest.json"
+   },
+   "artifacts": [
+    {
+     "args": [],
+     "artifact_id": "hermes:skill:cat:acc",
+     "artifact_type": "skill",
+     "command": "<ROOT>/home/.hermes/skills/cat/acc/SKILL.md",
+     "config_path": "<ROOT>/home/.hermes/skills/cat/acc/SKILL.md",
+     "harness": "hermes",
+     "metadata": {
+      "analysis_truncated": false,
+      "category": "cat",
+      "content_hash": "sha256:51d6722afd0a7314647d8342cbaa3fa78067faf86f110149d0cc4626eff0e6e7",
+      "description": "{'naïve': ['résumé', 'ü\"q'], 'ñ': 3}, ['Ångström', 2.5, None]",
+      "directory_hash": "sha256:3eaf746e66a0d2cfa5b883ea1e531bb7fa782b558873628907bad2932acb5971",
+      "env_mentions": [],
+      "has_code_blocks": false,
+      "inspection_complete": true,
+      "inspection_readable": true,
+      "preview_bytes": 137,
+      "related_skills": "{'é': ['à', 'è']}",
+      "size_bytes": 137,
+      "skillDirectoryIdentity": {
+       "contentHash": "sha256:3eaf746e66a0d2cfa5b883ea1e531bb7fa782b558873628907bad2932acb5971",
+       "entryCount": 1,
+       "reusable": true,
+       "schemaVersion": "guard.skill-directory-identity.v1",
+       "status": "complete",
+       "totalBytes": 137
+      },
+      "versionInfo": {
+       "changedFields": [],
+       "contentHash": "sha256:3eaf746e66a0d2cfa5b883ea1e531bb7fa782b558873628907bad2932acb5971",
+       "hashBasis": "skill-directory-v1",
+       "versionLabel": "cat/acc"
+      }
+     },
+     "name": "café",
+     "publisher": null,
+     "source_scope": "global",
+     "transport": null,
+     "url": null
+    }
+   ],
+   "dir_modes": {},
+   "dirs": [],
+   "files": [
+    {
+     "mode": 420,
+     "path": "home/.hermes/skills/cat/acc/SKILL.md",
+     "text": "---\nname: café\ndescription:\n  - {naïve: [résumé, \"ü\\\"q\"], ñ: 3}\n  - [Ångström, 2.5, null]\nrelated_skills:\n  - {é: [à, è]}\n---\n"
+    }
+   ],
+   "found_paths": [
+    "<ROOT>/home/.hermes/skills/cat/acc/SKILL.md"
+   ],
+   "name": "skill_frontmatter_nonascii_accents",
+   "symlinks": [],
+   "warnings": []
+  },
+  {
+   "args": {
+    "harness": "hermes",
+    "hermes_home": "<ROOT>/home/.hermes",
+    "host_home": null,
+    "managed_names": [],
+    "manifest_path": "<ROOT>/guard-home/hermes/manifest.json"
+   },
+   "artifacts": [
+    {
+     "args": [],
+     "artifact_id": "hermes:skill:cat:esc",
+     "artifact_type": "skill",
+     "command": "<ROOT>/home/.hermes/skills/cat/esc/SKILL.md",
+     "config_path": "<ROOT>/home/.hermes/skills/cat/esc/SKILL.md",
+     "harness": "hermes",
+     "metadata": {
+      "analysis_truncated": false,
+      "category": "cat",
+      "content_hash": "sha256:227811264f68f3841a7e0540ef3c697ffb68a856a48f0aad1d95373832770d1c",
+      "description": "😀 􏿿   ­ ퟿ , ['\\t\\n\\r é']",
+      "directory_hash": "sha256:cd50a3040eb57ff94cd22fa3e7b4b7c2080f6bfff020065d55f17e31ed3317ed",
+      "env_mentions": [],
+      "has_code_blocks": false,
+      "inspection_complete": true,
+      "inspection_readable": true,
+      "preview_bytes": 187,
+      "related_skills": "́e　x",
+      "size_bytes": 187,
+      "skillDirectoryIdentity": {
+       "contentHash": "sha256:cd50a3040eb57ff94cd22fa3e7b4b7c2080f6bfff020065d55f17e31ed3317ed",
+       "entryCount": 1,
+       "reusable": true,
+       "schemaVersion": "guard.skill-directory-identity.v1",
+       "status": "complete",
+       "totalBytes": 187
+      },
+      "versionInfo": {
+       "changedFields": [],
+       "contentHash": "sha256:cd50a3040eb57ff94cd22fa3e7b4b7c2080f6bfff020065d55f17e31ed3317ed",
+       "hashBasis": "skill-directory-v1",
+       "versionLabel": "cat/esc"
+      }
+     },
+     "name": "a​b, {'k\\xa0': '\\x01\\x7f\\u0378'}",
+     "publisher": null,
+     "source_scope": "global",
+     "transport": null,
+     "url": null
+    }
+   ],
+   "dir_modes": {},
+   "dirs": [],
+   "files": [
+    {
+     "mode": 420,
+     "path": "home/.hermes/skills/cat/esc/SKILL.md",
+     "text": "---\nname:\n  - \"a\\u200bb\"\n  - {\"k\\u00a0\": \"\\x01\\x7f\\u0378\"}\ndescription:\n  - \"\\U0001F600 \\U0010FFFF \\u2028 \\u00ad \\ud7ff \\ue000\"\n  - [\"\\t\\n\\r é\"]\nrelated_skills:\n  - \"\\u0301e\\u3000x\"\n---\n"
+    }
+   ],
+   "found_paths": [
+    "<ROOT>/home/.hermes/skills/cat/esc/SKILL.md"
+   ],
+   "name": "skill_frontmatter_nonascii_escapes",
+   "symlinks": [],
+   "warnings": []
+  },
+  {
+   "args": {
+    "harness": "hermes",
+    "hermes_home": "<ROOT>/home/.hermes",
+    "host_home": null,
+    "managed_names": [],
+    "manifest_path": "<ROOT>/guard-home/hermes/manifest.json"
+   },
+   "artifacts": [
+    {
+     "args": [],
+     "artifact_id": "hermes:skill:cat:meta",
+     "artifact_type": "skill",
+     "command": "<ROOT>/home/.hermes/skills/cat/meta/SKILL.md",
+     "config_path": "<ROOT>/home/.hermes/skills/cat/meta/SKILL.md",
+     "harness": "hermes",
+     "metadata": {
+      "analysis_truncated": false,
+      "category": "cat",
+      "content_hash": "sha256:3d02e361b00e322e54858cd57e5ea6be75ef7cd19bac8a8fc86f0436d49a59bb",
+      "description": "",
+      "directory_hash": "sha256:0f35e24308cd4a277c4140c4aa8dfc3660d24763db9e87b1babaf9d73b1e3694",
+      "env_mentions": [],
+      "has_code_blocks": false,
+      "inspection_complete": true,
+      "inspection_readable": true,
+      "preview_bytes": 99,
+      "related_skills": "",
+      "size_bytes": 99,
+      "skillDirectoryIdentity": {
+       "contentHash": "sha256:0f35e24308cd4a277c4140c4aa8dfc3660d24763db9e87b1babaf9d73b1e3694",
+       "entryCount": 1,
+       "reusable": true,
+       "schemaVersion": "guard.skill-directory-identity.v1",
+       "status": "complete",
+       "totalBytes": 99
+      },
+      "versionInfo": {
+       "changedFields": [],
+       "contentHash": "sha256:0f35e24308cd4a277c4140c4aa8dfc3660d24763db9e87b1babaf9d73b1e3694",
+       "hashBasis": "skill-directory-v1",
+       "versionLabel": "cat/meta"
+      }
+     },
+     "name": "m",
+     "publisher": null,
+     "source_scope": "global",
+     "transport": null,
+     "url": null
+    }
+   ],
+   "dir_modes": {},
+   "dirs": [],
+   "files": [
+    {
+     "mode": 420,
+     "path": "home/.hermes/skills/cat/meta/SKILL.md",
+     "text": "---\nname: m\nmetadata:\n  hermes:\n    related_skills:\n      - {日: [本, \"\\u200b\"]}\n      - ✓\n---\n"
+    }
+   ],
+   "found_paths": [
+    "<ROOT>/home/.hermes/skills/cat/meta/SKILL.md"
+   ],
+   "name": "skill_frontmatter_nonascii_metadata_related",
+   "symlinks": [],
+   "warnings": []
+  },
+  {
+   "args": {
+    "harness": "hermes",
+    "hermes_home": "<ROOT>/home/.hermes",
+    "host_home": null,
+    "managed_names": [],
+    "manifest_path": "<ROOT>/guard-home/hermes/manifest.json"
+   },
+   "artifacts": [
+    {
+     "args": [],
+     "artifact_id": "hermes:skill:cat:qt",
+     "artifact_type": "skill",
+     "command": "<ROOT>/home/.hermes/skills/cat/qt/SKILL.md",
+     "config_path": "<ROOT>/home/.hermes/skills/cat/qt/SKILL.md",
+     "harness": "hermes",
+     "metadata": {
+      "analysis_truncated": false,
+      "category": "cat",
+      "content_hash": "sha256:f91d08d889f07ecbc918b77f2c72a06ca01e6d919f96714e67cf66c6d4d883e2",
+      "description": "{\"é'\": 'ü'}",
+      "directory_hash": "sha256:3f723a7d22bfa82799426fa01c4519c7fda1b680043a1f70cbd2642f2a5bb8e2",
+      "env_mentions": [],
+      "has_code_blocks": false,
+      "inspection_complete": true,
+      "inspection_readable": true,
+      "preview_bytes": 80,
+      "related_skills": "",
+      "size_bytes": 80,
+      "skillDirectoryIdentity": {
+       "contentHash": "sha256:3f723a7d22bfa82799426fa01c4519c7fda1b680043a1f70cbd2642f2a5bb8e2",
+       "entryCount": 1,
+       "reusable": true,
+       "schemaVersion": "guard.skill-directory-identity.v1",
+       "status": "complete",
+       "totalBytes": 80
+      },
+      "versionInfo": {
+       "changedFields": [],
+       "contentHash": "sha256:3f723a7d22bfa82799426fa01c4519c7fda1b680043a1f70cbd2642f2a5bb8e2",
+       "hashBasis": "skill-directory-v1",
+       "versionLabel": "cat/qt"
+      }
+     },
+     "name": "é'\", é, it's é",
+     "publisher": null,
+     "source_scope": "global",
+     "transport": null,
+     "url": null
+    }
+   ],
+   "dir_modes": {},
+   "dirs": [],
+   "files": [
+    {
+     "mode": 420,
+     "path": "home/.hermes/skills/cat/qt/SKILL.md",
+     "text": "---\nname:\n  - \"é'\\\"\"\n  - 'é'\n  - \"it's é\"\ndescription:\n  - {\"é'\": \"ü\"}\n---\n"
+    }
+   ],
+   "found_paths": [
+    "<ROOT>/home/.hermes/skills/cat/qt/SKILL.md"
+   ],
+   "name": "skill_frontmatter_nonascii_quotes",
    "symlinks": [],
    "warnings": []
   },

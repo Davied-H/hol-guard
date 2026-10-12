@@ -233,6 +233,7 @@ mod guard_store_workflow_capability_vectors_tests;
 mod hardening;
 mod hermes_detect;
 mod hermes_inspect;
+mod hermes_printable;
 mod hermes_skills;
 mod hermes_text;
 #[cfg(all(test, unix))]

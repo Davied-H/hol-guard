@@ -165,11 +165,11 @@ fn scan_skill(
     let (args, has_blocks) = risk_args(content);
 
     let name = front
-        .flat("name")?
+        .flat("name")
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| skill.to_owned());
-    let description = front.flat("description")?.unwrap_or_default();
-    let related = front.flat("related_skills")?.unwrap_or_default();
+    let description = front.flat("description").unwrap_or_default();
+    let related = front.flat("related_skills").unwrap_or_default();
 
     let identity = identity(
         skill_md,

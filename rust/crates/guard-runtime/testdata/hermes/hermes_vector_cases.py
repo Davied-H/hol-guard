@@ -300,7 +300,40 @@ def skill_cases() -> list[dict]:
         case(
             "skill_frontmatter_nonascii_nested",
             [skill("cat", "na", "---\nname: n\ndescription:\n  - é\n  - {k: ü}\n---\n")],
-            rust_refuses=True,
+        ),
+        case(
+            "skill_frontmatter_nonascii_cjk",
+            [skill("cat", "cjk", "---\nname:\n  - 日本語\n  - {キー: 値, k: [中文, 한국어]}\ndescription:\n  - 説明: テスト\n  - 'it''s é'\n---\n")],
+        ),
+        case(
+            "skill_frontmatter_nonascii_accents",
+            [
+                skill(
+                    "cat",
+                    "acc",
+                    "---\nname: café\ndescription:\n  - {naïve: [résumé, \"ü\\\"q\"], ñ: 3}\n  - [Ångström, 2.5, null]\nrelated_skills:\n  - {é: [à, è]}\n---\n",
+                )
+            ],
+        ),
+        case(
+            "skill_frontmatter_nonascii_escapes",
+            [
+                skill(
+                    "cat",
+                    "esc",
+                    '---\nname:\n  - "a\\u200bb"\n  - {"k\\u00a0": "\\x01\\x7f\\u0378"}\n'
+                    'description:\n  - "\\U0001F600 \\U0010FFFF \\u2028 \\u00ad \\ud7ff \\ue000"\n  - ["\\t\\n\\r é"]\n'
+                    'related_skills:\n  - "\\u0301e\\u3000x"\n---\n',
+                )
+            ],
+        ),
+        case(
+            "skill_frontmatter_nonascii_metadata_related",
+            [skill("cat", "meta", "---\nname: m\nmetadata:\n  hermes:\n    related_skills:\n      - {日: [本, \"\\u200b\"]}\n      - ✓\n---\n")],
+        ),
+        case(
+            "skill_frontmatter_nonascii_quotes",
+            [skill("cat", "qt", "---\nname:\n  - \"é'\\\"\"\n  - 'é'\n  - \"it's é\"\ndescription:\n  - {\"é'\": \"ü\"}\n---\n")],
         ),
         case(
             "skill_frontmatter_nested_ascii",
