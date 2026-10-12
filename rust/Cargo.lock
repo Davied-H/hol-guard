@@ -857,6 +857,7 @@ version = "3.16.3"
 dependencies = [
  "aes",
  "base32ct",
+ "base64 0.22.1",
  "base64ct",
  "caseless",
  "cbc",
@@ -871,6 +872,7 @@ dependencies = [
  "guard-policy-snapshot",
  "guard-rule-contract",
  "guard-runtime-windows-process",
+ "guard-scanner",
  "guard-seatbelt",
  "guard-secure-fs",
  "hex",

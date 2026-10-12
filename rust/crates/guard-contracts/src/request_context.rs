@@ -164,6 +164,12 @@ pub struct ShellContextV1 {
 pub enum RequestContextKindV1 {
     /// Compile unverified portable source and report policy-change semantics.
     PolicyDocument(RequestContextPolicyDocumentV1),
+    /// Native sensitivity and structured-output authority over bounded content.
+    ContentSensitivity(RequestContextContentSensitivityV1),
+    RestrictedPytest {
+        operation: String,
+        input: Value,
+    },
     /// Rebuild monotonic command floors without workflow authorization grants.
     CriticalFloor(RequestContextCriticalFloorV1),
     /// Admit the request and build the whole canonical context.
@@ -243,6 +249,13 @@ pub struct RequestContextCriticalFloorV1 {
     pub script: String,
     pub cwd: String,
     pub home_dir: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct RequestContextContentSensitivityV1 {
+    pub query: String,
+    pub input: Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

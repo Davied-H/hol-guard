@@ -2,15 +2,11 @@
   "_comment": "Data-driven benign false-positive gate. 'harnesses' expands to one case per harness (id@harness). 'pending_fix' lists expanded case ids known to fail on the Linux CI host until the named fix lands; on CI the test fails if a listed case unexpectedly passes, so remove entries as fixes merge. 'pending_pr' names the in-flight PR that fixes each pending case ('unassigned' if none). 'pending_always' lists review cases whose approval row is expected to lack an Always option until #3961 lands; any other review row for read-only git, file reads or tool reads must offer Always.",
   "version": 1,
   "pending_fix": {
-    "ls-slug-dir@claude-code": "native_command_review_required",
-    "ls-slug-dir@codex": "native_command_review_required",
-    "ls-slug-dir@omp": "native_command_review_required",
-    "ls-slug-dir@zcode": "native_command_review_required",
     "pytest-quiet@claude-code": "native_command_review_required",
     "pytest-quiet@codex": "native_command_review_required",
+    "pytest-quiet@cursor": "native_command_review_required",
     "pytest-quiet@omp": "native_command_review_required",
-    "pytest-quiet@zcode": "native_command_review_required",
-    "zcode-mcp-js@zcode": "native_policy_review_required"
+    "pytest-quiet@zcode": "native_command_review_required"
   },
   "cases": [
     {
@@ -20,7 +16,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -36,7 +33,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -52,7 +50,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -68,7 +67,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -84,7 +84,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -100,7 +101,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -116,7 +118,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -132,7 +135,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -148,7 +152,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -164,7 +169,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -180,7 +186,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -196,7 +203,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -276,7 +284,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -292,7 +301,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -308,7 +318,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -324,7 +335,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -340,7 +352,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -356,7 +369,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -372,7 +386,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -388,7 +403,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -404,7 +420,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -420,7 +437,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -436,7 +454,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -452,7 +471,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -468,7 +488,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -484,7 +505,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -500,7 +522,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -516,7 +539,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -532,7 +556,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -548,7 +573,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -564,7 +590,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -580,7 +607,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -596,7 +624,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -612,7 +641,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -628,7 +658,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -643,7 +674,8 @@
       "harnesses": [
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "read",
       "tool_input": {
@@ -658,7 +690,8 @@
       "harnesses": [
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "read",
       "tool_input": {
@@ -673,7 +706,8 @@
       "harnesses": [
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "read",
       "tool_input": {
@@ -897,7 +931,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -913,7 +948,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -929,7 +965,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -945,7 +982,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -961,7 +999,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -977,7 +1016,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -993,7 +1033,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1009,7 +1050,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1025,7 +1067,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1041,7 +1084,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1057,7 +1101,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1073,7 +1118,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1089,7 +1135,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1105,7 +1152,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1288,7 +1336,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1304,7 +1353,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1320,7 +1370,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1336,7 +1387,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1352,7 +1404,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1368,7 +1421,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1383,7 +1437,8 @@
       "harnesses": [
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "read",
       "tool_input": {
@@ -1398,7 +1453,8 @@
       "harnesses": [
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "read",
       "tool_input": {
@@ -1429,7 +1485,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1445,7 +1502,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1478,7 +1536,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1494,7 +1553,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1510,7 +1570,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1526,7 +1587,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1542,7 +1604,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1558,7 +1621,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1568,13 +1632,62 @@
       "expect": "allow"
     },
     {
-      "id": "git-cd-worktree-log",
+      "id": "cp-recursive-in-workspace",
       "fix_area": "shell",
       "harnesses": [
         "codex",
         "zcode",
         "claude-code",
         "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cp -R src src-copy"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "neg-cp-recursive-to-ssh",
+      "fix_area": "shell",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cp -R src ${HOME}/.ssh/x"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-cp-recursive-ssh-source",
+      "fix_area": "shell",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cp -R ${HOME}/.ssh ssh-copy"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
+      "id": "git-cd-worktree-log",
+      "fix_area": "shell",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1590,7 +1703,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1606,7 +1720,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1622,7 +1737,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1638,7 +1754,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1654,7 +1771,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1670,7 +1788,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1686,7 +1805,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1702,7 +1822,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1718,7 +1839,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1734,7 +1856,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1750,7 +1873,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1766,7 +1890,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1782,7 +1907,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1798,7 +1924,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1814,7 +1941,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1830,7 +1958,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1846,7 +1975,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1862,7 +1992,8 @@
         "codex",
         "zcode",
         "claude-code",
-        "omp"
+        "omp",
+        "cursor"
       ],
       "tool": "shell",
       "tool_input": {
@@ -1984,6 +2115,38 @@
       "expect": "allow"
     },
     {
+      "id": "home-rg-relative-sibling-repo",
+      "fix_area": "shell",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "rg -n export ../service-api"
+      },
+      "cwd": "org_app",
+      "expect": "allow"
+    },
+    {
+      "id": "home-rg-abs-sibling-repo",
+      "fix_area": "shell",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "rg -n export ${ORG}/service-api/src"
+      },
+      "cwd": "org_app",
+      "expect": "allow"
+    },
+    {
       "id": "neg-home-fd-hidden",
       "fix_area": "negative",
       "harnesses": [
@@ -2049,15 +2212,11 @@
     }
   ],
   "pending_pr": {
-    "ls-slug-dir@claude-code": "unassigned",
-    "ls-slug-dir@codex": "unassigned",
-    "ls-slug-dir@omp": "unassigned",
-    "ls-slug-dir@zcode": "unassigned",
     "pytest-quiet@claude-code": "unassigned",
     "pytest-quiet@codex": "unassigned",
+    "pytest-quiet@cursor": "unassigned",
     "pytest-quiet@omp": "unassigned",
-    "pytest-quiet@zcode": "unassigned",
-    "zcode-mcp-js@zcode": "unassigned"
+    "pytest-quiet@zcode": "unassigned"
   },
   "pending_always": {}
 }
