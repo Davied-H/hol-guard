@@ -8,6 +8,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from . import native_execution
+from .native_context import ensure_resident_prerequisite
 
 _UNSERIALIZABLE = "<unserializable>"
 _NON_FINITE_TAG = "\0float"
@@ -32,8 +33,13 @@ def _home(guard_home: Path | None) -> Path:
 
 
 def _call(subop: str, payload: Mapping[str, object], guard_home: Path | None) -> object:
+    home = _home(guard_home)
+    # The resident refuses a home that has no runtime state yet, and a settings
+    # write is often the first thing that touches a fresh home.
+    if not ensure_resident_prerequisite(home):
+        raise NativeGuardSupportError(UNAVAILABLE_MESSAGE)
     try:
-        result = native_execution.guard_support_native(subop, payload, guard_home=_home(guard_home))
+        result = native_execution.guard_support_native(subop, payload, guard_home=home)
     except (OSError, ValueError) as error:
         raise NativeGuardSupportError(UNAVAILABLE_MESSAGE) from error
     if result is None:

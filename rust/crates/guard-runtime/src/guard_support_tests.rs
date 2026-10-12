@@ -172,7 +172,7 @@ fn toml_render_writes_non_finite_floats_like_python() {
 fn toml_render_quotes_keys_with_trailing_newlines() {
     // The old `$`-anchored pattern accepted "a\n" as a bare key and wrote invalid TOML.
     assert_eq!(
-        run_subop("toml_render", &json!({"a\n": 1})).unwrap(),
+        run_subop("toml_render", &json!({"config": {"a\n": 1}})).unwrap(),
         "\"a\\n\" = 1\n"
     );
 }

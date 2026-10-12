@@ -30,8 +30,20 @@ fn fail(message: &str) -> Outcome {
     Err((message.to_owned(), false))
 }
 
+/// Exactly `VALID_GUARD_ACTIONS`: unlike load-time normalization, a write rejects
+/// the legacy `ask` alias.
 fn is_action(value: &Value) -> bool {
-    normalize_guard_action_result(value, GuardAction::Review).recognized()
+    choice(
+        value,
+        &[
+            "allow",
+            "warn",
+            "review",
+            "require-reapproval",
+            "sandbox-required",
+            "block",
+        ],
+    )
 }
 
 fn choice(value: &Value, allowed: &[&str]) -> bool {

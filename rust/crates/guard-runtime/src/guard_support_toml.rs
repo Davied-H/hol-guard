@@ -97,7 +97,9 @@ fn inline_table(table: &Map<String, Value>) -> String {
 fn string(text: &str) -> String {
     let mut out = String::with_capacity(text.len() + 2);
     for ch in serde_json::to_string(text).expect("string encodes").chars() {
-        if ch.is_ascii() {
+        if ch == '\u{7f}' {
+            out.push_str("\\u007f");
+        } else if ch.is_ascii() {
             out.push(ch);
         } else if (ch as u32) <= 0xffff {
             out.push_str(&format!("\\u{:04x}", ch as u32));
