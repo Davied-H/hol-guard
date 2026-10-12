@@ -116,9 +116,18 @@ fn hmacs_match_python() {
 #[test]
 fn receipts_match_python() {
     for case in vectors()["receipts"].as_array().unwrap() {
-        let projection = json::parse(&text(&case["receipt"]))
-            .and_then(|receipt| receipt_projection(&receipt))
-            .map_or(Value::Null, |p| to_value(&p));
+        let parsed = json::parse(&text(&case["receipt"]));
+        let projected = parsed.as_ref().and_then(receipt_projection);
+        if let Some(first) = &projected {
+            let again = receipt_projection(first);
+            assert_eq!(
+                again.as_ref().map(json::encode),
+                Some(json::encode(first)),
+                "projection must remain a valid receipt: {}",
+                case["receipt"]
+            );
+        }
+        let projection = projected.map_or(Value::Null, |p| to_value(&p));
         assert_eq!(projection, case["projection"], "{}", case["receipt"]);
     }
 }

@@ -315,7 +315,11 @@ pub(crate) fn receipt_projection(receipt: &Json) -> Option<Json> {
         .iter()
         .filter_map(|field| receipt.get(field).map(|v| ((*field).to_owned(), v.clone())))
         .collect();
-    for field in ["command_extensions", "prompt_risk_classes"] {
+    for field in [
+        "command_extensions",
+        "prompt_risk_classes",
+        "business_review_binding",
+    ] {
         if let Some(value) = receipt.get(field) {
             projection.push((field.to_owned(), value.clone()));
         }

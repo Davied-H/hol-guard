@@ -3605,6 +3605,7 @@
   {
    "projection": {
     "authority": "rust",
+    "business_review_binding": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
     "deadline_budget_ms": 100,
     "decision": "allow",
     "decision_id": "766bc98ace16ee4f13a01f6249bd7f02afdeadbeb39fc8b33df8ac49bf1cb8e1",
@@ -7907,6 +7908,7 @@
       "sealed_receipt": {
        "opened": {
         "authority": "rust",
+        "business_review_binding": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
         "deadline_budget_ms": 100,
         "decision": "allow",
         "decision_id": "766bc98ace16ee4f13a01f6249bd7f02afdeadbeb39fc8b33df8ac49bf1cb8e1",
