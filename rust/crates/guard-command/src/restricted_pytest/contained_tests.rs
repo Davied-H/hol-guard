@@ -137,7 +137,11 @@ fn large_ordinary_file_index_keeps_the_mapping_deadline_for_image_inspection() {
     let input = json!({"images":[],"read_files":(0..100000).map(|i|
         format!("/guard-fixture/workspace/a/b/c/d/e/f/ordinary-{i}.txt")).collect::<Vec<_>>(),
         "runtime_roots":["/guard-fixture/runtime"],"workspace":"/guard-fixture/workspace"});
-    let result = evaluate_with_deadline("mapping_evidence", &input, Instant::now() + Duration::from_secs(5));
+    let result = evaluate_with_deadline(
+        "mapping_evidence",
+        &input,
+        Instant::now() + Duration::from_secs(5),
+    );
     assert_eq!(result, json!({"value":[]}));
 }
 
