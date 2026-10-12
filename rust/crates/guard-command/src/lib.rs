@@ -171,6 +171,8 @@ mod sfrs_gh_actions_read;
 mod sfrs_gh_bindings;
 mod sfrs_gh_body_file;
 mod sfrs_gh_body_file_check;
+#[cfg(unix)]
+mod sfrs_gh_body_safety;
 mod sfrs_gh_control_flow;
 mod sfrs_gh_definitions;
 mod sfrs_gh_environment;
@@ -219,6 +221,16 @@ mod sfrs_leaf_vectors;
 #[cfg(all(test, unix))]
 mod sfrs_net_vectors;
 mod sfrs_network_upload;
+#[cfg(unix)]
+mod sfrs_node_heredoc;
+#[cfg(unix)]
+mod sfrs_node_redaction;
+#[cfg(unix)]
+mod sfrs_node_templates;
+#[cfg(all(test, unix))]
+mod sfrs_node_vectors;
+#[cfg(unix)]
+mod sfrs_node_workflows;
 mod sfrs_patterns;
 mod sfrs_perl_read_only;
 #[cfg(all(test, unix))]
@@ -271,6 +283,8 @@ mod sfrs_substitution;
 #[cfg(test)]
 mod sfrs_token_vectors;
 mod sfrs_tool_request;
+#[cfg(unix)]
+mod sfrs_typescript_graphql;
 mod sfrs_upload_arguments;
 mod shell_command_wrappers;
 pub mod shell_execution_context;
