@@ -67,6 +67,16 @@ const SERVER_DESCRIPTOR_HASHES: [&str; 5] = [
 const TOOL_DESCRIPTOR_STRINGS: [&str; 4] = ["hashScope", "identityHash", "serverHash", "toolName"];
 const TOOL_DESCRIPTOR_OPTIONAL: [&str; 3] = ["descriptionHash", "descriptorHash", "schemaHash"];
 
+/// Whether the result of this request kind carries anything the gate checks.
+/// The redacted-value and catalog-fingerprint answers can be large and are
+/// opaque to the contract, so they skip the intermediate JSON tree.
+pub(crate) fn gated(kind: &Kind) -> bool {
+    !matches!(
+        kind,
+        Kind::McpRedactJson { .. } | Kind::McpToolCatalogFingerprint { .. }
+    )
+}
+
 /// Wire name of the request kind, matching the contract's `snake_case` tag.
 pub(crate) fn kind_name(kind: &Kind) -> &'static str {
     match kind {
@@ -350,7 +360,8 @@ fn fields_valid(kind: &str, payload: &Map<String, Value>) -> bool {
             is_unique_strings(model.get("sensitive_surface_flags"))
                 && is_unique_strings(model.get("volatile_fields_dropped"))
         });
-        if kind != "browser_mcp" || !lists_unique {
+        let version_ok = intent.is_none_or(|model| model.get("version") == Some(&Value::from(1)));
+        if kind != "browser_mcp" || !lists_unique || !version_ok {
             return false;
         }
     }

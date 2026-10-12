@@ -15,7 +15,7 @@ use sha2::{Digest, Sha256};
 use super::context_digest_json::{
     write_canonical_json, write_canonical_json_with_limit, write_json_string,
 };
-use super::context_digest_result_check::{check_result, kind_name};
+use super::context_digest_result_check::{check_result, gated, kind_name};
 use guard_contracts::{
     ContextDigestComponentsV1, ContextDigestKindV1, ContextDigestRequestV1, ContextDigestResultV1,
     PackageContextComponentV1, PackageContextEvidenceV1, APPROVAL_CONTEXT_TOKEN_PREFIX,
@@ -874,9 +874,11 @@ fn evaluate_context_digest_request_inner(
     }
     // Fail closed on the result contract before anything is encoded: an answer
     // that breaks it is a resident fault, not a result the caller may inspect.
-    let checked =
-        serde_json::to_value(&result).map_err(|_| "native_response_encode_failed".to_owned())?;
-    check_result(kind_name(&request.kind), &checked).map_err(str::to_owned)?;
+    if gated(&request.kind) {
+        let checked = serde_json::to_value(&result)
+            .map_err(|_| "native_response_encode_failed".to_owned())?;
+        check_result(kind_name(&request.kind), &checked).map_err(str::to_owned)?;
+    }
     crate::encode_response(&result)
 }
 
