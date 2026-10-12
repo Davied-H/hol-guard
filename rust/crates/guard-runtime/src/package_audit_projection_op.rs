@@ -69,6 +69,32 @@ fn cloud_payload(
     query: &PackageAuditCloudPayloadQueryV1,
     guard_home: &str,
 ) -> Result<Value, String> {
+    let snapshot = crate::workspace_inventory_op::inventory_snapshot(
+        &query.inventory_workspace_dir,
+        query.before_workspace_dir.as_deref(),
+        &query.sbom_paths,
+        query.include_lockfile_warnings,
+    )
+    .map_err(|_| invalid())?;
+    if snapshot.digest != query.inventory_digest {
+        return Err("native_package_audit_projection_inventory_changed".to_owned());
+    }
+    cloud_payload_from_inventory(
+        query,
+        guard_home,
+        &snapshot.manifest_paths,
+        &snapshot.lockfile_paths,
+        &snapshot.items,
+    )
+}
+
+fn cloud_payload_from_inventory(
+    query: &PackageAuditCloudPayloadQueryV1,
+    guard_home: &str,
+    manifest_paths: &[String],
+    lockfile_paths: &[String],
+    inventory: &[Value],
+) -> Result<Value, String> {
     if !Path::new(&query.store_path).is_file() {
         return Err("native_package_audit_projection_store_unavailable".to_owned());
     }
@@ -77,9 +103,9 @@ fn cloud_payload(
         Path::new(&query.workspace_dir),
         &query.workspace_id,
         &store,
-        &query.manifest_paths,
-        &query.lockfile_paths,
-        &query.inventory,
+        manifest_paths,
+        lockfile_paths,
+        inventory,
         &query.mode,
         query.page_size,
         &ResidentPaths,

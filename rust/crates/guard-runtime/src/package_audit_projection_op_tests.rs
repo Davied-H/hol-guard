@@ -208,9 +208,8 @@ fn cloud_query_for(vector: &Value, fixture: &Fixture) -> Value {
         "workspace_dir": workspace,
         "workspace_id": vector["workspace_id"],
         "store_path": store,
-        "manifest_paths": vector["manifest_paths"],
-        "lockfile_paths": vector["lockfile_paths"],
-        "inventory": vector["inventory"],
+        "inventory_workspace_dir": workspace,
+        "inventory_digest": "",
         "mode": vector["mode"],
         "page_size": vector["page_size"],
         "machine": VECTOR_MACHINE,
@@ -225,7 +224,30 @@ fn recorded_python_cloud_audit_vectors_match() {
         let fixture = Fixture::new();
         let kind = vector["query"].as_str().unwrap();
         let query = match kind {
-            "cloud_payload" => cloud_query_for(vector, &fixture),
+            "cloud_payload" => {
+                // The recorded inventories are not derived from the recorded
+                // files, so the payload builder is replayed on them directly.
+                let mut query = cloud_query_for(vector, &fixture);
+                query.as_object_mut().unwrap().remove("query");
+                let query: PackageAuditCloudPayloadQueryV1 = serde_json::from_value(query).unwrap();
+                let strings = |value: &Value| -> Vec<String> {
+                    value
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|item| item.as_str().unwrap().to_owned())
+                        .collect()
+                };
+                let result = cloud_payload_from_inventory(
+                    &query,
+                    "/tmp/guard-home",
+                    &strings(&vector["manifest_paths"]),
+                    &strings(&vector["lockfile_paths"]),
+                    vector["inventory"].as_array().unwrap(),
+                );
+                check_cloud_vector(index, vector, kind, result);
+                continue;
+            }
             "batch_url" => {
                 let mut query = json!({
                     "query": "batch_url",
@@ -247,32 +269,35 @@ fn recorded_python_cloud_audit_vectors_match() {
                 "candidates": false,
             }),
         };
-        let result = run(&request(query));
-        let expected = &vector["expected"];
-        if expected.get("error").is_some() {
-            assert_eq!(
-                result.unwrap_err(),
-                "native_package_audit_projection_invalid",
-                "vector {index}: {vector}"
-            );
-            continue;
-        }
-        let mut actual = result.unwrap_or_else(|error| panic!("vector {index}: {error}"));
-        let expected = expected["ok"].clone();
-        let expected = match kind {
-            "batch_url" => json!({"url": expected}),
-            "install_dirs" => json!({"workspaces": expected}),
-            _ => expected,
-        };
-        if kind == "cloud_payload" {
-            let machine = actual["workspaceContext"]
-                .as_object_mut()
-                .unwrap()
-                .remove("machine");
-            assert_eq!(machine, Some(json!(VECTOR_MACHINE)), "vector {index}");
-        }
-        assert_eq!(actual, expected, "vector {index}: {vector}");
+        check_cloud_vector(index, vector, kind, run(&request(query)));
     }
+}
+
+fn check_cloud_vector(index: usize, vector: &Value, kind: &str, result: Result<Value, String>) {
+    let expected = &vector["expected"];
+    if expected.get("error").is_some() {
+        assert_eq!(
+            result.unwrap_err(),
+            "native_package_audit_projection_invalid",
+            "vector {index}: {vector}"
+        );
+        return;
+    }
+    let mut actual = result.unwrap_or_else(|error| panic!("vector {index}: {error}"));
+    let expected = expected["ok"].clone();
+    let expected = match kind {
+        "batch_url" => json!({"url": expected}),
+        "install_dirs" => json!({"workspaces": expected}),
+        _ => expected,
+    };
+    if kind == "cloud_payload" {
+        let machine = actual["workspaceContext"]
+            .as_object_mut()
+            .unwrap()
+            .remove("machine");
+        assert_eq!(machine, Some(json!(VECTOR_MACHINE)), "vector {index}");
+    }
+    assert_eq!(actual, expected, "vector {index}: {vector}");
 }
 
 #[test]
@@ -310,4 +335,79 @@ fn workspace_candidates_keep_existing_project_directories_in_order() {
         })
         .collect();
     assert_eq!(names, ["explicit", "managed"]);
+}
+
+#[test]
+fn cloud_payload_for_a_large_workspace_fits_one_resident_reply() {
+    let fixture = Fixture::new();
+    let workspace = fixture.workspace();
+    let dependencies: Map<String, Value> = (0..10_050)
+        .map(|index| (format!("pkg-{index}"), json!("^1.0.0")))
+        .collect();
+    std::fs::write(
+        workspace.join("package.json"),
+        json!({"name": "large", "dependencies": dependencies}).to_string(),
+    )
+    .unwrap();
+    let workspace_dir = workspace.to_string_lossy().into_owned();
+    let snapshot =
+        crate::workspace_inventory_op::inventory_snapshot(&workspace_dir, None, &[], true).unwrap();
+    assert_eq!(snapshot.items.len(), 10_050);
+    let query = json!({
+        "query": "cloud_payload",
+        "workspace_dir": workspace_dir,
+        "workspace_id": "ws-large",
+        "store_path": fixture.store(None, &Value::Null),
+        "inventory_workspace_dir": workspace_dir,
+        "include_lockfile_warnings": true,
+        "inventory_digest": snapshot.digest,
+        "mode": "paged",
+        "machine": VECTOR_MACHINE,
+    });
+    // The request itself stays inside the resident's strict JSON limits.
+    assert!(crate::strict_json_value(&serde_json::to_vec(&query).unwrap()).is_ok());
+    let request = request(query);
+    let started = std::time::Instant::now();
+    let bytes = evaluate_package_audit_projection(&request).expect("cloud payload");
+    eprintln!(
+        "cloud payload reply {} bytes in {:?}",
+        bytes.len(),
+        started.elapsed()
+    );
+    assert!(bytes.len() <= guard_contracts::MAX_NATIVE_RESPONSE_BYTES);
+    let payload = &serde_json::from_slice::<Value>(&bytes).unwrap()["payload"];
+    assert_eq!(payload["packages"].as_array().map(Vec::len), Some(10_050));
+}
+
+#[test]
+fn cloud_payload_rejects_a_workspace_that_changed_since_its_inventory() {
+    let fixture = Fixture::new();
+    let workspace = fixture.workspace();
+    std::fs::write(
+        workspace.join("package.json"),
+        r#"{"dependencies":{"a":"1"}}"#,
+    )
+    .unwrap();
+    let workspace_dir = workspace.to_string_lossy().into_owned();
+    let snapshot =
+        crate::workspace_inventory_op::inventory_snapshot(&workspace_dir, None, &[], false)
+            .unwrap();
+    std::fs::write(
+        workspace.join("package.json"),
+        r#"{"dependencies":{"b":"1"}}"#,
+    )
+    .unwrap();
+    let result = run(&request(json!({
+        "query": "cloud_payload",
+        "workspace_dir": workspace_dir,
+        "workspace_id": "ws",
+        "store_path": fixture.store(None, &Value::Null),
+        "inventory_workspace_dir": workspace_dir,
+        "inventory_digest": snapshot.digest,
+        "mode": "paged",
+    })));
+    assert_eq!(
+        result.unwrap_err(),
+        "native_package_audit_projection_inventory_changed"
+    );
 }

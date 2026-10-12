@@ -57,9 +57,18 @@ pub struct PackageAuditCloudPayloadQueryV1 {
     pub workspace_id: String,
     /// Store whose `supply_chain_bundle_summary` sync payload supplies the policy version.
     pub store_path: String,
-    pub manifest_paths: Vec<String>,
-    pub lockfile_paths: Vec<String>,
-    pub inventory: Vec<Value>,
+    /// The inventory is rebuilt here from the same options the caller's
+    /// `workspace_inventory` read used, then pinned to the digest that read
+    /// reported. A large inventory never crosses the resident request, and a
+    /// workspace that changed in between is rejected.
+    pub inventory_workspace_dir: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub before_workspace_dir: Option<String>,
+    #[serde(default)]
+    pub sbom_paths: Vec<String>,
+    #[serde(default)]
+    pub include_lockfile_warnings: bool,
+    pub inventory_digest: String,
     pub mode: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub page_size: Option<i64>,

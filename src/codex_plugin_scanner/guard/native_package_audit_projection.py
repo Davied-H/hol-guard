@@ -149,25 +149,34 @@ def native_cloud_audit_payload(
     *,
     workspace_dir: Path,
     workspace_id: str,
-    manifest_paths: Sequence[str],
-    lockfile_paths: Sequence[str],
-    inventory: Sequence[dict[str, object]],
+    inventory_digest: str,
+    sbom_paths: Sequence[str] = (),
+    before_workspace_dir: Path | None = None,
+    include_lockfile_warnings: bool = False,
     mode: str = "paged",
     page_size: int | None = None,
 ) -> dict[str, object]:
-    """Return the resident-built Cloud workspace-audit request payload."""
+    """Return the resident-built Cloud workspace-audit request payload.
+
+    The resident rebuilds the inventory from the options of the
+    ``native_workspace_inventory`` read that reported ``inventory_digest`` and
+    rejects a workspace whose snapshot no longer matches it.
+    """
 
     query: dict[str, object] = {
         "query": "cloud_payload",
         "workspace_dir": str(workspace_dir),
         "workspace_id": workspace_id,
         "store_path": str(store.path),
-        "manifest_paths": list(manifest_paths),
-        "lockfile_paths": list(lockfile_paths),
-        "inventory": list(inventory),
+        "inventory_workspace_dir": str(Path(workspace_dir).expanduser().absolute()),
+        "sbom_paths": [str(path) for path in sbom_paths],
+        "include_lockfile_warnings": include_lockfile_warnings,
+        "inventory_digest": inventory_digest,
         "mode": mode,
         "machine": _machine_name(),
     }
+    if before_workspace_dir is not None:
+        query["before_workspace_dir"] = str(Path(before_workspace_dir).expanduser().absolute())
     if page_size is not None:
         query["page_size"] = page_size
     payload = _send(query, store)

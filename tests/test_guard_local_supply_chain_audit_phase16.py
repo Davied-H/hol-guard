@@ -51,7 +51,7 @@ def _seed_guard_cloud(store, *, workspace_id=None, sync_url=None, token="demo-to
 WORKSPACE_ID = "2de4fcb4-a5b2-447a-a67f-21c6eb4c5f3c"
 
 
-def test_cloud_workspace_audit_renews_dpop_proof_for_each_page(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cloud_workspace_audit_renews_dpop_proof_for_each_page(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     runner = local_supply_chain_module._runtime_runner_module()
     signed_proofs: list[str] = []
     request_bodies: list[dict[str, object]] = []
@@ -115,6 +115,7 @@ def test_cloud_workspace_audit_renews_dpop_proof_for_each_page(monkeypatch: pyte
     stub_authenticated_urlopen(monkeypatch, _fake_urlopen)
 
     response, fallback = cloud_audit_module._run_cloud_workspace_audit(
+        store=GuardStore(tmp_path / "guard-home"),
         auth_context={
             "access_token": "token",
             "sync_url": "https://guard.example/api/guard/receipts/sync",
@@ -791,7 +792,7 @@ def test_guard_supply_chain_audit_handles_large_workspace_and_prioritizes_findin
     assert output["evaluation"]["packages"][0]["name"] == "critical-lib"
 
 
-def test_run_cloud_workspace_audit_falls_back_after_page_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_cloud_workspace_audit_falls_back_after_page_limit(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     class _FakeResponse(io.StringIO):
         def __enter__(self) -> _FakeResponse:
             return self
@@ -821,6 +822,7 @@ def test_run_cloud_workspace_audit_falls_back_after_page_limit(monkeypatch: pyte
     )
 
     response, fallback_reason = cloud_audit_module._run_cloud_workspace_audit(
+        store=GuardStore(tmp_path / "guard-home"),
         request_payload={
             "commandShape": {
                 "argCount": 3,

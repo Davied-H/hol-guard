@@ -188,9 +188,10 @@ def build_workspace_audit_payload(
                 store,
                 workspace_dir=target_workspace_dir,
                 workspace_id=workspace_id,
-                manifest_paths=manifest_paths,
-                lockfile_paths=lockfile_paths,
-                inventory=inventory,
+                inventory_digest=workspace_inventory.inventory_digest,
+                sbom_paths=sbom_paths,
+                before_workspace_dir=effective_before_dir,
+                include_lockfile_warnings=True,
             )
             cloud_response, fallback_reason = _cloud_audit._run_cloud_workspace_audit(
                 store=store,

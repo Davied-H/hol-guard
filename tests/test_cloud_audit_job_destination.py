@@ -82,7 +82,9 @@ def test_authenticated_audit_transport_does_not_follow_redirects(
     opener.open.assert_called_once_with(request, timeout=5)
 
 
-def test_polling_passes_only_same_origin_job_url_to_live_request_boundary(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_polling_passes_only_same_origin_job_url_to_live_request_boundary(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     context = {"sync_url": "https://hol.org/api/guard/receipts/sync"}
     header_builder = Mock(return_value={"Authorization": "Bearer fixture-token"})
     transport = Mock(side_effect=lambda *_args, **_kwargs: io.StringIO(json.dumps({"status": "completed"})))
@@ -90,7 +92,7 @@ def test_polling_passes_only_same_origin_job_url_to_live_request_boundary(monkey
     monkeypatch.setattr(runner, "_guard_sync_headers", header_builder)
     monkeypatch.setattr(local_supply_chain, "managed_urlopen", transport)
     result = local_supply_chain._poll_cloud_workspace_audit_job(
-        auth_context=context, workspace_id="workspace", job_id="//attacker.invalid/x"
+        store=GuardStore(tmp_path), auth_context=context, workspace_id="workspace", job_id="//attacker.invalid/x"
     )
     assert result["status"] == "completed"
     request = transport.call_args.args[0]

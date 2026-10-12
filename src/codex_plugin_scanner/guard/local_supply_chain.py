@@ -1481,9 +1481,7 @@ def sync_managed_workspace_audits(
                 store,
                 workspace_dir=candidate,
                 workspace_id=workspace_id,
-                manifest_paths=manifest_paths,
-                lockfile_paths=lockfile_paths,
-                inventory=inventory,
+                inventory_digest=workspace_inventory.inventory_digest,
                 mode="job",
                 page_size=min(_CLOUD_AUDIT_SYNC_PAGE_SIZE, max(len(inventory), 1)),
             )
