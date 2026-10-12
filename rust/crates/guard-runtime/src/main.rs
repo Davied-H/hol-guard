@@ -55,6 +55,7 @@ mod claim_reuse_binding;
 mod claim_reuse_binding_tests;
 #[cfg(test)]
 mod claim_reuse_vectors_tests;
+mod claude_guard_question;
 mod cli_copilot_resolution;
 mod cli_runtime_support_op;
 mod cloud_action_envelope;
@@ -92,6 +93,13 @@ mod compound_git_paths;
 mod compound_git_segments;
 mod consumer_artifact_compose_op;
 mod consumer_artifact_compose_runtime;
+mod consumer_artifact_project_op;
+mod consumer_capabilities;
+mod consumer_capability_delta;
+mod consumer_evidence;
+mod consumer_incident;
+mod consumer_result;
+mod consumer_url;
 #[cfg(unix)]
 mod contained_op;
 mod content_sensitivity_op;
@@ -99,6 +107,7 @@ mod context_digest;
 mod context_digest_json;
 mod context_digest_local_cli;
 mod context_digest_package_scripts;
+mod context_digest_result_check;
 mod contributed_mcp_decision_op;
 mod critical_floor_op;
 mod cursor_observer_proof_op;
@@ -356,6 +365,7 @@ mod policy_snapshot_build;
 mod policy_store;
 mod prompt_analyze_op;
 mod protect_request_op;
+mod pyjson;
 #[cfg(test)]
 mod registry_vectors_tests;
 mod request_context_op;
@@ -418,6 +428,10 @@ mod totp;
 mod workspace_inventory_files;
 mod workspace_inventory_op;
 mod workspace_scan_targets;
+mod zcode_artifacts;
+mod zcode_detect;
+#[cfg(all(test, unix))]
+mod zcode_vectors_tests;
 
 pub(crate) use resident_protocol::{capabilities, encode_response, strict_json_value};
 pub(crate) use resident_transport::{
