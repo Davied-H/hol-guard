@@ -85,7 +85,6 @@ def continuation_authority(call: str, *, guard_home: Path | None = None, **args:
         error = exception_type(result["error"])
         code, prefix = result.get("sqlite_errorcode"), result.get("sqlite_errorname_prefix")
         if isinstance(error, sqlite3.Error) and isinstance(code, int) and isinstance(prefix, str):
-            setattr(error, "sqlite_errorcode", code)
             name = next(
                 (
                     name
@@ -94,7 +93,7 @@ def continuation_authority(call: str, *, guard_home: Path | None = None, **args:
                 ),
                 "unknown",
             )
-            setattr(error, "sqlite_errorname", name)
+            vars(error).update(sqlite_errorcode=code, sqlite_errorname=name)
         raise error
     return result
 
