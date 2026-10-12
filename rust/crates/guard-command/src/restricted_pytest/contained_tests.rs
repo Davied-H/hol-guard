@@ -145,11 +145,15 @@ fn relative_vitest_entry_uses_request_cwd_without_changing_resident_cwd() {
     fs::write(bin.join("node"), b"\x7fELFnative-fixture").unwrap();
     fs::set_permissions(bin.join("node"), fs::Permissions::from_mode(0o755)).unwrap();
     let before = env::current_dir().unwrap();
-    let reply = evaluate_with_deadline("prepare_vitest", &json!({
-        "command":["node","./node_modules/vitest/vitest.mjs","run"],
-        "workspace":workspace,"cwd":workspace,"platform":"darwin",
-        "backend_executable":"/usr/bin/true","search_path":bin
-    }), Instant::now() + Duration::from_secs(5));
+    let reply = evaluate_with_deadline(
+        "prepare_vitest",
+        &json!({
+            "command":["node","./node_modules/vitest/vitest.mjs","run"],
+            "workspace":workspace,"cwd":workspace,"platform":"darwin",
+            "backend_executable":"/usr/bin/true","search_path":bin
+        }),
+        Instant::now() + Duration::from_secs(5),
+    );
     assert_eq!(reply["value"]["command"][1], json!(entry));
     assert_eq!(env::current_dir().unwrap(), before);
 }
