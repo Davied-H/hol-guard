@@ -295,9 +295,26 @@ fn tool_action(
     let mut view = evaluation_view(input)?;
     // An evaluation of the accepted claim applies to the full parse that
     // replaced it; any other identity still fails the classifier's check.
+    // A claim that bound through a reduced identity did not see the segments
+    // that were dropped, so that evaluation cannot short-circuit as benign.
     if let (Some((command, claimed)), Some(view)) = (&bound, view.as_mut()) {
         if &view.security_identity == claimed {
-            view.security_identity = command.security_identity();
+            let full_identity = command.security_identity();
+            let reduced = claimed != &full_identity;
+            view.security_identity = full_identity;
+            if reduced {
+                view.reason_codes
+                    .retain(|code| code != "native.explicit-benign");
+                let allow_floor_only = view.minimum_action == CommandDecisionFloor::Allow
+                    && !view.match_default_modes.is_empty()
+                    && view
+                        .match_default_modes
+                        .iter()
+                        .all(|mode| mode == "disabled");
+                if allow_floor_only {
+                    view.match_default_modes.clear();
+                }
+            }
         }
     }
     let canonical = bound.map(|(command, _)| command);

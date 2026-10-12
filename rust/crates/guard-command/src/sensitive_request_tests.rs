@@ -240,6 +240,65 @@ fn canonical_claim_parse_settings_must_be_known() {
 }
 
 #[test]
+fn reduced_benign_evaluation_does_not_hide_an_embedded_secret_read() {
+    use std::path::Path;
+
+    let text = "echo $(cat ~/.ssh/id_rsa)";
+    let (cwd, home) = (Path::new("/work"), Path::new("/home/user"));
+    let mut native = crate::command_model::parse_shell_command(
+        text,
+        Some(cwd),
+        Some(home),
+        "posix",
+        "shell_string",
+        "guard-shell",
+        true,
+    );
+    let full = native.security_identity();
+    native.embedded_commands.clear();
+    native.redirects.clear();
+    let reduced = native.security_identity();
+    assert_ne!(full, reduced, "the embedded read must change the identity");
+    let input = json!({
+        "tool_name": "Bash",
+        "arguments": {"command": text},
+        "cwd": "/work",
+        "home_dir": "/home/user",
+        "canonical": {"raw_text": text, "security_identity": reduced},
+        "evaluation": {
+            "security_identity": reduced,
+            "minimum_action": "allow",
+            "match_default_modes": ["disabled"],
+            "reason_codes": ["native.explicit-benign"],
+            "explicitly_enabled_permission_ids": [],
+            "controlling_action_class": null,
+            "controlling_reason": null,
+        },
+    });
+    let found = ask("tool_action", &input).expect("classified");
+    assert!(found.get("error").is_none(), "{found}");
+    let matched = &found["match"];
+    assert!(
+        matched.is_object(),
+        "a benign evaluation of the reduced command hid the full parse: {found}"
+    );
+    assert_eq!(
+        matched["canonical_command"]["security_identity"].as_str(),
+        Some(full.as_str()),
+        "{found}"
+    );
+    let embedded = matched["canonical_command"]["embedded_commands"]
+        .as_array()
+        .expect("embedded");
+    assert!(
+        embedded.iter().any(|item| item["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("id_rsa"))),
+        "the embedded secret read was dropped: {found}"
+    );
+}
+
+#[test]
 fn uncertain_native_model_claim_binds_to_the_full_parse() {
     let text = "stripe products delete prod_123 2> --help";
     let request = crate::CommandModelRequestV1 {
