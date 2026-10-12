@@ -20,6 +20,7 @@ from ..aibom_detection import (
 )
 from ..codex_config import dump_toml, read_toml_payload
 from ..codex_hook_command_line import encode_hook_config_argument, render_hook_command
+from ..codex_hook_compatibility import NATIVE_CODEX_HOOK_COMMAND, NATIVE_CODEX_HOOK_FEATURE, python_bridge_argv
 from ..codex_hook_file_integrity import validate_regular_file
 from ..codex_hook_integrity import (
     atomic_write_bytes,
@@ -105,6 +106,7 @@ from .mcp_servers import (
     proxy_launcher_entry,
     skipped_stdio_server_names,
 )
+from .native_hook_bridge import native_hook_bridge_executable
 from .workspace_overrides import should_skip_workspace_override
 
 if TYPE_CHECKING:
@@ -254,7 +256,13 @@ def _hook_command_parts_for_home_mode(
     }
     bridge_path = Path(__file__).with_name("codex_daemon_hook_bridge.py").resolve()
     config_argument = encode_hook_config_argument(json.dumps(config, separators=(",", ":")))
-    return (python_executable, "-I", str(bridge_path), config_argument)
+    python_argv = (python_executable, "-I", str(bridge_path), config_argument)
+    # The native runtime answers ordinary hooks without starting Python and
+    # hands every other case to this same Python bridge argv.
+    native_bridge = native_hook_bridge_executable(NATIVE_CODEX_HOOK_FEATURE)
+    if native_bridge is None:
+        return python_argv
+    return (str(native_bridge), NATIVE_CODEX_HOOK_COMMAND, *python_argv)
 
 
 def _hook_command_parts(context: HarnessContext) -> tuple[str, ...]:
@@ -417,7 +425,7 @@ def _current_install_legacy_bindings(context: HarnessContext, hooks: dict[str, o
         hooks,
         expected_bindings=_manifest_event_bindings(context),
         current_argv=current_argv,
-        legacy_argv=[sys.executable, *current_argv[1:]],
+        legacy_argv=[sys.executable, *python_bridge_argv(current_argv)[1:]],
         legacy_status_messages=_LEGACY_MANAGED_HOOK_STATUS_MESSAGES,
     )
 
