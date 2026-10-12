@@ -11,7 +11,8 @@ GITHUB_REVIEW_CASE = "github-review-work-enabled-permissions"
 GITHUB_DELETE_CASE = "explicit-disabled-github-delete-permission"
 GITHUB_STUB_CASES = frozenset({GITHUB_REVIEW_CASE, GITHUB_DELETE_CASE})
 WORKTREE_CASE = "linked-worktree-edit-from-main-checkout"
-WORKTREE_NAME = "project-linked"
+# Not prefixed by the workspace name, so redaction cannot fold it into {{workspace}}.
+WORKTREE_NAME = "review-worktree"
 GITHUB_EXTENSION_ID = "command.github"
 GH_LOG = "output/gh-calls.log"
 SEPARATOR = "\x1f"

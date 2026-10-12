@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import posixpath
+import re
 import shutil
 from pathlib import Path
 from typing import Any
@@ -53,14 +54,28 @@ def _temp_write_error(calls: list[dict[str, Any]]) -> str | None:
 
 
 def _linked_worktree_error(calls: list[dict[str, Any]]) -> str | None:
-    """Require the model's edit and write to name the linked worktree, not the main checkout cwd."""
+    """Require the requested worktree steps: read, edit and read back its settings, write its note."""
     root = f"{{{{home}}}}/{WORKTREE_NAME}/"
+    settings, note = f"{root}src/settings.ts", f"{root}docs/change.md"
+    steps: list[tuple[str, str]] = []
     for call in calls:
-        if call["name"] not in {"edit", "write"}:
+        name = call["name"]
+        if name not in {"read", "edit", "write"}:
             continue
-        path = _edit_path(call["args"]) if call["name"] == "edit" else _path(call["args"])
+        path = _edit_path(call["args"]) if name == "edit" else _path(call["args"])
         if path is None or not path.startswith(root) or ".." in path.split("/"):
-            return "the model edited outside the linked worktree"
+            return "the model used a file outside the linked worktree"
+        if name == "read":
+            path = re.sub(r":\d+(-\d+)?$", "", path)
+        if (name == "edit" and path != settings) or (name == "write" and path != note):
+            return "the model changed a different worktree file"
+        steps.append((name, path))
+    edits = [index for index, step in enumerate(steps) if step == ("edit", settings)]
+    reads = [index for index, step in enumerate(steps) if step == ("read", settings)]
+    if not edits or ("write", note) not in steps:
+        return "the model did not edit the worktree settings and write its note"
+    if not reads or reads[0] > edits[0] or reads[-1] < edits[-1]:
+        return "the model did not read the worktree settings before and after editing"
     return None
 
 

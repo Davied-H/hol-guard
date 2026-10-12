@@ -606,7 +606,7 @@
         "edit",
         "write"
       ],
-      "prompt": "This project also has a linked git worktree at {{home}}/project-linked, which is where I want the change made, not the checkout you start in. Use absolute paths under {{home}}/project-linked. Read src/settings.ts there, use the edit tool to change retryLimit from 3 to 5, then use the write tool to create docs/change.md there containing exactly the line \"Retry limit increased from 3 to 5.\" and a trailing newline. Read src/settings.ts there again to confirm, and tell me what it now contains."
+      "prompt": "This project also has a linked git worktree at {{home}}/review-worktree, which is where I want the change made, not the checkout you start in. Use absolute paths under {{home}}/review-worktree. Read src/settings.ts there, use the edit tool to change retryLimit from 3 to 5, then use the write tool to create docs/change.md there containing exactly the line \"Retry limit increased from 3 to 5.\" and a trailing newline. Read src/settings.ts there again to confirm, and tell me what it now contains."
     }
   ]
 }

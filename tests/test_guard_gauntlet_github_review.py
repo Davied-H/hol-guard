@@ -8,6 +8,7 @@ from pathlib import Path
 
 from ci.gauntlet.catalog import load_catalog
 from ci.gauntlet.fixtures import SETTINGS_AFTER, create_fixture, filesystem_checks
+from ci.gauntlet.input_evidence import redact_value
 from ci.gauntlet.native_tools import _linked_worktree_error
 from ci.gauntlet.proofs import required_checks
 from ci.gauntlet.review_fixtures import (
@@ -17,6 +18,7 @@ from ci.gauntlet.review_fixtures import (
     GITHUB_REVIEW_CASE,
     REVIEW_COMMANDS,
     WORKTREE_CASE,
+    WORKTREE_NAME,
 )
 
 SCENARIOS = {scenario.id: scenario for scenario in load_catalog()}
@@ -53,7 +55,7 @@ def test_unrun_stub_leaves_the_delete_case_clean(tmp_path: Path):
 
 def test_linked_worktree_fixture_and_checks(tmp_path: Path):
     fixture = create_fixture(tmp_path / "case", linked_worktree=True)
-    linked = fixture.home / "project-linked"
+    linked = fixture.home / WORKTREE_NAME
     listing = subprocess.run(
         ["git", "-C", str(fixture.workspace), "worktree", "list", "--porcelain"],
         capture_output=True,
@@ -76,12 +78,26 @@ def test_linked_worktree_fixture_and_checks(tmp_path: Path):
     assert filesystem_checks(fixture, "native-tools", WORKTREE_CASE)["main-checkout-settings-unchanged"] is False
 
 
-def test_linked_worktree_scope_rejects_main_checkout_edits():
+def test_linked_worktree_scope_requires_the_requested_steps():
     def call(name: str, path: str) -> dict:
         return {"name": name, "args": {"path": path}}
 
-    inside = "{{home}}/project-linked/src/settings.ts"
-    assert _linked_worktree_error([call("read", "src/settings.ts"), call("write", inside)]) is None
-    assert _linked_worktree_error([call("write", "src/settings.ts")]) is not None
-    assert _linked_worktree_error([call("write", "{{workspace}}/src/settings.ts")]) is not None
-    assert _linked_worktree_error([call("write", "{{home}}/project-linked/../project/x")]) is not None
+    root = "{{home}}/review-worktree"
+    settings, note = f"{root}/src/settings.ts", f"{root}/docs/change.md"
+    done = [call("read", settings), call("edit", settings), call("write", note), call("read", f"{settings}:1-20")]
+    assert _linked_worktree_error(done) is None
+    # Wrong checkout, wrong file, escapes, and missing or out-of-order steps fail.
+    assert _linked_worktree_error([call("read", "src/settings.ts"), *done[1:]]) is not None
+    assert _linked_worktree_error([done[0], call("edit", f"{root}/src/other.ts"), *done[2:]]) is not None
+    assert _linked_worktree_error([*done[:2], call("write", "{{workspace}}/docs/change.md"), done[3]]) is not None
+    assert _linked_worktree_error([*done[:2], call("write", f"{root}/../project/x"), done[3]]) is not None
+    assert _linked_worktree_error(done[:3]) is not None
+    assert _linked_worktree_error([done[1], done[0], *done[2:]]) is not None
+    assert _linked_worktree_error([done[0], done[2], done[3]]) is not None
+
+
+def test_linked_worktree_paths_survive_evidence_redaction(tmp_path):
+    home = tmp_path / "home"
+    replacements = {str(home / "project"): "{{workspace}}", str(home): "{{home}}"}
+    redacted = redact_value(str(home / WORKTREE_NAME / "src/settings.ts"), replacements)
+    assert redacted == "{{home}}/review-worktree/src/settings.ts"
