@@ -5,12 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from ...native_shell_request_authority import shell_request_authority
-
 from .constants_core import _FIND_EXEC_ACTION_FLAGS, _FIND_EXEC_PLACEHOLDER_TARGET, _FIND_EXEC_TERMINATOR_TOKENS
 from .constants_patterns import _FIND_PATH_VALUE_PREDICATES, _HEREDOC_PATTERN, _SHELL_LOCAL_READ_COMMANDS
 from .developer_inspection import _find_exec_sed_args_are_read_only
 from .github_pr_expansion import _shell_token_has_active_expansion
-from .github_shell_capabilities import _shell_command_substitution_payloads, _ShellTokenWithQuoteContext
+from .github_shell_capabilities import _ShellTokenWithQuoteContext
 from .local_read_operands import _shell_segment_file_operand_tokens
 from .pytest_target_detection import _shell_token_has_active_glob
 from .request_models import (
@@ -19,7 +18,7 @@ from .request_models import (
     _SECRET_EXFILTRATION_SECRET_PATTERN,
     classify_sensitive_path,
 )
-from .shell_quote_parsing import _shell_token_segments, _shell_tokens_preserving_quote_context
+from .shell_quote_parsing import _shell_tokens_preserving_quote_context
 from .shell_tokenization import _shell_command_token_without_attached_redirection, _shell_segment_primary_command
 
 

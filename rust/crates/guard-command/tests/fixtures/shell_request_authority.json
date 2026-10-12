@@ -1217,6 +1217,7 @@
   ],
   "retained_original_fixture_sha256": {
     "rust/crates/guard-command/tests/fixtures/sfrs/classify_github_shell_capabilities.json.gz": "82f67f1fc406e50db843190085caa2a9ce204298c1c77b73e481a3ba590d14b4",
+    "rust/crates/guard-command/tests/fixtures/sfrs/fs_helpers.json.gz": "f5249e6f6d02e50f1ab8ab3c5791a3b3e1fe1d60b1b5a511bdf91a2580deb359",
     "rust/crates/guard-command/tests/fixtures/sfrs/github_body.json.gz": "de532d1d1d69a678b932fe20682723a86189cf76d242b923d3671742a6d9d005",
     "rust/crates/guard-command/tests/fixtures/sfrs/intermediate_tokens.json.gz": "fe85e5500ef3cf7c9f81bd69650d09e6cfca8813dedb5717c78e9de32223105a"
   },

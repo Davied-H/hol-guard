@@ -94,3 +94,17 @@ def test_cache_is_bounded_and_classifications_are_never_cached(bridge):
     native.shell_request_authority("classify_github_shell_capabilities", args)
     native.shell_request_authority("classify_github_shell_capabilities", args)
     assert len(calls) == 142
+
+
+@pytest.mark.parametrize(
+    "entry",
+    ["_gh_pr_create_uses_safe_static_body_file", "_gh_pr_edit_uses_safe_static_body_file"],
+)
+def test_static_body_proof_remains_fresh_and_command_level(bridge, entry):
+    _, calls = bridge
+    args = {"command_text": "gh pr create --body-file body.md", "cwd": Path("/workspace"), "home_dir": None}
+    native.shell_request_authority(entry, args)
+    native.shell_request_authority(entry, args)
+    assert len(calls) == 2
+    assert all(call[1]["entry"] == entry and "facts" in call[1] for call in calls)
+    assert calls[0][1]["arguments"]["cwd"] == "/workspace"
