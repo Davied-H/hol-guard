@@ -28,6 +28,7 @@ from .strict_json_pairs import unique_json_object
 _RESULT_SCHEMA = "guard-request-context-result.v1"
 _status_memo: tuple[float, object, NativeRuntimeStatus, tuple[int, ...], object] | None = None
 _resolution_memo: dict[tuple[str, bytes, str, str, int | None], bytes] = {}
+_path_memo: dict[tuple[str, bytes, str, str, int | None], bytes] = {}
 
 
 class NativeContentSensitivityError(RuntimeError, ValueError):
@@ -99,8 +100,7 @@ def content_query(query: str, body: dict[str, Any], *, deadline_monotonic: float
     if time.monotonic() >= deadline:
         raise NativeContentSensitivityDeadlineError("native_content_sensitivity_deadline_exceeded")
     if (
-        time.monotonic() >= deadline
-        or not status.available
+        not status.available
         or not status.compatible
         or status.identity is None
         or status.capabilities is None
@@ -110,7 +110,8 @@ def content_query(query: str, body: dict[str, Any], *, deadline_monotonic: float
     home = _resolve_digest_home(None)
     owner_uid = None if sys.platform == "win32" else os.geteuid()
     memo_key = (query, body_bytes, status.identity.sha256, str(home), owner_uid)
-    if query in {"resolution", "path"} and (cached := _resolution_memo.get(memo_key)) is not None:
+    memo = _path_memo if query == "path" else _resolution_memo
+    if query in {"resolution", "path"} and (cached := memo.get(memo_key)) is not None:
         result = json.loads(cached)
         if time.monotonic() >= deadline:
             raise NativeContentSensitivityDeadlineError("native_content_sensitivity_deadline_exceeded")
@@ -165,7 +166,14 @@ def content_query(query: str, body: dict[str, Any], *, deadline_monotonic: float
             and 0 < len(response["code"]) <= 128
             and payload is None
         ):
-            raise _CallerRejectedError("native_content_sensitivity_request_rejected")
+            if response["code"] == "native_request_context_budget_exceeded":
+                raise NativeContentSensitivityDeadlineError("native_content_sensitivity_deadline_exceeded")
+            if response["code"] in {
+                "native_request_context_content_input_invalid",
+                "native_request_context_content_receipt_invalid",
+            }:
+                raise _CallerRejectedError("native_content_sensitivity_request_rejected")
+            raise NativeContentSensitivityError("native_content_sensitivity_unavailable")
         if (
             response["status"] != "ok"
             or response["code"] != "ok"
@@ -199,9 +207,9 @@ def content_query(query: str, body: dict[str, Any], *, deadline_monotonic: float
     # These native DTOs depend only on the exact input and runtime, never file
     # contents. Scans, receipts and forwarding grants never use this memo.
     if query in {"resolution", "path"} and len(body_bytes) <= 65536:
-        if len(_resolution_memo) >= 64:
-            _resolution_memo.pop(next(iter(_resolution_memo)), None)
-        _resolution_memo[memo_key] = json.dumps(result["ok"], ensure_ascii=False).encode("utf-8")
+        if len(memo) >= 64:
+            memo.pop(next(iter(memo)), None)
+        memo[memo_key] = json.dumps(result["ok"], ensure_ascii=False).encode("utf-8")
     return result["ok"]
 
 

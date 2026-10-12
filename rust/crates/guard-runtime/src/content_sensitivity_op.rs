@@ -27,7 +27,13 @@ pub(crate) fn evaluate(
     budget.check()?;
     let result =
         guard_command::content_sensitivity::evaluate(&body.query, &input, budget.deadline())
-            .map_err(|_| "native_request_context_content_unavailable")?;
+            .map_err(|_| {
+                if std::time::Instant::now() >= budget.deadline() {
+                    "native_request_context_budget_exceeded"
+                } else {
+                    "native_request_context_content_unavailable"
+                }
+            })?;
     if result["ok"]["action"] == "forward" {
         // A Python-provided allow field is never a native forwarding grant.
         let receipt: guard_contracts::NativeHookDecisionReceiptV1 =

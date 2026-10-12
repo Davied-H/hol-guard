@@ -17,6 +17,7 @@ from codex_plugin_scanner.guard import native_content_sensitivity as client
 
 def _resident(monkeypatch: pytest.MonkeyPatch, mutation: str | None = None) -> list[dict[str, object]]:
     client._resolution_memo.clear()
+    client._path_memo.clear()
     identity = SimpleNamespace(path=Path("fixture-runtime"), sha256="a" * 64)
     status = SimpleNamespace(
         available=True,
@@ -65,6 +66,9 @@ def _resident(monkeypatch: pytest.MonkeyPatch, mutation: str | None = None) -> l
             response["status"] = "error"
         elif mutation == "rejected":
             response.update(status="error", code="native_request_context_content_input_invalid", payload=None)
+        elif mutation in {"native_budget", "native_fault"}:
+            code = "budget_exceeded" if mutation == "native_budget" else "content_unavailable"
+            response.update(status="error", code=f"native_request_context_{code}", payload=None)
         elif mutation == "missing":
             return None
         elif mutation == "duplicates":
@@ -363,3 +367,29 @@ def test_repeated_path_dto_is_cached_only_for_exact_input_and_admitted_runtime(m
     client.native_runtime_status().available = False
     with pytest.raises(client.NativeContentSensitivityError):
         client.content_query("path", body)
+
+
+def test_path_cache_pressure_never_evicts_managed_resolution(monkeypatch):
+    calls = _resident(monkeypatch)
+    resolution = {"config": {}, "harness": "pi"}
+    client.content_query("resolution", resolution)
+    for index in range(80):
+        client.content_query("path", {"path": f"ordinary-{index}", "cwd": None, "home_dir": "/fixture"})
+    client.content_query("resolution", resolution)
+    assert len(calls) == 81
+    assert len(client._path_memo) == 64
+
+
+@pytest.mark.parametrize("mutation,failures", [("native_budget", 0), ("native_fault", 1)])
+def test_bound_native_errors_preserve_deadline_and_resident_health(monkeypatch, mutation, failures):
+    _resident(monkeypatch, mutation)
+    recorded = []
+    monkeypatch.setattr(client, "native_record_resident_failure", lambda *args, **kwargs: recorded.append(args))
+    exception = (
+        client.NativeContentSensitivityDeadlineError
+        if mutation == "native_budget"
+        else client.NativeContentSensitivityError
+    )
+    with pytest.raises(exception):
+        client.content_query("content_version", {})
+    assert len(recorded) == failures
