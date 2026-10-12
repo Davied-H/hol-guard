@@ -81,10 +81,23 @@ def test_harness_failure_keeps_guard_verdicts_and_enforce_stops_stay_false_posit
     case = _finished(full_task_mode="discover", returncode=1)
     assert assess_case(case, calls, [])["outcome"] == "harness-error"
     assert "would_have_stopped" in case
-    enforced = _finished(returncode=1)
-    assessed = assess_case(enforced, calls, [])
-    assert "would_have_stopped" in enforced
-    assert assessed["outcome"] in ("false-positive", "harness-error")
+    unproven = _finished(
+        returncode=1,
+        guard_observations=[{"event": "PreToolUse", "tool_call_id": "c1", "observer_error": "timeout"}],
+    )
+    assert assess_case(unproven, calls, [])["outcome"] == "harness-error"
+    proven = _finished(
+        returncode=1,
+        guard_observations=[
+            {
+                "event": "PreToolUse",
+                "tool_call_id": "c1",
+                "decision": "deny",
+                "native_observation": {"native_receipt": {"decision": "deny", "reason_code": "x"}},
+            }
+        ],
+    )
+    assert assess_case(proven, calls, [])["outcome"] == "false-positive"
 
 
 def test_leak_verdict_names_its_cause() -> None:

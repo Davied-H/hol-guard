@@ -370,3 +370,18 @@ def test_graphql_variable_defaults_are_validated() -> None:
         "{ repository(owner: $owner, name: $name) { id } }"
     )
     assert graphql(safe, NESTED_VARS).allow
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # a bare CR ends a GraphQL comment, so the second root is real to GitHub
+        'query RepositoryInfo($owner:String!,$name:String!){ repository(owner:$owner,name:$name){id} #\r b: repository(owner:"other-owner",name:"x"){id}\n}',  # noqa: E501
+        # a backslash before three quotes does not end a block string
+        'query RepositoryInfo($owner:String!,$name:String!){ repository(owner:$owner,name:$name){ pullRequests(headRefName:"""\\""" ) {totalCount} } b: repository(owner:"other-owner",name:"x"){id} }',  # noqa: E501
+        # non-ASCII whitespace is not whitespace in GraphQL
+        "query RepositoryInfo($owner:String!,$name:String!){\u00a0repository(owner:$owner,name:$name){id} }",
+    ],
+)
+def test_graphql_tokenizer_matches_the_graphql_grammar(query: str) -> None:
+    assert not graphql(query, NESTED_VARS).allow

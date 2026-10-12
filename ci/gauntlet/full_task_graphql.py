@@ -20,9 +20,13 @@ from .full_task_graphql_schema import FRAGMENT_TYPES, MUTATION_PAYLOADS, SCHEMA
 
 MAX_TOKENS = 20000
 MAX_DEPTH = 16
+# Match GraphQL's lexical grammar exactly: ASCII whitespace, comments that end at CR or LF, and block
+# strings where only a backslash before three quotes is an escape. Anything else fails to tokenize.
 TOKEN = re.compile(
-    r'\s+|,|#[^\n]*|(?P<spread>\.\.\.)|(?P<punct>[!$&():=@\[\]{|}])|(?P<block>"""(?:[^"\\]|\\.|"(?!""))*""")'
-    r'|(?P<string>"(?:[^"\\\n]|\\.)*")|(?P<number>-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)|(?P<name>[_A-Za-z]\w*)'
+    r"[ \t\r\n]+|,|#[^\n\r]*|(?P<spread>\.\.\.)|(?P<punct>[!$&():=@\[\]{|}])"
+    r'|(?P<block>"""(?:\\"""|[^"\\]|\\(?!""")|"(?!""))*""")'
+    r'|(?P<string>"(?:[^"\\\n\r]|\\.)*")|(?P<number>-?[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)'
+    r"|(?P<name>[_A-Za-z][_0-9A-Za-z]*)"
 )
 QUERY_ROOTS = frozenset({"repository", "viewer"})
 MUTATION_ROOTS = {
