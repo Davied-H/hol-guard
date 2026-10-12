@@ -209,17 +209,19 @@ fn one_digit_timestamp_with_a_time_rejects_the_config() {
     let answer = detect(&args).expect("timestamp config");
     let artifacts = answer["artifacts"].as_array().expect("artifacts");
     assert!(
-        artifacts.iter().any(|artifact| {
-            artifact["metadata"]["config_reason"] == "config_value_invalid"
-        }),
+        artifacts
+            .iter()
+            .any(|artifact| { artifact["metadata"]["config_reason"] == "config_value_invalid" }),
         "{answer}"
     );
     assert!(
-        artifacts.iter().all(|artifact| artifact["command"] != "evil"),
+        artifacts
+            .iter()
+            .all(|artifact| artifact["command"] != "evil"),
         "{answer}"
     );
-    let tagged = crate::hermes_yaml::load("mcp_servers:\n  one:\n    command: !!str tool\n")
-        .expect("yaml");
+    let tagged =
+        crate::hermes_yaml::load("mcp_servers:\n  one:\n    command: !!str tool\n").expect("yaml");
     let tagged = tagged.expect("!!str is a core tag");
     let command = tagged
         .get("mcp_servers")
