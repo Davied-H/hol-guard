@@ -338,7 +338,6 @@ pub(crate) fn evaluate_resident_bytes(
             ResidentOperationV1::RequestContextBuild(request) => {
                 crate::request_context_op::evaluate_request_context_request(&request)
             }
-            #[cfg(unix)]
             ResidentOperationV1::SkillDirectoryIdentity(request) => {
                 crate::skill_directory_identity_op::evaluate_skill_directory_identity_request(
                     &request,
@@ -435,8 +434,7 @@ pub(crate) fn evaluate_resident_bytes(
                 crate::data_flow_analyze_op::evaluate_data_flow_analyze(&request)
             }
             #[cfg(not(unix))]
-            ResidentOperationV1::SkillDirectoryIdentity(_)
-            | ResidentOperationV1::ContainedNodeExecute(_)
+            ResidentOperationV1::ContainedNodeExecute(_)
             | ResidentOperationV1::ContainedTypescriptExecute(_)
             | ResidentOperationV1::ContainedPackageScriptExecute(_)
             | ResidentOperationV1::ContainedWorkspaceWriteExecute(_)

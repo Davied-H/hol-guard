@@ -5,10 +5,8 @@ documents. Python sends absolute paths and resource ceilings and presents the
 answer. Every digest, incomplete-state hash, and discovery issue id arrives
 from the runtime bound to the exact request; nothing here recomputes one.
 
-Two cases never reach the runtime: Windows, where the resident has no skill
-op and the portable Python implementation keeps its locked-descriptor and
-reparse-point handling, and paths that JSON cannot carry byte-for-byte
-(non-UTF-8 POSIX names), which the Rust request parser would reject.
+Paths use an OS-specific byte encoding, including non-UTF8 POSIX names and
+Windows UTF-16 names. The native walker owns every platform path decision.
 
 When no bound answer is available the result is an explicit, non-reusable
 ``native_unavailable`` identity. Its state hash and the discovery issue id are
@@ -20,14 +18,20 @@ from __future__ import annotations
 
 import os
 import re
+import time
 from collections.abc import Mapping
 from pathlib import Path
 from typing import TypeGuard, get_args
 from uuid import uuid4
 
-from .native_context import _canonical_request_sha256, _resolve_digest_home, ensure_resident_prerequisite
+from .native_context import (
+    _canonical_request_sha256,
+    _resolve_digest_home,
+    ensure_resident_prerequisite,
+)
 from .native_execution import _resident_request
 from .native_path_anchor import anchor_to_process_directory
+from .native_runtime import native_runtime_status
 from .skill_directory_identity_contract import (
     SKILL_DIRECTORY_IDENTITY_SCHEMA,
     SkillDirectoryIdentity,
@@ -70,16 +74,13 @@ def _is_windows() -> bool:
 
 
 def portable_python_required(*paths: Path) -> bool:
-    """True where the native op cannot serve the request: Windows or non-UTF-8 paths."""
-
-    if _is_windows():
-        return True
-    for path in paths:
-        try:
-            _ = os.fsencode(path).decode("utf-8")
-        except UnicodeError:
-            return True
+    """Compatibility query: every supported OS path now uses native authority."""
     return False
+
+
+def _encoded_path(path: Path) -> str:
+    text = anchor_to_process_directory(path)
+    return (text.encode("utf-16-le", "surrogatepass") if _is_windows() else os.fsencode(text)).hex()
 
 
 def unavailable_skill_directory_identity() -> SkillDirectoryIdentity:
@@ -105,9 +106,10 @@ def native_inspect_skill_directory(
 ) -> SkillDirectoryIdentity:
     payload = _exchange(
         {
-            "kind": "inspect",
-            "skill_document": anchor_to_process_directory(skill_document),
-            "scope_root": anchor_to_process_directory(scope_root),
+            "kind": "inspect_encoded",
+            "skill_document_hex": _encoded_path(skill_document),
+            "scope_root_hex": _encoded_path(scope_root),
+            "path_encoding": "utf16le" if _is_windows() else "os_bytes",
             "limits": _limits(limits),
         },
         timeout_seconds=_INSPECT_TIMEOUT_SECONDS,
@@ -123,20 +125,17 @@ def native_discover_skill_documents(
 ) -> SkillDocumentDiscovery:
     root = Path(anchor_to_process_directory(skill_root))
     payload = _exchange(
-        {"kind": "discover", "skill_root": str(root), "limits": _limits(limits)},
+        {
+            "kind": "discover_encoded",
+            "skill_root_hex": _encoded_path(root),
+            "path_encoding": "utf16le" if _is_windows() else "os_bytes",
+            "limits": _limits(limits),
+        },
         timeout_seconds=_DISCOVER_TIMEOUT_SECONDS,
     )
     discovery = _decode_discovery(payload, root)
     if discovery is not None:
         return discovery
-    try:
-        _ = os.lstat(root)
-    except FileNotFoundError:
-        # Nothing exists to enumerate, matching the runtime's own NotFound
-        # answer; an absent harness must not look installed or incomplete.
-        return SkillDocumentDiscovery(documents=(), issues=())
-    except OSError:
-        pass
     return SkillDocumentDiscovery(
         documents=(),
         issues=(
@@ -160,7 +159,14 @@ def _limits(limits: SkillDirectoryIdentityLimits) -> dict[str, object]:
     }
 
 
+def native_incomplete_skill_directory_identity(reason: SkillDirectoryIdentityFailure) -> SkillDirectoryIdentity:
+    payload = _exchange({"kind": "incomplete", "reason": reason}, timeout_seconds=_DISCOVER_TIMEOUT_SECONDS)
+    identity = _decode_identity(payload)
+    return identity if identity is not None else unavailable_skill_directory_identity()
+
+
 def _exchange(command: dict[str, object], *, timeout_seconds: float) -> object | None:
+    deadline = time.monotonic() + timeout_seconds
     guard_home = _resolve_digest_home(None)
     request: dict[str, object] = {
         "schema": _REQUEST_SCHEMA,
@@ -172,18 +178,26 @@ def _exchange(command: dict[str, object], *, timeout_seconds: float) -> object |
         digest = "sha256:" + _canonical_request_sha256(request)
     except (TypeError, ValueError):
         return None
+    status = native_runtime_status(deadline_monotonic=deadline)
+    if not status.available or not status.compatible or time.monotonic() >= deadline:
+        return None
     if not ensure_resident_prerequisite(guard_home):
+        return None
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
         return None
     response = _resident_request(
         operation="skill_directory_identity",
         request=request,
         guard_home=guard_home,
-        timeout_seconds=timeout_seconds,
-        required_feature=SKILL_DIRECTORY_IDENTITY_FEATURE,
+        timeout_seconds=remaining,
+        required_feature="skill-directory-portable-v1",
         response_schema=_RESULT_SCHEMA,
+        status=status,
     )
     if (
         response is None
+        or time.monotonic() > deadline
         or response.get("schema") != _RESULT_SCHEMA
         or response.get("request_id") != request["request_id"]
         or response.get("request_sha256") != digest
@@ -265,7 +279,11 @@ def _relative(value: object) -> str | None:
     if text == ".":
         return text
     parts = text.split("/")
-    if text.startswith("/") or any(part in {"", ".", ".."} for part in parts):
+    if (
+        text.startswith("/")
+        or any(part in {"", ".", ".."} for part in parts)
+        or (_is_windows() and ("\\" in text or ":" in text))
+    ):
         return None
     return text
 

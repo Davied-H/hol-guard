@@ -11,12 +11,6 @@ from typing import Any
 
 import pytest
 
-from codex_plugin_scanner.guard.portable_skill_directory_discovery import (
-    discover_skill_documents as portable_discover,
-)
-from codex_plugin_scanner.guard.portable_skill_directory_identity import (
-    inspect_skill_directory as portable_inspect,
-)
 from codex_plugin_scanner.guard.skill_directory_discovery import discover_skill_documents as native_discover
 from codex_plugin_scanner.guard.skill_directory_identity import inspect_skill_directory as native_inspect
 from codex_plugin_scanner.guard.skill_directory_identity_contract import SkillDirectoryIdentityLimits
@@ -37,7 +31,6 @@ _WIRE_FIELDS = (
     "incomplete_state_hash",
 )
 _IMPLEMENTATIONS: dict[str, tuple[Callable[..., Any], Callable[..., Any]]] = {
-    "portable": (portable_inspect, portable_discover),
     "native": (native_inspect, native_discover),
 }
 
