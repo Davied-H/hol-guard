@@ -2505,6 +2505,23 @@
       "expect": "allow"
     },
     {
+      "id": "gauntlet-grep-rln-exclude-git-sibling-repo",
+      "fix_area": "shell",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "grep -rln --exclude-dir=.git retry ${HOME}/other-project"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
       "id": "gauntlet-find-sibling-repo-name",
       "fix_area": "shell",
       "harnesses": [
