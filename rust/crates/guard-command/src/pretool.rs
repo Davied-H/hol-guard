@@ -12,6 +12,9 @@ pub struct PathContext<'a> {
     /// No inherited `RUSTUP_TOOLCHAIN` or `RUSTUP_HOME` can change which
     /// toolchain the rustup proxy runs. Literal contexts leave this false.
     pub rustup_override_absent: bool,
+    /// The shell expands `~` to `home_dir`: its HOME names the same
+    /// directory. Literal contexts leave this false.
+    pub shell_home_matches: bool,
 }
 
 mod contained_wrapper;
@@ -28,6 +31,7 @@ mod git_reads;
 use git_reads::safe_git_arguments;
 mod git_helper_context;
 mod git_probe;
+mod git_push;
 mod git_routes;
 mod git_worktree;
 mod guard_diagnostics;
@@ -67,6 +71,7 @@ pub use generic::evaluate_pre_tool_envelope;
 pub use generic::evaluate_pre_tool_envelope_with_context;
 pub use generic::evaluate_pre_tool_envelope_with_execution_context;
 pub use generic::evaluate_pre_tool_envelope_with_extensions;
+pub use git_push::{install_git_push_verdict, GitPushRequest, GitPushVerdict};
 pub(crate) use segment_proof::benign_command_segments;
 
 fn executable_basename(executable: &str) -> &str {
@@ -226,35 +231,6 @@ fn safe_gh_arguments(arguments: &[String], text: &str) -> bool {
     matches!(arguments, [auth, status, flag]
         if auth == "auth" && status == "status" && matches!(flag.as_str(), "--help" | "-h"))
         || crate::command_compatibility::github_arguments_are_read_only(arguments, text)
-}
-
-/// A Node inline print stays under review when the stamp shows a preload.
-///
-/// `NODE_OPTIONS` and the dynamic loader run code before `console.log`. A
-/// missing stamp keeps the older numeric proof, which has no identity print.
-fn node_inline_preload_configured(
-    model: &CanonicalCommandV1,
-    environment: Option<&guard_contracts::GuardExecutionEnvironmentV1>,
-) -> bool {
-    let Some(environment) = environment.filter(|environment| environment.has_valid_shape()) else {
-        return false;
-    };
-    let preload = environment.environment_names.iter().any(|name| {
-        matches!(
-            name.to_ascii_uppercase().as_str(),
-            "NODE_OPTIONS" | "LD_PRELOAD" | "LD_AUDIT" | "DYLD_INSERT_LIBRARIES"
-        )
-    });
-    preload
-        && model.segments.iter().any(|segment| {
-            let stripped = segment_proof::without_stderr_merge(segment);
-            let segment = stripped.as_ref().unwrap_or(segment);
-            segment.executable.as_deref().is_some_and(|executable| {
-                let basename = executable_basename(executable);
-                matches!(basename, "node" | "nodejs")
-                    && pure_expression::safe_inline_expression(basename, &segment.arguments)
-            })
-        })
 }
 
 fn exact_safe_command(model: &CanonicalCommandV1, allow_git_helper_context: bool) -> bool {
@@ -429,8 +405,16 @@ pub(super) fn evaluate_pre_tool_with_execution_context(
             "The Rust command authority proved this bounded worktree creation has a fresh contained destination, a local ref, and no executable Git routes.",
         ));
     }
+    if git_push::exact_safe_command(&model, context, deadline, execution_environment) {
+        return Ok(pretool_decision(
+            model,
+            "allow",
+            "native_exact_safe_git_push",
+            "The Rust command authority proved this push sends the checked-out branch to a credential-free GitHub HTTPS origin through trusted Git, credential helpers and hooks.",
+        ));
+    }
     if exact_safe_command_with_context(&model, false, context)
-        && !node_inline_preload_configured(&model, execution_environment)
+        && !bun_eval::node_inline_preload_configured(&model, execution_environment)
     {
         return Ok(pretool_decision(
             model,

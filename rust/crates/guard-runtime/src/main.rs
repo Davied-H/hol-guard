@@ -36,6 +36,24 @@ mod archive_acquisition_op;
 mod archive_inspect;
 mod archive_inspect_containment;
 mod archive_verdict_seam;
+#[cfg(unix)]
+mod binding_capture_capture;
+#[cfg(unix)]
+mod binding_capture_crypto;
+#[cfg(unix)]
+mod binding_capture_fs;
+#[cfg(unix)]
+mod binding_capture_join;
+#[cfg(unix)]
+mod binding_capture_json;
+#[cfg(unix)]
+mod binding_capture_op;
+#[cfg(unix)]
+mod binding_capture_receipt;
+#[cfg(unix)]
+mod binding_capture_record;
+#[cfg(all(test, unix))]
+mod binding_capture_vectors_tests;
 #[cfg(test)]
 mod bundle_parse_reuse_tests;
 mod business_document_compile;
@@ -160,6 +178,7 @@ mod direct_tool_context_op;
 mod direct_tool_context_tests;
 mod direct_tool_managed_bun;
 mod edge;
+mod edge_git_push;
 mod encrypted_secret_store;
 mod git_execution_safety_binary;
 mod git_execution_safety_checks;
@@ -383,6 +402,7 @@ mod policy_bundle_v1_rules;
 mod policy_bundle_v2;
 mod policy_bundle_v2_ack;
 mod policy_decision_lookup_op;
+mod policy_document_op;
 mod policy_effective;
 mod policy_enforcement;
 mod policy_integrity_resolver;

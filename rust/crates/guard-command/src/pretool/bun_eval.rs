@@ -46,6 +46,35 @@ pub(super) fn exact_safe_command(
         && !preload_config_present(environment, &home, &cwd)
 }
 
+/// A Node inline print stays under review when the stamp shows a preload.
+///
+/// `NODE_OPTIONS` and the dynamic loader run code before `console.log`. A
+/// missing stamp keeps the older numeric proof, which has no identity print.
+pub(super) fn node_inline_preload_configured(
+    model: &CanonicalCommandV1,
+    environment: Option<&guard_contracts::GuardExecutionEnvironmentV1>,
+) -> bool {
+    let Some(environment) = environment.filter(|environment| environment.has_valid_shape()) else {
+        return false;
+    };
+    let preload = environment.environment_names.iter().any(|name| {
+        matches!(
+            name.to_ascii_uppercase().as_str(),
+            "NODE_OPTIONS" | "LD_PRELOAD" | "LD_AUDIT" | "DYLD_INSERT_LIBRARIES"
+        )
+    });
+    preload
+        && model.segments.iter().any(|segment| {
+            let stripped = super::segment_proof::without_stderr_merge(segment);
+            let segment = stripped.as_ref().unwrap_or(segment);
+            segment.executable.as_deref().is_some_and(|executable| {
+                let basename = super::executable_basename(executable);
+                matches!(basename, "node" | "nodejs")
+                    && super::pure_expression::safe_inline_expression(basename, &segment.arguments)
+            })
+        })
+}
+
 /// `BUN_OPTIONS` and dynamic-loader injection run code before the print.
 fn stamped_loader_name(name: &str) -> bool {
     name.eq_ignore_ascii_case("BUN_OPTIONS")
