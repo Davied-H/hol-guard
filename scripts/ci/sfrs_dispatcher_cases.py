@@ -13,8 +13,6 @@ Rust port can rebuild the tree and replay every case. This script depends on the
 implementation and is retired with it.
 """
 
-# ruff: noqa: E501 - recorded case tables.
-
 from __future__ import annotations
 
 import gzip
@@ -29,6 +27,7 @@ import types
 from collections.abc import Callable
 from dataclasses import fields
 from pathlib import Path
+from typing import ClassVar
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import sfrs_destructive_cases as dcases
@@ -202,23 +201,42 @@ WRAPPERS = [
 ]
 
 SHELL_TOOLS = ["Bash", "bash", "shell", "Shell", "exec_command", "container.exec", "run_shell_command", "local_shell"]
-NON_SHELL_TOOLS = ["WebFetch", "mcp__server__run", "Task", "custom_tool", "Read", "Grep", "Glob", "browser", "functions.exec"]
+NON_SHELL_TOOLS = [
+    "WebFetch",
+    "mcp__server__run",
+    "Task",
+    "custom_tool",
+    "Read",
+    "Grep",
+    "Glob",
+    "browser",
+    "functions.exec",
+]
 FILE_WRITE_TOOLS = ["Write", "Edit", "MultiEdit", "apply_patch", "write_file", "NotebookEdit"]
 
-NATIVE_KINDS = ["benign", "disabled_only", "interaction", "enabled_allow", "monitor_no_class", "classification_block", "block_with_matches", "mismatch"]
+NATIVE_KINDS = [
+    "benign",
+    "disabled_only",
+    "interaction",
+    "enabled_allow",
+    "monitor_no_class",
+    "classification_block",
+    "block_with_matches",
+    "mismatch",
+]
 
 
-class Unsupported(Exception):
+class UnsupportedError(Exception):
     """The stand-in shell model is not exact for this command line."""
 
 
-class Resident(Exception):
+class ResidentError(Exception):
     """A resident-only answer was requested that the stand-in cannot give."""
 
 
 class State:
     env_dump = False
-    calls: list[list[object]] = []
+    calls: ClassVar[list[list[object]]] = []
     resident = False
 
 
@@ -272,15 +290,19 @@ def _model(
     if leading is not None:
         target, operator, rest = leading.group(1), leading.group(2), leading.group(3)
     elif UNSUPPORTED.search(command_text):
-        raise Unsupported
+        raise UnsupportedError
     if UNSUPPORTED.search(rest.replace("~", "")) or (target is not None and "~" in rest):
-        raise Unsupported
+        raise UnsupportedError
     rest_tokens = _flat_segments(rest)
     cwd_now: Path | None = initial
     reason: str | None = None
     if target is not None:
         base = (home_dir or Path.home()) if target.startswith("~") else initial
-        resolved = (base / target.lstrip("~").lstrip("/")).resolve() if target.startswith("~") else (initial / target).resolve()
+        resolved = (
+            (base / target.lstrip("~").lstrip("/")).resolve()
+            if target.startswith("~")
+            else (initial / target).resolve()
+        )
         if not resolved.is_dir():
             cwd_now, reason = None, "shell_cwd_missing_directory"
         elif workspace not in (resolved, *resolved.parents):
@@ -291,7 +313,17 @@ def _model(
     segments: list[sec.ShellExecutionSegment] = []
     if target is not None:
         segments.append(
-            _segment(["cd", target], 0, (), (operator or "&&",), cwd_now, (initial,), complete=complete, reason=reason, operation="cd")
+            _segment(
+                ["cd", target],
+                0,
+                (),
+                (operator or "&&",),
+                cwd_now,
+                (initial,),
+                complete=complete,
+                reason=reason,
+                operation="cd",
+            )
         )
     offset = len(segments)
     for position, tokens in enumerate(rest_tokens):
@@ -347,7 +379,7 @@ def _no_trusted(*_args: object, **_kwargs: object) -> bool:
 
 
 def _floor(*_args: object, **_kwargs: object) -> str:
-    raise Resident
+    raise ResidentError
 
 
 def _dump_truth(text: str) -> bool:
@@ -479,9 +511,6 @@ def main() -> None:
         _patch(native_critical_floor_action, _floor)
         assert dvitest.direct_local_vitest_execution_context is not None
 
-        home = root / "home"
-        proj = root / "proj"
-        work = root / "home/work"
         contexts: list[tuple[str | None, str | None]] = [
             ("proj", "home"),
             (None, "home"),
@@ -530,10 +559,10 @@ def main() -> None:
                 result = tar.extract_sensitive_tool_action_request(
                     tool, arguments, cwd=cwd, home_dir=home_dir, canonical_command=canonical, native_evaluation=native
                 )
-            except Unsupported:
+            except UnsupportedError:
                 skipped["unsupported"] += 1
                 return
-            except Resident:
+            except ResidentError:
                 skipped["resident"] += 1
                 return
             except OSError:
@@ -555,7 +584,7 @@ def main() -> None:
         for index, text in enumerate(corpus):
             for cwd_rel, home_rel in contexts[: 4 if index < 200 else 2]:
                 run("Bash", {"command": text}, text, cwd_rel, home_rel, None, None)
-        for index, text in enumerate(BASE_COMMANDS):
+        for text in BASE_COMMANDS:
             for prefix in CD_PREFIXES:
                 for cwd_rel, home_rel in contexts[:3]:
                     full = prefix + text
@@ -635,7 +664,7 @@ def main() -> None:
         for tool, arguments, text in shapes:
             for cwd_rel, home_rel in contexts[:2]:
                 run(tool, arguments, text, cwd_rel, home_rel, None, None)
-        for index, (tool, arguments, text) in enumerate(shapes):
+        for tool, arguments, text in shapes:
             if text.strip():
                 run(tool, arguments, text, "proj", "home", text.strip(), "classification_block")
         for name in ("proj", "home/work"):
@@ -646,7 +675,13 @@ def main() -> None:
                 run("Bash", {"command": f"   {text}   "}, f"   {text}   ", cwd_rel, home_rel, text, None)
         counts: dict[str, int] = {}
         for case in cases:
-            key = "error" if "error" in case else "none" if case.get("result") is None else str(case["result"]["action_class"])  # type: ignore[index]
+            key = (
+                "error"
+                if "error" in case
+                else "none"
+                if case.get("result") is None
+                else str(case["result"]["action_class"])
+            )  # type: ignore[index]
             counts[key] = counts.get(key, 0) + 1
     document = {
         "schema": "sfrs-dispatcher.v1",

@@ -15,9 +15,9 @@ use serde_json::Value;
 use crate::codex_output_env::Ctx;
 use crate::command_evaluation::{CommandDecisionFloor, CompositeCommandEvaluation};
 use crate::command_model::CanonicalCommand;
-use crate::shell_execution_context::{model_shell_execution_context, ShellExecutionContext};
 use crate::sfrs_source_edit_context::shell_execution_context_validation_reason;
 use crate::sfrs_tool_request::ToolActionRequest;
+use crate::shell_execution_context::{model_shell_execution_context, ShellExecutionContext};
 
 /// The Python `ValueError` a classifier raises; the message is the contract.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -183,12 +183,8 @@ pub(crate) fn model_context(
 ) -> ShellExecutionContext {
     let process_cwd = PathBuf::from(ctx.process_cwd.to_string());
     let effective = cwd.map_or(process_cwd, Path::to_path_buf);
-    let mut context = model_shell_execution_context(
-        command_text,
-        Some(&effective),
-        workspace_root,
-        home_dir,
-    );
+    let mut context =
+        model_shell_execution_context(command_text, Some(&effective), workspace_root, home_dir);
     if cwd.is_none() {
         for segment in &mut context.segments {
             if segment.cwd_source == "workspace" {

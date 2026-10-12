@@ -29,7 +29,9 @@ use crate::sfrs_kubernetes_commands::kubernetes_secret_read_source;
 use crate::sfrs_requests::normalize_tool_name;
 use crate::sfrs_shell_classifier::{destructive_shell_tool_action_request, ShellClassifyInputs};
 use crate::sfrs_shell_tokens::{shell_normalized_tool_name, shell_segment_primary_command};
-use crate::sfrs_tool_request::{docker_config_tool_action_request, docker_sensitive_tool_action_request};
+use crate::sfrs_tool_request::{
+    docker_config_tool_action_request, docker_sensitive_tool_action_request,
+};
 use crate::shell_command_wrappers::normalize_transparent_shell_command;
 use crate::shell_execution_context::ShellExecutionContext;
 
@@ -141,8 +143,7 @@ fn request_for_candidate(
         wrapper_chain = normalized.wrapper_chain;
     }
     let normalized_command_text = command_text.clone();
-    if let Some(request) =
-        unverified_git_fetch_request(requested, effective, &command_text, inputs)
+    if let Some(request) = unverified_git_fetch_request(requested, effective, &command_text, inputs)
     {
         return Ok(Some(request));
     }
@@ -155,13 +156,8 @@ fn request_for_candidate(
     };
     if let Some(request) = docker_sensitive_tool_action_request(requested, effective, &command_text)
     {
-        let request = request_with_shell_execution_context(
-            request.into(),
-            &command_text,
-            cwd,
-            None,
-            ctx,
-        );
+        let request =
+            request_with_shell_execution_context(request.into(), &command_text, cwd, None, ctx);
         return Ok(Some(wrap(request)));
     }
     if raw_command_text != command_text {
@@ -348,17 +344,25 @@ fn unverified_git_fetch_request(
         return None;
     }
     let (cwd, home_dir, ctx) = (inputs.cwd, inputs.home_dir, inputs.ctx);
-    let parsing_cwd = cwd
-        .or(home_dir)
-        .map_or_else(|| PathBuf::from(ctx.process_cwd.to_string()), Path::to_path_buf);
-    let context = model_context(ctx, command_text, Some(&parsing_cwd), Some(&parsing_cwd), home_dir);
+    let parsing_cwd = cwd.or(home_dir).map_or_else(
+        || PathBuf::from(ctx.process_cwd.to_string()),
+        Path::to_path_buf,
+    );
+    let context = model_context(
+        ctx,
+        command_text,
+        Some(&parsing_cwd),
+        Some(&parsing_cwd),
+        home_dir,
+    );
     let invokes: Vec<bool> = context
         .segments
         .iter()
         .map(|segment| segment_invokes_git_fetch(&segment.tokens))
         .collect();
     if !invokes.iter().any(|found| *found) {
-        let action_class = owned_git_index_inspection_action_class(command_text, cwd, home_dir, ctx)?;
+        let action_class =
+            owned_git_index_inspection_action_class(command_text, cwd, home_dir, ctx)?;
         return Some(ToolActionRequestMatch::new(
             requested,
             effective,
@@ -383,7 +387,10 @@ fn unverified_git_fetch_request(
             .zip(&invokes)
             .zip(&converted)
             .all(|((_, fetches), segment)| {
-                !fetches || ctx.host.git_inspection_segment(segment, home_text.as_deref())
+                !fetches
+                    || ctx
+                        .host
+                        .git_inspection_segment(segment, home_text.as_deref())
             })
     {
         return None;

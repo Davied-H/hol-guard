@@ -18,9 +18,9 @@ use crate::direct_vitest::{
 use crate::github_capability_contract::GitHubCommandAssessment;
 use crate::github_capability_interaction::github_capability_requires_confirmation;
 use crate::github_command_capabilities::classify_github_cli;
+use crate::sfrs_destructive_classifier::looks_destructive_shell_command_in;
 use crate::sfrs_developer_graph::{starts_with_literal_cd, GraphInputs};
 use crate::sfrs_dispatcher_request::model_context;
-use crate::sfrs_destructive_classifier::looks_destructive_shell_command_in;
 use crate::sfrs_interpreter_identity::{python_interpreter_executable_identities, IdentityInputs};
 use crate::sfrs_quote_parsing::{
     bounded_current_workspace_source_edit_execution_context, literal_cd_execution_context,

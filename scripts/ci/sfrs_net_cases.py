@@ -13,8 +13,6 @@ by the deterministic stand-in below, which the Rust replay mirrors. This script
 depends on the Python implementation and is retired with it.
 """
 
-# ruff: noqa: E501 - recorded case tables.
-
 from __future__ import annotations
 
 import gzip

@@ -109,9 +109,10 @@ pub(crate) fn windows_interpreter_floor(
     inputs: &ShellClassifyInputs,
     canonical: &CanonicalCommand,
 ) -> Option<ToolActionRequestMatch> {
-    let python_launch = canonical.segments.iter().any(|segment| {
-        is_python_interpreter_command(segment.executable.as_deref().unwrap_or(""))
-    });
+    let python_launch = canonical
+        .segments
+        .iter()
+        .any(|segment| is_python_interpreter_command(segment.executable.as_deref().unwrap_or("")));
     let allowed = inputs
         .native_evaluation
         .is_none_or(|native| native.minimum_action == CommandDecisionFloor::Allow);
@@ -125,7 +126,9 @@ pub(crate) fn windows_interpreter_floor(
     let selected = inputs.raw_execution_context.or(inputs.execution_context);
     let (cwd, home) = (
         inputs.cwd.map(crate::codex_output_source_paths::py_path),
-        inputs.home_dir.map(crate::codex_output_source_paths::py_path),
+        inputs
+            .home_dir
+            .map(crate::codex_output_source_paths::py_path),
     );
     let identity_inputs = crate::sfrs_interpreter_identity::IdentityInputs {
         cwd: cwd.as_ref(),
@@ -176,7 +179,10 @@ fn native_verdict(
     }
     let explicitly_benign = native.has_reason("native.explicit-benign");
     let allow_floor_only = !native.match_default_modes.is_empty()
-        && native.match_default_modes.iter().all(|mode| mode == "disabled");
+        && native
+            .match_default_modes
+            .iter()
+            .all(|mode| mode == "disabled");
     let allows = native.minimum_action == CommandDecisionFloor::Allow;
     let enabled = !native.explicitly_enabled_permission_ids.is_empty();
     if allows && (explicitly_benign || allow_floor_only) && !enabled {
@@ -207,7 +213,9 @@ impl PytestFacts {
     fn apply(&self, request: ToolActionRequestMatch) -> ToolActionRequestMatch {
         ToolActionRequestMatch {
             guard_default_action: self.requested.then(|| "sandbox-required".to_owned()),
-            reason_code: self.requested.then(|| PYTEST_PROFILE_REASON_CODE.to_owned()),
+            reason_code: self
+                .requested
+                .then(|| PYTEST_PROFILE_REASON_CODE.to_owned()),
             restricted_profile_version: self
                 .requested
                 .then(|| PYTEST_RESTRICTED_PROFILE_VERSION.to_owned()),
@@ -238,10 +246,7 @@ fn proposal_control_block(controls: Option<&ToolActionControls>) -> bool {
     .blocked
 }
 
-fn safe_body_file(
-    check: fn(&str, Option<&Path>, Option<&Path>, &Ctx) -> bool,
-    env: &Env,
-) -> bool {
+fn safe_body_file(check: fn(&str, Option<&Path>, Option<&Path>, &Ctx) -> bool, env: &Env) -> bool {
     check(env.detection, env.cwd, env.home_dir, env.ctx)
         && env
             .differing_raw()
@@ -293,11 +298,7 @@ pub(crate) fn classify_shell_tool_action_request(inputs: &ShellClassifyInputs) -
             .collect(),
         assessment,
     };
-    let identities = env.identities(
-        cwd,
-        &execution_context,
-        inputs.raw_execution_context,
-    );
+    let identities = env.identities(cwd, &execution_context, inputs.raw_execution_context);
     let interaction = match native_verdict(inputs.native_evaluation, &canonical)? {
         NativeVerdict::Benign => return Ok(None),
         NativeVerdict::Interaction(interaction) => interaction,
@@ -331,7 +332,15 @@ pub(crate) fn classify_shell_tool_action_request(inputs: &ShellClassifyInputs) -
     apply_home_risk_context(&env, &mut selection);
     apply_github_home_context(&env, &mut selection, github.as_ref());
     apply_bounded_source_edit(&env, &mut selection);
-    Ok(finish(inputs, &env, &canonical, &selection, &pytest, github.as_ref(), initial_risk))
+    Ok(finish(
+        inputs,
+        &env,
+        &canonical,
+        &selection,
+        &pytest,
+        github.as_ref(),
+        initial_risk,
+    ))
 }
 
 fn finish(
