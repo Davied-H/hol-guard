@@ -108,7 +108,6 @@ def prepare_verified_custom_extension_continuity(
         "workspace_id": validated_policy_bundle.get("workspaceId"),
         "device_id": device_id,
         "now": now,
-        "authority_revision": authority_revision,
         "previous": previous,
         "previous_item_order": _item_order(previous),
         "removals": removals,
@@ -129,6 +128,10 @@ def prepare_verified_custom_extension_continuity(
         or not isinstance(answer["write_last_good"], bool)
     ):
         raise _malformed()
+    for update in updates:
+        cli_id = update.get("cli_id") if isinstance(update, dict) else None
+        if not isinstance(cli_id, str) or observation_preconditions.get(cli_id) is None:
+            raise _malformed()
     state = _ordered_items(state, answer["state_item_order"])
     sync_payloads: dict[str, Mapping[str, object]] = {CUSTOM_EXTENSION_CONTINUITY_STATE_KEY: state}
     if answer["write_last_good"]:
@@ -162,7 +165,9 @@ def continuity_state_for_local_items(store: GuardStore, *, now: str) -> dict[str
     if not isinstance(stored, dict):
         return {}
     try:
-        answer = _native_continuity({"operation": "public_state", "stored": stored, "now": now}, frozenset({"states"}))
+        answer = _native_continuity(
+            store, {"operation": "public_state", "stored": stored, "now": now}, frozenset({"states"})
+        )
     except CustomExtensionContinuityError:
         return {}
     states = answer["states"]
@@ -191,6 +196,7 @@ def record_local_custom_extension_mutation(
         None,
     )
     answer = _native_continuity(
+        store,
         {
             "operation": "local_mutation",
             "cli_id": identity.cli_id,
@@ -236,6 +242,7 @@ def record_local_custom_extension_mutation(
 
 
 def _native_continuity(
+    store: GuardStore,
     request: dict[str, object],
     keys: frozenset[str],
     *,
@@ -244,7 +251,7 @@ def _native_continuity(
     result = native_context_digest(
         "custom_extension_continuity",
         {"request": request},
-        guard_home=_resolve_digest_home(None),
+        guard_home=_resolve_digest_home(store.guard_home),
     )
     if not isinstance(result, dict) or result.get("status") != "ok":
         raise CustomExtensionContinuityError("native custom extension continuity unavailable")
@@ -281,7 +288,7 @@ def _plan_with_details(store: GuardStore, request: dict[str, object], local_ids:
 
     details: dict[str, object] = {}
     for _ in range(len(local_ids) + 1):
-        answer = _native_continuity({**request, "details": details}, _PLAN_KEYS, allow_need_details=True)
+        answer = _native_continuity(store, {**request, "details": details}, _PLAN_KEYS, allow_need_details=True)
         wanted = answer.get("need_details")
         if wanted is None:
             return answer
@@ -314,7 +321,13 @@ def _ordered_items(state: dict[str, object], order: object) -> dict[str, object]
     """Restore the item order the native answer reports; its maps arrive sorted."""
 
     items = state.get("items")
-    if not isinstance(items, dict) or not isinstance(order, list) or set(order) != set(items):
+    if (
+        not isinstance(items, dict)
+        or not isinstance(order, list)
+        or not all(isinstance(key, str) for key in order)
+        or len(order) != len(items)
+        or set(order) != set(items)
+    ):
         raise _malformed()
     return {**state, "items": {key: items[key] for key in order}}
 

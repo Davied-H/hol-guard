@@ -89,6 +89,7 @@ _RESULT_CODES = {
     "native_mcp_risk_serialization_failed",
     "canonical_json_unencodable",
     "native_mcp_arguments_invalid",
+    "native_custom_extension_continuity_invalid_request",
 }
 
 # Filesystem authority: launch/executable identities hash on-disk bytes and
