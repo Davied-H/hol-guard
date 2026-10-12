@@ -12,7 +12,7 @@ from pathlib import Path
 
 from . import restricted_git, restricted_node_test, restricted_node_tool, restricted_vitest
 from .contained_wrapper import bounded_output, peel_contained_wrapper
-from .restricted_inline_eval import is_inline_eval, prepare_restricted_inline_eval, run_restricted_inline_eval
+from .restricted_inline_eval import prepare_restricted_inline_eval, run_restricted_inline_eval
 from .restricted_package_test import (
     PACKAGE_TEST_PROFILE,
     PACKAGE_TEST_REASON,
@@ -157,53 +157,15 @@ def run_authorized_contained_test(
     package_test = is_package_test(command)
     if package_test:
         command = list(resolve_package_test(command, workspace=workspace, cwd=cwd))
-    inline_eval = is_inline_eval(command)
-    # Fail before the authority request if the backend cannot enforce the profile.
-    node_runtime_args = (
-        restricted_node_test._node_runtime_args(command)
-        if command and Path(command[0]).name in {"node", "nodejs"}
-        else ()
-    )
-    node_test_index = 1 + len(node_runtime_args)
-    node_test = (
-        len(command) > node_test_index
-        and Path(command[0]).name in {"node", "nodejs"}
-        and command[node_test_index] == "--test"
-    )
-    vitest = bool(command) and (
-        Path(command[0]).name in {"bunx", "npx", "vitest"}
-        or restricted_vitest.bun_vitest_invocation(command) is not None
-        or (
-            len(command) > 1
-            and Path(command[0]).name in {"node", "nodejs"}
-            and any(argument.endswith("/node_modules/vitest/vitest.mjs") for argument in command[1:3])
-        )
-    )
-    git = bool(command) and Path(command[0]).name == "git"
-    node_tool = (
-        restricted_vitest.bun_vitest_invocation(command) is None
-        and bool(command)
-        and (
-            Path(command[0]).name in {"eslint", "tsc", "vite", "bun", "npm", "pnpm"}
-            or (
-                Path(command[0]).name in {"bunx", "npx"}
-                and any(arg in {"eslint", "tsc", "vite"} for arg in command[1:3])
-            )
-            or (
-                len(command) > 1
-                and Path(command[0]).name in {"node", "nodejs"}
-                and any(
-                    argument.endswith(
-                        (
-                            "/node_modules/eslint/bin/eslint.js",
-                            "/node_modules/typescript/bin/tsc",
-                            "/node_modules/vite/bin/vite.js",
-                        )
-                    )
-                    for argument in command[1:3]
-                )
-            )
-        )
+    from ..native_restricted_pytest import restricted_native
+
+    kinds = restricted_native("contained_kind", {"command": command}, dict)
+    if set(kinds) != {"inline_eval", "node_test", "vitest", "git", "node_tool"} or any(
+        type(value) is not bool for value in kinds.values()
+    ):
+        raise _reject()
+    inline_eval, node_test, vitest, git, node_tool = (
+        kinds[key] for key in ("inline_eval", "node_test", "vitest", "git", "node_tool")
     )
     inline_plan = node_tool_plan = git_plan = vitest_plan = node_test_plan = None
     if inline_eval:

@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import json
 import os
-import stat
+import sys
 import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
 
+from ..native_restricted_pytest import native_launch_plan, restricted_native
 from .restricted_node_capabilities import linux_node_environment
-from .restricted_node_test import _node_runtime_args, nearest_project_root, prepare_restricted_node_test
 from .restricted_pytest_model import (
     NODE_BUILD_OUTPUT_PROFILE_VERSION,
     NODE_TOOL_READ_ONLY_PROFILE_VERSION,
@@ -20,137 +20,41 @@ from .restricted_pytest_model import (
     RestrictedPytestPlan,
 )
 from .restricted_pytest_sandbox import _backend_argv, _restricted_environment, _run_backend_process
-from .restricted_pytest_validation import _normalized_command, _path_is_within
 
 
 def bun_vitest_invocation(command: Sequence[str]) -> tuple[str | None, tuple[str, ...]] | None:
-    """Recognize Bun's direct x wrapper, optionally with a leading cwd, or bunx with one."""
-    if not command or Path(command[0]).name not in {"bun", "bunx"}:
+    result = restricted_native("bun_vitest_invocation", {"command": list(command)}, (list, type(None)))
+    if result is None:
         return None
-    bunx = Path(command[0]).name == "bunx"
-    args = tuple(command[1:])
-    directory = None
-    if args and args[0] == "--cwd":
-        if len(args) < 2 or not args[1] or args[1].startswith("-"):
-            return None
-        directory, args = args[1], args[2:]
-    elif args and args[0].startswith("--cwd="):
-        directory, args = args[0][6:], args[1:]
-        if not directory:
-            return None
-    if bunx:
-        if directory is None:
-            return None
-    elif not args or args[0] != "x":
-        return None
-    else:
-        args = args[1:]
-    if args and args[0] == "--no-install":
-        args = args[1:]
-    if len(args) < 2 or args[:2] != ("vitest", "run"):
-        return None
-    return directory, args[1:]
+    if (
+        len(result) != 2
+        or (result[0] is not None and not isinstance(result[0], str))
+        or not isinstance(result[1], list)
+    ):
+        raise ValueError("Invalid native Bun invocation")
+    return result[0], tuple(result[1])
 
 
 def vitest_arguments(command: Sequence[str]) -> tuple[str, ...]:
-    argv = _normalized_command(command)
-    name = Path(argv[0]).name
-    runtime_args = _node_runtime_args(argv)
-    if name in {"bun", "bunx"} and (invocation := bun_vitest_invocation(argv)) is not None:
-        args = invocation[1]
-    elif name in {"bunx", "npx"}:
-        args = argv[1:]
-        if args and args[0] == "--no-install":
-            args = args[1:]
-        if not args or args[0] != "vitest":
-            raise RestrictedPytestError("vitest_restricted_invalid_command", "Only local Vitest run is supported.")
-        args = args[1:]
-    elif name == "vitest":
-        args = argv[1:]
-    elif name in {"node", "nodejs"}:
-        node_args = argv[1 + len(runtime_args) :]
-        if len(node_args) < 2 or not node_args[0].endswith("/node_modules/vitest/vitest.mjs"):
-            raise RestrictedPytestError("vitest_restricted_invalid_command", "Only local Vitest run is supported.")
-        args = node_args[1:]
-    else:
-        raise RestrictedPytestError("vitest_restricted_invalid_command", "Only local Vitest run is supported.")
-    if not args or args[0] != "run" or any(item in {";", "&&", "||", "|", "|&", "&"} for item in args):
-        raise RestrictedPytestError("vitest_restricted_invalid_command", "Protected Vitest requires direct run argv.")
-    return tuple(args)
+    return tuple(restricted_native("vitest_arguments", {"command": list(command)}, list))
 
 
 def prepare_restricted_vitest(
     command: Sequence[str], *, workspace: Path, cwd: Path | None = None
 ) -> RestrictedPytestPlan:
-    args = vitest_arguments(command)
-    runtime_args = _node_runtime_args(command)
-    invocation = bun_vitest_invocation(command)
-    if invocation is not None and invocation[0] is not None:
-        # Resolve against the original hook cwd, not the daemon's process cwd.
-        target = Path(invocation[0]).expanduser()
-        if not target.is_absolute():
-            target = (cwd or workspace) / target
-        try:
-            original = workspace.resolve(strict=True)
-            cwd = target.resolve(strict=True)
-            if not cwd.is_dir():
-                raise OSError("not a directory")
-            if Path(command[0]).name == "bunx" and not _path_is_within(cwd, original):
-                raise OSError("outside the workspace")
-        except (OSError, RuntimeError) as error:
-            raise RestrictedPytestError(
-                "vitest_restricted_invalid_command", "Vitest working directory is unavailable."
-            ) from error
-        if not _path_is_within(cwd, original):
-            workspace = cwd
-    plan = prepare_restricted_node_test(["node", "--test"], workspace=workspace, cwd=cwd)
-    try:
-        # Keep the approved root: a package directory may rely on hoisted dependencies.
-        modules = nearest_project_root(plan.cwd, plan.workspace, "node_modules/vitest/vitest.mjs") / "node_modules"
-        entry = (modules / "vitest" / "vitest.mjs").resolve(strict=True)
-        if not entry.is_file() or not _path_is_within(entry, modules):
-            raise OSError("invalid local Vitest entrypoint")
-        if (
-            Path(command[0]).name in {"node", "nodejs"}
-            and Path(command[1 + len(runtime_args)]).resolve(strict=True) != entry
-        ):
-            raise OSError("unexpected Vitest entrypoint")
-    except (OSError, RuntimeError) as error:
-        raise RestrictedPytestError(
-            "vitest_restricted_dependency_unavailable",
-            "Vitest is not installed inside this workspace. Guard did not download or execute a replacement.",
-        ) from error
-    args = _readonly_config_arguments(args, entry.parent / "package.json")
-    return replace(
-        plan,
-        profile_version=VITEST_READ_ONLY_PROFILE_VERSION,
-        command=(str(plan.executable), *runtime_args, str(entry), *args),
+    return native_launch_plan(
+        "prepare_vitest",
+        command,
+        workspace=workspace,
+        cwd=cwd or workspace,
+        platform=sys.platform,
+        backend_executable=None,
+        profile=VITEST_READ_ONLY_PROFILE_VERSION,
     )
 
 
 def _readonly_config_arguments(args: tuple[str, ...], manifest: Path) -> tuple[str, ...]:
-    """Avoid Vite's source-tree config bundle without overriding explicit loaders."""
-    if any(value == "--configLoader" or value.startswith("--configLoader=") for value in args):
-        return args
-    try:
-        descriptor = os.open(manifest, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-        with os.fdopen(descriptor, "rb") as handle:
-            if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
-                return args
-            raw = handle.read(65537)
-        if len(raw) > 65536:
-            return args
-        package = json.loads(raw)
-        if not isinstance(package, dict):
-            return args
-        version = package.get("version", "")
-        major = version.split(".", 1)[0] if isinstance(version, str) else ""
-        # Older releases are not assumed to support this CLI/Vite capability.
-        if package.get("name") == "vitest" and major.isascii() and major.isdigit() and int(major) >= 4:
-            return (*args, "--configLoader", "runner")
-    except (OSError, ValueError):
-        pass
-    return args
+    return tuple(restricted_native("readonly_config_arguments", {"command": args, "path": manifest}, list))
 
 
 def run_restricted_vitest(

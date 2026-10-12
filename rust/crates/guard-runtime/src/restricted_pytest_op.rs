@@ -11,9 +11,15 @@ pub(crate) fn evaluate(
         return Err("native_restricted_pytest_input_invalid");
     }
     #[cfg(unix)]
-    let result = guard_command::restricted_pytest::evaluate(operation, input);
+    let result = guard_command::restricted_pytest::evaluate_with_deadline(
+        operation,
+        input,
+        budget.deadline(),
+    );
     #[cfg(not(unix))]
-    let result = if operation == "normalized_command" {
+    let result = if let Some(result) = guard_command::contained_argv::evaluate(operation, input) {
+        result
+    } else if operation == "normalized_command" {
         guard_command::restricted_command::evaluate_normalized(input)
     } else {
         serde_json::json!({
