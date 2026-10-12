@@ -12,8 +12,8 @@ use serde_json::{json, Value};
 use crate::sfrs_destructive::{
     contains_destructive_git_command, contains_mutating_shell_redirection,
     contains_shell_credential_exfiltration, find_command_uses_delete, find_segment_uses_delete,
-    git_clean_is_preview, redacted_shell_text_for_command_names, segment_uses_destructive_git_command,
-    shell_command_names, shell_text_for_redirection_scan,
+    git_clean_is_preview, redacted_shell_text_for_command_names,
+    segment_uses_destructive_git_command, shell_command_names, shell_text_for_redirection_scan,
 };
 use crate::sfrs_sensitive_pipeline::{
     curl_segment_consumes_stdin, find_segment_expects_exec_terminator,

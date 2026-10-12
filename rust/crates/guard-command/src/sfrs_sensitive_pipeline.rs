@@ -1,6 +1,9 @@
 //! Port of `secret_file_request_services.sensitive_read_pipeline`: a pipeline
 //! that reads a protected path into a network sink reading stdin.
 
+// Consumed by the dispatcher slice.
+#![allow(dead_code)]
+
 use std::path::Path;
 
 use crate::sfrs_constants::{FIND_EXEC_ACTION_FLAGS, FIND_EXEC_TERMINATOR_TOKENS};
@@ -242,4 +245,3 @@ pub(crate) fn wget_segment_consumes_stdin(args: &[String]) -> bool {
     }
     false
 }
-

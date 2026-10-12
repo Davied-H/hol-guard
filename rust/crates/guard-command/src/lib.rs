@@ -147,13 +147,15 @@ mod sfrs_benign_reads;
 mod sfrs_benign_tool_action;
 mod sfrs_constants;
 mod sfrs_credential_exfil;
-mod sfrs_developer_graph;
-#[cfg(all(test, unix))]
-mod sfrs_developer_graph_vectors;
+#[cfg(unix)]
 mod sfrs_destructive;
+#[cfg(unix)]
 mod sfrs_destructive_classifier;
 #[cfg(all(test, unix))]
 mod sfrs_destructive_vectors;
+mod sfrs_developer_graph;
+#[cfg(all(test, unix))]
+mod sfrs_developer_graph_vectors;
 mod sfrs_developer_inspection;
 #[cfg(unix)]
 mod sfrs_developer_routines;
@@ -271,8 +273,9 @@ mod sfrs_routines_support;
 mod sfrs_routines_vectors;
 mod sfrs_search_filters;
 mod sfrs_selectors;
-mod sfrs_sensitive_pipeline;
 mod sfrs_self_approval;
+#[cfg(unix)]
+mod sfrs_sensitive_pipeline;
 mod sfrs_shell_tokens;
 mod sfrs_shlex;
 mod sfrs_source_edit;

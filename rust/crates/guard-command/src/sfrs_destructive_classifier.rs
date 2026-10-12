@@ -2,6 +2,9 @@
 //! shell command can mutate local state, run unreviewed code or otherwise needs
 //! review, after every read-only shape Guard recognises has been ruled out.
 
+// Consumed by the dispatcher slice.
+#![allow(dead_code)]
+
 use std::path::{Path, PathBuf};
 
 use crate::codex_output_env::Ctx;
@@ -63,7 +66,12 @@ fn path_name_lower(text: &str) -> String {
 }
 
 /// `native_critical_floor_action(...) == "block"`; every failure blocks.
-fn critical_floor_blocks(command_text: &str, cwd: Option<&Path>, home_dir: Option<&Path>, ctx: &Ctx) -> bool {
+fn critical_floor_blocks(
+    command_text: &str,
+    cwd: Option<&Path>,
+    home_dir: Option<&Path>,
+    ctx: &Ctx,
+) -> bool {
     if command_text.len() > crate::MAX_COMMAND_BYTES || command_text.contains('\0') {
         return true;
     }
@@ -95,7 +103,15 @@ pub(crate) fn looks_destructive_shell_command_in(
     ctx: &Ctx,
     execution_context: &ShellExecutionContext,
 ) -> bool {
-    destructive(command_text, cwd, home_dir, ctx, Some(execution_context), false, 0)
+    destructive(
+        command_text,
+        cwd,
+        home_dir,
+        ctx,
+        Some(execution_context),
+        false,
+        0,
+    )
 }
 
 fn destructive(
@@ -269,7 +285,9 @@ fn destructive(
         return true;
     }
     read_only_lookup_segments(&parts).iter().any(|segment| {
-        segment.first().is_some_and(|first| path_name_lower(first) == "sed")
+        segment
+            .first()
+            .is_some_and(|first| path_name_lower(first) == "sed")
             && segment[1..].iter().any(|part| part.starts_with("-i"))
     })
 }

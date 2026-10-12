@@ -2,6 +2,9 @@
 //! destructive shell, Git and redirection detection, and recursive credential
 //! exfiltration over nested shell payloads.
 
+// Consumed by the dispatcher slice.
+#![allow(dead_code)]
+
 use std::path::{Path, PathBuf};
 
 use crate::codex_output_py::{is_py_space, py_strip};
@@ -34,8 +37,7 @@ const FIND_VALUE_TAKING_PREDICATES: &[&str] = &[
     "-lname",
     "-ilname",
 ];
-const BARE_REDIRECT_OPERATORS: &[&str] =
-    &[">", ">>", ">|", "1>", "1>>", "1>|", "2>", "2>>", "2>|"];
+const BARE_REDIRECT_OPERATORS: &[&str] = &[">", ">>", ">|", "1>", "1>>", "1>|", "2>", "2>>", "2>|"];
 
 /// `_contains_shell_credential_exfiltration` (start with `depth = 0` and no
 /// visited script paths).
@@ -76,11 +78,15 @@ pub(crate) fn contains_shell_credential_exfiltration(
             visited_script_paths,
         )
     };
-    if env_split_string_payloads(&parts).iter().any(|text| nested(text))
+    if env_split_string_payloads(&parts)
+        .iter()
+        .any(|text| nested(text))
         || shell_command_substitution_payloads(normalized)
             .iter()
             .any(|text| nested(text))
-        || shell_command_scripts(&parts).iter().any(|text| nested(text))
+        || shell_command_scripts(&parts)
+            .iter()
+            .any(|text| nested(text))
     {
         return true;
     }
@@ -127,8 +133,7 @@ pub(crate) fn find_segment_uses_delete(segment_args: &[String]) -> bool {
             {
                 return true;
             }
-            while index < segment_args.len() && !matches!(segment_args[index].as_str(), ";" | "+")
-            {
+            while index < segment_args.len() && !matches!(segment_args[index].as_str(), ";" | "+") {
                 index += 1;
             }
             if index < segment_args.len() {
@@ -257,8 +262,7 @@ pub(crate) fn contains_mutating_shell_redirection(parts: &[String]) -> bool {
                 index += 1;
             }
         } else {
-            let Some((prefix, _fd, _op, attached_target)) =
-                split_attached_redirection_token(token)
+            let Some((prefix, _fd, _op, attached_target)) = split_attached_redirection_token(token)
             else {
                 index += 1;
                 continue;
