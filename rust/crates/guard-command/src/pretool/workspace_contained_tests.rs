@@ -115,6 +115,11 @@ fn commands_with_network_privilege_or_escape_stay_at_review() {
         "rm -rf ~",
         "rm -rf $HOME",
         "yarn",
+        "yarn --frozen-lockfile",
+        "yarn --immutable",
+        "npm --prefix web install",
+        "bun a zod",
+        "yarn upgrade-interactive",
         "npm i zod",
         "npm isntall zod",
         "npm install-test",
@@ -160,6 +165,12 @@ fn hostile_git_configuration_stays_at_review() {
     std::fs::write(
         ws.join(".git/config"),
         "[core]\n\thooksPath = /outside/hooks\n",
+    )
+    .unwrap();
+    assert_ne!(reason("omp", "./todo.py add x", &ws, true), CONTAINED);
+    std::fs::write(
+        ws.join(".git/config"),
+        "[include]\n\tpath = ../.gitconfig\n",
     )
     .unwrap();
     assert_ne!(reason("omp", "./todo.py add x", &ws, true), CONTAINED);

@@ -54,25 +54,23 @@ fn normalize(path: &Path) -> PathBuf {
     result
 }
 
-fn inside(workspace: &Path, value: &str) -> Option<PathBuf> {
+/// `value` as a path under `workspace`, resolving a relative value against
+/// `base`; `None` when it leaves the workspace or is not a plain path.
+fn inside(base: &Path, workspace: &Path, value: &str) -> Option<PathBuf> {
     let value = value.trim().trim_matches('"');
     if value.is_empty() || value.starts_with('~') || value.contains("://") {
         return None;
     }
-    let path = Path::new(value);
-    let joined = if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        workspace.join(path)
-    };
-    let normal = normalize(&joined);
+    let normal = normalize(&base.join(value));
     (normal.starts_with(workspace) && normal != workspace).then_some(normal)
 }
 
-/// Workspace paths a configured hook directory, include or helper command
-/// names. Every one becomes write-denied inside the sandbox; `None` when the
-/// list exceeds its bound.
+/// Workspace paths a configured hook directory or helper command names. Every
+/// one becomes write-denied inside the sandbox. `None` keeps the command at
+/// review: an include of workspace configuration this reader never parses, a
+/// hook directory outside the workspace, or a list beyond its bound.
 pub(crate) fn helper_write_denials(config: &str, workspace: &Path) -> Option<Vec<PathBuf>> {
+    let git_dir = workspace.join(".git");
     let mut denials: Vec<PathBuf> = Vec::new();
     let mut section = String::new();
     for line in config.lines() {
@@ -94,18 +92,30 @@ pub(crate) fn helper_write_denials(config: &str, workspace: &Path) -> Option<Vec
         };
         let key = key.trim().to_ascii_lowercase();
         let value = value.trim();
-        let candidate = if key == "hookspath" || (section.starts_with("include") && key == "path") {
-            inside(workspace, value)
-        } else {
-            let head = value.trim_start_matches('!').trim_start_matches('"');
-            let token = head.split_whitespace().next().unwrap_or_default();
-            if token.contains('/') {
-                inside(workspace, token)
-            } else {
-                None
+        let mut candidates: Vec<PathBuf> = Vec::new();
+        if section.starts_with("include") && key == "path" {
+            // Git resolves a relative include against the including file's
+            // directory, `.git/`. Included workspace configuration could name
+            // its own helpers, and this reader does not follow it.
+            if inside(&git_dir, workspace, value).is_some() {
+                return None;
             }
-        };
-        if let Some(path) = candidate {
+        } else if key == "hookspath" {
+            // Relative hook directories resolve against the work tree.
+            candidates.push(inside(workspace, workspace, value)?);
+        } else if section != "branch" && section != "user" {
+            // The first word is a program Git finds on PATH unless it has a
+            // slash. Later words are arguments a shell resolves in the
+            // repository, so a workspace file there is a helper too.
+            let words = value.trim_start_matches('!').split_whitespace();
+            for (index, word) in words.enumerate() {
+                let word = word.trim_matches(|c| c == '"' || c == '\'');
+                if word.contains('/') || (index > 0 && workspace.join(word).exists()) {
+                    candidates.extend(inside(workspace, workspace, word));
+                }
+            }
+        }
+        for path in candidates {
             if !denials.contains(&path) {
                 if denials.len() >= MAX_DENIALS {
                     // An unbounded list cannot be proven; keep the command at review.
@@ -116,4 +126,54 @@ pub(crate) fn helper_write_denials(config: &str, workspace: &Path) -> Option<Vec
         }
     }
     Some(denials)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::helper_write_denials;
+    use std::path::{Path, PathBuf};
+
+    fn denials(config: &str, workspace: &Path) -> Option<Vec<PathBuf>> {
+        helper_write_denials(config, workspace)
+    }
+
+    #[test]
+    fn workspace_includes_and_outside_hooks_keep_the_command_at_review() {
+        let ws = Path::new("/w/repo");
+        // Relative includes resolve against `.git/`, so both name workspace files.
+        assert_eq!(denials("[include]\n\tpath = ../.gitconfig\n", ws), None);
+        assert_eq!(denials("[include]\n\tpath = extra\n", ws), None);
+        assert_eq!(
+            denials("[includeIf \"gitdir:/w/\"]\n\tpath = /w/repo/cfg\n", ws),
+            None
+        );
+        assert_eq!(denials("[core]\n\thooksPath = /outside/hooks\n", ws), None);
+        assert_eq!(denials("[core]\n\thooksPath = ~/hooks\n", ws), None);
+        // An include outside the workspace is not writable from the sandbox.
+        assert_eq!(
+            denials("[include]\n\tpath = /etc/gitconfig.d/team\n", ws),
+            Some(vec![])
+        );
+    }
+
+    #[test]
+    fn helper_paths_in_any_word_are_write_denied() {
+        let ws = std::env::temp_dir().join(format!("hol-git-config-{}", std::process::id()));
+        std::fs::create_dir_all(ws.join("tools")).unwrap();
+        std::fs::write(ws.join("x.sh"), "").unwrap();
+        let config = "[core]\n\thooksPath = .githooks\n\tfsmonitor = ./tools/mon\n\
+             [alias]\n\tx = !sh tools/x\n\ty = !sh x.sh\n\tst = status -s\n\
+             [branch \"main\"]\n\tmerge = refs/heads/main\n";
+        let got = denials(config, &ws).unwrap();
+        assert_eq!(
+            got,
+            vec![
+                ws.join(".githooks"),
+                ws.join("tools/mon"),
+                ws.join("tools/x"),
+                ws.join("x.sh"),
+            ]
+        );
+        std::fs::remove_dir_all(&ws).unwrap();
+    }
 }

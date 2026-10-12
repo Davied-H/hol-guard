@@ -25,9 +25,12 @@ const REGISTRY_VERBS: &[&str] = &[
     "isntal",
     "isntall",
     "add",
+    "a",
     "update",
     "up",
     "upgrade",
+    "upgrade-interactive",
+    "self-update",
     "udpate",
     "ci",
     "clean-install",
@@ -60,6 +63,8 @@ const REGISTRY_VERBS: &[&str] = &[
     "outdated",
     "fetch",
     "cache",
+    "store",
+    "pm",
     "env",
     "set",
     "plugin",
@@ -108,7 +113,15 @@ pub(super) fn local_package_work(model: &CanonicalCommandV1) -> bool {
             .map(String::as_str)
             .take_while(|argument| *argument != "--")
             .collect();
-        // A bare `yarn` installs; `npm init <name>` runs a fetched initializer.
+        // A bare `yarn` (or `yarn --frozen-lockfile`) installs, so the verb must
+        // come first; `npm init <name>` runs a fetched initializer. A leading
+        // option such as `--cwd dir` hides the verb and keeps the command out.
+        let version_probe = arguments
+            .iter()
+            .all(|argument| matches!(*argument, "-v" | "--version" | "-h" | "--help"));
+        let leading_verb = arguments
+            .first()
+            .is_some_and(|argument| !argument.starts_with('-'));
         let positional_init = arguments
             .iter()
             .position(|argument| *argument == "init")
@@ -118,6 +131,7 @@ pub(super) fn local_package_work(model: &CanonicalCommandV1) -> bool {
                     .any(|argument| !argument.starts_with('-'))
             });
         !arguments.is_empty()
+            && (leading_verb || version_probe)
             && !positional_init
             && !arguments
                 .iter()
