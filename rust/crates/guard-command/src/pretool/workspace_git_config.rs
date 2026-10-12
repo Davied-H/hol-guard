@@ -1,6 +1,7 @@
 //! Bounded read of a workspace repository's configuration for the workspace
 //! sandbox: helper paths inside the workspace become write-denied so a
 //! sandboxed command cannot plant code a later, unsandboxed Git would run.
+use super::workspace_git_environment::{global_config_paths, GitVariables};
 use std::fs;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
@@ -60,32 +61,6 @@ pub(crate) fn repository_config(root: &Path) -> Result<Option<String>, ()> {
     ))
 }
 
-/// Configuration files host Git reads besides the repository's own. A
-/// relative `core.hooksPath` in any of them resolves against each work tree.
-fn global_config_paths(home: Option<&Path>) -> Vec<PathBuf> {
-    let mut paths: Vec<PathBuf> = [
-        "/etc/gitconfig",
-        "/opt/homebrew/etc/gitconfig",
-        "/usr/local/etc/gitconfig",
-    ]
-    .iter()
-    .map(PathBuf::from)
-    .collect();
-    if let Some(home) = home {
-        paths.push(home.join(".gitconfig"));
-        paths.push(home.join(".config/git/config"));
-    }
-    for variable in ["GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM"] {
-        if let Some(value) = std::env::var_os(variable).filter(|value| !value.is_empty()) {
-            paths.push(PathBuf::from(value));
-        }
-    }
-    if let Some(value) = std::env::var_os("XDG_CONFIG_HOME").filter(|value| !value.is_empty()) {
-        paths.push(PathBuf::from(value).join("git/config"));
-    }
-    paths
-}
-
 /// The repository whose work tree holds `workspace`: the workspace itself
 /// or the nearest ancestor with a `.git` entry, stopping at `home`.
 fn work_tree(workspace: &Path, home: Option<&Path>) -> Option<PathBuf> {
@@ -110,8 +85,9 @@ fn work_tree(workspace: &Path, home: Option<&Path>) -> Option<PathBuf> {
 pub(crate) fn workspace_write_denials(
     workspace: &Path,
     home: Option<&Path>,
+    variables: &GitVariables,
 ) -> Option<Vec<PathBuf>> {
-    write_denials_from(workspace, home, global_config_paths(home))
+    write_denials_from(workspace, home, global_config_paths(home, variables)?)
 }
 
 /// [`workspace_write_denials`] with `globals` as the global configuration

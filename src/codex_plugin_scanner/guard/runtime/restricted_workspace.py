@@ -172,6 +172,12 @@ def run_workspace_contained(
                 "cwd": cwd,
                 "platform": sys.platform,
                 "home": home_dir or Path.home(),
+                # The resident's own environment is not what a later host Git sees.
+                "git_environment": {
+                    name: value
+                    for name, value in os.environ.items()
+                    if name.startswith("GIT_CONFIG") or name == "XDG_CONFIG_HOME"
+                },
             },
             dict,
         ),
