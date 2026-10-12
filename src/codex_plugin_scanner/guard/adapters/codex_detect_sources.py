@@ -11,8 +11,7 @@ from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
 
-import tomllib
-
+from ..codex_config import tomllib
 from ..models import GuardArtifact
 from ..native_path_anchor import anchor_to_process_directory
 
