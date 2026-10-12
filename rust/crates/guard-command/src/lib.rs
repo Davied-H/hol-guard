@@ -75,6 +75,7 @@ mod command_workspace_write_candidates;
 pub mod content_sensitivity;
 pub mod contributed_mcp_decision;
 mod contributed_mcp_url;
+pub use contributed_mcp_url::normalized_remote_mcp_url;
 mod data_flow;
 pub mod dep_map;
 pub mod effect_decision;
@@ -123,6 +124,8 @@ mod native_command_extension_evidence_tests;
 pub mod native_command_program;
 pub mod npm_source_spec;
 pub mod ordered_json;
+#[cfg(unix)]
+pub mod package_context_build;
 pub mod package_execution_context;
 pub mod package_intent_common;
 pub mod package_intent_parser;
