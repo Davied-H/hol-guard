@@ -266,6 +266,8 @@ fn system_links_and_toolchain_config_stay_readable() {
     for file in [
         "/private/var/select/developer_dir",
         "/opt/homebrew/etc/gitconfig",
+        "/opt/homebrew/etc/openssl@3/openssl.cnf",
+        "/private/etc/ssl/openssl.cnf",
     ] {
         if Path::new(file).exists() {
             assert!(profile.contains(&format!("(literal \"{file}\")")), "{file}");
