@@ -4508,6 +4508,81 @@
      "args": [
       "x"
      ],
+     "artifact_id": "hermes:skill:cat:lc",
+     "artifact_type": "skill",
+     "command": "<ROOT>/home/.hermes/skills/cat/lc/SKILL.md",
+     "config_path": "<ROOT>/home/.hermes/skills/cat/lc/SKILL.md",
+     "harness": "hermes",
+     "metadata": {
+      "analysis_truncated": false,
+      "category": "cat",
+      "content_hash": "sha256:2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881",
+      "description": "",
+      "env_mentions": [],
+      "has_code_blocks": false,
+      "inspection_complete": true,
+      "inspection_readable": true,
+      "preview_bytes": 1,
+      "related_skills": "",
+      "runtime_request_signals": [
+       "Hermes skill directory identity is incomplete; review is required."
+      ],
+      "size_bytes": 1,
+      "skillDirectoryIdentity": {
+       "entryCount": 1,
+       "incompleteStateHash": "sha256:04946057e5f7313ae8a49c50a03f05d9bf1d5c416a74ef3a268b7c08647f2859",
+       "reason": "primary_missing",
+       "reusable": false,
+       "schemaVersion": "guard.skill-directory-identity.v1",
+       "status": "incomplete",
+       "totalBytes": 0
+      },
+      "versionInfo": {
+       "changedFields": [],
+       "contentHash": "sha256:04946057e5f7313ae8a49c50a03f05d9bf1d5c416a74ef3a268b7c08647f2859",
+       "hashBasis": "skill-directory-v1",
+       "versionLabel": "cat/lc"
+      }
+     },
+     "name": "lc",
+     "publisher": null,
+     "source_scope": "global",
+     "transport": null,
+     "url": null
+    }
+   ],
+   "dir_modes": {},
+   "dirs": [],
+   "files": [
+    {
+     "mode": 420,
+     "path": "home/.hermes/skills/cat/lc/skill.md",
+     "text": "x"
+    }
+   ],
+   "found_paths": [
+    "<ROOT>/home/.hermes/skills/cat/lc/SKILL.md"
+   ],
+   "name": "skill_lowercase_skill_md",
+   "requires_case_insensitive_fs": true,
+   "symlinks": [],
+   "warnings": [
+    "Hermes skill directory identity is incomplete (primary_missing); approval reuse is disabled."
+   ]
+  },
+  {
+   "args": {
+    "harness": "hermes",
+    "hermes_home": "<ROOT>/home/.hermes",
+    "host_home": null,
+    "managed_names": [],
+    "manifest_path": "<ROOT>/guard-home/hermes/manifest.json"
+   },
+   "artifacts": [
+    {
+     "args": [
+      "x"
+     ],
      "artifact_id": "hermes:skill:cat:sc",
      "artifact_type": "skill",
      "command": "<ROOT>/home/.hermes/skills/cat/sc/SKILL.md",

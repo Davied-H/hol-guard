@@ -104,6 +104,10 @@ fn replay(case: &Value) -> Result<(), String> {
             .take(60)
             .collect::<String>(),
     );
+    if case["requires_case_insensitive_fs"] == true && !folds_case(&root) {
+        release(&root);
+        return Ok(());
+    }
     materialize(&root, case);
     let root_text = root.to_string_lossy().into_owned();
     let args = substitute(&case["args"], &root_text);
@@ -111,6 +115,15 @@ fn replay(case: &Value) -> Result<(), String> {
     let outcome = check(case, name, &root_text, result);
     release(&root);
     outcome
+}
+
+/// Whether the fixture volume treats names that differ only in case as one.
+fn folds_case(directory: &Path) -> bool {
+    let probe = directory.join("CaseProbe");
+    fs::write(&probe, b"").unwrap();
+    let folded = directory.join("caseprobe").exists();
+    fs::remove_file(&probe).unwrap();
+    folded
 }
 
 fn check(
