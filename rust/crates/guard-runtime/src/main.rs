@@ -74,6 +74,22 @@ mod claim_reuse_binding_tests;
 #[cfg(test)]
 mod claim_reuse_vectors_tests;
 mod claude_guard_question;
+#[cfg(unix)]
+mod claude_hook_bridge;
+#[cfg(unix)]
+mod claude_hook_bridge_auth;
+#[cfg(all(test, unix))]
+mod claude_hook_bridge_fixture;
+#[cfg(unix)]
+mod claude_hook_bridge_http;
+#[cfg(unix)]
+mod claude_hook_bridge_http_text;
+#[cfg(unix)]
+mod claude_hook_bridge_render;
+#[cfg(unix)]
+mod claude_hook_bridge_transport;
+#[cfg(unix)]
+mod claude_hook_bridge_url;
 mod cli_copilot_resolution;
 mod cli_runtime_support_op;
 mod cloud_action_envelope;
@@ -308,6 +324,8 @@ mod hook_decision_native_facts;
 mod hook_decision_native_facts_tests;
 mod hook_decision_op;
 mod hook_decision_settle;
+#[cfg(unix)]
+mod hook_env_stamp;
 mod hook_policy_config;
 mod hook_process_spawn;
 mod hook_render_op;
@@ -444,6 +462,7 @@ mod runner_sync_url;
 mod runtime_cli;
 mod runtime_detector_run_op;
 mod secrets_cli;
+mod sensitive_request_op;
 #[cfg(all(test, unix))]
 #[allow(dead_code, clippy::pedantic)]
 #[path = "../../guard-command/tests/sfrs_support/mod.rs"]
@@ -583,6 +602,13 @@ fn run() -> Result<(), String> {
 }
 
 fn main() {
+    // The runtime also hosts the declarative source-compiler front end so the
+    // wheel ships a single native binary. Dispatch before the panic hook so
+    // compiler behavior (including its own exit paths) stays identical.
+    let arguments: Vec<String> = std::env::args().skip(1).collect();
+    if guard_command::source_cli::is_command(&arguments) {
+        std::process::exit(guard_command::source_cli::main(arguments));
+    }
     std::panic::set_hook(Box::new(|_| eprintln!("native_runtime_panicked")));
     if let Err(code) = run() {
         eprintln!("{code}");
