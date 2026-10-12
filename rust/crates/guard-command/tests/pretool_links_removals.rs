@@ -181,6 +181,7 @@ fn a_session_started_in_the_home_has_no_workspace_to_remove_from() {
     for command in [
         "rm notes.txt".to_owned(),
         "rm main/src/old.ts".to_owned(),
+        format!("cd {h}/other && rm src/keep.ts"),
         format!("ln -s {h}/main/src/old.ts {h}/new-link.ts"),
     ] {
         assert_ne!(

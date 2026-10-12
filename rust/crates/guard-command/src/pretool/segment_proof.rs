@@ -135,8 +135,9 @@ pub(super) fn exact_safe_cwd_compound(
 
 /// `ln` and `rm` may follow `cd` only when the new directory is the original
 /// workspace, a directory inside it, or a linked worktree of the same
-/// repository. A directory that is the home, or that contains the home, is
-/// not that workspace.
+/// repository. A session whose directory is the home, or a directory that
+/// contains the home, has no workspace boundary. `cd ~` and `cd /tmp` must
+/// not become the new write boundary.
 fn mutation_directory_stays_in_workspace(cwd: &str, context: super::PathContext<'_>) -> bool {
     let Some(original) = context
         .cwd
@@ -148,7 +149,10 @@ fn mutation_directory_stays_in_workspace(cwd: &str, context: super::PathContext<
     let home = context
         .home_dir
         .and_then(|home| std::fs::canonicalize(home).ok());
-    if home.as_ref().is_some_and(|home| home.starts_with(target)) {
+    let Some(home) = home else {
+        return false;
+    };
+    if home.starts_with(target) || home.starts_with(&original) {
         return false;
     }
     target.starts_with(&original)
