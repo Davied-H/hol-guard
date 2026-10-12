@@ -38,6 +38,7 @@ _PLAN_FIELDS = frozenset(
         "write_denials",
         "sandbox_path",
         "bootstrap_git",
+        "prefix_command",
         "denied_capabilities",
     }
 )
@@ -66,6 +67,7 @@ def _validated_plan(plan: object, command: str, workspace: Path) -> dict[str, ob
     if not isinstance(plan, dict) or set(plan) != _PLAN_FIELDS or plan["profile_version"] != WORKSPACE_PROFILE:
         raise _reject("Invalid workspace sandbox plan.")
     argv = plan["command"]
+    prefix = plan["prefix_command"]
     if (
         plan["backend"] != "macos-seatbelt"
         or not isinstance(argv, list)
@@ -74,6 +76,15 @@ def _validated_plan(plan: object, command: str, workspace: Path) -> dict[str, ob
         or not isinstance(argv[2], str)
         or plan["command_sha256"] != hashlib.sha256(argv[2].encode()).hexdigest()
         or not (argv[2] == command if plan["bootstrap_git"] is None else command.endswith(argv[2]))
+        or not (
+            prefix is None
+            or (
+                isinstance(prefix, str)
+                and plan["bootstrap_git"] is not None
+                and command.startswith(prefix)
+                and len(prefix) + len(argv[2]) < len(command)
+            )
+        )
         or Path(str(plan["workspace"])) != workspace.resolve(strict=True)
         or plan["allowed_executables"] != []
         or plan["read_only_roots"] != []
@@ -185,10 +196,10 @@ def run_workspace_contained(
     if second.get("command_binding_digest") != first_receipt.get("command_binding_digest"):
         raise _reject("The command evidence changed before launch.")
     sandbox_command = plan["command"]
+    prefix = plan["prefix_command"]
     if not isinstance(sandbox_command, list):
         raise _reject("Invalid workspace sandbox plan.")
     sandbox_argv = [str(item) for item in sandbox_command]
-    argv_text = sandbox_argv[2]
     exec_roots = _plan_paths(plan["exec_roots"])
     write_denials = _plan_paths(plan["write_denials"])
     with tempfile.TemporaryDirectory(prefix="hol-guard-workspace-") as temporary_directory:
@@ -197,49 +208,58 @@ def run_workspace_contained(
         private_tmp = private_root / "tmp"
         private_home.mkdir(mode=0o700)
         private_tmp.mkdir(mode=0o700)
+
+        def contained(argv_to_run: list[str]) -> int:
+            launch_env = _restricted_environment(
+                os.environ,
+                workspace=workspace,
+                cwd=cwd,
+                private_home=private_home,
+                private_tmp=private_tmp,
+                allowed_executables=(),
+            )
+            empty_config = private_root / "gitconfig"
+            empty_config.write_text("", encoding="utf-8")
+            launch_env["PATH"] = str(plan["sandbox_path"])
+            launch_env["GIT_CONFIG_NOSYSTEM"] = "1"
+            launch_env["GIT_CONFIG_GLOBAL"] = str(empty_config)
+            launch_env["GIT_TERMINAL_PROMPT"] = "0"
+            git = trusted_git_binary_for_cwd(workspace)
+            if git is not None:
+                launch_env.update(_identity(workspace, git))
+            profile = restricted_native(
+                "macos_profile",
+                {
+                    "profile_version": WORKSPACE_PROFILE,
+                    "workspace": workspace,
+                    "cwd": cwd,
+                    "private_root": private_root,
+                    "allowed_executables": [],
+                    "read_only_roots": [],
+                    "output_roots": [],
+                    "exec_roots": exec_roots,
+                    "write_denials": write_denials,
+                    "command": argv_to_run,
+                    "backend_executable": Path(str(plan["backend_executable"])),
+                },
+                str,
+            )
+            argv = [str(plan["backend_executable"]), "-p", profile, "--", *argv_to_run]
+            return _run_backend_process(
+                argv,
+                env=launch_env,
+                timeout_seconds=timeout_seconds,
+                cwd=cwd,
+                merge_stderr=merge_stderr,
+            )
+
+        if isinstance(prefix, str):
+            # `prefix && git init && rest`: a failed prefix ends the command.
+            exit_code = contained(["/bin/sh", "-c", prefix])
+            if exit_code != 0:
+                return exit_code
         if plan["bootstrap_git"] is not None:
             _bootstrap_init(plan["bootstrap_git"], workspace=workspace, private_root=private_root)
-            if not argv_text:
+            if not sandbox_argv[2]:
                 return 0
-        launch_env = _restricted_environment(
-            os.environ,
-            workspace=workspace,
-            cwd=cwd,
-            private_home=private_home,
-            private_tmp=private_tmp,
-            allowed_executables=(),
-        )
-        empty_config = private_root / "gitconfig"
-        empty_config.write_text("", encoding="utf-8")
-        launch_env["PATH"] = str(plan["sandbox_path"])
-        launch_env["GIT_CONFIG_NOSYSTEM"] = "1"
-        launch_env["GIT_CONFIG_GLOBAL"] = str(empty_config)
-        launch_env["GIT_TERMINAL_PROMPT"] = "0"
-        git = trusted_git_binary_for_cwd(workspace)
-        if git is not None:
-            launch_env.update(_identity(workspace, git))
-        profile = restricted_native(
-            "macos_profile",
-            {
-                "profile_version": WORKSPACE_PROFILE,
-                "workspace": workspace,
-                "cwd": cwd,
-                "private_root": private_root,
-                "allowed_executables": [],
-                "read_only_roots": [],
-                "output_roots": [],
-                "exec_roots": exec_roots,
-                "write_denials": write_denials,
-                "command": sandbox_argv,
-                "backend_executable": Path(str(plan["backend_executable"])),
-            },
-            str,
-        )
-        argv = [str(plan["backend_executable"]), "-p", profile, "--", *sandbox_argv]
-        return _run_backend_process(
-            argv,
-            env=launch_env,
-            timeout_seconds=timeout_seconds,
-            cwd=cwd,
-            merge_stderr=merge_stderr,
-        )
+        return contained(sandbox_argv)

@@ -75,9 +75,22 @@ pub(crate) struct Shape {
     /// Arguments for a trusted `git init`, run before the sandbox starts
     /// because `git init` always rewrites the write-denied `.git/config`.
     pub bootstrap: Option<Vec<String>>,
+    /// Text the sandbox runs before `git init`, which runs only when it
+    /// succeeds, as `&&` requires.
+    pub prefix: Option<String>,
     /// Text for `sh -c`; `None` runs the original bytes unchanged.
     pub remainder: Option<String>,
+    /// Character span of the `git init` segment in the classified text.
+    pub init_span: Option<(usize, usize)>,
 }
+
+/// Builtins that change the shell's own state. A segment before `git init`
+/// runs in a separate shell, so its effect would not reach the rest.
+const SHELL_STATE: &[&str] = &[
+    "cd", "pushd", "popd", "export", "unset", "set", "shopt", "source", ".", "alias", "unalias",
+    "declare", "typeset", "local", "readonly", "eval", "exec", "umask", "trap", "ulimit", "hash",
+    "shift", "read", "getopts", "builtin", "enable", "exit", "return", "function",
+];
 
 fn branch_name(name: &str) -> bool {
     !name.is_empty()
@@ -148,45 +161,77 @@ pub(crate) fn command_shape(
             return None;
         }
         if name == "git" && segment.arguments.iter().any(|argument| argument == "init") {
-            if index != 0 || segment.arguments.first().map(String::as_str) != Some("init") {
+            if bootstrap.is_some() || segment.arguments.first().map(String::as_str) != Some("init")
+            {
                 return None;
             }
             // An existing `.git` is never re-initialized: that is a config write.
             if std::fs::symlink_metadata(workspace.join(".git")).is_ok() {
                 return None;
             }
-            bootstrap = Some(init_arguments(&segment.arguments[1..])?);
+            bootstrap = Some((index, init_arguments(&segment.arguments[1..])?));
         }
     }
-    let Some(arguments) = bootstrap else {
+    let Some((init, arguments)) = bootstrap else {
         return Some(Shape {
             bootstrap: None,
+            prefix: None,
             remainder: None,
+            init_span: None,
         });
     };
+    if model.segments[..init].iter().any(|segment| {
+        segment
+            .executable
+            .as_deref()
+            .is_some_and(|value| SHELL_STATE.contains(&super::executable_basename(value)))
+    }) {
+        return None;
+    }
     let text = original?;
     if text.trim() != model.normalized_text || model.normalized_text != model.normalized_text.trim()
     {
         return None;
     }
-    let tail: String = model
-        .normalized_text
-        .chars()
-        .skip(model.segments[0].span.end)
-        .collect();
+    let span = &model.segments[init].span;
+    let (prefix, remainder) = split_at_init(&model.normalized_text, span.start, span.end)?;
+    Some(Shape {
+        bootstrap: Some(arguments),
+        prefix,
+        remainder: Some(remainder),
+        init_span: Some((span.start, span.end)),
+    })
+}
+
+/// The text before and after the `git init` segment at character span
+/// `start..end`. Only `&&` may precede it, so a failed prefix still stops it;
+/// only an unconditional sequence may follow it, so the rest can run alone.
+pub(crate) fn split_at_init(
+    text: &str,
+    start: usize,
+    end: usize,
+) -> Option<(Option<String>, String)> {
+    let head: String = text.chars().take(start).collect();
+    let head = head.trim();
+    let prefix = if head.is_empty() {
+        None
+    } else {
+        let prefix = head.strip_suffix("&&")?.trim();
+        if prefix.is_empty() || prefix.ends_with(['&', '|', ';']) {
+            return None;
+        }
+        Some(prefix.to_owned())
+    };
+    let tail: String = text.chars().skip(end).collect();
     let tail = tail.trim_start_matches([' ', '\t']);
     let rest = if tail.is_empty() {
         ""
     } else {
-        // Only an unconditional sequence may drop the `git init` segment.
         tail.strip_prefix("&&")
             .or_else(|| tail.strip_prefix(';'))
             .or_else(|| tail.strip_prefix('\n'))?
     };
-    Some(Shape {
-        bootstrap: Some(arguments),
-        remainder: Some(rest.trim().to_owned()),
-    })
+    Some((prefix, rest.trim().to_owned()))
 }
 
 fn extensions_contain(
