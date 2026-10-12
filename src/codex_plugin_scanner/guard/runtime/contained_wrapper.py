@@ -181,7 +181,10 @@ def peel_contained_wrapper(
             raise ValueError("unsupported cd prefix")
         spelled = tokens[1][0]
         # Only an unquoted leading `~` expands, as the native proof requires.
-        target = home / spelled[2:] if home_cd and home is not None else Path(spelled)
+        # `~//x` is home/x. Joining home with a leading slash would drop home,
+        # because pathlib treats an absolute right-hand side as the whole path.
+        rest = spelled[2:].lstrip("/")
+        target = home / rest if home_cd and home is not None else Path(spelled)
         if not exact or not target.is_absolute():
             raise ValueError("relative cd target")
         directory = target.resolve(strict=True)

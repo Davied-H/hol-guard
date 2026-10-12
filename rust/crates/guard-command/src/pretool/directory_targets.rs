@@ -184,23 +184,66 @@ pub(crate) fn search_home_targets_safe(
 fn shell_keeps_tilde_literal(text: &str) -> bool {
     let mut quote = None;
     let mut escaped = false;
-    for character in text.chars() {
+    let mut word_start = true;
+    let chars: Vec<char> = text.chars().collect();
+    for (index, character) in chars.iter().copied().enumerate() {
         if escaped {
             escaped = false;
             if character == '~' {
                 return true;
             }
+            word_start = false;
             continue;
+        }
+        // `~"/project"` keeps the tilde literal: the slash is quoted, so the
+        // shell does not expand it to home. The quote-stripped argument is
+        // still `~/project`, which must not be proved as that home path.
+        if quote.is_none()
+            && word_start
+            && character == '~'
+            && mixed_tilde_prefix(&chars[index + 1..])
+        {
+            return true;
         }
         match (quote, character) {
             (Some(_), '~') => return true,
             (None | Some('"'), '\\') => escaped = true,
             (None, '\'' | '"') => quote = Some(character),
             (Some(open), _) if character == open => quote = None,
+            (None, character) if is_shell_word_boundary(character) => {
+                word_start = true;
+                continue;
+            }
+            _ => {}
+        }
+        if quote.is_none() {
+            word_start = false;
+        }
+    }
+    false
+}
+
+/// A quote or escape between a word-initial `~` and the first unquoted `/`
+/// means the shell will not perform the home expansion the path proof assumes.
+fn mixed_tilde_prefix(rest: &[char]) -> bool {
+    let mut escaped = false;
+    for character in rest.iter().copied() {
+        if escaped {
+            return true;
+        }
+        match character {
+            '\\' => escaped = true,
+            '\'' | '"' => return true,
+            '/' => return false,
+            character if is_shell_word_boundary(character) => return false,
             _ => {}
         }
     }
     false
+}
+
+fn is_shell_word_boundary(character: char) -> bool {
+    character.is_whitespace() || matches!(character, ';' | '|' | '&' | '(' | ')' | '<' | '>' | '\n')
 }
 
 /// A backslash the shell would remove or reinterpret: any unquoted backslash,

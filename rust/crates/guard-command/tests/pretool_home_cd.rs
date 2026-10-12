@@ -96,6 +96,34 @@ fn home_relative_cd_reaches_the_same_proofs_as_the_absolute_path() {
 }
 
 #[test]
+fn doubled_slash_after_tilde_is_still_the_home_directory() {
+    let home = home();
+    let result = classify(&home, &home, "codex", "cd ~//project && ls src");
+    assert_eq!(result.decision, "allow", "{result:?}");
+    let quoted_slash = classify(&home, &home, "codex", "cd ~/\"project\" && ls src");
+    assert_eq!(quoted_slash.decision, "allow", "{quoted_slash:?}");
+}
+
+#[test]
+fn mixed_quote_after_tilde_is_not_proved_as_home() {
+    let home = home();
+    // A real directory whose name is `~`, so a literal tilde word can resolve.
+    std::fs::create_dir_all(home.join("project/~")).unwrap();
+    for command in [
+        "cd ~\"/project\" && ls src",
+        "cd ~'/project' && ls src",
+        "cd ~\"/sibling/dashboard\" && ./node_modules/.bin/vite build",
+    ] {
+        let result = classify(&home, &home, "codex", command);
+        assert_ne!(result.decision, "allow", "{command}: {result:?}");
+        assert_ne!(
+            result.minimum_action, "sandbox-required",
+            "{command}: {result:?}"
+        );
+    }
+}
+
+#[test]
 fn unproven_home_spellings_are_not_upgraded() {
     let home = home();
     let other = home.parent().unwrap().join("other-home");
