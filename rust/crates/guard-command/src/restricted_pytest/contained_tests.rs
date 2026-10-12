@@ -51,13 +51,22 @@ fn per_request_home_selects_nvm_and_preserves_home_root_refusal() {
     assert_eq!(evaluate("approved_node", &request), json!({"value":true}));
     let mut wrong_home = request;
     wrong_home["home"] = json!(workspace);
-    assert_eq!(evaluate("approved_node", &wrong_home), json!({"value":false}));
+    assert_eq!(
+        evaluate("approved_node", &wrong_home),
+        json!({"value":false})
+    );
     let mut launch = json!({"command":[node,"--test"],"workspace":workspace,"cwd":workspace,
         "home":home,"platform":"darwin","backend_executable":"/usr/bin/true","search_path":""});
-    assert_eq!(evaluate("prepare_node", &launch)["value"]["executable"], json!(node));
+    assert_eq!(
+        evaluate("prepare_node", &launch)["value"]["executable"],
+        json!(node)
+    );
     launch["workspace"] = json!(home);
     launch["cwd"] = json!(home);
-    assert_eq!(evaluate("prepare_node", &launch)["reason_code"], PYTEST_INVALID_WORKSPACE_REASON_CODE);
+    assert_eq!(
+        evaluate("prepare_node", &launch)["reason_code"],
+        PYTEST_INVALID_WORKSPACE_REASON_CODE
+    );
 }
 impl Drop for Fixture {
     fn drop(&mut self) {

@@ -46,7 +46,11 @@ pub(super) fn evaluate(operation: &str, input: &Value) -> Option<Value> {
             "prepare_node" => prepare_node(&input),
             "prepare_vitest" => prepare_vitest(&input),
             "prepare_inline" => prepare_inline(&input),
-            "approved_node" => Ok(json!(approved_node(&input.path, &input.workspace, input.home.as_deref()))),
+            "approved_node" => Ok(json!(approved_node(
+                &input.path,
+                &input.workspace,
+                input.home.as_deref()
+            ))),
             "nearest_project_root" => Ok(json!(nearest_project_root(
                 &input.cwd,
                 &input.workspace,
@@ -70,7 +74,10 @@ fn invalid_node(message: &str) -> RestrictedPytestError {
 
 fn nvm_versions_root(home: Option<&Path>) -> Option<PathBuf> {
     if let Some(home) = home {
-        return home.canonicalize().ok().map(|path| path.join(".nvm/versions/node"));
+        return home
+            .canonicalize()
+            .ok()
+            .map(|path| path.join(".nvm/versions/node"));
     }
     let from_env = std::env::var_os("HOME").and_then(|raw| {
         let path = PathBuf::from(&raw);
@@ -177,7 +184,8 @@ fn prepare_node(input: &Input) -> Result<Value, RestrictedPytestError> {
         input.backend_executable.as_deref(),
         &input.search_path,
     )?;
-    let workspace = validation::resolve_workspace_with_home(&input.workspace, input.home.as_deref())?;
+    let workspace =
+        validation::resolve_workspace_with_home(&input.workspace, input.home.as_deref())?;
     let cwd = resolve_cwd(&input.cwd, &workspace)?;
     let executable = resolve_executable(&argv[0], &cwd, &input.search_path)?;
     if !approved_node(&executable, &workspace, input.home.as_deref()) {

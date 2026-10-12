@@ -5,7 +5,10 @@ pub(super) fn resolve_workspace(workspace: &Path) -> Result<PathBuf, RestrictedP
     resolve_workspace_with_home(workspace, None)
 }
 
-pub(super) fn resolve_workspace_with_home(workspace: &Path, home: Option<&Path>) -> Result<PathBuf, RestrictedPytestError> {
+pub(super) fn resolve_workspace_with_home(
+    workspace: &Path,
+    home: Option<&Path>,
+) -> Result<PathBuf, RestrictedPytestError> {
     let resolved = expand_user(workspace).canonicalize().map_err(|error| {
         RestrictedPytestError::new(
             PYTEST_INVALID_WORKSPACE_REASON_CODE,
@@ -64,7 +67,9 @@ fn workspace_is_broad_or_sensitive_for_home(workspace: &Path, home: Option<&Path
     if broad_roots.contains(workspace) {
         return true;
     }
-    let home = home.map(|path| path.canonicalize().unwrap_or_else(|_| path.to_path_buf())).or_else(host_home_directory);
+    let home = home
+        .map(|path| path.canonicalize().unwrap_or_else(|_| path.to_path_buf()))
+        .or_else(host_home_directory);
     let home = match home {
         Some(h) => h,
         None => return true,
