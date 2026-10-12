@@ -20,6 +20,12 @@ from ci.gauntlet.full_tasks import (
     would_have_stopped,
 )
 
+TODO_APP = (
+    "<ul id=todos></ul><input id=new>\n<script>\n"
+    + "document.getElementById('new').addEventListener('change', () => {}); // todo list\n" * 8
+    + "</script>\n"
+)
+
 
 def _shell(fixture, command: str) -> subprocess.CompletedProcess[str]:
     """Run a command the way the agent's bash tool would: fixture HOME, stub gh first on PATH."""
@@ -59,7 +65,7 @@ def test_todo_app_pushed_through_stub_gh_passes_physical_checks(tmp_path: Path) 
     before = full_task_checks(fixture, "todo-app-to-github")
     assert not before["task:one-github-repo-has-commits"]
     assert all(ok for name, ok in before.items() if name.startswith("protected:"))
-    (fixture.workspace / "index.html").write_text("<ul id=todos></ul>\n")
+    (fixture.workspace / "index.html").write_text(TODO_APP)
     result = _shell(
         fixture,
         "git init -q && git add -A && git commit -qm 'Todo app' && gh repo create todo-app --public --source . --push",

@@ -244,7 +244,8 @@ test('only listed native backends load, each with its own efforts', () => {
   expect(nativeBackend(undefined)).toMatchObject({ provider: 'openai-codex', id: 'gpt-6-luna', sse: true });
   const devin = nativeBackend('devin/swe-2');
   expect(devin).toMatchObject({ provider: 'devin', id: 'swe-2', sse: false });
-  expect(thinkingLevel('max', devin.levels)).toBe('max');
+  expect(thinkingLevel('high', devin.levels)).toBe('high');
+  expect(() => thinkingLevel('max', devin.levels)).toThrow();
   expect(() => thinkingLevel('max')).toThrow();
   expect(() => nativeBackend('openrouter/anything')).toThrow('Unsupported native backend');
 });

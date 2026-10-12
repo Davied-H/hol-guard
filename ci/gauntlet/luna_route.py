@@ -33,7 +33,7 @@ EFFORTS = ("medium", "high", "low")
 DEFAULT_EFFORT = "medium"
 # Each native backend the adapter may load, with the efforts its pinned catalog entry accepts.
 # Devin SWE-2 runs through the same Oh My Pi login store; it has no low effort.
-BACKENDS: dict[tuple[str, str], tuple[str, ...]] = {BACKEND: EFFORTS, ("devin", "swe-2"): ("medium", "high", "max")}
+BACKENDS: dict[tuple[str, str], tuple[str, ...]] = {BACKEND: EFFORTS, ("devin", "swe-2"): ("medium", "high")}
 
 
 def parse_backend(value: str) -> tuple[str, str]:

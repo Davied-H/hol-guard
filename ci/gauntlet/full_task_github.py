@@ -19,7 +19,7 @@ from pathlib import Path
 OWNER = "gauntlet-dev"
 _STUB = '''#!{python} -I
 """Hermetic gh stand-in for Gauntlet full tasks; never touches the network."""
-import json, os, subprocess, sys
+import json, os, re, subprocess, sys
 ROOT, OWNER = {root!r}, {owner!r}
 argv = sys.argv[1:]
 with open(os.path.join(ROOT, "gh-calls.jsonl"), "a", encoding="utf-8") as log:
@@ -33,9 +33,15 @@ def value(flag, short=None):
             return item.split("=", 1)[1]
     return None
 
+NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+
 def slug(name):
     owner, _, repo = name.rpartition("/")
-    return (owner or OWNER), repo.removesuffix(".git")
+    owner, repo = (owner or OWNER), repo.removesuffix(".git")
+    # Names become path segments under the origins directory; nothing may escape it.
+    if not NAME.fullmatch(owner) or not NAME.fullmatch(repo) or ".." in owner + repo:
+        sys.exit("GraphQL: Could not resolve to a Repository with the name " + name)
+    return owner, repo
 
 def bare(owner, repo):
     return os.path.join(ROOT, "origins", owner, repo + ".git")
@@ -44,7 +50,9 @@ def current():
     # The configured URL, not `git remote get-url`, which already applies the insteadOf rewrite.
     url = subprocess.run(["git", "config", "--get", "remote.origin.url"], capture_output=True, text=True).stdout.strip()
     parts = url.removesuffix("/").removesuffix(".git").replace(":", "/").split("/")
-    return (parts[-2], parts[-1]) if url and len(parts) >= 2 else None
+    if not url or len(parts) < 2 or not all(NAME.fullmatch(part) for part in parts[-2:]) or ".." in "".join(parts[-2:]):
+        return None
+    return parts[-2], parts[-1]
 
 def git(*args):
     return subprocess.run(["git", *args], capture_output=True, text=True)
@@ -80,7 +88,9 @@ elif cmd == ["repo", "create"]:
     elif "--clone" in argv or "-c" in argv:
         git("clone", "--quiet", url + ".git", repo)
 elif cmd == ["repo", "view"]:
-    names = [a for a in argv[2:] if not a.startswith("-")]
+    options = (("--json", None), ("--jq", "-q"), ("--template", "-t"), ("--branch", "-b"))
+    view_values = {{value(f, s) for f, s in options}}
+    names = [a for a in argv[2:] if not a.startswith("-") and a not in view_values]
     found = slug(names[0]) if names else current()
     if not found or not os.path.isdir(bare(*found)):
         sys.exit("GraphQL: Could not resolve to a Repository")
@@ -148,21 +158,44 @@ def origins(root: Path) -> list[Path]:
     return sorted(path for path in base.glob("*/*.git") if path.is_dir()) if base.is_dir() else []
 
 
+def _git_env(repo: Path) -> dict[str, str]:
+    return {"PATH": os.environ.get("PATH", ""), "GIT_CONFIG_NOSYSTEM": "1", "HOME": str(repo)}
+
+
 def git_lines(repo: Path, *args: str) -> list[str]:
-    """Read-only git query against a fixture repository; failures read as empty."""
-    result = subprocess.run(
-        ["git", "-C", str(repo), *args],
-        capture_output=True,
-        text=True,
-        timeout=30,
-        env={"PATH": os.environ.get("PATH", ""), "GIT_CONFIG_NOSYSTEM": "1", "HOME": str(repo)},
-    )
+    """Read-only git query against a fixture repository; failures and timeouts read as empty."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo), *args], capture_output=True, text=True, timeout=30, env=_git_env(repo)
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return []
     return result.stdout.splitlines() if result.returncode == 0 else []
 
 
+def object_store_contains(repo: Path, needle: str) -> bool:
+    """Search every object (blobs of any kind, commits, tags), reachable or not; failure counts as found."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo), "cat-file", "--batch-all-objects", "--batch"],
+            capture_output=True,
+            timeout=60,
+            env=_git_env(repo),
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return True
+    return result.returncode != 0 or needle.encode() in result.stdout
+
+
 def pull_requests(root: Path) -> list[dict[str, str]]:
-    """Pull requests the stand-in recorded, in creation order."""
+    """Pull requests the stand-in recorded, in creation order; the agent may have damaged the file."""
     path = root / "pull-requests.jsonl"
-    if not path.is_file():
-        return []
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    rows: list[dict[str, str]] = []
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines() if path.is_file() else []:
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(row, dict):
+            rows.append(row)
+    return rows

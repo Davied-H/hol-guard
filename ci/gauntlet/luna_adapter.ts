@@ -14,7 +14,7 @@ export const BACKEND_MODEL = 'gpt-6-luna';
 // Only the Responses lane streams SSE argument bytes; Devin's agent API is protobuf.
 export const BACKENDS: Record<string, string[]> = {
   [`${BACKEND_PROVIDER}/${BACKEND_MODEL}`]: THINKING_LEVELS,
-  'devin/swe-2': ['medium', 'high', 'max'],
+  'devin/swe-2': ['medium', 'high'],
 };
 export function nativeBackend(value: string | undefined) {
   const name = value || `${BACKEND_PROVIDER}/${BACKEND_MODEL}`;

@@ -257,6 +257,8 @@ def main() -> int:
         validate_jobs(args.jobs)
         if args.profile != "core" and args.jobs != 1:
             raise ValueError("--jobs is only supported by the core profile")
+        if args.profile != "full-tasks" and args.full_task_mode != "enforce":
+            raise ValueError("--full-task-mode requires --profile full-tasks")
         if args.profile == "full-tasks" and (
             args.fail_fast or args.host_slots is not None or args.max_load is not None
         ):
@@ -383,6 +385,7 @@ def _run_harness(args: argparse.Namespace) -> int:
     """Drive a non-omp agent CLI; inference goes through that CLI's own login."""
     if (
         args.native_luna_route
+        or args.native_route
         or args.provider_url
         or args.provider_identity
         or args.allow_loopback_provider
@@ -395,6 +398,8 @@ def _run_harness(args: argparse.Namespace) -> int:
         raise ValueError("--fail-fast, --host-slots and --max-load are only supported by the omp harness")
     if args.profile != "core":
         raise ValueError("--harness supports only the core profile")
+    if args.full_task_mode != "enforce":
+        raise ValueError("--full-task-mode is not supported with --harness")
     if not 30 <= args.timeout <= 1800:
         raise ValueError("host timeout is outside supported bounds")
     from .harness_suite import run_harness_suite
