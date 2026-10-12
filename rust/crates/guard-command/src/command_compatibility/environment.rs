@@ -33,11 +33,13 @@ pub(crate) fn inert_environment_name(name: &str) -> bool {
     ) || name.starts_with("LC_")
 }
 
-/// Names that hand the program a credential or point it at another
-/// credential or configuration store (`GH_TOKEN`, `GOOGLE_APPLICATION_CREDENTIALS`,
-/// `GOG_KEYRING_PASSWORD`, `GH_CONFIG_DIR`). The arguments then no longer say
-/// whose authority the command runs with, so the prefix cannot be reviewed.
-/// Words are matched whole, so `TOKENIZERS_PARALLELISM` is not one.
+/// Whole-word credential names, plus the pairs `API_KEY` and `CONFIG_DIR`.
+/// `GH_TOKEN`, `GOOGLE_APPLICATION_CREDENTIALS`, `GOG_KEYRING_PASSWORD`, and
+/// `GH_CONFIG_DIR` match, so that prefix is not a reviewable context.
+/// `XDG_CONFIG_HOME`, `KUBECONFIG`, `AWS_PROFILE`, `AWS_CONFIG_FILE`,
+/// `DOCKER_CONFIG`, `CLOUDSDK_CONFIG`, `NETRC`, and `HOME` do not match and
+/// stay on the uncertainty floor. `TOKENIZERS_PARALLELISM` does not match:
+/// its word is `TOKENIZERS`, not `TOKEN`.
 pub(crate) fn credential_routing_environment_name(name: &str) -> bool {
     let upper = name.to_ascii_uppercase();
     let words: Vec<&str> = upper.split('_').collect();
@@ -110,6 +112,13 @@ mod tests {
             "TOKENIZERS_PARALLELISM",
             "CI",
             "XDG_CONFIG_HOME",
+            "KUBECONFIG",
+            "AWS_PROFILE",
+            "AWS_CONFIG_FILE",
+            "DOCKER_CONFIG",
+            "CLOUDSDK_CONFIG",
+            "NETRC",
+            "HOME",
             "KEYBOARD",
             "TODO_FILE",
         ] {

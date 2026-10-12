@@ -96,8 +96,22 @@ fn credential_assignment_prefixes_block_like_the_env_wrapper() {
         let evidence = result.command_extensions.as_ref().unwrap();
         assert!(evidence.evaluation_error.is_some(), "{command}");
     }
-    let result = evaluate(&binding, "TOKENIZERS_PARALLELISM=false ls");
-    assert_ne!(result.minimum_action, "block");
+    for command in [
+        "TOKENIZERS_PARALLELISM=false ls",
+        "XDG_CONFIG_HOME=./x ls",
+        "KUBECONFIG=/tmp/kube ls",
+        "AWS_PROFILE=other ls",
+        "AWS_CONFIG_FILE=/tmp/aws ls",
+        "DOCKER_CONFIG=/tmp/docker ls",
+        "CLOUDSDK_CONFIG=/tmp/gcloud ls",
+        "NETRC=/tmp/netrc ls",
+        "HOME=/tmp/home ls",
+    ] {
+        let result = evaluate(&binding, command);
+        assert_ne!(result.minimum_action, "block", "{command}");
+        let evidence = result.command_extensions.as_ref().unwrap();
+        assert!(evidence.evaluation_error.is_none(), "{command}");
+    }
 }
 
 #[test]
