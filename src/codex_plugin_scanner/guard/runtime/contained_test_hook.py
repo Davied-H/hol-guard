@@ -29,6 +29,7 @@ from .restricted_pytest_model import (
     VITEST_READ_ONLY_PROFILE_VERSION,
 )
 from .restricted_pytest_validation import _path_is_within
+from .restricted_workspace import receipt_matches, run_workspace_contained
 
 _MAX_REQUEST_BYTES = 1_048_576
 _FAILURE = "contained_test_authorization_failed"
@@ -169,10 +170,28 @@ def run_authorized_contained_test(
         sys.stdout.write(status_line)
         sys.stdout.flush()
         return 0
+
+    def workspace_fallback(error: Exception) -> int:
+        # Shapes the read-only parsers reject may still carry a workspace-sandbox
+        # receipt; anything else keeps its original failure.
+        receipt = authorize(payload)
+        if not receipt_matches(receipt) or not isinstance(receipt, Mapping):
+            raise error
+        return run_workspace_contained(
+            payload,
+            workspace=workspace,
+            cwd=cwd,
+            authorize=authorize,
+            first_receipt=receipt,
+            home_dir=home_dir,
+            timeout_seconds=timeout_seconds,
+            merge_stderr=merge_stderr,
+        )
+
     try:
         command = shlex.split(tool_input["command"], posix=True)
-    except ValueError as error:
-        raise _reject() from error
+    except ValueError:
+        return workspace_fallback(_reject())
     package_test = is_package_test(command)
     if package_test:
         command = list(resolve_package_test(command, workspace=workspace, cwd=cwd))
@@ -198,7 +217,10 @@ def run_authorized_contained_test(
     elif node_test:
         node_test_plan = restricted_node_test.prepare_restricted_node_test(command, workspace=workspace, cwd=cwd)
     else:
-        prepare_restricted_pytest(command, workspace=workspace, cwd=cwd, read_only_workspace=True)
+        try:
+            prepare_restricted_pytest(command, workspace=workspace, cwd=cwd, read_only_workspace=True)
+        except RestrictedPytestError as error:
+            return workspace_fallback(error)
     if inline_plan is not None:
         profile = inline_plan.profile_version
         if profile == "node-eval-readonly-v1":

@@ -377,6 +377,7 @@ fn evaluate_envelope(
         ),
         _ => result,
     };
+    let pre_floor = (result.reason_code.clone(), result.minimum_action.clone());
     if event == "PreToolUse"
         // Existing helper-context review may delegate only to enforced
         // read-only containment below; do not replace that protection.
@@ -491,5 +492,19 @@ fn evaluate_envelope(
         )
         .into();
     }
+    super::workspace_contained::convert(
+        &mut result,
+        &pre_floor,
+        command_model,
+        controls,
+        super::PathContext {
+            home_dir,
+            cwd,
+            ..context
+        },
+        harness,
+        event,
+        signals.command.as_deref(),
+    );
     result
 }
