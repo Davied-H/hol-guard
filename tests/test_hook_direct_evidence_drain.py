@@ -99,6 +99,26 @@ def test_a_malformed_record_is_not_recorded(tmp_path: Path, observed: list[dict[
     assert observed == []
 
 
+def test_an_unmanaged_harness_is_passed_through_without_recording(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, observed: list[dict[str, object]]
+) -> None:
+    from codex_plugin_scanner.guard.daemon import hook_managed_install_state
+
+    harnesses: list[str] = []
+
+    def unmanaged(host: object, harness: str) -> bool:
+        harnesses.append(harness)
+        return True
+
+    monkeypatch.setattr(hook_managed_install_state, "_hook_harness_is_unmanaged", unmanaged)
+    host = _host(tmp_path)
+    assert record_direct_hook_evidence(host, _record())
+    assert harnesses == ["codex"]
+    assert host.activity_writer.receipts == []
+    assert host.activity_writer.activity == []
+    assert observed == []
+
+
 def test_an_invalid_receipt_is_not_submitted(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, observed: list[dict[str, object]]
 ) -> None:

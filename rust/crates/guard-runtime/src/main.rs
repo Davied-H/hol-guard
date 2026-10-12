@@ -121,6 +121,8 @@ mod codex_hook_artifacts;
 #[cfg(unix)]
 mod codex_hook_bridge;
 #[cfg(unix)]
+mod codex_hook_bridge_direct;
+#[cfg(unix)]
 mod codex_hook_bridge_transport;
 #[cfg(unix)]
 mod codex_hook_identity;

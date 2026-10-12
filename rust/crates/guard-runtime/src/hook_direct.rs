@@ -21,6 +21,7 @@ use guard_contracts::{
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub(crate) const HOOK_DIRECT_FEATURE: &str = "hook-direct-v1";
 const HOOK_DIRECT_RESULT_SCHEMA: &str = "guard-hook-direct-result.v1";
@@ -81,6 +82,7 @@ enum HookDirectDefer {
     EvidenceFull,
     EdgeFailed,
     NotAllow,
+    RuntimeSuperseded,
 }
 
 impl HookDirectDefer {
@@ -102,6 +104,7 @@ impl HookDirectDefer {
             Self::EvidenceFull => "direct_hook_evidence_full",
             Self::EdgeFailed => "direct_hook_edge_failed",
             Self::NotAllow => "direct_hook_not_allow",
+            Self::RuntimeSuperseded => "direct_hook_runtime_superseded",
         }
     }
 }
@@ -125,12 +128,32 @@ pub(crate) fn evaluate(
     serde_json::to_vec(&body).map_err(|_| "direct_hook_result_encoding_failed".to_owned())
 }
 
+/// Whether this resident still runs the executable on disk. Bridges reach a
+/// resident by its executable path, so after an update replaces that file a
+/// resident still running the old image must leave hooks to the daemon. Once
+/// superseded it stays so, without hashing the new file on every hook.
+fn runtime_current() -> bool {
+    static SUPERSEDED: AtomicBool = AtomicBool::new(false);
+    if SUPERSEDED.load(Ordering::Relaxed) {
+        return false;
+    }
+    let current = crate::resident_state::runtime_digest()
+        .is_ok_and(|digest| !crate::resident_state::runtime_superseded(&digest));
+    if !current {
+        SUPERSEDED.store(true, Ordering::Relaxed);
+    }
+    current
+}
+
 fn answer(
     request: HookDirectRequestV1,
     policy_store: &PolicySnapshotStore,
 ) -> Result<Value, HookDirectDefer> {
     if request.harness != DIRECT_HARNESS {
         return Err(HookDirectDefer::HarnessUnsupported);
+    }
+    if !runtime_current() {
+        return Err(HookDirectDefer::RuntimeSuperseded);
     }
     let Value::Object(mut payload) = request.payload else {
         return Err(HookDirectDefer::PayloadUnsupported);
