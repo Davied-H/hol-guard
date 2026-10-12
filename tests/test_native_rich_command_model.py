@@ -331,13 +331,13 @@ def test_explicit_inspection_home_identity_outage_returns_blocked_diagnostic(mon
 def test_runtime_artifact_native_outage_does_not_reparse_or_fabricate_identity(monkeypatch, tmp_path, harness):
     from codex_plugin_scanner.guard.cli import commands_support_runtime_artifacts as artifacts
 
-    monkeypatch.setattr(artifacts, "review_command_native", lambda *args, **kwargs: None)
     monkeypatch.setattr(artifacts, "_canonical_harness_name", lambda _: "codex")
 
     def forbidden(*args, **kwargs):
         raise client.NativeCommandModelError("native_rich_command_model_unavailable")
 
     monkeypatch.setattr(artifacts, "parse_shell_command", forbidden)
+    monkeypatch.setattr(artifacts, "_hook_runtime_artifact_with_native", forbidden)
     result = artifacts._hook_runtime_artifact(
         harness=harness,
         payload={"hook_event_name": "PreToolUse", "tool_name": "Shell", "tool_input": {"command": "echo hi"}},
