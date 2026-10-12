@@ -191,6 +191,8 @@ fn unmodeled_commands_that_move_data_or_hide_programs_keep_the_evaluation_failur
         "cp --link guard-runtime/policy.json w/p && gh pr view 12 > w/p",
         "git checkout links && gh pr view 12 > w/l/policy.json",
         "git worktree add w links && gh pr view 12 > w/l/policy.json",
+        "git mv links w && gh pr view 12 > w/l/policy.json",
+        "git bisect start HEAD v1 && gh pr view 12 > w/l/policy.json",
         "LN.exe -s guard-runtime w/l && gh pr view 12 > w/l/policy.json",
         "cp -a links w && gh pr view 12 > w/l/policy.json",
         "cp -r links w && gh pr view 12 > w/l/policy.json",
