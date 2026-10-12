@@ -53,6 +53,10 @@ const UNRECOVERABLE_RULES: &[&str] = &[
     "command.git.switch",
     "command.git.unsafe-read",
 ];
+// These change a remote. The sandbox has no network, so containing them would
+// only turn a consent prompt into a silent failure.
+const REMOTE_RULES: &[&str] = &["command.git.force-push", "command.git.remote-branch-delete"];
+const SHELL_DESTRUCTION: &str = "command.shell-mutations.destructive-shell";
 const CONTAINABLE_RISKS: &[&str] = &["local_secret_read", "destructive_shell"];
 
 /// What the sandbox executes for one authorized command.
@@ -186,6 +190,7 @@ fn extensions_contain(result: &PreToolResultV1, controls: &CompiledNativeCommand
         && extensions.observations.iter().all(|observation| {
             observation.uncertainty_reasons.is_empty()
                 && !UNRECOVERABLE_RULES.contains(&observation.rule_id.as_str())
+                && !REMOTE_RULES.contains(&observation.rule_id.as_str())
                 && controls
                     .rule_risk_classes(&observation.rule_id)
                     .is_some_and(|classes| {
@@ -193,6 +198,70 @@ fn extensions_contain(result: &PreToolResultV1, controls: &CompiledNativeCommand
                             .iter()
                             .all(|class| CONTAINABLE_RISKS.contains(&class.as_str()))
                     })
+        })
+}
+
+/// Whether a destructive argument names the whole workspace, an ancestor of
+/// it, or every entry at its root. Deleting build output stays contained;
+/// wiping the workspace loses uncommitted work like `git reset --hard`.
+fn broad_target(argument: &str, workspace: &Path) -> bool {
+    use std::path::Component;
+    if argument.starts_with('-') {
+        return false;
+    }
+    if argument.starts_with('~') || argument.contains('$') {
+        return true;
+    }
+    let path = Path::new(argument);
+    let joined = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        workspace.join(path)
+    };
+    let mut normal = std::path::PathBuf::new();
+    for component in joined.components() {
+        match component {
+            Component::ParentDir => {
+                normal.pop();
+            }
+            Component::CurDir => {}
+            other => normal.push(other),
+        }
+    }
+    let root_glob = normal.parent() == Some(workspace)
+        && normal
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.chars().all(|c| matches!(c, '*' | '.' | '?')));
+    workspace.starts_with(&normal) || root_glob
+}
+
+fn destroys_workspace(
+    result: &PreToolResultV1,
+    model: &CanonicalCommandV1,
+    workspace: &Path,
+) -> bool {
+    let Some(extensions) = result.command_extensions.as_ref() else {
+        return true;
+    };
+    extensions
+        .observations
+        .iter()
+        .filter(|observation| observation.rule_id == SHELL_DESTRUCTION)
+        .flat_map(|observation| {
+            observation
+                .matcher_evidence
+                .iter()
+                .map(|evidence| evidence.segment_index)
+                .chain(observation.effective_segment_indexes.iter().copied())
+        })
+        .any(|index| {
+            model.segments.get(index).is_none_or(|segment| {
+                segment
+                    .arguments
+                    .iter()
+                    .any(|argument| broad_target(argument, workspace))
+            })
         })
 }
 
@@ -252,6 +321,7 @@ pub(super) fn convert(
     if config.is_some_and(|text| {
         super::workspace_git_config::helper_write_denials(&text, &workspace).is_none()
     }) || command_shape(model, &workspace, command_text).is_none()
+        || destroys_workspace(result, model, &workspace)
     {
         return;
     }

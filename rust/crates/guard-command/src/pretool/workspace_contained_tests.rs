@@ -54,6 +54,8 @@ fn unproven_local_commands_run_in_the_workspace_sandbox_on_macos() {
         "mkdir -p src && touch src/a.js",
         "git add -A && git commit -m x",
         "npm run build && git diff",
+        "rm -rf dist node_modules",
+        "rm -rf ./build/ && npm run build",
     ] {
         let got = reason("omp", command, &ws, true);
         if cfg!(target_os = "macos") {
@@ -98,6 +100,14 @@ fn commands_with_network_privilege_or_escape_stay_at_review() {
         "git checkout main",
         "cat .env",
         "GIT_DIR=/x git status",
+        "git push --force origin main",
+        "git push origin --delete feature",
+        "rm -rf .",
+        "rm -rf *",
+        "rm -rf ./*",
+        "rm -rf src/..",
+        "rm -rf ~",
+        "rm -rf $HOME",
     ] {
         assert_ne!(reason("omp", command, &ws, true), CONTAINED, "{command}");
     }
