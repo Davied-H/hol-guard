@@ -332,7 +332,7 @@ pub(crate) fn classify_shell_tool_action_request(inputs: &ShellClassifyInputs) -
     apply_home_risk_context(&env, &mut selection);
     apply_github_home_context(&env, &mut selection, github.as_ref());
     apply_bounded_source_edit(&env, &mut selection);
-    Ok(finish(
+    finish(
         inputs,
         &env,
         &canonical,
@@ -340,7 +340,7 @@ pub(crate) fn classify_shell_tool_action_request(inputs: &ShellClassifyInputs) -
         &pytest,
         github.as_ref(),
         initial_risk,
-    ))
+    )
 }
 
 fn finish(
@@ -351,7 +351,7 @@ fn finish(
     pytest: &PytestFacts,
     github: Option<&GitHubCommandAssessment>,
     initial_risk: Option<ToolActionRequestMatch>,
-) -> Option<ToolActionRequestMatch> {
+) -> Outcome {
     let execution = &selection.execution_context;
     let reason = shell_execution_context_validation_reason(execution);
     if initial_risk
@@ -360,7 +360,7 @@ fn finish(
         && reason.as_deref() == Some(SHELL_CWD_UNRESOLVED_PARENT_SHELL)
         && starts_with_source(execution)
     {
-        return initial_risk;
+        return Ok(initial_risk);
     }
     let make = |action_class: &str, text: &str| ToolActionRequestMatch {
         canonical_command: Some(canonical.clone()),
@@ -377,12 +377,12 @@ fn finish(
         let text = format!(
             "Guard could not prove the working directory for every shell segment and requires one conservative decision before the user confirms execution ({reason}). Use a literal, existing in-workspace directory with deterministic cd/pushd/popd control flow, or run the command from the intended directory."
         );
-        return Some(pytest.apply(ToolActionRequestMatch {
+        return Ok(Some(pytest.apply(ToolActionRequestMatch {
             shell_execution_context_hash: Some(execution.context_hash()),
             shell_execution_context_reason_code: Some(reason.clone()),
             shell_execution_effective_cwds: effective_cwd_texts(execution),
             ..make("unresolved shell execution context", &text)
-        }));
+        })));
     }
     let (cwd, home, ctx, detection) = (inputs.cwd, inputs.home_dir, inputs.ctx, env.detection);
     let raw_context = selection.raw_execution_context.as_ref();
@@ -407,7 +407,7 @@ fn finish(
             DESTRUCTIVE_REASON
         };
         let directory_change = matched.directory_change_present;
-        return Some(pytest.apply(ToolActionRequestMatch {
+        return Ok(Some(pytest.apply(ToolActionRequestMatch {
             shell_execution_context_hash: directory_change.then(|| matched.context_hash()),
             shell_execution_context_reason_code: matched.reason_code.clone(),
             shell_execution_effective_cwds: if directory_change {
@@ -416,37 +416,37 @@ fn finish(
                 Vec::new()
             },
             ..make("destructive shell command", text)
-        }));
+        })));
     }
     if pytest.requested {
-        return Some(pytest.apply(ToolActionRequestMatch {
+        return Ok(Some(pytest.apply(ToolActionRequestMatch {
             guard_default_action: Some("sandbox-required".to_owned()),
             ..make("pytest repository-code execution", PYTEST_REASON)
-        }));
+        })));
     }
     if safe_body_file(gh_pr_create_uses_safe_static_body_file, env) {
         if !proposal_control_block(inputs.controls) {
-            return None;
+            return Ok(None);
         }
         let contract = github_capability_contract(GitHubCommandCapability::ProposeRemote);
-        return Some(make(
+        return Ok(Some(make(
             contract
                 .action_class
                 .unwrap_or("GitHub pull-request proposal command"),
             "Guard extension controls block this GitHub capability.",
-        ));
+        )));
     }
     if safe_body_file(gh_pr_edit_uses_safe_static_body_file, env) {
-        return None;
+        return Ok(None);
     }
     if let Some(assessment) = github.filter(|found| github_capability_requires_confirmation(found))
     {
-        let action_class = github_capability_action_class(assessment).ok()?;
+        let action_class = github_capability_action_class(assessment).map_err(DispatchError)?;
         let text = format!(
             "{} Guard requires confirmation because the operation is not a statically proven read-only composition.",
             assessment.detail
         );
-        return Some(make(action_class, &text));
+        return Ok(Some(make(action_class, &text)));
     }
     let mut trusts: Vec<String> = selection
         .identities
@@ -471,10 +471,10 @@ fn finish(
             "Guard requires review because the Python command resolves through an interpreter path that is not an attested Guard or system runtime ({}). The decision is bound to the raw interpreter token, launch path, symlink chain, executable mode, file identity, and content hash.",
             trusts.join(", ")
         );
-        return Some(ToolActionRequestMatch {
+        return Ok(Some(ToolActionRequestMatch {
             reason_code: Some("interpreter_identity_untrusted".to_owned()),
             ..make("untrusted Python interpreter", &text)
-        });
+        }));
     }
-    initial_risk
+    Ok(initial_risk)
 }

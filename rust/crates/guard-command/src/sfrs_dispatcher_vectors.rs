@@ -300,8 +300,18 @@ fn differing_fields(expected: &Value, actual: &Value) -> String {
 /// The Rust inline `python -c` pytest check is lexical where Python parses the
 /// payload, so it may also route a payload that only might reach pytest into
 /// the restricted pytest profile. That divergence is accepted only one way:
-/// Python found no pytest route and Rust requires the sandbox.
+/// Python found no pytest route and Rust requires the sandbox. Only the fields
+/// the pytest route rewrites may differ; every other field must still match.
 fn stricter_inline_pytest(case: &Value, expected: &Value, actual: &Value) -> bool {
+    const PYTEST_ROUTE_FIELDS: [&str; 7] = [
+        "action_class",
+        "guard_default_action",
+        "pytest_config_identity_sha256",
+        "pytest_config_reason_codes",
+        "reason",
+        "reason_code",
+        "restricted_profile_version",
+    ];
     let command = case["arguments"]["command"].as_str().unwrap_or_default();
     let (Some(mut want), Some(mut got)) =
         (expected.as_object().cloned(), actual.as_object().cloned())
@@ -319,7 +329,7 @@ fn stricter_inline_pytest(case: &Value, expected: &Value, actual: &Value) -> boo
     if !(python_inline && python_had_no_pytest_route && rust_requires_sandbox) {
         return false;
     }
-    for key in ["guard_default_action", "pytest_config_reason_codes"] {
+    for key in PYTEST_ROUTE_FIELDS {
         want.remove(key);
         got.remove(key);
     }
@@ -402,7 +412,7 @@ fn dispatcher_matches_recorded_python() {
     let host_failures = crate::sfrs_host_divergence::portable_failures(
         host_failures,
         &[
-            ("command -p", 4),
+            ("command -p python3", 4),
             ("command -pv python3", 2),
             ("curl -F f=@", 4),
         ],
