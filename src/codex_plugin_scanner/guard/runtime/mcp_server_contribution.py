@@ -8,14 +8,13 @@ import sys
 from collections.abc import Mapping
 from functools import lru_cache
 from importlib import resources
-from ipaddress import IPv6Address, ip_address
 from pathlib import Path
 from typing import Final, cast
-from urllib.parse import urlsplit, urlunsplit
 
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError
 
+from ..native_cli_runtime_support import cli_runtime_support
 from .extension_contribution import frozen_package_data
 
 _SCHEMA_VERSION: Final = "guard.mcp-server-contribution.v1"
@@ -43,12 +42,6 @@ _DIRECT_COMMAND_VERSIONED_BASES: Final = tuple(
 _DIRECT_COMMAND: Final = re.compile(r"[a-z0-9][a-z0-9_-]*(?:\.[a-z0-9_-]+)*", re.ASCII)
 _TOOL_STATES: Final = frozenset({"inherit", "allow", "review", "block"})
 _REMOTE_TOOL_STATES: Final = frozenset({"inherit", "review", "block"})
-_REMOTE_MCP_URL_MAX_LENGTH: Final = 260
-_HEX_DIGITS: Final = frozenset("0123456789abcdefABCDEF")
-_UNRESERVED_PATH_CHARS: Final = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
-_SUB_DELIMITERS: Final = frozenset("!$&'()*+,;=")
-_REMOTE_PATH_CHARS: Final = _UNRESERVED_PATH_CHARS | _SUB_DELIMITERS | frozenset(":@/")
-_REMOTE_QUERY_CHARS: Final = _REMOTE_PATH_CHARS | frozenset("?")
 
 
 def contributions_dir() -> Path:
@@ -95,134 +88,10 @@ def _normalized_tool_name(name: object) -> str:
     return "-".join(part for part in compact.split("-") if part)
 
 
-def _valid_dns_hostname(host: str) -> bool:
-    if len(host) > 253 or not host.isascii():
-        return False
-    labels = host.split(".")
-    return all(
-        1 <= len(label) <= 63
-        and label[0].isalnum()
-        and label[-1].isalnum()
-        and all(ch.isalnum() or ch == "-" for ch in label)
-        for label in labels
-    )
-
-
-def _normalized_remote_component(
-    value: str,
-    *,
-    allowed_chars: frozenset[str],
-    empty_default: str,
-) -> str | None:
-    candidate = value or empty_default
-    output: list[str] = []
-    index = 0
-    while index < len(candidate):
-        character = candidate[index]
-        if character != "%":
-            if character not in allowed_chars:
-                return None
-            output.append(character)
-            index += 1
-            continue
-        if index + 2 >= len(candidate):
-            return None
-        escape = candidate[index + 1 : index + 3]
-        if any(character not in _HEX_DIGITS for character in escape):
-            return None
-        decoded = chr(int(escape, 16))
-        if ord(decoded) < 0x20 or ord(decoded) == 0x7F:
-            return None
-        if decoded in _UNRESERVED_PATH_CHARS:
-            output.append(decoded)
-        else:
-            output.append(f"%{escape.upper()}")
-        index += 3
-    return "".join(output)
-
-
-def _remove_remote_dot_segments(path: str) -> str:
-    segments = path.split("/")
-    resolved: list[str] = []
-    for segment in segments:
-        if segment == "..":
-            if resolved:
-                resolved.pop()
-        elif segment != ".":
-            resolved.append(segment)
-    if segments[-1] in {".", ".."}:
-        resolved.append("")
-    normalized = "/".join(resolved) or "/"
-    if path.startswith("/") and not normalized.startswith("/"):
-        normalized = f"/{normalized}"
-    return normalized
-
-
-def _normalized_remote_path(path: str) -> str | None:
-    normalized = _normalized_remote_component(path, allowed_chars=_REMOTE_PATH_CHARS, empty_default="/")
-    if normalized is None:
-        return None
-    return _remove_remote_dot_segments(normalized)
-
-
-def _normalized_remote_query(query: str) -> str | None:
-    return _normalized_remote_component(query, allowed_chars=_REMOTE_QUERY_CHARS, empty_default="")
-
-
 def normalized_remote_mcp_url(value: object) -> str | None:
     if not isinstance(value, str):
         return None
-    if not value or value != value.strip() or not value.isascii():
-        return None
-    if any(ord(character) <= 0x20 or ord(character) == 0x7F for character in value):
-        return None
-    candidate = value
-    try:
-        parsed = urlsplit(candidate)
-    except ValueError:
-        return None
-    if (
-        parsed.scheme.lower() != "https"
-        or not parsed.hostname
-        or parsed.username is not None
-        or parsed.password is not None
-        or parsed.fragment
-    ):
-        return None
-    try:
-        port = parsed.port
-    except ValueError:
-        return None
-    if port not in {None, 443}:
-        return None
-    raw_host = parsed.hostname.lower()
-    if raw_host.endswith(".."):
-        return None
-    host = raw_host[:-1] if raw_host.endswith(".") else raw_host
-    if not host:
-        return None
-    try:
-        address = ip_address(host)
-    except ValueError:
-        if all(ch.isdigit() or ch == "." for ch in host):
-            return None
-        if host == "localhost" or host.endswith(".localhost") or "." not in host or not _valid_dns_hostname(host):
-            return None
-    else:
-        if isinstance(address, IPv6Address) and address.ipv4_mapped is not None:
-            address = address.ipv4_mapped
-        if not address.is_global:
-            return None
-        host = str(address)
-    netloc = f"[{host}]" if ":" in host else host
-    path = _normalized_remote_path(parsed.path)
-    query = _normalized_remote_query(parsed.query)
-    if path is None or query is None:
-        return None
-    endpoint = urlunsplit(("https", netloc, path, "", ""))
-    if len(endpoint) > _REMOTE_MCP_URL_MAX_LENGTH:
-        return None
-    return urlunsplit(("https", netloc, path, query, ""))
+    return cli_runtime_support("remote_url", {"value": value})
 
 
 def remote_mcp_endpoint_identity(value: object) -> str | None:

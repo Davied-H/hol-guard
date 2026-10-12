@@ -588,5 +588,51 @@
   "tests/test_hook_security_regressions.py",
   "tests/test_hook_source_read_fast_path.py",
   "tests/test_native_approval_bridge.py"
+ ],
+ "retired_bodies": [
+  {
+   "path": "src/codex_plugin_scanner/guard/cli/commands_support_runtime_resolution.py",
+   "source_sha256": "8336a2fff0dfde8c6666251bf7754d6e4ea3799272d1ffdcc2ad41073f95a944",
+   "forbidden_symbols": [
+    "_CopilotMcpRuntimeTool",
+    "_resolve_copilot_mcp_runtime_tool",
+    "_copilot_runtime_tool_metadata",
+    "_copilot_runtime_server_environment",
+    "_copilot_runtime_match_priority"
+   ],
+   "native_replacements": [
+    "rust/crates/guard-runtime/src/cli_runtime_support_op.rs",
+    "rust/crates/guard-runtime/src/cli_copilot_resolution.rs",
+    "rust/crates/guard-runtime/src/cli_hook_input.rs"
+   ]
+  },
+  {
+   "path": "src/codex_plugin_scanner/guard/cli/commands_support_hook_payload_loader.py",
+   "source_sha256": "0623badd87e9b47eaef60ca37f908a890e6a44658d7422fd6b950f6385116be2",
+   "forbidden_symbols": [
+    "normalized_expected_tool_name",
+    "fallback_tool_call",
+    "normalized"
+   ],
+   "native_replacements": [
+    "rust/crates/guard-runtime/src/cli_runtime_support_op.rs",
+    "rust/crates/guard-runtime/src/cli_copilot_resolution.rs",
+    "rust/crates/guard-runtime/src/cli_hook_input.rs"
+   ]
+  },
+  {
+   "path": "src/codex_plugin_scanner/guard/runtime/mcp_server_contribution.py",
+   "source_sha256": "545d2a53a975c58a54268403e454bb5905ed95e8d626c2d6eeb57a0095b03440",
+   "forbidden_symbols": [
+    "_normalized_remote_component",
+    "_valid_dns_hostname",
+    "_remove_remote_dot_segments"
+   ],
+   "native_replacements": [
+    "rust/crates/guard-runtime/src/cli_runtime_support_op.rs",
+    "rust/crates/guard-runtime/src/cli_copilot_resolution.rs",
+    "rust/crates/guard-runtime/src/cli_hook_input.rs"
+   ]
+  }
  ]
 }
