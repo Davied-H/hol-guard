@@ -81,30 +81,61 @@ pub(in crate::pretool) fn agent_skill_document(
     {
         return false;
     }
-    for root in [
-        ".agents/skills",
-        // Oh My Pi also discovers user skills from the singular spelling.
-        ".agent/skills",
-        ".claude/skills",
-        ".codex/skills",
-        ".codex/superpowers/skills",
-        ".zcode/cli/plugins/cache",
-    ] {
-        let Ok(skills) = std::fs::canonicalize(home.join(root)) else {
-            continue;
-        };
+    skill_tree_parts(canonical, &home).is_some_and(|(root, parts)| {
+        // Cache entries are marketplace/plugin/version/skills/skill/document.
+        if root == ".zcode/cli/plugins/cache" {
+            parts.len() >= 6 && parts[3] == "skills"
+        } else {
+            parts.len() >= 2
+        }
+    })
+}
+
+/// A directory a names-only listing may start from: a user skill root, any
+/// visible directory below one, or `~/.agents` itself, which holds only the
+/// skills tree and its lock file. Content readers never use this allowance;
+/// scripts beside skill documents stay outside the read rules.
+pub(in crate::pretool) fn agent_skill_listing_directory(
+    canonical: &std::path::Path,
+    home_dir: Option<&str>,
+) -> bool {
+    let Some(home) = home_dir.and_then(|root| std::fs::canonicalize(root).ok()) else {
+        return false;
+    };
+    let agents = home.join(".agents");
+    canonical.is_dir()
+        && ((canonical == agents
+            && std::fs::symlink_metadata(&agents).is_ok_and(|metadata| metadata.is_dir()))
+            || skill_tree_parts(canonical, &home).is_some())
+}
+
+const SKILL_ROOTS: [&str; 6] = [
+    ".agents/skills",
+    // Oh My Pi also discovers user skills from the singular spelling.
+    ".agent/skills",
+    ".claude/skills",
+    ".codex/skills",
+    ".codex/superpowers/skills",
+    ".zcode/cli/plugins/cache",
+];
+
+/// The skill root holding `canonical` and the visible components below it.
+fn skill_tree_parts<'a>(
+    canonical: &'a std::path::Path,
+    home: &std::path::Path,
+) -> Option<(&'static str, Vec<&'a std::ffi::OsStr>)> {
+    SKILL_ROOTS.into_iter().find_map(|root| {
+        let skills = std::fs::canonicalize(home.join(root)).ok()?;
         // Retain the existing managed .agents root-link support. New roots,
         // including the singular .agent spelling, must resolve to themselves
         // so a link cannot turn hidden application state into skills.
         if root != ".agents/skills" && skills != home.join(root) {
-            continue;
+            return None;
         }
-        let Ok(relative) = canonical.strip_prefix(skills) else {
-            continue;
-        };
+        let relative = canonical.strip_prefix(skills).ok()?;
         // Codex ships its bundled skills under `skills/.system`; that one
         // top-level directory is a skill namespace, not hidden application state.
-        let Some(parts) = relative
+        let parts = relative
             .components()
             .enumerate()
             .map(|(index, component)| match component {
@@ -116,21 +147,9 @@ pub(in crate::pretool) fn agent_skill_document(
                 }
                 _ => None,
             })
-            .collect::<Option<Vec<_>>>()
-        else {
-            continue;
-        };
-        // Cache entries are marketplace/plugin/version/skills/skill/document.
-        let scoped = if root == ".zcode/cli/plugins/cache" {
-            parts.len() >= 6 && parts[3] == "skills"
-        } else {
-            parts.len() >= 2
-        };
-        if scoped {
-            return true;
-        }
-    }
-    false
+            .collect::<Option<Vec<_>>>()?;
+        Some((root, parts))
+    })
 }
 
 /// Oh My Pi keeps session artifacts and user skills under `~/.agent`. Reads

@@ -42,3 +42,30 @@ pub(in crate::pretool) fn agent_root_listing(
         && std::fs::canonicalize(&root).is_ok_and(|canonical| canonical == agent)
         && (!recursive || walk(agent, &[], &[], false))
 }
+
+/// A user skill directory, or `~/.agents`, named for a listing that prints
+/// names only (`ls` without recursion, `find` without actions). Agents look
+/// up skill scripts this way; the operand must clear the same word screens as
+/// the `.agent` root and resolve to a directory the skill rules admit.
+pub(in crate::pretool) fn skill_listing_root(value: &str, context: ReadContext<'_>) -> bool {
+    if value.is_empty()
+        || value.len() > 4096
+        || value.starts_with('-')
+        || value.contains(HAZARDS)
+        || value.contains(['*', '?', '[', ']', '{', '}'])
+        || value.split('/').any(|part| part == "..")
+        || !super::super::safe_reads::verified_path_context(context.home_dir, context.cwd)
+    {
+        return false;
+    }
+    expanded_operand(value, context)
+        .and_then(|root| std::fs::canonicalize(root).ok())
+        .is_some_and(|canonical| {
+            guard_secure_fs::sensitive_path_family(&canonical).is_none()
+                && !guard_secure_fs::credential_named_path(&canonical)
+                && super::super::read_paths::agent_skill_listing_directory(
+                    &canonical,
+                    context.home_dir,
+                )
+        })
+}

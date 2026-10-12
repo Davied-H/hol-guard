@@ -40,6 +40,8 @@ pub(super) fn safe_listing_arguments(
         }
         command_read_target(argument, context, true)
             || super::search::agent_root_listing(argument, context, false)
+            || super::search::skill_listing_root(argument, context)
+            || super::listing_reads::absent_listing_operand(argument, context)
     })
 }
 

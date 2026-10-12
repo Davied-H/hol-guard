@@ -11,7 +11,7 @@ mod options;
 mod roots;
 mod sibling;
 mod tree;
-pub(super) use agent_root::agent_root_listing;
+pub(super) use agent_root::{agent_root_listing, skill_listing_root};
 use options::unsafe_search_value;
 pub(super) use tree::{
     safe_glob_operand, safe_literal_bracket_tree, safe_recursive_search_target,
