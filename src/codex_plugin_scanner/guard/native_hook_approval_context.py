@@ -19,7 +19,7 @@ from .native_context import context_digest_guard_home, native_context_digest
 if TYPE_CHECKING:
     from .config import GuardConfig
     from .models import GuardArtifact
-    from .runtime.action_envelope import GuardActionEnvelope
+    from .runtime.actions import GuardActionEnvelope
     from .runtime.github_workflow_approval_record import GitHubWorkflowApprovalRecord
 
 _METADATA_KEYS = (
@@ -110,7 +110,7 @@ def _metadata(metadata: object) -> dict[str, object]:
         sequence = isinstance(value, list) or (
             key == "env_keys" and isinstance(value, Sequence) and not isinstance(value, str)
         )
-        projected[key] = [item for item in value if isinstance(item, str)] if sequence else None
+        projected[key] = [item for item in value if isinstance(item, str)] if sequence and value is not None else None
     return projected
 
 
