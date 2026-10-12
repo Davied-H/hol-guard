@@ -55,8 +55,11 @@ pub(crate) fn text_contains_credential_exfiltration(text: &str) -> bool {
     .all(|pattern| pattern.is_match(text).unwrap_or(true))
 }
 
+#[cfg(all(test, unix))]
 pub(crate) use crate::sfrs_gh_static_body_safety::{
     bounded_output_consumer, gh_pr_create_segment_with_bounded_output,
+};
+pub(crate) use crate::sfrs_gh_static_body_safety::{
     gh_pr_create_uses_safe_static_body_file, gh_pr_edit_uses_safe_static_body_file,
 };
 
