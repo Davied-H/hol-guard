@@ -1,0 +1,60 @@
+name: Experiment folded compiler release sizes
+# Measurement only; this branch is never merged.
+on:
+  push:
+    branches: [exp/fold-compiler-sizes]
+permissions:
+  contents: read
+jobs:
+  measure:
+    name: size ${{ matrix.target }} ${{ matrix.side }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        side: [base, head]
+        target: [x86_64-unknown-linux-musl, x86_64-apple-darwin, aarch64-apple-darwin, x86_64-pc-windows-msvc]
+        include:
+          - {target: x86_64-unknown-linux-musl, runner: ubuntu-latest, suffix: ''}
+          - {target: x86_64-apple-darwin, runner: macos-15, suffix: ''}
+          - {target: aarch64-apple-darwin, runner: macos-15, suffix: ''}
+          - {target: x86_64-pc-windows-msvc, runner: windows-latest, suffix: .exe, rustflags: -C link-arg=/Brepro}
+          - {side: base, ref: 0ddebe9e4fcb0327dadbc111f66286f99f0a5144}
+          - {side: head, ref: 7d4528af840af2a9800b614434306cde5737d0f9}
+    env:
+      RUST_TARGET: ${{ matrix.target }}
+      RUSTFLAGS: ${{ matrix.rustflags }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          ref: ${{ matrix.ref }}
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: '3.12'
+      - name: Toolchain
+        shell: bash
+        run: |
+          rustup toolchain install 1.88.0 --profile minimal
+          rustup default 1.88.0
+          rustup target add "$RUST_TARGET"
+      - name: Linux static toolchain
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends musl-tools
+      - name: Build the shipped release profile and report sizes
+        shell: bash
+        run: |
+          set -euo pipefail
+          unset CARGO_PROFILE_RELEASE_LTO CARGO_PROFILE_RELEASE_CODEGEN_UNITS
+          python scripts/refresh_extension_artifacts.py --trust-only
+          cargo build --manifest-path rust/Cargo.toml --locked --release --target "$RUST_TARGET" -p hol-guard-runtime -p guard-command --bin hol-guard-runtime --bin guard-command-source
+          dir="rust/target/$RUST_TARGET/release"
+          python - "${{ matrix.side }}" "$dir/hol-guard-runtime${{ matrix.suffix }}" "$dir/guard-command-source${{ matrix.suffix }}" <<'PY'
+          import os, sys, zlib
+          side, rt, sc = sys.argv[1:]
+          mib = 1024 * 1024
+          for label, path in (("runtime", rt), ("compiler", sc)):
+              data = open(path, "rb").read()
+              print(f"SIZE {side} {label} unpacked={len(data)} deflate9={len(zlib.compress(data, 9))} ({len(data)/mib:.2f} MiB / {len(zlib.compress(data, 9))/mib:.2f} MiB)")
+          PY
