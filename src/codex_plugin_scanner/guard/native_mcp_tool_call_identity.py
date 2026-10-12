@@ -103,15 +103,16 @@ def native_tool_call_identity(
         response is None
         or response.get("schema") != _RESULT_SCHEMA
         or response.get("request_id") != request["request_id"]
-        or response.get("request_sha256") != digest
     ):
         raise ValueError(_UNAVAILABLE)
     code = response.get("code")
+    # An error carries no authority and an oversized request is refused before
+    # the worker can hash it, so only an `ok` answer must echo the digest.
     if response.get("status") == "error":
         if code == _PROVIDER_HASH_CODE:
             raise ValueError("invalid provider catalog authority hash")
         raise ValueError(f"{_UNAVAILABLE}:{code}" if isinstance(code, str) and _CODE.fullmatch(code) else _UNAVAILABLE)
-    if response.get("status") != "ok" or code != "ok":
+    if response.get("status") != "ok" or code != "ok" or response.get("request_sha256") != digest:
         raise ValueError(_UNAVAILABLE)
     return _decode(response.get("payload"), expect_hash=hash_input is not None, token=_expects_token(hash_input))
 

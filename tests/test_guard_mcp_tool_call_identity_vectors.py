@@ -321,3 +321,21 @@ def test_python_builders_match_recorded_vectors(native_context_digest: Path) -> 
     if os.environ.get("HOL_GUARD_RECORD_VECTORS") == "1":
         _FIXTURE.write_text(json.dumps({"vectors": recorded}, indent=1, sort_keys=True) + "\n", encoding="utf-8")
     assert json.loads(_FIXTURE.read_text(encoding="utf-8"))["vectors"] == json.loads(json.dumps(recorded))
+
+
+def test_oversized_request_error_is_reported_with_its_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    from codex_plugin_scanner.guard import native_mcp_tool_call_identity as identity
+
+    def refuse(**kwargs: object) -> dict[str, object]:
+        return {
+            "schema": identity._RESULT_SCHEMA,
+            "request_id": kwargs["request"]["request_id"],  # type: ignore[index]
+            "request_sha256": "",
+            "status": "error",
+            "code": "native_mcp_tool_call_identity_request_too_large",
+        }
+
+    monkeypatch.setattr(identity, "_resident_request", refuse)
+    monkeypatch.setattr(identity, "_resolve_digest_home", lambda _home: Path("/nonexistent"))
+    with pytest.raises(ValueError, match="request_too_large"):
+        identity.native_tool_call_identity(build={"harness": "codex"})
