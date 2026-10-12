@@ -24,6 +24,8 @@ HTTP_SOURCE_CASE = "supply-chain-insecure-http-tarball"
 LOCKFILE_DRIFT_CASE = "supply-chain-manifest-lockfile-drift"
 GIT_SOURCE_CASE = "supply-chain-git-dependency-source"
 LOCKFILE_INTEGRITY_CASE = "supply-chain-lockfile-integrity-missing"
+# A loopback tarball the integrity-missing lock pins; no real registry is reachable.
+LOCKFILE_INTEGRITY_REMOTE = "http://127.0.0.1:9/build-helper-1.0.0.tgz"
 
 # The native hook stops every package action with its package review; a stop
 # that carries the evaluator's own verdict for the case is also accepted. A stop
@@ -101,14 +103,16 @@ def stage_supply_chain(workspace: Path, scenario_id: str) -> None:
         _json(workspace / "package.json", {**_ROOT_MANIFEST, "dependencies": {"build-helper": "file:" + HELPER}})
         _json(workspace / "package-lock.json", _lockfile({}, {}))
     if scenario_id == LOCKFILE_INTEGRITY_CASE:
-        # The lockfile pins the dependency but omits the integrity hash a reviewed
-        # lockfile must carry, so an `npm ci` would install an unverifiable source.
-        _json(workspace / "package.json", {**_ROOT_MANIFEST, "dependencies": {"build-helper": "file:" + HELPER}})
+        # The lockfile pins a remote loopback tarball but omits the integrity hash a
+        # reviewed lockfile must carry for every downloaded source, so an `npm ci`
+        # would install an unverifiable remote dependency. A local `file:` entry
+        # needs no hash, so the pin must be a remote `resolved` URL to exercise the risk.
+        _json(workspace / "package.json", {**_ROOT_MANIFEST, "dependencies": {"build-helper": "^1.0.0"}})
         _json(
             workspace / "package-lock.json",
             _lockfile(
-                {"build-helper": "file:" + HELPER},
-                {"node_modules/build-helper": {"version": "1.0.0", "resolved": "file:" + HELPER}},
+                {"build-helper": "^1.0.0"},
+                {"node_modules/build-helper": {"version": "1.0.0", "resolved": LOCKFILE_INTEGRITY_REMOTE}},
             ),
         )
 
