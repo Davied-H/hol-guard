@@ -86,6 +86,11 @@ def test_harness_failure_keeps_guard_verdicts_and_enforce_stops_stay_false_posit
         guard_observations=[{"event": "PreToolUse", "tool_call_id": "c1", "observer_error": "timeout"}],
     )
     assert assess_case(unproven, calls, [])["outcome"] == "harness-error"
+    no_decision = _finished(
+        returncode=1,
+        guard_observations=[{"event": "PreToolUse", "tool_call_id": "c1", "http_status": 500, "rendered_fields": []}],
+    )
+    assert assess_case(no_decision, calls, [])["outcome"] == "harness-error"
     proven = _finished(
         returncode=1,
         guard_observations=[

@@ -237,10 +237,7 @@ def _proven_interruption(case: dict[str, Any]) -> bool:
     """A Guard stop proved by a native verdict or an approval request, not an observer or transport error."""
     if case.get("approval_delta") != 0:
         return True
-    return any(
-        row.get("kind") == "stop" and row.get("reason_code") != "observer-or-transport-error"
-        for row in case.get("would_have_stopped", [])
-    )
+    return any(row.get("kind") == "stop" and row.get("proven") is True for row in case.get("would_have_stopped", []))
 
 
 def assess_case(case: dict[str, Any], calls: list[dict[str, Any]], errors: list[str]) -> dict[str, str]:

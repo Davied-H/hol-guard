@@ -173,6 +173,7 @@ def test_watch_rows_are_harvested_with_the_enforce_verdict() -> None:
     assert rows == [
         {
             "kind": "stop",
+            "proven": True,
             "event": "PreToolUse",
             "tool": "bash",
             "command": "git push -u origin main",

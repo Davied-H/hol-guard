@@ -277,11 +277,13 @@ def would_have_stopped(
         if mode == "discover":
             failed = row.get("observer_error") or row.get("transport_error")
             kind = "stop" if failed else _receipt_stop(row)
+            proven = not failed
         else:
             found = observation_interruptions(row, "omp")
             if contained and is_contained_deny(row, contained):
                 found = [event for event in found if event["kind"] != "decision"]
             kind = "stop" if found else None
+            proven = any(event["kind"] != "unproven" for event in found)
         if kind is None:
             continue
         receipt = (row.get("native_observation") or {}).get("native_receipt") or {}
@@ -289,6 +291,7 @@ def would_have_stopped(
         rows.append(
             {
                 "kind": kind,
+                "proven": proven,
                 "event": row.get("event"),
                 "tool": row.get("tool") or row.get("tool_name"),
                 "command": target.get("command") if isinstance(target, dict) else None,
