@@ -12,6 +12,7 @@ BASE = "68558a59d9e8b6d4a8a86ef9de9263de41248068"
 ROOT = Path(__file__).resolve().parents[2]
 SERVICE = "src/codex_plugin_scanner/guard/runtime/secret_file_request_services/"
 FUNCTIONS = {
+    "github_pr_body_safety.py": (),
     "github_shell_capabilities.py": (
         "_github_environment_name",
         "_github_shell_has_dynamic_arguments",
@@ -122,7 +123,7 @@ def main() -> None:
     ):
         record("_iter_shell_pipelines", parts)
     fixtures = {}
-    for name in ("classify_github_shell_capabilities", "intermediate_tokens", "pr_expansion"):
+    for name in ("classify_github_shell_capabilities", "intermediate_tokens", "fs_helpers", "github_body"):
         path = ROOT / "rust/crates/guard-command/tests/fixtures/sfrs" / (name + ".json.gz")
         if path.exists():
             fixtures[str(path.relative_to(ROOT))] = hashlib.sha256(path.read_bytes()).hexdigest()

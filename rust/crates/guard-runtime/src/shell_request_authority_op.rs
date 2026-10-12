@@ -14,7 +14,10 @@ pub(crate) fn dispatch(args: &Value) -> KindResult {
     let facts: CodexToolOutputFactsV1 = if args["facts"].is_null() {
         if matches!(
             entry,
-            "classify_github_shell_capabilities" | "_github_pipeline_companion_is_read_only"
+            "classify_github_shell_capabilities"
+                | "_github_pipeline_companion_is_read_only"
+                | "_gh_pr_create_uses_safe_static_body_file"
+                | "_gh_pr_edit_uses_safe_static_body_file"
         ) {
             return Err("native_shell_request_host_invalid");
         }

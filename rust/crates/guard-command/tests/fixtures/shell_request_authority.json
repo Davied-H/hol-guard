@@ -1217,11 +1217,13 @@
   ],
   "retained_original_fixture_sha256": {
     "rust/crates/guard-command/tests/fixtures/sfrs/classify_github_shell_capabilities.json.gz": "82f67f1fc406e50db843190085caa2a9ce204298c1c77b73e481a3ba590d14b4",
+    "rust/crates/guard-command/tests/fixtures/sfrs/github_body.json.gz": "de532d1d1d69a678b932fe20682723a86189cf76d242b923d3671742a6d9d005",
     "rust/crates/guard-command/tests/fixtures/sfrs/intermediate_tokens.json.gz": "fe85e5500ef3cf7c9f81bd69650d09e6cfca8813dedb5717c78e9de32223105a"
   },
   "schema": "guard-shell-request-authority-python-parity.v1",
   "source_commit": "68558a59d9e8b6d4a8a86ef9de9263de41248068",
   "source_sha256": {
+    "src/codex_plugin_scanner/guard/runtime/secret_file_request_services/github_pr_body_safety.py": "64ba8eac46f7178a1899ca502a333a33e321f36f10a699ba77337babb3dc9c24",
     "src/codex_plugin_scanner/guard/runtime/secret_file_request_services/github_pr_expansion.py": "1d245cfc7dd004faba76f35dd631f1d6561945610a6f7e1f1e0236feeb74cf68",
     "src/codex_plugin_scanner/guard/runtime/secret_file_request_services/github_shell_capabilities.py": "d584623615ba075ac4ab57cc81f9db42a8c4448638308935dff08e5172484317"
   }

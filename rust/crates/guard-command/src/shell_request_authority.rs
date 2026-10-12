@@ -64,6 +64,22 @@ pub fn dispatch(entry: &str, args: &Value, context: &Ctx) -> Result<Value, &'sta
                 isize::try_from(args["depth"].as_i64().unwrap_or(0)).map_err(|_| INVALID)?;
             return Ok(json!({"flags":flags(text(args,"command_text")?,depth)}));
         }
+        "_gh_pr_create_uses_safe_static_body_file" => json!(
+            crate::sfrs_gh_body_safety::gh_pr_create_uses_safe_static_body_file(
+                text(args, "command_text")?,
+                args["cwd"].as_str().map(Path::new),
+                args["home_dir"].as_str().map(Path::new),
+                context
+            )
+        ),
+        "_gh_pr_edit_uses_safe_static_body_file" => json!(
+            crate::sfrs_gh_body_safety::gh_pr_edit_uses_safe_static_body_file(
+                text(args, "command_text")?,
+                args["cwd"].as_str().map(Path::new),
+                args["home_dir"].as_str().map(Path::new),
+                context
+            )
+        ),
         "_github_environment_requires_review" => {
             let assignments: Vec<(String, String)> =
                 serde_json::from_value(args["assignments"].clone()).map_err(|_| INVALID)?;

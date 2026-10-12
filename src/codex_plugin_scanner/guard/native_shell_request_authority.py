@@ -61,7 +61,12 @@ def shell_request_authority(entry: str, arguments: dict[str, Any]) -> Any:
                 _FLAGS.move_to_end(key)
                 return cached[entry]
     request = {"entry": "pr_flags" if entry in flag_entries else entry, "arguments": _wire(arguments)}
-    if entry in {"classify_github_shell_capabilities", "_github_pipeline_companion_is_read_only"}:
+    if entry in {
+        "classify_github_shell_capabilities",
+        "_github_pipeline_companion_is_read_only",
+        "_gh_pr_create_uses_safe_static_body_file",
+        "_gh_pr_edit_uses_safe_static_body_file",
+    }:
         request["facts"] = {
             "process_cwd": os.getcwd(),
             "home": str(Path.home()),
