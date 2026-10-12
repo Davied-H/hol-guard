@@ -1,0 +1,64 @@
+name: Experiment alpha opt-level 0 sizes
+# Measurement only; this branch is never merged.
+on:
+  push:
+    branches: [exp/alpha-ws0-sizes]
+permissions:
+  contents: read
+jobs:
+  measure:
+    name: size ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {runner: ubuntu-latest, target: x86_64-unknown-linux-musl, suffix: ''}
+          - {runner: macos-15, target: x86_64-apple-darwin, suffix: ''}
+          - {runner: macos-15, target: aarch64-apple-darwin, suffix: ''}
+          - {runner: windows-latest, target: x86_64-pc-windows-msvc, suffix: .exe, rustflags: -C link-arg=/Brepro}
+    env:
+      RUST_TARGET: ${{ matrix.target }}
+      RUSTFLAGS: ${{ matrix.rustflags }}
+      CARGO_PROFILE_RELEASE_LTO: "false"
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: '3.12'
+      - name: Toolchain
+        shell: bash
+        run: |
+          rustup toolchain install 1.88.0 --profile minimal
+          rustup default 1.88.0
+          rustup target add "$RUST_TARGET"
+      - name: Linux static toolchain
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends musl-tools
+      - name: Build at s and at workspace opt-level 0, report sizes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/refresh_extension_artifacts.py --trust-only
+          python scripts/release/workspace_opt_profile.py --opt-level 0 --output "$RUNNER_TEMP/ws0.toml"
+          for variant in s ws0; do
+            extra=()
+            [[ "$variant" == ws0 ]] && extra=(--config "$RUNNER_TEMP/ws0.toml")
+            export CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target-$variant"
+            cargo build --manifest-path rust/Cargo.toml --locked --release --target "$RUST_TARGET" -p hol-guard-runtime -p guard-command --bin hol-guard-runtime --bin guard-command-source ${extra[@]+"${extra[@]}"}
+            dir="$CARGO_TARGET_DIR/$RUST_TARGET/release"
+            rt="$dir/hol-guard-runtime${{ matrix.suffix }}"; sc="$dir/guard-command-source${{ matrix.suffix }}"
+            python - "$variant" "$rt" "$sc" <<'PY'
+          import os, sys, zipfile, io
+          variant, rt, sc = sys.argv[1:]
+          buf = io.BytesIO()
+          with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+              z.write(rt, "rt"); z.write(sc, "sc")
+          mib = 1024 * 1024
+          print(f"SIZE {variant} runtime={os.path.getsize(rt)/mib:.2f}MiB compiler={os.path.getsize(sc)/mib:.2f}MiB zipped_both={len(buf.getvalue())/mib:.2f}MiB")
+          PY
+          done
