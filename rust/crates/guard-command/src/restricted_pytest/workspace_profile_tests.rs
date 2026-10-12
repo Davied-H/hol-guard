@@ -141,3 +141,39 @@ fn helper_denials_cover_every_case_and_each_ancestor() {
         assert!(workspace_profile::denial_patterns(ws, &[PathBuf::from(outside)]).is_err());
     }
 }
+
+#[test]
+fn nothing_protected_can_be_built_elsewhere_and_moved_in() {
+    let head =
+        Regex::new(&workspace_profile::bare_head_pattern(Path::new("/w/proj")).unwrap()).unwrap();
+    for denied in ["/w/proj/HEAD", "/w/proj/vendor/x/head", "/w/proj/.git/HEAD"] {
+        assert!(head.is_match(denied), "{denied}");
+    }
+    for allowed in ["/w/proj/HEAD.lock", "/w/proj/src/header.h", "/w/other/HEAD"] {
+        assert!(!head.is_match(allowed), "{allowed}");
+    }
+    let profile = workspace_profile::compose(&input("/w/proj"), &[], &[]).unwrap();
+    let lines: Vec<&str> = profile.lines().collect();
+    let private = Path::new("/private/tmp/guard-private");
+    let mut rules = vec![
+        workspace_profile::git_exec_pattern(private).unwrap(),
+        workspace_profile::bare_head_pattern(private).unwrap(),
+    ];
+    rules.extend(workspace_profile::protected_patterns(private).unwrap());
+    for pattern in &rules {
+        assert!(profile.contains(&seatbelt_string(pattern)), "{pattern}");
+    }
+    assert!(lines.contains(&"(deny file-write* (literal \"/w/proj\"))"));
+    // Only the repository's own HEAD is reopened, after the rule closing it.
+    let reopen = lines
+        .iter()
+        .position(|line| *line == "(allow file-write* (literal \"/w/proj/.git/HEAD\"))")
+        .unwrap();
+    let workspace_head =
+        seatbelt_string(&workspace_profile::bare_head_pattern(Path::new("/w/proj")).unwrap());
+    let closed = lines
+        .iter()
+        .position(|line| line.contains(&workspace_head))
+        .unwrap();
+    assert!(closed < reopen);
+}
