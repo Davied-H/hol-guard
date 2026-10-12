@@ -18,12 +18,15 @@ import json
 import os
 import threading
 from collections import deque
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
+from typing import TYPE_CHECKING, Final
 from uuid import uuid4
+
+if TYPE_CHECKING:
+    from .native_runtime_values import NativeRuntimeStatus
 
 BINDING_CAPTURE_FEATURE: Final = "codex-binding-capture-v1"
 _REQUEST_SCHEMA: Final = "guard-codex-binding-capture-request.v1"
@@ -37,12 +40,16 @@ _JOIN_PROBE_RECORDS: Final = 129
 # record_size. The row still has to fit inside the 256 KiB request cap.
 _JOIN_RECORD_BYTES: Final = 256 * 1024 - 8192
 _QUEUE_LIMIT: Final = 8
-_canonical_request_sha256 = None
-ensure_resident_prerequisite = None
-_resident_request = None
+_canonical_request_sha256: Callable[[dict[str, object]], str] | None = None
+ensure_resident_prerequisite: Callable[[Path], bool] | None = None
+_resident_request: Callable[..., dict[str, object] | None] | None = None
 
 
-def _bind_runtime_imports() -> None:
+def _bind_runtime_imports() -> tuple[
+    Callable[[dict[str, object]], str],
+    Callable[[Path], bool],
+    Callable[..., dict[str, object] | None],
+]:
     """Import the resident client only after a caller has decided to exchange."""
 
     global _canonical_request_sha256, ensure_resident_prerequisite, _resident_request
@@ -58,6 +65,12 @@ def _bind_runtime_imports() -> None:
         from .native_execution import _resident_request as request
 
         _resident_request = request
+    digest_fn = _canonical_request_sha256
+    prepare_fn = ensure_resident_prerequisite
+    request_fn = _resident_request
+    if digest_fn is None or prepare_fn is None or request_fn is None:
+        raise RuntimeError("binding capture runtime imports were not bound")
+    return digest_fn, prepare_fn, request_fn
 
 
 def _marker_present(guard_home: Path) -> bool:
@@ -75,9 +88,9 @@ def _exchange(
     *,
     timeout_seconds: float = _TIMEOUT_SECONDS,
     prepare: bool = True,
-    status: object | None = None,
+    status: NativeRuntimeStatus | None = None,
 ) -> object | None:
-    _bind_runtime_imports()
+    digest_fn, prepare_fn, request_fn = _bind_runtime_imports()
     request: dict[str, object] = {
         "schema": _REQUEST_SCHEMA,
         "request_id": f"codex-binding-capture-{uuid4().hex}",
@@ -85,12 +98,12 @@ def _exchange(
         "command": command,
     }
     try:
-        digest = "sha256:" + _canonical_request_sha256(request)
+        digest = "sha256:" + digest_fn(request)
     except (TypeError, ValueError):
         return None
-    if prepare and not ensure_resident_prerequisite(guard_home):
+    if prepare and not prepare_fn(guard_home):
         return None
-    response = _resident_request(
+    response = request_fn(
         operation="codex_binding_capture",
         request=request,
         guard_home=guard_home,
@@ -163,7 +176,7 @@ def _bounded_json(value: object, limit: int = _MAX_TEXT_BYTES) -> str | None:
     return "".join(parts)
 
 
-def _bridge_resident_status(guard_home: Path) -> object | None:
+def _bridge_resident_status(guard_home: Path) -> NativeRuntimeStatus | None:
     """Status of an already-idle resident, with no store provisioning and no spawn."""
 
     from .native_resident_client import native_resident_client_ready
