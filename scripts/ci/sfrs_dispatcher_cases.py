@@ -38,6 +38,7 @@ import sfrs_pytest_cases as pcases
 
 from codex_plugin_scanner.guard import native_compound_git_inspection as ncgi
 from codex_plugin_scanner.guard import native_direct_tool_context as ndtc
+from codex_plugin_scanner.guard import native_github_cli as ngc
 from codex_plugin_scanner.guard.runtime import direct_vitest as dvitest
 from codex_plugin_scanner.guard.runtime import shell_execution_context as sec
 from codex_plugin_scanner.guard.runtime._shell_execution_context_support import ShellPathIdentity
@@ -370,6 +371,9 @@ def _no_git(*_args: object, **_kwargs: object) -> object:
     return ncgi.CompoundGitAnswer(False, None, "native_compound_git_inspection_unavailable")
 
 
+NATIVE_SELECTION = ("HOL_GUARD_NATIVE", "HOL_GUARD_NATIVE_BINARY")
+
+
 def _no_direct(*_args: object, **_kwargs: object) -> None:
     return None
 
@@ -379,6 +383,11 @@ def _no_trusted(*_args: object, **_kwargs: object) -> bool:
 
 
 def _floor(*_args: object, **_kwargs: object) -> str:
+    raise ResidentError
+
+
+def _resident_only(*_args: object, **_kwargs: object) -> None:
+    """GitHub CLI classification has no in-process answer; skip such cases."""
     raise ResidentError
 
 
@@ -493,8 +502,11 @@ def main() -> None:
             tree["files"][name] = content  # type: ignore[index]
         guard = root / "guard/bin/python"
         env = {"HOME": str(root / "home"), "LANG": "C", "PATH": "/opt/zz/bin:/opt/yy/bin"}
+        # The resident answers shell-helper calls; its selection is not a recorded input.
+        native = {name: os.environ[name] for name in NATIVE_SELECTION if name in os.environ}
         os.environ.clear()
         os.environ.update(env)
+        os.environ.update(native)
         process_cwd = root / "proj"
         os.chdir(process_cwd)
         sys.executable = str(guard)
@@ -506,6 +518,7 @@ def main() -> None:
         _patch(ncgi.compound_git_inspection_native, _no_git)
         _patch(ndtc.native_direct_tool_context, _no_direct)
         _patch(ndtc.native_trusted_tool_command, _no_trusted)
+        _patch(ngc.github_cli_classify_native, _resident_only)
         from codex_plugin_scanner.guard.native_critical_floor import native_critical_floor_action
 
         _patch(native_critical_floor_action, _floor)

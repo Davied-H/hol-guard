@@ -214,6 +214,10 @@ fn run_case(document: &Value, root: &Path, case: &Value) -> Value {
             if request.shell_execution_context_hash.is_some() {
                 request.shell_execution_context_hash = Some("<hash>".to_owned());
             }
+            // Both hash absolute paths under a per-run scratch root.
+            if request.script_read_identity_sha256.is_some() {
+                request.script_read_identity_sha256 = Some("<hash>".to_owned());
+            }
             serde_json::to_value(&request).expect("serialize")
         }
         Err(error) => serde_json::json!({ "error": error.0 }),
@@ -275,7 +279,15 @@ fn dispatcher_matches_recorded_python() {
     for (position, case) in cases.iter().enumerate() {
         let expected = match case.get("error") {
             Some(error) => serde_json::json!({ "error": error }),
-            None => bind(&root, &case["result"]),
+            None => {
+                let mut result = bind(&root, &case["result"]);
+                if let Some(hash) = result.get_mut("script_read_identity_sha256") {
+                    if !hash.is_null() {
+                        *hash = Value::String("<hash>".to_owned());
+                    }
+                }
+                result
+            }
         };
         let actual = run_case(&document, &root, case);
         let bucket = if actual == expected { "pass" } else { "fail" };
@@ -287,8 +299,9 @@ fn dispatcher_matches_recorded_python() {
                 .map(|part| part.split(':').next().unwrap_or_default())
                 .collect::<Vec<_>>()
                 .join(",");
-            *kinds.entry(names).or_default() += 1;
-            if failures.len() < 60 {
+            let seen = kinds.entry(names).or_default();
+            *seen += 1;
+            if *seen <= 2 && failures.len() < 120 {
                 failures.push(format!(
                     "case {position}: tool {} args {} cwd {} home {} canonical {} native {}\n  differ {fields}",
                     case["tool"], case["arguments"], case["cwd"], case["home"], case["canonical"], case["native"],
