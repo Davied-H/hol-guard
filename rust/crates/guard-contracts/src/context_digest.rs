@@ -8,7 +8,7 @@
 //! --stdin`.
 
 use crate::{BrowserMcpArtifactV1, BrowserMcpRequestV1, BrowserMcpResultV1};
-use crate::{LocalCliIdentitySourceV1, LocalCliIdentityV1, PackageJsonScriptsV1};
+use crate::{LocalCliIdentitySourceV1, LocalCliIdentityV1, PackageJsonScriptsV1, UnlistedCliV1};
 use crate::{McpToolPolicyRequestV1, McpToolPolicyResultV1};
 use crate::{SuggestionToolV1, SuggestionVerdictV1};
 use serde::{Deserialize, Serialize};
@@ -282,8 +282,40 @@ pub enum ContextDigestKindV1 {
         cwd: String,
         home_dir: String,
     },
+    /// Identify the unlisted CLIs a command launches; reads the filesystem
+    /// and resolves launches in `env`.
+    LocalCliIdentify {
+        command_text: String,
+        cwd: String,
+        home_dir: Option<String>,
+        /// The caller's home, for `~/` paths when `home_dir` is absent.
+        user_home: String,
+        /// Also identify scripts and runners in each compound segment.
+        compound: bool,
+        env: BTreeMap<String, String>,
+        budget_ms: u64,
+    },
     CustomExtensionSuggestion {
         tools: Vec<SuggestionToolV1>,
+    },
+    /// Decide whether a Claude `AskUserQuestion` PostToolUse answers the
+    /// pending HOL Guard approval prompt, and map the chosen option to an
+    /// approval action.
+    ClaudeGuardQuestion {
+        /// Normalized hook event name.
+        event: Option<String>,
+        #[serde(default)]
+        tool_name: Value,
+        #[serde(default)]
+        tool_input: Value,
+        /// `tool_response` without its `answers` mapping.
+        #[serde(default)]
+        tool_response: Value,
+        /// `tool_response.answers` as ordered `[question, answer]` pairs, or
+        /// `None` when it was not a mapping.
+        response_answers: Option<Vec<Value>>,
+        /// The pending approval's prompt fields.
+        pending: Value,
     },
     McpServerIdentity {
         request: McpServerIdentityRequestV1,
@@ -387,6 +419,17 @@ pub enum ContextDigestKindV1 {
         state: String,
         /// Catalog schema/version token baked into the fingerprint.
         version: String,
+    },
+    /// Compose a runtime hook's saved-approval context (paths, shell
+    /// execution context, configured environment, launch identity, nonces)
+    /// and return its token. `inputs` is the transport projection of one
+    /// evaluation; the worker owns every derived component.
+    RuntimeHookApprovalContext {
+        inputs: Value,
+    },
+    /// The generic fallback hook's saved-approval context and token.
+    GenericHookApprovalContext {
+        inputs: Value,
     },
 }
 
@@ -517,6 +560,21 @@ pub struct ContextDigestResultV1 {
     /// `package_json_scripts` output; absent when nothing is recognized.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub package_json_scripts: Option<PackageJsonScriptsV1>,
+    /// `local_cli_identify` output, first-seen order, unique by `cli_id`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_cli_identities: Option<Vec<UnlistedCliV1>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_extension_suggestion: Option<Vec<SuggestionVerdictV1>>,
+    /// `claude_guard_question` answer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claude_guard_question: Option<ClaudeGuardQuestionVerdictV1>,
+}
+
+/// Whether a hook answers the pending HOL Guard approval prompt.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ClaudeGuardQuestionVerdictV1 {
+    pub is_question: bool,
+    /// `allow` or `block`; `None` when the answer names no approval option.
+    pub action: Option<String>,
 }

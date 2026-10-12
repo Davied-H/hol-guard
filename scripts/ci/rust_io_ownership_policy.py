@@ -80,6 +80,8 @@ _TRANSPORT_IDENTITY_PATHS: Final = frozenset(
 )
 _TRANSPORT_INTEGRITY_PATHS: Final = frozenset(
     {
+        # Reassembled resident fragments are bound by the native result digest.
+        "src/codex_plugin_scanner/guard/native_shell_helpers.py",
         "src/codex_plugin_scanner/guard/native_decision_receipt.py",
         "src/codex_plugin_scanner/guard/native_rich_command_model.py",
         "src/codex_plugin_scanner/guard/native_command_observations.py",
@@ -109,6 +111,7 @@ _TRANSPORT_INTEGRITY_PATHS: Final = frozenset(
         "src/codex_plugin_scanner/guard/native_hook_artifact_compose.py",
         # Same correlation-only digest for the consumer artifact composition op.
         "src/codex_plugin_scanner/guard/native_consumer_artifact_compose.py",
+        "src/codex_plugin_scanner/guard/native_consumer_artifact_project.py",
         # Same correlation-only digest for the per-harness hook adapter op.
         "src/codex_plugin_scanner/guard/native_hook_adapter.py",
         "src/codex_plugin_scanner/guard/native_hook_adapter_wire.py",
@@ -121,6 +124,8 @@ _TRANSPORT_INTEGRITY_PATHS: Final = frozenset(
         "src/codex_plugin_scanner/guard/native_git_execution_safety.py",
         "src/codex_plugin_scanner/guard/native_compound_git_inspection.py",
         "src/codex_plugin_scanner/guard/native_policy_bundle.py",
+        # Gathers ambient facts for and decodes the resident package-shim admin envelope; results stay Rust.
+        "src/codex_plugin_scanner/guard/native_shim_admin.py",
         # Decodes the bounded resident MCP proxy decision envelope; verdicts stay Rust.
         "src/codex_plugin_scanner/guard/native_mcp_proxy_decision.py",
         # Decodes the bounded resident daemon-lifecycle verdict; decisions stay Rust.
@@ -148,6 +153,7 @@ _TRANSPORT_DECODE_PATHS: Final = frozenset(
         # Resident-op dispatch bridge: decodes the bounded native response and
         # returns a DTO; it does not interpret response content into a decision.
         "src/codex_plugin_scanner/guard/native_execution.py",
+        "src/codex_plugin_scanner/guard/native_shell_helpers.py",
         # Bounded response decoding for native package-authority results.
         "src/codex_plugin_scanner/guard/native_package_authority.py",
         # Bounded response decoding for the resident approval-identity/hash result.
@@ -188,6 +194,7 @@ _TRANSPORT_DECODE_PATHS: Final = frozenset(
         # Decodes the bounded resident consumer artifact composition response;
         # the answer is strictly bound and validated, never reinterpreted.
         "src/codex_plugin_scanner/guard/native_consumer_artifact_compose.py",
+        "src/codex_plugin_scanner/guard/native_consumer_artifact_project.py",
         # Decodes the bounded resident hook adapter response; the answer is
         # strictly bound and validated, never reinterpreted.
         "src/codex_plugin_scanner/guard/native_hook_adapter.py",
@@ -206,6 +213,8 @@ _TRANSPORT_DECODE_PATHS: Final = frozenset(
         "src/codex_plugin_scanner/guard/native_compound_git_inspection.py",
         "src/codex_plugin_scanner/guard/native_codex_tool_output.py",
         "src/codex_plugin_scanner/guard/native_policy_bundle.py",
+        # Gathers ambient facts for and decodes the resident package-shim admin envelope; results stay Rust.
+        "src/codex_plugin_scanner/guard/native_shim_admin.py",
         # Decodes the bounded resident MCP proxy decision envelope; verdicts stay Rust.
         "src/codex_plugin_scanner/guard/native_mcp_proxy_decision.py",
         # Decodes the bounded resident daemon-lifecycle verdict; decisions stay Rust.
@@ -221,9 +230,14 @@ _TRANSPORT_DECODE_PATHS: Final = frozenset(
         # Decodes the bounded resident runner-authority response envelope and
         # projects typed runner state to it; Rust owns every authority answer.
         "src/codex_plugin_scanner/guard/native_runner_authority.py",
+        # Fused CLI input/identity DTO from the existing bound resident stream.
+        "src/codex_plugin_scanner/guard/native_cli_runtime_support.py",
         "src/codex_plugin_scanner/guard/runtime/runner_native_authority.py",
         # Decodes the bounded resident MCP tool-evidence response envelope.
         "src/codex_plugin_scanner/guard/native_mcp_tool_evidence.py",
+        # Normalizes the request to plain JSON types and decodes the bounded
+        # resident tool-call identity envelope; identity and hashing stay Rust.
+        "src/codex_plugin_scanner/guard/native_mcp_tool_call_identity.py",
         # JSON-safe DTO copy shared by the native runner-authority and MCP
         # tool-evidence projections; it carries no decision.
         "src/codex_plugin_scanner/guard/runtime/json_safe_copy.py",
@@ -343,8 +357,6 @@ _PENDING_AUTHORITY_PATHS: Final = frozenset(
         "src/codex_plugin_scanner/guard/cli/commands_support_runtime_policy.py",
         "src/codex_plugin_scanner/guard/cli/commands_support_runtime_resolution.py",
         "src/codex_plugin_scanner/guard/package_execution_context.py",
-        "src/codex_plugin_scanner/guard/package_execution_context_configuration.py",
-        "src/codex_plugin_scanner/guard/package_execution_context_inputs.py",
         "src/codex_plugin_scanner/guard/package_shim_frozen.py",
         "src/codex_plugin_scanner/guard/package_shim_status.py",
         "src/codex_plugin_scanner/guard/runtime/_shell_execution_context_support.py",
@@ -372,7 +384,6 @@ _PENDING_AUTHORITY_PATHS: Final = frozenset(
         "src/codex_plugin_scanner/guard/runtime/github_workflow_runtime.py",
         "src/codex_plugin_scanner/guard/runtime/jsonc.py",
         "src/codex_plugin_scanner/guard/runtime/local_cli_commands.py",
-        "src/codex_plugin_scanner/guard/runtime/local_cli_compound.py",
         "src/codex_plugin_scanner/guard/runtime/local_cli_identity.py",
         "src/codex_plugin_scanner/guard/runtime/local_cli_runner.py",
         "src/codex_plugin_scanner/guard/runtime/local_package_script_evidence.py",

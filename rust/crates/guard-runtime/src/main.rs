@@ -55,6 +55,9 @@ mod claim_reuse_binding;
 mod claim_reuse_binding_tests;
 #[cfg(test)]
 mod claim_reuse_vectors_tests;
+mod claude_guard_question;
+mod cli_copilot_resolution;
+mod cli_runtime_support_op;
 mod cloud_action_envelope;
 mod cloud_action_envelope_fields;
 mod cloud_receipt_payload;
@@ -90,6 +93,13 @@ mod compound_git_paths;
 mod compound_git_segments;
 mod consumer_artifact_compose_op;
 mod consumer_artifact_compose_runtime;
+mod consumer_artifact_project_op;
+mod consumer_capabilities;
+mod consumer_capability_delta;
+mod consumer_evidence;
+mod consumer_incident;
+mod consumer_result;
+mod consumer_url;
 #[cfg(unix)]
 mod contained_op;
 mod content_sensitivity_op;
@@ -97,6 +107,7 @@ mod context_digest;
 mod context_digest_json;
 mod context_digest_local_cli;
 mod context_digest_package_scripts;
+mod context_digest_result_check;
 mod contributed_mcp_decision_op;
 mod critical_floor_op;
 mod cursor_observer_proof_op;
@@ -236,7 +247,18 @@ mod guard_store_wfcap_wire;
 #[cfg(test)]
 mod guard_store_workflow_capability_vectors_tests;
 mod hardening;
+mod hermes_detect;
+mod hermes_inspect;
+mod hermes_printable;
+mod hermes_skills;
+mod hermes_text;
+#[cfg(all(test, unix))]
+mod hermes_vectors_tests;
+mod hermes_yaml;
+mod hermes_yaml_construct;
+mod hermes_yaml_resolve;
 mod hook_adapter_op;
+mod hook_approval_context;
 mod hook_artifact_compose_op;
 mod hook_artifact_compose_reuse;
 mod hook_authority_state_op;
@@ -250,9 +272,11 @@ mod hook_decision_native_facts;
 mod hook_decision_native_facts_tests;
 mod hook_decision_op;
 mod hook_decision_settle;
+mod hook_policy_config;
 mod hook_process_spawn;
 mod hook_render_op;
 mod local_cli_grant_op;
+mod local_cli_identify;
 mod local_mcp_grant_identity;
 mod local_mcp_grant_launcher;
 mod local_mcp_grant_op;
@@ -281,6 +305,8 @@ mod mcp_sensitive_read;
 #[cfg(test)]
 mod mcp_sensitive_read_vectors_tests;
 mod mcp_stdio_session_op;
+mod mcp_tool_call_identity_build;
+mod mcp_tool_call_identity_op;
 mod mcp_tool_evidence_op;
 mod mcp_tool_policy_composio;
 mod mcp_tool_policy_decide_op;
@@ -309,6 +335,7 @@ mod package_approval_hash_op;
 mod package_audit_projection_op;
 mod package_authority_config;
 mod package_authority_op;
+mod package_context_build_op;
 mod package_evaluation_compose_op;
 mod package_policy_resolve_op;
 mod package_posture_op;
@@ -346,6 +373,7 @@ mod policy_snapshot_build;
 mod policy_store;
 mod prompt_analyze_op;
 mod protect_request_op;
+mod pyjson;
 #[cfg(test)]
 mod registry_vectors_tests;
 mod request_context_op;
@@ -366,6 +394,7 @@ mod resident_transport;
 mod resident_transport_service;
 mod resident_update_lock;
 mod restricted_linux_launch;
+mod restricted_process_ceiling;
 mod restricted_pytest_op;
 mod rich_command_model_op;
 mod runner_authority_detector;
@@ -382,16 +411,13 @@ mod secrets_cli;
 #[allow(dead_code, clippy::pedantic)]
 #[path = "../../guard-command/tests/sfrs_support/mod.rs"]
 mod sfrs_support;
+mod shell_helpers_op;
 mod shim_op;
-#[cfg(unix)]
 mod skill_directory_identity_op;
-#[cfg(unix)]
 mod skill_identity_canon;
-#[cfg(unix)]
 mod skill_identity_discovery;
-#[cfg(unix)]
 mod skill_identity_inspect;
-#[cfg(unix)]
+mod skill_identity_platform;
 mod skill_identity_walk;
 #[cfg(unix)]
 mod state_directory_lock;
@@ -406,6 +432,10 @@ mod totp;
 mod workspace_inventory_files;
 mod workspace_inventory_op;
 mod workspace_scan_targets;
+mod zcode_artifacts;
+mod zcode_detect;
+#[cfg(all(test, unix))]
+mod zcode_vectors_tests;
 
 pub(crate) use resident_protocol::{capabilities, encode_response, strict_json_value};
 pub(crate) use resident_transport::{

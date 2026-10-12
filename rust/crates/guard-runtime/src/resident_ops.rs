@@ -311,6 +311,9 @@ pub(crate) fn evaluate_resident_bytes(
             ResidentOperationV1::LocalCliGrantDecide(request) => {
                 crate::local_cli_grant_op::evaluate_local_cli_grant_request(&request)
             }
+            ResidentOperationV1::ShellHelpers(request) => {
+                crate::shell_helpers_op::evaluate(&request)
+            }
             ResidentOperationV1::ApprovalProofDecide(request) => {
                 crate::approval_proof_op::evaluate_approval_proof_request(&request)
             }
@@ -343,6 +346,11 @@ pub(crate) fn evaluate_resident_bytes(
                     &request,
                 )
             }
+            ResidentOperationV1::ConsumerArtifactProject(request) => {
+                crate::consumer_artifact_project_op::evaluate_consumer_artifact_project_request(
+                    &request,
+                )
+            }
             ResidentOperationV1::LocalMcpGrantDecide(request) => {
                 crate::local_mcp_grant_op::evaluate_local_mcp_grant_request(&request)
             }
@@ -352,7 +360,6 @@ pub(crate) fn evaluate_resident_bytes(
                     policy_store,
                 )
             }
-            #[cfg(unix)]
             ResidentOperationV1::SkillDirectoryIdentity(request) => {
                 crate::skill_directory_identity_op::evaluate_skill_directory_identity_request(
                     &request,
@@ -365,6 +372,9 @@ pub(crate) fn evaluate_resident_bytes(
             }
             ResidentOperationV1::McpToolPolicyDecide(request) => {
                 crate::mcp_tool_policy_decide_op::evaluate_mcp_tool_policy_decide_request(&request)
+            }
+            ResidentOperationV1::McpToolCallIdentity(request) => {
+                crate::mcp_tool_call_identity_op::evaluate_mcp_tool_call_identity_request(&request)
             }
             ResidentOperationV1::PackageAdvisoryIds(request) => {
                 crate::package_authority_op::evaluate_package_advisory_ids(&request)
@@ -406,6 +416,9 @@ pub(crate) fn evaluate_resident_bytes(
             }
             ResidentOperationV1::ShimAdmin(request) => {
                 crate::shim_op::evaluate_shim_admin(&request)
+            }
+            ResidentOperationV1::PackageContextBuild(request) => {
+                crate::package_context_build_op::evaluate_package_context_build(&request)
             }
             ResidentOperationV1::McpStdioProbe(request) => {
                 crate::mcp_probe_op::evaluate_mcp_stdio_probe(&request)
@@ -449,8 +462,7 @@ pub(crate) fn evaluate_resident_bytes(
                 crate::data_flow_analyze_op::evaluate_data_flow_analyze(&request)
             }
             #[cfg(not(unix))]
-            ResidentOperationV1::SkillDirectoryIdentity(_)
-            | ResidentOperationV1::ContainedNodeExecute(_)
+            ResidentOperationV1::ContainedNodeExecute(_)
             | ResidentOperationV1::ContainedTypescriptExecute(_)
             | ResidentOperationV1::ContainedPackageScriptExecute(_)
             | ResidentOperationV1::ContainedWorkspaceWriteExecute(_)
@@ -506,6 +518,7 @@ fn operation_guard_home(operation: &ResidentOperationV1) -> Option<&str> {
         ResidentOperationV1::ContainedWorkspaceWriteExecute(request) => Some(&request.guard_home),
         ResidentOperationV1::ContainedExecute(request) => Some(&request.guard_home),
         ResidentOperationV1::ShimAdmin(request) => Some(&request.guard_home),
+        ResidentOperationV1::PackageContextBuild(request) => Some(&request.guard_home),
         ResidentOperationV1::McpStdioProbe(request) => Some(&request.guard_home),
         ResidentOperationV1::PromptAnalyze(request) => Some(&request.guard_home),
         ResidentOperationV1::McpRuntimeEvidence(request) => Some(&request.guard_home),

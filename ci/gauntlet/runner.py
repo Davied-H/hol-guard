@@ -32,6 +32,7 @@ from .case_helpers import (
 from .case_worker import SubprocessCaseWorker
 from .catalog import WATCH_COMMAND, WATCH_PROMPT, Scenario, catalog_digest, load_catalog
 from .cleanup import cleanup_case_resources
+from .contained_core import request_proofs
 from .evidence import assess_case, sha256_bytes
 from .extension_adapters import configure_extension_permission_denial, extension_adapter
 from .fixtures import create_fixture, create_run_root, digest_file, filesystem_checks, scenario_fixture_name
@@ -48,6 +49,7 @@ from .provider import InferenceRelay, LoopbackCollector
 from .review_fixtures import GITHUB_REVIEW_CASE, GITHUB_STUB_CASES, WORKTREE_CASE, configure_github_review_controls
 from .source_identity import source_identity
 from .summary import inference_usage, render_summary_markdown
+from .supply_chain import stage_supply_chain
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
@@ -72,6 +74,7 @@ def run_case(
         realistic=first_contact and scenario.id != WORKTREE_CASE,
         linked_worktree=scenario.id == WORKTREE_CASE,
     )
+    stage_supply_chain(fixture.workspace, scenario.id)
     private = fixture.root / "private-evidence"
     private.mkdir(mode=0o700)
     raw_log, error_log = private / "omp.jsonl", private / "stderr.txt"
@@ -253,6 +256,8 @@ def run_case(
             case["raw_transcript_sha256"] = digest_file(raw_log)
             case["stderr_sha256"] = digest_file(error_log)
             read_case_logs(case, raw_log, guard_log, replacements, host_log)
+            if proofs := request_proofs(host_log, fixture.workspace, replacements):
+                case["contained_request_proofs"] = proofs
             if scenario.oracle == "blocked-extension":
                 if extension_receipt_ids is None or extension_receipt_writer is None:
                     raise RuntimeError("native receipt correlation was not initialized")

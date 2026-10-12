@@ -134,6 +134,8 @@ def record() -> dict:
                 "evidence": {"mode": mode, "device": 1, "inode": 2, "links": links, "major": major, "minor": minor},
             }
 
+            syscall = Syscall(calls)
+
             def capture(plan=plan, calls=calls):
                 boundary.enforce_landlock(**plan)
                 return calls
@@ -145,7 +147,7 @@ def record() -> dict:
                     patch.object(
                         boundary.ctypes,
                         "CDLL",
-                        lambda *args, syscall=Syscall(calls), **kwargs: types.SimpleNamespace(
+                        lambda *args, syscall=syscall, **kwargs: types.SimpleNamespace(
                             syscall=syscall, prctl=lambda *args: 0
                         ),
                     )

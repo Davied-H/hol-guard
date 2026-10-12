@@ -265,6 +265,8 @@ def test_writer_drops_only_evidence_when_queue_is_full(tmp_path: Path) -> None:
 
 def test_writer_stops_with_bounded_sqlite_contention(tmp_path: Path) -> None:
     store = GuardStore(tmp_path / "guard-home")
+    # The bound measures SQLite contention, not one-time native provisioning.
+    _ = store.count_command_shadow_observations()
     lock = sqlite3.connect(store.path)
     _ = lock.execute("begin immediate")
     writer = RuntimeHookEvidenceWriter(
@@ -278,7 +280,11 @@ def test_writer_stops_with_bounded_sqlite_contention(tmp_path: Path) -> None:
             payload={"command": "rg safe"},
             succeeded=True,
         )
-        time.sleep(0.02)
+        # Time only the shutdown: the first contended attempt pays any cold
+        # native start-up, which is not what this bound measures.
+        attempt_deadline = time.monotonic() + 10
+        while writer.stats()["failures"] < 1 and time.monotonic() < attempt_deadline:
+            time.sleep(0.01)
         started = time.monotonic()
         assert writer.stop(timeout_seconds=1)
         assert time.monotonic() - started < 0.5

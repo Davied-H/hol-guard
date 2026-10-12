@@ -11,8 +11,8 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 
 from . import restricted_git, restricted_node_test, restricted_node_tool, restricted_vitest
-from .contained_wrapper import bounded_output, peel_contained_wrapper
-from .restricted_inline_eval import is_inline_eval, prepare_restricted_inline_eval, run_restricted_inline_eval
+from .contained_wrapper import bounded_output, peel_contained_wrapper, sibling_project_root
+from .restricted_inline_eval import prepare_restricted_inline_eval, run_restricted_inline_eval
 from .restricted_package_test import (
     PACKAGE_TEST_PROFILE,
     PACKAGE_TEST_REASON,
@@ -27,6 +27,7 @@ from .restricted_pytest_model import (
     PYTEST_READ_ONLY_PROFILE_VERSION,
     VITEST_READ_ONLY_PROFILE_VERSION,
 )
+from .restricted_pytest_validation import _path_is_within
 
 _MAX_REQUEST_BYTES = 1_048_576
 _FAILURE = "contained_test_authorization_failed"
@@ -114,11 +115,13 @@ def run_authorized_contained_test(
     authorize: Callable[[dict[str, object]], object],
     timeout_seconds: int,
     cwd: Path | None = None,
+    home_dir: Path | None = None,
 ) -> int:
     """Recheck native authority for the original input before protected execution.
 
     `workspace` stays the approved root for dependency and profile resolution;
-    `cwd` is only the directory a peeled `cd` selected to run in.
+    `cwd` is only the directory a peeled `cd` selected to run in. A `cd` into a
+    sibling repository moves the approved root to that repository.
     """
     tool_input = payload.get("tool_input")
     if not isinstance(tool_input, dict) or not isinstance(tool_input.get("command"), str):
@@ -126,7 +129,7 @@ def run_authorized_contained_test(
     if cwd is None:
         cwd = workspace
     try:
-        peeled = peel_contained_wrapper(tool_input["command"], workspace=workspace)
+        peeled = peel_contained_wrapper(tool_input["command"], workspace=workspace, home=home_dir)
     except (OSError, RuntimeError, ValueError) as error:
         raise _reject() from error
     if peeled is not None:
@@ -142,6 +145,11 @@ def run_authorized_contained_test(
         ):
             raise _reject()
         core, directory, output = peeled
+        if not _path_is_within(directory, workspace.resolve(strict=True)):
+            sibling = sibling_project_root(directory, home=home_dir)
+            if sibling is None:
+                raise _reject()
+            workspace = sibling
         with bounded_output(output):
             return run_authorized_contained_test(
                 {**payload, "cwd": str(directory), "tool_input": {**tool_input, "command": core}},
@@ -149,6 +157,7 @@ def run_authorized_contained_test(
                 authorize=authorize,
                 timeout_seconds=timeout_seconds,
                 cwd=directory,
+                home_dir=home_dir,
             )
     try:
         command = shlex.split(tool_input["command"], posix=True)
@@ -157,53 +166,15 @@ def run_authorized_contained_test(
     package_test = is_package_test(command)
     if package_test:
         command = list(resolve_package_test(command, workspace=workspace, cwd=cwd))
-    inline_eval = is_inline_eval(command)
-    # Fail before the authority request if the backend cannot enforce the profile.
-    node_runtime_args = (
-        restricted_node_test._node_runtime_args(command)
-        if command and Path(command[0]).name in {"node", "nodejs"}
-        else ()
-    )
-    node_test_index = 1 + len(node_runtime_args)
-    node_test = (
-        len(command) > node_test_index
-        and Path(command[0]).name in {"node", "nodejs"}
-        and command[node_test_index] == "--test"
-    )
-    vitest = bool(command) and (
-        Path(command[0]).name in {"bunx", "npx", "vitest"}
-        or restricted_vitest.bun_vitest_invocation(command) is not None
-        or (
-            len(command) > 1
-            and Path(command[0]).name in {"node", "nodejs"}
-            and any(argument.endswith("/node_modules/vitest/vitest.mjs") for argument in command[1:3])
-        )
-    )
-    git = bool(command) and Path(command[0]).name == "git"
-    node_tool = (
-        restricted_vitest.bun_vitest_invocation(command) is None
-        and bool(command)
-        and (
-            Path(command[0]).name in {"eslint", "tsc", "vite", "bun", "npm", "pnpm"}
-            or (
-                Path(command[0]).name in {"bunx", "npx"}
-                and any(arg in {"eslint", "tsc", "vite"} for arg in command[1:3])
-            )
-            or (
-                len(command) > 1
-                and Path(command[0]).name in {"node", "nodejs"}
-                and any(
-                    argument.endswith(
-                        (
-                            "/node_modules/eslint/bin/eslint.js",
-                            "/node_modules/typescript/bin/tsc",
-                            "/node_modules/vite/bin/vite.js",
-                        )
-                    )
-                    for argument in command[1:3]
-                )
-            )
-        )
+    from ..native_restricted_pytest import restricted_native
+
+    kinds = restricted_native("contained_kind", {"command": command}, dict)
+    if set(kinds) != {"inline_eval", "node_test", "vitest", "git", "node_tool"} or any(
+        type(value) is not bool for value in kinds.values()
+    ):
+        raise _reject()
+    inline_eval, node_test, vitest, git, node_tool = (
+        kinds[key] for key in ("inline_eval", "node_test", "vitest", "git", "node_tool")
     )
     inline_plan = node_tool_plan = git_plan = vitest_plan = node_test_plan = None
     if inline_eval:
