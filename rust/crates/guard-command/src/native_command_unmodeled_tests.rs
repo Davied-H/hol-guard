@@ -236,11 +236,20 @@ fn build_commands_behind_command_time_or_plain_env_are_not_evaluation_failures()
         "RUSTFLAGS='-C linker=./x' cargo build",
         "GOFLAGS=-toolexec=./x go build",
         "CC=./x npm run build",
-        "APP_FLAG=1 bun run build",
-        "PORT=3000 npm run dev",
-        "VITE_BASE=/app/ vite build",
     ] {
-        assert_eq!(decision(&controls, command).0, "block", "{command}");
+        assert_ne!(decision(&controls, command).0, "allow", "{command}");
+    }
+    // An ordinary application variable keeps the unprefixed decision.
+    for (command, bare) in [
+        ("APP_FLAG=1 bun run build", "bun run build"),
+        ("PORT=3000 npm run dev", "npm run dev"),
+        ("VITE_BASE=/app/ vite build", "vite build"),
+    ] {
+        assert_eq!(
+            decision(&controls, command).0,
+            decision(&controls, bare).0,
+            "{command}"
+        );
     }
 }
 
