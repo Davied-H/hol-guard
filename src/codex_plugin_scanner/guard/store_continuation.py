@@ -7,8 +7,8 @@ from typing import Any, cast
 from uuid import uuid4
 
 from .native_continuation_authority import continuation_authority
-from .store_base import sqlite_connect_timeout_seconds
 from .review_event_wake import review_event_wake_signal_for_key
+from .store_base import sqlite_connect_timeout_seconds
 
 
 def continuation_store_call(store: Any, call: str, **args: Any) -> dict[str, Any]:

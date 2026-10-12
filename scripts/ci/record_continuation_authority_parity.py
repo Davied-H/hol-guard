@@ -279,7 +279,11 @@ def record_lease_traces():
     fixed.hex = "00112233445566778899aabbccddeeff"
     lease_bindings = {"datetime": datetime, "timedelta": timedelta, "uuid4": lambda: fixed}
     exec(compile(ast.Module(body=[method], type_ignores=[]), store_path, "exec"), lease_bindings)
-    schema = "create table guard_continuation_claims (request_id text,offer_hash text,action text,state text,claimed_at text,lease_expires_at text,claim_id text,evidence_id text,primary key(request_id,offer_hash,action))"
+    schema = (
+        "create table guard_continuation_claims (request_id text,offer_hash text,action text,state text,"
+        "claimed_at text,lease_expires_at text,claim_id text,evidence_id text,"
+        "primary key(request_id,offer_hash,action))"
+    )
 
     class LeaseOwner:
         def __init__(self, connection):
