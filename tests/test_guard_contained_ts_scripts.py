@@ -150,8 +150,8 @@ def test_tsx_requires_a_local_loader_and_a_workspace_script(tmp_path, monkeypatc
         vitest.prepare_restricted_vitest(["tsx", "src/math.test.ts"], workspace=workspace)
 
 
-def test_bun_installed_transform_image_is_snapshotted(tmp_path, monkeypatch):
-    """Bun writes package files with mode 0777; the private copy is what runs."""
+def test_group_or_world_writable_transform_image_is_rejected(tmp_path, monkeypatch):
+    """Another local account can replace a 0777 image before the private copy."""
     monkeypatch.setattr(esbuild.sys, "platform", "darwin")
     monkeypatch.setattr(esbuild.platform, "machine", lambda: "arm64")
     package = tmp_path / "node_modules/esbuild"
@@ -163,6 +163,60 @@ def test_bun_installed_transform_image_is_snapshotted(tmp_path, monkeypatch):
     image.chmod(0o777)
     private = tmp_path / "private"
     private.mkdir(mode=0o700)
-    snapshot = esbuild.snapshot_esbuild(tmp_path, private)
-    assert snapshot is not None
-    assert snapshot[1].stat().st_mode & 0o777 == 0o500
+    with pytest.raises(RestrictedPytestError):
+        esbuild.snapshot_esbuild(tmp_path, private)
+
+
+def _native_esbuild(root: Path, version: str) -> Path:
+    package = root / "node_modules/esbuild"
+    package.mkdir(parents=True)
+    (package / "package.json").write_text(f'{{"name":"esbuild","version":"{version}"}}')
+    image = root / "node_modules/@esbuild/darwin-arm64/bin/esbuild"
+    image.parent.mkdir(parents=True)
+    image.write_bytes(b"\xcf\xfa\xed\xfe" + version.encode())
+    image.chmod(0o700)
+    return image
+
+
+def test_tsx_uses_the_esbuild_nested_beside_its_loader(tmp_path, monkeypatch):
+    monkeypatch.setattr(esbuild.sys, "platform", "darwin")
+    monkeypatch.setattr(esbuild.platform, "machine", lambda: "arm64")
+    workspace = _workspace(tmp_path)
+    hoisted = _native_esbuild(workspace, "0.19.12")
+    nested = _native_esbuild(workspace / "node_modules/tsx", "0.25.4")
+    loader = (workspace / "node_modules/tsx/dist/loader.mjs").resolve()
+    plan = RestrictedPytestPlan(
+        profile_version=VITEST_READ_ONLY_PROFILE_VERSION,
+        backend="macos-seatbelt",
+        backend_executable=Path("/usr/bin/sandbox-exec"),
+        workspace=workspace,
+        cwd=workspace,
+        command=("/usr/bin/node", "--import", loader.as_uri(), "src/math.test.ts"),
+        executable=Path("/usr/bin/node"),
+        allowed_executables=(Path("/usr/bin/node"),),
+        denied_capabilities=(),
+    )
+    holder: dict[str, dict[str, str]] = {}
+
+    def environment(*args, **kwargs):
+        return {}
+
+    def linux(plan, *, environment, **kwargs):
+        holder["env"] = environment
+        return environment
+
+    monkeypatch.setattr(vitest, "_restricted_environment", environment)
+    monkeypatch.setattr(vitest, "linux_node_environment", linux)
+    monkeypatch.setattr(vitest, "_backend_argv", lambda *args, **kwargs: [])
+    captured: dict[str, bytes] = {}
+
+    def launch(*args, **kwargs):
+        captured["bytes"] = Path(holder["env"]["ESBUILD_BINARY_PATH"]).read_bytes()
+        return 0
+
+    monkeypatch.setattr(vitest, "_run_backend_process", launch)
+    checked = []
+    assert vitest.run_restricted_node_plan(plan, env={}, authorize_capability=checked.append) == 0
+    assert captured["bytes"] == nested.read_bytes()
+    assert captured["bytes"] != hoisted.read_bytes()
+    assert checked == [(str(nested), "--service=0.25.4", "--ping")]

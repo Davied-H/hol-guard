@@ -48,16 +48,16 @@ def snapshot_esbuild(workspace: Path, private_root: Path) -> tuple[Path, Path, s
         source = (modules / "@esbuild" / f"{system}-{cpu}" / "bin/esbuild").resolve(strict=True)
         if not _path_is_within(source, modules):
             raise ValueError("external image")
-        # Bun installs every package file with mode 0777, so write bits on the
-        # image say nothing about who changed it. The bytes read here are the
-        # bytes that run: they are copied once into a private 0500 image that
-        # native authorization checks and the sandbox alone may execute.
+        # Another local account can replace a group- or world-writable image
+        # before this copy. The private 0500 file is only as trustworthy as
+        # the bytes read here, so those write bits stay a refusal.
         descriptor = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
         with os.fdopen(descriptor, "rb") as stream:
             metadata = os.fstat(stream.fileno())
             if (
                 not stat.S_ISREG(metadata.st_mode)
                 or metadata.st_uid not in {0, os.getuid()}
+                or metadata.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
                 or not metadata.st_mode & stat.S_IXUSR
                 or not 4 <= metadata.st_size <= _LIMIT
             ):

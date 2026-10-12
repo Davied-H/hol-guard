@@ -8,7 +8,9 @@ import stat
 import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
+from itertools import pairwise
 from pathlib import Path
+from urllib.parse import unquote, urlparse
 
 from .restricted_inline_eval import _test_script
 from .restricted_node_capabilities import linux_node_environment
@@ -22,6 +24,17 @@ from .restricted_pytest_model import (
 )
 from .restricted_pytest_sandbox import _backend_argv, _restricted_environment, _run_backend_process
 from .restricted_pytest_validation import _normalized_command, _path_is_within
+
+
+def _tsx_package_dir(command: Sequence[str]) -> Path | None:
+    """Directory of the tsx package named by a contained `--import` loader."""
+    for flag, value in pairwise(command):
+        if flag != "--import" or not value.startswith("file:"):
+            continue
+        path = Path(unquote(urlparse(value).path))
+        if path.name == "loader.mjs" and path.parent.name == "dist" and path.parent.parent.name == "tsx":
+            return path.parent.parent
+    return None
 
 
 def bun_vitest_invocation(command: Sequence[str]) -> tuple[str | None, tuple[str, ...]] | None:
@@ -275,7 +288,10 @@ def run_restricted_node_plan(
             # replace the image by renaming a writable scratch ancestor.
             # The transform image sits beside the package that runs the tests,
             # which may be a package directory below the approved root.
-            project = nearest_project_root(plan.cwd, plan.workspace, "node_modules/esbuild/package.json")
+            # A tsx loader can pin its own nested esbuild. Start there so a
+            # hoisted binary of a different version is not selected instead.
+            anchor = _tsx_package_dir(plan.command) or plan.cwd
+            project = nearest_project_root(anchor, plan.workspace, "node_modules/esbuild/package.json")
             esbuild = snapshot_esbuild(project, Path(images).resolve())
             if esbuild is not None:
                 source, image, version = esbuild
