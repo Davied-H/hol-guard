@@ -38,12 +38,19 @@ def live_ledger_groups(ledger: Path) -> list[int]:
     return list(live)
 
 
+# Mirrors the contained Python runner's trusted interpreter roots; others (Conda, pyenv) it refuses.
+TRUSTED_PYTHON_ROOTS = tuple(
+    Path(root) for root in ("/bin", "/opt/homebrew", "/opt/hostedtoolcache/Python", "/System", "/usr/bin", "/usr/local")
+)
+
+
 def python_shim(directory: Path, search_path: str) -> str | None:
     """Expose the developer's own ``python3`` ahead of the candidate virtualenv.
 
     The candidate venv must stay on PATH so ``hol-guard`` resolves to the build under test, but a
     developer shell does not resolve ``python3`` to a tool's private interpreter. Link ``python3``
-    and ``python`` to the first ``python3`` on PATH outside any virtualenv; without one, add nothing.
+    and ``python`` to the first ``python3`` on PATH outside any virtualenv whose real path lies in a
+    root Guard's contained runner trusts; without one, add nothing.
     """
     if os.name != "posix":
         return None
@@ -53,7 +60,11 @@ def python_shim(directory: Path, search_path: str) -> str | None:
         if not folder.is_absolute() or folder == candidate_bin or (folder.parent / "pyvenv.cfg").exists():
             continue
         interpreter = folder / "python3"
-        if interpreter.is_file() and os.access(interpreter, os.X_OK):
+        if (
+            interpreter.is_file()
+            and os.access(interpreter, os.X_OK)
+            and any(interpreter.resolve().is_relative_to(root) for root in TRUSTED_PYTHON_ROOTS)
+        ):
             directory.mkdir(mode=0o700, parents=True, exist_ok=True)
             for name in ("python3", "python"):
                 (directory / name).unlink(missing_ok=True)

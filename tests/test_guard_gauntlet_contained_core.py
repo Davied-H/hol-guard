@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from ci.gauntlet import host_process
 from ci.gauntlet.case_helpers import _fixture_replacements
 from ci.gauntlet.catalog import load_catalog
 from ci.gauntlet.contained_core import PROOF_SCHEMA, request_proofs
@@ -137,10 +138,19 @@ def _end(case):
     return next(e for e in case["events"] if e.get("toolCallId") == CALL and e["type"] == "tool_execution_end")
 
 
-def test_shim_links_first_python3_outside_virtualenvs(tmp_path):
-    """The agent's python3 is the developer's interpreter, never a virtualenv's private one."""
+@pytest.fixture
+def trusted(tmp_path, monkeypatch):
+    """Stand in for the system roots the contained Python runner trusts."""
+    roots = (tmp_path.resolve() / "system", tmp_path.resolve() / "later")
+    monkeypatch.setattr(host_process, "TRUSTED_PYTHON_ROOTS", roots)
+    return roots
+
+
+def test_shim_links_first_trusted_python3_outside_virtualenvs(tmp_path, trusted):
+    """The agent's python3 is a developer interpreter the contained runner accepts, never a venv's."""
     if os.name != "posix":
         pytest.skip("the shim is POSIX-only")
+    _executable(tmp_path / "conda/bin/python3")
     venv = tmp_path / "tool-venv"
     (venv / "pyvenv.cfg").parent.mkdir(parents=True)
     (venv / "pyvenv.cfg").write_text("home = /usr/bin\n")
@@ -148,7 +158,13 @@ def test_shim_links_first_python3_outside_virtualenvs(tmp_path):
     system = _executable(tmp_path / "system/bin/python3")
     _executable(tmp_path / "later/bin/python3")
     search = os.pathsep.join(
-        ["relative/bin", str(venv / "bin"), str(tmp_path / "system/bin"), str(tmp_path / "later/bin")]
+        [
+            "relative/bin",
+            str(tmp_path / "conda/bin"),
+            str(venv / "bin"),
+            str(tmp_path / "system/bin"),
+            str(tmp_path / "later/bin"),
+        ]
     )
     shim = python_shim(tmp_path / "shim", search)
     assert shim == str(tmp_path / "shim")
@@ -156,17 +172,20 @@ def test_shim_links_first_python3_outside_virtualenvs(tmp_path):
     assert all(os.readlink(Path(shim) / name) == str(system) for name in ("python", "python3"))
 
 
-def test_shim_is_skipped_without_an_outside_python3(tmp_path):
-    venv = tmp_path / "tool-venv"
+def test_shim_is_skipped_without_a_trusted_outside_python3(tmp_path, trusted):
+    venv = tmp_path / "system/tool-venv"
     (venv / "pyvenv.cfg").parent.mkdir(parents=True)
     (venv / "pyvenv.cfg").write_text("")
     _executable(venv / "bin/python3")
-    path = os.pathsep.join([str(Path(sys.executable).parent), str(venv / "bin"), str(tmp_path / "empty")])
+    _executable(tmp_path / "conda/bin/python3")
+    path = os.pathsep.join(
+        [str(Path(sys.executable).parent), str(venv / "bin"), str(tmp_path / "conda/bin"), str(tmp_path / "empty")]
+    )
     assert python_shim(tmp_path / "shim", path) is None
     assert not (tmp_path / "shim").exists()
 
 
-def test_agent_path_keeps_candidate_hol_guard_after_the_shim(tmp_path, monkeypatch):
+def test_agent_path_keeps_candidate_hol_guard_after_the_shim(tmp_path, monkeypatch, trusted):
     """Only python3/python are shadowed; hol-guard still resolves to the candidate build."""
     if os.name != "posix":
         pytest.skip("the shim is POSIX-only")
@@ -220,6 +239,10 @@ BROKEN = {
     ),
     "receipt request id": (
         lambda case: _break_receipt(case, "request_id", "request-8"),
+        "contained rewrite lacks an authoritative Rust containment receipt",
+    ),
+    "receipt and probe request ids missing": (
+        lambda case: (_break_receipt(case, "request_id", None), _pre(case).pop("probe_request_id")),
         "contained rewrite lacks an authoritative Rust containment receipt",
     ),
     "receipt extension digest": (
@@ -276,7 +299,7 @@ def test_each_broken_binding_fails_precisely(fixture, tmp_path, name):
     ("options", "reason"),
     [
         ({"guard_home": "{{fixture}}/other-home"}, "contained wrapper is not bound to the case's Guard installation"),
-        ({"home": "{{workspace}}"}, "contained wrapper is not bound to the case's Guard installation"),
+        ({"home": "{{home}}/other"}, "contained wrapper is not bound to the case's Guard installation"),
     ],
 )
 def test_wrapper_must_name_this_cases_guard_installation(fixture, tmp_path, options, reason):

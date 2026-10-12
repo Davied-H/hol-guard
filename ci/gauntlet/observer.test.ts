@@ -71,13 +71,13 @@ test("overlapping eval calls are observed without changing execution", () => {
 test("contained wrapper request bytes are captured beside the start event", () => {
   const handlers = new Map<string, (event: Record<string, unknown>) => void>();
   install({ on: (name, callback) => { handlers.set(name, callback); } });
-  const folder = join(root, "hol-guard-contained-test-unit");
-  mkdirSync(folder, { mode: 0o700 });
+  const folder = join(root, "dev's work", "hol-guard-contained-test-unit");
+  mkdirSync(folder, { mode: 0o700, recursive: true });
   const request = join(folder, "request.json");
   writeFileSync(request, '{"schema":"guard-contained-test-request.v1"}', { mode: 0o600 });
   const wrapper = (file: string) => ["/venv/bin/hol-guard", "execute-contained-test", "--guard-home", "/g",
     "--workspace", "/w", "--request-file", file, "--request-sha256", "a".repeat(64), "--home", "/h"]
-    .map(value => `'${value}'`).join(" ");
+    .map(value => `'${value.replaceAll("'", "'\\''")}'`).join(" ");
   const start = (id: string, command: string) =>
     ({ type: "tool_execution_start", toolCallId: id, toolName: "bash", args: { command } });
   handlers.get("tool_execution_start")!(start("bound", wrapper(request)));

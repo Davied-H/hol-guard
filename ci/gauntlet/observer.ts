@@ -150,15 +150,19 @@ globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promis
   return response;
 }) as typeof fetch;
 
-const CONTAINED_WRAPPER =
-  /^'[^']+' 'execute-contained-test' '--guard-home' '[^']+' '--workspace' '[^']+' '--request-file' '([^']+)' '--request-sha256' '[0-9a-f]{64}'(?: '--home' '[^']+')?$/;
+// Each argument is single-quoted with embedded apostrophes written as '\'' (canonical shell argv).
+const QUOTED = String.raw`'(?:[^']|'\\'')+'`;
+const CONTAINED_WRAPPER = new RegExp(
+  `^${QUOTED} 'execute-contained-test' '--guard-home' ${QUOTED} '--workspace' ${QUOTED} ` +
+    `'--request-file' (${QUOTED}) '--request-sha256' '[0-9a-f]{64}'(?: '--home' ${QUOTED})?$`,
+);
 
 // Guard's adapter deletes its contained-test request once the wrapper runs. Read only the exact
 // owner-only file the executing wrapper names, before it runs; the judge binds the bytes by digest.
 function containedRequest(event: JsonRecord): JsonRecord | undefined {
   const command = (event.args as JsonRecord | undefined)?.command;
   if (event.toolName !== "bash" || typeof command !== "string") return undefined;
-  const path = CONTAINED_WRAPPER.exec(command)?.[1];
+  const path = CONTAINED_WRAPPER.exec(command)?.[1]?.slice(1, -1).replaceAll("'\\''", "'");
   if (!path || basename(path) !== "request.json" || !basename(dirname(path)).startsWith("hol-guard-contained-test-")) {
     return undefined;
   }

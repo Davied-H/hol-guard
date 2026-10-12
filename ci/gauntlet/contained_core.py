@@ -41,7 +41,6 @@ CONTAINMENT_PROFILES = {
 def contained_public_path(value: object) -> bool:
     return isinstance(value, str) and (
         value.startswith("/")
-        or value in {"{{fixture}}", "{{workspace}}", "{{home}}"}
         or value.startswith(("{{fixture}}/", "{{workspace}}/", "{{home}}/", "{{contained_project}}/"))
     )
 
@@ -74,7 +73,8 @@ def contained_wrapper_argv(command: object, expected_workspace: str) -> tuple[li
         return None, "contained wrapper request path is not adapter-owned"
     if argv[8] != "--request-sha256" or _HEX64.fullmatch(argv[9]) is None:
         return None, "contained wrapper request digest is malformed"
-    if argv[10] != "--home" or not contained_public_path(argv[11]):
+    # The home binding alone may name the redacted home directory itself.
+    if argv[10] != "--home" or not (argv[11] == "{{home}}" or contained_public_path(argv[11])):
         return None, "contained wrapper home binding is malformed"
     return argv, None
 
@@ -113,7 +113,7 @@ def receipt_is_authoritative(observation: dict[str, Any], expected_reason: str, 
         or receipt.get("request_id") != observation.get("probe_request_id")
     ):
         return False
-    if not isinstance(receipt.get("decision_id"), str) or not receipt["decision_id"]:
+    if not all(isinstance(value, str) and value for value in (receipt.get("decision_id"), receipt.get("request_id"))):
         return False
     binding = receipt.get("command_extensions")
     if not isinstance(binding, dict):
