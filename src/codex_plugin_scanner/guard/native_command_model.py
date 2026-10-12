@@ -343,25 +343,6 @@ def _canonical_command_from_native(
     raw_segments = validated.get("segments")
     if not isinstance(normalized_text, str) or not isinstance(raw_segments, list):
         return None
-    if validated.get("confidence") == "uncertain":
-        uncertainty_reason = validated.get("uncertainty_reason")
-        if not isinstance(uncertainty_reason, str):
-            return None
-        canonical = CanonicalCommand(
-            raw_text=command.strip(),
-            normalized_text=normalized_text,
-            dialect="posix",
-            transport="shell_string",
-            extraction_provenance="guard-shell",
-            wrapper_chain=(),
-            segments=(),
-            redirects=(),
-            embedded_commands=(),
-            confidence="uncertain",
-            uncertainty_reason=uncertainty_reason,
-        )
-        return _bind_native_identity(canonical, validated)
-
     # The decoder above already validates every field and span. Present its
     # complete DTO without repeating its checks or deriving new semantics.
     segments = tuple(
@@ -391,8 +372,8 @@ def _canonical_command_from_native(
         segments=segments,
         redirects=(),
         embedded_commands=(),
-        confidence="exact",
-        uncertainty_reason=None,
+        confidence=validated["confidence"],
+        uncertainty_reason=validated["uncertainty_reason"],
     )
     if validated.get("path_overridden") is not canonical.path_overridden:
         return None

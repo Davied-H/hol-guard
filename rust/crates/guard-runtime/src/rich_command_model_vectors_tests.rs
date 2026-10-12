@@ -76,6 +76,27 @@ fn shadow_parser_supplies_the_existing_native_identity() {
 }
 
 #[test]
+fn large_uncertain_parse_uses_a_bound_text_reference() {
+    let command = format!(" {} ", "a".repeat(1_100_000));
+    let parsed = result(
+        "parse",
+        &json!({
+            "command": command, "dialect": "posix", "transport": "shell_string",
+            "extraction_provenance": "guard-shell", "normalize_wrappers": true,
+        }),
+    )
+    .unwrap();
+    assert_eq!(parsed["confidence"], "uncertain");
+    assert_eq!(parsed["raw_text"], "");
+    assert_eq!(parsed["normalized_text"], "");
+    assert_eq!(
+        parsed["source_text_span"],
+        json!({"start": 1, "end": 1_100_001})
+    );
+    assert!(serde_json::to_vec(&parsed).unwrap().len() < 2048);
+}
+
+#[test]
 fn response_is_bound_to_exact_request_and_rejects_unknown_inputs() {
     let request = RichCommandModelRequest {
         schema: REQUEST_SCHEMA.into(),

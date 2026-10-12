@@ -117,6 +117,67 @@ def test_shadow_native_identity_is_reused_without_another_transport(monkeypatch)
     assert _canonical_command_from_native("echo hi", {**payload, "security_identity": "invalid"}) is None
 
 
+@pytest.mark.parametrize("damage", ["negative_pipeline", "negative_span", "reversed_span"])
+def test_malformed_bound_positions_fail_closed(monkeypatch, damage):
+    model = command_model.parse_shell_command("echo hi")
+    payload = {**model.to_dict(), "raw_text": model.raw_text}
+    segment = payload["segments"][0]
+    if damage == "negative_pipeline":
+        segment["pipeline_index"] = -1
+    elif damage == "negative_span":
+        segment["span"]["start"] = -1
+    else:
+        segment["span"].update(start=2, end=1)
+
+    def respond(**kwargs):
+        material = json.loads(kwargs["payload"])["request"]
+        return json.dumps(
+            {
+                "schema": client.RESULT_SCHEMA,
+                "request_id": material["request_id"],
+                "request_sha256": client._canonical_request_sha256(material),
+                "status": "ok",
+                "error": None,
+                "result": payload,
+            }
+        ).encode()
+
+    monkeypatch.setattr(client, "native_resident_client_request", respond)
+    with pytest.raises(client.NativeCommandModelError):
+        command_model.parse_shell_command("echo hi")
+
+
+def test_large_uncertain_command_preserves_native_identity_without_duplicate_wire_text():
+    text = " " + "a" * 1_100_000 + " "
+    model = command_model.parse_shell_command(text)
+    assert model.raw_text == text[1:-1]
+    assert model.normalized_text == text[1:-1]
+    assert model.confidence == "uncertain"
+    assert model.uncertainty_reason == "command_byte_limit_exceeded"
+    assert model.security_identity.startswith("command-security-v2:")
+
+
+def test_local_cli_parser_outage_uses_existing_unverified_grant_path(monkeypatch, tmp_path):
+    from codex_plugin_scanner.guard import local_cli_hook, local_cli_trust
+
+    def unavailable(*args, **kwargs):
+        raise client.NativeCommandModelError("native_rich_command_model_unavailable")
+
+    monkeypatch.setattr(local_cli_trust, "identify_package_json_scripts", unavailable)
+    seen = []
+    monkeypatch.setattr(
+        local_cli_hook, "unverified_local_cli_action", lambda store, action: seen.append(action) or "review"
+    )
+    action = local_cli_hook.apply_local_cli_grant(
+        store=object(),
+        command="blocked-cli",
+        cwd=tmp_path,
+        home_dir=tmp_path,
+        current_action="allow",
+    )
+    assert action == "review" and seen == ["allow"]
+
+
 def test_fresh_status_probe_receives_deadline_and_expired_probe_does_not_start(monkeypatch):
     from types import SimpleNamespace
 
@@ -293,7 +354,7 @@ def test_transport_rejects_unbound_or_malformed_replies(
         return json.dumps(reply).encode()
 
     monkeypatch.setattr(client, "native_resident_client_request", respond)
-    with pytest.raises(ValueError):
+    with pytest.raises(client.NativeCommandModelError):
         command_tokens.shell_tokens("echo \udc80" if damage == "surrogate" else "echo hi")
 
 

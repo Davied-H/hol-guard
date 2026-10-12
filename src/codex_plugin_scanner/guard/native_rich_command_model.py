@@ -45,7 +45,7 @@ def native_runtime_status(*, deadline_monotonic: float) -> NativeRuntimeStatus:
     return status
 
 
-class NativeCommandModelError(RuntimeError, ValueError):
+class NativeCommandModelError(RuntimeError):
     """The native parser did not return an authoritative, bound result."""
 
 
@@ -57,6 +57,7 @@ def _shape(value: Any, spec: Any) -> bool:
             isinstance(value, dict)
             and set(value) == set(spec)
             and all(_shape(value[key], kind) for key, kind in spec.items())
+            and (not {"start", "end"} <= set(spec) or value["start"] <= value["end"])
         )
     if isinstance(spec, list):
         if not isinstance(value, list):
@@ -64,7 +65,7 @@ def _shape(value: Any, spec: Any) -> bool:
         if len(spec) == 1:
             return all(_shape(item, spec[0]) for item in value)
         return len(value) == len(spec) and all(_shape(item, kind) for item, kind in zip(value, spec, strict=True))
-    return type(value) is spec
+    return type(value) is spec and (spec is not int or value >= 0)
 
 
 def _valid_result(action: str, value: Any) -> bool:
@@ -199,13 +200,27 @@ def request(action: str, args: dict[str, Any], *, timeout_seconds: float = 10.0)
             raise ValueError(decoded["error"])
         if decoded["status"] != "ok" or decoded["error"] is not None:
             raise NativeCommandModelError("native_rich_command_model_invalid_result")
-        if not _valid_result(action, decoded["result"]):
+        result = decoded["result"]
+        if action == "parse" and isinstance(result, dict) and "source_text_span" in result:
+            span = result.pop("source_text_span")
+            source = args["command"].encode("utf-8")
+            if (
+                not _shape(span, {"start": int, "end": int})
+                or span["end"] > len(source)
+                or result.get("uncertainty_reason") != "command_byte_limit_exceeded"
+                or result.get("confidence") != "uncertain"
+                or result.get("raw_text") != ""
+                or result.get("normalized_text") != ""
+            ):
+                raise NativeCommandModelError("native_rich_command_model_invalid_result")
+            result["raw_text"] = result["normalized_text"] = source[span["start"] : span["end"]].decode("utf-8")
+        if not _valid_result(action, result):
             raise NativeCommandModelError("native_rich_command_model_invalid_result")
         if cache_key is not None:
             if len(_EXECUTABLE_CACHE) >= 256:
                 _EXECUTABLE_CACHE.clear()
             _EXECUTABLE_CACHE[cache_key] = decoded["result"]
-        return decoded["result"]
+        return result
     except UnicodeEncodeError as error:
         raise NativeCommandModelError("native_rich_command_model_invalid_input") from error
     except (OSError, TypeError, UnicodeError, json.JSONDecodeError) as error:

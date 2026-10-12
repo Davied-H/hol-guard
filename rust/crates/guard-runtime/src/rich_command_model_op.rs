@@ -155,6 +155,18 @@ pub(crate) fn result(action: &str, args: &Value) -> Result<Value, String> {
             );
             let mut value = model.to_dict();
             value["raw_text"] = json!(model.raw_text);
+            if model.uncertainty_reason.as_deref() == Some("command_byte_limit_exceeded")
+                && serde_json::to_vec(&value)
+                    .map_err(|_| "native_rich_command_model_invalid_result")?
+                    .len()
+                    > 1024 * 1024
+            {
+                let text = a.command.trim();
+                let start = text.as_ptr() as usize - a.command.as_ptr() as usize;
+                value["raw_text"] = json!("");
+                value["normalized_text"] = json!("");
+                value["source_text_span"] = json!({"start": start, "end": start + text.len()});
+            }
             for (value, command) in value["embedded_commands"]
                 .as_array_mut()
                 .unwrap()
