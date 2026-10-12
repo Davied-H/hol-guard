@@ -250,17 +250,19 @@ fn broad_target(argument: &str, workspace: &Path) -> bool {
             other => normal.push(other),
         }
     }
-    let root_glob = normal.parent() == Some(workspace)
-        && normal
-            .file_name()
-            .and_then(|name| name.to_str())
-            .is_some_and(|name| {
-                // Brackets and braces can spell any name, so only a literal
-                // stem or suffix such as `*.pyc` keeps a root glob narrow.
-                name.chars().all(|c| matches!(c, '*' | '.' | '?'))
-                    || name.contains(['[', '{', '\\'])
-            });
-    workspace.starts_with(&normal) || root_glob
+    let root_glob = normal
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| {
+            // Brackets and braces can spell any name, so only a literal
+            // stem or suffix such as `*.pyc` keeps a root glob narrow.
+            name.chars().all(|c| matches!(c, '*' | '.' | '?')) || name.contains(['[', '{', '\\'])
+        });
+    // The volume may be case-insensitive, so `/Users/me/Proj` can name the
+    // workspace `/Users/me/proj`.
+    let fold = |path: &Path| std::path::PathBuf::from(path.to_string_lossy().to_ascii_lowercase());
+    let (normal, workspace) = (fold(&normal), fold(workspace));
+    workspace.starts_with(&normal) || (root_glob && normal.parent() == Some(workspace.as_path()))
 }
 
 fn destroys_workspace(
@@ -373,12 +375,12 @@ pub(super) fn convert(
     {
         return;
     }
-    let Ok(config) = super::workspace_git_config::repository_config(&workspace) else {
-        return;
-    };
-    if config.is_some_and(|text| {
-        super::workspace_git_config::helper_write_denials(&text, &workspace).is_none()
-    }) || command_shape(model, &workspace, command_text).is_none()
+    if super::workspace_git_config::workspace_write_denials(
+        &workspace,
+        context.home_dir.map(Path::new),
+    )
+    .is_none()
+        || command_shape(model, &workspace, command_text).is_none()
         || destroys_workspace(result, model, &workspace)
     {
         return;

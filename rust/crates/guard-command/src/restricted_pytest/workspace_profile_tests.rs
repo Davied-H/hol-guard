@@ -83,7 +83,14 @@ fn composed_profile_orders_denials_last_and_covers_credentials() {
         .rposition(|line| line.starts_with("(deny file-read* file-write* (regex"))
         .unwrap();
     assert_eq!(credential, lines.len() - 1);
-    assert!(profile.contains("(deny file-write* (subpath \"/w/proj/tools/hook\"))"));
+    let hook = workspace_profile::denial_patterns(
+        Path::new("/w/proj"),
+        &[PathBuf::from("/w/proj/tools/hook")],
+    )
+    .unwrap();
+    for pattern in &hook {
+        assert!(profile.contains(&seatbelt_string(pattern)), "{pattern}");
+    }
     let allow = lines
         .iter()
         .position(|line| line.starts_with("(allow file-write*"))
@@ -105,4 +112,32 @@ fn privileged_binaries_are_denied_execution() {
 fn existing_profiles_ignore_the_new_fields_and_linux_rejects_this_one() {
     let error = bubblewrap_argv(&input("/w/proj")).unwrap_err();
     assert_eq!(error.reason_code, PYTEST_SANDBOX_UNAVAILABLE_REASON_CODE);
+}
+
+#[test]
+fn helper_denials_cover_every_case_and_each_ancestor() {
+    let ws = Path::new("/w/proj");
+    let patterns =
+        workspace_profile::denial_patterns(ws, &[PathBuf::from("/w/proj/.husky/_")]).unwrap();
+    let denied = |path: &str| {
+        patterns
+            .iter()
+            .any(|p| Regex::new(p).unwrap().is_match(path))
+    };
+    for path in [
+        "/w/proj/.husky/_",
+        "/w/proj/.husky/_/pre-commit",
+        "/w/proj/.HUSKY/_/pre-commit",
+        // Renaming or replacing the ancestor would redirect the hook path.
+        "/w/proj/.husky",
+        "/w/proj/.Husky",
+    ] {
+        assert!(denied(path), "{path}");
+    }
+    for path in ["/w/proj/.husky/install.mjs", "/w/proj/src", "/w/proj"] {
+        assert!(!denied(path), "{path}");
+    }
+    for outside in ["/w/other/x", "/w/proj"] {
+        assert!(workspace_profile::denial_patterns(ws, &[PathBuf::from(outside)]).is_err());
+    }
 }

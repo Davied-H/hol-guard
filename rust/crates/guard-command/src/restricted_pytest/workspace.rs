@@ -1,7 +1,7 @@
 //! Native launch plan for `workspace-contained-v1`.
 use super::*;
 use crate::pretool::generic::workspace_redirects;
-use crate::pretool::workspace_git_config::{helper_write_denials, repository_config};
+use crate::pretool::workspace_git_config::workspace_write_denials;
 use crate::pretool::{command_shape, WORKSPACE_PROFILE};
 use crate::{parse_command, CommandModelRequestV1};
 use serde::Deserialize;
@@ -75,13 +75,8 @@ fn prepare(input: &Input) -> Result<Value, RestrictedPytestError> {
         }
     }
     .ok_or_else(|| invalid("The command is not eligible for the workspace sandbox."))?;
-    let config = repository_config(&workspace)
-        .map_err(|_| invalid("The repository configuration is not eligible."))?;
-    let write_denials = match config {
-        Some(text) => helper_write_denials(&text, &workspace)
-            .ok_or_else(|| invalid("The repository configuration is not eligible."))?,
-        None => vec![],
-    };
+    let write_denials = workspace_write_denials(&workspace, input.home.as_deref())
+        .ok_or_else(|| invalid("The repository configuration is not eligible."))?;
     let text = shape
         .remainder
         .clone()

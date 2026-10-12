@@ -121,6 +121,32 @@ pub(super) fn protected_patterns(workspace: &Path) -> Result<Vec<String>, Restri
     ])
 }
 
+/// Helper paths stay unwritable at any letter case, and so does every
+/// directory between the workspace and each of them. Seatbelt checks only
+/// the paths an operation names, so otherwise a command could rename an
+/// ancestor away and put a symlink to its own files in its place.
+pub(super) fn denial_patterns(
+    workspace: &Path,
+    denials: &[PathBuf],
+) -> Result<Vec<String>, RestrictedPytestError> {
+    let mut patterns = Vec::new();
+    for denial in denials {
+        if !denial.starts_with(workspace) || denial == workspace {
+            return Err(invalid());
+        }
+        patterns.push(format!("^{}(/.*)?$", ci(&denial.to_string_lossy())?));
+        let mut ancestor = denial.parent();
+        while let Some(directory) = ancestor.filter(|directory| *directory != workspace) {
+            let pattern = format!("^{}$", ci(&directory.to_string_lossy())?);
+            if !patterns.contains(&pattern) {
+                patterns.push(pattern);
+            }
+            ancestor = directory.parent();
+        }
+    }
+    Ok(patterns)
+}
+
 fn regex_rule(operations: &str, pattern: &str) -> String {
     format!("(deny {operations} (regex {}))", seatbelt_string(pattern))
 }
@@ -186,11 +212,8 @@ pub(super) fn compose(
     for pattern in protected_patterns(workspace)? {
         lines.push(regex_rule("file-write*", &pattern));
     }
-    if !input.write_denials.is_empty() {
-        lines.push(format!(
-            "(deny file-write* {})",
-            filter(&input.write_denials, "subpath")
-        ));
+    for pattern in denial_patterns(workspace, &input.write_denials)? {
+        lines.push(regex_rule("file-write*", &pattern));
     }
     // Last, so no earlier allow can reopen a credential for reading or writing.
     for pattern in patterns() {
