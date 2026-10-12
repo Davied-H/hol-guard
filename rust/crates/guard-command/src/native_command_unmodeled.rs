@@ -20,6 +20,7 @@ use std::time::Instant;
 use guard_contracts::NativeCommandObservationBatchV1;
 
 use super::{rank, rule_floor, CompiledNativeCommandControls};
+use crate::pretool::generic::workspace_redirects;
 use crate::CanonicalCommandV1;
 
 /// Compatibility owners recognize these programs without a catalog matcher.
@@ -207,8 +208,8 @@ impl CompiledNativeCommandControls {
 }
 
 /// Loops and conditionals, or one heredoc that only feeds standard input,
-/// with nothing in the shell text that redirects, substitutes or overrides
-/// `PATH`.
+/// with nothing in the shell text that substitutes or overrides `PATH` and no
+/// redirect except to a literal path.
 fn reviewable_structure(command: &CanonicalCommandV1) -> bool {
     if command.path_overridden || command.confidence != "uncertain" {
         return false;
@@ -216,10 +217,21 @@ fn reviewable_structure(command: &CanonicalCommandV1) -> bool {
     match command.uncertainty_reason.as_deref() {
         Some("compound_shell_not_yet_supported") => {
             !moves_data(&unquoted_literal(&command.normalized_text))
+                || literal_redirects_only(&command.normalized_text)
         }
-        Some("command_redirect_not_yet_supported") => input_heredoc(&command.normalized_text),
+        Some("command_redirect_not_yet_supported") => {
+            input_heredoc(&command.normalized_text)
+                || literal_redirects_only(&command.normalized_text)
+        }
         _ => false,
     }
+}
+
+/// Every redirect names a literal path or feeds `cat` a quoted heredoc, and
+/// the rest substitutes nothing.
+fn literal_redirects_only(text: &str) -> bool {
+    workspace_redirects::project(text)
+        .is_some_and(|projected| !moves_data(&unquoted_literal(&projected)))
 }
 
 /// Whether shell text redirects, substitutes or sets the environment of a
