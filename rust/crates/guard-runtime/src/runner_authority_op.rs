@@ -60,7 +60,8 @@ pub(crate) fn dispatch(kind: &str, args: &Value) -> KindResult {
         "projection_approval"
         | "projection_receipt"
         | "projection_surfaces"
-        | "projection_surfaces_batch" => crate::signal_projection_op::dispatch(kind, args),
+        | "projection_surfaces_batch"
+        | "projection_artifact_surfaces" => crate::signal_projection_op::dispatch(kind, args),
         "decision_v2_decode"
         | "decision_enforcement_decode"
         | "decision_authoritative_decode"

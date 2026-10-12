@@ -144,12 +144,17 @@ def _shape(payload: dict[str, Any], kind: str) -> None:
         _fields(signal, signal_fields, ("technical_detail", "evidence_ref", "false_positive_hint", "advisory_id"))
 
 
+def artifact_transport_fields(payload: Mapping[str, object]) -> dict[str, object]:
+    """Retain action-bearing keys and the native owner's readable values."""
+    return {key: value if key in _ARTIFACT_FIELDS else None for key, value in payload.items()}
+
+
 def decision_authority(kind: str, args: Mapping[str, object]) -> dict[str, Any]:
     payload = args.get("payload")
     if kind == "decision_artifact_decode" and isinstance(payload, Mapping):
         # Preserve every key for native hidden-action detection, while removing
         # values the owner never reads (including raw scanner content).
-        args = {**args, "payload": {key: value if key in _ARTIFACT_FIELDS else None for key, value in payload.items()}}
+        args = {**args, "payload": artifact_transport_fields(payload)}
     result = _request(kind, args)
     if result.get("status") == "error":
         message = result.get("message")

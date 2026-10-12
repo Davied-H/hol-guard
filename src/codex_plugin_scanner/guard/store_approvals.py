@@ -939,6 +939,7 @@ def resolve_matching_duplicate_requests(
         """,
         (queue_group_id, oauth_source, request_id),
     ).fetchall()
+    guard_home = connection_guard_home(connection)
     resolvable_ids = [
         str(row["request_id"])
         for row in rows
@@ -946,6 +947,7 @@ def resolve_matching_duplicate_requests(
             row["policy_action"],
             row["decision_v2_json"],
             row["action_envelope_json"],
+            guard_home=guard_home,
         )
     ]
     _resolve_request_ids(
@@ -963,6 +965,8 @@ def approval_request_surfaces_are_resolvable(
     policy_action: object,
     decision_v2_json: object,
     action_envelope_json: object,
+    *,
+    guard_home: Path | None = None,
 ) -> bool:
     """Return whether raw persisted approval surfaces form a resolvable row."""
 
@@ -973,6 +977,7 @@ def approval_request_surfaces_are_resolvable(
         parsed_decision_v2 if parsed_decision_v2 is not None else decision_v2_json,
         parsed_action_envelope if parsed_action_envelope is not None else action_envelope_json,
         reject_contradiction=False,
+        guard_home=guard_home,
     )
     request: dict[str, object] = {"policy_action": canonical_decision.policy_action}
     if canonical_decision.contract_error is not None:

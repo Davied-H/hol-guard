@@ -882,7 +882,7 @@ def evaluate_detection(
         trusted_request_override = runtime["trusted_request_override"] is True
         scanner_evidence = cast(list[dict[str, object]], runtime["scanner_evidence"])
         policy_composition = cast(dict[str, object], runtime["policy_composition"])
-        authoritative_decision = _project_runtime_decision(runtime, risk_signals_v2)
+        authoritative_decision = _project_runtime_decision(runtime)
         policy_action = authoritative_decision.action if authoritative_decision is not None else "block"
         if authoritative_decision is None or authoritative_decision.enforcement.blocking:
             blocked = True
@@ -1115,7 +1115,7 @@ def evaluate_detection(
         trusted_request_override = runtime["trusted_request_override"] is True
         scanner_evidence = cast(list[dict[str, object]], runtime["scanner_evidence"])
         policy_composition = cast(dict[str, object], runtime["policy_composition"])
-        authoritative_decision = _project_runtime_decision(runtime, runtime_risk_signals_v2)
+        authoritative_decision = _project_runtime_decision(runtime)
         policy_action = authoritative_decision.action if authoritative_decision is not None else "block"
         if authoritative_decision is None or authoritative_decision.enforcement.blocking:
             blocked = True

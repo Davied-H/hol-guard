@@ -12,6 +12,19 @@ pub(crate) fn dispatch(kind: &str, args: &Value) -> KindResult {
     }
     let reject = args["reject"].as_bool().unwrap_or(false);
     let result = match kind {
+        "projection_artifact_surfaces" => {
+            let artifact = &args["artifact"];
+            guard_command::decisions::authoritative_decision_from_artifact(artifact, false)
+                .map_err(|error| error.to_string())
+                .and_then(|_| {
+                    surfaces(
+                        &artifact["policy_action"],
+                        &artifact["decision_v2_json"],
+                        &artifact["action_envelope_json"],
+                        true,
+                    )
+                })
+        }
         "projection_approval" => approval(&args["action"], &args["decision"], reject),
         "projection_receipt" => receipt(&args["action"], &args["envelope"], reject),
         "projection_surfaces" => surfaces(

@@ -14,6 +14,7 @@ to launch. Nothing here ever computes an action, reason or signature locally.
 from __future__ import annotations
 
 import json
+import os
 import time
 import uuid
 from collections.abc import Mapping
@@ -66,6 +67,14 @@ def native_runner_authority(kind: str, args: Mapping[str, Any], guard_home: Path
     """Run one authority ``kind`` in the resident and return its bound payload."""
 
     guard_home = _resolve_digest_home(guard_home)
+    if kind in {
+        "projection_approval",
+        "projection_receipt",
+        "projection_surfaces",
+        "projection_surfaces_batch",
+        "projection_artifact_surfaces",
+    }:
+        guard_home = _projection_carrier_home(guard_home)
     request: dict[str, Any] = {
         "schema": _REQUEST_SCHEMA,
         "request_id": uuid.uuid4().hex,
@@ -148,3 +157,16 @@ def native_runner_authority(kind: str, args: Mapping[str, Any], guard_home: Path
         raise _fail(status, guard_home, _INVALID_RESULT)
     native_record_resident_success(status.identity.sha256, guard_home)
     return payload["payload"]
+
+
+def _projection_carrier_home(requested: Path) -> Path:
+    """Pure field projection uses an initialized carrier, without signing-state creation."""
+    from .native_policy_snapshot_constants import NATIVE_POLICY_VERIFIER_KEY_NAME, NATIVE_RUNTIME_STATE_DIRECTORY
+
+    key = Path(NATIVE_RUNTIME_STATE_DIRECTORY) / NATIVE_POLICY_VERIFIER_KEY_NAME
+    if os.path.lexists(requested / key):
+        return requested
+    carrier = _resolve_digest_home(None)
+    if not os.path.lexists(carrier / key):
+        raise NativeRunnerAuthorityError("native_runner_authority_prerequisite_unavailable")
+    return carrier

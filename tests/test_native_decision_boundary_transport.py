@@ -113,6 +113,15 @@ def test_boundary_healthy_refusal_is_validation(monkeypatch: pytest.MonkeyPatch)
 
 
 @pytest.mark.usefixtures("native_prompt_runtime")
+def test_unkeyed_projection_home_never_creates_store_signing_state(tmp_path: Path) -> None:
+    home = tmp_path / "uninitialized-read-home"
+    home.mkdir()
+    result = canonical_approval_surfaces("review", None, None, reject_contradiction=False, guard_home=home)
+    assert result.policy_action == "review"
+    assert list(home.iterdir()) == []
+
+
+@pytest.mark.usefixtures("native_prompt_runtime")
 def test_large_readable_rows_split_without_reordering(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     home = tmp_path / "large-page-home"
     source = canonical_approval_decision("review", None, reject_contradiction=False, guard_home=home).decision_v2_json

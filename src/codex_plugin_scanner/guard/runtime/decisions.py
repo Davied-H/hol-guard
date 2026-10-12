@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from types import MappingProxyType
 from typing import Any, Literal
 
@@ -78,14 +78,7 @@ class GuardDecisionEnforcementState:
     snapshot_permitted: bool
 
     def to_dict(self) -> dict[str, bool]:
-        return {
-            "blocking": self.blocking,
-            "authority_finalized": self.authority_finalized,
-            "launch_permitted": self.launch_permitted,
-            "prompt_required": self.prompt_required,
-            "sandbox_required": self.sandbox_required,
-            "snapshot_permitted": self.snapshot_permitted,
-        }
+        return {field.name: getattr(self, field.name) for field in fields(GuardDecisionEnforcementState)}
 
     @classmethod
     def from_dict(cls, payload: Mapping[str, object]) -> GuardDecisionEnforcementState:

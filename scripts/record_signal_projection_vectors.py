@@ -39,6 +39,20 @@ boundaries = modules["decision_boundaries.py"]
 
 def evaluate(kind, args):
     try:
+        if kind == "projection_artifact_surfaces":
+            artifact = args["artifact"]
+            decisions.authoritative_decision_from_artifact(artifact)
+            return {
+                "status": "ok",
+                "value": asdict(
+                    boundaries.canonical_approval_surfaces(
+                        artifact.get("policy_action"),
+                        artifact.get("decision_v2_json"),
+                        artifact.get("action_envelope_json"),
+                        reject_contradiction=True,
+                    )
+                ),
+            }
         function = {
             "projection_approval": approval.canonical_approval_decision,
             "projection_receipt": boundaries.canonical_receipt_decision,
@@ -124,6 +138,10 @@ def main():
             record(
                 "projection_surfaces", {"action": action, "decision": decision, "envelope": envelope, "reject": reject}
             )
+    artifact_reference = json.loads((ROOT / "tests/fixtures/decision_authority_vectors.json").read_text())
+    for vector in artifact_reference["vectors"]:
+        if vector["kind"] == "decision_artifact_decode" and isinstance(vector["args"].get("payload"), dict):
+            record("projection_artifact_surfaces", {"artifact": vector["args"]["payload"]})
     result = {
         "schema": "signal-projection-reference.v1",
         "reference_commit": BASE,

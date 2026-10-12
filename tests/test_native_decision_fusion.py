@@ -50,7 +50,7 @@ def test_fused_decision_needs_one_existing_resident_call(
             {"runtime": runtime, "signals": []},
             guard_home=native_approval_reuse_runtime,
         )
-        projected = service._project_runtime_decision(answer, ())
+        projected = service._project_runtime_decision(answer)
         assert projected is not None
         assert projected.action == vector["expected"]["policy_action"]
         assert projected.reason == vector["expected"]["decision_reason"]

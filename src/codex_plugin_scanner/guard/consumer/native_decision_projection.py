@@ -252,9 +252,7 @@ def _native_runtime_decision(
     return answer
 
 
-def _project_runtime_decision(
-    runtime: dict[str, object], signals: Sequence[RiskSignalV2]
-) -> AuthoritativeGuardDecision | None:
+def _project_runtime_decision(runtime: dict[str, object]) -> AuthoritativeGuardDecision | None:
     if "authoritative_decision" in runtime:
         return project_native_authoritative_decision(cast(dict[str, Any], runtime["authoritative_decision"]))
     if "evaluation_error" in runtime:
