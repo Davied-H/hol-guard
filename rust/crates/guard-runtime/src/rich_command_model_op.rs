@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use std::io::Read;
 use std::path::Path;
 
-use base64::Engine;
+use base64ct::{Base64, Encoding};
 use guard_command::{command_model, rich_command_model_api as model_api};
 use guard_contracts::write_canonical_json_with_limit;
 use guard_policy_snapshot::digest_bytes;
@@ -151,8 +151,7 @@ pub(crate) fn result(action: &str, args: &Value) -> Result<Value, String> {
                 (Some(command), None, None) => command,
                 (None, Some(chunks), None) if !chunks.is_empty() => chunks.concat(),
                 (None, None, Some(chunks)) if !chunks.is_empty() => {
-                    let bytes = base64::engine::general_purpose::STANDARD
-                        .decode(chunks.concat())
+                    let bytes = Base64::decode_vec(&chunks.concat())
                         .map_err(|_| "native_rich_command_model_invalid_args")?;
                     let mut text = String::new();
                     flate2::read::GzDecoder::new(bytes.as_slice())
