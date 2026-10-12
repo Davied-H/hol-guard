@@ -5,7 +5,7 @@ from .opencode_process_template import OPENCODE_PROCESS_TEMPLATE
 _PLUGIN_TEMPLATE = (
     """// Managed by HOL Guard. Re-run `hol-guard install opencode` after moving Guard home.
 import { spawn as nodeSpawn } from "node:child_process";
-import { lstatSync, realpathSync } from "node:fs";
+import { accessSync, constants as fsConstants, lstatSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { join as joinPath, resolve as resolvePath } from "node:path";
 
@@ -57,14 +57,19 @@ export function resolveGuardPythonTarget(): string {
 }
 
 // The native runtime answers a hook from the Guard daemon and runs the Python
-// bridge for everything else. A missing runtime keeps the Python launcher.
+// bridge for everything else. A missing or non-executable runtime keeps the
+// Python launcher.
 export function resolveGuardNativeRuntime(): string | null {
   if (GUARD_NATIVE_BRIDGE === null || process.platform === "win32") {
     return null;
   }
   try {
     const resolved = realpathSync(GUARD_NATIVE_BRIDGE.runtimePath);
-    return lstatSync(resolved).isFile() ? resolved : null;
+    if (!lstatSync(resolved).isFile()) {
+      return null;
+    }
+    accessSync(resolved, fsConstants.X_OK);
+    return resolved;
   } catch {
     return null;
   }

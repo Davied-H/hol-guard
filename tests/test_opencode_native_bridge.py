@@ -127,6 +127,58 @@ def test_plugin_keeps_the_python_launcher_without_the_runtime(tmp_path: Path, mo
     assert completed.stdout.strip() == "null"
 
 
+def test_non_executable_runtime_keeps_the_python_launcher(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime = _fake_runtime(tmp_path)
+    runtime.chmod(0o644)
+    _offer_native(monkeypatch, runtime)
+    source = pretool_plugin_source(_context(tmp_path))
+
+    completed = _run_plugin(
+        tmp_path,
+        source,
+        "import { resolveGuardNativeRuntime } from './plugin';\nconsole.log(String(resolveGuardNativeRuntime()));\n",
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == "null"
+    assert "accessSync" in source
+    assert "fsConstants.X_OK" in source
+
+
+def test_unrunnable_native_runtime_falls_back_to_python(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime = tmp_path / "hol-guard-runtime"
+    runtime.write_text("#!/no/such/hol-guard-interpreter\n", encoding="utf-8")
+    runtime.chmod(0o755)
+    _offer_native(monkeypatch, runtime)
+    source = pretool_plugin_source(_context(tmp_path))
+    resolved = _run_plugin(
+        tmp_path,
+        source,
+        "import { resolveGuardNativeRuntime } from './plugin';\nconsole.log(String(resolveGuardNativeRuntime()));\n",
+    )
+    assert resolved.returncode == 0, resolved.stderr
+    assert resolved.stdout.strip() == str(runtime.resolve())
+
+    completed = _run_plugin(
+        tmp_path,
+        source,
+        "import { spawnGuardProcess } from './plugin';\n"
+        "const result = await spawnGuardProcess({\n"
+        '  args: ["-c", "import sys; sys.stdout.write(\'python-fallback\')"],\n'
+        "  nativeArgs: (pythonTarget) => ['bounded-hook-bridge', pythonTarget],\n"
+        f"  cwd: {json.dumps(str(tmp_path))},\n"
+        "  deadlineMs: Date.now() + 10000,\n"
+        "  env: { PATH: process.env.PATH ?? '' },\n"
+        "  stdin: '',\n"
+        "});\n"
+        "console.log(JSON.stringify({ exitCode: result.exitCode, stdout: result.stdout }));\n",
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert json.loads(completed.stdout) == {"exitCode": 0, "stdout": "python-fallback"}
+    assert "nodeSpawn(command, args, spawnOptions)" in source
+
+
 def test_python_bridge_pin_installs_no_native_bridge(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _offer_native(monkeypatch, _fake_runtime(tmp_path))
     monkeypatch.setenv("HOL_GUARD_BOUNDED_HOOK_BRIDGE", "python")
