@@ -134,7 +134,8 @@ def _request(operation: str, wire_input: Mapping[str, Any], expected: type | tup
             if type(value) in (expected if isinstance(expected, tuple) else (expected,)):
                 if (
                     type(value) is list
-        and operation not in {"bun_vitest_invocation", "tsx_test_invocation", "mapping_evidence", "mapping_elf"}
+                    and operation
+                    not in {"bun_vitest_invocation", "tsx_test_invocation", "mapping_evidence", "mapping_elf"}
                     and not all(isinstance(item, str) for item in value)
                 ) or (expected is dict and not all(isinstance(key, str) for key in value)):
                     pass
