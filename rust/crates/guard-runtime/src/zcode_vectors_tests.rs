@@ -4,7 +4,7 @@
 //! `<ROOT>` is the fixture root.
 
 use std::fs;
-use std::os::unix::fs::{symlink, PermissionsExt};
+use std::os::unix::fs::{symlink, MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
@@ -95,6 +95,52 @@ fn release(root: &Path) {
     let _ = fs::remove_dir_all(root);
 }
 
+/// The recorded lists come from a case-folding volume, where `Alpha` and
+/// `alpha` are one directory. A case-sensitive volume keeps both, and
+/// `sorted(path.iterdir())` then visits `Alpha` before `Zed`.
+fn volume_keeps_distinct_case(root: &Path, case: &Value) -> bool {
+    let paths: Vec<&str> = case["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|entry| entry["path"].as_str())
+        .collect();
+    for (index, left) in paths.iter().enumerate() {
+        for right in paths.iter().skip(index + 1) {
+            let mut prefix = PathBuf::new();
+            for (left_part, right_part) in left.split('/').zip(right.split('/')) {
+                if left_part.to_lowercase() == right_part.to_lowercase() && left_part != right_part
+                {
+                    let left_path = root.join(&prefix).join(left_part);
+                    let right_path = root.join(&prefix).join(right_part);
+                    let (Ok(left_meta), Ok(right_meta)) =
+                        (fs::metadata(&left_path), fs::metadata(&right_path))
+                    else {
+                        return false;
+                    };
+                    return left_meta.ino() != right_meta.ino()
+                        || left_meta.dev() != right_meta.dev();
+                }
+                if left_part != right_part {
+                    break;
+                }
+                prefix.push(left_part);
+            }
+        }
+    }
+    true
+}
+
+fn recorded<'a>(case: &'a Value, root: &Path, field: &str) -> &'a Value {
+    let distinct = format!("{field}_case_sensitive");
+    if volume_keeps_distinct_case(root, case) {
+        if let Some(value) = case.get(&distinct) {
+            return value;
+        }
+    }
+    &case[field]
+}
+
 fn replay(case: &Value) {
     let name = case["name"].as_str().unwrap();
     let root = temp_home(&format!("zcode-{name}").chars().take(60).collect::<String>());
@@ -113,12 +159,12 @@ fn replay(case: &Value) {
     let answer = result.unwrap_or_else(|code| panic!("{name}: resident refused with {code}"));
     assert_eq!(
         answer["artifacts"],
-        substitute(&case["artifacts"], &root_text),
+        substitute(recorded(case, &root, "artifacts"), &root_text),
         "{name}: artifacts"
     );
     assert_eq!(
         answer["found_paths"],
-        substitute(&case["found_paths"], &root_text),
+        substitute(recorded(case, &root, "found_paths"), &root_text),
         "{name}: found paths"
     );
     release(&root);
@@ -134,6 +180,25 @@ fn replays_every_recorded_zcode_detection_case() {
         replayed += 1;
     }
     assert!(replayed >= 60, "only {replayed} cases recorded");
+}
+
+#[test]
+fn case_sensitive_recording_is_selected_when_spellings_stay_distinct() {
+    let root = temp_home("zcode-case-select");
+    fs::create_dir_all(root.join("Alpha")).unwrap();
+    fs::write(root.join("Alpha/a"), b"a").unwrap();
+    fs::create_dir_all(root.join("beta")).unwrap();
+    fs::write(root.join("beta/a"), b"b").unwrap();
+    let case = serde_json::json!({
+        "files": [{"path": "Alpha/a"}, {"path": "beta/a"}],
+        "artifacts": ["folded"],
+        "artifacts_case_sensitive": ["distinct"],
+    });
+    assert_eq!(
+        recorded(&case, &root, "artifacts"),
+        &serde_json::json!(["distinct"])
+    );
+    release(&root);
 }
 
 #[test]
