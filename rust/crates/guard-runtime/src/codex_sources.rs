@@ -100,8 +100,8 @@ pub(super) fn toml_payload(bytes: Option<&[u8]>) -> Result<HookVal, &'static str
     if text.starts_with('\u{feff}') {
         return Ok(empty);
     }
-    match text.parse::<toml::Table>() {
-        Ok(table) => Ok(HookVal::from_toml(&toml::Value::Table(table))),
+    match text.parse::<toml_edit::DocumentMut>() {
+        Ok(document) => Ok(HookVal::from_document(document.as_table())),
         Err(error) => {
             let span = error.span().map_or(0, |span| span.start.min(text.len()));
             let start = text[..span].rfind('\n').map_or(0, |index| index + 1);

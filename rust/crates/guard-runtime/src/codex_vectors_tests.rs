@@ -22,7 +22,7 @@ fn substitute(value: &Value, root: &str) -> Value {
         }
         Value::Object(map) => Value::Object(
             map.iter()
-                .map(|(key, item)| (key.clone(), substitute(item, root)))
+                .map(|(key, item)| (key.replace("<ROOT>", root), substitute(item, root)))
                 .collect(),
         ),
         other => other.clone(),

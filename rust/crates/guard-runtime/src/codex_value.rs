@@ -77,20 +77,43 @@ impl HookVal {
         }
     }
 
-    pub(crate) fn from_toml(value: &toml::Value) -> HookVal {
+    /// A document in `tomllib` key order: a table keeps the order its keys
+    /// were first created in, even when an implicit parent is declared by a
+    /// later sub-table header before its own header.
+    pub(crate) fn from_document(table: &toml_edit::Table) -> HookVal {
+        HookVal::Dict(
+            table
+                .iter()
+                .filter_map(|(key, item)| Some((key.to_owned(), HookVal::from_item(item)?)))
+                .collect(),
+        )
+    }
+
+    fn from_item(item: &toml_edit::Item) -> Option<HookVal> {
+        match item {
+            toml_edit::Item::None => None,
+            toml_edit::Item::Value(value) => Some(HookVal::from_edit(value)),
+            toml_edit::Item::Table(table) => Some(HookVal::from_document(table)),
+            toml_edit::Item::ArrayOfTables(tables) => Some(HookVal::List(
+                tables.iter().map(HookVal::from_document).collect(),
+            )),
+        }
+    }
+
+    fn from_edit(value: &toml_edit::Value) -> HookVal {
         match value {
-            toml::Value::String(text) => HookVal::Str(text.clone()),
-            toml::Value::Integer(number) => HookVal::Int(number.to_string()),
-            toml::Value::Float(number) => HookVal::Float(*number),
-            toml::Value::Boolean(flag) => HookVal::Bool(*flag),
-            toml::Value::Datetime(stamp) => temporal(stamp),
-            toml::Value::Array(items) => {
-                HookVal::List(items.iter().map(HookVal::from_toml).collect())
+            toml_edit::Value::String(text) => HookVal::Str(text.value().clone()),
+            toml_edit::Value::Integer(number) => HookVal::Int(number.value().to_string()),
+            toml_edit::Value::Float(number) => HookVal::Float(*number.value()),
+            toml_edit::Value::Boolean(flag) => HookVal::Bool(*flag.value()),
+            toml_edit::Value::Datetime(stamp) => temporal(stamp.value()),
+            toml_edit::Value::Array(items) => {
+                HookVal::List(items.iter().map(HookVal::from_edit).collect())
             }
-            toml::Value::Table(table) => HookVal::Dict(
+            toml_edit::Value::InlineTable(table) => HookVal::Dict(
                 table
                     .iter()
-                    .map(|(key, item)| (key.clone(), HookVal::from_toml(item)))
+                    .map(|(key, item)| (key.to_owned(), HookVal::from_edit(item)))
                     .collect(),
             ),
         }
@@ -99,7 +122,7 @@ impl HookVal {
 
 /// `datetime`, `date` or `time` with its `isoformat()` (microsecond precision,
 /// a numeric UTC offset, never `Z`).
-fn temporal(stamp: &toml::value::Datetime) -> HookVal {
+fn temporal(stamp: &toml_edit::Datetime) -> HookVal {
     let date = stamp
         .date
         .map(|date| format!("{:04}-{:02}-{:02}", date.year, date.month, date.day));
