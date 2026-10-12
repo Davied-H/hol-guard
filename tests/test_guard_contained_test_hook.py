@@ -174,7 +174,7 @@ def test_authorized_original_input_runs_only_with_readonly_profile(
     assert (
         sink.run_authorized_contained_test(payload(), workspace=tmp_path, timeout_seconds=20, authorize=authorize) == 0
     )
-    assert [call[0] for call in calls] == ["authorize", "prepare", "authorize", "execute"]
+    assert [call[0] for call in calls] == ["prepare", "authorize", "execute"]
 
 
 @pytest.mark.parametrize("fresh_profile", ["node-test-readonly-v1", "pytest-readonly-v2", "wrong"])

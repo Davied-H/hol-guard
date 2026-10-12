@@ -70,7 +70,7 @@ def test_only_a_live_workspace_receipt_matches(changes: dict[str, object]) -> No
 
 
 @pytest.mark.parametrize("kind", ["git", "inline_eval", "node_tool", None])
-def test_a_workspace_receipt_routes_before_the_read_only_parsers(
+def test_a_workspace_receipt_runs_what_the_read_only_parsers_reject(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, kind: str | None
 ) -> None:
     # `git add -A && git commit` classifies as git and `node -e` as inline

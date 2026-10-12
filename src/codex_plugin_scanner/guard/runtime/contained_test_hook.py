@@ -171,11 +171,10 @@ def run_authorized_contained_test(
         sys.stdout.flush()
         return 0
 
-    # Rust chooses the profile. A workspace-sandbox receipt never goes through
-    # the read-only parsers: they reject exactly the mutating shapes
-    # (`git add && git commit`, `node -e`, `./todo.py`) it was issued for.
-    receipt = authorize(payload)
-    if receipt_matches(receipt) and isinstance(receipt, Mapping):
+    def run_workspace(receipt: object) -> int | None:
+        """Run in the workspace sandbox when Rust issued that profile, else None."""
+        if not receipt_matches(receipt) or not isinstance(receipt, Mapping):
+            return None
         return run_workspace_contained(
             payload,
             workspace=workspace,
@@ -188,35 +187,44 @@ def run_authorized_contained_test(
         )
 
     try:
-        command = shlex.split(tool_input["command"], posix=True)
-    except ValueError as error:
-        raise _reject() from error
-    package_test = is_package_test(command)
-    if package_test:
-        command = list(resolve_package_test(command, workspace=workspace, cwd=cwd))
-    from ..native_restricted_pytest import restricted_native
+        try:
+            command = shlex.split(tool_input["command"], posix=True)
+        except ValueError as error:
+            raise _reject() from error
+        package_test = is_package_test(command)
+        if package_test:
+            command = list(resolve_package_test(command, workspace=workspace, cwd=cwd))
+        from ..native_restricted_pytest import restricted_native
 
-    kinds = restricted_native("contained_kind", {"command": command}, dict)
-    if set(kinds) != {"inline_eval", "node_test", "vitest", "git", "node_tool"} or any(
-        type(value) is not bool for value in kinds.values()
-    ):
-        raise _reject()
-    inline_eval, node_test, vitest, git, node_tool = (
-        kinds[key] for key in ("inline_eval", "node_test", "vitest", "git", "node_tool")
-    )
-    inline_plan = node_tool_plan = git_plan = vitest_plan = node_test_plan = None
-    if inline_eval:
-        inline_plan = prepare_restricted_inline_eval(command, workspace=workspace, cwd=cwd)
-    elif node_tool:
-        node_tool_plan = restricted_node_tool.prepare_restricted_node_tool(command, workspace=workspace, cwd=cwd)
-    elif git:
-        git_plan = restricted_git.prepare_restricted_git(command, workspace=workspace, cwd=cwd)
-    elif vitest:
-        vitest_plan = restricted_vitest.prepare_restricted_vitest(command, workspace=workspace, cwd=cwd)
-    elif node_test:
-        node_test_plan = restricted_node_test.prepare_restricted_node_test(command, workspace=workspace, cwd=cwd)
-    else:
-        prepare_restricted_pytest(command, workspace=workspace, cwd=cwd, read_only_workspace=True)
+        kinds = restricted_native("contained_kind", {"command": command}, dict)
+        if set(kinds) != {"inline_eval", "node_test", "vitest", "git", "node_tool"} or any(
+            type(value) is not bool for value in kinds.values()
+        ):
+            raise _reject()
+        inline_eval, node_test, vitest, git, node_tool = (
+            kinds[key] for key in ("inline_eval", "node_test", "vitest", "git", "node_tool")
+        )
+        inline_plan = node_tool_plan = git_plan = vitest_plan = node_test_plan = None
+        if inline_eval:
+            inline_plan = prepare_restricted_inline_eval(command, workspace=workspace, cwd=cwd)
+        elif node_tool:
+            node_tool_plan = restricted_node_tool.prepare_restricted_node_tool(command, workspace=workspace, cwd=cwd)
+        elif git:
+            git_plan = restricted_git.prepare_restricted_git(command, workspace=workspace, cwd=cwd)
+        elif vitest:
+            vitest_plan = restricted_vitest.prepare_restricted_vitest(command, workspace=workspace, cwd=cwd)
+        elif node_test:
+            node_test_plan = restricted_node_test.prepare_restricted_node_test(command, workspace=workspace, cwd=cwd)
+        else:
+            prepare_restricted_pytest(command, workspace=workspace, cwd=cwd, read_only_workspace=True)
+    except RestrictedPytestError:
+        # The read-only planners reject the mutating shapes (`git add && git
+        # commit`, `node -e`, `./todo.py`) that Rust sends to the workspace
+        # sandbox. Only a live workspace receipt runs them; anything else fails.
+        exit_code = run_workspace(authorize(payload))
+        if exit_code is None:
+            raise
+        return exit_code
     if inline_plan is not None:
         profile = inline_plan.profile_version
         if profile == "node-eval-readonly-v1":
@@ -248,10 +256,14 @@ def run_authorized_contained_test(
             and response.get("observe_mode") is not True
         )
 
-    # The routing receipt only picked this path. Authorize again after
-    # planning so the live decision follows every file the planner read.
+    # Authorize after planning so the live decision follows every file the
+    # planner read. Rust may still pick the workspace sandbox for this shape.
+    receipt = authorize(payload)
+    exit_code = run_workspace(receipt)
+    if exit_code is not None:
+        return exit_code
     if not required(
-        authorize(payload),
+        receipt,
         expected_reason=PACKAGE_TEST_REASON if package_test else reason,
         expected_profile=PACKAGE_TEST_PROFILE if package_test else profile,
     ):
