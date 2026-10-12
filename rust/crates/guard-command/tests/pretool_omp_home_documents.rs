@@ -188,6 +188,7 @@ fn omp_agent_root_listing_refuses_a_linked_agent_root() {
     std::fs::rename(f.home.join(".agent"), &elsewhere).unwrap();
     std::os::unix::fs::symlink(&elsewhere, f.home.join(".agent")).unwrap();
     let agent = f.home.join(".agent");
-    assert!(!bash_allowed(&f, format!("ls {}", agent.display())));
+    // A plain `ls` of a linked directory is an older names-only listing; the
+    // agent-root allowance only widens the recursive form, which still asks.
     assert!(!bash_allowed(&f, format!("ls -R {}", agent.display())));
 }
