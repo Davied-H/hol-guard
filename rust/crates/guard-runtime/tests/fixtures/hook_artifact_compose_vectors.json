@@ -63,7 +63,11 @@
         "default_action": "review",
         "harness": "codex",
         "harness_posture_override": null,
-        "harness_risk_actions": {},
+        "harness_risk_actions": {
+          "codex": {
+            "data_flow_exfiltration": "???"
+          }
+        },
         "managed_locks_level": false,
         "protection_posture": "balanced",
         "protection_posture_explicit": false,
@@ -152,7 +156,11 @@
         "default_action": "review",
         "harness": "codex",
         "harness_posture_override": null,
-        "harness_risk_actions": {},
+        "harness_risk_actions": {
+          "codex": {
+            "data_flow_exfiltration": "???"
+          }
+        },
         "managed_locks_level": false,
         "protection_posture": "balanced",
         "protection_posture_explicit": false,
@@ -250,7 +258,11 @@
         "default_action": "review",
         "harness": "codex",
         "harness_posture_override": null,
-        "harness_risk_actions": {},
+        "harness_risk_actions": {
+          "codex": {
+            "data_flow_exfiltration": "???"
+          }
+        },
         "managed_locks_level": false,
         "protection_posture": "balanced",
         "protection_posture_explicit": false,
@@ -339,7 +351,11 @@
         "default_action": "review",
         "harness": "codex",
         "harness_posture_override": null,
-        "harness_risk_actions": {},
+        "harness_risk_actions": {
+          "codex": {
+            "data_flow_exfiltration": "???"
+          }
+        },
         "managed_locks_level": false,
         "protection_posture": "balanced",
         "protection_posture_explicit": false,
@@ -428,7 +444,11 @@
         "default_action": "review",
         "harness": "codex",
         "harness_posture_override": null,
-        "harness_risk_actions": {},
+        "harness_risk_actions": {
+          "codex": {
+            "data_flow_exfiltration": "???"
+          }
+        },
         "managed_locks_level": false,
         "protection_posture": "balanced",
         "protection_posture_explicit": false,
@@ -526,7 +546,11 @@
         "default_action": "review",
         "harness": "codex",
         "harness_posture_override": null,
-        "harness_risk_actions": {},
+        "harness_risk_actions": {
+          "codex": {
+            "data_flow_exfiltration": "???"
+          }
+        },
         "managed_locks_level": false,
         "protection_posture": "balanced",
         "protection_posture_explicit": false,
@@ -615,7 +639,11 @@
         "default_action": "review",
         "harness": "codex",
         "harness_posture_override": null,
-        "harness_risk_actions": {},
+        "harness_risk_actions": {
+          "codex": {
+            "data_flow_exfiltration": "???"
+          }
+        },
         "managed_locks_level": false,
         "protection_posture": "balanced",
         "protection_posture_explicit": false,
@@ -704,7 +732,11 @@
         "default_action": "review",
         "harness": "codex",
         "harness_posture_override": null,
-        "harness_risk_actions": {},
+        "harness_risk_actions": {
+          "codex": {
+            "data_flow_exfiltration": "???"
+          }
+        },
         "managed_locks_level": false,
         "protection_posture": "balanced",
         "protection_posture_explicit": false,
@@ -793,7 +825,11 @@
         "default_action": "review",
         "harness": "codex",
         "harness_posture_override": null,
-        "harness_risk_actions": {},
+        "harness_risk_actions": {
+          "codex": {
+            "data_flow_exfiltration": "???"
+          }
+        },
         "managed_locks_level": false,
         "protection_posture": "balanced",
         "protection_posture_explicit": false,
@@ -882,7 +918,11 @@
         "default_action": "review",
         "harness": "codex",
         "harness_posture_override": null,
-        "harness_risk_actions": {},
+        "harness_risk_actions": {
+          "codex": {
+            "data_flow_exfiltration": "???"
+          }
+        },
         "managed_locks_level": false,
         "protection_posture": "balanced",
         "protection_posture_explicit": false,
@@ -973,7 +1013,11 @@
         "default_action": "review",
         "harness": "codex",
         "harness_posture_override": null,
-        "harness_risk_actions": {},
+        "harness_risk_actions": {
+          "codex": {
+            "data_flow_exfiltration": "???"
+          }
+        },
         "managed_locks_level": false,
         "protection_posture": "balanced",
         "protection_posture_explicit": false,
@@ -1064,7 +1108,11 @@
         "default_action": "review",
         "harness": "codex",
         "harness_posture_override": null,
-        "harness_risk_actions": {},
+        "harness_risk_actions": {
+          "codex": {
+            "data_flow_exfiltration": "???"
+          }
+        },
         "managed_locks_level": false,
         "protection_posture": "balanced",
         "protection_posture_explicit": false,
@@ -1155,7 +1203,11 @@
         "default_action": "review",
         "harness": "codex",
         "harness_posture_override": null,
-        "harness_risk_actions": {},
+        "harness_risk_actions": {
+          "codex": {
+            "data_flow_exfiltration": "???"
+          }
+        },
         "managed_locks_level": false,
         "protection_posture": "balanced",
         "protection_posture_explicit": false,
@@ -1250,7 +1302,11 @@
         "default_action": "review",
         "harness": "codex",
         "harness_posture_override": null,
-        "harness_risk_actions": {},
+        "harness_risk_actions": {
+          "codex": {
+            "data_flow_exfiltration": "???"
+          }
+        },
         "managed_locks_level": false,
         "protection_posture": "balanced",
         "protection_posture_explicit": false,
@@ -1342,7 +1398,11 @@
         "default_action": "review",
         "harness": "codex",
         "harness_posture_override": null,
-        "harness_risk_actions": {},
+        "harness_risk_actions": {
+          "codex": {
+            "data_flow_exfiltration": "???"
+          }
+        },
         "managed_locks_level": false,
         "protection_posture": "balanced",
         "protection_posture_explicit": false,
@@ -1626,7 +1686,11 @@
         "default_action": "review",
         "harness": "codex",
         "harness_posture_override": null,
-        "harness_risk_actions": {},
+        "harness_risk_actions": {
+          "codex": {
+            "data_flow_exfiltration": "???"
+          }
+        },
         "managed_locks_level": false,
         "protection_posture": "balanced",
         "protection_posture_explicit": false,
@@ -1719,7 +1783,11 @@
         "default_action": "review",
         "harness": "codex",
         "harness_posture_override": null,
-        "harness_risk_actions": {},
+        "harness_risk_actions": {
+          "codex": {
+            "data_flow_exfiltration": "???"
+          }
+        },
         "managed_locks_level": false,
         "protection_posture": "balanced",
         "protection_posture_explicit": false,
@@ -1811,7 +1879,11 @@
         "default_action": "review",
         "harness": "codex",
         "harness_posture_override": null,
-        "harness_risk_actions": {},
+        "harness_risk_actions": {
+          "codex": {
+            "data_flow_exfiltration": "???"
+          }
+        },
         "managed_locks_level": false,
         "protection_posture": "balanced",
         "protection_posture_explicit": false,
@@ -1903,7 +1975,11 @@
         "default_action": "review",
         "harness": "codex",
         "harness_posture_override": null,
-        "harness_risk_actions": {},
+        "harness_risk_actions": {
+          "codex": {
+            "data_flow_exfiltration": "???"
+          }
+        },
         "managed_locks_level": false,
         "protection_posture": "balanced",
         "protection_posture_explicit": false,

@@ -180,8 +180,8 @@ def record() -> list[dict[str, object]]:
             },
             "artifact": {
                 "hard_block": _prompt_requires_hard_block(artifact),
-                "configured_override": config.resolve_action_override(
-                    HARNESS, artifact.artifact_id, artifact.publisher
+                "configured_override": _typed_override(
+                    config.resolve_action_override(HARNESS, artifact.artifact_id, artifact.publisher)
                 ),
                 "command_action_floor": policy._runtime_artifact_command_action_floor(artifact),
                 "explicit_permission_allow": policy._runtime_artifact_has_explicit_permission_allow(artifact),
