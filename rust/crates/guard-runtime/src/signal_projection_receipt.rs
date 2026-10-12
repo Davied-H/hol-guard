@@ -13,9 +13,7 @@ fn aliases_equal(a: &Value, b: &Value) -> bool {
         (Value::Bool(a), Value::Number(b)) | (Value::Number(b), Value::Bool(a)) => {
             b.as_f64() == Some(if *a { 1.0 } else { 0.0 })
         }
-        (Value::Number(a), Value::Number(b)) if a.is_f64() || b.is_f64() => {
-            a.as_f64() == b.as_f64()
-        }
+        (Value::Number(a), Value::Number(b)) => numbers_equal(a, b),
         (Value::Array(a), Value::Array(b)) => {
             a.len() == b.len() && a.iter().zip(b).all(|(a, b)| aliases_equal(a, b))
         }
@@ -25,6 +23,31 @@ fn aliases_equal(a: &Value, b: &Value) -> bool {
                     .all(|(key, a)| b.get(key).is_some_and(|b| aliases_equal(a, b)))
         }
         _ => false,
+    }
+}
+
+fn integer(number: &serde_json::Number) -> Option<i128> {
+    number
+        .as_i64()
+        .map(i128::from)
+        .or_else(|| number.as_u64().map(i128::from))
+}
+
+/// Exact numeric equality, as Python compares an int with a float: a float
+/// equals an integer only when it holds that integer's exact value.
+fn numbers_equal(a: &serde_json::Number, b: &serde_json::Number) -> bool {
+    match (integer(a), integer(b)) {
+        (Some(a), Some(b)) => a == b,
+        (None, None) => a.as_f64() == b.as_f64(),
+        (Some(whole), None) | (None, Some(whole)) => {
+            let float = if integer(a).is_some() { b } else { a };
+            float.as_f64().is_some_and(|value| {
+                value.is_finite()
+                    && value.fract() == 0.0
+                    && value.abs() < 2f64.powi(127)
+                    && value as i128 == whole
+            })
+        }
     }
 }
 

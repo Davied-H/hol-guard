@@ -62,3 +62,17 @@ fn native_page_batch_matches_individual_surface_projection() {
     assert_eq!(actual["value"], json!(expected));
     assert_eq!(actual["value"][0]["policy_action"], "block");
 }
+
+#[test]
+fn strict_receipt_rejects_aliases_that_differ_only_beyond_float_precision() {
+    let envelope = json!({"action_id": 9007199254740993_u64, "actionId": 9007199254740992.0});
+    assert!(crate::signal_projection_receipt::receipt(&json!("allow"), &envelope, true).is_err());
+    let same = json!({"action_id": 7, "actionId": 7.0});
+    assert!(crate::signal_projection_receipt::receipt(&json!("allow"), &same, true).is_ok());
+}
+
+#[test]
+fn a_non_boolean_strict_flag_is_refused() {
+    let args = json!({"action":"allow","envelope":null,"reject":"true"});
+    assert!(crate::signal_projection_op::dispatch("projection_receipt", &args).is_err());
+}

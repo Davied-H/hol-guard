@@ -10,7 +10,12 @@ pub(crate) fn dispatch(kind: &str, args: &Value) -> KindResult {
     if !args.is_object() {
         return Err(ERR_INVALID);
     }
-    let reject = args["reject"].as_bool().unwrap_or(false);
+    // A strict flag that is not a boolean is refused, never read as permissive.
+    let reject = match &args["reject"] {
+        Value::Null => false,
+        Value::Bool(reject) => *reject,
+        _ => return Err(ERR_INVALID),
+    };
     let result = match kind {
         "projection_artifact_surfaces" => {
             let artifact = &args["artifact"];
