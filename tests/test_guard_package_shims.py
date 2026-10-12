@@ -502,51 +502,6 @@ def _run_guard_protect_command(
         )
 
 
-def test_enable_wal_mode_uses_bounded_busy_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
-    sleep_calls: list[float] = []
-
-    class _Cursor:
-        def __init__(self, row):
-            self._row = row
-
-        def fetchone(self):
-            return self._row
-
-    class _Connection:
-        def __init__(self) -> None:
-            self.busy_timeout_ms = guard_store_module.SQLITE_BUSY_TIMEOUT_MS
-            self.wal_attempts = 0
-            self.commands: list[str] = []
-
-        def execute(self, sql: str):
-            self.commands.append(sql)
-            if sql == "pragma busy_timeout":
-                return _Cursor((self.busy_timeout_ms,))
-            if sql.startswith("pragma busy_timeout="):
-                self.busy_timeout_ms = int(sql.split("=", 1)[1])
-                return _Cursor(None)
-            if sql == "pragma journal_mode=WAL":
-                self.wal_attempts += 1
-                if self.wal_attempts < 2:
-                    raise sqlite3.OperationalError("database is locked")
-                return _Cursor(("wal",))
-            raise AssertionError(f"unexpected SQL: {sql}")
-
-    monkeypatch.setattr(guard_store_module.time, "sleep", lambda seconds: sleep_calls.append(seconds))
-    connection = _Connection()
-
-    guard_store_module.GuardStore._enable_wal_mode(connection)
-
-    assert connection.wal_attempts == 2
-    assert connection.commands[:2] == [
-        "pragma busy_timeout",
-        f"pragma busy_timeout={guard_store_module.SQLITE_WAL_BUSY_TIMEOUT_MS}",
-    ]
-    assert connection.commands[-1] == f"pragma busy_timeout={guard_store_module.SQLITE_BUSY_TIMEOUT_MS}"
-    assert connection.busy_timeout_ms == guard_store_module.SQLITE_BUSY_TIMEOUT_MS
-    assert sleep_calls == [guard_store_module._SQLITE_LOCK_RETRY_DELAY_SECONDS]
-
-
 def test_guard_protect_does_not_prime_policy_integrity_or_hold_sqlite_writer(
     tmp_path: Path,
     native_hook_force: Path,

@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from codex_plugin_scanner.guard import store_command_activity_health_schema as health_schema
+from codex_plugin_scanner.guard import store_command_activity_schema_versions as health_schema
 from codex_plugin_scanner.guard.native_guard_store import NativeGuardStoreUnavailable
 from codex_plugin_scanner.guard.runtime.command_activity_contract import (
     ActivityApprovalReuseStatus,
@@ -102,59 +102,6 @@ def test_health_migration_is_v11_atomic_and_reopens(tmp_path: Path) -> None:
     assert initial == reopened.get_command_activity_persistence_health()
     assert initial.dropped_event_count == 0
     assert initial.schema_version == health_schema.COMMAND_ACTIVITY_HEALTH_SCHEMA_VERSION
-
-
-def test_health_migration_failure_rolls_back_table_and_version(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    path = tmp_path / "migration.db"
-    with sqlite3.connect(path) as connection:
-        connection.execute("create table schema_migrations (version integer primary key, applied_at text not null)")
-        monkeypatch.setattr(health_schema, "_HEALTH_TABLE_SQL", "create table")
-        with pytest.raises(sqlite3.OperationalError):
-            health_schema.ensure_command_activity_health_schema(connection, applied_at=_NOW.isoformat())
-
-        tables = connection.execute("select name from sqlite_schema where name = 'command_activity_health'").fetchall()
-        migration = connection.execute("select version from schema_migrations where version = 11").fetchone()
-
-    assert tables == []
-    assert migration is None
-
-
-def test_health_migration_rejects_weakened_existing_schema(tmp_path: Path) -> None:
-    path = tmp_path / "incompatible.db"
-    weakened = health_schema._HEALTH_TABLE_SQL.replace(
-        " check (dropped_event_count between 0 and 9223372036854775807)",
-        "",
-    )
-    with sqlite3.connect(path) as connection:
-        connection.execute("create table schema_migrations (version integer primary key, applied_at text not null)")
-        connection.execute(weakened)
-
-        with pytest.raises(RuntimeError, match="incompatible command_activity_health schema object"):
-            health_schema.ensure_command_activity_health_schema(connection, applied_at=_NOW.isoformat())
-
-        migration = connection.execute("select version from schema_migrations where version = 11").fetchone()
-
-    assert migration is None
-
-
-def test_health_migration_rejects_incompatible_existing_singleton(tmp_path: Path) -> None:
-    path = tmp_path / "incompatible-row.db"
-    with sqlite3.connect(path) as connection:
-        connection.execute("create table schema_migrations (version integer primary key, applied_at text not null)")
-        connection.execute(health_schema._HEALTH_TABLE_SQL)
-        connection.execute(
-            """
-            insert into command_activity_health values (1, 0, 0, null, null, '0.0.0')
-            """
-        )
-        with pytest.raises(RuntimeError, match="incompatible command_activity_health singleton"):
-            health_schema.ensure_command_activity_health_schema(connection, applied_at=_NOW.isoformat())
-        migration = connection.execute("select version from schema_migrations where version = 11").fetchone()
-
-    assert migration is None
 
 
 def test_lookup_requires_exact_request_handle_and_hides_activity_id_lookup(tmp_path: Path) -> None:

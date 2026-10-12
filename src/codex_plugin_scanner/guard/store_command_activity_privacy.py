@@ -20,8 +20,10 @@ from .runtime.command_activity_contract import (
 )
 from .runtime.command_extensions import BUILT_IN_COMMAND_EXTENSION_REGISTRY
 from .runtime.command_shadow_evaluation import COMMAND_SHADOW_SCHEMA_VERSION
-from .store_command_activity_health_schema import COMMAND_ACTIVITY_HEALTH_SCHEMA_VERSION
-from .store_command_activity_maintenance_schema import COMMAND_ACTIVITY_MAINTENANCE_SCHEMA_VERSION
+from .store_command_activity_schema_versions import (
+    COMMAND_ACTIVITY_HEALTH_SCHEMA_VERSION,
+    COMMAND_ACTIVITY_MAINTENANCE_SCHEMA_VERSION,
+)
 
 COMMAND_ACTIVITY_DIAGNOSTICS_SCHEMA_VERSION: Final = "guard.command-activity-diagnostics.v1"
 _ALLOWED_ERROR_CLASSES: Final = (

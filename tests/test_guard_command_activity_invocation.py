@@ -22,7 +22,7 @@ from codex_plugin_scanner.guard.runtime.command_activity_display import (
     build_invocation_preview_from_payload,
 )
 from codex_plugin_scanner.guard.store import GuardStore
-from codex_plugin_scanner.guard.store_command_activity_display_schema import (
+from codex_plugin_scanner.guard.store_command_activity_schema_versions import (
     COMMAND_ACTIVITY_DISPLAY_SCHEMA_MIGRATION_VERSION,
 )
 from tests.guard_command_activity_api_support import evidence

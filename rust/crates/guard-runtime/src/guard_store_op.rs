@@ -99,6 +99,15 @@ fn evaluate(request: &GuardStoreRequestV1) -> StoreResult<(Value, Option<i64>)> 
     let path =
         crate::local_store_read::require_store_path(&request.store_path, &request.guard_home)
             .map_err(|_| StoreError::Invalid("native_guard_store_path_invalid"))?;
+    if request.method == crate::guard_store_schema::METHOD {
+        let payload = crate::guard_store_schema::initialize(
+            &path,
+            request.busy_timeout_ms,
+            &request.args,
+            apply_pragmas,
+        )?;
+        return Ok((payload, None));
+    }
     let kind = match method_kind(&request.method) {
         Some(kind) => kind,
         None => return invalid("native_guard_store_method_unknown"),

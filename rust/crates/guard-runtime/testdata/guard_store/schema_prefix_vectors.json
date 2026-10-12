@@ -1,0 +1,3070 @@
+{
+ "cases": [
+  {
+   "name": "fresh",
+   "setup": null,
+   "state": {
+    "auto_vacuum": 2,
+    "health": [
+     [
+      1,
+      0,
+      0,
+      null,
+      null,
+      "1.0.0"
+     ]
+    ],
+    "health_active": [
+     [
+      1,
+      0,
+      0,
+      0
+     ]
+    ],
+    "journal_mode": "wal",
+    "maintenance": [
+     [
+      1,
+      null,
+      null,
+      null,
+      null,
+      null,
+      0,
+      0,
+      0,
+      0,
+      0,
+      "guard.command-activity-maintenance.v1"
+     ]
+    ],
+    "migrations": [
+     10,
+     11,
+     12,
+     13,
+     19,
+     26,
+     27,
+     28,
+     29
+    ],
+    "objects": [
+     [
+      "index",
+      "idx_command_activity_approval_reuse_occurred_at",
+      "command_activity",
+      "CREATE INDEX idx_command_activity_approval_reuse_occurred_at\n        on command_activity (approval_reuse_status, occurred_at desc, activity_id desc)\n        "
+     ],
+     [
+      "index",
+      "idx_command_activity_correlation_lookup",
+      "command_activity_correlations",
+      "CREATE INDEX idx_command_activity_correlation_lookup\n        on command_activity_correlations (kind, harness, key_id, digest)\n        "
+     ],
+     [
+      "index",
+      "idx_command_activity_execution_status_occurred_at",
+      "command_activity",
+      "CREATE INDEX idx_command_activity_execution_status_occurred_at\n        on command_activity (execution_status, occurred_at desc, activity_id desc)\n        "
+     ],
+     [
+      "index",
+      "idx_command_activity_feedback_label",
+      "command_activity_feedback",
+      "CREATE INDEX idx_command_activity_feedback_label\n        on command_activity_feedback (label, updated_at desc, activity_id desc)\n        "
+     ],
+     [
+      "index",
+      "idx_command_activity_harness_occurred_at",
+      "command_activity",
+      "CREATE INDEX idx_command_activity_harness_occurred_at\n        on command_activity (harness, occurred_at desc, activity_id desc)\n        "
+     ],
+     [
+      "index",
+      "idx_command_activity_match_extension",
+      "command_activity_matches",
+      "CREATE INDEX idx_command_activity_match_extension\n        on command_activity_matches (extension_id, activity_id)\n        "
+     ],
+     [
+      "index",
+      "idx_command_activity_match_rule",
+      "command_activity_matches",
+      "CREATE INDEX idx_command_activity_match_rule\n        on command_activity_matches (rule_id, activity_id)\n        "
+     ],
+     [
+      "index",
+      "idx_command_activity_occurred_at",
+      "command_activity",
+      "CREATE INDEX idx_command_activity_occurred_at\n        on command_activity (occurred_at desc, activity_id desc)\n        "
+     ],
+     [
+      "index",
+      "idx_command_activity_prompted_occurred_at",
+      "command_activity",
+      "CREATE INDEX idx_command_activity_prompted_occurred_at\n        on command_activity (prompted, occurred_at desc, activity_id desc)\n        "
+     ],
+     [
+      "index",
+      "idx_command_activity_proof_level_occurred_at",
+      "command_activity",
+      "CREATE INDEX idx_command_activity_proof_level_occurred_at\n        on command_activity (proof_level, occurred_at desc, activity_id desc)\n        "
+     ],
+     [
+      "index",
+      "idx_command_activity_request_correlation_unique",
+      "command_activity_correlations",
+      "CREATE UNIQUE INDEX idx_command_activity_request_correlation_unique\n        on command_activity_correlations (harness, key_id, digest)\n        where kind = 'request'\n        "
+     ],
+     [
+      "index",
+      "idx_command_activity_rollup_membership_day",
+      "command_activity_rollup_membership",
+      "CREATE INDEX idx_command_activity_rollup_membership_day\n        on command_activity_rollup_membership (detail_present, day, activity_id)\n        "
+     ],
+     [
+      "index",
+      "idx_command_activity_rollup_membership_occurred_at",
+      "command_activity_rollup_membership",
+      "CREATE INDEX idx_command_activity_rollup_membership_occurred_at\n        on command_activity_rollup_membership (detail_present, occurred_at, activity_id)\n        "
+     ],
+     [
+      "index",
+      "idx_guard_cloud_events_sync",
+      "guard_cloud_events",
+      "CREATE INDEX idx_guard_cloud_events_sync\n            on guard_cloud_events (uploaded_at, occurred_at)\n            "
+     ],
+     [
+      "index",
+      "idx_guard_events_name_recent",
+      "guard_events",
+      "CREATE INDEX idx_guard_events_name_recent\n            on guard_events (event_name, occurred_at desc, event_id desc)\n            "
+     ],
+     [
+      "index",
+      "idx_guard_events_recent",
+      "guard_events",
+      "CREATE INDEX idx_guard_events_recent\n            on guard_events (occurred_at desc, event_id desc)\n            "
+     ],
+     [
+      "index",
+      "idx_guard_local_once_approvals_lookup",
+      "guard_local_once_approvals",
+      "CREATE INDEX idx_guard_local_once_approvals_lookup\n            on guard_local_once_approvals (claimed_at, harness, artifact_id, artifact_hash, expires_at)\n            "
+     ],
+     [
+      "index",
+      "idx_guard_local_once_diagnostic_artifact",
+      "guard_local_once_approvals",
+      "CREATE INDEX idx_guard_local_once_diagnostic_artifact\n            on guard_local_once_approvals (harness, artifact_id, created_at desc, approval_id desc)\n            where claimed_at is null and action = 'allow'\n            "
+     ],
+     [
+      "index",
+      "idx_guard_local_once_diagnostic_hash",
+      "guard_local_once_approvals",
+      "CREATE INDEX idx_guard_local_once_diagnostic_hash\n            on guard_local_once_approvals (harness, artifact_hash, created_at desc, approval_id desc)\n            where claimed_at is null and action = 'allow'\n            "
+     ],
+     [
+      "index",
+      "idx_guard_local_once_reuse_artifact",
+      "guard_local_once_approvals",
+      "CREATE INDEX idx_guard_local_once_reuse_artifact\n            on guard_local_once_approvals (action, harness, artifact_id, created_at desc, approval_id desc)\n            "
+     ],
+     [
+      "index",
+      "idx_guard_local_once_reuse_hash",
+      "guard_local_once_approvals",
+      "CREATE INDEX idx_guard_local_once_reuse_hash\n            on guard_local_once_approvals (action, harness, artifact_hash, created_at desc, approval_id desc)\n            "
+     ],
+     [
+      "index",
+      "idx_guard_request_read_state_read_at",
+      "guard_request_read_state",
+      "CREATE INDEX idx_guard_request_read_state_read_at\n            on guard_request_read_state (read_at desc)\n            "
+     ],
+     [
+      "index",
+      "idx_native_hook_decision_receipts_recorded_at",
+      "native_hook_decision_receipts",
+      "CREATE INDEX idx_native_hook_decision_receipts_recorded_at\n        on native_hook_decision_receipts (recorded_at)\n        "
+     ],
+     [
+      "index",
+      "idx_native_prompt_decision_receipts_recorded_at",
+      "native_prompt_decision_receipts",
+      "CREATE INDEX idx_native_prompt_decision_receipts_recorded_at\n        on native_prompt_decision_receipts (recorded_at)\n        "
+     ],
+     [
+      "index",
+      "idx_scanner_cache_key",
+      "scanner_cache",
+      "CREATE INDEX idx_scanner_cache_key\n            on scanner_cache (cache_key)\n            "
+     ],
+     [
+      "index",
+      "sqlite_autoindex_approval_requests_1",
+      "approval_requests",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_artifact_capabilities_1",
+      "artifact_capabilities",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_artifact_inventory_1",
+      "artifact_inventory",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_artifact_snapshots_1",
+      "artifact_snapshots",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_command_activity_1",
+      "command_activity",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_command_activity_correlations_1",
+      "command_activity_correlations",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_command_activity_daily_rollups_1",
+      "command_activity_daily_rollups",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_command_activity_daily_totals_1",
+      "command_activity_daily_totals",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_command_activity_feedback_1",
+      "command_activity_feedback",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_command_activity_invocation_1",
+      "command_activity_invocation",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_command_activity_match_effects_1",
+      "command_activity_match_effects",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_command_activity_matches_1",
+      "command_activity_matches",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_command_activity_matches_2",
+      "command_activity_matches",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_command_activity_rollup_membership_1",
+      "command_activity_rollup_membership",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_command_activity_rollup_pending_1",
+      "command_activity_rollup_pending",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_client_attachments_1",
+      "guard_client_attachments",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_cloud_events_1",
+      "guard_cloud_events",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_cloud_events_2",
+      "guard_cloud_events",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_connect_requests_1",
+      "guard_connect_requests",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_connect_states_1",
+      "guard_connect_states",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_continuation_claims_1",
+      "guard_continuation_claims",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_continuation_effects_1",
+      "guard_continuation_effects",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_devices_1",
+      "guard_devices",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_exact_cloud_review_receipts_1",
+      "guard_exact_cloud_review_receipts",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_local_once_approvals_1",
+      "guard_local_once_approvals",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_operation_items_1",
+      "guard_operation_items",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_operations_1",
+      "guard_operations",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_request_read_state_1",
+      "guard_request_read_state",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_request_resumes_1",
+      "guard_request_resumes",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_runtime_state_1",
+      "guard_runtime_state",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_sessions_1",
+      "guard_sessions",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_supply_chain_bundle_cache_1",
+      "guard_supply_chain_bundle_cache",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_supply_chain_eval_cache_1",
+      "guard_supply_chain_eval_cache",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_surface_opens_1",
+      "guard_surface_opens",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_threat_intel_bundles_1",
+      "guard_threat_intel_bundles",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_threat_intel_matches_1",
+      "guard_threat_intel_matches",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_harness_installations_1",
+      "harness_installations",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_managed_installs_1",
+      "managed_installs",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_native_hook_decision_receipts_1",
+      "native_hook_decision_receipts",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_native_prompt_decision_receipts_1",
+      "native_prompt_decision_receipts",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_provenance_cache_1",
+      "provenance_cache",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_publisher_cache_1",
+      "publisher_cache",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_runtime_receipt_envelopes_1",
+      "runtime_receipt_envelopes",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_runtime_receipts_1",
+      "runtime_receipts",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_scanner_cache_1",
+      "scanner_cache",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_sync_state_1",
+      "sync_state",
+      null
+     ],
+     [
+      "table",
+      "approval_requests",
+      "approval_requests",
+      "CREATE TABLE approval_requests (\n          request_id text primary key,\n          harness text not null,\n          artifact_id text not null,\n          artifact_name text not null,\n          artifact_type text not null,\n          artifact_hash text not null,\n          publisher text,\n          policy_action text not null,\n          recommended_scope text not null,\n          changed_fields_json text not null,\n          source_scope text not null,\n          oauth_source text,\n          config_path text not null,\n          workspace text,\n          launch_target text,\n          normalized_identity_key text,\n          action_identity text,\n          queue_group_id text,\n          dedupe_count integer not null default 1,\n          last_seen_at text,\n          transport text,\n          risk_summary text,\n          risk_signals_json text not null default '[]',\n          artifact_label text,\n          source_label text,\n          trigger_summary text,\n          why_now text,\n          launch_summary text,\n          risk_headline text,\n          action_envelope_json text,\n          decision_v2_json text,\n          fallback_cli_command text,\n          scanner_evidence_json text not null default '[]',\n          browser_intent_json text,\n          desktop_notified_at text,\n          raw_command_text text,\n          continuation_snapshot_json text,\n          extension_allow_hint_json text,\n          guard_version text,\n          first_seen_guard_version text,\n          last_seen_guard_version text,\n          watch_only_observation integer not null default 0,\n          review_command text not null,\n          approval_url text not null,\n          status text not null,\n          resolution_action text,\n          resolution_scope text,\n          reason text,\n          created_at text not null,\n          resolved_at text\n        )"
+     ],
+     [
+      "table",
+      "artifact_capabilities",
+      "artifact_capabilities",
+      "CREATE TABLE artifact_capabilities (\n              artifact_id text not null,\n              harness text not null,\n              capability_json text not null,\n              updated_at text not null,\n              primary key (artifact_id, harness)\n            )"
+     ],
+     [
+      "table",
+      "artifact_diffs",
+      "artifact_diffs",
+      "CREATE TABLE artifact_diffs (\n              diff_id integer primary key autoincrement,\n              artifact_id text not null,\n              harness text not null,\n              changed_fields_json text not null,\n              previous_hash text,\n              current_hash text not null,\n              recorded_at text not null\n            )"
+     ],
+     [
+      "table",
+      "artifact_hashes",
+      "artifact_hashes",
+      "CREATE TABLE artifact_hashes (\n              artifact_id text not null,\n              harness text not null,\n              artifact_hash text not null,\n              recorded_at text not null\n            )"
+     ],
+     [
+      "table",
+      "artifact_inventory",
+      "artifact_inventory",
+      "CREATE TABLE artifact_inventory (\n              artifact_id text not null,\n              harness text not null,\n              artifact_name text not null,\n              artifact_type text not null,\n              source_scope text not null,\n              config_path text not null,\n              publisher text,\n              origin_url text,\n              launch_command text,\n              transport text,\n              first_seen_at text not null,\n              last_seen_at text not null,\n              last_changed_at text,\n              last_approved_at text,\n              removed_at text,\n              present integer not null default 1,\n              last_policy_action text not null,\n              artifact_hash text not null,\n              primary key (artifact_id, harness)\n            )"
+     ],
+     [
+      "table",
+      "artifact_snapshots",
+      "artifact_snapshots",
+      "CREATE TABLE artifact_snapshots (\n              artifact_id text not null,\n              harness text not null,\n              snapshot_json text not null,\n              artifact_hash text not null,\n              recorded_at text not null,\n              primary key (artifact_id, harness)\n            )"
+     ],
+     [
+      "table",
+      "command_activity",
+      "command_activity",
+      "CREATE TABLE command_activity (\n          activity_id text primary key,\n          occurred_at text not null,\n          harness text not null,\n          hook_phase text not null,\n          execution_status text not null,\n          proof_level text not null,\n          policy_action text,\n          decision_reason_code text,\n          controlling_rule_id text,\n          parse_confidence text,\n          uncertainty_class text,\n          match_count integer not null check (match_count >= 0),\n          prompted integer not null check (prompted in (0, 1)),\n          approval_reuse_status text not null,\n          receipt_link_status text not null,\n          receipt_id text,\n          evaluation_latency_bucket text not null,\n          persistence_latency_bucket text not null,\n          schema_version text not null\n        )"
+     ],
+     [
+      "table",
+      "command_activity_correlations",
+      "command_activity_correlations",
+      "CREATE TABLE command_activity_correlations (\n          activity_id text not null references command_activity(activity_id) on delete cascade,\n          kind text not null,\n          harness text not null,\n          key_id text not null,\n          digest text not null,\n          primary key (activity_id, kind)\n        )"
+     ],
+     [
+      "table",
+      "command_activity_daily_rollups",
+      "command_activity_daily_rollups",
+      "CREATE TABLE command_activity_daily_rollups (\n          day text not null,\n          dimension text not null,\n          dimension_value text not null,\n          count integer not null default 0 check (count >= 0),\n          primary key (day, dimension, dimension_value)\n        )"
+     ],
+     [
+      "table",
+      "command_activity_daily_totals",
+      "command_activity_daily_totals",
+      "CREATE TABLE command_activity_daily_totals (\n          day text primary key,\n          total integer not null default 0 check (total >= 0)\n        )"
+     ],
+     [
+      "table",
+      "command_activity_feedback",
+      "command_activity_feedback",
+      "CREATE TABLE command_activity_feedback (\n          activity_id text primary key references command_activity(activity_id) on delete cascade,\n          label text not null check (\n            label in ('should_not_have_interrupted', 'expected_guard_to_stop_this')\n          ),\n          created_at text not null,\n          updated_at text not null,\n          schema_version text not null\n        )"
+     ],
+     [
+      "table",
+      "command_activity_health",
+      "command_activity_health",
+      "CREATE TABLE command_activity_health (\n  singleton integer primary key check (singleton = 1),\n  dropped_event_count integer not null check (dropped_event_count between 0 and 9223372036854775807),\n  persistence_error_count integer not null check (persistence_error_count between 0 and 9223372036854775807),\n  last_error_code text check (last_error_code is null or length(last_error_code) between 1 and 64),\n  last_error_at text,\n  schema_version text not null\n)"
+     ],
+     [
+      "table",
+      "command_activity_health_active",
+      "command_activity_health_active",
+      "CREATE TABLE command_activity_health_active (\n  singleton integer primary key check (singleton = 1),\n  command_error_active integer not null check (command_error_active in (0, 1)),\n  shadow_error_active integer not null check (shadow_error_active in (0, 1)),\n  maintenance_error_active integer not null check (maintenance_error_active in (0, 1)),\n  foreign key (singleton) references command_activity_health(singleton) on delete cascade\n)"
+     ],
+     [
+      "table",
+      "command_activity_invalidations",
+      "command_activity_invalidations",
+      "CREATE TABLE command_activity_invalidations (\n          sequence integer primary key autoincrement,\n          activity_id text not null\n        )"
+     ],
+     [
+      "table",
+      "command_activity_invocation",
+      "command_activity_invocation",
+      "CREATE TABLE command_activity_invocation (\n          activity_id text primary key references command_activity(activity_id) on delete cascade,\n          invocation_preview text not null check (\n            length(invocation_preview) between 1 and 4096\n          )\n        )"
+     ],
+     [
+      "table",
+      "command_activity_maintenance",
+      "command_activity_maintenance",
+      "CREATE TABLE command_activity_maintenance (\n          singleton integer primary key check (singleton = 1),\n          last_completed_day text,\n          last_run_at text,\n          detail_compaction_started_at text,\n          rollup_backfill_cursor_occurred_at text,\n          rollup_backfill_cursor_activity_id text,\n          rollup_backfill_complete integer not null default 0 check (rollup_backfill_complete in (0, 1)),\n          last_backfilled_rows integer not null default 0 check (last_backfilled_rows >= 0),\n          last_detail_rows_deleted integer not null default 0 check (last_detail_rows_deleted >= 0),\n          last_correlation_rows_deleted integer not null default 0 check (last_correlation_rows_deleted >= 0),\n          last_aggregate_rows_deleted integer not null default 0 check (last_aggregate_rows_deleted >= 0),\n          schema_version text not null\n        )"
+     ],
+     [
+      "table",
+      "command_activity_match_effects",
+      "command_activity_match_effects",
+      "CREATE TABLE command_activity_match_effects (\n          activity_id text not null,\n          ordinal integer not null,\n          effect_class text not null,\n          primary key (activity_id, ordinal, effect_class),\n          foreign key (activity_id, ordinal)\n            references command_activity_matches(activity_id, ordinal) on delete cascade\n        )"
+     ],
+     [
+      "table",
+      "command_activity_matches",
+      "command_activity_matches",
+      "CREATE TABLE command_activity_matches (\n          activity_id text not null references command_activity(activity_id) on delete cascade,\n          ordinal integer not null check (ordinal >= 0),\n          extension_id text not null,\n          extension_version text not null,\n          rule_id text not null,\n          rule_version text not null,\n          match_class text not null,\n          severity text not null,\n          default_floor text not null,\n          safe_variant_id text,\n          schema_version text not null,\n          primary key (activity_id, ordinal),\n          unique (activity_id, rule_id)\n        )"
+     ],
+     [
+      "table",
+      "command_activity_rollup_membership",
+      "command_activity_rollup_membership",
+      "CREATE TABLE command_activity_rollup_membership (\n          activity_id text primary key,\n          day text not null,\n          occurred_at text not null,\n          rolled_at text not null,\n          detail_present integer not null default 1 check (detail_present in (0, 1))\n        )"
+     ],
+     [
+      "table",
+      "command_activity_rollup_pending",
+      "command_activity_rollup_pending",
+      "CREATE TABLE command_activity_rollup_pending (\n          activity_id text primary key,\n          occurred_at text not null\n        )"
+     ],
+     [
+      "table",
+      "guard_approval_authority_revision",
+      "guard_approval_authority_revision",
+      "CREATE TABLE guard_approval_authority_revision (\n              singleton integer primary key check (singleton = 1),\n              revision integer not null\n            )"
+     ],
+     [
+      "table",
+      "guard_client_attachments",
+      "guard_client_attachments",
+      "CREATE TABLE guard_client_attachments (\n              client_id text primary key,\n              surface text not null,\n              session_id text,\n              metadata_json text not null default '{}',\n              lease_id text not null default '',\n              lease_expires_at text,\n              attached_at text not null,\n              last_seen_at text not null\n            )"
+     ],
+     [
+      "table",
+      "guard_cloud_events",
+      "guard_cloud_events",
+      "CREATE TABLE guard_cloud_events (\n              event_id text primary key,\n              idempotency_key text not null unique,\n              event_type text not null,\n              payload_json text not null,\n              occurred_at text not null,\n              uploaded_at text\n            )"
+     ],
+     [
+      "table",
+      "guard_connect_requests",
+      "guard_connect_requests",
+      "CREATE TABLE guard_connect_requests (\n          request_id text primary key,\n          sync_url text not null,\n          allowed_origin text not null,\n          pairing_secret_hash text not null,\n          status text not null,\n          created_at text not null,\n          expires_at text not null,\n          completed_at text\n        )"
+     ],
+     [
+      "table",
+      "guard_connect_states",
+      "guard_connect_states",
+      "CREATE TABLE guard_connect_states (\n          request_id text primary key,\n          sync_url text not null,\n          allowed_origin text not null,\n          status text not null,\n          milestone text not null,\n          reason text,\n          created_at text not null,\n          updated_at text not null,\n          expires_at text not null,\n          completed_at text,\n          proof_json text not null default '{}'\n        )"
+     ],
+     [
+      "table",
+      "guard_continuation_claims",
+      "guard_continuation_claims",
+      "CREATE TABLE guard_continuation_claims (\n          request_id text not null,\n          offer_hash text not null,\n          action text not null,\n          state text not null,\n          claimed_at text not null,\n          lease_expires_at text,\n          claim_id text,\n          evidence_id text,\n          primary key (request_id, offer_hash, action)\n        )"
+     ],
+     [
+      "table",
+      "guard_continuation_effects",
+      "guard_continuation_effects",
+      "CREATE TABLE guard_continuation_effects (\n          effect_key text primary key,\n          request_id text not null,\n          evidence_id text not null,\n          event_name text not null,\n          created_at text not null\n        )"
+     ],
+     [
+      "table",
+      "guard_devices",
+      "guard_devices",
+      "CREATE TABLE guard_devices (\n              device_key text primary key,\n              installation_id text not null,\n              device_label text not null,\n              created_at text not null,\n              updated_at text not null\n            )"
+     ],
+     [
+      "table",
+      "guard_events",
+      "guard_events",
+      "CREATE TABLE guard_events (\n              event_id integer primary key autoincrement,\n              event_name text not null,\n              payload_json text not null,\n              occurred_at text not null\n            )"
+     ],
+     [
+      "table",
+      "guard_exact_cloud_review_receipts",
+      "guard_exact_cloud_review_receipts",
+      "CREATE TABLE guard_exact_cloud_review_receipts (\n              receipt_id text primary key,\n              request_id text not null,\n              claimed_at text not null\n            )"
+     ],
+     [
+      "table",
+      "guard_local_once_approvals",
+      "guard_local_once_approvals",
+      "CREATE TABLE guard_local_once_approvals (\n              approval_id text primary key,\n              request_id text not null,\n              harness text not null,\n              artifact_id text not null,\n              artifact_hash text not null,\n              workspace text,\n              publisher text,\n              action text not null,\n              created_at text not null,\n              expires_at text not null,\n              claimed_at text,\n              integrity_version integer,\n              payload_hash text,\n              payload_mac text,\n              integrity_key_id text,\n              signed_at text,\n              authority_kind text\n            )"
+     ],
+     [
+      "table",
+      "guard_operation_items",
+      "guard_operation_items",
+      "CREATE TABLE guard_operation_items (\n              item_id text primary key,\n              operation_id text not null,\n              item_type text not null,\n              lifecycle text not null,\n              payload_json text not null default '{}',\n              created_at text not null\n            )"
+     ],
+     [
+      "table",
+      "guard_operations",
+      "guard_operations",
+      "CREATE TABLE guard_operations (\n              operation_id text primary key,\n              session_id text not null,\n              harness text not null,\n              operation_type text not null,\n              status text not null,\n              approval_request_ids_json text not null default '[]',\n              resume_token text,\n              metadata_json text not null default '{}',\n              created_at text not null,\n              updated_at text not null\n            )"
+     ],
+     [
+      "table",
+      "guard_request_read_state",
+      "guard_request_read_state",
+      "CREATE TABLE guard_request_read_state (\n              request_id text primary key,\n              read_at text not null\n            )"
+     ],
+     [
+      "table",
+      "guard_request_resumes",
+      "guard_request_resumes",
+      "CREATE TABLE guard_request_resumes (\n          request_id text primary key,\n          operation_id text,\n          harness text not null,\n          resolution_action text,\n          strategy text not null,\n          supported integer not null default 0,\n          status text not null,\n          thread_id text,\n          reason text,\n          message text,\n          last_error text,\n          attempt_count integer not null default 0,\n          created_at text not null,\n          updated_at text not null,\n          last_attempt_at text,\n          sent_at text,\n          continuation_contract_version text,\n          continuation_capability text,\n          continuation_status text,\n          continuation_reason text,\n          continuation_evidence_json text not null default '[]',\n          continuation_offer_hash text,\n          continuation_action text,\n          continuation_completed_at text,\n          continuation_cancelled_at text\n        )"
+     ],
+     [
+      "table",
+      "guard_runtime_state",
+      "guard_runtime_state",
+      "CREATE TABLE guard_runtime_state (\n              state_key text primary key,\n              session_id text not null,\n              daemon_host text not null,\n              daemon_port integer not null,\n              started_at text not null,\n              last_heartbeat_at text not null\n            )"
+     ],
+     [
+      "table",
+      "guard_sessions",
+      "guard_sessions",
+      "CREATE TABLE guard_sessions (\n              session_id text primary key,\n              harness text not null,\n              surface text not null,\n              status text not null,\n              client_name text not null,\n              client_title text,\n              client_version text,\n              workspace text,\n              capabilities_json text not null default '[]',\n              created_at text not null,\n              updated_at text not null\n            )"
+     ],
+     [
+      "table",
+      "guard_supply_chain_bundle_cache",
+      "guard_supply_chain_bundle_cache",
+      "CREATE TABLE guard_supply_chain_bundle_cache (\n        workspace_id text primary key,\n        bundle_version text not null,\n        key_id text not null,\n        tier text not null,\n        policy_hash text not null,\n        feed_snapshot_hash text not null,\n        scoring_version text not null,\n        payload_hash text not null,\n        response_json text not null,\n        cached_at text not null\n    )"
+     ],
+     [
+      "table",
+      "guard_supply_chain_eval_cache",
+      "guard_supply_chain_eval_cache",
+      "CREATE TABLE guard_supply_chain_eval_cache (\n        workspace_id text not null,\n        package_intent_hash text not null,\n        feed_snapshot_hash text not null,\n        policy_hash text not null,\n        scoring_version text not null,\n        bundle_version text not null,\n        decision_json text not null,\n        updated_at text not null,\n        primary key (\n            workspace_id,\n            package_intent_hash,\n            feed_snapshot_hash,\n            policy_hash,\n            scoring_version,\n            bundle_version\n        )\n    )"
+     ],
+     [
+      "table",
+      "guard_surface_opens",
+      "guard_surface_opens",
+      "CREATE TABLE guard_surface_opens (\n              surface text not null,\n              open_key text not null,\n              opened_at text not null,\n              primary key (surface, open_key)\n            )"
+     ],
+     [
+      "table",
+      "guard_threat_intel_bundles",
+      "guard_threat_intel_bundles",
+      "CREATE TABLE guard_threat_intel_bundles (\n        bundle_id     text primary key,\n        version       integer not null,\n        source        text not null,\n        generated_at  real not null,\n        expires_at    real not null,\n        signature     text not null,\n        advisories_json text not null default '[]',\n        cached_at     real not null\n    )"
+     ],
+     [
+      "table",
+      "guard_threat_intel_matches",
+      "guard_threat_intel_matches",
+      "CREATE TABLE guard_threat_intel_matches (\n        match_id        text primary key,\n        bundle_id       text not null,\n        advisory_id     text not null,\n        artifact_id     text not null,\n        harness         text not null default '',\n        workspace       text not null default '',\n        severity        text not null default 'info',\n        matched_at      real not null,\n        target_json     text not null default '{}'\n    )"
+     ],
+     [
+      "table",
+      "harness_installations",
+      "harness_installations",
+      "CREATE TABLE harness_installations (\n              harness text primary key,\n              active integer not null,\n              workspace text,\n              config_path text,\n              metadata_json text not null default '{}',\n              updated_at text not null\n            )"
+     ],
+     [
+      "table",
+      "managed_installs",
+      "managed_installs",
+      "CREATE TABLE managed_installs (\n              harness text primary key,\n              active integer not null,\n              workspace text,\n              manifest_json text not null,\n              updated_at text not null\n            )"
+     ],
+     [
+      "table",
+      "native_hook_decision_receipts",
+      "native_hook_decision_receipts",
+      "CREATE TABLE native_hook_decision_receipts (\n      decision_id text primary key,\n      schema text not null check (schema = 'guard-native-hook-decision-receipt.v1'),\n      version integer not null check (version = 1),\n      authority text not null check (authority = 'rust'),\n      request_id text not null,\n      request_digest text not null,\n      harness text not null,\n      event_name text not null check (event_name in ('PreToolUse', 'PostToolUse')),\n      payload_kind text not null,\n      policy_generation integer not null,\n      policy_digest text,\n      rule_digest text,\n      runtime_identity text,\n      decision text not null check (decision in ('allow', 'deny')),\n      model_output_action text not null,\n      policy_action text,\n      observed_policy_action text,\n      reason_code text not null,\n      workspace_bound integer not null check (workspace_bound in (0, 1)),\n      source_ref_external_allowed integer not null check (source_ref_external_allowed in (0, 1)),\n      reviewed_output_sha256 text,\n      observe_mode integer not null check (observe_mode in (0, 1)),\n      deadline_budget_ms integer,\n      command_extensions_json text check (command_extensions_json is null or length(command_extensions_json) between 2 and 2048),\n      \n      recorded_at text not null\n    )"
+     ],
+     [
+      "table",
+      "native_prompt_decision_receipts",
+      "native_prompt_decision_receipts",
+      "CREATE TABLE native_prompt_decision_receipts (\n      decision_id text primary key,\n      schema text not null check (schema = 'guard-native-hook-decision-receipt.v1'),\n      version integer not null check (version = 1),\n      authority text not null check (authority = 'rust'),\n      request_id text not null,\n      request_digest text not null,\n      harness text not null,\n      event_name text not null check (event_name = 'UserPromptSubmit'),\n      payload_kind text not null,\n      policy_generation integer not null,\n      policy_digest text,\n      rule_digest text,\n      runtime_identity text,\n      decision text not null check (decision in ('allow', 'deny')),\n      model_output_action text not null,\n      policy_action text,\n      observed_policy_action text,\n      reason_code text not null,\n      workspace_bound integer not null check (workspace_bound in (0, 1)),\n      source_ref_external_allowed integer not null check (source_ref_external_allowed in (0, 1)),\n      reviewed_output_sha256 text,\n      observe_mode integer not null check (observe_mode in (0, 1)),\n      deadline_budget_ms integer,\n      command_extensions_json text check (command_extensions_json is null or length(command_extensions_json) between 2 and 2048),\n      prompt_risk_classes_json text not null check (length(prompt_risk_classes_json) between 2 and 256),\n      recorded_at text not null\n    )"
+     ],
+     [
+      "table",
+      "policy_decisions",
+      "policy_decisions",
+      "CREATE TABLE policy_decisions (\n              decision_id integer primary key autoincrement,\n              harness text not null,\n              scope text not null,\n              artifact_id text,\n              artifact_hash text,\n              workspace text,\n              publisher text,\n              action text not null,\n              reason text,\n              owner text,\n              source text not null default 'local',\n              expires_at text,\n              policy_document_schema_version text,\n              policy_document_id text,\n              policy_document_digest text,\n              policy_rule_id text,\n              policy_provenance_json text,\n              updated_at text not null\n            )"
+     ],
+     [
+      "table",
+      "provenance_cache",
+      "provenance_cache",
+      "CREATE TABLE provenance_cache (\n              artifact_hash text primary key,\n              payload_json text not null,\n              updated_at text not null\n            )"
+     ],
+     [
+      "table",
+      "publisher_cache",
+      "publisher_cache",
+      "CREATE TABLE publisher_cache (\n              publisher_key text primary key,\n              payload_json text not null,\n              updated_at text not null\n            )"
+     ],
+     [
+      "table",
+      "runtime_receipt_envelopes",
+      "runtime_receipt_envelopes",
+      "CREATE TABLE runtime_receipt_envelopes (\n              receipt_id text primary key references runtime_receipts(receipt_id) on delete cascade,\n              envelope_full_json text,\n              envelope_redacted_json text not null\n            )"
+     ],
+     [
+      "table",
+      "runtime_receipts",
+      "runtime_receipts",
+      "CREATE TABLE runtime_receipts (\n              receipt_id text primary key,\n              harness text not null,\n              artifact_id text not null,\n              artifact_hash text not null,\n              policy_decision text not null,\n              capabilities_summary text not null default '',\n              changed_capabilities_json text not null,\n              provenance_summary text not null,\n              user_override text,\n              artifact_name text,\n              source_scope text,\n              scanner_evidence_json text not null default '[]',\n              timestamp text not null,\n              raw_command_text text\n            )"
+     ],
+     [
+      "table",
+      "scanner_cache",
+      "scanner_cache",
+      "CREATE TABLE scanner_cache (\n              scanner_name text not null,\n              target_id text not null,\n              cache_key text not null,\n              input_content_hash text not null,\n              scanner_version text not null,\n              payload_json text not null,\n              updated_at text not null,\n              primary key (scanner_name, target_id)\n            )"
+     ],
+     [
+      "table",
+      "schema_migrations",
+      "schema_migrations",
+      "CREATE TABLE schema_migrations (\n              version integer primary key,\n              applied_at text not null\n            )"
+     ],
+     [
+      "table",
+      "sqlite_sequence",
+      "sqlite_sequence",
+      "CREATE TABLE sqlite_sequence(name,seq)"
+     ],
+     [
+      "table",
+      "sync_state",
+      "sync_state",
+      "CREATE TABLE sync_state (\n              state_key text primary key,\n              payload_json text not null,\n              updated_at text not null\n            )"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_correlation_parent_immutable",
+      "command_activity_correlations",
+      "CREATE TRIGGER trg_command_activity_correlation_parent_immutable\n        before update of activity_id on command_activity_correlations\n        when new.activity_id != old.activity_id\n        begin\n          select raise(abort, 'command activity correlation parent is immutable');\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_correlations_parent",
+      "command_activity_correlations",
+      "CREATE TRIGGER trg_command_activity_correlations_parent\n        before insert on command_activity_correlations\n        when not exists (\n          select 1 from command_activity where activity_id = new.activity_id\n        )\n        begin\n          select raise(abort, 'command activity correlation requires parent activity');\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_delete_children",
+      "command_activity",
+      "CREATE TRIGGER trg_command_activity_delete_children\n        after delete on command_activity\n        begin\n          delete from command_activity_correlations where activity_id = old.activity_id;\n          delete from command_activity_matches where activity_id = old.activity_id;\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_effect_parent_immutable",
+      "command_activity_match_effects",
+      "CREATE TRIGGER trg_command_activity_effect_parent_immutable\n        before update of activity_id, ordinal on command_activity_match_effects\n        when new.activity_id != old.activity_id or new.ordinal != old.ordinal\n        begin\n          select raise(abort, 'command activity effect parent is immutable');\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_effects_parent",
+      "command_activity_match_effects",
+      "CREATE TRIGGER trg_command_activity_effects_parent\n        before insert on command_activity_match_effects\n        when not exists (\n          select 1 from command_activity_matches\n          where activity_id = new.activity_id and ordinal = new.ordinal\n        )\n        begin\n          select raise(abort, 'command activity effect requires parent match');\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_feedback_invalidation_delete",
+      "command_activity_feedback",
+      "CREATE TRIGGER trg_command_activity_feedback_invalidation_delete\n        after delete on command_activity_feedback\n        begin\n          insert into command_activity_invalidations (activity_id) values (old.activity_id);\n          delete from command_activity_invalidations\n          where sequence <= last_insert_rowid() - 10000;\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_feedback_invalidation_insert",
+      "command_activity_feedback",
+      "CREATE TRIGGER trg_command_activity_feedback_invalidation_insert\n        after insert on command_activity_feedback\n        begin\n          insert into command_activity_invalidations (activity_id) values (new.activity_id);\n          delete from command_activity_invalidations\n          where sequence <= last_insert_rowid() - 10000;\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_feedback_invalidation_update",
+      "command_activity_feedback",
+      "CREATE TRIGGER trg_command_activity_feedback_invalidation_update\n        after update on command_activity_feedback\n        begin\n          insert into command_activity_invalidations (activity_id) values (new.activity_id);\n          delete from command_activity_invalidations\n          where sequence <= last_insert_rowid() - 10000;\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_id_immutable",
+      "command_activity",
+      "CREATE TRIGGER trg_command_activity_id_immutable\n        before update of activity_id on command_activity\n        when new.activity_id != old.activity_id\n        begin\n          select raise(abort, 'command activity identity is immutable');\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_invalidation_delete",
+      "command_activity",
+      "CREATE TRIGGER trg_command_activity_invalidation_delete\n        after delete on command_activity\n        begin\n          insert into command_activity_invalidations (activity_id) values (old.activity_id);\n          delete from command_activity_invalidations\n          where sequence <= last_insert_rowid() - 10000;\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_invalidation_insert",
+      "command_activity",
+      "CREATE TRIGGER trg_command_activity_invalidation_insert\n        after insert on command_activity\n        begin\n          insert into command_activity_invalidations (activity_id) values (new.activity_id);\n          delete from command_activity_invalidations\n          where sequence <= last_insert_rowid() - 10000;\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_invalidation_update",
+      "command_activity",
+      "CREATE TRIGGER trg_command_activity_invalidation_update\n        after update on command_activity\n        begin\n          insert into command_activity_invalidations (activity_id) values (new.activity_id);\n          delete from command_activity_invalidations\n          where sequence <= last_insert_rowid() - 10000;\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_invocation_immutable",
+      "command_activity_invocation",
+      "CREATE TRIGGER trg_command_activity_invocation_immutable\n        before update on command_activity_invocation\n        begin\n          select raise(abort, 'command_activity_invocation_immutable');\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_invocation_parent",
+      "command_activity_invocation",
+      "CREATE TRIGGER trg_command_activity_invocation_parent\n        before insert on command_activity_invocation\n        when not exists (\n          select 1 from command_activity where activity_id = new.activity_id\n        )\n        begin\n          select raise(abort, 'command activity invocation parent is missing');\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_match_delete_effects",
+      "command_activity_matches",
+      "CREATE TRIGGER trg_command_activity_match_delete_effects\n        after delete on command_activity_matches\n        begin\n          delete from command_activity_match_effects\n          where activity_id = old.activity_id and ordinal = old.ordinal;\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_match_parent_immutable",
+      "command_activity_matches",
+      "CREATE TRIGGER trg_command_activity_match_parent_immutable\n        before update of activity_id, ordinal on command_activity_matches\n        when new.activity_id != old.activity_id or new.ordinal != old.ordinal\n        begin\n          select raise(abort, 'command activity match parent is immutable');\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_matches_parent",
+      "command_activity_matches",
+      "CREATE TRIGGER trg_command_activity_matches_parent\n        before insert on command_activity_matches\n        when not exists (\n          select 1 from command_activity where activity_id = new.activity_id\n        )\n        begin\n          select raise(abort, 'command activity match requires parent activity');\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_rollup_membership_detail_deleted",
+      "command_activity",
+      "CREATE TRIGGER trg_command_activity_rollup_membership_detail_deleted\n        after delete on command_activity\n        begin\n          update command_activity_rollup_membership\n          set detail_present = 0 where activity_id = old.activity_id;\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_rollup_membership_parent",
+      "command_activity_rollup_membership",
+      "CREATE TRIGGER trg_command_activity_rollup_membership_parent\n        before insert on command_activity_rollup_membership\n        when not exists (\n          select 1 from command_activity where activity_id = new.activity_id\n        )\n        begin\n          select raise(abort, 'command activity rollup membership parent is missing');\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_rollup_pending_membership_inserted",
+      "command_activity_rollup_membership",
+      "CREATE TRIGGER trg_command_activity_rollup_pending_membership_inserted\n        after insert on command_activity_rollup_membership\n        begin\n          delete from command_activity_rollup_pending where activity_id = new.activity_id;\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_rollup_pending_parent_deleted",
+      "command_activity",
+      "CREATE TRIGGER trg_command_activity_rollup_pending_parent_deleted\n        after delete on command_activity\n        begin\n          delete from command_activity_rollup_pending where activity_id = old.activity_id;\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_rollup_pending_parent_inserted",
+      "command_activity",
+      "CREATE TRIGGER trg_command_activity_rollup_pending_parent_inserted\n        after insert on command_activity\n        begin\n          insert or ignore into command_activity_rollup_pending (activity_id, occurred_at)\n          values (new.activity_id, new.occurred_at);\n        end"
+     ],
+     [
+      "trigger",
+      "trg_local_once_authority_delete",
+      "guard_local_once_approvals",
+      "CREATE TRIGGER trg_local_once_authority_delete\n            after delete on guard_local_once_approvals begin\n              update guard_approval_authority_revision set revision = revision + 1 where singleton = 1;\n            end"
+     ],
+     [
+      "trigger",
+      "trg_local_once_authority_insert",
+      "guard_local_once_approvals",
+      "CREATE TRIGGER trg_local_once_authority_insert\n            after insert on guard_local_once_approvals begin\n              update guard_approval_authority_revision set revision = revision + 1 where singleton = 1;\n            end"
+     ],
+     [
+      "trigger",
+      "trg_local_once_authority_update",
+      "guard_local_once_approvals",
+      "CREATE TRIGGER trg_local_once_authority_update\n            after update on guard_local_once_approvals begin\n              update guard_approval_authority_revision set revision = revision + 1 where singleton = 1;\n            end"
+     ],
+     [
+      "trigger",
+      "trg_policy_decisions_authority_delete",
+      "policy_decisions",
+      "CREATE TRIGGER trg_policy_decisions_authority_delete\n            after delete on policy_decisions begin\n              update guard_approval_authority_revision set revision = revision + 1 where singleton = 1;\n            end"
+     ],
+     [
+      "trigger",
+      "trg_policy_decisions_authority_insert",
+      "policy_decisions",
+      "CREATE TRIGGER trg_policy_decisions_authority_insert\n            after insert on policy_decisions begin\n              update guard_approval_authority_revision set revision = revision + 1 where singleton = 1;\n            end"
+     ],
+     [
+      "trigger",
+      "trg_policy_decisions_authority_update",
+      "policy_decisions",
+      "CREATE TRIGGER trg_policy_decisions_authority_update\n            after update on policy_decisions begin\n              update guard_approval_authority_revision set revision = revision + 1 where singleton = 1;\n            end"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "existing_file",
+   "setup": [
+    "create table legacy_marker (id integer)"
+   ],
+   "state": {
+    "auto_vacuum": 0,
+    "health": [
+     [
+      1,
+      0,
+      0,
+      null,
+      null,
+      "1.0.0"
+     ]
+    ],
+    "health_active": [
+     [
+      1,
+      0,
+      0,
+      0
+     ]
+    ],
+    "journal_mode": "wal",
+    "maintenance": [
+     [
+      1,
+      null,
+      null,
+      null,
+      null,
+      null,
+      0,
+      0,
+      0,
+      0,
+      0,
+      "guard.command-activity-maintenance.v1"
+     ]
+    ],
+    "migrations": [
+     10,
+     11,
+     12,
+     13,
+     19,
+     26,
+     27,
+     28,
+     29
+    ],
+    "objects": [
+     [
+      "index",
+      "idx_command_activity_approval_reuse_occurred_at",
+      "command_activity",
+      "CREATE INDEX idx_command_activity_approval_reuse_occurred_at\n        on command_activity (approval_reuse_status, occurred_at desc, activity_id desc)\n        "
+     ],
+     [
+      "index",
+      "idx_command_activity_correlation_lookup",
+      "command_activity_correlations",
+      "CREATE INDEX idx_command_activity_correlation_lookup\n        on command_activity_correlations (kind, harness, key_id, digest)\n        "
+     ],
+     [
+      "index",
+      "idx_command_activity_execution_status_occurred_at",
+      "command_activity",
+      "CREATE INDEX idx_command_activity_execution_status_occurred_at\n        on command_activity (execution_status, occurred_at desc, activity_id desc)\n        "
+     ],
+     [
+      "index",
+      "idx_command_activity_feedback_label",
+      "command_activity_feedback",
+      "CREATE INDEX idx_command_activity_feedback_label\n        on command_activity_feedback (label, updated_at desc, activity_id desc)\n        "
+     ],
+     [
+      "index",
+      "idx_command_activity_harness_occurred_at",
+      "command_activity",
+      "CREATE INDEX idx_command_activity_harness_occurred_at\n        on command_activity (harness, occurred_at desc, activity_id desc)\n        "
+     ],
+     [
+      "index",
+      "idx_command_activity_match_extension",
+      "command_activity_matches",
+      "CREATE INDEX idx_command_activity_match_extension\n        on command_activity_matches (extension_id, activity_id)\n        "
+     ],
+     [
+      "index",
+      "idx_command_activity_match_rule",
+      "command_activity_matches",
+      "CREATE INDEX idx_command_activity_match_rule\n        on command_activity_matches (rule_id, activity_id)\n        "
+     ],
+     [
+      "index",
+      "idx_command_activity_occurred_at",
+      "command_activity",
+      "CREATE INDEX idx_command_activity_occurred_at\n        on command_activity (occurred_at desc, activity_id desc)\n        "
+     ],
+     [
+      "index",
+      "idx_command_activity_prompted_occurred_at",
+      "command_activity",
+      "CREATE INDEX idx_command_activity_prompted_occurred_at\n        on command_activity (prompted, occurred_at desc, activity_id desc)\n        "
+     ],
+     [
+      "index",
+      "idx_command_activity_proof_level_occurred_at",
+      "command_activity",
+      "CREATE INDEX idx_command_activity_proof_level_occurred_at\n        on command_activity (proof_level, occurred_at desc, activity_id desc)\n        "
+     ],
+     [
+      "index",
+      "idx_command_activity_request_correlation_unique",
+      "command_activity_correlations",
+      "CREATE UNIQUE INDEX idx_command_activity_request_correlation_unique\n        on command_activity_correlations (harness, key_id, digest)\n        where kind = 'request'\n        "
+     ],
+     [
+      "index",
+      "idx_command_activity_rollup_membership_day",
+      "command_activity_rollup_membership",
+      "CREATE INDEX idx_command_activity_rollup_membership_day\n        on command_activity_rollup_membership (detail_present, day, activity_id)\n        "
+     ],
+     [
+      "index",
+      "idx_command_activity_rollup_membership_occurred_at",
+      "command_activity_rollup_membership",
+      "CREATE INDEX idx_command_activity_rollup_membership_occurred_at\n        on command_activity_rollup_membership (detail_present, occurred_at, activity_id)\n        "
+     ],
+     [
+      "index",
+      "idx_guard_cloud_events_sync",
+      "guard_cloud_events",
+      "CREATE INDEX idx_guard_cloud_events_sync\n            on guard_cloud_events (uploaded_at, occurred_at)\n            "
+     ],
+     [
+      "index",
+      "idx_guard_events_name_recent",
+      "guard_events",
+      "CREATE INDEX idx_guard_events_name_recent\n            on guard_events (event_name, occurred_at desc, event_id desc)\n            "
+     ],
+     [
+      "index",
+      "idx_guard_events_recent",
+      "guard_events",
+      "CREATE INDEX idx_guard_events_recent\n            on guard_events (occurred_at desc, event_id desc)\n            "
+     ],
+     [
+      "index",
+      "idx_guard_local_once_approvals_lookup",
+      "guard_local_once_approvals",
+      "CREATE INDEX idx_guard_local_once_approvals_lookup\n            on guard_local_once_approvals (claimed_at, harness, artifact_id, artifact_hash, expires_at)\n            "
+     ],
+     [
+      "index",
+      "idx_guard_local_once_diagnostic_artifact",
+      "guard_local_once_approvals",
+      "CREATE INDEX idx_guard_local_once_diagnostic_artifact\n            on guard_local_once_approvals (harness, artifact_id, created_at desc, approval_id desc)\n            where claimed_at is null and action = 'allow'\n            "
+     ],
+     [
+      "index",
+      "idx_guard_local_once_diagnostic_hash",
+      "guard_local_once_approvals",
+      "CREATE INDEX idx_guard_local_once_diagnostic_hash\n            on guard_local_once_approvals (harness, artifact_hash, created_at desc, approval_id desc)\n            where claimed_at is null and action = 'allow'\n            "
+     ],
+     [
+      "index",
+      "idx_guard_local_once_reuse_artifact",
+      "guard_local_once_approvals",
+      "CREATE INDEX idx_guard_local_once_reuse_artifact\n            on guard_local_once_approvals (action, harness, artifact_id, created_at desc, approval_id desc)\n            "
+     ],
+     [
+      "index",
+      "idx_guard_local_once_reuse_hash",
+      "guard_local_once_approvals",
+      "CREATE INDEX idx_guard_local_once_reuse_hash\n            on guard_local_once_approvals (action, harness, artifact_hash, created_at desc, approval_id desc)\n            "
+     ],
+     [
+      "index",
+      "idx_guard_request_read_state_read_at",
+      "guard_request_read_state",
+      "CREATE INDEX idx_guard_request_read_state_read_at\n            on guard_request_read_state (read_at desc)\n            "
+     ],
+     [
+      "index",
+      "idx_native_hook_decision_receipts_recorded_at",
+      "native_hook_decision_receipts",
+      "CREATE INDEX idx_native_hook_decision_receipts_recorded_at\n        on native_hook_decision_receipts (recorded_at)\n        "
+     ],
+     [
+      "index",
+      "idx_native_prompt_decision_receipts_recorded_at",
+      "native_prompt_decision_receipts",
+      "CREATE INDEX idx_native_prompt_decision_receipts_recorded_at\n        on native_prompt_decision_receipts (recorded_at)\n        "
+     ],
+     [
+      "index",
+      "idx_scanner_cache_key",
+      "scanner_cache",
+      "CREATE INDEX idx_scanner_cache_key\n            on scanner_cache (cache_key)\n            "
+     ],
+     [
+      "index",
+      "sqlite_autoindex_approval_requests_1",
+      "approval_requests",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_artifact_capabilities_1",
+      "artifact_capabilities",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_artifact_inventory_1",
+      "artifact_inventory",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_artifact_snapshots_1",
+      "artifact_snapshots",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_command_activity_1",
+      "command_activity",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_command_activity_correlations_1",
+      "command_activity_correlations",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_command_activity_daily_rollups_1",
+      "command_activity_daily_rollups",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_command_activity_daily_totals_1",
+      "command_activity_daily_totals",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_command_activity_feedback_1",
+      "command_activity_feedback",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_command_activity_invocation_1",
+      "command_activity_invocation",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_command_activity_match_effects_1",
+      "command_activity_match_effects",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_command_activity_matches_1",
+      "command_activity_matches",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_command_activity_matches_2",
+      "command_activity_matches",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_command_activity_rollup_membership_1",
+      "command_activity_rollup_membership",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_command_activity_rollup_pending_1",
+      "command_activity_rollup_pending",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_client_attachments_1",
+      "guard_client_attachments",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_cloud_events_1",
+      "guard_cloud_events",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_cloud_events_2",
+      "guard_cloud_events",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_connect_requests_1",
+      "guard_connect_requests",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_connect_states_1",
+      "guard_connect_states",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_continuation_claims_1",
+      "guard_continuation_claims",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_continuation_effects_1",
+      "guard_continuation_effects",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_devices_1",
+      "guard_devices",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_exact_cloud_review_receipts_1",
+      "guard_exact_cloud_review_receipts",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_local_once_approvals_1",
+      "guard_local_once_approvals",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_operation_items_1",
+      "guard_operation_items",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_operations_1",
+      "guard_operations",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_request_read_state_1",
+      "guard_request_read_state",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_request_resumes_1",
+      "guard_request_resumes",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_runtime_state_1",
+      "guard_runtime_state",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_sessions_1",
+      "guard_sessions",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_supply_chain_bundle_cache_1",
+      "guard_supply_chain_bundle_cache",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_supply_chain_eval_cache_1",
+      "guard_supply_chain_eval_cache",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_surface_opens_1",
+      "guard_surface_opens",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_threat_intel_bundles_1",
+      "guard_threat_intel_bundles",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_threat_intel_matches_1",
+      "guard_threat_intel_matches",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_harness_installations_1",
+      "harness_installations",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_managed_installs_1",
+      "managed_installs",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_native_hook_decision_receipts_1",
+      "native_hook_decision_receipts",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_native_prompt_decision_receipts_1",
+      "native_prompt_decision_receipts",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_provenance_cache_1",
+      "provenance_cache",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_publisher_cache_1",
+      "publisher_cache",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_runtime_receipt_envelopes_1",
+      "runtime_receipt_envelopes",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_runtime_receipts_1",
+      "runtime_receipts",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_scanner_cache_1",
+      "scanner_cache",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_sync_state_1",
+      "sync_state",
+      null
+     ],
+     [
+      "table",
+      "approval_requests",
+      "approval_requests",
+      "CREATE TABLE approval_requests (\n          request_id text primary key,\n          harness text not null,\n          artifact_id text not null,\n          artifact_name text not null,\n          artifact_type text not null,\n          artifact_hash text not null,\n          publisher text,\n          policy_action text not null,\n          recommended_scope text not null,\n          changed_fields_json text not null,\n          source_scope text not null,\n          oauth_source text,\n          config_path text not null,\n          workspace text,\n          launch_target text,\n          normalized_identity_key text,\n          action_identity text,\n          queue_group_id text,\n          dedupe_count integer not null default 1,\n          last_seen_at text,\n          transport text,\n          risk_summary text,\n          risk_signals_json text not null default '[]',\n          artifact_label text,\n          source_label text,\n          trigger_summary text,\n          why_now text,\n          launch_summary text,\n          risk_headline text,\n          action_envelope_json text,\n          decision_v2_json text,\n          fallback_cli_command text,\n          scanner_evidence_json text not null default '[]',\n          browser_intent_json text,\n          desktop_notified_at text,\n          raw_command_text text,\n          continuation_snapshot_json text,\n          extension_allow_hint_json text,\n          guard_version text,\n          first_seen_guard_version text,\n          last_seen_guard_version text,\n          watch_only_observation integer not null default 0,\n          review_command text not null,\n          approval_url text not null,\n          status text not null,\n          resolution_action text,\n          resolution_scope text,\n          reason text,\n          created_at text not null,\n          resolved_at text\n        )"
+     ],
+     [
+      "table",
+      "artifact_capabilities",
+      "artifact_capabilities",
+      "CREATE TABLE artifact_capabilities (\n              artifact_id text not null,\n              harness text not null,\n              capability_json text not null,\n              updated_at text not null,\n              primary key (artifact_id, harness)\n            )"
+     ],
+     [
+      "table",
+      "artifact_diffs",
+      "artifact_diffs",
+      "CREATE TABLE artifact_diffs (\n              diff_id integer primary key autoincrement,\n              artifact_id text not null,\n              harness text not null,\n              changed_fields_json text not null,\n              previous_hash text,\n              current_hash text not null,\n              recorded_at text not null\n            )"
+     ],
+     [
+      "table",
+      "artifact_hashes",
+      "artifact_hashes",
+      "CREATE TABLE artifact_hashes (\n              artifact_id text not null,\n              harness text not null,\n              artifact_hash text not null,\n              recorded_at text not null\n            )"
+     ],
+     [
+      "table",
+      "artifact_inventory",
+      "artifact_inventory",
+      "CREATE TABLE artifact_inventory (\n              artifact_id text not null,\n              harness text not null,\n              artifact_name text not null,\n              artifact_type text not null,\n              source_scope text not null,\n              config_path text not null,\n              publisher text,\n              origin_url text,\n              launch_command text,\n              transport text,\n              first_seen_at text not null,\n              last_seen_at text not null,\n              last_changed_at text,\n              last_approved_at text,\n              removed_at text,\n              present integer not null default 1,\n              last_policy_action text not null,\n              artifact_hash text not null,\n              primary key (artifact_id, harness)\n            )"
+     ],
+     [
+      "table",
+      "artifact_snapshots",
+      "artifact_snapshots",
+      "CREATE TABLE artifact_snapshots (\n              artifact_id text not null,\n              harness text not null,\n              snapshot_json text not null,\n              artifact_hash text not null,\n              recorded_at text not null,\n              primary key (artifact_id, harness)\n            )"
+     ],
+     [
+      "table",
+      "command_activity",
+      "command_activity",
+      "CREATE TABLE command_activity (\n          activity_id text primary key,\n          occurred_at text not null,\n          harness text not null,\n          hook_phase text not null,\n          execution_status text not null,\n          proof_level text not null,\n          policy_action text,\n          decision_reason_code text,\n          controlling_rule_id text,\n          parse_confidence text,\n          uncertainty_class text,\n          match_count integer not null check (match_count >= 0),\n          prompted integer not null check (prompted in (0, 1)),\n          approval_reuse_status text not null,\n          receipt_link_status text not null,\n          receipt_id text,\n          evaluation_latency_bucket text not null,\n          persistence_latency_bucket text not null,\n          schema_version text not null\n        )"
+     ],
+     [
+      "table",
+      "command_activity_correlations",
+      "command_activity_correlations",
+      "CREATE TABLE command_activity_correlations (\n          activity_id text not null references command_activity(activity_id) on delete cascade,\n          kind text not null,\n          harness text not null,\n          key_id text not null,\n          digest text not null,\n          primary key (activity_id, kind)\n        )"
+     ],
+     [
+      "table",
+      "command_activity_daily_rollups",
+      "command_activity_daily_rollups",
+      "CREATE TABLE command_activity_daily_rollups (\n          day text not null,\n          dimension text not null,\n          dimension_value text not null,\n          count integer not null default 0 check (count >= 0),\n          primary key (day, dimension, dimension_value)\n        )"
+     ],
+     [
+      "table",
+      "command_activity_daily_totals",
+      "command_activity_daily_totals",
+      "CREATE TABLE command_activity_daily_totals (\n          day text primary key,\n          total integer not null default 0 check (total >= 0)\n        )"
+     ],
+     [
+      "table",
+      "command_activity_feedback",
+      "command_activity_feedback",
+      "CREATE TABLE command_activity_feedback (\n          activity_id text primary key references command_activity(activity_id) on delete cascade,\n          label text not null check (\n            label in ('should_not_have_interrupted', 'expected_guard_to_stop_this')\n          ),\n          created_at text not null,\n          updated_at text not null,\n          schema_version text not null\n        )"
+     ],
+     [
+      "table",
+      "command_activity_health",
+      "command_activity_health",
+      "CREATE TABLE command_activity_health (\n  singleton integer primary key check (singleton = 1),\n  dropped_event_count integer not null check (dropped_event_count between 0 and 9223372036854775807),\n  persistence_error_count integer not null check (persistence_error_count between 0 and 9223372036854775807),\n  last_error_code text check (last_error_code is null or length(last_error_code) between 1 and 64),\n  last_error_at text,\n  schema_version text not null\n)"
+     ],
+     [
+      "table",
+      "command_activity_health_active",
+      "command_activity_health_active",
+      "CREATE TABLE command_activity_health_active (\n  singleton integer primary key check (singleton = 1),\n  command_error_active integer not null check (command_error_active in (0, 1)),\n  shadow_error_active integer not null check (shadow_error_active in (0, 1)),\n  maintenance_error_active integer not null check (maintenance_error_active in (0, 1)),\n  foreign key (singleton) references command_activity_health(singleton) on delete cascade\n)"
+     ],
+     [
+      "table",
+      "command_activity_invalidations",
+      "command_activity_invalidations",
+      "CREATE TABLE command_activity_invalidations (\n          sequence integer primary key autoincrement,\n          activity_id text not null\n        )"
+     ],
+     [
+      "table",
+      "command_activity_invocation",
+      "command_activity_invocation",
+      "CREATE TABLE command_activity_invocation (\n          activity_id text primary key references command_activity(activity_id) on delete cascade,\n          invocation_preview text not null check (\n            length(invocation_preview) between 1 and 4096\n          )\n        )"
+     ],
+     [
+      "table",
+      "command_activity_maintenance",
+      "command_activity_maintenance",
+      "CREATE TABLE command_activity_maintenance (\n          singleton integer primary key check (singleton = 1),\n          last_completed_day text,\n          last_run_at text,\n          detail_compaction_started_at text,\n          rollup_backfill_cursor_occurred_at text,\n          rollup_backfill_cursor_activity_id text,\n          rollup_backfill_complete integer not null default 0 check (rollup_backfill_complete in (0, 1)),\n          last_backfilled_rows integer not null default 0 check (last_backfilled_rows >= 0),\n          last_detail_rows_deleted integer not null default 0 check (last_detail_rows_deleted >= 0),\n          last_correlation_rows_deleted integer not null default 0 check (last_correlation_rows_deleted >= 0),\n          last_aggregate_rows_deleted integer not null default 0 check (last_aggregate_rows_deleted >= 0),\n          schema_version text not null\n        )"
+     ],
+     [
+      "table",
+      "command_activity_match_effects",
+      "command_activity_match_effects",
+      "CREATE TABLE command_activity_match_effects (\n          activity_id text not null,\n          ordinal integer not null,\n          effect_class text not null,\n          primary key (activity_id, ordinal, effect_class),\n          foreign key (activity_id, ordinal)\n            references command_activity_matches(activity_id, ordinal) on delete cascade\n        )"
+     ],
+     [
+      "table",
+      "command_activity_matches",
+      "command_activity_matches",
+      "CREATE TABLE command_activity_matches (\n          activity_id text not null references command_activity(activity_id) on delete cascade,\n          ordinal integer not null check (ordinal >= 0),\n          extension_id text not null,\n          extension_version text not null,\n          rule_id text not null,\n          rule_version text not null,\n          match_class text not null,\n          severity text not null,\n          default_floor text not null,\n          safe_variant_id text,\n          schema_version text not null,\n          primary key (activity_id, ordinal),\n          unique (activity_id, rule_id)\n        )"
+     ],
+     [
+      "table",
+      "command_activity_rollup_membership",
+      "command_activity_rollup_membership",
+      "CREATE TABLE command_activity_rollup_membership (\n          activity_id text primary key,\n          day text not null,\n          occurred_at text not null,\n          rolled_at text not null,\n          detail_present integer not null default 1 check (detail_present in (0, 1))\n        )"
+     ],
+     [
+      "table",
+      "command_activity_rollup_pending",
+      "command_activity_rollup_pending",
+      "CREATE TABLE command_activity_rollup_pending (\n          activity_id text primary key,\n          occurred_at text not null\n        )"
+     ],
+     [
+      "table",
+      "guard_approval_authority_revision",
+      "guard_approval_authority_revision",
+      "CREATE TABLE guard_approval_authority_revision (\n              singleton integer primary key check (singleton = 1),\n              revision integer not null\n            )"
+     ],
+     [
+      "table",
+      "guard_client_attachments",
+      "guard_client_attachments",
+      "CREATE TABLE guard_client_attachments (\n              client_id text primary key,\n              surface text not null,\n              session_id text,\n              metadata_json text not null default '{}',\n              lease_id text not null default '',\n              lease_expires_at text,\n              attached_at text not null,\n              last_seen_at text not null\n            )"
+     ],
+     [
+      "table",
+      "guard_cloud_events",
+      "guard_cloud_events",
+      "CREATE TABLE guard_cloud_events (\n              event_id text primary key,\n              idempotency_key text not null unique,\n              event_type text not null,\n              payload_json text not null,\n              occurred_at text not null,\n              uploaded_at text\n            )"
+     ],
+     [
+      "table",
+      "guard_connect_requests",
+      "guard_connect_requests",
+      "CREATE TABLE guard_connect_requests (\n          request_id text primary key,\n          sync_url text not null,\n          allowed_origin text not null,\n          pairing_secret_hash text not null,\n          status text not null,\n          created_at text not null,\n          expires_at text not null,\n          completed_at text\n        )"
+     ],
+     [
+      "table",
+      "guard_connect_states",
+      "guard_connect_states",
+      "CREATE TABLE guard_connect_states (\n          request_id text primary key,\n          sync_url text not null,\n          allowed_origin text not null,\n          status text not null,\n          milestone text not null,\n          reason text,\n          created_at text not null,\n          updated_at text not null,\n          expires_at text not null,\n          completed_at text,\n          proof_json text not null default '{}'\n        )"
+     ],
+     [
+      "table",
+      "guard_continuation_claims",
+      "guard_continuation_claims",
+      "CREATE TABLE guard_continuation_claims (\n          request_id text not null,\n          offer_hash text not null,\n          action text not null,\n          state text not null,\n          claimed_at text not null,\n          lease_expires_at text,\n          claim_id text,\n          evidence_id text,\n          primary key (request_id, offer_hash, action)\n        )"
+     ],
+     [
+      "table",
+      "guard_continuation_effects",
+      "guard_continuation_effects",
+      "CREATE TABLE guard_continuation_effects (\n          effect_key text primary key,\n          request_id text not null,\n          evidence_id text not null,\n          event_name text not null,\n          created_at text not null\n        )"
+     ],
+     [
+      "table",
+      "guard_devices",
+      "guard_devices",
+      "CREATE TABLE guard_devices (\n              device_key text primary key,\n              installation_id text not null,\n              device_label text not null,\n              created_at text not null,\n              updated_at text not null\n            )"
+     ],
+     [
+      "table",
+      "guard_events",
+      "guard_events",
+      "CREATE TABLE guard_events (\n              event_id integer primary key autoincrement,\n              event_name text not null,\n              payload_json text not null,\n              occurred_at text not null\n            )"
+     ],
+     [
+      "table",
+      "guard_exact_cloud_review_receipts",
+      "guard_exact_cloud_review_receipts",
+      "CREATE TABLE guard_exact_cloud_review_receipts (\n              receipt_id text primary key,\n              request_id text not null,\n              claimed_at text not null\n            )"
+     ],
+     [
+      "table",
+      "guard_local_once_approvals",
+      "guard_local_once_approvals",
+      "CREATE TABLE guard_local_once_approvals (\n              approval_id text primary key,\n              request_id text not null,\n              harness text not null,\n              artifact_id text not null,\n              artifact_hash text not null,\n              workspace text,\n              publisher text,\n              action text not null,\n              created_at text not null,\n              expires_at text not null,\n              claimed_at text,\n              integrity_version integer,\n              payload_hash text,\n              payload_mac text,\n              integrity_key_id text,\n              signed_at text,\n              authority_kind text\n            )"
+     ],
+     [
+      "table",
+      "guard_operation_items",
+      "guard_operation_items",
+      "CREATE TABLE guard_operation_items (\n              item_id text primary key,\n              operation_id text not null,\n              item_type text not null,\n              lifecycle text not null,\n              payload_json text not null default '{}',\n              created_at text not null\n            )"
+     ],
+     [
+      "table",
+      "guard_operations",
+      "guard_operations",
+      "CREATE TABLE guard_operations (\n              operation_id text primary key,\n              session_id text not null,\n              harness text not null,\n              operation_type text not null,\n              status text not null,\n              approval_request_ids_json text not null default '[]',\n              resume_token text,\n              metadata_json text not null default '{}',\n              created_at text not null,\n              updated_at text not null\n            )"
+     ],
+     [
+      "table",
+      "guard_request_read_state",
+      "guard_request_read_state",
+      "CREATE TABLE guard_request_read_state (\n              request_id text primary key,\n              read_at text not null\n            )"
+     ],
+     [
+      "table",
+      "guard_request_resumes",
+      "guard_request_resumes",
+      "CREATE TABLE guard_request_resumes (\n          request_id text primary key,\n          operation_id text,\n          harness text not null,\n          resolution_action text,\n          strategy text not null,\n          supported integer not null default 0,\n          status text not null,\n          thread_id text,\n          reason text,\n          message text,\n          last_error text,\n          attempt_count integer not null default 0,\n          created_at text not null,\n          updated_at text not null,\n          last_attempt_at text,\n          sent_at text,\n          continuation_contract_version text,\n          continuation_capability text,\n          continuation_status text,\n          continuation_reason text,\n          continuation_evidence_json text not null default '[]',\n          continuation_offer_hash text,\n          continuation_action text,\n          continuation_completed_at text,\n          continuation_cancelled_at text\n        )"
+     ],
+     [
+      "table",
+      "guard_runtime_state",
+      "guard_runtime_state",
+      "CREATE TABLE guard_runtime_state (\n              state_key text primary key,\n              session_id text not null,\n              daemon_host text not null,\n              daemon_port integer not null,\n              started_at text not null,\n              last_heartbeat_at text not null\n            )"
+     ],
+     [
+      "table",
+      "guard_sessions",
+      "guard_sessions",
+      "CREATE TABLE guard_sessions (\n              session_id text primary key,\n              harness text not null,\n              surface text not null,\n              status text not null,\n              client_name text not null,\n              client_title text,\n              client_version text,\n              workspace text,\n              capabilities_json text not null default '[]',\n              created_at text not null,\n              updated_at text not null\n            )"
+     ],
+     [
+      "table",
+      "guard_supply_chain_bundle_cache",
+      "guard_supply_chain_bundle_cache",
+      "CREATE TABLE guard_supply_chain_bundle_cache (\n        workspace_id text primary key,\n        bundle_version text not null,\n        key_id text not null,\n        tier text not null,\n        policy_hash text not null,\n        feed_snapshot_hash text not null,\n        scoring_version text not null,\n        payload_hash text not null,\n        response_json text not null,\n        cached_at text not null\n    )"
+     ],
+     [
+      "table",
+      "guard_supply_chain_eval_cache",
+      "guard_supply_chain_eval_cache",
+      "CREATE TABLE guard_supply_chain_eval_cache (\n        workspace_id text not null,\n        package_intent_hash text not null,\n        feed_snapshot_hash text not null,\n        policy_hash text not null,\n        scoring_version text not null,\n        bundle_version text not null,\n        decision_json text not null,\n        updated_at text not null,\n        primary key (\n            workspace_id,\n            package_intent_hash,\n            feed_snapshot_hash,\n            policy_hash,\n            scoring_version,\n            bundle_version\n        )\n    )"
+     ],
+     [
+      "table",
+      "guard_surface_opens",
+      "guard_surface_opens",
+      "CREATE TABLE guard_surface_opens (\n              surface text not null,\n              open_key text not null,\n              opened_at text not null,\n              primary key (surface, open_key)\n            )"
+     ],
+     [
+      "table",
+      "guard_threat_intel_bundles",
+      "guard_threat_intel_bundles",
+      "CREATE TABLE guard_threat_intel_bundles (\n        bundle_id     text primary key,\n        version       integer not null,\n        source        text not null,\n        generated_at  real not null,\n        expires_at    real not null,\n        signature     text not null,\n        advisories_json text not null default '[]',\n        cached_at     real not null\n    )"
+     ],
+     [
+      "table",
+      "guard_threat_intel_matches",
+      "guard_threat_intel_matches",
+      "CREATE TABLE guard_threat_intel_matches (\n        match_id        text primary key,\n        bundle_id       text not null,\n        advisory_id     text not null,\n        artifact_id     text not null,\n        harness         text not null default '',\n        workspace       text not null default '',\n        severity        text not null default 'info',\n        matched_at      real not null,\n        target_json     text not null default '{}'\n    )"
+     ],
+     [
+      "table",
+      "harness_installations",
+      "harness_installations",
+      "CREATE TABLE harness_installations (\n              harness text primary key,\n              active integer not null,\n              workspace text,\n              config_path text,\n              metadata_json text not null default '{}',\n              updated_at text not null\n            )"
+     ],
+     [
+      "table",
+      "legacy_marker",
+      "legacy_marker",
+      "CREATE TABLE legacy_marker (id integer)"
+     ],
+     [
+      "table",
+      "managed_installs",
+      "managed_installs",
+      "CREATE TABLE managed_installs (\n              harness text primary key,\n              active integer not null,\n              workspace text,\n              manifest_json text not null,\n              updated_at text not null\n            )"
+     ],
+     [
+      "table",
+      "native_hook_decision_receipts",
+      "native_hook_decision_receipts",
+      "CREATE TABLE native_hook_decision_receipts (\n      decision_id text primary key,\n      schema text not null check (schema = 'guard-native-hook-decision-receipt.v1'),\n      version integer not null check (version = 1),\n      authority text not null check (authority = 'rust'),\n      request_id text not null,\n      request_digest text not null,\n      harness text not null,\n      event_name text not null check (event_name in ('PreToolUse', 'PostToolUse')),\n      payload_kind text not null,\n      policy_generation integer not null,\n      policy_digest text,\n      rule_digest text,\n      runtime_identity text,\n      decision text not null check (decision in ('allow', 'deny')),\n      model_output_action text not null,\n      policy_action text,\n      observed_policy_action text,\n      reason_code text not null,\n      workspace_bound integer not null check (workspace_bound in (0, 1)),\n      source_ref_external_allowed integer not null check (source_ref_external_allowed in (0, 1)),\n      reviewed_output_sha256 text,\n      observe_mode integer not null check (observe_mode in (0, 1)),\n      deadline_budget_ms integer,\n      command_extensions_json text check (command_extensions_json is null or length(command_extensions_json) between 2 and 2048),\n      \n      recorded_at text not null\n    )"
+     ],
+     [
+      "table",
+      "native_prompt_decision_receipts",
+      "native_prompt_decision_receipts",
+      "CREATE TABLE native_prompt_decision_receipts (\n      decision_id text primary key,\n      schema text not null check (schema = 'guard-native-hook-decision-receipt.v1'),\n      version integer not null check (version = 1),\n      authority text not null check (authority = 'rust'),\n      request_id text not null,\n      request_digest text not null,\n      harness text not null,\n      event_name text not null check (event_name = 'UserPromptSubmit'),\n      payload_kind text not null,\n      policy_generation integer not null,\n      policy_digest text,\n      rule_digest text,\n      runtime_identity text,\n      decision text not null check (decision in ('allow', 'deny')),\n      model_output_action text not null,\n      policy_action text,\n      observed_policy_action text,\n      reason_code text not null,\n      workspace_bound integer not null check (workspace_bound in (0, 1)),\n      source_ref_external_allowed integer not null check (source_ref_external_allowed in (0, 1)),\n      reviewed_output_sha256 text,\n      observe_mode integer not null check (observe_mode in (0, 1)),\n      deadline_budget_ms integer,\n      command_extensions_json text check (command_extensions_json is null or length(command_extensions_json) between 2 and 2048),\n      prompt_risk_classes_json text not null check (length(prompt_risk_classes_json) between 2 and 256),\n      recorded_at text not null\n    )"
+     ],
+     [
+      "table",
+      "policy_decisions",
+      "policy_decisions",
+      "CREATE TABLE policy_decisions (\n              decision_id integer primary key autoincrement,\n              harness text not null,\n              scope text not null,\n              artifact_id text,\n              artifact_hash text,\n              workspace text,\n              publisher text,\n              action text not null,\n              reason text,\n              owner text,\n              source text not null default 'local',\n              expires_at text,\n              policy_document_schema_version text,\n              policy_document_id text,\n              policy_document_digest text,\n              policy_rule_id text,\n              policy_provenance_json text,\n              updated_at text not null\n            )"
+     ],
+     [
+      "table",
+      "provenance_cache",
+      "provenance_cache",
+      "CREATE TABLE provenance_cache (\n              artifact_hash text primary key,\n              payload_json text not null,\n              updated_at text not null\n            )"
+     ],
+     [
+      "table",
+      "publisher_cache",
+      "publisher_cache",
+      "CREATE TABLE publisher_cache (\n              publisher_key text primary key,\n              payload_json text not null,\n              updated_at text not null\n            )"
+     ],
+     [
+      "table",
+      "runtime_receipt_envelopes",
+      "runtime_receipt_envelopes",
+      "CREATE TABLE runtime_receipt_envelopes (\n              receipt_id text primary key references runtime_receipts(receipt_id) on delete cascade,\n              envelope_full_json text,\n              envelope_redacted_json text not null\n            )"
+     ],
+     [
+      "table",
+      "runtime_receipts",
+      "runtime_receipts",
+      "CREATE TABLE runtime_receipts (\n              receipt_id text primary key,\n              harness text not null,\n              artifact_id text not null,\n              artifact_hash text not null,\n              policy_decision text not null,\n              capabilities_summary text not null default '',\n              changed_capabilities_json text not null,\n              provenance_summary text not null,\n              user_override text,\n              artifact_name text,\n              source_scope text,\n              scanner_evidence_json text not null default '[]',\n              timestamp text not null,\n              raw_command_text text\n            )"
+     ],
+     [
+      "table",
+      "scanner_cache",
+      "scanner_cache",
+      "CREATE TABLE scanner_cache (\n              scanner_name text not null,\n              target_id text not null,\n              cache_key text not null,\n              input_content_hash text not null,\n              scanner_version text not null,\n              payload_json text not null,\n              updated_at text not null,\n              primary key (scanner_name, target_id)\n            )"
+     ],
+     [
+      "table",
+      "schema_migrations",
+      "schema_migrations",
+      "CREATE TABLE schema_migrations (\n              version integer primary key,\n              applied_at text not null\n            )"
+     ],
+     [
+      "table",
+      "sqlite_sequence",
+      "sqlite_sequence",
+      "CREATE TABLE sqlite_sequence(name,seq)"
+     ],
+     [
+      "table",
+      "sync_state",
+      "sync_state",
+      "CREATE TABLE sync_state (\n              state_key text primary key,\n              payload_json text not null,\n              updated_at text not null\n            )"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_correlation_parent_immutable",
+      "command_activity_correlations",
+      "CREATE TRIGGER trg_command_activity_correlation_parent_immutable\n        before update of activity_id on command_activity_correlations\n        when new.activity_id != old.activity_id\n        begin\n          select raise(abort, 'command activity correlation parent is immutable');\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_correlations_parent",
+      "command_activity_correlations",
+      "CREATE TRIGGER trg_command_activity_correlations_parent\n        before insert on command_activity_correlations\n        when not exists (\n          select 1 from command_activity where activity_id = new.activity_id\n        )\n        begin\n          select raise(abort, 'command activity correlation requires parent activity');\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_delete_children",
+      "command_activity",
+      "CREATE TRIGGER trg_command_activity_delete_children\n        after delete on command_activity\n        begin\n          delete from command_activity_correlations where activity_id = old.activity_id;\n          delete from command_activity_matches where activity_id = old.activity_id;\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_effect_parent_immutable",
+      "command_activity_match_effects",
+      "CREATE TRIGGER trg_command_activity_effect_parent_immutable\n        before update of activity_id, ordinal on command_activity_match_effects\n        when new.activity_id != old.activity_id or new.ordinal != old.ordinal\n        begin\n          select raise(abort, 'command activity effect parent is immutable');\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_effects_parent",
+      "command_activity_match_effects",
+      "CREATE TRIGGER trg_command_activity_effects_parent\n        before insert on command_activity_match_effects\n        when not exists (\n          select 1 from command_activity_matches\n          where activity_id = new.activity_id and ordinal = new.ordinal\n        )\n        begin\n          select raise(abort, 'command activity effect requires parent match');\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_feedback_invalidation_delete",
+      "command_activity_feedback",
+      "CREATE TRIGGER trg_command_activity_feedback_invalidation_delete\n        after delete on command_activity_feedback\n        begin\n          insert into command_activity_invalidations (activity_id) values (old.activity_id);\n          delete from command_activity_invalidations\n          where sequence <= last_insert_rowid() - 10000;\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_feedback_invalidation_insert",
+      "command_activity_feedback",
+      "CREATE TRIGGER trg_command_activity_feedback_invalidation_insert\n        after insert on command_activity_feedback\n        begin\n          insert into command_activity_invalidations (activity_id) values (new.activity_id);\n          delete from command_activity_invalidations\n          where sequence <= last_insert_rowid() - 10000;\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_feedback_invalidation_update",
+      "command_activity_feedback",
+      "CREATE TRIGGER trg_command_activity_feedback_invalidation_update\n        after update on command_activity_feedback\n        begin\n          insert into command_activity_invalidations (activity_id) values (new.activity_id);\n          delete from command_activity_invalidations\n          where sequence <= last_insert_rowid() - 10000;\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_id_immutable",
+      "command_activity",
+      "CREATE TRIGGER trg_command_activity_id_immutable\n        before update of activity_id on command_activity\n        when new.activity_id != old.activity_id\n        begin\n          select raise(abort, 'command activity identity is immutable');\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_invalidation_delete",
+      "command_activity",
+      "CREATE TRIGGER trg_command_activity_invalidation_delete\n        after delete on command_activity\n        begin\n          insert into command_activity_invalidations (activity_id) values (old.activity_id);\n          delete from command_activity_invalidations\n          where sequence <= last_insert_rowid() - 10000;\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_invalidation_insert",
+      "command_activity",
+      "CREATE TRIGGER trg_command_activity_invalidation_insert\n        after insert on command_activity\n        begin\n          insert into command_activity_invalidations (activity_id) values (new.activity_id);\n          delete from command_activity_invalidations\n          where sequence <= last_insert_rowid() - 10000;\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_invalidation_update",
+      "command_activity",
+      "CREATE TRIGGER trg_command_activity_invalidation_update\n        after update on command_activity\n        begin\n          insert into command_activity_invalidations (activity_id) values (new.activity_id);\n          delete from command_activity_invalidations\n          where sequence <= last_insert_rowid() - 10000;\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_invocation_immutable",
+      "command_activity_invocation",
+      "CREATE TRIGGER trg_command_activity_invocation_immutable\n        before update on command_activity_invocation\n        begin\n          select raise(abort, 'command_activity_invocation_immutable');\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_invocation_parent",
+      "command_activity_invocation",
+      "CREATE TRIGGER trg_command_activity_invocation_parent\n        before insert on command_activity_invocation\n        when not exists (\n          select 1 from command_activity where activity_id = new.activity_id\n        )\n        begin\n          select raise(abort, 'command activity invocation parent is missing');\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_match_delete_effects",
+      "command_activity_matches",
+      "CREATE TRIGGER trg_command_activity_match_delete_effects\n        after delete on command_activity_matches\n        begin\n          delete from command_activity_match_effects\n          where activity_id = old.activity_id and ordinal = old.ordinal;\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_match_parent_immutable",
+      "command_activity_matches",
+      "CREATE TRIGGER trg_command_activity_match_parent_immutable\n        before update of activity_id, ordinal on command_activity_matches\n        when new.activity_id != old.activity_id or new.ordinal != old.ordinal\n        begin\n          select raise(abort, 'command activity match parent is immutable');\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_matches_parent",
+      "command_activity_matches",
+      "CREATE TRIGGER trg_command_activity_matches_parent\n        before insert on command_activity_matches\n        when not exists (\n          select 1 from command_activity where activity_id = new.activity_id\n        )\n        begin\n          select raise(abort, 'command activity match requires parent activity');\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_rollup_membership_detail_deleted",
+      "command_activity",
+      "CREATE TRIGGER trg_command_activity_rollup_membership_detail_deleted\n        after delete on command_activity\n        begin\n          update command_activity_rollup_membership\n          set detail_present = 0 where activity_id = old.activity_id;\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_rollup_membership_parent",
+      "command_activity_rollup_membership",
+      "CREATE TRIGGER trg_command_activity_rollup_membership_parent\n        before insert on command_activity_rollup_membership\n        when not exists (\n          select 1 from command_activity where activity_id = new.activity_id\n        )\n        begin\n          select raise(abort, 'command activity rollup membership parent is missing');\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_rollup_pending_membership_inserted",
+      "command_activity_rollup_membership",
+      "CREATE TRIGGER trg_command_activity_rollup_pending_membership_inserted\n        after insert on command_activity_rollup_membership\n        begin\n          delete from command_activity_rollup_pending where activity_id = new.activity_id;\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_rollup_pending_parent_deleted",
+      "command_activity",
+      "CREATE TRIGGER trg_command_activity_rollup_pending_parent_deleted\n        after delete on command_activity\n        begin\n          delete from command_activity_rollup_pending where activity_id = old.activity_id;\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_rollup_pending_parent_inserted",
+      "command_activity",
+      "CREATE TRIGGER trg_command_activity_rollup_pending_parent_inserted\n        after insert on command_activity\n        begin\n          insert or ignore into command_activity_rollup_pending (activity_id, occurred_at)\n          values (new.activity_id, new.occurred_at);\n        end"
+     ],
+     [
+      "trigger",
+      "trg_local_once_authority_delete",
+      "guard_local_once_approvals",
+      "CREATE TRIGGER trg_local_once_authority_delete\n            after delete on guard_local_once_approvals begin\n              update guard_approval_authority_revision set revision = revision + 1 where singleton = 1;\n            end"
+     ],
+     [
+      "trigger",
+      "trg_local_once_authority_insert",
+      "guard_local_once_approvals",
+      "CREATE TRIGGER trg_local_once_authority_insert\n            after insert on guard_local_once_approvals begin\n              update guard_approval_authority_revision set revision = revision + 1 where singleton = 1;\n            end"
+     ],
+     [
+      "trigger",
+      "trg_local_once_authority_update",
+      "guard_local_once_approvals",
+      "CREATE TRIGGER trg_local_once_authority_update\n            after update on guard_local_once_approvals begin\n              update guard_approval_authority_revision set revision = revision + 1 where singleton = 1;\n            end"
+     ],
+     [
+      "trigger",
+      "trg_policy_decisions_authority_delete",
+      "policy_decisions",
+      "CREATE TRIGGER trg_policy_decisions_authority_delete\n            after delete on policy_decisions begin\n              update guard_approval_authority_revision set revision = revision + 1 where singleton = 1;\n            end"
+     ],
+     [
+      "trigger",
+      "trg_policy_decisions_authority_insert",
+      "policy_decisions",
+      "CREATE TRIGGER trg_policy_decisions_authority_insert\n            after insert on policy_decisions begin\n              update guard_approval_authority_revision set revision = revision + 1 where singleton = 1;\n            end"
+     ],
+     [
+      "trigger",
+      "trg_policy_decisions_authority_update",
+      "policy_decisions",
+      "CREATE TRIGGER trg_policy_decisions_authority_update\n            after update on policy_decisions begin\n              update guard_approval_authority_revision set revision = revision + 1 where singleton = 1;\n            end"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "legacy_columns",
+   "setup": [
+    "\n        create table if not exists guard_request_resumes (\n          request_id text primary key,\n          operation_id text,\n          harness text not null,\n          resolution_action text,\n          strategy text not null,\n          supported integer not null default 0,\n          status text not null,\n          thread_id text,\n          reason text,\n          message text,\n          last_error text,\n          attempt_count integer not null default 0,\n          created_at text not null,\n          updated_at text not null,\n          last_attempt_at text,\n          sent_at text\n        )\n        ",
+    "create table guard_continuation_claims (request_id text not null, offer_hash text not null, action text not null, state text not null, claimed_at text not null, evidence_id text, primary key (request_id, offer_hash, action))",
+    "\n    create table if not exists native_hook_decision_receipts (\n      decision_id text primary key,\n      schema text not null check (schema = 'guard-native-hook-decision-receipt.v1'),\n      version integer not null check (version = 1),\n      authority text not null check (authority = 'rust'),\n      request_id text not null,\n      request_digest text not null,\n      harness text not null,\n      event_name text not null check (event_name in ('PreToolUse', 'PostToolUse')),\n      payload_kind text not null,\n      policy_generation integer not null,\n      policy_digest text,\n      rule_digest text,\n      runtime_identity text,\n      decision text not null check (decision in ('allow', 'deny')),\n      model_output_action text not null,\n      policy_action text,\n      observed_policy_action text,\n      reason_code text not null,\n      workspace_bound integer not null check (workspace_bound in (0, 1)),\n      source_ref_external_allowed integer not null check (source_ref_external_allowed in (0, 1)),\n      reviewed_output_sha256 text,\n      observe_mode integer not null check (observe_mode in (0, 1)),\n      deadline_budget_ms integer,\n      \n      \n      recorded_at text not null\n    )\n    "
+   ],
+   "state": {
+    "auto_vacuum": 0,
+    "health": [
+     [
+      1,
+      0,
+      0,
+      null,
+      null,
+      "1.0.0"
+     ]
+    ],
+    "health_active": [
+     [
+      1,
+      0,
+      0,
+      0
+     ]
+    ],
+    "journal_mode": "wal",
+    "maintenance": [
+     [
+      1,
+      null,
+      null,
+      null,
+      null,
+      null,
+      0,
+      0,
+      0,
+      0,
+      0,
+      "guard.command-activity-maintenance.v1"
+     ]
+    ],
+    "migrations": [
+     10,
+     11,
+     12,
+     13,
+     19,
+     26,
+     27,
+     28,
+     29
+    ],
+    "objects": [
+     [
+      "index",
+      "idx_command_activity_approval_reuse_occurred_at",
+      "command_activity",
+      "CREATE INDEX idx_command_activity_approval_reuse_occurred_at\n        on command_activity (approval_reuse_status, occurred_at desc, activity_id desc)\n        "
+     ],
+     [
+      "index",
+      "idx_command_activity_correlation_lookup",
+      "command_activity_correlations",
+      "CREATE INDEX idx_command_activity_correlation_lookup\n        on command_activity_correlations (kind, harness, key_id, digest)\n        "
+     ],
+     [
+      "index",
+      "idx_command_activity_execution_status_occurred_at",
+      "command_activity",
+      "CREATE INDEX idx_command_activity_execution_status_occurred_at\n        on command_activity (execution_status, occurred_at desc, activity_id desc)\n        "
+     ],
+     [
+      "index",
+      "idx_command_activity_feedback_label",
+      "command_activity_feedback",
+      "CREATE INDEX idx_command_activity_feedback_label\n        on command_activity_feedback (label, updated_at desc, activity_id desc)\n        "
+     ],
+     [
+      "index",
+      "idx_command_activity_harness_occurred_at",
+      "command_activity",
+      "CREATE INDEX idx_command_activity_harness_occurred_at\n        on command_activity (harness, occurred_at desc, activity_id desc)\n        "
+     ],
+     [
+      "index",
+      "idx_command_activity_match_extension",
+      "command_activity_matches",
+      "CREATE INDEX idx_command_activity_match_extension\n        on command_activity_matches (extension_id, activity_id)\n        "
+     ],
+     [
+      "index",
+      "idx_command_activity_match_rule",
+      "command_activity_matches",
+      "CREATE INDEX idx_command_activity_match_rule\n        on command_activity_matches (rule_id, activity_id)\n        "
+     ],
+     [
+      "index",
+      "idx_command_activity_occurred_at",
+      "command_activity",
+      "CREATE INDEX idx_command_activity_occurred_at\n        on command_activity (occurred_at desc, activity_id desc)\n        "
+     ],
+     [
+      "index",
+      "idx_command_activity_prompted_occurred_at",
+      "command_activity",
+      "CREATE INDEX idx_command_activity_prompted_occurred_at\n        on command_activity (prompted, occurred_at desc, activity_id desc)\n        "
+     ],
+     [
+      "index",
+      "idx_command_activity_proof_level_occurred_at",
+      "command_activity",
+      "CREATE INDEX idx_command_activity_proof_level_occurred_at\n        on command_activity (proof_level, occurred_at desc, activity_id desc)\n        "
+     ],
+     [
+      "index",
+      "idx_command_activity_request_correlation_unique",
+      "command_activity_correlations",
+      "CREATE UNIQUE INDEX idx_command_activity_request_correlation_unique\n        on command_activity_correlations (harness, key_id, digest)\n        where kind = 'request'\n        "
+     ],
+     [
+      "index",
+      "idx_command_activity_rollup_membership_day",
+      "command_activity_rollup_membership",
+      "CREATE INDEX idx_command_activity_rollup_membership_day\n        on command_activity_rollup_membership (detail_present, day, activity_id)\n        "
+     ],
+     [
+      "index",
+      "idx_command_activity_rollup_membership_occurred_at",
+      "command_activity_rollup_membership",
+      "CREATE INDEX idx_command_activity_rollup_membership_occurred_at\n        on command_activity_rollup_membership (detail_present, occurred_at, activity_id)\n        "
+     ],
+     [
+      "index",
+      "idx_guard_cloud_events_sync",
+      "guard_cloud_events",
+      "CREATE INDEX idx_guard_cloud_events_sync\n            on guard_cloud_events (uploaded_at, occurred_at)\n            "
+     ],
+     [
+      "index",
+      "idx_guard_events_name_recent",
+      "guard_events",
+      "CREATE INDEX idx_guard_events_name_recent\n            on guard_events (event_name, occurred_at desc, event_id desc)\n            "
+     ],
+     [
+      "index",
+      "idx_guard_events_recent",
+      "guard_events",
+      "CREATE INDEX idx_guard_events_recent\n            on guard_events (occurred_at desc, event_id desc)\n            "
+     ],
+     [
+      "index",
+      "idx_guard_local_once_approvals_lookup",
+      "guard_local_once_approvals",
+      "CREATE INDEX idx_guard_local_once_approvals_lookup\n            on guard_local_once_approvals (claimed_at, harness, artifact_id, artifact_hash, expires_at)\n            "
+     ],
+     [
+      "index",
+      "idx_guard_local_once_diagnostic_artifact",
+      "guard_local_once_approvals",
+      "CREATE INDEX idx_guard_local_once_diagnostic_artifact\n            on guard_local_once_approvals (harness, artifact_id, created_at desc, approval_id desc)\n            where claimed_at is null and action = 'allow'\n            "
+     ],
+     [
+      "index",
+      "idx_guard_local_once_diagnostic_hash",
+      "guard_local_once_approvals",
+      "CREATE INDEX idx_guard_local_once_diagnostic_hash\n            on guard_local_once_approvals (harness, artifact_hash, created_at desc, approval_id desc)\n            where claimed_at is null and action = 'allow'\n            "
+     ],
+     [
+      "index",
+      "idx_guard_local_once_reuse_artifact",
+      "guard_local_once_approvals",
+      "CREATE INDEX idx_guard_local_once_reuse_artifact\n            on guard_local_once_approvals (action, harness, artifact_id, created_at desc, approval_id desc)\n            "
+     ],
+     [
+      "index",
+      "idx_guard_local_once_reuse_hash",
+      "guard_local_once_approvals",
+      "CREATE INDEX idx_guard_local_once_reuse_hash\n            on guard_local_once_approvals (action, harness, artifact_hash, created_at desc, approval_id desc)\n            "
+     ],
+     [
+      "index",
+      "idx_guard_request_read_state_read_at",
+      "guard_request_read_state",
+      "CREATE INDEX idx_guard_request_read_state_read_at\n            on guard_request_read_state (read_at desc)\n            "
+     ],
+     [
+      "index",
+      "idx_native_hook_decision_receipts_recorded_at",
+      "native_hook_decision_receipts",
+      "CREATE INDEX idx_native_hook_decision_receipts_recorded_at\n        on native_hook_decision_receipts (recorded_at)\n        "
+     ],
+     [
+      "index",
+      "idx_native_prompt_decision_receipts_recorded_at",
+      "native_prompt_decision_receipts",
+      "CREATE INDEX idx_native_prompt_decision_receipts_recorded_at\n        on native_prompt_decision_receipts (recorded_at)\n        "
+     ],
+     [
+      "index",
+      "idx_scanner_cache_key",
+      "scanner_cache",
+      "CREATE INDEX idx_scanner_cache_key\n            on scanner_cache (cache_key)\n            "
+     ],
+     [
+      "index",
+      "sqlite_autoindex_approval_requests_1",
+      "approval_requests",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_artifact_capabilities_1",
+      "artifact_capabilities",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_artifact_inventory_1",
+      "artifact_inventory",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_artifact_snapshots_1",
+      "artifact_snapshots",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_command_activity_1",
+      "command_activity",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_command_activity_correlations_1",
+      "command_activity_correlations",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_command_activity_daily_rollups_1",
+      "command_activity_daily_rollups",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_command_activity_daily_totals_1",
+      "command_activity_daily_totals",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_command_activity_feedback_1",
+      "command_activity_feedback",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_command_activity_invocation_1",
+      "command_activity_invocation",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_command_activity_match_effects_1",
+      "command_activity_match_effects",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_command_activity_matches_1",
+      "command_activity_matches",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_command_activity_matches_2",
+      "command_activity_matches",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_command_activity_rollup_membership_1",
+      "command_activity_rollup_membership",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_command_activity_rollup_pending_1",
+      "command_activity_rollup_pending",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_client_attachments_1",
+      "guard_client_attachments",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_cloud_events_1",
+      "guard_cloud_events",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_cloud_events_2",
+      "guard_cloud_events",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_connect_requests_1",
+      "guard_connect_requests",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_connect_states_1",
+      "guard_connect_states",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_continuation_claims_1",
+      "guard_continuation_claims",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_continuation_effects_1",
+      "guard_continuation_effects",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_devices_1",
+      "guard_devices",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_exact_cloud_review_receipts_1",
+      "guard_exact_cloud_review_receipts",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_local_once_approvals_1",
+      "guard_local_once_approvals",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_operation_items_1",
+      "guard_operation_items",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_operations_1",
+      "guard_operations",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_request_read_state_1",
+      "guard_request_read_state",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_request_resumes_1",
+      "guard_request_resumes",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_runtime_state_1",
+      "guard_runtime_state",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_sessions_1",
+      "guard_sessions",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_supply_chain_bundle_cache_1",
+      "guard_supply_chain_bundle_cache",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_supply_chain_eval_cache_1",
+      "guard_supply_chain_eval_cache",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_surface_opens_1",
+      "guard_surface_opens",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_threat_intel_bundles_1",
+      "guard_threat_intel_bundles",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_guard_threat_intel_matches_1",
+      "guard_threat_intel_matches",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_harness_installations_1",
+      "harness_installations",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_managed_installs_1",
+      "managed_installs",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_native_hook_decision_receipts_1",
+      "native_hook_decision_receipts",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_native_prompt_decision_receipts_1",
+      "native_prompt_decision_receipts",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_provenance_cache_1",
+      "provenance_cache",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_publisher_cache_1",
+      "publisher_cache",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_runtime_receipt_envelopes_1",
+      "runtime_receipt_envelopes",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_runtime_receipts_1",
+      "runtime_receipts",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_scanner_cache_1",
+      "scanner_cache",
+      null
+     ],
+     [
+      "index",
+      "sqlite_autoindex_sync_state_1",
+      "sync_state",
+      null
+     ],
+     [
+      "table",
+      "approval_requests",
+      "approval_requests",
+      "CREATE TABLE approval_requests (\n          request_id text primary key,\n          harness text not null,\n          artifact_id text not null,\n          artifact_name text not null,\n          artifact_type text not null,\n          artifact_hash text not null,\n          publisher text,\n          policy_action text not null,\n          recommended_scope text not null,\n          changed_fields_json text not null,\n          source_scope text not null,\n          oauth_source text,\n          config_path text not null,\n          workspace text,\n          launch_target text,\n          normalized_identity_key text,\n          action_identity text,\n          queue_group_id text,\n          dedupe_count integer not null default 1,\n          last_seen_at text,\n          transport text,\n          risk_summary text,\n          risk_signals_json text not null default '[]',\n          artifact_label text,\n          source_label text,\n          trigger_summary text,\n          why_now text,\n          launch_summary text,\n          risk_headline text,\n          action_envelope_json text,\n          decision_v2_json text,\n          fallback_cli_command text,\n          scanner_evidence_json text not null default '[]',\n          browser_intent_json text,\n          desktop_notified_at text,\n          raw_command_text text,\n          continuation_snapshot_json text,\n          extension_allow_hint_json text,\n          guard_version text,\n          first_seen_guard_version text,\n          last_seen_guard_version text,\n          watch_only_observation integer not null default 0,\n          review_command text not null,\n          approval_url text not null,\n          status text not null,\n          resolution_action text,\n          resolution_scope text,\n          reason text,\n          created_at text not null,\n          resolved_at text\n        )"
+     ],
+     [
+      "table",
+      "artifact_capabilities",
+      "artifact_capabilities",
+      "CREATE TABLE artifact_capabilities (\n              artifact_id text not null,\n              harness text not null,\n              capability_json text not null,\n              updated_at text not null,\n              primary key (artifact_id, harness)\n            )"
+     ],
+     [
+      "table",
+      "artifact_diffs",
+      "artifact_diffs",
+      "CREATE TABLE artifact_diffs (\n              diff_id integer primary key autoincrement,\n              artifact_id text not null,\n              harness text not null,\n              changed_fields_json text not null,\n              previous_hash text,\n              current_hash text not null,\n              recorded_at text not null\n            )"
+     ],
+     [
+      "table",
+      "artifact_hashes",
+      "artifact_hashes",
+      "CREATE TABLE artifact_hashes (\n              artifact_id text not null,\n              harness text not null,\n              artifact_hash text not null,\n              recorded_at text not null\n            )"
+     ],
+     [
+      "table",
+      "artifact_inventory",
+      "artifact_inventory",
+      "CREATE TABLE artifact_inventory (\n              artifact_id text not null,\n              harness text not null,\n              artifact_name text not null,\n              artifact_type text not null,\n              source_scope text not null,\n              config_path text not null,\n              publisher text,\n              origin_url text,\n              launch_command text,\n              transport text,\n              first_seen_at text not null,\n              last_seen_at text not null,\n              last_changed_at text,\n              last_approved_at text,\n              removed_at text,\n              present integer not null default 1,\n              last_policy_action text not null,\n              artifact_hash text not null,\n              primary key (artifact_id, harness)\n            )"
+     ],
+     [
+      "table",
+      "artifact_snapshots",
+      "artifact_snapshots",
+      "CREATE TABLE artifact_snapshots (\n              artifact_id text not null,\n              harness text not null,\n              snapshot_json text not null,\n              artifact_hash text not null,\n              recorded_at text not null,\n              primary key (artifact_id, harness)\n            )"
+     ],
+     [
+      "table",
+      "command_activity",
+      "command_activity",
+      "CREATE TABLE command_activity (\n          activity_id text primary key,\n          occurred_at text not null,\n          harness text not null,\n          hook_phase text not null,\n          execution_status text not null,\n          proof_level text not null,\n          policy_action text,\n          decision_reason_code text,\n          controlling_rule_id text,\n          parse_confidence text,\n          uncertainty_class text,\n          match_count integer not null check (match_count >= 0),\n          prompted integer not null check (prompted in (0, 1)),\n          approval_reuse_status text not null,\n          receipt_link_status text not null,\n          receipt_id text,\n          evaluation_latency_bucket text not null,\n          persistence_latency_bucket text not null,\n          schema_version text not null\n        )"
+     ],
+     [
+      "table",
+      "command_activity_correlations",
+      "command_activity_correlations",
+      "CREATE TABLE command_activity_correlations (\n          activity_id text not null references command_activity(activity_id) on delete cascade,\n          kind text not null,\n          harness text not null,\n          key_id text not null,\n          digest text not null,\n          primary key (activity_id, kind)\n        )"
+     ],
+     [
+      "table",
+      "command_activity_daily_rollups",
+      "command_activity_daily_rollups",
+      "CREATE TABLE command_activity_daily_rollups (\n          day text not null,\n          dimension text not null,\n          dimension_value text not null,\n          count integer not null default 0 check (count >= 0),\n          primary key (day, dimension, dimension_value)\n        )"
+     ],
+     [
+      "table",
+      "command_activity_daily_totals",
+      "command_activity_daily_totals",
+      "CREATE TABLE command_activity_daily_totals (\n          day text primary key,\n          total integer not null default 0 check (total >= 0)\n        )"
+     ],
+     [
+      "table",
+      "command_activity_feedback",
+      "command_activity_feedback",
+      "CREATE TABLE command_activity_feedback (\n          activity_id text primary key references command_activity(activity_id) on delete cascade,\n          label text not null check (\n            label in ('should_not_have_interrupted', 'expected_guard_to_stop_this')\n          ),\n          created_at text not null,\n          updated_at text not null,\n          schema_version text not null\n        )"
+     ],
+     [
+      "table",
+      "command_activity_health",
+      "command_activity_health",
+      "CREATE TABLE command_activity_health (\n  singleton integer primary key check (singleton = 1),\n  dropped_event_count integer not null check (dropped_event_count between 0 and 9223372036854775807),\n  persistence_error_count integer not null check (persistence_error_count between 0 and 9223372036854775807),\n  last_error_code text check (last_error_code is null or length(last_error_code) between 1 and 64),\n  last_error_at text,\n  schema_version text not null\n)"
+     ],
+     [
+      "table",
+      "command_activity_health_active",
+      "command_activity_health_active",
+      "CREATE TABLE command_activity_health_active (\n  singleton integer primary key check (singleton = 1),\n  command_error_active integer not null check (command_error_active in (0, 1)),\n  shadow_error_active integer not null check (shadow_error_active in (0, 1)),\n  maintenance_error_active integer not null check (maintenance_error_active in (0, 1)),\n  foreign key (singleton) references command_activity_health(singleton) on delete cascade\n)"
+     ],
+     [
+      "table",
+      "command_activity_invalidations",
+      "command_activity_invalidations",
+      "CREATE TABLE command_activity_invalidations (\n          sequence integer primary key autoincrement,\n          activity_id text not null\n        )"
+     ],
+     [
+      "table",
+      "command_activity_invocation",
+      "command_activity_invocation",
+      "CREATE TABLE command_activity_invocation (\n          activity_id text primary key references command_activity(activity_id) on delete cascade,\n          invocation_preview text not null check (\n            length(invocation_preview) between 1 and 4096\n          )\n        )"
+     ],
+     [
+      "table",
+      "command_activity_maintenance",
+      "command_activity_maintenance",
+      "CREATE TABLE command_activity_maintenance (\n          singleton integer primary key check (singleton = 1),\n          last_completed_day text,\n          last_run_at text,\n          detail_compaction_started_at text,\n          rollup_backfill_cursor_occurred_at text,\n          rollup_backfill_cursor_activity_id text,\n          rollup_backfill_complete integer not null default 0 check (rollup_backfill_complete in (0, 1)),\n          last_backfilled_rows integer not null default 0 check (last_backfilled_rows >= 0),\n          last_detail_rows_deleted integer not null default 0 check (last_detail_rows_deleted >= 0),\n          last_correlation_rows_deleted integer not null default 0 check (last_correlation_rows_deleted >= 0),\n          last_aggregate_rows_deleted integer not null default 0 check (last_aggregate_rows_deleted >= 0),\n          schema_version text not null\n        )"
+     ],
+     [
+      "table",
+      "command_activity_match_effects",
+      "command_activity_match_effects",
+      "CREATE TABLE command_activity_match_effects (\n          activity_id text not null,\n          ordinal integer not null,\n          effect_class text not null,\n          primary key (activity_id, ordinal, effect_class),\n          foreign key (activity_id, ordinal)\n            references command_activity_matches(activity_id, ordinal) on delete cascade\n        )"
+     ],
+     [
+      "table",
+      "command_activity_matches",
+      "command_activity_matches",
+      "CREATE TABLE command_activity_matches (\n          activity_id text not null references command_activity(activity_id) on delete cascade,\n          ordinal integer not null check (ordinal >= 0),\n          extension_id text not null,\n          extension_version text not null,\n          rule_id text not null,\n          rule_version text not null,\n          match_class text not null,\n          severity text not null,\n          default_floor text not null,\n          safe_variant_id text,\n          schema_version text not null,\n          primary key (activity_id, ordinal),\n          unique (activity_id, rule_id)\n        )"
+     ],
+     [
+      "table",
+      "command_activity_rollup_membership",
+      "command_activity_rollup_membership",
+      "CREATE TABLE command_activity_rollup_membership (\n          activity_id text primary key,\n          day text not null,\n          occurred_at text not null,\n          rolled_at text not null,\n          detail_present integer not null default 1 check (detail_present in (0, 1))\n        )"
+     ],
+     [
+      "table",
+      "command_activity_rollup_pending",
+      "command_activity_rollup_pending",
+      "CREATE TABLE command_activity_rollup_pending (\n          activity_id text primary key,\n          occurred_at text not null\n        )"
+     ],
+     [
+      "table",
+      "guard_approval_authority_revision",
+      "guard_approval_authority_revision",
+      "CREATE TABLE guard_approval_authority_revision (\n              singleton integer primary key check (singleton = 1),\n              revision integer not null\n            )"
+     ],
+     [
+      "table",
+      "guard_client_attachments",
+      "guard_client_attachments",
+      "CREATE TABLE guard_client_attachments (\n              client_id text primary key,\n              surface text not null,\n              session_id text,\n              metadata_json text not null default '{}',\n              lease_id text not null default '',\n              lease_expires_at text,\n              attached_at text not null,\n              last_seen_at text not null\n            )"
+     ],
+     [
+      "table",
+      "guard_cloud_events",
+      "guard_cloud_events",
+      "CREATE TABLE guard_cloud_events (\n              event_id text primary key,\n              idempotency_key text not null unique,\n              event_type text not null,\n              payload_json text not null,\n              occurred_at text not null,\n              uploaded_at text\n            )"
+     ],
+     [
+      "table",
+      "guard_connect_requests",
+      "guard_connect_requests",
+      "CREATE TABLE guard_connect_requests (\n          request_id text primary key,\n          sync_url text not null,\n          allowed_origin text not null,\n          pairing_secret_hash text not null,\n          status text not null,\n          created_at text not null,\n          expires_at text not null,\n          completed_at text\n        )"
+     ],
+     [
+      "table",
+      "guard_connect_states",
+      "guard_connect_states",
+      "CREATE TABLE guard_connect_states (\n          request_id text primary key,\n          sync_url text not null,\n          allowed_origin text not null,\n          status text not null,\n          milestone text not null,\n          reason text,\n          created_at text not null,\n          updated_at text not null,\n          expires_at text not null,\n          completed_at text,\n          proof_json text not null default '{}'\n        )"
+     ],
+     [
+      "table",
+      "guard_continuation_claims",
+      "guard_continuation_claims",
+      "CREATE TABLE guard_continuation_claims (request_id text not null, offer_hash text not null, action text not null, state text not null, claimed_at text not null, evidence_id text, lease_expires_at text, claim_id text, primary key (request_id, offer_hash, action))"
+     ],
+     [
+      "table",
+      "guard_continuation_effects",
+      "guard_continuation_effects",
+      "CREATE TABLE guard_continuation_effects (\n          effect_key text primary key,\n          request_id text not null,\n          evidence_id text not null,\n          event_name text not null,\n          created_at text not null\n        )"
+     ],
+     [
+      "table",
+      "guard_devices",
+      "guard_devices",
+      "CREATE TABLE guard_devices (\n              device_key text primary key,\n              installation_id text not null,\n              device_label text not null,\n              created_at text not null,\n              updated_at text not null\n            )"
+     ],
+     [
+      "table",
+      "guard_events",
+      "guard_events",
+      "CREATE TABLE guard_events (\n              event_id integer primary key autoincrement,\n              event_name text not null,\n              payload_json text not null,\n              occurred_at text not null\n            )"
+     ],
+     [
+      "table",
+      "guard_exact_cloud_review_receipts",
+      "guard_exact_cloud_review_receipts",
+      "CREATE TABLE guard_exact_cloud_review_receipts (\n              receipt_id text primary key,\n              request_id text not null,\n              claimed_at text not null\n            )"
+     ],
+     [
+      "table",
+      "guard_local_once_approvals",
+      "guard_local_once_approvals",
+      "CREATE TABLE guard_local_once_approvals (\n              approval_id text primary key,\n              request_id text not null,\n              harness text not null,\n              artifact_id text not null,\n              artifact_hash text not null,\n              workspace text,\n              publisher text,\n              action text not null,\n              created_at text not null,\n              expires_at text not null,\n              claimed_at text,\n              integrity_version integer,\n              payload_hash text,\n              payload_mac text,\n              integrity_key_id text,\n              signed_at text,\n              authority_kind text\n            )"
+     ],
+     [
+      "table",
+      "guard_operation_items",
+      "guard_operation_items",
+      "CREATE TABLE guard_operation_items (\n              item_id text primary key,\n              operation_id text not null,\n              item_type text not null,\n              lifecycle text not null,\n              payload_json text not null default '{}',\n              created_at text not null\n            )"
+     ],
+     [
+      "table",
+      "guard_operations",
+      "guard_operations",
+      "CREATE TABLE guard_operations (\n              operation_id text primary key,\n              session_id text not null,\n              harness text not null,\n              operation_type text not null,\n              status text not null,\n              approval_request_ids_json text not null default '[]',\n              resume_token text,\n              metadata_json text not null default '{}',\n              created_at text not null,\n              updated_at text not null\n            )"
+     ],
+     [
+      "table",
+      "guard_request_read_state",
+      "guard_request_read_state",
+      "CREATE TABLE guard_request_read_state (\n              request_id text primary key,\n              read_at text not null\n            )"
+     ],
+     [
+      "table",
+      "guard_request_resumes",
+      "guard_request_resumes",
+      "CREATE TABLE guard_request_resumes (\n          request_id text primary key,\n          operation_id text,\n          harness text not null,\n          resolution_action text,\n          strategy text not null,\n          supported integer not null default 0,\n          status text not null,\n          thread_id text,\n          reason text,\n          message text,\n          last_error text,\n          attempt_count integer not null default 0,\n          created_at text not null,\n          updated_at text not null,\n          last_attempt_at text,\n          sent_at text\n        , continuation_contract_version text, continuation_capability text, continuation_status text, continuation_reason text, continuation_evidence_json text not null default '[]', continuation_offer_hash text, continuation_action text, continuation_completed_at text, continuation_cancelled_at text)"
+     ],
+     [
+      "table",
+      "guard_runtime_state",
+      "guard_runtime_state",
+      "CREATE TABLE guard_runtime_state (\n              state_key text primary key,\n              session_id text not null,\n              daemon_host text not null,\n              daemon_port integer not null,\n              started_at text not null,\n              last_heartbeat_at text not null\n            )"
+     ],
+     [
+      "table",
+      "guard_sessions",
+      "guard_sessions",
+      "CREATE TABLE guard_sessions (\n              session_id text primary key,\n              harness text not null,\n              surface text not null,\n              status text not null,\n              client_name text not null,\n              client_title text,\n              client_version text,\n              workspace text,\n              capabilities_json text not null default '[]',\n              created_at text not null,\n              updated_at text not null\n            )"
+     ],
+     [
+      "table",
+      "guard_supply_chain_bundle_cache",
+      "guard_supply_chain_bundle_cache",
+      "CREATE TABLE guard_supply_chain_bundle_cache (\n        workspace_id text primary key,\n        bundle_version text not null,\n        key_id text not null,\n        tier text not null,\n        policy_hash text not null,\n        feed_snapshot_hash text not null,\n        scoring_version text not null,\n        payload_hash text not null,\n        response_json text not null,\n        cached_at text not null\n    )"
+     ],
+     [
+      "table",
+      "guard_supply_chain_eval_cache",
+      "guard_supply_chain_eval_cache",
+      "CREATE TABLE guard_supply_chain_eval_cache (\n        workspace_id text not null,\n        package_intent_hash text not null,\n        feed_snapshot_hash text not null,\n        policy_hash text not null,\n        scoring_version text not null,\n        bundle_version text not null,\n        decision_json text not null,\n        updated_at text not null,\n        primary key (\n            workspace_id,\n            package_intent_hash,\n            feed_snapshot_hash,\n            policy_hash,\n            scoring_version,\n            bundle_version\n        )\n    )"
+     ],
+     [
+      "table",
+      "guard_surface_opens",
+      "guard_surface_opens",
+      "CREATE TABLE guard_surface_opens (\n              surface text not null,\n              open_key text not null,\n              opened_at text not null,\n              primary key (surface, open_key)\n            )"
+     ],
+     [
+      "table",
+      "guard_threat_intel_bundles",
+      "guard_threat_intel_bundles",
+      "CREATE TABLE guard_threat_intel_bundles (\n        bundle_id     text primary key,\n        version       integer not null,\n        source        text not null,\n        generated_at  real not null,\n        expires_at    real not null,\n        signature     text not null,\n        advisories_json text not null default '[]',\n        cached_at     real not null\n    )"
+     ],
+     [
+      "table",
+      "guard_threat_intel_matches",
+      "guard_threat_intel_matches",
+      "CREATE TABLE guard_threat_intel_matches (\n        match_id        text primary key,\n        bundle_id       text not null,\n        advisory_id     text not null,\n        artifact_id     text not null,\n        harness         text not null default '',\n        workspace       text not null default '',\n        severity        text not null default 'info',\n        matched_at      real not null,\n        target_json     text not null default '{}'\n    )"
+     ],
+     [
+      "table",
+      "harness_installations",
+      "harness_installations",
+      "CREATE TABLE harness_installations (\n              harness text primary key,\n              active integer not null,\n              workspace text,\n              config_path text,\n              metadata_json text not null default '{}',\n              updated_at text not null\n            )"
+     ],
+     [
+      "table",
+      "managed_installs",
+      "managed_installs",
+      "CREATE TABLE managed_installs (\n              harness text primary key,\n              active integer not null,\n              workspace text,\n              manifest_json text not null,\n              updated_at text not null\n            )"
+     ],
+     [
+      "table",
+      "native_hook_decision_receipts",
+      "native_hook_decision_receipts",
+      "CREATE TABLE native_hook_decision_receipts (\n      decision_id text primary key,\n      schema text not null check (schema = 'guard-native-hook-decision-receipt.v1'),\n      version integer not null check (version = 1),\n      authority text not null check (authority = 'rust'),\n      request_id text not null,\n      request_digest text not null,\n      harness text not null,\n      event_name text not null check (event_name in ('PreToolUse', 'PostToolUse')),\n      payload_kind text not null,\n      policy_generation integer not null,\n      policy_digest text,\n      rule_digest text,\n      runtime_identity text,\n      decision text not null check (decision in ('allow', 'deny')),\n      model_output_action text not null,\n      policy_action text,\n      observed_policy_action text,\n      reason_code text not null,\n      workspace_bound integer not null check (workspace_bound in (0, 1)),\n      source_ref_external_allowed integer not null check (source_ref_external_allowed in (0, 1)),\n      reviewed_output_sha256 text,\n      observe_mode integer not null check (observe_mode in (0, 1)),\n      deadline_budget_ms integer,\n      \n      \n      recorded_at text not null\n    , command_extensions_json text check (command_extensions_json is null or length(command_extensions_json) between 2 and 2048))"
+     ],
+     [
+      "table",
+      "native_prompt_decision_receipts",
+      "native_prompt_decision_receipts",
+      "CREATE TABLE native_prompt_decision_receipts (\n      decision_id text primary key,\n      schema text not null check (schema = 'guard-native-hook-decision-receipt.v1'),\n      version integer not null check (version = 1),\n      authority text not null check (authority = 'rust'),\n      request_id text not null,\n      request_digest text not null,\n      harness text not null,\n      event_name text not null check (event_name = 'UserPromptSubmit'),\n      payload_kind text not null,\n      policy_generation integer not null,\n      policy_digest text,\n      rule_digest text,\n      runtime_identity text,\n      decision text not null check (decision in ('allow', 'deny')),\n      model_output_action text not null,\n      policy_action text,\n      observed_policy_action text,\n      reason_code text not null,\n      workspace_bound integer not null check (workspace_bound in (0, 1)),\n      source_ref_external_allowed integer not null check (source_ref_external_allowed in (0, 1)),\n      reviewed_output_sha256 text,\n      observe_mode integer not null check (observe_mode in (0, 1)),\n      deadline_budget_ms integer,\n      command_extensions_json text check (command_extensions_json is null or length(command_extensions_json) between 2 and 2048),\n      prompt_risk_classes_json text not null check (length(prompt_risk_classes_json) between 2 and 256),\n      recorded_at text not null\n    )"
+     ],
+     [
+      "table",
+      "policy_decisions",
+      "policy_decisions",
+      "CREATE TABLE policy_decisions (\n              decision_id integer primary key autoincrement,\n              harness text not null,\n              scope text not null,\n              artifact_id text,\n              artifact_hash text,\n              workspace text,\n              publisher text,\n              action text not null,\n              reason text,\n              owner text,\n              source text not null default 'local',\n              expires_at text,\n              policy_document_schema_version text,\n              policy_document_id text,\n              policy_document_digest text,\n              policy_rule_id text,\n              policy_provenance_json text,\n              updated_at text not null\n            )"
+     ],
+     [
+      "table",
+      "provenance_cache",
+      "provenance_cache",
+      "CREATE TABLE provenance_cache (\n              artifact_hash text primary key,\n              payload_json text not null,\n              updated_at text not null\n            )"
+     ],
+     [
+      "table",
+      "publisher_cache",
+      "publisher_cache",
+      "CREATE TABLE publisher_cache (\n              publisher_key text primary key,\n              payload_json text not null,\n              updated_at text not null\n            )"
+     ],
+     [
+      "table",
+      "runtime_receipt_envelopes",
+      "runtime_receipt_envelopes",
+      "CREATE TABLE runtime_receipt_envelopes (\n              receipt_id text primary key references runtime_receipts(receipt_id) on delete cascade,\n              envelope_full_json text,\n              envelope_redacted_json text not null\n            )"
+     ],
+     [
+      "table",
+      "runtime_receipts",
+      "runtime_receipts",
+      "CREATE TABLE runtime_receipts (\n              receipt_id text primary key,\n              harness text not null,\n              artifact_id text not null,\n              artifact_hash text not null,\n              policy_decision text not null,\n              capabilities_summary text not null default '',\n              changed_capabilities_json text not null,\n              provenance_summary text not null,\n              user_override text,\n              artifact_name text,\n              source_scope text,\n              scanner_evidence_json text not null default '[]',\n              timestamp text not null,\n              raw_command_text text\n            )"
+     ],
+     [
+      "table",
+      "scanner_cache",
+      "scanner_cache",
+      "CREATE TABLE scanner_cache (\n              scanner_name text not null,\n              target_id text not null,\n              cache_key text not null,\n              input_content_hash text not null,\n              scanner_version text not null,\n              payload_json text not null,\n              updated_at text not null,\n              primary key (scanner_name, target_id)\n            )"
+     ],
+     [
+      "table",
+      "schema_migrations",
+      "schema_migrations",
+      "CREATE TABLE schema_migrations (\n              version integer primary key,\n              applied_at text not null\n            )"
+     ],
+     [
+      "table",
+      "sqlite_sequence",
+      "sqlite_sequence",
+      "CREATE TABLE sqlite_sequence(name,seq)"
+     ],
+     [
+      "table",
+      "sync_state",
+      "sync_state",
+      "CREATE TABLE sync_state (\n              state_key text primary key,\n              payload_json text not null,\n              updated_at text not null\n            )"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_correlation_parent_immutable",
+      "command_activity_correlations",
+      "CREATE TRIGGER trg_command_activity_correlation_parent_immutable\n        before update of activity_id on command_activity_correlations\n        when new.activity_id != old.activity_id\n        begin\n          select raise(abort, 'command activity correlation parent is immutable');\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_correlations_parent",
+      "command_activity_correlations",
+      "CREATE TRIGGER trg_command_activity_correlations_parent\n        before insert on command_activity_correlations\n        when not exists (\n          select 1 from command_activity where activity_id = new.activity_id\n        )\n        begin\n          select raise(abort, 'command activity correlation requires parent activity');\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_delete_children",
+      "command_activity",
+      "CREATE TRIGGER trg_command_activity_delete_children\n        after delete on command_activity\n        begin\n          delete from command_activity_correlations where activity_id = old.activity_id;\n          delete from command_activity_matches where activity_id = old.activity_id;\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_effect_parent_immutable",
+      "command_activity_match_effects",
+      "CREATE TRIGGER trg_command_activity_effect_parent_immutable\n        before update of activity_id, ordinal on command_activity_match_effects\n        when new.activity_id != old.activity_id or new.ordinal != old.ordinal\n        begin\n          select raise(abort, 'command activity effect parent is immutable');\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_effects_parent",
+      "command_activity_match_effects",
+      "CREATE TRIGGER trg_command_activity_effects_parent\n        before insert on command_activity_match_effects\n        when not exists (\n          select 1 from command_activity_matches\n          where activity_id = new.activity_id and ordinal = new.ordinal\n        )\n        begin\n          select raise(abort, 'command activity effect requires parent match');\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_feedback_invalidation_delete",
+      "command_activity_feedback",
+      "CREATE TRIGGER trg_command_activity_feedback_invalidation_delete\n        after delete on command_activity_feedback\n        begin\n          insert into command_activity_invalidations (activity_id) values (old.activity_id);\n          delete from command_activity_invalidations\n          where sequence <= last_insert_rowid() - 10000;\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_feedback_invalidation_insert",
+      "command_activity_feedback",
+      "CREATE TRIGGER trg_command_activity_feedback_invalidation_insert\n        after insert on command_activity_feedback\n        begin\n          insert into command_activity_invalidations (activity_id) values (new.activity_id);\n          delete from command_activity_invalidations\n          where sequence <= last_insert_rowid() - 10000;\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_feedback_invalidation_update",
+      "command_activity_feedback",
+      "CREATE TRIGGER trg_command_activity_feedback_invalidation_update\n        after update on command_activity_feedback\n        begin\n          insert into command_activity_invalidations (activity_id) values (new.activity_id);\n          delete from command_activity_invalidations\n          where sequence <= last_insert_rowid() - 10000;\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_id_immutable",
+      "command_activity",
+      "CREATE TRIGGER trg_command_activity_id_immutable\n        before update of activity_id on command_activity\n        when new.activity_id != old.activity_id\n        begin\n          select raise(abort, 'command activity identity is immutable');\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_invalidation_delete",
+      "command_activity",
+      "CREATE TRIGGER trg_command_activity_invalidation_delete\n        after delete on command_activity\n        begin\n          insert into command_activity_invalidations (activity_id) values (old.activity_id);\n          delete from command_activity_invalidations\n          where sequence <= last_insert_rowid() - 10000;\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_invalidation_insert",
+      "command_activity",
+      "CREATE TRIGGER trg_command_activity_invalidation_insert\n        after insert on command_activity\n        begin\n          insert into command_activity_invalidations (activity_id) values (new.activity_id);\n          delete from command_activity_invalidations\n          where sequence <= last_insert_rowid() - 10000;\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_invalidation_update",
+      "command_activity",
+      "CREATE TRIGGER trg_command_activity_invalidation_update\n        after update on command_activity\n        begin\n          insert into command_activity_invalidations (activity_id) values (new.activity_id);\n          delete from command_activity_invalidations\n          where sequence <= last_insert_rowid() - 10000;\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_invocation_immutable",
+      "command_activity_invocation",
+      "CREATE TRIGGER trg_command_activity_invocation_immutable\n        before update on command_activity_invocation\n        begin\n          select raise(abort, 'command_activity_invocation_immutable');\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_invocation_parent",
+      "command_activity_invocation",
+      "CREATE TRIGGER trg_command_activity_invocation_parent\n        before insert on command_activity_invocation\n        when not exists (\n          select 1 from command_activity where activity_id = new.activity_id\n        )\n        begin\n          select raise(abort, 'command activity invocation parent is missing');\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_match_delete_effects",
+      "command_activity_matches",
+      "CREATE TRIGGER trg_command_activity_match_delete_effects\n        after delete on command_activity_matches\n        begin\n          delete from command_activity_match_effects\n          where activity_id = old.activity_id and ordinal = old.ordinal;\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_match_parent_immutable",
+      "command_activity_matches",
+      "CREATE TRIGGER trg_command_activity_match_parent_immutable\n        before update of activity_id, ordinal on command_activity_matches\n        when new.activity_id != old.activity_id or new.ordinal != old.ordinal\n        begin\n          select raise(abort, 'command activity match parent is immutable');\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_matches_parent",
+      "command_activity_matches",
+      "CREATE TRIGGER trg_command_activity_matches_parent\n        before insert on command_activity_matches\n        when not exists (\n          select 1 from command_activity where activity_id = new.activity_id\n        )\n        begin\n          select raise(abort, 'command activity match requires parent activity');\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_rollup_membership_detail_deleted",
+      "command_activity",
+      "CREATE TRIGGER trg_command_activity_rollup_membership_detail_deleted\n        after delete on command_activity\n        begin\n          update command_activity_rollup_membership\n          set detail_present = 0 where activity_id = old.activity_id;\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_rollup_membership_parent",
+      "command_activity_rollup_membership",
+      "CREATE TRIGGER trg_command_activity_rollup_membership_parent\n        before insert on command_activity_rollup_membership\n        when not exists (\n          select 1 from command_activity where activity_id = new.activity_id\n        )\n        begin\n          select raise(abort, 'command activity rollup membership parent is missing');\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_rollup_pending_membership_inserted",
+      "command_activity_rollup_membership",
+      "CREATE TRIGGER trg_command_activity_rollup_pending_membership_inserted\n        after insert on command_activity_rollup_membership\n        begin\n          delete from command_activity_rollup_pending where activity_id = new.activity_id;\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_rollup_pending_parent_deleted",
+      "command_activity",
+      "CREATE TRIGGER trg_command_activity_rollup_pending_parent_deleted\n        after delete on command_activity\n        begin\n          delete from command_activity_rollup_pending where activity_id = old.activity_id;\n        end"
+     ],
+     [
+      "trigger",
+      "trg_command_activity_rollup_pending_parent_inserted",
+      "command_activity",
+      "CREATE TRIGGER trg_command_activity_rollup_pending_parent_inserted\n        after insert on command_activity\n        begin\n          insert or ignore into command_activity_rollup_pending (activity_id, occurred_at)\n          values (new.activity_id, new.occurred_at);\n        end"
+     ],
+     [
+      "trigger",
+      "trg_local_once_authority_delete",
+      "guard_local_once_approvals",
+      "CREATE TRIGGER trg_local_once_authority_delete\n            after delete on guard_local_once_approvals begin\n              update guard_approval_authority_revision set revision = revision + 1 where singleton = 1;\n            end"
+     ],
+     [
+      "trigger",
+      "trg_local_once_authority_insert",
+      "guard_local_once_approvals",
+      "CREATE TRIGGER trg_local_once_authority_insert\n            after insert on guard_local_once_approvals begin\n              update guard_approval_authority_revision set revision = revision + 1 where singleton = 1;\n            end"
+     ],
+     [
+      "trigger",
+      "trg_local_once_authority_update",
+      "guard_local_once_approvals",
+      "CREATE TRIGGER trg_local_once_authority_update\n            after update on guard_local_once_approvals begin\n              update guard_approval_authority_revision set revision = revision + 1 where singleton = 1;\n            end"
+     ],
+     [
+      "trigger",
+      "trg_policy_decisions_authority_delete",
+      "policy_decisions",
+      "CREATE TRIGGER trg_policy_decisions_authority_delete\n            after delete on policy_decisions begin\n              update guard_approval_authority_revision set revision = revision + 1 where singleton = 1;\n            end"
+     ],
+     [
+      "trigger",
+      "trg_policy_decisions_authority_insert",
+      "policy_decisions",
+      "CREATE TRIGGER trg_policy_decisions_authority_insert\n            after insert on policy_decisions begin\n              update guard_approval_authority_revision set revision = revision + 1 where singleton = 1;\n            end"
+     ],
+     [
+      "trigger",
+      "trg_policy_decisions_authority_update",
+      "policy_decisions",
+      "CREATE TRIGGER trg_policy_decisions_authority_update\n            after update on policy_decisions begin\n              update guard_approval_authority_revision set revision = revision + 1 where singleton = 1;\n            end"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "activity_missing_columns",
+   "setup": [
+    "create table command_activity (activity_id text primary key, occurred_at text)"
+   ],
+   "sqlite_error": "no such column: harness"
+  },
+  {
+   "error": "incompatible command_activity schema",
+   "name": "activity_columns",
+   "setup": [
+    "\n        create table if not exists command_activity (\n          activity_id text primary key, extra text,\n          occurred_at text not null,\n          harness text not null,\n          hook_phase text not null,\n          execution_status text not null,\n          proof_level text not null,\n          policy_action text,\n          decision_reason_code text,\n          controlling_rule_id text,\n          parse_confidence text,\n          uncertainty_class text,\n          match_count integer not null check (match_count >= 0),\n          prompted integer not null check (prompted in (0, 1)),\n          approval_reuse_status text not null,\n          receipt_link_status text not null,\n          receipt_id text,\n          evaluation_latency_bucket text not null,\n          persistence_latency_bucket text not null,\n          schema_version text not null\n        )\n        "
+   ]
+  },
+  {
+   "error": "incompatible command_activity_daily_totals primary key",
+   "name": "activity_primary_key",
+   "setup": [
+    "create table command_activity_daily_totals (day text, total integer, primary key (total, day))"
+   ]
+  },
+  {
+   "error": "incompatible command activity index: idx_command_activity_occurred_at",
+   "name": "activity_index",
+   "setup": [
+    "\n        create table if not exists command_activity (\n          activity_id text primary key,\n          occurred_at text not null,\n          harness text not null,\n          hook_phase text not null,\n          execution_status text not null,\n          proof_level text not null,\n          policy_action text,\n          decision_reason_code text,\n          controlling_rule_id text,\n          parse_confidence text,\n          uncertainty_class text,\n          match_count integer not null check (match_count >= 0),\n          prompted integer not null check (prompted in (0, 1)),\n          approval_reuse_status text not null,\n          receipt_link_status text not null,\n          receipt_id text,\n          evaluation_latency_bucket text not null,\n          persistence_latency_bucket text not null,\n          schema_version text not null\n        )\n        ",
+    "create index idx_command_activity_occurred_at on command_activity(occurred_at)"
+   ]
+  },
+  {
+   "error": "incompatible command activity schema object: command_activity_daily_totals",
+   "name": "activity_object_sql",
+   "setup": [
+    "create table command_activity_daily_totals (day text primary key, total integer not null)"
+   ]
+  },
+  {
+   "error": "incompatible command_activity_daily_totals schema",
+   "name": "activity_canonical_sql",
+   "setup": [
+    "\n  \n   \n   \n   \n   \n   \n   \n   \n CREATE  \n TABLE  \n COMMAND_ACTIVITY_DAILY_TOTALS  \n (\n  \n   \n   \n   \n   \n   \n   \n   \n   \n   \n DAY  \n TEXT  \n PRIMARY  \n KEY,\n  \n   \n   \n   \n   \n   \n   \n   \n   \n   \n TOTAL  \n INTEGER  \n NOT  \n NULL  \n DEFAULT  \n 0  \n CHECK  \n (TOTAL  \n >=  \n 0)\n  \n   \n   \n   \n   \n   \n   \n   \n )\n  \n   \n   \n   \n   \n   \n   \n   \n "
+   ]
+  },
+  {
+   "error": "incompatible command_activity_health schema",
+   "name": "health_columns",
+   "setup": [
+    "create table command_activity_health (singleton integer primary key, extra text)"
+   ]
+  },
+  {
+   "error": "incompatible command_activity_health singleton",
+   "name": "health_singleton",
+   "setup": [
+    "\ncreate table if not exists command_activity_health (\n  singleton integer primary key check (singleton = 1),\n  dropped_event_count integer not null check (dropped_event_count between 0 and 9223372036854775807),\n  persistence_error_count integer not null check (persistence_error_count between 0 and 9223372036854775807),\n  last_error_code text check (last_error_code is null or length(last_error_code) between 1 and 64),\n  last_error_at text,\n  schema_version text not null\n)\n",
+    "insert into command_activity_health values (1, 0, 0, null, null, '0.9.0')"
+   ]
+  },
+  {
+   "error": "incompatible command_activity_health_active schema object",
+   "name": "health_active_object_sql",
+   "setup": [
+    "create table command_activity_health_active (singleton integer primary key, command_error_active integer not null, shadow_error_active integer not null, maintenance_error_active integer not null)"
+   ]
+  },
+  {
+   "error": "incompatible command_activity_maintenance singleton",
+   "name": "maintenance_singleton",
+   "setup": [
+    "\n        create table if not exists command_activity (\n          activity_id text primary key,\n          occurred_at text not null,\n          harness text not null,\n          hook_phase text not null,\n          execution_status text not null,\n          proof_level text not null,\n          policy_action text,\n          decision_reason_code text,\n          controlling_rule_id text,\n          parse_confidence text,\n          uncertainty_class text,\n          match_count integer not null check (match_count >= 0),\n          prompted integer not null check (prompted in (0, 1)),\n          approval_reuse_status text not null,\n          receipt_link_status text not null,\n          receipt_id text,\n          evaluation_latency_bucket text not null,\n          persistence_latency_bucket text not null,\n          schema_version text not null\n        )\n        ",
+    "\n        create table if not exists command_activity_matches (\n          activity_id text not null references command_activity(activity_id) on delete cascade,\n          ordinal integer not null check (ordinal >= 0),\n          extension_id text not null,\n          extension_version text not null,\n          rule_id text not null,\n          rule_version text not null,\n          match_class text not null,\n          severity text not null,\n          default_floor text not null,\n          safe_variant_id text,\n          schema_version text not null,\n          primary key (activity_id, ordinal),\n          unique (activity_id, rule_id)\n        )\n        ",
+    "\n        create table if not exists command_activity_match_effects (\n          activity_id text not null,\n          ordinal integer not null,\n          effect_class text not null,\n          primary key (activity_id, ordinal, effect_class),\n          foreign key (activity_id, ordinal)\n            references command_activity_matches(activity_id, ordinal) on delete cascade\n        )\n        ",
+    "\n        create table if not exists command_activity_correlations (\n          activity_id text not null references command_activity(activity_id) on delete cascade,\n          kind text not null,\n          harness text not null,\n          key_id text not null,\n          digest text not null,\n          primary key (activity_id, kind)\n        )\n        ",
+    "\n        create table if not exists command_activity_daily_totals (\n          day text primary key,\n          total integer not null default 0 check (total >= 0)\n        )\n        ",
+    "\n        create table if not exists command_activity_daily_rollups (\n          day text not null,\n          dimension text not null,\n          dimension_value text not null,\n          count integer not null default 0 check (count >= 0),\n          primary key (day, dimension, dimension_value)\n        )\n        ",
+    "\n        create index if not exists idx_command_activity_occurred_at\n        on command_activity (occurred_at desc, activity_id desc)\n        ",
+    "\n        create index if not exists idx_command_activity_harness_occurred_at\n        on command_activity (harness, occurred_at desc, activity_id desc)\n        ",
+    "\n        create index if not exists idx_command_activity_match_rule\n        on command_activity_matches (rule_id, activity_id)\n        ",
+    "\n        create index if not exists idx_command_activity_match_extension\n        on command_activity_matches (extension_id, activity_id)\n        ",
+    "\n        create index if not exists idx_command_activity_correlation_lookup\n        on command_activity_correlations (kind, harness, key_id, digest)\n        ",
+    "\n        create unique index if not exists idx_command_activity_request_correlation_unique\n        on command_activity_correlations (harness, key_id, digest)\n        where kind = 'request'\n        ",
+    "\n        create trigger if not exists trg_command_activity_matches_parent\n        before insert on command_activity_matches\n        when not exists (\n          select 1 from command_activity where activity_id = new.activity_id\n        )\n        begin\n          select raise(abort, 'command activity match requires parent activity');\n        end\n        ",
+    "\n        create trigger if not exists trg_command_activity_effects_parent\n        before insert on command_activity_match_effects\n        when not exists (\n          select 1 from command_activity_matches\n          where activity_id = new.activity_id and ordinal = new.ordinal\n        )\n        begin\n          select raise(abort, 'command activity effect requires parent match');\n        end\n        ",
+    "\n        create trigger if not exists trg_command_activity_correlations_parent\n        before insert on command_activity_correlations\n        when not exists (\n          select 1 from command_activity where activity_id = new.activity_id\n        )\n        begin\n          select raise(abort, 'command activity correlation requires parent activity');\n        end\n        ",
+    "\n        create trigger if not exists trg_command_activity_delete_children\n        after delete on command_activity\n        begin\n          delete from command_activity_correlations where activity_id = old.activity_id;\n          delete from command_activity_matches where activity_id = old.activity_id;\n        end\n        ",
+    "\n        create trigger if not exists trg_command_activity_match_delete_effects\n        after delete on command_activity_matches\n        begin\n          delete from command_activity_match_effects\n          where activity_id = old.activity_id and ordinal = old.ordinal;\n        end\n        ",
+    "\n        create trigger if not exists trg_command_activity_id_immutable\n        before update of activity_id on command_activity\n        when new.activity_id != old.activity_id\n        begin\n          select raise(abort, 'command activity identity is immutable');\n        end\n        ",
+    "\n        create trigger if not exists trg_command_activity_match_parent_immutable\n        before update of activity_id, ordinal on command_activity_matches\n        when new.activity_id != old.activity_id or new.ordinal != old.ordinal\n        begin\n          select raise(abort, 'command activity match parent is immutable');\n        end\n        ",
+    "\n        create trigger if not exists trg_command_activity_effect_parent_immutable\n        before update of activity_id, ordinal on command_activity_match_effects\n        when new.activity_id != old.activity_id or new.ordinal != old.ordinal\n        begin\n          select raise(abort, 'command activity effect parent is immutable');\n        end\n        ",
+    "\n        create trigger if not exists trg_command_activity_correlation_parent_immutable\n        before update of activity_id on command_activity_correlations\n        when new.activity_id != old.activity_id\n        begin\n          select raise(abort, 'command activity correlation parent is immutable');\n        end\n        ",
+    "\n        create table if not exists command_activity_rollup_membership (\n          activity_id text primary key,\n          day text not null,\n          occurred_at text not null,\n          rolled_at text not null,\n          detail_present integer not null default 1 check (detail_present in (0, 1))\n        )\n        ",
+    "\n        create index if not exists idx_command_activity_rollup_membership_day\n        on command_activity_rollup_membership (detail_present, day, activity_id)\n        ",
+    "\n        create index if not exists idx_command_activity_rollup_membership_occurred_at\n        on command_activity_rollup_membership (detail_present, occurred_at, activity_id)\n        ",
+    "\n        create table if not exists command_activity_rollup_pending (\n          activity_id text primary key,\n          occurred_at text not null\n        )\n        ",
+    "\n        create table if not exists command_activity_maintenance (\n          singleton integer primary key check (singleton = 1),\n          last_completed_day text,\n          last_run_at text,\n          detail_compaction_started_at text,\n          rollup_backfill_cursor_occurred_at text,\n          rollup_backfill_cursor_activity_id text,\n          rollup_backfill_complete integer not null default 0 check (rollup_backfill_complete in (0, 1)),\n          last_backfilled_rows integer not null default 0 check (last_backfilled_rows >= 0),\n          last_detail_rows_deleted integer not null default 0 check (last_detail_rows_deleted >= 0),\n          last_correlation_rows_deleted integer not null default 0 check (last_correlation_rows_deleted >= 0),\n          last_aggregate_rows_deleted integer not null default 0 check (last_aggregate_rows_deleted >= 0),\n          schema_version text not null\n        )\n        ",
+    "\n        create trigger if not exists trg_command_activity_rollup_membership_parent\n        before insert on command_activity_rollup_membership\n        when not exists (\n          select 1 from command_activity where activity_id = new.activity_id\n        )\n        begin\n          select raise(abort, 'command activity rollup membership parent is missing');\n        end\n        ",
+    "\n        create trigger if not exists trg_command_activity_rollup_membership_detail_deleted\n        after delete on command_activity\n        begin\n          update command_activity_rollup_membership\n          set detail_present = 0 where activity_id = old.activity_id;\n        end\n        ",
+    "\n        create trigger if not exists trg_command_activity_rollup_pending_parent_inserted\n        after insert on command_activity\n        begin\n          insert or ignore into command_activity_rollup_pending (activity_id, occurred_at)\n          values (new.activity_id, new.occurred_at);\n        end\n        ",
+    "\n        create trigger if not exists trg_command_activity_rollup_pending_membership_inserted\n        after insert on command_activity_rollup_membership\n        begin\n          delete from command_activity_rollup_pending where activity_id = new.activity_id;\n        end\n        ",
+    "\n        create trigger if not exists trg_command_activity_rollup_pending_parent_deleted\n        after delete on command_activity\n        begin\n          delete from command_activity_rollup_pending where activity_id = old.activity_id;\n        end\n        ",
+    "insert into command_activity_maintenance (singleton, rollup_backfill_complete, last_backfilled_rows, last_detail_rows_deleted, last_correlation_rows_deleted, last_aggregate_rows_deleted, schema_version) values (1, 0, 0, 0, 0, 0, 'old')"
+   ]
+  },
+  {
+   "error": "incompatible command activity API schema object: command_activity_invalidations",
+   "name": "api_object_sql",
+   "setup": [
+    "create table command_activity_invalidations (sequence integer primary key, activity_id text)"
+   ]
+  },
+  {
+   "error": "incompatible command_activity_invocation primary key",
+   "name": "display_primary_key",
+   "setup": [
+    "create table command_activity_invocation (activity_id text, invocation_preview text)"
+   ]
+  }
+ ]
+}

@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from codex_plugin_scanner.guard import store_command_activity_api_schema as api_schema
+from codex_plugin_scanner.guard import store_command_activity_schema_versions as api_schema
 from codex_plugin_scanner.guard.runtime.command_activity_api_contract import (
     CommandActivityAnalyticsQuery,
     CommandActivityFeedbackLabel,
@@ -26,7 +26,7 @@ from codex_plugin_scanner.guard.store_command_activity_api import (
 from tests.guard_command_activity_api_support import evidence, seed
 
 
-def test_api_schema_is_atomic_strict_and_reopens(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_api_schema_is_atomic_strict_and_reopens(tmp_path: Path) -> None:
     store = GuardStore(tmp_path / "guard-home", prime_policy_integrity=False)
     with sqlite3.connect(store.path) as connection:
         tables = {
@@ -36,25 +36,6 @@ def test_api_schema_is_atomic_strict_and_reopens(tmp_path: Path, monkeypatch: py
     assert {"command_activity_feedback", "command_activity_invalidations"} <= tables
     assert migration == (13,)
     GuardStore(store.guard_home, prime_policy_integrity=False)
-
-    database = tmp_path / "failure.db"
-    with sqlite3.connect(database) as connection:
-        connection.row_factory = sqlite3.Row
-        connection.execute("create table schema_migrations (version integer primary key, applied_at text not null)")
-        connection.execute("create table command_activity (activity_id text primary key)")
-        statements = api_schema.command_activity_api_schema_statements()
-        monkeypatch.setattr(
-            api_schema,
-            "command_activity_api_schema_statements",
-            lambda: (statements[0], "create table"),
-        )
-        with pytest.raises(sqlite3.OperationalError):
-            api_schema.ensure_command_activity_api_schema(connection, applied_at="2026-07-18T20:00:00+00:00")
-        assert connection.execute("select 1 from schema_migrations where version = 13").fetchone() is None
-        assert (
-            connection.execute("select 1 from sqlite_schema where name = 'command_activity_feedback'").fetchone()
-            is None
-        )
 
 
 def test_activity_page_is_deterministic_filter_bounded_and_private(tmp_path: Path) -> None:

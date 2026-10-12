@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from codex_plugin_scanner.guard import store_command_activity_schema as activity_schema
+from codex_plugin_scanner.guard import store_command_activity_schema_versions as activity_schema
 from codex_plugin_scanner.guard.runtime.command_activity_contract import (
     ActivityApprovalReuseStatus,
     ActivityDecisionReason,
@@ -153,63 +153,6 @@ def test_command_activity_migration_repairs_a_missing_table_on_reopen(tmp_path: 
     GuardStore(guard_home, prime_policy_integrity=False)
 
     assert "command_activity_daily_rollups" in _table_names(store.path)
-
-
-def test_command_activity_migration_failure_rolls_back_schema_and_version(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    database_path = tmp_path / "migration.db"
-    with sqlite3.connect(database_path) as connection:
-        connection.execute("create table schema_migrations (version integer primary key, applied_at text not null)")
-        statements = activity_schema.command_activity_schema_statements()
-        monkeypatch.setattr(
-            activity_schema,
-            "command_activity_schema_statements",
-            lambda: (statements[0], "create table"),
-        )
-        with pytest.raises(sqlite3.OperationalError):
-            activity_schema.ensure_command_activity_schema(connection, applied_at="2026-07-18T20:00:00+00:00")
-        tables = {
-            str(row[0]) for row in connection.execute("select name from sqlite_schema where type = 'table'").fetchall()
-        }
-        version = connection.execute(
-            "select version from schema_migrations where version = ?",
-            (activity_schema.COMMAND_ACTIVITY_SCHEMA_MIGRATION_VERSION,),
-        ).fetchone()
-
-        monkeypatch.setattr(activity_schema, "command_activity_schema_statements", lambda: statements)
-        activity_schema.ensure_command_activity_schema(connection, applied_at="2026-07-18T20:01:00+00:00")
-        recovered_version = connection.execute(
-            "select version from schema_migrations where version = ?",
-            (activity_schema.COMMAND_ACTIVITY_SCHEMA_MIGRATION_VERSION,),
-        ).fetchone()
-
-    assert "command_activity" not in tables
-    assert version is None
-    assert recovered_version == (activity_schema.COMMAND_ACTIVITY_SCHEMA_MIGRATION_VERSION,)
-
-
-def test_command_activity_migration_rejects_an_incompatible_existing_schema(tmp_path: Path) -> None:
-    database_path = tmp_path / "incompatible.db"
-    statements = activity_schema.command_activity_schema_statements()
-    incompatible_activity = statements[0].replace(
-        "match_count integer not null check (match_count >= 0)",
-        "match_count integer not null",
-    )
-    with sqlite3.connect(database_path) as connection:
-        connection.execute("create table schema_migrations (version integer primary key, applied_at text not null)")
-        connection.execute(incompatible_activity)
-
-        with pytest.raises(RuntimeError, match="incompatible command activity schema object"):
-            activity_schema.ensure_command_activity_schema(connection, applied_at="2026-07-18T20:00:00+00:00")
-
-        version = connection.execute(
-            "select version from schema_migrations where version = ?",
-            (activity_schema.COMMAND_ACTIVITY_SCHEMA_MIGRATION_VERSION,),
-        ).fetchone()
-
-    assert version is None
 
 
 def test_activity_persistence_counts_one_command_and_each_rule_hit(tmp_path: Path) -> None:

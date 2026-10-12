@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from codex_plugin_scanner.guard import store_command_activity_maintenance_schema as maintenance_schema
+from codex_plugin_scanner.guard import store_command_activity_schema_versions as maintenance_schema
 from codex_plugin_scanner.guard.models import GuardAction
 from codex_plugin_scanner.guard.runtime.command_activity_api_contract import CommandActivityAnalyticsQuery
 from codex_plugin_scanner.guard.runtime.command_activity_contract import (
@@ -140,30 +140,6 @@ def test_v12_schema_is_strict_atomic_and_rejects_orphan_membership(tmp_path: Pat
                 (_NOW.isoformat(), _NOW.isoformat()),
             )
     assert version == (12,)
-
-
-def test_v12_schema_failure_rolls_back_objects_and_version(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    path = tmp_path / "migration.db"
-    with sqlite3.connect(path) as connection:
-        connection.execute("create table schema_migrations (version integer primary key, applied_at text not null)")
-        connection.execute("create table command_activity (activity_id text primary key)")
-        statements = maintenance_schema.command_activity_maintenance_schema_statements()
-        monkeypatch.setattr(
-            maintenance_schema,
-            "command_activity_maintenance_schema_statements",
-            lambda: (statements[0], "create table"),
-        )
-        with pytest.raises(sqlite3.OperationalError):
-            maintenance_schema.ensure_command_activity_maintenance_schema(connection, applied_at=_NOW.isoformat())
-        table = connection.execute(
-            "select 1 from sqlite_schema where name = 'command_activity_rollup_membership'"
-        ).fetchone()
-        version = connection.execute("select 1 from schema_migrations where version = 12").fetchone()
-    assert table is None
-    assert version is None
 
 
 def test_record_and_transition_update_exact_bounded_cells_once(tmp_path: Path) -> None:

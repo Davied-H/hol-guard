@@ -29,14 +29,12 @@ from codex_plugin_scanner.guard.runtime.command_activity_contract import (
 )
 from codex_plugin_scanner.guard.runtime.command_shadow_evaluation import COMMAND_SHADOW_SCHEMA_VERSION
 from codex_plugin_scanner.guard.store import GuardStore
-from codex_plugin_scanner.guard.store_command_activity_health_schema import (
-    COMMAND_ACTIVITY_HEALTH_SCHEMA_VERSION,
-)
-from codex_plugin_scanner.guard.store_command_activity_maintenance_schema import (
-    COMMAND_ACTIVITY_MAINTENANCE_SCHEMA_VERSION,
-)
 from codex_plugin_scanner.guard.store_command_activity_privacy import (
     COMMAND_ACTIVITY_DIAGNOSTICS_SCHEMA_VERSION,
+)
+from codex_plugin_scanner.guard.store_command_activity_schema_versions import (
+    COMMAND_ACTIVITY_HEALTH_SCHEMA_VERSION,
+    COMMAND_ACTIVITY_MAINTENANCE_SCHEMA_VERSION,
 )
 from tests.guard_command_activity_api_support import seed
 from tests.native_command_activity_test_support import use_real_native_activity_reviews

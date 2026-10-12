@@ -118,10 +118,6 @@ from .store_approvals import (
 from .store_approvals import (
     resolve_request_with_queue_result as persist_queue_resolution,
 )
-from .store_connect import (
-    connect_request_schema_statement,
-    connect_state_schema_statement,
-)
 from .store_review_event_outbox_binding import bind_review_events_for_request
 from .store_evidence import (
     EvidenceRecord,
@@ -142,9 +138,6 @@ from .store_resume import (
 )
 from .store_resume import (
     get_request_resume as load_request_resume,
-)
-from .store_resume import (
-    resume_schema_statement,
 )
 from .store_resume import (
     seed_request_resume as persist_request_resume_seed,

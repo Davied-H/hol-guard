@@ -68,48 +68,11 @@ def native_decision_receipt_schema_statement(*, prompt: bool = False) -> str:
     """
 
 
-def native_decision_receipt_index_statements() -> tuple[str, ...]:
-    return (
-        """
-        create index if not exists idx_native_hook_decision_receipts_recorded_at
-        on native_hook_decision_receipts (recorded_at)
-        """,
-        """
-        create index if not exists idx_native_prompt_decision_receipts_recorded_at
-        on native_prompt_decision_receipts (recorded_at)
-        """,
-    )
-
-
 def native_decision_receipt_migration_versions() -> tuple[int, ...]:
     return (
         NATIVE_DECISION_RECEIPT_MIGRATION_VERSION,
         NATIVE_COMMAND_RECEIPT_BINDING_MIGRATION_VERSION,
         NATIVE_PROMPT_RECEIPT_MIGRATION_VERSION,
-    )
-
-
-def ensure_native_command_receipt_binding_schema(connection: sqlite3.Connection, *, applied_at: str) -> None:
-    """Upgrade legacy receipt rows without inventing a missing command binding."""
-    columns = {str(row[1]) for row in connection.execute("pragma table_info(native_hook_decision_receipts)")}
-    if "command_extensions_json" not in columns:
-        connection.execute("alter table native_hook_decision_receipts add column " + _COMMAND_BINDING_COLUMN)
-    connection.execute(
-        "insert or ignore into schema_migrations (version, applied_at) values (?, ?)",
-        (NATIVE_COMMAND_RECEIPT_BINDING_MIGRATION_VERSION, applied_at),
-    )
-
-
-def native_decision_receipt_schema_statements(*prefix: str) -> tuple[str, ...]:
-    return (
-        *prefix,
-        native_decision_receipt_schema_statement(),
-        native_decision_receipt_schema_statement(prompt=True),
-        *native_decision_receipt_index_statements(),
-        "insert or ignore into schema_migrations (version, applied_at) values "
-        f"({NATIVE_DECISION_RECEIPT_MIGRATION_VERSION}, datetime('now'))",
-        "insert or ignore into schema_migrations (version, applied_at) values "
-        f"({NATIVE_PROMPT_RECEIPT_MIGRATION_VERSION}, datetime('now'))",
     )
 
 
@@ -296,9 +259,6 @@ __all__ = [
     "NATIVE_DECISION_RECEIPT_MIGRATION_VERSION",
     "NATIVE_PROMPT_RECEIPT_MIGRATION_VERSION",
     "StoreNativeDecisionReceiptsMixin",
-    "ensure_native_command_receipt_binding_schema",
-    "native_decision_receipt_index_statements",
     "native_decision_receipt_migration_versions",
     "native_decision_receipt_schema_statement",
-    "native_decision_receipt_schema_statements",
 ]

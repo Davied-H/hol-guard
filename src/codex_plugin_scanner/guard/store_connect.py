@@ -1,4 +1,4 @@
-"""Guard connect-state schema and response shape. The native store owns the state."""
+"""Guard connect-state response shape. The native store owns the state and its schema."""
 
 from __future__ import annotations
 
@@ -6,39 +6,6 @@ import json
 from collections.abc import Mapping
 
 CONNECT_STATE_VERSION = "guard-connect-state.v1"
-
-
-def connect_request_schema_statement() -> str:
-    return """
-        create table if not exists guard_connect_requests (
-          request_id text primary key,
-          sync_url text not null,
-          allowed_origin text not null,
-          pairing_secret_hash text not null,
-          status text not null,
-          created_at text not null,
-          expires_at text not null,
-          completed_at text
-        )
-        """
-
-
-def connect_state_schema_statement() -> str:
-    return """
-        create table if not exists guard_connect_states (
-          request_id text primary key,
-          sync_url text not null,
-          allowed_origin text not null,
-          status text not null,
-          milestone text not null,
-          reason text,
-          created_at text not null,
-          updated_at text not null,
-          expires_at text not null,
-          completed_at text,
-          proof_json text not null default '{}'
-        )
-        """
 
 
 def build_connect_state_response(

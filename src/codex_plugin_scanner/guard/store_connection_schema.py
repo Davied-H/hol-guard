@@ -14,6 +14,7 @@ from uuid import uuid4
 from . import store_connection_scope, store_native_decision_receipts, store_review_event_outbox_schema
 from .fork_safety import forget_in_child
 from .mcp.policy_store import ensure_mcp_policy_request_schema
+from .native_guard_store import native_guard_store_call
 from .sqlite_deadline_connection import DeadlineConnection
 from .sqlite_errors import sqlite_error_is_fatal, sqlite_error_is_io
 from .sqlite_profile import (
@@ -37,19 +38,11 @@ from .sqlite_tuning import sqlite_operation_deadline_monotonic
 
 # ruff: noqa: F403,F405
 from .store_base import *
-from .store_command_activity_api_schema import ensure_command_activity_api_schema
-from .store_command_activity_display_schema import (
-    COMMAND_ACTIVITY_DISPLAY_SCHEMA_MIGRATION_VERSION,
-    ensure_command_activity_display_schema,
-)
-from .store_command_activity_health_schema import ensure_command_activity_health_schema
-from .store_command_activity_maintenance_schema import ensure_command_activity_maintenance_schema
-from .store_command_activity_schema import ensure_command_activity_schema
+from .store_command_activity_schema_versions import COMMAND_ACTIVITY_DISPLAY_SCHEMA_MIGRATION_VERSION
 from .store_command_shadow_schema import ensure_command_shadow_schema
 from .store_extension_control_authority_schema import ensure_extension_control_authority_schema
 from .store_local_cli_schema import ensure_local_cli_schema
 from .store_receipt_rollup_schema import request_receipt_rollup_rebuild
-from .store_resume import ensure_resume_schema
 from .store_review_event_outbox_schema import ensure_review_event_outbox_schema
 from .store_secret_policy_integrity import _POLICY_INTEGRITY_LOOKUP_UNSET
 from .store_storage_maintenance import (
@@ -85,19 +78,6 @@ def _backfill_approval_queue_columns_compat(connection: sqlite3.Connection) -> N
 def _slow_query_threshold_ms_compat() -> int:
     value = _facade_store_attr("_SLOW_QUERY_THRESHOLD_MS", _SLOW_QUERY_THRESHOLD_MS)
     return value if isinstance(value, int) and not isinstance(value, bool) else _SLOW_QUERY_THRESHOLD_MS
-
-
-def _sqlite_lock_retry_delay_seconds_compat() -> float:
-    value = _facade_store_attr("_SQLITE_LOCK_RETRY_DELAY_SECONDS", _SQLITE_LOCK_RETRY_DELAY_SECONDS)
-    return (
-        value if isinstance(value, (int, float)) and not isinstance(value, bool) else _SQLITE_LOCK_RETRY_DELAY_SECONDS
-    )
-
-
-def _sleep_compat(seconds: float) -> None:
-    time_module = _facade_store_attr("time", time)
-    sleep = getattr(time_module, "sleep", time.sleep)
-    sleep(seconds)
 
 
 _POLICY_INDEX_STATEMENTS = (
@@ -173,6 +153,7 @@ _POLICY_INDEX_STATEMENTS = (
     """,
 )
 
+NATIVE_SCHEMA_PREFIX_METHOD = "initialize_schema_prefix"
 _RECEIPT_WARN_ROLLUP_MIGRATION_VERSION = 16
 _REQUIRED_SCHEMA_MIGRATION_VERSIONS = (  # Keep retired-index databases on the path that reaps the index.
     *range(2, STORAGE_QUERY_INDEX_MIGRATION_VERSION + 1),
@@ -759,421 +740,11 @@ class StoreConnectionSchemaMixin:
             self._initialize_policy_integrity()
 
     def _initialize_schema(self) -> None:
-        initialize_incremental_vacuum = not self.path.exists()
-        statements = (
-            """
-            create table if not exists harness_installations (
-              harness text primary key,
-              active integer not null,
-              workspace text,
-              config_path text,
-              metadata_json text not null default '{}',
-              updated_at text not null
-            )
-            """,
-            """
-            create table if not exists artifact_snapshots (
-              artifact_id text not null,
-              harness text not null,
-              snapshot_json text not null,
-              artifact_hash text not null,
-              recorded_at text not null,
-              primary key (artifact_id, harness)
-            )
-            """,
-            """
-            create table if not exists artifact_hashes (
-              artifact_id text not null,
-              harness text not null,
-              artifact_hash text not null,
-              recorded_at text not null
-            )
-            """,
-            """
-            create table if not exists artifact_diffs (
-              diff_id integer primary key autoincrement,
-              artifact_id text not null,
-              harness text not null,
-              changed_fields_json text not null,
-              previous_hash text,
-              current_hash text not null,
-              recorded_at text not null
-            )
-            """,
-            """
-            create table if not exists artifact_capabilities (
-              artifact_id text not null,
-              harness text not null,
-              capability_json text not null,
-              updated_at text not null,
-              primary key (artifact_id, harness)
-            )
-            """,
-            """
-            create table if not exists provenance_cache (
-              artifact_hash text primary key,
-              payload_json text not null,
-              updated_at text not null
-            )
-            """,
-            """
-            create table if not exists artifact_inventory (
-              artifact_id text not null,
-              harness text not null,
-              artifact_name text not null,
-              artifact_type text not null,
-              source_scope text not null,
-              config_path text not null,
-              publisher text,
-              origin_url text,
-              launch_command text,
-              transport text,
-              first_seen_at text not null,
-              last_seen_at text not null,
-              last_changed_at text,
-              last_approved_at text,
-              removed_at text,
-              present integer not null default 1,
-              last_policy_action text not null,
-              artifact_hash text not null,
-              primary key (artifact_id, harness)
-            )
-            """,
-            """
-            create table if not exists policy_decisions (
-              decision_id integer primary key autoincrement,
-              harness text not null,
-              scope text not null,
-              artifact_id text,
-              artifact_hash text,
-              workspace text,
-              publisher text,
-              action text not null,
-              reason text,
-              owner text,
-              source text not null default 'local',
-              expires_at text,
-              policy_document_schema_version text,
-              policy_document_id text,
-              policy_document_digest text,
-              policy_rule_id text,
-              policy_provenance_json text,
-              updated_at text not null
-            )
-            """,
-            """
-            create table if not exists runtime_receipts (
-              receipt_id text primary key,
-              harness text not null,
-              artifact_id text not null,
-              artifact_hash text not null,
-              policy_decision text not null,
-              capabilities_summary text not null default '',
-              changed_capabilities_json text not null,
-              provenance_summary text not null,
-              user_override text,
-              artifact_name text,
-              source_scope text,
-              scanner_evidence_json text not null default '[]',
-              timestamp text not null,
-              raw_command_text text
-            )
-            """,
-            """
-            create table if not exists runtime_receipt_envelopes (
-              receipt_id text primary key references runtime_receipts(receipt_id) on delete cascade,
-              envelope_full_json text,
-              envelope_redacted_json text not null
-            )
-            """,
-            """
-            create table if not exists publisher_cache (
-              publisher_key text primary key,
-              payload_json text not null,
-              updated_at text not null
-            )
-            """,
-            """
-            create table if not exists sync_state (
-              state_key text primary key,
-              payload_json text not null,
-              updated_at text not null
-            )
-            """,
-            """
-            create table if not exists guard_devices (
-              device_key text primary key,
-              installation_id text not null,
-              device_label text not null,
-              created_at text not null,
-              updated_at text not null
-            )
-            """,
-            """
-            create table if not exists schema_migrations (
-              version integer primary key,
-              applied_at text not null
-            )
-            """,
-            """
-            create table if not exists guard_events (
-              event_id integer primary key autoincrement,
-              event_name text not null,
-              payload_json text not null,
-              occurred_at text not null
-            )
-            """,
-            """
-            create index if not exists idx_guard_events_recent
-            on guard_events (occurred_at desc, event_id desc)
-            """,
-            """
-            create index if not exists idx_guard_events_name_recent
-            on guard_events (event_name, occurred_at desc, event_id desc)
-            """,
-            """
-            create table if not exists guard_exact_cloud_review_receipts (
-              receipt_id text primary key,
-              request_id text not null,
-              claimed_at text not null
-            )
-            """,
-            """
-            create table if not exists guard_local_once_approvals (
-              approval_id text primary key,
-              request_id text not null,
-              harness text not null,
-              artifact_id text not null,
-              artifact_hash text not null,
-              workspace text,
-              publisher text,
-              action text not null,
-              created_at text not null,
-              expires_at text not null,
-              claimed_at text,
-              integrity_version integer,
-              payload_hash text,
-              payload_mac text,
-              integrity_key_id text,
-              signed_at text,
-              authority_kind text
-            )
-            """,
-            """
-            create index if not exists idx_guard_local_once_approvals_lookup
-            on guard_local_once_approvals (claimed_at, harness, artifact_id, artifact_hash, expires_at)
-            """,
-            """
-            create index if not exists idx_guard_local_once_reuse_artifact
-            on guard_local_once_approvals (action, harness, artifact_id, created_at desc, approval_id desc)
-            """,
-            """
-            create index if not exists idx_guard_local_once_reuse_hash
-            on guard_local_once_approvals (action, harness, artifact_hash, created_at desc, approval_id desc)
-            """,
-            """
-            create index if not exists idx_guard_local_once_diagnostic_artifact
-            on guard_local_once_approvals (harness, artifact_id, created_at desc, approval_id desc)
-            where claimed_at is null and action = 'allow'
-            """,
-            """
-            create index if not exists idx_guard_local_once_diagnostic_hash
-            on guard_local_once_approvals (harness, artifact_hash, created_at desc, approval_id desc)
-            where claimed_at is null and action = 'allow'
-            """,
-            """
-            create table if not exists guard_approval_authority_revision (
-              singleton integer primary key check (singleton = 1),
-              revision integer not null
-            )
-            """,
-            """
-            insert or ignore into guard_approval_authority_revision (singleton, revision)
-            values (1, 0)
-            """,
-            """
-            create trigger if not exists trg_policy_decisions_authority_insert
-            after insert on policy_decisions begin
-              update guard_approval_authority_revision set revision = revision + 1 where singleton = 1;
-            end
-            """,
-            """
-            create trigger if not exists trg_policy_decisions_authority_update
-            after update on policy_decisions begin
-              update guard_approval_authority_revision set revision = revision + 1 where singleton = 1;
-            end
-            """,
-            """
-            create trigger if not exists trg_policy_decisions_authority_delete
-            after delete on policy_decisions begin
-              update guard_approval_authority_revision set revision = revision + 1 where singleton = 1;
-            end
-            """,
-            """
-            create trigger if not exists trg_local_once_authority_insert
-            after insert on guard_local_once_approvals begin
-              update guard_approval_authority_revision set revision = revision + 1 where singleton = 1;
-            end
-            """,
-            """
-            create trigger if not exists trg_local_once_authority_update
-            after update on guard_local_once_approvals begin
-              update guard_approval_authority_revision set revision = revision + 1 where singleton = 1;
-            end
-            """,
-            """
-            create trigger if not exists trg_local_once_authority_delete
-            after delete on guard_local_once_approvals begin
-              update guard_approval_authority_revision set revision = revision + 1 where singleton = 1;
-            end
-            """,
-            """
-            create table if not exists guard_cloud_events (
-              event_id text primary key,
-              idempotency_key text not null unique,
-              event_type text not null,
-              payload_json text not null,
-              occurred_at text not null,
-              uploaded_at text
-            )
-            """,
-            """
-            create index if not exists idx_guard_cloud_events_sync
-            on guard_cloud_events (uploaded_at, occurred_at)
-            """,
-            """
-            create table if not exists guard_runtime_state (
-              state_key text primary key,
-              session_id text not null,
-              daemon_host text not null,
-              daemon_port integer not null,
-              started_at text not null,
-              last_heartbeat_at text not null
-            )
-            """,
-            """
-            create table if not exists scanner_cache (
-              scanner_name text not null,
-              target_id text not null,
-              cache_key text not null,
-              input_content_hash text not null,
-              scanner_version text not null,
-              payload_json text not null,
-              updated_at text not null,
-              primary key (scanner_name, target_id)
-            )
-            """,
-            """
-            create index if not exists idx_scanner_cache_key
-            on scanner_cache (cache_key)
-            """,
-            """
-            create table if not exists managed_installs (
-              harness text primary key,
-              active integer not null,
-              workspace text,
-              manifest_json text not null,
-              updated_at text not null
-            )
-            """,
-            """
-            create table if not exists guard_sessions (
-              session_id text primary key,
-              harness text not null,
-              surface text not null,
-              status text not null,
-              client_name text not null,
-              client_title text,
-              client_version text,
-              workspace text,
-              capabilities_json text not null default '[]',
-              created_at text not null,
-              updated_at text not null
-            )
-            """,
-            """
-            create table if not exists guard_operations (
-              operation_id text primary key,
-              session_id text not null,
-              harness text not null,
-              operation_type text not null,
-              status text not null,
-              approval_request_ids_json text not null default '[]',
-              resume_token text,
-              metadata_json text not null default '{}',
-              created_at text not null,
-              updated_at text not null
-            )
-            """,
-            """
-            create table if not exists guard_operation_items (
-              item_id text primary key,
-              operation_id text not null,
-              item_type text not null,
-              lifecycle text not null,
-              payload_json text not null default '{}',
-              created_at text not null
-            )
-            """,
-            """
-            create table if not exists guard_client_attachments (
-              client_id text primary key,
-              surface text not null,
-              session_id text,
-              metadata_json text not null default '{}',
-              lease_id text not null default '',
-              lease_expires_at text,
-              attached_at text not null,
-              last_seen_at text not null
-            )
-            """,
-            """
-            create table if not exists guard_surface_opens (
-              surface text not null,
-              open_key text not null,
-              opened_at text not null,
-              primary key (surface, open_key)
-            )
-            """,
-            """
-            create table if not exists guard_request_read_state (
-              request_id text primary key,
-              read_at text not null
-            )
-            """,
-            """
-            create index if not exists idx_guard_request_read_state_read_at
-            on guard_request_read_state (read_at desc)
-            """,
-            resume_schema_statement(),
-            connect_state_schema_statement(),
-            connect_request_schema_statement(),
-            connect_state_schema_statement(),
-            approval_schema_statement(),
-            supply_chain_bundle_schema_statement(),
-            supply_chain_eval_cache_schema_statement(),
-            threat_intel_bundle_schema_statement(),
-            *store_native_decision_receipts.native_decision_receipt_schema_statements(
-                threat_intel_matches_schema_statement()
-            ),
-        )
+        # The core tables, receipt binding, resume columns and command-activity
+        # families are created and validated by the native store in one
+        # transaction; it also creates a missing store file and enables WAL.
+        self._initialize_native_schema_prefix()
         with self._connect() as connection:
-            if initialize_incremental_vacuum:
-                connection.execute("pragma auto_vacuum=incremental")
-            # WAL must be enabled before schema DML starts a transaction. SQLite
-            # cannot change journal modes from inside an active transaction, and
-            # leaving an existing store in rollback-journal mode lets dashboard
-            # readers exhaust the bounded hook write deadline.
-            self._enable_wal_mode(connection)
-            for statement in statements:
-                connection.execute(statement)
-            store_native_decision_receipts.ensure_native_command_receipt_binding_schema(connection, applied_at=_now())
-            ensure_resume_schema(connection)
-            ensure_command_activity_schema(connection, applied_at=_now())
-            ensure_command_activity_health_schema(connection, applied_at=_now())
-            ensure_command_activity_maintenance_schema(connection, applied_at=_now())
-            ensure_command_activity_api_schema(connection, applied_at=_now())
-            ensure_command_activity_display_schema(connection, applied_at=_now())
             ensure_evidence_schema(connection)
             ensure_extension_control_authority_schema(connection, require_compatible=False)
             ensure_local_cli_schema(connection)
@@ -1388,32 +959,27 @@ class StoreConnectionSchemaMixin:
         except sqlite3.DatabaseError:
             return False
 
-    @staticmethod
-    def _enable_wal_mode(connection: sqlite3.Connection) -> None:
-        original_busy_timeout_row = connection.execute("pragma busy_timeout").fetchone()
-        original_busy_timeout_ms = int(original_busy_timeout_row[0]) if original_busy_timeout_row else 0
-        retry_deadline = time.monotonic() + (original_busy_timeout_ms / 1000)
-        lock_error: sqlite3.OperationalError | None = None
+    def _initialize_native_schema_prefix(self) -> None:
+        args = {"applied_at": _now()}
+        if not self._current_thread_owns_storage_recovery():
+            self._native_store_call(NATIVE_SCHEMA_PREFIX_METHOD, args)
+            return
+        # Recovery already holds the storage gate and is rebuilding this store;
+        # a failure here must surface to it rather than start another recovery.
+        timeout_seconds = sqlite_connect_timeout_seconds()
+        if timeout_seconds <= 0:
+            raise TimeoutError("Guard storage operation deadline expired.")
         try:
-            while True:
-                remaining_timeout_ms = max(0, int((retry_deadline - time.monotonic()) * 1000))
-                if lock_error is not None and remaining_timeout_ms <= 0:
-                    raise lock_error
-                wal_busy_timeout_ms = min(remaining_timeout_ms, SQLITE_WAL_BUSY_TIMEOUT_MS)
-                connection.execute(f"pragma busy_timeout={wal_busy_timeout_ms}")
-                try:
-                    connection.execute("pragma journal_mode=WAL")
-                    return
-                except sqlite3.OperationalError as exc:
-                    if "database is locked" not in str(exc).lower():
-                        raise
-                    lock_error = exc
-                    remaining_seconds = retry_deadline - time.monotonic()
-                    if remaining_seconds <= 0:
-                        raise
-                    _sleep_compat(min(_sqlite_lock_retry_delay_seconds_compat(), remaining_seconds))
+            native_guard_store_call(
+                store_path=self.path,
+                guard_home=self.guard_home,
+                source=self._guard_source,
+                method=NATIVE_SCHEMA_PREFIX_METHOD,
+                args=args,
+                deadline_monotonic=time.monotonic() + timeout_seconds,
+            )
         finally:
-            connection.execute(f"pragma busy_timeout={original_busy_timeout_ms}")
+            self._repair_store_permissions()
 
     @staticmethod
     def _ensure_policy_column(connection: sqlite3.Connection, column_name: str, column_type: str) -> None:
