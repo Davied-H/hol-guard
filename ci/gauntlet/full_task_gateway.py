@@ -27,6 +27,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
 
 from .full_task_gateway_policy import (
     API_HOST,
@@ -171,7 +172,9 @@ def make_handler(gateway: Gateway, context: ssl.SSLContext) -> type[BaseHTTPRequ
             body = self._body()
             if body is None:
                 return self._reply(413, b'{"message":"request too large"}')
-            hits = canary_hits(body, gateway.canaries)
+            hits = canary_hits(
+                body + b"\n" + unquote(self.path).encode() + b"\n" + self.path.encode(), gateway.canaries
+            )
             with gateway.lock:
                 decision = decide(gateway.scope, host, self.command, self.path, body)
             if not decision.allow:

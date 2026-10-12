@@ -24,7 +24,9 @@ PLATFORM = "linux/amd64"
 ARM_PLATFORM = "linux/arm64"
 ARM_WHEEL_TAG = "manylinux_2_17_aarch64"
 SLUG = "hashgraph-online/hol-guard"
-GATEWAY_FILES = ("full_task_gateway.py", "full_task_gateway_policy.py")
+GATEWAY_FILES = ("full_task_gateway.py", "full_task_gateway_policy.py", "full_task_graphql.py")
+# Where the read-only inputs mount in the agent container; a wheel requirement is a path there.
+WHEELHOUSE_MOUNT = "/inputs/wheelhouse"
 SHA = re.compile(r"[0-9a-f]{40}")
 
 
@@ -193,7 +195,9 @@ def pr_head_source(sha: str, inputs: Path, image: str) -> GuardSource:
         shutil.copy2(runtime, inputs / "runtime" / "hol-guard-runtime")
         # Dependencies only: pip resolves them from the local wheel inside a credential-free container.
         download_wheelhouse(image, f"/in/{wheels[0].name}", wheelhouse, mount=wheelhouse)
-    return GuardSource(f"pr-head:{sha[:12]}", wheels[0].name, sha, inputs / "runtime" / "hol-guard-runtime")
+    return GuardSource(
+        f"pr-head:{sha[:12]}", f"{WHEELHOUSE_MOUNT}/{wheels[0].name}", sha, inputs / "runtime" / "hol-guard-runtime"
+    )
 
 
 def wheel_source(wheel: Path, expected_sha: str, inputs: Path, image: str) -> GuardSource:
@@ -220,7 +224,9 @@ def wheel_source(wheel: Path, expected_sha: str, inputs: Path, image: str) -> Gu
     shutil.copy2(wheel, wheelhouse / wheel.name)
     download_wheelhouse(image, f"/in/{wheel.name}", wheelhouse, mount=wheelhouse, platform=ARM_PLATFORM)
     digest = hashlib.sha256(wheel.read_bytes()).hexdigest()
-    return GuardSource(f"wheel:{expected_sha[:12]}", wheel.name, expected_sha, None, ARM_PLATFORM, digest)
+    return GuardSource(
+        f"wheel:{expected_sha[:12]}", f"{WHEELHOUSE_MOUNT}/{wheel.name}", expected_sha, None, ARM_PLATFORM, digest
+    )
 
 
 def write_repo_inputs(inputs: Path) -> None:

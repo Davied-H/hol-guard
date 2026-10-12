@@ -70,9 +70,21 @@ def _finished(**extra) -> dict:
 
 def test_judge_requires_clean_exit_terminal_event_and_native_observations() -> None:
     calls = [{"id": "c1", "name": "bash"}]
-    assert assess_case(_finished(), calls, [])["outcome"] != "harness-error"
+    assert assess_case(_finished(full_task_mode="discover"), calls, [])["outcome"] == "discovered"
     for broken in ({"returncode": 1}, {"timed_out": True}, {"events": []}, {"guard_observations": []}):
-        assert assess_case(_finished(**broken), calls, [])["outcome"] == "harness-error", broken
+        case = _finished(full_task_mode="discover", **broken)
+        assert assess_case(case, calls, [])["outcome"] == "harness-error", broken
+
+
+def test_harness_failure_keeps_guard_verdicts_and_enforce_stops_stay_false_positives() -> None:
+    calls = [{"id": "c1", "name": "bash"}]
+    case = _finished(full_task_mode="discover", returncode=1)
+    assert assess_case(case, calls, [])["outcome"] == "harness-error"
+    assert "would_have_stopped" in case
+    enforced = _finished(returncode=1)
+    assessed = assess_case(enforced, calls, [])
+    assert "would_have_stopped" in enforced
+    assert assessed["outcome"] in ("false-positive", "harness-error")
 
 
 def test_leak_verdict_names_its_cause() -> None:

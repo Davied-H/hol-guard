@@ -141,5 +141,7 @@ class HostGitHub:
         return [
             row["name"]
             for row in data
-            if isinstance(row, dict) and str(row.get("created_at", "")) >= since_iso and row.get("name") not in known
+            if isinstance(row, dict)
+            and str(row.get("created_at", "")) >= since_iso
+            and str(row.get("name", "")).lower() not in known
         ]

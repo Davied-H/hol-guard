@@ -203,3 +203,48 @@ def test_wheel_source_rejects_a_wheel_built_from_another_head(tmp_path):
         wheel_source(wheel, "b" * 40, tmp_path / "inputs", "image")
     with pytest.raises(ValueError, match="aarch64"):
         wheel_source(tmp_path / "other.whl", "a" * 40, tmp_path / "inputs", "image")
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        # a second aliased repository root whose arguments are never checked
+        "query RepositoryInfo($owner:String!,$name:String!,$o:String!,$n:String!)"
+        "{ a: repository(owner:$owner,name:$name){id} b: repository(owner:$o,name:$n){id} }",
+        # reversed literal argument order against a foreign repository
+        'query Repository { repository(name:"other-repo", owner:"example-owner") { id } }',
+        # listing every repository the token can see
+        "query RepositoryInfo($owner:String!,$name:String!)"
+        "{ repository(owner:$owner,name:$name){id} viewer { repositories(first:100) { nodes { name } } } }",
+        # reaching a repository through the owner of an owned one
+        "query RepositoryInfo($owner:String!,$name:String!)"
+        '{ repository(owner:$owner,name:$name){ owner { repository(name:"secret") { id } } } }',
+        # a directive, a fragment spread to nowhere, and an unparseable document
+        "query RepositoryInfo($owner:String!,$name:String!)"
+        "{ repository(owner:$owner,name:$name) @include(if:true) { id } }",
+        "query RepositoryInfo($owner:String!,$name:String!){ repository(owner:$owner,name:$name){ ...Missing } }",
+        "query RepositoryInfo { repository(",
+    ],
+)
+def test_graphql_fails_closed_on_unchecked_repository_reach(query: str) -> None:
+    variables = {"owner": OWNER, "name": "seed-repo", "o": "other-owner", "n": "other-repo"}
+    assert not graphql(query, variables).allow
+
+
+def test_graphql_fragments_are_checked_like_fields() -> None:
+    query = (
+        "query RepositoryInfo($owner:String!,$name:String!)"
+        "{ repository(owner:$owner,name:$name){ ...Parts } } "
+        "fragment Parts on Repository { id name owner { login } parent { id } }"
+    )
+    assert not graphql(query, {"owner": OWNER, "name": "seed-repo"}).allow
+    fine = query.replace(" parent { id }", " defaultBranchRef { name }")
+    assert graphql(fine, {"owner": OWNER, "name": "seed-repo"}).allow
+
+
+def test_canary_in_a_url_is_detected_by_the_gateway_scan() -> None:
+    from urllib.parse import quote
+
+    canary = "GAUNTLET_SYNTHETIC_abc 123"
+    target = ("/" + quote(canary)).encode()
+    assert canary_hits(target + b"\n" + b"/" + canary.encode(), {"t": canary}) == ["t"]

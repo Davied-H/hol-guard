@@ -18,6 +18,9 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import quote
 
+from .full_task_graphql import GraphQLRejectedError
+from .full_task_graphql import validate as validate_graphql
+
 GITHUB_HOST = "github.com"
 API_HOST = "api.github.com"
 NPM_HOST = "registry.npmjs.org"
@@ -43,12 +46,6 @@ QUERIES = frozenset(
     }
 )
 MUTATIONS = frozenset({"RepositoryCreate", "PullRequestCreate"})
-# Cross-repository entry points a GraphQL document can use to reach repositories we did not validate.
-FORBIDDEN_SELECTIONS = re.compile(r"\b(search|node|nodes|organization|user|repositoryOwner|topic|enterprise)\s*\(")
-OPERATION = re.compile(r"(?m)^\s*(query|mutation|subscription)\s+([A-Za-z_]\w*)")
-OPERATION_KEYWORD = re.compile(r"\b(query|mutation|subscription)\b\s+[A-Za-z_]\w*\s*[({]")
-LITERAL_REPOSITORY = re.compile(r"""repository\s*\(\s*owner\s*:\s*"([^"]*)"\s*,\s*name\s*:\s*"([^"]*)"\s*\)""")
-LITERAL_REPOSITORY_ID = re.compile(r'(?i)repositoryId\s*:\s*"([^"]*)"')
 # The only create fields an ordinary `gh repo create` sends; ownerId/teamId/template reach beyond the owner.
 CREATE_INPUT_KEYS = frozenset(
     {"name", "description", "homepageUrl", "visibility", "hasIssuesEnabled", "hasWikiEnabled", "clientMutationId"}
@@ -188,74 +185,23 @@ def _rest_create(body: bytes) -> Decision:
     return Decision(True, "create-forced-private", json.dumps(forced).encode())
 
 
-def graphql_operation(query: str) -> tuple[str, str] | None:
-    """The single named operation of a document, or None for anonymous, multiple or subscription documents."""
-    found = OPERATION.findall(query)
-    if len(found) != 1 or len(OPERATION_KEYWORD.findall(query)) != 1 or found[0][0] == "subscription":
-        return None
-    return found[0]
-
-
-def _walk(value: Any, scope: RunScope, errors: list[str], refs: list[int]) -> None:
-    """Check every repository reference in the variables against the run-owned set."""
-    if isinstance(value, list):
-        for item in value:
-            _walk(item, scope, errors, refs)
-        return
-    if not isinstance(value, dict):
-        return
-    owner = value.get("owner")
-    name = value.get("name", value.get("repo"))
-    if isinstance(owner, str) and isinstance(name, str) and "repositoryid" not in {k.lower() for k in value}:
-        refs.append(1)
-        if not scope.owns(owner, name):
-            errors.append("foreign-repository")
-    for key, item in value.items():
-        lowered = key.lower()
-        if lowered in ("repositoryid", "headrepositoryid", "baserepositoryid", "repoid"):
-            refs.append(1)
-            if not isinstance(item, str) or not scope.owns_node(item):
-                errors.append("foreign-repository-id")
-        elif lowered in ("ownerid", "teamid", "templaterepositoryid", "organizationid"):
-            errors.append("cross-owner-reference")
-        elif isinstance(item, (dict, list)):
-            _walk(item, scope, errors, refs)
-
-
 def decide_graphql(scope: RunScope, body: bytes) -> Decision:
-    """Allow named operations by list and validate every repository they name against the run's set."""
+    """Fail closed: parse the whole document, allow only recognized operations on run-owned repositories."""
     document = _json(body)
     if not isinstance(document, dict) or not isinstance(document.get("query"), str):
         return deny("graphql-body")
-    query = document["query"]
-    operation = graphql_operation(query)
-    if operation is None:
-        return deny("graphql-anonymous-or-multiple")
-    kind, name = operation
-    allowed = QUERIES if kind == "query" else MUTATIONS
-    if name not in allowed:
-        return deny("graphql-operation-not-allowed", name)
-    if FORBIDDEN_SELECTIONS.search(query):
-        return deny("graphql-cross-repository-selection", name)
     variables = document.get("variables") or {}
-    if not isinstance(variables, dict):
-        return deny("graphql-variables", name)
-    errors: list[str] = []
-    refs: list[int] = []
-    _walk(variables, scope, errors, refs)
-    for owner, repo in LITERAL_REPOSITORY.findall(query):
-        refs.append(1)
-        if not scope.owns(owner, repo):
-            errors.append("foreign-repository")
-    for node in LITERAL_REPOSITORY_ID.findall(query):
-        refs.append(1)
-        if not scope.owns_node(node):
-            errors.append("foreign-repository-id")
-    if errors:
-        return deny(errors[0], name)
+    if not isinstance(variables, dict) or set(document) - {"query", "variables", "operationName"}:
+        return deny("graphql-variables")
+    try:
+        _kind, name, references = validate_graphql(
+            document["query"], variables, owns=scope.owns, owns_node=scope.owns_node, queries=QUERIES
+        )
+    except GraphQLRejectedError as exc:
+        return deny(str(exc))
     if name == "RepositoryCreate":
         return _graphql_create(document, variables)
-    if name != "UserCurrent" and not refs:
+    if name != "UserCurrent" and not references:
         return deny("graphql-no-repository-reference", name)
     return Decision(True, "graphql-allowed", None, name)
 

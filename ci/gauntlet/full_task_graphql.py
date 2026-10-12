@@ -1,0 +1,370 @@
+"""A small GraphQL reader and fail-closed validator for the full-task gateway.
+
+The gateway adds the operator's real GitHub token to a GraphQL request once policy allows it,
+so policy must understand the whole document, not pattern-match pieces of it. This module
+parses a document into operations, fields and fragments; any syntax it does not recognize is a
+rejection. Only a short list of root fields is accepted for each operation kind, every
+repository reference (literal or variable) must name a run-owned repository, and nested
+fields that can reach other repositories are refused.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from typing import Any
+
+MAX_TOKENS = 20000
+MAX_DEPTH = 16
+TOKEN = re.compile(
+    r'\s+|,|#[^\n]*|(?P<spread>\.\.\.)|(?P<punct>[!$&():=@\[\]{|}])|(?P<block>"""(?:[^"\\]|\\.|"(?!""))*""")'
+    r'|(?P<string>"(?:[^"\\\n]|\\.)*")|(?P<number>-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)|(?P<name>[_A-Za-z]\w*)'
+)
+QUERY_ROOTS = frozenset({"repository", "viewer"})
+MUTATION_ROOTS = {
+    "RepositoryCreate": frozenset({"createRepository"}),
+    "PullRequestCreate": frozenset({"createPullRequest"}),
+}
+VIEWER_FIELDS = frozenset({"login", "id", "name", "url", "databaseId", "__typename"})
+OWNER_FIELDS = frozenset({"login", "id", "url", "__typename"})
+# Below a repository, fields that lead to other repositories, users, organizations or any node by id.
+NESTED_DENY = frozenset(
+    {
+        "search",
+        "node",
+        "organization",
+        "user",
+        "repositoryOwner",
+        "topic",
+        "enterprise",
+        "repositories",
+        "repository",
+        "viewer",
+        "parent",
+        "forks",
+        "templateRepository",
+        "sponsors",
+        "topRepositories",
+        "pinnedItems",
+    }
+)
+ID_KEYS = frozenset({"repositoryid", "headrepositoryid", "baserepositoryid", "repoid"})
+CROSS_OWNER_KEYS = frozenset({"ownerid", "teamid", "templaterepositoryid", "organizationid"})
+
+
+class GraphQLRejectedError(Exception):
+    """The document is not one the gateway understands and may forward."""
+
+
+@dataclass(frozen=True)
+class Var:
+    name: str
+
+
+@dataclass
+class Field:
+    name: str
+    args: dict[str, Any] = field(default_factory=dict)
+    selections: list[Any] | None = None
+
+
+@dataclass
+class Spread:
+    name: str
+
+
+@dataclass
+class Inline:
+    selections: list[Any]
+
+
+def tokenize(text: str) -> list[tuple[str, str]]:
+    tokens: list[tuple[str, str]] = []
+    position = 0
+    while position < len(text):
+        match = TOKEN.match(text, position)
+        if match is None:
+            raise GraphQLRejectedError("graphql-unparseable")
+        position = match.end()
+        if match.lastgroup:
+            tokens.append((match.lastgroup, match.group()))
+        if len(tokens) > MAX_TOKENS:
+            raise GraphQLRejectedError("graphql-too-large")
+    return tokens
+
+
+class Parser:
+    def __init__(self, tokens: list[tuple[str, str]]):
+        self.tokens = tokens
+        self.index = 0
+
+    def peek(self) -> tuple[str, str]:
+        return self.tokens[self.index] if self.index < len(self.tokens) else ("end", "")
+
+    def take(self) -> tuple[str, str]:
+        token = self.peek()
+        self.index += 1
+        return token
+
+    def expect(self, text: str) -> None:
+        if self.take()[1] != text:
+            raise GraphQLRejectedError("graphql-unparseable")
+
+    def name(self) -> str:
+        kind, text = self.take()
+        if kind != "name":
+            raise GraphQLRejectedError("graphql-unparseable")
+        return text
+
+    def document(self) -> tuple[list[tuple[str, str, list[Any]]], dict[str, list[Any]]]:
+        operations: list[tuple[str, str, list[Any]]] = []
+        fragments: dict[str, list[Any]] = {}
+        while self.peek()[0] != "end":
+            kind, text = self.peek()
+            if kind == "name" and text in ("query", "mutation", "subscription"):
+                self.take()
+                operations.append((text, self.name(), self.operation_rest()))
+            elif kind == "name" and text == "fragment":
+                self.take()
+                label = self.name()
+                if self.name() != "on":
+                    raise GraphQLRejectedError("graphql-unparseable")
+                self.name()
+                self.no_directives()
+                if label in fragments:
+                    raise GraphQLRejectedError("graphql-duplicate-fragment")
+                fragments[label] = self.selection_set(0)
+            else:
+                raise GraphQLRejectedError("graphql-anonymous-or-unsupported")
+        return operations, fragments
+
+    def operation_rest(self) -> list[Any]:
+        if self.peek()[1] == "(":
+            depth = 0
+            while True:
+                kind, text = self.take()
+                if kind == "end":
+                    raise GraphQLRejectedError("graphql-unparseable")
+                depth += (text == "(") - (text == ")")
+                if depth == 0:
+                    break
+        self.no_directives()
+        return self.selection_set(0)
+
+    def no_directives(self) -> None:
+        if self.peek()[1] == "@":
+            raise GraphQLRejectedError("graphql-directive")
+
+    def selection_set(self, depth: int) -> list[Any]:
+        if depth > MAX_DEPTH:
+            raise GraphQLRejectedError("graphql-too-deep")
+        self.expect("{")
+        items: list[Any] = []
+        while self.peek()[1] != "}":
+            if self.peek()[0] == "end":
+                raise GraphQLRejectedError("graphql-unparseable")
+            items.append(self.selection(depth))
+        self.take()
+        if not items:
+            raise GraphQLRejectedError("graphql-unparseable")
+        return items
+
+    def selection(self, depth: int) -> Any:
+        if self.peek()[0] == "spread":
+            self.take()
+            if self.peek()[1] == "on":
+                self.take()
+                self.name()
+                self.no_directives()
+                return Inline(self.selection_set(depth + 1))
+            if self.peek()[1] == "{":
+                return Inline(self.selection_set(depth + 1))
+            label = self.name()
+            self.no_directives()
+            return Spread(label)
+        label = self.name()
+        if self.peek()[1] == ":":
+            self.take()
+            label = self.name()
+        node = Field(label)
+        if self.peek()[1] == "(":
+            node.args = self.arguments()
+        self.no_directives()
+        if self.peek()[1] == "{":
+            node.selections = self.selection_set(depth + 1)
+        return node
+
+    def arguments(self) -> dict[str, Any]:
+        self.expect("(")
+        found: dict[str, Any] = {}
+        while self.peek()[1] != ")":
+            key = self.name()
+            self.expect(":")
+            if key in found:
+                raise GraphQLRejectedError("graphql-duplicate-argument")
+            found[key] = self.value(0)
+        self.take()
+        return found
+
+    def value(self, depth: int) -> Any:
+        if depth > MAX_DEPTH:
+            raise GraphQLRejectedError("graphql-too-deep")
+        kind, text = self.take()
+        if text == "$":
+            return Var(self.name())
+        if text == "[":
+            items = []
+            while self.peek()[1] != "]":
+                if self.peek()[0] == "end":
+                    raise GraphQLRejectedError("graphql-unparseable")
+                items.append(self.value(depth + 1))
+            self.take()
+            return items
+        if text == "{":
+            fields: dict[str, Any] = {}
+            while self.peek()[1] != "}":
+                key = self.name()
+                self.expect(":")
+                fields[key] = self.value(depth + 1)
+            self.take()
+            return fields
+        if kind == "block":
+            return text[3:-3]
+        if kind == "string":
+            return _unquote(text)
+        if kind == "number":
+            return float(text) if re.search(r"[.eE]", text) else int(text)
+        if kind == "name":
+            return {"true": True, "false": False, "null": None}.get(text, text)
+        raise GraphQLRejectedError("graphql-unparseable")
+
+
+def _unquote(text: str) -> str:
+    try:
+        return str(json.loads(text))
+    except ValueError as exc:
+        raise GraphQLRejectedError("graphql-unparseable") from exc
+
+
+def _resolve(value: Any, variables: dict[str, Any]) -> Any:
+    if isinstance(value, Var):
+        return variables.get(value.name)
+    if isinstance(value, list):
+        return [_resolve(item, variables) for item in value]
+    if isinstance(value, dict):
+        return {key: _resolve(item, variables) for key, item in value.items()}
+    return value
+
+
+@dataclass
+class Checker:
+    owns: Callable[[str, str], bool]
+    owns_node: Callable[[str], bool]
+    variables: dict[str, Any]
+    fragments: dict[str, list[Any]]
+    references: int = 0
+
+    def reference_walk(self, value: Any) -> None:
+        """Every repository reference inside an argument or variable must be run-owned."""
+        if isinstance(value, list):
+            for item in value:
+                self.reference_walk(item)
+        elif isinstance(value, dict):
+            lowered = {key.lower() for key in value}
+            owner, name = value.get("owner"), value.get("name", value.get("repo"))
+            if isinstance(owner, str) and isinstance(name, str) and "repositoryid" not in lowered:
+                self.references += 1
+                if not self.owns(owner, name):
+                    raise GraphQLRejectedError("foreign-repository")
+            for key, item in value.items():
+                if key.lower() in ID_KEYS:
+                    self.references += 1
+                    if not isinstance(item, str) or not self.owns_node(item):
+                        raise GraphQLRejectedError("foreign-repository-id")
+                elif key.lower() in CROSS_OWNER_KEYS:
+                    raise GraphQLRejectedError("cross-owner-reference")
+                else:
+                    self.reference_walk(item)
+
+    def expand(self, selections: list[Any], seen: tuple[str, ...] = ()) -> list[Field]:
+        fields: list[Field] = []
+        for item in selections:
+            if isinstance(item, Field):
+                fields.append(item)
+            elif isinstance(item, Inline):
+                fields.extend(self.expand(item.selections, seen))
+            else:
+                if item.name in seen or item.name not in self.fragments:
+                    raise GraphQLRejectedError("graphql-fragment")
+                fields.extend(self.expand(self.fragments[item.name], (*seen, item.name)))
+        return fields
+
+    def nested(self, node: Field, *, payload: bool = False) -> None:
+        for value in node.args.values():
+            self.reference_walk(_resolve(value, self.variables))
+        if node.name in NESTED_DENY and not (payload and node.name == "repository"):
+            raise GraphQLRejectedError("graphql-cross-repository-selection")
+        if node.selections is None:
+            return
+        children = self.expand(node.selections)
+        if node.name == "owner" and any(child.name not in OWNER_FIELDS or child.selections for child in children):
+            raise GraphQLRejectedError("graphql-owner-selection")
+        for child in children:
+            self.nested(child)
+
+    def root(self, node: Field, roots: frozenset[str]) -> None:
+        if node.name not in roots:
+            raise GraphQLRejectedError("graphql-root-not-allowed")
+        if node.name == "viewer":
+            if node.args or node.selections is None:
+                raise GraphQLRejectedError("graphql-viewer")
+            children = self.expand(node.selections)
+            if any(child.name not in VIEWER_FIELDS or child.selections or child.args for child in children):
+                raise GraphQLRejectedError("graphql-viewer")
+        elif node.name == "repository":
+            if set(node.args) != {"owner", "name"} or node.selections is None:
+                raise GraphQLRejectedError("graphql-repository-arguments")
+            owner = _resolve(node.args["owner"], self.variables)
+            name = _resolve(node.args["name"], self.variables)
+            if not isinstance(owner, str) or not isinstance(name, str):
+                raise GraphQLRejectedError("graphql-repository-arguments")
+            self.references += 1
+            if not self.owns(owner, name):
+                raise GraphQLRejectedError("foreign-repository")
+            for child in self.expand(node.selections):
+                self.nested(child)
+        else:
+            if set(node.args) != {"input"} or not isinstance(node.args["input"], Var) or node.selections is None:
+                raise GraphQLRejectedError("graphql-mutation-arguments")
+            self.reference_walk(_resolve(node.args["input"], self.variables))
+            for child in self.expand(node.selections):
+                self.nested(child, payload=True)
+
+
+def validate(
+    query: str,
+    variables: dict[str, Any],
+    *,
+    owns: Callable[[str, str], bool],
+    owns_node: Callable[[str], bool],
+    queries: frozenset[str],
+) -> tuple[str, str, int]:
+    """Return (kind, operation name, repository references) or raise GraphQLRejectedError."""
+    operations, fragments = Parser(tokenize(query)).document()
+    if len(operations) != 1:
+        raise GraphQLRejectedError("graphql-anonymous-or-multiple")
+    kind, name, selections = operations[0]
+    if kind == "subscription":
+        raise GraphQLRejectedError("graphql-anonymous-or-multiple")
+    if kind == "query" and name not in queries:
+        raise GraphQLRejectedError("graphql-operation-not-allowed")
+    if kind == "mutation" and name not in MUTATION_ROOTS:
+        raise GraphQLRejectedError("graphql-operation-not-allowed")
+    checker = Checker(owns, owns_node, variables, fragments)
+    checker.reference_walk(variables)
+    roots = QUERY_ROOTS if kind == "query" else MUTATION_ROOTS[name]
+    for node in checker.expand(selections):
+        checker.root(node, roots)
+    return kind, name, checker.references

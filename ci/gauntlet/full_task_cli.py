@@ -47,6 +47,8 @@ def validate(args: argparse.Namespace) -> None:
         raise ValueError(
             "--guard-pypi, --guard-pr-head, --guard-wheel and --guard-build-sha require --full-task-docker"
         )
+    if args.full_task_seed_repo and not args.full_task_canary:
+        raise ValueError("--full-task-seed-repo needs --full-task-canary")
     if not docker and args.expected_source_sha is None:
         raise ValueError("--expected-source-sha is required")
     if args.profile != "full-tasks" and (args.github_owner or args.full_task_canary or args.full_task_seed_repo):
@@ -79,7 +81,11 @@ def run_profile(args: argparse.Namespace, provider: dict[str, Any]) -> dict[str,
         )
     from .full_task_runner import RemoteWorld, run_full_tasks
 
-    world = RemoteWorld(owner, args.full_task_canary, args.full_task_seed_repo) if args.full_task_canary else None
+    world = (
+        RemoteWorld(owner, args.full_task_canary, args.full_task_seed_repo)
+        if args.full_task_canary or args.full_task_seed_repo
+        else None
+    )
     return run_full_tasks(
         expected_source_sha=args.expected_source_sha,
         output=args.output,

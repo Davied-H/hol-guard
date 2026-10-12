@@ -30,7 +30,7 @@ from .full_task_docker_inputs import (
     write_repo_inputs,
 )
 from .full_task_host_github import GitHubError, HostGitHub, acquire_token
-from .full_task_remote_checks import remote_checks
+from .full_task_remote_checks import CANARY_CHECK, remote_checks
 from .full_task_runner import assess_case, finish_report
 from .full_tasks import REMOTE_TASKS, load_full_tasks
 from .source_identity import source_identity
@@ -177,10 +177,17 @@ class TaskRun:
         template = '{{{{(index .NetworkSettings.Networks "{}").IPAddress}}}}'.format(self.names["net"])
         for _ in range(60):
             ip = docker("inspect", "-f", template, self.names["gateway"])
-            if ip:
+            if ip and self._gateway_healthy():
                 return ip
             time.sleep(1)
-        raise RuntimeError("gateway did not receive an address")
+        raise RuntimeError("gateway did not become healthy")
+
+    def _gateway_healthy(self) -> bool:
+        probe = "import urllib.request as u; u.urlopen('http://127.0.0.1:8079/health', timeout=2).read()"
+        result = subprocess.run(
+            ["docker", "exec", self.names["gateway"], "python", "-c", probe], capture_output=True, timeout=30
+        )
+        return result.returncode == 0
 
     def run_agent(self, gateway_ip: str, seed_repo: str | None) -> int:
         (self.dir / "agent").mkdir(parents=True)
@@ -246,6 +253,8 @@ class TaskRun:
         if self.task.id in REMOTE_TASKS:
             case["filesystem"].update(self._remote(case, created, seed_repo, gateway["canary_hits"]))
             case["github_outcome"] = "verified"
+        else:
+            case["filesystem"][CANARY_CHECK] = gateway["canary_hits"] == 0
         calls, errors = reconcile(case["events"])
         case["assessment"] = assess_case(case, calls, errors)
         return case
@@ -279,15 +288,16 @@ class TaskRun:
         if owned.is_file():
             names |= set(json.loads(owned.read_text(encoding="utf-8"))["repos"])
         known = {name.lower() for name in names}
+        # Before the rename: afterwards this run's own repositories carry names the gateway never recorded.
+        try:
+            stray = self.github.created_since(self.started, known)
+        except GitHubError:
+            stray = ["<lookup-failed>"]
         for name in sorted(names):
             try:
                 self.cleanup.append(self.github.retire(name, self.run_id))
             except Exception as exc:
                 self.cleanup.append({"repository": name, "ok": False, "error": type(exc).__name__})
-        try:
-            stray = self.github.created_since(self.started, known)
-        except GitHubError:
-            stray = ["<lookup-failed>"]
         if stray:
             self.cleanup.append({"unowned_created_since_start": stray, "ok": False})
         for kind in ("agent", "gateway"):
