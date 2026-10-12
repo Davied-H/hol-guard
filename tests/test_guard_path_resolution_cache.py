@@ -115,7 +115,9 @@ def test_component_prefixes_match_the_targets_the_old_walk_produced(tmp_path: Pa
     nested = tmp_path / "a" / "b" / "c"
     nested.mkdir(parents=True)
     assert cache._component_prefixes(os.fspath(nested)) == _legacy_prefixes(os.fspath(nested))
-    assert cache._component_prefixes("/") == _legacy_prefixes("/") == (os.sep,)
+    drive, _ = os.path.splitdrive(os.path.abspath(os.sep))
+    expected_root = f"{drive}{os.sep}" if drive else os.sep
+    assert cache._component_prefixes(os.sep) == _legacy_prefixes(os.sep) == (expected_root,)
 
 
 def test_swapped_component_directory_with_fresh_inode_is_resolved_again(

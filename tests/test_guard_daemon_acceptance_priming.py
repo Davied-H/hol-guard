@@ -97,3 +97,9 @@ def test_prime_raises_when_only_transient_answers_arrive() -> None:
     state = _StubState(transient_answers=10_000, delay_seconds=0)
     with _stub_server(state) as server, pytest.raises(RuntimeError, match="resident client pool did not warm"):
         _prime(server, concurrency=2, deadline_seconds=0.4)
+
+
+def test_prime_rejects_a_nontransient_answer_that_arrives_after_the_deadline() -> None:
+    state = _StubState(transient_answers=0, delay_seconds=0.4)
+    with _stub_server(state) as server, pytest.raises(RuntimeError, match="resident client pool did not warm"):
+        _prime(server, concurrency=2, deadline_seconds=0.3)
