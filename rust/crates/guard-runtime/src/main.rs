@@ -84,6 +84,7 @@ mod claude_hook_bridge_fixture;
 mod claude_hook_bridge_http;
 #[cfg(unix)]
 mod claude_hook_bridge_http_text;
+#[cfg(unix)]
 mod claude_hook_bridge_render;
 #[cfg(unix)]
 mod claude_hook_bridge_transport;
@@ -323,6 +324,7 @@ mod hook_decision_native_facts;
 mod hook_decision_native_facts_tests;
 mod hook_decision_op;
 mod hook_decision_settle;
+#[cfg(unix)]
 mod hook_env_stamp;
 mod hook_policy_config;
 mod hook_process_spawn;
