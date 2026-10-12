@@ -100,7 +100,9 @@ fn skill_directories_list_without_review() {
 #[test]
 fn a_linked_agents_directory_is_not_a_skill_root() {
     let home = home("linked");
-    let elsewhere = home.join("work/elsewhere");
+    // A link into an ordinary visible directory is just that directory. Point
+    // it at a hidden one, which only the skill-root exception could open.
+    let elsewhere = home.join(".private");
     std::fs::create_dir_all(&elsewhere).unwrap();
     std::fs::rename(home.join(".agents"), elsewhere.join("agents")).unwrap();
     std::os::unix::fs::symlink(elsewhere.join("agents"), home.join(".agents")).unwrap();
