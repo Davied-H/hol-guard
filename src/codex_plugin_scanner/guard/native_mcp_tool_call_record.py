@@ -19,10 +19,12 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from .models import GuardArtifact, GuardReceipt
+from .native_context import ensure_resident_prerequisite
 from .native_execution import _resident_request
 from .native_guard_store import NativeGuardStoreUnavailable, raise_for_store_code
 from .native_mcp_runtime_evidence import argument_entries
 from .native_mcp_tool_evidence import NativeMcpToolEvidenceError
+from .native_resident_prerequisite_reason import prerequisite_unavailable_code
 from .runtime.mcp_skill_firewall import enrich_artifact_with_mcp_skill_firewall
 from .sqlite_tuning import sqlite_connect_timeout_seconds
 from .store_base import _canonical_utc_timestamp
@@ -66,6 +68,12 @@ class PreparedToolCallRecord:
         if self.recorded:
             raise ToolCallRecordError("native_mcp_tool_call_record_already_recorded")
         request_id = self.request["request_id"]
+        # The resident refuses a home without its runtime state; the old store call provisioned it.
+        if not ensure_resident_prerequisite(self.store.guard_home):
+            reason = prerequisite_unavailable_code(
+                "native_mcp_tool_call_record_prerequisite_unavailable", self.store.guard_home
+            )
+            raise NativeGuardStoreUnavailable(f"Guard store native runtime unavailable ({reason}).")
         with self.gate():
             response = _resident_request(
                 operation=_OPERATION,
