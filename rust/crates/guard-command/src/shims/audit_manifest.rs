@@ -115,9 +115,12 @@ fn nonfinite_literal(bytes: &[u8], index: usize) -> Option<&[u8]> {
 }
 
 fn splice_stamp(text: &str, stamp: &str) -> String {
-    let trimmed = text.trim();
-    let body = &trimmed[..trimmed.len() - 1];
     let rendered = serde_json::to_string(stamp).expect("stamp is a string");
+    let trimmed = text.trim();
+    if let Some(replaced) = replace_top_level_audit_stamps(trimmed, &rendered) {
+        return replaced;
+    }
+    let body = &trimmed[..trimmed.len() - 1];
     let comma = if body.trim_end().ends_with('{') {
         ""
     } else {
@@ -126,13 +129,167 @@ fn splice_stamp(text: &str, stamp: &str) -> String {
     format!("{body}{comma}\"last_audit_at\": {rendered}}}")
 }
 
+/// Replaces every top-level `last_audit_at` value. Nested keys stay put.
+/// `None` means the object has no top-level stamp yet.
+fn replace_top_level_audit_stamps(text: &str, rendered: &str) -> Option<String> {
+    let bytes = text.as_bytes();
+    let mut spans = Vec::new();
+    let mut index = skip_ws(bytes, 0);
+    if index >= bytes.len() || bytes[index] != b'{' {
+        return None;
+    }
+    index += 1;
+    loop {
+        index = skip_ws(bytes, index);
+        if index >= bytes.len() || bytes[index] == b'}' {
+            break;
+        }
+        if bytes[index] != b'"' {
+            return None;
+        }
+        let key_end = end_of_string(bytes, index);
+        let audit_key = bytes[index..key_end] == *b"\"last_audit_at\"";
+        index = skip_ws(bytes, key_end);
+        if index >= bytes.len() || bytes[index] != b':' {
+            return None;
+        }
+        index = skip_ws(bytes, index + 1);
+        let value_end = end_of_value(bytes, index);
+        if audit_key {
+            spans.push((index, value_end));
+        }
+        index = skip_ws(bytes, value_end);
+        if index < bytes.len() && bytes[index] == b',' {
+            index += 1;
+            continue;
+        }
+        break;
+    }
+    if spans.is_empty() {
+        return None;
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut cursor = 0;
+    for (start, end) in spans {
+        out.push_str(&text[cursor..start]);
+        out.push_str(rendered);
+        cursor = end;
+    }
+    out.push_str(&text[cursor..]);
+    Some(out)
+}
+
+fn skip_ws(bytes: &[u8], mut index: usize) -> usize {
+    while index < bytes.len() && matches!(bytes[index], b' ' | b'\t' | b'\n' | b'\r') {
+        index += 1;
+    }
+    index
+}
+
+fn end_of_string(bytes: &[u8], opening: usize) -> usize {
+    let mut index = opening + 1;
+    let mut escape = false;
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if escape {
+            escape = false;
+        } else if byte == b'\\' {
+            escape = true;
+        } else if byte == b'"' {
+            return index + 1;
+        }
+        index += 1;
+    }
+    bytes.len()
+}
+
+fn end_of_value(bytes: &[u8], start: usize) -> usize {
+    if start >= bytes.len() {
+        return start;
+    }
+    match bytes[start] {
+        b'"' => end_of_string(bytes, start),
+        b'{' | b'[' => end_of_container(bytes, start),
+        _ => {
+            let mut index = start;
+            while index < bytes.len()
+                && !matches!(
+                    bytes[index],
+                    b',' | b'}' | b']' | b' ' | b'\t' | b'\n' | b'\r'
+                )
+            {
+                index += 1;
+            }
+            index
+        }
+    }
+}
+
+fn end_of_container(bytes: &[u8], start: usize) -> usize {
+    let mut depth = 0i32;
+    let mut index = start;
+    let mut in_string = false;
+    let mut escape = false;
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if in_string {
+            if escape {
+                escape = false;
+            } else if byte == b'\\' {
+                escape = true;
+            } else if byte == b'"' {
+                in_string = false;
+            }
+            index += 1;
+            continue;
+        }
+        match byte {
+            b'"' => in_string = true,
+            b'{' | b'[' => depth += 1,
+            b'}' | b']' => {
+                depth -= 1;
+                index += 1;
+                if depth == 0 {
+                    return index;
+                }
+                continue;
+            }
+            _ => {}
+        }
+        index += 1;
+    }
+    bytes.len()
+}
+
 #[cfg(test)]
 mod tests {
-    use super::read_manifest;
+    use super::{read_manifest, with_stamp};
 
     #[test]
     fn a_truncated_nonfinite_object_is_not_treated_as_empty() {
         let error = read_manifest("{\"enabled\": true, \"score\": NaN").expect_err("truncated");
         assert!(error.contains("not strict JSON"), "{error}");
+    }
+
+    #[test]
+    fn a_second_nonfinite_stamp_replaces_the_top_level_audit_field() {
+        let original =
+            "{\"enabled\": true, \"score\": NaN, \"nested\": {\"last_audit_at\": \"keep\"}}";
+        let once = with_stamp(
+            read_manifest(original).expect("read"),
+            "2026-01-01T00:00:00+00:00",
+        );
+        let twice = with_stamp(
+            read_manifest(&once).expect("reread"),
+            "2026-02-02T00:00:00+00:00",
+        );
+        assert_eq!(twice.matches("\"last_audit_at\"").count(), 2, "{twice}");
+        assert!(
+            twice.contains("\"last_audit_at\": \"2026-02-02T00:00:00+00:00\""),
+            "{twice}"
+        );
+        assert!(twice.contains("\"last_audit_at\": \"keep\""), "{twice}");
+        assert!(!twice.contains("2026-01-01T00:00:00+00:00"), "{twice}");
+        assert!(twice.contains("NaN"), "{twice}");
     }
 }
