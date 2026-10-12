@@ -69,19 +69,24 @@ def test_only_a_live_workspace_receipt_matches(changes: dict[str, object]) -> No
     assert not workspace_sink.receipt_matches(None)
 
 
-def test_hook_falls_back_to_the_workspace_sink_only_with_a_receipt(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+@pytest.mark.parametrize("kind", ["git", "inline_eval", "node_tool", None])
+def test_a_workspace_receipt_routes_before_the_read_only_parsers(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, kind: str | None
 ) -> None:
+    # `git add -A && git commit` classifies as git and `node -e` as inline
+    # eval; their read-only parsers reject both, so the receipt must decide.
     def reject(*args: object, **kwargs: object) -> None:
-        raise RestrictedPytestError("pytest_restricted_invalid_command", "not pytest")
+        raise RestrictedPytestError("pytest_restricted_invalid_command", "read-only parser")
 
+    kinds = dict.fromkeys(("inline_eval", "node_test", "vitest", "git", "node_tool"), False)
+    if kind is not None:
+        kinds[kind] = True
     ran: list[object] = []
-    monkeypatch.setattr(
-        native,
-        "restricted_native",
-        lambda *args, **kwargs: dict.fromkeys(("inline_eval", "node_test", "vitest", "git", "node_tool"), False),
-    )
-    monkeypatch.setattr(sink, "prepare_restricted_pytest", reject)
+    monkeypatch.setattr(native, "restricted_native", lambda *args, **kwargs: kinds)
+    for parser in ("prepare_restricted_pytest", "prepare_restricted_inline_eval"):
+        monkeypatch.setattr(sink, parser, reject)
+    monkeypatch.setattr(sink.restricted_git, "prepare_restricted_git", reject)
+    monkeypatch.setattr(sink.restricted_node_tool, "prepare_restricted_node_tool", reject)
     monkeypatch.setattr(sink, "run_workspace_contained", lambda *args, **kwargs: ran.append(kwargs) or 0)
     assert (
         sink.run_authorized_contained_test(

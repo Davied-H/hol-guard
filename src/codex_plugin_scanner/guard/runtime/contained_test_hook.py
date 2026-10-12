@@ -171,12 +171,11 @@ def run_authorized_contained_test(
         sys.stdout.flush()
         return 0
 
-    def workspace_fallback(error: Exception) -> int:
-        # Shapes the read-only parsers reject may still carry a workspace-sandbox
-        # receipt; anything else keeps its original failure.
-        receipt = authorize(payload)
-        if not receipt_matches(receipt) or not isinstance(receipt, Mapping):
-            raise error
+    # Rust chooses the profile. A workspace-sandbox receipt never goes through
+    # the read-only parsers: they reject exactly the mutating shapes
+    # (`git add && git commit`, `node -e`, `./todo.py`) it was issued for.
+    receipt = authorize(payload)
+    if receipt_matches(receipt) and isinstance(receipt, Mapping):
         return run_workspace_contained(
             payload,
             workspace=workspace,
@@ -190,8 +189,8 @@ def run_authorized_contained_test(
 
     try:
         command = shlex.split(tool_input["command"], posix=True)
-    except ValueError:
-        return workspace_fallback(_reject())
+    except ValueError as error:
+        raise _reject() from error
     package_test = is_package_test(command)
     if package_test:
         command = list(resolve_package_test(command, workspace=workspace, cwd=cwd))
@@ -217,10 +216,7 @@ def run_authorized_contained_test(
     elif node_test:
         node_test_plan = restricted_node_test.prepare_restricted_node_test(command, workspace=workspace, cwd=cwd)
     else:
-        try:
-            prepare_restricted_pytest(command, workspace=workspace, cwd=cwd, read_only_workspace=True)
-        except RestrictedPytestError as error:
-            return workspace_fallback(error)
+        prepare_restricted_pytest(command, workspace=workspace, cwd=cwd, read_only_workspace=True)
     if inline_plan is not None:
         profile = inline_plan.profile_version
         if profile == "node-eval-readonly-v1":
@@ -252,8 +248,10 @@ def run_authorized_contained_test(
             and response.get("observe_mode") is not True
         )
 
+    # The receipt taken before planning is this command's single live
+    # authorization; planning reads files but cannot change what it bound.
     if not required(
-        authorize(payload),
+        receipt,
         expected_reason=PACKAGE_TEST_REASON if package_test else reason,
         expected_profile=PACKAGE_TEST_PROFILE if package_test else profile,
     ):
