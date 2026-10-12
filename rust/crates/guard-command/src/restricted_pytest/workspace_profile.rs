@@ -120,19 +120,22 @@ pub(crate) fn bare_head_pattern(root: &Path) -> Result<String, RestrictedPytestE
 }
 
 /// Git keeps a `HEAD` in `.git/logs` (the reflog) and in each remote under
-/// `.git/refs/remotes`. Adding `objects`, `commondir` or `config` beside one
-/// would complete a bare repository there, so none may be written.
+/// `.git/(logs/)?refs/remotes`. Adding `objects`, `commondir` or `config`
+/// directly beside one would complete a bare repository there, so none may be
+/// written. Deeper paths are ordinary refs, such as a branch named `fix/config`.
 pub(crate) fn ref_store_repository_pattern(root: &Path) -> Result<String, RestrictedPytestError> {
     let config = format!("{}({}|{})?", ci("config")?, ci(".worktree")?, ci(".lock")?);
-    Ok(format!(
-        "^{}/(.*/)?{}/({}|{})/(.*/)?({config}|{}|{}|{})(/.*)?$",
-        ci(&root.to_string_lossy())?,
-        ci(".git")?,
-        ci("logs")?,
-        ci("refs")?,
+    let names = format!(
+        "({config}|{}|{}|{})(/.*)?",
         ci("objects")?,
         ci("commondir")?,
-        ci("gitdir")?,
+        ci("gitdir")?
+    );
+    let (logs, refs, remotes) = (ci("logs")?, ci("refs")?, ci("remotes")?);
+    Ok(format!(
+        "^{}/(.*/)?{}/({logs}|({logs}/)?{refs}/{remotes}/[^/]+)/{names}$",
+        ci(&root.to_string_lossy())?,
+        ci(".git")?,
     ))
 }
 
