@@ -39,8 +39,9 @@ def native_runtime_status(*, deadline_monotonic: float) -> NativeRuntimeStatus:
         ):
             return memo[1]
     status = probe(deadline_monotonic=deadline_monotonic)
-    with _context._STATUS_MEMO_LOCK:
-        _context._status_memo = (time.monotonic(), status, probe)
+    if status.identity is not None and time.monotonic() < deadline_monotonic:
+        with _context._STATUS_MEMO_LOCK:
+            _context._status_memo = (time.monotonic(), status, probe)
     return status
 
 

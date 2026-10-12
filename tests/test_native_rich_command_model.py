@@ -124,7 +124,7 @@ def test_fresh_status_probe_receives_deadline_and_expired_probe_does_not_start(m
 
     seen = []
     now = [1.0]
-    status = SimpleNamespace()
+    status = SimpleNamespace(identity=object())
 
     def probe(*, deadline_monotonic):
         seen.append(deadline_monotonic)
@@ -143,6 +143,24 @@ def test_fresh_status_probe_receives_deadline_and_expired_probe_does_not_start(m
     assert seen == [3.0]
 
 
+def test_deadline_cutoff_status_does_not_poison_shared_memo(monkeypatch):
+    from types import SimpleNamespace
+
+    from codex_plugin_scanner.guard import native_context
+
+    now = [1.0]
+    monkeypatch.setattr(client, "time", SimpleNamespace(monotonic=lambda: now[0]))
+    monkeypatch.setattr(native_context, "_status_memo", None)
+
+    def cutoff(*, deadline_monotonic):
+        now[0] = deadline_monotonic + 1
+        return SimpleNamespace(identity=None, available=False)
+
+    monkeypatch.setattr(native_context, "native_runtime_status", cutoff)
+    assert client.native_runtime_status(deadline_monotonic=3.0).available is False
+    assert native_context._status_memo is None
+
+
 def test_shell_read_assessment_parser_loss_requires_review(monkeypatch, tmp_path):
     from types import SimpleNamespace
 
@@ -150,7 +168,9 @@ def test_shell_read_assessment_parser_loss_requires_review(monkeypatch, tmp_path
 
     monkeypatch.setattr(shell_secret_reads, "_command_may_need_read_assessment", lambda *args, **kwargs: True)
     monkeypatch.setattr(
-        shell_secret_reads, "model_shell_execution_context", lambda *args, **kwargs: SimpleNamespace(complete=True)
+        shell_secret_reads,
+        "model_shell_execution_context",
+        lambda *args, **kwargs: SimpleNamespace(complete=True, reason_code=None, segments=(object(),)),
     )
 
     def unavailable(*args, **kwargs):
