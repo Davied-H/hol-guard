@@ -151,6 +151,40 @@ fn listing_a_missing_path_proceeds_outside_hidden_locations() {
 }
 
 #[test]
+fn plugin_cache_listings_stay_under_the_skills_directory() {
+    let home = home("plugin-cache");
+    let version = home.join(".zcode/cli/plugins/cache/market/plugin/1.0.0");
+    std::fs::create_dir_all(version.join("skills/review")).unwrap();
+    std::fs::write(version.join("skills/review/SKILL.md"), "# Review\n").unwrap();
+    std::fs::create_dir_all(version.join("logs")).unwrap();
+    std::fs::write(version.join("logs/out.txt"), "ok\n").unwrap();
+    assert_eq!(
+        action(
+            &home,
+            "zcode",
+            "ls ~/.zcode/cli/plugins/cache/market/plugin/1.0.0"
+        ),
+        "allow"
+    );
+    assert_eq!(
+        action(
+            &home,
+            "zcode",
+            "ls ~/.zcode/cli/plugins/cache/market/plugin/1.0.0/skills/review"
+        ),
+        "allow"
+    );
+    assert_ne!(
+        action(
+            &home,
+            "zcode",
+            "ls ~/.zcode/cli/plugins/cache/market/plugin/1.0.0/logs"
+        ),
+        "allow"
+    );
+}
+
+#[test]
 fn a_document_under_two_skill_roots_needs_only_one_to_admit_it() {
     let home = home("two-roots");
     // `.agents/skills` may link into another skill root, one level down.

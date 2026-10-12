@@ -116,8 +116,14 @@ pub(in crate::pretool) fn agent_skill_listing_directory(
         return true;
     }
     // Drop the iterator before `home`. It borrows that canonical path.
-    let in_skill_tree = skill_tree_parts(canonical, &home).next().is_some();
-    in_skill_tree
+    // Plugin-cache listings may name the cache and the marketplace, plugin,
+    // and version directories above `skills`. A sibling such as `logs` is
+    // not a skill tree. Deeper entries must sit under that `skills` directory,
+    // matching the document allowance.
+    let admitted = skill_tree_parts(canonical, &home).any(|(root, parts)| {
+        root != ".zcode/cli/plugins/cache" || parts.len() <= 3 || parts[3] == "skills"
+    });
+    admitted
 }
 
 const SKILL_ROOTS: [&str; 6] = [
