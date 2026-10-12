@@ -5340,6 +5340,76 @@
  "implementation_base_sha": "1dc81dd4319cdf18e4b1c0fd3d061f732601b188",
  "replaced_implementations": [
   {
+   "path": "src/codex_plugin_scanner/guard/runtime/restricted_node_test.py",
+   "base_commit": "1b76783140a37e849645f943984f587acaa52cfa",
+   "source_sha256": "1188bd505740a12b2507284217f00481bdad5d87df6badae296aa7646f6da3b3",
+   "remaining_role": "Native launch-plan projection and Node process orchestration; argv and executable admission are native.",
+   "native_replacements": [
+    "rust/crates/guard-command/src/contained_argv.rs",
+    "rust/crates/guard-command/src/restricted_pytest/contained.rs",
+    "rust/crates/guard-runtime/src/restricted_pytest_op.rs"
+   ],
+   "parity_fixture": "rust/crates/guard-command/tests/fixtures/contained_execution_parity.json"
+  },
+  {
+   "path": "src/codex_plugin_scanner/guard/runtime/restricted_vitest.py",
+   "base_commit": "1b76783140a37e849645f943984f587acaa52cfa",
+   "source_sha256": "9d1684406dc67261a3813b6194fd69fd060fee76e3d8cf6318ffed246a7dafc0",
+   "remaining_role": "Native launch-plan projection and Vitest process orchestration; dependency admission and Bun/Node invocation construction are native.",
+   "native_replacements": [
+    "rust/crates/guard-command/src/contained_argv.rs",
+    "rust/crates/guard-command/src/restricted_pytest/contained.rs",
+    "rust/crates/guard-runtime/src/restricted_pytest_op.rs"
+   ],
+   "parity_fixture": "rust/crates/guard-command/tests/fixtures/contained_execution_parity.json"
+  },
+  {
+   "path": "src/codex_plugin_scanner/guard/runtime/restricted_inline_eval.py",
+   "base_commit": "1b76783140a37e849645f943984f587acaa52cfa",
+   "source_sha256": "9eea9ae400dc6631696401f84d02bf6ae4009218a250500288e02d0652e81ad9",
+   "remaining_role": "Native launch-plan projection and inline process orchestration; command admission and Python isolation flags are native.",
+   "native_replacements": [
+    "rust/crates/guard-command/src/contained_argv.rs",
+    "rust/crates/guard-command/src/restricted_pytest/contained.rs",
+    "rust/crates/guard-runtime/src/restricted_pytest_op.rs"
+   ],
+   "parity_fixture": "rust/crates/guard-command/tests/fixtures/contained_execution_parity.json"
+  },
+  {
+   "path": "src/codex_plugin_scanner/guard/runtime/restricted_credential_patterns.py",
+   "base_commit": "1b76783140a37e849645f943984f587acaa52cfa",
+   "source_sha256": "ee4457fac77d70e091e7786c9436d942749a6a6ef8004460b8d23c84150d9908",
+   "remaining_role": "Native transport projection of credential patterns and Seatbelt denials only; pattern construction and string escaping are native.",
+   "native_replacements": [
+    "rust/crates/guard-command/src/restricted_pytest/credentials.rs",
+    "rust/crates/guard-runtime/src/restricted_pytest_op.rs"
+   ],
+   "parity_fixture": "rust/crates/guard-command/tests/fixtures/contained_execution_parity.json"
+  },
+  {
+   "path": "src/codex_plugin_scanner/guard/runtime/restricted_linux_mapping_plan.py",
+   "base_commit": "1b76783140a37e849645f943984f587acaa52cfa",
+   "source_sha256": "0b7d2c667b1da815b33870865be842e46702a96a9bd8271dcafa1e98329a4e4a",
+   "remaining_role": "Bounded owner-only mapping input/result snapshot handoff and path-based ELF projection; ELF parsing and dependency-closure evidence are native.",
+   "native_replacements": [
+    "rust/crates/guard-command/src/restricted_pytest/mapping.rs",
+    "rust/crates/guard-command/src/restricted_pytest/mapping_elf.rs",
+    "rust/crates/guard-runtime/src/restricted_pytest_op.rs"
+   ],
+   "parity_fixture": "rust/crates/guard-command/tests/fixtures/contained_execution_parity.json"
+  },
+  {
+   "path": "src/codex_plugin_scanner/guard/runtime/contained_test_hook.py",
+   "base_commit": "1b76783140a37e849645f943984f587acaa52cfa",
+   "source_sha256": "fe10f99e29110692288aa3c162ca745d1def40f843eced5036376cb565b3d6be",
+   "remaining_role": "Authorization receipt checks, wrapper peeling and runner dispatch; contained-command classification is native.",
+   "native_replacements": [
+    "rust/crates/guard-command/src/contained_argv.rs",
+    "rust/crates/guard-runtime/src/restricted_pytest_op.rs"
+   ],
+   "parity_fixture": "rust/crates/guard-command/tests/fixtures/contained_execution_parity.json"
+  },
+  {
    "path": "src/codex_plugin_scanner/guard/runtime/command_option_parsing.py",
    "base_commit": "da723a48b221c135cbce3bade1bab3ddb4959044",
    "source_sha256": "cf9143df681b5db68cd5f03f12028dda0ad4e88ad9a9f7c9e09c330af7f2dd68",
@@ -5606,76 +5676,6 @@
     "rust/crates/guard-runtime/src/skill_identity_canon.rs"
    ],
    "parity_fixture": "rust/crates/guard-runtime/tests/fixtures/skill_directory_portable_vectors.json"
-  },
-  {
-   "path": "src/codex_plugin_scanner/guard/runtime/restricted_node_test.py",
-   "base_commit": "1b76783140a37e849645f943984f587acaa52cfa",
-   "source_sha256": "1188bd505740a12b2507284217f00481bdad5d87df6badae296aa7646f6da3b3",
-   "remaining_role": "Native launch-plan projection and Node process orchestration; argv and executable admission are native.",
-   "native_replacements": [
-    "rust/crates/guard-command/src/contained_argv.rs",
-    "rust/crates/guard-command/src/restricted_pytest/contained.rs",
-    "rust/crates/guard-runtime/src/restricted_pytest_op.rs"
-   ],
-   "parity_fixture": "rust/crates/guard-command/tests/fixtures/contained_execution_parity.json"
-  },
-  {
-   "path": "src/codex_plugin_scanner/guard/runtime/restricted_vitest.py",
-   "base_commit": "1b76783140a37e849645f943984f587acaa52cfa",
-   "source_sha256": "9d1684406dc67261a3813b6194fd69fd060fee76e3d8cf6318ffed246a7dafc0",
-   "remaining_role": "Native launch-plan projection and Vitest process orchestration; dependency admission and Bun/Node invocation construction are native.",
-   "native_replacements": [
-    "rust/crates/guard-command/src/contained_argv.rs",
-    "rust/crates/guard-command/src/restricted_pytest/contained.rs",
-    "rust/crates/guard-runtime/src/restricted_pytest_op.rs"
-   ],
-   "parity_fixture": "rust/crates/guard-command/tests/fixtures/contained_execution_parity.json"
-  },
-  {
-   "path": "src/codex_plugin_scanner/guard/runtime/restricted_inline_eval.py",
-   "base_commit": "1b76783140a37e849645f943984f587acaa52cfa",
-   "source_sha256": "9eea9ae400dc6631696401f84d02bf6ae4009218a250500288e02d0652e81ad9",
-   "remaining_role": "Native launch-plan projection and inline process orchestration; command admission and Python isolation flags are native.",
-   "native_replacements": [
-    "rust/crates/guard-command/src/contained_argv.rs",
-    "rust/crates/guard-command/src/restricted_pytest/contained.rs",
-    "rust/crates/guard-runtime/src/restricted_pytest_op.rs"
-   ],
-   "parity_fixture": "rust/crates/guard-command/tests/fixtures/contained_execution_parity.json"
-  },
-  {
-   "path": "src/codex_plugin_scanner/guard/runtime/restricted_credential_patterns.py",
-   "base_commit": "1b76783140a37e849645f943984f587acaa52cfa",
-   "source_sha256": "ee4457fac77d70e091e7786c9436d942749a6a6ef8004460b8d23c84150d9908",
-   "remaining_role": "Native transport projection of credential patterns and Seatbelt denials only; pattern construction and string escaping are native.",
-   "native_replacements": [
-    "rust/crates/guard-command/src/restricted_pytest/credentials.rs",
-    "rust/crates/guard-runtime/src/restricted_pytest_op.rs"
-   ],
-   "parity_fixture": "rust/crates/guard-command/tests/fixtures/contained_execution_parity.json"
-  },
-  {
-   "path": "src/codex_plugin_scanner/guard/runtime/restricted_linux_mapping_plan.py",
-   "base_commit": "1b76783140a37e849645f943984f587acaa52cfa",
-   "source_sha256": "0b7d2c667b1da815b33870865be842e46702a96a9bd8271dcafa1e98329a4e4a",
-   "remaining_role": "Bounded owner-only mapping input/result snapshot handoff and path-based ELF projection; ELF parsing and dependency-closure evidence are native.",
-   "native_replacements": [
-    "rust/crates/guard-command/src/restricted_pytest/mapping.rs",
-    "rust/crates/guard-command/src/restricted_pytest/mapping_elf.rs",
-    "rust/crates/guard-runtime/src/restricted_pytest_op.rs"
-   ],
-   "parity_fixture": "rust/crates/guard-command/tests/fixtures/contained_execution_parity.json"
-  },
-  {
-   "path": "src/codex_plugin_scanner/guard/runtime/contained_test_hook.py",
-   "base_commit": "1b76783140a37e849645f943984f587acaa52cfa",
-   "source_sha256": "fe10f99e29110692288aa3c162ca745d1def40f843eced5036376cb565b3d6be",
-   "remaining_role": "Authorization receipt checks, wrapper peeling and runner dispatch; contained-command classification is native.",
-   "native_replacements": [
-    "rust/crates/guard-command/src/contained_argv.rs",
-    "rust/crates/guard-runtime/src/restricted_pytest_op.rs"
-   ],
-   "parity_fixture": "rust/crates/guard-command/tests/fixtures/contained_execution_parity.json"
   }
  ],
  "retired_bodies": [

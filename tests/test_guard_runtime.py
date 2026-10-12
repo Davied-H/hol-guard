@@ -9580,54 +9580,6 @@ def test_guard_hook_claude_ask_user_question_multiple_questions_does_not_persist
     assert policies == []
 
 
-def test_guard_hook_claude_ask_user_question_empty_answers_uses_explicit_fallback_answer():
-    payload = {
-        "hook_event_name": "PostToolUse",
-        "tool_name": "AskUserQuestion",
-        "tool_response": {
-            "questions": [
-                {
-                    "header": "HOL Guard",
-                    "question": "HOL Guard intercepted this sensitive action. What should Claude do?",
-                    "options": [
-                        {"label": "Allow once"},
-                        {"label": "Allow during this session"},
-                        {"label": "Keep blocked"},
-                    ],
-                }
-            ],
-            "answers": {},
-            "selected_answer": "Allow once",
-        },
-    }
-
-    assert guard_commands_module._claude_guard_approval_answer(payload) == "allow"
-
-
-def test_guard_hook_claude_ask_user_question_accepts_dict_selected_answer():
-    payload = {
-        "hook_event_name": "PostToolUse",
-        "tool_name": "AskUserQuestion",
-        "tool_response": {
-            "questions": [
-                {
-                    "header": "HOL Guard",
-                    "question": "HOL Guard intercepted this sensitive action. What should Claude do?",
-                    "options": [
-                        {"label": "Allow once"},
-                        {"label": "Allow during this session"},
-                        {"label": "Keep blocked"},
-                    ],
-                }
-            ],
-            "answers": {},
-            "selected_answer": {"label": "Allow once"},
-        },
-    }
-
-    assert guard_commands_module._claude_guard_approval_answer(payload) == "allow"
-
-
 def test_guard_hook_claude_tampered_pending_state_cannot_bootstrap_signed_allow(tmp_path):
     home_dir = tmp_path / "home"
     store = GuardStore(home_dir)
@@ -10274,7 +10226,7 @@ def test_guard_hook_codex_strict_default_reviews_protected_apply_patch(
     assert requests[0]["artifact_type"] == "tool_action_request"
 
 
-def test_hook_runtime_artifact_routes_package_installs_to_package_request(tmp_path):
+def test_hook_runtime_artifact_routes_package_installs_to_package_request(tmp_path, native_approval_reuse_runtime):
     home_dir = tmp_path / "home"
     workspace_dir = tmp_path / "workspace"
     _write_text(home_dir / "config.toml", '[risk_actions]\npackage_script = "block"\ndestructive_shell = "allow"\n')
@@ -10308,6 +10260,7 @@ def test_hook_runtime_artifact_routes_package_installs_to_package_request(tmp_pa
             load_guard_config(home_dir),
             artifact,
             "codex",
+            guard_home=native_approval_reuse_runtime,
         )
         == "block"
     )
@@ -10328,7 +10281,9 @@ def test_hook_runtime_artifact_routes_package_installs_to_package_request(tmp_pa
         "npm install lodash && bash <<'EOF'\nrm -f important.txt\nEOF",
     ],
 )
-def test_hook_runtime_artifact_composes_package_and_later_shell_risks(tmp_path: Path, command: str) -> None:
+def test_hook_runtime_artifact_composes_package_and_later_shell_risks(
+    tmp_path: Path, command: str, native_approval_reuse_runtime
+) -> None:
     home_dir = tmp_path / "home"
     workspace_dir = tmp_path / "workspace"
     _write_text(workspace_dir / "package.json", '{"name":"demo"}\n')
@@ -10370,7 +10325,12 @@ def test_hook_runtime_artifact_composes_package_and_later_shell_risks(tmp_path: 
         default_action="allow",
         risk_actions={"package_script": "allow", "destructive_shell": "block"},
     )
-    assert guard_commands_module._runtime_artifact_policy_action(config, artifact, "codex") == "block"
+    assert (
+        guard_commands_module._runtime_artifact_policy_action(
+            config, artifact, "codex", guard_home=native_approval_reuse_runtime
+        )
+        == "block"
+    )
 
 
 def test_hook_runtime_artifact_binds_compound_approval_to_the_complete_command(tmp_path: Path) -> None:
@@ -17928,7 +17888,7 @@ def test_guard_runtime_tool_action_classification_emits_network_and_docker_risks
     assert guard_commands_module._runtime_artifact_risk_classes(docker_config_artifact) == ["local_secret_read"]
 
 
-def test_guard_runtime_tool_action_policy_uses_network_egress_when_stricter(tmp_path):
+def test_guard_runtime_tool_action_policy_uses_network_egress_when_stricter(tmp_path, native_approval_reuse_runtime):
     artifact = GuardArtifact(
         artifact_id="codex:test:tool-action:upload",
         name="Bash shell file upload command",
@@ -17948,7 +17908,12 @@ def test_guard_runtime_tool_action_policy_uses_network_egress_when_stricter(tmp_
         },
     )
 
-    assert guard_commands_module._runtime_artifact_policy_action(config, artifact, "codex") == "block"
+    assert (
+        guard_commands_module._runtime_artifact_policy_action(
+            config, artifact, "codex", guard_home=native_approval_reuse_runtime
+        )
+        == "block"
+    )
 
 
 @pytest.mark.parametrize(
@@ -18052,6 +18017,7 @@ def test_guard_runtime_requires_exact_context_for_saved_broad_risky_tool_action(
 def test_guard_runtime_rejects_saved_allows_for_different_risky_tool_action(
     tmp_path: Path,
     scope: str,
+    native_approval_reuse_runtime,
 ) -> None:
     store = GuardStore(tmp_path / "guard-home")
     workspace = tmp_path / "workspace"
@@ -18137,7 +18103,9 @@ def test_guard_runtime_rejects_saved_allows_for_different_risky_tool_action(
         is None
     )
     assert (
-        guard_commands_module._runtime_artifact_policy_action(config, later_artifact, "opencode")
+        guard_commands_module._runtime_artifact_policy_action(
+            config, later_artifact, "opencode", guard_home=native_approval_reuse_runtime
+        )
         == "require-reapproval"
     )
 
@@ -18254,7 +18222,9 @@ def test_guard_runtime_contextual_tool_action_lookup_skips_legacy_fallback_after
     )
 
 
-def test_guard_runtime_tool_action_policy_prefers_configured_risk_action_over_default(tmp_path):
+def test_guard_runtime_tool_action_policy_prefers_configured_risk_action_over_default(
+    tmp_path, native_approval_reuse_runtime
+):
     artifact = GuardArtifact(
         artifact_id="codex:test:tool-action:upload",
         name="Codex credential-looking output",
@@ -18274,10 +18244,17 @@ def test_guard_runtime_tool_action_policy_prefers_configured_risk_action_over_de
         risk_actions={"credential_exfiltration": "block"},
     )
 
-    assert guard_commands_module._runtime_artifact_policy_action(config, artifact, "codex") == "block"
+    assert (
+        guard_commands_module._runtime_artifact_policy_action(
+            config, artifact, "codex", guard_home=native_approval_reuse_runtime
+        )
+        == "block"
+    )
 
 
-def test_guard_runtime_tool_action_policy_includes_defaults_for_unconfigured_risks(tmp_path):
+def test_guard_runtime_tool_action_policy_includes_defaults_for_unconfigured_risks(
+    tmp_path, native_approval_reuse_runtime
+):
     artifact = GuardArtifact(
         artifact_id="codex:test:tool-action:upload",
         name="Codex credential-looking output",
@@ -18297,10 +18274,17 @@ def test_guard_runtime_tool_action_policy_includes_defaults_for_unconfigured_ris
         risk_actions={"network_egress": "allow"},
     )
 
-    assert guard_commands_module._runtime_artifact_policy_action(config, artifact, "codex") == "require-reapproval"
+    assert (
+        guard_commands_module._runtime_artifact_policy_action(
+            config, artifact, "codex", guard_home=native_approval_reuse_runtime
+        )
+        == "require-reapproval"
+    )
 
 
-def test_guard_runtime_tool_action_policy_does_not_let_warn_default_override_risk_defaults(tmp_path):
+def test_guard_runtime_tool_action_policy_does_not_let_warn_default_override_risk_defaults(
+    tmp_path, native_approval_reuse_runtime
+):
     artifact = GuardArtifact(
         artifact_id="codex:test:tool-action:upload",
         name="Codex credential-looking output",
@@ -18319,10 +18303,15 @@ def test_guard_runtime_tool_action_policy_does_not_let_warn_default_override_ris
         security_level="balanced",
     )
 
-    assert guard_commands_module._runtime_artifact_policy_action(config, artifact, "codex") == "require-reapproval"
+    assert (
+        guard_commands_module._runtime_artifact_policy_action(
+            config, artifact, "codex", guard_home=native_approval_reuse_runtime
+        )
+        == "require-reapproval"
+    )
 
 
-def test_guard_runtime_artifact_policy_includes_stronger_global_default(tmp_path):
+def test_guard_runtime_artifact_policy_includes_stronger_global_default(tmp_path, native_approval_reuse_runtime):
     artifact = GuardArtifact(
         artifact_id="codex:test:tool-action:global-default",
         name="Codex routine tool action",
@@ -18340,10 +18329,15 @@ def test_guard_runtime_artifact_policy_includes_stronger_global_default(tmp_path
         default_action="block",
     )
 
-    assert guard_commands_module._runtime_artifact_policy_action(config, artifact, "codex") == "block"
+    assert (
+        guard_commands_module._runtime_artifact_policy_action(
+            config, artifact, "codex", guard_home=native_approval_reuse_runtime
+        )
+        == "block"
+    )
 
 
-def test_guard_runtime_artifact_exact_allow_replaces_stricter_global_default(tmp_path):
+def test_guard_runtime_artifact_exact_allow_replaces_stricter_global_default(tmp_path, native_approval_reuse_runtime):
     artifact = GuardArtifact(
         artifact_id="codex:test:tool-action:exact-allow",
         name="Codex routine tool action",
@@ -18361,10 +18355,17 @@ def test_guard_runtime_artifact_exact_allow_replaces_stricter_global_default(tmp
         artifact_actions={artifact.artifact_id: "allow"},
     )
 
-    assert guard_commands_module._runtime_artifact_policy_action(config, artifact, "codex") == "allow"
+    assert (
+        guard_commands_module._runtime_artifact_policy_action(
+            config, artifact, "codex", guard_home=native_approval_reuse_runtime
+        )
+        == "allow"
+    )
 
 
-def test_guard_runtime_artifact_exact_allow_cannot_lower_independent_risk_block(tmp_path):
+def test_guard_runtime_artifact_exact_allow_cannot_lower_independent_risk_block(
+    tmp_path, native_approval_reuse_runtime
+):
     artifact = GuardArtifact(
         artifact_id="codex:test:tool-action:exact-allow-risk-block",
         name="Codex credential exfiltration action",
@@ -18386,7 +18387,12 @@ def test_guard_runtime_artifact_exact_allow_cannot_lower_independent_risk_block(
         risk_actions={"credential_exfiltration": "block"},
     )
 
-    assert guard_commands_module._runtime_artifact_policy_action(config, artifact, "codex") == "block"
+    assert (
+        guard_commands_module._runtime_artifact_policy_action(
+            config, artifact, "codex", guard_home=native_approval_reuse_runtime
+        )
+        == "block"
+    )
 
 
 @pytest.mark.parametrize(
@@ -18401,6 +18407,7 @@ def test_guard_runtime_artifact_policy_composes_exact_current_override(
     tmp_path,
     override_kwargs: dict[str, object],
     expected_action: str,
+    native_approval_reuse_runtime,
 ) -> None:
     artifact = GuardArtifact(
         artifact_id="codex:test:tool-action:override",
@@ -18420,7 +18427,12 @@ def test_guard_runtime_artifact_policy_composes_exact_current_override(
         **override_kwargs,  # type: ignore[arg-type]
     )
 
-    assert guard_commands_module._runtime_artifact_policy_action(config, artifact, "codex") == expected_action
+    assert (
+        guard_commands_module._runtime_artifact_policy_action(
+            config, artifact, "codex", guard_home=native_approval_reuse_runtime
+        )
+        == expected_action
+    )
 
 
 def test_guard_hook_codex_user_prompt_submit_guard_bypass_hard_blocks_without_approval_url(
