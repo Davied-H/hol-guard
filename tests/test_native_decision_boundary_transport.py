@@ -138,7 +138,9 @@ def test_large_readable_rows_split_without_reordering(monkeypatch: pytest.Monkey
     results = canonical_approval_surfaces_batch(inputs, guard_home=home)
     assert [row.decision_v2_json["policyVersion"] for row in results] == [row[1]["policyVersion"] for row in inputs]
     assert batches == [100, 50, 50]
-    oversized = [("review", {**source, "policyVersion": "x" * (2 * 1024 * 1024)}, None)]
+    # Each admitted string stays below 1 MiB; the combined result exceeds 2 MiB.
+    signals = [{"signal_id": f"large:{index}", "technical_detail": "x" * (800 * 1024)} for index in range(3)]
+    oversized = [("review", {**source, "signals": signals}, None)]
     with pytest.raises(native_signal_projection.NativeSignalProjectionError, match="response_too_large"):
         canonical_approval_surfaces_batch(oversized, guard_home=home)
     assert canonical_approval_surfaces_batch([("review", None, None)], guard_home=home)[0].policy_action == "review"
