@@ -24,6 +24,7 @@ use crate::sfrs_requests::{
     extract_sensitive_file_read_request_from_action, extract_sensitive_file_write_request,
     FileReadRequest, FileWriteRequest, SensitivePath,
 };
+use crate::CommandModelRequestV1;
 
 #[cfg(all(test, unix))]
 #[path = "sensitive_request_tests.rs"]
@@ -177,13 +178,13 @@ fn claim_setting<'a>(
 }
 
 /// The caller's canonical command, rebuilt here with the caller's parse
-/// settings. It binds only when the identity the caller holds agrees with the
-/// resident's own parse.
+/// settings, with the claimed identity it bound under. It binds only when
+/// that identity agrees with the resident's own parse.
 fn bound_canonical(
     input: &Value,
     cwd: Option<&Path>,
     home: Option<&Path>,
-) -> Result<Option<CanonicalCommand>, &'static str> {
+) -> Result<Option<(CanonicalCommand, String)>, &'static str> {
     let claim = match input.get("canonical") {
         None | Some(Value::Null) => return Ok(None),
         Some(claim) => claim,
@@ -197,10 +198,43 @@ fn bound_canonical(
     let transport = claim_setting(claim, "transport", "shell_string", Some(TRANSPORTS))?;
     let provenance = claim_setting(claim, "extraction_provenance", "guard-shell", None)?;
     let command = parse_shell_command(raw_text, cwd, home, dialect, transport, provenance, true);
-    if command.security_identity() != identity {
-        return Err("native_sensitive_request_canonical_unbound");
+    if command.security_identity() == identity {
+        return Ok(Some((command, identity.to_owned())));
     }
-    Ok(Some(command))
+    // Native evaluation stores this parse with redirects and embedded
+    // commands removed. Accept that identity, then classify the full parse
+    // so a nested executor stays visible.
+    let mut native_evaluation =
+        parse_shell_command(raw_text, cwd, home, dialect, transport, provenance, true);
+    native_evaluation.redirects.clear();
+    native_evaluation.embedded_commands.clear();
+    if native_evaluation.security_identity() == identity
+        || native_model_identity(raw_text, dialect, transport, provenance).as_deref()
+            == Some(identity)
+    {
+        return Ok(Some((command, identity.to_owned())));
+    }
+    Err("native_sensitive_request_canonical_unbound")
+}
+
+/// The identity the native command model gives `raw_text`. Native evaluation
+/// stores this model, which keeps no segments for input it cannot prove (an
+/// unsupported redirect, for one), so its identity differs from the full parse.
+fn native_model_identity(
+    raw_text: &str,
+    dialect: &str,
+    transport: &str,
+    provenance: &str,
+) -> Option<String> {
+    let request = CommandModelRequestV1 {
+        command: raw_text.to_owned(),
+        dialect: dialect.to_owned(),
+        transport: transport.to_owned(),
+        extraction_provenance: provenance.to_owned(),
+    };
+    crate::parse_command(&request)
+        .ok()
+        .map(|model| model.security_identity)
 }
 
 fn text_list(value: &Value) -> Result<Vec<String>, &'static str> {
@@ -257,8 +291,33 @@ fn tool_action(
     ctx: &Ctx,
     controls: Option<&ToolActionControls>,
 ) -> Result<Value, &'static str> {
-    let canonical = bound_canonical(input, cwd, home)?;
-    let view = evaluation_view(input)?;
+    let bound = bound_canonical(input, cwd, home)?;
+    let mut view = evaluation_view(input)?;
+    // An evaluation of the accepted claim applies to the full parse that
+    // replaced it; any other identity still fails the classifier's check.
+    // A claim that bound through a reduced identity did not see the segments
+    // that were dropped, so that evaluation cannot short-circuit as benign.
+    if let (Some((command, claimed)), Some(view)) = (&bound, view.as_mut()) {
+        if &view.security_identity == claimed {
+            let full_identity = command.security_identity();
+            let reduced = claimed != &full_identity;
+            view.security_identity = full_identity;
+            if reduced {
+                view.reason_codes
+                    .retain(|code| code != "native.explicit-benign");
+                let allow_floor_only = view.minimum_action == CommandDecisionFloor::Allow
+                    && !view.match_default_modes.is_empty()
+                    && view
+                        .match_default_modes
+                        .iter()
+                        .all(|mode| mode == "disabled");
+                if allow_floor_only {
+                    view.match_default_modes.clear();
+                }
+            }
+        }
+    }
+    let canonical = bound.map(|(command, _)| command);
     let tool = ovalue_from_json(field(input, "tool_name"));
     let arguments = field(input, "arguments");
     let inputs = ExtractInputs {
@@ -284,6 +343,21 @@ fn tool_action_wire(found: &ToolActionRequestMatch) -> Result<Value, &'static st
     {
         if let Some(fields) = slot.as_object_mut() {
             fields.insert("raw_text".to_owned(), json!(command.raw_text));
+            let Some(embedded) = fields
+                .get_mut("embedded_commands")
+                .and_then(Value::as_array_mut)
+            else {
+                return Err(INVALID);
+            };
+            if embedded.len() != command.embedded_commands.len() {
+                return Err(INVALID);
+            }
+            for (slot, embedded_command) in embedded.iter_mut().zip(&command.embedded_commands) {
+                let Some(object) = slot.as_object_mut() else {
+                    return Err(INVALID);
+                };
+                object.insert("text".to_owned(), json!(embedded_command.text));
+            }
         }
     }
     Ok(wire)
