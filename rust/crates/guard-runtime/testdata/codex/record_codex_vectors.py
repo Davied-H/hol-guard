@@ -165,7 +165,12 @@ def request_for(context: HarnessContext, spec: dict, root: Path, command: str) -
         "sources": sources,
         "contents": None
         if contents is None
-        else {str(path): None if data is None else data.hex() for path, data in contents.items()},
+        else {
+            str(path): None
+            if data is None
+            else data.replace(command.encode(), b"<CMD>").replace(str(root).encode(), b"<ROOT>").hex()
+            for path, data in contents.items()
+        },
     }
 
 

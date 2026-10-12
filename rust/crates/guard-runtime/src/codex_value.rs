@@ -81,10 +81,20 @@ impl HookVal {
     /// were first created in, even when an implicit parent is declared by a
     /// later sub-table header before its own header.
     pub(crate) fn from_document(table: &toml_edit::Table) -> HookVal {
+        // `tomllib` keeps the order keys were first created in, but toml_edit
+        // re-inserts a table at the end of its parent when a header later
+        // redefines an implicit one (`[a.b.c]` then `[a]`). Header positions
+        // are document order, so children sort by where they first appeared.
+        let body = body_rank(table);
+        let mut children: Vec<(usize, &str, &toml_edit::Item)> = table
+            .iter()
+            .map(|(key, item)| (first_rank(item).unwrap_or(body), key, item))
+            .collect();
+        children.sort_by_key(|(rank, _, _)| *rank);
         HookVal::Dict(
-            table
-                .iter()
-                .filter_map(|(key, item)| Some((key.to_owned(), HookVal::from_item(item)?)))
+            children
+                .into_iter()
+                .filter_map(|(_, key, item)| Some((key.to_owned(), HookVal::from_item(item)?)))
                 .collect(),
         )
     }
@@ -344,4 +354,29 @@ pub(crate) fn canonical_mapping(entries: &[(String, HookVal)], excluded: &[&str]
             .map(|(key, item)| (key.clone(), canonical_value(item)))
             .collect(),
     )
+}
+
+/// Where a table's own key-value pairs sit relative to the headers: after its
+/// header and before the next one.
+fn body_rank(table: &toml_edit::Table) -> usize {
+    table.position().map_or(0, |position| position * 2 + 1)
+}
+
+/// The document position of the first header that created `item`, counting
+/// headers of its descendants (a header like `[a.b.c]` creates `a` and `b`).
+fn first_rank(item: &toml_edit::Item) -> Option<usize> {
+    match item {
+        toml_edit::Item::Table(table) => table_rank(table),
+        toml_edit::Item::ArrayOfTables(tables) => tables.iter().filter_map(table_rank).min(),
+        _ => None,
+    }
+}
+
+fn table_rank(table: &toml_edit::Table) -> Option<usize> {
+    let own = table.position().map(|position| position * 2);
+    let inner = table.iter().filter_map(|(_, item)| first_rank(item)).min();
+    match (own, inner) {
+        (Some(left), Some(right)) => Some(left.min(right)),
+        (left, right) => left.or(right),
+    }
 }

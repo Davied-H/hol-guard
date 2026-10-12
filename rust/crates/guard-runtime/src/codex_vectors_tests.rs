@@ -95,13 +95,32 @@ fn release(root: &Path) {
     let _ = fs::remove_dir_all(root);
 }
 
+/// `contents` carries file bytes as hex; `<ROOT>` inside them is expanded
+/// before re-encoding, while `<CMD>` stays literal like it does in files.
+fn expand_contents(args: &mut Value, root: &str) {
+    let Some(contents) = args.get_mut("contents").and_then(Value::as_object_mut) else {
+        return;
+    };
+    for value in contents.values_mut() {
+        let Some(hex) = value.as_str() else { continue };
+        let bytes = decode_hex(hex);
+        let text = String::from_utf8_lossy(&bytes).replace("<ROOT>", root);
+        *value = Value::String(
+            text.bytes()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>(),
+        );
+    }
+}
+
 /// Replays one case; `Err` lists every field that differs from Python.
 fn replay(case: &Value) -> Result<(), String> {
     let name = case["name"].as_str().unwrap();
     let root = temp_home(&format!("codex-{name}").chars().take(60).collect::<String>());
     materialize(&root, case);
     let root_text = root.to_string_lossy().into_owned();
-    let args = substitute(&case["args"], &root_text);
+    let mut args = substitute(&case["args"], &root_text);
+    expand_contents(&mut args, &root_text);
     let result = detect(&args);
     let outcome = check(case, name, &root_text, result);
     release(&root);
