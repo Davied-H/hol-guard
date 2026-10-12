@@ -2,6 +2,10 @@ use super::*;
 
 /// `_resolve_workspace` (:52-77).
 pub(super) fn resolve_workspace(workspace: &Path) -> Result<PathBuf, RestrictedPytestError> {
+    resolve_workspace_with_home(workspace, None)
+}
+
+pub(super) fn resolve_workspace_with_home(workspace: &Path, home: Option<&Path>) -> Result<PathBuf, RestrictedPytestError> {
     let resolved = expand_user(workspace).canonicalize().map_err(|error| {
         RestrictedPytestError::new(
             PYTEST_INVALID_WORKSPACE_REASON_CODE,
@@ -14,7 +18,11 @@ pub(super) fn resolve_workspace(workspace: &Path) -> Result<PathBuf, RestrictedP
             "Restricted pytest workspace must be an existing directory.",
         ));
     }
-    if workspace_is_broad_or_sensitive(&resolved) {
+    let sensitive = match home {
+        Some(home) => workspace_is_broad_or_sensitive_for_home(&resolved, Some(home)),
+        None => workspace_is_broad_or_sensitive(&resolved),
+    };
+    if sensitive {
         return Err(RestrictedPytestError::new(
             PYTEST_INVALID_WORKSPACE_REASON_CODE,
             "Restricted pytest workspace cannot be a filesystem, home, temporary, or credential-directory root.",
@@ -34,6 +42,10 @@ pub(super) fn resolve_workspace(workspace: &Path) -> Result<PathBuf, RestrictedP
 
 /// `_workspace_is_broad_or_sensitive` (:78-104).
 pub(super) fn workspace_is_broad_or_sensitive(workspace: &Path) -> bool {
+    workspace_is_broad_or_sensitive_for_home(workspace, None)
+}
+
+fn workspace_is_broad_or_sensitive_for_home(workspace: &Path, home: Option<&Path>) -> bool {
     let broad_roots: HashSet<PathBuf> = [
         "/",
         "/Users",
@@ -52,7 +64,7 @@ pub(super) fn workspace_is_broad_or_sensitive(workspace: &Path) -> bool {
     if broad_roots.contains(workspace) {
         return true;
     }
-    let home = host_home_directory();
+    let home = home.map(|path| path.canonicalize().unwrap_or_else(|_| path.to_path_buf())).or_else(host_home_directory);
     let home = match home {
         Some(h) => h,
         None => return true,

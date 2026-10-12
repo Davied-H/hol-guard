@@ -34,6 +34,31 @@ fn expand(value: &Value, root: &str) -> Value {
 }
 
 struct Fixture(PathBuf);
+
+#[test]
+fn per_request_home_selects_nvm_and_preserves_home_root_refusal() {
+    let fixture = fixture("guard-caller-home");
+    let home = fixture.0.join("caller-home");
+    let node = home.join(".nvm/versions/node/v20.1.2/bin/node");
+    let workspace = fixture.0.join("project");
+    fs::create_dir_all(node.parent().unwrap()).unwrap();
+    fs::create_dir(&workspace).unwrap();
+    fs::write(workspace.join("package.json"), "{}").unwrap();
+    fs::write(home.join("package.json"), "{}").unwrap();
+    fs::write(&node, b"\x7fELFnative-fixture").unwrap();
+    fs::set_permissions(&node, fs::Permissions::from_mode(0o755)).unwrap();
+    let request = json!({"path":node,"workspace":workspace,"home":home});
+    assert_eq!(evaluate("approved_node", &request), json!({"value":true}));
+    let mut wrong_home = request;
+    wrong_home["home"] = json!(workspace);
+    assert_eq!(evaluate("approved_node", &wrong_home), json!({"value":false}));
+    let mut launch = json!({"command":[node,"--test"],"workspace":workspace,"cwd":workspace,
+        "home":home,"platform":"darwin","backend_executable":"/usr/bin/true","search_path":""});
+    assert_eq!(evaluate("prepare_node", &launch)["value"]["executable"], json!(node));
+    launch["workspace"] = json!(home);
+    launch["cwd"] = json!(home);
+    assert_eq!(evaluate("prepare_node", &launch)["reason_code"], PYTEST_INVALID_WORKSPACE_REASON_CODE);
+}
 impl Drop for Fixture {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);

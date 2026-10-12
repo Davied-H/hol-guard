@@ -135,7 +135,10 @@ pub fn python_runtime_args(command: &[String]) -> Option<Vec<String>> {
         index += 1;
     }
     let inline = command.len() == index + 2 && command[index] == "-c";
-    if !inline && !command.get(index).is_some_and(|v| test_script(v)) {
+    let unittest = command.get(index).is_some_and(|value| value == "-m")
+        && command.get(index + 1).is_some_and(|value| value == "unittest")
+        && command[index + 2..].iter().all(|value| !value.contains(['<', '>', '|', '&', ';', '`', '$']));
+    if !inline && !unittest && !command.get(index).is_some_and(|v| test_script(v)) {
         return None;
     }
     Some(command[1..index].to_vec())
