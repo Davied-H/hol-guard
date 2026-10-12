@@ -33,6 +33,9 @@ _MAX_TEXT_BYTES: Final = 65536
 _TIMEOUT_SECONDS: Final = 2.0
 _BRIDGE_TIMEOUT_SECONDS: Final = 0.2
 _JOIN_PROBE_RECORDS: Final = 129
+# One join row may exceed the 64 KiB capture ceiling so the runtime can return
+# record_size. The row still has to fit inside the 256 KiB request cap.
+_JOIN_RECORD_BYTES: Final = 256 * 1024 - 8192
 _QUEUE_LIMIT: Final = 8
 _canonical_request_sha256 = None
 ensure_resident_prerequisite = None
@@ -270,13 +273,17 @@ def join_binding_records(guard_home: Path, records: list[object]) -> dict[str, o
     if os.name == "nt" or not guard_home.is_absolute():
         return None
     encoded: list[str] = []
+    encoded_bytes = 0
     for record in records:
         if len(encoded) >= _JOIN_PROBE_RECORDS:
             break
-        text = _bounded_json(record)
+        text = _bounded_json(record, _JOIN_RECORD_BYTES)
         if text is None:
             return None
         encoded.append(text)
+        encoded_bytes += len(text.encode("utf-8"))
+        if encoded_bytes > _MAX_TEXT_BYTES:
+            break
     payload = _exchange(guard_home, {"kind": "join", "records": encoded})
     result = payload.get("result") if isinstance(payload, Mapping) else None
     return dict(result) if isinstance(result, Mapping) else None

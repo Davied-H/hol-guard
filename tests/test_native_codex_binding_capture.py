@@ -420,6 +420,34 @@ def test_join_serializes_only_enough_records_to_show_the_limit(
     assert len(encoded) == capture._JOIN_PROBE_RECORDS
 
 
+def test_join_forwards_a_record_over_the_capture_ceiling(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[dict[str, object]] = []
+
+    def answer(_home: Path, command: dict[str, object]) -> object:
+        seen.append(command)
+        return {"result": {"status": "invalid"}}
+
+    _patch_exchange(monkeypatch, answer)
+    bulky = {"text": "a" * (capture._MAX_TEXT_BYTES + 1)}
+    assert capture.join_binding_records(tmp_path, [bulky, {"n": 1}]) == {"status": "invalid"}
+    encoded = seen[0]["records"]
+    assert isinstance(encoded, list)
+    assert len(encoded) == 1
+    assert len(encoded[0].encode("utf-8")) > capture._MAX_TEXT_BYTES
+
+
+def test_join_rejects_a_record_that_cannot_fit_the_request(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[object] = []
+    _patch_exchange(monkeypatch, lambda *args: calls.append(args))
+    huge = {"text": "b" * capture._JOIN_RECORD_BYTES}
+    assert capture.join_binding_records(tmp_path, [huge]) is None
+    assert calls == []
+
+
 def test_capture_timeouts_do_not_touch_enforcement_resilience(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
