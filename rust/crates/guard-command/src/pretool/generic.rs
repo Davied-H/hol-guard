@@ -240,6 +240,7 @@ fn evaluate_envelope(
         payload,
         &signals,
         &omp::OmpContext {
+            yield_report_verified: yield_payload.is_some(),
             harness,
             event,
             controls,
@@ -439,7 +440,10 @@ fn evaluate_envelope(
     // into the contained sink get the receipt, others would see a bare deny.
     if cfg!(target_os = "macos")
         && event == "PreToolUse"
-        && matches!(harness, "omp" | "oh-my-pi" | "zcode" | "claude-code")
+        && matches!(
+            harness,
+            "omp" | "oh-my-pi" | "zcode" | "claude-code" | "codex"
+        )
         && cwd.is_some()
         && (result.action.action_type == PreToolActionTypeV1::Command
             || (matches!(

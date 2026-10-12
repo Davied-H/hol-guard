@@ -104,6 +104,9 @@ pub(super) fn exact_safe_cwd_compound(
                     | "sort"
                     | "uniq"
                     | "cut"
+                    | "du"
+                    | "df"
+                    | "diff"
             )
         ) && exact_safe_segment_with_context(
             model,
@@ -218,6 +221,8 @@ pub(crate) fn benign_command_segments(
                         | "stat"
                         | "test"
                         | "find"
+                        | "du"
+                        | "diff"
                 );
             let ls_has_explicit_target = basename != "ls" || {
                 let mut skip_next = false;
@@ -323,14 +328,21 @@ pub(super) fn exact_safe_segment_with_context(
                 || safe_reads::safe_plain_file_arguments(&segment.arguments, context)
         }
         "base64" => super::base64_reads::safe_base64_arguments(&segment.arguments, context),
+        "du" => super::metadata_reads::safe_du_arguments(&segment.arguments, context),
+        "df" => super::metadata_reads::safe_df_arguments(&segment.arguments),
+        "diff" => super::metadata_reads::safe_diff_arguments(&segment.arguments, context),
         "stat" => matches!(segment.arguments.as_slice(), [target]
             if !target.starts_with('-')
                 && safe_reads::bounded_read_target(target, context.home_dir, context.cwd, false)),
         "cp" => {
             model.segments.len() == 1
-                && safe_reads::safe_copy_arguments(&segment.arguments, context)
+                && (safe_reads::safe_copy_arguments(&segment.arguments, context)
+                    || super::recursive_copy::safe_recursive_copy_arguments(
+                        &segment.arguments,
+                        context,
+                    ))
         }
-        "mkdir" | "touch" | "mv" => {
+        "mktemp" | "mkdir" | "touch" | "mv" => {
             model.segments.len() == 1
                 && safe_reads::safe_file_mutation_arguments(basename, &segment.arguments, context)
         }

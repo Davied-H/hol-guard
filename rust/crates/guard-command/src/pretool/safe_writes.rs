@@ -19,6 +19,15 @@ pub(super) fn bounded_native_file_write_target(
     bounded_write_target(value, home_dir, cwd, false, true)
 }
 
+/// A new directory path inside the workspace, screened like `mkdir`.
+pub(super) fn bounded_new_directory_write_target(
+    value: &str,
+    home_dir: Option<&str>,
+    cwd: Option<&str>,
+) -> bool {
+    bounded_write_target(value, home_dir, cwd, true, false)
+}
+
 /// A single absolute file write into a temporary directory the user owns.
 /// It never widens the workspace or home boundaries; see the copy carve-out.
 pub(super) fn bounded_native_temporary_write_target(
@@ -158,6 +167,12 @@ pub(super) fn safe_file_mutation_arguments(
     context: super::PathContext<'_>,
 ) -> bool {
     match (command, arguments) {
+        // The standard directory-only form creates one unique private leaf;
+        // it never opens, overwrites, or removes an existing path. Subsequent
+        // writes still require the separate owned-temporary-directory proof.
+        ("mktemp", [flag]) if flag == "-d" => {
+            super::safe_reads::verified_path_context(context.home_dir, context.cwd)
+        }
         ("mkdir", [target]) => {
             !target.starts_with('-')
                 && bounded_write_target(target, context.home_dir, context.cwd, true, false)
@@ -234,9 +249,24 @@ fn bounded_temporary_copy_target(value: &str, context: super::PathContext<'_>) -
         return false;
     };
     let roots = [Path::new("/tmp"), Path::new("/var/tmp")];
+    // macOS mktemp uses the user's configured Darwin temp root, outside /tmp.
+    // Admit only that exact root after proving private ownership, not the
+    // entire /var/folders tree or another user's temporary directories.
+    #[cfg(target_os = "macos")]
+    let darwin_temp = std::fs::canonicalize(std::env::temp_dir())
+        .ok()
+        .filter(|root| {
+            root.starts_with("/private/var/folders")
+                && root.metadata().is_ok_and(|metadata| {
+                    metadata.is_dir() && metadata.uid() == owner && metadata.mode() & 0o077 == 0
+                })
+        });
+    #[cfg(not(target_os = "macos"))]
+    let darwin_temp: Option<std::path::PathBuf> = None;
     let in_scope = roots
         .iter()
         .filter_map(|root| std::fs::canonicalize(root).ok())
+        .chain(darwin_temp)
         .any(|root| {
             parent.starts_with(&root)
                 && (parent == root

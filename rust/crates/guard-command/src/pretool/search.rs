@@ -1,15 +1,19 @@
 use super::sensitive_read_path_argument as sensitive_path_argument;
 use glob_class::glob_class_matches;
 use std::collections::{HashSet, VecDeque};
+mod agent_root;
 mod fd;
 mod glob_class;
 mod grep;
 mod hint;
 mod options;
+mod sibling;
 mod tree;
+pub(super) use agent_root::agent_root_listing;
 use options::unsafe_search_value;
 pub(super) use tree::{
-    safe_glob_operand, safe_literal_bracket_tree, safe_recursive_target, SECRET_EXTENSIONS,
+    safe_glob_operand, safe_literal_bracket_tree, safe_recursive_search_target,
+    safe_recursive_target, safe_unmatched_bracket_operand, SECRET_EXTENSIONS,
 };
 fn glob_matches(pattern: &[u8], value: &[u8]) -> bool {
     let mut previous = vec![false; value.len() + 1];
@@ -450,6 +454,7 @@ fn safe_rg_arguments_inner(
             // or a directory below the cwd whose whole tree is ordinary.
             if unsafe_search_value(SearchValueRole::Path, argument, context)
                 && !tree::rg_root_inside_cwd(argument, context)
+                && !sibling::rg_sibling_repository_root(argument, context)
                 && !tree::safe_recursive_search_target(argument, context)
                 && (!argument.contains(['*', '?', '['])
                     || !tree::safe_glob_search_operand(argument, context))

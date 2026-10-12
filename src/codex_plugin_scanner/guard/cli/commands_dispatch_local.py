@@ -141,6 +141,7 @@ def _run_guard_execute_contained_test_command(
         request_validated = True
         return run_authorized_contained_test(
             payload, workspace=workspace, timeout_seconds=int(args.timeout_seconds),
+            home_dir=context.home_dir,
             authorize=lambda original: try_native_hook_authority(
                 payload={**original, "guard_containment_receipt_only": True},
                 harness=str(getattr(args, "harness", "omp")), home_dir=context.home_dir,
@@ -153,7 +154,7 @@ def _run_guard_execute_contained_test_command(
         print(f"{error.reason_code}: {error}", file=sys.stderr)
         return error.exit_code
     finally:
-        if request_validated and getattr(args, "harness", "omp") in {"zcode", "claude-code"}:
+        if request_validated and getattr(args, "harness", "omp") in {"zcode", "claude-code", "codex"}:
             with suppress(OSError):
                 request_file = Path(args.request_file)
                 request_file.unlink(missing_ok=True)

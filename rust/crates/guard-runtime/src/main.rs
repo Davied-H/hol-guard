@@ -1,6 +1,17 @@
 #![forbid(unsafe_code)]
 #![recursion_limit = "512"]
 
+mod aibom_artifact;
+mod aibom_discovery;
+mod aibom_extend;
+mod aibom_marketplace;
+mod aibom_mcp_metadata;
+mod aibom_op;
+mod aibom_paths;
+mod aibom_skill_rules;
+mod aibom_skills;
+#[cfg(all(test, unix))]
+mod aibom_vectors_tests;
 mod approval;
 mod approval_bulk_eligibility_op;
 mod approval_gate_consumers;
@@ -62,6 +73,9 @@ mod claim_reuse_binding;
 mod claim_reuse_binding_tests;
 #[cfg(test)]
 mod claim_reuse_vectors_tests;
+mod claude_guard_question;
+mod cli_copilot_resolution;
+mod cli_runtime_support_op;
 mod cloud_action_envelope;
 mod cloud_action_envelope_fields;
 mod cloud_receipt_payload;
@@ -74,14 +88,23 @@ mod cloud_request_text;
 mod cloud_request_vectors_tests;
 mod cloud_sync_privacy;
 mod codex_app_server_socket;
+mod codex_detect;
+mod codex_hook_artifacts;
+mod codex_hooks;
+mod codex_identity;
+mod codex_proxy;
 mod codex_request_resume_busy;
 mod codex_request_resume_op;
 mod codex_request_resume_store;
+mod codex_sources;
 mod codex_thread_continue_op;
 mod codex_tool_output_git;
 mod codex_tool_output_op;
 #[cfg(all(test, unix))]
 mod codex_tool_output_vectors_tests;
+mod codex_value;
+#[cfg(all(test, unix))]
+mod codex_vectors_tests;
 mod command_effect;
 mod compound_git_args;
 mod compound_git_chain;
@@ -97,14 +120,26 @@ mod compound_git_paths;
 mod compound_git_segments;
 mod consumer_artifact_compose_op;
 mod consumer_artifact_compose_runtime;
+mod consumer_artifact_project_op;
+mod consumer_capabilities;
+mod consumer_capability_delta;
+mod consumer_evidence;
+mod consumer_incident;
+mod consumer_result;
+mod consumer_url;
 #[cfg(unix)]
 mod contained_op;
+mod content_sensitivity_op;
 mod context_digest;
 mod context_digest_json;
 mod context_digest_local_cli;
+mod context_digest_package_scripts;
+mod context_digest_result_check;
 mod contributed_mcp_decision_op;
 mod critical_floor_op;
 mod cursor_observer_proof_op;
+mod custom_extension_continuity;
+mod custom_extension_suggestion;
 mod daemon_handler_digits;
 mod daemon_handler_fields;
 mod daemon_handler_headless;
@@ -130,6 +165,9 @@ mod daemon_route_paths;
 mod daemon_route_resolve;
 mod daemon_route_session;
 mod data_flow_analyze_op;
+mod decision_authority_op;
+#[cfg(test)]
+mod decision_authority_vectors_tests;
 mod direct_tool_context_op;
 #[cfg(test)]
 mod direct_tool_context_tests;
@@ -146,6 +184,8 @@ mod git_execution_safety_repo_tests;
 #[cfg(test)]
 mod git_execution_safety_tests;
 mod github_cli_classify_op;
+mod github_workflow_context_io;
+mod github_workflow_prepare_op;
 mod guard_config_coerce;
 mod guard_config_harness;
 mod guard_config_iso;
@@ -165,6 +205,10 @@ mod guard_store_cmd_rollups;
 #[cfg(test)]
 mod guard_store_cmd_vectors_tests;
 mod guard_store_cmd_wire;
+mod guard_store_connect;
+mod guard_store_connect_effective;
+#[cfg(test)]
+mod guard_store_connect_vectors_tests;
 mod guard_store_db;
 mod guard_store_inventory;
 #[cfg(test)]
@@ -173,6 +217,9 @@ mod guard_store_inventory_page_tests;
 mod guard_store_inventory_vectors_tests;
 mod guard_store_json;
 mod guard_store_lineage;
+mod guard_store_native_review_consume;
+#[cfg(test)]
+mod guard_store_native_review_consume_tests;
 mod guard_store_observed_mcp;
 mod guard_store_op;
 mod guard_store_outbox_append;
@@ -185,6 +232,11 @@ mod guard_store_outbox_reads;
 mod guard_store_outbox_reads_tests;
 mod guard_store_outbox_recover;
 mod guard_store_outbox_requeue;
+mod guard_store_policy_source_context;
+#[cfg(test)]
+mod guard_store_policy_source_context_vectors_tests;
+mod guard_store_policy_source_labels;
+mod guard_store_policy_source_rows;
 mod guard_store_receipt_analytics;
 mod guard_store_receipt_approval;
 mod guard_store_receipt_decision;
@@ -198,9 +250,15 @@ mod guard_store_receipts_vectors_tests;
 mod guard_store_sessions;
 #[cfg(test)]
 mod guard_store_sessions_vectors_tests;
+mod guard_store_state_ops;
+#[cfg(test)]
+mod guard_store_state_ops_vectors_tests;
 mod guard_store_storage_maintenance;
 #[cfg(test)]
 mod guard_store_storage_maintenance_vectors_tests;
+mod guard_store_tool_call_evidence;
+#[cfg(test)]
+mod guard_store_tool_call_evidence_tests;
 #[cfg(test)]
 mod guard_store_vectors_tests;
 mod guard_store_wfcap_authority;
@@ -219,22 +277,42 @@ mod guard_store_wfcap_wire;
 #[cfg(test)]
 mod guard_store_workflow_capability_vectors_tests;
 mod hardening;
+mod hermes_detect;
+mod hermes_inspect;
+mod hermes_printable;
+mod hermes_skills;
+mod hermes_text;
+#[cfg(all(test, unix))]
+mod hermes_vectors_tests;
+mod hermes_yaml;
+mod hermes_yaml_construct;
+mod hermes_yaml_resolve;
 mod hook_adapter_op;
+mod hook_approval_context;
 mod hook_artifact_compose_op;
 mod hook_artifact_compose_reuse;
 mod hook_authority_state_op;
+#[cfg(all(test, unix))]
+mod hook_decision_benign_tool_action_tests;
 mod hook_decision_compose;
 mod hook_decision_directive;
 mod hook_decision_finalize;
+mod hook_decision_native_facts;
+#[cfg(all(test, unix))]
+mod hook_decision_native_facts_tests;
 mod hook_decision_op;
+mod hook_decision_settle;
+mod hook_policy_config;
 mod hook_process_spawn;
 mod hook_render_op;
 mod local_cli_grant_op;
+mod local_cli_identify;
 mod local_mcp_grant_identity;
 mod local_mcp_grant_launcher;
 mod local_mcp_grant_op;
 mod local_once_store;
 mod local_store_read;
+mod managed_controls_policy_fields;
 mod managed_resident;
 mod mcp_probe_op;
 mod mcp_proxy_actions;
@@ -257,6 +335,8 @@ mod mcp_sensitive_read;
 #[cfg(test)]
 mod mcp_sensitive_read_vectors_tests;
 mod mcp_stdio_session_op;
+mod mcp_tool_call_identity_build;
+mod mcp_tool_call_identity_op;
 mod mcp_tool_evidence_op;
 mod mcp_tool_policy_composio;
 mod mcp_tool_policy_decide_op;
@@ -264,7 +344,10 @@ mod mcp_tool_policy_decision;
 mod mcp_tool_policy_extension;
 mod mcp_tool_policy_flow;
 mod mcp_tool_policy_grants;
+mod mcp_tool_policy_lookup;
+mod mcp_tool_policy_proxy;
 mod mcp_tool_policy_revalidate;
+mod native_exact_action_op;
 mod native_hook_receipt;
 mod native_runtime_admission;
 mod native_runtime_resilience;
@@ -282,9 +365,11 @@ mod package_approval_hash_op;
 mod package_audit_projection_op;
 mod package_authority_config;
 mod package_authority_op;
+mod package_context_build_op;
 mod package_evaluation_compose_op;
 mod package_policy_resolve_op;
 mod package_posture_op;
+mod package_protect_projection_op;
 mod policy_bundle_crypto;
 mod policy_bundle_decisions;
 mod policy_bundle_delivery;
@@ -318,6 +403,7 @@ mod policy_snapshot_build;
 mod policy_store;
 mod prompt_analyze_op;
 mod protect_request_op;
+mod pyjson;
 #[cfg(test)]
 mod registry_vectors_tests;
 mod request_context_op;
@@ -325,6 +411,7 @@ mod request_context_shell;
 mod resident_client;
 mod resident_diagnostics;
 mod resident_endpoint;
+mod resident_inspection_services;
 mod resident_op_features;
 mod resident_ops;
 #[allow(dead_code)] // Worker enrollment is not enabled by this OS identity input.
@@ -336,6 +423,8 @@ mod resident_state_encoding;
 mod resident_transport;
 mod resident_transport_service;
 mod resident_update_lock;
+mod restricted_pytest_op;
+mod rich_command_model_op;
 mod runner_authority_detector;
 mod runner_authority_evaluation;
 mod runner_authority_op;
@@ -346,16 +435,23 @@ mod runner_sync_url;
 mod runtime_cli;
 mod runtime_detector_run_op;
 mod secrets_cli;
+#[cfg(all(test, unix))]
+#[allow(dead_code, clippy::pedantic)]
+#[path = "../../guard-command/tests/sfrs_support/mod.rs"]
+mod sfrs_support;
+mod shell_helpers_op;
 mod shim_op;
-#[cfg(unix)]
+mod signal_projection_approval;
+mod signal_projection_decode;
+mod signal_projection_op;
+mod signal_projection_receipt;
+#[cfg(test)]
+mod signal_projection_vectors_tests;
 mod skill_directory_identity_op;
-#[cfg(unix)]
 mod skill_identity_canon;
-#[cfg(unix)]
 mod skill_identity_discovery;
-#[cfg(unix)]
 mod skill_identity_inspect;
-#[cfg(unix)]
+mod skill_identity_platform;
 mod skill_identity_walk;
 #[cfg(unix)]
 mod state_directory_lock;
@@ -370,6 +466,10 @@ mod totp;
 mod workspace_inventory_files;
 mod workspace_inventory_op;
 mod workspace_scan_targets;
+mod zcode_artifacts;
+mod zcode_detect;
+#[cfg(all(test, unix))]
+mod zcode_vectors_tests;
 
 pub(crate) use resident_protocol::{capabilities, encode_response, strict_json_value};
 pub(crate) use resident_transport::{

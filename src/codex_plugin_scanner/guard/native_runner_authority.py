@@ -14,6 +14,7 @@ to launch. Nothing here ever computes an action, reason or signature locally.
 from __future__ import annotations
 
 import json
+import os
 import time
 import uuid
 from collections.abc import Mapping
@@ -53,15 +54,36 @@ class NativeRunnerAuthorityError(ValueError):
     """The native owner could not supply a bound, typed runner-authority answer."""
 
 
+class NativeRunnerAuthorityRefusalError(NativeRunnerAuthorityError):
+    """A healthy owner, or the bounded encoder, refused invalid input."""
+
+
 def _fail(status: Any, guard_home: Path, code: str) -> NativeRunnerAuthorityError:
     native_record_resident_failure(status.identity.sha256, guard_home, reason=code)
     return NativeRunnerAuthorityError(code)
 
 
-def native_runner_authority(kind: str, args: Mapping[str, Any], guard_home: Path | None = None) -> dict[str, Any]:
-    """Run one authority ``kind`` in the resident and return its bound payload."""
+def native_runner_authority(
+    kind: str,
+    args: Mapping[str, Any],
+    guard_home: Path | None = None,
+    timeout_seconds: float | None = None,
+) -> dict[str, Any]:
+    """Run one authority ``kind`` in the resident and return its bound payload.
+
+    ``timeout_seconds`` widens the per-call budget for file-heavy kinds; the
+    envelope deadline stays bounded by ``_MAX_DEADLINE_BUDGET_MS``.
+    """
 
     guard_home = _resolve_digest_home(guard_home)
+    if kind in {
+        "projection_approval",
+        "projection_receipt",
+        "projection_surfaces",
+        "projection_surfaces_batch",
+        "projection_artifact_surfaces",
+    }:
+        guard_home = _projection_carrier_home(guard_home)
     request: dict[str, Any] = {
         "schema": _REQUEST_SCHEMA,
         "request_id": uuid.uuid4().hex,
@@ -89,7 +111,7 @@ def native_runner_authority(kind: str, args: Mapping[str, Any], guard_home: Path
         )
     try:
         request_sha256 = _canonical_request_sha256(request)
-        budget_seconds = _TIMEOUT_SECONDS
+        budget_seconds = _TIMEOUT_SECONDS if timeout_seconds is None else float(timeout_seconds)
         if not native_resident_client_ready(status.identity.path, guard_home):
             budget_seconds += _COLD_START_ALLOWANCE_SECONDS
         deadline_budget_ms = max(1, min(_MAX_DEADLINE_BUDGET_MS, int(budget_seconds * 1_000)))
@@ -100,9 +122,9 @@ def native_runner_authority(kind: str, args: Mapping[str, Any], guard_home: Path
             allow_nan=False,
         ).encode("utf-8")
     except (TypeError, ValueError, UnicodeEncodeError) as error:
-        raise NativeRunnerAuthorityError("native_runner_authority_component_unencodable") from error
+        raise NativeRunnerAuthorityRefusalError("native_runner_authority_component_unencodable") from error
     if len(envelope) > _MAX_REQUEST_BYTES:
-        raise NativeRunnerAuthorityError("native_runner_authority_request_too_large")
+        raise NativeRunnerAuthorityRefusalError("native_runner_authority_request_too_large")
     try:
         output = native_resident_client_request(
             executable=status.identity.path,
@@ -139,8 +161,24 @@ def native_runner_authority(kind: str, args: Mapping[str, Any], guard_home: Path
         # is refused (callers fail closed) but the resident stays healthy, so a
         # bad request can never open the shared availability circuit.
         native_record_resident_success(status.identity.sha256, guard_home)
-        raise NativeRunnerAuthorityError(code)
+        raise NativeRunnerAuthorityRefusalError(code)
     if payload.get("status") != "ok" or code != "ok" or not isinstance(payload.get("payload"), dict):
         raise _fail(status, guard_home, _INVALID_RESULT)
     native_record_resident_success(status.identity.sha256, guard_home)
     return payload["payload"]
+
+
+def _projection_carrier_home(requested: Path) -> Path:
+    """Pure field projection prefers an initialized carrier over signing-state creation.
+
+    When neither the requested home nor the default carrier is initialized, the
+    requested home is returned so the resident prerequisite provisions it, as
+    the write path that follows would do anyway.
+    """
+    from .native_policy_snapshot_constants import NATIVE_POLICY_VERIFIER_KEY_NAME, NATIVE_RUNTIME_STATE_DIRECTORY
+
+    key = Path(NATIVE_RUNTIME_STATE_DIRECTORY) / NATIVE_POLICY_VERIFIER_KEY_NAME
+    if os.path.lexists(requested / key):
+        return requested
+    carrier = _resolve_digest_home(None)
+    return carrier if os.path.lexists(carrier / key) else requested
