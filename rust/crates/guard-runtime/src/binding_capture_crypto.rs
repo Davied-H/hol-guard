@@ -11,7 +11,6 @@ use sha2::Sha256;
 use crate::binding_capture_json::{self as json, Json, MAX_CANONICAL_BYTES};
 
 pub(crate) const CAPTURE_SCHEMA: &str = "guard-codex-binding-capture.v2";
-pub(crate) const LEGACY_CAPTURE_SCHEMA: &str = "guard-codex-binding-capture.v1";
 pub(crate) const FINGERPRINT_SCHEME: &str = "hmac-sha256-per-run-v2";
 pub(crate) const KEY_BYTES: usize = 32;
 const NONCE_BYTES: usize = 12;

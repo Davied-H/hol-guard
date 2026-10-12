@@ -25,16 +25,36 @@ from pathlib import Path
 from typing import Final
 from uuid import uuid4
 
-from .native_context import _canonical_request_sha256, ensure_resident_prerequisite
-from .native_execution import _resident_request
-
 BINDING_CAPTURE_FEATURE: Final = "codex-binding-capture-v1"
 _REQUEST_SCHEMA: Final = "guard-codex-binding-capture-request.v1"
 _RESULT_SCHEMA: Final = "guard-codex-binding-capture-result.v1"
 _MARKER_PARTS: Final = ("diagnostics", "codex-binding-capture.v2.json")
 _MAX_TEXT_BYTES: Final = 65536
 _TIMEOUT_SECONDS: Final = 2.0
+_BRIDGE_TIMEOUT_SECONDS: Final = 0.2
+_JOIN_PROBE_RECORDS: Final = 129
 _QUEUE_LIMIT: Final = 8
+_canonical_request_sha256 = None
+ensure_resident_prerequisite = None
+_resident_request = None
+
+
+def _bind_runtime_imports() -> None:
+    """Import the resident client only after a caller has decided to exchange."""
+
+    global _canonical_request_sha256, ensure_resident_prerequisite, _resident_request
+    if _canonical_request_sha256 is None:
+        from .native_context import _canonical_request_sha256 as digest
+
+        _canonical_request_sha256 = digest
+    if ensure_resident_prerequisite is None:
+        from .native_context import ensure_resident_prerequisite as prepare
+
+        ensure_resident_prerequisite = prepare
+    if _resident_request is None:
+        from .native_execution import _resident_request as request
+
+        _resident_request = request
 
 
 def _marker_present(guard_home: Path) -> bool:
@@ -46,7 +66,15 @@ def _marker_present(guard_home: Path) -> bool:
         return False
 
 
-def _exchange(guard_home: Path, command: dict[str, object]) -> object | None:
+def _exchange(
+    guard_home: Path,
+    command: dict[str, object],
+    *,
+    timeout_seconds: float = _TIMEOUT_SECONDS,
+    prepare: bool = True,
+    status: object | None = None,
+) -> object | None:
+    _bind_runtime_imports()
     request: dict[str, object] = {
         "schema": _REQUEST_SCHEMA,
         "request_id": f"codex-binding-capture-{uuid4().hex}",
@@ -57,15 +85,17 @@ def _exchange(guard_home: Path, command: dict[str, object]) -> object | None:
         digest = "sha256:" + _canonical_request_sha256(request)
     except (TypeError, ValueError):
         return None
-    if not ensure_resident_prerequisite(guard_home):
+    if prepare and not ensure_resident_prerequisite(guard_home):
         return None
     response = _resident_request(
         operation="codex_binding_capture",
         request=request,
         guard_home=guard_home,
-        timeout_seconds=_TIMEOUT_SECONDS,
+        timeout_seconds=timeout_seconds,
         required_feature=BINDING_CAPTURE_FEATURE,
         response_schema=_RESULT_SCHEMA,
+        record_resilience=False,
+        status=status,
     )
     if (
         response is None
@@ -99,6 +129,51 @@ def _recorded(payload: object) -> bool:
     return isinstance(payload, Mapping) and payload.get("recorded") is True
 
 
+def _contains_oversized_text(value: object, limit: int) -> bool:
+    if isinstance(value, str):
+        return len(value.encode("utf-8")) > limit
+    if isinstance(value, Mapping):
+        return any(
+            _contains_oversized_text(key, limit) or _contains_oversized_text(item, limit) for key, item in value.items()
+        )
+    if isinstance(value, (list, tuple)):
+        return any(_contains_oversized_text(item, limit) for item in value)
+    return False
+
+
+def _bounded_json(value: object, limit: int = _MAX_TEXT_BYTES) -> str | None:
+    """Compact UTF-8 JSON, or ``None`` once the byte ceiling is crossed."""
+
+    if _contains_oversized_text(value, limit):
+        return None
+    encoder = json.JSONEncoder(sort_keys=True, separators=(",", ":"), allow_nan=False, ensure_ascii=False)
+    try:
+        parts: list[str] = []
+        size = 0
+        for chunk in encoder.iterencode(value):
+            size += len(chunk.encode("utf-8"))
+            if size > limit:
+                return None
+            parts.append(chunk)
+    except (TypeError, ValueError, RecursionError):
+        return None
+    return "".join(parts)
+
+
+def _bridge_resident_status(guard_home: Path) -> object | None:
+    """Status of an already-idle resident, with no store provisioning and no spawn."""
+
+    from .native_resident_client import native_resident_client_ready
+    from .native_runtime import native_runtime_status
+
+    status = native_runtime_status()
+    identity = getattr(status, "identity", None)
+    path = getattr(identity, "path", None)
+    if not isinstance(path, Path) or not native_resident_client_ready(path, guard_home):
+        return None
+    return status
+
+
 def record_bridge_ingress(
     *,
     guard_home: Path,
@@ -115,6 +190,9 @@ def record_bridge_ingress(
     forwarded = raw if forwarded_payload is None else _bounded_text(forwarded_payload)
     if raw is None or forwarded is None or not isinstance(event_name, str):
         return False
+    status = _bridge_resident_status(guard_home)
+    if status is None:
+        return False
     return _recorded(
         _exchange(
             guard_home,
@@ -125,6 +203,9 @@ def record_bridge_ingress(
                 "event_name": event_name,
                 "harness": harness,
             },
+            timeout_seconds=_BRIDGE_TIMEOUT_SECONDS,
+            prepare=False,
+            status=status,
         )
     )
 
@@ -141,10 +222,9 @@ def record_native_worker(
 
     if harness != "codex" or not isinstance(event_name, str) or not _marker_present(guard_home):
         return False
-    try:
-        payload_text = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
-        receipt_text = json.dumps(receipt, sort_keys=True, separators=(",", ":"), allow_nan=False)
-    except (TypeError, ValueError, RecursionError):
+    payload_text = _bounded_json(payload)
+    receipt_text = _bounded_json(receipt)
+    if payload_text is None or receipt_text is None:
         return False
     return _recorded(
         _exchange(
@@ -189,10 +269,14 @@ def join_binding_records(guard_home: Path, records: list[object]) -> dict[str, o
 
     if os.name == "nt" or not guard_home.is_absolute():
         return None
-    try:
-        encoded = [json.dumps(record, sort_keys=True, separators=(",", ":"), allow_nan=False) for record in records]
-    except (TypeError, ValueError, RecursionError):
-        return None
+    encoded: list[str] = []
+    for record in records:
+        if len(encoded) >= _JOIN_PROBE_RECORDS:
+            break
+        text = _bounded_json(record)
+        if text is None:
+            return None
+        encoded.append(text)
     payload = _exchange(guard_home, {"kind": "join", "records": encoded})
     result = payload.get("result") if isinstance(payload, Mapping) else None
     return dict(result) if isinstance(result, Mapping) else None
@@ -236,12 +320,9 @@ class CodexBindingCaptureWriter:
         try:
             if self._stopped.is_set() or len(self._pending) >= _QUEUE_LIMIT or not _marker_present(guard_home):
                 return False
-            try:
-                payload_text = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
-                receipt_text = json.dumps(receipt, sort_keys=True, separators=(",", ":"), allow_nan=False)
-            except (TypeError, ValueError, RecursionError):
-                return False
-            if len(payload_text) > _MAX_TEXT_BYTES or len(receipt_text) > _MAX_TEXT_BYTES:
+            payload_text = _bounded_json(payload)
+            receipt_text = _bounded_json(receipt)
+            if payload_text is None or receipt_text is None:
                 return False
             self._pending.append(_CaptureTask(guard_home, payload_text, receipt_text, event_name))
             return True

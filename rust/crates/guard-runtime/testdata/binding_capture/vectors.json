@@ -1066,69 +1066,6 @@
     "session_overrides": {}
    },
    {
-    "name": "legacy_schema",
-    "records": [
-     {
-      "event_name": "PreToolUse",
-      "fingerprint_scheme": "hmac-sha256-per-run-v2",
-      "forwarded_payload_hmac_sha256": "f106daf542bbb9696341aa6cd9aae61162892fe0861c841acd7312a7eef64da6",
-      "harness": "codex",
-      "key_id": "0123456789abcdef0123456789abcdef",
-      "raw_payload_hmac_sha256": "7ba4fc3f846d04309d0c7927f459bb5be3f348edfb368b1387e0f7db1bb3269f",
-      "route": "bridge_ingress",
-      "row_mac": "e9f00b3aac152156d6ac3f52ba4f6f6de3465a84819cf2d99fd793063efd8cd7",
-      "run_id": "run-1",
-      "schema": "guard-codex-binding-capture.v1",
-      "tool_use_id": "call-1",
-      "tool_use_id_state": "present"
-     },
-     {
-      "decision_scope": "native_edge",
-      "event_name": "PreToolUse",
-      "fingerprint_scheme": "hmac-sha256-per-run-v2",
-      "forwarded_payload_hmac_sha256": "f106daf542bbb9696341aa6cd9aae61162892fe0861c841acd7312a7eef64da6",
-      "harness": "codex",
-      "key_id": "0123456789abcdef0123456789abcdef",
-      "route": "native_worker",
-      "row_mac": "e7e285b8d53cab510b5b33af1a72db058383d8eccb18661a06115219c6389483",
-      "run_id": "run-1",
-      "schema": "guard-codex-binding-capture.v2",
-      "sealed_receipt": {
-       "ciphertext_b64": "_gtiAup11iy6CosLar4oTrb8ZpmXFvY5bfE8cdD8wAqfS3xsEORoz20VktKXwwyrxd9vGC_oQxMDnGx6h0a3ZsNfzwMj_Uxq8LxvZt0HHU84NGd9nNMDQnKy4Lz-qj8pr5bA8x6f899cuKLuM0fpIMCXOE8UqknfB2qzeUL26Ooop5A61vlFx0HZ_7L9uPqd6wb1aOfuICHV3rtXG1Samha0YpOYdSrxpzZ1Nisd-K1iNAG6Sjwgs__E3NtVdHEDcoad_TBrRETCBY6QQYCmVjFjtyAaDIld0nzgVf_i4JVbW1mg1t2UvW_WIVxJQI5lNhSvxKJfmCdPmjDmND_-s7L9oYPTWLEu4htSOaRnxiqL0rvxbanpzTofWFzwtZUA0oAMJyCuznJV2ialdAKK3B20ZB78nlVKZtY2WFrLSX6ZVN37y2phF87_bDrX3MkwoK7Y24VOAaLu1CoKt90fsay-vQXhU5GUbasF9SYf-3V6ImxDDtCUTYUE5ACJMpcm-Vp9gJwr3e87wIK8B2lFQhyaQdbCL6btEViq9ltzSGh1YkepCH3VzvQ57IwXZHJQk9KRu8HVrPPpE9qc-lfJhFhX1qypIYVN3zKIUDvEayU5eXAMVoG5rZivxvs2CVSIaBOWcXkSou6IgILa42DC66nwcxxbJKs252s0agvsgNMEFQ5Bdrw9ujF_-UmvAAYQEXnJz_pg9cF6HiapaasvfOGeRgrnUJtihIcMyX_zbBA3JwIVawvJSjPcl13mCbw_AV1DIjaUaJ5VCi8Kf19vKcjAC6KebuXbZ5uxswnGvbGSQ4jZU_VX8ayZv6DVyj9WNFzhH39ARvKYH2wfWRUr4oBku5XvXFIPhaZBWoyHL2hNMGSXdhzB6e5BDGCzSBi5Yix7EpbqeLMDjTrd2snsnzKe8SPqWzhmsLNCaRKRrAO1TMbgJPo1Hgmh3xJgva5HaYDzGIw=",
-       "nonce_b64": "xb-pbRElx6b9UjqU"
-      },
-      "tool_use_id": "call-1",
-      "tool_use_id_state": "present"
-     }
-    ],
-    "result": {
-     "fingerprint_scheme": "hmac-sha256-per-run-v2",
-     "issues": [
-      {
-       "reason": "legacy_capture_schema",
-       "status": "invalid"
-      }
-     ],
-     "joins": [
-      {
-       "identity": [
-        "run-1",
-        "codex",
-        "PreToolUse",
-        "call-1"
-       ],
-       "reason": "missing_join_side",
-       "status": "unbound"
-      }
-     ],
-     "schema": "guard-codex-binding-capture.v2",
-     "scope": "native_edge_binding",
-     "status": "invalid"
-    },
-    "session": true,
-    "session_overrides": {}
-   },
-   {
     "name": "wrong_run",
     "records": [
      {

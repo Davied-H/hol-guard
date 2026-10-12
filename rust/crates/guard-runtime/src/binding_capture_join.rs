@@ -1,8 +1,7 @@
 //! Validate existing capture output and join bounded, keyed capture rows.
 
 use crate::binding_capture_crypto::{
-    CaptureSession, CAPTURE_SCHEMA, FINGERPRINT_SCHEME, LEGACY_CAPTURE_SCHEMA, MAX_BYTES,
-    MAX_RECORDS,
+    CaptureSession, CAPTURE_SCHEMA, FINGERPRINT_SCHEME, MAX_BYTES, MAX_RECORDS,
 };
 use crate::binding_capture_json::{self as json, Json};
 use crate::binding_capture_record::{
@@ -132,13 +131,7 @@ pub(crate) fn join_binding_records(
         };
         aggregate_bytes += size;
         let Some(normalized) = validated_record(record, None, session, now) else {
-            let schema_reason =
-                if record.get("schema").and_then(Json::as_str) == Some(LEGACY_CAPTURE_SCHEMA) {
-                    "legacy_capture_schema"
-                } else {
-                    "record_shape"
-                };
-            issues.push(issue("invalid", schema_reason));
+            issues.push(issue("invalid", "record_shape"));
             continue;
         };
         let Some(key) = normalized.key else {

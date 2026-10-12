@@ -6,6 +6,8 @@
 //! grammar exactly instead of reusing the transport parser, whose depth and
 //! collection ceilings differ from the capture's documented 64/4096 bounds.
 
+use std::collections::HashSet;
+
 use guard_contracts::python_float_repr;
 
 pub(crate) const MAX_CANONICAL_BYTES: usize = 64 * 1024;
@@ -74,6 +76,7 @@ impl Json {
 struct Parser<'a> {
     bytes: &'a [u8],
     index: usize,
+    nodes: usize,
 }
 
 type ParseResult<T> = Result<T, ()>;
@@ -92,10 +95,19 @@ impl Parser<'_> {
         self.bytes[self.index..].starts_with(text)
     }
 
+    fn charge(&mut self) -> ParseResult<()> {
+        if self.nodes >= MAX_NODES {
+            return Err(());
+        }
+        self.nodes += 1;
+        Ok(())
+    }
+
     fn value(&mut self, depth: usize) -> ParseResult<Json> {
         if depth > PARSE_DEPTH_GUARD {
             return Err(());
         }
+        self.charge()?;
         self.whitespace();
         match self.bytes.get(self.index) {
             Some(b'{') => self.object(depth),
@@ -268,6 +280,7 @@ impl Parser<'_> {
     fn object(&mut self, depth: usize) -> ParseResult<Json> {
         self.index += 1;
         let mut entries: Vec<(String, Json)> = Vec::new();
+        let mut seen: HashSet<String> = HashSet::new();
         self.whitespace();
         if self.bytes.get(self.index) == Some(&b'}') {
             self.index += 1;
@@ -279,15 +292,16 @@ impl Parser<'_> {
                 return Err(());
             }
             let key = self.string()?;
+            self.charge()?;
+            if !seen.insert(key.clone()) {
+                return Err(());
+            }
             self.whitespace();
             if self.bytes.get(self.index) != Some(&b':') {
                 return Err(());
             }
             self.index += 1;
             let value = self.value(depth + 1)?;
-            if entries.iter().any(|(existing, _)| *existing == key) {
-                return Err(());
-            }
             entries.push((key, value));
             self.whitespace();
             match self.bytes.get(self.index) {
@@ -316,6 +330,7 @@ pub(crate) fn parse(text: &str) -> Option<Json> {
     let mut parser = Parser {
         bytes: text.as_bytes(),
         index: 0,
+        nodes: 0,
     };
     let value = parser.value(0).ok()?;
     parser.whitespace();
@@ -436,4 +451,29 @@ pub(crate) fn canonical(value: &Json) -> Option<Vec<u8>> {
     }
     let encoded = encode(value);
     (encoded.len() <= MAX_CANONICAL_BYTES).then_some(encoded)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn small_object_parses_and_duplicate_keys_fail() {
+        assert!(parse_object(br#"{"a":1}"#).is_some());
+        assert!(parse_object(br#"{"a":1,"a":2}"#).is_none());
+    }
+
+    #[test]
+    fn wide_object_under_the_byte_ceiling_is_rejected_during_parse() {
+        let mut body = String::from("{");
+        for index in 0..6000 {
+            if index > 0 {
+                body.push(',');
+            }
+            body.push_str(&format!("\"{index:04}\":1"));
+        }
+        body.push('}');
+        assert!(body.len() < MAX_CANONICAL_BYTES);
+        assert!(parse_object(body.as_bytes()).is_none());
+    }
 }

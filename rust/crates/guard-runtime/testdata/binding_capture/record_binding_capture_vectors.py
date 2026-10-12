@@ -194,10 +194,14 @@ def json_cases() -> list[dict[str, object]]:
         encoded = text.encode("utf-8", errors="surrogatepass")
         parsed = cap._json_object(encoded)
         canonical = None if parsed is None else canonical_json_bytes(parsed)
+        if parsed is None or canonical is None:
+            object_text = None
+        else:
+            object_text = canonical.decode("utf-8")
         cases.append(
             {
                 "text": text,
-                "object": None if parsed is None else canonical.decode("utf-8") if canonical is not None else None,
+                "object": object_text,
                 "validated": parsed is not None,
             }
         )
@@ -592,9 +596,6 @@ def join_cases(scenario_rows: list[dict[str, object]]) -> list[dict[str, object]
     extra = json.loads(json.dumps(pair))
     extra[0]["extra"] = 1
     add("extra_field", extra)
-    legacy = json.loads(json.dumps(pair))
-    legacy[0]["schema"] = crypto.LEGACY_CAPTURE_SCHEMA
-    add("legacy_schema", legacy)
     wrong_run = json.loads(json.dumps(pair))
     wrong_run[0]["run_id"] = "other"
     add("wrong_run", wrong_run)

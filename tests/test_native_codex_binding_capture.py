@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from codex_plugin_scanner.guard import native_codex_binding_capture as capture
-from codex_plugin_scanner.guard.daemon import hook_worker_native
+from codex_plugin_scanner.guard.daemon import hook_worker_native_review
 from codex_plugin_scanner.guard.daemon.hook_worker import HookWorker
 from codex_plugin_scanner.guard.native_codex_binding_capture import CodexBindingCaptureWriter
 from codex_plugin_scanner.guard.native_decision_receipt import canonical_receipt_bytes
@@ -81,9 +81,10 @@ def test_bridge_forwards_bounded_text_and_reports_runtime_answer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _enable(tmp_path)
+    monkeypatch.setattr(capture, "_bridge_resident_status", lambda _home: object())
     seen: list[dict[str, object]] = []
 
-    def answer(_home: Path, command: dict[str, object]) -> object:
+    def answer(_home: Path, command: dict[str, object], **_kwargs: object) -> object:
         seen.append(command)
         return {"recorded": True}
 
@@ -107,9 +108,9 @@ def test_bridge_forwards_bounded_text_and_reports_runtime_answer(
         guard_home=tmp_path, raw_payload="{}", event_name="PreToolUse", harness="claude"
     )
     assert len(seen) == 1
-    _patch_exchange(monkeypatch, lambda *_args: {"recorded": False})
+    _patch_exchange(monkeypatch, lambda *_args, **_kwargs: {"recorded": False})
     assert not capture.record_bridge_ingress(guard_home=tmp_path, raw_payload="{}", event_name="PreToolUse")
-    _patch_exchange(monkeypatch, lambda *_args: None)
+    _patch_exchange(monkeypatch, lambda *_args, **_kwargs: None)
     assert not capture.record_bridge_ingress(guard_home=tmp_path, raw_payload="{}", event_name="PreToolUse")
 
 
@@ -122,6 +123,7 @@ def test_exchange_rejects_unbound_or_failed_runtime_replies(tmp_path: Path, monk
         assert isinstance(request, dict)
         assert kwargs["operation"] == "codex_binding_capture"
         assert kwargs["required_feature"] == capture.BINDING_CAPTURE_FEATURE
+        assert kwargs["record_resilience"] is False
         reply = replies.pop(0)
         if reply is not None and reply.get("request_id") == "echo":
             reply = {**reply, "request_id": request["request_id"]}
@@ -236,7 +238,7 @@ def test_native_allow_does_not_wait_for_optional_capture(
             inside_fence[0] = False
 
     _patch_exchange(monkeypatch, blocked)
-    monkeypatch.setattr(hook_worker_native, "native_review_fence", fence)
+    monkeypatch.setattr(hook_worker_native_review, "native_review_fence", fence)
     writer = CodexBindingCaptureWriter()
     worker = HookWorker(
         store=GuardStore(tmp_path / "guard"),
@@ -262,6 +264,10 @@ def test_native_allow_does_not_wait_for_optional_capture(
                 "reason": "Bounded command.",
                 "explicitly_benign": True,
                 "command_model": {"normalized_text": "pwd"},
+            },
+            "harness_response": {
+                "policy_action": "allow",
+                "hookSpecificOutput": {"permissionDecision": "allow"},
             },
         },
     )
@@ -365,6 +371,106 @@ def test_capture_queue_keeps_bounded_immutable_snapshots(tmp_path: Path, monkeyp
         assert json.loads(str(recorded[1]["receipt"]))["reason_code"] == "native_allow"
     finally:
         _finish(writer, release)
+
+
+def test_bridge_skips_when_no_idle_resident(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _enable(tmp_path)
+    calls: list[object] = []
+    _patch_exchange(monkeypatch, lambda *args, **kwargs: calls.append((args, kwargs)))
+    monkeypatch.setattr(capture, "_bridge_resident_status", lambda _home: None)
+    assert not capture.record_bridge_ingress(guard_home=tmp_path, raw_payload="{}", event_name="PreToolUse")
+    assert calls == []
+
+
+def test_unicode_payload_is_bounded_by_utf8_bytes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _enable(tmp_path)
+    seen: list[dict[str, object]] = []
+
+    def answer(_home: Path, command: dict[str, object]) -> object:
+        seen.append(command)
+        return {"recorded": True}
+
+    _patch_exchange(monkeypatch, answer)
+    assert capture.record_native_worker(
+        guard_home=tmp_path,
+        payload={"text": "é" * 10922},
+        harness="codex",
+        event_name="PreToolUse",
+        receipt={"ok": True},
+    )
+    payload = str(seen[0]["payload"])
+    assert "\\u00e9" not in payload
+    assert len(payload.encode("utf-8")) <= capture._MAX_TEXT_BYTES
+
+
+def test_join_serializes_only_enough_records_to_show_the_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list[dict[str, object]] = []
+
+    def answer(_home: Path, command: dict[str, object]) -> object:
+        seen.append(command)
+        return {"result": {"status": "ambiguous"}}
+
+    _patch_exchange(monkeypatch, answer)
+    records: list[object] = [{"n": index} for index in range(400)]
+    assert capture.join_binding_records(tmp_path, records) == {"status": "ambiguous"}
+    encoded = seen[0]["records"]
+    assert isinstance(encoded, list)
+    assert len(encoded) == capture._JOIN_PROBE_RECORDS
+
+
+def test_capture_timeouts_do_not_touch_enforcement_resilience(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from types import SimpleNamespace
+
+    from codex_plugin_scanner.guard import native_execution
+
+    recorded: list[str] = []
+    monkeypatch.setattr(
+        native_execution,
+        "native_record_resident_failure",
+        lambda *_args, **_kwargs: recorded.append("failure"),
+    )
+    monkeypatch.setattr(
+        native_execution,
+        "native_record_resident_success",
+        lambda *_args, **_kwargs: recorded.append("success"),
+    )
+    monkeypatch.setattr(native_execution, "native_resident_client_request", lambda **_kwargs: None)
+    status = SimpleNamespace(
+        available=True,
+        compatible=True,
+        identity=SimpleNamespace(sha256="ab", path=tmp_path / "runtime"),
+        capabilities=SimpleNamespace(features={"resident-protocol-v2", capture.BINDING_CAPTURE_FEATURE}),
+    )
+    for _ in range(3):
+        assert (
+            native_execution._resident_request(
+                operation="codex_binding_capture",
+                request={},
+                guard_home=tmp_path,
+                timeout_seconds=0.2,
+                required_feature=capture.BINDING_CAPTURE_FEATURE,
+                record_resilience=False,
+                status=status,
+            )
+            is None
+        )
+    assert recorded == []
+    assert (
+        native_execution._resident_request(
+            operation="codex_binding_capture",
+            request={},
+            guard_home=tmp_path,
+            timeout_seconds=0.2,
+            required_feature=capture.BINDING_CAPTURE_FEATURE,
+            status=status,
+        )
+        is None
+    )
+    assert recorded == ["failure"]
 
 
 def test_writer_skips_queue_without_marker(tmp_path: Path) -> None:
