@@ -140,8 +140,8 @@ fn omp_document_searches_refuse_hidden_descendants_and_benign_symlinks() {
     write(skills.join(".hidden/SKILL.md"), "inert hidden fixture\n");
     assert!(!allowed(&omp(
         &f,
-        "glob",
-        json!({"path":format!("{}/**/SKILL.md", skills.display())})
+        "grep",
+        json!({"path":skills,"pattern":"inert"})
     )));
     let artifacts = f.home.join(".agent/artifacts");
     write(artifacts.join("report.md"), "Inert report\n");
