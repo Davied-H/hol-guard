@@ -4480,26 +4480,6 @@
    "old_node": "tests/test_native_approval_bridge.py::test_decoders_reject_floor_lowering_unknown_fields_duplicate_json_and_unknown_errors",
    "new_node": "tests/test_native_response_decoder.py::test_approval_decoders_reject_floor_lowering_and_tampering",
    "reason": "Decoder floor-lowering and tamper negatives cover the live native_approval_protocol surface; bridge-specific assertions were retired."
-  },
-  {
-   "old_node": "tests/test_guard_runtime.py::test_normalize_hook_payload_prefers_matching_tool_call_args",
-   "new_node": "tests/test_guard_runtime.py::test_normalize_hook_payload_prefers_matching_tool_call_args",
-   "reason": "Public caller regression preserved; native configuration and normalization replace the original helper bodies."
-  },
-  {
-   "old_node": "tests/test_guard_runtime.py::test_copilot_runtime_tool_call_prefers_cli_workspace_config_when_workspace_is_inferred",
-   "new_node": "tests/test_guard_runtime.py::test_copilot_runtime_tool_call_prefers_cli_workspace_config_when_workspace_is_inferred",
-   "reason": "Public caller regression preserved; native configuration and normalization replace the original helper bodies."
-  },
-  {
-   "old_node": "tests/test_guard_runtime.py::test_copilot_runtime_tool_call_prefers_ide_workspace_config_when_workspace_is_explicit",
-   "new_node": "tests/test_guard_runtime.py::test_copilot_runtime_tool_call_prefers_ide_workspace_config_when_workspace_is_explicit",
-   "reason": "Public caller regression preserved; native configuration and normalization replace the original helper bodies."
-  },
-  {
-   "old_node": "tests/test_guard_hook_executable_identity.py::test_copilot_mcp_server_and_tool_configuration_changes_invalidate_identity",
-   "new_node": "tests/test_guard_hook_executable_identity.py::test_copilot_mcp_server_and_tool_configuration_changes_invalidate_identity",
-   "reason": "Public caller regression preserved; native configuration and normalization replace the original helper bodies."
   }
  ],
  "unchanged_regression_suites": [
@@ -4660,17 +4640,6 @@
    "path": "src/codex_plugin_scanner/guard/cli/commands_support_runtime_resolution.py",
    "base_commit": "d75f7f7c59",
    "source_sha256": "8336a2fff0dfde8c6666251bf7754d6e4ea3799272d1ffdcc2ad41073f95a944",
-   "remaining_role": "Public DTO and bound native transport facade; configuration selection, identity composition, and URL normalization bodies removed.",
-   "native_replacements": [
-    "rust/crates/guard-runtime/src/cli_copilot_resolution.rs",
-    "rust/crates/guard-command/src/contributed_mcp_url.rs"
-   ],
-   "parity_fixture": "rust/crates/guard-runtime/tests/fixtures/cli_runtime_support_vectors.json"
-  },
-  {
-   "path": "src/codex_plugin_scanner/guard/runtime/mcp_server_contribution.py",
-   "base_commit": "d75f7f7c59",
-   "source_sha256": "545d2a53a975c58a54268403e454bb5905ed95e8d626c2d6eeb57a0095b03440",
    "remaining_role": "Public DTO and bound native transport facade; configuration selection, identity composition, and URL normalization bodies removed.",
    "native_replacements": [
     "rust/crates/guard-runtime/src/cli_copilot_resolution.rs",

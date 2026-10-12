@@ -23,7 +23,6 @@ sys.path.insert(0, str(ROOT / "src"))
 TRUST_MAP = ROOT / "contracts/extensions/build-trust-class-map.v1.json"
 TARGET_DIR = ROOT / "rust/target"
 COMPILER = TARGET_DIR / "release/guard-command-source"
-RUNTIME = TARGET_DIR / "release/hol-guard-runtime"
 TOOLCHAIN = "1.88.0"
 
 
@@ -32,10 +31,6 @@ def _run(command: list[str], *, env: dict[str, str] | None = None) -> str:
     merged["PYTHONPATH"] = os.pathsep.join([str(ROOT / "src"), str(ROOT), merged.get("PYTHONPATH", "")]).rstrip(
         os.pathsep
     )
-    # Contribution validation normalizes remote MCP URLs in the native resident.
-    if RUNTIME.is_file() and "HOL_GUARD_NATIVE_BINARY" not in merged:
-        merged["HOL_GUARD_NATIVE"] = "force"
-        merged["HOL_GUARD_NATIVE_BINARY"] = str(RUNTIME)
     if env:
         merged.update(env)
     completed = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, env=merged, timeout=900, check=False)
@@ -176,7 +171,7 @@ def sync_trust_map() -> bool:
 
 
 def build_source_compiler() -> None:
-    """Build the offline compiler and the runtime that validates remote MCP contributions."""
+    """Catalog publication needs the offline compiler, not a second runtime build."""
     _run(
         [
             "cargo",
@@ -192,10 +187,6 @@ def build_source_compiler() -> None:
             "guard-command",
             "--bin",
             "guard-command-source",
-            "-p",
-            "hol-guard-runtime",
-            "--bin",
-            "hol-guard-runtime",
         ]
     )
 

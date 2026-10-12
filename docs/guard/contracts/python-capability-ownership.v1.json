@@ -647,19 +647,6 @@
     "rust/crates/guard-runtime/src/cli_runtime_support_op.rs",
     "rust/crates/guard-runtime/src/cli_copilot_resolution.rs"
    ]
-  },
-  {
-   "path": "src/codex_plugin_scanner/guard/runtime/mcp_server_contribution.py",
-   "source_sha256": "545d2a53a975c58a54268403e454bb5905ed95e8d626c2d6eeb57a0095b03440",
-   "forbidden_symbols": [
-    "_normalized_remote_component",
-    "_valid_dns_hostname",
-    "_remove_remote_dot_segments"
-   ],
-   "native_replacements": [
-    "rust/crates/guard-runtime/src/cli_runtime_support_op.rs",
-    "rust/crates/guard-runtime/src/cli_copilot_resolution.rs"
-   ]
   }
  ]
 }
