@@ -130,10 +130,13 @@ def run_restricted_node_plan(
         esbuild = None
         if plan.profile_version == VITEST_READ_ONLY_PROFILE_VERSION:
             from .restricted_esbuild import snapshot_esbuild
+            from .restricted_node_test import nearest_project_root
 
             # Executable images have a separate read-only tree. A child cannot
             # replace the image by renaming a writable scratch ancestor.
-            esbuild = snapshot_esbuild(plan.workspace, Path(images).resolve())
+            anchor = _tsx_package_dir(plan.command) or plan.cwd
+            project = nearest_project_root(anchor, plan.workspace, "node_modules/esbuild/package.json")
+            esbuild = snapshot_esbuild(project, Path(images).resolve())
             if esbuild is not None:
                 source, image, version = esbuild
                 if authorize_capability is None:
