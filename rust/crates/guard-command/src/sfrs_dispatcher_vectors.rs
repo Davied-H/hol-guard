@@ -303,13 +303,39 @@ fn differing_fields(expected: &Value, actual: &Value) -> String {
 /// Python found no pytest route and Rust requires the sandbox.
 fn stricter_inline_pytest(case: &Value, expected: &Value, actual: &Value) -> bool {
     let command = case["arguments"]["command"].as_str().unwrap_or_default();
-    command.contains("python")
-        && command.contains(" -c")
-        && expected["guard_default_action"].is_null()
-        && expected["pytest_config_reason_codes"]
-            .as_array()
-            .is_none_or(Vec::is_empty)
-        && actual["guard_default_action"] == "sandbox-required"
+    let (Some(mut want), Some(mut got)) =
+        (expected.as_object().cloned(), actual.as_object().cloned())
+    else {
+        return false;
+    };
+    let python_inline = command.contains("python") && command.contains(" -c");
+    let python_had_no_pytest_route = want.get("guard_default_action").is_none_or(Value::is_null)
+        && want
+            .get("pytest_config_reason_codes")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty);
+    let rust_requires_sandbox =
+        got.get("guard_default_action").and_then(Value::as_str) == Some("sandbox-required");
+    if !(python_inline && python_had_no_pytest_route && rust_requires_sandbox) {
+        return false;
+    }
+    for key in ["guard_default_action", "pytest_config_reason_codes"] {
+        want.remove(key);
+        got.remove(key);
+    }
+    want == got
+}
+
+/// A Linux mismatch is host-sensitive only when every differing leaf is one of
+/// the two facts the macOS recording cannot reproduce: interpreter trust for a
+/// missing `/bin/python3`, or an upload operand's security identity.
+fn host_only_difference(fields: &str) -> bool {
+    !fields.is_empty()
+        && fields.split("; ").all(|part| {
+            let name = part.split(':').next().unwrap_or_default().trim();
+            name == "canonical_command.security_identity"
+                || name == "interpreter_executable_identities[0].trust"
+        })
 }
 
 #[test]
@@ -321,7 +347,8 @@ fn dispatcher_matches_recorded_python() {
     // starts at the process cwd. nextest gives each test its own process.
     let previous_cwd = std::env::current_dir().expect("cwd");
     std::env::set_current_dir(root.join("proj")).expect("enter proj");
-    let mut failures = Vec::new();
+    let mut host_failures = Vec::new();
+    let mut other_failures = Vec::new();
     let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
     let mut kinds: BTreeMap<String, usize> = BTreeMap::new();
     let cases = document["cases"].as_array().expect("cases");
@@ -355,24 +382,36 @@ fn dispatcher_matches_recorded_python() {
                 .collect::<Vec<_>>()
                 .join(",");
             *kinds.entry(names).or_default() += 1;
-            failures.push(format!(
+            let failure = format!(
                 "case {position}: tool {} args {} cwd {} home {} canonical {} native {}\n  differ {fields}",
                 case["tool"], case["arguments"], case["cwd"], case["home"], case["canonical"], case["native"],
-            ));
+            );
+            if host_only_difference(&fields) {
+                host_failures.push(failure);
+            } else {
+                other_failures.push(failure);
+            }
         }
     }
     std::env::set_current_dir(previous_cwd).expect("restore cwd");
     assert!(cases.len() >= 800, "recorded {} cases", cases.len());
-    // Recorded on macOS: `/bin/python3` is absent there, and the upload
-    // operand's security identity observes host path facts of the scratch tree.
-    let failures = crate::sfrs_host_divergence::portable_failures(
-        failures,
-        &[("command -p python3", 4), ("curl -F f=@", 4)],
+    // Recorded on macOS: `command -p` and `command -pv` find no `/bin/python3` there, so `command -p` and
+    // `command -pv` observe a different interpreter trust on Linux CI. The
+    // upload operand's security identity observes host path facts of the scratch
+    // tree. Any other differing field stays a failure.
+    let host_failures = crate::sfrs_host_divergence::portable_failures(
+        host_failures,
+        &[
+            ("command -p", 4),
+            ("command -pv python3", 2),
+            ("curl -F f=@", 4),
+        ],
     );
+    other_failures.extend(host_failures);
     assert!(
-        failures.is_empty(),
+        other_failures.is_empty(),
         "{counts:?}\n{kinds:#?}\n{}",
-        failures
+        other_failures
             .iter()
             .take(120)
             .cloned()
