@@ -51,6 +51,32 @@ fn verdicts_match_the_retired_python() {
 }
 
 #[test]
+fn final_sigma_follows_python_lower() {
+    let cases = [
+        ("ΑΣ", "ας"),
+        ("A Σ", "a σ"),
+        ("ΑΣ ", "ας"),
+        ("ΟΔΟΣ", "οδος"),
+        ("Α\u{0301}Σ", "α\u{0301}ς"),
+        ("Α Σ", "α σ"),
+        ("Σ\u{0301}", "σ\u{0301}"),
+        ("Α.\u{0301}Σ", "α.\u{0301}ς"),
+        ("12Σ", "12σ"),
+        ("Σ1", "σ1"),
+        ("İ", "i\u{0307}"),
+        ("STRASSE", "strasse"),
+        ("straße", "straße"),
+        ("Σ", "σ"),
+        ("ΣΑ", "σα"),
+        ("ΑΣΑ", "ασα"),
+        ("A.Σ", "a.ς"),
+    ];
+    for (input, expected) in cases {
+        assert_eq!(super::normalize(input), expected, "{input}");
+    }
+}
+
+#[test]
 fn a_pending_that_is_not_an_object_is_not_a_question() {
     let answer = json!("Allow once");
     let actual = verdict(&Question {

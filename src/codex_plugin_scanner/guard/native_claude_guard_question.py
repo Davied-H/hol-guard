@@ -55,7 +55,8 @@ def claude_guard_question_verdict(
     """Whether ``payload`` answers the pending HOL Guard prompt, and with what."""
 
     tool_name = payload.get("tool_name")
-    if event != "PostToolUse" or not isinstance(tool_name, str) or "askuserquestion" not in tool_name.lower():
+    normalized_tool = tool_name.strip().lower() if isinstance(tool_name, str) else ""
+    if event != "PostToolUse" or normalized_tool != "askuserquestion":
         # Only narrows: other tools' PostToolUse never reach the resident or
         # ship their (possibly large) input and response.
         return _NOT_A_QUESTION
@@ -71,7 +72,7 @@ def claude_guard_question_verdict(
         return _NOT_A_QUESTION
     is_question = verdict["is_question"]
     action = verdict["action"]
-    if not isinstance(is_question, bool) or (action is not None and action not in _ACTIONS):
+    if not isinstance(is_question, bool) or not (action is None or (isinstance(action, str) and action in _ACTIONS)):
         return _NOT_A_QUESTION
     if not is_question and action is not None:
         return _NOT_A_QUESTION

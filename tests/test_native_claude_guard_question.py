@@ -45,6 +45,8 @@ def test_native_verdicts_match_the_recorded_answers() -> None:
         {"status": "ok", "claude_guard_question": {"is_question": "yes", "action": "allow"}},
         {"status": "ok", "claude_guard_question": {"is_question": False, "action": "allow"}},
         {"status": "ok", "claude_guard_question": {"is_question": True, "action": "allow", "extra": 1}},
+        {"status": "ok", "claude_guard_question": {"is_question": True, "action": ["allow"]}},
+        {"status": "ok", "claude_guard_question": {"is_question": True, "action": {"kind": "allow"}}},
     ],
 )
 def test_native_failure_is_never_an_approval(monkeypatch: pytest.MonkeyPatch, answer: object) -> None:
@@ -69,4 +71,7 @@ def test_other_tools_never_reach_the_resident(monkeypatch: pytest.MonkeyPatch) -
         False,
         None,
     )
+    assert claude_guard_question_verdict(
+        {**case["payload"], "tool_name": "NotAskUserQuestion"}, case["pending"], event="PostToolUse"
+    ) == (False, None)
     assert claude_guard_question_verdict(case["payload"], case["pending"], event="PreToolUse") == (False, None)
