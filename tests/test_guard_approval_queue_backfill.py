@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from codex_plugin_scanner.guard import native_execution, native_store_policy, store_approvals
+from codex_plugin_scanner.guard import native_execution, native_runner_authority, native_store_policy, store_approvals
 from codex_plugin_scanner.guard.models import GuardApprovalRequest
 from codex_plugin_scanner.guard.native_approval_queue_identity import (
     APPROVAL_QUEUE_IDENTITY_FEATURE,
@@ -34,6 +34,16 @@ def _isolated_backfill_cache() -> Iterator[None]:
     store_approvals._QUEUE_BACKFILLED_HOMES.clear()
     yield
     store_approvals._QUEUE_BACKFILLED_HOMES.clear()
+
+
+@pytest.fixture(autouse=True)
+def _projection_on_default_carrier(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These homes hold a placeholder verifier key, so field projection uses the real carrier."""
+    monkeypatch.setattr(
+        native_runner_authority,
+        "_projection_carrier_home",
+        lambda _requested: native_runner_authority._resolve_digest_home(None),
+    )
 
 
 def _home(tmp_path: Path) -> Path:
