@@ -19,8 +19,8 @@ from .restricted_pytest_model import (
 from .restricted_pytest_sandbox import _backend_argv, _restricted_environment, _run_backend_process
 
 
-def _test_script(script: str) -> bool:
-    return restricted_native("test_script", {"value": script}, bool)
+def _test_script(script: str, *, node: bool = False) -> bool:
+    return restricted_native("test_script", {"value": script, "node": node}, bool)
 
 
 def _python_runtime_args(command: Sequence[str]) -> tuple[str, ...] | None:

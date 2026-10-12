@@ -8,7 +8,9 @@ import sys
 import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
+from itertools import pairwise
 from pathlib import Path
+from urllib.parse import unquote, urlparse
 
 from ..native_restricted_pytest import native_launch_plan, restricted_native
 from .restricted_node_capabilities import linux_node_environment
@@ -22,6 +24,17 @@ from .restricted_pytest_model import (
 from .restricted_pytest_sandbox import _backend_argv, _restricted_environment, _run_backend_process
 
 
+def _tsx_package_dir(command: Sequence[str]) -> Path | None:
+    """Directory of the tsx package named by a contained `--import` loader."""
+    for flag, value in pairwise(command):
+        if flag != "--import" or not value.startswith("file:"):
+            continue
+        path = Path(unquote(urlparse(value).path))
+        if path.name == "loader.mjs" and path.parent.name == "dist" and path.parent.parent.name == "tsx":
+            return path.parent.parent
+    return None
+
+
 def bun_vitest_invocation(command: Sequence[str]) -> tuple[str | None, tuple[str, ...]] | None:
     result = restricted_native("bun_vitest_invocation", {"command": list(command)}, (list, type(None)))
     if result is None:
@@ -32,6 +45,15 @@ def bun_vitest_invocation(command: Sequence[str]) -> tuple[str | None, tuple[str
         or not isinstance(result[1], list)
     ):
         raise ValueError("Invalid native Bun invocation")
+    return result[0], tuple(result[1])
+
+
+def tsx_test_invocation(command: Sequence[str]) -> tuple[str, tuple[str, ...]] | None:
+    result = restricted_native("tsx_test_invocation", {"command": list(command)}, (list, type(None)))
+    if result is None:
+        return None
+    if len(result) != 2 or not isinstance(result[0], str) or not isinstance(result[1], list):
+        raise ValueError("Invalid native tsx invocation")
     return result[0], tuple(result[1])
 
 
