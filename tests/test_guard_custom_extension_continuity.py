@@ -429,3 +429,23 @@ def test_observation_hash_change_after_preflight_aborts_old_identity_apply(
     result = apply_verified_custom_extension_continuity(restarted, _bundle(identity), now=_NOW)
     assert result["items"][identity.cli_id]["status"] == "changed_identity"
     assert restarted.read_local_cli_grant(identity.cli_id) is None
+
+
+def test_native_outage_applies_nothing_and_hides_public_state(tmp_path: Path, monkeypatch) -> None:
+    from codex_plugin_scanner.guard.runtime import custom_extension_continuity
+
+    store = GuardStore(tmp_path / "guard-home")
+    identity = _identity()
+    _observe(store, identity)
+    _ = apply_verified_custom_extension_continuity(store, _bundle(identity), now=_NOW)
+    before = store.read_local_cli_revision()
+    monkeypatch.setattr(custom_extension_continuity, "native_context_digest", lambda *_args, **_kwargs: None)
+
+    with pytest.raises(CustomExtensionContinuityError, match="unavailable"):
+        _ = apply_verified_custom_extension_continuity(store, _bundle(identity, revision=2), now=_NOW)
+    with pytest.raises(CustomExtensionContinuityError, match="unavailable"):
+        _ = record_local_custom_extension_mutation(
+            store, identity=identity, state="unset", expected_revision=before, command_states={}, now=_NOW
+        )
+    assert store.read_local_cli_revision() == before
+    assert continuity_state_for_local_items(store, now=_NOW) == {}

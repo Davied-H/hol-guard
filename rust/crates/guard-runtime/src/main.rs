@@ -87,6 +87,7 @@ mod context_digest_local_cli;
 mod contributed_mcp_decision_op;
 mod critical_floor_op;
 mod cursor_observer_proof_op;
+mod custom_extension_continuity;
 mod daemon_handler_digits;
 mod daemon_handler_fields;
 mod daemon_handler_headless;

@@ -259,6 +259,12 @@ pub enum ContextDigestKindV1 {
     PackageExecutionContextFromScannerEvidence {
         material: Value,
     },
+    /// Plan signed custom-Extension continuity, record a local override, or
+    /// project stored continuity state. The request carries the store
+    /// snapshot; the answer is in `custom_extension_continuity`.
+    CustomExtensionContinuity {
+        request: Value,
+    },
     /// Derive the grant identity of an unlisted local CLI.
     LocalCliIdentity {
         source: LocalCliIdentitySourceV1,
@@ -484,4 +490,8 @@ pub struct ContextDigestResultV1 {
     /// an identifiable CLI.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub local_cli_identity: Option<LocalCliIdentityV1>,
+    /// `custom_extension_continuity` answer: a plan, a refusal
+    /// (`{"error": message}`), a local override, or public state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_extension_continuity: Option<Value>,
 }
