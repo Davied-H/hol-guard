@@ -1,14 +1,15 @@
-"""Peel the cd prefix and bounded output filter that native authority classified."""
+"""Peel the cd prefix, output handling and status echo that native authority classified."""
 
 from __future__ import annotations
 
 import contextlib
 import io
+import os
 import re
 import shlex
 import sys
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from .restricted_pytest_validation import _path_is_within
@@ -20,15 +21,29 @@ _OPERATOR = frozenset("();<>|&\n")
 _UNQUOTED_EXPANSION = frozenset("$`*?[{")
 _DOUBLE_QUOTED_ESCAPES = frozenset('$`"\\')
 _ARGUMENT_REJECT = frozenset("<>|&;")
+# A final `; echo "<label>$?"`; a label with spaces must be double-quoted.
+_STATUS_ECHO = re.compile(
+    r'[ \t]*;[ \t]*echo[ \t]+(?:"([A-Za-z0-9_=: -]{0,32})\$\?"|([A-Za-z0-9_=:-]{0,32})\$\?)[ \t]*\Z'
+)
 
 
 @dataclass(frozen=True)
 class OutputFilter:
-    """A trailing `| head|tail -N`, applied in-process to the contained output."""
+    """A trailing `2>&1`, `| head|tail -N` or `; echo "<label>$?"`, applied in-process.
+
+    `kind` is "head" or "tail" for a bounded filter, else "all".
+    """
 
     kind: str
     count: int
     merge_stderr: bool
+    status_label: str | None = None
+
+    def status_line(self, exit_code: int) -> str | None:
+        """The echo's output; after a pipe, `$?` is the filter's own status."""
+        if self.status_label is None:
+            return None
+        return f"{self.status_label}{0 if self.kind in {'head', 'tail'} else exit_code}\n"
 
 
 def _lex(command: str) -> tuple[list[tuple[str, bool]], bool]:
@@ -112,14 +127,48 @@ def _bounded_filter(arguments: list[tuple[str, bool]]) -> int | None:
     return None
 
 
-def peel_contained_wrapper(command: str, *, workspace: Path) -> tuple[str, Path, OutputFilter | None] | None:
+def sibling_project_root(directory: Path, *, home: Path | None) -> Path | None:
+    """The repository holding a cd target outside the hook workspace, as native authority finds it.
+
+    The nearest ancestor with a `.git` entry, strictly below home or the system
+    temporary directory and owned by this user. The sink rebases its approved
+    root there, so the run is contained to that repository exactly as it would
+    be from a session started in it.
+    """
+    if home is None:
+        return None
+    directory = directory.resolve(strict=True)
+    for base in (home, Path("/tmp")):
+        try:
+            base = base.resolve(strict=True)
+        except (OSError, RuntimeError):
+            continue
+        if directory == base or not _path_is_within(directory, base):
+            continue
+        candidate = directory
+        while candidate != base:
+            if os.path.lexists(candidate / ".git"):
+                return candidate if candidate.stat().st_uid == os.getuid() else None
+            candidate = candidate.parent
+        return None
+    return None
+
+
+def peel_contained_wrapper(
+    command: str, *, workspace: Path, home: Path | None = None
+) -> tuple[str, Path, OutputFilter | None] | None:
     """Return the core command, its directory, and output filter, or None when nothing is wrapped.
 
-    Raises ValueError (or OSError for a missing cd target) for shapes native authority never upgrades.
+    A cd target must lie in the workspace or, given `home`, in a sibling
+    repository (see `sibling_project_root`). Raises ValueError (or OSError for
+    a missing cd target) for shapes native authority never upgrades.
     """
+    status = _STATUS_ECHO.search(command)
+    if status is not None:
+        command = command[: status.start()]
     tokens, exact = _lex(command)
     directory = workspace
-    wrapped = False
+    wrapped = status is not None
     output = None
     if tokens[:1] == [("cd", False)]:
         if len(tokens) < 4 or tokens[1][1] or tokens[2] != ("&&", True):
@@ -128,7 +177,10 @@ def peel_contained_wrapper(command: str, *, workspace: Path) -> tuple[str, Path,
         if not exact or not target.is_absolute():
             raise ValueError("relative cd target")
         directory = target.resolve(strict=True)
-        if not directory.is_dir() or not _path_is_within(directory, workspace.resolve(strict=True)):
+        if not directory.is_dir() or not (
+            _path_is_within(directory, workspace.resolve(strict=True))
+            or sibling_project_root(directory, home=home) is not None
+        ):
             raise ValueError("cd target outside the workspace")
         tokens, wrapped = tokens[3:], True
     if ("|", True) in tokens:
@@ -143,6 +195,13 @@ def peel_contained_wrapper(command: str, *, workspace: Path) -> tuple[str, Path,
             tokens = tokens[:-1]
         output = OutputFilter(program[0][0], count, merge)
         wrapped = True
+    elif tokens[-1:] == [("2>&1", True)]:
+        tokens = tokens[:-1]
+        output = OutputFilter("all", 0, True)
+        wrapped = True
+    if status is not None:
+        label = status.group(1) if status.group(1) is not None else status.group(2)
+        output = replace(output or OutputFilter("all", 0, False), status_label=label)
     if not wrapped:
         return None
     if not exact or not tokens or any(operator or set(value) & _ARGUMENT_REJECT for value, operator in tokens):
@@ -154,11 +213,16 @@ def peel_contained_wrapper(command: str, *, workspace: Path) -> tuple[str, Path,
 def bounded_output(output: OutputFilter | None) -> Iterator[None]:
     """Apply head/tail in-process; no external filter runs outside containment.
 
-    The sandbox captures stdout and stderr separately, so with `2>&1` the merged
-    stream is the run's stdout followed by its stderr, not their interleaving.
+    A bare `2>&1` is one file descriptor in the sandbox, so this wrapper does
+    not buffer that full stream. Head and tail still keep only the requested
+    lines of the replay.
     """
-    if output is None:
+    if output is None or (output.kind == "all" and not output.merge_stderr):
         yield
+        return
+    if output.kind == "all":
+        with contextlib.redirect_stderr(sys.stdout):
+            yield
         return
     destination = sys.stdout
     captured = io.StringIO()

@@ -12,6 +12,8 @@
 //! and the files it names.
 
 mod admin;
+mod audit;
+mod audit_manifest;
 mod frozen;
 mod generate;
 mod manifest;
@@ -19,17 +21,18 @@ mod path_order;
 mod probe;
 mod profile;
 mod pyfs;
+mod pyfs_nt;
 mod status;
 mod template;
 mod values;
+mod winpath;
 
 use std::collections::BTreeMap;
-
-use pyfs::{py_join, py_norm};
 
 pub use admin::{
     activate_package_shims, install_package_shims, repair_package_shims, uninstall_package_shims,
 };
+pub use audit::record_package_shim_audit_result;
 pub use path_order::get_path_order_status;
 pub use probe::{probe_package_shim_intercepts, ProbeOptions};
 pub use profile::{
@@ -103,6 +106,9 @@ pub struct ShimFacts {
     pub sqlite_connect_timeout_seconds: f64,
     /// ISO-8601 UTC timestamp standing in for `datetime.now(timezone.utc)`.
     pub now: String,
+    /// `shims._is_transient_path` of this request's package-shim directory.
+    /// `None` means the resident applies `is_transient_path` itself.
+    pub shim_dir_transient: Option<bool>,
 }
 
 /// The `HarnessContext` the Python functions took, plus the process facts.
@@ -125,24 +131,23 @@ impl ShimContext {
         facts: ShimFacts,
     ) -> Self {
         Self {
-            guard_home: py_norm(guard_home),
-            home_dir: home_dir.map(py_norm),
-            workspace_dir: workspace_dir.map(py_norm),
+            guard_home: facts.norm(guard_home),
+            home_dir: home_dir.map(|value| facts.norm(value)),
+            workspace_dir: workspace_dir.map(|value| facts.norm(value)),
             facts,
         }
     }
 
     /// `guard_home / "package-shims" / "bin"`.
     pub(crate) fn shim_dir(&self) -> String {
-        py_join(&py_join(&self.guard_home, "package-shims"), "bin")
+        let root = self.facts.join(&self.guard_home, "package-shims");
+        self.facts.join(&root, "bin")
     }
 
     /// `guard_home / "package-shims" / "manifest.json"`.
     pub(crate) fn manifest_path(&self) -> String {
-        py_join(
-            &py_join(&self.guard_home, "package-shims"),
-            PACKAGE_SHIM_MANIFEST,
-        )
+        let root = self.facts.join(&self.guard_home, "package-shims");
+        self.facts.join(&root, PACKAGE_SHIM_MANIFEST)
     }
 
     /// `os.pathsep`.

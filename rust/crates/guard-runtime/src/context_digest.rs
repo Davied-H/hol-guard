@@ -15,6 +15,7 @@ use sha2::{Digest, Sha256};
 use super::context_digest_json::{
     write_canonical_json, write_canonical_json_with_limit, write_json_string,
 };
+use super::context_digest_result_check::{check_result, gated, kind_name};
 use guard_contracts::{
     ContextDigestComponentsV1, ContextDigestKindV1, ContextDigestRequestV1, ContextDigestResultV1,
     PackageContextComponentV1, PackageContextEvidenceV1, APPROVAL_CONTEXT_TOKEN_PREFIX,
@@ -293,7 +294,7 @@ pub(crate) fn validate_context_tokens(saved: &Value, current: &Value) -> Option<
 
 /// CPython `str.strip()` whitespace set: the ASCII controls 0x09-0x0d and
 /// 0x1c-0x1f plus every Unicode code point whose `isspace` is true.
-fn is_python_space(ch: char) -> bool {
+pub(crate) fn is_python_space(ch: char) -> bool {
     matches!(
         ch,
         '\u{09}'..='\u{0d}'
@@ -666,6 +667,25 @@ fn evaluate_request(
                 },
             )?);
         }
+        ContextDigestKindV1::ClaudeGuardQuestion {
+            event,
+            tool_name,
+            tool_input,
+            tool_response,
+            response_answers,
+            pending,
+        } => {
+            result.claude_guard_question = Some(super::claude_guard_question::verdict(
+                &super::claude_guard_question::Question {
+                    event: event.as_deref(),
+                    tool_name,
+                    tool_input,
+                    tool_response,
+                    response_answers: response_answers.as_deref(),
+                    pending,
+                },
+            ));
+        }
         ContextDigestKindV1::CustomExtensionSuggestion { tools } => {
             result.custom_extension_suggestion = Some(
                 super::custom_extension_suggestion::suggestion_verdicts(tools)?,
@@ -866,10 +886,18 @@ fn evaluate_context_digest_request_inner(
         package_json_scripts: None,
         local_cli_identities: None,
         custom_extension_suggestion: None,
+        claude_guard_question: None,
     };
     if let Err(code) = evaluate_request(request, &mut result) {
         result.status = "error".to_owned();
         result.code = code.to_owned();
+    }
+    // Fail closed on the result contract before anything is encoded: an answer
+    // that breaks it is a resident fault, not a result the caller may inspect.
+    if gated(&request.kind) {
+        let checked = serde_json::to_value(&result)
+            .map_err(|_| "native_response_encode_failed".to_owned())?;
+        check_result(kind_name(&request.kind), &checked).map_err(str::to_owned)?;
     }
     crate::encode_response(&result)
 }
