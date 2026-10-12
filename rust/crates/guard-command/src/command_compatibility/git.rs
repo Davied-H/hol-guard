@@ -393,6 +393,8 @@ mod tests {
             "git diff --cached",
             "git diff --staged",
             "git diff --cached --check",
+            "git diff --cached --numstat",
+            "git diff --cached --quiet",
             "git diff --cached --stat",
             "git diff --staged --name-only",
             "git diff --cached --name-status HEAD",
