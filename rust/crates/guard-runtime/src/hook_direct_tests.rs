@@ -220,11 +220,12 @@ fn run(lane: &Lane, payload: Value) -> Value {
     serde_json::from_slice(&evaluate(request, &lane.fixture.store).unwrap()).unwrap()
 }
 
-fn read_payload(lane: &Lane) -> Value {
+/// A shell command the edge allows outright.
+fn allowed_payload(lane: &Lane) -> Value {
     json!({
         "hook_event_name": "PreToolUse",
-        "tool_name": "read_file",
-        "tool_input": { "path": "README.md" },
+        "tool_name": "Bash",
+        "tool_input": { "command": "pwd" },
         "cwd": lane.workspace,
     })
 }
@@ -238,31 +239,31 @@ fn deferred(result: &Value) -> &str {
 #[test]
 fn request_shapes_the_daemon_must_handle_defer() {
     let lane = lane("shapes", json!({}));
-    let mut probe = read_payload(&lane);
+    let mut probe = allowed_payload(&lane);
     probe["guard_transition_probe"] = json!({});
     assert_eq!(deferred(&run(&lane, probe)), "direct_hook_transition_probe");
-    let mut reference = read_payload(&lane);
+    let mut reference = allowed_payload(&lane);
     reference["guard_payload_ref"] = json!("ref");
     assert_eq!(
         deferred(&run(&lane, reference)),
         "direct_hook_payload_unsupported"
     );
-    let mut post = read_payload(&lane);
+    let mut post = allowed_payload(&lane);
     post["hook_event_name"] = json!("PostToolUse");
     assert_eq!(deferred(&run(&lane, post)), "direct_hook_event_unsupported");
-    let mut environment = read_payload(&lane);
+    let mut environment = allowed_payload(&lane);
     environment["guard_execution_environment"] = json!("PATH=/bin");
     assert_eq!(
         deferred(&run(&lane, environment)),
         "direct_hook_execution_environment_invalid"
     );
-    let mut homeless = read_payload(&lane);
+    let mut homeless = allowed_payload(&lane);
     homeless.as_object_mut().unwrap().remove("cwd");
     assert_eq!(
         deferred(&run(&lane, homeless)),
         "direct_hook_workspace_missing"
     );
-    let mut elsewhere = read_payload(&lane);
+    let mut elsewhere = allowed_payload(&lane);
     elsewhere["cwd"] = json!(lane.fixture.root.to_str().unwrap());
     assert_eq!(
         deferred(&run(&lane, elsewhere)),
@@ -283,7 +284,7 @@ fn other_harnesses_and_homes_defer() {
         home_dir: HOME.to_owned(),
         workspace: None,
         deadline_budget_ms: None,
-        payload: read_payload(&lane),
+        payload: allowed_payload(&lane),
     };
     let result: Value =
         serde_json::from_slice(&evaluate(request.clone(), &lane.fixture.store).unwrap()).unwrap();
@@ -299,12 +300,12 @@ fn other_harnesses_and_homes_defer() {
 fn daemon_only_state_in_the_binding_defers() {
     let rules = lane("rules", json!({ "local_cli_block_rules": true }));
     assert_eq!(
-        deferred(&run(&rules, read_payload(&rules))),
+        deferred(&run(&rules, allowed_payload(&rules))),
         "direct_hook_local_cli_rules"
     );
     let watch = lane("watch", json!({ "harness_postures": { "codex": "watch" } }));
     assert_eq!(
-        deferred(&run(&watch, read_payload(&watch))),
+        deferred(&run(&watch, allowed_payload(&watch))),
         "direct_hook_recording_only"
     );
     for (label, missing) in [
@@ -321,7 +322,7 @@ fn daemon_only_state_in_the_binding_defers() {
         bound.as_object_mut().unwrap().remove(missing);
         push(&lane.fixture, Some(bound)).unwrap();
         assert_eq!(
-            deferred(&run(&lane, read_payload(&lane))),
+            deferred(&run(&lane, allowed_payload(&lane))),
             "direct_hook_binding_incomplete",
             "{missing}"
         );
@@ -356,7 +357,7 @@ fn drain(lane: &Lane) -> Value {
 fn a_daemon_that_does_not_drain_evidence_keeps_the_lane_closed() {
     let lane = lane("undrained", json!({ "evidence_drain": false }));
     assert_eq!(
-        deferred(&run(&lane, read_payload(&lane))),
+        deferred(&run(&lane, allowed_payload(&lane))),
         "direct_hook_evidence_undrained"
     );
     assert_eq!(drain(&lane)["records"], json!([]));
@@ -365,7 +366,7 @@ fn a_daemon_that_does_not_drain_evidence_keeps_the_lane_closed() {
 #[test]
 fn an_answer_queues_the_evidence_the_daemon_records() {
     let lane = lane("evidence", json!({}));
-    let mut payload = read_payload(&lane);
+    let mut payload = allowed_payload(&lane);
     payload["hook_env"] = json!({ "HOME": HOME });
     let result = run(&lane, payload);
     assert_eq!(result["outcome"], "answer", "{result}");
@@ -382,7 +383,7 @@ fn an_answer_queues_the_evidence_the_daemon_records() {
         record["receipt"],
         edge.get("receipt").cloned().unwrap_or(Value::Null)
     );
-    let mut expected = read_payload(&lane);
+    let mut expected = allowed_payload(&lane);
     expected["guard_execution_environment"] = Value::Null;
     assert_eq!(record["payload"], expected);
     assert_eq!(drain(&lane)["records"], json!([]));
@@ -391,7 +392,7 @@ fn an_answer_queues_the_evidence_the_daemon_records() {
 #[test]
 fn a_deferred_hook_queues_no_evidence() {
     let lane = lane("deferred-evidence", json!({}));
-    let mut post = read_payload(&lane);
+    let mut post = allowed_payload(&lane);
     post["hook_event_name"] = json!("PostToolUse");
     deferred(&run(&lane, post));
     assert_eq!(drain(&lane)["records"], json!([]));
