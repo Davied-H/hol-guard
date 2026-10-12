@@ -1,11 +1,15 @@
 //! Recorded vectors and transport binding checks for `HookArtifactCompose`.
 
+use flate2::read::GzDecoder;
 use guard_contracts::{HookArtifactComposeQueryV1, HOOK_ARTIFACT_COMPOSE_REQUEST_SCHEMA};
 use serde_json::{json, Value};
+use std::io::Read;
 
 use super::compose;
 
 const VECTORS: &str = include_str!("../tests/fixtures/hook_artifact_compose_vectors.json");
+const CONFIG_ACTION_VECTORS: &[u8] =
+    include_bytes!("../tests/fixtures/config_action_vectors.json.gz");
 
 #[test]
 fn matches_recorded_vectors() {
@@ -15,6 +19,24 @@ fn matches_recorded_vectors() {
         let name = vector["name"].as_str().unwrap();
         let query: HookArtifactComposeQueryV1 = serde_json::from_value(vector["query"].clone())
             .unwrap_or_else(|error| panic!("{name}: {error}"));
+        assert_eq!(compose(&query), vector["expected"], "{name}");
+    }
+}
+
+#[test]
+fn config_action_matches_recorded_python_vectors() {
+    let mut text = String::new();
+    GzDecoder::new(CONFIG_ACTION_VECTORS)
+        .read_to_string(&mut text)
+        .unwrap();
+    let vectors: Vec<Value> = serde_json::from_str(&text).unwrap();
+    assert!(vectors.len() >= 900);
+    for vector in vectors {
+        let name = vector["name"].as_str().unwrap();
+        let mut query = vector["query"].clone();
+        query["kind"] = json!("config_action");
+        let query: HookArtifactComposeQueryV1 =
+            serde_json::from_value(query).unwrap_or_else(|error| panic!("{name}: {error}"));
         assert_eq!(compose(&query), vector["expected"], "{name}");
     }
 }
