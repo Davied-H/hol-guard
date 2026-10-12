@@ -30,6 +30,8 @@ mod policy_enforcement_matrix;
 mod policy_enforcement_mcp_provider;
 #[path = "policy_enforcement_policy.rs"]
 mod policy_enforcement_policy;
+#[path = "policy_enforcement_reason.rs"]
+mod policy_enforcement_reason;
 pub(crate) use policy_enforcement_matrix::{validate_pre_tool_result_matrix, ActionFloor};
 
 /// Recheck business rules above the authenticated native receipt's intrinsic
@@ -63,9 +65,10 @@ use policy_enforcement_facts::{
     classify_tool_name, collect_fact_maps, payload_facts, preferred_tool_name, PATH_KEYS,
 };
 use policy_enforcement_helpers::{
-    action_rank, join_action, normalized_harness, policy_floor_with_cause, FloorCause, FloorInput,
+    action_rank, join_action, normalized_harness, policy_floor_with_cause, FloorInput,
 };
 use policy_enforcement_policy::CompiledEffectivePolicy;
+use policy_enforcement_reason::policy_override_reason;
 
 #[path = "policy_enforcement_admission.rs"]
 mod policy_enforcement_admission;
@@ -109,67 +112,6 @@ const VALID_RISK_KEYS: &[&str] = &[
 const MAX_SELECTOR_VALUE_BYTES: usize = 4 * 1024;
 const MAX_FACT_DEPTH: usize = 32;
 const MAX_FACT_NODES: usize = 2_048;
-
-fn policy_override_reason(action: &str, cause: Option<FloorCause>) -> (&'static str, String) {
-    let (code, outcome) = match action {
-        "block" => ("native_policy_block", "blocked this hook action"),
-        "sandbox-required" => (
-            "native_policy_sandbox_required",
-            "requires sandbox enforcement",
-        ),
-        "require-reapproval" => (
-            "native_policy_reapproval_required",
-            "requires fresh approval",
-        ),
-        "review" => ("native_policy_review_required", "requires review"),
-        _ => ("native_policy_warning", "raised this action"),
-    };
-    let Some(cause) = cause else {
-        return (
-            code,
-            format!("HOL Guard {outcome} under the installed native policy."),
-        );
-    };
-    let setting = match cause {
-        FloorCause::Default => "default action".to_owned(),
-        FloorCause::Harness => "setting for this harness".to_owned(),
-        FloorCause::Subprocess => "subprocess setting".to_owned(),
-        FloorCause::Network => "new network domain setting".to_owned(),
-        FloorCause::Unknown => "rule for unrecognized tool operations".to_owned(),
-        FloorCause::ChangedHash => "changed artifact setting".to_owned(),
-        FloorCause::UnknownPublisher => "unknown publisher setting".to_owned(),
-        FloorCause::Artifact => "rule for this artifact".to_owned(),
-        FloorCause::Publisher => "rule for this publisher".to_owned(),
-        FloorCause::Risk(risk) => format!("{} setting", risk_label(risk)),
-    };
-    (
-        code,
-        format!("HOL Guard {outcome} under the installed policy's {setting}."),
-    )
-}
-
-fn risk_label(risk: &str) -> &'static str {
-    match risk {
-        "local_secret_read" => "secret read",
-        "credential_exfiltration" => "credential export",
-        "data_flow_exfiltration" => "data export",
-        "destructive_shell" => "destructive command",
-        "encoded_execution" => "encoded execution",
-        "network_egress" => "network access",
-        "prompt_injection" => "prompt injection",
-        "mcp_dangerous_tool" => "unreviewed MCP tool",
-        "malicious_skill" => "malicious skill",
-        "package_script" => "package script",
-        "persistence" => "persistence",
-        "guard_bypass" => "Guard bypass",
-        "cloud_advisory" => "cloud advisory",
-        "encoded_exfiltration" => "encoded export",
-        "execution" => "command execution",
-        "supply_chain" => "supply chain",
-        "policy_bypass" => "policy bypass",
-        _ => "risk",
-    }
-}
 
 /// Apply the authenticated policy to a generic native PreTool result.
 pub(crate) fn apply_pre_tool_policy(
