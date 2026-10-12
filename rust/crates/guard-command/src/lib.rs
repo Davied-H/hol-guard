@@ -148,6 +148,7 @@ pub mod environment_secret_dump;
 pub mod pretool;
 mod runtime_read_paths;
 pub mod secret_path_probe;
+pub mod sensitive_request;
 mod sfrs_agent_guidance;
 mod sfrs_benign_reads;
 #[cfg(unix)]
