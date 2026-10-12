@@ -21,6 +21,14 @@ pub(crate) fn install() {
 }
 
 fn verdict(push: &GitPushRequest<'_>) -> bool {
+    // A relative value resolves from whichever directory reads it: the account
+    // check and the probes would each see a different global configuration.
+    if push
+        .xdg_config_home
+        .is_some_and(|xdg| !Path::new(xdg).is_absolute())
+    {
+        return false;
+    }
     let Some(account_home) = account_home() else {
         return false;
     };

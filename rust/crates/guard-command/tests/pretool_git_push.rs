@@ -57,10 +57,52 @@ fn environment(home: &Path, names: &[&str]) -> guard_contracts::GuardExecutionEn
     }
 }
 
+/// Local-admin controls over the Git extension: one control, or none.
+fn git_controls(
+    target: Option<(&str, &str, &str)>,
+) -> guard_command::native_command_controls::CompiledNativeCommandControls {
+    let program = guard_command::native_command_program::packaged_command_program().unwrap();
+    let controls = target.map_or_else(Vec::new, |(kind, id, state)| {
+        vec![json!({"target_kind": kind, "target_id": id, "state": state})]
+    });
+    let mut binding: guard_contracts::NativeCommandControlBindingV1 =
+        serde_json::from_value(json!({
+            "schema": "guard.native-command-control-binding.v1",
+            "program_digest": program.program_digest,
+            "catalog_digest": program.catalog_digest,
+            "trust_digest": program.trust_digest,
+            "health": "protected",
+            "revision": 1,
+            "managed_revision": 0,
+            "effective_digest": "",
+            "layers": [{
+                "schema_version": "1.0.0",
+                "kind": "local-admin",
+                "catalog_digest": program.catalog_digest,
+                "global_lockdown": false,
+                "controls": controls
+            }]
+        }))
+        .unwrap();
+    binding.effective_digest = binding.compute_effective_digest().unwrap();
+    guard_command::native_command_controls::CompiledNativeCommandControls::new(&binding).unwrap()
+}
+
 fn classify(
     home: &Path,
     cwd: &str,
     environment: Option<&guard_contracts::GuardExecutionEnvironmentV1>,
+    harness: &str,
+    command: &str,
+) -> guard_contracts::PreToolResultV1 {
+    classify_with(home, cwd, environment, None, harness, command)
+}
+
+fn classify_with(
+    home: &Path,
+    cwd: &str,
+    environment: Option<&guard_contracts::GuardExecutionEnvironmentV1>,
+    controls: Option<&guard_command::native_command_controls::CompiledNativeCommandControls>,
     harness: &str,
     command: &str,
 ) -> guard_contracts::PreToolResultV1 {
@@ -69,7 +111,7 @@ fn classify(
         harness,
         "PreToolUse",
         &json!({"tool_name": "bash", "tool_input": {"command": command}}),
-        None,
+        controls,
         None,
         PathContext {
             home_dir: home.to_str(),
@@ -133,6 +175,10 @@ fn accepted_pushes_proceed_and_everything_else_keeps_its_review() {
         ("ready", "git -C /etc push origin main"),
         ("ready", "git -C ../.. push origin main"),
         ("ready", "git -C ~/missing push origin main"),
+        // A quoted `~` reaches Git as a literal relative directory.
+        ("other", "git -C '~/ready' push origin main"),
+        ("other", "git -C \"~/ready\" push origin main"),
+        ("other", "git -C \\~/ready push origin main"),
         ("ready", "sudo git push origin main"),
     ] {
         let result = classify(&home, cwd, Some(&plain), "omp", command);
@@ -171,6 +217,62 @@ fn accepted_pushes_proceed_and_everything_else_keeps_its_review() {
         Some(&elsewhere),
         "omp",
         "git -C ~/ready push origin main",
+    );
+    assert_ne!(result.decision, "allow");
+}
+
+#[test]
+fn git_extension_controls_still_decide_a_proven_push() {
+    let home = home();
+    let plain = environment(&home, &["HOME", "PATH"]);
+    install_git_push_verdict(verdict);
+    let command = "git push -u origin topic";
+    for (target, allowed) in [
+        (None, true),
+        (
+            Some(("permission", "command.git.permission.push", "enabled")),
+            true,
+        ),
+        (
+            Some(("permission", "command.git.permission.push", "disabled")),
+            false,
+        ),
+        (Some(("extension", "command.git", "disabled")), false),
+    ] {
+        let controls = git_controls(target);
+        for harness in ["omp", "zcode", "claude-code", "codex"] {
+            let result = classify_with(
+                &home,
+                "ready",
+                Some(&plain),
+                Some(&controls),
+                harness,
+                command,
+            );
+            assert_eq!(
+                result.decision == "allow",
+                allowed,
+                "{harness}: {target:?}: {result:?}"
+            );
+            if !allowed {
+                assert_eq!(result.minimum_action, "block", "{harness}: {target:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn a_relative_xdg_config_home_keeps_the_review() {
+    let home = home();
+    install_git_push_verdict(verdict);
+    let mut relative = environment(&home, &["HOME", "PATH", "XDG_CONFIG_HOME"]);
+    relative.xdg_config_home = Some(".config".to_owned());
+    let result = classify(
+        &home,
+        "ready",
+        Some(&relative),
+        "omp",
+        "git push origin main",
     );
     assert_ne!(result.decision, "allow");
 }

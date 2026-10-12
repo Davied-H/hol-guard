@@ -187,6 +187,16 @@ fn proven_push(
     {
         return false;
     }
+    // `git -C '~/x'` receives a literal relative `~/x`; only an unquoted `~`
+    // reaches Git as the home directory the proof checks.
+    if !super::directory_targets::home_targets_unquoted(segment)
+        || environment
+            .xdg_config_home
+            .as_deref()
+            .is_some_and(|xdg| !Path::new(xdg).is_absolute())
+    {
+        return false;
+    }
     let Some(repository) = repository(spec.directory, &home, &cwd, shell_home) else {
         return false;
     };
