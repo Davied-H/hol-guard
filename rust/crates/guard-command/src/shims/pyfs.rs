@@ -10,29 +10,12 @@ use std::fs;
 use std::path::PathBuf;
 
 use super::{ShimFacts, ShimResult};
+use crate::codex_output_py::PyPath;
 
 /// `pathlib` normalisation: drop empty and `.` segments, keep a double leading
 /// slash, and spell an empty path `.`.
 pub(crate) fn py_norm(path: &str) -> String {
-    let prefix = if path.starts_with("//") && !path.starts_with("///") {
-        "//"
-    } else if path.starts_with('/') {
-        "/"
-    } else {
-        ""
-    };
-    let parts: Vec<&str> = path
-        .split('/')
-        .filter(|part| !part.is_empty() && *part != ".")
-        .collect();
-    if parts.is_empty() {
-        return if prefix.is_empty() {
-            ".".to_owned()
-        } else {
-            prefix.to_owned()
-        };
-    }
-    format!("{prefix}{}", parts.join("/"))
+    PyPath::new(path).to_string()
 }
 
 /// `posixpath.normpath`.
@@ -68,33 +51,21 @@ pub(crate) fn py_normpath(path: &str) -> String {
 
 /// `Path(base) / child`.
 pub(crate) fn py_join(base: &str, child: &str) -> String {
-    if child.starts_with('/') {
-        return py_norm(child);
-    }
-    py_norm(&format!("{base}/{child}"))
+    PyPath::new(base).join(child).to_string()
 }
 
 /// `Path(path).name`.
 pub(crate) fn py_name(path: &str) -> String {
-    let norm = py_norm(path);
-    if norm == "." || norm.chars().all(|ch| ch == '/') {
-        return String::new();
-    }
-    norm.rsplit('/').next().unwrap_or("").to_owned()
+    PyPath::new(path).name().to_owned()
 }
 
 /// `str(Path(path).parent)`.
 pub(crate) fn py_parent(path: &str) -> String {
-    let norm = py_norm(path);
-    match norm.rfind('/') {
-        None => ".".to_owned(),
-        Some(0) => "/".to_owned(),
-        Some(index) => norm[..index].to_owned(),
-    }
+    PyPath::new(path).parent().to_string()
 }
 
 pub(crate) fn is_absolute(path: &str) -> bool {
-    path.starts_with('/')
+    PyPath::new(path).is_absolute()
 }
 
 /// Why `read_text` failed; Python caught only the first kind in most callers.

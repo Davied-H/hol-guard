@@ -15,6 +15,7 @@ use crate::package_authority_op::request_digest_with_limit;
 
 const SCHEMA_MISMATCH: &str = "native_shim_admin_schema_mismatch";
 const UNKNOWN_SUBOP: &str = "native_shim_admin_unknown_subop";
+const UNSUPPORTED_PLATFORM: &str = "native_shim_admin_unsupported_platform";
 const INVALID_REQUEST: &str = "native_shim_admin_invalid_request";
 const SUBOP_FAILED: &str = "native_shim_admin_failed";
 const RESPONSE_TOO_LARGE: &str = "native_shim_admin_response_too_large";
@@ -91,7 +92,7 @@ fn dispatch(request: &ShimAdminRequestV2) -> Result<Value, Failure> {
         "probe_intercepts" => {
             let default_timeout = request.facts.sqlite_connect_timeout_seconds;
             let fallback = if default_timeout.is_finite() && default_timeout >= 0.0 {
-                default_timeout as u64 + 5
+                (default_timeout as u64).saturating_add(5)
             } else {
                 35
             };
@@ -134,6 +135,27 @@ fn evaluate(request: &ShimAdminRequestV2) -> Result<Value, Failure> {
         return Err(Failure {
             code: INVALID_REQUEST,
             detail: Some("guard_home must not be empty".to_owned()),
+        });
+    }
+    // The native path model is POSIX (`PurePosixPath`); drive letters and
+    // backslashes would be mis-compared, so a Windows request fails closed.
+    if request.facts.windows {
+        return Err(Failure {
+            code: UNSUPPORTED_PLATFORM,
+            detail: Some("windows path semantics are not implemented".to_owned()),
+        });
+    }
+    if matches!(request.subop.as_str(), "install" | "activate" | "repair")
+        && request.facts.frozen
+        && (request.facts.frozen_cli.is_empty()
+            || !request
+                .facts
+                .trusted_frozen_cli_paths
+                .contains(&request.facts.frozen_cli))
+    {
+        return Err(Failure {
+            code: INVALID_REQUEST,
+            detail: Some("frozen_cli must be one of trusted_frozen_cli_paths".to_owned()),
         });
     }
     dispatch(request)
@@ -224,6 +246,29 @@ mod tests {
     fn decode(request: &ShimAdminRequestV2) -> ShimAdminResultV2 {
         let bytes = evaluate_shim_admin(request).expect("encoded");
         serde_json::from_slice(&bytes).expect("result")
+    }
+
+    #[test]
+    fn windows_requests_fail_closed() {
+        let mut windows = request("status");
+        windows.facts.windows = true;
+        assert_eq!(decode(&windows).code, UNSUPPORTED_PLATFORM);
+    }
+
+    #[test]
+    fn frozen_install_requires_a_trusted_interpreter() {
+        for (cli, trusted) in [
+            ("", vec![]),
+            ("/evil/guard", vec!["/opt/guard"]),
+            ("/opt/guard", vec![]),
+        ] {
+            let mut frozen = request("install");
+            frozen.facts.frozen = true;
+            frozen.facts.frozen_cli = cli.to_owned();
+            frozen.facts.trusted_frozen_cli_paths =
+                trusted.into_iter().map(str::to_owned).collect();
+            assert_eq!(decode(&frozen).code, INVALID_REQUEST);
+        }
     }
 
     #[test]
