@@ -20,6 +20,7 @@ import time
 from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 
+from .native_command_control_authority import AUTHORITY_FILE_NAME
 from .native_policy_snapshot_constants import NATIVE_RUNTIME_STATE_DIRECTORY
 
 DIRECT_LANE_PUSH_FEATURE = "policy-snapshot-direct-lane-v1"
@@ -43,8 +44,11 @@ _I64_MIN = -(1 << 63)
 _I64_MAX = (1 << 63) - 1
 _U64_MAX = (1 << 64) - 1
 
-# Database writes are hints the publisher recompiles and compares; they never
-# revoke the ACK up front, so the resident does not watch them either.
+# Database writes and the publisher's own command-control marker commit are
+# hints the publisher recompiles and compares; they never revoke the ACK up
+# front, so the resident does not watch them either. The marker is replaced
+# atomically during publication, so binding its stat would close the lane on
+# every publish that commits it.
 _DATABASE_FILE_NAMES = frozenset({"guard.db", "guard.db-wal", "guard.db-shm", "guard.db-journal"})
 
 # Serializes each barrier value change with its file operation, so a renewal
@@ -70,6 +74,12 @@ def _stat_valid(stat_identity: tuple[int, int, int, int]) -> bool:
     )
 
 
+def _hint_only(path: Path) -> bool:
+    if path.name in _DATABASE_FILE_NAMES:
+        return True
+    return path.name == AUTHORITY_FILE_NAME and path.parent.name == NATIVE_RUNTIME_STATE_DIRECTORY
+
+
 def direct_lane_binding(
     *,
     inputs: Iterable[tuple[str, tuple[int, int, int, int] | None]],
@@ -81,7 +91,7 @@ def direct_lane_binding(
         return None
     bound_inputs: list[dict[str, object]] = []
     for path, stat_identity in inputs:
-        if Path(path).name in _DATABASE_FILE_NAMES:
+        if _hint_only(Path(path)):
             continue
         # An input the resident cannot re-stat exactly would leave a change
         # unobserved, so the whole lane stays closed.
