@@ -9,7 +9,7 @@ runtime cannot answer, parsing fails closed with ``native_unavailable``.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Final, TypeGuard, cast
+from typing import Any, Final, TypeGuard, cast
 
 from .native_context import _resolve_digest_home, native_context_digest
 from .runtime.command_extensions import CommandSafetyExtensionRegistry
@@ -168,7 +168,9 @@ def _target(value: dict[str, object]) -> ControlTarget:
 
 
 def _controls(values: object) -> tuple[ExtensionControl, ...]:
-    return tuple(ExtensionControl(_target(value), ControlState(value["state"])) for value in cast(list[dict], values))
+    return tuple(
+        ExtensionControl(_target(value), ControlState(value["state"])) for value in cast(list[dict[str, Any]], values)
+    )
 
 
 def _parsed(answer: dict[str, object], registry: CommandSafetyExtensionRegistry) -> ParsedManagedControlsPolicy:
@@ -198,10 +200,11 @@ def _parsed(answer: dict[str, object], registry: CommandSafetyExtensionRegistry)
                 extension_ids=tuple(rule["extension_ids"]),
                 permission_ids=tuple(rule["permission_ids"]),
             )
-            for rule in cast(list[dict], answer["rule_targets"])
+            for rule in cast(list[dict[str, Any]], answer["rule_targets"])
         ),
         delegated_targets=tuple(
-            DelegatedExtensionTarget(_target(value)) for value in cast(list[dict], answer["delegated_targets"])
+            DelegatedExtensionTarget(_target(value))
+            for value in cast(list[dict[str, Any]], answer["delegated_targets"])
         ),
     )
 
