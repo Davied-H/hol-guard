@@ -230,30 +230,56 @@ fn reviewable_structure(command: &CanonicalCommandV1) -> bool {
 }
 
 /// Every redirect names a literal path or feeds `cat` a quoted heredoc, and
-/// the rest substitutes nothing and makes no link the redirect could follow.
+/// the rest substitutes nothing and, when a redirect names a file other than
+/// `/dev/null`, makes no link that redirect could follow.
 fn literal_redirects_only(text: &str) -> bool {
-    workspace_redirects::project(text).is_some_and(|projected| {
+    workspace_redirects::project_naming_files(text).is_some_and(|(projected, names_files)| {
         let literal = unquoted_literal(&projected);
-        !moves_data(&literal) && !creates_links(&literal)
+        !moves_data(&literal) && !(names_files && creates_links(&literal))
     })
 }
 
 /// Whether a segment runs a program that makes or moves links. A later
 /// redirect can write through such a link, so its literal path no longer
-/// names the file. Copies that keep links (`cp -a`, `-P`, `-d`, `-R`) and
-/// archive or sync tools that recreate them count too. Names are compared
-/// case-insensitively without `.exe` or `.cmd`, and any `--sy` option is
-/// taken as GNU's abbreviation of `--symbolic-link`.
+/// names the file. Copies that make or keep links (`cp -l`, `-a`, `-P`, `-d`,
+/// `-R`), archive or sync tools that recreate them, and Git commands that
+/// write a working tree, which may hold committed symlinks, count too. Names
+/// are compared case-insensitively without `.exe` or `.cmd`, and any `--sy`
+/// option is taken as GNU's abbreviation of `--symbolic-link`.
 fn creates_links(literal: &str) -> bool {
-    let link_copy = literal.split_whitespace().any(|word| {
+    let words = || literal.split_whitespace();
+    let link_copy = words().any(|word| {
         word.starts_with("--sy")
             || matches!(
                 word,
-                "--archive" | "--no-dereference" | "--recursive" | "--preserve=links"
+                "--archive" | "--no-dereference" | "--recursive" | "--preserve=links" | "--link"
             )
             || (word.starts_with('-')
                 && !word.starts_with("--")
-                && word.contains(['s', 'a', 'P', 'd', 'r', 'R']))
+                && word.contains(['s', 'a', 'P', 'd', 'r', 'R', 'l']))
+    });
+    let writes_tree = words().any(|word| {
+        matches!(
+            word,
+            "checkout"
+                | "checkout-index"
+                | "switch"
+                | "restore"
+                | "reset"
+                | "clone"
+                | "worktree"
+                | "stash"
+                | "pull"
+                | "merge"
+                | "rebase"
+                | "cherry-pick"
+                | "revert"
+                | "apply"
+                | "am"
+                | "read-tree"
+                | "sparse-checkout"
+                | "submodule"
+        )
     });
     command_words(literal).any(|word| {
         let base = word.rsplit(['/', '\\']).next().unwrap_or(word);
@@ -278,6 +304,7 @@ fn creates_links(literal: &str) -> bool {
                 | "7z"
                 | "rsync"
         ) || (link_copy && matches!(name, "cp" | "gcp" | "ditto"))
+            || (writes_tree && name == "git")
     })
 }
 

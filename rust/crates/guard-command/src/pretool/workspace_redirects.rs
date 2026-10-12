@@ -35,18 +35,29 @@ enum Quote {
 /// another form: process substitution, a computed or home-relative target, a
 /// descriptor above 2, a herestring, or a heredoc fed to anything but `cat`.
 pub(crate) fn project(raw: &str) -> Option<String> {
-    project_mapped(raw).map(|(projected, _)| projected)
+    project_scan(raw).map(|(projected, _, _)| projected)
+}
+
+/// [`project`], and whether any removed redirect names a file other than
+/// `/dev/null`, which no link in the workspace can retarget.
+pub(crate) fn project_naming_files(raw: &str) -> Option<(String, bool)> {
+    project_scan(raw).map(|(projected, _, names_files)| (projected, names_files))
 }
 
 /// [`project`] with, for each byte of the projection, the index of the raw
 /// character it came from. Bytes the projection inserts take the index of the
 /// redirect they replace.
 fn project_mapped(raw: &str) -> Option<(String, Vec<usize>)> {
+    project_scan(raw).map(|(projected, map, _)| (projected, map))
+}
+
+fn project_scan(raw: &str) -> Option<(String, Vec<usize>, bool)> {
     let chars: Vec<char> = raw.chars().collect();
     let mut out = String::with_capacity(raw.len());
     let mut map: Vec<usize> = Vec::with_capacity(raw.len());
     let mut heredocs: Vec<(String, bool)> = Vec::new();
     let (mut quote, mut escaped, mut removed) = (Quote::None, false, false);
+    let mut names_files = false;
     let mut index = 0usize;
     let mut origin = 0usize;
     while index < chars.len() {
@@ -101,7 +112,7 @@ fn project_mapped(raw: &str) -> Option<(String, Vec<usize>)> {
                 continue;
             }
             '<' | '>' => {
-                index = remove_redirect(&chars, index, &mut out)?;
+                index = remove_redirect(&chars, index, &mut out, &mut names_files)?;
                 index = rejoin(&chars, index, &mut out);
                 removed = true;
                 continue;
@@ -119,7 +130,7 @@ fn project_mapped(raw: &str) -> Option<(String, Vec<usize>)> {
     let lead = out.len() - out.trim_start().len();
     let projected = out.trim();
     let map = map[lead..lead + projected.len()].to_vec();
-    Some((projected.to_owned(), map))
+    Some((projected.to_owned(), map, names_files))
 }
 
 /// The shape the projected command earns, with a bootstrapped `git init`
@@ -238,7 +249,12 @@ fn current_segment(out: &str) -> &str {
     &out[start..]
 }
 
-fn remove_redirect(chars: &[char], start: usize, out: &mut String) -> Option<usize> {
+fn remove_redirect(
+    chars: &[char],
+    start: usize,
+    out: &mut String,
+    names_files: &mut bool,
+) -> Option<usize> {
     let input = chars[start] == '<';
     let mut index = start + 1;
     let descriptor = trailing_word(out).to_owned();
@@ -281,6 +297,7 @@ fn remove_redirect(chars: &[char], start: usize, out: &mut String) -> Option<usi
     if !literal_target(&target) {
         return None;
     }
+    *names_files |= target != "/dev/null";
     out.push(' ');
     Some(index)
 }

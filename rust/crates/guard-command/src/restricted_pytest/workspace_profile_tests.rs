@@ -164,10 +164,15 @@ fn nothing_protected_can_be_built_elsewhere_and_moved_in() {
         assert!(profile.contains(&seatbelt_string(pattern)), "{pattern}");
     }
     assert!(lines.contains(&"(deny file-write* (literal \"/w/proj\"))"));
-    // Only the repository's own HEAD is reopened, after the rule closing it.
+    // Only the repository's own HEAD and its reflog are reopened, after the
+    // rule closing them.
+    assert!(head.is_match("/w/proj/.git/logs/HEAD"));
     let reopen = lines
         .iter()
-        .position(|line| *line == "(allow file-write* (literal \"/w/proj/.git/HEAD\"))")
+        .position(|line| {
+            *line
+                == "(allow file-write* (literal \"/w/proj/.git/HEAD\") (literal \"/w/proj/.git/logs/HEAD\"))"
+        })
         .unwrap();
     let workspace_head =
         seatbelt_string(&workspace_profile::bare_head_pattern(Path::new("/w/proj")).unwrap());
