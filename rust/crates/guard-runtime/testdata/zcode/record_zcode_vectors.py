@@ -252,6 +252,10 @@ def plugin_cache_cases() -> list[dict]:
     return [
         case("plugin_full", full, dirs=[f"{root}/commands/dir.md", f"{root}/skills/dirskill/SKILL.md"]),
         case("plugin_manifest_only", [manifest(root, {"name": "pl"})]),
+        case(
+            "plugin_manifest_surrogate_unused_field",
+            [manifest(root, {"name": "pl", "description": "\ud800"})],
+        ),
         case("plugin_manifest_missing_name_uses_version_dir", [manifest(plugin("2.0.0"), {"version": 3})]),
         case("plugin_manifest_empty_name", [manifest(root, {"name": ""})]),
         case("plugin_author_string", [manifest(root, {"name": "pl", "author": "Grace"})]),

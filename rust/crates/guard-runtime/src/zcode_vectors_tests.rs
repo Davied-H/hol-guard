@@ -187,16 +187,19 @@ fn case_sensitive_recording_is_selected_when_spellings_stay_distinct() {
     let root = temp_home("zcode-case-select");
     fs::create_dir_all(root.join("Alpha")).unwrap();
     fs::write(root.join("Alpha/a"), b"a").unwrap();
-    fs::create_dir_all(root.join("beta")).unwrap();
-    fs::write(root.join("beta/a"), b"b").unwrap();
+    fs::create_dir_all(root.join("alpha")).unwrap();
+    fs::write(root.join("alpha/b"), b"b").unwrap();
+    let distinct = fs::metadata(root.join("Alpha")).unwrap().ino()
+        != fs::metadata(root.join("alpha")).unwrap().ino();
     let case = serde_json::json!({
-        "files": [{"path": "Alpha/a"}, {"path": "beta/a"}],
+        "files": [{"path": "Alpha/a"}, {"path": "alpha/b"}],
         "artifacts": ["folded"],
         "artifacts_case_sensitive": ["distinct"],
     });
+    let expected = if distinct { "distinct" } else { "folded" };
     assert_eq!(
         recorded(&case, &root, "artifacts"),
-        &serde_json::json!(["distinct"])
+        &serde_json::json!([expected])
     );
     release(&root);
 }
