@@ -204,6 +204,11 @@ pub(super) fn run() -> Result<(), String> {
             let response = context_digest::evaluate_context_digest_bytes(&bytes)?;
             write_bytes_response(&response)
         }
+        [command, listen_flag, listen, upstream_flag, upstream]
+            if command == "daemon-listen" && listen_flag == "--address" && upstream_flag == "--upstream" =>
+        {
+            run_daemon_listener(listen, upstream)
+        }
         [command, flag, path] if command == "serve" && flag == "--socket" => serve(path),
         [command, flag, address] if command == "serve" && flag == "--tcp-loopback" => {
             serve_loopback(address)
@@ -271,8 +276,18 @@ pub(super) fn run() -> Result<(), String> {
             )
         }
         _ => Err(
-            "usage: hol-guard-runtime compile-business-policy --stdin | capabilities --json | rule-contract --json | self-test --json | hook --stdin | migrate-policy --state-dir STATE_DIR | prepare-approval-enrollment --state-dir STATE_DIR | enroll-approval-authority --state-dir STATE_DIR --record RECORD | prepare-approval-v4-enrollment --state-dir STATE_DIR --rp-id RP_ID --origin ORIGIN | enroll-approval-v4-authority --state-dir STATE_DIR --record RECORD | enroll-workspace-review-authority --state-dir STATE_DIR --record RECORD | workspace-review-decision --stdin STATE_DIR --request-id REQUEST_ID | hook-client --stdin STATE_DIR | resident-client --stdin STATE_DIR | resident-client-stream --stdin STATE_DIR | command-model --stdin | pre-tool --stdin | archive-inspect --stdin | secrets-cli --stdin | context-digest --stdin | serve --socket PATH | serve --tcp-loopback 127.0.0.1:PORT | resident-stop --state-dir STATE_DIR [--retire-clients] | resident-reset-restart-budget --state-dir STATE_DIR | serve-managed --state-dir STATE_DIR --generation N --owner-process-id PID --runtime-sha256 SHA | supervise-managed --state-dir STATE_DIR --generation N --owner-process-id PID --runtime-sha256 SHA"
+            "usage: hol-guard-runtime compile-business-policy --stdin | capabilities --json | rule-contract --json | self-test --json | hook --stdin | migrate-policy --state-dir STATE_DIR | prepare-approval-enrollment --state-dir STATE_DIR | enroll-approval-authority --state-dir STATE_DIR --record RECORD | prepare-approval-v4-enrollment --state-dir STATE_DIR --rp-id RP_ID --origin ORIGIN | enroll-approval-v4-authority --state-dir STATE_DIR --record RECORD | enroll-workspace-review-authority --state-dir STATE_DIR --record RECORD | workspace-review-decision --stdin STATE_DIR --request-id REQUEST_ID | hook-client --stdin STATE_DIR | resident-client --stdin STATE_DIR | resident-client-stream --stdin STATE_DIR | command-model --stdin | pre-tool --stdin | archive-inspect --stdin | secrets-cli --stdin | context-digest --stdin | daemon-listen --address 127.0.0.1:PORT --upstream 127.0.0.1:PORT | serve --socket PATH | serve --tcp-loopback 127.0.0.1:PORT | resident-stop --state-dir STATE_DIR [--retire-clients] | resident-reset-restart-budget --state-dir STATE_DIR | serve-managed --state-dir STATE_DIR --generation N --owner-process-id PID --runtime-sha256 SHA | supervise-managed --state-dir STATE_DIR --generation N --owner-process-id PID --runtime-sha256 SHA"
                 .into(),
         ),
     }
+}
+
+#[cfg(unix)]
+fn run_daemon_listener(listen: &str, upstream: &str) -> Result<(), String> {
+    crate::daemon_listener_serve::run(listen, upstream)
+}
+
+#[cfg(not(unix))]
+fn run_daemon_listener(_listen: &str, _upstream: &str) -> Result<(), String> {
+    Err("native_daemon_listener_unsupported_platform".to_owned())
 }

@@ -106,6 +106,22 @@ mod daemon_lifecycle_text;
 mod daemon_lifecycle_unit_tests;
 #[cfg(test)]
 mod daemon_lifecycle_vectors_tests;
+#[cfg(unix)]
+mod daemon_listener_driver;
+#[cfg(unix)]
+mod daemon_listener_proxy;
+#[cfg(unix)]
+mod daemon_listener_request_line;
+#[cfg(unix)]
+mod daemon_listener_serve;
+#[cfg(all(test, unix))]
+mod daemon_listener_serve_tests;
+#[cfg(unix)]
+mod daemon_listener_state;
+#[cfg(all(test, unix))]
+mod daemon_listener_vector_tests;
+#[cfg(unix)]
+mod daemon_listener_watchdog;
 mod daemon_policy_authority;
 mod daemon_route_op;
 mod daemon_route_paths;
