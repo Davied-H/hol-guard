@@ -82,7 +82,9 @@ pub(crate) fn evaluate(
                 input["result_snapshot"]
                     .as_str()
                     .ok_or("Linux workspace index transport is unavailable.")
-                    .and_then(|path| index_snapshot::write(std::path::Path::new(path), &value))
+                    .and_then(|path| {
+                        index_snapshot::write(std::path::Path::new(path), &value, deadline)
+                    })
             });
         return reply(result);
     }

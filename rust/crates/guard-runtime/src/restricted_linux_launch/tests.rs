@@ -41,6 +41,31 @@ fn fixture(prefix: &str) -> Fixture {
 }
 
 #[test]
+fn expired_snapshot_deadline_cannot_create_or_append_a_plan() {
+    use std::os::unix::fs::PermissionsExt;
+    use std::time::{Duration, Instant};
+    let fixture = fixture("hol-guard-linux-index");
+    std::fs::set_permissions(&fixture.0, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let snapshot = fixture.0.join("linux-index.json");
+    let expired = Instant::now();
+    assert!(index_snapshot::write(&snapshot, &json!([]), expired).is_err());
+    assert!(!snapshot.exists());
+    let envelope = index_snapshot::write(
+        &snapshot,
+        &json!([]),
+        Instant::now() + Duration::from_secs(5),
+    )
+    .unwrap();
+    assert_eq!(envelope["decoded_bytes"], json!(2));
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&snapshot)
+        .unwrap();
+    assert!(index_snapshot::write_bytes(&mut file, b"late", expired).is_err());
+    assert_eq!(std::fs::read(snapshot).unwrap(), b"[]");
+}
+
+#[test]
 fn original_python_kernel_plan_and_mount_contracts() {
     let fixture = fixture("guard-linux-launch-parity");
     std::fs::write(fixture.0.join("runner"), b"\x7fELFfixture-not-executed").unwrap();

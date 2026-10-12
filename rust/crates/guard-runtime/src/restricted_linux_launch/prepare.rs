@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
-use std::io::{Read, Write};
+use std::io::Read;
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -269,6 +269,8 @@ pub(super) fn argv(value: &Value, deadline: Instant) -> Result<Value> {
     if raw.len() as u64 > super::plan::MAX_BYTES || Instant::now() >= deadline {
         return Err("Linux execution plan exceeds its budget.");
     }
+    let digest = format!("{:x}", Sha256::digest(&raw));
+    super::index_snapshot::check(deadline)?;
     let snapshot = input.private_root.join(FILENAME);
     let mut file = OpenOptions::new()
         .write(true)
@@ -277,9 +279,8 @@ pub(super) fn argv(value: &Value, deadline: Instant) -> Result<Value> {
         .custom_flags(libc::O_NOFOLLOW)
         .open(&snapshot)
         .map_err(|_| "Linux execution snapshot could not be created.")?;
-    file.write_all(&raw)
-        .map_err(|_| "Linux execution snapshot could not be written.")?;
-    super::argv::compose(
+    super::index_snapshot::write_bytes(&mut file, &raw, deadline)?;
+    let result = super::argv::compose(
         &input.backend_executable,
         &input.workspace,
         &input.cwd,
@@ -288,7 +289,9 @@ pub(super) fn argv(value: &Value, deadline: Instant) -> Result<Value> {
         write_roots,
         images,
         &snapshot,
-        &format!("{:x}", Sha256::digest(&raw)),
+        &digest,
         DIRECTORY,
-    )
+    )?;
+    super::index_snapshot::check(deadline)?;
+    Ok(result)
 }

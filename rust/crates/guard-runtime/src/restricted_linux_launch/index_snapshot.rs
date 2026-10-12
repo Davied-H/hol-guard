@@ -8,8 +8,28 @@ use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::Path;
+use std::time::Instant;
 
-pub(super) fn write(path: &Path, value: &Value) -> Result<Value> {
+pub(super) fn check(deadline: Instant) -> Result<()> {
+    if Instant::now() >= deadline {
+        Err("Linux execution snapshot exceeds its time budget.")
+    } else {
+        Ok(())
+    }
+}
+
+pub(super) fn write_bytes(file: &mut File, bytes: &[u8], deadline: Instant) -> Result<()> {
+    for chunk in bytes.chunks(1024 * 1024) {
+        check(deadline)?;
+        file.write_all(chunk)
+            .map_err(|_| "Linux execution snapshot could not be written.")?;
+        check(deadline)?;
+    }
+    check(deadline)
+}
+
+pub(super) fn write(path: &Path, value: &Value, deadline: Instant) -> Result<Value> {
+    check(deadline)?;
     let message = "Linux workspace index transport is unavailable.";
     let parent = path.parent().ok_or(message)?;
     if !parent.is_absolute()
@@ -32,9 +52,12 @@ pub(super) fn write(path: &Path, value: &Value) -> Result<Value> {
         return Err(message);
     }
     let bytes = serde_json::to_vec(value).map_err(|_| message)?;
+    check(deadline)?;
     if bytes.len() > 64 * 1024 * 1024 {
         return Err("Linux workspace index exceeds its wire budget.");
     }
+    let digest = format!("{:x}", Sha256::digest(&bytes));
+    check(deadline)?;
     let descriptor = openat(
         &directory,
         "linux-index.json",
@@ -43,6 +66,6 @@ pub(super) fn write(path: &Path, value: &Value) -> Result<Value> {
     )
     .map_err(|_| message)?;
     let mut file = File::from(descriptor);
-    file.write_all(&bytes).map_err(|_| message)?;
-    Ok(json!({"decoded_bytes":bytes.len(),"sha256":format!("{:x}",Sha256::digest(&bytes))}))
+    write_bytes(&mut file, &bytes, deadline)?;
+    Ok(json!({"decoded_bytes":bytes.len(),"sha256":digest}))
 }
