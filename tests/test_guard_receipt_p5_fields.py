@@ -20,7 +20,6 @@ from pathlib import Path
 import pytest
 
 from codex_plugin_scanner.guard.consumer.service import _build_diff_summary
-from codex_plugin_scanner.guard.mcp_tool_calls import _map_approval_source
 from codex_plugin_scanner.guard.models import GuardReceipt
 from codex_plugin_scanner.guard.receipts.manager import _auto_diff_summary, build_receipt
 from codex_plugin_scanner.guard.store import GuardStore
@@ -452,31 +451,3 @@ class TestV5MigrationPreservesRowids:
         r50 = store.get_receipt("r-50")
         assert r50 is not None
         assert r50["action_envelope_json"] is None
-
-
-class TestMapApprovalSource:
-    @pytest.mark.parametrize(
-        "decision_source,expected",
-        [
-            ("inline-approved", "inline"),
-            ("inline-denied", "inline"),
-            ("native-approved", "inline"),
-            ("claude-native-approved", "inline"),
-            ("policy-allow", "policy"),
-            ("policy-block", "policy"),
-            ("policy_allow", "policy"),
-            ("heuristic-allow", "policy"),
-            ("heuristic_block", "policy"),
-            ("auto-allow", "policy"),
-            ("heuristic", "policy"),
-            ("policy", "policy"),
-            ("auto", "policy"),
-            ("pre-tool-hook", "policy"),
-            ("permission-request-hook", "policy"),
-            ("pending-approval", "approval_center"),
-            ("approval-center-allow", "approval_center"),
-            ("unknown-source", "approval_center"),
-        ],
-    )
-    def test_decision_source_mapped_correctly(self, decision_source: str, expected: str) -> None:
-        assert _map_approval_source(decision_source) == expected

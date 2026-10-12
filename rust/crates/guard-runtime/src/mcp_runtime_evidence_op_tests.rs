@@ -253,22 +253,6 @@ fn oversized_request_is_rejected_before_evaluation() {
 }
 
 #[test]
-fn receipt_evidence_returns_both_values_in_one_reply() {
-    let mut request = request("receipt_evidence");
-    request.tool_description = Some("d".to_owned());
-    request.arguments = entries(&[("command", Some("ls")), ("file_path", Some("/a/b.txt"))]);
-    request.risk_categories = strings(&["credential"]);
-    let payload = run(&request).payload.unwrap();
-    assert_eq!(payload["command_text"], "ls");
-    // Call arguments never feed the receipt runtimeAction record.
-    assert_eq!(payload["runtime_action"]["filesTouched"], json!([]));
-    assert_eq!(
-        payload["runtime_action"]["claimedCapabilities"],
-        json!(["tool_description"])
-    );
-}
-
-#[test]
 fn request_rejects_unknown_and_missing_fields() {
     let good = serde_json::to_value(request("command_text")).unwrap();
     assert!(serde_json::from_value::<McpRuntimeEvidenceRequestV1>(good.clone()).is_ok());

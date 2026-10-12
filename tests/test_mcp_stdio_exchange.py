@@ -199,3 +199,39 @@ def test_unknown_outcome_and_good_outcome_record_health_appropriately(
     assert refused is None
     assert len(successes) == 2  # usable outcome and bound refusal both answer
     assert failures == []
+
+
+def test_allow_evidence_is_stored_before_the_forward_in_the_same_exchange(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, native_mcp_probe
+) -> None:
+    proxy, marker = _proxy(tmp_path, monkeypatch, native_mcp_probe)
+    operations: collections.Counter[str] = collections.Counter()
+    real = native_execution.native_resident_client_request
+
+    def spy(**kwargs):
+        operations[json.loads(kwargs["payload"])["operation"]] += 1
+        return real(**kwargs)
+
+    monkeypatch.setattr(native_execution, "native_resident_client_request", spy)
+    result = proxy.run_session(_call_messages())
+    assert "result" in result["responses"][2], result["responses"][2]
+    assert marker.exists()
+    assert operations["mcp_tool_call_record"] == 0
+    assert operations["guard_store"] == 0
+    receipts = proxy.store.list_receipts(limit=10)
+    assert [item["policy_decision"] for item in receipts].count("allow") == 1
+
+
+def test_record_failure_in_the_exchange_fails_the_call_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, native_mcp_probe
+) -> None:
+    proxy, marker = _proxy(tmp_path, monkeypatch, native_mcp_probe)
+
+    def record_failed(session_id, message, **_kwargs):
+        return {"outcome": "record_failed", "written": False, "record_error": "native_guard_store_busy"}
+
+    monkeypatch.setattr(native_child_io_module, "mcp_stdio_session_exchange_native", record_failed)
+    result = proxy.run_session(_call_messages())
+    assert marker.exists() is False
+    assert "error" in result["responses"][2]
+    assert proxy.store.list_receipts(limit=10) == []

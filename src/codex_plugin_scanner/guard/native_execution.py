@@ -178,6 +178,7 @@ def _resident_request(
             "protect_request",
             "mcp_tool_call_identity",
             "package_context_build",
+            "mcp_tool_call_record",
         }:
             accepted = frozenset({"ok", "error"})
         elif operation == "mcp_tool_policy_decide":

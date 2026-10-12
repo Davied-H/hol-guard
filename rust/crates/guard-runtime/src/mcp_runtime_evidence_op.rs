@@ -52,18 +52,6 @@ fn evaluate(request: &McpRuntimeEvidenceRequestV1) -> Result<Value, &'static str
         "command_text" => Ok(json!({
             "command_text": extract_command_text(&request.artifact_name, arguments),
         })),
-        // One round trip for a receipt: display text from the arguments, the
-        // runtimeAction record from description/risk/envelope (receipts never
-        // fed call arguments into it).
-        "receipt_evidence" => Ok(json!({
-            "command_text": extract_command_text(&request.artifact_name, arguments),
-            "runtime_action": runtime_action_record(
-                request.tool_description.as_deref(),
-                None,
-                &request.risk_categories,
-                request.envelope.as_ref(),
-            ),
-        })),
         _ => Err(ERR_SUBOP),
     }
 }

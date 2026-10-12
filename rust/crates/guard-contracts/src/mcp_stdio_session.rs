@@ -58,6 +58,11 @@ pub struct McpStdioSessionExchangeV1 {
     pub quiet_ms: u64,
     /// How long to wait for the response correlated to `message.id`.
     pub response_timeout_ms: u64,
+    /// Evidence for the call being written. Recorded in the resident store after
+    /// the quiet edge passes and before the write; a failed record means the
+    /// message is never written.
+    #[serde(default)]
+    pub record: Option<crate::mcp_tool_call_record::McpToolCallRecordRequestV1>,
 }
 
 /// `recv` — drain the next inbound child frame within `timeout_ms`. When

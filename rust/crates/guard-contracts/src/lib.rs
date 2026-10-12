@@ -110,6 +110,8 @@ mod mcp_tool_policy_decide;
 pub use mcp_tool_policy_decide::*;
 mod mcp_tool_call_identity;
 pub use mcp_tool_call_identity::*;
+mod mcp_tool_call_record;
+pub use mcp_tool_call_record::*;
 mod mcp_stdio_session;
 pub use mcp_stdio_session::*;
 mod command_effect;

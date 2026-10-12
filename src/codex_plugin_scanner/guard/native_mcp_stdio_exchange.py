@@ -12,11 +12,12 @@ from .native_execution import (
     _MCP_STDIO_SESSION_RESULT_SCHEMA,
     _resident_request,
 )
+from .native_mcp_tool_call_record import NATIVE_MCP_TOOL_CALL_RECORD_FEATURE
 from .native_runtime import native_runtime_status
 from .native_runtime_resilience import native_record_resident_failure, native_record_resident_success
 
-ExchangeOutcome = Literal["boundary", "response", "event", "timeout", "eof"]
-_OUTCOMES = frozenset({"boundary", "response", "event", "timeout", "eof"})
+ExchangeOutcome = Literal["boundary", "response", "event", "timeout", "eof", "record_failed"]
+_OUTCOMES = frozenset({"boundary", "response", "event", "timeout", "eof", "record_failed"})
 # Resident-side bounds the transport deadline must cover beyond the quiet and response windows:
 # an unfinished child frame may extend the quiet edge, and the write itself may block on child stdin.
 _QUIET_EXTENSION_SECONDS = 1.0
@@ -31,6 +32,7 @@ def mcp_stdio_session_exchange_native(
     guard_home: Path,
     quiet_seconds: float,
     response_timeout_seconds: float,
+    record: Mapping[str, object] | None = None,
 ) -> dict[str, object] | None:
     """Wait for a quiet edge, write ``message`` and return the first thing the child says back.
 
@@ -39,7 +41,12 @@ def mcp_stdio_session_exchange_native(
     * ``boundary``: a frame arrived during the quiet edge, nothing was written;
     * ``response``: the response correlated to ``message["id"]``;
     * ``event``: another frame arrived first (child request or notification);
-    * ``timeout`` or ``eof``: the message was written but no response came.
+    * ``timeout`` or ``eof``: the message was written but no response came;
+    * ``record_failed``: ``record`` could not be stored, so nothing was written.
+
+    ``record`` is the evidence for the call: the resident stores it after the
+    quiet edge passes and before the write, and reports ``recorded`` and the
+    outbox generation back.
 
     ``None`` means the resident gave no usable answer, so the caller cannot
     know whether the message was written and must fail the call.
@@ -52,6 +59,7 @@ def mcp_stdio_session_exchange_native(
         "exchange": {
             "quiet_ms": int(quiet_seconds * 1000),
             "response_timeout_ms": int(response_timeout_seconds * 1000),
+            **({} if record is None else {"record": dict(record)}),
         },
     }
     status = native_runtime_status()
@@ -66,7 +74,7 @@ def mcp_stdio_session_exchange_native(
             + response_timeout_seconds
             + _TRANSPORT_MARGIN_SECONDS
         ),
-        required_feature=_MCP_STDIO_SESSION_FEATURE,
+        required_feature=_MCP_STDIO_SESSION_FEATURE if record is None else NATIVE_MCP_TOOL_CALL_RECORD_FEATURE,
         response_schema=_MCP_STDIO_SESSION_RESULT_SCHEMA,
         record_success=False,
         status=status,

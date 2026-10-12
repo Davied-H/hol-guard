@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 from collections import deque
 from collections.abc import Iterable, Mapping
+from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -24,6 +25,7 @@ from ..native_execution import (
     mcp_stdio_session_send_native,
 )
 from ..native_mcp_stdio_exchange import mcp_stdio_session_exchange_native
+from ..native_mcp_tool_call_record import PreparedToolCallRecord, ToolCallRecordError
 from .stdio import ProxyIoTimeoutError
 
 
@@ -77,23 +79,34 @@ class _NativeMcpChildIo:
         *,
         quiet_seconds: float,
         response_timeout_seconds: float,
+        record: PreparedToolCallRecord | None = None,
     ) -> dict[str, Any] | bool:
         """Quiet edge, write and response in one resident round trip.
 
         Returns the correlated response, or whether ``message`` was written.
+        ``record`` is stored by the resident between the quiet edge and the
+        write; when that store fails nothing is written and
+        ``ToolCallRecordError`` is raised.
         Whatever else the child said is queued so the relay reads it exactly as
         it would have read it from separate ``send`` and ``recv`` calls.
         """
-        outcome = mcp_stdio_session_exchange_native(
-            self._session_id,
-            message,
-            guard_home=self._guard_home,
-            quiet_seconds=quiet_seconds,
-            response_timeout_seconds=response_timeout_seconds,
-        )
+        with nullcontext() if record is None else record.gate():
+            outcome = mcp_stdio_session_exchange_native(
+                self._session_id,
+                message,
+                guard_home=self._guard_home,
+                quiet_seconds=quiet_seconds,
+                response_timeout_seconds=response_timeout_seconds,
+                record=None if record is None else record.request,
+            )
         if outcome is None:
             raise RuntimeError("native MCP session exchange failed")
         kind = outcome["outcome"]
+        if kind == "record_failed":
+            raise ToolCallRecordError(str(outcome.get("record_error") or "native_mcp_tool_call_record_failed"))
+        if record is not None and outcome.get("recorded") is True:
+            generation = outcome.get("outbox_generation")
+            record.finish(generation if type(generation) is int else None)
         written = outcome.get("written") is True
         frame = outcome.get("frame")
         if kind == "response" and isinstance(frame, dict):

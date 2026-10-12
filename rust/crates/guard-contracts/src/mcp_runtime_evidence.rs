@@ -81,9 +81,7 @@ pub struct McpRuntimeEvidenceRequestV1 {
     pub schema: String,
     /// Caller correlation id; echoed back in the result.
     pub request_id: String,
-    /// `runtime_action`, `command_text`, or `receipt_evidence` (both in one reply:
-    /// `command_text` from `arguments`, `runtime_action` from description,
-    /// risk categories, and envelope only).
+    /// `runtime_action` or `command_text`.
     pub subop: String,
     /// Resolved guard home the request is scoped to.
     pub guard_home: String,
@@ -113,7 +111,7 @@ pub struct McpRuntimeEvidenceResultV1 {
     pub status: String,
     /// `ok`, or one of the `native_mcp_runtime_evidence_*` failure codes.
     pub code: String,
-    /// `{"runtime_action": ..}`, `{"command_text": ..}`, or both keys for `receipt_evidence`.
+    /// `{"runtime_action": ..}` or `{"command_text": ..}`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub payload: Option<Value>,
 }

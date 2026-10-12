@@ -6,6 +6,7 @@ import io
 import json
 import os
 import queue
+import sqlite3
 import sys
 import threading
 from collections.abc import Callable, Mapping, Sequence
@@ -64,6 +65,7 @@ from ..native_mcp_proxy_decision import (
     package_facts,
     tool_facts,
 )
+from ..native_mcp_tool_call_record import PreparedToolCallRecord, ToolCallRecordError, prepare_tool_call_record
 from ..package_execution_context import build_package_execution_context
 from ..policy.engine import build_decision_v2
 from ..runtime.approval_context import (
@@ -2329,6 +2331,34 @@ class RuntimeMcpGuardProxy:
             "scanner_evidence": list(scanner_evidence),
         }
 
+    def _evidence_unavailable_response(
+        self,
+        *,
+        message_id: Any,
+        tool_name: str,
+        params: dict[str, Any],
+        scanner_evidence: tuple[dict[str, object], ...],
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Fail closed: the call's evidence could not be stored, so it was not forwarded."""
+        response = _blocked_tool_response(
+            message_id,
+            tool_name,
+            f"HOL Guard could not record evidence for tool call {tool_name} from {self.server_name}; "
+            "the call was not forwarded.",
+            {"approvalRequests": [], "guardPolicyAction": "block"},
+        )
+        event: dict[str, Any] = {
+            "method": "tools/call",
+            "tool_name": tool_name,
+            "decision": "evidence-unavailable",
+            "policy_action": "block",
+            "redacted_params": _safe_mcp_params(params),
+            "approval_requests": [],
+        }
+        if scanner_evidence:
+            event["scanner_evidence"] = list(scanner_evidence)
+        return response, event
+
     def _terminal_tool_response(
         self,
         *,
@@ -2765,6 +2795,21 @@ class RuntimeMcpGuardProxy:
                     scanner_evidence=scanner_evidence,
                     policy_action="require-reapproval",
                 )
+        # The evidence is stored before the call is written to the child, so a
+        # call that executed always has its receipt.
+        record = prepare_tool_call_record(
+            store=self.store,
+            kind="allow",
+            artifact=artifact,
+            artifact_hash=artifact_hash,
+            decision_source=decision_source,
+            now=_now(),
+            signals=signals,
+            risk_categories=risk_categories,
+            policy_action=policy_action,
+            arguments=_safe_mcp_arguments(params.get("arguments")),
+            additional_scanner_evidence=scanner_evidence,
+        )
         try:
             response = self._forward_message(
                 message,
@@ -2775,6 +2820,7 @@ class RuntimeMcpGuardProxy:
                 expected_catalog_generation=expected_catalog_generation,
                 expected_catalog_state=expected_catalog_state,
                 expected_catalog_fingerprint=expected_catalog_fingerprint,
+                record=record,
             )
         except _ToolCatalogBoundaryChangedError:
             return self._catalog_boundary_failure_response(
@@ -2785,19 +2831,13 @@ class RuntimeMcpGuardProxy:
                 phase="immediately_before_forward",
                 package_request=False,
             )
-        allow_tool_call(
-            store=self.store,
-            artifact=artifact,
-            artifact_hash=artifact_hash,
-            decision_source=decision_source,
-            now=_now(),
-            signals=signals,
-            risk_categories=risk_categories,
-            remember=False,
-            arguments=_safe_mcp_arguments(params.get("arguments")),
-            additional_scanner_evidence=scanner_evidence,
-            policy_action=policy_action,
-        )
+        except (ToolCallRecordError, sqlite3.Error, TimeoutError):
+            return self._evidence_unavailable_response(
+                message_id=message.get("id"),
+                tool_name=str(params.get("name") or artifact.name),
+                params=params,
+                scanner_evidence=scanner_evidence,
+            )
         event: dict[str, Any] = {
             "method": "tools/call",
             "tool_name": params.get("name"),
@@ -3005,6 +3045,7 @@ class RuntimeMcpGuardProxy:
         expected_catalog_generation: int | None = None,
         expected_catalog_state: _ToolCatalogState | None = None,
         expected_catalog_fingerprint: str | None = None,
+        record: PreparedToolCallRecord | None = None,
     ) -> dict[str, Any]:
         request_id = message.get("id")
         catalog = (
@@ -3023,6 +3064,7 @@ class RuntimeMcpGuardProxy:
                 message,
                 quiet_seconds=_TOOLS_CALL_PREWRITE_QUIET_SECONDS,
                 response_timeout_seconds=self._child_response_timeout_seconds(),
+                record=record,
             )
             if isinstance(exchanged, dict):
                 return exchanged
@@ -3043,6 +3085,8 @@ class RuntimeMcpGuardProxy:
         ):
             raise _ToolCatalogBoundaryChangedError(_TOOL_CATALOG_EXECUTION_BOUNDARY_CHANGED)
         if not written:
+            if record is not None and not record.recorded:
+                record.commit()
             child_stdin.write(json.dumps(message) + "\n")
             child_stdin.flush()
         while True:

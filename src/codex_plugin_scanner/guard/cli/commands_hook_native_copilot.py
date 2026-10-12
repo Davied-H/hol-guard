@@ -230,7 +230,8 @@ def _settle_copilot_tool_call(
                 receipt = allow_tool_call(remember=False, **receipt_kwargs)
             else:
                 receipt = block_tool_call(**receipt_kwargs)
-            receipt_id = receipt.receipt_id
+            if receipt is not None:
+                receipt_id = receipt.receipt_id
         elif kind == "activity":
             _ = record_pre_hook_command_activity_best_effort(
                 store=store,

@@ -13,7 +13,7 @@ import sqlite3
 
 import pytest
 
-from codex_plugin_scanner.guard import native_context, native_execution
+from codex_plugin_scanner.guard import native_context, native_execution, native_mcp_runtime_evidence
 from codex_plugin_scanner.guard.config import GuardConfig
 from codex_plugin_scanner.guard.proxy import CodexMcpGuardProxy
 from codex_plugin_scanner.guard.proxy import runtime_mcp as runtime_mcp_module
@@ -23,8 +23,9 @@ from tests.test_guard_runtime_mcp_saved_blocks import _child_command, _context, 
 pytestmark = [pytest.mark.usefixtures("bundle_first_cloud"), pytest.mark.usefixtures("package_intent_native")]
 
 # Resident ops one benign warm allow may spend, excluding the `tools/list` setup.
-# Includes the single `mcp_tool_call_identity` round trip; the stdio exchange fusion lowers it further.
-_TOTAL_BUDGET = 7
+# One warm allow is three round trips: the fused stdio exchange (allow evidence, forward and response),
+# the tool-call identity, and the policy decision.
+_TOTAL_BUDGET = 3
 _CONNECTION_BUDGET = 2
 # `native_context_digest` calls (cached ones included) cost Python time even when no resident round
 # trip happens, so they are bounded too.
@@ -33,7 +34,11 @@ _PER_OPERATION_BUDGET = {
     "mcp_tool_policy_decide": 1,
     "policy_decision_lookup": 0,
     "mcp_proxy_decide": 0,
-    "guard_store": 1,
+    "mcp_tool_call_identity": 1,
+    "mcp_stdio_session_send": 1,
+    "mcp_stdio_session_recv": 0,
+    "mcp_runtime_evidence": 0,
+    "guard_store": 0,
 }
 
 
@@ -66,6 +71,7 @@ def test_benign_tool_call_stays_within_the_resident_round_trip_budget(
         return real(**kwargs)
 
     monkeypatch.setattr(native_execution, "native_resident_client_request", spy)
+    monkeypatch.setattr(native_mcp_runtime_evidence, "native_resident_client_request", spy)
     digests: list[str] = []
     real_digest = native_context.native_context_digest
 

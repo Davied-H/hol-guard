@@ -60,8 +60,10 @@ def test_tool_call_evidence_is_one_resident_store_call(
         allow_tool_call(**common, remember=False)
         event_name = "runtime_tool_call_allowed"
 
-    # Display-evidence ops are separate; the three durable writes must share one store call.
-    assert _operations(log_path).count("guard_store") == 1
+    # Display evidence is built inside the record op; the three durable writes share its one store call.
+    operations = _operations(log_path)
+    assert operations.count("mcp_tool_call_record") == 1
+    assert operations.count("guard_store") == 0
     assert _count(store, "artifact_inventory", "artifact_id = 'codex:runtime:mcp:lean-ctx:ctx_read'") == 1
     assert _count(store, "runtime_receipts") == 1
     assert _count(store, "guard_events", f"event_name = '{event_name}'") == 1

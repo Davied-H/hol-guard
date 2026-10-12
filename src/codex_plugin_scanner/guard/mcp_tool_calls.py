@@ -11,14 +11,13 @@ from .action_lattice import normalize_guard_action
 from .approval_gate import ApprovalGateGrant
 from .collections_support import dedupe_preserving_order
 from .config import GuardConfig
-from .mcp_tool_call_evidence import receipt_evidence_for_mcp_tool_call
 from .models import GuardAction, GuardArtifact, GuardReceipt, PolicyDecision
 from .native_approval_proof import (
     ApprovalReuseClaimDisposition,
 )
 from .native_mcp_tool_call_identity import NativeToolCallIdentity, native_tool_call_identity, server_identity_dto
+from .native_mcp_tool_call_record import prepare_tool_call_record
 from .native_mcp_tool_evidence import native_tool_risk_evidence
-from .receipts import build_receipt
 from .runtime.approval_context import (
     current_extension_control_binding_digest,
 )
@@ -31,13 +30,6 @@ from .runtime.mcp_protection import (
     McpServerIdentity,
 )
 from .store import GuardStore
-
-_NON_EXECUTED_TOOL_CALL_TAXONOMY: Mapping[GuardAction, tuple[str, str]] = {
-    "review": ("runtime_tool_call_review_required", "runtime tool call awaiting review"),
-    "require-reapproval": ("runtime_tool_call_reapproval_required", "runtime tool call awaiting fresh approval"),
-    "sandbox-required": ("runtime_tool_call_sandbox_required", "runtime tool call requires an enforceable sandbox"),
-    "block": ("runtime_tool_call_blocked", "runtime tool call blocked"),
-}
 
 
 @dataclass(frozen=True, slots=True)
@@ -293,34 +285,7 @@ def tool_call_risk_summary(artifact: GuardArtifact, arguments: object) -> str:
     return native_tool_risk_evidence(artifact, arguments)[2]
 
 
-_INLINE_SOURCES = frozenset({"inline-approved", "inline-denied", "native-approved", "claude-native-approved"})
-_POLICY_SOURCES = frozenset(
-    {
-        "heuristic",
-        "policy",
-        "auto",
-        "pre-tool-hook",
-        "permission-request-hook",
-        "policy-allow",
-        "policy-block",
-        "policy_allow",
-        "policy_block",
-        "heuristic-allow",
-        "heuristic-block",
-        "heuristic_allow",
-        "heuristic_block",
-        "auto-allow",
-        "auto-block",
-    }
-)
-
-
-def _map_approval_source(decision_source: str) -> str:
-    if decision_source in _INLINE_SOURCES:
-        return "inline"
-    if decision_source in _POLICY_SOURCES or decision_source.startswith("policy"):
-        return "policy"
-    return "approval_center"
+_NON_EXECUTED_ACTIONS = frozenset({"review", "require-reapproval", "sandbox-required", "block"})
 
 
 def allow_tool_call(
@@ -339,7 +304,8 @@ def allow_tool_call(
     additional_scanner_evidence: tuple[dict[str, object], ...] = (),
     policy_action: GuardAction = "allow",
     emit_runtime_evidence: bool = True,
-) -> GuardReceipt:
+) -> GuardReceipt | None:
+    """Remember the allow when asked, then record the call; ``None`` when no evidence is emitted."""
     if remember:
         if composio_requires_action_review(artifact.command or ""):
             raise ValueError("verified_account_required_for_remembered_provider_action")
@@ -357,44 +323,21 @@ def allow_tool_call(
             now,
             approval_gate_grant=approval_gate_grant,
         )
-    # Display-only evidence; failure degrades it, never the receipt or event.
-    raw_command_text, firewall_evidence = receipt_evidence_for_mcp_tool_call(
-        artifact, arguments=arguments, risk_categories=risk_categories, guard_home=store.guard_home
-    )
-    receipt = build_receipt(
-        harness=artifact.harness,
-        artifact_id=artifact.artifact_id,
+    if not emit_runtime_evidence:
+        return None
+    return prepare_tool_call_record(
+        store=store,
+        kind="allow",
+        artifact=artifact,
         artifact_hash=artifact_hash,
-        policy_decision=policy_action,
-        capabilities_summary=f"mcp tool call • {artifact.name}",
-        changed_capabilities=["runtime_tool_call", decision_source, *signals],
-        provenance_summary=f"runtime tool call allowed from {artifact.config_path}",
-        artifact_name=artifact.name,
-        source_scope=artifact.source_scope,
-        user_override="inline-approve" if decision_source == "inline-approved" else None,
-        approval_source=_map_approval_source(decision_source),
-        scanner_evidence=(firewall_evidence, *additional_scanner_evidence),
-        raw_command_text=raw_command_text,
-    )
-    if emit_runtime_evidence:
-        store.record_tool_call_evidence(
-            artifact=artifact,
-            artifact_hash=artifact_hash,
-            policy_action=policy_action,
-            approved=policy_action in {"allow", "warn"},
-            receipt=receipt,
-            event_name="runtime_tool_call_allowed",
-            event_payload={
-                "artifact_id": artifact.artifact_id,
-                "artifact_hash": artifact_hash,
-                "decision_source": decision_source,
-                "policy_action": policy_action,
-                "risk_categories": list(risk_categories),
-                "signals": list(signals),
-            },
-            now=now,
-        )
-    return receipt
+        decision_source=decision_source,
+        now=now,
+        signals=signals,
+        risk_categories=risk_categories,
+        policy_action=policy_action,
+        arguments=arguments,
+        additional_scanner_evidence=additional_scanner_evidence,
+    ).commit()
 
 
 def block_tool_call(
@@ -410,47 +353,21 @@ def block_tool_call(
     additional_scanner_evidence: tuple[dict[str, object], ...] = (),
     policy_action: GuardAction = "block",
 ) -> GuardReceipt:
-    try:
-        event_name, provenance_action = _NON_EXECUTED_TOOL_CALL_TAXONOMY[policy_action]
-    except KeyError as exc:
-        raise ValueError(f"block_tool_call cannot record executing action {policy_action!r}.") from exc
-    raw_command_text, firewall_evidence = receipt_evidence_for_mcp_tool_call(
-        artifact, arguments=arguments, risk_categories=risk_categories, guard_home=store.guard_home
-    )
-    receipt = build_receipt(
-        harness=artifact.harness,
-        artifact_id=artifact.artifact_id,
-        artifact_hash=artifact_hash,
-        policy_decision=policy_action,
-        capabilities_summary=f"mcp tool call • {artifact.name}",
-        changed_capabilities=["runtime_tool_call", decision_source, *signals],
-        provenance_summary=f"{provenance_action} from {artifact.config_path}",
-        artifact_name=artifact.name,
-        source_scope=artifact.source_scope,
-        user_override="inline-deny" if decision_source == "inline-denied" else None,
-        approval_source=_map_approval_source(decision_source),
-        scanner_evidence=(firewall_evidence, *additional_scanner_evidence),
-        raw_command_text=raw_command_text,
-    )
-    store.record_tool_call_evidence(
+    if policy_action not in _NON_EXECUTED_ACTIONS:
+        raise ValueError(f"block_tool_call cannot record executing action {policy_action!r}.")
+    return prepare_tool_call_record(
+        store=store,
+        kind="block",
         artifact=artifact,
         artifact_hash=artifact_hash,
-        policy_action=policy_action,
-        approved=False,
-        receipt=receipt,
-        event_name=event_name,
-        event_payload={
-            "artifact_id": artifact.artifact_id,
-            "artifact_hash": artifact_hash,
-            "decision_source": decision_source,
-            "policy_action": policy_action,
-            "execution_outcome": "not-executed",
-            "risk_categories": list(risk_categories),
-            "signals": list(signals),
-        },
+        decision_source=decision_source,
         now=now,
-    )
-    return receipt
+        signals=signals,
+        risk_categories=risk_categories,
+        policy_action=policy_action,
+        arguments=arguments,
+        additional_scanner_evidence=additional_scanner_evidence,
+    ).commit()
 
 
 _dedupe = dedupe_preserving_order

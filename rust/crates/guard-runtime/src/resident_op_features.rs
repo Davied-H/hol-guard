@@ -63,6 +63,7 @@ pub(crate) const RESIDENT_OP_FEATURES: &[&str] = &[
     guard_contracts::REQUEST_CONTEXT_FEATURE,
     guard_contracts::MCP_TOOL_POLICY_DECIDE_FEATURE,
     guard_contracts::MCP_TOOL_CALL_IDENTITY_FEATURE,
+    guard_contracts::MCP_TOOL_CALL_RECORD_FEATURE,
     guard_contracts::GITHUB_WORKFLOW_PREPARE_FEATURE,
     guard_contracts::NATIVE_EXACT_ACTION_FEATURE,
 ];

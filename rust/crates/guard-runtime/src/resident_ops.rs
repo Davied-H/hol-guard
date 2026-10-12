@@ -371,6 +371,9 @@ pub(crate) fn evaluate_resident_bytes(
             ResidentOperationV1::McpToolCallIdentity(request) => {
                 crate::mcp_tool_call_identity_op::evaluate_mcp_tool_call_identity_request(&request)
             }
+            ResidentOperationV1::McpToolCallRecord(request) => {
+                crate::mcp_tool_call_record_op::evaluate_mcp_tool_call_record_request(&request)
+            }
             ResidentOperationV1::PackageAdvisoryIds(request) => {
                 crate::package_authority_op::evaluate_package_advisory_ids(&request)
             }
@@ -517,6 +520,7 @@ fn operation_guard_home(operation: &ResidentOperationV1) -> Option<&str> {
         ResidentOperationV1::McpStdioProbe(request) => Some(&request.guard_home),
         ResidentOperationV1::PromptAnalyze(request) => Some(&request.guard_home),
         ResidentOperationV1::McpRuntimeEvidence(request) => Some(&request.guard_home),
+        ResidentOperationV1::McpToolCallRecord(request) => Some(&request.guard_home),
         ResidentOperationV1::RuntimeDetectorRun(request) => Some(&request.guard_home),
         ResidentOperationV1::RunnerAuthority(request) => Some(&request.guard_home),
         ResidentOperationV1::LocalCliGrantDecide(request) => Some(&request.guard_home),

@@ -4,9 +4,8 @@ Rust owns the ``runtimeAction`` receipt record and the displayed command text
 of an MCP tool call. Python ships artifact/argument DTOs, binds the answer to
 the request by ``request_id`` and canonical ``request_sha256``, and renders it.
 Any transport, scope, or binding failure raises ``NativeMcpRuntimeEvidenceError``
-(never another exception type). Callers that record already-final verdicts
-(``mcp_tool_call_evidence``) catch it and degrade to omitted evidence; nothing
-here ever recomputes the evidence locally.
+(never another exception type); nothing here ever recomputes the evidence
+locally. Recording a tool-call verdict goes through ``mcp_tool_call_record``.
 """
 
 from __future__ import annotations
@@ -223,32 +222,3 @@ def native_runtime_action_record(
     if "runtime_action" not in result or not (record is None or isinstance(record, dict)):
         raise NativeMcpRuntimeEvidenceError(_INVALID_RESULT)
     return record
-
-
-def native_receipt_evidence(
-    *,
-    artifact_name: str,
-    tool_description: str | None,
-    arguments: list[list[Any]] | None,
-    risk_categories: Sequence[str],
-    guard_home: Path | None,
-) -> tuple[str | None, dict[str, object] | None]:
-    """One resident round trip: ``(command_text, runtime_action)`` for a receipt."""
-    result = _request(
-        "receipt_evidence",
-        guard_home,
-        artifact_name=artifact_name,
-        tool_description=tool_description,
-        arguments=arguments,
-        risk_categories=list(risk_categories),
-    )
-    text = result.get("command_text")
-    record = result.get("runtime_action")
-    if (
-        "command_text" not in result
-        or "runtime_action" not in result
-        or not (text is None or isinstance(text, str))
-        or not (record is None or isinstance(record, dict))
-    ):
-        raise NativeMcpRuntimeEvidenceError(_INVALID_RESULT)
-    return text, record

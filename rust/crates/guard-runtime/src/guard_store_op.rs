@@ -85,6 +85,15 @@ pub(crate) fn evaluate_guard_store_request(
     })
 }
 
+/// Run one store request in-process for callers that fold a store write into
+/// their own op. Returns the outbox generation when rows changed, or the
+/// stable failure code; a failed request wrote nothing.
+pub(crate) fn run_store_request(request: &GuardStoreRequestV1) -> Result<Option<i64>, String> {
+    evaluate(request)
+        .map(|(_, generation)| generation)
+        .map_err(|error| error.code().to_owned())
+}
+
 fn evaluate(request: &GuardStoreRequestV1) -> StoreResult<(Value, Option<i64>)> {
     let invalid = |code| Err(StoreError::Invalid(code));
     if request.schema != GUARD_STORE_REQUEST_SCHEMA {

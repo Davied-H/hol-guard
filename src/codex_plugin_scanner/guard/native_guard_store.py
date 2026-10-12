@@ -73,7 +73,7 @@ def unavailable_outbox_status(error: NativeGuardStoreUnavailable) -> dict[str, o
     }
 
 
-def _raise_for_code(code: object, payload: object) -> None:
+def raise_for_store_code(code: object, payload: object) -> None:
     message = payload.get("message") if isinstance(payload, dict) else None
     text = message if isinstance(message, str) else "Guard store operation failed."
     if code == "native_guard_store_value_error":
@@ -166,7 +166,7 @@ def native_guard_store_call(
     if identity is not None:
         native_record_resident_success(identity.sha256, guard_home)
     if status == "error":
-        _raise_for_code(code, payload)
+        raise_for_store_code(code, payload)
     generation = response.get("outbox_generation")
     if status != "ok" or code != "ok" or (generation is not None and (type(generation) is not int or generation < 0)):
         raise _unavailable("native_guard_store_response_invalid")
@@ -177,5 +177,6 @@ __all__ = [
     "GUARD_STORE_FEATURE",
     "NativeGuardStoreUnavailable",
     "native_guard_store_call",
+    "raise_for_store_code",
     "unavailable_outbox_status",
 ]

@@ -8,10 +8,7 @@ from pathlib import Path
 import pytest
 
 from codex_plugin_scanner.guard import native_mcp_runtime_evidence as module
-from codex_plugin_scanner.guard.native_mcp_runtime_evidence import (
-    argument_entries,
-    native_receipt_evidence,
-)
+from codex_plugin_scanner.guard.native_mcp_runtime_evidence import argument_entries
 
 
 def test_argument_entries_projects_only_consumed_keys_in_order() -> None:
@@ -40,36 +37,3 @@ def test_python_key_sets_mirror_the_rust_contract() -> None:
     assert rust_keys("MCP_RUNTIME_EVIDENCE_COMMAND_ARGUMENT_KEYS") == module._COMMAND_ARGUMENT_KEYS
     assert rust_keys("MCP_RUNTIME_EVIDENCE_PATH_ARGUMENT_KEYS") == module._PATH_ARGUMENT_KEYS
     assert rust_keys("MCP_RUNTIME_EVIDENCE_PATH_TOKENS") == module._PATH_TOKENS
-
-
-def _force_available(monkeypatch: pytest.MonkeyPatch) -> None:
-    class Features:
-        features = frozenset({module._FEATURE, module._RESIDENT_PROTOCOL_FEATURE})
-
-    class Identity:
-        path = "/bin/true"
-        sha256 = "0" * 64
-
-    class Status:
-        mode = "force"
-        available = True
-        compatible = True
-        identity = Identity()
-        capabilities = Features()
-
-    monkeypatch.setattr(module, "_native_runtime_status_memo", lambda: Status())
-    monkeypatch.setattr(module, "ensure_resident_prerequisite", lambda _home: True)
-    monkeypatch.setattr(module, "native_record_resident_failure", lambda *a, **k: None)
-
-
-def test_receipt_evidence_single_round_trip_end_to_end(tmp_path: Path) -> None:
-    text, record = native_receipt_evidence(
-        artifact_name="fs",
-        tool_description="d",
-        arguments=[["path", "/tmp/a"]],
-        risk_categories=["credential"],
-        guard_home=tmp_path,
-    )
-    assert text == "fs /tmp/a"
-    assert record is not None
-    assert record["claimedCapabilities"] == ["tool_description"]
