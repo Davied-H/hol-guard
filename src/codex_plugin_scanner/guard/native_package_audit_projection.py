@@ -173,8 +173,10 @@ def native_cloud_audit_payload(
         "include_lockfile_warnings": include_lockfile_warnings,
         "inventory_digest": inventory_digest,
         "mode": mode,
-        "machine": _machine_name(),
     }
+    machine = _machine_name()
+    if machine is not None:
+        query["machine"] = machine
     if before_workspace_dir is not None:
         query["before_workspace_dir"] = str(Path(before_workspace_dir).expanduser().absolute())
     if page_size is not None:

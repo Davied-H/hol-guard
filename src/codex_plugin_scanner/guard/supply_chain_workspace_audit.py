@@ -14,6 +14,7 @@ from . import local_supply_chain as _lsc
 from . import supply_chain_cloud_audit as _cloud_audit
 from .config import GuardConfig
 from .native_package_audit_projection import (
+    NativePackageAuditProjectionError,
     native_advisory_aliases,
     native_audit_receipt_metadata,
     native_ci_gate_result,
@@ -214,11 +215,18 @@ def build_workspace_audit_payload(
                     inventory_digest=workspace_inventory.inventory_digest,
                     now=now,
                 )
-        except (runner.GuardSyncAuthorizationExpiredError, runner.GuardSyncNotConfiguredError, RuntimeError):
-            fallback_reason = {
-                "code": "cloud_auth_error",
-                "message": "Guard cloud authorization could not be refreshed, so Guard fell back locally.",
-            }
+        except (runner.GuardSyncAuthorizationExpiredError, runner.GuardSyncNotConfiguredError, RuntimeError) as error:
+            fallback_reason = (
+                {
+                    "code": "native_projection_unavailable",
+                    "message": "Guard could not build or read the Cloud audit natively, so Guard fell back locally.",
+                }
+                if isinstance(error, NativePackageAuditProjectionError)
+                else {
+                    "code": "cloud_auth_error",
+                    "message": "Guard cloud authorization could not be refreshed, so Guard fell back locally.",
+                }
+            )
             evaluation = _workspace_local_evaluation(
                 store=store,
                 workspace_dir=target_workspace_dir,

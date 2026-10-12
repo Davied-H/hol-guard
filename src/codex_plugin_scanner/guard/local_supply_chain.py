@@ -946,14 +946,18 @@ def build_package_protect_payload(
         current_config_provider=current_config_provider,
         additional_authority_provider=additional_authority_provider,
     )
-    final_projection = native_package_protect_projection(
-        store,
-        authority=final_authority,
-        evaluation=final_evaluation,
-        command=command,
-        executed=True,
-        blocking=False,
-    )
+    try:
+        final_projection = native_package_protect_projection(
+            store,
+            authority=final_authority,
+            evaluation=final_evaluation,
+            command=command,
+            executed=True,
+            blocking=False,
+        )
+    except BaseException:
+        _cleanup_external_archive_downloads(final_evaluation)
+        raise
 
     def deny(denied_evaluation: Any) -> tuple[dict[str, object], int]:
         try:
