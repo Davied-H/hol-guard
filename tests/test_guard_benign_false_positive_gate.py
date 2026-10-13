@@ -34,7 +34,7 @@ from codex_plugin_scanner.guard.hook_execution_environment import collect_hook_e
 from codex_plugin_scanner.guard.store import GuardStore
 from tests.benign_fp_gate_fixture import BenignFixture, build_fixture, route_codex
 from tests.gauntlet_replay import OMP_CONTAINED, cursor_hook_fields
-from tests.native_gate_retry import review_with_unavailable_retry
+from tests.native_gate_retry import UNAVAILABLE_REASON, review_with_unavailable_retry
 
 pytestmark = pytest.mark.usefixtures("native_hook_force")
 
@@ -341,6 +341,7 @@ def test_benign_agent_work_is_allowed_and_negative_controls_are_not(
         assert _decision(result) != "allow" or approvals > 0 or _contained(result), (
             f"negative control was allowed: {description}"
         )
+        assert _reason(result) != UNAVAILABLE_REASON, f"native review unavailable: {description}"
         return
     gap = always_gap(_ROWS.get(case.case_id, [])) if _always_expected(case) else []
     if case.case_id in _PENDING_FIX:
