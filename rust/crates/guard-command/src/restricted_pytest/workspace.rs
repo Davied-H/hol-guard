@@ -1,7 +1,7 @@
 //! Native launch plan for `workspace-contained-v1`.
 use super::*;
 use crate::pretool::generic::workspace_redirects;
-use crate::pretool::workspace_git_config::workspace_write_denials;
+use crate::pretool::workspace_git_config::{linked_git_dirs, workspace_write_denials};
 use crate::pretool::workspace_git_environment::GitVariables;
 use crate::pretool::{command_shape, WORKSPACE_PROFILE};
 use crate::{parse_command, CommandModelRequestV1};
@@ -97,6 +97,10 @@ fn prepare(input: &Input) -> Result<Value, RestrictedPytestError> {
         .unwrap_or_else(|| input.text.clone());
     let (exec_roots, sandbox_path) =
         workspace_exec_roots(&input.search_path, input.home.as_deref(), &workspace);
+    // A linked worktree's index, HEAD and objects live in the main checkout's
+    // `.git`, which the backend must also let the run write.
+    let linked_git = linked_git_dirs(&workspace, input.home.as_deref())
+        .map(|(common, admin)| json!({"common": common, "admin": admin}));
     Ok(json!({
         "profile_version": WORKSPACE_PROFILE,
         "backend": backend,
@@ -110,6 +114,7 @@ fn prepare(input: &Input) -> Result<Value, RestrictedPytestError> {
         "read_only_roots": [],
         "exec_roots": exec_roots,
         "write_denials": write_denials,
+        "linked_git": linked_git,
         "sandbox_path": sandbox_path,
         "bootstrap_git": shape.bootstrap,
         "prefix_command": shape.prefix,

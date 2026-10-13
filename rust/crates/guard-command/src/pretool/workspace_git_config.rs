@@ -42,23 +42,37 @@ fn read_config(path: &Path, follow: bool) -> Result<Option<String>, ()> {
 
 /// `Ok(None)` when `root` has no repository, `Ok(Some(text))` for a plain,
 /// bounded `.git/config`, and `Err` for anything the sandbox cannot reason
-/// about (symlinked or file-form `.git`, oversized or binary config, or a
-/// `config.worktree`, which Git also reads and this reader does not).
+/// about (symlinked `.git`, a gitfile other than a verified linked worktree's,
+/// oversized or binary config, or a `config.worktree`, which Git also reads
+/// and this reader does not). A linked worktree reads its shared repository's
+/// configuration, and the admin entry's `config.worktree` as well.
 pub(crate) fn repository_config(root: &Path) -> Result<Option<String>, ()> {
     let git = root.join(".git");
-    match fs::symlink_metadata(&git) {
+    let directories = match fs::symlink_metadata(&git) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(_) => return Err(()),
-        Ok(metadata) if !metadata.is_dir() => return Err(()),
-        Ok(_) => {}
-    }
-    match fs::symlink_metadata(git.join("config.worktree")) {
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        _ => return Err(()),
+        Ok(metadata) if metadata.is_dir() => vec![git],
+        Ok(metadata) if metadata.is_file() => {
+            let (common, admin) = super::worktree_writes::linked_worktree_dirs(root).ok_or(())?;
+            vec![common, admin]
+        }
+        Ok(_) => return Err(()),
+    };
+    for directory in &directories {
+        match fs::symlink_metadata(directory.join("config.worktree")) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            _ => return Err(()),
+        }
     }
     Ok(Some(
-        read_config(&git.join("config"), false)?.unwrap_or_default(),
+        read_config(&directories[0].join("config"), false)?.unwrap_or_default(),
     ))
+}
+
+/// The shared Git directory and admin entry of the verified linked worktree
+/// whose work tree holds `workspace`, or `None` for any other workspace.
+pub(crate) fn linked_git_dirs(workspace: &Path, home: Option<&Path>) -> Option<(PathBuf, PathBuf)> {
+    super::worktree_writes::linked_worktree_dirs(&work_tree(workspace, home)?)
 }
 
 /// The repository whose work tree holds `workspace`: the workspace itself
@@ -98,14 +112,36 @@ fn write_denials_from(
     globals: Vec<PathBuf>,
 ) -> Option<Vec<PathBuf>> {
     let root = work_tree(workspace, home);
-    let mut denials = match &root {
+    let denials = denials_within(root.as_deref(), workspace, home, globals.clone())?;
+    // A run in a linked worktree also writes its shared repository's objects
+    // and refs, so no helper or global configuration may live there either.
+    if let Some((common, _)) = root
+        .as_deref()
+        .and_then(super::worktree_writes::linked_worktree_dirs)
+    {
+        if !denials_within(root.as_deref(), &common, home, globals)?.is_empty() {
+            return None;
+        }
+    }
+    Some(denials)
+}
+
+/// The helper paths under `workspace` that the configuration of the
+/// repository at `root`, and `globals` with their includes, name.
+fn denials_within(
+    root: Option<&Path>,
+    workspace: &Path,
+    home: Option<&Path>,
+    globals: Vec<PathBuf>,
+) -> Option<Vec<PathBuf>> {
+    let mut denials = match root {
         Some(root) => {
             let config = repository_config(root).ok()?.unwrap_or_default();
             helper_denials(&config, root, workspace, home)?
         }
         None => Vec::new(),
     };
-    let base = root.as_deref().unwrap_or(workspace);
+    let base = root.unwrap_or(workspace);
     let mut pending: Vec<(PathBuf, usize)> = globals.into_iter().map(|path| (path, 0)).collect();
     let mut visited = 0usize;
     while let Some((path, depth)) = pending.pop() {
