@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
+
+from .native_guard_config import WORKSPACE_CONFIG_FILENAMES
 
 if TYPE_CHECKING:
     from .native_policy_snapshot_publisher import NativePolicySnapshotPublisher
@@ -50,6 +53,43 @@ class NativePolicySnapshotWorkspaceReadinessMixin:
         candidate = publisher._resolved_workspace(workspace)
         with publisher._condition:
             return candidate in publisher._pending_workspace_paths
+
+    def workspace_admissible_without_overlay(self, workspace: Path | None) -> bool:
+        """True when the ACKed snapshot already holds this pending workspace's policy.
+
+        A workspace config reads only that directory's own overlay files, and
+        the snapshot merges every overlay strictest-first over the home config.
+        A canonical subdirectory of an already compiled workspace that has no
+        overlay file therefore contributes nothing beyond the home config, so
+        its hooks may use the current ACK while the publisher still compiles
+        it. Any overlay entry, read error, symlink or junction keeps the
+        workspace gated on its own ACK.
+        """
+
+        publisher = cast("NativePolicySnapshotPublisher", self)
+        if workspace is None:
+            return False
+        candidate = publisher._resolved_workspace(workspace)
+        with publisher._condition:
+            if candidate not in publisher._pending_workspace_paths:
+                return False
+            settled = publisher._workspace_paths - publisher._pending_workspace_paths
+        if not any(candidate != parent and candidate.is_relative_to(parent) for parent in settled):
+            return False
+        try:
+            if os.path.realpath(candidate) != os.fspath(candidate):
+                return False
+        except (OSError, ValueError):
+            return False
+        for name in WORKSPACE_CONFIG_FILENAMES:
+            try:
+                _ = os.lstat(candidate / name)
+            except FileNotFoundError:
+                continue
+            except (OSError, ValueError):
+                return False
+            return False
+        return True
 
     def _queue_pending_workspace_publish_locked(self) -> None:
         publisher = cast("NativePolicySnapshotPublisher", self)
