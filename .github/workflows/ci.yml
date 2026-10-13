@@ -175,6 +175,11 @@ jobs:
           # Line tables keep panic backtraces readable while cutting link time
           # across the ~85 test binaries; full debuginfo is never inspected in CI.
           echo "CARGO_PROFILE_TEST_DEBUG=line-tables-only" >> "$GITHUB_ENV"
+          # Set linker flags before setup-rust restores the cache: rust-cache
+          # includes these values in its key. LLD is provisioned below before
+          # any compilation, so changed linker settings never reuse stale deps.
+          echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=clang" >> "$GITHUB_ENV"
+          echo "RUSTFLAGS=-C link-arg=-fuse-ld=lld" >> "$GITHUB_ENV"
 
       - uses: ./.github/actions/setup-rust
         with:
@@ -226,8 +231,6 @@ jobs:
           command -v ld.lld
           clang --version | head -n 1
           ld.lld --version
-          echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=clang" >> "$GITHUB_ENV"
-          echo "RUSTFLAGS=-C link-arg=-fuse-ld=lld" >> "$GITHUB_ENV"
       - name: Validate the locked Rust workspace
         env:
           CARGO_CHECK: ${{ matrix.check }}
