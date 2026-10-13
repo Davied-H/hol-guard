@@ -7,7 +7,9 @@
 //!
 //! The queue lives in memory only, so raw tool input never reaches disk
 //! outside the daemon's evidence writer. A record that does not fit makes the
-//! hook take the daemon path rather than answer without its evidence.
+//! hook take the daemon path rather than answer without its evidence. A page
+//! stays queued until the daemon acknowledges its cursor, so a lost response
+//! is sent again.
 
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -29,17 +31,33 @@ pub(crate) struct HookDirectEvidenceDrainRequestV1 {
     pub(crate) guard_home: String,
     #[serde(default)]
     pub(crate) max_records: Option<usize>,
+    /// Drop queued records through this cursor. Absent on the first page.
+    #[serde(default)]
+    pub(crate) ack_through: Option<u64>,
 }
 
 struct QueuedRecord {
+    seq: u64,
     bytes: usize,
     record: Value,
 }
 
-#[derive(Default)]
 struct QueueState {
     records: VecDeque<QueuedRecord>,
     bytes: usize,
+    next_seq: u64,
+    acked_through: u64,
+}
+
+impl Default for QueueState {
+    fn default() -> Self {
+        Self {
+            records: VecDeque::new(),
+            bytes: 0,
+            next_seq: 1,
+            acked_through: 0,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -63,33 +81,57 @@ impl DirectEvidenceQueue {
         if state.records.len() >= MAX_QUEUED_RECORDS || state.bytes + bytes > MAX_QUEUED_BYTES {
             return false;
         }
+        let seq = state.next_seq;
+        state.next_seq = state.next_seq.saturating_add(1);
         state.bytes += bytes;
-        state.records.push_back(QueuedRecord { bytes, record });
+        state.records.push_back(QueuedRecord { seq, bytes, record });
         true
     }
 
-    /// Remove and return the oldest records that fit one response.
-    fn take(&self, max_records: usize) -> (Vec<Value>, usize) {
+    /// Acknowledge records the daemon already has, then copy the next page.
+    ///
+    /// Unacknowledged records stay queued. A lost response is therefore sent
+    /// again instead of dropping evidence for an allow that already returned.
+    fn acknowledge_and_peek(
+        &self,
+        ack_through: Option<u64>,
+        max_records: usize,
+    ) -> (Vec<Value>, usize, Option<u64>) {
         let Ok(mut state) = self.state.lock() else {
-            return (Vec::new(), 0);
+            return (Vec::new(), 0, None);
         };
+        if let Some(ack) = ack_through {
+            if ack >= state.acked_through {
+                state.acked_through = ack;
+                while state
+                    .records
+                    .front()
+                    .map(|next| next.seq <= ack)
+                    .unwrap_or(false)
+                {
+                    let Some(next) = state.records.pop_front() else {
+                        break;
+                    };
+                    state.bytes -= next.bytes;
+                }
+            }
+        }
         let mut taken = Vec::new();
         let mut page_bytes = 0;
-        while taken.len() < max_records {
-            let Some(next) = state.records.front() else {
+        let mut through = None;
+        for next in &state.records {
+            if taken.len() >= max_records {
                 break;
-            };
+            }
             if !taken.is_empty() && page_bytes + next.bytes > MAX_DRAIN_BYTES {
                 break;
             }
-            let Some(next) = state.records.pop_front() else {
-                break;
-            };
-            state.bytes -= next.bytes;
             page_bytes += next.bytes;
-            taken.push(next.record);
+            through = Some(next.seq);
+            taken.push(next.record.clone());
         }
-        (taken, state.records.len())
+        let remaining = state.records.len().saturating_sub(taken.len());
+        (taken, remaining, through)
     }
 }
 
@@ -101,11 +143,13 @@ pub(crate) fn drain(
         .max_records
         .unwrap_or(DEFAULT_DRAIN_RECORDS)
         .clamp(1, DEFAULT_DRAIN_RECORDS);
-    let (records, remaining) = queue.take(max_records);
+    let (records, remaining, through) =
+        queue.acknowledge_and_peek(request.ack_through, max_records);
     serde_json::to_vec(&json!({
         "schema": DRAIN_RESULT_SCHEMA,
         "records": records,
         "remaining": remaining,
+        "through": through,
     }))
     .map_err(|_| "direct_hook_evidence_encoding_failed".to_owned())
 }

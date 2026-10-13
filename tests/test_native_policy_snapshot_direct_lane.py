@@ -255,6 +255,21 @@ def test_evidence_drain_binds_only_while_enabled_and_supported(tmp_path: Path) -
     assert not publisher.direct_evidence_bound([DIRECT_HOOK_EVIDENCE_FEATURE])
 
 
+def test_a_stopped_drain_rejects_an_in_flight_evidence_ack(tmp_path: Path) -> None:
+    publisher = _publisher(tmp_path)
+    ack = publisher._direct_lane_ack_path()
+    publisher.enable_direct_evidence_drain(True)
+    publisher._acked = True
+    publisher.enable_direct_evidence_drain(False)
+    publisher._publish_direct_lane_ack(
+        {"generation": 3, "policy_digest": DIGEST},
+        evidence_drain=True,
+    )
+    assert not ack.exists()
+    publisher._renew_direct_lane_ack()
+    assert not ack.exists()
+
+
 def test_evidence_transport_needs_a_resident_with_the_drain(tmp_path: Path) -> None:
     publisher = _publisher(tmp_path)
     assert publisher.direct_evidence_transport() is None
