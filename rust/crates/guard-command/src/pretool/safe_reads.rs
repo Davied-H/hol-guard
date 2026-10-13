@@ -371,7 +371,9 @@ pub(super) fn safe_jq_stdin_arguments(arguments: &[String]) -> bool {
     // Stdin may come from a network/API command, so retain the pre-existing
     // projection-first requirement. Standalone builtins and object output are
     // admitted only when jq reads a separately screened file operand.
-    arguments.last().is_some_and(|filter| filter.starts_with('.'))
+    arguments
+        .last()
+        .is_some_and(|filter| filter.starts_with('.'))
         && safe_jq_filter_arguments(arguments)
 }
 
@@ -471,7 +473,6 @@ fn safe_head_tail_with_targets(
     }
     (saw_target || piped_input) && !expect_count
 }
-
 
 #[cfg(test)]
 mod jq_stdin_boundary_tests {
