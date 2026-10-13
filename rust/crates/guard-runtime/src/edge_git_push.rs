@@ -68,7 +68,7 @@ fn request(
         git_path: None,
         arguments: Vec::new(),
         branch: Some(push.branch.to_owned()),
-        reference: None,
+        reference: push.creates_branch.then(|| "HEAD".to_owned()),
     }
 }
 
@@ -128,6 +128,7 @@ mod tests {
             home,
             path: "/usr/bin:/bin",
             xdg_config_home: None,
+            creates_branch: false,
         }
     }
 
@@ -146,6 +147,7 @@ mod tests {
         assert_eq!(built.check, GitExecutionSafetyCheckV1::PushOrigin);
         assert_eq!(built.branch.as_deref(), Some("feature/one"));
         assert_eq!(built.cwd, "/home/tester/project");
+        assert_eq!(built.reference, None);
         assert_eq!(
             built.environment.keys().collect::<Vec<_>>(),
             ["HOME", "PATH"]
@@ -159,6 +161,11 @@ mod tests {
             built.environment.get("XDG_CONFIG_HOME").map(String::as_str),
             Some("/home/tester/.config")
         );
+        let mut created = push(&git, &repository, &home);
+        created.creates_branch = true;
+        let built = request(&created, "/home/tester".into(), Vec::new());
+        assert_eq!(built.reference.as_deref(), Some("HEAD"));
+        assert_eq!(built.branch.as_deref(), Some("feature/one"));
     }
 
     #[test]

@@ -701,6 +701,7 @@ fn evaluate_envelope(
         &mut result,
         &pre_floor,
         command_model,
+        controls,
         super::PathContext {
             home_dir,
             cwd,
