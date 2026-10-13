@@ -175,17 +175,7 @@ jobs:
           # Line tables keep panic backtraces readable while cutting link time
           # across the ~85 test binaries; full debuginfo is never inspected in CI.
           echo "CARGO_PROFILE_TEST_DEBUG=line-tables-only" >> "$GITHUB_ENV"
-          # GNU ld links each test harness independently. Use the pinned Ubuntu
-          # image's clang/lld when available to accelerate 100+ native test
-          # binary links. Keep regular linking as a safe fallback.
-          if command -v clang >/dev/null 2>&1 && command -v ld.lld >/dev/null 2>&1; then
-            echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=clang" >> "$GITHUB_ENV"
-            echo "RUSTFLAGS=-C link-arg=-fuse-ld=lld" >> "$GITHUB_ENV"
-            clang --version | head -n 1
-            ld.lld --version
-          else
-            echo "::warning::clang/lld unavailable: using system linker"
-          fi
+
       - uses: ./.github/actions/setup-rust
         with:
           # Separate dependency artifacts per package shard: cargo feature sets
@@ -218,7 +208,9 @@ jobs:
         # and the live confinement run is skipped.
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends apparmor bubblewrap
+          # LLD is not on PATH on the current ubuntu-24.04 runner image.
+          # Provision it alongside the already-required sandbox utilities.
+          sudo apt-get install -y --no-install-recommends apparmor bubblewrap lld
           sudo tee /etc/apparmor.d/hol-guard-bwrap <<'EOF'
           abi <abi/4.0>,
           include <tunables/global>
@@ -228,6 +220,14 @@ jobs:
           EOF
           sudo apparmor_parser -r /etc/apparmor.d/hol-guard-bwrap
           /usr/bin/bwrap --version
+          # Use the fast ELF linker for every test harness. Fail explicitly
+          # rather than silently falling back and missing the runtime target.
+          command -v clang
+          command -v ld.lld
+          clang --version | head -n 1
+          ld.lld --version
+          echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=clang" >> "$GITHUB_ENV"
+          echo "RUSTFLAGS=-C link-arg=-fuse-ld=lld" >> "$GITHUB_ENV"
       - name: Validate the locked Rust workspace
         env:
           CARGO_CHECK: ${{ matrix.check }}
