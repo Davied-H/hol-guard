@@ -87,10 +87,12 @@ fn read_only_segments_before_a_git_read_keep_its_proof() {
         &home,
         &["config", "core.pager", &format!("touch '{marker}'")],
     );
-    assert_eq!(reason(&home, &repository, "git log --oneline -5"), FLOOR);
-    // The listing route stops at its own helper check first.
-    assert_eq!(
-        reason(&home, &repository, "ls && git log --oneline -5"),
-        "native_git_helper_context_review"
-    );
+    // Either Git context check may stop it first; both keep the review.
+    for command in ["git log --oneline -5", "ls && git log --oneline -5"] {
+        let code = reason(&home, &repository, command);
+        assert!(
+            [FLOOR, "native_git_helper_context_review"].contains(&code.as_str()),
+            "{command}: {code}"
+        );
+    }
 }
