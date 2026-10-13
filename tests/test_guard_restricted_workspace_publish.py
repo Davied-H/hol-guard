@@ -122,3 +122,28 @@ def test_a_split_that_differs_from_the_receipt_is_rejected(
     with pytest.raises(RestrictedPytestError):
         run_publish(monkeypatch, tmp_path, plan(tmp_path, "npm test", **published), first=first)
     assert not (tmp_path / ".git").exists()
+
+
+def test_git_steps_never_resolve_through_workspace_or_relative_path_entries(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    planted = tmp_path / "bin"
+    planted.mkdir()
+    marker = tmp_path / "planted-ran"
+    script = planted / "git"
+    script.write_text(f"#!/bin/sh\ntouch {marker}\n", encoding="utf-8")
+    script.chmod(0o755)
+    host_path = workspace_sink.os.environ.get("PATH", "")
+    monkeypatch.setenv("PATH", f"{planted}:bin:.:{host_path}")
+    monkeypatch.chdir(tmp_path)
+    published = plan(tmp_path, "npm test", native_suffix=PUBLISH_SUFFIX)
+    exit_code, _, _ = run_publish(monkeypatch, tmp_path, published)
+    assert exit_code == 0
+    assert not marker.exists()
+    assert (tmp_path / ".git").is_dir()
+
+
+def test_outside_search_path_keeps_only_absolute_entries_outside_the_workspace(tmp_path: Path) -> None:
+    inside = tmp_path / "node_modules" / ".bin"
+    search_path = f"/usr/bin::.:bin:{tmp_path}:{inside}:{tmp_path}/../{tmp_path.name}/x:/bin"
+    assert workspace_sink._outside_search_path(search_path, tmp_path) == "/usr/bin:/bin"

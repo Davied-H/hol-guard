@@ -381,6 +381,7 @@ def _run_publish_steps(
     process = subprocess.Popen(
         ["/bin/sh", "-c", suffix],
         cwd=workspace,
+        env={**os.environ, "PATH": _outside_search_path(os.environ.get("PATH", ""), workspace)},
         stdin=subprocess.DEVNULL,
         stderr=subprocess.STDOUT if merge_stderr else None,
         start_new_session=True,
@@ -397,6 +398,24 @@ def _run_publish_steps(
             exit_code=124,
         ) from error
     return return_code if return_code >= 0 else 128 + abs(return_code)
+
+
+def _outside_search_path(search_path: str, workspace: Path) -> str:
+    """`search_path` without entries the contained checks could have written.
+
+    The checks could plant a `git` or `gh` in a relative or workspace entry,
+    which the Git steps would then run unsandboxed, as the sandbox's own
+    PATH filter anticipates.
+    """
+    root = workspace.resolve()
+    kept: list[str] = []
+    for entry in search_path.split(os.pathsep):
+        if not os.path.isabs(entry):
+            continue
+        resolved = Path(entry).resolve()
+        if resolved != root and not resolved.is_relative_to(root):
+            kept.append(entry)
+    return os.pathsep.join(kept)
 
 
 def _remove_overlay(root: Path) -> None:
