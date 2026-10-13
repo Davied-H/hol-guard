@@ -63,8 +63,9 @@ _FIXED_TOOLS = {
 # prompts and has no owner yet. A merged PR is never a marker: once its fix
 # lands the case either passes or needs a new owner.
 _ALLOWED_PR = {"unassigned"}
-# Cursor coverage mirrors two existing pending claude-code entries.
-_PENDING_CEILING = 12
+# The session-* cases replay prompts users approved by hand. Those still
+# reviewed on Linux CI are recorded here until their fixes land.
+_PENDING_CEILING = 68
 _RENDERED_KEYS = ("reason", "notice", "message", "systemMessage", "stopReason")
 _RENDERED_SPECIFIC_KEYS = ("permissionDecisionReason", "additionalContext")
 # Pending entries are recorded against the Linux CI host. Git helper context and
@@ -206,8 +207,8 @@ def _harness_route(
     """Apply the containment rewrite the harness's own hook performs.
 
     ``review_http_payload`` already routes Z Code and Claude Code. Codex routes
-    in its hook bridge (every profile on macOS, the workspace profile on Linux), and Oh My Pi in its TypeScript extension (every
-    profile on macOS, the workspace profile on Linux). Without this the gate
+    in its hook bridge and Oh My Pi in its TypeScript extension (every profile
+    on macOS, the workspace profile on Linux). Without this the gate
     counts their contained runs as reviews although the user sees nothing.
     """
     if case.harness == "codex":

@@ -132,7 +132,8 @@ def _node_toolchain(workspace: Path) -> None:
         f"node_modules/{name}": {"version": version, "integrity": "sha512-fixture"}
         for name, version in _NODE_PACKAGES.items()
     }
-    manifest = {"private": True, "scripts": {"build": "vite build", "test": "vitest run"}, "devDependencies": dependencies}
+    scripts = {"build": "vite build", "test": "vitest run"}
+    manifest = {"private": True, "scripts": scripts, "devDependencies": dependencies}
     _write(workspace / "package.json", json.dumps(manifest) + "\n")
     _write(workspace / "package-lock.json", json.dumps({"lockfileVersion": 3, "packages": locked}) + "\n")
     _write(workspace / "tests" / "sample.test.ts", "export const sample = 1;\n")
@@ -283,7 +284,8 @@ def build_fixture(root: Path) -> BenignFixture:
     _write(tmp_org / "app" / "tests" / "index.test.ts", "import { railStage } from '../src';\n")
     _git(tmp_org / "app", "add", "-A", home=home)
     _git(tmp_org / "app", "commit", "--quiet", "-m", "app base", home=home)
-    _git(tmp_org / "app", "worktree", "add", "--quiet", "-b", "followup", str(tmp_org.parent / "app-followup"), home=home)
+    followup = str(tmp_org.parent / "app-followup")
+    _git(tmp_org / "app", "worktree", "add", "--quiet", "-b", "followup", followup, home=home)
     remote = tmp_org.parent / "remote" / "app.git"
     _git(tmp_org.parent, "clone", "--quiet", "--bare", str(tmp_org / "app"), str(remote), home=home)
     _git(tmp_org / "app", "remote", "add", "origin", str(remote), home=home)
