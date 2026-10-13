@@ -32,23 +32,18 @@ pub(in crate::pretool) fn repository_inert(
     if !refreshes && base.get_args().next().is_none() && !temporary(base, &roots) {
         return Some(true);
     }
-    let mut lookup = super::copy_command(base)?;
-    lookup.args([
-        "--no-pager",
-        "rev-parse",
-        "--path-format=absolute",
-        "--git-dir",
-        "--git-common-dir",
-    ]);
-    if refreshes {
-        lookup.args(["--git-path", "hooks/post-index-change"]);
-    }
-    let (status, bytes) = super::output(&mut lookup, deadline, PATH_LIMIT)?;
-    if !status.success() {
+    let paths = match lookup(base, refreshes, true, deadline)? {
+        Some(paths) => paths,
+        // A hook path below a file (`core.hooksPath=/dev/null`) cannot be
+        // normalized, so ask for it as Git spells it; Git's own hook lookup
+        // finds nothing there. A relative spelling stays unproven.
+        None if refreshes => match lookup(base, refreshes, false, deadline)? {
+            Some(paths) => paths,
+            None => return super::outside_repository(base, deadline)?.then_some(true),
+        },
         // Outside any repository there is no hook and no local configuration.
-        return super::outside_repository(base, deadline)?.then_some(true);
-    }
-    let paths = absolute_lines(&bytes, if refreshes { 3 } else { 2 })?;
+        None => return super::outside_repository(base, deadline)?.then_some(true),
+    };
     let (directories, hook) = paths.split_at(2);
     let mut guarded: Vec<PathBuf> = directories.to_vec();
     guarded.push(directories[1].join("config"));
@@ -59,6 +54,35 @@ pub(in crate::pretool) fn repository_inert(
         return Some(false);
     }
     Some(hook.iter().all(|hook| hook_inert(hook)))
+}
+
+/// The absolute Git and common directories, then the `post-index-change` hook
+/// path for a refreshing read: `Some(None)` when Git cannot answer, `None`
+/// when the probe itself fails or an answer is not an absolute path.
+fn lookup(
+    base: &Command,
+    refreshes: bool,
+    normalized: bool,
+    deadline: Instant,
+) -> Option<Option<Vec<PathBuf>>> {
+    let mut command = super::copy_command(base)?;
+    command.args(["--no-pager", "rev-parse"]);
+    if refreshes && !normalized {
+        command.args(["--git-path", "hooks/post-index-change"]);
+    }
+    command.args(["--path-format=absolute", "--git-dir", "--git-common-dir"]);
+    if refreshes && normalized {
+        command.args(["--git-path", "hooks/post-index-change"]);
+    }
+    let (status, bytes) = super::output(&mut command, deadline, PATH_LIMIT)?;
+    if !status.success() {
+        return Some(None);
+    }
+    let mut paths = absolute_lines(&bytes, if refreshes { 3 } else { 2 })?;
+    if refreshes && !normalized {
+        paths.rotate_left(1);
+    }
+    Some(Some(paths))
 }
 
 fn temporary(base: &Command, roots: &[PathBuf]) -> bool {

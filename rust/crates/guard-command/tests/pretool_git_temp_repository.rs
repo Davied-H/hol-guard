@@ -91,6 +91,9 @@ fn inspection(scratch: &Scratch) -> String {
     )
 }
 
+/// A named change that makes the scratch repository able to start code.
+type Mutation = (&'static str, fn(&Scratch));
+
 fn executable(path: &Path) {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(path, "#!/bin/sh\nexit 0\n").unwrap();
@@ -116,6 +119,44 @@ fn rooted_parent_listing_then_repository_inspection_is_allowed() {
     }
 }
 
+/// A rooted `..` listing is a proven read, so the Git reads after the `cd`
+/// get the decision they get alone, whether or not the configuration probe
+/// covers their operation.
+#[test]
+fn rooted_parent_listing_admits_every_read_after_the_cd() {
+    let scratch = scratch("unprobed");
+    let org = scratch.org.display();
+    let prefix = format!("ls {org}/.. && cd {org}/app");
+    for command in [
+        format!("ls {org}/.."),
+        format!("{prefix} && git rev-parse HEAD"),
+        format!("{prefix} && git remote -v"),
+        format!("{prefix} && git status && git remote -v"),
+    ] {
+        let result = decide(&scratch, &command);
+        assert_eq!(
+            result.decision, "allow",
+            "{command}: {}",
+            result.reason_code
+        );
+    }
+}
+
+/// A skills directory linked to the home directory must not become a home
+/// listing through a rooted `..` spelling either.
+#[test]
+fn rooted_parent_through_a_skills_link_to_home_stays_reviewed() {
+    let scratch = scratch("skills-link");
+    let home = scratch.home.display();
+    std::fs::create_dir_all(scratch.home.join("notes")).unwrap();
+    std::fs::create_dir_all(scratch.home.join(".agents")).unwrap();
+    std::os::unix::fs::symlink(&scratch.home, scratch.home.join(".agents/skills")).unwrap();
+    let command = format!("ls {home}/.agents/skills/notes/..");
+    let result = decide(&scratch, &command);
+    assert_ne!(result.decision, "allow", "{command}");
+    assert!(!result.explicitly_benign, "{command}");
+}
+
 #[test]
 fn rooted_parent_reads_into_secret_locations_stay_reviewed() {
     let scratch = scratch("secret");
@@ -135,7 +176,7 @@ fn rooted_parent_reads_into_secret_locations_stay_reviewed() {
 
 #[test]
 fn execution_capable_repository_configuration_stays_reviewed() {
-    let mutations: [(&str, fn(&Scratch)); 4] = [
+    let mutations: [Mutation; 4] = [
         ("fsmonitor", |s: &Scratch| {
             git(
                 &s.app,
