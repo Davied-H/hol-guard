@@ -155,16 +155,20 @@ impl Repository {
 }
 
 impl Repository {
-    /// Takes what the verdict was asked about checkouts under this home.
+    /// Takes what the verdict was asked about checkouts under this home. The
+    /// standalone push path may ask first and then give way to the chain.
     fn asked(&self) -> Vec<(String, bool)> {
         let mut asked = ASKED.lock().unwrap();
         let (mine, others) = std::mem::take(&mut *asked)
             .into_iter()
             .partition::<Vec<_>, _>(|(repository, _, _)| repository.starts_with(&self.home));
         *asked = others;
-        mine.into_iter()
+        let mut mine: Vec<_> = mine
+            .into_iter()
             .map(|(_, branch, created)| (branch, created))
-            .collect()
+            .collect();
+        mine.dedup();
+        mine
     }
 }
 
