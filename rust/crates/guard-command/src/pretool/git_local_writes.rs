@@ -1,7 +1,7 @@
 //! Local Git writes that keep every change reachable: `git add`, a non-forced
 //! `git rm`, `git commit -m`, a new branch at `HEAD` or at a start point that
-//! replaces no untracked file, and a plain stash push, with Git reads the
-//! configuration probe proves helper-free around them.
+//! replaces no untracked file, a non-forced branch rename and a plain stash
+//! push, with Git reads the configuration probe proves helper-free around them.
 //! The workspace sandbox runs them in a main checkout, but a linked worktree
 //! keeps its index, refs and objects in the shared Git directory the sandbox
 //! cannot write, and some hosts have no sandbox, so they would stop at review.
@@ -13,7 +13,7 @@
 //! --amend` replaces the local tip, but the reflog still reaches the old
 //! commit, and rewriting what a remote holds still needs a reviewed forced
 //! push. `git add -f` stays reviewed: it is how an ignored secret file gets
-//! staged.
+//! staged. `git branch -M` stays reviewed: it overwrites an existing branch.
 
 use super::git_remote_config::GitConfig;
 use super::git_session_probe::Probe;
@@ -31,6 +31,7 @@ const RULES: &[&str] = &[
     "command.git.add",
     "command.git.rm",
     "command.git.commit",
+    "command.git.branch",
     "command.git.switch",
     "command.git.checkout",
     "command.git.stash",
@@ -58,6 +59,7 @@ const COMMIT_HOOKS: &[&str] = &[
     "reference-transaction",
     "pre-auto-gc",
 ];
+const BRANCH_HOOKS: &[&str] = &["reference-transaction"];
 const CHECKOUT_HOOKS: &[&str] = &[
     "post-checkout",
     "post-index-change",
@@ -269,6 +271,7 @@ fn write_hooks(original: &CommandSegmentV1) -> Option<(&'static [&'static str], 
         (&"add", rest) => add(rest).then_some(INDEX_HOOKS),
         (&"rm", rest) => rm(rest).then_some(INDEX_HOOKS),
         (&"commit", rest) => commit(rest).then_some(COMMIT_HOOKS),
+        (&"branch", rest) => branch_rename(rest).then_some(BRANCH_HOOKS),
         _ => super::workspace_contained::keeping_arguments(&segment.arguments)
             .then_some(CHECKOUT_HOOKS),
     };
@@ -351,6 +354,23 @@ fn commit(rest: &[&str]) -> bool {
         }
     }
     message || (amend && no_edit)
+}
+
+/// `branch -m NEW` or `branch -m OLD NEW`, options first. A rename moves the
+/// ref with its reflog and refuses an existing target, so nothing becomes
+/// unreachable. `-M`, `--force`, a copy and every other option are refused.
+fn branch_rename(rest: &[&str]) -> bool {
+    let mut moved = false;
+    let mut names = Vec::new();
+    for word in rest {
+        match *word {
+            "-m" | "--move" if !moved && names.is_empty() => moved = true,
+            "-q" | "--quiet" if names.is_empty() => {}
+            name if super::worktree_add::valid_branch_name(name) => names.push(name),
+            _ => return false,
+        }
+    }
+    moved && matches!(names.len(), 1 | 2)
 }
 
 /// Whether the effective configuration lets these writes start no program.

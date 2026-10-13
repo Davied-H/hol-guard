@@ -25,17 +25,26 @@ pub(super) fn requires_review(
         ..context
     };
     let benign = super::segment_proof::benign_command_segments(model, context);
-    // A trailing `2>&1` is a redirect, not a Git argument.
-    let arguments: Vec<Vec<String>> = model
+    // `git merge-base ... | xargs git log` runs its Git read as the child, so
+    // that stage is judged as the Git command it runs.
+    let children: Vec<Option<crate::CommandSegmentV1>> = (0..model.segments.len())
+        .map(|index| super::fanout_reads::git_xargs_child(model, index))
+        .collect();
+    let segments: Vec<&crate::CommandSegmentV1> = model
         .segments
+        .iter()
+        .zip(&children)
+        .map(|(segment, child)| child.as_ref().unwrap_or(segment))
+        .collect();
+    // A trailing `2>&1` is a redirect, not a Git argument.
+    let arguments: Vec<Vec<String>> = segments
         .iter()
         .map(|segment| {
             super::segment_proof::without_stderr_merge(segment)
                 .map_or_else(|| segment.arguments.clone(), |stripped| stripped.arguments)
         })
         .collect();
-    let inspections: Vec<Option<bool>> = model
-        .segments
+    let inspections: Vec<Option<bool>> = segments
         .iter()
         .enumerate()
         .map(|(index, segment)| {
@@ -75,7 +84,7 @@ pub(super) fn requires_review(
     // A proven Git read or `origin` fetch writes no configuration, so it
     // cannot change what a later read in the same command would run.
     let settled = |prior: usize| {
-        let segment = &model.segments[prior];
+        let segment = segments[prior];
         benign.contains(&prior)
             || write_free(segment)
             || super::git_remote_ops::verified_fetch(segment, read_context)
@@ -88,7 +97,7 @@ pub(super) fn requires_review(
                         read_context,
                     )))
     };
-    model.segments.iter().enumerate().any(|(index, segment)| {
+    segments.iter().enumerate().any(|(index, segment)| {
         segment.executable.as_deref().is_some_and(|executable| {
             if super::executable_basename(executable) != "git" {
                 return false;
