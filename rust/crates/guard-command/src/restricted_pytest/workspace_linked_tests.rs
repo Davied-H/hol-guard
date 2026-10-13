@@ -166,3 +166,21 @@ fn any_other_shared_change_discards_both_layers() {
         fs::remove_dir_all(root).unwrap();
     }
 }
+
+#[test]
+fn a_broad_or_sensitive_main_checkout_is_not_admissible() {
+    let home = Path::new("/w/home");
+    assert!(admissible_checkout(&home.join("main/.git"), Some(home)));
+    for common in [
+        "/.git",
+        "/tmp/.git",
+        "/w/home/.git",
+        "/w/.git",
+        "/w/home/.ssh/.git",
+    ] {
+        assert!(
+            !admissible_checkout(Path::new(common), Some(home)),
+            "{common}"
+        );
+    }
+}

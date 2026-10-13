@@ -1,4 +1,5 @@
 //! Native launch plan for `workspace-contained-v1`.
+use super::workspace_linked::admissible_checkout;
 use super::*;
 use crate::pretool::generic::workspace_redirects;
 use crate::pretool::workspace_git_config::{linked_git_dirs, workspace_write_denials};
@@ -99,8 +100,16 @@ fn prepare(input: &Input) -> Result<Value, RestrictedPytestError> {
         workspace_exec_roots(&input.search_path, input.home.as_deref(), &workspace);
     // A linked worktree's index, HEAD and objects live in the main checkout's
     // `.git`, which the backend must also let the run write.
-    let linked_git = linked_git_dirs(&workspace, input.home.as_deref())
-        .map(|(common, admin)| json!({"common": common, "admin": admin}));
+    // Its main checkout becomes readable too, so it must be admissible as a
+    // workspace root would be.
+    let linked_git = match linked_git_dirs(&workspace, input.home.as_deref()) {
+        Some((common, _)) if !admissible_checkout(&common, input.home.as_deref()) => {
+            return Err(invalid(
+                "The linked worktree's main checkout is not an admissible sandbox root.",
+            ));
+        }
+        linked => linked.map(|(common, admin)| json!({"common": common, "admin": admin})),
+    };
     Ok(json!({
         "profile_version": WORKSPACE_PROFILE,
         "backend": backend,

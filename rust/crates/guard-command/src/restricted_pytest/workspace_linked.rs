@@ -45,6 +45,15 @@ fn invalid() -> RestrictedPytestError {
     )
 }
 
+/// Whether a run may read and execute the main checkout holding the shared
+/// directory `common`: it must not be a root no workspace may be, such as
+/// `/`, a temporary root, a home directory or one of its credential folders.
+pub(super) fn admissible_checkout(common: &Path, home: Option<&Path>) -> bool {
+    common
+        .parent()
+        .is_some_and(|checkout| !workspace_is_broad_or_sensitive_for_home(checkout, home))
+}
+
 impl LinkedGit {
     /// `self` when it names a checkout's `.git` and an admin entry directly
     /// under its `worktrees`, and neither the shared directory nor

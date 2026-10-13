@@ -342,6 +342,13 @@ pub(super) fn compose(
             "(allow file-write* {})",
             filter(&linked.files().1, "literal")
         ));
+        // Its reflog directory holds a `HEAD`. Renaming it into a shared
+        // tree would carry that `HEAD` past `bare_head_pattern`, so, as with
+        // `head_carrier_pattern`, Git may create it but not move it.
+        lines.push(format!(
+            "(deny file-write-unlink {})",
+            filter(&[linked.admin.join("logs")], "literal")
+        ));
     }
     for pattern in denial_patterns(workspace, &input.write_denials)? {
         lines.push(regex_rule("file-write*", &pattern));

@@ -304,6 +304,16 @@ fn a_linked_worktree_writes_only_shared_stores_and_its_admin_entry() {
         let needle = format!("(literal \"/w/main/.git/worktrees/proj/{file}\")");
         assert!(line("(allow file-write*", &needle), "{file}");
     }
+    let logs = "(literal \"/w/main/.git/worktrees/proj/logs\")";
+    let allow = profile
+        .lines()
+        .position(|line| line.starts_with("(allow file-write*") && line.contains(logs))
+        .unwrap();
+    let unlink = profile
+        .lines()
+        .position(|line| line == format!("(deny file-write-unlink {logs})"))
+        .unwrap();
+    assert!(allow < unlink);
     assert!(!profile.contains("(subpath \"/w/main/.git\")"));
     assert!(!profile.contains("(subpath \"/w/main/.git/worktrees"));
     // An admin entry anywhere but directly under the shared `worktrees`.
