@@ -156,6 +156,24 @@ test("enrollment waits for approval lookup and refreshes on Check again", async 
   await expect(page.getByRole("button", { name: "Copy setup command", exact: true })).toBeVisible();
 });
 
+test("approval setup cancellation and unsaved changes keep a clear return path", async ({ page }) => {
+  const fixture = await mountRecoveryFixture(page, { configured: false, enabled: false, failSettings: false });
+  await page.goto(`/extensions?${DAEMON}`);
+  await page.getByRole("button", { name: "Open approval settings", exact: true }).click();
+  await page.getByRole("button", { name: "Set up approval password", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Set your approval password" });
+  await dialog.getByRole("button", { name: "Go back", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Back to Extensions", exact: true })).toBeEnabled();
+  expect(fixture.settingsUpdates).toHaveLength(0);
+  await page.getByRole("checkbox", { name: "Ask for proof on allow decisions", exact: true }).check();
+  await expect(page.getByRole("button", { name: "Back to Extensions", exact: true })).toBeDisabled();
+  await expect(page.getByText("Save your changes before returning to Extensions.")).toBeVisible();
+  await page.getByRole("checkbox", { name: "Ask for proof on allow decisions", exact: true }).uncheck();
+  await page.getByRole("button", { name: "Back to Extensions", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Set up local approval", exact: true })).toBeVisible();
+  expect(fixture.settingsUpdates).toHaveLength(0);
+});
+
 test("recovery routes unconfigured approval to settings instead of asking for proof", async ({ page }) => {
   const runtimeErrors: string[] = [];
   page.on("pageerror", (error) => runtimeErrors.push(error.message));
