@@ -456,10 +456,8 @@ fn package_script_payload(lane: &Lane) -> Value {
 #[test]
 fn custom_rules_defer_only_a_command_that_launches_a_local_cli() {
     let open = allowing_lane("cli-open", json!({}));
-    assert_eq!(
-        run(&open, package_script_payload(&open))["outcome"],
-        "answer"
-    );
+    let launched = run(&open, package_script_payload(&open));
+    assert_eq!(launched["outcome"], "answer", "{launched}");
 
     let rules = allowing_lane("cli-rules", json!({ "local_cli_block_rules": true }));
     // `pwd` launches no local CLI, so no custom rule can block it.
@@ -485,10 +483,8 @@ fn a_block_rule_saved_after_the_publish_defers() {
              insert into local_cli_command_grant values ('cli', 'run', 'allow');",
         )
         .unwrap();
-    assert_eq!(
-        run(&lane, package_script_payload(&lane))["outcome"],
-        "answer"
-    );
+    let launched = run(&lane, package_script_payload(&lane));
+    assert_eq!(launched["outcome"], "answer", "{launched}");
     for statement in [
         "update local_cli_command_grant set state = 'block'",
         "update local_cli_command_grant set state = 'allow'; \
@@ -883,4 +879,41 @@ fn a_claude_code_prompt_without_a_notice_is_answered_in_either_posture() {
         let page = drain(&reviewed, None);
         assert_eq!(page["records"][0]["harness"], "claude-code", "{label}");
     }
+}
+
+#[test]
+fn probe_local_cli_commands_temporary() {
+    let open = allowing_lane("cli-probe", json!({}));
+    let root = std::path::Path::new(&open.workspace);
+    fs::create_dir_all(root.join("bin")).unwrap();
+    fs::write(root.join("x.py"), b"print(1)\n").unwrap();
+    fs::write(root.join("app.js"), b"console.log(1)\n").unwrap();
+    fs::write(root.join("bin/tool.sh"), b"#!/bin/sh\necho hi\n").unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(root.join("bin/tool.sh"), fs::Permissions::from_mode(0o755)).unwrap();
+    let mut report = Vec::new();
+    for command in [
+        "npm run build",
+        "python3 x.py",
+        "node app.js",
+        "bash bin/tool.sh",
+        "./bin/tool.sh",
+        "./bin/missing.sh",
+        "npx wrangler deploy",
+    ] {
+        let result = run(
+            &open,
+            json!({
+                "hook_event_name": "PreToolUse",
+                "tool_name": "Bash",
+                "tool_input": { "command": command },
+                "cwd": open.workspace,
+            }),
+        );
+        report.push(format!(
+            "{command} => {} {}",
+            result["outcome"], result["reason"]
+        ));
+    }
+    panic!("PROBE {}", report.join(" | "));
 }
