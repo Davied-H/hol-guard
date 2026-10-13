@@ -43,8 +43,8 @@ pub(super) use settings::carry_settings;
 
 /// Clients whose only purpose is the network the sandbox withholds.
 const NETWORK_CLIENTS: &[&str] = &[
-    "curl", "wget", "nc", "ncat", "netcat", "socat", "ssh", "scp", "sftp", "ftp", "telnet", "http",
-    "https", "xh",
+    "curl", "wget", "nc", "ncat", "netcat", "socat", "ssh", "scp", "sftp", "ftp", "tftp", "telnet",
+    "rsync", "nmap", "aria2c", "http", "https", "xh",
 ];
 
 // Privilege and permission changes. This is an exclusion, not an allowlist.
