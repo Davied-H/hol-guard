@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 
@@ -52,3 +54,30 @@ def native_status(cli: Path, env: dict[str, str], cwd: Path) -> dict[str, object
         return json.loads(result.stdout.strip().splitlines()[-1])
     except (IndexError, json.JSONDecodeError):
         return {"error": f"exit {result.returncode}: {result.stderr[-300:]}"}
+
+
+def traced_programs(handler: list[str] | str, payload: str, env: dict[str, str], cwd: Path) -> dict[str, object]:
+    """Programs one hook call executes, by basename, when strace is available."""
+
+    strace = shutil.which("strace")
+    if strace is None or isinstance(handler, str):
+        return {"error": "strace unavailable"}
+    with tempfile.NamedTemporaryFile(prefix="wpl-trace-", suffix=".txt") as trace:
+        subprocess.run(
+            [strace, "-f", "-qq", "-e", "trace=execve", "-o", trace.name, *handler],
+            input=payload,
+            env=env,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+        lines = Path(trace.name).read_text(encoding="utf-8", errors="replace").splitlines()
+    programs: dict[str, int] = {}
+    for line in lines:
+        if "execve(" not in line or "= -1" in line:
+            continue
+        name = Path(line.split('execve("', 1)[-1].split('"', 1)[0]).name
+        programs[name] = programs.get(name, 0) + 1
+    return {"programs": programs}

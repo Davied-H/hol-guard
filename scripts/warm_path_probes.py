@@ -26,7 +26,7 @@ from collections import Counter
 from pathlib import Path
 
 import tomllib
-from warm_path_route import handler_route, native_status
+from warm_path_route import handler_route, native_status, traced_programs
 from warm_path_stats import describe
 
 _CLK_TCK = os.sysconf("SC_CLK_TCK") if hasattr(os, "sysconf") else 100
@@ -274,6 +274,7 @@ def run_hook_phase(cli: Path, env: dict[str, str], root: Path, *, warmup: int, s
         observed = [call() for _ in range(samples)]
         after_children = resource.getrusage(resource.RUSAGE_CHILDREN)
         after_service = service_snapshot(baseline, root)
+        traced = traced_programs(handler, payload, env, workspace)
     finally:
         stop_services(cli, env, home, guard_home, baseline, root)
     latencies = [elapsed for elapsed, _ in observed]
@@ -295,6 +296,9 @@ def run_hook_phase(cli: Path, env: dict[str, str], root: Path, *, warmup: int, s
         "handler_route": handler_route(handler),
         "native_status": runtime,
         "last_stderr_tail": stderr_tail,
+        "traced_call": traced,
+        "client_user_ms_per_call": (after_children.ru_utime - before_children.ru_utime) * 1000 / max(1, samples),
+        "client_sys_ms_per_call": (after_children.ru_stime - before_children.ru_stime) * 1000 / max(1, samples),
     }
 
 

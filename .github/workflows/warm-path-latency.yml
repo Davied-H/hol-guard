@@ -87,7 +87,7 @@ jobs:
       - name: Install static Linux linker
         run: |
           sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends musl-tools
+          sudo apt-get install --yes --no-install-recommends musl-tools strace
       - name: Resolve revisions
         run: |
           set -euo pipefail
