@@ -55,6 +55,10 @@ fn other_parentheses_keep_the_review() {
         "cat <<EOF\n(ls)",
         "echo $'\\'' && (ls)",
         "echo \\( && ls)",
+        "echo \\&&(ls)",
+        "echo \\||(ls)",
+        "echo \\;(ls)",
+        "ls \\\n(cat Cargo.toml)",
     ] {
         assert_eq!(unwrap(command), None, "{command}");
     }
