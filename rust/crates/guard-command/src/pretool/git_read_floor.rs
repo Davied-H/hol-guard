@@ -14,9 +14,17 @@ pub(super) fn requires_review(
     deadline: Option<Instant>,
     execution_environment: Option<&guard_contracts::GuardExecutionEnvironmentV1>,
 ) -> bool {
+    // Reads in a checkout the same command creates were proven against the
+    // repository whose configuration the new worktree shares.
+    if super::worktree_add::chain::proven(model, context, deadline, execution_environment) {
+        return false;
+    }
     // A proven read prefix holds no Git segment and changes nothing a later
     // read depends on, so the floor judges the command from its `cd` onward.
     if let Some(rest) = super::segment_proof::after_read_prefix(model, context) {
+        return requires_review(&rest, context, deadline, execution_environment);
+    }
+    if let Some(rest) = after_git_read_prefix(model, context, deadline, execution_environment) {
         return requires_review(&rest, context, deadline, execution_environment);
     }
     let destination = super::segment_proof::verified_cwd_compound_context(model, context);
@@ -117,4 +125,75 @@ pub(super) fn requires_review(
                 || (inspection.is_some() && index > 0 && (0..index).any(|prior| !settled(prior)))
         })
     })
+}
+
+/// The command from its only `cd` onward, when everything before the `cd`
+/// is a Git read proven helper-free in the reported directory, or a read the
+/// plain read prefix also accepts. `git log -5 && git status --short | head
+/// && cd ../other && git log -5` then gets the same floor as
+/// `cd ../other && git log -5`: a proven read writes no configuration, ref
+/// or hook the later reads could pick up. A Git write, a configuration change
+/// or anything that can run a hook leaves no proven read, so it stays in the
+/// floor's judgement of the whole command.
+fn after_git_read_prefix(
+    model: &CanonicalCommandV1,
+    context: super::PathContext<'_>,
+    deadline: Option<Instant>,
+    execution_environment: Option<&guard_contracts::GuardExecutionEnvironmentV1>,
+) -> Option<CanonicalCommandV1> {
+    if model.confidence != "exact" || model.path_overridden || !model.wrapper_chain.is_empty() {
+        return None;
+    }
+    let mut changes = model
+        .segments
+        .iter()
+        .enumerate()
+        .filter(|(_, segment)| segment.executable.as_deref() == Some("cd"));
+    let (start, _) = changes.next()?;
+    if start == 0 || changes.next().is_some() {
+        return None;
+    }
+    for index in 1..=start {
+        let separator = super::worktree_add::separator_between(model, index - 1, index)?;
+        let expected: &[&str] = if index == start {
+            &["&&"]
+        } else {
+            &["&&", "|"]
+        };
+        if !expected.contains(&separator.trim()) {
+            return None;
+        }
+    }
+    let mut prefix = model.clone();
+    prefix.segments.truncate(start);
+    let proven = (0..start).all(|index| {
+        let segment = &prefix.segments[index];
+        let git = segment
+            .executable
+            .as_deref()
+            .is_some_and(|executable| super::executable_basename(executable) == "git");
+        segment.environment_names.is_empty()
+            && segment.wrapper_chain.is_empty()
+            && !segment.path_overridden
+            && if git {
+                super::git_remote_ops::proven_read(
+                    &prefix,
+                    index,
+                    context,
+                    deadline,
+                    execution_environment,
+                )
+            } else {
+                super::segment_proof::cwd_read_executable(segment.executable.as_deref())
+                    && super::segment_proof::exact_safe_segment_with_context(
+                        &prefix, segment, false, context,
+                    )
+            }
+    });
+    if !proven {
+        return None;
+    }
+    let mut rest = model.clone();
+    rest.segments = model.segments[start..].to_vec();
+    Some(rest)
 }
