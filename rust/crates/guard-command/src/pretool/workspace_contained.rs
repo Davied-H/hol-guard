@@ -29,6 +29,8 @@ mod chmod;
 mod git_metadata;
 #[path = "workspace_git_keeps_work.rs"]
 mod keeps_work;
+#[path = "workspace_contained_links.rs"]
+mod links;
 #[path = "workspace_contained_package.rs"]
 mod package;
 #[path = "workspace_contained_reach.rs"]
@@ -194,6 +196,11 @@ pub(crate) fn command_shape(
             return None;
         }
         let name = super::executable_basename(executable);
+        // Containment cannot undo an in-workspace write through an existing
+        // hard link: its other name may be protected or outside the workspace.
+        if links::mutates_linked_destination(name, &segment.arguments, workspace) {
+            return None;
+        }
         // The sandbox has no network, so a network client would only fail,
         // and it reaches no directory outside the workspace.
         if NETWORK_CLIENTS.contains(&name)
