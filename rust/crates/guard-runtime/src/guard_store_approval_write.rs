@@ -49,7 +49,7 @@ pub(crate) fn add_native_review_approval_request(
         normalized => normalized,
     };
     let request_id = write(connection, &request, &derived, &oauth_source, now)?;
-    bind_events_for_request(connection, &request_id, source)?;
+    bind_events_for_request(connection, &request_id, &oauth_source)?;
     Ok(Value::String(request_id))
 }
 
