@@ -190,6 +190,9 @@ def _session_worktree(org: Path, home: Path) -> None:
     _write(portal / "deploy.sh", "#!/bin/sh\n# cronjob rollout\necho deploy\n")
     _write(portal / "scripts" / "report.ts", "console.log(process.env.REPORT_WINDOW ?? '24h');\n")
     _write(portal / ".gitignore", "node_modules/\n.deploy-production.lock.d/\n")
+    _write(
+        portal / "src" / "app" / "page.tsx", "export default function Page() {\n  return <a href={OLD}>Home</a>;\n}\n"
+    )
     _git(portal, "add", "-A", home=home)
     _git(portal, "commit", "--quiet", "-m", "report script", home=home)
     _git(portal, "remote", "add", "origin", "https://github.com/example-org/app-portal.git", home=home)
@@ -283,6 +286,7 @@ def build_fixture(root: Path) -> BenignFixture:
     # Private user-owned temp dir (mode 0700, as mktemp -d creates) with one existing file.
     private_tmp = Path(tempfile.mkdtemp(prefix="tmp.", dir=_system_tmp())).resolve()
     _write(private_tmp / "notes.txt", "first draft\n")
+    _write(private_tmp / "resume-phase1.mjs", "console.log('resume');\n")
     # Workspace as a linked worktree under the system temp area whose registered siblings are outside cwd.
     tmp_worktree = Path(tempfile.mkdtemp(prefix="wt.", dir=_system_tmp())).resolve() / "workspace"
     _git(parent, "worktree", "add", "--quiet", "-b", "tmp-feature", str(tmp_worktree), home=home)
@@ -312,6 +316,12 @@ def build_fixture(root: Path) -> BenignFixture:
         _write(repository / ".github" / "workflows" / "ci.yml", "name: ci\n")
         _write(repository / "src" / "index.ts", f"export const name = '{name}';\n")
         _write(repository / "README.md", f"# {name}\n")
+        if name == "service-api":
+            _write(repository / "contracts" / "commands.json", '{"commands": []}\n')
+            _write(repository / "validation" / "schema.json", '{"type": "object"}\n')
+            _write(repository / "rust" / "crates" / "catalog" / "src" / "lib.rs", "pub fn catalog_read() {}\n")
+            # A real target, so the sibling `.env` negative controls prove a refusal.
+            _write(repository / ".env", "TOKEN=synthetic-not-a-secret\n")
         _git(repository, "add", "-A", home=home)
         _git(repository, "commit", "--quiet", "-m", f"{name} base", home=home)
     _session_worktree(org, home)
