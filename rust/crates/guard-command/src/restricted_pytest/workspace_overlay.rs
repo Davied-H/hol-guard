@@ -382,6 +382,7 @@ fn apply_change(
 
 /// Check every change in `upper`, then apply them all to `workspace`.
 /// Returns how many entries changed.
+#[cfg(test)]
 pub(crate) fn apply(
     upper: &Path,
     workspace: &Path,
