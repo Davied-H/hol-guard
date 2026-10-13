@@ -64,13 +64,14 @@ pub(crate) fn open_private_file(path: &Path, label: &str) -> Result<File, String
             unavailable()
         }
     })?;
-    let file = guard_runtime_windows_process::open_bound_regular_file(path).map_err(|error| {
-        if error.kind() == io::ErrorKind::InvalidData {
-            format!("{label} must be a regular file")
-        } else {
-            unavailable()
-        }
-    })?;
+    let file =
+        guard_runtime_windows_process::open_bound_replaceable_file(path).map_err(|error| {
+            if error.kind() == io::ErrorKind::InvalidData {
+                format!("{label} must be a regular file")
+            } else {
+                unavailable()
+            }
+        })?;
     let trusted = Trusted::current().ok_or_else(unavailable)?;
     for handle in [home.handle(), &file] {
         match verify(handle, &trusted) {
