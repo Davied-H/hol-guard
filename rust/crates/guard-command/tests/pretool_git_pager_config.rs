@@ -1,5 +1,4 @@
-#[path = "support/git_helper_fixture.rs"]
-pub mod fixture;
+use crate::git_helper_fixture as fixture;
 use fixture::*;
 use serde_json::json;
 
@@ -69,6 +68,17 @@ fn pager_checks_follow_the_actual_subcommand_and_global_override() {
         (
             "[core]\npager = ./synthetic-never-execute\n",
             "git diff --no-ext-diff --no-textconv",
+            "deny",
+        ),
+        // A read that starts no helper does not need the probe in a chain.
+        (
+            "[core]\npager = ./synthetic-never-execute\n[pager]\nlog = false\n",
+            "git log --oneline -1 && git rev-parse HEAD",
+            "allow",
+        ),
+        (
+            "[core]\npager = ./synthetic-never-execute\n",
+            "git rev-parse HEAD; git log --oneline -1",
             "deny",
         ),
     ] {

@@ -21,10 +21,12 @@ pub struct PathContext<'a> {
 }
 
 mod contained_wrapper;
+pub(crate) mod curl_reads;
+pub(crate) mod kubectl_reads;
 mod workspace_contained;
 #[cfg(unix)]
 pub(crate) use workspace_contained::PROFILE as WORKSPACE_PROFILE;
-pub(crate) use workspace_contained::{command_shape, init_arguments};
+pub(crate) use workspace_contained::{command_shape, init_arguments, Shape};
 pub(crate) mod directory_targets;
 pub(crate) mod workspace_git_config;
 pub(crate) mod workspace_git_environment;
@@ -44,6 +46,7 @@ mod git_reads;
 mod repo_create_reason;
 use git_reads::safe_git_arguments;
 mod git_helper_context;
+mod git_local_writes;
 mod git_probe;
 mod git_push;
 mod git_remote_config;
@@ -55,6 +58,7 @@ mod guard_diagnostics;
 mod listing_reads;
 mod lookup_reads;
 mod metadata_reads;
+mod npm_environment;
 mod npm_reads;
 mod pytest_contained;
 mod tool_bin_listing;
@@ -83,6 +87,9 @@ mod shell_script;
 mod stdin_filters;
 mod symlink_writes;
 mod version_probes;
+#[cfg(test)]
+#[path = "pretool/workspace_contained_runner_tests.rs"]
+mod workspace_contained_runner_tests;
 #[cfg(test)]
 #[path = "pretool/workspace_contained_tests.rs"]
 mod workspace_contained_tests;
@@ -196,7 +203,7 @@ pub(super) fn sensitive_command(value: &str) -> bool {
         ".env",
     ];
     needles.iter().any(|needle| lowered.contains(needle))
-        || lowered.contains("printenv")
+        || crate::environment_secret_dump::printenv_may_print_secret(&lowered)
         || lowered.contains("os.environ")
         || lowered.contains("process.env")
 }
@@ -513,10 +520,11 @@ fn evaluate_single_command(
     if exact_safe_command_with_context(&model, false, context)
         && !bun_eval::node_inline_preload_configured(&model, execution_environment)
     {
+        let reason_code = curl_reads::proven_reason_code(&model);
         return Ok(pretool_decision(
             model,
             "allow",
-            "native_exact_safe_command",
+            reason_code,
             "The Rust command authority proved this bounded command explicitly benign.",
         ));
     }

@@ -82,7 +82,8 @@ pub(super) fn exact_safe_cwd_compound(
         );
     }
     model.segments[1..].iter().all(|segment| {
-        cwd_read_executable(segment.executable.as_deref())
+        (cwd_read_executable(segment.executable.as_deref())
+            || super::version_probes::lone_probe_segment(segment))
             && exact_safe_segment_with_context(
                 model,
                 segment,
@@ -115,6 +116,7 @@ fn cwd_read_executable(executable: Option<&str>) -> bool {
                 | "sleep"
                 | "uptime"
                 | "pgrep"
+                | "ps"
                 | "ls"
                 | "cat"
                 | "base64"
@@ -283,6 +285,7 @@ pub(crate) fn benign_command_segments(
                     | "sleep"
                     | "uptime"
                     | "pgrep"
+                    | "ps"
             ) || segment.arguments.is_empty()
                 || stdin_filter;
             // Context-free public wrappers cannot prove that a file operand or
@@ -426,7 +429,9 @@ pub(super) fn exact_safe_segment_with_context(
         "date" => safe_reads::safe_date_arguments(&segment.arguments),
         "sleep" => safe_reads::safe_sleep_arguments(&segment.arguments),
         "uptime" => segment.arguments.is_empty(),
+        "printenv" => super::safe_scalar::safe_printenv_arguments(&segment.arguments),
         "pgrep" => super::safe_scalar::safe_pgrep_arguments(&segment.arguments),
+        "ps" => super::safe_scalar::safe_ps_arguments(&segment.arguments),
         "ls" => {
             super::listing_reads::safe_listing_segment(&segment.text, &segment.arguments, context)
         }
@@ -435,7 +440,10 @@ pub(super) fn exact_safe_segment_with_context(
             super::find_reads::safe_find_listing_arguments(&segment.arguments, context)
                 || super::fanout_reads::safe_find_exec(model, segment, context)
         }
-        "xargs" => super::fanout_reads::safe_xargs(model, segment, context),
+        "xargs" => {
+            super::fanout_reads::safe_xargs(model, segment, context)
+                || super::fanout_reads::safe_git_xargs(model, segment, context)
+        }
         // Operand-free `cat` after a pipe only copies the proven producer's output.
         "cat" => {
             (segment.pipeline_index > 0 && segment.arguments.is_empty())
@@ -479,6 +487,9 @@ pub(super) fn exact_safe_segment_with_context(
                 && super::directory_targets::home_targets_unquoted(segment)
         }
         "gh" => safe_gh_arguments(&segment.arguments, &segment.text),
+        "curl" => super::curl_reads::safe_curl_segment(model, segment),
+        "kubectl" => super::kubectl_reads::safe_kubectl_segment(model, segment, context),
+        "export" => super::kubectl_reads::safe_export_segment(model, segment, context),
         "wrangler" => super::wrangler_reads::safe_wrangler_arguments(&segment.arguments),
         "npm" => {
             super::npm_reads::read_only_neighbors(model)
