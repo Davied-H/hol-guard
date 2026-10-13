@@ -28,7 +28,7 @@ const STATE_DIRECTORY: &str = "native-runtime";
 const DIRECT_RESULT_SCHEMA: &str = "guard-hook-direct-result.v1";
 const USER_PROMPT_SUBMIT: &str = "UserPromptSubmit";
 /// Claude Code's permission dialog, which the resident answers from the
-/// session's permission notice.
+/// session's permission notice, and Codex's, which it leaves to Codex.
 const PERMISSION_REQUEST: &str = "PermissionRequest";
 const NOTIFICATION: &str = "Notification";
 
@@ -64,6 +64,7 @@ const GROK: &str = "grok";
 /// A resident answers an allow well inside this. A slower resident leaves
 /// the daemon most of the hook's budget.
 const DIRECT_TIMEOUT: Duration = Duration::from_millis(1_000);
+#[cfg(unix)]
 const MINIMUM_DIRECT_TIMEOUT: Duration = Duration::from_millis(50);
 
 /// The query parameters the daemon reads, as `parse_qs(query)[name][-1]`.
@@ -310,7 +311,7 @@ fn direct_enabled(switch: &str) -> bool {
 /// daemon's constant. Permission and notification hooks, and the `before*`
 /// hooks the daemon denies, go to the daemon without asking the resident;
 /// `direct_answer` asks it about Claude Code's `PermissionRequest` and
-/// `Notification`.
+/// `Notification`, and Codex's `PermissionRequest`.
 fn direct_event(event_name: &str) -> bool {
     if [PRE_TOOL_USE, POST_TOOL_USE, USER_PROMPT_SUBMIT].contains(&event_name) {
         return true;
@@ -322,14 +323,31 @@ fn direct_event(event_name: &str) -> bool {
         || compact.starts_with("before"))
 }
 
-/// `direct_event`, plus Claude Code's `PermissionRequest` and `Notification`.
+/// `direct_event`, plus Claude Code's `PermissionRequest` and
+/// `Notification`, and Codex's `PermissionRequest`.
 fn harness_event(harness: &DirectHarness, event_name: &str) -> bool {
     direct_event(event_name)
         || (harness.name == CLAUDE_CODE.name
             && [PERMISSION_REQUEST, NOTIFICATION].contains(&event_name))
+        || (harness.name == CODEX.name && event_name == PERMISSION_REQUEST)
 }
 
 /// Send the request to a live resident that runs this very executable.
+///
+/// TODO(windows-direct-resident): the same-executable process check is
+/// unix-only, so on Windows no resident is trusted and the hook always
+/// takes the daemon path.
+#[cfg(windows)]
+fn send_to_live_resident(
+    _state_base: &Path,
+    _request: &[u8],
+    _deadline: Instant,
+) -> Option<Vec<u8>> {
+    None
+}
+
+/// Send the request to a live resident that runs this very executable.
+#[cfg(unix)]
 fn send_to_live_resident(state_base: &Path, request: &[u8], deadline: Instant) -> Option<Vec<u8>> {
     // Discovery checks the directory's privacy; it must already exist.
     if !std::fs::symlink_metadata(state_base).is_ok_and(|metadata| metadata.is_dir()) {
@@ -428,6 +446,6 @@ pub(crate) fn grok_direct_answer(
     answered_response(&output)
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 #[path = "codex_hook_bridge_direct_tests.rs"]
 mod tests;
