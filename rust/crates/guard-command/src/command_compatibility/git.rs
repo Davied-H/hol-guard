@@ -283,6 +283,7 @@ fn routed<'a>(
     arguments.get(index..)
 }
 
+#[cfg(test)]
 pub(super) fn observe_with_context(
     segment: &CommandSegmentV1,
     index: usize,
