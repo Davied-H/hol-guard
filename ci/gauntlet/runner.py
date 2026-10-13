@@ -148,8 +148,6 @@ def run_case(
                     case["business_policy"], publisher.current_snapshot(), policy_snapshot
                 )
             worker = daemon._server.hook_worker
-            if scenario.oracle == "watch-command":
-                case["watch_binding_before"] = ready_watch_binding(worker)
             if scenario.oracle == "blocked-extension":
                 extension_receipt_ids = native_probe.persisted_native_receipt_ids(worker.store)
                 extension_receipt_writer = daemon._server.runtime_hook_evidence_writer
@@ -236,6 +234,7 @@ def run_case(
             if scenario.oracle == "watch-command":
                 position = command.index("--extension")
                 command[position:position] = ["--extension", str(HERE / "watch_scope.ts")]
+                case["watch_binding_before"] = ready_watch_binding(worker)
             case["returncode"], case["timed_out"] = run_process(
                 command,
                 cwd=fixture.workspace,
