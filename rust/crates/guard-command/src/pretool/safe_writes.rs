@@ -23,8 +23,9 @@ pub(super) fn bounded_native_file_write_target(
 }
 
 /// A structured write tool opens its path literally, so `[id]` in a Next.js,
-/// SvelteKit or Nuxt route directory is a name, not a glob. Only brackets are
-/// accepted; every other metacharacter and every location, protected-file,
+/// SvelteKit or Nuxt route directory and `$postId` in a Remix or TanStack
+/// Router route file are names, not globs or expansions. Only brackets and `$`
+/// are accepted; every other metacharacter and every location, protected-file,
 /// hidden-part and hard-link screen still applies to the resolved target.
 pub(super) fn bounded_structured_file_write_target(
     value: &str,
@@ -70,7 +71,7 @@ fn bounded_write_target(
     cwd: Option<&str>,
     directory: bool,
     allow_home: bool,
-    literal_brackets: bool,
+    literal_names: bool,
 ) -> bool {
     let Some(workspace) = cwd.and_then(|root| {
         let expanded = expand_home_read_path(root, home_dir).unwrap_or_else(|| root.to_owned());
@@ -81,9 +82,12 @@ fn bounded_write_target(
     if value.is_empty()
         || value.len() > 4096
         || value.contains([
-            '$', '`', '|', ';', '&', '<', '>', '\n', '\r', '\0', '*', '?', '{', '}',
+            '`', '|', ';', '&', '<', '>', '\n', '\r', '\0', '*', '?', '{', '}',
         ])
-        || (!literal_brackets && value.contains(['[', ']']))
+        || (!literal_names && value.contains(['$', '[', ']']))
+        // `$` never reaches a colon past the drive, such as an NTFS `::$DATA`
+        // stream selector, so a literal name always names the file itself.
+        || (value.contains('$') && value.char_indices().any(|(at, c)| c == ':' && at > 1))
         || value.split(['/', '\\']).any(|part| part == "..")
     {
         return false;

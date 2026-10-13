@@ -813,6 +813,22 @@
       "expect": "allow"
     },
     {
+      "id": "write-dollar-route-file",
+      "fix_area": "write",
+      "harnesses": [
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "write",
+      "tool_input": {
+        "path": "${WORKTREE}/app/routes/posts.$slug.edit.tsx",
+        "content": "export default function Edit() { return null; }\n"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
       "id": "read-credential-lookalike-name",
       "fix_area": "shell",
       "harnesses": [

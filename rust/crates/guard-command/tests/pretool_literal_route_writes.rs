@@ -16,7 +16,7 @@ impl Drop for Fixture {
 
 fn fixture() -> Fixture {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/pretool-bracketed-route-writes")
+        .join("../../target/pretool-literal-route-writes")
         .join(format!(
             "home-{}-{}",
             std::process::id(),
@@ -32,6 +32,8 @@ fn fixture() -> Fixture {
     for file in [
         "project/app/registry/[slug]/page.tsx",
         "project/app/[id]/settings.ts",
+        "project/app/routes/posts.$slug.tsx",
+        "project/CLAUDE.md",
         "project/.git/hooks/pre-commit",
         ".ssh/config",
     ] {
@@ -41,6 +43,7 @@ fn fixture() -> Fixture {
     }
     std::fs::create_dir_all(root.join("outside")).unwrap();
     std::os::unix::fs::symlink(home.join(".ssh"), project.join("app/[link]")).unwrap();
+    std::os::unix::fs::symlink(root.join("outside"), project.join("app/routes/$link")).unwrap();
     Fixture {
         root,
         home,
@@ -111,8 +114,68 @@ fn dynamic_route_files_are_literal_workspace_writes() {
     assert_eq!(result.minimum_action, "allow", "{result:?}");
 }
 
+fn multi_edit(f: &Fixture, harness: &str, path: &str) -> guard_contracts::PreToolResultV1 {
+    run(
+        f,
+        harness,
+        "MultiEdit",
+        json!({"file_path": path, "edits": [{"old_string": "synthetic", "new_string": "updated"}]}),
+    )
+}
+
 #[test]
-fn bracketed_writes_keep_every_other_screen() {
+fn dollar_route_files_are_literal_workspace_writes() {
+    let f = fixture();
+    for harness in ["claude-code", "zcode", "omp"] {
+        for path in [
+            "app/routes/$postId.tsx",
+            "app/routes/posts.$slug.tsx",
+            "app/routes/posts.$slug.edit.tsx",
+            "app/routes/$.tsx",
+            "src/routes/users/$userId/index.tsx",
+        ] {
+            let absolute = f.project.join(path);
+            for spelling in [path, absolute.to_str().unwrap()] {
+                let result = host_write(&f, harness, spelling);
+                assert_eq!(
+                    (result.minimum_action.as_str(), result.reason_code.as_str()),
+                    ("allow", "native_exact_safe_file_write"),
+                    "{harness} {spelling}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn multi_edit_is_a_write_with_the_write_screens() {
+    let f = fixture();
+    for harness in ["claude-code", "zcode"] {
+        for path in [
+            "app/registry/[slug]/page.tsx",
+            "app/routes/posts.$slug.tsx",
+            "app/[id]/settings.ts",
+        ] {
+            let path = f.project.join(path);
+            let result = multi_edit(&f, harness, path.to_str().unwrap());
+            assert_eq!(
+                (result.minimum_action.as_str(), result.reason_code.as_str()),
+                ("allow", "native_exact_safe_file_write"),
+                "{harness} {path:?}"
+            );
+        }
+        // These existing files are readable, but a MultiEdit is not a read:
+        // instruction files and Git hooks keep the write review.
+        for path in ["CLAUDE.md", ".git/hooks/pre-commit"] {
+            let path = f.project.join(path);
+            let result = multi_edit(&f, harness, path.to_str().unwrap());
+            assert_ne!(result.minimum_action, "allow", "{harness} {path:?}");
+        }
+    }
+}
+
+#[test]
+fn literal_route_writes_keep_every_other_screen() {
     let f = fixture();
     let outside = f.root.join("outside/[id]/route.ts");
     let home_dotfile = f.home.join(".zshrc");
@@ -132,6 +195,15 @@ fn bracketed_writes_keep_every_other_screen() {
         // Writes outside the workspace and verified home stay reviewed.
         outside.to_str().unwrap(),
         home_dotfile.to_str().unwrap(),
+        // `$` is a literal name only; it never widens a target either.
+        "app/routes/$link/escape.ts",
+        "app/routes/.env.$stage",
+        "app/routes/$id/.env",
+        ".git/hooks/$hook",
+        ".husky/$hook",
+        "app/routes/$id.tsx::$DATA",
+        "app/routes/$id/*.tsx",
+        "app/routes/$id/../../../../outside/escape.ts",
     ] {
         for harness in ["claude-code", "zcode", "omp"] {
             let result = host_write(&f, harness, path);

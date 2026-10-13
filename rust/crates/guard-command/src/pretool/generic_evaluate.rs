@@ -289,8 +289,17 @@ pub(super) fn evaluate_signals(
     }
     if action_type == PreToolActionTypeV1::FileWrite
         && signals.tool_name.as_deref().is_some_and(|tool| {
-            tool_matches(tool, &["write", "edit", "patch", "replace", "create_file"])
-                && !tool_matches(tool, &["delete", "remove", "mkdir"])
+            tool_matches(
+                tool,
+                &[
+                    "write",
+                    "edit",
+                    "multiedit",
+                    "patch",
+                    "replace",
+                    "create_file",
+                ],
+            ) && !tool_matches(tool, &["delete", "remove", "mkdir"])
         })
         && !signals.sensitive_target
         && signals.url_values.is_empty()
@@ -300,8 +309,9 @@ pub(super) fn evaluate_signals(
             signals.tool_name.as_deref(),
             Some("Write" | "Edit" | "MultiEdit" | "write" | "edit")
         ) {
-            // Only the host file tools open their path literally, so a
-            // `[id]` route directory is a name. Any other tool may glob-expand.
+            // Only the host file tools open their path literally, so an `[id]`
+            // route directory or a `$postId` route file is a name. Any other
+            // tool may glob-expand or substitute.
             super::super::safe_reads::bounded_structured_file_write_target(
                 &signals.path_values[0],
                 home_dir,
