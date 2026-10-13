@@ -204,9 +204,18 @@ fn constant_eval_with_an_object_publisher_keeps_the_unknown_publisher_floor() {
 
 #[test]
 fn proved_listing_output_is_released_without_lowering_scans_or_floors() {
+    struct RemoveOnDrop(std::path::PathBuf);
+    impl Drop for RemoveOnDrop {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/omp-listing-output-tests")
         .join(format!("home-{}", std::process::id()));
+    // A reused process id must not inherit an earlier run's fixture.
+    let _ = std::fs::remove_dir_all(&root);
+    let _cleanup = RemoveOnDrop(root.clone());
     std::fs::create_dir_all(root.join("project/src")).unwrap();
     std::fs::create_dir_all(root.join(".ssh")).unwrap();
     let root = std::fs::canonicalize(root).unwrap();
