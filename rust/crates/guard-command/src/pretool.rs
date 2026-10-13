@@ -32,6 +32,7 @@ pub(crate) use directory_targets::safe_directory_target;
 mod base64_reads;
 mod bun_eval;
 mod compound_reason;
+mod fanout_reads;
 mod find_reads;
 pub(crate) mod git_branch_listing;
 mod git_config;
@@ -513,7 +514,8 @@ pub(super) fn evaluate_pre_tool_with_execution_context(
             "HOL Guard is checking repository Git-helper configuration before allowing this read-only command.",
         ));
     }
-    let reason = compound_reason::unproven_steps_reason(&model, context)
+    let reason = fanout_reads::whitespace_split_reason(&model)
+        .or_else(|| compound_reason::unproven_steps_reason(&model, context))
         .or_else(|| repo_create_reason::private_alternative_reason(&model))
         .or_else(|| worktree_add::outside_home_reason(&model, context));
     Ok(pretool_decision(
@@ -530,5 +532,7 @@ pub(super) fn evaluate_pre_tool_with_execution_context(
 mod tests;
 #[cfg(test)]
 mod tests_benign_probes;
+#[cfg(test)]
+mod tests_fanout_reads;
 #[cfg(test)]
 mod tests_listing_find_probes;
