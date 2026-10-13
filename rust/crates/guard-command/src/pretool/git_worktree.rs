@@ -145,8 +145,6 @@ pub(super) fn trusted_pipeline_command(
     };
     if !home.is_dir()
         || !cwd.is_dir()
-        || !environment.git_config_no_system
-        || environment.xdg_config_home.is_some()
         || !super::git_config::clean_environment(Some(environment), &home, &cwd)
         || environment
             .home
@@ -172,9 +170,7 @@ fn prepared_git_command(
     let home = fs::canonicalize(declared_home).ok()?;
     let cwd = fs::canonicalize(declared_cwd).ok()?;
     let environment = execution_environment?;
-    if !environment.git_config_no_system
-        || environment.xdg_config_home.is_some()
-        || !home.is_dir()
+    if !home.is_dir()
         || !cwd.is_dir()
         || !super::git_config::clean_environment(Some(environment), &home, &cwd)
     {
@@ -194,9 +190,17 @@ fn prepared_git_command(
     if !git_home.is_absolute() || fs::canonicalize(&git_home).ok()? != home {
         return None;
     }
+    // Probe the configuration the agent's Git will read: the system file
+    // unless the session disables it, and the session's XDG directory.
+    // `safe_worktree_config` then judges every scope.
+    if environment.git_config_no_system {
+        command.env("GIT_CONFIG_NOSYSTEM", "1");
+    }
+    if let Some(directory) = environment.xdg_config_home.as_deref() {
+        command.env("XDG_CONFIG_HOME", directory);
+    }
     command
         .current_dir(&cwd)
-        .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("HOME", &git_home)
         .env("USERPROFILE", &git_home);
     Some((command, binary, cwd, git_home))
@@ -286,7 +290,8 @@ fn safe_worktree_config(output: &[u8]) -> Option<WorktreeConfig> {
             continue;
         }
         // `worktree add` and each probe below use built-in commands, local
-        // refs, and no diff/editor operation. A global credential helper is
+        // refs, and no diff/editor operation. A global or system credential
+        // helper, such as the `osxkeychain` helper Git for macOS installs, is
         // not consulted for this local-ref operation; retain the deny floor
         // for repository-scoped helpers and execution-capable settings.
         if key == "core.hookspath"
@@ -299,7 +304,7 @@ fn safe_worktree_config(output: &[u8]) -> Option<WorktreeConfig> {
             || key.starts_with("hook.")
             || key.starts_with("pager.")
             || key.starts_with("filter.")
-            || (key.starts_with("credential.") && scope != "global")
+            || (key.starts_with("credential.") && !matches!(scope, "global" | "system"))
             || key.starts_with("include")
             || key.starts_with("extensions.")
             || key.starts_with("submodule.")
