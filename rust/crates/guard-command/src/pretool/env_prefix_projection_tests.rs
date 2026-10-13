@@ -217,7 +217,8 @@ fn search_paths_are_reviewed_in_front_of_their_own_toolchain() {
             "REPORT_DIR",
         ),
     ] {
-        let reviewed = project_reviewed(command).unwrap_or_else(|| panic!("{command}"));
+        let reviewed =
+            project_reviewed(command, Default::default()).unwrap_or_else(|| panic!("{command}"));
         assert_eq!(reviewed.command, projected, "{command}");
         assert_eq!(reviewed.setting, setting, "{command}");
     }

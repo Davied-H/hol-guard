@@ -4679,6 +4679,70 @@
       },
       "cwd": "worktree",
       "expect": "allow"
+    },
+    {
+      "id": "session-git-dir-log",
+      "fix_area": "git",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git --git-dir=app/.git log --oneline -12"
+      },
+      "cwd": "tmp_org",
+      "expect": "allow"
+    },
+    {
+      "id": "session-export-git-config-null-sibling-status",
+      "fix_area": "git",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null; git -C ${TMP_ORG_WT} -c core.fsmonitor=false status --porcelain"
+      },
+      "cwd": "tmp_org",
+      "expect": "allow"
+    },
+    {
+      "id": "session-ls-cd-tmp-sibling-git-status-log",
+      "fix_area": "git",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "ls .. && ls && cd ${TMP_ORG_WT} && git status && git log --oneline -15"
+      },
+      "cwd": "tmp_org",
+      "expect": "allow"
+    },
+    {
+      "id": "session-jq-filter-tmp-sibling",
+      "fix_area": "shell",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "jq -r '.scripts | keys | length' ${TMP_ORG_WT}/package.json"
+      },
+      "cwd": "tmp_org",
+      "expect": "allow"
     }
   ],
   "pending_pr": {
