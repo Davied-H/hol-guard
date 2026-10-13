@@ -8426,12 +8426,10 @@ function CatalogExtensionRow(props) {
   );
 }
 function ConnectorDiscoveryControl(props) {
-  if (props.discovering) {
-    return props.showProgress ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { "aria-live": "polite", className: "text-sm text-brand-dark/70", children: "Checking host connections…" }) : null;
-  }
+  const message = props.discovering ? props.showProgress ? "Checking host connections…" : "" : props.error ?? "";
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap items-center gap-x-3 gap-y-1", children: [
-    props.error ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { "aria-live": "polite", className: "text-sm text-brand-dark/70", children: props.error }) : null,
-    /* @__PURE__ */ jsxRuntimeExports.jsx(
+    /* @__PURE__ */ jsxRuntimeExports.jsx("p", { "aria-live": "polite", "aria-atomic": "true", className: "text-sm text-brand-dark/70", children: message }),
+    props.discovering ? null : /* @__PURE__ */ jsxRuntimeExports.jsx(
       "button",
       {
         type: "button",
@@ -8442,6 +8440,7 @@ function ConnectorDiscoveryControl(props) {
     )
   ] });
 }
+
 function CatalogFilterEmpty(props) {
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-6 rounded-2xl border border-[rgba(63,65,116,0.12)] bg-white px-4 py-6", children: [
     /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm font-semibold text-brand-dark", children: "No extensions match these filters." }),
@@ -8642,7 +8641,7 @@ function ExtensionsOverview(props) {
             ConnectorDiscoveryControl,
             {
               discovering,
-              showProgress: addedCustomItems.length > 0,
+              showProgress: addedCustomItems.length > 0 || customItemsFilteredOut,
               error: [discoveryError, hostDiscoveryError].filter(Boolean).join(" ") || null,
               onRetry: () => setDiscoveryAttempt((attempt) => attempt + 1)
             }
