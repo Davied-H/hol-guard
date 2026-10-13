@@ -2,11 +2,12 @@
 //! sandbox: helper paths inside the workspace become write-denied so a
 //! sandboxed command cannot plant code a later, unsandboxed Git would run.
 use super::workspace_git_environment::{global_config_paths, GitVariables};
+use config_entries::{entries, names_data};
 use std::fs;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 
-const MAX_CONFIG_BYTES: u64 = 64 * 1024;
+const MAX_CONFIG_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_DENIALS: usize = 64;
 const MAX_GLOBAL_FILES: usize = 32;
 const MAX_INCLUDE_DEPTH: usize = 4;
@@ -42,23 +43,37 @@ fn read_config(path: &Path, follow: bool) -> Result<Option<String>, ()> {
 
 /// `Ok(None)` when `root` has no repository, `Ok(Some(text))` for a plain,
 /// bounded `.git/config`, and `Err` for anything the sandbox cannot reason
-/// about (symlinked or file-form `.git`, oversized or binary config, or a
-/// `config.worktree`, which Git also reads and this reader does not).
+/// about (symlinked `.git`, a gitfile other than a verified linked worktree's,
+/// oversized or binary config, or a `config.worktree`, which Git also reads
+/// and this reader does not). A linked worktree reads its shared repository's
+/// configuration, and the admin entry's `config.worktree` as well.
 pub(crate) fn repository_config(root: &Path) -> Result<Option<String>, ()> {
     let git = root.join(".git");
-    match fs::symlink_metadata(&git) {
+    let directories = match fs::symlink_metadata(&git) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(_) => return Err(()),
-        Ok(metadata) if !metadata.is_dir() => return Err(()),
-        Ok(_) => {}
-    }
-    match fs::symlink_metadata(git.join("config.worktree")) {
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        _ => return Err(()),
+        Ok(metadata) if metadata.is_dir() => vec![git],
+        Ok(metadata) if metadata.is_file() => {
+            let (common, admin) = super::worktree_writes::linked_worktree_dirs(root).ok_or(())?;
+            vec![common, admin]
+        }
+        Ok(_) => return Err(()),
+    };
+    for directory in &directories {
+        match fs::symlink_metadata(directory.join("config.worktree")) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            _ => return Err(()),
+        }
     }
     Ok(Some(
-        read_config(&git.join("config"), false)?.unwrap_or_default(),
+        read_config(&directories[0].join("config"), false)?.unwrap_or_default(),
     ))
+}
+
+/// The shared Git directory and admin entry of the verified linked worktree
+/// whose work tree holds `workspace`, or `None` for any other workspace.
+pub(crate) fn linked_git_dirs(workspace: &Path, home: Option<&Path>) -> Option<(PathBuf, PathBuf)> {
+    super::worktree_writes::linked_worktree_dirs(&work_tree(workspace, home)?)
 }
 
 /// The repository whose work tree holds `workspace`: the workspace itself
@@ -98,14 +113,36 @@ fn write_denials_from(
     globals: Vec<PathBuf>,
 ) -> Option<Vec<PathBuf>> {
     let root = work_tree(workspace, home);
-    let mut denials = match &root {
+    let denials = denials_within(root.as_deref(), workspace, home, globals.clone())?;
+    // A run in a linked worktree also writes its shared repository's objects
+    // and refs, so no helper or global configuration may live there either.
+    if let Some((common, _)) = root
+        .as_deref()
+        .and_then(super::worktree_writes::linked_worktree_dirs)
+    {
+        if !denials_within(root.as_deref(), &common, home, globals)?.is_empty() {
+            return None;
+        }
+    }
+    Some(denials)
+}
+
+/// The helper paths under `workspace` that the configuration of the
+/// repository at `root`, and `globals` with their includes, name.
+fn denials_within(
+    root: Option<&Path>,
+    workspace: &Path,
+    home: Option<&Path>,
+    globals: Vec<PathBuf>,
+) -> Option<Vec<PathBuf>> {
+    let mut denials = match root {
         Some(root) => {
             let config = repository_config(root).ok()?.unwrap_or_default();
             helper_denials(&config, root, workspace, home)?
         }
         None => Vec::new(),
     };
-    let base = root.as_deref().unwrap_or(workspace);
+    let base = root.unwrap_or(workspace);
     let mut pending: Vec<(PathBuf, usize)> = globals.into_iter().map(|path| (path, 0)).collect();
     let mut visited = 0usize;
     while let Some((path, depth)) = pending.pop() {
@@ -125,16 +162,16 @@ fn write_denials_from(
         let directory = resolved.parent()?.to_path_buf();
         for (section, key, value) in entries(&config)? {
             if section.starts_with("include") && key == "path" {
-                pending.push((expand(&directory, home, value)?, depth + 1));
+                pending.push((expand(&directory, home, &value)?, depth + 1));
             } else if key == "hookspath" {
                 let relative = !value.trim_matches('"').starts_with(['~', '/']);
-                let path = expand(base, home, value)?;
+                let path = expand(base, home, &value)?;
                 if relative && !path.starts_with(base) {
                     return None;
                 }
                 deny_linked(&mut denials, path, workspace)?;
             } else if section != "branch" && section != "user" && !names_data(&section, &key) {
-                helper_word_denials(&mut denials, value, base, home, workspace)?;
+                helper_word_denials(&mut denials, &value, base, home, workspace)?;
             }
         }
     }
@@ -251,54 +288,6 @@ fn inside(base: &Path, workspace: &Path, value: &str) -> Option<PathBuf> {
     (normal.starts_with(workspace) && normal != workspace).then_some(normal)
 }
 
-/// Keys of remotes and submodules that name refs, URLs or checkout paths,
-/// never a program. Their other keys, such as `uploadpack` or `update`, can.
-/// `safe.directory` names trusted repositories, often with a `*` pattern.
-fn names_data(section: &str, key: &str) -> bool {
-    (matches!(section, "remote" | "submodule")
-        && matches!(
-            key,
-            "url" | "pushurl" | "fetch" | "push" | "path" | "branch"
-        ))
-        || (section == "safe" && key == "directory")
-}
-
-/// Section, key and value of each `key = value` line. `None` when a header
-/// carries text after its `]`: Git parses that as a key, as in
-/// `[core] hooksPath = x`, and this reader does not.
-fn entries(config: &str) -> Option<Vec<(String, String, &str)>> {
-    let mut result = Vec::new();
-    let mut section = String::new();
-    for line in config.lines() {
-        let line = line.trim();
-        if line.starts_with('#') || line.starts_with(';') {
-            continue;
-        }
-        if let Some(header) = line.strip_prefix('[') {
-            let (name, rest) = header.split_once(']')?;
-            let rest = rest.trim();
-            if !rest.is_empty() && !rest.starts_with(['#', ';']) {
-                return None;
-            }
-            section = name
-                .trim()
-                .split(|c: char| c.is_whitespace() || c == '"')
-                .next()
-                .unwrap_or_default()
-                .to_ascii_lowercase();
-            continue;
-        }
-        if let Some((key, value)) = line.split_once('=') {
-            result.push((
-                section.clone(),
-                key.trim().to_ascii_lowercase(),
-                value.trim(),
-            ));
-        }
-    }
-    Some(result)
-}
-
 /// Workspace paths a configured hook directory or helper command names, for
 /// a repository whose work tree is the workspace.
 #[cfg(test)]
@@ -328,7 +317,7 @@ fn helper_denials(
             // Git resolves a relative include against the including file's
             // directory, `.git/`. Included repository configuration could
             // name its own helpers, and this reader does not follow it.
-            if inside(&git_dir, root, value).is_some() {
+            if inside(&git_dir, root, &value).is_some() {
                 return None;
             }
         } else if key == "hookspath" {
@@ -337,9 +326,9 @@ fn helper_denials(
             if value.contains(['#', ';', '\\']) {
                 return None;
             }
-            candidates.push(inside(root, root, value)?);
+            candidates.push(inside(root, root, &value)?);
         } else if section != "branch" && section != "user" && !names_data(section, key) {
-            helper_word_denials(&mut denials, value, root, home, workspace)?;
+            helper_word_denials(&mut denials, &value, root, home, workspace)?;
         }
         for path in candidates {
             // An unbounded list, or a path that is or holds the workspace,
@@ -369,6 +358,18 @@ fn helper_word_denials(
 ) -> Option<()> {
     if value.contains(['`', '\\', '*', '?', '[']) {
         return None;
+    }
+    // A quoted word with whitespace names one path that the splitter below
+    // would break apart, so keep it at review. Scan before trimming so an
+    // opening quote still counts.
+    let mut quote = None;
+    for c in value.chars() {
+        match (quote, c) {
+            (None, '"' | '\'') => quote = Some(c),
+            (Some(open), c) if c == open => quote = None,
+            (Some(_), c) if c.is_whitespace() => return None,
+            _ => {}
+        }
     }
     let value = value
         .trim_start_matches(['"', '\''])
@@ -432,6 +433,9 @@ fn bare_variable(word: &str) -> bool {
         && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
     matches!(name, "@" | "#") || digits || identifier
 }
+
+#[path = "workspace_git_config_entries.rs"]
+mod config_entries;
 
 #[cfg(test)]
 #[path = "workspace_git_config_tests.rs"]

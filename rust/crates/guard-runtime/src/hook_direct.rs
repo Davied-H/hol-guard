@@ -9,10 +9,13 @@
 //! `PreToolUse` allow or terminal block, any `PreToolUse` verdict in Watch,
 //! any reviewed `PostToolUse` of those harnesses, and a reviewed
 //! `UserPromptSubmit` with its receipt, for Codex always and for Claude Code
-//! in Watch. The daemon never changes those responses. Every other request,
-//! and every `PreToolUse` verdict the daemon turns into an approval, a
-//! repair link or a Claude Code contained run outside Watch, defers so the
-//! caller takes the daemon path, which is unchanged. While custom extension
+//! in Watch, and a Cursor `PreToolUse` its hook client runs as an allow. The
+//! daemon never changes those responses. Every other request,
+//! and every `PreToolUse` verdict the daemon turns into an approval or a
+//! repair link, defers so the caller takes the daemon path, which is
+//! unchanged. A Claude Code sandbox requirement outside Watch is routed to
+//! contained execution as the daemon routes it, once the daemon has bound
+//! its sink command, and defers without one. While custom extension
 //! block rules exist, an allowed `PreToolUse` whose command launches a local
 //! CLI, or whose launch cannot be derived, also defers so the daemon reads
 //! that CLI's grant.
@@ -35,9 +38,11 @@ use workspace::{expanduser, normalized_workspace, normpath};
 use workspace::{python_strip, settled_directory, workspace_candidate};
 
 pub(crate) const HOOK_DIRECT_FEATURE: &str = "hook-direct-v1";
+/// The resident accepts the sink command that routes a sandbox requirement.
+pub(crate) const HOOK_DIRECT_CONTAINED_ROUTE_FEATURE: &str = "hook-direct-contained-route-v1";
 const HOOK_DIRECT_RESULT_SCHEMA: &str = "guard-hook-direct-result.v1";
 /// The harnesses whose allow the daemon returns as the edge rendered it.
-const DIRECT_HARNESSES: [&str; 2] = ["codex", "claude-code"];
+const DIRECT_HARNESSES: [&str; 3] = ["codex", CLAUDE_CODE, CURSOR];
 const TRANSITION_PROBE_FIELD: &str = "guard_transition_probe";
 const EXECUTION_ENVIRONMENT_FIELD: &str = "guard_execution_environment";
 const PAYLOAD_REFERENCE_FIELDS: [&str; 2] = ["guard_payload_ref", "guard_source_ref"];
@@ -56,6 +61,7 @@ const REPAIRABLE_BLOCK_REASON: &str = "native_command_control_authority_block";
 const USER_PROMPT_SUBMIT: &str = "UserPromptSubmit";
 const USER_PROMPT_EVENT_NAMES: [&str; 3] = ["prompt", "userpromptsubmit", "userpromptsubmitted"];
 const CLAUDE_CODE: &str = "claude-code";
+const CURSOR: &str = "cursor";
 const PRE_TOOL_EVENT_NAMES: [&str; 7] = [
     "pretool",
     "pretooluse",
@@ -111,6 +117,7 @@ enum HookDirectDefer {
     ExecutionEnvironmentInvalid,
     EvidenceUndrained,
     EvidenceFull,
+    ContainedRouteFailed,
     EdgeFailed,
     NotAllow,
     RuntimeSuperseded,
@@ -134,6 +141,7 @@ impl HookDirectDefer {
             Self::ExecutionEnvironmentInvalid => "direct_hook_execution_environment_invalid",
             Self::EvidenceUndrained => "direct_hook_evidence_undrained",
             Self::EvidenceFull => "direct_hook_evidence_full",
+            Self::ContainedRouteFailed => "direct_hook_contained_route_failed",
             Self::EdgeFailed => "direct_hook_edge_failed",
             Self::NotAllow => "direct_hook_not_allow",
             Self::RuntimeSuperseded => "direct_hook_runtime_superseded",
@@ -192,6 +200,10 @@ fn answer(
     };
     let event = direct_event(&payload)?.ok_or(HookDirectDefer::EventUnsupported)?;
     let pre_tool = event == PRE_TOOL_USE;
+    let cursor_harness = request.harness == CURSOR;
+    if cursor_harness && !pre_tool {
+        return Err(HookDirectDefer::EventUnsupported);
+    }
     if payload.contains_key(TRANSITION_PROBE_FIELD) {
         // A probe carries a request identity only the daemon assigns.
         return Err(HookDirectDefer::TransitionProbe);
@@ -275,6 +287,11 @@ fn answer(
 
     // Only a `PreToolUse` under custom rules reads its payload after the edge.
     let rule_payload = (pre_tool && custom_rules).then(|| payload.clone());
+    // Claude Code applies `updatedInput`, so the daemon routes its sandbox
+    // requirements to contained execution with the sink command it binds.
+    let contained = pre_tool && request.harness == CLAUDE_CODE;
+    let sink_command = binding.contained_sink_command.clone().filter(|_| contained);
+    let guard_home = request.guard_home.clone();
     let envelope = GuardHookEnvelopeV2 {
         schema: GUARD_HOOK_ENVELOPE_V2_SCHEMA.to_owned(),
         request_id: None,
@@ -304,11 +321,32 @@ fn answer(
     };
     let edge = crate::edge::evaluate_envelope_with_store(envelope, policy_store)
         .map_err(|_| HookDirectDefer::EdgeFailed)?;
+    // Removed again unless the answer that runs it is returned.
+    let mut snapshot = None;
     let answered = match event {
+        PRE_TOOL_USE if cursor_harness => cursor::answer(&edge, recording_only)?,
         // Watch never pauses or repairs a call: the daemon records the
         // edge's non-blocking response for every verdict, as the drain does.
         PRE_TOOL_USE if recording_only => reviewed_edge(&edge, PRE_TOOL_USE)?,
-        PRE_TOOL_USE => pre_tool_answer(&edge, request.harness == CLAUDE_CODE)?,
+        PRE_TOOL_USE => {
+            let mut answered = pre_tool_answer(&edge, contained && sink_command.is_none())?;
+            if let Some(command) = sink_command.as_deref() {
+                let target = contained::SinkTarget {
+                    command,
+                    harness: &request.harness,
+                    guard_home: &guard_home,
+                    home_dir: &request_home,
+                    workspace: &workspace,
+                };
+                if let Some((routed, written)) =
+                    contained::route(&answered["harness_response"], &evidence_payload, &target)?
+                {
+                    answered["harness_response"] = routed;
+                    snapshot = Some(written);
+                }
+            }
+            answered
+        }
         POST_TOOL_USE => post_tool_answer(&edge)?,
         _ => prompt_answer(&edge, prompt_notice)?,
     };
@@ -331,6 +369,9 @@ fn answer(
     });
     if !policy_store.direct_evidence().offer(evidence) {
         return Err(HookDirectDefer::EvidenceFull);
+    }
+    if let Some(snapshot) = snapshot {
+        snapshot.keep();
     }
     Ok(answered)
 }
@@ -355,8 +396,9 @@ fn reviewed_edge(edge: &[u8], event: &str) -> Result<Value, HookDirectDefer> {
 ///   only on review and require-reapproval floors, so a warn is recorded and
 ///   run like an allow.
 /// - a terminal block or sandbox requirement. The daemon only adds a repair
-///   link to a command-control authority block and, with `contained`, routes
-///   a sandbox requirement to contained execution; any other denial keeps
+///   link to a command-control authority block and routes a Claude Code
+///   sandbox requirement to contained execution, which defers here with
+///   `contained` and is otherwise routed by the caller; any other denial keeps
 ///   the edge's harness response. A saved approval never lowers a terminal
 ///   action, and the daemon checks custom block rules only against an allow.
 fn pre_tool_answer(edge: &[u8], contained: bool) -> Result<Value, HookDirectDefer> {
@@ -444,6 +486,10 @@ fn direct_event(payload: &Map<String, Value>) -> Result<Option<&'static str>, Ho
     Ok(Some(PRE_TOOL_USE))
 }
 
+#[path = "hook_direct_contained.rs"]
+mod contained;
+#[path = "hook_direct_cursor.rs"]
+mod cursor;
 #[path = "hook_direct_local_cli.rs"]
 mod local_cli;
 #[path = "hook_direct_workspace.rs"]

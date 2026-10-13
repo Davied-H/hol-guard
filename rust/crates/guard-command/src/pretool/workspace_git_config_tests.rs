@@ -1,4 +1,4 @@
-use super::{helper_write_denials, write_denials_from};
+use super::{helper_write_denials, linked_git_dirs, repository_config, write_denials_from};
 use std::path::{Path, PathBuf};
 
 /// Only the user's files, so the host's system configuration and environment
@@ -75,6 +75,19 @@ fn helper_paths_in_any_word_are_write_denied() {
             ws.join("tools/d"),
         ]
     );
+}
+
+#[test]
+fn a_quoted_helper_path_with_spaces_stays_at_review() {
+    let ws = Path::new("/w/repo");
+    for config in [
+        "[alias]\n\tcommit = !sh \\\"./tools/my hook.sh\\\"\n",
+        "[alias]\n\tcommit = !sh './tools/my hook.sh'\n",
+        "[core]\n\tsshCommand = \"\\\"./my ssh.sh\\\"\"\n",
+        "[alias]\n\tcommit = !'./tools/my hook.sh'\n",
+    ] {
+        assert_eq!(denials(config, ws), None, "{config}");
+    }
 }
 
 #[test]
@@ -291,5 +304,105 @@ fn global_helper_programs_in_the_workspace_are_denied() {
         std::fs::write(&global, format!("[alias]\n\tz = {value}\n")).unwrap();
         assert_eq!(workspace_write_denials(&ws, Some(&home)), None, "{value}");
     }
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn a_verified_linked_worktree_reads_and_guards_its_shared_repository() {
+    let root = scratch("linked");
+    let home = root.join("home");
+    let common = home.join("main/.git");
+    let admin = common.join("worktrees/wt");
+    let wt = home.join("wt");
+    std::fs::create_dir_all(&admin).unwrap();
+    std::fs::create_dir_all(wt.join("src")).unwrap();
+    std::fs::write(common.join("config"), "[core]\n\tbare = false\n").unwrap();
+    std::fs::write(admin.join("commondir"), "../..\n").unwrap();
+    std::fs::write(
+        admin.join("gitdir"),
+        format!("{}\n", wt.join(".git").display()),
+    )
+    .unwrap();
+    std::fs::write(wt.join(".git"), format!("gitdir: {}\n", admin.display())).unwrap();
+    assert_eq!(
+        linked_git_dirs(&wt.join("src"), Some(&home)),
+        Some((common.clone(), admin.clone()))
+    );
+    assert_eq!(
+        repository_config(&wt),
+        Ok(Some("[core]\n\tbare = false\n".to_string()))
+    );
+    assert_eq!(workspace_write_denials(&wt, Some(&home)), Some(vec![]));
+    // A helper in the shared directory, which the run may write, keeps the
+    // command at review.
+    std::fs::write(
+        home.join(".gitconfig"),
+        format!("[alias]\n\tx = !{}/x\n", common.join("objects").display()),
+    )
+    .unwrap();
+    assert_eq!(workspace_write_denials(&wt, Some(&home)), None);
+    std::fs::remove_file(home.join(".gitconfig")).unwrap();
+    // A worktree configuration is read by Git and not by this reader.
+    std::fs::write(admin.join("config.worktree"), "").unwrap();
+    assert_eq!(repository_config(&wt), Err(()));
+    std::fs::remove_file(admin.join("config.worktree")).unwrap();
+    // An admin entry that does not link back is no verified worktree.
+    std::fs::write(
+        admin.join("gitdir"),
+        format!("{}\n", home.join("other/.git").display()),
+    )
+    .unwrap();
+    assert_eq!(linked_git_dirs(&wt, Some(&home)), None);
+    assert_eq!(repository_config(&wt), Err(()));
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn quoted_and_escaped_values_are_decoded_like_git() {
+    let ws = Path::new("/w/repo");
+    // An escaped-quote alias naming an absolute script outside the workspace.
+    let escaped = "[alias]\n\tcommit = !bash \\\"/opt/hooks/commit.sh\\\"\n";
+    assert_eq!(denials(escaped, ws), Some(vec![]));
+    let quoted = "[alias]\n\tcommit = \"!bash /opt/hooks/commit.sh\"\n";
+    assert_eq!(denials(quoted, ws), Some(vec![]));
+    // A relative script is still write-denied, escaped or not.
+    let relative = "[alias]\n\tcommit = !bash \\\"./tools/commit.sh\\\"\n";
+    let plain = "[alias]\n\tcommit = !bash ./tools/commit.sh\n";
+    assert_eq!(denials(relative, ws), denials(plain, ws));
+    assert_eq!(
+        denials(relative, ws),
+        Some(vec![ws.join("tools/commit.sh")])
+    );
+    // A backtick, a glob, an escaped backslash, an unknown escape, a trailing
+    // continuation and an unterminated quote all keep the command at review.
+    for value in [
+        "!bash \\\"`id`\\\"",
+        "!bash \\\"/opt/*.sh\\\"",
+        "!bash \\\\x",
+        "!bash \\q",
+        "!bash /opt/x.sh \\",
+        "\"!bash /opt/x.sh",
+    ] {
+        let config = format!("[alias]\n\tcommit = {value}\n");
+        assert_eq!(denials(&config, ws), None, "{value}");
+    }
+}
+
+#[test]
+fn large_repository_config_is_read_within_the_bound() {
+    let root = scratch("large-config");
+    std::fs::create_dir_all(root.join(".git")).unwrap();
+    let mut config = String::new();
+    for index in 0..9000 {
+        config.push_str(&format!(
+            "[branch \"b{index}\"]\n\tmerge = refs/heads/b{index}\n"
+        ));
+    }
+    assert!(config.len() > 64 * 1024);
+    std::fs::write(root.join(".git/config"), &config).unwrap();
+    assert!(super::repository_config(&root).unwrap().is_some());
+    config.push_str(&"#".repeat(5 * 1024 * 1024));
+    std::fs::write(root.join(".git/config"), &config).unwrap();
+    assert!(super::repository_config(&root).is_err());
     let _ = std::fs::remove_dir_all(&root);
 }
