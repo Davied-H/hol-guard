@@ -219,6 +219,27 @@ fn project_sources_other_than_the_registry_keep_the_review() {
             ("package.json", json!({})),
             ("npm-shrinkwrap.json", json!({"lockfileVersion": 1})),
         ],
+        // npm builds a locked tree's edges from the lock entries themselves.
+        vec![
+            ("package.json", json!({})),
+            (
+                "package-lock.json",
+                lock(
+                    "node_modules/left",
+                    json!({
+                        "resolved": "https://registry.npmjs.org/left/-/left-1.0.0.tgz",
+                        "dependencies": {"x": "github:someone/x"},
+                    }),
+                ),
+            ),
+        ],
+        vec![
+            ("package.json", json!({})),
+            (
+                "package-lock.json",
+                json!({"packages": {"": {"optionalDependencies": {"x": "file:../x"}}}}),
+            ),
+        ],
         vec![],
     ] {
         let root = project(&files);
@@ -237,4 +258,25 @@ fn a_project_npm_could_install_from_a_workspace_root_keeps_the_review() {
     assert_eq!(project_roots(&member), Some(Vec::new()));
     assert_eq!(project_roots(Path::new("app")), None);
     std::fs::remove_dir_all(workspace).unwrap();
+}
+
+#[test]
+fn lock_declared_edges_join_the_walk() {
+    let root = project(&[
+        ("package.json", json!({"dependencies": {"left": "^1.0.0"}})),
+        (
+            "package-lock.json",
+            json!({"packages": {
+                "": {"dependencies": {"left": "^1.0.0"}},
+                "node_modules/left": {
+                    "resolved": "https://registry.npmjs.org/left/-/left-1.0.0.tgz",
+                    "peerDependencies": {"right": ">=1.2.0"},
+                },
+            }}),
+        ),
+    ]);
+    let roots = roots(&root).unwrap();
+    assert!(roots.contains(&("right".to_owned(), ">=1.2.0".to_owned())));
+    // `right` 2.0.0 names a git dependency, so the lock's edge keeps the review.
+    assert!(!registry_tree_is_git_free(roots, &mut registry));
 }

@@ -60,6 +60,9 @@ pub(super) fn git_free_install_tree(
 /// lock leaves out or no longer satisfies, so each manifest range is checked
 /// against every release it admits. Locked packages must be registry tarballs
 /// of the package their path names, so a lock cannot substitute another one.
+/// npm builds a locked tree's edges from each entry's own dependency fields,
+/// so those join the walk too, and any that is not a registry selector keeps
+/// the review.
 pub(super) fn project_roots(root: &Path) -> Option<Vec<(String, String)>> {
     if !root.is_absolute() || inside_workspace(root) {
         return None;
@@ -68,13 +71,13 @@ pub(super) fn project_roots(root: &Path) -> Option<Vec<(String, String)>> {
     if manifest.contains_key("overrides") || manifest.contains_key("workspaces") {
         return None;
     }
+    let mut roots = Vec::new();
     for name in ["npm-shrinkwrap.json", "package-lock.json"] {
         let path = root.join(name);
-        if std::fs::symlink_metadata(&path).is_ok() && !registry_only_lock(&read_object(&path)?) {
-            return None;
+        if std::fs::symlink_metadata(&path).is_ok() {
+            roots.extend(registry_only_lock(&read_object(&path)?)?);
         }
     }
-    let mut roots = Vec::new();
     for field in PROJECT_DEPENDENCY_FIELDS {
         roots.extend(registry_dependencies(manifest.get(field))?);
     }
@@ -92,33 +95,39 @@ fn inside_workspace(root: &Path) -> bool {
     })
 }
 
-/// Whether every locked package is a public registry tarball of the package
-/// its `node_modules` path names, or a file bundled inside one.
-fn registry_only_lock(lock: &Map<String, Value>) -> bool {
-    let Some(packages) = lock.get("packages").and_then(Value::as_object) else {
-        return false;
-    };
-    packages.iter().all(|(key, entry)| {
-        if key.is_empty() {
-            return true;
+/// The dependency edges every lock entry declares, when every locked package
+/// is a public registry tarball of the package its `node_modules` path names,
+/// or a file bundled inside one, and every edge is a registry selector.
+fn registry_only_lock(lock: &Map<String, Value>) -> Option<Vec<(String, String)>> {
+    let packages = lock.get("packages").and_then(Value::as_object)?;
+    let mut edges = Vec::new();
+    for (key, entry) in packages {
+        let entry = entry.as_object()?;
+        for field in PROJECT_DEPENDENCY_FIELDS {
+            edges.extend(registry_dependencies(entry.get(field))?);
         }
-        let (Some(entry), Some(name)) = (entry.as_object(), locked_package_name(key)) else {
-            return false;
-        };
+        if key.is_empty() {
+            continue;
+        }
+        let name = locked_package_name(key)?;
         if entry
             .get("link")
             .is_some_and(|link| link != &Value::Bool(false))
         {
-            return false;
+            return None;
         }
-        match entry.get("resolved") {
+        let registry = match entry.get("resolved") {
             Some(Value::String(resolved)) => {
                 resolved.starts_with(&format!("{REGISTRY_TARBALL_PREFIX}{name}/-/"))
             }
             None => entry.get("inBundle") == Some(&Value::Bool(true)),
             _ => false,
+        };
+        if !registry {
+            return None;
         }
-    })
+    }
+    Some(edges)
 }
 
 /// The package name at the end of a lock's `node_modules` path.
