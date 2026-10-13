@@ -184,6 +184,15 @@ fn answer(
         Some(true) => return Err(HookDirectDefer::LocalCliRules),
         Some(false) => {}
     }
+    // The binding is only as fresh as its last publish, while the daemon reads
+    // the rules from the store before every hook. A rule saved since then
+    // lives only in the store, so read it there too. An unreadable store
+    // counts as holding rules, as a failed daemon probe does.
+    if crate::local_store_read::local_cli_block_rules_exist(Path::new(&request.guard_home))
+        .unwrap_or(true)
+    {
+        return Err(HookDirectDefer::LocalCliRules);
+    }
     let postures = binding
         .harness_postures
         .as_ref()
