@@ -3,8 +3,8 @@
 A direct answer skips the daemon's post-allow recording. The resident queues
 the inputs that recording needs, and this drain pulls them over the resident
 channel and records them exactly as the daemon path does after a Codex
-``PreToolUse`` allow: the decision receipt, the command activity, and the
-command-line observation. The publisher advertises the drain in the
+``PreToolUse`` allow: the decision receipt, the binding capture, the command
+activity, and the command-line observation. The publisher advertises the drain in the
 direct-lane binding only while it runs, so a resident never answers directly
 for a daemon that would leave the evidence behind.
 """
@@ -74,6 +74,11 @@ def record_direct_hook_evidence(host: _DrainHost, record: object) -> bool:
         if callable(submit):
             with suppress(Exception):
                 submit(receipt=accepted)
+        capture = getattr(getattr(host, "capture_writer", None), "submit_native_capture", None)
+        if harness == "codex" and callable(capture):
+            # The daemon hands a Codex receipt to the binding capture as well.
+            with suppress(Exception):
+                capture(guard_home=host.guard_home, payload=payload, receipt=accepted)
     with suppress(Exception):
         observe_native_pre_tool_cli(host.store, payload=payload, workspace=Path(workspace), home_dir=Path(home_dir))
     _record_native_pre_activity(host, harness, payload, response, accepted)  # pyright: ignore[reportArgumentType]

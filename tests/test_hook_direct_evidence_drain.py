@@ -92,6 +92,30 @@ def test_a_drained_claude_code_answer_is_recorded_for_claude_code(
     assert activity["policy_action"] == "allow"
 
 
+class _Capture:
+    def __init__(self) -> None:
+        self.captured: list[dict[str, object]] = []
+
+    def submit_native_capture(self, **values: object) -> bool:
+        self.captured.append(values)
+        return True
+
+
+@pytest.mark.parametrize(("harness", "captured"), [("codex", 1), ("claude-code", 0)])
+def test_a_codex_receipt_reaches_the_binding_capture(
+    tmp_path: Path, observed: list[dict[str, object]], harness: str, captured: int
+) -> None:
+    host = _host(tmp_path)
+    capture = _Capture()
+    host.capture_writer = capture  # pyright: ignore[reportAttributeAccessIssue]
+    assert record_direct_hook_evidence(host, _record(harness=harness))
+
+    assert len(capture.captured) == captured
+    if captured:
+        assert capture.captured[0]["guard_home"] == tmp_path
+        assert capture.captured[0]["receipt"] == RECEIPT
+
+
 @pytest.mark.parametrize(
     "record",
     [
