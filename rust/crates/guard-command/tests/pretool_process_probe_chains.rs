@@ -83,7 +83,7 @@ fn outside_reads_chained_with_process_probes_proceed() {
         "ls /usr/share | head -6; pgrep -fl postgres | head -4",
         "ls /usr/local; find /usr/local -maxdepth 1 -name '*.pid' 2>/dev/null; pgrep -fl postgres | head -4",
         "ls /usr/local; lsof -ti:3000",
-        "ls /usr/local; pg_isready -q",
+        "ls /usr/local; pg_isready -h localhost -q",
         "ls src; pgrep -l node",
     ] {
         assert_eq!(shell(&home, command), "allow", "{command}");
@@ -101,6 +101,7 @@ fn secret_reads_uploads_and_unproven_probes_keep_review() {
         "ls /usr/local; pgrep -l node; rm -rf src",
         "ls /usr/local; lsof /usr/local",
         "ls /usr/local; lsof -i @example.com",
+        "ls /usr/local; pg_isready -q",
         "ls /usr/local; pg_isready -h db.example.com",
         "ls /usr/local; pg_isready -d host=db.example.com",
     ] {
