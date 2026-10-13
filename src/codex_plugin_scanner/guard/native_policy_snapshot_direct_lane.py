@@ -176,9 +176,12 @@ def direct_lane_integrity_key(store: object, features: Iterable[str]) -> tuple[b
     if not callable(material):
         return None
     try:
-        key, key_id = material(create=False)
+        loaded = material(create=False)
     except (OSError, RuntimeError, ValueError):
         return None
+    if not isinstance(loaded, tuple) or len(loaded) != 2:
+        return None
+    key, key_id = loaded
     if not isinstance(key, bytes) or not key or not isinstance(key_id, str) or not key_id:
         return None
     return key, key_id
