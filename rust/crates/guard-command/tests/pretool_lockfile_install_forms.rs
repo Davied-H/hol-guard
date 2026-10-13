@@ -95,3 +95,21 @@ fn bunfig_lockfile_table_is_inert_only_for_save_and_print() {
         assert_eq!(result.reason_code == ALLOWED, allowed, "{name}");
     }
 }
+
+#[test]
+fn an_inherited_npm_cache_setting_leaves_the_install_proven() {
+    let lab = Lab::new();
+    let portal = lab.project(
+        "app-portal",
+        &[("package.json", PACKAGE_JSON), ("bun.lock", BUN_LOCK)],
+    );
+    for (names, allowed) in [
+        (&["npm_config_cache", "NPM_CONFIG_LOGLEVEL"][..], true),
+        (&["npm_config_cache", "npm_config_registry"][..], false),
+        (&["NPM_CONFIG_USERCONFIG"][..], false),
+        (&["BUN_CONFIG_REGISTRY"][..], false),
+    ] {
+        let result = lab.classify(&portal, BUN, names);
+        assert_eq!(result.reason_code == ALLOWED, allowed, "{names:?}");
+    }
+}

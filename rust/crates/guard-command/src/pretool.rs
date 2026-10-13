@@ -56,6 +56,7 @@ mod guard_diagnostics;
 mod listing_reads;
 mod lookup_reads;
 mod metadata_reads;
+mod npm_environment;
 mod npm_reads;
 mod pytest_contained;
 mod tool_bin_listing;

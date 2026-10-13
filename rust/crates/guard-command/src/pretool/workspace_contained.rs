@@ -408,18 +408,18 @@ pub(super) fn convert(
     let (Some(model), Some(controls), Some(cwd)) = (model, controls, context.cwd) else {
         return;
     };
-    if !extensions_contain(result, controls, model, package) {
-        return;
-    }
     let Some(workspace) = workspace_admissible(Path::new(cwd), context.home_dir.map(Path::new))
     else {
         return;
     };
-    // `npx vite` with vite installed runs `node_modules/.bin/vite`.
-    let runners = package
-        .then(|| runner::installed_tools(model, &workspace))
-        .flatten();
-    if package && !package::local_package_work(model, runners.is_some()) {
+    // `npx vite` with vite installed runs `node_modules/.bin/vite`. `npx` and
+    // `bunx` arrive as commands rather than package actions, so a runner is
+    // held to every package check below whichever way it arrived.
+    let runners = runner::installed_tools(model, &workspace);
+    let package = package || runners.is_some();
+    if !extensions_contain(result, controls, model, package)
+        || (package && !package::local_package_work(model, runners.is_some()))
+    {
         return;
     }
     // Installs, one-shot executions and lockfile syncs stay with supply-chain
