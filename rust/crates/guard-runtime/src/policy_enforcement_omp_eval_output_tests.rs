@@ -299,5 +299,18 @@ fn proved_listing_output_is_released_without_lowering_scans_or_floors() {
             super::super::eval_output::bounded_output_action(&request).is_none(),
             "{harness} {tool} {input}"
         );
+        // Without the proof, the fallback classifier must not release the output either.
+        let result = apply_post_tool_policy(
+            &snapshot(effective.clone()),
+            &request,
+            GuardHookPayloadKindV2::Inline,
+            guard_hook_core::review_post_tool(&request),
+        )
+        .unwrap();
+        assert_ne!(
+            result.model_output_action, "allow_original",
+            "{harness} {tool} {input}: {}",
+            result.reason_code
+        );
     }
 }
