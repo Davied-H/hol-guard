@@ -1,6 +1,11 @@
 use super::*;
 
 fn controls_with(enabled: &[&str]) -> CompiledNativeCommandControls {
+    let states: Vec<_> = enabled.iter().map(|id| (*id, "enabled")).collect();
+    controls_with_states(&states)
+}
+
+fn controls_with_states(states: &[(&str, &str)]) -> CompiledNativeCommandControls {
     let program = packaged_command_program().unwrap();
     let mut binding: NativeCommandControlBindingV1 = serde_json::from_value(serde_json::json!({
         "schema": "guard.native-command-control-binding.v1",
@@ -9,10 +14,10 @@ fn controls_with(enabled: &[&str]) -> CompiledNativeCommandControls {
         "revision": 1, "managed_revision": 0, "effective_digest": "", "layers": []
     }))
     .unwrap();
-    if !enabled.is_empty() {
-        let controls: Vec<_> = enabled
+    if !states.is_empty() {
+        let controls: Vec<_> = states
             .iter()
-            .map(|id| serde_json::json!({"target_kind": "permission", "target_id": id, "state": "enabled"}))
+            .map(|(id, state)| serde_json::json!({"target_kind": "permission", "target_id": id, "state": state}))
             .collect();
         binding.layers = serde_json::from_value(serde_json::json!([{
             "schema_version": "1.0.0", "kind": "local-admin", "catalog_digest": program.catalog_digest,
@@ -243,20 +248,29 @@ fn routine_review_thread_permission_alone_covers_only_one_static_resolution() {
     ] {
         assert_ne!(action(&controls, command), "allow", "{command}");
     }
+    // The permission's packaged baseline is `allow`, so an unset control
+    // covers the same single resolution, and disabling it restores review.
     let unset = controls_with(&[]);
-    for command in [RESOLVE_WITH_VARIABLE, RESOLVE_ALIASED_BATCH, REPLY_MENTION] {
+    assert_eq!(action(&unset, RESOLVE_WITH_VARIABLE), "allow");
+    for command in [RESOLVE_ALIASED_BATCH, REPLY_MENTION] {
         assert_ne!(action(&unset, command), "allow", "{command}");
     }
+    let disabled = controls_with_states(&[(
+        "command.github.permission.routine-review-thread-remote",
+        "disabled",
+    )]);
+    assert_ne!(action(&disabled, RESOLVE_WITH_VARIABLE), "allow");
 }
 
 #[test]
 fn a_github_segment_needs_every_permission_it_observes() {
     // `gh auth status` reads local and remote state; the local grant alone
     // must not cover it, even after a granted mutation in the same chain.
-    let partial = controls_with(&[
-        "command.github.permission.content-remote",
-        "command.github.permission.mutate-remote",
-        "command.github.permission.read-local",
+    let partial = controls_with_states(&[
+        ("command.github.permission.content-remote", "enabled"),
+        ("command.github.permission.mutate-remote", "enabled"),
+        ("command.github.permission.read-local", "enabled"),
+        ("command.github.permission.read-remote", "disabled"),
     ]);
     let chain = "gh issue comment 1 --body hi && gh auth status";
     assert_ne!(action(&partial, chain), "allow");
