@@ -154,12 +154,16 @@ fn clears_store_screen(path: &Path) -> bool {
         let config_child =
             parent == Some(".config") || (parent == Some("share") && grandparent == Some(".local"));
         CREDENTIAL_STORE_NAMES.contains(&name.as_str())
-            || harness_login_store(name)
+            || (harness_login_store(name) && !names[index + 1..].iter().any(|n| n == "plugins"))
             || name.starts_with(".env")
             || (config_child && NESTED_CREDENTIAL_STORE_NAMES.contains(&name.as_str()))
     })
 }
 
+/// A harness directory other than the shared skill and hook trees. Its
+/// `plugins` subtree (`~/.zcode/cli/plugins/cache`) holds installed plugin
+/// code rather than the login, so listings below it are screened like any
+/// other dot-directory.
 fn harness_login_store(name: &str) -> bool {
     crate::harness_config_names::HARNESS_DIRECTORIES.contains(&name)
         && !HARNESS_SHARED_NAMES.contains(&name)
