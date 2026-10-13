@@ -210,3 +210,56 @@ def test_fetch_supply_chain_bundle_payload_raises_retryable_unavailable_on_guard
         _fetch_supply_chain_bundle_payload(request)
     assert exc_info.value.retryable is True
     assert "Guard Cloud is unavailable" in str(exc_info.value)
+
+
+def _cloudflare_error(body: str, headers: dict[str, str], *, code: int = 403) -> urllib.error.HTTPError:
+    from email.message import Message
+
+    message = Message()
+    for key, value in headers.items():
+        message[key] = value
+    return urllib.error.HTTPError(
+        url="https://hol.org/api/guard/receipts/sync",
+        code=code,
+        msg="Forbidden",
+        hdrs=message,
+        fp=io.BytesIO(body.encode("utf-8")),
+    )
+
+
+def test_sync_http_error_message_names_a_cloudflare_block_instead_of_dumping_its_page() -> None:
+    page = (
+        "<!DOCTYPE html><html><head><title>Attention Required! | Cloudflare</title></head>"
+        "<body><h1>Sorry, you have been blocked</h1></body></html>"
+    )
+    message = _sync_http_error_message(
+        _cloudflare_error(
+            page,
+            {"Server": "cloudflare", "CF-RAY": "a4a17d23bec08abe-SJC", "Content-Type": "text/html; charset=UTF-8"},
+        )
+    )
+    assert message.startswith("Guard Cloud is unreachable from this network")
+    assert "blocked the request (HTTP 403, Ray ID a4a17d23bec08abe)" in message
+    assert "reconnecting will not help" in message
+    assert "<html" not in message
+
+
+def test_sync_http_error_message_names_a_cloudflare_challenge() -> None:
+    message = _sync_http_error_message(
+        _cloudflare_error(
+            "<html><head><title>Just a moment...</title></head></html>",
+            {"Server": "cloudflare", "cf-mitigated": "challenge", "Content-Type": "text/html"},
+        )
+    )
+    assert "challenged the request (HTTP 403)" in message
+    assert "Ray ID" not in message
+
+
+def test_sync_http_error_message_keeps_guard_cloud_answers_behind_cloudflare() -> None:
+    message = _sync_http_error_message(
+        _cloudflare_error(
+            json.dumps({"error": "Guard sync requires a Pro plan."}),
+            {"Server": "cloudflare", "CF-RAY": "abc123-SJC", "Content-Type": "application/json"},
+        )
+    )
+    assert message == "Guard sync requires a Pro plan."

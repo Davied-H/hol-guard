@@ -9,8 +9,9 @@ const INVALID_PAYLOAD: &str = "Guard Cloud sync returned an invalid response pay
 /// Failure classes of one evaluation POST, mirroring the Python exception
 /// hierarchy the evaluator branches on.
 enum PostFailure {
-    /// `urllib.error.HTTPError`.
-    Http(u16),
+    /// `urllib.error.HTTPError`, with the reason when Cloudflare in front of
+    /// Guard Cloud blocked or challenged the request.
+    Http(u16, Option<String>),
     /// Other `OSError` (connection failures and timeouts).
     Os(EvalError),
     /// `RuntimeError` / `ValueError` from the transport (invalid payload,
@@ -20,12 +21,42 @@ enum PostFailure {
 
 fn classify_post_failure(error: EvalError) -> PostFailure {
     match error {
-        EvalError::HttpStatus(code, _) => PostFailure::Http(code),
+        EvalError::HttpStatus(code, reason) => {
+            PostFailure::Http(code, is_cloud_edge_block_reason(&reason).then_some(reason))
+        }
         EvalError::Internal(message) if message == INVALID_PAYLOAD => PostFailure::Invalid,
         EvalError::Internal(message) => PostFailure::Os(EvalError::Internal(message)),
         EvalError::Validation(_)
         | EvalError::NotFound(_)
         | EvalError::SavedPolicyProbeRequired(_) => PostFailure::Invalid,
+    }
+}
+
+/// Code and message when Guard Cloud auth could not be resolved. A token refresh
+/// that Cloudflare blocked is a network failure, not an expired sign-in, so it
+/// must not ask the user to reconnect.
+fn auth_failure_reason(reason: &str, fallback: bool) -> (&'static str, String) {
+    match (is_cloud_edge_block_reason(reason), fallback) {
+        (true, true) => (
+            "cloud_http_error",
+            format!("{reason} Guard used local package intelligence."),
+        ),
+        (true, false) => (
+            "cloud_http_error",
+            format!(
+                "{reason} Guard blocked this package request rather than bypassing Cloud package protection."
+            ),
+        ),
+        (false, true) => (
+            "cloud_auth_error",
+            "Guard cloud evaluation was not authorized, so Guard used local package intelligence."
+                .to_owned(),
+        ),
+        (false, false) => (
+            "cloud_auth_error",
+            "Guard cloud evaluation was not authorized, so this package request needs review."
+                .to_owned(),
+        ),
     }
 }
 
@@ -58,8 +89,8 @@ fn dict_items(value: Option<&Value>) -> Vec<Map<String, Value>> {
 /// What one evaluation POST (including its 401 refresh retry) produced.
 enum Fetched {
     Payload(Map<String, Value>),
-    /// An HTTP status that still has to be handled.
-    Status(u16),
+    /// An HTTP status that still has to be handled, with any edge-block reason.
+    Status(u16, Option<String>),
     /// A finished outcome.
     Done(Box<CloudOutcome>),
 }
@@ -190,27 +221,19 @@ impl CloudContext<'_> {
     /// The pre-request failures of `_resolve_guard_sync_auth_context`.
     fn auth_resolution_failure(&self, error: &EvalError) -> CloudOutcome {
         match error {
-            EvalError::Validation(_) => {
+            EvalError::Validation(reason) => {
                 if self.can_fallback_from_cloud_failure() {
-                    return (
-                        None,
-                        Some(cloud_fallback_reason(
-                            "cloud_auth_error",
-                            "Guard cloud evaluation was not authorized, so Guard used local package intelligence.",
-                        )),
-                    );
+                    let (code, message) = auth_failure_reason(reason, true);
+                    return (None, Some(cloud_fallback_reason(code, &message)));
                 }
                 let mut decision = self.failure_decision();
                 if decision == "block" && self.fail_closed_decision() != "block" {
-                    // An expired sign-in is a credential-state failure, not a
-                    // package verdict: stop the install through the approval queue.
+                    // A credential or network failure is not a package verdict:
+                    // stop the install through the approval queue.
                     decision = "ask".to_owned();
                 }
-                self.fail_closed(
-                    "cloud_auth_error",
-                    "Guard cloud evaluation was not authorized, so this package request needs review.",
-                    &decision,
-                )
+                let (code, message) = auth_failure_reason(reason, false);
+                self.fail_closed(code, &message, &decision)
             }
             EvalError::NotFound(_) => {
                 if self.can_fallback_from_cloud_failure() {
@@ -270,25 +293,27 @@ impl CloudContext<'_> {
             Ok(payload) => return Fetched::Payload(payload),
             Err(error) => error,
         };
-        let status = match classify_post_failure(error) {
-            PostFailure::Http(status) => status,
+        let (status, edge_block) = match classify_post_failure(error) {
+            PostFailure::Http(status, edge_block) => (status, edge_block),
             PostFailure::Os(error) => return Fetched::Done(Box::new(self.handle_os_error(&error))),
             PostFailure::Invalid => return Fetched::Done(Box::new(self.invalid_response())),
         };
         if status != 401 {
-            return Fetched::Status(status);
+            return Fetched::Status(status, edge_block);
         }
         let Ok(fresh) = self
             .deps
             .guard_sync
             .resolve_guard_sync_auth_context(self.store, false, true)
         else {
-            return Fetched::Status(status);
+            return Fetched::Status(status, edge_block);
         };
         match self.post(&Value::Object(fresh), url, data) {
             Ok(payload) => Fetched::Payload(payload),
             Err(error) => match classify_post_failure(error) {
-                PostFailure::Http(retry_status) => Fetched::Status(retry_status),
+                PostFailure::Http(retry_status, edge_block) => {
+                    Fetched::Status(retry_status, edge_block)
+                }
                 PostFailure::Os(error) => Fetched::Done(Box::new(self.handle_os_error(&error))),
                 // A reply the refreshed request could not parse is an invalid
                 // Cloud response (review), not the stale 401 that triggered it.
@@ -297,10 +322,11 @@ impl CloudContext<'_> {
         }
     }
 
-    fn http_status_outcome(&self, status: u16) -> CloudOutcome {
+    fn http_status_outcome(&self, status: u16, edge_block: Option<&str>) -> CloudOutcome {
         if let Some(failed) = cloud_http_fail_closed_evaluation_full(
             self.deps,
             status,
+            edge_block,
             self.artifact,
             self.targets,
             self.workspace_dir,
@@ -491,7 +517,43 @@ pub(super) fn evaluate_with_cloud(
     let request_data = serde_json::to_vec(&request_payload).unwrap_or_default();
     match context.fetch(&Value::Object(auth_context), &evaluate_url, &request_data) {
         Fetched::Payload(payload) => context.merge_response(&payload),
-        Fetched::Status(status) => context.http_status_outcome(status),
+        Fetched::Status(status, edge_block) => {
+            context.http_status_outcome(status, edge_block.as_deref())
+        }
         Fetched::Done(outcome) => *outcome,
+    }
+}
+
+#[cfg(test)]
+mod edge_block_tests {
+    use super::*;
+
+    const EDGE: &str = "Guard Cloud is unreachable from this network: Cloudflare in front of Guard Cloud blocked the request (HTTP 403, Ray ID a4a17d23bec08abe).";
+
+    #[test]
+    fn an_edge_block_status_keeps_its_reason_and_other_statuses_do_not() {
+        match classify_post_failure(EvalError::HttpStatus(403, EDGE.to_owned())) {
+            PostFailure::Http(403, Some(reason)) => assert_eq!(reason, EDGE),
+            _ => panic!("edge block reason was dropped"),
+        }
+        match classify_post_failure(EvalError::HttpStatus(403, "Plan restriction".to_owned())) {
+            PostFailure::Http(403, None) => {}
+            _ => panic!("an ordinary 403 must not look like an edge block"),
+        }
+    }
+
+    #[test]
+    fn a_blocked_token_refresh_is_not_reported_as_an_expired_sign_in() {
+        for fallback in [true, false] {
+            let (code, message) = auth_failure_reason(EDGE, fallback);
+            assert_eq!(code, "cloud_http_error");
+            assert!(message.starts_with(EDGE), "{message}");
+            let (code, message) = auth_failure_reason(
+                "Guard OAuth credentials are incomplete; reauthorize Guard.",
+                fallback,
+            );
+            assert_eq!(code, "cloud_auth_error");
+            assert!(message.contains("not authorized"), "{message}");
+        }
     }
 }

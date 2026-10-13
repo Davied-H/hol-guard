@@ -3085,11 +3085,46 @@ def _read_guard_cloud_error_message(payload: dict[str, object]) -> str | None:
     return None
 
 
+CLOUD_EDGE_BLOCK_REASON_PREFIX = "Guard Cloud is unreachable from this network"
+
+
+def _cloud_edge_block_message(error: urllib.error.HTTPError, raw_body: str) -> str | None:
+    """Cloudflare's own block or challenge page instead of a Guard Cloud answer.
+
+    Mirrors ``cloud_edge_block_message`` in guard_sync_transport.rs. The page is HTML
+    a client cannot pass, so its raw text is no use as an error message.
+    """
+    headers = error.headers
+    if headers is None:
+        return None
+    challenged = headers.get("cf-mitigated") is not None
+    from_cloudflare = headers.get("cf-ray") is not None or str(headers.get("server") or "").lower() == "cloudflare"
+    html = str(headers.get("content-type") or "").lower().startswith("text/html")
+    page = raw_body[: 64 * 1024]
+    challenge_page = "Just a moment..." in page or "challenge-platform" in page
+    block_page = "Attention Required! | Cloudflare" in page or "Sorry, you have been blocked" in page
+    if not challenged and not (from_cloudflare and html and (challenge_page or block_page)):
+        return None
+    action = "challenged" if challenged or challenge_page else "blocked"
+    ray = str(headers.get("cf-ray") or "").split("-", 1)[0]
+    if ray.isascii() and ray.isalnum():
+        ray_detail, ray_hint = f", Ray ID {ray}", "; the Guard Cloud operator can look up that Ray ID"
+    else:
+        ray_detail, ray_hint = "", ""
+    return (
+        f"{CLOUD_EDGE_BLOCK_REASON_PREFIX}: Cloudflare in front of Guard Cloud {action} the request "
+        f"(HTTP {error.code}{ray_detail}). This is not a sign-in problem, so reconnecting will not help{ray_hint}."
+    )
+
+
 def _sync_http_error_message(error: urllib.error.HTTPError) -> str:
     try:
         raw_body = error.read().decode("utf-8", errors="replace")
     except OSError:
         raw_body = ""
+    edge_block = _cloud_edge_block_message(error, raw_body)
+    if edge_block is not None:
+        return edge_block
     try:
         payload = json.loads(raw_body) if raw_body else None
     except json.JSONDecodeError:
