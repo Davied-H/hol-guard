@@ -91,9 +91,30 @@ fn printing_escape_sequences_does_not_change_a_job_log_read() {
 }
 
 #[test]
-fn kubectl_reads_are_an_opt_in_permission_that_never_covers_exec_or_secrets() {
+fn kubectl_reads_are_allowed_by_default_and_never_cover_exec_or_secrets() {
     let read = "kubectl --context example -n example-namespace get deploy example-app -o jsonpath='{.status.readyReplicas}'";
-    assert_ne!(action(&controls_with(&[]), read), "allow");
+    // Listing and describing non-secret resources changes nothing and prints
+    // no credential, so it needs no prompt even with the permission unset.
+    let defaults = controls_with(&[]);
+    for command in [
+        read,
+        "kubectl get pods -n example-namespace -l app=example-app",
+        "kubectl describe deploy example-app -n example-namespace",
+        "kubectl get configmaps -n example-namespace",
+    ] {
+        assert_eq!(action(&defaults, command), "allow", "{command}");
+    }
+    // Logs and ConfigMap data are application output that often carries
+    // credentials, so they keep the review without the permission.
+    for command in [
+        "kubectl logs deploy/example-app -n example-namespace",
+        "kubectl get configmap example-config -o yaml",
+        "kubectl describe configmap example-config",
+        "kubectl exec deploy/example-app -- env",
+        "kubectl get secret example-secret -o yaml",
+    ] {
+        assert_ne!(action(&defaults, command), "allow", "{command}");
+    }
     let controls = controls_with(&["command.kubernetes-operations.permission.read-resources"]);
     for command in [
         read,
