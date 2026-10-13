@@ -8,7 +8,9 @@ use super::git_session_probe::Probe;
 use crate::{CanonicalCommandV1, CommandSegmentV1};
 use std::time::Instant;
 
-/// The allow reason for a proven refresh, or `None`.
+/// The allow reason for a proven refresh, or `None`. The fetch may sit in a
+/// chain after a verified `cd` and beside segments that are benign on their
+/// own, such as `git fetch origin main && git log origin/main --oneline -2`.
 pub(super) fn exact_safe_command(
     model: &CanonicalCommandV1,
     context: super::PathContext<'_>,
@@ -18,12 +20,59 @@ pub(super) fn exact_safe_command(
     if model.confidence != "exact"
         || model.path_overridden
         || !model.wrapper_chain.is_empty()
-        || model.segments.len() != 1
+        || model.segments.is_empty()
     {
         return None;
     }
-    let segment = &model.segments[0];
-    let leading = parse(segment, context)?;
+    let cwd_proof = model
+        .segments
+        .iter()
+        .position(|segment| segment.executable.as_deref() == Some("cd"))
+        .and_then(|cd_index| {
+            super::worktree_add::verified_worktree_cwd_context(model, cd_index, context)
+        });
+    let context = super::PathContext {
+        cwd: cwd_proof
+            .as_ref()
+            .map(|proof| proof.cwd.as_str())
+            .or(context.cwd),
+        ..context
+    };
+    let mut fetch_seen = false;
+    for (index, segment) in model.segments.iter().enumerate() {
+        if segment.executable.as_deref() == Some("cd") {
+            if cwd_proof
+                .as_ref()
+                .is_none_or(|proof| proof.cd_index != index)
+            {
+                return None;
+            }
+            continue;
+        }
+        if let Some(leading) = parse(segment, context) {
+            if fetch_seen || !proven(segment, leading, context, deadline, execution_environment) {
+                return None;
+            }
+            fetch_seen = true;
+            continue;
+        }
+        if !super::segment_proof::exact_safe_segment_with_context(model, segment, false, context) {
+            return None;
+        }
+    }
+    fetch_seen.then_some((
+        "native_exact_safe_git_origin_refresh",
+        "The Rust command authority proved this fetch reaches only a GitHub HTTPS origin with trusted credential helpers, plain refspecs and no hooks or transport programs.",
+    ))
+}
+
+fn proven(
+    segment: &CommandSegmentV1,
+    leading: &[String],
+    context: super::PathContext<'_>,
+    deadline: Option<Instant>,
+    execution_environment: Option<&guard_contracts::GuardExecutionEnvironmentV1>,
+) -> bool {
     let proven = super::git_probe::memoized(memo_key(segment, context), || {
         Some(prove(
             segment.executable.as_deref()?,
@@ -33,10 +82,7 @@ pub(super) fn exact_safe_command(
             execution_environment,
         ))
     });
-    (proven == Some(true)).then_some((
-        "native_exact_safe_git_origin_refresh",
-        "The Rust command authority proved this fetch reaches only a GitHub HTTPS origin with trusted credential helpers, plain refspecs and no hooks or transport programs.",
-    ))
+    proven == Some(true)
 }
 
 /// Whether this evaluation already proved `segment` as a safe `origin`

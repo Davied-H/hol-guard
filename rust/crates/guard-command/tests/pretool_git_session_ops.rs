@@ -197,7 +197,17 @@ fn origin_refresh_is_quiet_only_for_a_proven_github_https_origin() {
         &format!("git -C {primary} fetch --quiet --prune origin main"),
         "native_exact_safe_git_origin_refresh",
     );
+    // A proven refresh composes with segments that are benign on their own.
+    session.assert_allow(
+        &format!(
+            "git -C {primary} fetch origin main && git -C {primary} log origin/main --oneline -2"
+        ),
+        "native_exact_safe_git_origin_refresh",
+    );
     for command in [
+        format!("git -C {primary} fetch origin && rm -rf target"),
+        format!("git -C {primary} fetch origin; cat {primary}/.env"),
+        format!("git -C {primary} fetch origin && git -C {primary} fetch evil"),
         format!("git -C {primary} fetch evil"),
         format!("git -C {primary} fetch origin --upload-pack=id"),
         format!("git -C {primary} fetch origin '+refs/*:refs/*'"),
