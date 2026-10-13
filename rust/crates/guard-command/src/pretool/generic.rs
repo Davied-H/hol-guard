@@ -2,6 +2,8 @@
 mod evaluate;
 use evaluate::evaluate_signals;
 
+#[path = "chain_literals.rs"]
+pub(crate) mod chain_literals;
 #[path = "generic_command_rewrite.rs"]
 mod command_rewrite;
 #[path = "env_prefix_projection.rs"]
@@ -91,6 +93,7 @@ mod tools;
 #[path = "generic_web_fetch.rs"]
 mod web_fetch;
 pub(in crate::pretool) use tools::is_package_tool;
+pub(in crate::pretool) use web_fetch::plain_public_url;
 
 /// Evaluate the complete raw PreToolUse payload in native code. This stays
 /// separate from `evaluate_pre_tool`, the compatibility command-model
@@ -150,16 +153,19 @@ pub fn evaluate_pre_tool_envelope_with_execution_context(
 ) -> PreToolResultV1 {
     let mut result = super::git_probe::with_memo(|| {
         super::search::with_walk_memo(|| {
-            evaluate_envelope(
-                harness,
-                event,
-                payload,
-                controls,
-                deadline,
-                context,
-                execution_environment,
-                true,
-            )
+            let evaluate = |payload: &Value| {
+                evaluate_envelope(
+                    harness,
+                    event,
+                    payload,
+                    controls,
+                    deadline,
+                    context,
+                    execution_environment,
+                    true,
+                )
+            };
+            chain_literals::rejudge(evaluate(payload), payload, context, evaluate)
         })
     });
     // Name what kept the extension controls from evaluating the command, a
@@ -701,6 +707,7 @@ fn evaluate_envelope(
         &mut result,
         &pre_floor,
         command_model,
+        controls,
         super::PathContext {
             home_dir,
             cwd,

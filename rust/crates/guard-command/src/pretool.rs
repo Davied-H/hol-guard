@@ -21,6 +21,8 @@ pub struct PathContext<'a> {
 }
 
 mod contained_wrapper;
+pub(crate) mod curl_reads;
+pub(crate) mod kubectl_reads;
 mod workspace_contained;
 #[cfg(unix)]
 pub(crate) use workspace_contained::PROFILE as WORKSPACE_PROFILE;
@@ -38,7 +40,9 @@ mod for_loop_unroll;
 pub(crate) mod git_branch_listing;
 mod git_config;
 pub(crate) mod git_config_reads;
+pub(crate) mod git_grep;
 pub(crate) mod git_hash_object;
+pub(crate) mod git_init_target;
 mod git_read_floor;
 mod git_reads;
 mod repo_create_reason;
@@ -56,6 +60,7 @@ mod guard_diagnostics;
 mod listing_reads;
 mod lookup_reads;
 mod metadata_reads;
+mod npm_environment;
 mod npm_reads;
 mod pytest_contained;
 mod tool_bin_listing;
@@ -71,7 +76,7 @@ mod recursive_copy;
 mod restricted_tests;
 mod rust_toolchain;
 mod safe_links;
-mod safe_reads;
+pub(crate) mod safe_reads;
 mod safe_scalar;
 mod safe_writes;
 mod search;
@@ -84,6 +89,12 @@ mod shell_script;
 mod stdin_filters;
 mod symlink_writes;
 mod version_probes;
+#[cfg(test)]
+#[path = "pretool/workspace_contained_runner_tests.rs"]
+mod workspace_contained_runner_tests;
+#[cfg(test)]
+#[path = "pretool/workspace_contained_sibling_tests.rs"]
+mod workspace_contained_sibling_tests;
 #[cfg(test)]
 #[path = "pretool/workspace_contained_tests.rs"]
 mod workspace_contained_tests;
@@ -102,7 +113,8 @@ pub use generic::evaluate_pre_tool_envelope_with_context;
 pub use generic::evaluate_pre_tool_envelope_with_execution_context;
 pub use generic::evaluate_pre_tool_envelope_with_extensions;
 pub use git_push::{install_git_push_verdict, GitPushRequest, GitPushVerdict};
-pub(crate) use segment_proof::benign_command_segments;
+pub(crate) use segment_proof::{benign_command_segments, without_stderr_merge};
+pub(crate) use worktree_add::verified_leading_cd;
 
 /// Whether this evaluation already proved `segment` as a safe `origin`
 /// refresh or feature push.
@@ -296,7 +308,9 @@ fn exact_safe_command_with_context(
     if !safe_scalar::bounded_total_sleep(model) {
         return false;
     }
-    if segment_proof::exact_safe_cwd_compound(model, allow_git_helper_context, context) {
+    if segment_proof::exact_safe_cwd_compound(model, allow_git_helper_context, context)
+        || safe_reads::exact_safe_sequence(model, allow_git_helper_context, context)
+    {
         return true;
     }
     if let Some(rest) = segment_proof::after_read_prefix(model, context) {
@@ -492,6 +506,14 @@ fn evaluate_single_command(
     }
     if let Some((reason_code, reason)) =
         git_remote_ops::exact_safe_command(&model, context, deadline, execution_environment)
+            .or_else(|| {
+                let environment = execution_environment;
+                git_config_reads::writes::exact_safe_command(&model, context, deadline, environment)
+            })
+            .or_else(|| {
+                let environment = execution_environment;
+                git_init_target::exact_safe_command(&model, context, deadline, environment)
+            })
     {
         return Ok(pretool_decision(model, "allow", reason_code, reason));
     }
@@ -514,10 +536,11 @@ fn evaluate_single_command(
     if exact_safe_command_with_context(&model, false, context)
         && !bun_eval::node_inline_preload_configured(&model, execution_environment)
     {
+        let reason_code = curl_reads::proven_reason_code(&model);
         return Ok(pretool_decision(
             model,
             "allow",
-            "native_exact_safe_command",
+            reason_code,
             "The Rust command authority proved this bounded command explicitly benign.",
         ));
     }

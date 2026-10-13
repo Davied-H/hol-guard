@@ -7,9 +7,9 @@ use guard_command::pretool::{evaluate_pre_tool_envelope_with_execution_context, 
 use serde_json::json;
 use std::path::{Path, PathBuf};
 
-const PACKAGE_JSON: &str =
+pub(crate) const PACKAGE_JSON: &str =
     r#"{"name":"fixture","version":"1.0.0","dependencies":{"left-pad":"^1.3.0"}}"#;
-const BUN_LOCK: &str = r#"{
+pub(crate) const BUN_LOCK: &str = r#"{
   "lockfileVersion": 1,
   "workspaces": {
     "": { "name": "fixture", "dependencies": { "left-pad": "^1.3.0" } },
@@ -19,7 +19,7 @@ const BUN_LOCK: &str = r#"{
   }
 }
 "#;
-const PNPM_LOCK: &str = "lockfileVersion: '9.0'
+pub(crate) const PNPM_LOCK: &str = "lockfileVersion: '9.0'
 
 importers:
 
@@ -38,7 +38,7 @@ snapshots:
 
   left-pad@1.3.0: {}
 ";
-const PACKAGE_LOCK: &str = r#"{
+pub(crate) const PACKAGE_LOCK: &str = r#"{
   "name": "fixture",
   "lockfileVersion": 3,
   "requires": true,
@@ -53,9 +53,9 @@ const PACKAGE_LOCK: &str = r#"{
 }
 "#;
 
-const BUN: &str = "bun install --frozen-lockfile --ignore-scripts";
-const PNPM: &str = "pnpm install --frozen-lockfile --ignore-scripts";
-const NPM: &str = "npm ci --ignore-scripts --no-audit";
+pub(crate) const BUN: &str = "bun install --frozen-lockfile --ignore-scripts";
+pub(crate) const PNPM: &str = "pnpm install --frozen-lockfile --ignore-scripts";
+pub(crate) const NPM: &str = "npm ci --ignore-scripts --no-audit";
 
 /// A project name, the files it holds and the install run in it.
 type Case<'a> = (&'a str, Vec<(&'a str, &'a str)>, &'a str);
@@ -85,13 +85,13 @@ fn default_controls() -> guard_command::native_command_controls::CompiledNativeC
     guard_command::native_command_controls::CompiledNativeCommandControls::new(&binding).unwrap()
 }
 
-struct Lab {
-    home: PathBuf,
+pub(crate) struct Lab {
+    pub(crate) home: PathBuf,
     _cleanup: FixtureCleanup,
 }
 
 impl Lab {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let unique = format!(
             "{}-{}",
             std::process::id(),
@@ -113,7 +113,7 @@ impl Lab {
 
     /// A project at `name` below the lab's home holding `files`, where a
     /// leading `cd` can be proven.
-    fn project(&self, name: &str, files: &[(&str, &str)]) -> PathBuf {
+    pub(crate) fn project(&self, name: &str, files: &[(&str, &str)]) -> PathBuf {
         let project = self.home.join(name);
         for (path, text) in files {
             let path = project.join(path);
@@ -123,7 +123,7 @@ impl Lab {
         project
     }
 
-    fn classify(
+    pub(crate) fn classify(
         &self,
         cwd: &Path,
         command: &str,

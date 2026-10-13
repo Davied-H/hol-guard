@@ -17,7 +17,8 @@
 use super::*;
 use base64ct::{Base64UrlUnpadded, Encoding};
 use guard_policy_snapshot::{
-    DirectLaneBindingV1, DirectLaneInputV1, DirectLaneSecretV1, DirectLaneStatV1,
+    DirectLaneBindingV1, DirectLaneEnvironmentV1, DirectLaneInputV1,
+    DirectLanePolicyIntegrityStateV1, DirectLaneSecretV1, DirectLaneStatV1,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use zeroize::Zeroizing;
@@ -42,6 +43,15 @@ pub(crate) struct DirectLaneBinding {
     pub(crate) evidence_drain: Option<bool>,
     pub(crate) contained_sink_command: Option<Vec<String>>,
     pub(crate) integrity_key: Option<DirectLaneIntegrityKey>,
+    /// The daemon's process environment for exact-action proofs.
+    pub(crate) exact_action_environment: Option<DirectLaneEnvironmentV1>,
+    /// The daemon's extension-control digest for exact-action proofs.
+    pub(crate) exact_action_control_digest: Option<String>,
+    /// The policy-integrity state the daemon refreshed when it published.
+    pub(crate) policy_integrity_state: Option<DirectLanePolicyIntegrityStateV1>,
+    /// What the daemon queues a reviewed `PreToolUse` for approval with.
+    #[allow(dead_code)]
+    pub(crate) review: DirectLaneReviewFacts,
 }
 
 /// The daemon's policy-integrity key, held only in memory.
@@ -63,6 +73,30 @@ impl DirectLaneIntegrityKey {
             key,
             key_id: key_id?,
         })
+    }
+}
+
+#[cfg(test)]
+impl DirectLaneBinding {
+    /// A binding with no admitted inputs and no optional state, for tests of
+    /// the hooks that read its state.
+    pub(crate) fn empty_for_tests() -> Self {
+        Self {
+            generation: 1,
+            policy_digest: String::new(),
+            workspaces: BTreeSet::new(),
+            inputs: Vec::new(),
+            home_dir: None,
+            harness_postures: None,
+            local_cli_block_rules: None,
+            evidence_drain: None,
+            contained_sink_command: None,
+            integrity_key: None,
+            exact_action_environment: None,
+            exact_action_control_digest: None,
+            policy_integrity_state: None,
+            review: DirectLaneReviewFacts::default(),
+        }
     }
 }
 
@@ -125,6 +159,15 @@ impl PolicySnapshotStore {
                 integrity_key: DirectLaneIntegrityKey::decode(
                     binding.integrity_key_b64,
                     binding.integrity_key_id,
+                ),
+                exact_action_environment: binding.exact_action_environment,
+                exact_action_control_digest: binding.exact_action_control_digest,
+                policy_integrity_state: binding.policy_integrity_state,
+                review: DirectLaneReviewFacts::parse(
+                    binding.blocked_request_mode,
+                    binding.approval_center_origin,
+                    binding.review_oauth_source,
+                    binding.review_host_cwd,
                 ),
             })
         });
@@ -279,6 +322,10 @@ fn observe_input(path: &str) -> Option<DirectLaneStatV1> {
 fn observe_input(_path: &str) -> Option<DirectLaneStatV1> {
     None
 }
+
+#[path = "policy_store_direct_lane_review.rs"]
+mod review;
+pub(crate) use review::{DirectLaneReviewFacts, HOOK_DIRECT_REVIEW_FACTS_FEATURE};
 
 #[cfg(all(test, unix))]
 #[path = "policy_store_direct_lane_tests.rs"]

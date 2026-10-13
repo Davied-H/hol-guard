@@ -2,16 +2,19 @@
 
 use crate::git_helper_fixture as fixture;
 
+#[path = "pretool_git_session_ops/context.rs"]
+mod context;
+
 use fixture::{evaluate_pre_tool_envelope_with_context, FixtureCleanup};
 use serde_json::json;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
-struct Session {
-    home: PathBuf,
-    org: PathBuf,
-    primary: PathBuf,
-    worktree: PathBuf,
+pub(crate) struct Session {
+    pub(crate) home: PathBuf,
+    pub(crate) org: PathBuf,
+    pub(crate) primary: PathBuf,
+    pub(crate) worktree: PathBuf,
     _cleanup: FixtureCleanup,
 }
 
@@ -65,7 +68,7 @@ fn git(home: &Path, directory: &Path, arguments: &[&str]) {
 
 /// `home/org/app-portal` on `main` with a GitHub HTTPS origin, and its linked
 /// worktree `home/app-portal-fix` on `fix/report-lane`, beside the cwd.
-fn session(label: &str) -> Session {
+pub(crate) fn session(label: &str) -> Session {
     let base = if cfg!(target_os = "macos") {
         PathBuf::from("/tmp")
     } else {
@@ -146,7 +149,11 @@ impl Session {
         self.evaluate_at(command, &self.org)
     }
 
-    fn evaluate_at(&self, command: &str, cwd: &Path) -> guard_contracts::PreToolResultV1 {
+    pub(crate) fn evaluate_at(
+        &self,
+        command: &str,
+        cwd: &Path,
+    ) -> guard_contracts::PreToolResultV1 {
         evaluate_pre_tool_envelope_with_context(
             "codex",
             "PreToolUse",
@@ -176,14 +183,14 @@ impl Session {
         );
     }
 
-    fn config(&self, arguments: &[&str]) {
+    pub(crate) fn config(&self, arguments: &[&str]) {
         let mut full = vec!["config"];
         full.extend_from_slice(arguments);
         git(&self.home, &self.primary, &full);
     }
 }
 
-fn executable_hook(path: &Path) {
+pub(crate) fn executable_hook(path: &Path) {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(path, "#!/bin/sh\nexit 0\n").unwrap();
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
