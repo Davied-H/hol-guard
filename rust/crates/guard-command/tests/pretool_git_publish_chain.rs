@@ -226,7 +226,7 @@ fn a_chain_of_proven_steps_publishes_without_review() {
 fn any_unproven_step_or_connector_keeps_the_review() {
     install_git_push_verdict(verdict);
     let repository = repository("review");
-    for command in [
+    let allowed: Vec<_> = [
         // Connectors other than `&&` run later steps after a failed one.
         "git checkout -b b1 && git add . && git commit -m x; git push origin b1",
         "git checkout -b b1 && git commit -m x || git push origin b1",
@@ -246,9 +246,10 @@ fn any_unproven_step_or_connector_keeps_the_review() {
         "perl push origin main",
         "git add . && git commit -m x && perl push origin main",
         "git checkout -b feat && git add . && git commit -m x && perl push origin feat",
-        "git add . && git commit -m x && env git push origin main",
-        "git add . && git commit -m x && command git push origin main",
         "git add . && git commit -m x && env -C ../other git push origin main",
+        "git add . && git commit -m x && env -i git push origin main",
+        "git add . && git commit -m x && env -u HOME git push origin main",
+        "git add . && git commit -m x && env -S 'git push' origin main",
         // A proposal follows the push of the work it proposes.
         "git add . && git commit -m x && gh pr create --title T --body B && git push origin main",
         "git checkout -b b1 origin/main && git push origin b1",
@@ -264,10 +265,11 @@ fn any_unproven_step_or_connector_keeps_the_review() {
         "git add . && git commit -m x && git push origin main && gh pr merge 1 --squash",
         "git add . && git commit -m x && git push origin main && gh repo create app --public --source . --push",
         "git add . && git commit -m x && git push origin main && gh pr create --title T --body B > out.txt",
-    ] {
-        let (action, reason) = repository.decision(command);
-        assert_ne!(action, "allow", "{command}: {reason}");
-    }
+    ]
+    .into_iter()
+    .filter(|command| repository.decision(command).0 == "allow")
+    .collect();
+    assert!(allowed.is_empty(), "allowed without review: {allowed:#?}");
     // A proposal the user's controls disable never rides along.
     let disabled = repository.evaluate_with(
         "git add . && git commit -m x && git push origin main && gh pr create --title T --body B",
