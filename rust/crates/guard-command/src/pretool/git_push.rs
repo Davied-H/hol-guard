@@ -178,7 +178,7 @@ pub(super) fn chained_push_proven(
     };
     chained(segment)
         && segment.pipeline_index == 0
-        && !deadline.is_some_and(|deadline| Instant::now() >= deadline)
+        && deadline.is_none_or(|deadline| Instant::now() < deadline)
         && proven_push(segment, context, execution_environment, *verdict, created)
 }
 
