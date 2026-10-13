@@ -1,6 +1,7 @@
 use super::{
-    direct_event, evaluate, expanduser, normalized_workspace, normpath, post_tool_answer,
+    cursor, direct_event, evaluate, expanduser, normalized_workspace, normpath, post_tool_answer,
     pre_tool_answer, prompt_answer, workspace_candidate, HookDirectDefer, HookDirectRequestV1,
+    REPAIRABLE_BLOCK_REASON,
 };
 use crate::policy_store::policy_store_direct_lane::tests::{
     allowing_fixture, binding, fixture, push, write_current_ack, Fixture,
