@@ -347,7 +347,7 @@ pub(super) fn safe_jq_file_arguments(
         return false;
     };
     !file.starts_with('-')
-        && safe_jq_stdin_arguments(rest)
+        && safe_jq_filter_arguments(rest)
         && command_read_target(file, context, false)
 }
 
@@ -361,10 +361,21 @@ pub(super) fn jq_filter_position(arguments: &[String], piped_input: bool) -> Opt
     } else {
         last.checked_sub(1)?
     };
-    jq_filter::safe_filter(&arguments[index]).then_some(index)
+    (!piped_input || arguments[index].starts_with('.'))
+        .then(|| jq_filter::safe_filter(&arguments[index]))
+        .filter(|allowed| *allowed)
+        .map(|_| index)
 }
 
 pub(super) fn safe_jq_stdin_arguments(arguments: &[String]) -> bool {
+    // Stdin may come from a network/API command, so retain the pre-existing
+    // projection-first requirement. Standalone builtins and object output are
+    // admitted only when jq reads a separately screened file operand.
+    arguments.last().is_some_and(|filter| filter.starts_with('.'))
+        && safe_jq_filter_arguments(arguments)
+}
+
+fn safe_jq_filter_arguments(arguments: &[String]) -> bool {
     let mut filter = None;
     for argument in arguments {
         if filter.is_none()
