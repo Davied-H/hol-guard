@@ -28,9 +28,11 @@ pub fn credential_named_path(path: &Path) -> bool {
 }
 
 /// A directory named for credentials: a marker on its own (`secrets`,
-/// `.auth`, `token`), or a compound naming stored secrets (`prod-secrets`,
-/// `aws_credentials`). A compound with a singular or generic marker, such as
-/// `secret-egress` or `auth-service`, names a feature rather than a store.
+/// `.auth`, `token`), or a compound naming stored secrets with a plural
+/// marker (`prod-secrets`, `aws_credentials`, `api-tokens`). A compound with
+/// a singular or generic marker, such as `secret-egress` or `auth-service`,
+/// names a feature rather than a store, and so do design tokens
+/// (`design-tokens`), which hold styles rather than credentials.
 fn credential_directory(part: &str) -> bool {
     let lower = part.to_ascii_lowercase();
     let bare = lower.trim_start_matches('.');
@@ -52,9 +54,13 @@ fn credential_directory(part: &str) -> bool {
     {
         return true;
     }
-    bare.replace(['-', '.'], "_")
-        .split('_')
-        .any(|token| matches!(token, "secrets" | "credentials"))
+    let words = bare.replace(['-', '.'], "_");
+    let words: Vec<&str> = words.split('_').collect();
+    words.iter().any(|word| match *word {
+        "secrets" | "credentials" => true,
+        "tokens" => !words.contains(&"design"),
+        _ => false,
+    })
 }
 
 #[cfg(test)]
@@ -72,6 +78,8 @@ mod tests {
             ".env.d/local.conf",
             "fixtures/github-token.txt",
             "keys/service_credentials.json",
+            "config/api-tokens/github.json",
+            "auth/oauth_tokens/session.json",
         ] {
             assert!(credential_named_path(Path::new(path)), "{path}");
         }
@@ -79,6 +87,7 @@ mod tests {
             "seeds/hermes/mcp/secret-egress/server.json",
             "services/auth-service/config.json",
             "design-tokens/colors.json",
+            "packages/ui/design_tokens/spacing.json",
             "guard/__pycache__/oauth_token_claims.cpython-312.pyc",
             "guard/runtime/command_tokens.py",
             "docs/notes.md",
