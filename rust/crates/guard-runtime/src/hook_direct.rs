@@ -48,6 +48,9 @@ pub(crate) const HOOK_DIRECT_PERMISSION_NOTICE_FEATURE: &str = "hook-direct-perm
 /// The resident answers a reviewed `PreToolUse` from a saved exact-action
 /// decision when the binding carries what the daemon reads it with.
 pub(crate) const HOOK_DIRECT_SAVED_DECISION_FEATURE: &str = "hook-direct-saved-decision-v1";
+/// The resident takes the bound managed-policy view and answers an Oh My Pi
+/// `PostToolUse` for which it requires no structured output mediation.
+pub(crate) const HOOK_DIRECT_STRUCTURED_OUTPUT_FEATURE: &str = "hook-direct-structured-output-v1";
 const HOOK_DIRECT_RESULT_SCHEMA: &str = "guard-hook-direct-result.v1";
 /// The harnesses whose allow the daemon returns as the edge rendered it.
 /// The bounded bridge harnesses after Cursor have no harness-specific step
@@ -152,6 +155,7 @@ enum HookDirectDefer {
     SavedDecision,
     ReviewQueue,
     RuntimeSuperseded,
+    StructuredMediation,
 }
 
 impl HookDirectDefer {
@@ -179,6 +183,7 @@ impl HookDirectDefer {
             Self::SavedDecision => "direct_hook_saved_decision",
             Self::ReviewQueue => "direct_hook_review_queue",
             Self::RuntimeSuperseded => "direct_hook_runtime_superseded",
+            Self::StructuredMediation => "direct_hook_structured_mediation",
         }
     }
 }
@@ -255,9 +260,7 @@ fn answer(
     {
         return Err(HookDirectDefer::PayloadUnsupported);
     }
-    if pi::structured_mediation(&request.harness, event) {
-        return Err(HookDirectDefer::EventUnsupported);
-    }
+    let structured_mediation = pi::structured_mediation(&request.harness, event);
     let source_ref_external_allowed = pi::source_ref_external_allowed(&request.harness);
     payload.remove("hook_env");
     // The daemon records the payload without `hook_env`, and with the
@@ -287,6 +290,14 @@ fn answer(
     let (snapshot, binding) = policy_store
         .admit_direct_hook(&workspace)
         .map_err(HookDirectDefer::Lane)?;
+    if structured_mediation
+        && !pi::structured_output_unrequired(
+            &request.harness,
+            binding.structured_output_config.as_ref(),
+        )
+    {
+        return Err(HookDirectDefer::StructuredMediation);
+    }
 
     let home_dir = binding
         .home_dir
