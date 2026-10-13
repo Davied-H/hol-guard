@@ -86,7 +86,11 @@ fn prompt_stop_reason(cause: Option<FloorCause>) -> String {
                 "guard_bypass" | "policy_bypass" => "asks to disable Guard protection",
                 _ => "matches a guarded request type",
             },
-            Some(risk),
+            // Only risk classes the settings command accepts get a setting hint.
+            match risk {
+                "execution" | "policy_bypass" => None,
+                _ => Some(risk),
+            },
         ),
         _ => ("matches a guarded request type", None),
     };

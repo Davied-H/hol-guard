@@ -130,6 +130,9 @@ fn tool_bin_directories_list_metadata_only() {
     write(home.join(".local/share/data"), "x");
     write(home.join(".ssh/id_rsa"), "key");
     std::os::unix::fs::symlink(home.join(".ssh/id_rsa"), home.join(".local/bin/leak")).unwrap();
+    // A child link to a directory would let `ls -a` or `ls -L` list its entries.
+    write(home.join("work/secrets/notes"), "x");
+    std::os::unix::fs::symlink(home.join("work/secrets"), home.join(".local/bin/dir")).unwrap();
     // A package-manager prefix: the visible name is a symlink to its target.
     write(root.join("prefix/Cellar/node/1/bin/npm"), "script");
     std::fs::create_dir_all(root.join("prefix/bin")).unwrap();
@@ -149,6 +152,9 @@ fn tool_bin_directories_list_metadata_only() {
         "ls -la ~/.cargo/credentials.toml",
         "ls -la ~/.local/share/data",
         "ls -la ~/.local/bin/leak",
+        "ls -la ~/.local/bin/dir",
+        "ls -a ~/.local/bin/dir",
+        "ls -laL ~/.local/bin/dir",
         "ls -la ~/.local/bin/../share/data",
         "cat ~/.bun/bin/bun",
     ] {

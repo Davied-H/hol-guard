@@ -167,19 +167,21 @@ pub fn evaluate_pre_tool_envelope_with_execution_context(
         let command = extract_generic_signals(payload)
             .ok()
             .and_then(|signals| signals.command);
+        // A code-loading setting refuses on its own, so name it before any
+        // expanded setting that may sit beside it.
         if let Some(setting) = command
-            .as_deref()
-            .and_then(env_prefix_projection::substituted_setting)
-        {
-            result.reason = format!(
-                "HOL Guard blocked this command because the {setting} setting is filled by a command substitution or variable expansion, which Guard does not allow in an environment prefix. Do not capture credentials or other output into a setting. Rely on the tool's own login (for example gh's active account), or run the commands separately without passing the output through the environment."
-            );
-        } else if let Some(setting) = command
             .as_deref()
             .and_then(env_prefix_projection::code_loading_setting)
         {
             result.reason = format!(
                 "HOL Guard blocked this command because the {setting} setting can load code that the installed extension controls cannot check. Run the command without it."
+            );
+        } else if let Some(setting) = command
+            .as_deref()
+            .and_then(env_prefix_projection::substituted_setting)
+        {
+            result.reason = format!(
+                "HOL Guard blocked this command because the {setting} setting is filled by a command substitution or variable expansion, which Guard does not allow in an environment prefix. Do not capture credentials or other output into a setting. Rely on the tool's own login (for example gh's active account), or run the commands separately without passing the output through the environment."
             );
         } else if command
             .as_deref()

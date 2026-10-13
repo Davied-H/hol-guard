@@ -78,6 +78,17 @@ fn helper_paths_in_any_word_are_write_denied() {
 }
 
 #[test]
+fn a_quoted_helper_path_with_spaces_stays_at_review() {
+    let ws = Path::new("/w/repo");
+    for config in [
+        "[alias]\n\tcommit = !sh \\\"./tools/my hook.sh\\\"\n",
+        "[alias]\n\tcommit = !sh './tools/my hook.sh'\n",
+    ] {
+        assert_eq!(denials(config, ws), None, "{config}");
+    }
+}
+
+#[test]
 fn remote_and_submodule_data_keys_are_not_helpers() {
     let ws = Path::new("/w/repo");
     let config = "[remote \"origin\"]\n\turl = ../origin.git\n\

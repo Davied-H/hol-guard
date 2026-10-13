@@ -77,7 +77,7 @@ pub(super) fn tool_bin_listing_operand(value: &str, context: super::PathContext<
     {
         return false;
     }
-    (canonical.is_file() || canonical.is_dir())
+    canonical.is_file()
         && (std::fs::canonicalize(&bin_dir).is_ok_and(|bin| canonical.starts_with(bin))
             || super::read_paths::resolved_path_allowed_for_operation(
                 &canonical,

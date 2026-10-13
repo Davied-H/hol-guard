@@ -18,17 +18,16 @@ _APPROVAL_WAIT = (
     "It is waiting for the user to approve it in the HOL Guard inbox (`hol-guard approvals`). "
     "Do not retry the same action until it is approved; continue with other work meanwhile."
 )
-_ASK_USER = "Ask the user to approve it in HOL Guard; do not retry it or work around the block."
+_NOT_QUEUED = (
+    "No approval is waiting in HOL Guard for this action. Do not retry it or work around the block; "
+    "continue with a permitted alternative or tell the user what is blocked."
+)
 
 # Plain-language next steps keyed by the reason code Rust already returned.
 _REASON_CODE_HINTS = {
     "native_destructive_command": (
         "This command deletes or overwrites data. Use `git worktree remove` for a worktree, "
         "target one specific path, or ask the user to run it."
-    ),
-    "native_command_extension_evaluation_failed": (
-        "Do not put command substitution or credentials in an environment-variable prefix; "
-        "run each step as a separate command."
     ),
     "native_package_review": (
         "Package installs run code from a registry. Use `--ignore-scripts` where the package manager allows it."
@@ -52,5 +51,5 @@ def safe_alternative_reason(
     if reason_code is None and approval_queued is None:
         return f"{reason.strip()} {SAFE_ALTERNATIVE_GUIDANCE}".strip()
     hint = _REASON_CODE_HINTS.get(reason_code or "", "")
-    wait = _APPROVAL_WAIT if approval_queued else _ASK_USER
+    wait = _APPROVAL_WAIT if approval_queued else _NOT_QUEUED
     return " ".join(part for part in (reason.strip(), hint, wait) if part)

@@ -398,6 +398,17 @@ fn helper_word_denials(
     let value = value
         .trim_start_matches(['"', '\''])
         .trim_start_matches('!');
+    // A quoted word with whitespace names one path that the splitter below
+    // would break apart, so keep it at review.
+    let mut quote = None;
+    for c in value.chars() {
+        match (quote, c) {
+            (None, '"' | '\'') => quote = Some(c),
+            (Some(open), c) if c == open => quote = None,
+            (Some(_), c) if c.is_whitespace() => return None,
+            _ => {}
+        }
+    }
     if value
         .split(|c: char| c.is_whitespace() || ";&|()<>".contains(c))
         .map(|word| word.trim_matches(['"', '\'']))

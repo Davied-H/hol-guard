@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 // Attribute inspection never invokes clean/smudge/process filters. Check every
 // tracked and untracked path, or only the `named` operands when the command
 // reads nothing else; a global filter definition alone cannot execute.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn unused(
     binary: &Path,
     leading: &[String],
