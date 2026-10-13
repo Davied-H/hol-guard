@@ -25,6 +25,7 @@ import {
   exportSettings,
   fetchRuntimeSnapshot,
   fetchSettings,
+  guardAwareHref,
   importSettings,
   resetSettings,
   type ApprovalGateWriteProof,
@@ -37,6 +38,7 @@ import {
   verifyApprovalGateTotp,
   revokeApprovalGateCooldown,
 } from "./guard-api";
+import { commitDashboardLocation } from "./dashboard-location";
 import { approvalGateCooldownLabel } from "./approval-gate-utils";
 import { GuardHookRemovalPanel } from "./guard-hook-removal-panel";
 import { GuardRepairControl } from "./guard-repair-control";
@@ -471,6 +473,8 @@ type SettingsWorkspaceProps = {
 };
 
 export function SettingsWorkspace({ onApprovalGateChange }: SettingsWorkspaceProps) {
+  const [returnToExtensions] = useState(() => new URLSearchParams(window.location.search).get("returnTo") === "extensions");
+  const approvalSetupRef = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<SettingsState>({ kind: "loading" });
   const [draft, setDraft] = useState<GuardSettings | null>(null);
   const [saving, setSaving] = useState(false);
@@ -490,6 +494,11 @@ export function SettingsWorkspace({ onApprovalGateChange }: SettingsWorkspacePro
   const [pendingPosture, setPendingPosture] = useState<ProtectionPosture | null>(null);
   const [activeTab, setActiveTab] = useState<LocalSettingsTabKey>(() => resolveInitialSettingsTab(window.location.search));
   const [searchQuery, setSearchQuery] = useState("");
+  useEffect(() => {
+    if (!returnToExtensions || activeTab !== "approval" || state.kind !== "ready") return;
+    approvalSetupRef.current?.focus();
+    approvalSetupRef.current?.scrollIntoView({ block: "start" });
+  }, [returnToExtensions, activeTab, state.kind]);
   const [importingSettings, setImportingSettings] = useState(false);
   const [resettingSettings, setResettingSettings] = useState(false);
   const [exportingSettings, setExportingSettings] = useState(false);
@@ -1695,6 +1704,45 @@ export function SettingsWorkspace({ onApprovalGateChange }: SettingsWorkspacePro
 
         {activeTab === "approval" && (
           <div className="flex min-h-0 flex-1 flex-col space-y-4">
+            <div ref={approvalSetupRef} role="region" tabIndex={-1} aria-label="Local approval setup" className="scroll-mt-24 rounded-xl focus-visible:outline-2 focus-visible:outline-brand-blue sm:scroll-mt-4">
+            {returnToExtensions ? <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-base font-semibold text-brand-dark">Local approval</h2>
+                <p className="mt-1 text-sm text-slate-600">{savedSettingsRef.current?.approval_gate?.enabled && savedSettingsRef.current?.approval_gate?.configured
+                  ? "Local approval is ready. Return to Extensions to finish setup."
+                  : "Set a password here, then return to Extensions. Guard Cloud is not required."}</p>
+              </div>
+              <ActionButton variant="outline" disabled={saving || proofModalPending || hasUnsavedChanges(savedSettingsRef.current, draft)} onClick={() => commitDashboardLocation(guardAwareHref("/extensions"))}>Back to Extensions</ActionButton>
+            </div> : null}
+            <ApprovalGateCard
+              enabled={approvalGateEnabled}
+              gateConfig={draft.approval_gate ?? null}
+              savedGateConfig={savedSettingsRef.current?.approval_gate ?? null}
+              totpCode={approvalGateTotpCode}
+              totpDeviceLabel={approvalGateTotpDeviceLabel}
+              strictAllDecisions={approvalGateStrictAllDecisions}
+              cooldownSeconds={approvalGateCooldown}
+              totpEnrollment={totpEnrollment}
+              totpSetupOpen={totpSetupOpen}
+              totpSetupStep={totpSetupStep}
+              totpActionPassword={totpActionPassword}
+              totpActionPending={totpActionPending}
+              totpActionError={totpActionError}
+              onToggle={handleApprovalGateToggle}
+              onOpenPasswordChangeModal={handleOpenPasswordChangeModal}
+              onTotpCodeChange={handleApprovalGateTotpCode}
+              onTotpDeviceLabelChange={handleApprovalGateTotpDeviceLabel}
+              onTotpActionPasswordChange={handleTotpActionPasswordChange}
+              onOpenTotpSetup={handleOpenTotpSetup}
+              onCloseTotpSetup={handleCloseTotpSetup}
+              onStrictAllDecisionsChange={handleApprovalGateStrictAllDecisions}
+              onCooldownChange={handleApprovalGateCooldownChange}
+              onStartTotpEnrollment={handleStartTotpEnrollment}
+              onVerifyTotpEnrollment={handleVerifyTotpEnrollment}
+              onDisableTotp={handleDisableTotp}
+              onRevokeCooldown={handleRequestRevokeCooldown}
+            />
+            </div>
             <SettingsFormSection
               title="When Guard blocks a request"
               description="Applies to every harness. Blocked actions stay blocked in either mode."
@@ -1722,15 +1770,6 @@ export function SettingsWorkspace({ onApprovalGateChange }: SettingsWorkspacePro
                 ))}
               </fieldset>
             </SettingsFormSection>
-            {!approvalGateEnabled ? (
-              <div className="rounded-xl border border-brand-blue/10 bg-brand-blue/[0.03] px-4 py-3">
-                <p className="text-sm text-brand-dark">
-                  {draft?.approval_gate?.configured === true
-                    ? "Ask for proof is off. Your saved password and authenticator stay on this device."
-                    : "Add a password or phone app code before allow or trust changes stick."}
-                </p>
-              </div>
-            ) : null}
             {draft.blocked_request_mode === "ask" && <SettingsFormSection
               title="Where Guard asks"
               description="This only chooses the surface for Ask once. It does not change what Guard stops."
@@ -1760,34 +1799,6 @@ export function SettingsWorkspace({ onApprovalGateChange }: SettingsWorkspacePro
                 )}
               </div>
             </SettingsFormSection>}
-            <ApprovalGateCard
-              enabled={approvalGateEnabled}
-              gateConfig={draft.approval_gate ?? null}
-              savedGateConfig={savedSettingsRef.current?.approval_gate ?? null}
-              totpCode={approvalGateTotpCode}
-              totpDeviceLabel={approvalGateTotpDeviceLabel}
-              strictAllDecisions={approvalGateStrictAllDecisions}
-              cooldownSeconds={approvalGateCooldown}
-              totpEnrollment={totpEnrollment}
-              totpSetupOpen={totpSetupOpen}
-              totpSetupStep={totpSetupStep}
-              totpActionPassword={totpActionPassword}
-              totpActionPending={totpActionPending}
-              totpActionError={totpActionError}
-              onToggle={handleApprovalGateToggle}
-              onOpenPasswordChangeModal={handleOpenPasswordChangeModal}
-              onTotpCodeChange={handleApprovalGateTotpCode}
-              onTotpDeviceLabelChange={handleApprovalGateTotpDeviceLabel}
-              onTotpActionPasswordChange={handleTotpActionPasswordChange}
-              onOpenTotpSetup={handleOpenTotpSetup}
-              onCloseTotpSetup={handleCloseTotpSetup}
-              onStrictAllDecisionsChange={handleApprovalGateStrictAllDecisions}
-              onCooldownChange={handleApprovalGateCooldownChange}
-              onStartTotpEnrollment={handleStartTotpEnrollment}
-              onVerifyTotpEnrollment={handleVerifyTotpEnrollment}
-              onDisableTotp={handleDisableTotp}
-              onRevokeCooldown={handleRequestRevokeCooldown}
-            />
           </div>
         )}
 
