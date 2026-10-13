@@ -326,7 +326,8 @@ class NativePolicySnapshotPublicationMixin:
                     publisher._acked = True
                     if publisher._harness_postures == bound_postures:
                         publisher._direct_lane_local_cli_revision = local_cli_revision
-                        publisher._publish_direct_lane_ack(snapshot)
+                        evidence_drain = isinstance(direct_lane, Mapping) and direct_lane.get("evidence_drain") is True
+                        publisher._publish_direct_lane_ack(snapshot, evidence_drain=evidence_drain)
                     else:
                         # Daemon hooks read the persisted postures; a direct
                         # hook must never see a different Watch decision.
