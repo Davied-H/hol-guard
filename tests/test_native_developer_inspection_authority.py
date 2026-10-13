@@ -23,8 +23,8 @@ def bridge(monkeypatch):
     monkeypatch.setattr(native, "native_runner_authority", answer)
     monkeypatch.setattr(native, "_facts", lambda cwd, home: {"cwd": str(cwd), "home_dir": str(home)})
     monkeypatch.setattr(native, "_environment_snapshot", lambda: {"RIPGREP_CONFIG_PATH": "synthetic-config"})
-    monkeypatch.setattr(native, "_process_groups", lambda: [])
-    monkeypatch.setattr(native, "_account_home_directory", lambda: None)
+    monkeypatch.setattr(native.native_git_execution_safety, "_process_groups", lambda: [])
+    monkeypatch.setattr(native.native_git_execution_safety, "_account_home_directory", lambda: None)
     monkeypatch.setattr(native, "_resolve_digest_home", lambda _: Path("/guard"))
     return calls, response
 
