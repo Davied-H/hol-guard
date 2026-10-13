@@ -136,7 +136,11 @@ pub(super) fn outside_home_reason(
     let target = if supplied.is_absolute() {
         supplied.to_path_buf()
     } else {
-        Path::new(context.cwd?).join(supplied)
+        let base = match spec.chdir {
+            Some(directory) => resolve_chdir(directory, context)?,
+            None => context.cwd?.to_owned(),
+        };
+        Path::new(&base).join(supplied)
     };
     let parent = std::fs::canonicalize(target.parent()?).ok()?;
     if parent.starts_with(&home) {
