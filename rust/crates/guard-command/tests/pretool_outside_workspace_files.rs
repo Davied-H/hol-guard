@@ -258,20 +258,26 @@ fn write_probe_removes_only_the_file_it_created() {
 #[test]
 fn cd_sequences_prove_reads_in_both_directories() {
     let fixture = fixture("cd-sequence");
-    check(
-        &fixture,
-        &[
-            "cd ~/code/sibling && ls src; ls tests",
-            "cd ~/code/sibling && ls src; ls tests; ls",
-        ],
-        &[
-            "cd ~/code/sibling && ls src; cat .env",
-            "cd ~/code/sibling && ls src; rm -f existing.txt",
-            "cd ~/code/sibling; ls src",
-            "cd ~/code/sibling || ls src; ls tests",
-            "cd ~/.ssh && ls; ls",
-        ],
-    );
+    // A `~` operand to `cd` is proven only when the shell's HOME matches the
+    // declared one, which an in-process evaluation cannot show; use absolute
+    // paths so the sequence proof itself is exercised.
+    let sibling = fixture.home.join("code/sibling");
+    let ssh = fixture.home.join(".ssh");
+    let (sibling, ssh) = (sibling.display(), ssh.display());
+    let allowed = [
+        format!("cd {sibling} && ls src; ls tests"),
+        format!("cd {sibling} && ls src; ls tests; ls"),
+    ];
+    let reviewed = [
+        format!("cd {sibling} && ls src; cat .env"),
+        format!("cd {sibling} && ls src; rm -f existing.txt"),
+        format!("cd {sibling}; ls src"),
+        format!("cd {sibling} || ls src; ls tests"),
+        format!("cd {ssh} && ls; ls"),
+    ];
+    let allowed: Vec<&str> = allowed.iter().map(String::as_str).collect();
+    let reviewed: Vec<&str> = reviewed.iter().map(String::as_str).collect();
+    check(&fixture, &allowed, &reviewed);
 }
 
 #[test]
