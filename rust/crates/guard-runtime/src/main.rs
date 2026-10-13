@@ -199,6 +199,8 @@ mod data_flow_analyze_op;
 mod decision_authority_op;
 #[cfg(test)]
 mod decision_authority_vectors_tests;
+mod developer_inspection_authority_op;
+mod developer_inspection_host;
 mod direct_tool_context_op;
 #[cfg(test)]
 mod direct_tool_context_tests;
@@ -387,6 +389,19 @@ mod mcp_proxy_projection_vectors_tests;
 mod mcp_proxy_route;
 mod mcp_proxy_shlex;
 mod mcp_proxy_signals;
+mod mcp_relay;
+#[cfg(unix)]
+mod mcp_relay_args;
+#[cfg(unix)]
+mod mcp_relay_authority;
+#[cfg(unix)]
+mod mcp_relay_catalog;
+#[cfg(unix)]
+mod mcp_relay_core;
+#[cfg(unix)]
+mod mcp_relay_host;
+#[cfg(unix)]
+mod mcp_relay_launch;
 mod mcp_runtime_evidence_op;
 mod mcp_sensitive_read;
 #[cfg(test)]
