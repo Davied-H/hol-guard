@@ -91,8 +91,8 @@ pub(super) fn registry_selector(target: &Map<String, Value>) -> Option<String> {
     {
         return None;
     }
-    // A bare name installs the `latest` dist-tag, which the resolver reads
-    // as the highest stable release.
+    // A bare name installs the `latest` dist-tag, which the resolver binds
+    // to the version that tag names.
     Some(
         optional_string(target.get("range"))
             .or_else(|| optional_string(target.get("version")))

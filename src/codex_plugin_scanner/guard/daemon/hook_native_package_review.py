@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from ..hook_execution_environment import HOOK_EXECUTION_ENVIRONMENT_KEY
-from .hook_fail_closed import render_accepted_allow, render_pre_tool
+from .hook_fail_closed import render_pre_tool
 from .hook_request_parsing import pre_tool_command
 
 if TYPE_CHECKING:
@@ -116,7 +116,8 @@ def native_package_review_response(
     if evaluation.decision == "allow" or _script_free_watch(evaluation):
         allowed = dict(native_result)
         allowed.update(decision="allow", minimum_action="allow", policy_action="allow")
-        return render_accepted_allow(harness, allowed, guard_home=guard_home, deadline=deadline)
+        # The evaluator settled this; no saved approval was reused.
+        return render_pre_tool(harness, allowed, guard_home=guard_home, deadline=deadline)
     guidance = next(
         (
             str(reason.get("message"))

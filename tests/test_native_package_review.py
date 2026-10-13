@@ -210,12 +210,12 @@ def test_evaluator_verdict_settles_the_review(
         lambda *_args, **_kwargs: SimpleNamespace(decision=decision, reasons=reasons, packages=packages),
     )
     monkeypatch.setattr(
-        package_review, "render_accepted_allow", lambda _harness, verdict, **_kwargs: {"rendered": verdict["decision"]}
-    )
-    monkeypatch.setattr(
         package_review,
         "render_pre_tool",
-        lambda _harness, verdict, **_kwargs: {"rendered": verdict["decision"], "reason": verdict["reason"]},
+        lambda _harness, verdict, **_kwargs: {
+            "rendered": verdict["decision"],
+            **({"reason": verdict["reason"]} if "reason" in verdict else {}),
+        },
     )
 
     response = package_review.native_package_review_response(
