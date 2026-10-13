@@ -466,6 +466,8 @@ jobs:
           test -s "$shard_file"
           # PRs need the same behavioral suite, not the coverage tracer tax. Main
           # remains the authoritative coverage/Sonar producer after merge.
+          # The benign and replay gates expect the Linux workspace sandbox. They
+          # run in native-command-evaluators, which provisions bubblewrap.
           coverage_args=()
           if [[ "${{ github.event_name }}" != "pull_request" ]]; then
             export GUARD_PYTEST_UNDER_COVERAGE=1
@@ -476,6 +478,8 @@ jobs:
             -p pytest_duration_report "@$shard_file" --tb=short --durations=10 \
             -n 2 --dist loadfile --max-worker-restart 0 \
             --reruns 1 --reruns-delay 2 \
+            --deselect tests/test_guard_benign_false_positive_gate.py \
+            --deselect tests/test_guard_gauntlet_replay_gate.py \
             --deselect tests/test_guard_daemon_storage_liveness.py::test_locked_storage_hook_burst_fails_safe_without_stranding_daemon \
             --deselect tests/test_guard_approval_store_scale.py::TestQueueScaleTargets::test_listing_first_queue_page_with_100k_rows_stays_under_100ms \
             --deselect tests/test_guard_approval_store_scale.py::TestQueueScaleTargets::test_listing_queue_page_without_totals_stays_under_50ms_with_100k_rows \
