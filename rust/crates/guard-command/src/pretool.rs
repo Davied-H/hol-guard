@@ -22,7 +22,9 @@ pub struct PathContext<'a> {
 
 mod contained_wrapper;
 pub(crate) mod curl_reads;
+pub(crate) mod docker_reads;
 pub(crate) mod kubectl_reads;
+pub(crate) mod port_probes;
 mod workspace_contained;
 #[cfg(unix)]
 pub(crate) use workspace_contained::PROFILE as WORKSPACE_PROFILE;
@@ -314,6 +316,11 @@ fn exact_safe_command_with_context(
         return true;
     }
     if let Some(rest) = segment_proof::after_read_prefix(model, context) {
+        return segment_proof::exact_safe_cwd_compound(&rest, allow_git_helper_context, context);
+    }
+    if let Some(rest) =
+        git_read_floor::after_safe_git_read_prefix(model, allow_git_helper_context, context)
+    {
         return segment_proof::exact_safe_cwd_compound(&rest, allow_git_helper_context, context);
     }
     model.segments.iter().all(|segment| {
