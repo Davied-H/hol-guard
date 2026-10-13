@@ -46,6 +46,7 @@ _COMPATIBILITY_PATHS: Final = frozenset(
 _TRANSPORT_IDENTITY_PATHS: Final = frozenset(
     {
         "src/codex_plugin_scanner/guard/native_shell_request_authority.py",
+        "src/codex_plugin_scanner/guard/native_developer_inspection_authority.py",
         "src/codex_plugin_scanner/guard/native_restricted_pytest.py",
         # Payload-reference metadata validation; the native edge reads bytes.
         "src/codex_plugin_scanner/guard/daemon/hook_request_parsing.py",
