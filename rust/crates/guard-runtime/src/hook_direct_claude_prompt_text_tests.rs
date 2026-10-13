@@ -1,4 +1,5 @@
-//! Parity vectors recorded from the daemon's Python prompt notice.
+//! Parity vectors recorded from the daemon's Python prompt notice
+//! (`scripts/record_claude_prompt_notice_vectors.py`).
 
 use serde_json::{json, Value};
 
@@ -9,9 +10,9 @@ const VECTORS: &str = include_str!("../tests/fixtures/claude_prompt_notice_vecto
 #[test]
 fn the_notice_matches_the_daemon() {
     let document: Value = serde_json::from_str(VECTORS).unwrap();
-    let cases = document["cases"].as_array().unwrap();
-    assert_eq!(cases.len(), 273);
-    for case in cases {
+    let vectors = document["vectors"].as_array().unwrap();
+    assert_eq!(vectors.len(), 273);
+    for case in vectors {
         let name = case["name"].as_str().unwrap();
         let mut response = case["response"].clone();
         brand(&mut response, &case["result"]).unwrap_or_else(|error| panic!("{name}: {error:?}"));

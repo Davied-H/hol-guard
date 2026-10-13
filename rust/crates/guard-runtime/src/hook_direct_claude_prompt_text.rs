@@ -5,9 +5,9 @@
 //! model. The action and reason come from the native result; this only
 //! renders the daemon's copy for them.
 
-use guard_command::workspace_inventory::python_strip;
 use serde_json::Value;
 
+use super::claude_permission_text::ensure_terminal_punctuation;
 use super::HookDirectDefer;
 
 /// Native classes the daemon reads as a request for local secrets.
@@ -75,18 +75,6 @@ pub(super) fn brand(response: &mut Value, result: &Value) -> Result<(), HookDire
         }
     }
     Ok(())
-}
-
-/// `ensure_terminal_punctuation`: stripped, ending in `.`, `!` or `?`.
-fn ensure_terminal_punctuation(message: &str) -> String {
-    let trimmed = python_strip(message);
-    if trimmed.is_empty() {
-        return String::new();
-    }
-    if trimmed.ends_with(['.', '!', '?']) {
-        return trimmed.to_owned();
-    }
-    format!("{trimmed}.")
 }
 
 #[cfg(test)]

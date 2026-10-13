@@ -1,32 +1,29 @@
 #!/usr/bin/env python3
 """Record parity vectors for Guard's Claude Code prompt notice.
 
-Usage: GUARD_PY_SNAPSHOT=<path to src dir of the reference snapshot> \
-    python scripts/record_claude_prompt_notice_vectors.py [snapshot_src]
+The expected answers come from ``_claude_native_prompt_brand``, which the
+daemon applies to a reviewed Claude ``UserPromptSubmit`` outside Watch. The
+resident's port in ``hook_direct_claude_prompt_text.rs`` replays every vector:
+one native prompt result, the harness response the edge rendered for it, and
+the response the daemon returns after adding its notice.
 
-The reference snapshot must predate the move of the notice to the native
-runtime (base commit ``BASE_COMMIT``). Each vector is one native prompt result,
-the harness response the edge rendered for it, and the response the daemon
-returns after adding its notice. Deterministic output.
+Usage: python scripts/record_claude_prompt_notice_vectors.py [--check]
+Deterministic output.
 """
 
 from __future__ import annotations
 
 import copy
 import json
-import os
 import sys
 from pathlib import Path
 
-snapshot = os.environ.get("GUARD_PY_SNAPSHOT") or (sys.argv[1] if len(sys.argv) > 1 else "")
-if not snapshot:
-    sys.exit("set GUARD_PY_SNAPSHOT or pass the snapshot src directory")
-sys.path.insert(0, snapshot)
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "src"))
 
-from codex_plugin_scanner.guard.daemon import hook_worker_native as reference  # noqa: E402
+from codex_plugin_scanner.guard.daemon.hook_worker_native import _claude_native_prompt_brand  # noqa: E402
 
-BASE_COMMIT = "0c317c93f9"
-OUT = Path(__file__).resolve().parent.parent / "rust/crates/guard-runtime/tests/fixtures"
+OUT = ROOT / "rust/crates/guard-runtime/tests/fixtures/claude_prompt_notice_vectors.json"
 ACTIONS = ("require-reapproval", "block", "sandbox-required")
 CLASS_SETS: tuple[tuple[str, object], ...] = (
     ("no-classes", ...),
@@ -93,24 +90,36 @@ def cases() -> list[tuple[str, dict[str, object], dict[str, object]]]:
     return collected
 
 
-def main() -> None:
-    document = {
-        "schema": "claude-prompt-notice-vectors.v1",
-        "base_commit": BASE_COMMIT,
-        "cases": [
-            {
-                "name": name,
-                "result": native_result,
-                "response": response,
-                "expected": reference._claude_native_prompt_brand(copy.deepcopy(response), native_result),
-            }
-            for name, native_result, response in cases()
-        ],
-    }
-    path = OUT / "claude_prompt_notice_vectors.json"
-    path.write_text(json.dumps(document, indent=1, ensure_ascii=False) + "\n")
-    print(f"wrote {len(document['cases'])} vectors to {path}")
+def document() -> dict[str, object]:
+    vectors = [
+        {
+            "name": name,
+            "result": native_result,
+            "response": response,
+            "expected": _claude_native_prompt_brand(copy.deepcopy(response), native_result),
+        }
+        for name, native_result, response in cases()
+    ]
+    names = [vector["name"] for vector in vectors]
+    if len(set(names)) != len(names):
+        raise SystemExit("duplicate vector names")
+    return {"schema": "claude-prompt-notice-vectors.v1", "vectors": vectors}
+
+
+def render() -> str:
+    return json.dumps(document(), indent=1, ensure_ascii=True) + "\n"
+
+
+def main() -> int:
+    text = render()
+    if "--check" in sys.argv[1:]:
+        if OUT.read_text(encoding="utf-8") != text:
+            print(f"{OUT} is stale; rerun {Path(__file__).name}", file=sys.stderr)
+            return 1
+        return 0
+    OUT.write_text(text, encoding="utf-8")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

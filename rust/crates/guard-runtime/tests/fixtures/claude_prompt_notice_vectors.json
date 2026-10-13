@@ -1,7 +1,6 @@
 {
  "schema": "claude-prompt-notice-vectors.v1",
- "base_commit": "0c317c93f9",
- "cases": [
+ "vectors": [
   {
    "name": "require-reapproval/no-classes/reason-plain",
    "result": {

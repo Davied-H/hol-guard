@@ -480,7 +480,7 @@ fn prompt_answer(edge: &[u8], notice: bool) -> Result<Value, HookDirectDefer> {
         let response = parsed
             .get_mut("harness_response")
             .ok_or(HookDirectDefer::PromptNotice)?;
-        prompt_text::brand(response, &result)?;
+        claude_prompt_text::brand(response, &result)?;
     }
     Ok(parsed)
 }
@@ -519,6 +519,8 @@ fn direct_event(payload: &Map<String, Value>) -> Result<Option<&'static str>, Ho
 
 #[path = "hook_direct_claude_permission_text.rs"]
 mod claude_permission_text;
+#[path = "hook_direct_claude_prompt_text.rs"]
+mod claude_prompt_text;
 #[path = "hook_direct_contained.rs"]
 mod contained;
 #[path = "hook_direct_cursor.rs"]
@@ -527,8 +529,6 @@ mod cursor;
 mod lifecycle;
 #[path = "hook_direct_local_cli.rs"]
 mod local_cli;
-#[path = "hook_direct_claude_prompt_text.rs"]
-mod prompt_text;
 #[path = "hook_direct_workspace.rs"]
 mod workspace;
 
