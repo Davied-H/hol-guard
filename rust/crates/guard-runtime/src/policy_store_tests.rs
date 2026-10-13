@@ -74,6 +74,14 @@ pub(super) fn signed_snapshot(generation: u64, key: &[u8], guard_home: &Path) ->
     signed_snapshot_with_policy(generation, key, guard_home, policy())
 }
 
+pub(super) fn signed_allow_snapshot(
+    generation: u64,
+    key: &[u8],
+    guard_home: &Path,
+) -> PolicySnapshotV3 {
+    signed_snapshot_with_policy(generation, key, guard_home, policy_with_default("allow"))
+}
+
 fn signed_snapshot_with_policy(
     generation: u64,
     key: &[u8],

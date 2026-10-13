@@ -129,13 +129,20 @@ def test_an_invalid_receipt_is_not_submitted(
     assert host.activity_writer.activity[0]["receipt_id"] is None
 
 
-def _page(records: list[object], remaining: int) -> bytes:
-    return json.dumps({"schema": "guard-hook-direct-evidence.v1", "records": records, "remaining": remaining}).encode()
+def _page(records: list[object], remaining: int, through: int | None = None) -> bytes:
+    body: dict[str, object] = {
+        "schema": "guard-hook-direct-evidence.v1",
+        "records": records,
+        "remaining": remaining,
+    }
+    if through is not None:
+        body["through"] = through
+    return json.dumps(body).encode()
 
 
 def test_drain_pulls_pages_until_the_queue_is_empty(tmp_path: Path, observed: list[dict[str, object]]) -> None:
     host = _host(tmp_path)
-    pages = [_page([_record(), "junk"], 1), _page([_record()], 0)]
+    pages = [_page([_record(), "junk"], 1, through=2), _page([_record()], 0, through=3)]
     requests: list[dict[str, object]] = []
 
     def client(**values: object) -> bytes:
@@ -151,6 +158,7 @@ def test_drain_pulls_pages_until_the_queue_is_empty(tmp_path: Path, observed: li
         "operation": "hook_direct_evidence_drain",
         "request": {"guard_home": str(tmp_path)},
     }
+    assert json.loads(requests[1]["payload"])["request"]["ack_through"] == 2  # pyright: ignore[reportArgumentType]
 
 
 @pytest.mark.parametrize("output", [None, b"", b"not json", b'{"schema":"other","records":[],"remaining":0}'])
@@ -158,6 +166,25 @@ def test_drain_counts_a_bad_page_as_a_failure(tmp_path: Path, output: bytes | No
     drain = DirectHookEvidenceDrain(_host(tmp_path), transport=lambda: (tmp_path, lambda **_: output))
     assert drain.drain_once() is False
     assert drain.failures == 1
+
+
+def test_a_lost_page_is_requested_again_with_the_same_cursor(tmp_path: Path) -> None:
+    host = _host(tmp_path)
+    outputs = [None, _page([_record()], 0, through=4)]
+    requests: list[dict[str, object]] = []
+
+    def client(**values: object) -> bytes | None:
+        requests.append(values)
+        output = outputs.pop(0)
+        return output
+
+    drain = DirectHookEvidenceDrain(host, transport=lambda: (tmp_path / "guard-runtime", client))
+    assert drain.drain_once() is False
+    assert drain.failures == 1
+    assert drain.drain_once() is False
+    assert drain.recorded == 1
+    assert "ack_through" not in json.loads(requests[0]["payload"])["request"]  # pyright: ignore[reportArgumentType]
+    assert "ack_through" not in json.loads(requests[1]["payload"])["request"]  # pyright: ignore[reportArgumentType]
 
 
 def test_drain_without_a_resident_does_nothing(tmp_path: Path) -> None:
@@ -168,6 +195,6 @@ def test_drain_without_a_resident_does_nothing(tmp_path: Path) -> None:
 
 def test_stop_collects_what_the_resident_still_holds(tmp_path: Path, observed: list[dict[str, object]]) -> None:
     host = _host(tmp_path)
-    drain = DirectHookEvidenceDrain(host, transport=lambda: (tmp_path, lambda **_: _page([_record()], 0)))
+    drain = DirectHookEvidenceDrain(host, transport=lambda: (tmp_path, lambda **_: _page([_record()], 0, through=1)))
     drain.stop()
     assert drain.recorded == 1
