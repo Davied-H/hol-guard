@@ -59,7 +59,9 @@ pub(super) fn fast_forward_inert(
                 && key.ends_with(".remote")
                 && values.iter().any(|value| value.trim() != "origin"))
     });
-    !routed && probe.hooks_inert(&["post-merge", "post-index-change"])
+    !routed
+        && !repository_lfs_program(repository)
+        && probe.hooks_inert(&["post-merge", "post-index-change"])
 }
 
 /// The filter `git lfs install` writes to the user's own configuration. A
@@ -73,6 +75,19 @@ pub(in crate::pretool) fn standard_lfs(key: &str, values: &[String]) -> bool {
         _ => return false,
     };
     values.iter().all(|value| value.trim() == expected)
+}
+
+/// Git LFS also starts programs named by `lfs.extension.<name>.*`,
+/// `lfs.customtransfer.<name>.path` and `lfs.standalonetransferagent`. A
+/// repository can set those while leaving the user's filter alone.
+pub(in crate::pretool) fn repository_lfs_program(repository: &GitConfig) -> bool {
+    repository.keys().any(|key| {
+        let key = key.to_ascii_lowercase();
+        key.starts_with("lfs.")
+            && (key.starts_with("lfs.extension.")
+                || key.starts_with("lfs.customtransfer.")
+                || key.ends_with(".standalonetransferagent"))
+    })
 }
 
 pub(in crate::pretool) fn disabled(value: &str) -> bool {

@@ -10,13 +10,16 @@
 //! that direct reads deny.
 use super::tree::{expanded_operand, walk, HAZARDS};
 use super::ReadContext;
+use std::path::Path;
 
 pub(in crate::pretool) fn agent_root_listing(
     value: &str,
     context: ReadContext<'_>,
     recursive: bool,
 ) -> bool {
-    // `$HOME` and `${HOME}` name the same directory a leading `~` does.
+    // `$HOME` and `${HOME}` name the same directory a leading `~` does. The
+    // parser drops quotes, so `'$HOME/.agent'` reaches here too, where the
+    // shell leaves the name alone; that literal path must not exist.
     let spelled;
     let value = match ["${HOME}", "$HOME"]
         .iter()
@@ -24,6 +27,12 @@ pub(in crate::pretool) fn agent_root_listing(
         .filter(|rest| rest.is_empty() || rest.starts_with('/'))
     {
         Some(rest) => {
+            let literal = context
+                .cwd
+                .is_none_or(|cwd| std::fs::symlink_metadata(Path::new(cwd).join(value)).is_ok());
+            if literal {
+                return false;
+            }
             spelled = format!("~{rest}");
             spelled.as_str()
         }

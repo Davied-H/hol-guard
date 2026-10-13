@@ -288,6 +288,10 @@ fn fast_forward_pull_is_quiet_only_without_merge_or_checkout_programs() {
         ("filter.lfs.smudge", "git-lfs smudge %f"),
         // A repository cannot vouch for its own filter, even the LFS one.
         ("filter.lfs.process", "git-lfs filter-process"),
+        // Nor name the programs Git LFS starts beside the user's filter.
+        ("lfs.extension.fixture.smudge", "id"),
+        ("lfs.customtransfer.fixture.path", "/tmp/transfer"),
+        ("lfs.standalonetransferagent", "fixture"),
         ("core.fsmonitor", "/tmp/monitor"),
         ("core.worktree", elsewhere.as_str()),
         ("hook.post-merge.command", "id"),

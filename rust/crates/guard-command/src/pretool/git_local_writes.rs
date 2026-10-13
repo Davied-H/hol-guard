@@ -7,8 +7,11 @@
 //! than the user's Git LFS install, no fsmonitor, signing, diff program,
 //! lazy fetch, submodule recursion or configured hook, and none of the hook
 //! files the command runs. `git rm` without `-f` refuses a file that differs
-//! from `HEAD`, and a commit, branch or stash only adds history. `git add -f`
-//! stays reviewed: it is how an ignored secret file gets staged.
+//! from `HEAD`, and a commit, branch or stash only adds history. `git commit
+//! --amend` replaces the local tip, but the reflog still reaches the old
+//! commit, and rewriting what a remote holds still needs a reviewed forced
+//! push. `git add -f` stays reviewed: it is how an ignored secret file gets
+//! staged.
 
 use super::git_remote_config::GitConfig;
 use super::git_session_probe::Probe;
@@ -298,25 +301,27 @@ fn commit(rest: &[&str]) -> bool {
 
 /// Whether the effective configuration lets these writes start no program.
 pub(in crate::pretool) fn inert(effective: &GitConfig, repository: &GitConfig) -> bool {
-    !effective.iter().any(|(key, values)| {
-        let enabled = values
-            .iter()
-            .any(|value| !super::git_remote_ops::pull::disabled(value));
-        (key.starts_with("filter.")
-            && (!super::git_remote_ops::pull::standard_lfs(key, values)
-                || repository.contains_key(key)))
-            || key.starts_with("hook.")
-            || key == "core.worktree"
-            || key == "core.virtualfilesystem"
-            || key == "diff.external"
-            || key == "extensions.partialclone"
-            || (key.starts_with("diff.")
-                && (key.ends_with(".textconv") || key.ends_with(".command")))
-            || (key.starts_with("trailer.") && (key.ends_with(".command") || key.ends_with(".cmd")))
-            || (key.starts_with("remote.") && key.ends_with(".promisor") && enabled)
-            || (matches!(
-                key.as_str(),
-                "core.fsmonitor" | "commit.gpgsign" | "submodule.recurse"
-            ) && enabled)
-    })
+    !super::git_remote_ops::pull::repository_lfs_program(repository)
+        && !effective.iter().any(|(key, values)| {
+            let enabled = values
+                .iter()
+                .any(|value| !super::git_remote_ops::pull::disabled(value));
+            (key.starts_with("filter.")
+                && (!super::git_remote_ops::pull::standard_lfs(key, values)
+                    || repository.contains_key(key)))
+                || key.starts_with("hook.")
+                || key == "core.worktree"
+                || key == "core.virtualfilesystem"
+                || key == "diff.external"
+                || key == "extensions.partialclone"
+                || (key.starts_with("diff.")
+                    && (key.ends_with(".textconv") || key.ends_with(".command")))
+                || (key.starts_with("trailer.")
+                    && (key.ends_with(".command") || key.ends_with(".cmd")))
+                || (key.starts_with("remote.") && key.ends_with(".promisor") && enabled)
+                || (matches!(
+                    key.as_str(),
+                    "core.fsmonitor" | "commit.gpgsign" | "submodule.recurse"
+                ) && enabled)
+        })
 }

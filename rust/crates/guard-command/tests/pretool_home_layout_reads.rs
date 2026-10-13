@@ -242,6 +242,10 @@ fn git_inspection_of_owned_sibling_below_tmp_is_allowed_unless_shared() {
             linked.to_str().unwrap(),
         ],
     );
+    // The umask may leave group write on directories made above.
+    for directory in [&org, &org.join("app"), &linked] {
+        std::fs::set_permissions(directory, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
     for command in [
         format!("git -C {} log --oneline -3", linked.display()),
         format!("git -C {} status --short", linked.display()),
