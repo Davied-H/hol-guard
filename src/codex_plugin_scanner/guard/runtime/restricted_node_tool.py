@@ -43,6 +43,56 @@ def _package_directory(directory: Path, workspace: Path) -> bool:
     return not any((workspace.joinpath(*parts[: index + 1])).is_symlink() for index in range(len(parts)))
 
 
+def _is_real_directory(path: Path) -> bool:
+    try:
+        info = path.lstat()
+    except OSError:
+        return False
+    return stat.S_ISDIR(info.st_mode)
+
+
+def _reached_without_links(path: Path, workspace: Path) -> bool:
+    """True when `path` is a real directory and no component up to `workspace` is a link."""
+    if not _path_is_within(path, workspace):
+        return False
+    try:
+        boundary = workspace.resolve()
+    except OSError:
+        return False
+    current = path
+    while True:
+        if not _is_real_directory(current):
+            return False
+        try:
+            here = current.resolve()
+        except OSError:
+            return False
+        if here == boundary:
+            return True
+        if boundary not in here.parents:
+            return False
+        parent = current.parent
+        if parent == current:
+            return False
+        current = parent
+
+
+def _create_vite_temp_directory(root: Path, workspace: Path) -> None:
+    """Create Vite's bundle directory only as a real directory under the workspace."""
+    parent = root.parent
+    if root.is_symlink() or not _reached_without_links(parent, workspace):
+        raise RestrictedPytestError(
+            "node_build_invalid_output",
+            "Vite's config bundle directory is not a real directory inside the project.",
+        )
+    root.mkdir(mode=0o755, exist_ok=True)
+    if not _is_real_directory(root):
+        raise RestrictedPytestError(
+            "node_build_invalid_output",
+            "Vite's config bundle directory is not a real directory inside the project.",
+        )
+
+
 def _conventional_output(path: Path, workspace: Path) -> bool:
     # A package below the workspace (a monorepo app reached with `cd`) builds
     # into its own dist, next to its package.json.
@@ -213,13 +263,7 @@ def run_restricted_node_tool(
     for root in plan.output_roots:
         # Vite creates this directory itself; a sandbox grant needs it first.
         if root.name == ".vite-temp":
-            parent = root.parent
-            if root.is_symlink() or parent.is_symlink() or not parent.is_dir():
-                raise RestrictedPytestError(
-                    "node_build_invalid_output",
-                    "Vite's config bundle directory is not a real directory inside the project.",
-                )
-            root.mkdir(mode=0o755, exist_ok=True)
+            _create_vite_temp_directory(root, plan.workspace)
     return run_restricted_node_plan(
         plan,
         timeout_seconds=timeout_seconds,

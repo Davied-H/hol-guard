@@ -179,6 +179,32 @@ def test_an_unverifiable_bundle_directory_keeps_the_runner_loader(monkeypatch, t
     )
 
 
+def test_vite_temp_is_created_only_through_real_directories(tmp_path):
+    modules = tmp_path / "app/node_modules"
+    modules.mkdir(parents=True)
+    created = modules / ".vite-temp"
+    tool._create_vite_temp_directory(created, tmp_path)
+    assert created.is_dir() and not created.is_symlink()
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    linked = tmp_path / "linked"
+    linked.symlink_to(outside, target_is_directory=True)
+    escaped = linked / "node_modules/.vite-temp"
+    (linked / "node_modules").mkdir()
+    with pytest.raises(RestrictedPytestError):
+        tool._create_vite_temp_directory(escaped, tmp_path)
+    assert not (outside / "node_modules/.vite-temp").exists()
+
+    target = tmp_path / "elsewhere"
+    target.mkdir()
+    planted = modules / ".vite-temp-link"
+    planted.symlink_to(target, target_is_directory=True)
+    with pytest.raises(RestrictedPytestError):
+        tool._create_vite_temp_directory(planted, tmp_path)
+    assert planted.is_symlink()
+
+
 def test_a_linked_ancestor_of_node_modules_is_not_a_bundle_grant(tmp_path):
     app = _dashboard(tmp_path / "ws", "export default {};\n")
     workspace = tmp_path / "ws"
