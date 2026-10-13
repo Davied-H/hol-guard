@@ -18,10 +18,7 @@ import pytest
 
 from codex_plugin_scanner.guard import store_portable_project_memory
 from codex_plugin_scanner.guard.cli import commands_hook_native_generic
-from codex_plugin_scanner.guard.runtime.approval_reuse import (
-    _decision_from_native_payload,
-    approval_reuse_authority_unavailable,
-)
+from codex_plugin_scanner.guard.runtime.approval_reuse import _decision_from_native_payload
 from codex_plugin_scanner.guard.store import GuardStore
 from codex_plugin_scanner.guard.store_policy import PolicyLookupEvidence
 
@@ -73,6 +70,19 @@ def test_generic_saved_decision_ships_recorded_groups(vector, monkeypatch, tmp_p
         GuardStore, "_portable_project_workspace", staticmethod(lambda _ws: vector["portable_workspace"])
     )
     monkeypatch.setattr(commands_hook_native_generic, "_generic_hook_memory_command", lambda _payload: "echo")
+    diagnosed: list[tuple[object, ...]] = []
+    evaluated: list[tuple[object, ...]] = []
+
+    def diagnostic(_store: GuardStore, *args: object) -> tuple[str, None]:
+        diagnosed.append(args)
+        return "approval_reuse_integrity_failure", None
+
+    def evaluate(*args: object, **kwargs: object) -> object:
+        evaluated.append((*args, kwargs))
+        return _decision_from_native_payload(_REUSE)
+
+    monkeypatch.setattr(GuardStore, "approval_reuse_diagnostic", diagnostic)
+    monkeypatch.setattr(commands_hook_native_generic, "evaluate_approval_reuse", evaluate)
 
     result = commands_hook_native_generic._generic_hook_saved_decision(
         artifact_hash=vector["artifact_hash"],
@@ -90,9 +100,19 @@ def test_generic_saved_decision_ships_recorded_groups(vector, monkeypatch, tmp_p
     decision, ignored, reuse, saved_present = result
     if vector["degraded"]:
         assert requests == []
+        # A degraded home still explains the miss and fails closed on saved rows.
         assert (decision, ignored, saved_present) == (None, None, True)
-        assert reuse == approval_reuse_authority_unavailable("review")
+        assert diagnosed == [("claude-code", vector["artifact_id"], vector["artifact_hash"], vector["workspace"], None)]
+        assert evaluated == [
+            (
+                "review",
+                "allow",
+                {"saved_decision_present": True, "validation_reason": "approval_reuse_integrity_failure"},
+            )
+        ]
+        assert reuse == _decision_from_native_payload(_REUSE)
         return
+    assert diagnosed == [] and evaluated == []
     [request] = requests
     assert request["consume_one_shot"] is False
     assert request["workspace"] == vector["workspace"]

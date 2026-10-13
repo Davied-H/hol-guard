@@ -119,7 +119,7 @@ class StorePortableProjectMemoryMixin:
         memory_artifact_type: str | None,
         memory_artifact_name: str | None,
         current_action: str,
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | None:
         """Peek saved decisions for several ``(artifact_id, artifact_hash)`` probes in one resident call.
 
         Each probe composes its direct, exact-command and memory ids most
@@ -129,19 +129,12 @@ class StorePortableProjectMemoryMixin:
         token against its hash, explains a miss, and composes the reuse verdict
         for ``current_action``. Returns ``decision``, ``ignored_local_integrity``,
         ``reuse`` (the verdict payload), ``saved_present`` and
-        ``saved_artifact_hash``.
+        ``saved_artifact_hash``. ``None`` means the home serves no saved
+        authority, so there is no saved decision to compose.
         """
         evidence = self.policy_lookup_evidence()
         if evidence.degraded_trust_status is not None:
-            # No resident serves this home: saved rows fail closed as an
-            # unverifiable approval and the verdict is unavailable.
-            return {
-                "decision": None,
-                "ignored_local_integrity": None,
-                "reuse": None,
-                "saved_present": evidence.has_saved_rows,
-                "saved_artifact_hash": None,
-            }
+            return None
         groups: list[dict[str, object]] = []
         for artifact_id, artifact_hash in probes:
             exact_ids, memory_id = memory_lookup_candidates(

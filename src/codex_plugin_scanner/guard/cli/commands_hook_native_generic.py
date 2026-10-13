@@ -314,14 +314,27 @@ def _generic_hook_saved_decision(
         memory_artifact_name=artifact_name,
         current_action=current_action,
     )
-    reuse_payload = saved.get("reuse")
+    if saved is None:
+        # No saved authority to read: a near match can still explain the miss.
+        diagnosed_reason, diagnosed_stored_hash = store.approval_reuse_diagnostic(
+            harness, artifact_id, artifact_hash, workspace, publisher
+        )
+        saved_present = diagnosed_reason is not None
+        verdict = evaluate_approval_reuse(
+            current_action,
+            "allow" if saved_present else None,
+            saved_decision_present=saved_present,
+            validation_reason=cast(ApprovalReuseValidationFailure | None, diagnosed_reason),
+        )
+        reuse = with_saved_artifact_hash_provenance(
+            # Resident unreachable: preserve the recomputed action unchanged;
+            # the saved decision is not claimed.
+            verdict if verdict is not None else approval_reuse_authority_unavailable(current_action),
+            diagnosed_stored_hash,
+        )
+        return None, None, reuse, saved_present
     reuse = with_saved_artifact_hash_provenance(
-        _decision_from_native_payload(reuse_payload)
-        if reuse_payload is not None
-        # No resident serves this home: preserve the recomputed action
-        # unchanged; the saved decision is not claimed.
-        else approval_reuse_authority_unavailable(current_action),
-        saved.get("saved_artifact_hash"),
+        _decision_from_native_payload(saved.get("reuse")), saved.get("saved_artifact_hash")
     )
     return saved.get("decision"), saved.get("ignored_local_integrity"), reuse, saved.get("saved_present") is True
 
