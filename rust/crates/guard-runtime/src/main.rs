@@ -36,6 +36,7 @@ mod archive_acquisition_op;
 mod archive_inspect;
 mod archive_inspect_containment;
 mod archive_verdict_seam;
+mod blocked_request_mode;
 #[cfg(unix)]
 mod binding_capture_capture;
 #[cfg(unix)]
@@ -263,6 +264,9 @@ mod guard_store_connect_effective;
 #[cfg(test)]
 mod guard_store_connect_vectors_tests;
 mod guard_store_db;
+mod guard_store_guard_event;
+#[cfg(test)]
+mod guard_store_guard_event_tests;
 mod guard_store_inventory;
 #[cfg(test)]
 mod guard_store_inventory_page_tests;
