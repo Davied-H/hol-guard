@@ -202,9 +202,8 @@ fn no_filter_attributes(
         },
     };
     for file in [common_dir.join("info/attributes"), global] {
-        match attributes_file_mentions_filter(&file)? {
-            true => return Some(false),
-            false => {}
+        if attributes_file_mentions_filter(&file)? {
+            return Some(false);
         }
     }
     Some(true)
