@@ -54,6 +54,7 @@ mod binding_capture_receipt;
 mod binding_capture_record;
 #[cfg(all(test, unix))]
 mod binding_capture_vectors_tests;
+mod blocked_request_mode;
 #[cfg(unix)]
 mod bounded_hook_bridge;
 #[cfg(unix)]
@@ -244,6 +245,9 @@ mod guard_config_managed;
 mod guard_store_advisory_cache;
 #[cfg(test)]
 mod guard_store_advisory_cache_vectors_tests;
+mod guard_store_approval_request;
+mod guard_store_approval_row;
+mod guard_store_approval_write;
 mod guard_store_args;
 mod guard_store_clients;
 mod guard_store_cmd_activity;
@@ -263,6 +267,9 @@ mod guard_store_connect_effective;
 #[cfg(test)]
 mod guard_store_connect_vectors_tests;
 mod guard_store_db;
+mod guard_store_guard_event;
+#[cfg(test)]
+mod guard_store_guard_event_tests;
 mod guard_store_inventory;
 #[cfg(test)]
 mod guard_store_inventory_page_tests;
