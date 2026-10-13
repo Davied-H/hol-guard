@@ -73,8 +73,41 @@ pub(in crate::pretool) fn credential_file_metadata_operand(
         )
 }
 
+/// Component names that hold a tool's download or build caches rather than
+/// installed packages. A cache may hold its own `node_modules` tree.
+const CACHE_PARTS: [&str; 7] = [
+    "cache", ".cache", "caches", "_cacache", "_npx", "tmp", ".tmp",
+];
+
+fn path_names(path: &Path) -> Option<Vec<&str>> {
+    path.components()
+        .map(|component| match component {
+            Component::Normal(name) => name.to_str(),
+            _ => None,
+        })
+        .collect()
+}
+
+/// `<root>/.../node_modules/...` with no hidden directory before
+/// `node_modules`, and no cache, sensitive or credential-named component.
+fn package_tree_parts(root: &str, rest: &[&str]) -> bool {
+    let Some(modules) = rest.iter().position(|name| *name == "node_modules") else {
+        return false;
+    };
+    PACKAGE_ROOTS.contains(&root)
+        && !rest[..modules].iter().any(|name| name.starts_with('.'))
+        && !rest.iter().any(|name| {
+            CACHE_PARTS.contains(&name.to_ascii_lowercase().as_str())
+                || guard_secure_fs::sensitive_external_filename(Path::new(name))
+                || guard_secure_fs::credential_named_path(Path::new(name))
+        })
+}
+
 /// `ls ~/.bun/install/global/node_modules`: a listing inside a global
-/// `node_modules` tree of a home-level runtime or version manager.
+/// `node_modules` tree of a home-level runtime or version manager. Both the
+/// spelled and the resolved path must be such a tree, so a link from a
+/// global tree into the tool's cache stays reviewed. A target that resolves
+/// outside the tool root must also pass the ordinary read location screens.
 pub(in crate::pretool) fn global_package_listing_operand(
     value: &str,
     context: crate::pretool::PathContext<'_>,
@@ -82,38 +115,19 @@ pub(in crate::pretool) fn global_package_listing_operand(
     let (Some(path), Some(home_dir)) = (plain_operand(value, context), context.home_dir) else {
         return false;
     };
-    let Ok(relative) = path.strip_prefix(home_dir) else {
+    let Some(names) = path.strip_prefix(home_dir).ok().and_then(path_names) else {
         return false;
     };
-    let mut names = Vec::new();
-    for component in relative.components() {
-        let Component::Normal(name) = component else {
-            return false;
-        };
-        let Some(name) = name.to_str() else {
-            return false;
-        };
-        names.push(name);
-    }
     let Some((root, rest)) = names.split_first() else {
         return false;
     };
-    let Some(modules) = rest.iter().position(|name| *name == "node_modules") else {
-        return false;
-    };
-    if !PACKAGE_ROOTS.contains(root)
-        || rest[..modules].iter().any(|name| name.starts_with('.'))
-        || rest.iter().any(|name| {
-            guard_secure_fs::sensitive_external_filename(Path::new(name))
-                || guard_secure_fs::credential_named_path(Path::new(name))
-        })
-    {
+    if !package_tree_parts(root, rest) {
         return false;
     }
-    let Ok(canonical) = std::fs::canonicalize(&path) else {
-        return false;
-    };
-    let Ok(tool_root) = std::fs::canonicalize(Path::new(home_dir).join(root)) else {
+    let (Ok(canonical), Ok(tool_root)) = (
+        std::fs::canonicalize(&path),
+        std::fs::canonicalize(Path::new(home_dir).join(root)),
+    ) else {
         return false;
     };
     if guard_secure_fs::sensitive_path_family(&canonical).is_some()
@@ -121,12 +135,20 @@ pub(in crate::pretool) fn global_package_listing_operand(
     {
         return false;
     }
-    canonical.starts_with(&tool_root)
-        || crate::pretool::read_paths::resolved_path_allowed_for_operation(
-            &canonical,
-            context.home_dir,
-            context.cwd,
-            false,
-            true,
-        )
+    match canonical.strip_prefix(&tool_root).ok().and_then(path_names) {
+        Some(resolved) => package_tree_parts(root, &resolved),
+        None => {
+            path_names(&canonical).is_some_and(|resolved| {
+                !resolved
+                    .iter()
+                    .any(|name| CACHE_PARTS.contains(&name.to_ascii_lowercase().as_str()))
+            }) && crate::pretool::read_paths::resolved_path_allowed_for_operation(
+                &canonical,
+                context.home_dir,
+                context.cwd,
+                false,
+                true,
+            )
+        }
+    }
 }

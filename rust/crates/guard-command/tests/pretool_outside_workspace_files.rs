@@ -134,6 +134,10 @@ fn new_files_and_directories_outside_the_workspace() {
             "mkdir -p ~/code/sibling/.git/hooks",
             "touch ~/.probe",
             "touch ~/code/sibling/.envrc",
+            "touch ~/code/sibling/.zcode/x",
+            "mkdir -p ~/code/sibling/.copilot/a",
+            "mkdir -p ~/code/sibling/.opencode/plugins",
+            "cp -R ~/code/sibling/src ~/code/sibling/.clinerules/",
             "touch ~/Library/LaunchAgents/probe.plist",
             "touch ~/code/sibling/existing.txt && rm ~/code/sibling/existing.txt",
         ],
@@ -168,6 +172,14 @@ fn plain_dot_scratch_writes_in_sibling_checkouts() {
         ".cursor/mcp.json",
         ".mcp.json",
         ".tmp/.envrc",
+        ".opencode/plugins/x.ts",
+        ".zcode/x",
+        ".zcode-plugin/x.json",
+        ".copilot/a/x.md",
+        ".clinerules/x.md",
+        ".vscode-insiders/settings.json",
+        ".kiro/steering/x.md",
+        ".roo/rules/x.md",
     ] {
         let path = sibling.join(name);
         assert!(!write_allowed(&fixture, path.to_str().unwrap()), "{name}");
@@ -213,6 +225,32 @@ fn global_package_trees_list_without_their_tool_state() {
             "ls ~/.bun",
             "ls ~/.nvm/.cache/node_modules",
             "ls -R ~/.bun/install/global/node_modules",
+        ],
+    );
+}
+
+#[test]
+fn global_package_links_into_tool_caches_stay_reviewed() {
+    let fixture = fixture("package-links");
+    let cache = fixture.home.join(".bun/install/cache/node_modules/pkg");
+    write(&cache.join("package.json"), "{}\n");
+    let global = fixture.home.join(".bun/install/global/node_modules");
+    std::os::unix::fs::symlink(&cache, global.join("linked")).unwrap();
+    let nvm_cache = fixture.home.join(".nvm/.cache/node_modules");
+    let nvm_lib = fixture.home.join(".nvm/versions/node/v2.0.0/lib");
+    std::fs::create_dir_all(&nvm_lib).unwrap();
+    std::os::unix::fs::symlink(&nvm_cache, nvm_lib.join("node_modules")).unwrap();
+    check(
+        &fixture,
+        &[
+            "ls ~/.bun/install/global/node_modules",
+            "ls -la ~/.bun/install/global/node_modules/vite",
+        ],
+        &[
+            "ls ~/.bun/install/global/node_modules/linked",
+            "ls -la ~/.bun/install/global/node_modules/linked/",
+            "ls ~/.bun/install/cache/node_modules/pkg",
+            "ls ~/.nvm/versions/node/v2.0.0/lib/node_modules",
         ],
     );
 }

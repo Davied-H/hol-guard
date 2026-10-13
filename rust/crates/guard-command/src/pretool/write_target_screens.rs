@@ -60,7 +60,9 @@ pub(super) fn home_spelling_matches_target(
 /// root. Each one runs or redirects tooling without an explicit command:
 /// git internals and hooks, CI and editor tasks, package-manager and
 /// interpreter selection, environment loaders, agent harness configuration
-/// and credential stores.
+/// and credential stores. Harness directories are prefixes so variants such
+/// as `.zcode-plugin`, `.clinerules` or `.vscode-insiders` stay guarded; some
+/// harnesses load code from them on start (`.opencode/plugins/*.ts`).
 const GUARDED_DOT_NAMES: &[&str] = &[
     ".agent",
     ".agents",
@@ -91,35 +93,57 @@ const GUARDED_DOT_NAMES: &[&str] = &[
     ".npm",
     ".nvmrc",
     ".omp",
+    ".pi",
     ".python-version",
     ".ruby-version",
     ".ssh",
     ".svn",
     ".tool-versions",
     ".venv",
-    ".vscode",
     ".yarn",
     ".zed",
 ];
 const GUARDED_DOT_PREFIXES: &[&str] = &[
     ".aider",
+    ".amazonq",
+    ".antigravity",
+    ".augment",
     ".bunfig",
     ".claude",
+    ".cline",
     ".codex",
+    ".copilot",
+    ".crush",
     ".cursor",
+    ".devin",
     ".env",
     ".gemini",
     ".git",
+    ".goose",
+    ".grok",
+    ".hermes",
+    ".junie",
+    ".kimi",
+    ".kiro",
     ".lefthook",
     ".mcp",
     ".mise",
     ".npmrc",
+    ".openclaw",
+    ".opencode",
+    ".openhands",
     ".overcommit",
+    ".paseo",
     ".pnp",
     ".pre-commit",
     ".pypirc",
+    ".qwen",
+    ".roo",
+    ".trae",
+    ".vscode",
     ".windsurf",
     ".yarnrc",
+    ".zcode",
 ];
 
 /// A write whose hidden components are plain scratch names, such as
