@@ -1,6 +1,6 @@
 use super::{
     allow_answer, direct_event, evaluate, expanduser, normalized_workspace, normpath,
-    post_tool_answer, workspace_candidate, HookDirectDefer, HookDirectRequestV1,
+    post_tool_answer, prompt_answer, workspace_candidate, HookDirectDefer, HookDirectRequestV1,
 };
 use crate::policy_store::policy_store_direct_lane::tests::{
     binding, fixture, push, write_current_ack, Fixture,
@@ -34,6 +34,13 @@ fn event_name_follows_the_daemon_rule() {
         assert_eq!(
             direct_event(&object(json!({ "hook_event_name": name }))),
             Ok(Some("PostToolUse")),
+            "{name}"
+        );
+    }
+    for name in ["UserPromptSubmit", "prompt", "user-prompt-submitted"] {
+        assert_eq!(
+            direct_event(&object(json!({ "hook_event_name": name }))),
+            Ok(Some("UserPromptSubmit")),
             "{name}"
         );
     }
@@ -619,4 +626,77 @@ fn a_post_tool_use_is_answered_where_the_daemon_only_records_it() {
     let result = run_as(&watch, "claude-code", None, post_tool_payload(&watch));
     assert_eq!(result["outcome"], "answer", "{result}");
     assert_eq!(drain(&watch)["records"][0]["harness"], "claude-code");
+}
+
+#[test]
+fn a_prompt_answer_needs_its_receipt() {
+    let reviewed = |receipt: Value| {
+        serde_json::to_vec(&json!({
+            "schema": "guard-hook-edge-result.v2",
+            "event_name": "UserPromptSubmit",
+            "result": { "decision": "block", "minimum_action": "block" },
+            "harness_response": {},
+            "receipt": receipt,
+        }))
+        .unwrap()
+    };
+    assert!(prompt_answer(&reviewed(json!({ "decision_id": "d" }))).is_ok());
+    assert_eq!(
+        prompt_answer(&reviewed(Value::Null)),
+        Err(HookDirectDefer::EdgeFailed)
+    );
+    assert_eq!(
+        prompt_answer(&post_edge(json!({}))),
+        Err(HookDirectDefer::EdgeFailed)
+    );
+}
+
+fn prompt_payload(lane: &Lane) -> Value {
+    json!({
+        "hook_event_name": "UserPromptSubmit",
+        "prompt": "List the files in this repository.",
+        "cwd": lane.workspace,
+    })
+}
+
+#[test]
+fn a_codex_prompt_is_answered_in_either_posture() {
+    for (label, extra) in [
+        ("prompt", json!({})),
+        (
+            "prompt-watch",
+            json!({ "harness_postures": { "codex": "watch" } }),
+        ),
+        ("prompt-rules", json!({ "local_cli_block_rules": true })),
+    ] {
+        let reviewed = lane(label, extra);
+        let result = run(&reviewed, prompt_payload(&reviewed));
+        assert_eq!(result["outcome"], "answer", "{label}: {result}");
+        assert_eq!(result["edge"]["event_name"], "UserPromptSubmit", "{label}");
+        let page = drain(&reviewed);
+        let record = &page["records"][0];
+        assert_eq!(record["event"], "UserPromptSubmit", "{label}");
+        assert_eq!(record["receipt"], result["edge"]["receipt"], "{label}");
+    }
+}
+
+#[test]
+fn a_claude_code_prompt_is_answered_only_in_watch() {
+    let enforced = lane("prompt-claude", json!({}));
+    assert_eq!(
+        deferred(&run_as(
+            &enforced,
+            "claude-code",
+            None,
+            prompt_payload(&enforced)
+        )),
+        "direct_hook_prompt_notice"
+    );
+    assert_eq!(drain(&enforced)["records"], json!([]));
+    let watch = lane(
+        "prompt-claude-watch",
+        json!({ "harness_postures": { "claude-code": "watch" } }),
+    );
+    let result = run_as(&watch, "claude-code", None, prompt_payload(&watch));
+    assert_eq!(result["outcome"], "answer", "{result}");
 }
