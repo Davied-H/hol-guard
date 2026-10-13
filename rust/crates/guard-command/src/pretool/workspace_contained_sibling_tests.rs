@@ -38,7 +38,9 @@ fn reason(harness: &str, home: &Path, cwd: &Path, command: &str) -> String {
 /// A main checkout, a linked worktree beside it, an unrelated clone and a
 /// plain directory, all below a private home.
 fn fixture() -> (PathBuf, PathBuf, PathBuf) {
-    let root = std::env::temp_dir().join(format!("guard-sibling-{}", std::process::id()));
+    // `/tmp`, not `$TMPDIR`: macOS puts the latter below `/private/var`,
+    // which no path proof admits outside the working directory.
+    let root = Path::new("/tmp").join(format!("guard-sibling-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     let projects = root.join("home/projects");
     let (main, tree) = (projects.join("app"), projects.join("app-report"));
@@ -82,18 +84,20 @@ fn contained(reason: &str) -> bool {
 #[test]
 fn a_list_after_cd_into_a_sibling_root_runs_contained_there() {
     let (home, main, tree) = fixture();
-    let absolute = format!(
-        "cd {} && node scripts/report.mjs && cat reports/weekly.md",
-        tree.display()
-    );
+    let other = tree.parent().unwrap().join("other");
     for command in [
-        "cd ../app-report && node scripts/report.mjs && cat reports/weekly.md",
-        "cd ../app-report && npm run build && ls dist",
-        "cd ../other && npm run build && cat package.json",
-        absolute.as_str(),
+        format!(
+            "cd {} && node scripts/report.mjs && cat reports/weekly.md",
+            tree.display()
+        ),
+        format!("cd {} && npm run build && ls dist", tree.display()),
+        format!(
+            "cd {} && npm run build && cat package.json",
+            other.display()
+        ),
     ] {
         assert_eq!(
-            contained(&reason("omp", &home, &main, command)),
+            contained(&reason("omp", &home, &main, &command)),
             host(),
             "{command}"
         );
@@ -104,23 +108,51 @@ fn a_list_after_cd_into_a_sibling_root_runs_contained_there() {
 #[test]
 fn a_sibling_cd_the_sink_would_not_rebase_keeps_its_review() {
     let (home, main, _tree) = fixture();
+    let projects = main.parent().unwrap();
     for command in [
+        // The shell resolves `..` against its logical `$PWD`, which the
+        // reported cwd may not show, so a relative parent is never proved.
+        "cd ../app-report && node scripts/report.mjs && cat reports/weekly.md".to_owned(),
         // Not a repository root, or no repository at all.
-        "cd ../app-report/scripts && node report.mjs && cat out.md",
-        "cd ../plain && npm run build && ls dist",
-        "cd .. && npm run build && ls dist",
+        format!(
+            "cd {}/app-report/scripts && node report.mjs && cat out.md",
+            projects.display()
+        ),
+        format!(
+            "cd {}/plain && npm run build && ls dist",
+            projects.display()
+        ),
+        format!("cd {} && npm run build && ls dist", projects.display()),
         // A pipe or `;` is not the `&&` list the sink peels.
-        "cd ../app-report && npm run build && ls | wc -l",
-        "cd ../app-report; npm run build && ls dist",
+        format!(
+            "cd {}/app-report && npm run build && ls | wc -l",
+            projects.display()
+        ),
+        format!(
+            "cd {}/app-report; npm run build && ls dist",
+            projects.display()
+        ),
         // The rest still faces every check it would from that root.
-        "cd ../app-report && git add -A && git status",
-        "cd ../app-report && npm run build && curl https://example.com",
-        "cd ../app-report && npm run build && cat ../app/.git/config",
-        "cd ../app-report && npm run build && rm -rf .",
-        "cd ../app-report && ls && rm notes.txt",
+        format!(
+            "cd {}/app-report && git add -A && git status",
+            projects.display()
+        ),
+        format!(
+            "cd {}/app-report && npm run build && curl https://example.com",
+            projects.display()
+        ),
+        format!(
+            "cd {}/app-report && npm run build && cat ../app/.git/config",
+            projects.display()
+        ),
+        format!(
+            "cd {}/app-report && npm run build && rm -rf .",
+            projects.display()
+        ),
+        format!("cd {}/app-report && ls && rm notes.txt", projects.display()),
     ] {
         assert!(
-            !contained(&reason("omp", &home, &main, command)),
+            !contained(&reason("omp", &home, &main, &command)),
             "{command}"
         );
     }
@@ -128,7 +160,10 @@ fn a_sibling_cd_the_sink_would_not_rebase_keeps_its_review() {
         "cursor",
         &home,
         &main,
-        "cd ../app-report && npm run build && ls dist"
+        format!(
+            "cd {}/app-report && npm run build && ls dist",
+            projects.display()
+        )
     )));
     let _ = std::fs::remove_dir_all(home.parent().unwrap());
 }
