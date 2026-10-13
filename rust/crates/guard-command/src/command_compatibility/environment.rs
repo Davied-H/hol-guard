@@ -87,8 +87,12 @@ const CODE_LOADING_MARKERS: &[&str] = &[
     "PAGER",
     "PLUGIN",
     "REQUIRE",
+    "LINKER",
+    "RUNNER",
     "RUSTC",
+    "RUSTDOC",
     "SCRIPT",
+    "SHELL",
     "STARTUP",
     "VISUAL",
     "WRAPPER",
@@ -137,7 +141,7 @@ pub(crate) fn code_loading_environment_name(name: &str) -> bool {
     let upper = upper.as_str();
     CODE_LOADING_NAMES.contains(&upper)
         || CODE_LOADING_EXACT.contains(&upper)
-        || ["LD_", "DYLD_", "BASH_FUNC_"]
+        || ["LD_", "DYLD_", "BASH_FUNC_", "NPM_CONFIG_"]
             .iter()
             .any(|prefix| upper.starts_with(prefix))
         || CODE_LOADING_MARKERS
@@ -184,6 +188,12 @@ mod tests {
             for name in [
                 "RUSTC_WRAPPER",
                 "CARGO_BUILD_RUSTC_WRAPPER",
+                "RUSTDOC",
+                "CARGO_BUILD_RUSTDOC",
+                "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER",
+                "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER",
+                "npm_config_shell",
+                "npm_config_registry",
                 "npm_config_script_shell",
                 "LD_LIBRARY_PATH",
                 "DYLD_INSERT_LIBRARIES",

@@ -285,6 +285,8 @@ fn build_commands_behind_command_time_or_plain_env_are_not_evaluation_failures()
         "CXX=./x cargo build",
         "RUSTC_WRAPPER=./x cargo build",
         "CARGO_BUILD_RUSTC_WRAPPER=./x cargo build",
+        "RUSTDOC=./x cargo doc",
+        "CARGO_BUILD_RUSTDOC=./x cargo doc",
         "npm_config_script_shell=./x npm run build",
         "npm_config_node_options=--require=./x.js npm run build",
         "LD_LIBRARY_PATH=./x vite build",
