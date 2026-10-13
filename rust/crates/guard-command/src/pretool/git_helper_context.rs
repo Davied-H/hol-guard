@@ -17,10 +17,10 @@ pub(super) fn git_helper_context_required(
         cwd: destination.as_deref().or(context.cwd),
         ..context
     };
-    model
-        .segments
-        .iter()
-        .any(|segment| segment_runs_helpers(segment, context))
+    (0..model.segments.len()).any(|index| {
+        let child = super::fanout_reads::git_xargs_child(model, index);
+        segment_runs_helpers(child.as_ref().unwrap_or(&model.segments[index]), context)
+    })
 }
 
 /// Whether a Git segment's operation can start a configured helper.
@@ -50,6 +50,8 @@ fn segment_runs_helpers(segment: &crate::CommandSegmentV1, context: PathContext<
                         "config" => super::git_config_reads::read_form(&arguments[1..]).is_some(),
                         // merge-base does not page by default, but pager.merge-base can.
                         "merge-base" => true,
+                        // grep pages by default through pager.grep or core.pager.
+                        "grep" => true,
                         _ => false,
                     }
                 })
@@ -77,6 +79,9 @@ pub(super) fn git_helpers_proven_inert(
         ..context
     };
     model.segments.iter().enumerate().all(|(index, segment)| {
+        // `git merge-base ... | xargs git log` runs its Git read as the child.
+        let child = super::fanout_reads::git_xargs_child(model, index);
+        let segment = child.as_ref().unwrap_or(segment);
         segment.executable.as_deref().is_none_or(|executable| {
             executable_basename(executable) != "git"
                 // The exact-safe proof already cleared Git reads that start no

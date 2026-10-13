@@ -42,6 +42,9 @@ const BUNFIG_INSTALL_KEYS: &[&str] = &[
     "saveTextLockfile",
     "linker",
     "auto",
+    "minimumReleaseAge",
+    "linkWorkspacePackages",
+    "dryRun",
 ];
 
 pub(super) fn directory_ready(
@@ -171,14 +174,56 @@ fn bunfig_inert(path: &Path) -> bool {
         let Ok(table) = toml::from_str::<toml::Table>(text) else {
             return false;
         };
+        if bunfig_preloads_code(&table) {
+            return false;
+        }
         match table.get("install") {
             None => true,
-            Some(toml::Value::Table(install)) => install
-                .keys()
-                .all(|key| BUNFIG_INSTALL_KEYS.contains(&key.as_str())),
+            Some(toml::Value::Table(install)) => install.iter().all(|(key, value)| {
+                BUNFIG_INSTALL_KEYS.contains(&key.as_str())
+                    || (key == "lockfile" && bunfig_lockfile_inert(value))
+                    || (key == "cache" && bunfig_cache_inert(value))
+            }),
             Some(_) => false,
         }
     })
+}
+
+/// `preload` names scripts Bun runs before a file, at the top level or under
+/// `[run]` or `[test]`. An install does not read it, but a project that
+/// configures code to run at startup is not one to wave through unseen.
+fn bunfig_preloads_code(table: &toml::Table) -> bool {
+    table.contains_key("preload")
+        || ["run", "test"].iter().any(|section| {
+            matches!(table.get(*section), Some(toml::Value::Table(inner)) if inner.contains_key("preload"))
+        })
+}
+
+/// `[install.cache]` may only switch the cache off. A `dir` moves where the
+/// install writes.
+fn bunfig_cache_inert(value: &toml::Value) -> bool {
+    let toml::Value::Table(cache) = value else {
+        return false;
+    };
+    cache.iter().all(|(key, value)| {
+        matches!(key.as_str(), "disable" | "disableManifest") && value.is_bool()
+    })
+}
+
+/// `[install.lockfile]` only says whether Bun writes `bun.lock` and whether it
+/// also prints a `yarn.lock`. A frozen install writes neither, and neither key
+/// names a registry, a credential or a script.
+fn bunfig_lockfile_inert(value: &toml::Value) -> bool {
+    let toml::Value::Table(lockfile) = value else {
+        return false;
+    };
+    lockfile
+        .iter()
+        .all(|(key, value)| match (key.as_str(), value) {
+            ("save", toml::Value::Boolean(_)) => true,
+            ("print", toml::Value::String(format)) => format == "yarn",
+            _ => false,
+        })
 }
 
 /// Top-level keys only: the file is YAML, and a nested value cannot name a

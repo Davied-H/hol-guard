@@ -241,6 +241,9 @@ mod guard_config_harness;
 mod guard_config_iso;
 mod guard_config_load;
 mod guard_config_managed;
+mod guard_store_advisory_cache;
+#[cfg(test)]
+mod guard_store_advisory_cache_vectors_tests;
 mod guard_store_args;
 mod guard_store_clients;
 mod guard_store_cmd_activity;
@@ -269,7 +272,11 @@ mod guard_store_json;
 mod guard_store_lineage;
 mod guard_store_local_cli;
 #[cfg(test)]
+mod guard_store_local_cli_grant_vectors_tests;
+mod guard_store_local_cli_grants;
+#[cfg(test)]
 mod guard_store_local_cli_vectors_tests;
+mod guard_store_local_mcp_observation;
 mod guard_store_native_review_consume;
 #[cfg(test)]
 mod guard_store_native_review_consume_tests;
