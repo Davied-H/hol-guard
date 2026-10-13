@@ -365,6 +365,8 @@ jobs:
           SHARD_INDEX: ${{ matrix.shard-index }}
           SHARD_COUNT: 4
         run: |
+          # A collection failure must fail the step even when grep still prints nodes.
+          set -o pipefail
           gates=(tests/test_guard_benign_false_positive_gate.py
                  tests/test_guard_gauntlet_replay_gate.py
                  tests/test_guard_command_corpus_benign_allow.py)

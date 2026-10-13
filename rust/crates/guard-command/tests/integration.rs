@@ -128,8 +128,10 @@ fn every_test_file_is_compiled() {
             continue;
         };
         let target = format!("path = \"tests/{stem}.rs\"");
+        // lines() drops CR, so a Windows autocrlf checkout still matches.
+        let module = format!("pub mod {stem};");
         if stem != "integration"
-            && !declared.contains(&format!("\npub mod {stem};\n"))
+            && !declared.lines().any(|line| line.trim() == module)
             && !cargo.contains(&target)
         {
             missing.push(stem.to_owned());
