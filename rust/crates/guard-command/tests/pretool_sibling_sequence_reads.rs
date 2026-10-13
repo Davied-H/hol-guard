@@ -204,6 +204,16 @@ fn rustfmt_rewrites_sibling_sources_that_pass_the_write_proof() {
             format!("rustfmt --edition 2021 {sibling}/src/lib.rs && ls"),
         ],
     );
+    // A missing rustup default or a linked custom default cannot authorize a
+    // potentially executable formatter, even when its target is bounded.
+    let rustup_settings = space.home.join(".rustup/settings.toml");
+    std::fs::remove_file(&rustup_settings).unwrap();
+    check(&space, &[], &[allowed.clone()]);
+    write(&rustup_settings, "default_toolchain = \"custom-formatter\"\\n");
+    check(&space, &[], &[allowed.clone()]);
+    write(&rustup_settings, "default_toolchain = \"stable\"\\n");
+    check(&space, &[allowed.clone()], &[]);
+
     // The rustup proxy reads the toolchain file above the working directory;
     // a `path` entry there selects another binary.
     write(
