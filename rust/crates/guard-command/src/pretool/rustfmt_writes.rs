@@ -81,23 +81,73 @@ fn source_without_child_modules(target: &str, cwd: Option<&str>) -> bool {
         && !declares_out_of_line_module(&source)
 }
 
-/// Over-approximates `mod name;`: the word `mod` followed by one name and a
-/// semicolon, wherever it appears, comments and strings included.
+/// Rust permits comments anywhere ordinary whitespace is permitted.
+/// Skip comments conservatively, including nested block comments. An
+/// unterminated block is untrusted, so callers refuse formatting.
+fn skip_trivia(source: &str, mut offset: usize) -> Option<usize> {
+    loop {
+        let remaining = source.get(offset..)?;
+        if remaining.starts_with("//") {
+            offset += remaining.find('\n').unwrap_or(remaining.len());
+            continue;
+        }
+        if remaining.starts_with("/*") {
+            offset += 2;
+            let mut depth = 1_usize;
+            while depth != 0 {
+                let next = source.get(offset..)?;
+                if next.starts_with("/*") {
+                    depth += 1;
+                    offset += 2;
+                } else if next.starts_with("*/") {
+                    depth -= 1;
+                    offset += 2;
+                } else {
+                    offset += next.chars().next()?.len_utf8();
+                }
+            }
+            continue;
+        }
+        if let Some(ch) = remaining.chars().next().filter(|ch| ch.is_whitespace()) {
+            offset += ch.len_utf8();
+            continue;
+        }
+        return Some(offset);
+    }
+}
+
+/// Over-approximates out-of-line declarations, including comments as trivia.
+/// Matching inside a string or a comment may conservatively trigger review.
 fn declares_out_of_line_module(source: &str) -> bool {
     let identifier = |character: char| character.is_alphanumeric() || character == '_';
     source.match_indices("mod").any(|(start, _)| {
         if source[..start].chars().next_back().is_some_and(identifier) {
             return false;
         }
-        let rest = &source[start + 3..];
-        if !rest.starts_with(char::is_whitespace) {
+        let after_keyword = start + 3;
+        let Some(after) = source.get(after_keyword..) else {
+            return true;
+        };
+        if !after.starts_with(char::is_whitespace)
+            && !after.starts_with("//")
+            && !after.starts_with("/*")
+        {
             return false;
         }
-        let rest = rest.trim_start();
+        let Some(name_start) = skip_trivia(source, after_keyword) else {
+            return true;
+        };
+        let rest = &source[name_start..];
         let name_end = rest
             .find(|character: char| !(identifier(character) || character == '#'))
             .unwrap_or(rest.len());
-        name_end > 0 && rest[name_end..].trim_start().starts_with(';')
+        if name_end == 0 {
+            return false;
+        }
+        match skip_trivia(source, name_start + name_end) {
+            Some(next) => source[next..].starts_with(';'),
+            None => true,
+        }
     })
 }
 
@@ -113,6 +163,12 @@ mod tests {
             "#[path = \"/tmp/x.rs\"]\nmod r#type;",
             "mod outer {\n    mod inner;\n}",
             "pub(crate)\tmod\nchild\n;",
+            "mod child /**/;",
+            "mod child // comment\n;",
+            "mod /* outer /* nested */ remaining */ child;",
+            "#[path = \"../.github/workflows/check.rs\"] mod child /**/;",
+            "mod /* unterminated",
+
         ] {
             assert!(declares_out_of_line_module(source), "{source}");
         }
@@ -120,6 +176,9 @@ mod tests {
             "pub fn name() -> &'static str {\n    \"fixture\"\n}\n",
             "mod tests {\n    #[test]\n    fn ok() {}\n}",
             "fn module(); let model = 1;",
+            "mod nested { mod helper {} }",
+            "fn modern() {}",
+
             "",
         ] {
             assert!(!declares_out_of_line_module(source), "{source}");
