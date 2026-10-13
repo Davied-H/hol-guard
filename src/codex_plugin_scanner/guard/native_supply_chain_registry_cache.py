@@ -19,7 +19,7 @@ import contextvars
 import threading
 import time
 from collections import OrderedDict
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Hashable, Iterator
 from contextlib import contextmanager
 
 TTL_SECONDS = 60.0
@@ -31,7 +31,7 @@ SETTLE_SECONDS = 0.75
 
 RawResponse = tuple[int, tuple[tuple[str, str], ...], bytes]
 # URL, request headers, response byte limit, redirect limit.
-CacheKey = tuple[str, tuple[tuple[str, str], ...], int, int]
+CacheKey = tuple[str, tuple[tuple[str, str], ...], int, int, Hashable]
 ReadResult = RawResponse | dict[str, object]
 
 _WAIT_DEADLINE: contextvars.ContextVar[float | None] = contextvars.ContextVar(

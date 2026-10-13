@@ -23,7 +23,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from .mdm.network_transport import ManagedNetworkError, managed_urlopen
+from .mdm.network_transport import ManagedNetworkError, managed_urlopen, resolved_network_policy
 from .native_supply_chain_archive import ArchiveFulfilment
 from .native_supply_chain_registry_cache import REGISTRY_CACHE, CacheKey, RawResponse, RegistryCache
 
@@ -244,7 +244,9 @@ def _registry_cache_key(need: Mapping[str, Any]) -> CacheKey | None:
 
     Only a body-less GET of public metadata qualifies: no credential or cookie
     rides along, and no retry pause was asked for (a pause means the resident
-    wants a new answer, not the one it already has).
+    wants a new answer, not the one it already has). The managed network
+    policy is part of the key, so a policy change never serves a response the
+    new policy would not have fetched.
     """
 
     headers = {str(k): str(v) for k, v in dict(need["headers"]).items()}
@@ -256,8 +258,12 @@ def _registry_cache_key(need: Mapping[str, Any]) -> CacheKey | None:
         or any(name.lower() in _CREDENTIAL_HEADERS for name in headers)
     ):
         return None
+    try:
+        policy, _managed = resolved_network_policy(None)
+    except Exception:
+        return None
     ordered = tuple(sorted((name.lower(), value) for name, value in headers.items()))
-    return (str(need["url"]), ordered, int(need["max_response_bytes"]), int(need["max_redirects"]))
+    return (str(need["url"]), ordered, int(need["max_response_bytes"]), int(need["max_redirects"]), policy)
 
 
 def _read_bounded(stream: Any, limit: int, deadline: float) -> bytes:

@@ -14,6 +14,7 @@ from codex_plugin_scanner.guard import native_supply_chain_archive as archive_mo
 from codex_plugin_scanner.guard import native_supply_chain_egress as egress
 from codex_plugin_scanner.guard import native_supply_chain_registry_cache as registry_cache
 from codex_plugin_scanner.guard.daemon import hook_native_package_review as package_review
+from codex_plugin_scanner.guard.mdm.contracts import ManagedNetworkPolicy
 from codex_plugin_scanner.guard.native_supply_chain_registry_cache import (
     SETTLE_SECONDS,
     TTL_SECONDS,
@@ -23,7 +24,7 @@ from codex_plugin_scanner.guard.native_supply_chain_registry_cache import (
 )
 
 URL = "https://registry.npmjs.org/zod"
-KEY = (URL, (("accept", "application/json"),), 1024, 0)
+KEY = (URL, (("accept", "application/json"),), 1024, 0, None)
 OK = (200, (("content-type", "application/json"),), b"{}")
 
 
@@ -82,7 +83,7 @@ def test_only_a_complete_success_is_kept(result: object) -> None:
 def test_the_oldest_response_makes_room_for_a_new_one(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(registry_cache, "MAX_ENTRIES", 2)
     cache = RegistryCache()
-    keys = [(f"{URL}/{index}", (), 1024, 0) for index in range(3)]
+    keys = [(f"{URL}/{index}", (), 1024, 0, None) for index in range(3)]
     for key in keys:
         cache.fetch(key, lambda: OK)
     calls, read = _counting(OK)
@@ -180,6 +181,22 @@ def test_reads_that_carry_state_are_never_reused(overrides: dict[str, object]) -
 
 def test_the_redirect_limit_is_part_of_the_key() -> None:
     assert egress._registry_cache_key(_need()) != egress._registry_cache_key(_need(max_redirects=2))
+
+
+def test_a_network_policy_change_is_never_served_from_the_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    policies = iter([ManagedNetworkPolicy(), ManagedNetworkPolicy(allow_public_registries=False)])
+    monkeypatch.setattr(egress, "resolved_network_policy", lambda _policy: (next(policies), True))
+
+    assert egress._registry_cache_key(_need()) != egress._registry_cache_key(_need())
+
+
+def test_an_unreadable_network_policy_is_never_cached(monkeypatch: pytest.MonkeyPatch) -> None:
+    def unreadable(_policy: object) -> object:
+        raise OSError("policy unreadable")
+
+    monkeypatch.setattr(egress, "resolved_network_policy", unreadable)
+
+    assert egress._registry_cache_key(_need()) is None
 
 
 def test_separate_reviews_download_a_registry_document_once(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
