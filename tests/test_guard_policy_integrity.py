@@ -52,6 +52,10 @@ from codex_plugin_scanner.guard.local_trust_contract import (
     select_trust_backend,
 )
 from codex_plugin_scanner.guard.models import PolicyDecision
+from codex_plugin_scanner.guard.native_policy_snapshot_constants import (
+    NATIVE_POLICY_VERIFIER_KEY_NAME,
+    NATIVE_RUNTIME_STATE_DIRECTORY,
+)
 from codex_plugin_scanner.guard.policy_authority import PolicyAuthorityError
 from codex_plugin_scanner.guard.policy_bundle_decisions import build_policy_bundle_decisions
 from codex_plugin_scanner.guard.policy_bundle_parser import policy_bundle_acceptance_checkpoint
@@ -991,6 +995,10 @@ def _rotate_policy_integrity_key(store: GuardStore, *, raw_key: bytes) -> None:
         store._policy_integrity_key_ref,
         base64.urlsafe_b64encode(raw_key).decode("ascii"),
     )
+    # The resident verifier key is derived from the master key and is never
+    # replaced in place, so a rotation is an explicit repair that retires it
+    # with the old master.
+    (store.guard_home / NATIVE_RUNTIME_STATE_DIRECTORY / NATIVE_POLICY_VERIFIER_KEY_NAME).unlink(missing_ok=True)
     store._clear_policy_integrity_cache()
 
 

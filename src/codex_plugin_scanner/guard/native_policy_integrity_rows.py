@@ -121,7 +121,10 @@ def _run(
     items: list[dict[str, object]],
 ) -> list[Mapping[str, object]]:
     outcomes: list[Mapping[str, object]] = []
-    for chunk in _chunks(items):
+    chunks = _chunks(items)
+    if chunks and key is not None:
+        _ensure_verifier_key(guard_home, key)
+    for chunk in chunks:
         outcomes.extend(_request_chunk(guard_home, key=key, key_id=key_id, field=field, items=chunk))
     return outcomes
 
@@ -142,6 +145,34 @@ def _chunks(items: list[dict[str, object]]) -> list[list[dict[str, object]]]:
     if current:
         chunks.append(current)
     return chunks
+
+
+def _ensure_verifier_key(guard_home: Path, key: bytes | None) -> None:
+    """Provision the home's resident verifier key from the integrity key in hand.
+
+    The resident refuses to start for a home without its verifier key. A store
+    can sign or verify rows before any publisher has provisioned it, for
+    example on a fresh home, so the key is derived here from the same master
+    key the request carries. Provisioning never replaces an existing key, and
+    without a key to derive from the request fails closed.
+    """
+
+    from .native_policy_snapshot_constants import (
+        NATIVE_POLICY_VERIFIER_KEY_NAME,
+        NATIVE_RUNTIME_STATE_DIRECTORY,
+        NativePolicySnapshotError,
+    )
+
+    if (guard_home / NATIVE_RUNTIME_STATE_DIRECTORY / NATIVE_POLICY_VERIFIER_KEY_NAME).is_file():
+        return
+    if key is None:
+        raise NativePolicyIntegrityUnavailableError()
+    from .native_policy_snapshot_windows_key import provision_native_policy_verifier_key
+
+    try:
+        provision_native_policy_verifier_key(guard_home, key)
+    except (NativePolicySnapshotError, OSError, ValueError):
+        raise NativePolicyIntegrityUnavailableError() from None
 
 
 def _request_chunk(

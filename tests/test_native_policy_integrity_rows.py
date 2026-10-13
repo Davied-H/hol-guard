@@ -17,6 +17,10 @@ from codex_plugin_scanner.guard.native_policy_integrity_rows import (
     native_sign_policy_rows,
     native_verify_policy_rows,
 )
+from codex_plugin_scanner.guard.native_policy_snapshot_constants import (
+    NATIVE_POLICY_VERIFIER_KEY_NAME,
+    NATIVE_RUNTIME_STATE_DIRECTORY,
+)
 
 _KEY = bytes(range(32))
 _KEY_ID = "guard-policy-integrity-key:test"
@@ -111,6 +115,10 @@ def test_sign_returns_the_resident_columns(resident: _Resident, tmp_path: Path) 
     ]
     request = resident.requests[0]
     assert request["integrity_key_b64"] == base64.urlsafe_b64encode(_KEY).rstrip(b"=").decode("ascii")
+    key_path = tmp_path / NATIVE_RUNTIME_STATE_DIRECTORY / NATIVE_POLICY_VERIFIER_KEY_NAME
+    assert key_path.is_file()
+    assert key_path.stat().st_size == 32
+    assert key_path.stat().st_mode & 0o077 == 0
 
 
 def test_reply_digest_excludes_the_key(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -195,3 +203,4 @@ def test_rows_ship_only_integrity_columns_with_foreign_values_as_null(resident: 
         "trusted_generation": 2,
     }
     assert "integrity_key_b64" not in resident.requests[0]
+    assert not (tmp_path / NATIVE_RUNTIME_STATE_DIRECTORY / NATIVE_POLICY_VERIFIER_KEY_NAME).exists()
