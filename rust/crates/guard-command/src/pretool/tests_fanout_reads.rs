@@ -115,6 +115,10 @@ fn unproven_fanout_stays_reviewed() {
         "find src -type f -name '*.ts' -ok cat {} \\;",
         "find src -type f -name '*.ts' -execdir cat {} +",
         "find src -type f -name '*.ts' -exec sed -i s/a/b/ {} +",
+        // A `;` inside the child ends the body early and exposes more expression.
+        "find src -type f -name '*.ts' -exec grep -e x -e ';' -o -delete -fprintf {} ';'",
+        "find src -type f -name '*.ts' -exec grep -e x -e ';' -o -exec touch {} ';'",
+        "find src -type f -name '*.ts' -exec grep -e x -e ';' -fprint src/main.ts -fprintf {} ';'",
         // Roots outside the workspace or through links.
         "find .. -type f -name '*.ts' -exec cat {} +",
         "find ../home -type f -name '*.ts' -exec cat {} +",

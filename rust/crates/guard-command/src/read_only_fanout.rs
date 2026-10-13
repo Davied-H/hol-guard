@@ -143,7 +143,14 @@ pub(crate) fn find_exec(arguments: &[String]) -> Option<FindExec<'_>> {
         return None;
     }
     let (marker, child) = body.split_last()?;
-    if marker != "{}" || child.iter().any(|argument| argument.contains("{}")) {
+    // find ends an `-exec` body at its first `;` (or a `+` right after `{}`)
+    // and parses what follows as more expression, such as `-o -delete`. A
+    // child holding either token would hide that expression from the proof.
+    if marker != "{}"
+        || child
+            .iter()
+            .any(|argument| argument.contains("{}") || matches!(argument.as_str(), ";" | "+"))
+    {
         return None;
     }
     child_listed(child).then_some(FindExec { shape, child })
@@ -245,6 +252,9 @@ mod tests {
             &["src", "-fprint", "out", "-exec", "cat", "{}", "+"],
             &["src", "-exec", "/bin/cat", "{}", "+"],
             &["src", "-exec", "cat", "x{}", "+"],
+            &[
+                "src", "-exec", "grep", "-e", ";", "-o", "-delete", "-fprintf", "{}", ";",
+            ],
             &["-L", "src", "-exec", "cat", "{}", "+"],
             &["-exec", "cat", "{}", "+"],
         ] {
