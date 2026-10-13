@@ -156,6 +156,14 @@ def gate_environment(tmp_path_factory: pytest.TempPathFactory) -> Iterator[tuple
     if not binary:
         pytest.fail("HOL_GUARD_NATIVE_BINARY must name the compiled native runtime")
     patch.setenv("HOL_GUARD_NATIVE_BINARY", binary)
+    # Match the Gauntlet replay environment: hosted Linux runners have no Bun.
+    # The native bun -e proof must find a benign local executable on PATH in
+    # both replay gates; otherwise a fixed case remains pending in this gate.
+    bun = fixture.home / ".bun" / "bin" / "bun"
+    bun.parent.mkdir(parents=True, exist_ok=True)
+    bun.write_text("#!/bin/sh\\nexit 0\\n", encoding="utf-8")
+    bun.chmod(0o755)
+    patch.setenv("PATH", os.pathsep.join([os.environ.get("PATH", ""), str(bun.parent)]))
     store = GuardStore(fixture.guard_home)
     # Deliberately no prepare_workspace_policy/register_workspace: first contact.
     worker = HookWorker(store=store, workspace=fixture.worktree)
