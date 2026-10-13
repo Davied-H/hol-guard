@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 
 from .native_guard_store import NativeGuardStoreUnavailable
-from .native_policy_integrity_rows import PolicyRowVerifyItem
+from .native_policy_integrity_rows import PolicyRowVerifyItem, discard_row_signing_verifier_key
 from .store_base import *
 
 _LOGGER = logging.getLogger(__name__)
@@ -626,6 +626,7 @@ class StorePolicyIntegrityAdminMixin:
         if secret_store is not None:
             secret_store.delete_secret(self._policy_integrity_key_ref)
             secret_store.delete_secret(self._policy_integrity_control_ref)
+            discard_row_signing_verifier_key(Path(self.guard_home))
         self._clear_policy_integrity_cache()
         with self._connect() as connection:
             self._refresh_policy_integrity_state(

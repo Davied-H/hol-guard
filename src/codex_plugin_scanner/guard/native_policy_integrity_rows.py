@@ -15,7 +15,9 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 from collections.abc import Mapping, Sequence
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
@@ -91,11 +93,18 @@ def native_verify_policy_rows(
     key: bytes | None,
     key_id: str | None,
 ) -> list[PolicyIntegrityVerificationResult]:
-    """One verification result per item, in order, answered by the resident."""
+    """One verification result per item, in order.
 
-    wire = [_verify_wire(item) for item in items]
-    outcomes = _run(Path(guard_home), key=key, key_id=key_id, field="verify", items=wire)
-    return [_verification(outcome) for outcome in outcomes]
+    A degraded-mode item is never verified: the resident would only echo the
+    row's stored fields under ``degraded_mode``, a status no caller honors. That
+    answer is built here, so a home the resident cannot serve, such as a
+    symlinked one, still reports its rows as degraded rather than failing.
+    Every other item is answered by the resident.
+    """
+
+    wire = [_verify_wire(item) for item in items if not item.degraded_mode]
+    outcomes = iter(_run(Path(guard_home), key=key, key_id=key_id, field="verify", items=wire))
+    return [_degraded(item.row) if item.degraded_mode else _verification(next(outcomes)) for item in items]
 
 
 def native_sign_policy_rows(
@@ -173,6 +182,33 @@ def _ensure_verifier_key(guard_home: Path, key: bytes | None) -> None:
         provision_native_policy_verifier_key(guard_home, key)
     except (NativePolicySnapshotError, OSError, ValueError):
         raise NativePolicyIntegrityUnavailableError() from None
+
+
+def discard_row_signing_verifier_key(guard_home: Path) -> None:
+    """Drop a verifier key that only row signing relied on, after a key reset.
+
+    Row signing provisions the verifier from the integrity key, and a reset
+    deletes that key. Left behind, the stale verifier marks the home as armed,
+    so the store refuses to mint the replacement key and stays degraded. The
+    verifier is kept whenever other native state is bound to it: an armed
+    command-control marker, a generation floor or a published snapshot each
+    needs its own explicit recovery, not an implicit verifier reset.
+    """
+
+    from .native_command_control_authority import AUTHORITY_FILE_NAME
+    from .native_policy_snapshot_constants import (
+        _RUST_GENERATION_FLOOR_NAME,
+        _RUST_SNAPSHOT_STATE_NAME,
+        NATIVE_POLICY_VERIFIER_KEY_NAME,
+        NATIVE_RUNTIME_STATE_DIRECTORY,
+    )
+
+    state = guard_home / NATIVE_RUNTIME_STATE_DIRECTORY
+    bound = (AUTHORITY_FILE_NAME, _RUST_GENERATION_FLOOR_NAME, _RUST_SNAPSHOT_STATE_NAME)
+    if any(os.path.lexists(state / name) for name in bound):
+        return
+    with suppress(FileNotFoundError):
+        os.unlink(state / NATIVE_POLICY_VERIFIER_KEY_NAME)
 
 
 def _request_chunk(
@@ -303,6 +339,19 @@ def _verification(outcome: Mapping[str, object]) -> PolicyIntegrityVerificationR
         payload_hash=_optional_text(outcome, "payload_hash"),
         key_id=_optional_text(outcome, "key_id"),
         message=_optional_text(outcome, "message"),
+    )
+
+
+def _degraded(row: Mapping[str, object]) -> PolicyIntegrityVerificationResult:
+    def stored(name: str) -> str | None:
+        value = row.get(name)
+        return value if isinstance(value, str) and value else None
+
+    return PolicyIntegrityVerificationResult(
+        status="degraded_mode",
+        payload_hash=stored("payload_hash"),
+        key_id=stored("integrity_key_id"),
+        message="policy_integrity_backend_unavailable",
     )
 
 

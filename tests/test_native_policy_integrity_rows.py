@@ -14,13 +14,16 @@ from codex_plugin_scanner.guard.native_policy_integrity_rows import (
     NativePolicyIntegrityUnavailableError,
     PolicyRowSignItem,
     PolicyRowVerifyItem,
+    discard_row_signing_verifier_key,
     native_sign_policy_rows,
     native_verify_policy_rows,
 )
 from codex_plugin_scanner.guard.native_policy_snapshot_constants import (
+    _RUST_GENERATION_FLOOR_NAME,
     NATIVE_POLICY_VERIFIER_KEY_NAME,
     NATIVE_RUNTIME_STATE_DIRECTORY,
 )
+from codex_plugin_scanner.guard.policy_integrity import PolicyIntegrityVerificationResult
 
 _KEY = bytes(range(32))
 _KEY_ID = "guard-policy-integrity-key:test"
@@ -191,7 +194,7 @@ def test_rows_ship_only_integrity_columns_with_foreign_values_as_null(resident: 
 
     native_verify_policy_rows(
         guard_home=tmp_path,
-        items=[PolicyRowVerifyItem(row, degraded_mode=True, trusted_generation=2)],
+        items=[PolicyRowVerifyItem(row, degraded_mode=False, trusted_generation=2)],
         key=None,
         key_id=None,
     )
@@ -199,8 +202,53 @@ def test_rows_ship_only_integrity_columns_with_foreign_values_as_null(resident: 
     item = resident.requests[0]["verify"][0]
     assert item == {
         "row": {"decision_id": 1, "expires_at": None, "owner": "me", "reason": None},
-        "degraded_mode": True,
+        "degraded_mode": False,
         "trusted_generation": 2,
     }
     assert "integrity_key_b64" not in resident.requests[0]
     assert not (tmp_path / NATIVE_RUNTIME_STATE_DIRECTORY / NATIVE_POLICY_VERIFIER_KEY_NAME).exists()
+
+
+def test_degraded_rows_are_answered_without_the_resident(resident: _Resident, tmp_path: Path) -> None:
+    row = {"decision_id": 1, "payload_hash": "sha256:stored", "integrity_key_id": "", "owner": "me"}
+
+    results = native_verify_policy_rows(
+        guard_home=tmp_path,
+        items=[PolicyRowVerifyItem(row, degraded_mode=True)],
+        key=None,
+        key_id=None,
+    )
+
+    assert resident.requests == []
+    assert results == [
+        PolicyIntegrityVerificationResult(
+            status="degraded_mode",
+            payload_hash="sha256:stored",
+            key_id=None,
+            message="policy_integrity_backend_unavailable",
+        )
+    ]
+
+
+def test_reset_discards_a_verifier_only_row_signing_relied_on(tmp_path: Path) -> None:
+    state = tmp_path / NATIVE_RUNTIME_STATE_DIRECTORY
+    state.mkdir()
+    verifier = state / NATIVE_POLICY_VERIFIER_KEY_NAME
+    verifier.write_bytes(b"v" * 32)
+
+    discard_row_signing_verifier_key(tmp_path)
+
+    assert not verifier.exists()
+    discard_row_signing_verifier_key(tmp_path)
+
+
+def test_reset_keeps_a_verifier_other_native_state_is_bound_to(tmp_path: Path) -> None:
+    state = tmp_path / NATIVE_RUNTIME_STATE_DIRECTORY
+    state.mkdir()
+    verifier = state / NATIVE_POLICY_VERIFIER_KEY_NAME
+    verifier.write_bytes(b"v" * 32)
+    (state / _RUST_GENERATION_FLOOR_NAME).write_text("{}")
+
+    discard_row_signing_verifier_key(tmp_path)
+
+    assert verifier.read_bytes() == b"v" * 32
