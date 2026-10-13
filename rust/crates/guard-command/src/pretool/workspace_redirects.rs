@@ -223,6 +223,11 @@ pub(super) fn contained(
         false,
     );
     let workspace = crate::pretool::workspace_contained::admitted_workspace(context)?;
+    // A redirect aimed outside the workspace is not workspace work: the
+    // sandbox would only refuse the write, so it keeps its review.
+    if crate::pretool::workspace_contained::redirect_leaves(command, &workspace) {
+        return None;
+    }
     // A projection that earns a plain allow runs in the sandbox too: the
     // redirects still need its confinement, and the command needs nothing
     // the sandbox withholds when it stays offline.

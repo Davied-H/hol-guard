@@ -349,6 +349,11 @@ fn sandbox_available() -> bool {
     false
 }
 
+/// Whether a redirect in `command` names a path outside `workspace`.
+pub(super) fn redirect_leaves(command: &str, workspace: &Path) -> bool {
+    reach::redirect_targets(command).any(|target| reach::outside(target, "", workspace))
+}
+
 /// The workspace the sandbox would confine for this session, if any.
 pub(super) fn admitted_workspace(context: PathContext<'_>) -> Option<std::path::PathBuf> {
     workspace_admissible(Path::new(context.cwd?), context.home_dir.map(Path::new))

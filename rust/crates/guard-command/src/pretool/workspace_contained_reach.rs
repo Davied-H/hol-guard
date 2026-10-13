@@ -46,7 +46,7 @@ pub(super) fn reaches_outside(segment: &CommandSegmentV1, name: &str, workspace:
 }
 
 /// Redirect targets live only in the segment text: `> out`, `2>>log`, `&>x`.
-fn redirect_targets(text: &str) -> impl Iterator<Item = &str> {
+pub(super) fn redirect_targets(text: &str) -> impl Iterator<Item = &str> {
     let mut words = text.split_whitespace().peekable();
     std::iter::from_fn(move || {
         while let Some(word) = words.next() {
@@ -66,7 +66,7 @@ fn redirect_targets(text: &str) -> impl Iterator<Item = &str> {
     })
 }
 
-fn outside(value: &str, name: &str, workspace: &Path) -> bool {
+pub(super) fn outside(value: &str, name: &str, workspace: &Path) -> bool {
     let path = Path::new(value);
     if value.starts_with('~') {
         return true;

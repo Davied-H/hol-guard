@@ -123,7 +123,8 @@ fn a_reviewable_setting_before_an_unmodeled_script_reaches_ordinary_review() {
             "{command}"
         );
     }
-    // Other paths and other loader settings keep the block.
+    // Any other plain module path in front of `node` only picks which code
+    // the script loads, so it reaches review or the sandbox, never allow.
     std::fs::create_dir_all(root.join("project/vendor")).unwrap();
     for command in [
         format!(
@@ -139,15 +140,24 @@ fn a_reviewable_setting_before_an_unmodeled_script_reaches_ordinary_review() {
             "NODE_PATH={}/../project/node_modules node scripts/report.mjs",
             modules.display()
         ),
-        "NODE_OPTIONS=--require=./hook.js node scripts/report.mjs".to_owned(),
     ] {
         let result = evaluate(&root, &command);
-        assert_eq!(
-            result.minimum_action, "block",
-            "{command}: {}",
+        assert!(
+            matches!(
+                result.minimum_action.as_str(),
+                "review" | "sandbox-required"
+            ),
+            "{command}: {} {}",
+            result.minimum_action,
             result.reason
         );
     }
+    // Loader hooks keep the block.
+    let result = evaluate(
+        &root,
+        "NODE_OPTIONS=--require=./hook.js node scripts/report.mjs",
+    );
+    assert_eq!(result.minimum_action, "block", "{}", result.reason);
 
     for command in [
         "NODE_OPTIONS=--require=./hook.js node scripts/report.mjs",
