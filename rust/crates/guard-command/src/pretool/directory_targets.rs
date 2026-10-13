@@ -73,11 +73,14 @@ pub(super) fn verified_cwd_target(value: &str, context: super::PathContext<'_>) 
 /// check rejects symlinked components. `..` is never proved: the shell
 /// resolves it against its logical `$PWD`, which may name a symlinked
 /// parent the reported cwd does not show. On Windows a `:` can name a
-/// drive-relative path (`C:src`) or an alternate data stream, so it is never
-/// joined; the caller's exact-spelling check covers case, short names and
-/// junctions there.
+/// drive-relative path (`C:src`) or an alternate data stream, and Git Bash
+/// resolves a root-relative `/etc` against its own root rather than the
+/// cwd's drive, so neither is joined; the caller's exact-spelling check
+/// covers case, short names and junctions there.
 fn relative_cwd_target(value: &str, context: super::PathContext<'_>) -> Option<std::path::PathBuf> {
-    if value.starts_with('~') || (cfg!(windows) && value.contains(':')) {
+    if value.starts_with('~')
+        || (cfg!(windows) && (value.contains(':') || value.starts_with(['/', '\\'])))
+    {
         return None;
     }
     let dotted = value == "." || value.starts_with("./");

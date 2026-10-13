@@ -70,6 +70,10 @@ fn relative_cd_keeps_windows_spelling_checks() {
         r"cd src\pretool && ls".to_owned(),
         format!("cd {drive}src && ls"),
         "cd src:stream && ls".to_owned(),
+        // Git Bash resolves these against its own root, not the cwd's drive.
+        "cd /src && ls".to_owned(),
+        "cd /tmp && ls".to_owned(),
+        "cd //localhost/c$ && ls".to_owned(),
         "cd missing && ls".to_owned(),
     ] {
         assert!(!allowed_in(&root, &command, Some(&clean)), "{command}");
