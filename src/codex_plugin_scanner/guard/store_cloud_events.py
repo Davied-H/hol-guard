@@ -151,25 +151,6 @@ class StoreCloudEventsMixin:
             for row in rows
         ]
 
-    def cache_advisories(self, advisories: list[dict[str, object]], now: str) -> int:
-        stored = self._native_store_call(
-            "cache_advisories", {"payloads": [json.dumps(advisory) for advisory in advisories], "now": now}
-        )
-        if not isinstance(stored, int) or isinstance(stored, bool):
-            raise sqlite3.DatabaseError("native_advisory_cache_invalid")
-        return stored
-
-    def list_cached_advisories(self, limit: int | None = 100) -> list[dict[str, object]]:
-        rows = self._native_store_call("list_cached_advisories", {"limit": limit})
-        if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
-            raise sqlite3.DatabaseError("native_advisory_cache_invalid")
-        items: list[dict[str, object]] = []
-        for row in rows:
-            payload = json.loads(str(row["payload_json"]))
-            if isinstance(payload, dict):
-                items.append({"cache_key": str(row["publisher_key"]), "updated_at": str(row["updated_at"]), **payload})
-        return items
-
     def cache_supply_chain_bundle(
         self,
         workspace_id: str,

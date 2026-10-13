@@ -78,7 +78,11 @@ fn replays_every_recorded_advisory_cache_step() {
             let reply = run_step(&home, source, step);
             assert_eq!(reply["status"], "ok", "{label}: {reply}");
             if step["method"] == "list_cached_advisories" {
-                assert_eq!(decoded(&reply["payload"]), step["result"], "{label}");
+                assert_eq!(
+                    decoded(&reply["payload"]["rows"]),
+                    step["result"],
+                    "{label}"
+                );
             } else {
                 assert_eq!(reply["payload"], step["result"], "{label}");
             }
@@ -92,4 +96,51 @@ fn replays_every_recorded_advisory_cache_step() {
         let _ = std::fs::remove_dir_all(&home);
     }
     assert!(compared_steps >= 11, "only {compared_steps} recorded steps");
+}
+
+#[test]
+fn pages_large_lists_under_the_reply_budget() {
+    let vectors: Value = serde_json::from_str(VECTORS).unwrap();
+    let source = vectors["source"].as_str().unwrap();
+    let home = temp_home("paging");
+    build_database(
+        &home.join("guard.db"),
+        &vectors,
+        &serde_json::json!({"seed": {}}),
+    );
+    let connection = Connection::open(home.join("guard.db")).unwrap();
+    let body = "x".repeat(400 * 1024);
+    for (key, day) in [("a", 1), ("b", 2), ("c", 3), ("d", 4)] {
+        connection
+            .execute(
+                "insert into publisher_cache (publisher_key, payload_json, updated_at) values (?, ?, ?)",
+                rusqlite::params![key, format!("{{\"body\": \"{body}\"}}"), format!("2026-10-0{day}")],
+            )
+            .unwrap();
+    }
+    let page = |args: Value| {
+        let step = serde_json::json!({"method": "list_cached_advisories", "wire_args": args});
+        let reply = run_step(&home, source, &step);
+        assert_eq!(reply["status"], "ok", "{reply}");
+        let keys: Vec<String> = reply["payload"]["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["publisher_key"].as_str().unwrap().to_owned())
+            .collect();
+        (keys, reply["payload"]["more"].as_bool().unwrap())
+    };
+    assert_eq!(
+        page(serde_json::json!({"limit": null})),
+        (vec!["d".into(), "c".into()], true)
+    );
+    assert_eq!(
+        page(serde_json::json!({"limit": null, "offset": 2})),
+        (vec!["b".into(), "a".into()], false)
+    );
+    assert_eq!(
+        page(serde_json::json!({"limit": 1, "offset": 3})),
+        (vec!["a".into()], false)
+    );
+    let _ = std::fs::remove_dir_all(&home);
 }

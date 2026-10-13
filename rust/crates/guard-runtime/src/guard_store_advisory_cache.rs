@@ -50,22 +50,41 @@ pub(crate) fn cache(connection: &Connection, args: &Args) -> StoreResult<Value> 
     Ok(Value::from(payloads.len()))
 }
 
-/// Cached rows newest first, at most `limit` unless it is null. The payload
-/// text is returned as stored so the caller decodes it exactly as before.
+/// Serialized row bytes one `list` reply carries before it stops early, well
+/// under the resident's reply frame limit.
+const LIST_REPLY_BUDGET: usize = 1024 * 1024;
+
+/// One page of cached rows newest first: at most `limit` (unbounded when it
+/// is null or negative) after skipping `offset`. The payload text is returned
+/// as stored so the caller decodes it exactly as before. A page that would
+/// pass the reply budget stops early (always keeping its first row) and sets
+/// `more`, so the caller asks again from where it ended.
 pub(crate) fn list(connection: &Connection, args: &Args) -> StoreResult<Value> {
-    let rows = match args.raw("limit") {
-        None => query_all(
-            connection,
-            "select publisher_key, payload_json, updated_at from publisher_cache \
-             order by updated_at desc",
-            &[],
-        )?,
-        Some(_) => query_all(
-            connection,
-            "select publisher_key, payload_json, updated_at from publisher_cache \
-             order by updated_at desc limit ?",
-            &[Value::from(args.int("limit")?)],
-        )?,
+    let limit = match args.raw("limit") {
+        None => -1,
+        Some(_) => args.int("limit")?,
     };
-    Ok(Value::Array(rows.into_iter().map(Value::Object).collect()))
+    let offset = match args.raw("offset") {
+        None => 0,
+        Some(_) => args.int("offset")?,
+    };
+    let rows = query_all(
+        connection,
+        "select publisher_key, payload_json, updated_at from publisher_cache \
+         order by updated_at desc limit ? offset ?",
+        &[Value::from(limit), Value::from(offset)],
+    )?;
+    let mut page = Vec::with_capacity(rows.len());
+    let mut used = 0;
+    let mut more = false;
+    for row in rows {
+        let row = Value::Object(row);
+        used += serde_json::to_string(&row).map_or(0, |text| text.len());
+        if used > LIST_REPLY_BUDGET && !page.is_empty() {
+            more = true;
+            break;
+        }
+        page.push(row);
+    }
+    Ok(serde_json::json!({"rows": page, "more": more}))
 }
