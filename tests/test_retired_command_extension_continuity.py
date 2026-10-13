@@ -100,10 +100,11 @@ def _source(extension_id: str) -> dict:
     return _document(SOURCE_ROOT / f"{extension_id}.json")["extension"]
 
 
-def _native_rule_ids(evaluation: object, extension_id: str) -> set[str]:
+def _active_rule_ids(evaluation: object, extension_id: str) -> set[str]:
+    """Only effective native matches enforce a rule; raw observations can be safe."""
     return {
-        item.rule.rule_id
-        for item in evaluation.extension_observations
+        item.match.rule.rule_id
+        for item in evaluation.matches
         if item.extension.extension_id == extension_id
     }
 
@@ -166,7 +167,7 @@ def test_each_contributed_rule_remains_live_in_native_runtime(
 ) -> None:
     rule_id = f"{extension_id}.{suffix}"
     inert = real_native_command_evaluation(command, cwd=tmp_path, home_dir=tmp_path).evaluation
-    assert rule_id not in _native_rule_ids(inert, extension_id), rule_id
+    assert rule_id not in _active_rule_ids(inert, extension_id), rule_id
 
     enabled = real_native_command_evaluation(
         command,
@@ -174,12 +175,12 @@ def test_each_contributed_rule_remains_live_in_native_runtime(
         home_dir=tmp_path,
         controls=(("extension", extension_id, "enabled"),),
     ).evaluation
-    assert rule_id in _native_rule_ids(enabled, extension_id), (
+    assert rule_id in _active_rule_ids(enabled, extension_id), (
         extension_id,
         command,
         enabled.command.confidence,
         enabled.command.uncertainty_reason,
-        sorted(_native_rule_ids(enabled, extension_id)),
+        sorted(_active_rule_ids(enabled, extension_id)),
     )
 
 
@@ -193,4 +194,4 @@ def test_contributor_preview_and_read_only_paths_stay_safe_when_enabled(
         home_dir=tmp_path,
         controls=(("extension", extension_id, "enabled"),),
     ).evaluation
-    assert not _native_rule_ids(enabled, extension_id), (extension_id, command)
+    assert not _active_rule_ids(enabled, extension_id), (extension_id, command)
