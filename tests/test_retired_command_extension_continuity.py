@@ -61,7 +61,11 @@ ENABLED_CASES = (
     ("command.ollama", "ollama rm llama3", "rm"),
     ("command.probe", "probe request run api.yml items/0", "request-run"),
     ("command.probe", "probe request run api.yml items/0 --output response.json", "request-output"),
-    ("command.probe", "probe request create api.yml --name Health --method GET --url https://api.example.test/health", "request-write"),
+    (
+        "command.probe",
+        "probe request create api.yml --name Health --method GET --url https://api.example.test/health",
+        "request-write",
+    ),
     ("command.probe", "probe request delete api.yml items/0", "request-delete"),
     ("command.probe", "probe folder create api.yml --name Users", "folder-write"),
     ("command.probe", "probe folder delete api.yml items/0", "folder-delete"),
