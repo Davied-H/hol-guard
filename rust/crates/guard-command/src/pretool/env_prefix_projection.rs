@@ -7,6 +7,7 @@
 //! credentials, code loading or network routing leaves the command untouched.
 
 use crate::cloud_scrub_shell::{shell_tokens, ShellToken};
+use crate::pretool::PathContext;
 use guard_contracts::PreToolResultV1;
 
 #[path = "env_prefix_search_path.rs"]
@@ -117,22 +118,29 @@ pub(super) struct ReviewedProjection {
 /// The command with every inert environment prefix removed, or `None` when
 /// there is nothing to remove or any prefix might change execution.
 pub(super) fn project(command: &str) -> Option<String> {
-    project_with(command, None)
+    project_with(command, None, PathContext::default())
 }
 
 /// The command with its literal environment prefixes removed when at least
 /// one of them is not inert but none can swap the program, its loader or its
 /// credentials. `None` when [`project`] applies or nothing qualifies.
-pub(super) fn project_reviewed(command: &str) -> Option<ReviewedProjection> {
+pub(super) fn project_reviewed(
+    command: &str,
+    context: PathContext<'_>,
+) -> Option<ReviewedProjection> {
     let mut setting = None;
-    let command = project_with(command, Some(&mut setting))?;
+    let command = project_with(command, Some(&mut setting), context)?;
     Some(ReviewedProjection {
         command,
         setting: setting?,
     })
 }
 
-fn project_with(command: &str, mut setting: Option<&mut Option<String>>) -> Option<String> {
+fn project_with(
+    command: &str,
+    mut setting: Option<&mut Option<String>>,
+    context: PathContext<'_>,
+) -> Option<String> {
     if command.len() > MAX_PROJECTED_CHARS || command.contains(['\n', '\r', '\0']) {
         return None;
     }
@@ -152,7 +160,14 @@ fn project_with(command: &str, mut setting: Option<&mut Option<String>>) -> Opti
             continue;
         }
         command_start = false;
-        index = strip_prefixes(&tokens, &chars, index, &mut removed, setting.as_deref_mut())?;
+        index = strip_prefixes(
+            &tokens,
+            &chars,
+            index,
+            &mut removed,
+            setting.as_deref_mut(),
+            context,
+        )?;
     }
     if !removed.contains(&true) {
         return None;
@@ -178,6 +193,7 @@ fn strip_prefixes(
     mut index: usize,
     removed: &mut [bool],
     mut setting: Option<&mut Option<String>>,
+    context: PathContext<'_>,
 ) -> Option<usize> {
     let mut stripped = false;
     let mut required = Vec::new();
@@ -188,7 +204,7 @@ fn strip_prefixes(
                 return None;
             }
             if !inert_assignment(name, value) {
-                search_path::review(setting.as_deref_mut(), &mut required, name, value)?;
+                search_path::review(setting.as_deref_mut(), &mut required, name, value, context)?;
             }
         } else if token.value == "env" || token.value == "/usr/bin/env" {
             removed[index] = true;
@@ -199,6 +215,7 @@ fn strip_prefixes(
                 removed,
                 setting.as_deref_mut(),
                 &mut required,
+                context,
             )?;
             stripped = true;
             continue;
@@ -242,6 +259,7 @@ fn strip_env_options(
     removed: &mut [bool],
     mut setting: Option<&mut Option<String>>,
     required: &mut Vec<&'static [&'static str]>,
+    context: PathContext<'_>,
 ) -> Option<usize> {
     while index < tokens.len() && !tokens[index].is_control {
         let token = &tokens[index];
@@ -275,7 +293,7 @@ fn strip_env_options(
             return None;
         } else if let Some((name, assigned)) = assignment(token) {
             if !inert_assignment(name, assigned) {
-                search_path::review(setting.as_deref_mut(), required, name, assigned)?;
+                search_path::review(setting.as_deref_mut(), required, name, assigned, context)?;
             }
         } else {
             break;
@@ -378,8 +396,11 @@ fn inert_unset(name: &str) -> bool {
 
 /// A setting that may change behavior but leaves the program, its loader and
 /// its credentials alone, so a human can review the command it prefixes.
-fn reviewable_assignment(name: &str) -> bool {
+fn reviewable_assignment(name: &str, value: &str, context: PathContext<'_>) -> bool {
     let upper = name.to_ascii_uppercase();
+    if upper == "NODE_PATH" {
+        return trusted_node_path(value, context);
+    }
     name.len() <= MAX_SETTING_CHARS
         && !UNREVIEWABLE_NAMES.contains(&upper.as_str())
         && !UNREVIEWABLE_PREFIXES
@@ -389,7 +410,45 @@ fn reviewable_assignment(name: &str) -> bool {
         && !CREDENTIAL_MARKERS
             .iter()
             .any(|marker| upper.contains(marker))
-        && !crate::command_compatibility::code_or_redirect_environment_name(&upper)
+        && !code_loading_name(&upper)
+}
+
+/// `NODE_PATH` as one canonical, existing `node_modules` directory inside the
+/// working directory or home, with no hidden component, symlink or list
+/// separator. Module lookup then falls back to a dependency tree the project
+/// already trusts. The command still never settles below review.
+fn trusted_node_path(value: &str, context: PathContext<'_>) -> bool {
+    use std::path::{Component, Path};
+    let path = Path::new(value);
+    if value.len() > 1024
+        || !path.is_absolute()
+        || value.contains([':', ';', '\\'])
+        || path.file_name().is_none_or(|name| name != "node_modules")
+        || path.components().any(|component| match component {
+            Component::Normal(name) => name.to_string_lossy().starts_with('.'),
+            Component::RootDir | Component::Prefix(_) => false,
+            _ => true,
+        })
+    {
+        return false;
+    }
+    let Ok(canonical) = std::fs::canonicalize(path) else {
+        return false;
+    };
+    if canonical != path || !canonical.is_dir() {
+        return false;
+    }
+    let inside = |root: Option<&str>| {
+        root.and_then(|root| std::fs::canonicalize(root).ok())
+            .is_some_and(|root| canonical.starts_with(root))
+    };
+    (inside(context.cwd) || inside(context.home_dir))
+        && guard_secure_fs::sensitive_path_family(&canonical).is_none()
+        && !guard_secure_fs::credential_named_path(&canonical)
+}
+
+fn code_loading_name(upper: &str) -> bool {
+    crate::command_compatibility::code_or_redirect_environment_name(upper)
 }
 
 /// The first leading setting of any simple command that can load other code,
@@ -427,6 +486,45 @@ pub(super) fn code_loading_setting(command: &str) -> Option<String> {
             && crate::command_compatibility::code_or_redirect_environment_name(
                 &name.to_ascii_uppercase(),
             )
+        {
+            return Some(name.to_owned());
+        }
+    }
+    None
+}
+
+/// The first leading setting of any simple command whose value carries a
+/// command substitution, backtick or variable expansion, as a shape-checked
+/// name a reason may echo.
+pub(super) fn substituted_setting(command: &str) -> Option<String> {
+    if command.len() > MAX_PROJECTED_CHARS {
+        return None;
+    }
+    let chars: Vec<char> = command.chars().collect();
+    let tokens = shell_tokens(&chars)?;
+    let mut command_start = true;
+    let mut in_prefix = false;
+    for token in &tokens {
+        if token.is_control {
+            command_start = COMMAND_SEPARATORS.contains(&token.value.as_str());
+            in_prefix = false;
+            continue;
+        }
+        if command_start {
+            command_start = false;
+            in_prefix = true;
+        }
+        if !in_prefix || token.value == "env" || token.value == "/usr/bin/env" {
+            continue;
+        }
+        let Some((name, _)) = shell_assignment(chars.as_slice(), token) else {
+            in_prefix = false;
+            continue;
+        };
+        let raw = chars.get(token.start..token.end)?;
+        if name.len() <= MAX_SETTING_CHARS
+            && assignment_name_shape(name)
+            && raw.iter().any(|character| matches!(character, '$' | '`'))
         {
             return Some(name.to_owned());
         }
@@ -498,3 +596,39 @@ fn rank(action: &str) -> u8 {
 #[cfg(test)]
 #[path = "env_prefix_projection_tests.rs"]
 mod tests;
+
+/// Settings that only remove Git configuration sources. Isolating the global
+/// and system files leaves a subset of the configuration the unexported
+/// command sees, so a read proven helper-free without them stays helper-free.
+const GIT_CONFIG_ISOLATION: [(&str, &str); 3] = [
+    ("GIT_CONFIG_GLOBAL", "/dev/null"),
+    ("GIT_CONFIG_SYSTEM", "/dev/null"),
+    ("GIT_CONFIG_NOSYSTEM", "1"),
+];
+
+/// The command after leading `export NAME=value...;` statements that set only
+/// [`GIT_CONFIG_ISOLATION`] values. The caller accepts the remainder's verdict
+/// only when it allows, never to lower a review or block.
+pub(super) fn project_git_config_isolation(command: &str) -> Option<String> {
+    let mut rest = command.trim_start();
+    let mut stripped = false;
+    while let Some(after) = rest.strip_prefix("export ") {
+        let end = after.find([';', '&', '\n', '|', '(', ')', '<', '>', '`', '$'])?;
+        let (assignments, tail) = after.split_at(end);
+        let tail = tail.strip_prefix(';').or_else(|| tail.strip_prefix("&&"))?;
+        let mut count = 0;
+        for token in assignments.split_whitespace() {
+            let (name, value) = token.split_once('=')?;
+            if !GIT_CONFIG_ISOLATION.contains(&(name, value)) {
+                return None;
+            }
+            count += 1;
+        }
+        if count == 0 {
+            return None;
+        }
+        stripped = true;
+        rest = tail.trim_start();
+    }
+    (stripped && !rest.is_empty()).then(|| rest.to_owned())
+}

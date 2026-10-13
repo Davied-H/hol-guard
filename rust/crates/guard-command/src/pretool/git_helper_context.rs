@@ -17,12 +17,11 @@ pub(super) fn git_helper_context_required(
     model
         .segments
         .iter()
-        .any(|segment| needs_helper_proof(segment, context))
+        .any(|segment| segment_runs_helpers(segment, context))
 }
 
-/// Whether `segment` is a Git read whose configuration could start a diff,
-/// textconv, pager or filter helper.
-fn needs_helper_proof(segment: &crate::CommandSegmentV1, context: PathContext<'_>) -> bool {
+/// Whether a Git segment's operation can start a configured helper.
+fn segment_runs_helpers(segment: &crate::CommandSegmentV1, context: PathContext<'_>) -> bool {
     segment.executable.as_deref().is_some_and(|executable| {
         executable_basename(executable) == "git"
             // Leading `-C`/`-P` options precede the subcommand.
@@ -41,7 +40,9 @@ fn needs_helper_proof(segment: &crate::CommandSegmentV1, context: PathContext<'_
                                 .iter()
                                 .any(|argument| argument == "--no-textconv")),
                         // A clean filter is the only helper hash-object runs.
-                        "hash-object" => !super::git_hash_object::filters_disabled(&arguments[1..]),
+                        "hash-object" => {
+                            !super::git_hash_object::filters_disabled(&arguments[1..])
+                        }
                         // The probe screens the printed entries for credentials.
                         "config" => super::git_config_reads::read_form(&arguments[1..]).is_some(),
                         // merge-base does not page by default, but pager.merge-base can.
@@ -75,18 +76,32 @@ pub(super) fn git_helpers_proven_inert(
             executable_basename(executable) != "git"
                 // The exact-safe proof already cleared Git reads that start no
                 // helper, such as `rev-parse`, so only helper reads need the probe.
-                || !needs_helper_proof(segment, context)
+                || !segment_runs_helpers(segment, context)
                 || (segment.environment_names.is_empty()
                     && super::directory_targets::drive_targets_quoted(segment)
                     && super::directory_targets::home_targets_unquoted(segment)
-                    && git_config::execution_free(
+                    && match git_config::execution_free(
                         executable,
                         &segment.arguments,
                         context,
                         deadline,
                         Some(environment),
                         stdout_piped(model, index),
-                    ) == Some(true))
+                    ) {
+                        Some(proven) => proven,
+                        // Operations the probe does not cover (rev-parse,
+                        // ls-files, remote -v, worktree list) run no
+                        // configured helper; the exact-safe proof already
+                        // admitted them, so they join a proven sequence.
+                        None => {
+                            crate::command_compatibility::git_inspection_arguments(
+                                &segment.arguments,
+                                context,
+                            )
+                            .is_some()
+                                && !segment_runs_helpers(segment, context)
+                        }
+                    })
         })
     })
 }

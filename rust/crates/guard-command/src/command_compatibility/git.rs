@@ -171,26 +171,7 @@ pub(super) fn inspection_arguments<'a>(
     arguments: &'a [String],
     context: crate::pretool::PathContext<'_>,
 ) -> Option<&'a [String]> {
-    // These operations run no hook, so any `core.hooksPath` leaves them as
-    // they are.
-    if let Some(remaining) = routed(arguments, context, true).filter(|remaining| {
-        matches!(
-            remaining.first().map(String::as_str),
-            Some(
-                "status"
-                    | "diff"
-                    | "log"
-                    | "show"
-                    | "hash-object"
-                    | "rev-parse"
-                    | "merge-base"
-                    | "ls-files"
-            )
-        )
-    }) {
-        return Some(remaining);
-    }
-    let remaining = routed_arguments(arguments, context)?;
+    let remaining = routed(arguments, context, true)?;
     matches!(
         remaining.first().map(String::as_str),
         Some(
@@ -222,15 +203,17 @@ pub(super) fn routed_arguments<'a>(
     routed(arguments, context, false)
 }
 
-/// The arguments after leading `-C` routes and safe `-c` settings. With
-/// `hookless`, the caller runs no hook, so any `core.hooksPath` is accepted.
+/// `inspection` additionally admits read-only routing and hardening options
+/// (`--git-dir=<bare repository>`, a `core.hooksPath` that names no hooks)
+/// that proofs for operations which run hooks must keep refusing.
 fn routed<'a>(
     arguments: &'a [String],
     context: crate::pretool::PathContext<'_>,
-    hookless: bool,
+    inspection: bool,
 ) -> Option<&'a [String]> {
     let mut index = 0;
     let mut saw_change_directory = false;
+    let mut saw_git_dir = false;
     while let Some(argument) = arguments.get(index) {
         if matches!(
             argument.as_str(),
@@ -244,8 +227,7 @@ fn routed<'a>(
             let boolean = value.to_ascii_lowercase();
             let safe = match key.to_ascii_lowercase().as_str() {
                 "core.fsmonitor" => matches!(boolean.as_str(), "false" | "0" | "no" | "off"),
-                // Pointing hooks at nothing only turns them off.
-                "core.hookspath" => hookless || value == "/dev/null",
+                "core.hookspath" => inspection && hooks_path_names_no_hooks(value),
                 "core.quotepath" => matches!(
                     boolean.as_str(),
                     "true" | "false" | "1" | "0" | "yes" | "no" | "on" | "off"
@@ -258,7 +240,23 @@ fn routed<'a>(
             index += 2;
             continue;
         }
+        if let Some(git_dir) = argument.strip_prefix("--git-dir=").filter(|_| inspection) {
+            // A bare repository named by `--git-dir` is a read route like `-C`.
+            if saw_change_directory
+                || saw_git_dir
+                || !crate::pretool::safe_directory_target(git_dir)
+                || !crate::pretool::git_dir_route_within_scope(git_dir, context)
+            {
+                return None;
+            }
+            saw_git_dir = true;
+            index += 1;
+            continue;
+        }
         let target = if argument == "-C" {
+            if saw_git_dir {
+                return None;
+            }
             index += 1;
             arguments.get(index)?.as_str()
         } else {
@@ -412,3 +410,60 @@ pub(super) fn observe_with_context(
 #[cfg(test)]
 #[path = "git_tests.rs"]
 mod tests;
+
+/// Hooks never run for an inspection read, and a path with no hook files adds
+/// none. `/dev/null` is the conventional way to disable hooks entirely.
+const GIT_HOOK_NAMES: &[&str] = &[
+    "applypatch-msg",
+    "pre-applypatch",
+    "post-applypatch",
+    "pre-commit",
+    "pre-merge-commit",
+    "prepare-commit-msg",
+    "commit-msg",
+    "post-commit",
+    "pre-rebase",
+    "post-checkout",
+    "post-merge",
+    "pre-push",
+    "pre-receive",
+    "update",
+    "proc-receive",
+    "post-receive",
+    "post-update",
+    "reference-transaction",
+    "push-to-checkout",
+    "pre-auto-gc",
+    "post-rewrite",
+    "sendemail-validate",
+    "fsmonitor-watchman",
+    "p4-changelist",
+    "p4-prepare-changelist",
+    "p4-post-changelist",
+    "p4-pre-submit",
+    "post-index-change",
+];
+
+fn hooks_path_names_no_hooks(value: &str) -> bool {
+    if value == "/dev/null" {
+        return true;
+    }
+    // Git joins an empty hooks path as `/<hook>`, so it names the filesystem root.
+    if value.is_empty() {
+        return GIT_HOOK_NAMES.iter().all(|name| {
+            std::fs::symlink_metadata(std::path::Path::new("/").join(name))
+                .is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound)
+        });
+    }
+    let path = std::path::Path::new(value);
+    if !path.is_absolute() || value.starts_with('~') {
+        return false;
+    }
+    match std::fs::symlink_metadata(path) {
+        Err(error) => error.kind() == std::io::ErrorKind::NotFound,
+        Ok(metadata) => {
+            metadata.is_dir()
+                && std::fs::read_dir(path).is_ok_and(|mut entries| entries.next().is_none())
+        }
+    }
+}

@@ -56,9 +56,10 @@ pub(super) fn review(
     required: &mut Vec<&'static [&'static str]>,
     name: &str,
     value: &str,
+    context: super::PathContext<'_>,
 ) -> Option<()> {
     let first = setting?;
-    if !super::reviewable_assignment(name) {
+    if !super::reviewable_assignment(name, value, context) {
         required.push(programs(name, value)?);
     }
     first.get_or_insert_with(|| name.to_owned());
