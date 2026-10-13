@@ -250,6 +250,43 @@ pub(crate) fn claude_permission_notice_direct(
     session_id: &str,
     tool_name: Option<&str>,
 ) -> Result<Option<Map<String, Value>>, DirectNoticeDefer> {
+    direct_notice_transaction(
+        store_path,
+        Some((key, key_id)),
+        now,
+        Some(session_id),
+        tool_name,
+        None,
+    )
+}
+
+/// The daemon's answer to a Claude `permission_prompt` notification:
+/// `_load_claude_permission_notice`, `_mark_claude_pending_permission_prompt_seen`
+/// and the event it always records, in one transaction.
+///
+/// `key` is `None` when the caller found no notice row for the session, or
+/// the hook names no session: no notice is loaded then, as the daemon finds
+/// none, and only the event is written. `event` renders the event's JSON
+/// text from the loaded notice. Failing to write it defers like a busy store.
+pub(crate) fn claude_permission_prompt_direct(
+    store_path: &std::path::Path,
+    key: Option<(&[u8], &str)>,
+    now: &str,
+    session_id: Option<&str>,
+    tool_name: Option<&str>,
+    event: (&str, &dyn Fn(Option<&Map<String, Value>>) -> Option<String>),
+) -> Result<Option<Map<String, Value>>, DirectNoticeDefer> {
+    direct_notice_transaction(store_path, key, now, session_id, tool_name, Some(event))
+}
+
+fn direct_notice_transaction(
+    store_path: &std::path::Path,
+    key: Option<(&[u8], &str)>,
+    now: &str,
+    session_id: Option<&str>,
+    tool_name: Option<&str>,
+    event: Option<(&str, &dyn Fn(Option<&Map<String, Value>>) -> Option<String>)>,
+) -> Result<Option<Map<String, Value>>, DirectNoticeDefer> {
     let connection = Connection::open_with_flags(store_path, OpenFlags::SQLITE_OPEN_READ_WRITE)
         .map_err(|_| DirectNoticeDefer::StoreUnavailable)?;
     // A held write lock sends the hook to the daemon, which waits for it.
@@ -262,24 +299,45 @@ pub(crate) fn claude_permission_notice_direct(
     let foreign_key = std::cell::Cell::new(false);
     let env = Env {
         connection: &connection,
-        key: Some(key.to_vec()),
-        key_id: Some(key_id),
+        key: key.map(|(bytes, _)| bytes.to_vec()),
+        key_id: key.map(|(_, id)| id),
         now,
         foreign_key: Some(&foreign_key),
     };
-    let notice = env.claude_load_notice(session_id, tool_name);
-    if let Some(notice) = &notice {
-        if let (Some(artifact_id), Some(artifact_hash), Some(command)) = (
-            opt_str(notice, "artifact_id"),
-            opt_str(notice, "artifact_hash"),
-            opt_str(notice, "command"),
-        ) {
-            env.claude_mark_prompt_seen(session_id, &artifact_id, &artifact_hash, &command);
+    let notice = match (key, session_id) {
+        (Some(_), Some(session_id)) => {
+            let notice = env.claude_load_notice(session_id, tool_name);
+            if let Some(notice) = &notice {
+                if let (Some(artifact_id), Some(artifact_hash), Some(command)) = (
+                    opt_str(notice, "artifact_id"),
+                    opt_str(notice, "artifact_hash"),
+                    opt_str(notice, "command"),
+                ) {
+                    env.claude_mark_prompt_seen(session_id, &artifact_id, &artifact_hash, &command);
+                }
+            }
+            notice
         }
-    }
+        _ => None,
+    };
     if foreign_key.get() {
         let _ = connection.execute_batch("ROLLBACK");
         return Err(DirectNoticeDefer::ForeignKey);
+    }
+    if let Some((event_name, render)) = event {
+        let recorded = render(notice.as_ref()).is_some_and(|text| {
+            connection
+                .execute(
+                    "insert into guard_events (event_name, payload_json, occurred_at) \
+                     values (?1, ?2, ?3)",
+                    params![event_name, text, now],
+                )
+                .is_ok()
+        });
+        if !recorded {
+            let _ = connection.execute_batch("ROLLBACK");
+            return Err(DirectNoticeDefer::StoreUnavailable);
+        }
     }
     if connection.execute_batch("COMMIT").is_err() {
         let _ = connection.execute_batch("ROLLBACK");
