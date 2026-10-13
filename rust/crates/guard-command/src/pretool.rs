@@ -89,6 +89,8 @@ mod worktree_writes;
 mod wrangler_reads;
 
 pub mod generic;
+mod package_scripts_disabled;
+pub use package_scripts_disabled::no_script_install_command;
 
 pub use generic::bounded_task_metadata_output;
 pub use generic::evaluate_pre_tool_envelope;
