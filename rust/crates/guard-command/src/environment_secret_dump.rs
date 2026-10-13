@@ -175,6 +175,12 @@ fn file_operand(args: &[String]) -> Option<&str> {
     }
     None
 }
+/// Whether an `echo` or `printf` segment's text expands a credential-named
+/// variable such as `$GITHUB_TOKEN`. Printing one shows the secret to the
+/// agent, or writes it where any later command can read it. Fails closed.
+pub fn printer_expands_secret(text: &str) -> bool {
+    script_reads_secrets(text).unwrap_or(true)
+}
 fn segment_reads_secrets(
     segment: &[String],
     cwd: Option<&Path>,

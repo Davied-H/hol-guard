@@ -272,6 +272,13 @@ pub(super) fn observe(
             );
         }
     }
+    if literal_printer && crate::environment_secret_dump::printer_expands_secret(&segment.text) {
+        output.rule(
+            "command.shell-mutations.process-environment-secret-read",
+            index,
+            false,
+        );
+    }
     if matches!(executable.as_str(), "printenv" | "env") {
         if arguments.is_empty() || arguments.iter().any(|value| sensitive(value)) {
             output.rule(
