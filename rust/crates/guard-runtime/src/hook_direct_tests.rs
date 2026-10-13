@@ -165,12 +165,13 @@ fn edge(decision: &str, minimum_action: &str) -> Vec<u8> {
 }
 
 #[test]
-fn only_an_allow_is_answered() {
+fn only_an_unconditional_allow_is_answered() {
     let answered = allow_answer(&edge("allow", "allow")).unwrap();
     assert_eq!(answered["result"]["decision"], "allow");
-    // The default `warn` policy floor allows the call.
-    let warned = allow_answer(&edge("allow", "warn")).unwrap();
-    assert_eq!(warned["result"]["minimum_action"], "warn");
+    assert_eq!(
+        allow_answer(&edge("allow", "warn")),
+        Err(HookDirectDefer::NotAllow)
+    );
     for (decision, minimum_action) in [
         ("block", "block"),
         ("deny", "review"),
@@ -406,7 +407,12 @@ fn a_block_rule_saved_after_the_publish_defers() {
              insert into local_cli_command_grant values ('cli', 'run', 'allow');",
         )
         .unwrap();
-    assert_eq!(run(&lane, allowed_payload(&lane))["outcome"], "answer");
+    // The fixture policy warns on commands, so an allow-only grant stays with
+    // the daemon. A block rule is still read before that edge decision.
+    assert_eq!(
+        deferred(&run(&lane, allowed_payload(&lane))),
+        "direct_hook_not_allow"
+    );
     for statement in [
         "update local_cli_command_grant set state = 'block'",
         "update local_cli_command_grant set state = 'allow'; \
@@ -487,12 +493,13 @@ fn an_edge_verdict_other_than_allow_takes_the_daemon_path() {
     assert_eq!(deferred(&run(&lane, payload)), "direct_hook_not_allow");
 }
 
-fn drain(lane: &Lane, ack_through: Option<u64>) -> Value {
+/// The next evidence page, after acknowledging `acked`, a page drained before.
+fn drain(lane: &Lane, acked: Option<&Value>) -> Value {
     let request = crate::hook_direct_evidence::HookDirectEvidenceDrainRequestV1 {
         guard_home: lane.fixture.root.to_str().unwrap().to_owned(),
         max_records: None,
-        ack_through,
-        ack_epoch: None,
+        ack_through: acked.and_then(|page| page["through"].as_u64()),
+        ack_epoch: acked.and_then(|page| page["epoch"].as_str().map(str::to_owned)),
     };
     let page =
         crate::hook_direct_evidence::drain(&request, lane.fixture.store.direct_evidence()).unwrap();
@@ -545,7 +552,7 @@ fn an_answer_queues_the_evidence_the_daemon_records() {
     assert_eq!(record["payload"], expected);
     let again = drain(&lane, None);
     assert_eq!(again["records"], page["records"]);
-    assert_eq!(drain(&lane, page["through"].as_u64())["records"], json!([]));
+    assert_eq!(drain(&lane, Some(&page))["records"], json!([]));
 }
 
 #[test]
