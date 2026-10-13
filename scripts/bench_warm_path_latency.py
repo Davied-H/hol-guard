@@ -110,7 +110,9 @@ def measure_target(label: str, python: Path, args: argparse.Namespace) -> dict[s
                 phase = {"error": f"{type(error).__name__}: {error}"[:4000]}
                 print(f"  {label} {path} FAILED {phase['error']}", flush=True)
             else:
-                print(f"  {label} {path} p95={phase['stats_ms']['p95']:.2f} ms classes={phase['classes']}", flush=True)  # type: ignore[index]
+                p95 = phase["stats_ms"]["p95"]  # type: ignore[index]
+                route = f"route={phase.get('handler_route')} native={phase.get('native_status')}"
+                print(f"  {label} {path} p95={p95:.2f} ms classes={phase['classes']} {route}", flush=True)
             result[path] = phase
     result["loadavg_after"] = os.getloadavg()
     return result

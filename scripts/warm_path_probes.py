@@ -26,6 +26,7 @@ from collections import Counter
 from pathlib import Path
 
 import tomllib
+from warm_path_route import handler_route, native_status
 from warm_path_stats import describe
 
 _CLK_TCK = os.sysconf("SC_CLK_TCK") if hasattr(os, "sysconf") else 100
@@ -244,9 +245,13 @@ def run_hook_phase(cli: Path, env: dict[str, str], root: Path, *, warmup: int, s
     try:
         _run_install(cli, "claude-code", env, home, guard_home, workspace)
         handler = _claude_pretool_handler(home, workspace)
+        runtime = native_status(cli, env, workspace)
         payload = json.dumps({**_BENIGN_HOOK_PAYLOAD, "cwd": str(workspace)})
 
+        stderr_tail = ""
+
         def call() -> tuple[float, str]:
+            nonlocal stderr_tail
             started = time.perf_counter_ns()
             result = subprocess.run(
                 handler,
@@ -260,6 +265,7 @@ def run_hook_phase(cli: Path, env: dict[str, str], root: Path, *, warmup: int, s
                 check=False,
             )
             elapsed = (time.perf_counter_ns() - started) / 1e6
+            stderr_tail = result.stderr[-500:]
             return elapsed, classify_hook_output(result.returncode, result.stdout)
 
         warmup_ms = [call()[0] for _ in range(warmup)]
@@ -286,6 +292,9 @@ def run_hook_phase(cli: Path, env: dict[str, str], root: Path, *, warmup: int, s
         "service_cpu_ms_per_call": service_cpu_ms / max(1, samples),
         "service": after_service,
         "handler_shape": {"kind": "shell" if isinstance(handler, str) else "argv", "length": len(handler)},
+        "handler_route": handler_route(handler),
+        "native_status": runtime,
+        "last_stderr_tail": stderr_tail,
     }
 
 
