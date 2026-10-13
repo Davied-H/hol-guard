@@ -125,8 +125,11 @@ fn process_ids(value: &str) -> bool {
 }
 
 pub(in crate::pretool) fn safe_pg_isready_arguments(arguments: &[String]) -> bool {
-    // An omitted -h inherits PGHOST/PGSERVICE/libpq configuration, which can
-    // route a readiness probe to an arbitrary remote address.
+    // The command text must name a loopback host: an omitted -h would take
+    // the target from PGHOST or a service file. This bounds what the agent
+    // wrote, not the inherited libpq environment (PGHOSTADDR or a service
+    // `hostaddr` still overrides -h); that environment is the user's own
+    // configuration, and the probe sends only a startup packet.
     let mut explicit_loopback = false;
     let mut index = 0;
     while index < arguments.len() {
