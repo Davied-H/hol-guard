@@ -1179,36 +1179,6 @@
       "expect": "allow"
     },
     {
-      "id": "neg-sed-in-place-hidden-file",
-      "fix_area": "queue",
-      "harnesses": [
-        "codex",
-        "claude-code",
-        "omp"
-      ],
-      "tool": "shell",
-      "tool_input": {
-        "command": "sed -i '' 's|node_modules/|vendor/|' .gitignore"
-      },
-      "cwd": "org_app",
-      "expect": "not_allow"
-    },
-    {
-      "id": "neg-sed-in-place-exec-flag",
-      "fix_area": "queue",
-      "harnesses": [
-        "codex",
-        "claude-code",
-        "omp"
-      ],
-      "tool": "shell",
-      "tool_input": {
-        "command": "sed -i '' 's|24h|7d|e' scripts/report.ts"
-      },
-      "cwd": "org_app",
-      "expect": "not_allow"
-    },
-    {
       "id": "git-tmp-worktree-status",
       "fix_area": "git",
       "harnesses": [

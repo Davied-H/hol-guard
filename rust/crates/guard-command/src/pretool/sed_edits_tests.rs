@@ -110,6 +110,14 @@ fn single_substitutions_are_inert() {
     }
     for script in [
         "s/a/b/e",
+        "s|24h|7d|e",
+        "s#a#b#e",
+        "s/a/b/ge",
+        "s/a/b/eg",
+        "s/a/b/gw out.txt",
+        "s/a/b/eI",
+        "s/a/b/Me",
+        "s/a/b/gM",
         "s/a/b/w out.txt",
         "s/a/b/;w out.txt",
         "s/a/b/;e id",
@@ -316,18 +324,32 @@ fn a_bounded_workspace_edit_needs_no_prompt() {
             Some(layout.home.as_str()),
             Some(layout.workspace.as_str()),
         )
-        .minimum_action
     };
     for harness in ["codex", "claude-code", "omp"] {
         let edit = "sed -i '' 's|href={OLD}|href={next}|' src/app/page.tsx";
-        assert_eq!(action(harness, edit), "allow", "{harness}: {edit}");
+        assert_eq!(
+            action(harness, edit).minimum_action,
+            "allow",
+            "{harness}: {edit}"
+        );
+        // These may still run in the workspace sandbox, but never as a proven
+        // exact-safe edit on the host.
         for command in [
             "sed -i '' 's/a/b/' AGENTS.md",
             "sed -i '' 's/a/b/' .git/config",
+            "sed -i '' 's/a/b/' .env",
             "sed -i '' 's/a/b/e' src/app/page.tsx",
+            "sed -i '' 's|24h|7d|e' src/app/page.tsx",
+            "sed -i '' 's#a#b#ge' src/app/page.tsx",
+            "sed -i '' 's/a/b/gw out.txt' src/app/page.tsx",
             "sed -i '' 's/a/b/' ../notes.txt",
         ] {
-            assert_ne!(action(harness, command), "allow", "{harness}: {command}");
+            let result = action(harness, command);
+            assert_ne!(result.minimum_action, "allow", "{harness}: {command}");
+            assert_ne!(
+                result.reason_code, "native_exact_safe_command",
+                "{harness}: {command}"
+            );
         }
     }
     let _ = std::fs::remove_dir_all(&layout.root);
