@@ -18,6 +18,7 @@ from .restricted_pytest_model import (
     RestrictedPytestPlan,
 )
 from .restricted_pytest_validation import _normalized_command, _path_is_within
+from .restricted_vite_output import config_bundle_directory, declared_vite_output
 from .restricted_vitest import run_restricted_node_plan
 from .secret_sensitivity import classify_secret_path
 
@@ -30,8 +31,31 @@ def is_local_package_entry(argument: str, package_entry: str) -> bool:
     return prefix != argument and (prefix == "" or prefix.endswith("/"))
 
 
-def validate_build_output_root(path: Path, *, workspace: Path) -> None:
-    if path.parent != workspace or path.name not in {"dist", "build", "out"} or path.is_symlink():
+def _package_directory(directory: Path, workspace: Path) -> bool:
+    """The workspace root, or a package directory below it reached without links."""
+    if directory == workspace:
+        return True
+    if not _path_is_within(directory, workspace) or not (directory / "package.json").is_file():
+        return False
+    parts = directory.relative_to(workspace).parts
+    if any(part.startswith(".") or part == "node_modules" for part in parts):
+        return False
+    return not any((workspace.joinpath(*parts[: index + 1])).is_symlink() for index in range(len(parts)))
+
+
+def _conventional_output(path: Path, workspace: Path) -> bool:
+    # A package below the workspace (a monorepo app reached with `cd`) builds
+    # into its own dist, next to its package.json.
+    return _package_directory(path.parent, workspace) and path.name in {"dist", "build", "out"}
+
+
+def validate_build_output_root(path: Path, *, workspace: Path, cwd: Path | None = None) -> None:
+    """Accept a conventional build directory, or the literal one the Vite config in `cwd` names."""
+    if path.is_symlink() or not (
+        _conventional_output(path, workspace)
+        or (cwd is not None and declared_vite_output(cwd, workspace) == path)
+        or (cwd is not None and config_bundle_directory(cwd, workspace, path.parent) == path)
+    ):
         raise RestrictedPytestError(
             "node_build_invalid_output", "Build output must be a dedicated generated directory."
         )
@@ -124,7 +148,7 @@ def prepare_restricted_node_tool(
     base = prepare_restricted_node_test(["node", "--test"], workspace=workspace, cwd=cwd)
     output_roots = ()
     if name == "vite":
-        output_name = "dist"
+        output_name = None
         for index, value in enumerate(args):
             if value.startswith("--outDir="):
                 output_name = value.removeprefix("--outDir=")
@@ -132,11 +156,11 @@ def prepare_restricted_node_tool(
                 if index + 1 >= len(args):
                     raise RestrictedPytestError("node_build_invalid_output", "Missing output directory.")
                 output_name = args[index + 1]
-        output = base.cwd / output_name
-        validate_build_output_root(output, workspace=base.workspace)
+        explicit_config = any(value in {"-c", "--config"} or value.startswith("--config=") for value in args)
+        declared = None if output_name or explicit_config else declared_vite_output(base.cwd, base.workspace)
+        output = declared or base.cwd / (output_name or "dist")
+        validate_build_output_root(output, workspace=base.workspace, cwd=None if declared is None else base.cwd)
         output_roots = (output,)
-        if not any(value == "--configLoader" or value.startswith("--configLoader=") for value in args):
-            args = (*args, "--configLoader", "runner")
     try:
         modules = nearest_project_root(base.cwd, base.workspace, "node_modules/" + _ENTRIES[name]) / "node_modules"
         entry = (modules / _ENTRIES[name]).resolve(strict=True)
@@ -150,6 +174,13 @@ def prepare_restricted_node_tool(
             "node_tool_dependency_unavailable",
             "The local lint/typecheck tool is unavailable; no replacement was downloaded.",
         ) from error
+    if name == "vite" and not any(value == "--configLoader" or value.startswith("--configLoader=") for value in args):
+        explicit_config = any(value in {"-c", "--config"} or value.startswith("--config=") for value in args)
+        bundle = None if explicit_config else config_bundle_directory(base.cwd, base.workspace, modules)
+        if bundle is None:
+            args = (*args, "--configLoader", "runner")
+        else:
+            output_roots = (*output_roots, bundle)
     return replace(
         base,
         profile_version=NODE_BUILD_OUTPUT_PROFILE_VERSION if name == "vite" else NODE_TOOL_READ_ONLY_PROFILE_VERSION,
@@ -169,6 +200,10 @@ def run_restricted_node_tool(
     authorize_capability: Callable[[tuple[str, ...]], None] | None = None,
     merge_stderr: bool = False,
 ) -> int:
+    for root in plan.output_roots:
+        # Vite creates this directory itself; a sandbox grant needs it first.
+        if root.name == ".vite-temp":
+            root.mkdir(mode=0o755, exist_ok=True)
     return run_restricted_node_plan(
         plan,
         timeout_seconds=timeout_seconds,
