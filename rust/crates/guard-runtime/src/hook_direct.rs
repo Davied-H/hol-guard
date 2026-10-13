@@ -359,6 +359,8 @@ fn reviewed_edge(edge: &[u8], event: &str) -> Result<Value, HookDirectDefer> {
 ///   the edge's harness response. A saved approval never lowers a terminal
 ///   action, and the daemon checks custom block rules only against an allow.
 fn pre_tool_answer(edge: &[u8], contained: bool) -> Result<Value, HookDirectDefer> {
+    #[cfg(test)]
+    eprintln!("EDGE {}", String::from_utf8_lossy(edge));
     let parsed = reviewed_edge(edge, PRE_TOOL_USE)?;
     let result = parsed.get("result");
     let field = |name: &str| {

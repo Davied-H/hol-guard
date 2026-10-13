@@ -894,3 +894,33 @@ fn a_claude_code_prompt_without_a_notice_is_answered_in_either_posture() {
         assert_eq!(page["records"][0]["harness"], "claude-code", "{label}");
     }
 }
+
+#[test]
+fn probe_local_cli_edge_temporary() {
+    let open = trusting_lane("cli-probe", json!({}));
+    let root = std::path::Path::new(&open.workspace);
+    fs::create_dir_all(root.join("bin")).unwrap();
+    fs::write(root.join("x.py"), b"print(1)\n").unwrap();
+    fs::write(root.join("bin/tool.sh"), b"#!/bin/sh\necho hi\n").unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(root.join("bin/tool.sh"), fs::Permissions::from_mode(0o755)).unwrap();
+    package_script_payload(&open);
+    for command in [
+        "npm run build",
+        "python3 x.py",
+        "./bin/tool.sh",
+        "npx wrangler deploy",
+    ] {
+        eprintln!("COMMAND {command}");
+        run(
+            &open,
+            json!({
+                "hook_event_name": "PreToolUse",
+                "tool_name": "Bash",
+                "tool_input": { "command": command },
+                "cwd": open.workspace,
+            }),
+        );
+    }
+    panic!("PROBE done");
+}
