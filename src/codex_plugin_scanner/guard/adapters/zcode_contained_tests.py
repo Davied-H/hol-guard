@@ -29,6 +29,7 @@ _PROFILES = {
     "native_git_readonly_containment_required": "git-readonly-v1",
     "native_node_tool_readonly_containment_required": "node-tool-readonly-v1",
     "native_node_build_output_containment_required": "node-build-output-v1",
+    "native_workspace_containment_required": "workspace-contained-v1",
 }
 _ROUTED_HARNESSES = frozenset({"zcode", "claude-code"})
 # Codex is routed by its hook bridge, which first confirms the running Codex applies updatedInput.
@@ -105,6 +106,13 @@ def route_zcode_containment(
     return routed if routed is not None else response
 
 
+def _platform_contains(response: Mapping[str, object]) -> bool:
+    """macOS runs every contained profile; Linux runs the workspace sandbox."""
+    return sys.platform == "darwin" or (
+        sys.platform == "linux" and response.get("required_execution_profile") == "workspace-contained-v1"
+    )
+
+
 def contained_zcode_response(
     response: Mapping[str, object],
     *,
@@ -115,7 +123,7 @@ def contained_zcode_response(
     """Allow only the rewritten sink; native authority is rechecked at execution."""
     reason = response.get("reason_code")
     if (
-        sys.platform != "darwin"
+        not _platform_contains(response)
         or config.get("harness") not in _SINK_HARNESSES
         or response.get("decision") != "deny"
         or response.get("policy_action") != "sandbox-required"
