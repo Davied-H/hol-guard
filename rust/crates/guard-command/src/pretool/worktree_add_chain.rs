@@ -109,7 +109,9 @@ fn prove(
         return false;
     }
     // Reads are proven in the repository the checkout belongs to. If the
-    // `cd` fails, a read after `;` runs there, which this proof also covers.
+    // `cd` fails, a read after `;` runs in the shell's own directory, so `;`
+    // is accepted only when that directory is the proven repository.
+    let fallback_proven = chdir.is_none() || chdir.as_deref() == context.cwd;
     let repository = super::super::PathContext {
         cwd: chdir.as_deref().or(context.cwd),
         ..context
@@ -118,7 +120,11 @@ fn prove(
         let joined = super::separator_between(model, index - 1, index);
         if !joined
             .as_deref()
-            .is_some_and(|separator| matches!(separator.trim(), "&&" | ";" | "|"))
+            .is_some_and(|separator| match separator.trim() {
+                "&&" | "|" => true,
+                ";" => fallback_proven,
+                _ => false,
+            })
         {
             return false;
         }

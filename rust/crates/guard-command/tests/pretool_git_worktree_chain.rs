@@ -176,3 +176,20 @@ fn other_work_in_the_new_worktree_stays_reviewed() {
         assert_reviewed(&home, &repository, command);
     }
 }
+
+/// With `git -C`, a failed `cd` leaves the shell in a directory the proof
+/// never read, so a read after `;` stays reviewed.
+#[test]
+fn fallback_reads_after_a_routed_add_stay_reviewed() {
+    let (_cleanup, home, repository) = repository("chain-routed");
+    let organization = repository.parent().unwrap();
+    let destination = organization.join("app-flat");
+    let (repository_text, destination) = (repository.display(), destination.display());
+    assert_reviewed(
+        &home,
+        organization,
+        &format!(
+            "git -C {repository_text} worktree add -b flat {destination} origin/main && cd {destination}; git log --oneline -3"
+        ),
+    );
+}
