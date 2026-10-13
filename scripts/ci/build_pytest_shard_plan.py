@@ -81,7 +81,7 @@ SCHEDULING_ONLY_NODE_IDS = frozenset(
     }
 )
 # The benign and replay gates expect the Linux workspace sandbox. Coverage
-# deselects them; native-command-evaluators runs them with bubblewrap.
+# deselects them; native-gates runs them with bubblewrap.
 SANDBOX_GATE_FILES = frozenset(
     {"tests/test_guard_benign_false_positive_gate.py", "tests/test_guard_gauntlet_replay_gate.py"}
 )
