@@ -67,6 +67,7 @@ pub(crate) struct HookDirectRequestV1 {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum HookDirectDefer {
     HarnessUnsupported,
+    HarnessUnmanaged,
     EventUnsupported,
     PayloadUnsupported,
     TransitionProbe,
@@ -89,6 +90,7 @@ impl HookDirectDefer {
     fn code(self) -> &'static str {
         match self {
             Self::HarnessUnsupported => "direct_hook_harness_unsupported",
+            Self::HarnessUnmanaged => "direct_hook_harness_unmanaged",
             Self::EventUnsupported => "direct_hook_event_unsupported",
             Self::PayloadUnsupported => "direct_hook_payload_unsupported",
             Self::TransitionProbe => "direct_hook_transition_probe",
@@ -208,12 +210,19 @@ fn answer(
         Some(false) => {}
     }
     // The binding is only as fresh as its last publish, while the daemon reads
-    // the rules from the store before every hook. A rule saved since then
-    // lives only in the store, so read it there too. An unreadable store
-    // counts as holding rules, as a failed daemon probe does.
-    if crate::local_store_read::local_cli_block_rules_exist(Path::new(&request.guard_home))
-        .unwrap_or(true)
-    {
+    // the rules and the managed installs from the store before every hook.
+    // A change saved since then lives only in the store, so read it there
+    // too. An unreadable store counts as holding rules, as a failed daemon
+    // probe does.
+    let store =
+        crate::local_store_read::hook_store_probe(Path::new(&request.guard_home), DIRECT_HARNESS)
+            .map_err(|_| HookDirectDefer::LocalCliRules)?;
+    if store.harness_unmanaged {
+        // The daemon passes such a hook through and leaves the harness its
+        // own permission flow; an allow answer would replace that flow.
+        return Err(HookDirectDefer::HarnessUnmanaged);
+    }
+    if store.local_cli_block_rules {
         return Err(HookDirectDefer::LocalCliRules);
     }
     let postures = binding
