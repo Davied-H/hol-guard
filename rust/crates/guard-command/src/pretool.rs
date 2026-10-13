@@ -371,7 +371,12 @@ pub(super) fn evaluate_pre_tool_with_execution_context(
         deadline,
         execution_environment,
     ) {
-        Ok(unrolled) if matches!(unrolled.minimum_action.as_str(), "allow" | "review" | "block") => {
+        Ok(unrolled)
+            if matches!(
+                unrolled.minimum_action.as_str(),
+                "allow" | "review" | "block"
+            ) =>
+        {
             Ok(unrolled)
         }
         _ => Ok(decision),

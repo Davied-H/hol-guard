@@ -375,4 +375,3 @@ fn prefixed_git_commands_keep_the_git_permission_decision() {
         assert_eq!(decision(&controls, command).0, "block", "{command}");
     }
 }
-

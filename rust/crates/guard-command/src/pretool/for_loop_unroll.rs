@@ -74,7 +74,10 @@ fn cd_prefix(command: &str) -> Option<(String, &str)> {
         return None;
     }
     let rest = rest.trim_start_matches([' ', '\t']).strip_prefix("&&")?;
-    Some((format!("cd {dir} && "), rest.trim_start_matches([' ', '\t', '\n'])))
+    Some((
+        format!("cd {dir} && "),
+        rest.trim_start_matches([' ', '\t', '\n']),
+    ))
 }
 
 /// Consume `keyword` followed by whitespace.
