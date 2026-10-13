@@ -87,11 +87,11 @@ fn routes_every_vector_as_the_python_router_did() {
         .unwrap();
         let written = requests(&temp);
         if case["routed"] != json!(true) {
-            assert_eq!(routed, None, "{name}");
+            assert!(routed.is_none(), "{name}");
             assert!(written.is_empty(), "{name}");
             continue;
         }
-        let routed = routed.unwrap_or_else(|| panic!("{name} was not routed"));
+        let (routed, snapshot) = routed.unwrap_or_else(|| panic!("{name} was not routed"));
         assert_eq!(written.len(), 1, "{name}");
         let directory = &written[0];
         let request = directory.join(REQUEST_FILE_NAME);
@@ -150,8 +150,9 @@ fn routes_every_vector_as_the_python_router_did() {
             }),
             "{name}"
         );
-        fs::remove_file(&request).unwrap();
-        fs::remove_dir(directory).unwrap();
+        // An answer that defers after routing drops its snapshot.
+        drop(snapshot);
+        assert!(!directory.exists(), "{name}");
     }
     fs::remove_dir_all(root).unwrap();
 }
@@ -186,6 +187,7 @@ fn route_shell(
     }))
     .unwrap();
     route_on(&response, &payload, target, platform("linux"), temp)
+        .map(|routed| routed.map(|(response, _)| response))
 }
 
 #[test]

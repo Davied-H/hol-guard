@@ -30,6 +30,40 @@ pub(super) struct SinkTarget<'a> {
     pub(super) workspace: &'a str,
 }
 
+/// A routed harness response and the request snapshot it runs.
+pub(super) type Routed = (Value, Snapshot);
+
+/// A written request snapshot. It is removed when dropped, so a direct
+/// answer that defers after routing leaves nothing behind for the daemon,
+/// which writes its own; `keep` hands it to the sink the answer runs.
+pub(super) struct Snapshot {
+    request: Option<std::path::PathBuf>,
+}
+
+impl Snapshot {
+    #[cfg_attr(not(unix), allow(dead_code))]
+    fn new(request: std::path::PathBuf) -> Self {
+        Self {
+            request: Some(request),
+        }
+    }
+
+    pub(super) fn keep(mut self) {
+        self.request = None;
+    }
+}
+
+impl Drop for Snapshot {
+    fn drop(&mut self) {
+        if let Some(request) = self.request.take() {
+            let _ = std::fs::remove_file(&request);
+            if let Some(directory) = request.parent() {
+                let _ = std::fs::remove_dir(directory);
+            }
+        }
+    }
+}
+
 /// The routed harness response for the edge's `response`, or `None` when the
 /// daemon would return `response` unchanged. A request the resident cannot
 /// write defers, so the daemon takes the call.
@@ -37,7 +71,7 @@ pub(super) fn route(
     response: &Value,
     payload: &Map<String, Value>,
     target: &SinkTarget<'_>,
-) -> Result<Option<Value>, HookDirectDefer> {
+) -> Result<Option<Routed>, HookDirectDefer> {
     route_on(
         response,
         payload,
@@ -55,7 +89,7 @@ fn route_on(
     target: &SinkTarget<'_>,
     platform: fn(&str) -> bool,
     temp: &std::path::Path,
-) -> Result<Option<Value>, HookDirectDefer> {
+) -> Result<Option<Routed>, HookDirectDefer> {
     // The sink asks for the receipt alone; an untrusted caller setting this
     // only keeps its own call denied.
     if payload.get(RECEIPT_ONLY_FIELD) == Some(&Value::Bool(true)) || !routable(response, platform)
@@ -144,7 +178,7 @@ mod request;
 
 #[cfg(not(unix))]
 mod request {
-    use super::{HookDirectDefer, SinkTarget};
+    use super::{HookDirectDefer, Routed, SinkTarget};
     use serde_json::{Map, Value};
 
     pub(super) fn write_and_route(
@@ -152,7 +186,7 @@ mod request {
         _payload: &Map<String, Value>,
         _original: &Map<String, Value>,
         _target: &SinkTarget<'_>,
-    ) -> Result<Option<Value>, HookDirectDefer> {
+    ) -> Result<Option<Routed>, HookDirectDefer> {
         Err(HookDirectDefer::ContainedRouteFailed)
     }
 }

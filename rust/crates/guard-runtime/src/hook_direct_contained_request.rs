@@ -7,7 +7,7 @@
 //! snapshot once it has. A snapshot whose call never ran is reclaimed after
 //! a day, as the daemon reclaims its own.
 
-use super::{first, routed_response, HookDirectDefer, SinkTarget};
+use super::{first, routed_response, HookDirectDefer, Routed, SinkTarget, Snapshot};
 use nix::fcntl::AtFlags;
 use nix::sys::stat::fstatat;
 use nix::unistd::{getuid, unlinkat, UnlinkatFlags};
@@ -36,7 +36,7 @@ pub(super) fn write_and_route(
     payload: &Map<String, Value>,
     original: &Map<String, Value>,
     target: &SinkTarget<'_>,
-) -> Result<Option<Value>, HookDirectDefer> {
+) -> Result<Option<Routed>, HookDirectDefer> {
     let failed = HookDirectDefer::ContainedRouteFailed;
     // The binding is only as fresh as its last publish; a launcher removed
     // since then leaves the call to the daemon, which resolves it again.
@@ -96,7 +96,10 @@ pub(super) fn write_and_route(
         ]
         .map(str::to_owned),
     );
-    Ok(Some(routed_response(original, &command)))
+    Ok(Some((
+        routed_response(original, &command),
+        Snapshot::new(request),
+    )))
 }
 
 /// A new owner-only directory under `temp`, named as `mkdtemp` names one.

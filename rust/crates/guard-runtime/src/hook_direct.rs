@@ -315,6 +315,8 @@ fn answer(
     };
     let edge = crate::edge::evaluate_envelope_with_store(envelope, policy_store)
         .map_err(|_| HookDirectDefer::EdgeFailed)?;
+    // Removed again unless the answer that runs it is returned.
+    let mut snapshot = None;
     let answered = match event {
         // Watch never pauses or repairs a call: the daemon records the
         // edge's non-blocking response for every verdict, as the drain does.
@@ -329,10 +331,11 @@ fn answer(
                     home_dir: &request_home,
                     workspace: &workspace,
                 };
-                if let Some(routed) =
+                if let Some((routed, written)) =
                     contained::route(&answered["harness_response"], &evidence_payload, &target)?
                 {
                     answered["harness_response"] = routed;
+                    snapshot = Some(written);
                 }
             }
             answered
@@ -359,6 +362,9 @@ fn answer(
     });
     if !policy_store.direct_evidence().offer(evidence) {
         return Err(HookDirectDefer::EvidenceFull);
+    }
+    if let Some(snapshot) = snapshot {
+        snapshot.keep();
     }
     Ok(answered)
 }
