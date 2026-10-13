@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import ast
 import re
+from pathlib import Path
 
 import yaml
-from pathlib import Path
 
 from tests.support.ci_workflow import composite_action_steps, load_ci_workflow
 
