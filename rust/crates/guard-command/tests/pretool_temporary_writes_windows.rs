@@ -92,11 +92,15 @@ fn profile_temporary_write_keeps_spelling_link_and_leaf_boundaries() {
     std::fs::write(&outside, "x").unwrap();
     let hard = scratch.join("hard.txt");
     std::fs::hard_link(&outside, &hard).unwrap();
+    // A junction into the workspace is an ordinary workspace write, so point
+    // it at a directory outside both the workspace and home.
+    let elsewhere = Path::new(&fixture.home).parent().unwrap().join("elsewhere");
+    std::fs::create_dir_all(&elsewhere).unwrap();
     let junction = scratch.join("junction");
     let status = std::process::Command::new("cmd")
         .args(["/C", "mklink", "/J"])
         .arg(&junction)
-        .arg(&fixture.workspace)
+        .arg(&elsewhere)
         .stdout(std::process::Stdio::null())
         .status()
         .unwrap();
