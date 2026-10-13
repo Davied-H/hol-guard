@@ -1,0 +1,3393 @@
+{
+ "cases": [
+  {
+   "name": "sign_batch",
+   "payload": {
+    "sign": [
+     {
+      "integrity_generation": 1,
+      "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "integrity_version": 2,
+      "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+      "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+      "signed_at": "2026-10-13T12:00:00Z"
+     },
+     {
+      "integrity_generation": 3,
+      "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "integrity_version": 2,
+      "payload_hash": "15896827966ae7db6b0d05f0173b4e6e29f5ee6ee5e9130cdf97f3cf61205d07",
+      "payload_mac": "da9d3a648c0f65aa1d57027871696d892804e0f527910e6b6af34954c88c9a2b",
+      "signed_at": "2026-10-13T12:00:00Z"
+     },
+     {
+      "integrity_generation": 2,
+      "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "integrity_version": 2,
+      "payload_hash": "0313bfb0db554ca24e9d05c782d19d7c5a0ca88fbfafbfcc7822216e3812d638",
+      "payload_mac": "b2a1a69bdcda64a0fd2bb10b6ee402e8b71565c5cf040928ff50934e411bfc73",
+      "signed_at": "2026-10-13T12:00:00Z"
+     },
+     {
+      "integrity_generation": 1,
+      "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "integrity_version": 2,
+      "payload_hash": "e7798814b208eb9316b33c6be733a7b2d88d7a5a2a7d508ad661e0a06f594ab1",
+      "payload_mac": "7e0b7b1601e9ca973366856a2acab5d9bc984ff3e2605b3eb711d55a3606f735",
+      "signed_at": "2026-10-13T12:00:00Z"
+     },
+     {
+      "integrity_generation": 4,
+      "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "integrity_version": 2,
+      "payload_hash": "34d998c27f90da6bf8ad9b341f077e7236c15bbd9b3b17d964579b9cdffa3ce1",
+      "payload_mac": "38d334fb33b1d85ea7f6949b095a27fe1afe7874620ad783bac6e695dd69006b",
+      "signed_at": "2026-10-13T12:00:00Z"
+     },
+     {
+      "integrity_generation": 5,
+      "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "integrity_version": 2,
+      "payload_hash": "01f6a79f1f633a1a4a351a641cd05b60eaac6c47baac361ac01fd209fefc651c",
+      "payload_mac": "9fa9d23e84f422b9aeaae5f6b9da73dd166f3a7a1095131da705204bf9e466d2",
+      "signed_at": "2026-10-13T12:00:00Z"
+     },
+     {
+      "integrity_generation": 5,
+      "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "integrity_version": 2,
+      "payload_hash": "b9c7273e212a96b6109353306e3c49783c9e95311da6d498c3d3178676c2d4f5",
+      "payload_mac": "bd834541c459403caf9cf6ba5499caaf70b23fbce9d8333fc093eb7789e4e919",
+      "signed_at": "2026-10-13T12:00:00Z"
+     },
+     {
+      "integrity_generation": 6,
+      "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "integrity_version": 2,
+      "payload_hash": "41ef4239cf2536879e726c12a3c9c051f774e41452fea2ff4296c6a735f83cac",
+      "payload_mac": "fb20425b11cba6434b15458c68ac3291e4a589b39d64e32ec888ce0dd6a5929f",
+      "signed_at": "2026-10-13T12:00:00Z"
+     },
+     {
+      "integrity_generation": 2,
+      "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "integrity_version": 2,
+      "payload_hash": "e6d06c812ddd21f3037625e57d97dbb5ffd4cbffc952a779b273ffb9314fc41a",
+      "payload_mac": "b618015c1f7e883504aec6a2bf25ef171e96d5ed37e24d56aa8726ebb67736f5",
+      "signed_at": "2026-10-13T12:00:00Z"
+     },
+     {
+      "integrity_generation": 9,
+      "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "integrity_version": 2,
+      "payload_hash": "bfa47501d0031e2ba363c1e7d3327c827be3c587d6ed5ea385683c331430eb72",
+      "payload_mac": "52c6d7158d1559ad0a2427c5aa22f4965c7fee89392e5592d63f4d756aead2c4",
+      "signed_at": "2026-10-13T12:00:00Z"
+     },
+     {
+      "integrity_generation": 0,
+      "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "integrity_version": 2,
+      "payload_hash": "4534e6bf0f248c24fc69c413010d0953dfc15669685627681023473928e7b90c",
+      "payload_mac": "9dc2e4c65cc212f012e2775a79d1a8b65b4414bafe1bed8c502cf38c2bef7d89",
+      "signed_at": "2026-10-13T12:00:00Z"
+     },
+     {
+      "integrity_generation": 9007199254740993,
+      "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "integrity_version": 2,
+      "payload_hash": "cca4f08b822e679bbfe2a0d81f659e18dc79add5b47734a8d4e0b76baab3c463",
+      "payload_mac": "52e93031decd2e0141ec3aaa1b2395456067cf2b875c8b9ea8fbd57d3257cdb1",
+      "signed_at": "2026-10-13T12:00:00Z"
+     }
+    ],
+    "verify": []
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "sign-batch",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [
+     {
+      "generation": 1,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "owner": "local",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "signed_at": "2026-10-13T12:00:00Z"
+     },
+     {
+      "generation": 3,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "owner": "local",
+       "publisher": "\u00e9diteur",
+       "reason": "Freigabe f\u00fcr \u00e9tape \u2014 \u65e5\u672c\u8a9e \ud83d\ude00",
+       "scope": "artifact",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/d\u00e9mo"
+      },
+      "signed_at": "2026-10-13T12:00:00Z"
+     },
+     {
+      "generation": 2,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": "",
+       "harness": "claude-code",
+       "owner": "",
+       "publisher": "",
+       "reason": "",
+       "scope": "artifact",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": ""
+      },
+      "signed_at": "2026-10-13T12:00:00Z"
+     },
+     {
+      "generation": 1,
+      "row": {
+       "action": "allow",
+       "artifact_hash": null,
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": null,
+       "expires_at": null,
+       "harness": "claude-code",
+       "owner": null,
+       "publisher": null,
+       "reason": null,
+       "scope": "artifact",
+       "source": "local",
+       "updated_at": null,
+       "workspace": null
+      },
+      "signed_at": "2026-10-13T12:00:00Z"
+     },
+     {
+      "generation": 4,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": true,
+       "expires_at": null,
+       "harness": "claude-code",
+       "owner": "local",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "signed_at": "2026-10-13T12:00:00Z"
+     },
+     {
+      "generation": 5,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": " 42 ",
+       "expires_at": null,
+       "harness": "claude-code",
+       "owner": "local",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "signed_at": "2026-10-13T12:00:00Z"
+     },
+     {
+      "generation": 5,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": "4x2",
+       "expires_at": null,
+       "harness": "claude-code",
+       "owner": "local",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "signed_at": "2026-10-13T12:00:00Z"
+     },
+     {
+      "generation": 6,
+      "row": {
+       "action": [
+        "allow"
+       ],
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "owner": false,
+       "publisher": null,
+       "reason": 17,
+       "scope": "artifact",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "signed_at": "2026-10-13T12:00:00Z"
+     },
+     {
+      "generation": 2,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "Bash:printf \"a\\tb\\n\" </dev/null",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "owner": "local",
+       "publisher": null,
+       "reason": "line\nbreak\ttab\u0001ctl",
+       "scope": "artifact",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "signed_at": "2026-10-13T12:00:00Z"
+     },
+     {
+      "generation": 9,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": null,
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": "2026-10-14T00:00:00Z",
+       "harness": "claude-code",
+       "owner": "local",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "workspace",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "signed_at": "2026-10-13T12:00:00Z"
+     },
+     {
+      "generation": 0,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "owner": "local",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "signed_at": "2026-10-13T12:00:00Z"
+     },
+     {
+      "generation": 9007199254740993,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "owner": "local",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "signed_at": "2026-10-13T12:00:00Z"
+     }
+    ],
+    "verify": []
+   },
+   "request_sha256": "sha256:d3db901cdf9d87c5d0567dc6870101f73b87e24f21188701f7ae4bad362f02ce"
+  },
+  {
+   "name": "advance_generation",
+   "payload": {
+    "sign": [
+     {
+      "integrity_generation": 2,
+      "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "integrity_version": 2,
+      "payload_hash": "7bae8e80d1a45e68d810acb277b4f1578827d3eae189d772569ab96b4a8d3e4a",
+      "payload_mac": "6252c6bd2426e537be01fcbcbb7ff4992cab5d72b709a32a2dd19e4ed64475c0",
+      "signed_at": "2026-10-13T12:05:00Z"
+     }
+    ],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "hmac-sha256",
+      "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+      "status": "valid"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "advance-generation",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [
+     {
+      "generation": 2,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 1,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "signed_at": "2026-10-13T12:05:00Z"
+     }
+    ],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 1,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "trusted_generation": 1
+     }
+    ]
+   },
+   "request_sha256": "sha256:1edbbe0eccabab37e4b8c4fac412fcf899029ad03ee45e6869eada795ae97531"
+  },
+  {
+   "name": "verify_plain_valid",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "hmac-sha256",
+      "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+      "status": "valid"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "plain_valid",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 1,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "trusted_generation": 1
+     }
+    ]
+   },
+   "request_sha256": "sha256:73c078065f6af130f7cb11d6eecd29a541d402e42d7d92007df15602842a4c4b"
+  },
+  {
+   "name": "verify_plain_untrusted_generation",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "hmac-sha256",
+      "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+      "status": "valid"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "plain_untrusted_generation",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 1,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      }
+     }
+    ]
+   },
+   "request_sha256": "sha256:7fcf5d4a8d29183f27fde33c47f091a76c30e67d72c7251fddae0a5618bcd03e"
+  },
+  {
+   "name": "verify_unicode_valid",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "hmac-sha256",
+      "payload_hash": "15896827966ae7db6b0d05f0173b4e6e29f5ee6ee5e9130cdf97f3cf61205d07",
+      "status": "valid"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "unicode_valid",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 3,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": "15896827966ae7db6b0d05f0173b4e6e29f5ee6ee5e9130cdf97f3cf61205d07",
+       "payload_mac": "da9d3a648c0f65aa1d57027871696d892804e0f527910e6b6af34954c88c9a2b",
+       "publisher": "\u00e9diteur",
+       "reason": "Freigabe f\u00fcr \u00e9tape \u2014 \u65e5\u672c\u8a9e \ud83d\ude00",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/d\u00e9mo"
+      },
+      "trusted_generation": 3
+     }
+    ]
+   },
+   "request_sha256": "sha256:13a807bb315563e36d6e8f526e4fd4717ce0590b67a4e5c9dbb946d0e7c30a95"
+  },
+  {
+   "name": "verify_unicode_untrusted_generation",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "hmac-sha256",
+      "payload_hash": "15896827966ae7db6b0d05f0173b4e6e29f5ee6ee5e9130cdf97f3cf61205d07",
+      "status": "valid"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "unicode_untrusted_generation",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 3,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": "15896827966ae7db6b0d05f0173b4e6e29f5ee6ee5e9130cdf97f3cf61205d07",
+       "payload_mac": "da9d3a648c0f65aa1d57027871696d892804e0f527910e6b6af34954c88c9a2b",
+       "publisher": "\u00e9diteur",
+       "reason": "Freigabe f\u00fcr \u00e9tape \u2014 \u65e5\u672c\u8a9e \ud83d\ude00",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/d\u00e9mo"
+      }
+     }
+    ]
+   },
+   "request_sha256": "sha256:259b13003a867ee341acb659613e0ed42eff6d5d8fd4da00cc80e6df34794d95"
+  },
+  {
+   "name": "verify_empty_strings_valid",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "hmac-sha256",
+      "payload_hash": "0313bfb0db554ca24e9d05c782d19d7c5a0ca88fbfafbfcc7822216e3812d638",
+      "status": "valid"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "empty_strings_valid",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": "",
+       "harness": "claude-code",
+       "integrity_generation": 2,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": "",
+       "payload_hash": "0313bfb0db554ca24e9d05c782d19d7c5a0ca88fbfafbfcc7822216e3812d638",
+       "payload_mac": "b2a1a69bdcda64a0fd2bb10b6ee402e8b71565c5cf040928ff50934e411bfc73",
+       "publisher": "",
+       "reason": "",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": ""
+      },
+      "trusted_generation": 2
+     }
+    ]
+   },
+   "request_sha256": "sha256:40a1192cfbb4954818d082e1806a62ed0ba1f668bf8ed7eb03f41cb5d01341e1"
+  },
+  {
+   "name": "verify_empty_strings_untrusted_generation",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "hmac-sha256",
+      "payload_hash": "0313bfb0db554ca24e9d05c782d19d7c5a0ca88fbfafbfcc7822216e3812d638",
+      "status": "valid"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "empty_strings_untrusted_generation",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": "",
+       "harness": "claude-code",
+       "integrity_generation": 2,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": "",
+       "payload_hash": "0313bfb0db554ca24e9d05c782d19d7c5a0ca88fbfafbfcc7822216e3812d638",
+       "payload_mac": "b2a1a69bdcda64a0fd2bb10b6ee402e8b71565c5cf040928ff50934e411bfc73",
+       "publisher": "",
+       "reason": "",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": ""
+      }
+     }
+    ]
+   },
+   "request_sha256": "sha256:885dcf7620e3f05c65cd3cb1b8c6d32ba30839225a1ee26f60e6fe18130a174e"
+  },
+  {
+   "name": "verify_nulls_valid",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "hmac-sha256",
+      "payload_hash": "e7798814b208eb9316b33c6be733a7b2d88d7a5a2a7d508ad661e0a06f594ab1",
+      "status": "valid"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "nulls_valid",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": null,
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": null,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 1,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": null,
+       "payload_hash": "e7798814b208eb9316b33c6be733a7b2d88d7a5a2a7d508ad661e0a06f594ab1",
+       "payload_mac": "7e0b7b1601e9ca973366856a2acab5d9bc984ff3e2605b3eb711d55a3606f735",
+       "publisher": null,
+       "reason": null,
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": null,
+       "workspace": null
+      },
+      "trusted_generation": 1
+     }
+    ]
+   },
+   "request_sha256": "sha256:9354b1cd00fc9065b68e38a0110a66fa16c02652a5e44e04a7a639e5f4935cc2"
+  },
+  {
+   "name": "verify_nulls_untrusted_generation",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "hmac-sha256",
+      "payload_hash": "e7798814b208eb9316b33c6be733a7b2d88d7a5a2a7d508ad661e0a06f594ab1",
+      "status": "valid"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "nulls_untrusted_generation",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": null,
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": null,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 1,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": null,
+       "payload_hash": "e7798814b208eb9316b33c6be733a7b2d88d7a5a2a7d508ad661e0a06f594ab1",
+       "payload_mac": "7e0b7b1601e9ca973366856a2acab5d9bc984ff3e2605b3eb711d55a3606f735",
+       "publisher": null,
+       "reason": null,
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": null,
+       "workspace": null
+      }
+     }
+    ]
+   },
+   "request_sha256": "sha256:39460bc1b19018cb8f1e2603b8c39039395611627108e2d1f29edafccd6319e8"
+  },
+  {
+   "name": "verify_bool_decision_id_valid",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "hmac-sha256",
+      "payload_hash": "34d998c27f90da6bf8ad9b341f077e7236c15bbd9b3b17d964579b9cdffa3ce1",
+      "status": "valid"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "bool_decision_id_valid",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": true,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 4,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": "34d998c27f90da6bf8ad9b341f077e7236c15bbd9b3b17d964579b9cdffa3ce1",
+       "payload_mac": "38d334fb33b1d85ea7f6949b095a27fe1afe7874620ad783bac6e695dd69006b",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "trusted_generation": 4
+     }
+    ]
+   },
+   "request_sha256": "sha256:3658b14d1c4bea00fe4e9783200c58cd8afbbb935852678cd83ea213210464fb"
+  },
+  {
+   "name": "verify_bool_decision_id_untrusted_generation",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "hmac-sha256",
+      "payload_hash": "34d998c27f90da6bf8ad9b341f077e7236c15bbd9b3b17d964579b9cdffa3ce1",
+      "status": "valid"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "bool_decision_id_untrusted_generation",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": true,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 4,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": "34d998c27f90da6bf8ad9b341f077e7236c15bbd9b3b17d964579b9cdffa3ce1",
+       "payload_mac": "38d334fb33b1d85ea7f6949b095a27fe1afe7874620ad783bac6e695dd69006b",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      }
+     }
+    ]
+   },
+   "request_sha256": "sha256:cf12af9ea5eb9b2dfa71a5ed3b398169a35c7a519fd40ef1980e2b0d028c7279"
+  },
+  {
+   "name": "verify_digit_string_decision_id_valid",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "hmac-sha256",
+      "payload_hash": "01f6a79f1f633a1a4a351a641cd05b60eaac6c47baac361ac01fd209fefc651c",
+      "status": "valid"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "digit_string_decision_id_valid",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": " 42 ",
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 5,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": "01f6a79f1f633a1a4a351a641cd05b60eaac6c47baac361ac01fd209fefc651c",
+       "payload_mac": "9fa9d23e84f422b9aeaae5f6b9da73dd166f3a7a1095131da705204bf9e466d2",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "trusted_generation": 5
+     }
+    ]
+   },
+   "request_sha256": "sha256:e7755c089d8c8d7fa8b134c066f40aa98444ee092b0696d9f5a47db4078ec213"
+  },
+  {
+   "name": "verify_digit_string_decision_id_untrusted_generation",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "hmac-sha256",
+      "payload_hash": "01f6a79f1f633a1a4a351a641cd05b60eaac6c47baac361ac01fd209fefc651c",
+      "status": "valid"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "digit_string_decision_id_untrusted_generation",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": " 42 ",
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 5,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": "01f6a79f1f633a1a4a351a641cd05b60eaac6c47baac361ac01fd209fefc651c",
+       "payload_mac": "9fa9d23e84f422b9aeaae5f6b9da73dd166f3a7a1095131da705204bf9e466d2",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      }
+     }
+    ]
+   },
+   "request_sha256": "sha256:d1642fad1d99e3075d4fcaa4c82a7b610c8399118d5c7270cfdc7b4a9d480cab"
+  },
+  {
+   "name": "verify_non_digit_decision_id_valid",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "hmac-sha256",
+      "payload_hash": "b9c7273e212a96b6109353306e3c49783c9e95311da6d498c3d3178676c2d4f5",
+      "status": "valid"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "non_digit_decision_id_valid",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": "4x2",
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 5,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": "b9c7273e212a96b6109353306e3c49783c9e95311da6d498c3d3178676c2d4f5",
+       "payload_mac": "bd834541c459403caf9cf6ba5499caaf70b23fbce9d8333fc093eb7789e4e919",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "trusted_generation": 5
+     }
+    ]
+   },
+   "request_sha256": "sha256:56365950b33cbbc0b781666f1aeea8579f59babb6175e412dedd8860b3880b58"
+  },
+  {
+   "name": "verify_non_digit_decision_id_untrusted_generation",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "hmac-sha256",
+      "payload_hash": "b9c7273e212a96b6109353306e3c49783c9e95311da6d498c3d3178676c2d4f5",
+      "status": "valid"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "non_digit_decision_id_untrusted_generation",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": "4x2",
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 5,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": "b9c7273e212a96b6109353306e3c49783c9e95311da6d498c3d3178676c2d4f5",
+       "payload_mac": "bd834541c459403caf9cf6ba5499caaf70b23fbce9d8333fc093eb7789e4e919",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      }
+     }
+    ]
+   },
+   "request_sha256": "sha256:ad248c8c09af48d2aa2b95d0fa7e0adf64bcc061557ebdd25925d297f3af62be"
+  },
+  {
+   "name": "verify_non_string_fields_valid",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "hmac-sha256",
+      "payload_hash": "41ef4239cf2536879e726c12a3c9c051f774e41452fea2ff4296c6a735f83cac",
+      "status": "valid"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "non_string_fields_valid",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": [
+        "allow"
+       ],
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 6,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": false,
+       "payload_hash": "41ef4239cf2536879e726c12a3c9c051f774e41452fea2ff4296c6a735f83cac",
+       "payload_mac": "fb20425b11cba6434b15458c68ac3291e4a589b39d64e32ec888ce0dd6a5929f",
+       "publisher": null,
+       "reason": 17,
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "trusted_generation": 6
+     }
+    ]
+   },
+   "request_sha256": "sha256:f40fc8f0255d34a80edf8fe6b2b60e281b932b540413684cc02ab391caf1b6b1"
+  },
+  {
+   "name": "verify_non_string_fields_untrusted_generation",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "hmac-sha256",
+      "payload_hash": "41ef4239cf2536879e726c12a3c9c051f774e41452fea2ff4296c6a735f83cac",
+      "status": "valid"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "non_string_fields_untrusted_generation",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": [
+        "allow"
+       ],
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 6,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": false,
+       "payload_hash": "41ef4239cf2536879e726c12a3c9c051f774e41452fea2ff4296c6a735f83cac",
+       "payload_mac": "fb20425b11cba6434b15458c68ac3291e4a589b39d64e32ec888ce0dd6a5929f",
+       "publisher": null,
+       "reason": 17,
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      }
+     }
+    ]
+   },
+   "request_sha256": "sha256:6210d2bb06685190e42bf663d69ea9511ef64d0faa5e4e7bd5f7e34be652c42e"
+  },
+  {
+   "name": "verify_escapes_valid",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "hmac-sha256",
+      "payload_hash": "e6d06c812ddd21f3037625e57d97dbb5ffd4cbffc952a779b273ffb9314fc41a",
+      "status": "valid"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "escapes_valid",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "Bash:printf \"a\\tb\\n\" </dev/null",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 2,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": "e6d06c812ddd21f3037625e57d97dbb5ffd4cbffc952a779b273ffb9314fc41a",
+       "payload_mac": "b618015c1f7e883504aec6a2bf25ef171e96d5ed37e24d56aa8726ebb67736f5",
+       "publisher": null,
+       "reason": "line\nbreak\ttab\u0001ctl",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "trusted_generation": 2
+     }
+    ]
+   },
+   "request_sha256": "sha256:65f44bff0bf6c580b149f26bcffd09486f9f4a731fdf8eb2cb89dea45a6004ef"
+  },
+  {
+   "name": "verify_escapes_untrusted_generation",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "hmac-sha256",
+      "payload_hash": "e6d06c812ddd21f3037625e57d97dbb5ffd4cbffc952a779b273ffb9314fc41a",
+      "status": "valid"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "escapes_untrusted_generation",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "Bash:printf \"a\\tb\\n\" </dev/null",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 2,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": "e6d06c812ddd21f3037625e57d97dbb5ffd4cbffc952a779b273ffb9314fc41a",
+       "payload_mac": "b618015c1f7e883504aec6a2bf25ef171e96d5ed37e24d56aa8726ebb67736f5",
+       "publisher": null,
+       "reason": "line\nbreak\ttab\u0001ctl",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      }
+     }
+    ]
+   },
+   "request_sha256": "sha256:5db3ab062a241e6c812f25694a1be4710f36b42f7c3bffa4b64be9ac9881ddb2"
+  },
+  {
+   "name": "verify_expiring_valid",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "hmac-sha256",
+      "payload_hash": "bfa47501d0031e2ba363c1e7d3327c827be3c587d6ed5ea385683c331430eb72",
+      "status": "valid"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "expiring_valid",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": null,
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": "2026-10-14T00:00:00Z",
+       "harness": "claude-code",
+       "integrity_generation": 9,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": "bfa47501d0031e2ba363c1e7d3327c827be3c587d6ed5ea385683c331430eb72",
+       "payload_mac": "52c6d7158d1559ad0a2427c5aa22f4965c7fee89392e5592d63f4d756aead2c4",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "workspace",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "trusted_generation": 9
+     }
+    ]
+   },
+   "request_sha256": "sha256:c69eaad050e49bb0f17e48ea737c765115ac174aaec9df3f3cfdf6b845784dd0"
+  },
+  {
+   "name": "verify_expiring_untrusted_generation",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "hmac-sha256",
+      "payload_hash": "bfa47501d0031e2ba363c1e7d3327c827be3c587d6ed5ea385683c331430eb72",
+      "status": "valid"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "expiring_untrusted_generation",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": null,
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": "2026-10-14T00:00:00Z",
+       "harness": "claude-code",
+       "integrity_generation": 9,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": "bfa47501d0031e2ba363c1e7d3327c827be3c587d6ed5ea385683c331430eb72",
+       "payload_mac": "52c6d7158d1559ad0a2427c5aa22f4965c7fee89392e5592d63f4d756aead2c4",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "workspace",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      }
+     }
+    ]
+   },
+   "request_sha256": "sha256:2b58a582215ac1eb9df0871676b833dec500f2cf679eab37e7197aa9c87d3258"
+  },
+  {
+   "name": "verify_generation_zero_valid",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "hmac-sha256",
+      "payload_hash": "4534e6bf0f248c24fc69c413010d0953dfc15669685627681023473928e7b90c",
+      "status": "valid"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "generation_zero_valid",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 0,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": "4534e6bf0f248c24fc69c413010d0953dfc15669685627681023473928e7b90c",
+       "payload_mac": "9dc2e4c65cc212f012e2775a79d1a8b65b4414bafe1bed8c502cf38c2bef7d89",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "trusted_generation": 0
+     }
+    ]
+   },
+   "request_sha256": "sha256:cabfd2e5e0fedc5c9e2e63d6e5eb8a351e66d658258961223c6787a1b99a95bc"
+  },
+  {
+   "name": "verify_generation_zero_untrusted_generation",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "hmac-sha256",
+      "payload_hash": "4534e6bf0f248c24fc69c413010d0953dfc15669685627681023473928e7b90c",
+      "status": "valid"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "generation_zero_untrusted_generation",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 0,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": "4534e6bf0f248c24fc69c413010d0953dfc15669685627681023473928e7b90c",
+       "payload_mac": "9dc2e4c65cc212f012e2775a79d1a8b65b4414bafe1bed8c502cf38c2bef7d89",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      }
+     }
+    ]
+   },
+   "request_sha256": "sha256:1f1c6df067a5d7fec84b37b42ecc587783bc34914161be22d9b90da510e4c1ee"
+  },
+  {
+   "name": "verify_generation_large_valid",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "hmac-sha256",
+      "payload_hash": "cca4f08b822e679bbfe2a0d81f659e18dc79add5b47734a8d4e0b76baab3c463",
+      "status": "valid"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "generation_large_valid",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 9007199254740993,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": "cca4f08b822e679bbfe2a0d81f659e18dc79add5b47734a8d4e0b76baab3c463",
+       "payload_mac": "52e93031decd2e0141ec3aaa1b2395456067cf2b875c8b9ea8fbd57d3257cdb1",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "trusted_generation": 9007199254740993
+     }
+    ]
+   },
+   "request_sha256": "sha256:c4eeac57358360b2aee03c34e8ab8fa5d8f5025bbcdb08a4a8cf4668c2317f32"
+  },
+  {
+   "name": "verify_generation_large_untrusted_generation",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "hmac-sha256",
+      "payload_hash": "cca4f08b822e679bbfe2a0d81f659e18dc79add5b47734a8d4e0b76baab3c463",
+      "status": "valid"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "generation_large_untrusted_generation",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 9007199254740993,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": "cca4f08b822e679bbfe2a0d81f659e18dc79add5b47734a8d4e0b76baab3c463",
+       "payload_mac": "52e93031decd2e0141ec3aaa1b2395456067cf2b875c8b9ea8fbd57d3257cdb1",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      }
+     }
+    ]
+   },
+   "request_sha256": "sha256:199812158dc5ed61ed3a787060ce7d873d70fb07b033616e8a5ea7a8742a29c0"
+  },
+  {
+   "name": "verify_rollback",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "policy_integrity_generation_rollback",
+      "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+      "status": "rollback_detected"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "rollback",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 1,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "trusted_generation": 2
+     }
+    ]
+   },
+   "request_sha256": "sha256:f2a217c056d5a6a3e40e5272a4ce37b8ea64c4c138d7523b5175aa029b71f767"
+  },
+  {
+   "name": "verify_degraded",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "policy_integrity_backend_unavailable",
+      "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+      "status": "degraded_mode"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "degraded",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": true,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 1,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "trusted_generation": 1
+     }
+    ]
+   },
+   "request_sha256": "sha256:e75dbc1c844dec97c26df2cba62d7b3837a5fca50f3a416d0748e2a16879cf79"
+  },
+  {
+   "name": "verify_degraded_unsigned",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": null,
+      "message": "policy_integrity_backend_unavailable",
+      "payload_hash": null,
+      "status": "degraded_mode"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "degraded_unsigned",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": true,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "owner": "local",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      }
+     }
+    ]
+   },
+   "request_sha256": "sha256:0fc063171c415d8c5fd39dccf5cd5243a4f53920c6fb3bc3b26385a215b90114"
+  },
+  {
+   "name": "verify_missing_all",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": null,
+      "message": "policy_integrity_metadata_missing",
+      "payload_hash": null,
+      "status": "missing_integrity"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "missing_all",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "owner": "local",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "trusted_generation": 1
+     }
+    ]
+   },
+   "request_sha256": "sha256:b1da67d281740fe583a97e81711abd1a42d936084df16dfed7a380517f7ff63b"
+  },
+  {
+   "name": "verify_missing_integrity_version",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "policy_integrity_metadata_missing",
+      "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+      "status": "missing_integrity"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "missing_integrity_version",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 1,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": null,
+       "owner": "local",
+       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "trusted_generation": 1
+     }
+    ]
+   },
+   "request_sha256": "sha256:df9fa16954b58aab913aeaf12fcac1e938c1d8f0f4010ddf5799464884108c26"
+  },
+  {
+   "name": "verify_empty_integrity_version",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "policy_integrity_metadata_missing",
+      "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+      "status": "missing_integrity"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "empty_integrity_version",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 1,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": "",
+       "owner": "local",
+       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "trusted_generation": 1
+     }
+    ]
+   },
+   "request_sha256": "sha256:824e7233c9445cd86020613ae2bede3624eea70ce6286c81c4087bc7b31c8990"
+  },
+  {
+   "name": "verify_missing_integrity_key_id",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": null,
+      "message": "policy_integrity_metadata_missing",
+      "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+      "status": "missing_integrity"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "missing_integrity_key_id",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 1,
+       "integrity_key_id": null,
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "trusted_generation": 1
+     }
+    ]
+   },
+   "request_sha256": "sha256:238d26ec8176b620ff9e2082764a98b15834b5fd5f78f50d6a3e9859d89d11c1"
+  },
+  {
+   "name": "verify_empty_integrity_key_id",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": null,
+      "message": "policy_integrity_metadata_missing",
+      "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+      "status": "missing_integrity"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "empty_integrity_key_id",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 1,
+       "integrity_key_id": "",
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "trusted_generation": 1
+     }
+    ]
+   },
+   "request_sha256": "sha256:3f273e604cdb2a6f8a51d3c06252b240346cb432a9fd791951face04208faaa6"
+  },
+  {
+   "name": "verify_missing_payload_hash",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "policy_integrity_metadata_missing",
+      "payload_hash": null,
+      "status": "missing_integrity"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "missing_payload_hash",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 1,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": null,
+       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "trusted_generation": 1
+     }
+    ]
+   },
+   "request_sha256": "sha256:b08137fb0161e63856157a061e66940f5c9a8cd2b99b3e2576fbc250dbbf7c67"
+  },
+  {
+   "name": "verify_empty_payload_hash",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "policy_integrity_metadata_missing",
+      "payload_hash": null,
+      "status": "missing_integrity"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "empty_payload_hash",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 1,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": "",
+       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "trusted_generation": 1
+     }
+    ]
+   },
+   "request_sha256": "sha256:343345b53e5ba42bc81c0ee258c322c5dff40fea34919f42f21f291a120ef21a"
+  },
+  {
+   "name": "verify_missing_payload_mac",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "policy_integrity_metadata_missing",
+      "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+      "status": "missing_integrity"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "missing_payload_mac",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 1,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+       "payload_mac": null,
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "trusted_generation": 1
+     }
+    ]
+   },
+   "request_sha256": "sha256:cd66a66c973c0c980ae18142d99c8692a3dd2365a98ab4c6611ab91b58fd4923"
+  },
+  {
+   "name": "verify_empty_payload_mac",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "policy_integrity_metadata_missing",
+      "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+      "status": "missing_integrity"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "empty_payload_mac",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 1,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+       "payload_mac": "",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "trusted_generation": 1
+     }
+    ]
+   },
+   "request_sha256": "sha256:f3a9841ae250881e7bb77655badf6e36a798bbfd3cafdb11545b956481c4b2ce"
+  },
+  {
+   "name": "verify_missing_signed_at",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "policy_integrity_metadata_missing",
+      "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+      "status": "missing_integrity"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "missing_signed_at",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 1,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": null,
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "trusted_generation": 1
+     }
+    ]
+   },
+   "request_sha256": "sha256:ba62add9a636fe29df1a071f087e6d929f582c589a7c918a0d1518122c104362"
+  },
+  {
+   "name": "verify_empty_signed_at",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "policy_integrity_metadata_missing",
+      "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+      "status": "missing_integrity"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "empty_signed_at",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 1,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "trusted_generation": 1
+     }
+    ]
+   },
+   "request_sha256": "sha256:ae7ab778b532b0fc2822fef45c1ca4e046bfb743a6c8a199ab0baafdd6c6dcef"
+  },
+  {
+   "name": "verify_version_three",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "policy_integrity_version_unsupported",
+      "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+      "status": "tampered"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "version_three",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 1,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 3,
+       "owner": "local",
+       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "trusted_generation": 1
+     }
+    ]
+   },
+   "request_sha256": "sha256:0ba9c1f818a18ff179315301a9f7a5f84f74da75f2ebf3ecec5a4e7509f0838a"
+  },
+  {
+   "name": "verify_version_zero",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "policy_integrity_version_unsupported",
+      "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+      "status": "tampered"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "version_zero",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 1,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 0,
+       "owner": "local",
+       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "trusted_generation": 1
+     }
+    ]
+   },
+   "request_sha256": "sha256:bf9ed051c35ec79df45c0d133c5349609bc1cc17c867cbe82ac1c6377ac7ce75"
+  },
+  {
+   "name": "verify_version_string",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "hmac-sha256",
+      "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+      "status": "valid"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "version_string",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 1,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": "2",
+       "owner": "local",
+       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "trusted_generation": 1
+     }
+    ]
+   },
+   "request_sha256": "sha256:acfbca2b1db167826ca7857fd7dfdffb7c611740a2942f7ae039085dc693e5db"
+  },
+  {
+   "name": "verify_version_padded_string",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "hmac-sha256",
+      "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+      "status": "valid"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "version_padded_string",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 1,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": " 2 ",
+       "owner": "local",
+       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "trusted_generation": 1
+     }
+    ]
+   },
+   "request_sha256": "sha256:a99016fd5651ae0d1c964fda4d24aa3a4630a64bfd3dec017c7dc23be673acb4"
+  },
+  {
+   "name": "verify_version_bool_true",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "policy_integrity_payload_hash_mismatch",
+      "payload_hash": "cb1fbd03e3cae360130754313bd1679cef2267c79fe2b1c559b4a09adc8b5ffc",
+      "status": "tampered"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "version_bool_true",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 1,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": true,
+       "owner": "local",
+       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "trusted_generation": 1
+     }
+    ]
+   },
+   "request_sha256": "sha256:704b420aa9cf6fbc8b1cf7cfba31d2bcde1a4c9b10042429338cf8041bdffc22"
+  },
+  {
+   "name": "verify_wrong_key_id",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:0123456789abcdef",
+      "message": "policy_integrity_key_unavailable",
+      "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+      "status": "unknown_key"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "wrong_key_id",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 1,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:0123456789abcdef",
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "trusted_generation": 1
+     }
+    ]
+   },
+   "request_sha256": "sha256:eebb10eb764a3095858e35478c2a18f6910eba660e4a0aae23666febe08ffd67"
+  },
+  {
+   "name": "verify_action_tampered",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "policy_integrity_payload_hash_mismatch",
+      "payload_hash": "7e9dd970c28561765dab6bffdcc3dcbe21d4e1392e2ae26278b617afc581ca2f",
+      "status": "tampered"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "action_tampered",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "block",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 1,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "trusted_generation": 1
+     }
+    ]
+   },
+   "request_sha256": "sha256:7afb7617cac9b394c9cc804bec13de22c495229ed5e7c00c9655dd6aa9ba3945"
+  },
+  {
+   "name": "verify_reason_tampered",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "policy_integrity_payload_hash_mismatch",
+      "payload_hash": "638ae8cc2e12fd64417b2469cbc0cdd76105b0555cbb3a6fb59ff75346f6caed",
+      "status": "tampered"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "reason_tampered",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 1,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "publisher": null,
+       "reason": "approved",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "trusted_generation": 1
+     }
+    ]
+   },
+   "request_sha256": "sha256:e7a7767fa18c7658a76dd144c018aca292e43a1221daf5263e431ac8f19f8da8"
+  },
+  {
+   "name": "verify_generation_tampered",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "policy_integrity_payload_hash_mismatch",
+      "payload_hash": "7bae8e80d1a45e68d810acb277b4f1578827d3eae189d772569ab96b4a8d3e4a",
+      "status": "tampered"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "generation_tampered",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 2,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "trusted_generation": 2
+     }
+    ]
+   },
+   "request_sha256": "sha256:3b71dfe0eea2fbbfef14c95ab5a4492dc31554674f3a7172971a6eaba3d124a6"
+  },
+  {
+   "name": "verify_extra_column_ignored",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "hmac-sha256",
+      "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+      "status": "valid"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "extra_column_ignored",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2020-01-01T00:00:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 1,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "trusted_generation": 1
+     }
+    ]
+   },
+   "request_sha256": "sha256:43a26fd587f331da296a6454718121f2f0d81bc74cd7a8ed843f2027607f5a26"
+  },
+  {
+   "name": "verify_hash_uppercase",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "policy_integrity_payload_hash_mismatch",
+      "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+      "status": "tampered"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "hash_uppercase",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 1,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": "9C879D8584C240D3786B4AE728733E49032C98B51ADD58D6C89BDB691A561166",
+       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "trusted_generation": 1
+     }
+    ]
+   },
+   "request_sha256": "sha256:6f45f59569f31894f5da782ead65af14cdf8b80334d177373f8ef115d9ed8d1f"
+  },
+  {
+   "name": "verify_mac_tampered",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "policy_integrity_mac_mismatch",
+      "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+      "status": "tampered"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "mac_tampered",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 1,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+       "payload_mac": "03a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "trusted_generation": 1
+     }
+    ]
+   },
+   "request_sha256": "sha256:394f0e34b9825ba55bafa32916c4942c7acd3582c9567877801336b43aae12a8"
+  },
+  {
+   "name": "verify_mac_truncated",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "policy_integrity_mac_mismatch",
+      "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+      "status": "tampered"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "mac_truncated",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 1,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f058325763",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "trusted_generation": 1
+     }
+    ]
+   },
+   "request_sha256": "sha256:a6043b01da169684097a72ffc6fb4018728594816ab0134f156d2d9ff4810cc7"
+  },
+  {
+   "name": "verify_legacy_valid",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "hmac-sha256",
+      "payload_hash": "cb1fbd03e3cae360130754313bd1679cef2267c79fe2b1c559b4a09adc8b5ffc",
+      "status": "valid"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "legacy_valid",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": null,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 1,
+       "owner": "local",
+       "payload_hash": "cb1fbd03e3cae360130754313bd1679cef2267c79fe2b1c559b4a09adc8b5ffc",
+       "payload_mac": "be2a10f525125ecade42fd8d68e90801e36105df6e41df85066de1af1b6dd3d5",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      }
+     }
+    ]
+   },
+   "request_sha256": "sha256:46dcda5b7c4820f0a06ba5eba0b817a368a320de4ddd6491387032cabf6ec956"
+  },
+  {
+   "name": "verify_legacy_ignores_trusted_generation",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "hmac-sha256",
+      "payload_hash": "cb1fbd03e3cae360130754313bd1679cef2267c79fe2b1c559b4a09adc8b5ffc",
+      "status": "valid"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "legacy_ignores_trusted_generation",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": null,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 1,
+       "owner": "local",
+       "payload_hash": "cb1fbd03e3cae360130754313bd1679cef2267c79fe2b1c559b4a09adc8b5ffc",
+       "payload_mac": "be2a10f525125ecade42fd8d68e90801e36105df6e41df85066de1af1b6dd3d5",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "trusted_generation": 5
+     }
+    ]
+   },
+   "request_sha256": "sha256:b8cfc40c5ad697342f3bd47fa84f277900c7622f15444a3fb184d369a23205a8"
+  },
+  {
+   "name": "verify_legacy_reason_unsigned",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "hmac-sha256",
+      "payload_hash": "cb1fbd03e3cae360130754313bd1679cef2267c79fe2b1c559b4a09adc8b5ffc",
+      "status": "valid"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "legacy_reason_unsigned",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": null,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 1,
+       "owner": "local",
+       "payload_hash": "cb1fbd03e3cae360130754313bd1679cef2267c79fe2b1c559b4a09adc8b5ffc",
+       "payload_mac": "be2a10f525125ecade42fd8d68e90801e36105df6e41df85066de1af1b6dd3d5",
+       "publisher": null,
+       "reason": "changed",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      }
+     }
+    ]
+   },
+   "request_sha256": "sha256:2dfac2bff48b98b0d04b9097e8618dfc2d105c0e3799ea823ccd81a769da9b2e"
+  },
+  {
+   "name": "verify_legacy_action_tampered",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "policy_integrity_payload_hash_mismatch",
+      "payload_hash": "c2cd05682cbf8ea63af550021e07474a5b43255da41a2e4a20dd20d0df3cb71a",
+      "status": "tampered"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "legacy_action_tampered",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "block",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": null,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 1,
+       "owner": "local",
+       "payload_hash": "cb1fbd03e3cae360130754313bd1679cef2267c79fe2b1c559b4a09adc8b5ffc",
+       "payload_mac": "be2a10f525125ecade42fd8d68e90801e36105df6e41df85066de1af1b6dd3d5",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      }
+     }
+    ]
+   },
+   "request_sha256": "sha256:59181a6ffcf677717c8e17a07afccb51152220638d3231a6a36912b7f32e4302"
+  },
+  {
+   "name": "verify_legacy_as_v2",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "policy_integrity_payload_hash_mismatch",
+      "payload_hash": "904348c16ca3cbe3d8988c80d73ceda30bd366780c497c1680c8783f3a1d7e19",
+      "status": "tampered"
+     }
+    ]
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "legacy_as_v2",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": null,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": "cb1fbd03e3cae360130754313bd1679cef2267c79fe2b1c559b4a09adc8b5ffc",
+       "payload_mac": "be2a10f525125ecade42fd8d68e90801e36105df6e41df85066de1af1b6dd3d5",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      }
+     }
+    ]
+   },
+   "request_sha256": "sha256:0568b5ef2982b297abd9522cb34b7fd40d05185ea88aff0fde3a4225c39bef67"
+  },
+  {
+   "name": "verify_without_key",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "policy_integrity_key_unavailable",
+      "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+      "status": "unknown_key"
+     },
+     {
+      "key_id": null,
+      "message": "policy_integrity_metadata_missing",
+      "payload_hash": null,
+      "status": "missing_integrity"
+     },
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "policy_integrity_key_unavailable",
+      "payload_hash": "cb1fbd03e3cae360130754313bd1679cef2267c79fe2b1c559b4a09adc8b5ffc",
+      "status": "unknown_key"
+     }
+    ]
+   },
+   "request": {
+    "request_id": "unkeyed",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 1,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "trusted_generation": 1
+     },
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "owner": "local",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "trusted_generation": 1
+     },
+     {
+      "degraded_mode": false,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": null,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 1,
+       "owner": "local",
+       "payload_hash": "cb1fbd03e3cae360130754313bd1679cef2267c79fe2b1c559b4a09adc8b5ffc",
+       "payload_mac": "be2a10f525125ecade42fd8d68e90801e36105df6e41df85066de1af1b6dd3d5",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      },
+      "trusted_generation": 1
+     }
+    ]
+   },
+   "request_sha256": "sha256:8bb348c76e522ab85be893588beaaaa5eae3ca9a21960dd1882a91b50351b2e3"
+  },
+  {
+   "name": "verify_degraded_without_key",
+   "payload": {
+    "sign": [],
+    "verify": [
+     {
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "message": "policy_integrity_backend_unavailable",
+      "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+      "status": "degraded_mode"
+     }
+    ]
+   },
+   "request": {
+    "request_id": "unkeyed-degraded",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": [
+     {
+      "degraded_mode": true,
+      "row": {
+       "action": "allow",
+       "artifact_hash": "sha256:abababababababababababababababababababababababababababababababab",
+       "artifact_id": "claude-code:project:/workspace/demo:Bash:npm test",
+       "created_at": "2026-10-13T11:59:00Z",
+       "decision_id": 7,
+       "expires_at": null,
+       "harness": "claude-code",
+       "integrity_generation": 1,
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_version": 2,
+       "owner": "local",
+       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
+       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "publisher": null,
+       "reason": "approved from the review queue",
+       "scope": "artifact",
+       "signed_at": "2026-10-13T12:00:00Z",
+       "source": "local",
+       "updated_at": "2026-10-13T11:59:30Z",
+       "workspace": "/workspace/demo"
+      }
+     }
+    ]
+   },
+   "request_sha256": "sha256:465351d79035df5f4b01cf019f095f8fa064443bc0cfd46169e26fb03ae0ba19"
+  },
+  {
+   "name": "empty_batch",
+   "payload": {
+    "sign": [],
+    "verify": []
+   },
+   "request": {
+    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "request_id": "empty",
+    "schema": "guard-policy-integrity-rows-request.v1",
+    "sign": [],
+    "verify": []
+   },
+   "request_sha256": "sha256:aad76fb9f0a0e603cfc21e52617c9996222d1fa093ec51a123f13c52720f60c1"
+  }
+ ],
+ "key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
+ "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+ "schema": "guard-policy-integrity-rows-vectors.v1"
+}
