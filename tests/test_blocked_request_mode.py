@@ -85,7 +85,9 @@ def test_specific_deny_text_without_queued_approval_points_to_no_approval() -> N
 
 def test_extension_failure_keeps_the_native_reason_without_a_generic_hint() -> None:
     reason = "HOL Guard blocked this command because it leaves a quote open."
-    text = safe_alternative_reason(reason, reason_code="native_command_extension_evaluation_failed", approval_queued=True)
+    text = safe_alternative_reason(
+        reason, reason_code="native_command_extension_evaluation_failed", approval_queued=True
+    )
     assert text.startswith(reason)
     assert "command substitution" not in text
 
