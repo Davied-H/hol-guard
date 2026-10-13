@@ -22,7 +22,7 @@ use serde_json::{json, Map, Value};
 use super::claude_permission_text::{notification_tool_name, permission_request_response};
 use super::workspace::python_strip;
 use super::{
-    HookDirectDefer, CLAUDE_CODE, CURSOR, EVENT_NAME_FIELDS, PAYLOAD_REFERENCE_FIELDS,
+    HookDirectDefer, CLAUDE_CODE, CURSOR, EVENT_NAME_FIELDS, GROK, PAYLOAD_REFERENCE_FIELDS,
     TRANSITION_PROBE_FIELD,
 };
 use crate::hook_authority_state_op::claude_permission_notice_direct;
@@ -64,6 +64,10 @@ fn event_name(payload: &Map<String, Value>) -> Result<&str, HookDirectDefer> {
 
 /// The harness response `fail_closed_response` returns for `event`.
 fn constant_response(harness: &str, event: &str) -> Value {
+    // `fail_closed_response` answers every Grok lifecycle hook with `{}`.
+    if harness == GROK {
+        return json!({});
+    }
     if DECISION_HARNESSES.contains(&harness) {
         return json!({
             "decision": "allow",
