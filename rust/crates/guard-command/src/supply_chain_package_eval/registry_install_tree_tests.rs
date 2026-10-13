@@ -186,12 +186,55 @@ fn project_sources_other_than_the_registry_keep_the_review() {
                 left("https://registry.example.test/left/-/left-1.0.0.tgz"),
             ),
         ],
-        // A registry tarball of another package under this name.
+        // A registry tarball of another package under this name, directly
+        // or through a noncanonical path.
         vec![
             ("package.json", json!({})),
             (
                 "package-lock.json",
                 left("https://registry.npmjs.org/other/-/other-1.0.0.tgz"),
+            ),
+        ],
+        vec![
+            ("package.json", json!({})),
+            (
+                "package-lock.json",
+                left("https://registry.npmjs.org/left/-/../../other/-/other-1.0.0.tgz"),
+            ),
+        ],
+        vec![
+            ("package.json", json!({})),
+            (
+                "package-lock.json",
+                left("https://registry.npmjs.org/left/-/%2e%2e/%2e%2e/other/-/other-1.0.0.tgz"),
+            ),
+        ],
+        vec![
+            ("package.json", json!({})),
+            (
+                "package-lock.json",
+                left("https://registry.npmjs.org/left/-/other-1.0.0.tgz"),
+            ),
+        ],
+        vec![
+            ("package.json", json!({})),
+            (
+                "package-lock.json",
+                left("https://registry.npmjs.org/left/-/left-1.0.0.tgz?x=../other"),
+            ),
+        ],
+        vec![
+            ("package.json", json!({})),
+            (
+                "package-lock.json",
+                left("https://registry.npmjs.org/left/-/left-1.0.0.tgz#frag"),
+            ),
+        ],
+        vec![
+            ("package.json", json!({})),
+            (
+                "package-lock.json",
+                left("https://registry.npmjs.org/left/-/left-.tgz"),
             ),
         ],
         vec![

@@ -117,9 +117,7 @@ fn registry_only_lock(lock: &Map<String, Value>) -> Option<Vec<(String, String)>
             return None;
         }
         let registry = match entry.get("resolved") {
-            Some(Value::String(resolved)) => {
-                resolved.starts_with(&format!("{REGISTRY_TARBALL_PREFIX}{name}/-/"))
-            }
+            Some(Value::String(resolved)) => registry_tarball_of(resolved, name),
             None => entry.get("inBundle") == Some(&Value::Bool(true)),
             _ => false,
         };
@@ -128,6 +126,27 @@ fn registry_only_lock(lock: &Map<String, Value>) -> Option<Vec<(String, String)>
         }
     }
     Some(edges)
+}
+
+/// Whether `resolved` is the canonical public registry tarball URL of a
+/// release of `name`: `<registry>/<name>/-/<base>-<version>.tgz`. The file
+/// name admits only version characters, so no `/`, `..`, percent escape,
+/// query or fragment can make the URL name a different package.
+fn registry_tarball_of(resolved: &str, name: &str) -> bool {
+    let base = name.rsplit('/').next().unwrap_or(name);
+    resolved
+        .strip_prefix(&format!("{REGISTRY_TARBALL_PREFIX}{name}/-/{base}-"))
+        .and_then(|rest| rest.strip_suffix(".tgz"))
+        .is_some_and(|version| {
+            version
+                .bytes()
+                .next()
+                .is_some_and(|byte| byte.is_ascii_alphanumeric())
+                && !version.contains("..")
+                && version
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b".+-".contains(&byte))
+        })
 }
 
 /// The package name at the end of a lock's `node_modules` path.
