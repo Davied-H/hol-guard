@@ -287,19 +287,27 @@ fn valid_ref_component(value: &str) -> bool {
         && !value.ends_with(".lock")
 }
 
+/// A relative destination may start by climbing out of the repository, as in
+/// `../report-worktree`, the usual sibling layout; `fresh_destination` then
+/// requires the canonical parent to stay under home or an owned temporary
+/// directory.
 fn valid_path_text(value: &str) -> bool {
-    let components = value.strip_prefix('/').unwrap_or(value);
+    let absolute = value.strip_prefix('/');
+    let mut parts = absolute.unwrap_or(value).split('/').peekable();
+    if absolute.is_none() {
+        while parts.next_if_eq(&"..").is_some() {}
+    }
+    let parts: Vec<&str> = parts.collect();
     value.len() <= MAX_DESTINATION_BYTES
-        && !components.is_empty()
+        && !parts.is_empty()
         && value.trim() == value
         && !value.starts_with('~')
         && !value.contains([
             '$', '`', '|', ';', '&', '<', '>', '\n', '\r', '\0', '*', '?', '[', ']', '{', '}', '\\',
         ])
-        // `..` is resolved below against the real parent directory.
-        && !components
-            .split('/')
-            .any(|part| part.is_empty() || part == ".")
+        && !parts
+            .iter()
+            .any(|part| part.is_empty() || *part == "." || *part == "..")
 }
 
 fn fresh_destination(value: &str, context: super::PathContext<'_>) -> Option<PathBuf> {
@@ -321,13 +329,11 @@ fn fresh_destination(value: &str, context: super::PathContext<'_>) -> Option<Pat
     }
     let parent_metadata = std::fs::symlink_metadata(parent).ok()?;
     let canonical_parent = std::fs::canonicalize(parent).ok()?;
-    // A checkout directly in the shared temporary directory, or below it
-    // where the user owns every directory on the way, is as private as one
-    // below home. On macOS `/tmp` is itself a link to `/private/tmp`.
-    let temporary = super::git_routes::temporary_checkout_parent(&canonical_parent, context);
-    if (parent_metadata.file_type().is_symlink() && !(temporary && parent == Path::new("/tmp")))
-        || !canonical_parent.is_dir()
-    {
+    // A checkout below the shared temporary directory, where the user owns
+    // every directory on the way, is as private as one below home. Directly
+    // in it, another user could have made the empty directory Git fills.
+    let temporary = super::git_routes::owned_temporary_directory(&canonical_parent, context);
+    if parent_metadata.file_type().is_symlink() || !canonical_parent.is_dir() {
         return None;
     }
     if !canonical_parent.starts_with(&home) && !temporary {

@@ -2,15 +2,20 @@
 //! verdict unchanged.
 //!
 //! The daemon path derives the workspace, checks daemon state the snapshot
-//! does not carry, builds the edge envelope and, for an allow, returns the
+//! does not carry, builds the edge envelope and, for most verdicts, returns the
 //! edge's harness response verbatim. This operation repeats that path for the
 //! shapes where the daemon adds nothing, in a workspace the current snapshot
 //! settled, while the publisher's ACK still holds: a Codex or Claude Code
-//! `PreToolUse` allow outside Watch, any reviewed `PostToolUse` of those
-//! harnesses, and a reviewed `UserPromptSubmit` with its receipt, for Codex
-//! always and for Claude Code in Watch. The daemon never changes those
-//! responses. Every other request, and every other `PreToolUse` verdict,
-//! defers so the caller takes the daemon path, which is unchanged.
+//! `PreToolUse` allow or terminal block, any `PreToolUse` verdict in Watch,
+//! any reviewed `PostToolUse` of those harnesses, and a reviewed
+//! `UserPromptSubmit` with its receipt, for Codex always and for Claude Code
+//! in Watch. The daemon never changes those responses. Every other request,
+//! and every `PreToolUse` verdict the daemon turns into an approval, a
+//! repair link or a Claude Code contained run outside Watch, defers so the
+//! caller takes the daemon path, which is unchanged. While custom extension
+//! block rules exist, an allowed `PreToolUse` whose command launches a local
+//! CLI, or whose launch cannot be derived, also defers so the daemon reads
+//! that CLI's grant.
 //!
 //! The daemon also records evidence after it answers. An answer is returned
 //! only once that evidence is queued for the daemon to drain.
@@ -46,6 +51,8 @@ const EVENT_NAME_FIELDS: [&str; 6] = [
 ];
 const PRE_TOOL_USE: &str = "PreToolUse";
 const POST_TOOL_USE: &str = "PostToolUse";
+/// The denial the daemon adds a command-control repair link to.
+const REPAIRABLE_BLOCK_REASON: &str = "native_command_control_authority_block";
 const USER_PROMPT_SUBMIT: &str = "UserPromptSubmit";
 const USER_PROMPT_EVENT_NAMES: [&str; 3] = ["prompt", "userpromptsubmit", "userpromptsubmitted"];
 const CLAUDE_CODE: &str = "claude-code";
@@ -100,7 +107,6 @@ enum HookDirectDefer {
     BindingIncomplete,
     HomeMismatch,
     LocalCliRules,
-    RecordingOnly,
     PromptNotice,
     ExecutionEnvironmentInvalid,
     EvidenceUndrained,
@@ -124,7 +130,6 @@ impl HookDirectDefer {
             Self::BindingIncomplete => "direct_hook_binding_incomplete",
             Self::HomeMismatch => "direct_hook_home_mismatch",
             Self::LocalCliRules => "direct_hook_local_cli_rules",
-            Self::RecordingOnly => "direct_hook_recording_only",
             Self::PromptNotice => "direct_hook_prompt_notice",
             Self::ExecutionEnvironmentInvalid => "direct_hook_execution_environment_invalid",
             Self::EvidenceUndrained => "direct_hook_evidence_undrained",
@@ -233,13 +238,10 @@ fn answer(
     if home_dir != request_home {
         return Err(HookDirectDefer::HomeMismatch);
     }
-    match binding.local_cli_block_rules {
-        None => return Err(HookDirectDefer::BindingIncomplete),
-        // The daemon checks these rules before a `PreToolUse` edge; only it
-        // applies them.
-        Some(true) if pre_tool => return Err(HookDirectDefer::LocalCliRules),
-        Some(_) => {}
-    }
+    // The daemon checks custom block rules against an allowed `PreToolUse`.
+    let mut custom_rules = binding
+        .local_cli_block_rules
+        .ok_or(HookDirectDefer::BindingIncomplete)?;
     // The binding is only as fresh as its last publish, while the daemon reads
     // the rules and the managed installs from the store before every hook.
     // A change saved since then lives only in the store, so read it there
@@ -250,12 +252,10 @@ fn answer(
             .map_err(|_| HookDirectDefer::LocalCliRules)?;
     if store.harness_unmanaged {
         // The daemon passes such a hook through and leaves the harness its
-        // own permission flow; an allow answer would replace that flow.
+        // own permission flow; a direct answer would replace that flow.
         return Err(HookDirectDefer::HarnessUnmanaged);
     }
-    if pre_tool && store.local_cli_block_rules {
-        return Err(HookDirectDefer::LocalCliRules);
-    }
+    custom_rules |= store.local_cli_block_rules;
     let postures = binding
         .harness_postures
         .as_ref()
@@ -265,11 +265,6 @@ fn answer(
         Some(posture) => posture == "watch",
         None => snapshot.mode == "observe",
     };
-    if recording_only && pre_tool {
-        // Watch needs the daemon's would-have-stopped evidence. A
-        // `PostToolUse` records the same activity in either posture.
-        return Err(HookDirectDefer::RecordingOnly);
-    }
     // Outside Watch the daemon may add Guard's notice to a Claude Code
     // prompt response.
     let prompt_notice =
@@ -278,6 +273,8 @@ fn answer(
         return Err(HookDirectDefer::EvidenceUndrained);
     }
 
+    // Only a `PreToolUse` under custom rules reads its payload after the edge.
+    let rule_payload = (pre_tool && custom_rules).then(|| payload.clone());
     let envelope = GuardHookEnvelopeV2 {
         schema: GUARD_HOOK_ENVELOPE_V2_SCHEMA.to_owned(),
         request_id: None,
@@ -308,10 +305,21 @@ fn answer(
     let edge = crate::edge::evaluate_envelope_with_store(envelope, policy_store)
         .map_err(|_| HookDirectDefer::EdgeFailed)?;
     let answered = match event {
-        PRE_TOOL_USE => allow_answer(&edge)?,
+        // Watch never pauses or repairs a call: the daemon records the
+        // edge's non-blocking response for every verdict, as the drain does.
+        PRE_TOOL_USE if recording_only => reviewed_edge(&edge, PRE_TOOL_USE)?,
+        PRE_TOOL_USE => pre_tool_answer(&edge, request.harness == CLAUDE_CODE)?,
         POST_TOOL_USE => post_tool_answer(&edge)?,
         _ => prompt_answer(&edge, prompt_notice)?,
     };
+    if local_cli::defers_for_custom_rule(
+        &answered,
+        rule_payload.as_ref(),
+        &workspace,
+        &request_home,
+    ) {
+        return Err(HookDirectDefer::LocalCliRules);
+    }
     let evidence = json!({
         "event": event,
         "harness": request.harness,
@@ -340,12 +348,18 @@ fn reviewed_edge(edge: &[u8], event: &str) -> Result<Value, HookDirectDefer> {
     Ok(parsed)
 }
 
-/// The edge result to return as is, when it is an allow the daemon would
-/// pass through unchanged. A warn floor is that allow too: the daemon asks
-/// for approval only on review and require-reapproval floors, leaves an
-/// allowed command's policy unrepaired, and returns the edge's harness
-/// response as it is, so a warn is recorded and run like an allow.
-fn allow_answer(edge: &[u8]) -> Result<Value, HookDirectDefer> {
+/// The edge result to return as is, when the daemon would pass it through
+/// unchanged:
+///
+/// - an allow, with an allow or warn floor. The daemon asks for approval
+///   only on review and require-reapproval floors, so a warn is recorded and
+///   run like an allow.
+/// - a terminal block or sandbox requirement. The daemon only adds a repair
+///   link to a command-control authority block and, with `contained`, routes
+///   a sandbox requirement to contained execution; any other denial keeps
+///   the edge's harness response. A saved approval never lowers a terminal
+///   action, and the daemon checks custom block rules only against an allow.
+fn pre_tool_answer(edge: &[u8], contained: bool) -> Result<Value, HookDirectDefer> {
     let parsed = reviewed_edge(edge, PRE_TOOL_USE)?;
     let result = parsed.get("result");
     let field = |name: &str| {
@@ -353,9 +367,15 @@ fn allow_answer(edge: &[u8]) -> Result<Value, HookDirectDefer> {
             .and_then(|result| result.get(name))
             .and_then(Value::as_str)
     };
-    if field("decision") != Some("allow")
-        || !matches!(field("minimum_action"), Some("allow" | "warn"))
-    {
+    let passed_through = match (field("decision"), field("minimum_action")) {
+        (Some("allow"), Some("allow" | "warn")) => true,
+        (Some("deny" | "block"), Some("block")) => {
+            field("reason_code") != Some(REPAIRABLE_BLOCK_REASON)
+        }
+        (Some("deny" | "block"), Some("sandbox-required")) => !contained,
+        _ => false,
+    };
+    if !passed_through {
         return Err(HookDirectDefer::NotAllow);
     }
     Ok(parsed)
@@ -424,6 +444,8 @@ fn direct_event(payload: &Map<String, Value>) -> Result<Option<&'static str>, Ho
     Ok(Some(PRE_TOOL_USE))
 }
 
+#[path = "hook_direct_local_cli.rs"]
+mod local_cli;
 #[path = "hook_direct_workspace.rs"]
 mod workspace;
 

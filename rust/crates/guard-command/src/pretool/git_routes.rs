@@ -131,18 +131,6 @@ pub(in crate::pretool) fn owned_temporary_directory(
     })
 }
 
-/// Whether canonical `path` may hold a new sibling checkout: the shared
-/// temporary directory itself, whose sticky bit keeps others from moving a
-/// fresh entry, or a directory below it that `owned_temporary_directory`
-/// admits.
-pub(in crate::pretool) fn temporary_checkout_parent(
-    path: &std::path::Path,
-    context: super::PathContext<'_>,
-) -> bool {
-    owned_temporary_roots().iter().any(|root| root == path)
-        || owned_temporary_directory(path, context)
-}
-
 /// The canonical shared temporary roots (`/tmp`, which is `/private/tmp` on
 /// macOS) that sibling checkouts may sit below; none off Unix.
 fn owned_temporary_roots() -> Vec<std::path::PathBuf> {
