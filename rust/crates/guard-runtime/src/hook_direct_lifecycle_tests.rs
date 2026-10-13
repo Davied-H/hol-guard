@@ -273,6 +273,8 @@ fn notice(session: &str, artifact_type: &str) -> Value {
         "tool_name": "Bash",
         "artifact_type": artifact_type,
         "reason": "Synthetic review reason",
+        // The daemon stamps every notice; a row without it reads as expired.
+        "saved_at": utc_now(),
     })
 }
 
