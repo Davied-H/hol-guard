@@ -239,9 +239,9 @@ jobs:
 
   native-command-evaluators:
     runs-on: ubuntu-latest
-    # A cold opt-level=s release build takes about four minutes, and the
-    # Gauntlet replay gate now replays 81 cases; together they overran ten.
-    timeout-minutes: 15
+    # A cold opt-level=s release build takes about four minutes. The benign
+    # gate now replays about 1,250 harness cases, which overran fifteen.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
