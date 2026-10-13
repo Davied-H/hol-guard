@@ -71,6 +71,12 @@ fn unproven_local_commands_run_in_the_workspace_sandbox_on_macos() {
         "pnpm run test:unit",
         "bun run build",
         "/Users/nobody/.nvm/versions/node/v25.2.1/bin/npm run build",
+        // These Git forms keep every uncommitted change reachable.
+        "git switch -c feature/login-form",
+        "git checkout -b fix-1",
+        "git stash",
+        "git stash push -m 'wip: parser'",
+        "git stash -u && git switch -c spike",
     ] {
         let got = reason("omp", command, &ws, true);
         if host() {
@@ -134,6 +140,17 @@ fn commands_with_network_privilege_or_escape_stay_at_review() {
         "echo hi > ../out",
         "git reset --hard",
         "git checkout main",
+        "git checkout -- src/app.py",
+        "git checkout -b fix origin/main",
+        "git switch -c fix origin/main",
+        "git switch -C fix",
+        "git switch --discard-changes main",
+        "git -C ../other switch -c fix",
+        "git stash pop",
+        "git stash drop",
+        "git stash clear",
+        "git stash push -- src/app.py",
+        "git stash -m",
         "cat .env",
         "GIT_DIR=/x git status",
         "git push --force origin main",
