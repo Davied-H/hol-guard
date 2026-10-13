@@ -153,14 +153,16 @@ fn redirect_disqualifies_containment(reason: &str) -> bool {
     // A file redirect is a shell effect. Pytest and inline-eval profiles and
     // the proofs of Git's own writes are only valid for the exact command, so
     // the projection must not inherit them.
+    // A network read's body is remote content, never a reviewed workspace edit.
     matches!(
         reason,
         "native_pytest_readonly_containment_required"
             | "native_python_eval_readonly_containment_required"
             | "native_node_eval_readonly_containment_required"
             | "native_workspace_containment_required"
-            | super::super::git_config_reads::writes::REASON
-            | super::super::git_init_target::REASON
+            | crate::pretool::git_config_reads::writes::REASON
+            | crate::pretool::git_init_target::REASON
+            | crate::pretool::curl_reads::NETWORK_READ_REASON
     )
 }
 
