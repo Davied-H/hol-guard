@@ -317,14 +317,26 @@ fn binding() -> DirectLaneBinding {
     binding
 }
 
-/// The edge, payload and token of the first bound query vector.
-fn bound_request(binding: &DirectLaneBinding) -> (Vec<u8>, Map<String, Value>, String, String) {
+/// A real workspace for the read vector, whose token resolves its target.
+fn workspace(tag: &str) -> String {
+    let root =
+        std::env::temp_dir().join(format!("hg-saved-workspace-{tag}-{}", std::process::id()));
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    std::fs::write(root.join("src/a.py"), b"print(1)\n").unwrap();
+    root.canonicalize().unwrap().to_str().unwrap().to_owned()
+}
+
+/// The edge, payload and token of the bound `Read` vector in `workspace`.
+fn bound_request(
+    binding: &DirectLaneBinding,
+    workspace: &str,
+) -> (Vec<u8>, Map<String, Value>, String, String) {
     let vectors = vectors();
     let case = vectors["queries"]
         .as_array()
         .unwrap()
         .iter()
-        .find(|case| !case["query"].is_null() && case["harness"] == "claude-code")
+        .find(|case| case["name"] == "camel-case-read")
         .unwrap()
         .clone();
     let payload = case["payload"].as_object().unwrap().clone();
@@ -332,7 +344,7 @@ fn bound_request(binding: &DirectLaneBinding) -> (Vec<u8>, Map<String, Value>, S
     let input = query::QueryInput {
         harness: "claude-code",
         payload: &payload,
-        workspace: vectors["workspace"].as_str().unwrap(),
+        workspace,
         home_dir: vectors["home_dir"].as_str().unwrap(),
         environment: &binding.exact_action_environment.as_ref().unwrap().0,
         control_digest: binding.exact_action_control_digest.as_deref().unwrap(),
@@ -356,7 +368,9 @@ fn answer_with(
     binding: &DirectLaneBinding,
 ) -> Result<Value, HookDirectDefer> {
     let vectors = vectors();
-    let (edge, payload, artifact_id, token) = bound_request(binding);
+    let workspace = workspace(tag);
+    let full = binding();
+    let (edge, payload, artifact_id, token) = bound_request(&full, &workspace);
     let (path, connection) = local_store(tag);
     insert_decision(
         &connection,
@@ -372,7 +386,7 @@ fn answer_with(
         &Context {
             harness: "claude-code",
             payload: &payload,
-            workspace: vectors["workspace"].as_str().unwrap(),
+            workspace: &workspace,
             home_dir: vectors["home_dir"].as_str().unwrap(),
             guard_home: &guard_home,
             binding,
@@ -409,7 +423,7 @@ fn a_binding_without_the_published_state_defers() {
     unbound.exact_action_control_digest = None;
     assert!(matches!(
         answer_with("answer-unbound", "allow", &unbound),
-        Err(HookDirectDefer::SavedDecision)
+        Err(HookDirectDefer::NotAllow)
     ));
     let mut other_key = binding();
     other_key.integrity_key = Some(DirectLaneIntegrityKey {

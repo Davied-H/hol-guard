@@ -146,7 +146,7 @@ fn a_fact_the_daemon_would_stringify_defers() {
 
 #[test]
 fn numbers_the_daemon_could_respell_defer() {
-    for text in ["1.5", "1e5", "-0", "1.0", "100000000000000000000"] {
+    for text in ["1.5", "1e5", "1.0", "100000000000000000000"] {
         let value: Value = serde_json::from_str(text).unwrap();
         assert!(!plain_numbers(&value), "{text}");
         let payload: Map<String, Value> =
@@ -159,7 +159,7 @@ fn numbers_the_daemon_could_respell_defer() {
             "{text}"
         );
     }
-    for text in ["0", "-7", "18446744073709551615"] {
+    for text in ["0", "-0", "-7", "18446744073709551615"] {
         let value: Value = serde_json::from_str(text).unwrap();
         assert!(plain_numbers(&value), "{text}");
     }

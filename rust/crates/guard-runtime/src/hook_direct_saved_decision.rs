@@ -81,8 +81,9 @@ pub(super) fn answer(edge: &[u8], context: &Context<'_>) -> Result<Value, HookDi
         .and_then(Value::as_str)
         .is_some_and(|action| REVIEW_ACTIONS.contains(&action))
     {
-        return Err(HookDirectDefer::SavedDecision);
+        return Err(HookDirectDefer::NotAllow);
     }
+    // A daemon that published no saved-decision state keeps every review.
     let binding = context.binding;
     let (Some(environment), Some(control_digest), Some(integrity), Some(key)) = (
         binding.exact_action_environment.as_ref(),
@@ -90,7 +91,7 @@ pub(super) fn answer(edge: &[u8], context: &Context<'_>) -> Result<Value, HookDi
         binding.policy_integrity_state.as_ref(),
         binding.integrity_key.as_ref(),
     ) else {
-        return Err(HookDirectDefer::SavedDecision);
+        return Err(HookDirectDefer::NotAllow);
     };
     if integrity.enforcement != "enforce"
         || integrity.mode != "protected"
