@@ -191,13 +191,27 @@ fn frozen_script_free_installs_from_registry_lockfiles_proceed() {
             ("package-lock.json", PACKAGE_LOCK),
         ],
     );
+    let mut refused = Vec::new();
     for (project, install) in [(&bun, BUN), (&pnpm, PNPM), (&npm, NPM)] {
-        let result = lab.classify(project, install, &[]);
-        assert_allowed(&result, install);
-        let command = format!("cd {} && {install} 2>&1 | tail -15", project.display());
-        let result = lab.classify(&lab.home, &command, &["BUN_INSTALL", "PNPM_HOME"]);
-        assert_allowed(&result, &command);
+        let cd = format!("cd {} && {install}", project.display());
+        let piped = format!("{install} 2>&1 | tail -15");
+        let both = format!("cd {} && {install} 2>&1 | tail -15", project.display());
+        let names: &[&str] = &["BUN_INSTALL", "PNPM_HOME"];
+        for (cwd, command, names) in [
+            (project.as_path(), install, &[][..]),
+            (project.as_path(), install, names),
+            (project.as_path(), piped.as_str(), &[][..]),
+            (lab.home.as_path(), cd.as_str(), &[][..]),
+            (lab.home.as_path(), both.as_str(), &[][..]),
+            (lab.home.as_path(), both.as_str(), names),
+        ] {
+            let result = lab.classify(cwd, command, names);
+            if result.reason_code != "native_exact_safe_lockfile_install" {
+                refused.push(format!("{command} {names:?}: {}", result.reason_code));
+            }
+        }
     }
+    assert!(refused.is_empty(), "{}", refused.join("\n"));
 }
 
 #[test]
