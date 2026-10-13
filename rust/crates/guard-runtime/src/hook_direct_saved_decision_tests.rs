@@ -365,7 +365,7 @@ fn bound_request(
 fn answer_with(
     tag: &str,
     action: &str,
-    binding: &DirectLaneBinding,
+    answering: &DirectLaneBinding,
 ) -> Result<Value, HookDirectDefer> {
     let vectors = vectors();
     let workspace = workspace(tag);
@@ -389,7 +389,7 @@ fn answer_with(
             workspace: &workspace,
             home_dir: vectors["home_dir"].as_str().unwrap(),
             guard_home: &guard_home,
-            binding,
+            binding: answering,
         },
     )
 }
