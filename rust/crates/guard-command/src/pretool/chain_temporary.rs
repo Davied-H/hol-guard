@@ -45,8 +45,10 @@ pub(super) fn temporary_file_target(
     cwd: Option<&str>,
 ) -> bool {
     let path = Path::new(value);
+    // `Path::components` drops interior `.` parts, so screen the text too.
     path.is_absolute()
         && !value.starts_with('~')
+        && !value.split(['/', '\\']).any(|part| part == ".")
         && !path.components().any(|component| match component {
             Component::Normal(part) => part.to_string_lossy().starts_with('.'),
             Component::ParentDir | Component::CurDir => true,

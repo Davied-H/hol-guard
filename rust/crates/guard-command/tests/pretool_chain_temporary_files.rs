@@ -119,6 +119,7 @@ fn temporary_files_keep_link_sink_and_destination_boundaries() {
         format!("cat {scratch}/.env"),
         format!("wc -l {scratch}/id_rsa"),
         format!("cat {scratch}/missing/notes.txt"),
+        format!("printf x > {scratch}/./p.ts; cp {scratch}/./p.ts src/d.ts"),
         // A chain that could create a link or change directory first.
         format!("ln -s {home}/.ssh/id_rsa {scratch}/k.txt; cat {scratch}/k.txt"),
         format!("head -3 src/a.ts > {scratch}/p.ts; cd src && cp {scratch}/p.ts b.ts"),
