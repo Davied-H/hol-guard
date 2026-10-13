@@ -25,11 +25,16 @@ fn target(value: &str, workspace: &Path) -> PathBuf {
 }
 
 fn expanded_operand(value: &str) -> bool {
-    value.chars().any(|c| matches!(c, '*' | '?' | '[' | ']' | '$' | '\u{60}' | '{' | '}'))
+    value
+        .chars()
+        .any(|c| matches!(c, '*' | '?' | '[' | ']' | '$' | '\u{60}' | '{' | '}'))
 }
 
 fn plain_operand(value: &str) -> bool {
-    !value.is_empty() && !value.starts_with('-') && !value.starts_with('~') && !expanded_operand(value)
+    !value.is_empty()
+        && !value.starts_with('-')
+        && !value.starts_with('~')
+        && !expanded_operand(value)
 }
 
 /// True means containment must decline. Unsupported forms of cp/touch must
@@ -57,8 +62,7 @@ pub(super) fn mutates_linked_destination(
                 return true;
             };
             // Even after the option separator, require concrete operands.
-            if expanded_operand(source) || expanded_operand(destination)
-            {
+            if expanded_operand(source) || expanded_operand(destination) {
                 return true;
             }
             let mut destination = target(destination, workspace);
@@ -180,5 +184,4 @@ mod tests {
             );
         }
     }
-
 }
