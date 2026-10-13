@@ -142,12 +142,11 @@ fn above_root_allowed(above: &[&str]) -> bool {
 
 /// A package manager's download or tarball cache, such as
 /// `~/.bun/install/cache` or `~/.npm/_cacache`, is tool state rather than an
-/// installed tree.
+/// installed tree. The platform cache roots are not: Poetry keeps its
+/// virtualenvs below `~/Library/Caches/pypoetry` on macOS just as it does
+/// below `~/.cache/pypoetry` on Linux, so `Caches` is not a download cache.
 fn download_cache(name: &str) -> bool {
-    matches!(
-        name.to_ascii_lowercase().as_str(),
-        "cache" | "caches" | "_cacache"
-    )
+    matches!(name.to_ascii_lowercase().as_str(), "cache" | "_cacache")
 }
 
 /// The path inside the install root: only benign project dotfiles may be
@@ -204,5 +203,17 @@ mod tests {
         assert!(super::above_root_allowed(&[".bun", "install", "global"]));
         assert!(!super::above_root_allowed(&[".bun", "install", "cache"]));
         assert!(!super::above_root_allowed(&[".npm", "_cacache"]));
+    }
+
+    #[test]
+    fn platform_cache_roots_hold_virtualenvs_on_every_host() {
+        for path in [
+            "Library/Caches/pypoetry/virtualenvs/app-py3.12/lib/python3.12/site-packages",
+            ".cache/pypoetry/virtualenvs/app-py3.12/lib/python3.12/site-packages",
+        ] {
+            let names: Vec<&str> = path.split('/').collect();
+            let root = super::install_root(&names).expect(path);
+            assert!(super::above_root_allowed(&names[..root]), "{path}");
+        }
     }
 }
