@@ -446,7 +446,8 @@ fn substitute(item: &str, word: &str) -> Option<String> {
 
 /// The redirect text after `done`, restricted to plain redirections.
 fn redirect_tail(tail: &str) -> Option<String> {
-    let tail = tail.trim();
+    // Newlines after done start new commands and must not be trimmed away.
+    let tail = tail.trim_start_matches([' ', '\t']).trim_end();
     if tail.is_empty() {
         return Some(String::new());
     }

@@ -157,6 +157,10 @@ fn a_leading_redirection_cannot_hide_the_command_word() {
         "for f in a; do <in $f; done",
         "for f in a; do /usr/bin/doc?er ps $f; done",
         "for f in a; do echo $f | x*y; done",
+        "for f in a b; do echo $f; done\n2>/dev/null printf separate",
+        "for f in a b; do echo $f; done\n1>log.txt printf separate",
+        "for f in a b; do echo $f; done \n2>/dev/null printf separate",
+        "for f in a b; do echo $f; done\t\n2>/dev/null printf separate",
     ] {
         assert_eq!(super::for_loop_unroll::unroll(command), None, "{command}");
     }
