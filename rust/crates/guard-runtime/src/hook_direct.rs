@@ -6,11 +6,12 @@
 //! edge's harness response verbatim. This operation repeats that path for the
 //! shapes where the daemon adds nothing, in a workspace the current snapshot
 //! settled, while the publisher's ACK still holds: a Codex or Claude Code
-//! `PreToolUse` allow or terminal block outside Watch, and any reviewed
-//! `PostToolUse` of those harnesses, whose response the daemon never changes.
-//! Every other request, and every `PreToolUse` verdict the daemon turns into
-//! an approval or a repair link, defers so the caller takes the daemon path,
-//! which is unchanged.
+//! `PreToolUse` allow or terminal block outside Watch, any reviewed
+//! `PostToolUse` of those harnesses, and a reviewed `UserPromptSubmit` with
+//! its receipt, for Codex always and for Claude Code in Watch. The daemon
+//! never changes those responses. Every other request, and every `PreToolUse`
+//! verdict the daemon turns into an approval or a repair link, defers so the
+//! caller takes the daemon path, which is unchanged.
 //!
 //! The daemon also records evidence after it answers. An answer is returned
 //! only once that evidence is queued for the daemon to drain.
@@ -48,6 +49,9 @@ const PRE_TOOL_USE: &str = "PreToolUse";
 const POST_TOOL_USE: &str = "PostToolUse";
 /// The denial the daemon adds a command-control repair link to.
 const REPAIRABLE_BLOCK_REASON: &str = "native_command_control_authority_block";
+const USER_PROMPT_SUBMIT: &str = "UserPromptSubmit";
+const USER_PROMPT_EVENT_NAMES: [&str; 3] = ["prompt", "userpromptsubmit", "userpromptsubmitted"];
+const CLAUDE_CODE: &str = "claude-code";
 const PRE_TOOL_EVENT_NAMES: [&str; 7] = [
     "pretool",
     "pretooluse",
@@ -100,6 +104,7 @@ enum HookDirectDefer {
     HomeMismatch,
     LocalCliRules,
     RecordingOnly,
+    PromptNotice,
     ExecutionEnvironmentInvalid,
     EvidenceUndrained,
     EvidenceFull,
@@ -123,6 +128,7 @@ impl HookDirectDefer {
             Self::HomeMismatch => "direct_hook_home_mismatch",
             Self::LocalCliRules => "direct_hook_local_cli_rules",
             Self::RecordingOnly => "direct_hook_recording_only",
+            Self::PromptNotice => "direct_hook_prompt_notice",
             Self::ExecutionEnvironmentInvalid => "direct_hook_execution_environment_invalid",
             Self::EvidenceUndrained => "direct_hook_evidence_undrained",
             Self::EvidenceFull => "direct_hook_evidence_full",
@@ -267,6 +273,10 @@ fn answer(
         // `PostToolUse` records the same activity in either posture.
         return Err(HookDirectDefer::RecordingOnly);
     }
+    // Outside Watch the daemon may add Guard's notice to a Claude Code
+    // prompt response.
+    let prompt_notice =
+        event == USER_PROMPT_SUBMIT && !recording_only && request.harness == CLAUDE_CODE;
     if binding.evidence_drain != Some(true) {
         return Err(HookDirectDefer::EvidenceUndrained);
     }
@@ -300,10 +310,10 @@ fn answer(
     };
     let edge = crate::edge::evaluate_envelope_with_store(envelope, policy_store)
         .map_err(|_| HookDirectDefer::EdgeFailed)?;
-    let answered = if pre_tool {
-        pre_tool_answer(&edge)?
-    } else {
-        post_tool_answer(&edge)?
+    let answered = match event {
+        PRE_TOOL_USE => pre_tool_answer(&edge)?,
+        POST_TOOL_USE => post_tool_answer(&edge)?,
+        _ => prompt_answer(&edge, prompt_notice)?,
     };
     let evidence = json!({
         "event": event,
@@ -370,9 +380,34 @@ fn post_tool_answer(edge: &[u8]) -> Result<Value, HookDirectDefer> {
     reviewed_edge(edge, POST_TOOL_USE)
 }
 
+/// The edge result to return as is: the daemon passes a reviewed
+/// `UserPromptSubmit` through once it accepts the receipt, and answers one
+/// without a receipt as unavailable. With `notice`, the daemon adds Guard's
+/// Claude Code notice for exactly these actions and leaves any other
+/// response untouched.
+fn prompt_answer(edge: &[u8], notice: bool) -> Result<Value, HookDirectDefer> {
+    let parsed = reviewed_edge(edge, USER_PROMPT_SUBMIT)?;
+    if !parsed.get("receipt").is_some_and(Value::is_object) {
+        return Err(HookDirectDefer::EdgeFailed);
+    }
+    let action = parsed
+        .get("result")
+        .and_then(|result| result.get("minimum_action"))
+        .and_then(Value::as_str);
+    if notice
+        && matches!(
+            action,
+            Some("require-reapproval" | "block" | "sandbox-required")
+        )
+    {
+        return Err(HookDirectDefer::PromptNotice);
+    }
+    Ok(parsed)
+}
+
 /// The daemon's event name rule: the first non-blank name field decides, and
-/// a payload without one is a `PreToolUse`. Only the two tool events can be
-/// answered here.
+/// a payload without one is a `PreToolUse`. Only the two tool events and a
+/// prompt can be answered here.
 fn direct_event(payload: &Map<String, Value>) -> Result<Option<&'static str>, HookDirectDefer> {
     for field in EVENT_NAME_FIELDS {
         let Some(value) = payload.get(field).and_then(Value::as_str) else {
@@ -393,6 +428,8 @@ fn direct_event(payload: &Map<String, Value>) -> Result<Option<&'static str>, Ho
             Some(PRE_TOOL_USE)
         } else if POST_TOOL_EVENT_NAMES.contains(&compact.as_str()) {
             Some(POST_TOOL_USE)
+        } else if USER_PROMPT_EVENT_NAMES.contains(&compact.as_str()) {
+            Some(USER_PROMPT_SUBMIT)
         } else {
             None
         });
