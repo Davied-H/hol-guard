@@ -287,7 +287,8 @@ fn answer(
 }
 
 /// The edge result to return as is, when it is an allow the daemon would
-/// pass through unchanged.
+/// pass through unchanged. A `warn` floor still allows the call, and the
+/// daemon returns that edge response untouched as well.
 fn allow_answer(edge: &[u8]) -> Result<Value, HookDirectDefer> {
     let parsed: Value = serde_json::from_slice(edge).map_err(|_| HookDirectDefer::EdgeFailed)?;
     if parsed.get("event_name").and_then(Value::as_str) != Some("PreToolUse")
@@ -301,7 +302,9 @@ fn allow_answer(edge: &[u8]) -> Result<Value, HookDirectDefer> {
             .and_then(|result| result.get(name))
             .and_then(Value::as_str)
     };
-    if field("decision") != Some("allow") || field("minimum_action") != Some("allow") {
+    if field("decision") != Some("allow")
+        || !matches!(field("minimum_action"), Some("allow" | "warn"))
+    {
         return Err(HookDirectDefer::NotAllow);
     }
     Ok(parsed)
