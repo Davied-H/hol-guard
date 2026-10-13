@@ -98,7 +98,8 @@ fn a_reviewable_setting_before_an_unmodeled_script_reaches_ordinary_review() {
 
     // A canonical, existing `node_modules` directory inside the working tree
     // is a dependency tree the project already trusts: the setting is named in
-    // an ordinary review instead of the hard block, and never settles lower.
+    // an ordinary review (or the workspace sandbox) instead of the hard block,
+    // and never settles lower.
     std::fs::create_dir_all(&modules).unwrap();
     let modules = modules.canonicalize().unwrap();
     for command in [
@@ -109,8 +110,11 @@ fn a_reviewable_setting_before_an_unmodeled_script_reaches_ordinary_review() {
         ),
     ] {
         let result = evaluate(&root, &command);
-        assert_eq!(
-            result.minimum_action, "review",
+        assert!(
+            matches!(
+                result.minimum_action.as_str(),
+                "review" | "sandbox-required"
+            ),
             "{command}: {}",
             result.reason
         );

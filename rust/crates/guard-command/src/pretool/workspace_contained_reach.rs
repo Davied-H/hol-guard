@@ -32,6 +32,9 @@ pub(super) fn reaches_outside(segment: &CommandSegmentV1, name: &str, workspace:
     {
         return true;
     }
+    if redirect_targets(&segment.text).any(|target| outside(target, name, workspace)) {
+        return true;
+    }
     segment.arguments.iter().any(|argument| {
         let value = match argument.split_once('=') {
             Some((option, value)) if option.starts_with('-') => value,
@@ -39,6 +42,27 @@ pub(super) fn reaches_outside(segment: &CommandSegmentV1, name: &str, workspace:
             _ => argument.as_str(),
         };
         outside(value, name, workspace)
+    })
+}
+
+/// Redirect targets live only in the segment text: `> out`, `2>>log`, `&>x`.
+fn redirect_targets(text: &str) -> impl Iterator<Item = &str> {
+    let mut words = text.split_whitespace().peekable();
+    std::iter::from_fn(move || {
+        while let Some(word) = words.next() {
+            let operator = word.trim_start_matches(|c: char| c.is_ascii_digit() || c == '&');
+            if !operator.starts_with(['>', '<']) {
+                continue;
+            }
+            let target = operator.trim_start_matches(['>', '<', '|', '&']);
+            let target = if target.is_empty() {
+                words.next().unwrap_or_default()
+            } else {
+                target
+            };
+            return Some(target.trim_matches(['"', '\'']));
+        }
+        None
     })
 }
 
