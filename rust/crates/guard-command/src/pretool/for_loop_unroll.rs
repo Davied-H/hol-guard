@@ -100,9 +100,7 @@ fn valid_identifier(name: &str) -> bool {
     // Only ordinary lowercase identifiers are admitted to this proof.
     // Exclude a leading underscore because '_' itself is shell-special.
     let mut chars = name.chars();
-    chars
-        .next()
-        .is_some_and(|first| first.is_ascii_lowercase())
+    chars.next().is_some_and(|first| first.is_ascii_lowercase())
         && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
 }
 
