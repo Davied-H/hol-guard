@@ -5,7 +5,7 @@ The required `CI` workflow validates the complete locked Linux Rust workspace on
 in parallel matrix jobs. The `native-command-evaluators` producer checks formatting, builds and verifies
 the release compiler/runtime, and uploads matching artifacts without waiting for
 Python setup or replay gates. On the measured PR run, moving Python setup and
-contract checks off its 4m59s pre-upload path removes the remaining serial
+contract checks off its 4m55s pre-upload path removes the remaining serial
 work; the goal is a producer runtime below five minutes, including artifact
 upload. Cold-cache compiler changes can still exceed that target.
 The `native-gates` job retains the complete native contract group in shard 0
