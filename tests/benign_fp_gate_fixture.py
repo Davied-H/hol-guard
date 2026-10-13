@@ -34,6 +34,10 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+import pytest
+
+from codex_plugin_scanner.guard.adapters import codex_contained_tests
+
 _GIT_IDENTITY = {
     "GIT_AUTHOR_NAME": "Fixture Author",
     "GIT_AUTHOR_EMAIL": "fixture@example.invalid",
@@ -69,8 +73,14 @@ class BenignFixture:
     def cleanup(self) -> None:
         """Remove the directories this fixture created outside its own root."""
         shutil.rmtree(self.private_tmp, ignore_errors=True)
+        shutil.rmtree(self.contained_requests, ignore_errors=True)
         shutil.rmtree(self.tmp_worktree.parent, ignore_errors=True)
         shutil.rmtree(self.tmp_org.parent, ignore_errors=True)
+
+    @property
+    def contained_requests(self) -> Path:
+        """Where routed contained runs write their request files."""
+        return self.root / "contained-requests"
 
     def tokens(self) -> dict[str, str]:
         return {
@@ -292,3 +302,23 @@ def build_fixture(root: Path) -> BenignFixture:
     return BenignFixture(
         root, home, parent, worktree, nested, gitlink_repo, guard_home, private_tmp, tmp_worktree, org, tmp_org
     )
+
+
+def route_codex(result: dict[str, object], payload: dict[str, object], fixture: BenignFixture) -> dict[str, object]:
+    """Run the real Codex bridge rewrite for a Codex release that applies ``updatedInput``.
+
+    Codex before 0.131 keeps the denial with an update hint, so the gates model
+    0.131 or later and say nothing about older releases. The contained request
+    file goes to the fixture's own directory, which ``cleanup`` removes.
+    """
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(codex_contained_tests, "launching_codex_executable", lambda: Path("/usr/local/bin/codex"))
+        patch.setattr(codex_contained_tests, "codex_applies_updated_input", lambda *_args, **_kwargs: True)
+        fixture.contained_requests.mkdir(exist_ok=True)
+        patch.setattr(tempfile, "tempdir", str(fixture.contained_requests))
+        return codex_contained_tests.route_codex_containment(
+            dict(result),
+            hook_input=json.dumps(payload),
+            guard_home=fixture.guard_home,
+            home_dir=fixture.home,
+        )

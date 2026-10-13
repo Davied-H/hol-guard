@@ -27,11 +27,10 @@ import pytest
 
 from ci.gauntlet.approval_rows import always_gap, approval_rows
 from ci.gauntlet.input_evidence import redact_value
-from codex_plugin_scanner.guard.adapters import codex_contained_tests
 from codex_plugin_scanner.guard.daemon.hook_worker import HookWorker
 from codex_plugin_scanner.guard.hook_execution_environment import collect_hook_execution_environment
 from codex_plugin_scanner.guard.store import GuardStore
-from tests.benign_fp_gate_fixture import BenignFixture, build_fixture
+from tests.benign_fp_gate_fixture import BenignFixture, build_fixture, route_codex
 from tests.gauntlet_replay import OMP_CONTAINED, cursor_hook_fields
 
 pytestmark = pytest.mark.usefixtures("native_hook_force")
@@ -206,27 +205,10 @@ def _harness_route(
     counts their contained runs as reviews although the user sees nothing.
     """
     if case.harness == "codex":
-        return _codex_route(result, payload, fixture)
+        return route_codex(result, payload, fixture)
     if case.harness == "omp" and _omp_routes(result):
         return {"decision": "allow", "policy_action": "allow", "reason_code": _reason(result), "routed": "omp"}
     return result
-
-
-def _codex_route(result: dict[str, object], payload: dict[str, object], fixture: BenignFixture) -> dict[str, object]:
-    """Run the real Codex bridge rewrite for a Codex release that applies ``updatedInput``.
-
-    Codex before 0.131 keeps the denial with an update hint, so the gate models
-    0.131 or later and says nothing about older releases.
-    """
-    with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(codex_contained_tests, "launching_codex_executable", lambda: Path("/usr/local/bin/codex"))
-        patch.setattr(codex_contained_tests, "codex_applies_updated_input", lambda *_args, **_kwargs: True)
-        return codex_contained_tests.route_codex_containment(
-            dict(result),
-            hook_input=json.dumps(payload),
-            guard_home=fixture.guard_home,
-            home_dir=fixture.home,
-        )
 
 
 def _omp_routes(result: dict[str, object]) -> bool:
