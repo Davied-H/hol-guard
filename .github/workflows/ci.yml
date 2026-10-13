@@ -266,8 +266,9 @@ jobs:
 
   native-command-evaluators:
     runs-on: ubuntu-latest
-    # A cold opt-level=s release build takes about four minutes. The replay
-    # gates run in native-gates so coverage does not wait for them.
+    # Only compile, verify and upload the matching native artifacts here. Python
+    # contracts and the replay gates run after artifact upload in native-gates.
+    # This keeps the normal cached producer below five minutes.
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
@@ -306,28 +307,6 @@ jobs:
             arguments+=(--changed-from "$BASE_SHA")
           fi
           python3 scripts/ci/verify_native_command_program.py "${arguments[@]}"
-      - uses: ./.github/actions/setup-ci-python
-        with:
-          python-version: ${{ env.CI_PYTHON_VERSION }}
-          cache-dependency-glob: ${{ env.CI_UV_CACHE_DEPENDENCY_GLOB }}
-      - name: Prepare current public directory before pytest collection
-        run: |
-          uv run --no-sync python scripts/export_extension_directory.py
-          uv run --no-sync python scripts/render_command_extension_directory.py
-          uv run --no-sync python scripts/export_extension_directory.py --check
-          uv run --no-sync python scripts/render_command_extension_directory.py --check
-      - name: Check native contract groups before pytest fan-out
-        env:
-          HOL_GUARD_NATIVE_SOURCE_COMPILER: ${{ github.workspace }}/rust/target/release/guard-command-source
-          HOL_GUARD_NATIVE_TEST_SOURCE_COMPILER: ${{ github.workspace }}/rust/target/release/guard-command-source
-          HOL_GUARD_NATIVE_BINARY: ${{ github.workspace }}/rust/target/release/hol-guard-runtime
-          HOL_GUARD_NATIVE_REGRESSION: "1"
-        run: |
-          uv run --no-sync pytest -q --tb=short \
-            ci/package_size \
-            tests/test_guard_command_corpus_native_contract.py::test_native_contract_validates_every_authored_signature_without_rewriting_evidence \
-            tests/test_pi_adapter.py::TestPiInstall::test_install_writes_managed_extension_that_denies_on_hook_errors \
-            tests/test_pi_adapter.py::TestPiInstall::test_managed_extension_fails_safe_on_ambiguous_success_payloads
       - name: Upload native command evaluators
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
@@ -352,11 +331,11 @@ jobs:
     name: native-gates (${{ matrix.shard-index }})
     needs: native-command-evaluators
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     strategy:
       fail-fast: false
       matrix:
-        shard-index: [0, 1, 2, 3]
+        shard-index: [0, 1, 2, 3, 4, 5, 6, 7]
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
@@ -376,10 +355,29 @@ jobs:
           echo "HOL_GUARD_NATIVE_SOURCE_COMPILER=$GITHUB_WORKSPACE/rust/target/release/guard-command-source" >> "$GITHUB_ENV"
           echo "HOL_GUARD_NATIVE_BINARY=$GITHUB_WORKSPACE/rust/target/release/hol-guard-runtime" >> "$GITHUB_ENV"
           echo "HOL_GUARD_NATIVE_REGRESSION=1" >> "$GITHUB_ENV"
+      - name: Prepare current public directory and check native contracts
+        # One required shard owns the previously serial producer contracts;
+        # failure still fails native-gates and the required aggregate.
+        if: matrix.shard-index == 0
+        env:
+          HOL_GUARD_NATIVE_SOURCE_COMPILER: ${{ github.workspace }}/rust/target/release/guard-command-source
+          HOL_GUARD_NATIVE_TEST_SOURCE_COMPILER: ${{ github.workspace }}/rust/target/release/guard-command-source
+          HOL_GUARD_NATIVE_BINARY: ${{ github.workspace }}/rust/target/release/hol-guard-runtime
+          HOL_GUARD_NATIVE_REGRESSION: "1"
+        run: |
+          uv run --no-sync python scripts/export_extension_directory.py
+          uv run --no-sync python scripts/render_command_extension_directory.py
+          uv run --no-sync python scripts/export_extension_directory.py --check
+          uv run --no-sync python scripts/render_command_extension_directory.py --check
+          uv run --no-sync pytest -q --tb=short \
+            ci/package_size \
+            tests/test_guard_command_corpus_native_contract.py::test_native_contract_validates_every_authored_signature_without_rewriting_evidence \
+            tests/test_pi_adapter.py::TestPiInstall::test_install_writes_managed_extension_that_denies_on_hook_errors \
+            tests/test_pi_adapter.py::TestPiInstall::test_managed_extension_fails_safe_on_ambiguous_success_payloads
       - name: Benign false-positive and Gauntlet replay gates (model-free, native path)
         env:
           SHARD_INDEX: ${{ matrix.shard-index }}
-          SHARD_COUNT: 4
+          SHARD_COUNT: 8
         run: |
           # A collection failure must fail the step even when grep still prints nodes.
           set -o pipefail
@@ -387,7 +385,7 @@ jobs:
                  tests/test_guard_gauntlet_replay_gate.py
                  tests/test_guard_command_corpus_benign_allow.py)
           uv run --no-sync pytest --collect-only -q "${gates[@]}" | grep '::' > gate-nodes.txt
-          # Every shard collects the same sorted list and keeps every fourth
+          # Every shard collects the same sorted list and keeps every eighth
           # node, so the shards are disjoint and together cover the whole gate.
           sort gate-nodes.txt | awk -v n="$SHARD_COUNT" -v i="$SHARD_INDEX" '(NR - 1) % n == i' > gate-shard.txt
           test -s gate-shard.txt
