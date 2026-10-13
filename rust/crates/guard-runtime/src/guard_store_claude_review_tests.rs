@@ -164,3 +164,43 @@ fn a_row_signed_under_another_key_rolls_the_review_back() {
     drop(connection);
     let _ = std::fs::remove_dir_all(&fixture.home);
 }
+
+#[test]
+fn a_foreign_notice_without_a_pending_index_stays() {
+    let fixture = fixture("claude-review-foreign-notice");
+    let connection = Connection::open(fixture.home.join("guard.db")).unwrap();
+    let foreign = json!({"session_id": "sess-1", "integrity": {"integrity_key_id": "rotated"}});
+    let notice_key = "claude_permission_notice:sess-1:Bash";
+    connection
+        .execute(
+            "insert into sync_state (state_key, payload_json, updated_at) values (?1, ?2, ?3)",
+            params![notice_key, foreign.to_string(), "2026-03-01T12:00:00+00:00"],
+        )
+        .unwrap();
+    let reply = write(&fixture);
+    assert_eq!(reply["status"], "error", "{reply}");
+    assert_eq!(
+        reply["payload"]["message"], "native_claude_review_notice_foreign_key",
+        "{reply}"
+    );
+    assert_eq!(
+        count(&connection, "approval_requests"),
+        0,
+        "queue rolled back"
+    );
+    let stored: String = connection
+        .query_row(
+            "select payload_json from sync_state where state_key = ?1",
+            params![notice_key],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        stored,
+        foreign.to_string(),
+        "notice stays signed under the other key"
+    );
+    assert_eq!(count(&connection, "guard_events"), 0, "no audit rows");
+    drop(connection);
+    let _ = std::fs::remove_dir_all(&fixture.home);
+}

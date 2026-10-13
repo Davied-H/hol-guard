@@ -80,6 +80,19 @@ impl Env<'_> {
         let Value::Object(source) = payload else {
             return false;
         };
+        if let Some(flag) = self.foreign_key {
+            if let Stored::Object(existing) = self.read(state_key) {
+                let signed_key_id = existing
+                    .get("integrity")
+                    .and_then(Value::as_object)
+                    .and_then(|integrity| integrity.get("integrity_key_id"))
+                    .and_then(Value::as_str);
+                if signed_key_id.is_some_and(|signed| Some(signed) != self.key_id) {
+                    flag.set(true);
+                    return false;
+                }
+            }
+        }
         let mut signed: Object = source
             .iter()
             .filter(|(name, _)| name.as_str() != "integrity")
