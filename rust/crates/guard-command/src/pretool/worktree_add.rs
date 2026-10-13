@@ -331,30 +331,21 @@ fn fresh_destination(value: &str, context: super::PathContext<'_>) -> Option<Pat
         return None;
     }
     let canonical_parent = std::fs::canonicalize(parent).ok()?;
+    if !canonical_parent.starts_with(&home) {
+        return None;
+    }
     let leaf = target.file_name()?.to_str()?;
     if leaf.starts_with('.') {
         return None;
     }
     let destination = canonical_parent.join(leaf);
-    // Below home the ordinary workspace/home write screens apply. A fresh
-    // sibling in a user-owned temporary directory (`/tmp/...`) takes the
-    // screened temporary-write proof instead; `git worktree add` creates the
-    // leaf itself and refuses an existing non-empty one.
-    let destination_text = destination.to_str()?;
-    let admitted = if canonical_parent.starts_with(&home) {
-        super::safe_writes::bounded_native_file_write_target(
-            destination_text,
+    if protected_worktree_destination(&destination)
+        || !super::safe_writes::bounded_native_file_write_target(
+            destination.to_str()?,
             context.home_dir,
             context.cwd,
         )
-    } else {
-        super::safe_writes::bounded_native_temporary_write_target(
-            destination_text,
-            context.home_dir,
-            context.cwd,
-        )
-    };
-    if protected_worktree_destination(&destination) || !admitted {
+    {
         return None;
     }
     Some(destination)

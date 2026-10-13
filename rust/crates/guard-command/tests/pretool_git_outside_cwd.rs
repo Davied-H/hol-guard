@@ -244,22 +244,6 @@ fn hardening_flags_do_not_make_reads_riskier() {
 }
 
 #[test]
-fn fresh_sibling_worktree_is_admitted_and_existing_targets_are_not() {
-    let w = world("worktree");
-    let fresh = w.parent.join("app-followup");
-    let command = format!("git worktree add {} -b fix/report-window HEAD", fresh.display());
-    assert_eq!(reason(&w, &w.app, &command).1, "native_exact_safe_worktree_add");
-    std::fs::create_dir_all(&fresh).unwrap();
-    assert_ne!(reason(&w, &w.app, &command).1, "native_exact_safe_worktree_add");
-    let forced = format!("git worktree add --force {}/other -b x HEAD", w.parent.display());
-    assert_ne!(reason(&w, &w.app, &forced).1, "native_exact_safe_worktree_add");
-    // A repository whose attributes select the configured filter stays reviewed.
-    std::fs::write(w.app.join(".gitattributes"), "*.txt filter=lfs\n").unwrap();
-    let command = format!("git worktree add {}/second -b fix/second HEAD", w.parent.display());
-    assert_ne!(reason(&w, &w.app, &command).1, "native_exact_safe_worktree_add");
-}
-
-#[test]
 fn git_config_isolation_exports_do_not_make_reads_riskier() {
     let w = world("isolation");
     let app = w.app.display();
