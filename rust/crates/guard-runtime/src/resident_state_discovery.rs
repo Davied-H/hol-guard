@@ -37,7 +37,6 @@ pub(crate) fn discover_home_states_prefer(
 /// this very executable. A scope's resident counts as live when its start
 /// marker matches and it runs this executable's path, so no runtime is
 /// hashed; the caller still validates the identity it connects to.
-#[cfg(unix)]
 pub(crate) fn discover_same_executable_states(
     base: &Path,
 ) -> Result<Vec<(PathBuf, String, ResidentState)>, String> {
@@ -50,7 +49,6 @@ enum Liveness {
     /// The process runs bytes matching the state's runtime digest.
     RuntimeDigest,
     /// The process runs this executable's path.
-    #[cfg(unix)]
     SameExecutable,
 }
 
@@ -210,7 +208,6 @@ impl DiscoveryBudget {
             Liveness::RuntimeDigest => {
                 validate_runtime_process_identity(key.0, &key.1, &key.2).is_ok()
             }
-            #[cfg(unix)]
             Liveness::SameExecutable => {
                 super::validate_same_executable_process_identity(key.0, &key.1).is_ok()
             }

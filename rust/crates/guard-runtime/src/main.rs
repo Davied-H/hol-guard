@@ -199,6 +199,8 @@ mod data_flow_analyze_op;
 mod decision_authority_op;
 #[cfg(test)]
 mod decision_authority_vectors_tests;
+mod developer_inspection_authority_op;
+mod developer_inspection_host;
 mod direct_tool_context_op;
 #[cfg(test)]
 mod direct_tool_context_tests;
@@ -472,6 +474,7 @@ mod policy_document_op;
 mod policy_effective;
 mod policy_enforcement;
 mod policy_integrity_resolver;
+mod policy_integrity_rows_op;
 mod policy_lookup_groups;
 mod policy_lookup_reuse;
 mod policy_snapshot_build;

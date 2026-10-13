@@ -34,6 +34,7 @@ pub(crate) mod workspace_git_config;
 pub(crate) mod workspace_git_environment;
 pub(crate) use directory_targets::safe_directory_target;
 mod base64_reads;
+mod brew_reads;
 mod bun_eval;
 mod chain_temporary;
 mod compound_reason;
@@ -49,6 +50,7 @@ pub(crate) mod git_init_target;
 pub(crate) mod git_object_reads;
 mod git_read_floor;
 mod git_reads;
+mod git_search_text;
 mod repo_create_reason;
 use git_reads::safe_git_arguments;
 mod git_helper_context;
@@ -66,6 +68,7 @@ mod lookup_reads;
 mod metadata_reads;
 mod npm_environment;
 mod npm_reads;
+mod postgres_reads;
 mod pytest_contained;
 mod tool_bin_listing;
 mod trusted_location;
@@ -170,8 +173,13 @@ pub(super) fn normalized_haystack(value: &str) -> String {
 }
 
 pub(super) fn sensitive_command(value: &str) -> bool {
+    credential_keyword_text(value) || sensitive_location_text(value)
+}
+
+/// Credential words such as `password` or `api_key`, anywhere in `value`
+/// except a plain source-file path.
+pub(super) fn credential_keyword_text(value: &str) -> bool {
     let lowered = normalized_haystack(value);
-    let keywords_apply = !plain_source_code_path(value);
     let keyword_needles = [
         "aws_secret_access_key",
         "private_key",
@@ -181,13 +189,16 @@ pub(super) fn sensitive_command(value: &str) -> bool {
         "password",
         "secret",
     ];
-    if keywords_apply
+    !plain_source_code_path(value)
         && keyword_needles
             .iter()
             .any(|needle| lowered.contains(needle))
-    {
-        return true;
-    }
+}
+
+/// Credential locations and environment reads: `.env`, `~/.ssh`,
+/// `process.env` and the like.
+fn sensitive_location_text(value: &str) -> bool {
+    let lowered = normalized_haystack(value);
     let needles = [
         "/.ssh/",
         "~/.ssh",
@@ -556,7 +567,10 @@ fn evaluate_single_command(
             "The Rust command authority proved this bounded command explicitly benign.",
         ));
     }
-    if sensitive_command(normalized) {
+    if git_search_text::sensitive_beyond_patterns(
+        normalized,
+        git_search_text::command_without_patterns(&model),
+    ) {
         return Ok(pretool_decision(
             model,
             "review",
