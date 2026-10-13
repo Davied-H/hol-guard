@@ -419,6 +419,19 @@ fn substitute_word(word: &[char], bindings: &HashMap<String, Binding>) -> Option
                     .iter()
                     .take_while(|&&c| c == '_' || c.is_ascii_alphanumeric())
                     .count();
+                // `$$`, `$!` and the other special parameters expand on their
+                // own; the next character must never start a new expansion.
+                let special = word.get(index + 1).copied().filter(|next| {
+                    length == 0
+                        && !braced
+                        && matches!(next, '$' | '!' | '?' | '#' | '-' | '@' | '*')
+                });
+                if let Some(next) = special {
+                    out.push('$');
+                    out.push(next);
+                    index += 2;
+                    continue;
+                }
                 let name: String = word[from..from + length].iter().collect();
                 let after = word.get(from + length).copied();
                 let usable = if braced {

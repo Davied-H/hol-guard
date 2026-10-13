@@ -201,6 +201,14 @@ fn quoted_or_escaped_names_still_count() {
 }
 
 #[test]
+fn special_parameters_are_never_reparsed_as_a_binding() {
+    // `$$F` is the shell's PID followed by `F`, never `$` and then `$F`.
+    for command in ["F=a && rm $$F", "F=a && rm $${F}", "F=a && rm $!F"] {
+        assert_eq!(substituted(command), None, "{command}");
+    }
+}
+
+#[test]
 fn text_the_pass_cannot_see_ends_substitution() {
     // An unresolved expansion or a glob could expand to a bound name.
     assert_eq!(
