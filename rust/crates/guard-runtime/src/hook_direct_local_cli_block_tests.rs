@@ -138,10 +138,12 @@ fn watch_records_the_block_as_the_daemon_does() {
 
 #[test]
 fn a_verdict_too_large_to_render_defers() {
+    // The block verdict replaces `reason` with the short extension text, so
+    // the bulk has to sit on a field that is still sent to the renderer.
     let result = object(&json!({
         "decision": "allow",
         "minimum_action": "allow",
-        "reason": "x".repeat(64 * 1024),
+        "evidence": "x".repeat(64 * 1024),
     }));
     assert_eq!(block_response("codex", &result, "demo-tool", false), None);
 }
