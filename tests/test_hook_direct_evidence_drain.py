@@ -164,7 +164,7 @@ def test_an_invalid_receipt_is_not_submitted(
     assert host.activity_writer.activity[0]["receipt_id"] is None
 
 
-def _page(records: list[object], remaining: int, through: int | None = None) -> bytes:
+def _page(records: list[object], remaining: int, through: int | None = None, epoch: object = "e1") -> bytes:
     body: dict[str, object] = {
         "schema": "guard-hook-direct-evidence.v1",
         "records": records,
@@ -172,6 +172,7 @@ def _page(records: list[object], remaining: int, through: int | None = None) -> 
     }
     if through is not None:
         body["through"] = through
+        body["epoch"] = epoch
     return json.dumps(body).encode()
 
 
@@ -194,6 +195,33 @@ def test_drain_pulls_pages_until_the_queue_is_empty(tmp_path: Path, observed: li
         "request": {"guard_home": str(tmp_path)},
     }
     assert json.loads(requests[1]["payload"])["request"]["ack_through"] == 2  # pyright: ignore[reportArgumentType]
+    assert json.loads(requests[1]["payload"])["request"]["ack_epoch"] == "e1"  # pyright: ignore[reportArgumentType]
+
+
+@pytest.mark.parametrize("epoch", [None, "", 7])
+def test_a_cursor_without_its_resident_epoch_is_a_bad_page(tmp_path: Path, epoch: object) -> None:
+    output = _page([_record()], 0, through=1, epoch=epoch)
+    drain = DirectHookEvidenceDrain(_host(tmp_path), transport=lambda: (tmp_path, lambda **_: output))
+    assert drain.drain_once() is False
+    assert (drain.recorded, drain.failures) == (0, 1)
+
+
+def test_a_restarted_resident_gets_the_cursor_of_its_own_page(
+    tmp_path: Path, observed: list[dict[str, object]]
+) -> None:
+    host = _host(tmp_path)
+    pages = [_page([_record()], 0, through=9, epoch="old"), _page([_record()], 0, through=1, epoch="new"), _page([], 0)]
+    requests: list[dict[str, object]] = []
+
+    def client(**values: object) -> bytes:
+        requests.append(values)
+        return pages.pop(0)
+
+    drain = DirectHookEvidenceDrain(host, transport=lambda: (tmp_path, client))
+    for _ in range(3):
+        drain.drain_once()
+    sent = [json.loads(request["payload"])["request"] for request in requests]  # pyright: ignore[reportArgumentType]
+    assert [(item.get("ack_epoch"), item.get("ack_through")) for item in sent] == [(None, None), ("old", 9), ("new", 1)]
 
 
 @pytest.mark.parametrize("output", [None, b"", b"not json", b'{"schema":"other","records":[],"remaining":0}'])
