@@ -197,18 +197,7 @@ jobs:
         if: matrix.check == 'test'
         # Without it the overlay sandbox tests take the unavailable-host branch
         # and the live confinement run is skipped.
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends apparmor bubblewrap
-          sudo tee /etc/apparmor.d/hol-guard-bwrap <<'EOF'
-          abi <abi/4.0>,
-          include <tunables/global>
-          /usr/bin/bwrap flags=(unconfined) {
-            userns,
-          }
-          EOF
-          sudo apparmor_parser -r /etc/apparmor.d/hol-guard-bwrap
-          /usr/bin/bwrap --version
+        run: bash ci/containment/install-bubblewrap.sh
       - name: Validate the locked Rust workspace
         env:
           CARGO_CHECK: ${{ matrix.check }}
@@ -316,18 +305,7 @@ jobs:
         # Without it every command the sandbox would contain falls back to
         # review, and the gates measure a host that Linux users with
         # bubblewrap never see.
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends apparmor bubblewrap
-          sudo tee /etc/apparmor.d/hol-guard-bwrap <<'EOF'
-          abi <abi/4.0>,
-          include <tunables/global>
-          /usr/bin/bwrap flags=(unconfined) {
-            userns,
-          }
-          EOF
-          sudo apparmor_parser -r /etc/apparmor.d/hol-guard-bwrap
-          /usr/bin/bwrap --version
+        run: bash ci/containment/install-bubblewrap.sh
       - name: Benign false-positive and Gauntlet replay gates (model-free, native path)
         env:
           HOL_GUARD_NATIVE_BINARY: ${{ github.workspace }}/rust/target/release/hol-guard-runtime

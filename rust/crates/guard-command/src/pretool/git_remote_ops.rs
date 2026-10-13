@@ -69,7 +69,9 @@ pub(super) fn exact_safe_command(
             fetch_seen = true;
             continue;
         }
-        if !super::segment_proof::exact_safe_segment_with_context(model, segment, false, context) {
+        if !super::segment_proof::exact_safe_segment_with_context(model, segment, false, context)
+            && !proven_read(model, index, context, deadline, execution_environment)
+        {
             return None;
         }
     }
@@ -77,6 +79,35 @@ pub(super) fn exact_safe_command(
         "native_exact_safe_git_origin_refresh",
         "The Rust command authority proved this fetch or fast-forward pull reaches only a GitHub HTTPS origin with trusted credential helpers, plain refspecs and no hooks, filters or transport programs.",
     ))
+}
+
+/// A Git read the configuration probe proves starts no pager, diff driver or
+/// textconv helper. A fetch writes refs, never configuration, so the proof
+/// holds on either side of it.
+fn proven_read(
+    model: &CanonicalCommandV1,
+    index: usize,
+    context: super::PathContext<'_>,
+    deadline: Option<Instant>,
+    execution_environment: Option<&guard_contracts::GuardExecutionEnvironmentV1>,
+) -> bool {
+    let segment = &model.segments[index];
+    segment.executable.as_deref() == Some("git")
+        && segment.environment_names.is_empty()
+        && !segment.path_overridden
+        && segment.wrapper_chain.is_empty()
+        && !super::sensitive_command(&segment.text)
+        && super::git_reads::safe_git_arguments(&segment.arguments, true, context)
+        && super::directory_targets::drive_targets_quoted(segment)
+        && super::directory_targets::home_targets_unquoted(segment)
+        && super::git_config::execution_free(
+            "git",
+            &segment.arguments,
+            context,
+            deadline,
+            execution_environment,
+            super::git_helper_context::stdout_piped(model, index),
+        ) == Some(true)
 }
 
 fn proven(
