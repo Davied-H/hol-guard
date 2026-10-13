@@ -1641,7 +1641,6 @@
         "id": "mcp-policy-request-workflow",
         "category": "control_plane",
         "path": "src/codex_plugin_scanner/guard/mcp/policy_store.py",
-        "root_function": true,
         "symbols": [
           "_VALID_REQUEST_STATUSES",
           "_PolicyRequestStoreConnection",
