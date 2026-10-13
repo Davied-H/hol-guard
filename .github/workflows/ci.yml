@@ -155,13 +155,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        check: [clippy, test]
+        # Validate every workspace package, sharded by package family so the
+        # costly guard-command and runtime test targets compile on separate
+        # runners. The matrix is one required job: any shard failure fails CI.
+        check: [clippy, test, test-runtime, test-other]
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
           persist-credentials: false
       - name: Configure the checked optimized test profile
-        if: matrix.check == 'test'
+        if: matrix.check != 'clippy'
         run: |
           # Keep dependency crates at opt-level 1 via rust/Cargo.toml.
           # Avoid optimizing the large workspace test binaries so we spend less
@@ -174,15 +177,17 @@ jobs:
           echo "CARGO_PROFILE_TEST_DEBUG=line-tables-only" >> "$GITHUB_ENV"
       - uses: ./.github/actions/setup-rust
         with:
-          cache-key: ci-workspace-${{ matrix.check }}
+          # Reuse the warmed test dependency cache for each shard; their test
+          # binaries are rebuilt from the current checkout.
+          cache-key: ci-workspace-${{ matrix.check == 'clippy' && 'clippy' || 'test' }}
           components: clippy
       - name: Install content-addressed compiler cache
-        if: matrix.check == 'test'
+        if: matrix.check != 'clippy'
         uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba
         with:
           version: v0.18.0
       - name: Route workspace crates through the compiler cache
-        if: matrix.check == 'test'
+        if: matrix.check != 'clippy'
         # rust-cache restores third-party crates only; fresh checkout mtimes make
         # every workspace crate stale. sccache keys on content, so crates a PR did
         # not touch are restored instead of recompiled.
@@ -197,7 +202,7 @@ jobs:
         env:
           SCCACHE_MODE: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') && 'READ_WRITE' || 'READ_ONLY' }}
       - name: Provision bubblewrap for the Linux workspace sandbox tests
-        if: matrix.check == 'test'
+        if: matrix.check != 'clippy'
         # Without it the overlay sandbox tests take the unavailable-host branch
         # and the live confinement run is skipped.
         run: |
@@ -229,15 +234,21 @@ jobs:
                 exit "$clippy_status"
               fi
               ;;
-            test)
+            test|test-runtime|test-other)
               nextest_bin="$(python3 scripts/ci/install_nextest.py)"
-              PATH="$nextest_bin:$PATH" cargo nextest run --manifest-path rust/Cargo.toml --locked --workspace --all-targets \
-                --test-threads 4 --retries 0 --no-fail-fast
+              args=(--manifest-path rust/Cargo.toml --locked --all-targets
+                    --test-threads 4 --retries 0 --no-fail-fast)
+              case "$CARGO_CHECK" in
+                test) args+=(-p guard-command) ;;
+                test-runtime) args+=(-p hol-guard-runtime) ;;
+                test-other) args+=(--workspace --exclude guard-command --exclude hol-guard-runtime) ;;
+              esac
+              PATH="$nextest_bin:$PATH" cargo nextest run "${args[@]}"
               ;;
             *) echo "Unsupported workspace check" >&2; exit 64 ;;
           esac
       - name: Report compiler cache statistics
-        if: always() && matrix.check == 'test'
+        if: always() && matrix.check != 'clippy'
         run: '"$SCCACHE_PATH" --show-stats || true'
       - name: Bind successful strict Clippy report
         if: matrix.check == 'clippy'
