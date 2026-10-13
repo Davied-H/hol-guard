@@ -85,8 +85,9 @@ fn unproven_local_commands_run_in_the_workspace_sandbox_on_macos() {
     }
 }
 
-/// Narrower node profiles claim these commands before the general workspace
-/// profile; each is at least as tightly bounded, or needs no sandbox at all.
+/// On macOS, narrower node profiles claim these commands before the general
+/// workspace profile; each is at least as tightly bounded, or needs no sandbox
+/// at all. Linux has only the workspace sandbox.
 #[test]
 fn node_commands_with_a_narrower_profile_keep_it_on_macos() {
     let ws = workspace("node-narrow", true);
@@ -106,8 +107,12 @@ fn node_commands_with_a_narrower_profile_keep_it_on_macos() {
         ("npm -v", "native_exact_safe_command"),
     ] {
         let got = reason("omp", command, &ws, true);
-        if host() {
+        if cfg!(target_os = "macos") {
             assert_eq!(got, narrower, "{command}");
+        } else if host() {
+            // Linux has no narrower node profile; the workspace sandbox
+            // bounds the command instead.
+            assert!(got == narrower || got == CONTAINED, "{command}: {got}");
         } else {
             assert_ne!(got, CONTAINED, "{command}");
         }
@@ -121,9 +126,9 @@ fn node_commands_with_a_narrower_profile_keep_it_on_macos() {
 fn inline_node_eval_keeps_its_read_only_containment_profile() {
     let ws = workspace("node-eval", true);
     let got = reason("omp", "node -e 1", &ws, true);
-    if host() {
+    if cfg!(target_os = "macos") {
         assert_eq!(got, "native_node_eval_readonly_containment_required");
-    } else {
+    } else if !host() {
         assert_ne!(got, CONTAINED);
     }
 }
