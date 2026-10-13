@@ -233,6 +233,35 @@ fn evaluate_envelope(
         && signals.command.as_deref().is_some_and(|patch| {
             super::apply_patch_writes::routine_apply_patch(patch, home_dir, cwd)
         });
+    // Exporting only Git-config isolation (`GIT_CONFIG_GLOBAL=/dev/null`)
+    // removes configuration sources, so the remaining command's allow carries.
+    if let Some(projected) = signals
+        .command
+        .as_deref()
+        .filter(|_| !search_scope_proven && !apply_patch_proven)
+        .and_then(env_prefix_projection::project_git_config_isolation)
+    {
+        let projected_payload = payload_with_command(
+            payload,
+            signals.command.as_deref().unwrap_or_default(),
+            &projected,
+        );
+        if projected_payload != *payload {
+            let projected = evaluate_envelope(
+                harness,
+                event,
+                &projected_payload,
+                controls,
+                deadline,
+                context,
+                execution_environment,
+                project_redirects,
+            );
+            if projected.minimum_action == "allow" {
+                return projected;
+            }
+        }
+    }
     if let Some(contained) = signals
         .command
         .as_deref()
