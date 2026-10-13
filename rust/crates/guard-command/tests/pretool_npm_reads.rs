@@ -5,6 +5,7 @@ use serde_json::json;
 
 fn decide(
     environment_names: &[&str],
+    shell_home: Option<&std::path::Path>,
     command: &str,
     home: &std::path::Path,
     cwd: &std::path::Path,
@@ -16,7 +17,7 @@ fn decide(
             .map(|name| (*name).to_owned())
             .collect(),
         environment_digest: "0".repeat(64),
-        home: None,
+        home: shell_home.map(|home| home.to_string_lossy().into_owned()),
         git_pager_disabled: false,
         pager_disabled: false,
         xdg_config_home: None,
@@ -86,7 +87,7 @@ fn registry_and_tree_reads_continue_unless_configuration_moves_npm() {
         (&clean, "npm view zod version"),
     ] {
         assert_eq!(
-            decide(&[], command, &home, cwd),
+            decide(&[], Some(&home), command, &home, cwd),
             "allow",
             "{command} in {}",
             cwd.display()
@@ -109,7 +110,7 @@ fn registry_and_tree_reads_continue_unless_configuration_moves_npm() {
         (&plain, "npm view zod version > out.txt"),
     ] {
         assert_ne!(
-            decide(&[], command, &home, cwd),
+            decide(&[], Some(&home), command, &home, cwd),
             "allow",
             "{command} in {}",
             cwd.display()
@@ -121,9 +122,17 @@ fn registry_and_tree_reads_continue_unless_configuration_moves_npm() {
         "NODE_OPTIONS",
     ] {
         assert_ne!(
-            decide(&[name], "npm view zod version", &home, &plain),
+            decide(&[name], Some(&home), "npm view zod version", &home, &plain),
             "allow",
             "{name}"
+        );
+    }
+
+    // npm reads the user config from its own HOME, which must be the one checked.
+    for shell_home in [None, Some(plain.as_path())] {
+        assert_ne!(
+            decide(&[], shell_home, "npm view zod version", &home, &plain),
+            "allow"
         );
     }
 
@@ -133,5 +142,8 @@ fn registry_and_tree_reads_continue_unless_configuration_moves_npm() {
         "registry=https://registry.example.test/\n",
     )
     .unwrap();
-    assert_ne!(decide(&[], "npm view zod version", &home, &plain), "allow");
+    assert_ne!(
+        decide(&[], Some(&home), "npm view zod version", &home, &plain),
+        "allow"
+    );
 }

@@ -97,6 +97,8 @@ fn npmrc_lines_that_move_the_fetch_or_send_credentials_are_unsafe() {
         "always-auth=true",
         "ca[]=-----BEGIN CERTIFICATE-----",
         "[section]",
+        "${X?}registry=https://registry.example.test/",
+        "user${X?}config=/tmp/other",
     ] {
         assert!(!inert_line(line), "{line}");
     }

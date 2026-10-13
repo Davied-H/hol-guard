@@ -22,7 +22,9 @@ pub(super) fn safe_npm_read(arguments: &[String], context: super::PathContext<'_
         "ls" | "list" => list_arguments(rest),
         _ => false,
     };
-    shape && context.npm_config_inert && configuration_inert(context)
+    // npm finds the user config through its own HOME, so the one checked
+    // below must be that HOME.
+    shape && context.npm_config_inert && context.shell_home_matches && configuration_inert(context)
 }
 
 /// The configuration check reads files before the command runs, so nothing
@@ -211,7 +213,8 @@ fn inert_line(line: &str) -> bool {
         .trim_end_matches("[]")
         .to_ascii_lowercase()
         .replace('_', "-");
-    !key.ends_with(":registry") && !UNSAFE_KEYS.contains(&key.as_str())
+    // npm expands `${VAR}` in keys too, so `${X?}registry` reads as `registry`.
+    !key.contains("${") && !key.ends_with(":registry") && !UNSAFE_KEYS.contains(&key.as_str())
 }
 
 #[cfg(test)]
