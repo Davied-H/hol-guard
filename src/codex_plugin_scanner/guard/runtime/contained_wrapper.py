@@ -193,6 +193,10 @@ def _package_directory(tokens: list[tuple[str, bool]], base: Path) -> tuple[list
     rest = words[:index] + words[index + consumed :]
     if value.startswith(("-", "~")) or "//" in value or not _PLAIN_WORD.fullmatch(value) or not rest:
         return None
+    # Only scripts are projected; `bun x`, `npm exec` and other runners keep
+    # their own tool-runner path, as on the native side.
+    if rest[0] not in ("run", "test"):
+        return None
     directory = Path(os.path.realpath(os.path.normpath(os.path.join(os.path.realpath(base), value))))
     if not directory.is_dir():
         raise ValueError("package directory is not a directory")

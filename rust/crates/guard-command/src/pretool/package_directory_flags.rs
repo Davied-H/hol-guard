@@ -151,6 +151,11 @@ pub(in crate::pretool) fn as_cd_list(
     if rest.is_empty() {
         return None;
     }
+    // Only scripts are projected; `bun x`, `npm exec` and other runners keep
+    // their own tool-runner proof.
+    if !matches!(rest.first().copied(), Some("run" | "test")) {
+        return None;
+    }
     let remainder: String = chars[first.span.end..].iter().collect();
     let text = format!(
         "cd {directory} && {executable} {}{remainder}",

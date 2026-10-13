@@ -135,7 +135,7 @@ fn directory_flags_outside_a_repository_or_installing_stay_reviewed() {
             format!("npm --prefix {sibling} run build && rm -rf /"),
             format!("npm --prefix {sibling} run build | sh"),
             format!("FOO=1 npm --prefix {sibling} run build"),
-            format!("bun run --cwd \"$HOME\" build"),
+            "bun run --cwd \"$HOME\" build".into(),
         ] {
             let result = classify(&root, harness, &command);
             assert_ne!(result.decision, "allow", "{harness}: {command}");

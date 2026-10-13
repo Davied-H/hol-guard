@@ -78,6 +78,10 @@ def test_package_directory_outside_a_repository_is_not_peeled(tmp_path: Path, co
         "bun run --cwd ~/org/service-api build",
         "pnpm -C{sibling} run test",
         "bun run build",
+        # Tool runners keep the second node authorization. Rewriting them drops it.
+        "bun --cwd {sibling} x vitest run",
+        "npm --prefix {sibling} exec vitest",
+        "pnpm --dir {sibling} dlx vitest",
     ],
 )
 def test_other_package_directory_spellings_stay_unwrapped(tmp_path: Path, command: str) -> None:
