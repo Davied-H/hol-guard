@@ -38,6 +38,14 @@ pub(super) fn private_alternative_reason(model: &CanonicalCommandV1) -> Option<S
             reason_tail(push)
         ));
     }
+    // Split into separate commands, steps after a `cd` would run elsewhere.
+    if model
+        .segments
+        .iter()
+        .any(|segment| matches!(segment.executable.as_deref(), Some("cd" | "pushd")))
+    {
+        return None;
+    }
     let mut creates = model
         .segments
         .iter()

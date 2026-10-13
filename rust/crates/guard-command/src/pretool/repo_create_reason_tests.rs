@@ -58,6 +58,7 @@ fn repo_creates_the_private_form_would_not_admit_keep_the_generic_reason() {
         "git status && gh repo create example-org/todo-app --public",
         "gh repo create one --public && gh repo create two --public",
         "GH_HOST=example.com gh repo create todo-app --public && git status",
+        "cd app && gh repo create todo-app --public --source .",
     ] {
         let (_, _, reason) = review(command);
         assert!(
