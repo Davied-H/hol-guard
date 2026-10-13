@@ -7,6 +7,8 @@ import pytest
 
 from codex_plugin_scanner.guard.runtime.runner import (
     GuardSyncNotAvailableError,
+    _check_plan_restriction_403,
+    _cloud_edge_block_from_http_error,
     _fetch_supply_chain_bundle_payload,
     _sync_http_error_message,
     _urlopen_json_with_timeout_retry,
@@ -263,3 +265,35 @@ def test_sync_http_error_message_keeps_guard_cloud_answers_behind_cloudflare() -
         )
     )
     assert message == "Guard sync requires a Pro plan."
+
+
+_CLOUDFLARE_BLOCK_PAGE = (
+    "<!DOCTYPE html><html><head><title>Attention Required! | Cloudflare</title></head>"
+    "<body><h1>Sorry, you have been blocked</h1></body></html>"
+)
+_CLOUDFLARE_HEADERS = {"Server": "cloudflare", "CF-RAY": "a4a17d23bec08abe-SJC", "Content-Type": "text/html"}
+
+
+def test_receipt_sync_403_reports_a_cloudflare_block_not_its_page() -> None:
+    # sync_receipts routes 403s through the plan-restriction check, not _sync_http_error_message.
+    is_plan, message = _check_plan_restriction_403(_cloudflare_error(_CLOUDFLARE_BLOCK_PAGE, _CLOUDFLARE_HEADERS))
+    assert is_plan is False
+    assert message.startswith("Guard Cloud is unreachable from this network")
+    assert "Ray ID a4a17d23bec08abe" in message
+    assert "<html" not in message
+
+
+def test_receipt_sync_403_still_detects_a_plan_restriction_behind_cloudflare() -> None:
+    body = json.dumps({"syncEnabled": False, "error": "Guard sync requires a Pro plan."})
+    is_plan, message = _check_plan_restriction_403(
+        _cloudflare_error(body, {"Server": "cloudflare", "CF-RAY": "abc123-SJC", "Content-Type": "application/json"})
+    )
+    assert (is_plan, message) == (True, "Guard sync requires a Pro plan.")
+
+
+def test_receipt_sync_401_from_cloudflare_is_not_an_expired_sign_in() -> None:
+    edge = _cloud_edge_block_from_http_error(_cloudflare_error(_CLOUDFLARE_BLOCK_PAGE, _CLOUDFLARE_HEADERS, code=401))
+    assert edge is not None and "blocked the request (HTTP 401" in edge
+    assert (
+        _cloud_edge_block_from_http_error(_cloudflare_error("", {"Content-Type": "application/json"}, code=401)) is None
+    )

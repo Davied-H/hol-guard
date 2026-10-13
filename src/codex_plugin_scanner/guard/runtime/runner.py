@@ -463,6 +463,9 @@ def sync_receipts(
             )
         except urllib.error.HTTPError as error:
             if error.code == 401:
+                edge_block = _cloud_edge_block_from_http_error(error)
+                if edge_block is not None:
+                    raise RuntimeError(edge_block) from error
                 if auth_context is None and not auth_refresh_retried:
                     auth_refresh_retried = True
                     resolved_auth_context = _resolve_guard_sync_auth_context(store, force_refresh=True)
@@ -484,6 +487,9 @@ def sync_receipts(
                         )
                     except urllib.error.HTTPError as retry_error:
                         if retry_error.code == 401:
+                            edge_block = _cloud_edge_block_from_http_error(retry_error)
+                            if edge_block is not None:
+                                raise RuntimeError(edge_block) from retry_error
                             raise GuardSyncAuthorizationExpiredError(
                                 _guard_oauth_reauthorization_message()
                             ) from retry_error
@@ -3117,6 +3123,15 @@ def _cloud_edge_block_message(error: urllib.error.HTTPError, raw_body: str) -> s
     )
 
 
+def _cloud_edge_block_from_http_error(error: urllib.error.HTTPError) -> str | None:
+    """Read the body once and return the edge-block message, if Cloudflare answered."""
+    try:
+        raw_body = error.read().decode("utf-8", errors="replace")
+    except OSError:
+        raw_body = ""
+    return _cloud_edge_block_message(error, raw_body)
+
+
 def _sync_http_error_message(error: urllib.error.HTTPError) -> str:
     try:
         raw_body = error.read().decode("utf-8", errors="replace")
@@ -3176,6 +3191,9 @@ def _check_plan_restriction_403(
         payload: object = json.loads(raw_body) if raw_body else None
     except json.JSONDecodeError:
         payload = None
+    edge_block = _cloud_edge_block_message(error, raw_body)
+    if edge_block is not None:
+        return False, edge_block
     fallback = raw_body.strip() or f"HTTP Error {error.code}: {error.reason}"
     if not isinstance(payload, dict):
         return False, fallback
