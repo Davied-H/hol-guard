@@ -77,7 +77,14 @@ fn envelope_query_matches_the_daemon() {
         assert_eq!(query.host.cwd.as_deref(), host["cwd"].as_str(), "{name}");
         assert_eq!(text(expected, "harness"), input.harness, "{name}");
         assert_eq!(text(expected, "event_name"), "PreToolUse", "{name}");
-        assert_eq!(tagged(&vector["payload"]), expected["payload"], "{name}");
+        // The daemon's query keeps the hook's key order; the resident's map
+        // is sorted, so compare the canonical forms.
+        let canonical = |wire: &Value| OValue::from_wire(wire).expect("wire").canonical_json();
+        assert_eq!(
+            canonical(&tagged(&vector["payload"])),
+            canonical(&expected["payload"]),
+            "{name}"
+        );
     }
 }
 
@@ -167,6 +174,8 @@ fn unanswerable_shapes_defer() {
     let servers =
         deferred_at(|vector, _| vector["payload"]["mcpServers"] = json!({"b": {}, "a": {}}));
     assert_eq!(servers, Deferred::Adapter);
+    let cline = deferred_at(|vector, _| vector["harness"] = json!("cline"));
+    assert_eq!(cline, Deferred::Adapter);
     let oversize = deferred_at(|vector, _| {
         vector["payload"]["tool_input"]["description"] = json!("x".repeat(MAX_PAYLOAD_BYTES));
     });

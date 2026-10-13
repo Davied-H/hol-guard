@@ -167,9 +167,13 @@ pub(super) fn envelope_query<'a>(input: &RequestInput<'a>) -> Option<EnvelopeQue
 
 /// `native_action_envelope`, run in process.
 fn adapter_envelope(input: &RequestInput<'_>, query: &EnvelopeQuery<'_>) -> Option<Value> {
-    if ORDERED_SERVER_FIELDS
-        .iter()
-        .any(|field| input.payload.get(*field).is_some_and(Value::is_object))
+    // The resident's payload map is key-sorted, while the daemon's keeps the
+    // hook's order. Cline preparation and server maps read keys in order;
+    // every other adapter step looks keys up or sorts them first.
+    if input.harness == "cline"
+        || ORDERED_SERVER_FIELDS
+            .iter()
+            .any(|field| input.payload.get(*field).is_some_and(Value::is_object))
     {
         return None;
     }
