@@ -22,12 +22,11 @@ pub(super) fn worktree_add_execution_free(
     if Instant::now() >= deadline || !destination.is_absolute() {
         return None;
     }
-    let (base, _binary, cwd, _git_home) =
+    let (base, _binary, cwd, git_home) =
         prepared_git_command(executable, context, execution_environment)?;
     let home = fs::canonicalize(Path::new(context.home_dir?)).ok()?;
-    if !destination.starts_with(&home) {
-        return Some(false);
-    }
+    // `fresh_destination` already screened the location: below home, or a
+    // fresh leaf in a user-owned temporary directory.
     match fs::symlink_metadata(destination) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Ok(_) => return Some(false),
@@ -51,7 +50,34 @@ pub(super) fn worktree_add_execution_free(
     if !(status.success() || status.code() == Some(1) && output.is_empty()) {
         return None;
     }
-    if !safe_worktree_config(&output)? {
+    let deferred = safe_worktree_config(&output)?;
+    if !deferred.safe {
+        return Some(false);
+    }
+    // Global developer settings that only matter while the new work tree is
+    // checked out are proven separately instead of rejected outright.
+    for hooks in &deferred.hooks_paths {
+        let hooks = match hooks.strip_prefix('~') {
+            Some("") => home.clone(),
+            Some(rest) if rest.starts_with('/') => home.join(rest.trim_start_matches('/')),
+            Some(_) => return Some(false),
+            None => PathBuf::from(hooks),
+        };
+        if !hooks.is_absolute() || !hooks_are_inert(&hooks) {
+            return Some(false);
+        }
+    }
+    if deferred.global_filters
+        && !checkout_filters_unused(
+            &base,
+            leading,
+            &cwd,
+            &git_home,
+            reference,
+            deadline,
+            execution_environment,
+        )?
+    {
         return Some(false);
     }
     let git_dir = git_path(
@@ -224,9 +250,20 @@ fn git_path(
     .ok()
 }
 
-fn safe_worktree_config(output: &[u8]) -> Option<bool> {
+struct WorktreeConfig {
+    safe: bool,
+    hooks_paths: Vec<String>,
+    global_filters: bool,
+}
+
+fn safe_worktree_config(output: &[u8]) -> Option<WorktreeConfig> {
     let output = std::str::from_utf8(output).ok()?;
     let mut records = output.split('\0');
+    let mut config = WorktreeConfig {
+        safe: true,
+        hooks_paths: Vec::new(),
+        global_filters: false,
+    };
     while let Some(scope) = records.next() {
         if scope.is_empty() {
             continue;
@@ -235,7 +272,18 @@ fn safe_worktree_config(output: &[u8]) -> Option<bool> {
         let (key, value) = record.split_once('\n')?;
         let key = key.to_ascii_lowercase();
         if key == "core.bare" && super::git_config::enabled_boolean(value) {
-            return Some(false);
+            config.safe = false;
+        }
+        // The checkout runs only the hooks named below and the filters the
+        // new tree's attributes select; a global hooks directory without
+        // those hooks and global filters no checked-out path uses are inert.
+        if scope == "global" && key == "core.hookspath" {
+            config.hooks_paths.push(value.to_owned());
+            continue;
+        }
+        if scope == "global" && key.starts_with("filter.") {
+            config.global_filters = true;
+            continue;
         }
         // `worktree add` and each probe below use built-in commands, local
         // refs, and no diff/editor operation. A global credential helper is
@@ -260,10 +308,49 @@ fn safe_worktree_config(output: &[u8]) -> Option<bool> {
             || key.ends_with(".uploadpack")
             || key.ends_with(".receivepack")
         {
-            return Some(false);
+            config.safe = false;
         }
     }
-    Some(true)
+    Some(config)
+}
+
+/// A checkout smudges only paths whose `filter` attribute is set. The new
+/// tree is HEAD's, so require that reference, no uncommitted attribute change,
+/// and no filter attribute on any path (the repository's own attribute files,
+/// `info/attributes` and global attribute files all apply to the check).
+fn checkout_filters_unused(
+    base: &Command,
+    leading: &[String],
+    cwd: &Path,
+    home: &Path,
+    reference: Option<&str>,
+    deadline: Instant,
+    environment: Option<&guard_contracts::GuardExecutionEnvironmentV1>,
+) -> Option<bool> {
+    if reference.is_some_and(|value| value != "HEAD") {
+        return Some(false);
+    }
+    let (status, _) = git_query_with_args(
+        base,
+        leading,
+        &[
+            "--no-pager",
+            "diff",
+            "--quiet",
+            "--no-ext-diff",
+            "--no-textconv",
+            "HEAD",
+            "--",
+            "*.gitattributes",
+        ],
+        deadline,
+        WORKTREE_PROBE_LIMIT,
+    )?;
+    if !status.success() {
+        return Some(false);
+    }
+    let binary = Path::new(base.get_program());
+    super::git_config::filters_unused(binary, leading, cwd, home, deadline, environment)
 }
 
 fn hooks_are_inert(path: &Path) -> bool {

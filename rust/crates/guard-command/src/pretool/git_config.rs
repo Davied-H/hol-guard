@@ -12,6 +12,19 @@ mod textconv;
 
 const CONFIG_LIMIT: u64 = 65_536;
 
+/// Whether no tracked or untracked path of the repository at `cwd` selects a
+/// filter through its attributes.
+pub(super) fn filters_unused(
+    binary: &Path,
+    leading: &[String],
+    cwd: &Path,
+    home: &Path,
+    deadline: Instant,
+    environment: Option<&guard_contracts::GuardExecutionEnvironmentV1>,
+) -> Option<bool> {
+    filters::unused(binary, leading, cwd, home, environment, deadline, &[], false)
+}
+
 pub(super) fn execution_free(
     executable: &str,
     arguments: &[String],
@@ -247,6 +260,7 @@ fn probe(
             execution_environment,
             deadline,
             hashed.as_deref().unwrap_or_default(),
+            operation == "status",
         )?;
     for (key, value) in effective {
         let disabled = disabled_boolean(value);

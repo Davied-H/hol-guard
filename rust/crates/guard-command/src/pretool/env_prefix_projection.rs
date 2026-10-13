@@ -591,3 +591,41 @@ fn rank(action: &str) -> u8 {
 #[cfg(test)]
 #[path = "env_prefix_projection_tests.rs"]
 mod tests;
+
+/// Settings that only remove Git configuration sources. Isolating the global
+/// and system files leaves a subset of the configuration the unexported
+/// command sees, so a read proven helper-free without them stays helper-free.
+const GIT_CONFIG_ISOLATION: [(&str, &str); 3] = [
+    ("GIT_CONFIG_GLOBAL", "/dev/null"),
+    ("GIT_CONFIG_SYSTEM", "/dev/null"),
+    ("GIT_CONFIG_NOSYSTEM", "1"),
+];
+
+/// The command after leading `export NAME=value...;` statements that set only
+/// [`GIT_CONFIG_ISOLATION`] values. The caller accepts the remainder's verdict
+/// only when it allows, never to lower a review or block.
+pub(super) fn project_git_config_isolation(command: &str) -> Option<String> {
+    let mut rest = command.trim_start();
+    let mut stripped = false;
+    while let Some(after) = rest.strip_prefix("export ") {
+        let end = after.find([';', '&', '\n', '|', '(', ')', '<', '>', '`', '$'])?;
+        let (assignments, tail) = after.split_at(end);
+        let tail = tail
+            .strip_prefix(';')
+            .or_else(|| tail.strip_prefix("&&"))?;
+        let mut count = 0;
+        for token in assignments.split_whitespace() {
+            let (name, value) = token.split_once('=')?;
+            if !GIT_CONFIG_ISOLATION.contains(&(name, value)) {
+                return None;
+            }
+            count += 1;
+        }
+        if count == 0 {
+            return None;
+        }
+        stripped = true;
+        rest = tail.trim_start();
+    }
+    (stripped && !rest.is_empty()).then(|| rest.to_owned())
+}
