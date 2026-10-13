@@ -21789,7 +21789,8 @@ def test_omitted_bundle_with_invalid_cached_authority_clears_unsigned_legacy_pol
         "2026-07-16T00:00:00Z",
         remote_write_authorized=True,
     )
-    store.set_cloud_exceptions(
+    store.set_sync_payload(
+        "cloud_exceptions",
         [
             {
                 "id": "stored-unsigned-exception",
@@ -22028,7 +22029,8 @@ def test_omitted_bundle_rematerializes_only_valid_cached_signed_policy(
         "2026-07-17T00:00:00Z",
         remote_write_authorized=True,
     )
-    store.set_cloud_exceptions(
+    store.set_sync_payload(
+        "cloud_exceptions",
         [
             {
                 "id": "stale-receipt-sync-exception",
