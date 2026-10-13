@@ -10,11 +10,11 @@
 use crate::pretool::PathContext;
 use guard_contracts::PreToolResultV1;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[path = "chain_literals_lex.rs"]
 mod lex;
-use lex::{identifier, items, tokenize, Token};
+use lex::{identifier, items, names_variable, opaque, tokenize, Token};
 
 const MAX_COMMAND_CHARS: usize = 8192;
 const MAX_VALUE_CHARS: usize = 256;
@@ -128,17 +128,27 @@ fn launcher_shape(_command: &str, _workspace: &std::path::Path) -> bool {
 /// when nothing is substituted or the command has any shape outside a plain
 /// `&&` / `;` list of simple commands and pipelines.
 pub(crate) fn substitute(command: &str) -> Option<String> {
-    if command.chars().count() > MAX_COMMAND_CHARS
-        || command.chars().any(|c| c.is_control() && c != '\t')
+    // zsh reads a non-ASCII letter after `$NAME` as part of the name.
+    if !command.is_ascii()
+        || command.len() > MAX_COMMAND_CHARS
+        || command.bytes().any(|b| b.is_ascii_control() && b != b'\t')
+        // A changed `IFS` splits an unquoted use the literal would not.
+        || names_variable(command, |name| name == "IFS")
     {
         return None;
     }
     let chars: Vec<char> = command.chars().collect();
     let tokens = tokenize(&chars)?;
+    let list = items(&tokens)?;
+    let assigned: HashSet<String> = list
+        .iter()
+        .flat_map(|(stages, _)| stages.iter().flatten())
+        .filter_map(|&(start, end)| assignment(&chars[start..end]).map(|(name, _)| name))
+        .collect();
     let mut bindings: HashMap<String, Binding> = HashMap::new();
     let mut edits: Vec<(usize, usize, String)> = Vec::new();
     let mut first_in_list = true;
-    for (stages, separator) in items(&tokens)? {
+    for (stages, separator) in list {
         if stages
             .iter()
             .flatten()
@@ -171,6 +181,7 @@ pub(crate) fn substitute(command: &str) -> Option<String> {
                 }
             }
         } else {
+            let mut sealed = false;
             for stage in &stages {
                 let leading = stage
                     .iter()
@@ -182,10 +193,26 @@ pub(crate) fn substitute(command: &str) -> Option<String> {
                 // Words expand before the prefix settings apply, so they see
                 // the bindings that came before this command.
                 for &(start, end) in &stage[leading..] {
-                    if let Some(text) = substitute_word(&chars[start..end], &bindings) {
+                    let text = substitute_word(&chars[start..end], &bindings);
+                    let word = text
+                        .clone()
+                        .unwrap_or_else(|| chars[start..end].iter().collect());
+                    // Any builtin may take a variable to set by name; zsh's
+                    // `zformat -f`, `zstyle -s` and module builtins do.
+                    if names_variable(&word, |name| assigned.contains(name)) {
+                        return None;
+                    }
+                    sealed |= opaque(&word);
+                    if let Some(text) = text {
                         edits.push((start, end, text));
                     }
                 }
+            }
+            if sealed {
+                // Text this pass cannot see could name a variable to set, so
+                // no later use is substituted.
+                bindings.clear();
+                break;
             }
             // A prefix setting may outlive its command (POSIX special
             // builtins, zsh's last pipeline stage); stop trusting the name.
@@ -366,6 +393,7 @@ fn substitute_word(word: &[char], bindings: &HashMap<String, Binding>) -> Option
     let mut out = String::with_capacity(word.len());
     let mut replaced = false;
     let mut single = false;
+    let mut double = false;
     let mut index = 0usize;
     while index < word.len() {
         let c = word[index];
@@ -376,7 +404,8 @@ fn substitute_word(word: &[char], bindings: &HashMap<String, Binding>) -> Option
             continue;
         }
         match c {
-            '\'' if !inside_double(word, index) => single = true,
+            '\'' if !double => single = true,
+            '"' => double = !double,
             '\\' => {
                 out.extend(word.get(index..index + 2).unwrap_or(&word[index..]));
                 index += 2;
@@ -409,23 +438,6 @@ fn substitute_word(word: &[char], bindings: &HashMap<String, Binding>) -> Option
         index += 1;
     }
     replaced.then_some(out)
-}
-
-/// Whether `index` lies inside a double-quoted span of `word`.
-fn inside_double(word: &[char], index: usize) -> bool {
-    let mut double = false;
-    let mut single = false;
-    let mut position = 0usize;
-    while position < index {
-        match word[position] {
-            '\\' if !single => position += 1,
-            '\'' if !double => single = !single,
-            '"' if !single => double = !double,
-            _ => {}
-        }
-        position += 1;
-    }
-    double
 }
 
 #[cfg(test)]

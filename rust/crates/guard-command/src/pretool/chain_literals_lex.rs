@@ -1,5 +1,6 @@
 //! Words and list operators of the plain `&&` / `;` lists that chain
-//! literal substitution understands.
+//! literal substitution understands, and the word scans that decide whether
+//! a command could set a variable behind its back.
 
 #[derive(Clone, Copy, PartialEq)]
 pub(super) enum Token {
@@ -133,4 +134,58 @@ pub(super) fn identifier(name: &str) -> bool {
         .next()
         .is_some_and(|first| first == '_' || first.is_ascii_alphabetic())
         && chars.all(|c| c == '_' || c.is_ascii_alphanumeric())
+}
+
+/// Whether `text` names a variable `target` accepts as a bare word or as the
+/// operand of an attached flag such as `-vNAME`, the forms in which a builtin
+/// takes a variable to set. `$NAME` and `${NAME}` are uses, not targets.
+pub(super) fn names_variable(text: &str, target: impl Fn(&str) -> bool) -> bool {
+    let mut previous = ' ';
+    let mut opener = ' ';
+    let mut token = String::new();
+    for c in text.chars().chain(std::iter::once(' ')) {
+        if c == '_' || c.is_ascii_alphanumeric() {
+            if token.is_empty() {
+                opener = previous;
+            }
+            token.push(c);
+        } else if !token.is_empty() {
+            let named = match opener {
+                '$' | '{' => false,
+                '-' => (1..token.len()).any(|split| {
+                    token[..split].bytes().all(|b| b.is_ascii_alphabetic())
+                        && target(&token[split..])
+                }),
+                _ => target(&token),
+            };
+            if named {
+                return true;
+            }
+            token.clear();
+        }
+        previous = c;
+    }
+    false
+}
+
+/// Whether a word can still expand to text this pass did not see: an
+/// unresolved expansion, or an unquoted glob that could match a file named
+/// after a variable.
+pub(super) fn opaque(word: &str) -> bool {
+    let (mut single, mut double, mut escaped) = (false, false, false);
+    for c in word.chars() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match c {
+            '\\' if !single => escaped = true,
+            '\'' if !double => single = !single,
+            '"' if !single => double = !double,
+            '$' if !single => return true,
+            '*' | '?' | '[' if !single && !double => return true,
+            _ => {}
+        }
+    }
+    false
 }

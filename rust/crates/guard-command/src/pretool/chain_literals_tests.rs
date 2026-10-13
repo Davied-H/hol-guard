@@ -138,6 +138,64 @@ fn quoted_escaped_and_zsh_qualified_uses_are_left_alone() {
     }
 }
 
+#[test]
+fn a_changed_ifs_refuses_the_whole_chain() {
+    // bash splits `$F` on the comma; the literal would be one operand.
+    for command in [
+        "IFS=,; F=build,/Users/me/.bashrc; rm -f $F",
+        "export IFS=, && F=a,b && rm -f $F",
+        "F=a,b && IFS=, cat x && rm -f $F",
+        "F=a,b && zformat -f IFS , && rm -f $F",
+        "F=a,b && printf -vIFS , && rm -f $F",
+    ] {
+        assert_eq!(substituted(command), None, "{command}");
+    }
+}
+
+#[test]
+fn non_ascii_text_refuses_the_whole_chain() {
+    // zsh reads `$Dé` as the variable `Dé`, not `$D` followed by `é`.
+    for command in [
+        "D=build; rm -rf /ws/$D\u{e9}",
+        "D=build; rm -rf /ws/$D && echo caf\u{e9}",
+    ] {
+        assert_eq!(substituted(command), None, "{command}");
+    }
+}
+
+#[test]
+fn a_command_naming_a_bound_variable_refuses_the_chain() {
+    for command in [
+        "X=build; zformat -f X /Users/me/.ssh; rm -rf $X",
+        "X=build && zstyle -s ctx style X && rm -rf $X",
+        "X=build && strftime -s X %s 0 && rm -rf $X",
+        "X=build && zstat -A X f && rm -rf $X",
+        "X=build && sysread X && rm -rf $X",
+        "X=build && getln -vX && rm -rf $X",
+        "X=build && sometool --into=X && rm -rf $X",
+        // The variable's name can reach the builtin through another binding.
+        "N=X && X=build && zformat -f $N /tmp && rm -rf $X",
+    ] {
+        assert_eq!(substituted(command), None, "{command}");
+    }
+}
+
+#[test]
+fn text_the_pass_cannot_see_ends_substitution() {
+    // An unresolved expansion or a glob could expand to a bound name.
+    assert_eq!(
+        substituted("X=build && cat $X && zformat -f $G /tmp && rm -rf $X").as_deref(),
+        Some("X=build && cat build && zformat -f $G /tmp && rm -rf $X")
+    );
+    for command in [
+        "X=build && zformat -f ? /tmp && rm -rf $X",
+        "X=build && zformat -f [X] /tmp && rm -rf $X",
+        "X=build && zformat -f $G /tmp && rm -rf $X",
+    ] {
+        assert_eq!(substituted(command), None, "{command}");
+    }
+}
+
 #[cfg(unix)]
 mod envelope {
     use crate::native_command_controls::CompiledNativeCommandControls;
