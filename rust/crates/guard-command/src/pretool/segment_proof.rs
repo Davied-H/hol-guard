@@ -1,6 +1,6 @@
 use super::{
     executable_basename, pure_expression, safe_directory_target, safe_gh_arguments,
-    safe_git_arguments, safe_reads, search, sensitive_command, sensitive_path_argument,
+    safe_git_arguments, safe_reads, search, sensitive_path_argument,
 };
 use crate::CanonicalCommandV1;
 
@@ -187,14 +187,25 @@ pub(super) fn exact_safe_segment_with_context(
     let basename = executable_basename(executable);
     let inert_search = matches!(basename, "rg" | "grep" | "fd")
         && search::safe_search_arguments_with_context(basename, &segment.arguments, context);
+    let search_text = if basename == "git" {
+        super::git_search_text::pattern_positions(&segment.arguments)
+    } else {
+        Vec::new()
+    };
     if (!inert_search
         && !super::source_file_read_segment(segment)
-        && sensitive_command(&segment.text))
+        && super::git_search_text::sensitive_beyond_patterns(
+            &segment.text,
+            super::git_search_text::segment_without_patterns(segment),
+        ))
         || (!matches!(basename, "rg" | "grep" | "fd")
             && segment
                 .arguments
                 .iter()
-                .any(|argument| sensitive_path_argument(argument)))
+                .enumerate()
+                .any(|(index, argument)| {
+                    !search_text.contains(&index) && sensitive_path_argument(argument)
+                }))
         || !segment.environment_names.is_empty()
         || executable.contains(['/', '\\'])
     {
