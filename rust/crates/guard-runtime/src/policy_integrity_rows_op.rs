@@ -11,6 +11,10 @@
 //! encoding or a row shape is invalid, or when a sign item has no key. A
 //! verify item without a usable key answers `unknown_key`, matching the
 //! store's own verification.
+//!
+//! The reply's `request_sha256` binds every request field except
+//! `integrity_key_b64`: the digest never covers key bytes, so a reply, log or
+//! diagnostic that carries the digest reveals nothing about the key.
 
 use base64ct::{Base64UrlUnpadded, Encoding};
 use guard_contracts::{
@@ -21,6 +25,7 @@ use guard_contracts::{
     POLICY_INTEGRITY_ROWS_RESULT_SCHEMA,
 };
 use guard_policy_snapshot::policy_integrity::{sign_local_policy_row, verify_local_policy_row};
+use serde::Serialize;
 use serde_json::Value;
 use zeroize::Zeroizing;
 
@@ -32,8 +37,11 @@ const MAX_KEY_BYTES: usize = 1024;
 pub(crate) fn evaluate_policy_integrity_rows_request(
     request: &PolicyIntegrityRowsRequestV1,
 ) -> Result<Vec<u8>, String> {
-    let request_sha256 = request_digest_with_limit(request, POLICY_INTEGRITY_ROWS_MAX_BYTES)
-        .map_err(|_| "native_policy_integrity_rows_too_large".to_owned())?;
+    let request_sha256 = request_digest_with_limit(
+        &KeyRedactedRequest::from(request),
+        POLICY_INTEGRITY_ROWS_MAX_BYTES,
+    )
+    .map_err(|_| "native_policy_integrity_rows_too_large".to_owned())?;
     let payload = evaluate(request).map_err(str::to_owned)?;
     crate::encode_response(&PolicyIntegrityRowsResultV1 {
         schema: POLICY_INTEGRITY_ROWS_RESULT_SCHEMA.to_owned(),
@@ -43,6 +51,30 @@ pub(crate) fn evaluate_policy_integrity_rows_request(
         code: "ok".to_owned(),
         payload: Some(payload),
     })
+}
+
+/// The request as it is digested: every field but the key. Field names and
+/// omission rules mirror `PolicyIntegrityRowsRequestV1`.
+#[derive(Serialize)]
+pub(crate) struct KeyRedactedRequest<'a> {
+    schema: &'a str,
+    request_id: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    integrity_key_id: Option<&'a str>,
+    verify: &'a [PolicyIntegrityVerifyItemV1],
+    sign: &'a [PolicyIntegritySignItemV1],
+}
+
+impl<'a> From<&'a PolicyIntegrityRowsRequestV1> for KeyRedactedRequest<'a> {
+    fn from(request: &'a PolicyIntegrityRowsRequestV1) -> Self {
+        Self {
+            schema: &request.schema,
+            request_id: &request.request_id,
+            integrity_key_id: request.integrity_key_id.as_deref(),
+            verify: &request.verify,
+            sign: &request.sign,
+        }
+    }
 }
 
 pub(crate) fn evaluate(

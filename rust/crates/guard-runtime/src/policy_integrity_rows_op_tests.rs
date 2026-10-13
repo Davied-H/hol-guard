@@ -65,6 +65,28 @@ fn python_vectors_match_byte_for_byte() {
     }
 }
 
+fn reply_digest(value: Value) -> String {
+    let bytes = evaluate_policy_integrity_rows_request(&request(value)).expect("result");
+    let result: PolicyIntegrityRowsResultV1 = serde_json::from_slice(&bytes).expect("result json");
+    result.request_sha256
+}
+
+#[test]
+fn request_digest_never_covers_the_key() {
+    let verify = json!([{"row": plain_row(), "degraded_mode": false}]);
+    let keyed = keyed_request(verify.clone(), json!([]));
+    let mut other_key = keyed.clone();
+    other_key["integrity_key_b64"] = json!("AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE");
+    let mut no_key = keyed.clone();
+    no_key.as_object_mut().unwrap().remove("integrity_key_b64");
+    let digest = reply_digest(keyed.clone());
+    assert_eq!(digest, reply_digest(other_key));
+    assert_eq!(digest, reply_digest(no_key));
+    let mut other_key_id = keyed;
+    other_key_id["integrity_key_id"] = json!("guard-policy-integrity-key:other");
+    assert_ne!(digest, reply_digest(other_key_id));
+}
+
 #[test]
 fn signed_rows_round_trip_through_verify() {
     let signed = evaluate(&request(keyed_request(

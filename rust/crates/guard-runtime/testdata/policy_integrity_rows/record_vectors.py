@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Record policy-integrity row vectors from the ORIGINAL Python signer.
 
-Run against a checkout that still holds the Python implementation in
-``codex_plugin_scanner/guard/policy_integrity.py``, never from Rust output:
+The Python implementation has since been removed; the resident op is the
+only signer. Re-recording needs a checkout from before that removal (the
+commit that added this file), never Rust output:
 
     PYTHONPATH=$PWD/src python3 <this-file> <output vectors.json>
 
 Each case is a full ``policy_integrity_rows`` request, the request digest the
-Python transport binds replies to, and the payload the Python functions
+Python transport binds replies to (every field except ``integrity_key_b64``,
+so the digest never covers key bytes), and the payload the Python functions
 produce for it: ``verify_local_policy_row`` per verify item and
 ``sign_local_policy_row`` per sign item. Rows signed by an earlier case are
 reused so a signature is verified by the code that would later read it.
@@ -193,7 +195,8 @@ def _case(name: str, request: dict[str, object], payload: dict[str, object]) -> 
     return {
         "name": name,
         "request": request,
-        "request_sha256": "sha256:" + _canonical_request_sha256(request),
+        "request_sha256": "sha256:"
+        + _canonical_request_sha256({key: value for key, value in request.items() if key != "integrity_key_b64"}),
         "payload": payload,
     }
 

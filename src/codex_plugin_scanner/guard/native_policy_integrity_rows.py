@@ -1,0 +1,286 @@
+"""Resident bridge for local policy-row integrity: batch verify and sign.
+
+Rust owns every canonical payload, SHA-256 digest and HMAC-SHA256 tag through
+the resident ``policy_integrity_rows`` op. ``GuardStore`` ships the rows and
+the key it already resolved, then stores what comes back. There is no local
+computation to fall back to: when the resident is unavailable, or a reply is
+unbound or malformed, :class:`NativePolicyIntegrityUnavailableError` is raised
+and the caller's operation fails closed.
+
+The reply digest binds every request field except ``integrity_key_b64``, so it
+never covers key bytes.
+"""
+
+from __future__ import annotations
+
+import base64
+import json
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from pathlib import Path
+from uuid import uuid4
+
+from .native_context import _canonical_request_sha256
+from .native_execution import _resident_request
+from .native_runtime import NativeRuntimeStatus, native_runtime_status
+from .native_runtime_resilience import native_record_resident_failure, native_record_resident_success
+from .policy_integrity import PolicyIntegrityVerificationResult
+
+POLICY_INTEGRITY_ROWS_FEATURE = "policy-integrity-rows-v1"
+_REQUEST_SCHEMA = "guard-policy-integrity-rows-request.v1"
+_RESULT_SCHEMA = "guard-policy-integrity-rows-result.v1"
+_KEY_FIELD = "integrity_key_b64"
+_MAX_ITEMS = 1024
+_MAX_REQUEST_BYTES = 4 * 1024 * 1024
+# Leaves room under the request cap for the envelope and the key fields.
+_CHUNK_BYTES = 3 * 1024 * 1024
+_TIMEOUT_SECONDS = 10.0
+UNAVAILABLE = "native_policy_integrity_rows_unavailable"
+# The columns the resident reads from a row; nothing else is shipped.
+_ROW_COLUMNS = (
+    "action",
+    "artifact_hash",
+    "artifact_id",
+    "decision_id",
+    "expires_at",
+    "harness",
+    "integrity_generation",
+    "integrity_key_id",
+    "integrity_version",
+    "owner",
+    "payload_hash",
+    "payload_mac",
+    "publisher",
+    "reason",
+    "scope",
+    "signed_at",
+    "source",
+    "updated_at",
+    "workspace",
+)
+_VERIFY_STATUSES = frozenset(
+    {"valid", "missing_integrity", "tampered", "unknown_key", "rollback_detected", "degraded_mode"}
+)
+_SIGNATURE_FIELDS = frozenset(
+    {"integrity_version", "integrity_generation", "payload_hash", "payload_mac", "integrity_key_id", "signed_at"}
+)
+
+
+class NativePolicyIntegrityUnavailableError(RuntimeError):
+    """The resident did not verify or sign; nothing was computed locally."""
+
+    def __init__(self) -> None:
+        super().__init__(UNAVAILABLE)
+
+
+@dataclass(frozen=True, slots=True)
+class PolicyRowVerifyItem:
+    row: Mapping[str, object]
+    degraded_mode: bool
+    trusted_generation: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PolicyRowSignItem:
+    row: Mapping[str, object]
+    generation: int
+    signed_at: str
+
+
+def native_verify_policy_rows(
+    *,
+    guard_home: Path | str,
+    items: Sequence[PolicyRowVerifyItem],
+    key: bytes | None,
+    key_id: str | None,
+) -> list[PolicyIntegrityVerificationResult]:
+    """One verification result per item, in order, answered by the resident."""
+
+    wire = [_verify_wire(item) for item in items]
+    outcomes = _run(Path(guard_home), key=key, key_id=key_id, field="verify", items=wire)
+    return [_verification(outcome) for outcome in outcomes]
+
+
+def native_sign_policy_rows(
+    *,
+    guard_home: Path | str,
+    items: Sequence[PolicyRowSignItem],
+    key: bytes,
+    key_id: str,
+) -> list[dict[str, object]]:
+    """The six integrity columns per item, in order, signed by the resident."""
+
+    wire = [_sign_wire(item) for item in items]
+    outcomes = _run(Path(guard_home), key=key, key_id=key_id, field="sign", items=wire)
+    return [_signature(outcome, item) for outcome, item in zip(outcomes, items, strict=True)]
+
+
+def _run(
+    guard_home: Path,
+    *,
+    key: bytes | None,
+    key_id: str | None,
+    field: str,
+    items: list[dict[str, object]],
+) -> list[Mapping[str, object]]:
+    outcomes: list[Mapping[str, object]] = []
+    for chunk in _chunks(items):
+        outcomes.extend(_request_chunk(guard_home, key=key, key_id=key_id, field=field, items=chunk))
+    return outcomes
+
+
+def _chunks(items: list[dict[str, object]]) -> list[list[dict[str, object]]]:
+    chunks: list[list[dict[str, object]]] = []
+    current: list[dict[str, object]] = []
+    current_bytes = 0
+    for item in items:
+        size = len(_dumps(item))
+        if size > _CHUNK_BYTES:
+            raise NativePolicyIntegrityUnavailableError()
+        if current and (len(current) >= _MAX_ITEMS or current_bytes + size > _CHUNK_BYTES):
+            chunks.append(current)
+            current, current_bytes = [], 0
+        current.append(item)
+        current_bytes += size + 1
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+def _request_chunk(
+    guard_home: Path,
+    *,
+    key: bytes | None,
+    key_id: str | None,
+    field: str,
+    items: list[dict[str, object]],
+) -> list[Mapping[str, object]]:
+    request: dict[str, object] = {
+        "schema": _REQUEST_SCHEMA,
+        "request_id": f"policy-integrity-rows-{uuid4().hex}",
+        "verify": items if field == "verify" else [],
+        "sign": items if field == "sign" else [],
+    }
+    if key is not None:
+        request[_KEY_FIELD] = base64.urlsafe_b64encode(key).rstrip(b"=").decode("ascii")
+    if key_id is not None:
+        request["integrity_key_id"] = key_id
+    status = native_runtime_status()
+    try:
+        response = _resident_request(
+            operation="policy_integrity_rows",
+            request=request,
+            guard_home=guard_home,
+            timeout_seconds=_TIMEOUT_SECONDS,
+            required_feature=POLICY_INTEGRITY_ROWS_FEATURE,
+            response_schema=_RESULT_SCHEMA,
+            max_request_bytes=_MAX_REQUEST_BYTES,
+            record_success=False,
+            status=status,
+        )
+    except (TypeError, ValueError):
+        response = None
+    payload = _bound_payload(response, request, guard_home, status)
+    outcomes = payload.get(field) if payload is not None else None
+    other = payload.get("sign" if field == "verify" else "verify") if payload is not None else None
+    if not isinstance(outcomes, list) or len(outcomes) != len(items) or other != []:
+        raise NativePolicyIntegrityUnavailableError()
+    if not all(isinstance(outcome, dict) for outcome in outcomes):
+        raise NativePolicyIntegrityUnavailableError()
+    return outcomes
+
+
+def _bound_payload(
+    response: dict[str, object] | None,
+    request: dict[str, object],
+    guard_home: Path,
+    status: NativeRuntimeStatus,
+) -> dict[str, object] | None:
+    """The ``ok`` payload of a reply bound to ``request``, else ``None``."""
+
+    if response is None:
+        return None
+    try:
+        digest = "sha256:" + _canonical_request_sha256(
+            {name: value for name, value in request.items() if name != _KEY_FIELD}
+        )
+    except (TypeError, ValueError):
+        return None
+    bound = response.get("request_id") == request["request_id"] and response.get("request_sha256") == digest
+    payload = response.get("payload")
+    usable = response.get("status") == "ok" and response.get("code") == "ok" and isinstance(payload, dict)
+    identity = status.identity
+    if identity is not None:
+        if bound and usable:
+            native_record_resident_success(identity.sha256, guard_home)
+        else:
+            native_record_resident_failure(identity.sha256, guard_home, reason="native_policy_integrity_rows_binding")
+    return payload if bound and usable and isinstance(payload, dict) else None
+
+
+def _wire_row(row: Mapping[str, object]) -> dict[str, object]:
+    """The integrity-relevant columns, as JSON the resident reads identically.
+
+    The resident treats any value that is not a string, integer or boolean as
+    absent for every column it reads, so other SQLite values (blobs, reals)
+    travel as ``null``.
+    """
+
+    wire: dict[str, object] = {}
+    for column in _ROW_COLUMNS:
+        if column not in row:
+            continue
+        value = row[column]
+        wire[column] = value if isinstance(value, str | int) else None
+    return wire
+
+
+def _verify_wire(item: PolicyRowVerifyItem) -> dict[str, object]:
+    wire: dict[str, object] = {"row": _wire_row(item.row), "degraded_mode": bool(item.degraded_mode)}
+    if item.trusted_generation is not None:
+        wire["trusted_generation"] = int(item.trusted_generation)
+    return wire
+
+
+def _sign_wire(item: PolicyRowSignItem) -> dict[str, object]:
+    return {"row": _wire_row(item.row), "generation": int(item.generation), "signed_at": str(item.signed_at)}
+
+
+def _optional_text(outcome: Mapping[str, object], name: str) -> str | None:
+    value = outcome.get(name)
+    if value is not None and not isinstance(value, str):
+        raise NativePolicyIntegrityUnavailableError()
+    return value
+
+
+def _verification(outcome: Mapping[str, object]) -> PolicyIntegrityVerificationResult:
+    status = outcome.get("status")
+    if status not in _VERIFY_STATUSES:
+        raise NativePolicyIntegrityUnavailableError()
+    return PolicyIntegrityVerificationResult(
+        status=status,  # type: ignore[arg-type]
+        payload_hash=_optional_text(outcome, "payload_hash"),
+        key_id=_optional_text(outcome, "key_id"),
+        message=_optional_text(outcome, "message"),
+    )
+
+
+def _signature(outcome: Mapping[str, object], item: PolicyRowSignItem) -> dict[str, object]:
+    if set(outcome) != _SIGNATURE_FIELDS:
+        raise NativePolicyIntegrityUnavailableError()
+    texts = ("payload_hash", "payload_mac", "integrity_key_id", "signed_at")
+    if not all(isinstance(outcome[name], str) and outcome[name] for name in texts):
+        raise NativePolicyIntegrityUnavailableError()
+    version, generation = outcome["integrity_version"], outcome["integrity_generation"]
+    if not isinstance(version, int) or isinstance(version, bool) or generation != item.generation:
+        raise NativePolicyIntegrityUnavailableError()
+    if outcome["signed_at"] != item.signed_at:
+        raise NativePolicyIntegrityUnavailableError()
+    return dict(outcome)
+
+
+def _dumps(value: object) -> str:
+    try:
+        return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    except (TypeError, ValueError) as error:
+        raise NativePolicyIntegrityUnavailableError() from error
