@@ -284,6 +284,34 @@ fn git_commands_that_write_sandbox_denied_metadata_stay_out_of_the_sandbox() {
     }
 }
 
+#[test]
+fn creating_a_branch_runs_in_the_workspace_sandbox() {
+    let ws = workspace("branch-create", true);
+    for command in [
+        "git switch -c feature",
+        "git checkout -b fix/login && git add -A && git commit -m fix",
+        "git switch -c fix --no-track main",
+    ] {
+        let got = reason("omp", command, &ws, true);
+        if host() {
+            assert_eq!(got, CONTAINED, "{command}");
+        } else {
+            assert_ne!(got, CONTAINED, "{command}");
+        }
+    }
+    for command in [
+        "git switch main",
+        "git switch -C feature",
+        "git checkout -B feature",
+        "git checkout -b feature -- src",
+        "git switch -c feature --discard-changes",
+        "git checkout -b feature && git checkout main",
+        "git checkout -b fix origin/main",
+    ] {
+        assert_ne!(reason("omp", command, &ws, true), CONTAINED, "{command}");
+    }
+}
+
 /// Whether this host runs the workspace sandbox at all.
 fn host() -> bool {
     cfg!(target_os = "macos") || crate::restricted_pytest::linux_workspace_sandbox_available()

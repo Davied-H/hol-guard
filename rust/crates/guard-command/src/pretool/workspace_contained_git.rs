@@ -6,7 +6,18 @@
 //! has to write there fails inside the sandbox with "Operation not permitted",
 //! sometimes after a partial effect such as a new branch, and the agent keeps
 //! retrying a command that cannot succeed. These commands stay at review.
+//!
+//! Creating a new branch is the opposite case: the Git workspace rules keep
+//! switching and checkout at review because they can discard uncommitted
+//! work, but a plain `git switch -c` or `git checkout -b` cannot, and the
+//! sandbox completes it.
 
+use crate::CanonicalCommandV1;
+use guard_contracts::NativeCommandObservationV1;
+
+/// Workspace rules whose matches a new branch from `git switch -c` or
+/// `git checkout -b` accounts for.
+const BRANCH_CREATE_RULES: &[&str] = &["command.git.checkout", "command.git.switch"];
 /// Global options whose value is the next argument.
 const VALUE_OPTIONS: &[&str] = &[
     "-C",
@@ -113,6 +124,74 @@ fn writes_config(arguments: &[String]) -> bool {
             .any(|argument| CONFIG_WRITES.contains(&argument.as_str()))
 }
 
+/// Options a new-branch `switch` or `checkout` may carry without touching
+/// existing work. Anything else, such as `--force`, `--merge`, `--orphan` or
+/// a pathspec, keeps the command at review.
+const BRANCH_CREATE_OPTIONS: &[&str] = &[
+    "-q",
+    "--quiet",
+    "--no-track",
+    "--no-guess",
+    "--progress",
+    "--no-progress",
+];
+
+/// Whether a `git switch -c` or `git checkout -b` only creates a new branch.
+/// Git refuses to create a branch that exists and keeps uncommitted changes
+/// unless they conflict with the start point, in which case it stops. The
+/// upper-case `-C` and `-B` reset an existing branch, so the comparison is
+/// case-sensitive.
+pub(super) fn creates_branch(arguments: &[String]) -> bool {
+    let Some((name, rest)) = subcommand(arguments) else {
+        return false;
+    };
+    let create = match name {
+        "switch" => ["-c", "--create"].as_slice(),
+        "checkout" => ["-b"].as_slice(),
+        _ => return false,
+    };
+    let mut created = false;
+    let mut positional = 0;
+    for argument in rest {
+        if create.contains(&argument.as_str()) && !created {
+            created = true;
+        } else if argument.starts_with('-') {
+            if !BRANCH_CREATE_OPTIONS.contains(&argument.as_str()) {
+                return false;
+            }
+        } else {
+            positional += 1;
+        }
+    }
+    // The new branch's name and at most one start point.
+    created && (1..=2).contains(&positional)
+}
+
+/// Whether an observation of a Git workspace rule covers only segments that
+/// create a new branch, which loses no work and so need not stay at review.
+pub(super) fn only_creates_branches(
+    observation: &NativeCommandObservationV1,
+    model: &CanonicalCommandV1,
+) -> bool {
+    let mut segments = observation
+        .matcher_evidence
+        .iter()
+        .map(|evidence| evidence.segment_index)
+        .chain(observation.effective_segment_indexes.iter().copied())
+        .peekable();
+    BRANCH_CREATE_RULES.contains(&observation.rule_id.as_str())
+        && segments.peek().is_some()
+        && segments.all(|index| {
+            model.segments.get(index).is_some_and(|segment| {
+                segment
+                    .executable
+                    .as_deref()
+                    .is_some_and(|value| super::super::executable_basename(value) == "git")
+                    && creates_branch(&segment.arguments)
+            })
+        })
+}
+
 /// Whether a `git` invocation with these arguments must write a path the
 /// workspace sandbox denies.
 pub(super) fn writes_denied_metadata(arguments: &[String]) -> bool {
@@ -152,7 +231,7 @@ pub(super) fn writes_denied_metadata(arguments: &[String]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::writes_denied_metadata;
+    use super::{creates_branch, writes_denied_metadata};
 
     fn writes(command: &str) -> bool {
         let arguments: Vec<String> = command
@@ -226,6 +305,45 @@ mod tests {
             "git log -C --oneline",
         ] {
             assert!(!writes(command), "{command}");
+        }
+    }
+
+    #[test]
+    fn branch_creation_is_told_apart_from_switching_and_resets() {
+        let creates = |command: &str| {
+            let arguments: Vec<String> = command
+                .split_whitespace()
+                .skip(1)
+                .map(str::to_owned)
+                .collect();
+            creates_branch(&arguments)
+        };
+        for command in [
+            "git switch -c feature",
+            "git switch --create feature",
+            "git checkout -b feature",
+            "git checkout -q -b fix/login",
+            "git switch -c fix --no-track origin/main",
+            "git -C . checkout -b feature main",
+        ] {
+            assert!(creates(command), "{command}");
+        }
+        for command in [
+            "git switch main",
+            "git checkout main",
+            "git checkout -b",
+            "git switch -C feature",
+            "git checkout -B feature",
+            "git switch -c feature --discard-changes",
+            "git checkout -f -b feature",
+            "git checkout -b feature -- src",
+            "git checkout -b feature main src",
+            "git switch -m -c feature",
+            "git switch --orphan feature",
+            "git checkout -b feature -b other",
+            "git branch feature",
+        ] {
+            assert!(!creates(command), "{command}");
         }
     }
 }

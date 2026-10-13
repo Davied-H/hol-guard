@@ -246,6 +246,7 @@ pub(crate) fn split_at_init(
 fn extensions_contain(
     result: &PreToolResultV1,
     controls: &CompiledNativeCommandControls,
+    model: &CanonicalCommandV1,
     package: bool,
 ) -> bool {
     // Without the loaded extension program there is no network or risk
@@ -265,7 +266,8 @@ fn extensions_contain(
         })
         && extensions.observations.iter().all(|observation| {
             observation.uncertainty_reasons.is_empty()
-                && !UNRECOVERABLE_RULES.contains(&observation.rule_id.as_str())
+                && (!UNRECOVERABLE_RULES.contains(&observation.rule_id.as_str())
+                    || git_metadata::only_creates_branches(observation, model))
                 && !REMOTE_RULES.contains(&observation.rule_id.as_str())
                 && controls
                     .rule_risk_classes(&observation.rule_id)
@@ -421,7 +423,7 @@ pub(super) fn convert(
     let (Some(model), Some(controls), Some(cwd)) = (model, controls, context.cwd) else {
         return;
     };
-    if !extensions_contain(result, controls, package)
+    if !extensions_contain(result, controls, model, package)
         || (package && !package::local_package_work(model))
     {
         return;
