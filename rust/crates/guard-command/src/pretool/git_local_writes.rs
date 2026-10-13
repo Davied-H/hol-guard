@@ -14,17 +14,32 @@
 //! commit, and rewriting what a remote holds still needs a reviewed forced
 //! push. `git add -f` stays reviewed: it is how an ignored secret file gets
 //! staged. `git branch -M` stays reviewed: it overwrites an existing branch.
+//!
+//! The same chain may end by publishing that work: one `git push origin
+//! <branch>` proven by the runtime push verdict, for the branch the chain
+//! creates or the one checked out, and a `gh pr create` the user's GitHub
+//! permissions already let run alone. Every step keeps the proof it has on
+//! its own; anything else in the chain keeps the review.
 
 use super::git_remote_config::GitConfig;
 use super::git_session_probe::Probe;
+use crate::native_command_controls::CompiledNativeCommandControls;
 use crate::{CanonicalCommandV1, CommandSegmentV1};
-use guard_contracts::{GuardExecutionEnvironmentV1, PreToolActionTypeV1, PreToolResultV1};
+use guard_contracts::{
+    GuardExecutionEnvironmentV1, NativeCommandPermissionObservationV1, PreToolActionTypeV1,
+    PreToolResultV1,
+};
 use std::time::Instant;
 
+#[path = "git_local_writes_forms.rs"]
+mod forms;
 #[path = "git_local_writes_start.rs"]
 mod start;
 
+use forms::{add, branch_rename, commit, rm};
+
 pub(crate) const REASON: &str = "native_exact_safe_git_local_write";
+pub(crate) const PUBLISH_REASON: &str = "native_exact_safe_git_publish_chain";
 
 /// The declarative review rules these forms may settle.
 const RULES: &[&str] = &[
@@ -36,6 +51,10 @@ const RULES: &[&str] = &[
     "command.git.checkout",
     "command.git.stash",
 ];
+
+/// The rule a proven `git push origin <branch>` step may raise.
+const PUSH_RULE: &str = "command.git.push";
+const PROPOSE_PERMISSION: &str = "command.github.permission.propose-remote";
 
 /// Read rules the packaged catalog ships disabled, so they never raise a
 /// review of their own.
@@ -73,6 +92,7 @@ pub(super) fn settle(
     result: &mut PreToolResultV1,
     pre_floor: &(String, String),
     model: Option<&CanonicalCommandV1>,
+    controls: Option<&CompiledNativeCommandControls>,
     context: super::PathContext<'_>,
     deadline: Option<Instant>,
     execution_environment: Option<&GuardExecutionEnvironmentV1>,
@@ -98,39 +118,75 @@ pub(super) fn settle(
     let Some(model) = model else {
         return;
     };
-    if !proven(result, model, context, deadline, execution_environment) {
+    let Some(published) = proven(
+        result,
+        model,
+        controls,
+        context,
+        deadline,
+        execution_environment,
+    ) else {
         return;
-    }
+    };
     result.minimum_action = "allow".into();
     result.policy_action = "allow".into();
     result.decision = "allow".into();
     result.explicitly_benign = true;
-    result.reason_code = REASON.into();
-    result.reason = concat!(
-        "The Rust command authority proved this Git command only updates the local ",
-        "repository, keeps every change reachable, and starts no configured program or hook.",
-    )
-    .into();
+    (result.reason_code, result.reason) = if published {
+        (
+            PUBLISH_REASON.into(),
+            concat!(
+                "The Rust command authority proved each step of this chain: the local Git ",
+                "writes keep every change reachable and start no configured program or hook, ",
+                "a push sends the branch the chain checks out to a credential-free GitHub ",
+                "HTTPS origin, and a GitHub step is one your permissions allow on its own.",
+            )
+            .into(),
+        )
+    } else {
+        (
+            REASON.into(),
+            concat!(
+                "The Rust command authority proved this Git command only updates the local ",
+                "repository, keeps every change reachable, and starts no configured program or hook.",
+            )
+            .into(),
+        )
+    };
 }
 
+/// `Some(true)` when the proven chain also pushes, `Some(false)` when it
+/// only writes locally, and `None` when any step is unproven.
 fn proven(
     result: &PreToolResultV1,
     model: &CanonicalCommandV1,
+    controls: Option<&CompiledNativeCommandControls>,
     context: super::PathContext<'_>,
     deadline: Option<Instant>,
     execution_environment: Option<&GuardExecutionEnvironmentV1>,
-) -> bool {
-    let Some(extensions) = result.command_extensions.as_ref() else {
-        return false;
-    };
+) -> Option<bool> {
+    let extensions = result.command_extensions.as_ref()?;
     if model.confidence != "exact"
         || model.path_overridden
         || !model.wrapper_chain.is_empty()
         || extensions.binding.uncertainty_count != 0
         || extensions.evaluation_error.is_some()
-        || !extensions.permission_observations.is_empty()
     {
-        return false;
+        return None;
+    }
+    // A `gh pr create` the user's GitHub permissions allow on its own. Nothing
+    // else may carry a permission observation.
+    let granted = controls
+        .map(|controls| controls.github_granted_segments(&extensions.permission_observations))
+        .unwrap_or_default();
+    let allowed_alone = |observation: &NativeCommandPermissionObservationV1| {
+        let mut segments = observation.matcher_evidence.iter();
+        observation.permission_id == PROPOSE_PERMISSION
+            && !observation.matcher_evidence.is_empty()
+            && segments.all(|evidence| granted.contains(&evidence.segment_index))
+    };
+    if !extensions.permission_observations.iter().all(allowed_alone) {
+        return None;
     }
     let cwd_proof = model
         .segments
@@ -149,29 +205,49 @@ fn proven(
     let mut writes: Vec<(usize, &'static [&'static str])> = Vec::new();
     let mut starts = Vec::new();
     let mut safe = Vec::new();
+    let mut created: Vec<(usize, &str)> = Vec::new();
+    let mut moved = false;
+    let mut push: Option<usize> = None;
+    let mut proposal = false;
     for (index, segment) in model.segments.iter().enumerate() {
         if segment.executable.as_deref() == Some("cd") {
             if cwd_proof
                 .as_ref()
                 .is_none_or(|proof| proof.cd_index != index)
             {
-                return false;
+                return None;
             }
             continue;
         }
         if let Some((hooks, point)) = write_hooks(segment) {
             writes.push((index, hooks));
             starts.extend(point);
+            match created_branch(segment) {
+                Some(name) => created.push((index, name)),
+                None => moved |= moves_head(segment),
+            }
+            continue;
+        }
+        if super::git_push::chained(segment) {
+            // A proposal opens the pull request for work the chain pushed.
+            if proposal || push.replace(index).is_some() {
+                return None;
+            }
+            continue;
+        }
+        if granted.contains(&index) {
+            proposal = true;
             continue;
         }
         if !super::segment_proof::exact_safe_segment_with_context(model, segment, false, context)
             && !configured_read(model, index, context, deadline, execution_environment)
         {
-            return false;
+            return None;
         }
         safe.push(index);
     }
     let written = |index: &usize| writes.iter().any(|(write, _)| write == index);
+    let pushed = |index: &usize| push == Some(*index);
     // Off-by-default read rules (`command.git.status`) still record what they
     // matched; on a segment proven above they add nothing to review.
     let inert_match = |observation: &guard_contracts::NativeCommandObservationV1| {
@@ -184,7 +260,16 @@ fn proven(
                 .chain(observation.effective_segment_indexes.iter().copied())
                 .all(|index| safe.contains(&index))
     };
-    if writes.is_empty()
+    // A chain that publishes runs each step only after the one before it
+    // succeeded: `;`, `||`, `&` or a pipe could push or propose after a failed
+    // branch creation or commit.
+    let published = push.is_some() || proposal;
+    let and_chained = (1..model.segments.len()).all(|index| {
+        super::worktree_add::separator_between(model, index - 1, index)
+            .is_some_and(|separator| separator.trim() == "&&")
+    });
+    if (writes.is_empty() && push.is_none())
+        || (published && !and_chained)
         || !extensions.observations.iter().all(|observation| {
             if observation.uncertainty_reasons.is_empty() && inert_match(observation) {
                 return true;
@@ -195,32 +280,84 @@ fn proven(
                 .map(|evidence| evidence.segment_index)
                 .chain(observation.effective_segment_indexes.iter().copied())
                 .peekable();
+            let rule = observation.rule_id.as_str();
             observation.uncertainty_reasons.is_empty()
-                && RULES.contains(&observation.rule_id.as_str())
                 && indexes.peek().is_some()
-                && indexes.all(|index| written(&index))
+                && if rule == PUSH_RULE {
+                    indexes.all(|index| pushed(&index))
+                } else {
+                    RULES.contains(&rule) && indexes.all(|index| written(&index))
+                }
         })
     {
-        return false;
+        return None;
     }
-    let Some(probe) = Probe::new("git", &[], context, deadline, execution_environment) else {
-        return false;
-    };
-    let Some((effective, repository)) = probe.config() else {
-        return false;
-    };
+    let probe = Probe::new("git", &[], context, deadline, execution_environment)?;
+    let (effective, repository) = probe.config()?;
     // A configuration included for the branch a checkout leaves would apply
     // to the reads after it without having been probed.
     let branch_scoped = writes.iter().any(|(_, hooks)| *hooks == CHECKOUT_HOOKS)
         && effective
             .keys()
             .any(|key| key.to_ascii_lowercase().starts_with("includeif.onbranch"));
-    inert(&effective, &repository)
-        && !branch_scoped
-        && writes.iter().all(|(_, hooks)| probe.hooks_inert(hooks))
-        && starts
+    if branch_scoped
+        || !inert(&effective, &repository)
+        || !writes.iter().all(|(_, hooks)| probe.hooks_inert(hooks))
+        || !starts
             .iter()
             .all(|point| start::replaces_nothing(&probe, point))
+    {
+        return None;
+    }
+    let Some(push) = push else {
+        return Some(published);
+    };
+    // A rename or a switch to another branch would change what the push
+    // sends after the verdict saw the checkout.
+    if moved {
+        return None;
+    }
+    // The push sends the branch the chain checks out: the one it creates, or
+    // with no creation the one checked out now. A creation after the push or a
+    // second one would leave a different branch checked out than the verdict saw.
+    let created = match created.as_slice() {
+        [] => None,
+        [(index, name)] if *index < push => Some(*name),
+        _ => return None,
+    };
+    super::git_push::chained_push_proven(
+        &model.segments[push],
+        context,
+        deadline,
+        execution_environment,
+        created,
+    )
+    .then_some(true)
+}
+
+/// The branch `git switch -c <name>` or `git checkout -b <name>` creates at
+/// the checked-out commit. A start point is not one of these forms.
+fn created_branch(original: &CommandSegmentV1) -> Option<&str> {
+    match original.arguments.as_slice() {
+        [command, flag, name]
+            if matches!(
+                (command.as_str(), flag.as_str()),
+                ("switch", "-c" | "--create") | ("checkout", "-b")
+            ) =>
+        {
+            Some(name.as_str())
+        }
+        _ => None,
+    }
+}
+
+/// Whether a write other than a branch creation may change the checked-out
+/// branch: any `checkout`, `switch` or `branch` form.
+fn moves_head(original: &CommandSegmentV1) -> bool {
+    original
+        .arguments
+        .first()
+        .is_none_or(|command| matches!(command.as_str(), "checkout" | "switch" | "branch"))
 }
 
 /// A Git read whose configuration the session probe proves starts no
@@ -280,97 +417,6 @@ fn write_hooks(original: &CommandSegmentV1) -> Option<(&'static [&'static str], 
     }
     let point = start::start_point(&segment.arguments)?;
     Some((CHECKOUT_HOOKS, Some(point.to_owned())))
-}
-
-/// Options `allowed` accepts, then pathspecs, with `--` ending the options.
-fn pathspecs(rest: &[&str], allowed: impl Fn(&str) -> bool) -> bool {
-    let mut options = true;
-    rest.iter().all(|word| {
-        if options && *word == "--" {
-            options = false;
-            true
-        } else if options && word.starts_with('-') {
-            allowed(word)
-        } else {
-            !word.is_empty()
-        }
-    })
-}
-
-fn add(rest: &[&str]) -> bool {
-    pathspecs(rest, |option| {
-        matches!(
-            option,
-            "-A" | "--all"
-                | "-u"
-                | "--update"
-                | "-v"
-                | "--verbose"
-                | "-n"
-                | "--dry-run"
-                | "-N"
-                | "--intent-to-add"
-                | "--ignore-errors"
-        )
-    })
-}
-
-fn rm(rest: &[&str]) -> bool {
-    pathspecs(rest, |option| {
-        matches!(
-            option,
-            "-q" | "--quiet" | "-r" | "--cached" | "-n" | "--dry-run" | "--ignore-unmatch"
-        )
-    })
-}
-
-/// A commit whose message is on the command line, so no editor starts.
-fn commit(rest: &[&str]) -> bool {
-    let (mut message, mut amend, mut no_edit) = (false, false, false);
-    let mut options = true;
-    let mut words = rest.iter();
-    while let Some(word) = words.next() {
-        if !options || !word.starts_with('-') {
-            if word.is_empty() {
-                return false;
-            }
-            continue;
-        }
-        match *word {
-            "--" => options = false,
-            "-m" | "--message" | "-am" => {
-                if words.next().is_none() {
-                    return false;
-                }
-                message = true;
-            }
-            value if value.starts_with("--message=") => message = true,
-            value if value.len() > 2 && value.starts_with("-m") => message = true,
-            "-q" | "--quiet" | "-a" | "--all" | "-s" | "--signoff" | "-n" | "--no-verify"
-            | "--allow-empty" | "--no-gpg-sign" => {}
-            "--amend" => amend = true,
-            "--no-edit" => no_edit = true,
-            _ => return false,
-        }
-    }
-    message || (amend && no_edit)
-}
-
-/// `branch -m NEW` or `branch -m OLD NEW`, options first. A rename moves the
-/// ref with its reflog and refuses an existing target, so nothing becomes
-/// unreachable. `-M`, `--force`, a copy and every other option are refused.
-fn branch_rename(rest: &[&str]) -> bool {
-    let mut moved = false;
-    let mut names = Vec::new();
-    for word in rest {
-        match *word {
-            "-m" | "--move" if !moved && names.is_empty() => moved = true,
-            "-q" | "--quiet" if names.is_empty() => {}
-            name if super::worktree_add::valid_branch_name(name) => names.push(name),
-            _ => return false,
-        }
-    }
-    moved && matches!(names.len(), 1 | 2)
 }
 
 /// Whether the effective configuration lets these writes start no program.
