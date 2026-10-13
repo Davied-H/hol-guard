@@ -90,29 +90,33 @@ pub(super) fn answer(
         Some(Value::String(text)) if !text.is_empty() => text.as_str(),
         _ => DEFAULT_REASON,
     };
-    let stored_id = write(context, facts.oauth_source, request)?;
-    // A pending request for the same action keeps its id, so a pause the
-    // resident cannot render leaves the daemon to queue the same request.
-    let approval_url = rewrite_approval_url(&approval_url, &stored_id);
     let auth_token =
         crate::daemon_policy_authority::load_guard_daemon_auth_token(Path::new(context.guard_home));
-    let linked = crate::native_review_link::native_review_reason(
-        &canonical_harness(context.harness),
-        reason,
-        &approval_url,
-        auth_token.as_deref(),
-        now_micros().ok_or(HookDirectDefer::ReviewQueue)?,
-    )
-    .ok_or(HookDirectDefer::ReviewQueue)?;
-    respond(
-        context.harness,
-        result,
-        &stored_id,
-        &approval_url,
-        &linked,
-        facts.origin,
-    )
-    .ok_or(HookDirectDefer::ReviewQueue)
+    let pause = |request_id: &str, approval_url: &str| {
+        let linked = crate::native_review_link::native_review_reason(
+            &canonical_harness(context.harness),
+            reason,
+            approval_url,
+            auth_token.as_deref(),
+            now_micros()?,
+        )?;
+        respond(
+            context.harness,
+            result,
+            request_id,
+            approval_url,
+            &linked,
+            facts.origin,
+        )
+    };
+    // Render the pause before writing, so a pause the resident cannot render
+    // leaves the queue to the daemon rather than recording the hook twice.
+    pause(&request_id, &approval_url).ok_or(HookDirectDefer::ReviewQueue)?;
+    let stored_id = write(context, facts.oauth_source, request)?;
+    // A pending request for the same action keeps its id, so a pause the
+    // resident still cannot render leaves the daemon to queue the same request.
+    let approval_url = rewrite_approval_url(&approval_url, &stored_id);
+    pause(&stored_id, &approval_url).ok_or(HookDirectDefer::ReviewQueue)
 }
 
 /// The published facts for an `ask` review the resident may queue.
