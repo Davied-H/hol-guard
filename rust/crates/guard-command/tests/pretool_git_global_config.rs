@@ -180,7 +180,12 @@ impl Session {
     }
 }
 
-const ALIAS_SANDBOX: &str = "native_workspace_containment_required";
+// Workspace containment is macOS-only; elsewhere the same alias stays at review.
+const ALIAS_SANDBOX: &str = if cfg!(target_os = "macos") {
+    "native_workspace_containment_required"
+} else {
+    "native_command_review_required"
+};
 
 fn write_global(session: &Session, text: &str) {
     std::fs::write(session.home.join(".gitconfig"), text).unwrap();
