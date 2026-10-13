@@ -2,14 +2,17 @@
 
 use crate::git_helper_fixture as fixture;
 
+#[path = "pretool_git_session_ops/context.rs"]
+mod context;
+
 use fixture::{evaluate_pre_tool_envelope_with_context, FixtureCleanup};
 use serde_json::json;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 pub(crate) struct Session {
-    home: PathBuf,
-    org: PathBuf,
+    pub(crate) home: PathBuf,
+    pub(crate) org: PathBuf,
     pub(crate) primary: PathBuf,
     pub(crate) worktree: PathBuf,
     _cleanup: FixtureCleanup,

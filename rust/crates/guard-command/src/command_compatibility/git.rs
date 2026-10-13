@@ -179,7 +179,6 @@ pub(super) fn inspection_arguments<'a>(
                 | "diff"
                 | "log"
                 | "show"
-                | "grep"
                 | "branch"
                 | "hash-object"
                 | "rev-parse"
@@ -188,6 +187,7 @@ pub(super) fn inspection_arguments<'a>(
                 | "remote"
                 | "worktree"
                 | "config"
+                | "grep"
         )
     )
     .then_some(remaining)
@@ -241,8 +241,15 @@ fn routed<'a>(
             index += 2;
             continue;
         }
-        if let Some(git_dir) = argument.strip_prefix("--git-dir=").filter(|_| inspection) {
-            // A bare repository named by `--git-dir` is a read route like `-C`.
+        let git_dir = match argument.as_str() {
+            "--git-dir" if inspection => {
+                index += 1;
+                Some(arguments.get(index)?.as_str())
+            }
+            _ => argument.strip_prefix("--git-dir=").filter(|_| inspection),
+        };
+        if let Some(git_dir) = git_dir {
+            // A repository named by `--git-dir` is a read route like `-C`.
             if saw_change_directory
                 || saw_git_dir
                 || !crate::pretool::safe_directory_target(git_dir)
@@ -284,11 +291,24 @@ fn routed<'a>(
     arguments.get(index..)
 }
 
+#[cfg(test)]
 pub(super) fn observe_with_context(
     segment: &CommandSegmentV1,
     index: usize,
     result: &mut CompatibilityObservations,
     context: crate::pretool::PathContext<'_>,
+) {
+    observe_with_contexts(segment, index, result, context, context);
+}
+
+/// `proof_context` is where native proofs ran this segment: the directory a
+/// verified leading `cd` entered, or `context` itself.
+pub(super) fn observe_with_contexts(
+    segment: &CommandSegmentV1,
+    index: usize,
+    result: &mut CompatibilityObservations,
+    context: crate::pretool::PathContext<'_>,
+    proof_context: crate::pretool::PathContext<'_>,
 ) {
     let arguments = &segment.arguments;
     if arguments
@@ -335,13 +355,26 @@ pub(super) fn observe_with_context(
             crate::pretool::git_hash_object::read_operands(&remaining[1..]).is_some()
         });
     // `init` is a built-in, so no alias can replace it. Creating a repository
-    // in the current directory with only a quiet flag or an initial branch
-    // name touches none of the porcelain owners above. Templates, separate
-    // git directories and other targets keep every owner uncertain.
+    // in the current directory or one absolute target with only a quiet flag
+    // or an initial branch name touches none of the porcelain owners above;
+    // the native proof still decides the target. Templates, separate git
+    // directories and other options keep every owner uncertain.
     let plain_init = command_index == 0
         && command == "init"
-        && crate::pretool::init_arguments(&arguments[1..]).is_some();
+        && (crate::pretool::init_arguments(&arguments[1..]).is_some()
+            || crate::pretool::git_init_target::target(&arguments[1..])
+                .is_some_and(crate::pretool::git_init_target::absolute_target));
+    // A plain configuration write sets a key Git never runs; its own proof
+    // still decides the repository.
+    let plain_config_write = command == "config"
+        && crate::pretool::directory_targets::drive_targets_quoted(segment)
+        && crate::pretool::directory_targets::home_targets_unquoted(segment)
+        && routed_arguments(arguments, context).is_some_and(|remaining| {
+            remaining.first().map(String::as_str) == Some("config")
+                && crate::pretool::git_config_reads::writes::plain_write(&remaining[1..]).is_some()
+        });
     if plumbing
+        || plain_config_write
         || branch_listing
         || hash_read
         || plain_init
@@ -391,9 +424,12 @@ pub(super) fn observe_with_context(
         // option-prefixed, URL, or otherwise non-exact form stays uncertain.
         // The hook's native proof already checked the repository's origin,
         // transport, credential helpers and hooks for exactly this segment.
-        let plain = git_fetch::plain_origin_refresh(segment, command_index)
-            || (routed_remote && git_fetch::routed_origin_refresh(segment, command_index));
-        if !(plain && crate::pretool::verified_origin_operation(segment, context)) {
+        // A trailing `2>&1` only merges the fetch's progress into stdout.
+        let stripped = crate::pretool::without_stderr_merge(segment);
+        let refresh = stripped.as_ref().unwrap_or(segment);
+        let plain = git_fetch::plain_origin_refresh(refresh, command_index)
+            || (routed_remote && git_fetch::routed_origin_refresh(refresh, command_index));
+        if !(plain && crate::pretool::verified_origin_operation(refresh, proof_context)) {
             result.rule("command.git.unverified-fetch", index, !plain);
         }
     }
