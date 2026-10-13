@@ -94,9 +94,12 @@ fn expansion_end(chars: &[char], index: usize) -> Option<usize> {
     }
 }
 
+/// A pipeline stage's words as `(start, end)` spans.
+pub(super) type Stage = Vec<(usize, usize)>;
+
 /// `(stages, separator)` for each `&&` / `;` list item; a trailing `;` is
 /// allowed, an empty item or stage is not.
-pub(super) fn items(tokens: &[Token]) -> Option<Vec<(Vec<Vec<(usize, usize)>>, Token)>> {
+pub(super) fn items(tokens: &[Token]) -> Option<Vec<(Vec<Stage>, Token)>> {
     let mut items = Vec::new();
     let mut stages = vec![Vec::new()];
     for (position, token) in tokens.iter().enumerate() {
