@@ -209,7 +209,9 @@ def test_client_never_gains_time_from_the_handoff(tmp_path: Path, monkeypatch: p
     namespace = _client(tmp_path)
 
     budget = float(namespace["_HOOK_DEADLINE_MONOTONIC"]) - float(namespace["_HOOK_STARTED_MONOTONIC"])
-    assert 0 <= budget <= 8
+    # The deadline is `started + budget`, so subtracting the start back out can
+    # land a rounding step above the full budget on a large monotonic clock.
+    assert 0 <= budget <= 8 + 1e-9
 
 
 def _run_after_client(tmp_path: Path, raw: str, body: str) -> tuple[dict[str, object], str, int]:
