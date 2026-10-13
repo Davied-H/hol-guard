@@ -58,6 +58,7 @@ mod pytest_contained;
 mod trusted_location;
 pub(crate) use git_routes::git_route_within_workspace;
 mod apply_patch_writes;
+mod lockfile_install;
 mod pure_expression;
 mod read_paths;
 mod source_reads;
