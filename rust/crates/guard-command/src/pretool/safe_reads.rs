@@ -13,6 +13,7 @@ pub(super) use super::safe_writes::{
     bounded_native_file_write_target, safe_copy_arguments, safe_file_mutation_arguments,
 };
 pub(super) use command_sequences::exact_safe_sequence;
+pub(crate) use command_sequences::proven_created_file_removal;
 
 pub(super) fn safe_file_predicate_arguments(
     arguments: &[String],

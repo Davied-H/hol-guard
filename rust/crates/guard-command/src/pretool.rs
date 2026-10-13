@@ -71,7 +71,7 @@ mod recursive_copy;
 mod restricted_tests;
 mod rust_toolchain;
 mod safe_links;
-mod safe_reads;
+pub(crate) mod safe_reads;
 mod safe_scalar;
 mod safe_writes;
 mod search;

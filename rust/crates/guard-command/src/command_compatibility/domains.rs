@@ -222,6 +222,7 @@ pub(super) fn observe(
     segment: &CommandSegmentV1,
     index: usize,
     output: &mut CompatibilityObservations,
+    context: crate::pretool::PathContext<'_>,
 ) {
     let executable = basename(segment);
     let arguments = &segment.arguments;
@@ -371,7 +372,12 @@ pub(super) fn observe(
     }
     let introspection_only =
         matches!(arguments.as_slice(), [only] if matches!(only.as_str(), "--help" | "--version"));
+    // A write probe's trailing `rm` removes only the file the same command
+    // creates, which the native proof checked did not exist beforehand.
+    let probe_cleanup = executable == "rm"
+        && crate::pretool::safe_reads::proven_created_file_removal(command, segment, context);
     if !introspection_only
+        && !probe_cleanup
         && (matches!(
             executable.as_str(),
             "rm" | "rmdir"

@@ -112,6 +112,24 @@ fn cd_then_read_sequence(
         })
 }
 
+/// The trailing `rm` of a write probe that the native proof accepts: it
+/// removes only the file the same command creates, and that file does not
+/// exist yet. The compatibility layer does not treat it as a destructive
+/// delete.
+pub(crate) fn proven_created_file_removal(
+    model: &CanonicalCommandV1,
+    segment: &CommandSegmentV1,
+    context: PathContext<'_>,
+) -> bool {
+    segment.executable.as_deref() == Some("rm")
+        && model
+            .segments
+            .last()
+            .is_some_and(|last| std::ptr::eq(last, segment))
+        && exact_model(model)
+        && created_file_probe(model, context)
+}
+
 fn created_file_probe(model: &CanonicalCommandV1, context: PathContext<'_>) -> bool {
     let (Some(first), Some(last)) = (model.segments.first(), model.segments.last()) else {
         return false;

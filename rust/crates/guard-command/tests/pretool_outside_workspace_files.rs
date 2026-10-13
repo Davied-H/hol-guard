@@ -273,3 +273,48 @@ fn cd_sequences_prove_reads_in_both_directories() {
         ],
     );
 }
+
+#[test]
+fn write_probe_cleanup_is_not_a_destructive_delete_under_default_controls() {
+    use guard_command::native_command_controls::CompiledNativeCommandControls;
+    use guard_command::native_command_program::packaged_command_program;
+    use guard_contracts::NativeCommandControlBindingV1;
+
+    let fixture = fixture("probe-controls");
+    let program = packaged_command_program().unwrap();
+    let mut binding: NativeCommandControlBindingV1 = serde_json::from_value(json!({
+        "schema": "guard.native-command-control-binding.v1",
+        "program_digest": program.program_digest, "catalog_digest": program.catalog_digest,
+        "trust_digest": program.trust_digest, "health": "protected", "revision": 1,
+        "managed_revision": 0, "effective_digest": "", "layers": []
+    }))
+    .unwrap();
+    binding.effective_digest = binding.compute_effective_digest().unwrap();
+    let controls = CompiledNativeCommandControls::new(&binding).unwrap();
+    let action = |command: &str| {
+        evaluate_pre_tool_envelope_with_context(
+            "zcode",
+            "PreToolUse",
+            &json!({"toolName": "Bash", "toolInput": {"command": command}}),
+            Some(&controls),
+            None,
+            fixture.home.to_str(),
+            fixture.project.to_str(),
+        )
+        .minimum_action
+    };
+    for command in [
+        "touch ~/code/sibling/probe.txt && echo ok || echo fail; rm -f ~/code/sibling/probe.txt",
+        "touch ~/code/sibling/probe.txt && rm ~/code/sibling/probe.txt",
+    ] {
+        assert_eq!(action(command), "allow", "{command}");
+    }
+    for command in [
+        "touch ~/code/sibling/existing.txt && rm -f ~/code/sibling/existing.txt",
+        "touch ~/code/sibling/probe.txt; rm -f ~/code/sibling/existing.txt",
+        "rm -f ~/code/sibling/existing.txt",
+        "rm -f ~/code/sibling/probe.txt",
+    ] {
+        assert_ne!(action(command), "allow", "{command}");
+    }
+}
