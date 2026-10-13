@@ -133,7 +133,8 @@ def test_caller_rejections_do_not_quarantine_the_shared_resident(monkeypatch, ca
         body = {"unused": float("nan")}
     if case == "expired_reply":
         now = time.monotonic()
-        monkeypatch.setattr(client.time, "monotonic", lambda: now + (1 if calls else 0))
+        # Past both the warm and the cold-start default budget.
+        monkeypatch.setattr(client.time, "monotonic", lambda: now + (5 if calls else 0))
     with pytest.raises(client.NativeContentSensitivityError):
         client.content_query("content_version", body)
     assert not failures
