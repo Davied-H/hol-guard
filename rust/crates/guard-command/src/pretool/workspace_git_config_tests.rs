@@ -55,6 +55,19 @@ fn shell_punctuation_splits_helper_words() {
 }
 
 #[test]
+fn escaped_quotes_decode_before_helper_words_are_read() {
+    let ws = Path::new("/w/repo");
+    let config = "[difftool \"difft\"]\n\tcmd = difft \\\"$LOCAL\\\" \\\"$REMOTE\\\"\n[alias]\n\tx = !sh \\\"./tools/x.sh\\\"\n";
+    let got = denials(config, ws).unwrap();
+    assert_eq!(got, vec![ws.join("tools/x.sh")]);
+    // Any other escape, or a continuation, keeps the command at review.
+    for value in ["!sh tools\\nx", "!sh tools/x.sh \\"] {
+        let config = format!("[alias]\n\tx = {value}\n");
+        assert_eq!(denials(&config, ws), None, "{value}");
+    }
+}
+
+#[test]
 fn helper_paths_in_any_word_are_write_denied() {
     // Nothing here exists yet: the sandbox could create any of it.
     let ws = Path::new("/w/repo");

@@ -92,6 +92,7 @@ class BenignFixture:
             "gitlink_repo": self.gitlink_repo,
             "org": self.org,
             "org_app": self.org / "app-portal",
+            "org_wt": self.org.parent / "app-portal-fix",
         }[name]
 
 
@@ -116,7 +117,7 @@ def _write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
-_NODE_PACKAGES = {"vitest": "3.2.4", "wrangler": "4.20.0"}
+_NODE_PACKAGES = {"vite": "7.1.5", "vitest": "3.2.4", "wrangler": "4.20.0"}
 
 
 def _node_toolchain(workspace: Path) -> None:
@@ -125,7 +126,8 @@ def _node_toolchain(workspace: Path) -> None:
         f"node_modules/{name}": {"version": version, "integrity": "sha512-fixture"}
         for name, version in _NODE_PACKAGES.items()
     }
-    _write(workspace / "package.json", json.dumps({"private": True, "devDependencies": dependencies}) + "\n")
+    manifest = {"private": True, "scripts": {"build": "vite build", "test": "vitest run"}, "devDependencies": dependencies}
+    _write(workspace / "package.json", json.dumps(manifest) + "\n")
     _write(workspace / "package-lock.json", json.dumps({"lockfileVersion": 3, "packages": locked}) + "\n")
     _write(workspace / "tests" / "sample.test.ts", "export const sample = 1;\n")
     for name, version in _NODE_PACKAGES.items():
@@ -198,6 +200,11 @@ def build_fixture(root: Path) -> BenignFixture:
     _git(parent, "worktree", "add", "--quiet", "-b", "feature", str(worktree), home=home)
     _node_toolchain(worktree)
     _write(worktree / "test_calc.py", "assert 1 + 1 == 2\nprint('ok')\n")
+    _write(worktree / "scripts" / "rebuild.sh", "#!/bin/sh\necho rebuilt\n")
+    # Worktree package borrowing the canonical checkout's installed node_modules through a symlink.
+    _node_toolchain(parent / "dashboard")
+    _write(worktree / "dashboard" / "package.json", (parent / "dashboard" / "package.json").read_text())
+    (worktree / "dashboard" / "node_modules").symlink_to(parent / "dashboard" / "node_modules")
 
     # Untracked child repository nested inside the parent working tree.
     nested.mkdir(parents=True)

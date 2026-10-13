@@ -9,6 +9,9 @@
 use crate::cloud_scrub_shell::{shell_tokens, ShellToken};
 use guard_contracts::PreToolResultV1;
 
+#[path = "env_prefix_search_path.rs"]
+mod search_path;
+
 const MAX_PROJECTED_CHARS: usize = 32_768;
 
 /// Command separators after which a new simple command starts.
@@ -177,6 +180,7 @@ fn strip_prefixes(
     mut setting: Option<&mut Option<String>>,
 ) -> Option<usize> {
     let mut stripped = false;
+    let mut required = Vec::new();
     while index < tokens.len() && !tokens[index].is_control {
         let token = &tokens[index];
         if let Some((name, value)) = shell_assignment(chars, token) {
@@ -184,14 +188,18 @@ fn strip_prefixes(
                 return None;
             }
             if !inert_assignment(name, value) {
-                let first = setting
-                    .as_deref_mut()
-                    .filter(|_| reviewable_assignment(name))?;
-                first.get_or_insert_with(|| name.to_owned());
+                search_path::review(setting.as_deref_mut(), &mut required, name, value)?;
             }
         } else if token.value == "env" || token.value == "/usr/bin/env" {
             removed[index] = true;
-            index = strip_env_options(tokens, chars, index + 1, removed, setting.as_deref_mut())?;
+            index = strip_env_options(
+                tokens,
+                chars,
+                index + 1,
+                removed,
+                setting.as_deref_mut(),
+                &mut required,
+            )?;
             stripped = true;
             continue;
         } else {
@@ -209,6 +217,9 @@ fn strip_prefixes(
     // Guard's own launchers prove their exact invocation, environment
     // included; a prefix in front of them is never projected away.
     if stripped && guard_launcher(&tokens[index].value) {
+        return None;
+    }
+    if !required.is_empty() && !search_path::admits(&required, &tokens[index].value) {
         return None;
     }
     Some(index)
@@ -230,6 +241,7 @@ fn strip_env_options(
     mut index: usize,
     removed: &mut [bool],
     mut setting: Option<&mut Option<String>>,
+    required: &mut Vec<&'static [&'static str]>,
 ) -> Option<usize> {
     while index < tokens.len() && !tokens[index].is_control {
         let token = &tokens[index];
@@ -263,10 +275,7 @@ fn strip_env_options(
             return None;
         } else if let Some((name, assigned)) = assignment(token) {
             if !inert_assignment(name, assigned) {
-                let first = setting
-                    .as_deref_mut()
-                    .filter(|_| reviewable_assignment(name))?;
-                first.get_or_insert_with(|| name.to_owned());
+                search_path::review(setting.as_deref_mut(), required, name, assigned)?;
             }
         } else {
             break;
@@ -380,11 +389,7 @@ fn reviewable_assignment(name: &str) -> bool {
         && !CREDENTIAL_MARKERS
             .iter()
             .any(|marker| upper.contains(marker))
-        && !code_loading_name(&upper)
-}
-
-fn code_loading_name(upper: &str) -> bool {
-    crate::command_compatibility::code_or_redirect_environment_name(upper)
+        && !crate::command_compatibility::code_or_redirect_environment_name(&upper)
 }
 
 /// The first leading setting of any simple command that can load other code,
@@ -419,7 +424,9 @@ pub(super) fn code_loading_setting(command: &str) -> Option<String> {
         };
         if name.len() <= MAX_SETTING_CHARS
             && assignment_name_shape(name)
-            && code_loading_name(&name.to_ascii_uppercase())
+            && crate::command_compatibility::code_or_redirect_environment_name(
+                &name.to_ascii_uppercase(),
+            )
         {
             return Some(name.to_owned());
         }

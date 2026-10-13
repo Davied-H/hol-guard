@@ -6,7 +6,9 @@ use std::fs;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 
-const MAX_CONFIG_BYTES: u64 = 64 * 1024;
+/// Long-lived repositories collect large `branch.*` sections; the bound only
+/// keeps a pathological file from stalling the hook.
+const MAX_CONFIG_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_DENIALS: usize = 64;
 const MAX_GLOBAL_FILES: usize = 32;
 const MAX_INCLUDE_DEPTH: usize = 4;
@@ -134,7 +136,7 @@ fn write_denials_from(
                 }
                 deny_linked(&mut denials, path, workspace)?;
             } else if section != "branch" && section != "user" && !names_data(&section, &key) {
-                helper_word_denials(&mut denials, value, base, home, workspace)?;
+                helper_word_denials(&mut denials, &unescape(value)?, base, home, workspace)?;
             }
         }
     }
@@ -339,7 +341,7 @@ fn helper_denials(
             }
             candidates.push(inside(root, root, value)?);
         } else if section != "branch" && section != "user" && !names_data(section, key) {
-            helper_word_denials(&mut denials, value, root, home, workspace)?;
+            helper_word_denials(&mut denials, &unescape(value)?, root, home, workspace)?;
         }
         for path in candidates {
             // An unbounded list, or a path that is or holds the workspace,
@@ -348,6 +350,25 @@ fn helper_denials(
         }
     }
     Some(denials)
+}
+
+/// A value with Git's `\"` escapes decoded, as Git hands it to the shell.
+/// `None` for any other escape or a trailing continuation, which this
+/// line-based reader does not decode.
+fn unescape(value: &str) -> Option<String> {
+    let mut result = String::with_capacity(value.len());
+    let mut characters = value.chars();
+    while let Some(character) = characters.next() {
+        if character == '\\' {
+            if characters.next()? != '"' {
+                return None;
+            }
+            result.push('"');
+        } else {
+            result.push(character);
+        }
+    }
+    Some(result)
 }
 
 /// Denies each workspace path a helper value could run or hand to a shell.

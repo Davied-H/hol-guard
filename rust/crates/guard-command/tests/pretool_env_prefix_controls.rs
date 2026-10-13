@@ -67,6 +67,17 @@ fn a_reviewable_setting_before_an_unmodeled_script_reaches_ordinary_review() {
         &root,
         &format!("NODE_PATH={} node scripts/report.mjs", modules.display()),
     );
+    assert_eq!(
+        (result.minimum_action.as_str(), result.reason_code.as_str()),
+        ("review", "native_command_review_required"),
+        "{}",
+        result.reason
+    );
+
+    let result = evaluate(
+        &root,
+        &format!("NODE_PATH={} gh api user", modules.display()),
+    );
     assert_eq!(result.minimum_action, "block", "{}", result.reason);
     assert!(
         result

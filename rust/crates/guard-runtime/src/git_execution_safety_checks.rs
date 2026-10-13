@@ -309,15 +309,24 @@ impl Context<'_> {
             return false;
         };
         let prober = self.prober(&repository);
-        let echoes = |arguments: &[&str]| {
+        let output = |arguments: &[&str]| {
             prober
                 .run(arguments)
                 .filter(ProbeOutput::success)
-                .and_then(|output| output.text().map(|text| text.trim() == branch))
-                .unwrap_or(false)
+                .and_then(|output| output.text().map(|text| text.trim().to_owned()))
         };
-        if !echoes(&["check-ref-format", "--branch", branch])
-            || !echoes(&["symbolic-ref", "--quiet", "--short", "HEAD"])
+        // `git push origin HEAD` pushes the checked-out branch to the same
+        // name, so it is the same push as naming that branch.
+        let Some(current) = output(&["symbolic-ref", "--quiet", "--short", "HEAD"]) else {
+            return false;
+        };
+        let branch = if branch == "HEAD" {
+            current.as_str()
+        } else {
+            branch
+        };
+        if current != branch
+            || output(&["check-ref-format", "--branch", branch]).as_deref() != Some(branch)
         {
             return false;
         }

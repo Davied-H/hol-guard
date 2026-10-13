@@ -258,6 +258,9 @@ fn push_requires_a_stable_account_and_a_checked_out_branch() {
     assert!(!crate::git_execution_safety_checks::decide(&request).allowed);
     request.branch = Some("-main".to_owned());
     assert!(!crate::git_execution_safety_checks::decide(&request).allowed);
+    // `HEAD` names the checked-out branch.
+    request.branch = Some("HEAD".to_owned());
+    assert!(crate::git_execution_safety_checks::decide(&request).allowed);
     fixture.config("remote.origin.pushurl", "https://example.invalid/x.git");
     assert!(!fixture.allowed(Check::PushOrigin));
 }

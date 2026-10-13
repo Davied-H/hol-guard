@@ -285,6 +285,9 @@ pub(super) fn glob_can_select_sensitive_path(value: &str) -> bool {
 enum SearchValueRole {
     Pattern,
     Glob,
+    /// ripgrep `-g`/`--glob`: a leading `!` turns the glob into an exclusion,
+    /// which only removes files from the walk and never selects new ones.
+    RgGlob,
     Path,
     TypeGlob,
     DirectoryAction,
@@ -428,7 +431,7 @@ fn safe_rg_arguments_inner(
                 &[
                     ('e', SearchValueRole::Pattern),
                     ('f', SearchValueRole::Path),
-                    ('g', SearchValueRole::Glob),
+                    ('g', SearchValueRole::RgGlob),
                     ('A', SearchValueRole::Other),
                     ('B', SearchValueRole::Other),
                     ('C', SearchValueRole::Other),
