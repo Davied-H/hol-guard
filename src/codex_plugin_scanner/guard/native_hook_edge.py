@@ -138,7 +138,7 @@ def _valid_pre_tool_result_fields(result: dict[str, Any]) -> bool:
 
 
 def _contained_removal(result: dict[str, Any], extensions: dict[str, object]) -> bool:
-    """Whether every uncertain match is a plain removal Rust sent to the workspace sandbox."""
+    """Whether every uncertain match is a removal or in-place edit Rust sent to the sandbox."""
     observations = cast(list[dict[str, object]], extensions["observations"])
     uncertain = [item for item in observations if item["uncertainty_reasons"]]
     return (

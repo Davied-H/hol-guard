@@ -1,13 +1,15 @@
-//! File removal inside the workspace sandbox.
+//! File removal and in-place edits inside the workspace sandbox.
 //!
 //! The destructive-shell rule matches every `rm`, `dd`, `truncate` and in-place
 //! edit, and marks each match uncertain because the rule alone cannot prove a
 //! target is safe to lose. A plain `rm` or `rmdir` in the workspace is ordinary
-//! cleanup: the sandbox keeps it off the home directory and `.git`, so this
-//! module accepts that uncertainty for those two programs only. A recursive
-//! removal could still take uncommitted work with it, so each of its targets
-//! must be missing or ignored by Git, and it must run before any other command
-//! could create or move what it names.
+//! cleanup, and `sed -i` is the same file edit an agent's own edit tool makes:
+//! the sandbox keeps both off the network, credentials, the home directory and
+//! `.git`, so this module accepts that uncertainty for those programs only.
+//! A sed script cannot reach past the sandbox either, so it is not parsed. A
+//! recursive removal could still take uncommitted work with it, so each of its
+//! targets must be missing or ignored by Git, and it must run before any other
+//! command could create or move what it names.
 use super::super::git_session_probe::Probe;
 use super::PathContext;
 use crate::CanonicalCommandV1;
@@ -28,16 +30,20 @@ fn segment_indexes(observation: &NativeCommandObservationV1) -> impl Iterator<It
 }
 
 /// The operands of a plain `rm` or `rmdir` segment and whether it recurses,
-/// or `None` for any other program, option or shell expansion.
+/// no operands for an in-place `sed` edit, or `None` for any other program,
+/// option or shell expansion.
 fn removal(model: &CanonicalCommandV1, index: usize) -> Option<(bool, Vec<&str>)> {
     let segment = model.segments.get(index)?;
     let program = segment.executable.as_deref()?;
-    if !matches!(program, "rm" | "rmdir")
+    if !matches!(program, "rm" | "rmdir" | "sed")
         || segment.path_overridden
         || !segment.wrapper_chain.is_empty()
         || !segment.environment_names.is_empty()
     {
         return None;
+    }
+    if program == "sed" {
+        return in_place_edit(&segment.arguments).then(|| (false, Vec::new()));
     }
     let (mut recursive, mut options, mut operands) = (false, true, Vec::new());
     for argument in &segment.arguments {
@@ -66,7 +72,61 @@ fn removal(model: &CanonicalCommandV1, index: usize) -> Option<(bool, Vec<&str>)
     (program == "rm" || !recursive).then_some((recursive, operands))
 }
 
-/// Whether `observation` is the destructive-shell match on plain removals.
+/// Whether `sed` runs with `-i` (GNU or BSD spelling) and only the options
+/// both document. The script and file operands are left as they are.
+fn in_place_edit(arguments: &[String]) -> bool {
+    let mut in_place = false;
+    let mut words = arguments.iter();
+    while let Some(argument) = words.next() {
+        let argument = argument.as_str();
+        if argument == "--" {
+            break;
+        }
+        if let Some(long) = argument.strip_prefix("--") {
+            let (name, value) = long
+                .split_once('=')
+                .map_or((long, None), |(name, value)| (name, Some(value)));
+            match name {
+                "in-place" => in_place = true,
+                "expression" | "file" | "line-length" => {
+                    if value.is_none() && words.next().is_none() {
+                        return false;
+                    }
+                }
+                "regexp-extended" | "quiet" | "silent" | "separate" | "null-data" | "posix"
+                | "sandbox" | "unbuffered" | "debug" | "zero-terminated"
+                    if value.is_none() => {}
+                _ => return false,
+            }
+            continue;
+        }
+        let Some(flags) = argument.strip_prefix('-').filter(|flags| !flags.is_empty()) else {
+            continue;
+        };
+        for (position, flag) in flags.char_indices() {
+            match flag {
+                // The rest of the word is a backup suffix.
+                'i' => {
+                    in_place = true;
+                    break;
+                }
+                // The rest of the word, or the next word, is the value.
+                'e' | 'f' | 'l' => {
+                    if position + 1 == flags.len() && words.next().is_none() {
+                        return false;
+                    }
+                    break;
+                }
+                'E' | 'r' | 'n' | 's' | 'u' | 'z' => {}
+                _ => return false,
+            }
+        }
+    }
+    in_place
+}
+
+/// Whether `observation` is the destructive-shell match on plain removals and
+/// in-place edits.
 pub(super) fn accepted(
     observation: &NativeCommandObservationV1,
     model: &CanonicalCommandV1,

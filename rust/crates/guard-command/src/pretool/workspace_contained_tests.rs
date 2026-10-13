@@ -428,6 +428,10 @@ fn recursive_removal_runs_in_the_sandbox_only_for_ignored_or_missing_targets() {
         "rm -rf coverage",
         "rm src/a.ts",
         "rm -f src/a.ts dist/out.js",
+        "sed -i 's/1/2/' src/a.ts",
+        "sed -i '' -e 's/1/2/g' src/a.ts",
+        "sed -E -i.bak 's/(1)/2/' src/a.ts",
+        "sed --in-place=.orig -n 'p' src/a.ts && rm -f src/a.ts.orig",
     ] {
         let got = reason(command);
         if host() {
@@ -450,6 +454,8 @@ fn recursive_removal_runs_in_the_sandbox_only_for_ignored_or_missing_targets() {
         "truncate -s 0 src/a.ts",
         "rm --no-preserve-root -rf dist",
         "GLOBIGNORE=x rm -rf dist",
+        "sed --follow-symlinks -i 's/1/2/' src/a.ts",
+        "LC_ALL=C sed -i 's/1/2/' src/a.ts",
     ] {
         assert_ne!(reason(command), CONTAINED, "{command}");
     }

@@ -43,9 +43,9 @@ fn binding_uncertainty(binding: Option<&Value>, expected: usize) -> bool {
         if count.as_u64() == u64::try_from(expected).ok())
 }
 
-/// The destructive-shell match on a plain `rm` or `rmdir`. The rule marks
-/// every match uncertain; the Rust classifier admitted it to the workspace
-/// sandbox only after proving the removal cannot take uncommitted work.
+/// The destructive-shell match on a plain `rm`, `rmdir` or `sed -i`. The rule
+/// marks every match uncertain; the Rust classifier admitted it to the
+/// workspace sandbox only after proving a removal cannot take uncommitted work.
 fn workspace_removal(item: &Value) -> bool {
     matches!(item, Value::Object(item)
         if item.get("rule_id").and_then(Value::as_str)

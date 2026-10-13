@@ -11,7 +11,9 @@
     "pytest-quiet@codex": "native_command_review_required",
     "pytest-quiet@cursor": "native_command_review_required",
     "pytest-quiet@omp": "native_command_review_required",
-    "pytest-quiet@zcode": "native_command_review_required"
+    "pytest-quiet@zcode": "native_command_review_required",
+    "session-rm-workspace-file@cursor": "native_command_review_required",
+    "session-sed-inplace-workspace-file@cursor": "native_command_review_required"
   },
   "cases": [
     {
@@ -3363,6 +3365,23 @@
       "expect": "allow"
     },
     {
+      "id": "session-sed-inplace-workspace-file",
+      "fix_area": "shell",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "sed -i.bak 's/one/two/' ${WORKTREE}/src/one.ts"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
       "id": "session-sed-n-echo-rg-count",
       "fix_area": "shell",
       "harnesses": [
@@ -3885,7 +3904,9 @@
     "pytest-quiet@codex": "unassigned",
     "pytest-quiet@cursor": "unassigned",
     "pytest-quiet@omp": "unassigned",
-    "pytest-quiet@zcode": "unassigned"
+    "pytest-quiet@zcode": "unassigned",
+    "session-rm-workspace-file@cursor": "unassigned",
+    "session-sed-inplace-workspace-file@cursor": "unassigned"
   },
   "pending_always": {}
 }
