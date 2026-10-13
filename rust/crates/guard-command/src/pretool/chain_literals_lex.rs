@@ -139,11 +139,14 @@ pub(super) fn identifier(name: &str) -> bool {
 /// Whether `text` names a variable `target` accepts as a bare word or as the
 /// operand of an attached flag such as `-vNAME`, the forms in which a builtin
 /// takes a variable to set. `$NAME` and `${NAME}` are uses, not targets.
+/// Quotes and escapes are removed first, as the shell removes them before
+/// the builtin sees `O"UT"`, `'O'UT` or `O\UT` as `OUT`.
 pub(super) fn names_variable(text: &str, target: impl Fn(&str) -> bool) -> bool {
     let mut previous = ' ';
     let mut opener = ' ';
     let mut token = String::new();
-    for c in text.chars().chain(std::iter::once(' ')) {
+    let dequoted = text.chars().filter(|c| !matches!(c, '\'' | '"' | '\\'));
+    for c in dequoted.chain(std::iter::once(' ')) {
         if c == '_' || c.is_ascii_alphanumeric() {
             if token.is_empty() {
                 opener = previous;

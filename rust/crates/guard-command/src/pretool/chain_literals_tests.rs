@@ -181,6 +181,23 @@ fn a_command_naming_a_bound_variable_refuses_the_chain() {
 }
 
 #[test]
+fn quoted_or_escaped_names_still_count() {
+    // The shell removes the quotes, so the builtin receives `OUT` or `IFS`.
+    for command in [
+        "OUT=build; zformat -f O\"UT\" /Users/me/.ssh; rm -rf $OUT",
+        "OUT=build; zformat -f \"O\"\"UT\" /Users/me/.ssh; rm -rf $OUT",
+        "OUT=build; zstyle -s :a b O\\UT; rm -rf $OUT",
+        "OUT=build; zformat -f 'O'UT /Users/me/.ssh; rm -rf $OUT",
+        "OUT=build; compgen -V O\"UT\" x; rm -rf $OUT",
+        "OUT=build; getln -v'OUT'; rm -rf $OUT",
+        "I\"FS\"=,; F=a,b; rm -f $F",
+        "F=a,b; zformat -f 'IFS' ,; rm -f $F",
+    ] {
+        assert_eq!(substituted(command), None, "{command}");
+    }
+}
+
+#[test]
 fn text_the_pass_cannot_see_ends_substitution() {
     // An unresolved expansion or a glob could expand to a bound name.
     assert_eq!(
