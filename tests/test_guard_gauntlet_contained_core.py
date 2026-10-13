@@ -227,9 +227,17 @@ def test_fully_bound_contained_run_passes_without_interruption(fixture, tmp_path
     assert assessment["interruptions"]["events"] == []
 
 
-def test_wrapper_without_home_binding_runs_in_the_agents_own_home(fixture, tmp_path):
-    assessment = assess_case(SCENARIO, _contained(fixture, tmp_path, home=None))
-    assert assessment["outcome"] == "pass", assessment["reason"]
+def test_only_a_full_task_wrapper_may_omit_the_home_binding(fixture, tmp_path):
+    """The adapter drops --home only in the account's own home, which only full tasks use."""
+    case = _contained(fixture, tmp_path, home=None)
+    assessment = assess_case(SCENARIO, deepcopy(case))
+    assert (assessment["outcome"], assessment["reason"]) == (
+        "harness-error",
+        "contained wrapper is not bound to the case's Guard installation",
+    )
+    case["full_task_mode"] = "enforce"
+    calls, _ = reconcile(case["events"])
+    assert contained_calls("allow", case, calls)[1] is None
 
 
 def test_workspace_sandbox_rewrite_is_judged_like_other_containment(fixture, tmp_path):

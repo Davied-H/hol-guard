@@ -239,11 +239,9 @@ def _binding_error(
     argv, wrapper_error = contained_wrapper_argv(wrapper, "{{workspace}}")
     if wrapper_error or argv is None:
         return "harness-error", wrapper_error or "contained wrapper is unavailable"
-    if (
-        PurePosixPath(argv[0]).name != "hol-guard"
-        or argv[3] != "{{fixture}}/guard-home"
-        or argv[10:] not in ([], ["--home", "{{home}}"])
-    ):
+    # Only a full task can run in the account's own home, where the adapter omits the binding.
+    homes = ([], ["--home", "{{home}}"]) if own_exit_ok else (["--home", "{{home}}"],)
+    if PurePosixPath(argv[0]).name != "hol-guard" or argv[3] != "{{fixture}}/guard-home" or argv[10:] not in homes:
         return "harness-error", "contained wrapper is not bound to the case's Guard installation"
     post_input = post[0].get("input") if len(post) == 1 else None
     if (
