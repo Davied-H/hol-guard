@@ -15,19 +15,12 @@ const CONTROL_WORDS: &[&str] = &[
     "if", "in", "select", "then", "time", "until", "while",
 ];
 
-/// zsh ties these lowercase names to `PATH` and friends or to shell state, so
-/// binding one changes how the body runs.
+/// zsh specials outside the PATH family that `valid_identifier` rejects.
 const SHELL_SPECIAL_NAMES: &[&str] = &[
-    "_",
     "argv",
-    "cdpath",
     "fignore",
-    "fpath",
     "histchars",
     "mailpath",
-    "manpath",
-    "module_path",
-    "path",
     "pipestatus",
     "psvar",
     "signals",
@@ -114,11 +107,22 @@ fn next_word(text: &str) -> Option<(&str, &str)> {
 }
 
 fn valid_identifier(name: &str) -> bool {
+    // Loop variables also modify the environment seen by commands in the
+    // body. Rebinding PATH, HOME, IFS, Git configuration variables, or other
+    // exported uppercase names can change which commands actually execute.
+    // Only ordinary lowercase identifiers are admitted to this proof.
+    // Exclude a leading underscore because '_' itself is shell-special.
+    // zsh additionally ties these lowercase arrays to PATH, CDPATH, FPATH,
+    // MANPATH and MODULE_PATH, so they can change command lookup.
+    if matches!(
+        name,
+        "path" | "cdpath" | "fpath" | "manpath" | "module_path"
+    ) {
+        return false;
+    }
     let mut chars = name.chars();
-    chars
-        .next()
-        .is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
-        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+    chars.next().is_some_and(|first| first.is_ascii_lowercase())
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
 }
 
 fn safe_value(value: &str) -> bool {
@@ -455,7 +459,8 @@ fn substitute(item: &str, word: &str) -> Option<String> {
 
 /// The redirect text after `done`, restricted to plain redirections.
 fn redirect_tail(tail: &str) -> Option<String> {
-    let tail = tail.trim();
+    // Newlines after done start new commands and must not be trimmed away.
+    let tail = tail.trim_start_matches([' ', '\t']).trim_end();
     if tail.is_empty() {
         return Some(String::new());
     }
@@ -480,13 +485,9 @@ fn redirect_tail(tail: &str) -> Option<String> {
     Some(tail.to_owned())
 }
 
-/// A loop variable must not be one the shell or child processes read. An
-/// uppercase name such as `PATH`, `HOME`, `IFS` or `LD_PRELOAD` can be an
-/// exported variable, and `*_proxy` names are lowercase environment variables,
-/// so binding either changes what the unrolled body would run.
+/// `valid_identifier` already limits loop variables to lowercase names. The
+/// `*_proxy` names are lowercase environment variables, and the zsh specials
+/// change shell state, so binding either changes what the body would run.
 fn ordinary_loop_name(name: &str) -> bool {
-    name.bytes()
-        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
-        && !name.ends_with("_proxy")
-        && !SHELL_SPECIAL_NAMES.contains(&name)
+    !name.ends_with("_proxy") && !SHELL_SPECIAL_NAMES.contains(&name)
 }
