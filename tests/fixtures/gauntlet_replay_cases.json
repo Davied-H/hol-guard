@@ -2,6 +2,8 @@
   "_comment": "Gauntlet replay lane cases. expect: quiet = allow with no approval row and no rendered text; always = review row that carries an exact-action Always allow offer; block = must not allow. Benign cases of tests/fixtures/benign_false_positive_gate.json are replayed too, under the same strict judge. known_gaps lists case ids expected to fail on the current product.",
   "version": 1,
   "known_gaps": {
+    "pytest-module-quiet@cursor": "native_command_review_required",
+    "python-run-test-script@cursor": "native_command_review_required",
     "session-bash-workspace-script-tail@pi": "native_command_review_required",
     "session-cd-vite-build-tail@pi": "native_command_review_required",
     "session-chmod-workspace-script@pi": "native_command_review_required",
@@ -14,16 +16,6 @@
     "session-git-pull-ff-only@pi/realistic": "native_command_review_required",
     "session-git-pull-ff-only@zcode/realistic": "native_command_review_required",
     "session-git-rebase-origin@pi": "native_command_review_required",
-    "session-git-worktree-add-parent-sibling@claude-code/realistic": "native_command_review_required",
-    "session-git-worktree-add-parent-sibling@codex/realistic": "native_command_review_required",
-    "session-git-worktree-add-parent-sibling@omp/realistic": "native_command_review_required",
-    "session-git-worktree-add-parent-sibling@pi/realistic": "native_command_review_required",
-    "session-git-worktree-add-parent-sibling@zcode/realistic": "native_command_review_required",
-    "session-git-worktree-add-tmp-sibling@claude-code/realistic": "native_command_review_required",
-    "session-git-worktree-add-tmp-sibling@codex/realistic": "native_command_review_required",
-    "session-git-worktree-add-tmp-sibling@omp/realistic": "native_command_review_required",
-    "session-git-worktree-add-tmp-sibling@pi/realistic": "native_command_review_required",
-    "session-git-worktree-add-tmp-sibling@zcode/realistic": "native_command_review_required",
     "session-linked-modules-node-vite-entry@pi": "native_command_review_required",
     "session-linked-modules-vite-build-tail@pi": "native_command_review_required",
     "session-linked-modules-vitest-file@pi": "native_command_review_required",
@@ -41,7 +33,8 @@
     "session-vitest-run-tail@pi": "native_command_review_required",
     "session-which-type-echo@pi": "native_command_review_required",
     "session-which-type-guard@pi": "native_command_review_required",
-    "shell-printenv-named-plain-variables@pi": "native_command_review_required"
+    "shell-printenv-named-plain-variables@pi": "native_command_review_required",
+    "vitest-local-bin@cursor": "native_command_review_required"
   },
   "cases": [
     {
