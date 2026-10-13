@@ -6,8 +6,11 @@
 use serde_json::{json, Map, Value};
 
 const GIT_RULES: [&str; 3] = ["command.git.diff", "command.git.log", "command.git.show"];
-const NODE_PERMISSION_CODES: [&str; 5] = [
+/// Bun inline evaluation reports package protection because Bun is a package
+/// manager image; pretool admits that only for an exact `bun -e/-p` argv.
+const NODE_PERMISSION_CODES: [&str; 6] = [
     "native_workspace_containment_required",
+    "native_node_eval_readonly_containment_required",
     "native_vitest_readonly_containment_required",
     "native_package_test_readonly_containment_required",
     "native_node_tool_readonly_containment_required",

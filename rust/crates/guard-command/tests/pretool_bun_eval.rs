@@ -288,3 +288,95 @@ fn a_repository_that_contains_the_session_home_is_not_proven() {
         );
     }
 }
+
+const NODE_EVAL: &str = "native_node_eval_readonly_containment_required";
+
+/// File reads, and the writes, requests and spawns the read-only boundary
+/// denies at run time, all leave the command contained rather than allowed.
+const CONTAINED: &[&str] = &[
+    "bun -e \"const fs = require('fs'); console.log(JSON.parse(fs.readFileSync('package.json', 'utf8')).name)\"",
+    "bun --eval \"console.log(require('fs').readdirSync('.'))\"",
+    "bun -p \"require('fs').existsSync('bun.lock')\"",
+    "bun --print \"require('fs').statSync('package.json').size\"",
+    "bun -e \"await Bun.write('out.txt', 'x')\"",
+    "bun -e \"await fetch('https://example.com')\"",
+    "bun -e \"Bun.spawn(['sh', '-c', 'id'])\"",
+];
+
+#[test]
+fn bun_inline_eval_shares_the_node_eval_boundary() {
+    let home = home();
+    let plain = environment(&home, &home.join("bin"), &["HOME", "PATH"]);
+    for harness in ["omp", "zcode", "claude-code", "codex"] {
+        for command in CONTAINED {
+            let result = classify(&home, "project", Some(&plain), harness, command);
+            assert_eq!(result.decision, "deny", "{harness}: {command}");
+            if cfg!(target_os = "macos") {
+                assert_eq!(result.minimum_action, "sandbox-required", "{command}");
+                assert_eq!(result.reason_code, NODE_EVAL, "{command}");
+            }
+        }
+    }
+    let read = CONTAINED[0];
+    for command in [
+        format!("BUN_OPTIONS=--preload=./x.js {read}"),
+        format!("{read} > out.txt"),
+        format!("{read} && rm -rf build"),
+        format!("sudo {read}"),
+        read.replacen("bun -e", "bun --smol -e", 1),
+        read.replacen("bun -e", "bun run -e", 1),
+        read.replacen("bun -e", "bunx -e", 1),
+        format!("{read} extra"),
+    ] {
+        let result = classify(&home, "project", Some(&plain), "zcode", &command);
+        assert_ne!(result.reason_code, NODE_EVAL, "{command}");
+        assert_ne!(result.decision, "allow", "{command}");
+    }
+}
+
+/// With the packaged extension program Bun reports the Node package
+/// permission. Only an exact `bun -e/-p` keeps the evaluation boundary.
+#[test]
+fn bun_package_permission_is_accepted_only_for_exact_inline_eval() {
+    use guard_command::native_command_controls::CompiledNativeCommandControls;
+    use guard_command::native_command_program::packaged_command_program;
+    let program = packaged_command_program().unwrap();
+    let mut binding: guard_contracts::NativeCommandControlBindingV1 =
+        serde_json::from_value(json!({
+            "schema": "guard.native-command-control-binding.v1",
+            "program_digest": program.program_digest, "catalog_digest": program.catalog_digest,
+            "trust_digest": program.trust_digest, "health": "protected",
+            "revision": 1, "managed_revision": 0, "effective_digest": "", "layers": []
+        }))
+        .unwrap();
+    binding.effective_digest = binding.compute_effective_digest().unwrap();
+    let controls = CompiledNativeCommandControls::new(&binding).unwrap();
+    let home = home();
+    let cwd = home.join("project");
+    let evaluate = |command: &str| {
+        evaluate_pre_tool_envelope_with_execution_context(
+            "zcode",
+            "PreToolUse",
+            &json!({"tool_name": "bash", "tool_input": {"command": command}}),
+            Some(&controls),
+            None,
+            PathContext {
+                home_dir: home.to_str(),
+                cwd: cwd.to_str(),
+                ..PathContext::default()
+            },
+            None,
+        )
+    };
+    let read = CONTAINED[0];
+    let result = evaluate(read);
+    assert_ne!(result.decision, "allow");
+    if cfg!(target_os = "macos") {
+        assert_eq!(result.reason_code, NODE_EVAL);
+        assert_eq!(result.minimum_action, "sandbox-required");
+    }
+    let wrapped = format!("timeout 30 {read}");
+    let result = evaluate(&wrapped);
+    assert_ne!(result.reason_code, NODE_EVAL, "{wrapped}");
+    assert_ne!(result.decision, "allow", "{wrapped}");
+}

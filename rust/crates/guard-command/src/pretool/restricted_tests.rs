@@ -186,6 +186,45 @@ fn workspace_relative(directory: &str) -> bool {
             .all(|part| !part.is_empty() && part != "..")
 }
 
+fn bun_eval_flag(flag: &str) -> bool {
+    matches!(flag, "-e" | "--eval" | "-p" | "--print")
+}
+
+/// Whether `reason` may carry the Node package-protection permission. Bun is a
+/// package manager image, so its inline evaluation always reports it; the
+/// evaluation still runs in the Node read-only boundary.
+pub(super) fn package_permission_contained(
+    reason: Option<&str>,
+    model: Option<&CanonicalCommandV1>,
+) -> bool {
+    match reason {
+        Some(
+            "native_vitest_readonly_containment_required"
+            | "native_package_test_readonly_containment_required"
+            | "native_node_tool_readonly_containment_required"
+            | "native_node_build_output_containment_required",
+        ) => true,
+        Some("native_node_eval_readonly_containment_required") => {
+            model.is_some_and(bun_inline_eval)
+        }
+        _ => false,
+    }
+}
+
+/// The whole command is `bun -e|--eval|-p|--print <program>`: an evaluation
+/// with no package operation, environment assignment or wrapper.
+pub(super) fn bun_inline_eval(model: &CanonicalCommandV1) -> bool {
+    model.confidence == "exact"
+        && !model.path_overridden
+        && model.wrapper_chain.is_empty()
+        && matches!(model.segments.as_slice(), [segment]
+            if segment.environment_names.is_empty()
+                && segment.wrapper_chain.is_empty()
+                && !segment.path_overridden
+                && segment.executable.as_deref().map(super::executable_basename) == Some("bun")
+                && matches!(segment.arguments.as_slice(), [flag, _] if bun_eval_flag(flag)))
+}
+
 pub(super) fn readonly_test_reason(model: &CanonicalCommandV1) -> Option<&'static str> {
     if requires_pytest_containment(model) {
         return Some("native_pytest_readonly_containment_required");
@@ -245,6 +284,10 @@ pub(super) fn readonly_test_reason(model: &CanonicalCommandV1) -> Option<&'stati
             return Some("native_python_eval_readonly_containment_required");
         }
         ("node" | "nodejs", [flag, _program]) if matches!(flag.as_str(), "-e" | "--eval") => {
+            return Some("native_node_eval_readonly_containment_required");
+        }
+        // Same evaluation boundary as Node; the sink approves the Bun image.
+        ("bun", [flag, _program]) if bun_eval_flag(flag) => {
             return Some("native_node_eval_readonly_containment_required");
         }
         (name, args) if tsx_test_script_args(name, args) => {

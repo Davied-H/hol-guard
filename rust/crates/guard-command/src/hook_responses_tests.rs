@@ -155,3 +155,42 @@ fn post_tool_policy_floor_warning_on_a_proven_allow_renders_no_text() {
         );
     }
 }
+
+#[test]
+fn bun_eval_package_permission_keeps_the_node_eval_receipt() {
+    let response = |reason_code: &str| {
+        obj(&json!({
+            "schema": "guard-pre-tool-result.v1",
+            "authority": "rust",
+            "decision": "deny",
+            "minimum_action": "sandbox-required",
+            "policy_action": "sandbox-required",
+            "reason_code": reason_code,
+            "reason": "protected",
+            "command_extensions": {
+                "binding": {"uncertainty_count": 0},
+                "evaluation_error": null,
+                "observations": [],
+                "permission_observations": [{
+                    "extension_id": "command.package.node",
+                    "permission_id": "command.package.node.permission.package-protection",
+                    "uncertainty_reasons": [],
+                }],
+            },
+        }))
+    };
+    let rendered = pre_tool(
+        "zcode",
+        &response("native_node_eval_readonly_containment_required"),
+    );
+    assert_eq!(
+        rendered.get("required_execution_profile"),
+        Some(&json!("node-eval-readonly-v1"))
+    );
+    // Python evaluation never runs a package-manager image.
+    let rendered = pre_tool(
+        "zcode",
+        &response("native_python_eval_readonly_containment_required"),
+    );
+    assert_eq!(rendered.get("required_execution_profile"), None);
+}
