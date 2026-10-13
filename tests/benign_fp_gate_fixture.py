@@ -225,6 +225,7 @@ def build_fixture(root: Path) -> BenignFixture:
     for directory in (home, guard_home):
         directory.mkdir(parents=True)
     _write(home / ".gitconfig", _LFS_GITCONFIG)
+    _write(home / ".rustup" / "settings.toml", 'version = "12"\ndefault_toolchain = "stable"\n')
     # Synthetic credential file so the negative controls have a real target.
     _write(home / ".agent" / "skills" / "x" / "SKILL.md", "---\nname: x\n---\nSynthetic home skill body.\n")
     _write(home / ".agent" / "artifacts" / "report.md", "# Report\nInert build report text.\n")
