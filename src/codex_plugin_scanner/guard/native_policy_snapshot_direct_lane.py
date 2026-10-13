@@ -184,6 +184,8 @@ class NativePolicySnapshotDirectLaneAck:
     _direct_lane_local_cli_revision: int | None = None
     # Set while the daemon drains direct-answer evidence from the resident.
     _direct_evidence_drain_enabled: bool = False
+    # The open ACK was published for a resident that queues evidence.
+    _direct_lane_evidence_bound: bool = False
 
     @property
     def _acked(self) -> bool:
@@ -198,7 +200,7 @@ class NativePolicySnapshotDirectLaneAck:
                 self._direct_lane_lease_expires_at_ms = 0
                 self._unlink_direct_lane_ack()
 
-    def _publish_direct_lane_ack(self, snapshot: Mapping[str, object]) -> None:
+    def _publish_direct_lane_ack(self, snapshot: Mapping[str, object], *, evidence_drain: bool = False) -> None:
         """Open the lane for the snapshot whose ACK was just committed."""
 
         generation = snapshot.get("generation")
@@ -208,7 +210,13 @@ class NativePolicySnapshotDirectLaneAck:
         with _ACK_LOCK:
             if not self._acked_value:
                 return
+            # The binding was compiled while the drain was up. Writing the ACK
+            # after the drain stopped would let the resident allow hooks whose
+            # evidence nobody records.
+            if evidence_drain and not self._direct_evidence_drain_enabled:
+                return
             self._direct_lane_ack_target = (generation, policy_digest)
+            self._direct_lane_evidence_bound = evidence_drain
             self._write_direct_lane_ack_locked()
 
     def _renew_direct_lane_ack(self) -> None:
@@ -219,6 +227,12 @@ class NativePolicySnapshotDirectLaneAck:
         if self._direct_lane_lease_expires_at_ms - _now_ms() > DIRECT_LANE_ACK_RENEW_REMAINING_MS:
             return
         with _ACK_LOCK:
+            if self._direct_lane_evidence_bound and not self._direct_evidence_drain_enabled:
+                self._direct_lane_ack_target = None
+                self._direct_lane_lease_expires_at_ms = 0
+                self._direct_lane_evidence_bound = False
+                self._unlink_direct_lane_ack()
+                return
             if self._acked_value and self._direct_lane_ack_target is not None:
                 self._write_direct_lane_ack_locked()
 
@@ -240,12 +254,14 @@ class NativePolicySnapshotDirectLaneAck:
         with _ACK_LOCK:
             self._direct_lane_ack_target = None
             self._direct_lane_lease_expires_at_ms = 0
+            self._direct_lane_evidence_bound = False
             self._unlink_direct_lane_ack()
 
     def enable_direct_evidence_drain(self, enabled: bool) -> None:
         """Advertise the evidence drain in the next binding, or stop direct hooks."""
 
-        self._direct_evidence_drain_enabled = enabled
+        with _ACK_LOCK:
+            self._direct_evidence_drain_enabled = enabled
         if not enabled:
             self._close_direct_lane_ack()
 

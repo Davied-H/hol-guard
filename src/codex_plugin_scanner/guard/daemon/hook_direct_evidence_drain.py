@@ -75,7 +75,7 @@ def record_direct_hook_evidence(host: _DrainHost, record: object) -> bool:
     return True
 
 
-def _decode_page(output: bytes | None) -> tuple[list[object], int] | None:
+def _decode_page(output: bytes | None) -> tuple[list[object], int, int | None] | None:
     if not output:
         return None
     try:
@@ -86,9 +86,12 @@ def _decode_page(output: bytes | None) -> tuple[list[object], int] | None:
         return None
     records = page.get("records")
     remaining = page.get("remaining")
+    through = page.get("through")
     if not isinstance(records, list) or isinstance(remaining, bool) or not isinstance(remaining, int):
         return None
-    return records, remaining
+    if through is not None and (isinstance(through, bool) or not isinstance(through, int) or through < 1):
+        return None
+    return records, remaining, through
 
 
 class DirectHookEvidenceDrain:
@@ -109,6 +112,7 @@ class DirectHookEvidenceDrain:
         self.recorded = 0
         self.rejected = 0
         self.failures = 0
+        self._ack_through: int | None = None
 
     def start(self) -> None:
         if self._thread is not None:
@@ -133,27 +137,35 @@ class DirectHookEvidenceDrain:
             page = self._fetch_page()
             if page is None:
                 return False
-            records, remaining = page
+            records, remaining, through = page
+            if records and through is None:
+                self.failures += 1
+                return False
             for record in records:
                 if record_direct_hook_evidence(self._host, record):
                     self.recorded += 1
                 else:
                     self.rejected += 1
+            if through is not None:
+                self._ack_through = through
             if remaining == 0 or not records:
                 return False
         return True
 
-    def _fetch_page(self) -> tuple[list[object], int] | None:
+    def _fetch_page(self) -> tuple[list[object], int, int | None] | None:
         from ..native_runtime import _isolated_environment
 
         transport = self._transport()
         if transport is None:
             return None
         executable, client = transport
+        request: dict[str, object] = {"guard_home": str(self._host.guard_home)}
+        if self._ack_through is not None:
+            request["ack_through"] = self._ack_through
         payload = json.dumps(
             {
                 "operation": "hook_direct_evidence_drain",
-                "request": {"guard_home": str(self._host.guard_home)},
+                "request": request,
             },
             separators=(",", ":"),
         ).encode("utf-8")
