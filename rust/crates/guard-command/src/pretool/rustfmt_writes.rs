@@ -141,8 +141,11 @@ fn declares_out_of_line_module(source: &str) -> bool {
         let name_end = rest
             .find(|character: char| !(identifier(character) || character == '#'))
             .unwrap_or(rest.len());
+        // Rust identifiers include Unicode XID_Start characters. If we cannot
+        // recognize a name after `mod`, fail closed instead of allowing a
+        // formatter to rewrite an unverified child module.
         if name_end == 0 {
-            return false;
+            return true;
         }
         match skip_trivia(source, name_start + name_end) {
             Some(next) => source[next..].starts_with(';'),
@@ -168,6 +171,7 @@ mod tests {
             "mod /* outer /* nested */ remaining */ child;",
             "#[path = \"../.github/workflows/check.rs\"] mod child /**/;",
             "mod /* unterminated",
+            "#[path = \"../.github/workflows/check.rs\"] mod ℘;",
 
         ] {
             assert!(declares_out_of_line_module(source), "{source}");
