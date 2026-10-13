@@ -25,7 +25,7 @@ pub(crate) const NETWORK_READ_REASON: &str = "native_exact_safe_network_read";
 const RESERVED_SUFFIXES: [&str; 4] = [".test", ".invalid", ".example", ".localhost"];
 
 /// Flags that change only presentation, failure handling or transport version.
-const PLAIN_FLAGS: [&str; 18] = [
+const PLAIN_FLAGS: [&str; 17] = [
     "--compressed",
     "--fail",
     "--fail-with-body",
@@ -37,7 +37,6 @@ const PLAIN_FLAGS: [&str; 18] = [
     "--include",
     "--ipv4",
     "--ipv6",
-    "--location",
     "--no-buffer",
     "--no-progress-meter",
     "--show-error",
@@ -46,8 +45,12 @@ const PLAIN_FLAGS: [&str; 18] = [
     "--verbose",
 ];
 
-/// Single-letter forms of [`PLAIN_FLAGS`] that may be clustered (`-fsSL`).
-const SHORT_FLAGS: &str = "fsSLiIvN46gG";
+/// Single-letter forms of [`PLAIN_FLAGS`] that may be clustered (`-fsS`).
+///
+/// `-L`/`--location` is absent on purpose: a public URL could answer with a
+/// redirect to loopback, a private range or a metadata endpoint, and curl
+/// would follow it (resending custom headers) without the destination check.
+const SHORT_FLAGS: &str = "fsSiIvN46gG";
 /// Single-letter options that take a value. They end a cluster.
 const SHORT_VALUES: &str = "mHXwoA";
 

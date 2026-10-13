@@ -20,7 +20,7 @@ fn plain_public_reads_are_proven() {
         "curl https://example.com/api/health",
         "curl -sS --max-time 20 https://example.com/api/health",
         "curl -s --max-time=15 https://example.com/api/health",
-        "curl -fsSL https://example.com/install.txt",
+        "curl -fsS https://example.com/install.txt",
         "curl -I https://example.com/",
         "curl -X GET https://example.com/v1/items",
         "curl -XHEAD https://example.com/",
@@ -37,6 +37,10 @@ fn plain_public_reads_are_proven() {
 #[test]
 fn bodies_files_credentials_and_routing_stay_reviewed() {
     for command in [
+        "curl -L https://example.com/r",
+        "curl -fsSL https://example.com/install.txt",
+        "curl --location https://example.com/r",
+        "curl -sL -H 'Metadata-Flavor: Google' https://example.com/r",
         "curl -d x=1 https://example.com/",
         "curl --data-binary @notes.txt https://example.com/",
         "curl --json '{}' https://example.com/",
