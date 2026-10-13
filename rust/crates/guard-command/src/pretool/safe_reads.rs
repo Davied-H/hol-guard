@@ -2,6 +2,8 @@
 mod command_sequences;
 #[path = "jq_filter.rs"]
 mod jq_filter;
+#[path = "read_globs.rs"]
+mod read_globs;
 pub(super) use super::directory_targets::verified_cwd_target;
 pub(super) use super::read_paths::{
     bounded_file_read_target, bounded_omp_directory_read_target, bounded_omp_file_read_target,
@@ -69,6 +71,7 @@ pub(super) fn command_read_target(
 ) -> bool {
     if context.home_dir.is_some() || context.cwd.is_some() {
         bounded_read_target(value, context.home_dir, context.cwd, allow_directory)
+            || (!allow_directory && read_globs::bounded_glob_file_read_target(value, context))
             || (!allow_directory
                 && super::chain_temporary::absent_temporary_read_target(
                     value,
@@ -347,6 +350,19 @@ pub(super) fn safe_jq_file_arguments(
         && rest.last().is_some_and(|filter| filter.starts_with('.'))
         && safe_jq_stdin_arguments(rest)
         && command_read_target(file, context, false)
+}
+
+/// Where a proven jq filter sits: last when jq reads stdin, before the file
+/// operand otherwise. The filter is a program over the value read, so a
+/// field such as `.key` is not a path to screen.
+pub(super) fn jq_filter_position(arguments: &[String], piped_input: bool) -> Option<usize> {
+    let last = arguments.len().checked_sub(1)?;
+    let index = if piped_input {
+        last
+    } else {
+        last.checked_sub(1)?
+    };
+    jq_filter::safe_filter(&arguments[index]).then_some(index)
 }
 
 pub(super) fn safe_jq_stdin_arguments(arguments: &[String]) -> bool {
