@@ -5,7 +5,8 @@
 //! that can point the program, its compiler or its loader at other code
 //! (`NODE_PATH`, `RUSTFLAGS`, `RUSTC_WRAPPER`, `CC`, `LD_PRELOAD`, ...) is
 //! matched by name fragment rather than a closed list and fails closed. Any
-//! other name (`PORT`, `GIT_DIR`) stays uncertainty for the owners' floor.
+//! other name (`PORT`, `GIT_DIR`, `KUBECONFIG`) stays uncertainty for the
+//! owners' floor.
 
 #[cfg(test)]
 use crate::CommandSegmentV1;
@@ -37,10 +38,10 @@ pub(crate) fn inert_environment_name(name: &str) -> bool {
 /// Whole-word credential names, plus the pairs `API_KEY` and `CONFIG_DIR`.
 /// `GH_TOKEN`, `GOOGLE_APPLICATION_CREDENTIALS`, `GOG_KEYRING_PASSWORD`, and
 /// `GH_CONFIG_DIR` match, so that prefix is not a reviewable context.
-/// `AWS_PROFILE` and `NETRC` do not match and stay on the uncertainty floor;
-/// config redirects such as `KUBECONFIG` and `XDG_CONFIG_HOME` fail closed
-/// through `code_loading_environment_name` instead. `TOKENIZERS_PARALLELISM`
-/// does not match: its word is `TOKENIZERS`, not `TOKEN`.
+/// `XDG_CONFIG_HOME`, `KUBECONFIG`, `AWS_PROFILE`, `AWS_CONFIG_FILE`,
+/// `DOCKER_CONFIG`, `CLOUDSDK_CONFIG`, `NETRC`, and `HOME` do not match and
+/// stay on the uncertainty floor. `TOKENIZERS_PARALLELISM` does not match:
+/// its word is `TOKENIZERS`, not `TOKEN`.
 pub(crate) fn credential_routing_environment_name(name: &str) -> bool {
     let upper = name.to_ascii_uppercase();
     let words: Vec<&str> = upper.split('_').collect();
@@ -63,21 +64,18 @@ pub(crate) fn credential_routing_environment_name(name: &str) -> bool {
     })
 }
 
-/// Name fragments of settings that point a program, its compiler or its
-/// loader at other code or options (`NODE_OPTIONS`, `NODE_PATH`, `RUSTFLAGS`,
-/// `PYTHONSTARTUP`). Those stay unprojected, so extension controls keep
-/// failing closed on them.
+/// Name fragments of settings that make a program, its compiler or its loader
+/// run other code or options (`NODE_OPTIONS`, `RUSTFLAGS`, `RUSTC_WRAPPER`,
+/// `PYTHONSTARTUP`).
 const CODE_LOADING_MARKERS: &[&str] = &[
     "ARGS",
     "BIN",
     "BROWSER",
     "CMD",
     "COMMAND",
-    "CONF",
     "EDITOR",
     "EXEC",
     "FLAGS",
-    "HOME",
     "HOOK",
     "IMPORT",
     "INIT",
@@ -86,7 +84,6 @@ const CODE_LOADING_MARKERS: &[&str] = &[
     "MODULE",
     "OPT",
     "PAGER",
-    "PATH",
     "PLUGIN",
     "REQUIRE",
     "RUSTC",
@@ -100,20 +97,31 @@ const CODE_LOADING_MARKERS: &[&str] = &[
     "LESSCLOSE",
 ];
 
+/// Fragments of settings that move where a program finds its config, home
+/// or files (`KUBECONFIG`, `XDG_CONFIG_HOME`, `KD_SAVE_PATH`). They may lead
+/// to code, but most name data, so the compatibility layer reviews them as
+/// uncertainty while the env-prefix projection still declines them.
+const REDIRECT_MARKERS: &[&str] = &["CONF", "HOME", "PATH"];
+
 /// Toolchain programs a build reads from the environment.
 const CODE_LOADING_NAMES: &[&str] = &[
     "AR", "AS", "CC", "CPP", "CXX", "FC", "LD", "LINK", "NM", "RANLIB",
 ];
 
-/// Exact names a program, its shell or Git runs as code or reads a toolchain
-/// from, which no marker above covers.
+/// Exact names a program, its shell or Git runs as code, searches for code,
+/// or reads a toolchain from, which no marker above covers.
 const CODE_LOADING_EXACT: &[&str] = &[
     "BASH_ENV",
     "ENV",
+    "GCONV_PATH",
     "GIT_ASKPASS",
+    "GIT_EXEC_PATH",
     "GIT_EXTERNAL_DIFF",
     "GIT_SSH",
     "GOTOOLCHAIN",
+    "NODE_PATH",
+    "PATH",
+    "PYTHONPATH",
     "SSH_ASKPASS",
 ];
 
@@ -132,6 +140,15 @@ pub(crate) fn code_loading_environment_name(name: &str) -> bool {
         || CODE_LOADING_MARKERS
             .iter()
             .any(|marker| upper.contains(marker))
+}
+
+/// A code-loading setting, or one that redirects config, home or a search
+/// path. The env-prefix projection never strips either kind.
+pub(crate) fn code_or_redirect_environment_name(name: &str) -> bool {
+    code_loading_environment_name(name) || {
+        let upper = name.to_ascii_uppercase();
+        REDIRECT_MARKERS.iter().any(|marker| upper.contains(marker))
+    }
 }
 
 #[cfg(test)]

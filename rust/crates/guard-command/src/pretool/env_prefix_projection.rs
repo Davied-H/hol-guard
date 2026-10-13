@@ -384,7 +384,7 @@ fn reviewable_assignment(name: &str) -> bool {
 }
 
 fn code_loading_name(upper: &str) -> bool {
-    crate::command_compatibility::code_loading_environment_name(upper)
+    crate::command_compatibility::code_or_redirect_environment_name(upper)
 }
 
 /// The first leading setting of any simple command that can load other code,
