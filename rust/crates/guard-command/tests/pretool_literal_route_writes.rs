@@ -164,13 +164,15 @@ fn multi_edit_is_a_write_with_the_write_screens() {
                 "{harness} {path:?}"
             );
         }
-        // These existing files are readable, but a MultiEdit is not a read:
-        // instruction files and Git hooks keep the write review.
-        for path in ["CLAUDE.md", ".git/hooks/pre-commit"] {
-            let path = f.project.join(path);
-            let result = multi_edit(&f, harness, path.to_str().unwrap());
-            assert_ne!(result.minimum_action, "allow", "{harness} {path:?}");
-        }
+        // A MultiEdit follows the Write and Edit rules: plain instruction
+        // files stay writable, while a Git hook keeps the write review even
+        // though the existing file is readable.
+        let instructions = f.project.join("CLAUDE.md");
+        let result = multi_edit(&f, harness, instructions.to_str().unwrap());
+        assert_eq!(result.minimum_action, "allow", "{harness} {instructions:?}");
+        let hook = f.project.join(".git/hooks/pre-commit");
+        let result = multi_edit(&f, harness, hook.to_str().unwrap());
+        assert_ne!(result.minimum_action, "allow", "{harness} {hook:?}");
     }
 }
 
