@@ -510,7 +510,7 @@ pub(super) fn evaluate_pre_tool_with_execution_context(
         "review",
         "native_command_review_required",
         reason.as_deref().unwrap_or(
-            "HOL Guard requires review because the Rust authority could not prove this command explicitly benign.",
+            "HOL Guard requires review because this command could not be confirmed read-only. Approve it in the HOL Guard inbox (choose Always for a repeated read-only command), or split it into simpler commands.",
         ),
     ))
 }

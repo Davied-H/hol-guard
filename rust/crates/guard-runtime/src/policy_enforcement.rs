@@ -306,7 +306,11 @@ pub(crate) fn apply_pre_tool_policy(
     }
 
     if policy_raised {
-        let (reason_code, reason) = policy_override_reason(&effective, Some(floor_cause));
+        let (reason_code, reason) = policy_override_reason(
+            &effective,
+            Some(floor_cause),
+            output.action.action_type == guard_contracts::PreToolActionTypeV1::Prompt,
+        );
         output.reason_code = reason_code.to_owned();
         output.reason = reason;
     }
@@ -447,7 +451,7 @@ pub(crate) fn apply_post_tool_policy(
     // Name the setting only when the policy floor, not the intrinsic
     // result, set the outcome.
     let cause = (action_rank(&floor) > action_rank(&intrinsic)).then_some(floor_cause);
-    let (reason_code, reason) = policy_override_reason(&effective, cause);
+    let (reason_code, reason) = policy_override_reason(&effective, cause, false);
     let mut denied = HookReviewResponseV1::deny(reason_code, reason);
     denied.policy_action = Some(effective);
     Ok(denied)
