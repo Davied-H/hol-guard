@@ -371,9 +371,9 @@ fn parse(segment: &CommandSegmentV1) -> Option<WorktreeAdd<'_>> {
     // detaches at what the name resolves to) and the probe reads the same
     // commit. With `-b` or `--detach` the reference stays qualified.
     let attach = branch.is_none() && !detach;
-    if reference
-        .is_some_and(|value| !valid_local_reference(value) && !(attach && valid_branch_name(value)))
-    {
+    if reference.is_some_and(|value| {
+        !(valid_local_reference(value) || (attach && valid_branch_name(value)))
+    }) {
         return None;
     }
     Some(WorktreeAdd {
