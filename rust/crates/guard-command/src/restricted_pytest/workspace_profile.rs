@@ -252,18 +252,6 @@ pub(super) fn denial_patterns(
     Ok(patterns)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_name_that_cannot_fit_in_a_fresh_group_is_rejected() {
-        let long = "n".repeat(SEATBELT_PATTERN_BUDGET);
-        assert!(bounded("^", &["ok", &long], "$").is_err());
-        assert!(bounded("^", &["hooks", "plugins"], "$").is_ok());
-    }
-}
-
 fn regex_rule(operations: &str, pattern: &str) -> String {
     format!("(deny {operations} (regex {}))", seatbelt_string(pattern))
 }
@@ -407,4 +395,16 @@ pub(super) fn compose(
         lines.push(regex_rule("file-read* file-write*", &pattern));
     }
     Ok(lines.join("\n"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_name_that_cannot_fit_in_a_fresh_group_is_rejected() {
+        let long = "n".repeat(SEATBELT_PATTERN_BUDGET);
+        assert!(bounded("^", &["ok", &long], "$").is_err());
+        assert!(bounded("^", &["hooks", "plugins"], "$").is_ok());
+    }
 }
