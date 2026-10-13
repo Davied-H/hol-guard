@@ -163,7 +163,9 @@ SCENARIOS: list[dict[str, object]] = [
     {
         "name": "fresh_insert_correlation_from_decision",
         "request": request(
-            "r-new", harness=" Claude-Code ", decision_v2_json={"correlationId": " gcr_feedface-1111-4222-8333-444455556666 "}
+            "r-new",
+            harness=" Claude-Code ",
+            decision_v2_json={"correlationId": " gcr_feedface-1111-4222-8333-444455556666 "},
         ),
     },
     {
