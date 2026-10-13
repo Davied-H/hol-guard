@@ -18,6 +18,8 @@ fn names_only_log_accepts_glob_pathspecs() {
         "log -n5 --name-status origin/main -- *migration*",
         "log --format=%h%x20%s --date=iso -- docs/*",
         "log --stat --no-merges -- src/**/*.sql",
+        "log --pretty=oneline -- src/*",
+        "log --pretty=tformat:%h -- src/*",
     ] {
         assert!(proven(text), "{text}");
     }
@@ -42,6 +44,8 @@ fn content_options_keep_glob_pathspecs_reviewed() {
         "log --show-signature -- src/*",
         "log --format=%G? -- src/*",
         "log --pretty=format:%GS -- src/*",
+        "log --pretty=audit -- src/*",
+        "log --format=audit -- src/*",
         "log --output=out.txt -- src/*",
         "log --ext-diff -- src/*",
     ] {

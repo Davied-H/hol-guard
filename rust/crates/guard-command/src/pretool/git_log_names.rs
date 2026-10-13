@@ -88,13 +88,36 @@ fn listing_argument(argument: &str) -> bool {
         .strip_prefix("--format=")
         .or_else(|| argument.strip_prefix("--pretty="))
     {
-        // `%G` placeholders verify signatures, which runs the configured
-        // signing program.
-        return !format.contains("%G");
+        return listing_format(format);
     }
     LISTING_VALUE_OPTIONS
         .iter()
         .any(|prefix| argument.starts_with(prefix))
+}
+
+/// A built-in format name, or an explicit format without `%G` placeholders,
+/// which verify signatures and so run the configured signing program. Any
+/// other name resolves through a `pretty.<name>` alias Guard did not read.
+fn listing_format(format: &str) -> bool {
+    const BUILT_IN: &[&str] = &[
+        "oneline",
+        "short",
+        "medium",
+        "full",
+        "fuller",
+        "reference",
+        "email",
+        "raw",
+        "mboxrd",
+    ];
+    if BUILT_IN.contains(&format) {
+        return true;
+    }
+    let explicit = format
+        .strip_prefix("format:")
+        .or_else(|| format.strip_prefix("tformat:"))
+        .or_else(|| format.contains('%').then_some(format));
+    explicit.is_some_and(|format| !format.contains("%G"))
 }
 
 /// `-3` or `-n3`.
