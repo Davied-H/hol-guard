@@ -6,6 +6,16 @@ pub(super) mod package_dir;
 #[path = "contained_output_filters.rs"]
 mod output_filters;
 
+/// The package-directory route keeps its single `| tail -N`/`| head -N` filter.
+fn output_filter(segment: &CommandSegmentV1) -> bool {
+    segment.environment_names.is_empty()
+        && segment.wrapper_chain.is_empty()
+        && !segment.path_overridden
+        && segment.pipeline_index == 1
+        && matches!(segment.executable.as_deref(), Some("tail" | "head"))
+        && output_filters::head_tail_arguments(&segment.arguments)
+}
+
 /// How many segments after `core` form the sink's output filter chain: each a
 /// later stage of the same pipeline, joined by a plain `|`. `None` when any
 /// segment after `core` is something else.

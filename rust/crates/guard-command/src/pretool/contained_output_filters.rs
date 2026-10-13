@@ -38,7 +38,7 @@ pub(super) fn filter_stage(segment: &CommandSegmentV1, source: &str) -> bool {
     }
 }
 
-fn head_tail_arguments(arguments: &[String]) -> bool {
+pub(super) fn head_tail_arguments(arguments: &[String]) -> bool {
     match arguments {
         [count] => count.strip_prefix('-').is_some_and(bounded_count),
         [flag, count] => flag == "-n" && bounded_count(count),
