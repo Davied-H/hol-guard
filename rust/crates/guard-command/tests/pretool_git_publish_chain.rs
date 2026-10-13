@@ -289,26 +289,21 @@ fn any_unproven_step_or_connector_keeps_the_review() {
 fn checks_before_a_proven_publish_run_contained_then_publish() {
     install_git_push_verdict(verdict);
     let repository = repository("checks");
-    // Workspace containment is macOS-only; elsewhere the chain stays at review.
-    let contained = if cfg!(target_os = "macos") {
-        "native_workspace_containment_required"
-    } else {
-        "native_command_review_required"
-    };
     let command = concat!(
         "node --input-type=module -e \"console.log('guide')\" && ",
         "git checkout -b add-guide && git add CONTRIBUTING.md && ",
         "git commit -m \"Add guide\" && git push -u origin add-guide",
     );
     let result = repository.evaluate_with(command, &repository.primary, &controls("default"));
-    assert_eq!(result.reason_code, contained, "{command}");
-    if cfg!(target_os = "macos") {
-        assert!(
-            result.reason.contains("then runs the Git steps"),
-            "{}",
-            result.reason
-        );
-    }
+    assert_eq!(
+        result.reason_code, "native_workspace_containment_required",
+        "{command}"
+    );
+    assert!(
+        result.reason.contains("then runs the Git steps"),
+        "{}",
+        result.reason
+    );
     // The Git steps must pass on their own, joined by `&&` alone.
     for command in [
         "node -e \"console.log(1)\" && git checkout -b refused && git push origin refused",
