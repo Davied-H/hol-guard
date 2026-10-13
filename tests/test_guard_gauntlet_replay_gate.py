@@ -11,6 +11,7 @@ passes fails as stale.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import sys
@@ -22,6 +23,7 @@ import pytest
 
 from ci.gauntlet.approval_rows import approval_rows
 from ci.gauntlet.input_evidence import redact_value
+from codex_plugin_scanner.guard.adapters import codex_contained_tests
 from codex_plugin_scanner.guard.daemon.hook_worker import HookWorker
 from codex_plugin_scanner.guard.hook_execution_environment import collect_hook_execution_environment
 from codex_plugin_scanner.guard.store import GuardStore
@@ -126,7 +128,25 @@ def _replay(case: ReplayCase, fixture: BenignFixture, worker: HookWorker) -> tup
         guard_home=fixture.guard_home,
         workspace=fixture.cwd(case.cwd),
     )
+    if case.harness == "codex":
+        result = _codex_route(result, payload, fixture)
     return result, approval_rows(worker.store, known)
+
+
+def _codex_route(result: dict[str, object], payload: dict[str, object], fixture: BenignFixture) -> dict[str, object]:
+    """Apply the Codex hook bridge's containment rewrite for a release that applies ``updatedInput``.
+
+    ``review_http_payload`` routes Z Code and Claude Code itself; Codex routes in its bridge.
+    """
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(codex_contained_tests, "launching_codex_executable", lambda: Path("/usr/local/bin/codex"))
+        patch.setattr(codex_contained_tests, "codex_applies_updated_input", lambda *_args, **_kwargs: True)
+        return codex_contained_tests.route_codex_containment(
+            dict(result),
+            hook_input=json.dumps(payload),
+            guard_home=fixture.guard_home,
+            home_dir=fixture.home,
+        )
 
 
 @pytest.mark.usefixtures("native_hook_force")

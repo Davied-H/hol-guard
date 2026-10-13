@@ -81,7 +81,7 @@ fn sensitive_name(name: &str) -> Result<bool, &'static str> {
 pub fn printenv_may_print_secret(text: &str) -> bool {
     text.match_indices("printenv").any(|(start, _)| {
         let mut names = text[start + "printenv".len()..]
-            .split(|c: char| matches!(c, ';' | '&' | '|' | '>' | '<' | '\n' | ')' | '`'))
+            .split([';', '&', '|', '>', '<', '\n', ')', '`'])
             .next()
             .unwrap_or_default()
             .split_whitespace()

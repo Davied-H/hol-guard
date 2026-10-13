@@ -215,7 +215,8 @@ pub(super) fn loses_work(
 /// wiping the workspace loses uncommitted work like `git reset --hard`.
 fn broad_target(argument: &str, workspace: &Path) -> bool {
     use std::path::Component;
-    if argument.starts_with('-') {
+    // BSD `sed -i ''` passes an empty backup suffix, not a path.
+    if argument.is_empty() || argument.starts_with('-') {
         return false;
     }
     if argument.starts_with('~') || argument.contains('$') {

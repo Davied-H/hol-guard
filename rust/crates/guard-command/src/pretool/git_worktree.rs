@@ -250,6 +250,24 @@ fn safe_worktree_config(output: &[u8]) -> Option<bool> {
         // helper, such as the `osxkeychain` helper Git for macOS installs, is
         // not consulted for this local-ref operation; retain the deny floor
         // for repository-scoped helpers and execution-capable settings.
+        let user_scope = matches!(scope, "global" | "system");
+        // The user's own `git lfs install` filter runs Git LFS on checkout,
+        // as it does for every other Git command; the repository may neither
+        // set that filter nor name further LFS programs.
+        if key.starts_with("filter.")
+            && user_scope
+            && super::git_remote_ops::pull::standard_lfs(&key, &[value.to_owned()])
+        {
+            continue;
+        }
+        if !user_scope
+            && key.starts_with("lfs.")
+            && (key.starts_with("lfs.extension.")
+                || key.starts_with("lfs.customtransfer.")
+                || key.ends_with(".standalonetransferagent"))
+        {
+            return Some(false);
+        }
         if key == "core.hookspath"
             || key == "core.worktree"
             || key == "core.fsmonitor"
@@ -260,7 +278,7 @@ fn safe_worktree_config(output: &[u8]) -> Option<bool> {
             || key.starts_with("hook.")
             || key.starts_with("pager.")
             || key.starts_with("filter.")
-            || (key.starts_with("credential.") && !matches!(scope, "global" | "system"))
+            || (key.starts_with("credential.") && !user_scope)
             || key.starts_with("include")
             || key.starts_with("extensions.")
             || key.starts_with("submodule.")

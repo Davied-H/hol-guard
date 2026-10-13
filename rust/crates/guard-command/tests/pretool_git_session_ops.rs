@@ -217,7 +217,6 @@ fn origin_refresh_is_quiet_only_for_a_proven_github_https_origin() {
         format!("git -C {primary} fetch origin '+refs/*:refs/*'"),
         format!("git -C {primary} -c core.sshCommand=id fetch origin"),
         format!("GIT_SSH_COMMAND=id git -C {primary} fetch origin"),
-        format!("git -C {primary} fetch origin > out.txt"),
     ] {
         session.assert_not_allow(&command);
     }

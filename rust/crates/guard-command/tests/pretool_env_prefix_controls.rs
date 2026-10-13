@@ -45,9 +45,13 @@ fn a_reviewable_setting_before_an_unmodeled_script_reaches_ordinary_review() {
         ),
     ] {
         let result = evaluate(&root, &command);
-        assert_eq!(
-            (result.minimum_action.as_str(), result.reason_code.as_str()),
-            ("review", "native_command_review_required"),
+        // Hosts with the workspace sandbox run the script there instead.
+        assert!(
+            matches!(
+                (result.minimum_action.as_str(), result.reason_code.as_str()),
+                ("review", "native_command_review_required")
+                    | ("sandbox-required", "native_workspace_containment_required")
+            ),
             "{command}: {}",
             result.reason
         );

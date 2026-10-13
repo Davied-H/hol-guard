@@ -206,7 +206,7 @@ def _harness_route(
     """Apply the containment rewrite the harness's own hook performs.
 
     ``review_http_payload`` already routes Z Code and Claude Code. Codex routes
-    in its hook bridge on macOS, and Oh My Pi in its TypeScript extension (every
+    in its hook bridge (every profile on macOS, the workspace profile on Linux), and Oh My Pi in its TypeScript extension (every
     profile on macOS, the workspace profile on Linux). Without this the gate
     counts their contained runs as reviews although the user sees nothing.
     """

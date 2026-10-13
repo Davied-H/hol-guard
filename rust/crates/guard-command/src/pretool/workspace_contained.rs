@@ -31,6 +31,8 @@ mod git_metadata;
 mod keeps_work;
 #[path = "workspace_contained_package.rs"]
 mod package;
+#[path = "workspace_contained_reach.rs"]
+mod reach;
 #[path = "workspace_contained_removal.rs"]
 mod removal;
 #[path = "workspace_contained_settings.rs"]
@@ -38,6 +40,12 @@ mod settings;
 
 pub(super) use keeps_work::keeping_arguments;
 pub(super) use settings::carry_settings;
+
+/// Clients whose only purpose is the network the sandbox withholds.
+const NETWORK_CLIENTS: &[&str] = &[
+    "curl", "wget", "nc", "ncat", "netcat", "socat", "ssh", "scp", "sftp", "ftp", "telnet", "http",
+    "https", "xh",
+];
 
 // Privilege and permission changes. This is an exclusion, not an allowlist.
 const PRIVILEGE_DENY: &[&str] = &[
@@ -104,6 +112,18 @@ const SHELL_STATE: &[&str] = &[
     "declare", "typeset", "local", "readonly", "eval", "exec", "umask", "trap", "ulimit", "hash",
     "shift", "read", "getopts", "builtin", "enable", "exit", "return", "function",
 ];
+
+/// A literal directory at or below the workspace, with no parent step.
+fn below(target: &str, workspace: &Path) -> bool {
+    let path = Path::new(target);
+    !target.is_empty()
+        && !target.starts_with(['~', '-'])
+        && !target.contains('$')
+        && path
+            .components()
+            .all(|component| !matches!(component, std::path::Component::ParentDir))
+        && (path.is_relative() || path.starts_with(workspace))
+}
 
 fn branch_name(name: &str) -> bool {
     !name.is_empty()
@@ -174,6 +194,15 @@ pub(crate) fn command_shape(
             return None;
         }
         let name = super::executable_basename(executable);
+        // The sandbox has no network, so a network client would only fail,
+        // and it reaches no directory outside the workspace.
+        if NETWORK_CLIENTS.contains(&name)
+            || reach::reaches_outside(segment, name, workspace)
+            || (matches!(name, "cd" | "pushd")
+                && !matches!(segment.arguments.as_slice(), [target] if below(target, workspace)))
+        {
+            return None;
+        }
         if PRIVILEGE_DENY.contains(&name)
             && !(name == "chmod" && chmod::plain_mode(&segment.arguments))
         {
@@ -415,7 +444,7 @@ pub(super) fn convert(
     mark_contained(result);
 }
 
-fn mark_contained(result: &mut PreToolResultV1) {
+pub(crate) fn mark_contained(result: &mut PreToolResultV1) {
     result.minimum_action = "sandbox-required".into();
     result.policy_action = "sandbox-required".into();
     result.decision = "deny".into();
