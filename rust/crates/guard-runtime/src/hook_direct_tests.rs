@@ -327,6 +327,46 @@ fn daemon_only_state_in_the_binding_defers() {
 }
 
 #[test]
+fn a_block_rule_saved_after_the_publish_defers() {
+    let lane = lane("stored-rules", json!({}));
+    let store = lane.fixture.root.join("guard.db");
+    let connection = rusqlite::Connection::open(&store).unwrap();
+    connection
+        .execute_batch(
+            "create table local_cli_grant (cli_id text primary key, state text not null);
+             create table local_cli_command_grant (
+                 cli_id text not null, command_id text not null, state text not null
+             );
+             insert into local_cli_grant values ('cli', 'allowed');
+             insert into local_cli_command_grant values ('cli', 'run', 'allow');",
+        )
+        .unwrap();
+    assert_ne!(
+        deferred(&run(&lane, read_payload(&lane))),
+        "direct_hook_local_cli_rules"
+    );
+    for statement in [
+        "update local_cli_command_grant set state = 'block'",
+        "update local_cli_command_grant set state = 'allow'; \
+         update local_cli_grant set state = 'blocked'",
+    ] {
+        connection.execute_batch(statement).unwrap();
+        assert_eq!(
+            deferred(&run(&lane, read_payload(&lane))),
+            "direct_hook_local_cli_rules",
+            "{statement}"
+        );
+    }
+    drop(connection);
+    // A store the resident cannot read counts as holding rules.
+    fs::write(&store, b"not a database").unwrap();
+    assert_eq!(
+        deferred(&run(&lane, read_payload(&lane))),
+        "direct_hook_local_cli_rules"
+    );
+}
+
+#[test]
 fn an_edge_verdict_other_than_allow_takes_the_daemon_path() {
     // A sensitive read needs review, so the resident evaluates it and still
     // hands it to the daemon.

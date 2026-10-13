@@ -124,3 +124,39 @@ pub(crate) fn column_exists(
         .map(|found| found.is_some())
         .map_err(|_| StoreReadError::StoreUnavailable)
 }
+
+/// How long a hook-path probe waits on a writer before giving up.
+const HOOK_PROBE_BUSY_TIMEOUT_MS: u64 = 50;
+
+/// Whether a custom command-line block rule exists, answered the way
+/// `GuardStore.has_local_cli_block_rules` answers it. A missing store or
+/// table holds no rule, since the daemon would create the table empty.
+pub(crate) fn local_cli_block_rules_exist(guard_home: &Path) -> Result<bool, StoreReadError> {
+    let Some(connection) = open_read_only(&guard_home.join(STORE_FILE_NAME))? else {
+        return Ok(false);
+    };
+    connection
+        .busy_timeout(std::time::Duration::from_millis(HOOK_PROBE_BUSY_TIMEOUT_MS))
+        .map_err(|_| StoreReadError::StoreUnavailable)?;
+    for (table, query) in [
+        (
+            "local_cli_grant",
+            "select exists(select 1 from local_cli_grant where state = 'blocked')",
+        ),
+        (
+            "local_cli_command_grant",
+            "select exists(select 1 from local_cli_command_grant where state = 'block')",
+        ),
+    ] {
+        if !table_exists(&connection, table)? {
+            continue;
+        }
+        let found: bool = connection
+            .query_row(query, [], |row| row.get(0))
+            .map_err(|_| StoreReadError::StoreUnavailable)?;
+        if found {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
