@@ -64,11 +64,13 @@ class BenignFixture:
     private_tmp: Path
     tmp_worktree: Path
     org: Path
+    tmp_org: Path
 
     def cleanup(self) -> None:
         """Remove the directories this fixture created outside its own root."""
         shutil.rmtree(self.private_tmp, ignore_errors=True)
         shutil.rmtree(self.tmp_worktree.parent, ignore_errors=True)
+        shutil.rmtree(self.tmp_org.parent, ignore_errors=True)
 
     def tokens(self) -> dict[str, str]:
         return {
@@ -80,6 +82,7 @@ class BenignFixture:
             "${PRIVATE_TMP}": str(self.private_tmp),
             "${ORG}": str(self.org),
             "${ORG_WT}": str(self.org.parent / "app-portal-fix"),
+            "${TMP_ORG_WT}": str(self.tmp_org.parent / "app-followup"),
         }
 
     def cwd(self, name: str) -> Path:
@@ -93,6 +96,7 @@ class BenignFixture:
             "org": self.org,
             "org_app": self.org / "app-portal",
             "org_wt": self.org.parent / "app-portal-fix",
+            "tmp_org": self.tmp_org,
         }[name]
 
 
@@ -251,4 +255,14 @@ def build_fixture(root: Path) -> BenignFixture:
         _git(repository, "add", "-A", home=home)
         _git(repository, "commit", "--quiet", "-m", f"{name} base", home=home)
     _session_worktree(org, home)
-    return BenignFixture(root, home, parent, worktree, nested, gitlink_repo, guard_home, private_tmp, tmp_worktree, org)
+    # A non-repository parent under /tmp whose repository has a linked worktree beside the parent.
+    tmp_org = Path(tempfile.mkdtemp(prefix="org.", dir=_system_tmp())).resolve() / "org"
+    (tmp_org / "app").mkdir(parents=True)
+    _git(tmp_org / "app", "init", "--quiet", "--initial-branch=main", home=home)
+    _write(tmp_org / "app" / "README.md", "# app\n")
+    _git(tmp_org / "app", "add", "-A", home=home)
+    _git(tmp_org / "app", "commit", "--quiet", "-m", "app base", home=home)
+    _git(tmp_org / "app", "worktree", "add", "--quiet", "-b", "followup", str(tmp_org.parent / "app-followup"), home=home)
+    return BenignFixture(
+        root, home, parent, worktree, nested, gitlink_repo, guard_home, private_tmp, tmp_worktree, org, tmp_org
+    )

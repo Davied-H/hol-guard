@@ -3898,6 +3898,38 @@
       },
       "cwd": "org",
       "expect": "allow"
+    },
+    {
+      "id": "session-git-c-tmp-sibling-log",
+      "fix_area": "git",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git -C ${TMP_ORG_WT} log --oneline -3"
+      },
+      "cwd": "tmp_org",
+      "expect": "allow"
+    },
+    {
+      "id": "session-git-c-tmp-sibling-status",
+      "fix_area": "git",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git -C ${TMP_ORG_WT} status --porcelain"
+      },
+      "cwd": "tmp_org",
+      "expect": "allow"
     }
   ],
   "pending_pr": {
