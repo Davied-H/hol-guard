@@ -306,3 +306,40 @@ fn global_helper_programs_in_the_workspace_are_denied() {
     }
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[test]
+fn a_linked_worktree_reads_the_common_configuration() {
+    let root = scratch("linked");
+    let (home, main, tree) = (root.join("home"), root.join("main"), root.join("tree"));
+    let admin = main.join(".git/worktrees/tree");
+    std::fs::create_dir_all(&admin).unwrap();
+    std::fs::create_dir_all(&tree).unwrap();
+    std::fs::write(
+        main.join(".git/config"),
+        "[core]\n\tfsmonitor = tools/mon\n",
+    )
+    .unwrap();
+    std::fs::write(admin.join("commondir"), "../..\n").unwrap();
+    std::fs::write(
+        admin.join("gitdir"),
+        format!("{}\n", tree.join(".git").display()),
+    )
+    .unwrap();
+    std::fs::write(tree.join(".git"), format!("gitdir: {}\n", admin.display())).unwrap();
+    assert_eq!(
+        workspace_write_denials(&tree, Some(&home)),
+        Some(vec![tree.join("tools/mon")])
+    );
+    // Per-worktree configuration is not read, so it keeps the review.
+    std::fs::write(admin.join("config.worktree"), "[core]\n\thooksPath = h\n").unwrap();
+    assert_eq!(workspace_write_denials(&tree, Some(&home)), None);
+    std::fs::remove_file(admin.join("config.worktree")).unwrap();
+    // A `.git` file whose admin entry does not link back is not trusted.
+    std::fs::write(
+        admin.join("gitdir"),
+        format!("{}\n", main.join(".git").display()),
+    )
+    .unwrap();
+    assert_eq!(workspace_write_denials(&tree, Some(&home)), None);
+    let _ = std::fs::remove_dir_all(&root);
+}

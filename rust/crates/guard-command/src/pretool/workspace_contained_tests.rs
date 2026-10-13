@@ -58,6 +58,8 @@ fn unproven_local_commands_run_in_the_workspace_sandbox_on_macos() {
         "rm -rf ./build/ && npm run build",
         "rm -f *.pyc",
         "rm notes.txt",
+        "chmod +x scripts/run.sh",
+        "chmod 755 bin/tool && ./bin/tool",
         "rm -f init_repo.py",
         "rm a.py && rm -rf __pycache__",
         "echo hi > scratch.txt && rm scratch.txt",
@@ -136,6 +138,8 @@ fn commands_with_network_privilege_or_escape_stay_at_review() {
         "npm install",
         "sudo ls",
         "chmod 777 x",
+        "chmod u+s x",
+        "chmod -R 755 .",
         "echo $(x)",
         "echo hi > ../out",
         "git reset --hard",
@@ -289,4 +293,37 @@ fn redirects_the_sandbox_cannot_bound_stay_out_of_the_workspace_sandbox() {
 /// Whether this host runs the workspace sandbox at all.
 fn host() -> bool {
     cfg!(target_os = "macos") || crate::restricted_pytest::linux_workspace_sandbox_available()
+}
+
+#[test]
+fn a_linked_worktree_contains_everything_but_git() {
+    let root = std::env::temp_dir().join(format!("guard-ws-{}-linked", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let (main, tree) = (root.join("main"), root.join("tree"));
+    let admin = main.join(".git/worktrees/tree");
+    std::fs::create_dir_all(&admin).unwrap();
+    std::fs::create_dir_all(&tree).unwrap();
+    let (main, tree) = (main.canonicalize().unwrap(), tree.canonicalize().unwrap());
+    let admin = admin.canonicalize().unwrap();
+    std::fs::write(main.join(".git/config"), "[core]\n\tbare = false\n").unwrap();
+    std::fs::write(admin.join("commondir"), "../..\n").unwrap();
+    std::fs::write(
+        admin.join("gitdir"),
+        format!("{}\n", tree.join(".git").display()),
+    )
+    .unwrap();
+    std::fs::write(tree.join(".git"), format!("gitdir: {}\n", admin.display())).unwrap();
+    std::fs::write(tree.join("package.json"), "{}").unwrap();
+    for command in ["rm notes.txt", "npm run build", "chmod +x scripts/run.sh"] {
+        assert_eq!(
+            reason("omp", command, &tree, true) == CONTAINED,
+            host(),
+            "{command}"
+        );
+    }
+    // Its index and objects live in the shared Git directory, out of reach.
+    for command in ["git add -A", "git rm -q src/a.ts", "npm test && git status"] {
+        assert_ne!(reason("omp", command, &tree, true), CONTAINED, "{command}");
+    }
+    let _ = std::fs::remove_dir_all(&root);
 }

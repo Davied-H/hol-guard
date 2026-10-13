@@ -23,6 +23,8 @@ fn workspace_admissible(_cwd: &Path, _home: Option<&Path>) -> Option<std::path::
 pub(crate) const REASON: &str = "native_workspace_containment_required";
 pub(crate) const PROFILE: &str = "workspace-contained-v1";
 
+#[path = "workspace_contained_chmod.rs"]
+mod chmod;
 #[path = "workspace_git_keeps_work.rs"]
 mod keeps_work;
 #[path = "workspace_contained_package.rs"]
@@ -148,6 +150,7 @@ pub(crate) fn command_shape(
         return None;
     }
     let mut bootstrap = None;
+    let linked = super::worktree_writes::linked_worktree_common_dir(workspace).is_some();
     for (index, segment) in model.segments.iter().enumerate() {
         let executable = segment.executable.as_deref()?;
         if executable.contains('$')
@@ -163,7 +166,15 @@ pub(crate) fn command_shape(
             return None;
         }
         let name = super::executable_basename(executable);
-        if PRIVILEGE_DENY.contains(&name) {
+        if PRIVILEGE_DENY.contains(&name)
+            && !(name == "chmod" && chmod::plain_mode(&segment.arguments))
+        {
+            return None;
+        }
+        // A linked worktree keeps its index, refs and objects in the shared
+        // Git directory outside the workspace, which the sandbox cannot
+        // reach, so Git there would only fail. It keeps its review.
+        if name == "git" && linked {
             return None;
         }
         if name == "git" && segment.arguments.iter().any(|argument| argument == "init") {

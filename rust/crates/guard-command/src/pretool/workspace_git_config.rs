@@ -44,22 +44,33 @@ fn read_config(path: &Path, follow: bool) -> Result<Option<String>, ()> {
 
 /// `Ok(None)` when `root` has no repository, `Ok(Some(text))` for a plain,
 /// bounded `.git/config`, and `Err` for anything the sandbox cannot reason
-/// about (symlinked or file-form `.git`, oversized or binary config, or a
+/// about (a symlinked `.git`, oversized or binary config, or a
 /// `config.worktree`, which Git also reads and this reader does not).
+///
+/// A file-form `.git` is read only for a linked worktree whose admin entry
+/// sits under `<common>/worktrees` and links back to this checkout. Its
+/// configuration is the common directory's, outside the work tree; the
+/// sandbox already denies writes to the `.git` file itself, so a command
+/// cannot point a later host Git at a directory it planted.
 pub(crate) fn repository_config(root: &Path) -> Result<Option<String>, ()> {
     let git = root.join(".git");
-    match fs::symlink_metadata(&git) {
+    let (admin, common) = match fs::symlink_metadata(&git) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(_) => return Err(()),
-        Ok(metadata) if !metadata.is_dir() => return Err(()),
-        Ok(_) => {}
-    }
-    match fs::symlink_metadata(git.join("config.worktree")) {
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        _ => return Err(()),
+        Ok(metadata) if metadata.is_dir() => (git.clone(), git),
+        Ok(metadata) if metadata.is_file() => {
+            super::worktree_writes::linked_worktree_dirs(root).ok_or(())?
+        }
+        Ok(_) => return Err(()),
+    };
+    for directory in [&admin, &common] {
+        match fs::symlink_metadata(directory.join("config.worktree")) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            _ => return Err(()),
+        }
     }
     Ok(Some(
-        read_config(&git.join("config"), false)?.unwrap_or_default(),
+        read_config(&common.join("config"), false)?.unwrap_or_default(),
     ))
 }
 

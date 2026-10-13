@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -27,6 +28,8 @@ import pytest
 
 from ci.gauntlet.approval_rows import always_gap, approval_rows
 from ci.gauntlet.input_evidence import redact_value
+from codex_plugin_scanner.guard.adapters import codex_contained_tests
+from codex_plugin_scanner.guard.adapters.pi_extension_contained_tests_source import CONTAINED_TEST_HELPERS_SOURCE
 from codex_plugin_scanner.guard.daemon.hook_worker import HookWorker
 from codex_plugin_scanner.guard.hook_execution_environment import collect_hook_execution_environment
 from codex_plugin_scanner.guard.store import GuardStore
@@ -70,6 +73,10 @@ _RENDERED_SPECIFIC_KEYS = ("permissionDecisionReason", "additionalContext")
 # through protected read-only execution, so local macOS runs do not judge marker staleness.
 _ENFORCE_STALE_PENDING = bool(os.environ.get("CI")) and sys.platform != "darwin"
 _PENDING_PR: dict[str, str] = _DOCUMENT["pending_pr"]
+# Profile and reason pairs the shipped Oh My Pi extension sends to the contained runner.
+_OMP_CONTAINED = frozenset(
+    re.findall(r'profile === "([^"]+)" &&\s*response\.reason_code === "([^"]+)"', CONTAINED_TEST_HELPERS_SOURCE)
+)
 _PENDING_ALWAYS: dict[str, str] = _DOCUMENT["pending_always"]
 
 
@@ -189,7 +196,58 @@ def _review(case: GateCase, fixture: BenignFixture, worker: HookWorker) -> tuple
         workspace=fixture.cwd(case.cwd),
     )
     _ROWS[case.case_id] = approval_rows(worker.store, known)
-    return result, worker.store.count_approval_requests(status=None) - before
+    routed = _harness_route(case, result, payload, fixture)
+    return routed, worker.store.count_approval_requests(status=None) - before
+
+
+def _harness_route(
+    case: GateCase, result: dict[str, object], payload: dict[str, object], fixture: BenignFixture
+) -> dict[str, object]:
+    """Apply the containment rewrite the harness's own hook performs.
+
+    ``review_http_payload`` already routes Z Code and Claude Code. Codex routes
+    in its hook bridge on macOS, and Oh My Pi in its TypeScript extension (every
+    profile on macOS, the workspace profile on Linux). Without this the gate
+    counts their contained runs as reviews although the user sees nothing.
+    """
+    if case.harness == "codex":
+        return _codex_route(result, payload, fixture)
+    if case.harness == "omp" and _omp_routes(result):
+        return {"decision": "allow", "policy_action": "allow", "reason_code": _reason(result), "routed": "omp"}
+    return result
+
+
+def _codex_route(result: dict[str, object], payload: dict[str, object], fixture: BenignFixture) -> dict[str, object]:
+    """Run the real Codex bridge rewrite for a Codex release that applies ``updatedInput``.
+
+    Codex before 0.131 keeps the denial with an update hint, so the gate models
+    0.131 or later and says nothing about older releases.
+    """
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(codex_contained_tests, "launching_codex_executable", lambda: Path("/usr/local/bin/codex"))
+        patch.setattr(codex_contained_tests, "codex_applies_updated_input", lambda *_args, **_kwargs: True)
+        return codex_contained_tests.route_codex_containment(
+            dict(result),
+            hook_input=json.dumps(payload),
+            guard_home=fixture.guard_home,
+            home_dir=fixture.home,
+        )
+
+
+def _omp_routes(result: dict[str, object]) -> bool:
+    profile = result.get("required_execution_profile")
+    return (
+        result.get("decision") == "deny"
+        and result.get("policy_action") == "sandbox-required"
+        and result.get("observe_mode") is not True
+        and (profile, _reason(result)) in _OMP_CONTAINED
+        and (sys.platform == "darwin" or (sys.platform == "linux" and profile == "workspace-contained-v1"))
+    )
+
+
+def _contained(result: dict[str, object]) -> bool:
+    """Allowed only to run inside the workspace sandbox, by any harness route."""
+    return result.get("routed") == "omp" or _reason(result) == "native_contained_execution_routed"
 
 
 def _reason(result: dict[str, object]) -> str:
@@ -276,7 +334,11 @@ def test_benign_agent_work_is_allowed_and_negative_controls_are_not(
     if case.expect == "not_allow":
         assert case.case_id not in _PENDING_FIX, "negative controls cannot be pending_fix"
         # A warning or notice on an allowed call is still an allow, so check the effective decision.
-        assert _decision(result) != "allow" or approvals > 0, f"negative control was allowed: {description}"
+        # Contained execution also protects: the sandbox runs without network, home or
+        # credential access, so a contained `rg KEY ~/.ssh` finds nothing to leak.
+        assert _decision(result) != "allow" or approvals > 0 or _contained(result), (
+            f"negative control was allowed: {description}"
+        )
         return
     gap = always_gap(_ROWS.get(case.case_id, [])) if _always_expected(case) else []
     if case.case_id in _PENDING_FIX:

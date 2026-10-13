@@ -63,6 +63,13 @@ pub(super) fn same_repository_worktree(workspace: &Path, target: &Path) -> bool 
 /// `gitdir` backlink must name this checkout, so a stray `.git` file cannot
 /// nominate an unrelated directory.
 pub(in crate::pretool) fn linked_worktree_common_dir(workspace: &Path) -> Option<PathBuf> {
+    linked_worktree_dirs(workspace).map(|(_, common)| common)
+}
+
+/// The admin directory (`<common>/worktrees/<name>`) and the common
+/// directory of the linked worktree that contains `workspace`, under the
+/// same checks.
+pub(in crate::pretool) fn linked_worktree_dirs(workspace: &Path) -> Option<(PathBuf, PathBuf)> {
     let root = workspace
         .ancestors()
         .find(|root| root.join(".git").symlink_metadata().is_ok())?;
@@ -76,7 +83,7 @@ pub(in crate::pretool) fn linked_worktree_common_dir(workspace: &Path) -> Option
     (common.file_name() == Some(".git".as_ref())
         && admin.starts_with(common.join("worktrees"))
         && backlink == root.join(".git"))
-    .then_some(common)
+    .then_some((admin, common))
 }
 
 pub(in crate::pretool) fn repository_common_directory(
