@@ -1,6 +1,7 @@
 //! Seatbelt composition for `workspace-contained-v1`, kept apart from
 //! `compose_macos_profile` so the existing profile bytes stay fixed.
 use super::*;
+use crate::harness_config_names::{GITHUB_AGENT_DIRECTORIES, HARNESS_DIRECTORIES, HARNESS_FILES};
 
 /// Absolute names a sandboxed command must never execute; mirrors the
 /// classifier's privilege exclusion so a shell cannot reach them by name.
@@ -55,10 +56,6 @@ const TOOLCHAIN_FILES: &[&str] = &[
     "/System/Library/OpenSSL/openssl.cnf",
 ];
 const PROTECTED_DIRECTORIES: &[&str] = &[
-    ".agents",
-    ".claude",
-    ".codex",
-    ".cursor",
     ".bzr",
     ".hg",
     ".jj",
@@ -68,15 +65,6 @@ const PROTECTED_DIRECTORIES: &[&str] = &[
     ".vscode",
     ".idea",
     ".devcontainer",
-];
-const PROTECTED_FILES: &[&str] = &[
-    "agents.md",
-    "claude.md",
-    "copilot-instructions.md",
-    ".clinerules",
-    ".cursorrules",
-    ".windsurfrules",
-    ".mcp.json",
 ];
 
 fn invalid() -> RestrictedPytestError {
@@ -177,14 +165,24 @@ pub(super) fn head_carrier_pattern(root: &Path) -> Result<String, RestrictedPyte
     ))
 }
 
+/// Version-control metadata, editor and devcontainer settings, and every
+/// harness directory (plugins, hooks, settings, MCP and instruction files a
+/// harness loads on its next start), at any depth.
 pub(crate) fn protected_patterns(workspace: &Path) -> Result<Vec<String>, RestrictedPytestError> {
     let root = ci(&workspace.to_string_lossy())?;
+    let directories: Vec<&str> = PROTECTED_DIRECTORIES
+        .iter()
+        .chain(HARNESS_DIRECTORIES)
+        .copied()
+        .collect();
     Ok(vec![
+        format!("^{root}/(.*/)?({})(/.*)?$", alternatives(&directories)?),
+        format!("^{root}/(.*/)?({})$", alternatives(HARNESS_FILES)?),
         format!(
-            "^{root}/(.*/)?({})(/.*)?$",
-            alternatives(PROTECTED_DIRECTORIES)?
+            "^{root}/(.*/)?{}/({})(/.*)?$",
+            ci(".github")?,
+            alternatives(GITHUB_AGENT_DIRECTORIES)?
         ),
-        format!("^{root}/(.*/)?({})$", alternatives(PROTECTED_FILES)?),
         format!("^{root}/(.*/)?{}(/.*)?$", ci(".github/workflows")?),
     ])
 }
