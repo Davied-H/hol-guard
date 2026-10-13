@@ -271,8 +271,17 @@ fn jq_pipelines_reshape_without_reaching_input_or_environment() {
         &[
             "jq -r '.scripts | keys | length' ~/code/sibling/package.json",
             "jq '.scripts|keys_unsorted|sort' ~/code/sibling/package.json",
+            "jq -r '.scripts | keys[]' ~/code/sibling/package.json",
+            "jq -r '.scripts | to_entries[] | .key' ~/code/sibling/package.json",
+            "jq -r '.scripts | has(\"build\")' ~/code/sibling/package.json",
+            "jq -r '.scripts | keys | join(\"\\n\")' ~/code/sibling/package.json",
+            "cat ~/code/sibling/package.json | jq -r '.key'",
         ],
         &[
+            "jq -r '.scripts | has(\"\\(env)\")' ~/code/sibling/package.json",
+            "jq -r '.scripts | test(\"x\")' ~/code/sibling/package.json",
+            "jq -r '.name' ~/code/sibling/server.key",
+            "jq -r '.name' ~/code/sibling/.key",
             "jq -r '.scripts | env' ~/code/sibling/package.json",
             "jq -r '.scripts | input' ~/code/sibling/package.json",
             "jq -r '.scripts | $ENV' ~/code/sibling/package.json",
@@ -313,6 +322,10 @@ fn cd_sequences_prove_reads_in_both_directories() {
     let allowed = [
         format!("cd {sibling} && ls src; ls tests"),
         format!("cd {sibling} && ls src; ls tests; ls"),
+        format!("cd {sibling} && ls src; ls tests;"),
+        format!("cd {sibling} && ls; node --version"),
+        format!("cd {sibling} && node -v; ls"),
+        format!("cd {sibling} && cat package.json && python3 --version"),
     ];
     let reviewed = [
         format!("cd {sibling} && ls src; cat .env"),
@@ -320,6 +333,11 @@ fn cd_sequences_prove_reads_in_both_directories() {
         format!("cd {sibling}; ls src"),
         format!("cd {sibling} || ls src; ls tests"),
         format!("cd {ssh} && ls; ls"),
+        format!("cd {sibling} && ls; node -e 1"),
+        format!("cd {sibling} && ls; node src/index.ts"),
+        format!("cd {sibling} && ls; pnpm --version"),
+        format!("cd {sibling} && ls; yarn --version"),
+        format!("cd {sibling} && ls; ;"),
     ];
     let allowed: Vec<&str> = allowed.iter().map(String::as_str).collect();
     let reviewed: Vec<&str> = reviewed.iter().map(String::as_str).collect();
