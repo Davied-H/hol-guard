@@ -3,10 +3,15 @@
 use std::path::{Path, PathBuf};
 
 #[cfg(unix)]
-fn linked_file(path: &Path) -> bool {
+fn linked_file(path: &Path, workspace: &Path) -> bool {
     use std::os::unix::fs::MetadataExt;
-    // A symlink may resolve to a protected inode. Metadata errors other
-    // than absence cannot establish a safe destination.
+    // A parent symlink is followed by the write, while the lexical path still
+    // looks workspace-relative. Absence of a later component stops the walk;
+    // any other inspection failure cannot establish a safe destination.
+    match symlink_parent(path, workspace) {
+        Some(false) => {}
+        Some(true) | None => return true,
+    }
     match std::fs::symlink_metadata(path) {
         Ok(metadata) if metadata.file_type().is_symlink() => true,
         Ok(metadata) => metadata.is_file() && metadata.nlink() != 1,
@@ -14,8 +19,30 @@ fn linked_file(path: &Path) -> bool {
     }
 }
 
+/// `Some(true)` when a parent of `path` is a symlink or cannot be inspected.
+/// `None` means `path` is not under `workspace`, which also declines.
+#[cfg(unix)]
+fn symlink_parent(path: &Path, workspace: &Path) -> Option<bool> {
+    let relative = path.strip_prefix(workspace).ok()?;
+    let mut current = workspace.to_path_buf();
+    let mut components = relative.components().peekable();
+    while let Some(component) = components.next() {
+        if components.peek().is_none() {
+            break;
+        }
+        current.push(component);
+        match std::fs::symlink_metadata(&current) {
+            Ok(metadata) if metadata.file_type().is_symlink() => return Some(true),
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+            Err(_) => return Some(true),
+        }
+    }
+    Some(false)
+}
+
 #[cfg(not(unix))]
-fn linked_file(_path: &Path) -> bool {
+fn linked_file(_path: &Path, _workspace: &Path) -> bool {
     // Workspace containment is not admitted on non-Unix platforms.
     false
 }
@@ -39,7 +66,8 @@ fn plain_operand(value: &str) -> bool {
 
 /// True means containment must decline. Unsupported forms of cp/touch must
 /// fail closed: flags, multiple destinations, and shell expansions can make
-/// a protected hard-linked inode the write target.
+/// a protected hard-linked inode the write target. A symlink parent can too,
+/// because the write follows it while the lexical path stays inside.
 pub(super) fn mutates_linked_destination(
     name: &str,
     arguments: &[String],
@@ -72,7 +100,7 @@ pub(super) fn mutates_linked_destination(
                 };
                 destination = destination.join(basename);
             }
-            linked_file(&destination)
+            linked_file(&destination, workspace)
         }
         "touch" => {
             let destination = match arguments {
@@ -85,7 +113,7 @@ pub(super) fn mutates_linked_destination(
             if expanded_operand(destination) {
                 return true;
             }
-            linked_file(&target(destination, workspace))
+            linked_file(&target(destination, workspace), workspace)
         }
         _ => false,
     }
@@ -148,6 +176,59 @@ mod tests {
                 expected,
             );
         }
+    }
+
+    #[test]
+    fn a_symlinked_parent_cannot_hide_an_outside_destination() {
+        let root = Workspace(std::env::temp_dir().join(format!(
+            "guard-linked-parent-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+        )));
+        let outside = root.0.join("outside");
+        let workspace = root.0.join("workspace");
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::create_dir(&workspace).unwrap();
+        std::fs::write(outside.join("existing"), b"sentinel").unwrap();
+        std::os::unix::fs::symlink(&outside, workspace.join("alias")).unwrap();
+        std::fs::write(workspace.join("source"), b"ordinary").unwrap();
+        std::fs::create_dir(workspace.join("sub")).unwrap();
+        for (name, args) in [
+            ("touch", vec!["alias/existing"]),
+            ("touch", vec!["alias/new"]),
+            ("cp", vec!["source", "alias/existing"]),
+            ("cp", vec!["source", "alias/plain"]),
+        ] {
+            let owned = args.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>();
+            assert!(
+                mutates_linked_destination(name, &owned, &workspace),
+                "{name} {args:?}"
+            );
+            let model = crate::parse_command(&crate::CommandModelRequestV1 {
+                command: format!("{name} {}", args.join(" ")),
+                dialect: "posix".into(),
+                transport: "shell_string".into(),
+                extraction_provenance: "pre-tool-generic".into(),
+            })
+            .unwrap();
+            assert!(
+                super::super::command_shape(&model, &workspace, None).is_none(),
+                "{name} {args:?}"
+            );
+        }
+        let nested = vec!["sub/new".to_owned()];
+        assert!(!mutates_linked_destination("touch", &nested, &workspace));
+        let model = crate::parse_command(&crate::CommandModelRequestV1 {
+            command: "touch sub/new".into(),
+            dialect: "posix".into(),
+            transport: "shell_string".into(),
+            extraction_provenance: "pre-tool-generic".into(),
+        })
+        .unwrap();
+        assert!(super::super::command_shape(&model, &workspace, None).is_some());
     }
 
     #[test]
