@@ -67,10 +67,14 @@ impl Env<'_> {
         );
     }
 
+    fn key_bytes(&self) -> Option<&[u8]> {
+        self.key.as_ref().map(|key| key.as_slice())
+    }
+
     /// Sign `payload` for `kind` and persist it under `state_key`. `false` when
     /// there is no key or the store refuses the write.
     pub(super) fn store_signed(&self, state_key: &str, payload: &Value, kind: &Kind) -> bool {
-        let (Some(key), Some(key_id)) = (self.key.as_deref(), self.key_id) else {
+        let (Some(key), Some(key_id)) = (self.key_bytes(), self.key_id) else {
             return false;
         };
         let Value::Object(source) = payload else {
@@ -130,7 +134,7 @@ impl Env<'_> {
             .map(|(name, value)| (name.clone(), value.clone()))
             .collect();
         let (key, key_id) = if use_key {
-            (self.key.as_deref(), self.key_id)
+            (self.key_bytes(), self.key_id)
         } else {
             (None, None)
         };

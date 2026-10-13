@@ -151,6 +151,10 @@ fn a_row_signed_under_another_key_rolls_the_review_back() {
     let reply = write(&fixture);
     assert_eq!(reply["status"], "error", "{reply}");
     assert_eq!(
+        reply["payload"]["message"], "native_claude_review_notice_foreign_key",
+        "{reply}"
+    );
+    assert_eq!(
         count(&connection, "approval_requests"),
         0,
         "queue rolled back"
