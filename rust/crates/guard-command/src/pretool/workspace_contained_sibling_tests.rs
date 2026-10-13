@@ -3,6 +3,9 @@ use crate::native_command_controls::CompiledNativeCommandControls;
 use crate::native_command_program::packaged_command_program;
 use guard_contracts::NativeCommandControlBindingV1;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static NEXT_FIXTURE: AtomicU64 = AtomicU64::new(0);
 
 fn controls() -> CompiledNativeCommandControls {
     let program = packaged_command_program().unwrap();
@@ -40,7 +43,11 @@ fn reason(harness: &str, home: &Path, cwd: &Path, command: &str) -> String {
 fn fixture() -> (PathBuf, PathBuf, PathBuf) {
     // `/tmp`, not `$TMPDIR`: macOS puts the latter below `/private/var`,
     // which no path proof admits outside the working directory.
-    let root = Path::new("/tmp").join(format!("guard-sibling-{}", std::process::id()));
+    let root = Path::new("/tmp").join(format!(
+        "guard-sibling-{}-{}",
+        std::process::id(),
+        NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed)
+    ));
     let _ = std::fs::remove_dir_all(&root);
     let projects = root.join("home/projects");
     let (main, tree) = (projects.join("app"), projects.join("app-report"));
@@ -160,7 +167,7 @@ fn a_sibling_cd_the_sink_would_not_rebase_keeps_its_review() {
         "cursor",
         &home,
         &main,
-        format!(
+        &format!(
             "cd {}/app-report && npm run build && ls dist",
             projects.display()
         )
