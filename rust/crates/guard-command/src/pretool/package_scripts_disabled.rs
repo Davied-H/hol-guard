@@ -1,20 +1,18 @@
 //! Proof that a package install cannot run lifecycle scripts.
 //!
-//! With `--ignore-scripts` (or yarn's `--mode=skip-build`) no lifecycle
-//! script runs, so the installed `package_script` risk setting has nothing to
-//! govern. The proof is deliberately narrow: one plain install segment, no
+//! With `--ignore-scripts` no lifecycle script runs, so the installed
+//! `package_script` risk setting has nothing to govern. pnpm also loads the
+//! project's pnpmfile unless `--ignore-pnpmfile` is set, and yarn runs its
+//! configured release and plugins, so yarn never qualifies. The proof is
+//! deliberately narrow: one plain install segment, no
 //! environment prefix, no positional package names, no wrapper. The install
 //! may follow a plain `cd <dir>` and feed a bounded `tail`/`head`, since
 //! neither runs package code.
 
 use crate::{parse_command, CommandModelRequestV1, CommandSegmentV1};
 
-fn flag_disables_scripts(manager: &str, argument: &str) -> bool {
-    match argument {
-        "--ignore-scripts" | "--ignore-scripts=true" => true,
-        "--mode=skip-build" => manager == "yarn",
-        _ => false,
-    }
+fn flag_disables_scripts(argument: &str) -> bool {
+    matches!(argument, "--ignore-scripts" | "--ignore-scripts=true")
 }
 
 fn flag_reenables_scripts(argument: &str) -> bool {
@@ -28,11 +26,12 @@ fn flag_reenables_scripts(argument: &str) -> bool {
             | "--foreground-scripts"
             | "--foreground-scripts=true"
     ) || (lowered.starts_with("--ignore-scripts=") && lowered != "--ignore-scripts=true")
-        || lowered.starts_with("--mode=") && lowered != "--mode=skip-build"
+        || lowered.starts_with("--mode=")
 }
 
-/// True only for a lone `npm|pnpm|yarn|bun install|i|ci` with a flag that
-/// disables lifecycle scripts and nothing that re-enables them.
+/// True only for a lone `npm|pnpm|bun install|i|ci` with a flag that disables
+/// lifecycle scripts, `--ignore-pnpmfile` for pnpm, and nothing that
+/// re-enables them.
 pub fn no_script_install_command(command: &str) -> bool {
     let Ok(model) = parse_command(&CommandModelRequestV1 {
         command: command.to_owned(),
@@ -68,7 +67,7 @@ pub fn no_script_install_command(command: &str) -> bool {
         return false;
     };
     let manager = executable.rsplit('/').next().unwrap_or(executable);
-    if !matches!(manager, "npm" | "pnpm" | "yarn" | "bun")
+    if !matches!(manager, "npm" | "pnpm" | "bun")
         || !segment.environment_names.is_empty()
         || !segment.wrapper_chain.is_empty()
         || segment.path_overridden
@@ -92,9 +91,8 @@ pub fn no_script_install_command(command: &str) -> bool {
         return false;
     }
     flags.iter().all(|flag| flag.starts_with("--"))
-        && flags
-            .iter()
-            .any(|flag| flag_disables_scripts(manager, flag))
+        && flags.iter().any(|flag| flag_disables_scripts(flag))
+        && (manager != "pnpm" || flags.iter().any(|flag| flag == "--ignore-pnpmfile"))
         && !flags.iter().any(|flag| flag_reenables_scripts(flag))
 }
 
@@ -136,9 +134,7 @@ mod tests {
             "bun install --frozen-lockfile --ignore-scripts",
             "npm ci --ignore-scripts",
             "npm install --ignore-scripts",
-            "pnpm install --ignore-scripts",
-            "yarn install --ignore-scripts",
-            "yarn install --mode=skip-build",
+            "pnpm install --ignore-scripts --ignore-pnpmfile",
             "/usr/bin/npm ci --ignore-scripts=true",
             "cd /tmp/w/app && bun install --ignore-scripts",
             "cd /tmp/w/app && bun install --frozen-lockfile --ignore-scripts 2>&1 | tail -6",
@@ -173,6 +169,10 @@ mod tests {
             "npm install --mode=skip-build",
             "yarn install --mode=update-lockfile --ignore-scripts",
             "pip install --ignore-scripts",
+            "pnpm install --ignore-scripts",
+            "yarn install --ignore-scripts",
+            "yarn install --mode=skip-build",
+            "cd /tmp/w/app && pnpm install --ignore-scripts",
         ] {
             assert!(!no_script_install_command(command), "{command}");
         }

@@ -27,7 +27,7 @@ _NOT_QUEUED = (
 _REASON_CODE_HINTS = {
     "native_destructive_command": (
         "This command deletes or overwrites data. Use `git worktree remove` for a worktree, "
-        "target one specific path, or ask the user to run it."
+        "or target one specific path."
     ),
     "native_package_review": (
         "Package installs run code from a registry. Use `--ignore-scripts` where the package manager allows it."

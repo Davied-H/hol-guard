@@ -32,6 +32,29 @@ const PRIVATE_SUFFIXES: [&str; 9] = [
     ".corp",
 ];
 
+// Wildcard DNS services that resolve any name to the address spelled inside
+// it, so a public-looking name can still point at loopback or a LAN host.
+const REBINDING_SUFFIXES: [&str; 9] = [
+    ".nip.io",
+    ".sslip.io",
+    ".xip.io",
+    ".localtest.me",
+    ".lvh.me",
+    ".traefik.me",
+    ".local.gd",
+    ".vcap.me",
+    ".localhost.direct",
+];
+
+/// A label that spells an address, such as `127` in `127.0.0.1.example.test`
+/// or `10-0-0-5` in `10-0-0-5.example.test`.
+fn address_label(label: &str) -> bool {
+    !label.is_empty()
+        && label
+            .split('-')
+            .all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
+}
+
 fn is_fetch_tool(tool: &str) -> bool {
     tool_matches(tool, &["web_fetch", "webfetch", "fetch_web"])
 }
@@ -49,6 +72,10 @@ fn public_dns_host(host: &Host<&str>) -> bool {
         && !name.starts_with('.')
         && name != "localhost"
         && !PRIVATE_SUFFIXES.iter().any(|suffix| name.ends_with(suffix))
+        && !REBINDING_SUFFIXES
+            .iter()
+            .any(|suffix| name.ends_with(suffix) || name == suffix[1..])
+        && !name.split('.').any(address_label)
 }
 
 fn plain_public_url(raw: &str) -> bool {
@@ -114,6 +141,12 @@ mod tests {
             "http://printer.local/",
             "http://app.example.internal/",
             "http://intranet/",
+            "http://127.0.0.1.nip.io/",
+            "http://10-0-0-5.sslip.io/",
+            "http://app.localtest.me/",
+            "http://lvh.me/",
+            "http://127.0.0.1.example.test/",
+            "http://10-0-0-5.example.test/",
             "https://status.example.test/?api_token=x",
             "https://status.example.test/?Key=x",
             "https://status.example.test/?sig=x",

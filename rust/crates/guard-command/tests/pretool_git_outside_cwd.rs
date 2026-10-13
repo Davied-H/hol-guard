@@ -7,7 +7,17 @@ use std::path::Path;
 
 fn git(dir: &Path, home: &Path, args: &[&str]) {
     let mut c = std::process::Command::new("git");
-    for n in ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"] {
+    for n in [
+        "GIT_DIR",
+        "GIT_WORK_TREE",
+        "GIT_INDEX_FILE",
+        "GIT_COMMON_DIR",
+        "GIT_OBJECT_DIRECTORY",
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+        "GIT_PREFIX",
+        "GIT_CONFIG_GLOBAL",
+        "GIT_CONFIG",
+    ] {
         c.env_remove(n);
     }
     let s = c

@@ -110,8 +110,7 @@ fn proven_no_scripts_install_skips_only_the_package_script_floor() {
     for command in [
         "bun install --frozen-lockfile --ignore-scripts",
         "npm ci --ignore-scripts",
-        "pnpm install --ignore-scripts",
-        "yarn install --mode=skip-build",
+        "pnpm install --ignore-scripts --ignore-pnpmfile",
     ] {
         let result = apply(command);
         assert_eq!(result.minimum_action, "review", "{command}");
@@ -120,6 +119,8 @@ fn proven_no_scripts_install_skips_only_the_package_script_floor() {
     for command in [
         "bun install --frozen-lockfile",
         "bun install --ignore-scripts=false",
+        "pnpm install --ignore-scripts",
+        "yarn install --mode=skip-build",
         "npm run build",
         "bun run build",
         "npm ci --ignore-scripts && npm run build",

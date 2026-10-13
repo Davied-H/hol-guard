@@ -83,6 +83,8 @@ fn a_quoted_helper_path_with_spaces_stays_at_review() {
     for config in [
         "[alias]\n\tcommit = !sh \\\"./tools/my hook.sh\\\"\n",
         "[alias]\n\tcommit = !sh './tools/my hook.sh'\n",
+        "[core]\n\tsshCommand = \"\\\"./my ssh.sh\\\"\"\n",
+        "[alias]\n\tcommit = !'./tools/my hook.sh'\n",
     ] {
         assert_eq!(denials(config, ws), None, "{config}");
     }

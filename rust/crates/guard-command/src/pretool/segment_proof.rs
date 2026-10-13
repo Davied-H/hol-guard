@@ -253,6 +253,7 @@ pub(crate) fn benign_command_segments(
                         | "du"
                         | "diff"
                         | "npm"
+                        | "jq"
                 );
             let ls_has_explicit_target = basename != "ls" || {
                 let mut skip_next = false;
