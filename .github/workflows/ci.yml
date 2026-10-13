@@ -175,11 +175,22 @@ jobs:
           # Line tables keep panic backtraces readable while cutting link time
           # across the ~85 test binaries; full debuginfo is never inspected in CI.
           echo "CARGO_PROFILE_TEST_DEBUG=line-tables-only" >> "$GITHUB_ENV"
+          # GNU ld links each test harness independently. Use the pinned Ubuntu
+          # image's clang/lld when available to accelerate 100+ native test
+          # binary links. Keep regular linking as a safe fallback.
+          if command -v clang >/dev/null 2>&1 && command -v ld.lld >/dev/null 2>&1; then
+            echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=clang" >> "$GITHUB_ENV"
+            echo "RUSTFLAGS=-C link-arg=-fuse-ld=lld" >> "$GITHUB_ENV"
+            clang --version | head -n 1
+            ld.lld --version
+          else
+            echo "::warning::clang/lld unavailable: using system linker"
+          fi
       - uses: ./.github/actions/setup-rust
         with:
-          # Reuse the warmed test dependency cache for each shard; their test
-          # binaries are rebuilt from the current checkout.
-          cache-key: ci-workspace-${{ matrix.check == 'clippy' && 'clippy' || 'test' }}
+          # Separate dependency artifacts per package shard: cargo feature sets
+          # differ, so sharing a writer key prevents the other shards warming.
+          cache-key: ci-workspace-${{ matrix.check }}
           components: clippy
       - name: Install content-addressed compiler cache
         if: matrix.check != 'clippy'
