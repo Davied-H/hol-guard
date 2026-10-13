@@ -1,6 +1,7 @@
 //! File-edit tools may write ordinary workspace files silently, but a write
-//! that plants harness configuration (plugins, hooks, settings, MCP servers,
-//! instruction files) goes to review, because the harness loads it unasked.
+//! that plants harness configuration (plugins, hooks, settings, MCP servers)
+//! goes to review, because the harness loads it unasked. Plain-text
+//! instruction files (`AGENTS.md`, `CLAUDE.md`) stay silently writable.
 use guard_command::pretool::evaluate_pre_tool_envelope_with_context;
 use serde_json::json;
 
@@ -62,6 +63,10 @@ fn file_edit_tools_review_harness_configuration_inside_the_workspace() {
             "tests/example.test.ts",
             "dist/index.js",
             "README.md",
+            "AGENTS.md",
+            "CLAUDE.md",
+            "GEMINI.md",
+            "docs/AGENTS.md",
         ] {
             assert_eq!(
                 decide(&home, &workspace, tool, relative),
@@ -90,11 +95,10 @@ fn file_edit_tools_review_harness_configuration_inside_the_workspace() {
             ".mcp.json",
             ".vscode/tasks.json",
             ".github/copilot-instructions.md",
-            "AGENTS.md",
-            "CLAUDE.md",
-            "GEMINI.md",
-            "docs/AGENTS.md",
             "opencode.json",
+            "opencode.jsonc",
+            ".github/prompts/x.md",
+            ".githooks/pre-push",
         ] {
             assert_ne!(
                 decide(&home, &workspace, tool, relative),

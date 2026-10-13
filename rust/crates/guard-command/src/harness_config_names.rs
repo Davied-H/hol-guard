@@ -3,8 +3,10 @@
 //! instruction files. Planting one is a persistence vector, because the
 //! harness loads it without asking, so a write that creates or changes any of
 //! them is reviewed even inside the workspace, in every write route (the
-//! workspace sandbox profile, the Linux overlay, `apply_patch` and the
-//! semantic contained write). Reading them is unaffected.
+//! workspace sandbox profile, the Linux overlay, file-edit tools, host shell
+//! writes, `apply_patch` and the semantic contained write). Plain-text
+//! instruction files are the exception on the host routes. Reading is
+//! unaffected.
 //!
 //! Names are matched case-insensitively at any depth. A directory name covers
 //! everything below it; a file name covers only that basename.
@@ -48,24 +50,31 @@ pub(crate) const HARNESS_DIRECTORIES: &[&str] = &[
     ".zed",
 ];
 
-/// Files that steer an agent or register tools for it, at any depth.
-pub(crate) const HARNESS_FILES: &[&str] = &[
+/// Files that register a command a harness or tool launches (MCP servers,
+/// lint and test commands). Writes to them are reviewed in every route.
+pub(crate) const HARNESS_CONFIG_FILES: &[&str] = &[
     ".aider.conf.yml",
+    ".mcp.json",
+    "crush.json",
+    "opencode.json",
+    "opencode.jsonc",
+];
+
+/// Plain-text agent instruction files. They execute nothing and show in a
+/// diff, so file-edit tools and host shell writes may change them silently.
+/// The workspace sandbox still denies them, as it always has.
+pub(crate) const HARNESS_INSTRUCTION_FILES: &[&str] = &[
     ".aider.model.settings.yml",
     ".clinerules",
     ".cursorrules",
     ".goosehints",
-    ".mcp.json",
     ".roomodes",
     ".roorules",
     ".windsurfrules",
     "agents.md",
     "claude.md",
     "copilot-instructions.md",
-    "crush.json",
     "gemini.md",
-    "opencode.json",
-    "opencode.jsonc",
     "qwen.md",
 ];
 
@@ -80,21 +89,21 @@ pub(crate) fn directory_name(name: &str) -> bool {
     HARNESS_DIRECTORIES.contains(&lowered.as_str())
 }
 
-/// True when `name` (any letter case) is a harness instruction or settings file.
-pub(crate) fn file_name(name: &str) -> bool {
+/// True when `name` (any letter case) is a file that registers a launch command.
+pub(crate) fn config_file_name(name: &str) -> bool {
     let lowered = name.to_ascii_lowercase();
-    HARNESS_FILES.contains(&lowered.as_str())
+    HARNESS_CONFIG_FILES.contains(&lowered.as_str())
 }
 
 /// True when any component of the workspace-relative `parts` names harness
-/// configuration: a harness directory, a harness file, or an agent directory
+/// configuration: a harness directory, a launch-command config file, or an agent directory
 /// directly under `.github`.
 pub(crate) fn path_parts_protected<'a>(parts: impl IntoIterator<Item = &'a str>) -> bool {
     let mut previous_github = false;
     for part in parts {
         let lowered = part.to_ascii_lowercase();
         if directory_name(&lowered)
-            || file_name(&lowered)
+            || config_file_name(&lowered)
             || (previous_github && GITHUB_AGENT_DIRECTORIES.contains(&lowered.as_str()))
         {
             return true;
@@ -144,7 +153,6 @@ mod tests {
             "pkg/.Claude/settings.json",
             ".copilot/a",
             ".clinerules/rules.md",
-            ".clinerules",
             ".gemini/settings.json",
             ".kiro/steering/a.md",
             ".roo/rules/a.md",
@@ -153,8 +161,7 @@ mod tests {
             ".pi/extensions/a.ts",
             ".husky/pre-commit",
             ".mcp.json",
-            "sub/GEMINI.md",
-            ".github/copilot-instructions.md",
+            "sub/opencode.jsonc",
             ".github/instructions/a.md",
             ".github/hooks/a.json",
             "opencode.json",
@@ -170,8 +177,9 @@ mod tests {
         let target = |supplied: &str, canonical: &str| {
             write_target_protected(Path::new(supplied), Path::new(canonical), workspace)
         };
-        assert!(target("/w/proj/AGENTS.md", "/w/proj/docs/rules.md"));
-        assert!(target("AGENTS.md", "/w/proj/AGENTS.md"));
+        assert!(target("/w/proj/.mcp.json", "/w/proj/docs/rules.json"));
+        assert!(target("opencode.json", "/w/proj/opencode.json"));
+        assert!(!target("AGENTS.md", "/w/proj/AGENTS.md"));
         assert!(target("notes.md", "/w/proj/.zcode/notes.md"));
         assert!(!target("src/a.ts", "/w/proj/src/a.ts"));
         assert!(!target("/w/proj/src/a.ts", "/w/proj/src/a.ts"));
@@ -185,6 +193,10 @@ mod tests {
             "dist/index.js",
             "node_modules/.cache/x",
             ".github/dependabot.yml",
+            "AGENTS.md",
+            "docs/CLAUDE.md",
+            "GEMINI.md",
+            ".github/copilot-instructions.md",
             ".github/ISSUE_TEMPLATE/bug.md",
             ".vscode-test/x",
             ".pipeline/x",

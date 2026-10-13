@@ -1,7 +1,9 @@
 //! Seatbelt composition for `workspace-contained-v1`, kept apart from
 //! `compose_macos_profile` so the existing profile bytes stay fixed.
 use super::*;
-use crate::harness_config_names::{GITHUB_AGENT_DIRECTORIES, HARNESS_DIRECTORIES, HARNESS_FILES};
+use crate::harness_config_names::{
+    GITHUB_AGENT_DIRECTORIES, HARNESS_CONFIG_FILES, HARNESS_DIRECTORIES, HARNESS_INSTRUCTION_FILES,
+};
 
 /// Absolute names a sandboxed command must never execute; mirrors the
 /// classifier's privilege exclusion so a shell cannot reach them by name.
@@ -175,9 +177,14 @@ pub(crate) fn protected_patterns(workspace: &Path) -> Result<Vec<String>, Restri
         .chain(HARNESS_DIRECTORIES)
         .copied()
         .collect();
+    let files: Vec<&str> = HARNESS_CONFIG_FILES
+        .iter()
+        .chain(HARNESS_INSTRUCTION_FILES)
+        .copied()
+        .collect();
     Ok(vec![
         format!("^{root}/(.*/)?({})(/.*)?$", alternatives(&directories)?),
-        format!("^{root}/(.*/)?({})$", alternatives(HARNESS_FILES)?),
+        format!("^{root}/(.*/)?({})$", alternatives(&files)?),
         format!(
             "^{root}/(.*/)?{}/({})(/.*)?$",
             ci(".github")?,
