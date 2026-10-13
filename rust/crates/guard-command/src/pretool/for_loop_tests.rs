@@ -183,6 +183,12 @@ fn environment_and_shell_special_loop_variables_are_not_unrolled() {
         "_",
         "_path",
         "pathVar",
+        // zsh ties these lowercase names to executable or module lookup paths.
+        "path",
+        "cdpath",
+        "fpath",
+        "manpath",
+        "module_path",
     ] {
         let command = format!("for {name} in .; do git status; done");
         assert_eq!(

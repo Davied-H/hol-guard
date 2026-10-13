@@ -99,6 +99,11 @@ fn valid_identifier(name: &str) -> bool {
     // exported uppercase names can change which commands actually execute.
     // Only ordinary lowercase identifiers are admitted to this proof.
     // Exclude a leading underscore because '_' itself is shell-special.
+    // zsh additionally ties these lowercase arrays to PATH, CDPATH, FPATH,
+    // MANPATH and MODULE_PATH, so they can change command lookup.
+    if matches!(name, "path" | "cdpath" | "fpath" | "manpath" | "module_path") {
+        return false;
+    }
     let mut chars = name.chars();
     chars.next().is_some_and(|first| first.is_ascii_lowercase())
         && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
