@@ -845,9 +845,17 @@ fn sync_http_eval_error(status: u16, headers: &BTreeMap<String, String>, body: &
 /// an expired sign-in.
 pub const CLOUD_EDGE_BLOCK_REASON_PREFIX: &str = "Guard Cloud is unreachable from this network";
 
-/// True when `reason` came from [`cloud_edge_block_message`].
+/// The edge-block text inside `reason`, which a caller may have prefixed with
+/// its own context, or `None` when the reason is not an edge block.
+pub fn cloud_edge_block_reason(reason: &str) -> Option<&str> {
+    reason
+        .find(CLOUD_EDGE_BLOCK_REASON_PREFIX)
+        .map(|start| &reason[start..])
+}
+
+/// True when `reason` carries a [`cloud_edge_block_message`].
 pub fn is_cloud_edge_block_reason(reason: &str) -> bool {
-    reason.starts_with(CLOUD_EDGE_BLOCK_REASON_PREFIX)
+    cloud_edge_block_reason(reason).is_some()
 }
 
 /// Cloudflare's own block or challenge page instead of a Guard Cloud answer.

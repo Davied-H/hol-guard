@@ -22,7 +22,7 @@ enum PostFailure {
 fn classify_post_failure(error: EvalError) -> PostFailure {
     match error {
         EvalError::HttpStatus(code, reason) => {
-            PostFailure::Http(code, is_cloud_edge_block_reason(&reason).then_some(reason))
+            PostFailure::Http(code, cloud_edge_block_reason(&reason).map(str::to_owned))
         }
         EvalError::Internal(message) if message == INVALID_PAYLOAD => PostFailure::Invalid,
         EvalError::Internal(message) => PostFailure::Os(EvalError::Internal(message)),
@@ -36,23 +36,23 @@ fn classify_post_failure(error: EvalError) -> PostFailure {
 /// that Cloudflare blocked is a network failure, not an expired sign-in, so it
 /// must not ask the user to reconnect.
 fn auth_failure_reason(reason: &str, fallback: bool) -> (&'static str, String) {
-    match (is_cloud_edge_block_reason(reason), fallback) {
-        (true, true) => (
+    match (cloud_edge_block_reason(reason), fallback) {
+        (Some(edge), true) => (
             "cloud_http_error",
-            format!("{reason} Guard used local package intelligence."),
+            format!("{edge} Guard used local package intelligence."),
         ),
-        (true, false) => (
+        (Some(edge), false) => (
             "cloud_http_error",
             format!(
-                "{reason} Guard blocked this package request rather than bypassing Cloud package protection."
+                "{edge} Guard blocked this package request rather than bypassing Cloud package protection."
             ),
         ),
-        (false, true) => (
+        (None, true) => (
             "cloud_auth_error",
             "Guard cloud evaluation was not authorized, so Guard used local package intelligence."
                 .to_owned(),
         ),
-        (false, false) => (
+        (None, false) => (
             "cloud_auth_error",
             "Guard cloud evaluation was not authorized, so this package request needs review."
                 .to_owned(),
@@ -540,6 +540,17 @@ mod edge_block_tests {
             PostFailure::Http(403, None) => {}
             _ => panic!("an ordinary 403 must not look like an edge block"),
         }
+    }
+
+    #[test]
+    fn an_edge_block_wrapped_in_other_context_still_reports_only_the_edge_block() {
+        let wrapped = format!(
+            "Guard Cloud sign-in is no longer valid. Reconnect Guard Cloud to continue. {EDGE}"
+        );
+        let (code, message) = auth_failure_reason(&wrapped, false);
+        assert_eq!(code, "cloud_http_error");
+        assert!(message.starts_with(EDGE), "{message}");
+        assert!(!message.contains("Reconnect"), "{message}");
     }
 
     #[test]
