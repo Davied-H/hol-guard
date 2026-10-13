@@ -471,3 +471,22 @@ fn safe_head_tail_with_targets(
     }
     (saw_target || piped_input) && !expect_count
 }
+
+
+#[cfg(test)]
+mod jq_stdin_boundary_tests {
+    use super::{jq_filter_position, safe_jq_filter_arguments, safe_jq_stdin_arguments};
+
+    #[test]
+    fn object_filters_and_bare_builtins_do_not_expand_stdin_authority() {
+        for filter in ["keys", "length", "{tests: .tests, total: .total}"] {
+            let args = vec!["-r".to_owned(), filter.to_owned()];
+            assert!(safe_jq_filter_arguments(&args), "{filter}");
+            assert!(!safe_jq_stdin_arguments(&args), "{filter}");
+            assert_eq!(jq_filter_position(&args, true), None, "{filter}");
+        }
+        let projection = vec!["-r".to_owned(), ".tests | keys".to_owned()];
+        assert!(safe_jq_stdin_arguments(&projection));
+        assert_eq!(jq_filter_position(&projection, true), Some(1));
+    }
+}
