@@ -16,21 +16,18 @@ const VALUE_OPTIONS: &[&str] = &[
     "--namespace",
     "--config-env",
 ];
-/// `git branch` options that write the branch's configuration section.
+/// `git branch` long options that write or remove the branch's configuration
+/// section. Their short forms are `BRANCH_CONFIG_LETTERS`.
 const BRANCH_CONFIG_WRITES: &[&str] = &[
-    "-u",
     "--set-upstream-to",
     "--unset-upstream",
-    "-t",
     "--track",
     "--edit-description",
-    "-m",
-    "-M",
     "--move",
-    "-c",
-    "-C",
     "--copy",
+    "--delete",
 ];
+const BRANCH_CONFIG_LETTERS: &str = "utmMcCdD";
 /// `git config` reads. Anything else that names a key and a value writes.
 const CONFIG_READS: &[&str] = &[
     "--get",
@@ -71,9 +68,16 @@ fn subcommand(arguments: &[String]) -> Option<(&str, &[String])> {
 /// a remote-tracking start point does too, and telling one from a local
 /// branch needs the repository, so any start point counts unless the command
 /// says `--no-track`.
+/// Whether a short-option cluster such as `-fu` includes one of `letters`.
+fn short_option(argument: &str, letters: &str) -> bool {
+    argument
+        .strip_prefix('-')
+        .is_some_and(|flags| !flags.starts_with('-') && flags.chars().any(|c| letters.contains(c)))
+}
+
 fn tracks(arguments: &[String]) -> bool {
     if arguments.iter().any(|argument| {
-        matches!(argument.as_str(), "-t" | "--track") || argument.starts_with("--track=")
+        short_option(argument, "t") || argument == "--track" || argument.starts_with("--track=")
     }) {
         return true;
     }
@@ -132,17 +136,16 @@ pub(super) fn writes_denied_metadata(arguments: &[String]) -> bool {
             tracks(rest)
                 || rest.iter().any(|argument| {
                     BRANCH_CONFIG_WRITES.contains(&argument.as_str())
+                        || short_option(argument, BRANCH_CONFIG_LETTERS)
                         || argument.starts_with("--set-upstream-to=")
                 })
         }
         "checkout" | "switch" => tracks(rest),
-        "push" => rest
-            .iter()
-            .any(|argument| matches!(argument.as_str(), "-u" | "--set-upstream")),
         "config" => writes_config(rest),
         // A clone writes a new repository's configuration; repacking updates
-        // `.git/objects/info`.
-        "clone" | "gc" | "repack" | "maintenance" => true,
+        // `.git/objects/info`. A push can record an upstream through `-u` or
+        // `push.autoSetupRemote`, and needs the network the sandbox lacks.
+        "clone" | "gc" | "repack" | "maintenance" | "push" => true,
         _ => false,
     }
 }
@@ -181,6 +184,13 @@ mod tests {
             "git checkout -b fix origin/main",
             "git branch fix origin/main",
             "git push -u origin main",
+            "git push -fu origin main",
+            "git push origin main",
+            "git branch -d feature",
+            "git branch -D feature",
+            "git branch --delete feature",
+            "git branch -vu origin/main",
+            "git switch -tc feature origin/feature",
             "git submodule add ../lib lib",
             "git sparse-checkout set src",
             "git lfs install",
@@ -211,7 +221,6 @@ mod tests {
             "git checkout -b feature",
             "git switch -c fix --no-track origin/main",
             "git branch --list feat*",
-            "git push origin main",
             "git submodule status",
             "git -c core.pager=cat log --oneline",
             "git log -C --oneline",
