@@ -72,7 +72,7 @@ fn the_private_alternative_runs_without_review() {
         "gh repo create todo-app --private",
         "gh repo create todo-app --source . --remote origin --private",
         "gh repo create todo-app --private -d \"A small todo app\" --add-readme",
-        "/usr/local/bin/gh repo create todo-app --private --gitignore Node --license mit",
+        "gh repo create todo-app --private --gitignore Node --license mit",
     ] {
         let (action, code, _) = review(command);
         assert_eq!(action, "allow", "{command}: {code}");
@@ -89,6 +89,8 @@ fn the_private_alternative_runs_without_review() {
         "gh repo create todo-app",
         "gh repo create todo-app --public",
         "gh repo create todo-app --internal",
+        // A directory in the executable never reaches the basename allow.
+        "/usr/local/bin/gh repo create todo-app --private --gitignore Node --license mit",
     ] {
         let (action, _, _) = review(command);
         assert_ne!(action, "allow", "{command}");
