@@ -5,7 +5,13 @@ use std::path::{Path, PathBuf};
 #[cfg(unix)]
 fn linked_file(path: &Path) -> bool {
     use std::os::unix::fs::MetadataExt;
-    std::fs::metadata(path).is_ok_and(|metadata| metadata.is_file() && metadata.nlink() != 1)
+    // A symlink may resolve to a protected inode. Metadata errors other
+    // than absence cannot establish a safe destination.
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => true,
+        Ok(metadata) => metadata.is_file() && metadata.nlink() != 1,
+        Err(error) => error.kind() != std::io::ErrorKind::NotFound,
+    }
 }
 
 #[cfg(not(unix))]
@@ -18,15 +24,42 @@ fn target(value: &str, workspace: &Path) -> PathBuf {
     workspace.join(value)
 }
 
+fn plain_operand(value: &str) -> bool {
+    !value.is_empty()
+        && !value.starts_with(['-', '~'])
+        && !value.contains(['*', '?', '[', ']', '$', '\u{60}', '{', '}'])
+}
+
+/// True means containment must decline. Unsupported forms of cp/touch must
+/// fail closed: flags, multiple destinations, and shell expansions can make
+/// a protected hard-linked inode the write target.
 pub(super) fn mutates_linked_destination(
     name: &str,
     arguments: &[String],
     workspace: &Path,
 ) -> bool {
-    match (name, arguments) {
-        ("cp", [source, destination]) | ("cp", [_, source, destination])
-            if arguments.len() == 2 || arguments.first().is_some_and(|value| value == "--") =>
-        {
+    match name {
+        "cp" => {
+            let operands = match arguments {
+                [source, destination] if plain_operand(source) && plain_operand(destination) => {
+                    Some((source.as_str(), destination.as_str()))
+                }
+                [separator, source, destination]
+                    if separator == "--" && !source.is_empty() && !destination.is_empty() =>
+                {
+                    Some((source.as_str(), destination.as_str()))
+                }
+                _ => None,
+            };
+            let Some((source, destination)) = operands else {
+                return true;
+            };
+            // Even after the option separator, require concrete operands.
+            if source.contains(['*', '?', '[', ']', '$', '\u{60}', '{', '}'])
+                || destination.contains(['*', '?', '[', ']', '$', '\u{60}', '{', '}'])
+            {
+                return true;
+            }
             let mut destination = target(destination, workspace);
             if destination.is_dir() {
                 let Some(basename) = Path::new(source).file_name() else {
@@ -36,8 +69,17 @@ pub(super) fn mutates_linked_destination(
             }
             linked_file(&destination)
         }
-        ("touch", [destination]) => linked_file(&target(destination, workspace)),
-        ("touch", [separator, destination]) if separator == "--" => {
+        "touch" => {
+            let destination = match arguments {
+                [destination] if plain_operand(destination) => destination,
+                [separator, destination] if separator == "--" && !destination.is_empty() => {
+                    destination
+                }
+                _ => return true,
+            };
+            if destination.contains(['*', '?', '[', ']', '$', '\u{60}', '{', '}']) {
+                return true;
+            }
             linked_file(&target(destination, workspace))
         }
         _ => false,
