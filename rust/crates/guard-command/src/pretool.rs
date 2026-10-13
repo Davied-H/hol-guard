@@ -21,7 +21,7 @@ pub struct PathContext<'a> {
 }
 
 mod contained_wrapper;
-mod curl_reads;
+pub(crate) mod curl_reads;
 pub(crate) mod kubectl_reads;
 mod workspace_contained;
 #[cfg(unix)]

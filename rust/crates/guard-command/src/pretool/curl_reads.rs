@@ -116,6 +116,19 @@ pub(super) fn safe_curl_segment(
     urls > 0
 }
 
+/// A whole `curl` segment, generic checks included, that the native proof
+/// accepts as a GET or HEAD of a public URL. None of its allowed options reads
+/// standard input or a local file, so the compatibility layer does not treat
+/// it as a possible upload when it sits in a pipeline.
+pub(crate) fn proven_read_segment(
+    model: &crate::CanonicalCommandV1,
+    segment: &crate::CommandSegmentV1,
+    context: super::PathContext<'_>,
+) -> bool {
+    segment.executable.as_deref() == Some("curl")
+        && super::segment_proof::exact_safe_segment_with_context(model, segment, false, context)
+}
+
 /// Reason code for a proven command: a network read keeps a distinct code so
 /// a projected file redirect of its body stays reviewed.
 pub(crate) fn proven_reason_code(model: &crate::CanonicalCommandV1) -> &'static str {

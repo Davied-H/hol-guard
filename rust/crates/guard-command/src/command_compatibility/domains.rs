@@ -273,7 +273,11 @@ pub(super) fn observe(
             .filter(|other| other.execution_context == segment.execution_context)
             .count()
             > 1;
-        if upload || pipeline {
+        // A proven read takes no option that sends stdin or a file, so a
+        // pipe after it only filters the response.
+        let proven_read = executable == "curl"
+            && crate::pretool::curl_reads::proven_read_segment(command, segment, context);
+        if (upload || pipeline) && !proven_read {
             output.rule("command.data-protection.file-upload", index, true);
         }
         if sensitive(&command.normalized_text) {
