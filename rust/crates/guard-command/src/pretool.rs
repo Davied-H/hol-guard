@@ -40,6 +40,7 @@ mod for_loop_unroll;
 pub(crate) mod git_branch_listing;
 mod git_config;
 pub(crate) mod git_config_reads;
+pub(crate) mod git_grep;
 pub(crate) mod git_hash_object;
 mod git_read_floor;
 mod git_reads;
@@ -74,7 +75,7 @@ mod recursive_copy;
 mod restricted_tests;
 mod rust_toolchain;
 mod safe_links;
-mod safe_reads;
+pub(crate) mod safe_reads;
 mod safe_scalar;
 mod safe_writes;
 mod search;
@@ -90,6 +91,9 @@ mod version_probes;
 #[cfg(test)]
 #[path = "pretool/workspace_contained_runner_tests.rs"]
 mod workspace_contained_runner_tests;
+#[cfg(test)]
+#[path = "pretool/workspace_contained_sibling_tests.rs"]
+mod workspace_contained_sibling_tests;
 #[cfg(test)]
 #[path = "pretool/workspace_contained_tests.rs"]
 mod workspace_contained_tests;
@@ -302,7 +306,9 @@ fn exact_safe_command_with_context(
     if !safe_scalar::bounded_total_sleep(model) {
         return false;
     }
-    if segment_proof::exact_safe_cwd_compound(model, allow_git_helper_context, context) {
+    if segment_proof::exact_safe_cwd_compound(model, allow_git_helper_context, context)
+        || safe_reads::exact_safe_sequence(model, allow_git_helper_context, context)
+    {
         return true;
     }
     if let Some(rest) = segment_proof::after_read_prefix(model, context) {

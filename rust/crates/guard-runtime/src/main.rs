@@ -241,6 +241,9 @@ mod guard_config_harness;
 mod guard_config_iso;
 mod guard_config_load;
 mod guard_config_managed;
+mod guard_store_advisory_cache;
+#[cfg(test)]
+mod guard_store_advisory_cache_vectors_tests;
 mod guard_store_approval_request;
 mod guard_store_approval_row;
 mod guard_store_approval_write;
@@ -391,6 +394,9 @@ mod mcp_proxy_decision_tests;
 mod mcp_proxy_decision_vectors_tests;
 mod mcp_proxy_package;
 mod mcp_proxy_postclaim;
+mod mcp_proxy_projection;
+#[cfg(test)]
+mod mcp_proxy_projection_vectors_tests;
 mod mcp_proxy_route;
 mod mcp_proxy_shlex;
 mod mcp_proxy_signals;
@@ -414,6 +420,8 @@ mod mcp_tool_policy_revalidate;
 mod memory_pattern;
 mod native_exact_action_op;
 mod native_hook_receipt;
+#[allow(dead_code)] // Read once the direct lane queues a reviewed `PreToolUse` itself.
+mod native_review_link;
 mod native_runtime_admission;
 mod native_runtime_resilience;
 mod oauth_refresh;

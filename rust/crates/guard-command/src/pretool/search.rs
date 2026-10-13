@@ -258,7 +258,18 @@ pub(super) fn glob_can_select_sensitive_path(value: &str) -> bool {
             {
                 return true;
             }
-            let env_hint = hint::glob_constrained_lcs(bytes, b".env.") >= 2;
+            // A literal source extension already lets `*.ts` through, so for
+            // such a glob only the text before its first `*` can aim it at
+            // `.env.` files: `.env*.ts` still refuses, `*.test.ts` does not.
+            let env_scope = if code_extension {
+                &bytes[..bytes
+                    .iter()
+                    .position(|character| *character == b'*')
+                    .unwrap_or(bytes.len())]
+            } else {
+                bytes
+            };
+            let env_hint = hint::glob_constrained_lcs(env_scope, b".env.") >= 2;
             let family_hint = [
                 b"private-key".as_slice(),
                 b"private_key",
@@ -456,6 +467,16 @@ fn safe_rg_arguments_inner(
         }
         if paths_only || pattern_supplied {
             if stdin_only {
+                return false;
+            }
+            // A broad search of only parent directories traverses unrelated
+            // sibling projects. Named sibling paths still use canonical
+            // provenance checks, but `rg pattern ../` remains at review.
+            let directories: Vec<_> = argument
+                .split('/')
+                .filter(|part| !part.is_empty() && *part != ".")
+                .collect();
+            if !directories.is_empty() && directories.iter().all(|part| *part == "..") {
                 return false;
             }
             // A shell glob that lexically could reach a hidden or credential
