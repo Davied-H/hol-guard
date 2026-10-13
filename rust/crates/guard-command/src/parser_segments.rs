@@ -231,12 +231,11 @@ pub(super) fn is_stderr_to_null_redirect(
     start: usize,
     preserve_backslash: bool,
 ) -> bool {
-    // Only the fixed stderr sink is inert; arbitrary paths and descriptors
-    // must still pass through the unsupported-redirection guard. POSIX shells
-    // on Windows (Git Bash, MSYS2, Cygwin) map `/dev/null` to the null device
-    // too, and this dialect is only ever run by one of them.
-    chars.get(start..start.saturating_add(11))
-        == Some(&['2', '>', '/', 'd', 'e', 'v', '/', 'n', 'u', 'l', 'l'])
+    // Only Unix's fixed stderr sink is inert; arbitrary paths and descriptors
+    // must still pass through the unsupported-redirection guard.
+    cfg!(unix)
+        && chars.get(start..start.saturating_add(11))
+            == Some(&['2', '>', '/', 'd', 'e', 'v', '/', 'n', 'u', 'l', 'l'])
         && starts_at_shell_token_boundary(chars, start, preserve_backslash)
         && chars.get(start + 11).is_none_or(|value| {
             is_shell_token_whitespace(*value) || matches!(*value, '|' | '&' | ';')

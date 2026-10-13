@@ -105,19 +105,19 @@ fn windows_missing_git_marker_probe_accepts_backslash_home_spellings() {
             == "allow"
     };
     for command in [
-        format!("ls -d '{home_spelling}'/plain/.git 2>/dev/null; ls '{home_spelling}'/plain"),
-        format!("ls -d '{home_spelling}\\plain\\.git' 2>/dev/null"),
-        "ls README.md 2>/dev/null".to_owned(),
-        "cat README.md 2>/dev/null | head -5".to_owned(),
+        format!("ls -d '{home_spelling}'/plain/.git; ls '{home_spelling}'/plain"),
+        format!("ls -d '{home_spelling}\\plain\\.git'"),
     ] {
         assert!(allowed(command.clone()), "{command}");
     }
     for command in [
-        format!("ls -d '{home_spelling}\\plain\\.ssh' 2>/dev/null"),
-        format!("ls -d '{home_spelling}\\plain\\.git\\config' 2>/dev/null"),
-        format!("ls -d '{home_spelling}\\plain\\..\\.ssh' 2>/dev/null"),
-        format!("ls -d '{home_spelling}\\missing\\.aws' 2>/dev/null"),
-        "ls README.md 2>/dev/nullx".to_owned(),
+        format!("ls -d '{home_spelling}\\plain\\.ssh'"),
+        format!("ls -d '{home_spelling}\\plain\\.git\\config'"),
+        format!("ls -d '{home_spelling}\\plain\\..\\.ssh'"),
+        format!("ls -d '{home_spelling}\\missing\\.aws'"),
+        // A Windows host may run this text in PowerShell or cmd, where
+        // `2>/dev/null` writes to `\dev\null` on the current drive.
+        "ls README.md 2>/dev/null".to_owned(),
     ] {
         assert!(!allowed(command.clone()), "{command}");
     }
