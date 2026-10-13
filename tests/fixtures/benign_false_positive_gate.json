@@ -3850,6 +3850,54 @@
       },
       "cwd": "parent",
       "expect": "allow"
+    },
+    {
+      "id": "session-git-c-linked-sibling-log",
+      "fix_area": "git",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git -C ${ORG_WT} log --oneline -3"
+      },
+      "cwd": "org",
+      "expect": "allow"
+    },
+    {
+      "id": "session-git-log-rev-chain",
+      "fix_area": "git",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git log --format='%h %ad %s' --date=iso -1 HEAD~1; echo ---; git rev-parse HEAD; echo ---; git log --oneline HEAD~1..HEAD | wc -l"
+      },
+      "cwd": "org_app",
+      "expect": "allow"
+    },
+    {
+      "id": "session-git-c-disabled-helpers-status",
+      "fix_area": "git",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git -C ${ORG}/app-portal -c core.fsmonitor=false status --porcelain"
+      },
+      "cwd": "org",
+      "expect": "allow"
     }
   ],
   "pending_pr": {
