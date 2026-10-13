@@ -26,6 +26,9 @@
 //! `add_silent_native_review_approval_request`, and the hook answers with the
 //! `render_pre_tool` block whose reason `safe_alternative_reason` writes.
 //!
+//! A package review is queued only when `native_package_review_response`
+//! provably leaves it to the queue (`hook_direct_review_package.rs`).
+//!
 //! Every other shape defers, so the daemon still answers the hook: a missing
 //! fact, a package review the daemon may settle, a Claude Code notice the
 //! bound key cannot sign, and any request or write the resident could not
@@ -51,9 +54,6 @@ const SILENT_WRITE_METHOD: &str = "add_silent_native_review_approval_request";
 const CLAUDE_WRITE_METHOD: &str = "add_claude_native_review_approval_request";
 /// `asks_for_approval`: the mode that pauses the hook for the inbox.
 const ASK_MODE: &str = "ask";
-/// `PACKAGE_REVIEW_REASON`: a review `native_package_review_response` may
-/// settle before anything is queued.
-const PACKAGE_REVIEW_REASON: &str = "native_package_review";
 /// The harness whose paused review also records a permission notice.
 const CLAUDE_CODE: &str = "claude-code";
 /// The mode the daemon records a silent block with.
@@ -230,7 +230,8 @@ fn facts<'a>(context: &Context<'a>, result: &Object) -> Option<Facts<'a>> {
     let binding = context.binding;
     let review = &binding.review;
     let mode = review.blocked_request_mode.as_deref()?;
-    if result.get("reason_code").and_then(Value::as_str) == Some(PACKAGE_REVIEW_REASON) {
+    // `native_package_review_response` may settle a package review first.
+    if !package::left_to_queue(cfg!(windows), context.recorded_payload, result) {
         return None;
     }
     // `_native_review_artifact_id` names the notice's artifact with the
@@ -352,6 +353,9 @@ fn now_micros() -> Option<i64> {
 
 #[path = "hook_direct_review_notice.rs"]
 mod notice;
+
+#[path = "hook_direct_review_package.rs"]
+mod package;
 
 #[cfg(test)]
 #[path = "hook_direct_review_queue_tests.rs"]
