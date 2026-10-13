@@ -51,8 +51,9 @@ pub(crate) const HOOK_DIRECT_SAVED_DECISION_FEATURE: &str = "hook-direct-saved-d
 const HOOK_DIRECT_RESULT_SCHEMA: &str = "guard-hook-direct-result.v1";
 /// The harnesses whose allow the daemon returns as the edge rendered it.
 /// The bounded bridge harnesses after Cursor have no harness-specific step
-/// on the daemon path for the hooks answered here.
-const DIRECT_HARNESSES: [&str; 12] = [
+/// on the daemon path for the hooks answered here; the `pi` module defers
+/// the Oh My Pi steps the resident cannot repeat.
+const DIRECT_HARNESSES: [&str; 14] = [
     "codex",
     CLAUDE_CODE,
     CURSOR,
@@ -65,6 +66,8 @@ const DIRECT_HARNESSES: [&str; 12] = [
     "cline",
     "opencode",
     GROK,
+    "pi",
+    "omp",
 ];
 const TRANSITION_PROBE_FIELD: &str = "guard_transition_probe";
 const EXECUTION_ENVIRONMENT_FIELD: &str = "guard_execution_environment";
@@ -252,6 +255,10 @@ fn answer(
     {
         return Err(HookDirectDefer::PayloadUnsupported);
     }
+    if pi::structured_mediation(&request.harness, event) {
+        return Err(HookDirectDefer::EventUnsupported);
+    }
+    let source_ref_external_allowed = pi::source_ref_external_allowed(&request.harness);
     payload.remove("hook_env");
     // The daemon records the payload without `hook_env`, and with the
     // execution environment present even when the caller sent none.
@@ -357,7 +364,7 @@ fn answer(
             cwd: Some(workspace.clone()),
             home_dir: request_home.clone(),
             guard_home: request.guard_home,
-            source_ref_external_allowed: false,
+            source_ref_external_allowed,
             execution_environment,
         },
         recording_only,
@@ -568,6 +575,8 @@ mod cursor;
 mod lifecycle;
 #[path = "hook_direct_local_cli.rs"]
 mod local_cli;
+#[path = "hook_direct_pi.rs"]
+mod pi;
 #[path = "hook_direct_saved_decision.rs"]
 mod saved_decision;
 #[path = "hook_direct_workspace.rs"]

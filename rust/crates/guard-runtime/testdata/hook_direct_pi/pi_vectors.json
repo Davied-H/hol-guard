@@ -1,0 +1,720 @@
+{
+ "source_ref_external_allowed": [
+  {
+   "harness": "pi",
+   "allowed": true
+  },
+  {
+   "harness": "omp",
+   "allowed": true
+  },
+  {
+   "harness": "PI",
+   "allowed": true
+  },
+  {
+   "harness": " Omp ",
+   "allowed": true
+  },
+  {
+   "harness": "\tpi\n",
+   "allowed": true
+  },
+  {
+   "harness": "\u001cpi\u001f",
+   "allowed": true
+  },
+  {
+   "harness": "　omp ",
+   "allowed": true
+  },
+  {
+   "harness": "o_m_p",
+   "allowed": false
+  },
+  {
+   "harness": "oh-my-pi",
+   "allowed": false
+  },
+  {
+   "harness": "oh_my_pi",
+   "allowed": false
+  },
+  {
+   "harness": "pi-agent",
+   "allowed": false
+  },
+  {
+   "harness": "pi_coding_agent",
+   "allowed": false
+  },
+  {
+   "harness": "pi-coding-agent",
+   "allowed": false
+  },
+  {
+   "harness": "pix",
+   "allowed": false
+  },
+  {
+   "harness": "p i",
+   "allowed": false
+  },
+  {
+   "harness": "",
+   "allowed": false
+  },
+  {
+   "harness": "codex",
+   "allowed": false
+  },
+  {
+   "harness": "claude-code",
+   "allowed": false
+  },
+  {
+   "harness": "cursor",
+   "allowed": false
+  },
+  {
+   "harness": "copilot",
+   "allowed": false
+  },
+  {
+   "harness": "kimi",
+   "allowed": false
+  },
+  {
+   "harness": "devin",
+   "allowed": false
+  },
+  {
+   "harness": "zcode",
+   "allowed": false
+  },
+  {
+   "harness": "openclaw",
+   "allowed": false
+  },
+  {
+   "harness": "hermes",
+   "allowed": false
+  },
+  {
+   "harness": "cline",
+   "allowed": false
+  },
+  {
+   "harness": "opencode",
+   "allowed": false
+  },
+  {
+   "harness": "grok",
+   "allowed": false
+  }
+ ],
+ "structured_mediation": [
+  {
+   "harness": "pi",
+   "event": "PreToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "pi",
+   "event": "PostToolUse",
+   "mediated": true
+  },
+  {
+   "harness": "pi",
+   "event": "UserPromptSubmit",
+   "mediated": false
+  },
+  {
+   "harness": "omp",
+   "event": "PreToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "omp",
+   "event": "PostToolUse",
+   "mediated": true
+  },
+  {
+   "harness": "omp",
+   "event": "UserPromptSubmit",
+   "mediated": false
+  },
+  {
+   "harness": "PI",
+   "event": "PreToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "PI",
+   "event": "PostToolUse",
+   "mediated": true
+  },
+  {
+   "harness": "PI",
+   "event": "UserPromptSubmit",
+   "mediated": false
+  },
+  {
+   "harness": " Omp ",
+   "event": "PreToolUse",
+   "mediated": false
+  },
+  {
+   "harness": " Omp ",
+   "event": "PostToolUse",
+   "mediated": true
+  },
+  {
+   "harness": " Omp ",
+   "event": "UserPromptSubmit",
+   "mediated": false
+  },
+  {
+   "harness": "\tpi\n",
+   "event": "PreToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "\tpi\n",
+   "event": "PostToolUse",
+   "mediated": true
+  },
+  {
+   "harness": "\tpi\n",
+   "event": "UserPromptSubmit",
+   "mediated": false
+  },
+  {
+   "harness": "\u001cpi\u001f",
+   "event": "PreToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "\u001cpi\u001f",
+   "event": "PostToolUse",
+   "mediated": true
+  },
+  {
+   "harness": "\u001cpi\u001f",
+   "event": "UserPromptSubmit",
+   "mediated": false
+  },
+  {
+   "harness": "　omp ",
+   "event": "PreToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "　omp ",
+   "event": "PostToolUse",
+   "mediated": true
+  },
+  {
+   "harness": "　omp ",
+   "event": "UserPromptSubmit",
+   "mediated": false
+  },
+  {
+   "harness": "o_m_p",
+   "event": "PreToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "o_m_p",
+   "event": "PostToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "o_m_p",
+   "event": "UserPromptSubmit",
+   "mediated": false
+  },
+  {
+   "harness": "oh-my-pi",
+   "event": "PreToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "oh-my-pi",
+   "event": "PostToolUse",
+   "mediated": true
+  },
+  {
+   "harness": "oh-my-pi",
+   "event": "UserPromptSubmit",
+   "mediated": false
+  },
+  {
+   "harness": "oh_my_pi",
+   "event": "PreToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "oh_my_pi",
+   "event": "PostToolUse",
+   "mediated": true
+  },
+  {
+   "harness": "oh_my_pi",
+   "event": "UserPromptSubmit",
+   "mediated": false
+  },
+  {
+   "harness": "pi-agent",
+   "event": "PreToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "pi-agent",
+   "event": "PostToolUse",
+   "mediated": true
+  },
+  {
+   "harness": "pi-agent",
+   "event": "UserPromptSubmit",
+   "mediated": false
+  },
+  {
+   "harness": "pi_coding_agent",
+   "event": "PreToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "pi_coding_agent",
+   "event": "PostToolUse",
+   "mediated": true
+  },
+  {
+   "harness": "pi_coding_agent",
+   "event": "UserPromptSubmit",
+   "mediated": false
+  },
+  {
+   "harness": "pi-coding-agent",
+   "event": "PreToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "pi-coding-agent",
+   "event": "PostToolUse",
+   "mediated": true
+  },
+  {
+   "harness": "pi-coding-agent",
+   "event": "UserPromptSubmit",
+   "mediated": false
+  },
+  {
+   "harness": "pix",
+   "event": "PreToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "pix",
+   "event": "PostToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "pix",
+   "event": "UserPromptSubmit",
+   "mediated": false
+  },
+  {
+   "harness": "p i",
+   "event": "PreToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "p i",
+   "event": "PostToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "p i",
+   "event": "UserPromptSubmit",
+   "mediated": false
+  },
+  {
+   "harness": "",
+   "event": "PreToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "",
+   "event": "PostToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "",
+   "event": "UserPromptSubmit",
+   "mediated": false
+  },
+  {
+   "harness": "codex",
+   "event": "PreToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "codex",
+   "event": "PostToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "codex",
+   "event": "UserPromptSubmit",
+   "mediated": false
+  },
+  {
+   "harness": "claude-code",
+   "event": "PreToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "claude-code",
+   "event": "PostToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "claude-code",
+   "event": "UserPromptSubmit",
+   "mediated": false
+  },
+  {
+   "harness": "cursor",
+   "event": "PreToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "cursor",
+   "event": "PostToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "cursor",
+   "event": "UserPromptSubmit",
+   "mediated": false
+  },
+  {
+   "harness": "copilot",
+   "event": "PreToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "copilot",
+   "event": "PostToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "copilot",
+   "event": "UserPromptSubmit",
+   "mediated": false
+  },
+  {
+   "harness": "kimi",
+   "event": "PreToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "kimi",
+   "event": "PostToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "kimi",
+   "event": "UserPromptSubmit",
+   "mediated": false
+  },
+  {
+   "harness": "devin",
+   "event": "PreToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "devin",
+   "event": "PostToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "devin",
+   "event": "UserPromptSubmit",
+   "mediated": false
+  },
+  {
+   "harness": "zcode",
+   "event": "PreToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "zcode",
+   "event": "PostToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "zcode",
+   "event": "UserPromptSubmit",
+   "mediated": false
+  },
+  {
+   "harness": "openclaw",
+   "event": "PreToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "openclaw",
+   "event": "PostToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "openclaw",
+   "event": "UserPromptSubmit",
+   "mediated": false
+  },
+  {
+   "harness": "hermes",
+   "event": "PreToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "hermes",
+   "event": "PostToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "hermes",
+   "event": "UserPromptSubmit",
+   "mediated": false
+  },
+  {
+   "harness": "cline",
+   "event": "PreToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "cline",
+   "event": "PostToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "cline",
+   "event": "UserPromptSubmit",
+   "mediated": false
+  },
+  {
+   "harness": "opencode",
+   "event": "PreToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "opencode",
+   "event": "PostToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "opencode",
+   "event": "UserPromptSubmit",
+   "mediated": false
+  },
+  {
+   "harness": "grok",
+   "event": "PreToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "grok",
+   "event": "PostToolUse",
+   "mediated": false
+  },
+  {
+   "harness": "grok",
+   "event": "UserPromptSubmit",
+   "mediated": false
+  }
+ ],
+ "lifecycle": [
+  {
+   "harness": "pi",
+   "event": "SessionStart",
+   "response": {
+    "decision": "allow",
+    "policy_action": "allow",
+    "reason_code": "native_hook_event_unavailable"
+   }
+  },
+  {
+   "harness": "pi",
+   "event": "SessionEnd",
+   "response": {
+    "decision": "allow",
+    "policy_action": "allow",
+    "reason_code": "native_hook_event_unavailable"
+   }
+  },
+  {
+   "harness": "pi",
+   "event": "session_start",
+   "response": {
+    "decision": "allow",
+    "policy_action": "allow",
+    "reason_code": "native_hook_event_unavailable"
+   }
+  },
+  {
+   "harness": "pi",
+   "event": "Stop",
+   "response": {
+    "decision": "allow",
+    "policy_action": "allow",
+    "reason_code": "native_hook_event_unavailable"
+   }
+  },
+  {
+   "harness": "pi",
+   "event": "SubagentStop",
+   "response": {
+    "decision": "allow",
+    "policy_action": "allow",
+    "reason_code": "native_hook_event_unavailable"
+   }
+  },
+  {
+   "harness": "pi",
+   "event": "Notification",
+   "response": {
+    "decision": "allow",
+    "policy_action": "allow",
+    "reason_code": "native_hook_event_unavailable"
+   }
+  },
+  {
+   "harness": "pi",
+   "event": "TaskStart",
+   "response": {
+    "decision": "allow",
+    "policy_action": "allow",
+    "reason_code": "native_hook_event_unavailable"
+   }
+  },
+  {
+   "harness": "pi",
+   "event": "SessionShutdown",
+   "response": {
+    "decision": "allow",
+    "policy_action": "allow",
+    "reason_code": "native_hook_event_unavailable"
+   }
+  },
+  {
+   "harness": "pi",
+   "event": "agent_end",
+   "response": {
+    "decision": "allow",
+    "policy_action": "allow",
+    "reason_code": "native_hook_event_unavailable"
+   }
+  },
+  {
+   "harness": "pi",
+   "event": "turn_end",
+   "response": {
+    "decision": "allow",
+    "policy_action": "allow",
+    "reason_code": "native_hook_event_unavailable"
+   }
+  },
+  {
+   "harness": "omp",
+   "event": "SessionStart",
+   "response": {
+    "decision": "allow",
+    "policy_action": "allow",
+    "reason_code": "native_hook_event_unavailable"
+   }
+  },
+  {
+   "harness": "omp",
+   "event": "SessionEnd",
+   "response": {
+    "decision": "allow",
+    "policy_action": "allow",
+    "reason_code": "native_hook_event_unavailable"
+   }
+  },
+  {
+   "harness": "omp",
+   "event": "session_start",
+   "response": {
+    "decision": "allow",
+    "policy_action": "allow",
+    "reason_code": "native_hook_event_unavailable"
+   }
+  },
+  {
+   "harness": "omp",
+   "event": "Stop",
+   "response": {
+    "decision": "allow",
+    "policy_action": "allow",
+    "reason_code": "native_hook_event_unavailable"
+   }
+  },
+  {
+   "harness": "omp",
+   "event": "SubagentStop",
+   "response": {
+    "decision": "allow",
+    "policy_action": "allow",
+    "reason_code": "native_hook_event_unavailable"
+   }
+  },
+  {
+   "harness": "omp",
+   "event": "Notification",
+   "response": {
+    "decision": "allow",
+    "policy_action": "allow",
+    "reason_code": "native_hook_event_unavailable"
+   }
+  },
+  {
+   "harness": "omp",
+   "event": "TaskStart",
+   "response": {
+    "decision": "allow",
+    "policy_action": "allow",
+    "reason_code": "native_hook_event_unavailable"
+   }
+  },
+  {
+   "harness": "omp",
+   "event": "SessionShutdown",
+   "response": {
+    "decision": "allow",
+    "policy_action": "allow",
+    "reason_code": "native_hook_event_unavailable"
+   }
+  },
+  {
+   "harness": "omp",
+   "event": "agent_end",
+   "response": {
+    "decision": "allow",
+    "policy_action": "allow",
+    "reason_code": "native_hook_event_unavailable"
+   }
+  },
+  {
+   "harness": "omp",
+   "event": "turn_end",
+   "response": {
+    "decision": "allow",
+    "policy_action": "allow",
+    "reason_code": "native_hook_event_unavailable"
+   }
+  }
+ ]
+}
