@@ -3,7 +3,8 @@
 //! * `lsof -i`: lists open network sockets and the processes that hold them,
 //!   the view `ps aux` already gives for command lines. Only socket listings
 //!   are admitted: an `-i` selector, `-s` state filters, `-p` process ids and
-//!   the display flags `-n`, `-P`, `-t`, `-a`, `-l` and `-V`.
+//!   the display flags `-n`, `-P`, `-t`, `-a`, `-l` and `-V`. lsof joins
+//!   selectors with OR, so `-p` needs `-a` to stay a socket listing.
 //! * `pg_isready`: asks a local PostgreSQL server whether it accepts
 //!   connections and prints the answer. It sends no query and no password.
 //!
@@ -17,6 +18,8 @@ const LOOPBACK_HOSTS: [&str; 3] = ["127.0.0.1", "localhost", "::1"];
 
 pub(in crate::pretool) fn safe_lsof_arguments(arguments: &[String]) -> bool {
     let mut network = false;
+    let mut pid = false;
+    let mut and = false;
     let mut index = 0;
     while index < arguments.len() {
         let argument = arguments[index].as_str();
@@ -30,7 +33,11 @@ pub(in crate::pretool) fn safe_lsof_arguments(arguments: &[String]) -> bool {
         for (offset, flag) in cluster.char_indices() {
             let rest = &cluster[offset + flag.len_utf8()..];
             match flag {
-                'n' | 'P' | 't' | 'a' | 'l' | 'V' => continue,
+                'a' => {
+                    and = true;
+                    continue;
+                }
+                'n' | 'P' | 't' | 'l' | 'V' => continue,
                 'i' => {
                     network = true;
                     if !rest.is_empty() {
@@ -56,6 +63,7 @@ pub(in crate::pretool) fn safe_lsof_arguments(arguments: &[String]) -> bool {
                     }
                 }
                 'p' => {
+                    pid = true;
                     let value = if rest.is_empty() {
                         let Some(value) = arguments.get(index) else {
                             return false;
@@ -74,7 +82,8 @@ pub(in crate::pretool) fn safe_lsof_arguments(arguments: &[String]) -> bool {
             break;
         }
     }
-    network
+    // Without `-a`, `-p` also lists every open file of that process.
+    network && (!pid || and)
 }
 
 /// `[46][protocol][:port]`, for example `:5432`, `TCP:3000`, `4tcp` or
@@ -194,6 +203,7 @@ mod tests {
             "-nP -iTCP:5432 -sTCP:LISTEN",
             "-nP -iTCP -sTCP:LISTEN",
             "-i4 -a -p 123,456",
+            "-ai -p 123",
             "-i tcp:8000-8010",
         ] {
             assert!(safe_lsof_arguments(&arguments(command)), "lsof {command}");
@@ -226,6 +236,8 @@ mod tests {
             "-F n -i",
             "-p",
             "-p self -i",
+            "-i -p 123",
+            "-ip 123",
             "--help",
         ] {
             assert!(!safe_lsof_arguments(&arguments(command)), "lsof {command}");
