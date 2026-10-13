@@ -716,5 +716,1391 @@
     "reason_code": "native_hook_event_unavailable"
    }
   }
+ ],
+ "structured_output": [
+  {
+   "policy": "absent",
+   "harness": "pi",
+   "view": {
+    "managed_policy_status": "absent",
+    "managed_policy_hash": null,
+    "managed_locked_settings": [],
+    "managed_policy": null
+   },
+   "unchanged": true
+  },
+  {
+   "policy": "absent",
+   "harness": "omp",
+   "view": {
+    "managed_policy_status": "absent",
+    "managed_policy_hash": null,
+    "managed_locked_settings": [],
+    "managed_policy": null
+   },
+   "unchanged": true
+  },
+  {
+   "policy": "no_status",
+   "harness": "pi",
+   "view": {
+    "managed_policy_status": null,
+    "managed_policy_hash": null,
+    "managed_locked_settings": [],
+    "managed_policy": null
+   },
+   "unchanged": true
+  },
+  {
+   "policy": "no_status",
+   "harness": "omp",
+   "view": {
+    "managed_policy_status": null,
+    "managed_policy_hash": null,
+    "managed_locked_settings": [],
+    "managed_policy": null
+   },
+   "unchanged": true
+  },
+  {
+   "policy": "absent_reserved",
+   "harness": "pi",
+   "view": {
+    "managed_policy_status": "absent",
+    "managed_policy_hash": null,
+    "managed_locked_settings": [
+     "data_control.structured_output"
+    ],
+    "managed_policy": null
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "absent_reserved",
+   "harness": "omp",
+   "view": {
+    "managed_policy_status": "absent",
+    "managed_policy_hash": null,
+    "managed_locked_settings": [
+     "data_control.structured_output"
+    ],
+    "managed_policy": null
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "absent_with_hash",
+   "harness": "pi",
+   "view": {
+    "managed_policy_status": "absent",
+    "managed_policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "managed_locked_settings": [],
+    "managed_policy": null
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "absent_with_hash",
+   "harness": "omp",
+   "view": {
+    "managed_policy_status": "absent",
+    "managed_policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "managed_locked_settings": [],
+    "managed_policy": null
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "absent_with_policy",
+   "harness": "pi",
+   "view": {
+    "managed_policy_status": "absent",
+    "managed_policy_hash": null,
+    "managed_locked_settings": [],
+    "managed_policy": {
+     "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "settings": {}
+    }
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "absent_with_policy",
+   "harness": "omp",
+   "view": {
+    "managed_policy_status": "absent",
+    "managed_policy_hash": null,
+    "managed_locked_settings": [],
+    "managed_policy": {
+     "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "settings": {}
+    }
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "active_without_setting",
+   "harness": "pi",
+   "view": {
+    "managed_policy_status": "active",
+    "managed_policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "managed_locked_settings": [
+     "harness_postures"
+    ],
+    "managed_policy": {
+     "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "settings": {}
+    }
+   },
+   "unchanged": true
+  },
+  {
+   "policy": "active_without_setting",
+   "harness": "omp",
+   "view": {
+    "managed_policy_status": "active",
+    "managed_policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "managed_locked_settings": [
+     "harness_postures"
+    ],
+    "managed_policy": {
+     "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "settings": {}
+    }
+   },
+   "unchanged": true
+  },
+  {
+   "policy": "active_other_data_control",
+   "harness": "pi",
+   "view": {
+    "managed_policy_status": "active",
+    "managed_policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "managed_locked_settings": [],
+    "managed_policy": {
+     "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "settings": {}
+    }
+   },
+   "unchanged": true
+  },
+  {
+   "policy": "active_other_data_control",
+   "harness": "omp",
+   "view": {
+    "managed_policy_status": "active",
+    "managed_policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "managed_locked_settings": [],
+    "managed_policy": {
+     "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "settings": {}
+    }
+   },
+   "unchanged": true
+  },
+  {
+   "policy": "active_unlocked_setting",
+   "harness": "pi",
+   "view": {
+    "managed_policy_status": "active",
+    "managed_policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "managed_locked_settings": [],
+    "managed_policy": {
+     "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "settings": {
+      "data_control": {
+       "structured_output": {
+        "version": "hol-guard-structured-output-policy.v1",
+        "enabled": true,
+        "harnesses": [
+         "pi"
+        ],
+        "event": "PostToolUse",
+        "destinationRole": "model_visible_tool_result",
+        "schema": {
+         "fields": [
+          {
+           "path": [
+            "email"
+           ],
+           "role": "protected_personal",
+           "valueType": "string",
+           "category": "email_address"
+          }
+         ]
+        },
+        "onMatch": "withhold",
+        "onUnsupported": "withhold"
+       }
+      }
+     }
+    }
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "active_unlocked_setting",
+   "harness": "omp",
+   "view": {
+    "managed_policy_status": "active",
+    "managed_policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "managed_locked_settings": [],
+    "managed_policy": {
+     "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "settings": {
+      "data_control": {
+       "structured_output": {
+        "version": "hol-guard-structured-output-policy.v1",
+        "enabled": true,
+        "harnesses": [
+         "pi"
+        ],
+        "event": "PostToolUse",
+        "destinationRole": "model_visible_tool_result",
+        "schema": {
+         "fields": [
+          {
+           "path": [
+            "email"
+           ],
+           "role": "protected_personal",
+           "valueType": "string",
+           "category": "email_address"
+          }
+         ]
+        },
+        "onMatch": "withhold",
+        "onUnsupported": "withhold"
+       }
+      }
+     }
+    }
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "active_locked_pi",
+   "harness": "pi",
+   "view": {
+    "managed_policy_status": "active",
+    "managed_policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "managed_locked_settings": [
+     "data_control.structured_output"
+    ],
+    "managed_policy": {
+     "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "settings": {
+      "data_control": {
+       "structured_output": {
+        "version": "hol-guard-structured-output-policy.v1",
+        "enabled": true,
+        "harnesses": [
+         "pi"
+        ],
+        "event": "PostToolUse",
+        "destinationRole": "model_visible_tool_result",
+        "schema": {
+         "fields": [
+          {
+           "path": [
+            "email"
+           ],
+           "role": "protected_personal",
+           "valueType": "string",
+           "category": "email_address"
+          }
+         ]
+        },
+        "onMatch": "withhold",
+        "onUnsupported": "withhold"
+       }
+      }
+     }
+    }
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "active_locked_pi",
+   "harness": "omp",
+   "view": {
+    "managed_policy_status": "active",
+    "managed_policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "managed_locked_settings": [
+     "data_control.structured_output"
+    ],
+    "managed_policy": {
+     "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "settings": {
+      "data_control": {
+       "structured_output": {
+        "version": "hol-guard-structured-output-policy.v1",
+        "enabled": true,
+        "harnesses": [
+         "pi"
+        ],
+        "event": "PostToolUse",
+        "destinationRole": "model_visible_tool_result",
+        "schema": {
+         "fields": [
+          {
+           "path": [
+            "email"
+           ],
+           "role": "protected_personal",
+           "valueType": "string",
+           "category": "email_address"
+          }
+         ]
+        },
+        "onMatch": "withhold",
+        "onUnsupported": "withhold"
+       }
+      }
+     }
+    }
+   },
+   "unchanged": true
+  },
+  {
+   "policy": "active_locked_omp",
+   "harness": "pi",
+   "view": {
+    "managed_policy_status": "active",
+    "managed_policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "managed_locked_settings": [
+     "data_control.structured_output"
+    ],
+    "managed_policy": {
+     "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "settings": {
+      "data_control": {
+       "structured_output": {
+        "version": "hol-guard-structured-output-policy.v1",
+        "enabled": true,
+        "harnesses": [
+         "omp"
+        ],
+        "event": "PostToolUse",
+        "destinationRole": "model_visible_tool_result",
+        "schema": {
+         "fields": [
+          {
+           "path": [
+            "email"
+           ],
+           "role": "protected_personal",
+           "valueType": "string",
+           "category": "email_address"
+          }
+         ]
+        },
+        "onMatch": "withhold",
+        "onUnsupported": "withhold"
+       }
+      }
+     }
+    }
+   },
+   "unchanged": true
+  },
+  {
+   "policy": "active_locked_omp",
+   "harness": "omp",
+   "view": {
+    "managed_policy_status": "active",
+    "managed_policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "managed_locked_settings": [
+     "data_control.structured_output"
+    ],
+    "managed_policy": {
+     "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "settings": {
+      "data_control": {
+       "structured_output": {
+        "version": "hol-guard-structured-output-policy.v1",
+        "enabled": true,
+        "harnesses": [
+         "omp"
+        ],
+        "event": "PostToolUse",
+        "destinationRole": "model_visible_tool_result",
+        "schema": {
+         "fields": [
+          {
+           "path": [
+            "email"
+           ],
+           "role": "protected_personal",
+           "valueType": "string",
+           "category": "email_address"
+          }
+         ]
+        },
+        "onMatch": "withhold",
+        "onUnsupported": "withhold"
+       }
+      }
+     }
+    }
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "active_locked_both",
+   "harness": "pi",
+   "view": {
+    "managed_policy_status": "active",
+    "managed_policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "managed_locked_settings": [
+     "data_control.structured_output"
+    ],
+    "managed_policy": {
+     "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "settings": {
+      "data_control": {
+       "structured_output": {
+        "version": "hol-guard-structured-output-policy.v1",
+        "enabled": true,
+        "harnesses": [
+         "omp",
+         "pi"
+        ],
+        "event": "PostToolUse",
+        "destinationRole": "model_visible_tool_result",
+        "schema": {
+         "fields": [
+          {
+           "path": [
+            "email"
+           ],
+           "role": "protected_personal",
+           "valueType": "string",
+           "category": "email_address"
+          }
+         ]
+        },
+        "onMatch": "withhold",
+        "onUnsupported": "withhold"
+       }
+      }
+     }
+    }
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "active_locked_both",
+   "harness": "omp",
+   "view": {
+    "managed_policy_status": "active",
+    "managed_policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "managed_locked_settings": [
+     "data_control.structured_output"
+    ],
+    "managed_policy": {
+     "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "settings": {
+      "data_control": {
+       "structured_output": {
+        "version": "hol-guard-structured-output-policy.v1",
+        "enabled": true,
+        "harnesses": [
+         "omp",
+         "pi"
+        ],
+        "event": "PostToolUse",
+        "destinationRole": "model_visible_tool_result",
+        "schema": {
+         "fields": [
+          {
+           "path": [
+            "email"
+           ],
+           "role": "protected_personal",
+           "valueType": "string",
+           "category": "email_address"
+          }
+         ]
+        },
+        "onMatch": "withhold",
+        "onUnsupported": "withhold"
+       }
+      }
+     }
+    }
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "active_locked_disabled",
+   "harness": "pi",
+   "view": {
+    "managed_policy_status": "active",
+    "managed_policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "managed_locked_settings": [
+     "data_control.structured_output"
+    ],
+    "managed_policy": {
+     "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "settings": {
+      "data_control": {
+       "structured_output": {
+        "version": "hol-guard-structured-output-policy.v1",
+        "enabled": false,
+        "harnesses": [
+         "omp"
+        ],
+        "event": "PostToolUse",
+        "destinationRole": "model_visible_tool_result",
+        "schema": {
+         "fields": [
+          {
+           "path": [
+            "email"
+           ],
+           "role": "protected_personal",
+           "valueType": "string",
+           "category": "email_address"
+          }
+         ]
+        },
+        "onMatch": "withhold",
+        "onUnsupported": "withhold"
+       }
+      }
+     }
+    }
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "active_locked_disabled",
+   "harness": "omp",
+   "view": {
+    "managed_policy_status": "active",
+    "managed_policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "managed_locked_settings": [
+     "data_control.structured_output"
+    ],
+    "managed_policy": {
+     "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "settings": {
+      "data_control": {
+       "structured_output": {
+        "version": "hol-guard-structured-output-policy.v1",
+        "enabled": false,
+        "harnesses": [
+         "omp"
+        ],
+        "event": "PostToolUse",
+        "destinationRole": "model_visible_tool_result",
+        "schema": {
+         "fields": [
+          {
+           "path": [
+            "email"
+           ],
+           "role": "protected_personal",
+           "valueType": "string",
+           "category": "email_address"
+          }
+         ]
+        },
+        "onMatch": "withhold",
+        "onUnsupported": "withhold"
+       }
+      }
+     }
+    }
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "active_locked_unknown_harness",
+   "harness": "pi",
+   "view": {
+    "managed_policy_status": "active",
+    "managed_policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "managed_locked_settings": [
+     "data_control.structured_output"
+    ],
+    "managed_policy": {
+     "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "settings": {
+      "data_control": {
+       "structured_output": {
+        "version": "hol-guard-structured-output-policy.v1",
+        "enabled": true,
+        "harnesses": [
+         "codex"
+        ],
+        "event": "PostToolUse",
+        "destinationRole": "model_visible_tool_result",
+        "schema": {
+         "fields": [
+          {
+           "path": [
+            "email"
+           ],
+           "role": "protected_personal",
+           "valueType": "string",
+           "category": "email_address"
+          }
+         ]
+        },
+        "onMatch": "withhold",
+        "onUnsupported": "withhold"
+       }
+      }
+     }
+    }
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "active_locked_unknown_harness",
+   "harness": "omp",
+   "view": {
+    "managed_policy_status": "active",
+    "managed_policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "managed_locked_settings": [
+     "data_control.structured_output"
+    ],
+    "managed_policy": {
+     "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "settings": {
+      "data_control": {
+       "structured_output": {
+        "version": "hol-guard-structured-output-policy.v1",
+        "enabled": true,
+        "harnesses": [
+         "codex"
+        ],
+        "event": "PostToolUse",
+        "destinationRole": "model_visible_tool_result",
+        "schema": {
+         "fields": [
+          {
+           "path": [
+            "email"
+           ],
+           "role": "protected_personal",
+           "valueType": "string",
+           "category": "email_address"
+          }
+         ]
+        },
+        "onMatch": "withhold",
+        "onUnsupported": "withhold"
+       }
+      }
+     }
+    }
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "active_locked_without_setting",
+   "harness": "pi",
+   "view": {
+    "managed_policy_status": "active",
+    "managed_policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "managed_locked_settings": [
+     "data_control.structured_output"
+    ],
+    "managed_policy": {
+     "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "settings": {}
+    }
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "active_locked_without_setting",
+   "harness": "omp",
+   "view": {
+    "managed_policy_status": "active",
+    "managed_policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "managed_locked_settings": [
+     "data_control.structured_output"
+    ],
+    "managed_policy": {
+     "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "settings": {}
+    }
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "active_locked_without_hash",
+   "harness": "pi",
+   "view": {
+    "managed_policy_status": "active",
+    "managed_policy_hash": null,
+    "managed_locked_settings": [
+     "data_control.structured_output"
+    ],
+    "managed_policy": {
+     "content_hash": null,
+     "settings": {
+      "data_control": {
+       "structured_output": {
+        "version": "hol-guard-structured-output-policy.v1",
+        "enabled": true,
+        "harnesses": [
+         "omp"
+        ],
+        "event": "PostToolUse",
+        "destinationRole": "model_visible_tool_result",
+        "schema": {
+         "fields": [
+          {
+           "path": [
+            "email"
+           ],
+           "role": "protected_personal",
+           "valueType": "string",
+           "category": "email_address"
+          }
+         ]
+        },
+        "onMatch": "withhold",
+        "onUnsupported": "withhold"
+       }
+      }
+     }
+    }
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "active_locked_without_hash",
+   "harness": "omp",
+   "view": {
+    "managed_policy_status": "active",
+    "managed_policy_hash": null,
+    "managed_locked_settings": [
+     "data_control.structured_output"
+    ],
+    "managed_policy": {
+     "content_hash": null,
+     "settings": {
+      "data_control": {
+       "structured_output": {
+        "version": "hol-guard-structured-output-policy.v1",
+        "enabled": true,
+        "harnesses": [
+         "omp"
+        ],
+        "event": "PostToolUse",
+        "destinationRole": "model_visible_tool_result",
+        "schema": {
+         "fields": [
+          {
+           "path": [
+            "email"
+           ],
+           "role": "protected_personal",
+           "valueType": "string",
+           "category": "email_address"
+          }
+         ]
+        },
+        "onMatch": "withhold",
+        "onUnsupported": "withhold"
+       }
+      }
+     }
+    }
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "active_locked_short_hash",
+   "harness": "pi",
+   "view": {
+    "managed_policy_status": "active",
+    "managed_policy_hash": "abc",
+    "managed_locked_settings": [
+     "data_control.structured_output"
+    ],
+    "managed_policy": {
+     "content_hash": "abc",
+     "settings": {
+      "data_control": {
+       "structured_output": {
+        "version": "hol-guard-structured-output-policy.v1",
+        "enabled": true,
+        "harnesses": [
+         "omp"
+        ],
+        "event": "PostToolUse",
+        "destinationRole": "model_visible_tool_result",
+        "schema": {
+         "fields": [
+          {
+           "path": [
+            "email"
+           ],
+           "role": "protected_personal",
+           "valueType": "string",
+           "category": "email_address"
+          }
+         ]
+        },
+        "onMatch": "withhold",
+        "onUnsupported": "withhold"
+       }
+      }
+     }
+    }
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "active_locked_short_hash",
+   "harness": "omp",
+   "view": {
+    "managed_policy_status": "active",
+    "managed_policy_hash": "abc",
+    "managed_locked_settings": [
+     "data_control.structured_output"
+    ],
+    "managed_policy": {
+     "content_hash": "abc",
+     "settings": {
+      "data_control": {
+       "structured_output": {
+        "version": "hol-guard-structured-output-policy.v1",
+        "enabled": true,
+        "harnesses": [
+         "omp"
+        ],
+        "event": "PostToolUse",
+        "destinationRole": "model_visible_tool_result",
+        "schema": {
+         "fields": [
+          {
+           "path": [
+            "email"
+           ],
+           "role": "protected_personal",
+           "valueType": "string",
+           "category": "email_address"
+          }
+         ]
+        },
+        "onMatch": "withhold",
+        "onUnsupported": "withhold"
+       }
+      }
+     }
+    }
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "active_locked_without_policy",
+   "harness": "pi",
+   "view": {
+    "managed_policy_status": "active",
+    "managed_policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "managed_locked_settings": [
+     "data_control.structured_output"
+    ],
+    "managed_policy": null
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "active_locked_without_policy",
+   "harness": "omp",
+   "view": {
+    "managed_policy_status": "active",
+    "managed_policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "managed_locked_settings": [
+     "data_control.structured_output"
+    ],
+    "managed_policy": null
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "active_locked_hash_mismatch",
+   "harness": "pi",
+   "view": {
+    "managed_policy_status": "active",
+    "managed_policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "managed_locked_settings": [
+     "data_control.structured_output"
+    ],
+    "managed_policy": {
+     "content_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+     "settings": {
+      "data_control": {
+       "structured_output": {
+        "version": "hol-guard-structured-output-policy.v1",
+        "enabled": true,
+        "harnesses": [
+         "omp"
+        ],
+        "event": "PostToolUse",
+        "destinationRole": "model_visible_tool_result",
+        "schema": {
+         "fields": [
+          {
+           "path": [
+            "email"
+           ],
+           "role": "protected_personal",
+           "valueType": "string",
+           "category": "email_address"
+          }
+         ]
+        },
+        "onMatch": "withhold",
+        "onUnsupported": "withhold"
+       }
+      }
+     }
+    }
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "active_locked_hash_mismatch",
+   "harness": "omp",
+   "view": {
+    "managed_policy_status": "active",
+    "managed_policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "managed_locked_settings": [
+     "data_control.structured_output"
+    ],
+    "managed_policy": {
+     "content_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+     "settings": {
+      "data_control": {
+       "structured_output": {
+        "version": "hol-guard-structured-output-policy.v1",
+        "enabled": true,
+        "harnesses": [
+         "omp"
+        ],
+        "event": "PostToolUse",
+        "destinationRole": "model_visible_tool_result",
+        "schema": {
+         "fields": [
+          {
+           "path": [
+            "email"
+           ],
+           "role": "protected_personal",
+           "valueType": "string",
+           "category": "email_address"
+          }
+         ]
+        },
+        "onMatch": "withhold",
+        "onUnsupported": "withhold"
+       }
+      }
+     }
+    }
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "active_locked_settings_unreadable",
+   "harness": "pi",
+   "view": {
+    "managed_policy_status": "active",
+    "managed_policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "managed_locked_settings": [
+     "data_control.structured_output"
+    ],
+    "managed_policy": {
+     "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "settings": null
+    }
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "active_locked_settings_unreadable",
+   "harness": "omp",
+   "view": {
+    "managed_policy_status": "active",
+    "managed_policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "managed_locked_settings": [
+     "data_control.structured_output"
+    ],
+    "managed_policy": {
+     "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "settings": null
+    }
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "active_locked_set",
+   "harness": "pi",
+   "view": {
+    "managed_policy_status": "active",
+    "managed_policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "managed_locked_settings": [
+     "data_control.structured_output"
+    ],
+    "managed_policy": {
+     "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "settings": {
+      "data_control": {
+       "structured_output": {
+        "version": "hol-guard-structured-output-policy.v1",
+        "enabled": true,
+        "harnesses": [
+         "omp"
+        ],
+        "event": "PostToolUse",
+        "destinationRole": "model_visible_tool_result",
+        "schema": {
+         "fields": [
+          {
+           "path": [
+            "email"
+           ],
+           "role": "protected_personal",
+           "valueType": "string",
+           "category": "email_address"
+          }
+         ]
+        },
+        "onMatch": "withhold",
+        "onUnsupported": "withhold"
+       }
+      }
+     }
+    }
+   },
+   "unchanged": true
+  },
+  {
+   "policy": "active_locked_set",
+   "harness": "omp",
+   "view": {
+    "managed_policy_status": "active",
+    "managed_policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "managed_locked_settings": [
+     "data_control.structured_output"
+    ],
+    "managed_policy": {
+     "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "settings": {
+      "data_control": {
+       "structured_output": {
+        "version": "hol-guard-structured-output-policy.v1",
+        "enabled": true,
+        "harnesses": [
+         "omp"
+        ],
+        "event": "PostToolUse",
+        "destinationRole": "model_visible_tool_result",
+        "schema": {
+         "fields": [
+          {
+           "path": [
+            "email"
+           ],
+           "role": "protected_personal",
+           "valueType": "string",
+           "category": "email_address"
+          }
+         ]
+        },
+        "onMatch": "withhold",
+        "onUnsupported": "withhold"
+       }
+      }
+     }
+    }
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "active_locked_text",
+   "harness": "pi",
+   "view": {
+    "managed_policy_status": "active",
+    "managed_policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "managed_locked_settings": [],
+    "managed_policy": {
+     "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "settings": {
+      "data_control": {
+       "structured_output": {
+        "version": "hol-guard-structured-output-policy.v1",
+        "enabled": true,
+        "harnesses": [
+         "omp"
+        ],
+        "event": "PostToolUse",
+        "destinationRole": "model_visible_tool_result",
+        "schema": {
+         "fields": [
+          {
+           "path": [
+            "email"
+           ],
+           "role": "protected_personal",
+           "valueType": "string",
+           "category": "email_address"
+          }
+         ]
+        },
+        "onMatch": "withhold",
+        "onUnsupported": "withhold"
+       }
+      }
+     }
+    }
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "active_locked_text",
+   "harness": "omp",
+   "view": {
+    "managed_policy_status": "active",
+    "managed_policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "managed_locked_settings": [],
+    "managed_policy": {
+     "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "settings": {
+      "data_control": {
+       "structured_output": {
+        "version": "hol-guard-structured-output-policy.v1",
+        "enabled": true,
+        "harnesses": [
+         "omp"
+        ],
+        "event": "PostToolUse",
+        "destinationRole": "model_visible_tool_result",
+        "schema": {
+         "fields": [
+          {
+           "path": [
+            "email"
+           ],
+           "role": "protected_personal",
+           "valueType": "string",
+           "category": "email_address"
+          }
+         ]
+        },
+        "onMatch": "withhold",
+        "onUnsupported": "withhold"
+       }
+      }
+     }
+    }
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "invalid",
+   "harness": "pi",
+   "view": {
+    "managed_policy_status": "invalid",
+    "managed_policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "managed_locked_settings": [
+     "*"
+    ],
+    "managed_policy": {
+     "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "settings": {}
+    }
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "invalid",
+   "harness": "omp",
+   "view": {
+    "managed_policy_status": "invalid",
+    "managed_policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "managed_locked_settings": [
+     "*"
+    ],
+    "managed_policy": {
+     "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "settings": {}
+    }
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "inaccessible",
+   "harness": "pi",
+   "view": {
+    "managed_policy_status": "inaccessible",
+    "managed_policy_hash": null,
+    "managed_locked_settings": [],
+    "managed_policy": null
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "inaccessible",
+   "harness": "omp",
+   "view": {
+    "managed_policy_status": "inaccessible",
+    "managed_policy_hash": null,
+    "managed_locked_settings": [],
+    "managed_policy": null
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "tampered",
+   "harness": "pi",
+   "view": {
+    "managed_policy_status": "tampered",
+    "managed_policy_hash": null,
+    "managed_locked_settings": [],
+    "managed_policy": null
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "tampered",
+   "harness": "omp",
+   "view": {
+    "managed_policy_status": "tampered",
+    "managed_policy_hash": null,
+    "managed_locked_settings": [],
+    "managed_policy": null
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "revoked",
+   "harness": "pi",
+   "view": {
+    "managed_policy_status": "revoked",
+    "managed_policy_hash": null,
+    "managed_locked_settings": [],
+    "managed_policy": null
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "revoked",
+   "harness": "omp",
+   "view": {
+    "managed_policy_status": "revoked",
+    "managed_policy_hash": null,
+    "managed_locked_settings": [],
+    "managed_policy": null
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "stale",
+   "harness": "pi",
+   "view": {
+    "managed_policy_status": "stale",
+    "managed_policy_hash": null,
+    "managed_locked_settings": [],
+    "managed_policy": null
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "stale",
+   "harness": "omp",
+   "view": {
+    "managed_policy_status": "stale",
+    "managed_policy_hash": null,
+    "managed_locked_settings": [],
+    "managed_policy": null
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "unknown_status",
+   "harness": "pi",
+   "view": {
+    "managed_policy_status": "ACTIVE",
+    "managed_policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "managed_locked_settings": [],
+    "managed_policy": {
+     "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "settings": {}
+    }
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "unknown_status",
+   "harness": "omp",
+   "view": {
+    "managed_policy_status": "ACTIVE",
+    "managed_policy_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "managed_locked_settings": [],
+    "managed_policy": {
+     "content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "settings": {}
+    }
+   },
+   "unchanged": false
+  },
+  {
+   "policy": "tuple_harnesses",
+   "harness": "pi",
+   "view": null,
+   "unchanged": true
+  },
+  {
+   "policy": "tuple_harnesses",
+   "harness": "omp",
+   "view": null,
+   "unchanged": false
+  },
+  {
+   "policy": "float_in_setting",
+   "harness": "pi",
+   "view": null,
+   "unchanged": false
+  },
+  {
+   "policy": "float_in_setting",
+   "harness": "omp",
+   "view": null,
+   "unchanged": false
+  },
+  {
+   "policy": "integer_key_in_setting",
+   "harness": "pi",
+   "view": null,
+   "unchanged": false
+  },
+  {
+   "policy": "integer_key_in_setting",
+   "harness": "omp",
+   "view": null,
+   "unchanged": false
+  },
+  {
+   "policy": "unpaired_surrogate",
+   "harness": "pi",
+   "view": null,
+   "unchanged": false
+  },
+  {
+   "policy": "unpaired_surrogate",
+   "harness": "omp",
+   "view": null,
+   "unchanged": false
+  }
  ]
 }
