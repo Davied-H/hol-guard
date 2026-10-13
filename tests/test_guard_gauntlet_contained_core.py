@@ -53,7 +53,7 @@ def _capture_log(path: Path, *captures: tuple[str, bytes]) -> Path:
     return path
 
 
-def _wrapper(request_sha256: str, *, guard_home: str = "{{fixture}}/guard-home", home: str = "{{home}}") -> str:
+def _wrapper(request_sha256: str, *, guard_home: str = "{{fixture}}/guard-home", home: str | None = "{{home}}") -> str:
     argv = [
         "/candidate/.venv/bin/hol-guard",
         "execute-contained-test",
@@ -65,8 +65,7 @@ def _wrapper(request_sha256: str, *, guard_home: str = "{{fixture}}/guard-home",
         "/tmp/hol-guard-contained-test-abc123/request.json",
         "--request-sha256",
         request_sha256,
-        "--home",
-        home,
+        *(["--home", home] if home is not None else []),
     ]
     return " ".join("'" + value + "'" for value in argv)
 
@@ -226,6 +225,11 @@ def test_fully_bound_contained_run_passes_without_interruption(fixture, tmp_path
     assessment = assess_case(SCENARIO, _contained(fixture, tmp_path))
     assert assessment["outcome"] == "pass", assessment["reason"]
     assert assessment["interruptions"]["events"] == []
+
+
+def test_wrapper_without_home_binding_runs_in_the_agents_own_home(fixture, tmp_path):
+    assessment = assess_case(SCENARIO, _contained(fixture, tmp_path, home=None))
+    assert assessment["outcome"] == "pass", assessment["reason"]
 
 
 def test_workspace_sandbox_rewrite_is_judged_like_other_containment(fixture, tmp_path):
