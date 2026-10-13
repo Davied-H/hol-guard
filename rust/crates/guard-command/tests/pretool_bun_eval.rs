@@ -308,6 +308,8 @@ const SCREENED: &[&str] = &[
     "bun -e \"console.log(Bun.version.constructor('return 1')())\"",
     "bun -e \"require('fs').writeFileSync('x', 'y')\"",
     "bun -e \"console.log(process.env.HOME)\"",
+    "bun -e \"const { writeFileSync: w } = require('fs'); w('x', 'y')\"",
+    "bun -e \"const { rmSync: r } = require('fs'); r('x')\"",
 ];
 
 #[test]

@@ -200,7 +200,12 @@ fn identifier_allowed(program: &str, start: usize, end: usize) -> bool {
         "Bun" => member(after).is_some_and(|member| BUN_MEMBERS.contains(&member)),
         "process" => member(after).is_some_and(|member| PROCESS_MEMBERS.contains(&member)),
         "require" => required_module(after).is_some_and(|name| REQUIRE_MODULES.contains(&name)),
-        name => !BLOCKED_NAMES.contains(&name),
+        // Any mention of a destructive fs call fails, so a renamed
+        // destructuring such as `{ rmSync: r }` cannot slip past the call scan.
+        name => {
+            !BLOCKED_NAMES.contains(&name)
+                && !crate::sfrs_patterns::DESTRUCTIVE_NODE_INLINE_CALLS.contains(&name)
+        }
     }
 }
 
