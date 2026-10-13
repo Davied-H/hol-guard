@@ -4834,7 +4834,7 @@
     },
     {
       "id": "session-printf-gitignore-dotfile",
-      "fix_area": "printf 'node_modules\\n' > .gitignore",
+      "fix_area": "redirect",
       "harnesses": [
         "codex",
         "zcode",
@@ -4843,14 +4843,14 @@
       ],
       "tool": "shell",
       "tool_input": {
-        "command": "redirect"
+        "command": "printf 'node_modules\\n' > .gitignore"
       },
       "cwd": "worktree",
       "expect": "allow"
     },
     {
       "id": "session-echo-add-commit-message-init",
-      "fix_area": "echo x > notes.txt && git add -A && git commit -m init",
+      "fix_area": "git",
       "harnesses": [
         "codex",
         "zcode",
@@ -4859,7 +4859,7 @@
       ],
       "tool": "shell",
       "tool_input": {
-        "command": "git"
+        "command": "echo x > notes.txt && git add -A && git commit -m init"
       },
       "cwd": "worktree",
       "expect": "allow"

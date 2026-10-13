@@ -53,6 +53,8 @@ ENVIRONMENTS = ("clean", "realistic")
 OMP_CONTAINED = frozenset(
     re.findall(r'profile === "([^"]+)" &&\s*response\.reason_code === "([^"]+)"', CONTAINED_TEST_HELPERS_SOURCE)
 )
+# An empty set would silently stop modelling OMP routing if the extension's source changes shape.
+assert ("workspace-contained-v1", "native_workspace_containment_required") in OMP_CONTAINED
 
 
 @dataclass(frozen=True)

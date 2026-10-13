@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import sys
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -29,12 +28,11 @@ import pytest
 from ci.gauntlet.approval_rows import always_gap, approval_rows
 from ci.gauntlet.input_evidence import redact_value
 from codex_plugin_scanner.guard.adapters import codex_contained_tests
-from codex_plugin_scanner.guard.adapters.pi_extension_contained_tests_source import CONTAINED_TEST_HELPERS_SOURCE
 from codex_plugin_scanner.guard.daemon.hook_worker import HookWorker
 from codex_plugin_scanner.guard.hook_execution_environment import collect_hook_execution_environment
 from codex_plugin_scanner.guard.store import GuardStore
 from tests.benign_fp_gate_fixture import BenignFixture, build_fixture
-from tests.gauntlet_replay import cursor_hook_fields
+from tests.gauntlet_replay import OMP_CONTAINED, cursor_hook_fields
 
 pytestmark = pytest.mark.usefixtures("native_hook_force")
 
@@ -74,10 +72,6 @@ _RENDERED_SPECIFIC_KEYS = ("permissionDecisionReason", "additionalContext")
 # through protected read-only execution, so local macOS runs do not judge marker staleness.
 _ENFORCE_STALE_PENDING = bool(os.environ.get("CI")) and sys.platform != "darwin"
 _PENDING_PR: dict[str, str] = _DOCUMENT["pending_pr"]
-# Profile and reason pairs the shipped Oh My Pi extension sends to the contained runner.
-_OMP_CONTAINED = frozenset(
-    re.findall(r'profile === "([^"]+)" &&\s*response\.reason_code === "([^"]+)"', CONTAINED_TEST_HELPERS_SOURCE)
-)
 _PENDING_ALWAYS: dict[str, str] = _DOCUMENT["pending_always"]
 
 
@@ -241,7 +235,7 @@ def _omp_routes(result: dict[str, object]) -> bool:
         result.get("decision") == "deny"
         and result.get("policy_action") == "sandbox-required"
         and result.get("observe_mode") is not True
-        and (profile, _reason(result)) in _OMP_CONTAINED
+        and (profile, _reason(result)) in OMP_CONTAINED
         and (sys.platform == "darwin" or (sys.platform == "linux" and profile == "workspace-contained-v1"))
     )
 
