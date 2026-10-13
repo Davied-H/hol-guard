@@ -59,6 +59,9 @@ const BUN: &str = "bun install --frozen-lockfile --ignore-scripts";
 const PNPM: &str = "pnpm install --frozen-lockfile --ignore-scripts";
 const NPM: &str = "npm ci --ignore-scripts --no-audit";
 
+/// A project name, the files it holds and the install run in it.
+type Case<'a> = (&'a str, Vec<(&'a str, &'a str)>, &'a str);
+
 fn default_controls() -> guard_command::native_command_controls::CompiledNativeCommandControls {
     let program = guard_command::native_command_program::packaged_command_program().unwrap();
     let mut binding: guard_contracts::NativeCommandControlBindingV1 =
@@ -85,7 +88,6 @@ fn default_controls() -> guard_command::native_command_controls::CompiledNativeC
 }
 
 struct Lab {
-    root: PathBuf,
     home: PathBuf,
     _cleanup: FixtureCleanup,
 }
@@ -106,15 +108,15 @@ impl Lab {
         let home = root.join("home");
         std::fs::create_dir_all(&home).unwrap();
         Self {
-            _cleanup: FixtureCleanup(root.clone()),
-            root,
+            _cleanup: FixtureCleanup(root),
             home,
         }
     }
 
-    /// A project at `name` below the lab root holding `files`.
+    /// A project at `name` below the lab's home holding `files`, where a
+    /// leading `cd` can be proven.
     fn project(&self, name: &str, files: &[(&str, &str)]) -> PathBuf {
-        let project = self.root.join(name);
+        let project = self.home.join(name);
         for (path, text) in files {
             let path = project.join(path);
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -256,7 +258,7 @@ fn lockfiles_naming_other_sources_stay_reviewed() {
         "https://registry.npmjs.org/",
         "https://registry.example.invalid/",
     );
-    let cases: Vec<(&str, Vec<(&str, &str)>, &str)> = vec![
+    let cases: Vec<Case> = vec![
         ("bun-git", vec![("bun.lock", &git_bun)], BUN),
         ("bun-mirror", vec![("bun.lock", &mirrored_bun)], BUN),
         ("bun-duplicate", vec![("bun.lock", &duplicate_bun)], BUN),
