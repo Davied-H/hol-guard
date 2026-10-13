@@ -261,6 +261,11 @@ fn proved_listing_output_is_released_without_lowering_scans_or_floors() {
             "{harness} {tool}: {}",
             result.reason_code
         );
+        // A reviewed excerpt is also an allow; the listing itself must pass through.
+        assert_eq!(
+            result.model_output_action, "allow_original",
+            "{harness} {tool}"
+        );
         let denied = apply_post_tool_policy(
             &snapshot(effective.clone()),
             &request,
