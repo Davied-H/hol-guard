@@ -7,6 +7,11 @@
 //! and depends only on the harness and the event name. This module returns
 //! that same constant without the daemon round trip. It never answers a
 //! hook the daemon handles itself or answers with a deny.
+//!
+//! Claude Code's `PermissionRequest` is the exception the daemon answers
+//! from the session's permission notice. Without a notice row its answer is
+//! also a constant, which this module returns; a session with one keeps
+//! the daemon path.
 
 use std::path::Path;
 
@@ -14,7 +19,7 @@ use serde_json::{json, Map, Value};
 
 use super::workspace::python_strip;
 use super::{
-    HookDirectDefer, CLAUDE_CODE, CURSOR, EVENT_NAME_FIELDS, PAYLOAD_REFERENCE_FIELDS,
+    HookDirectDefer, CLAUDE_CODE, CURSOR, EVENT_NAME_FIELDS, GROK, PAYLOAD_REFERENCE_FIELDS,
     TRANSITION_PROBE_FIELD,
 };
 use crate::policy_store::PolicySnapshotStore;
@@ -32,6 +37,8 @@ const DAEMON_EVENTS: [&str; 3] = [
     "copilotpermissionrequest",
 ];
 const NOTIFICATION: &str = "notification";
+/// The events `runtime_hook_event_name` names `PermissionRequest`.
+const CLAUDE_PERMISSION_EVENTS: [&str; 2] = ["permissionrequest", "permissionrequestv2"];
 /// A longer or unusual name is left to the daemon.
 const MAX_EVENT_NAME_BYTES: usize = 64;
 
@@ -52,6 +59,10 @@ fn event_name(payload: &Map<String, Value>) -> Result<&str, HookDirectDefer> {
 
 /// The harness response `fail_closed_response` returns for `event`.
 fn constant_response(harness: &str, event: &str) -> Value {
+    // `fail_closed_response` answers every Grok lifecycle hook with `{}`.
+    if harness == GROK {
+        return json!({});
+    }
     if DECISION_HARNESSES.contains(&harness) {
         return json!({
             "decision": "allow",
@@ -88,9 +99,12 @@ pub(super) fn answer(
         return Err(HookDirectDefer::EventUnsupported);
     }
     let compact = event.replace(['_', '-'], "").to_ascii_lowercase();
-    if DAEMON_EVENTS.contains(&compact.as_str())
-        || compact.starts_with("before")
-        || (harness == CLAUDE_CODE && compact == NOTIFICATION)
+    let claude_permission =
+        harness == CLAUDE_CODE && CLAUDE_PERMISSION_EVENTS.contains(&compact.as_str());
+    if !claude_permission
+        && (DAEMON_EVENTS.contains(&compact.as_str())
+            || compact.starts_with("before")
+            || (harness == CLAUDE_CODE && compact == NOTIFICATION))
     {
         return Err(HookDirectDefer::EventUnsupported);
     }
@@ -113,5 +127,41 @@ pub(super) fn answer(
     if store.harness_unmanaged {
         return Err(HookDirectDefer::HarnessUnmanaged);
     }
+    if claude_permission {
+        return claude_permission_answer(guard_home, payload);
+    }
     Ok(json!({ "harness_response": constant_response(harness, event) }))
+}
+
+/// `claude_permission_request_response` for a session without a permission
+/// notice: Guard leaves the decision to Claude's own dialog. A notice row,
+/// even one the daemon would reject, takes the daemon path, since only the
+/// daemon holds the key that verifies it.
+fn claude_permission_answer(
+    guard_home: &str,
+    payload: &Map<String, Value>,
+) -> Result<Value, HookDirectDefer> {
+    // `_optional_string(payload.get("session_id"))`; without a session the
+    // daemon looks up no notice.
+    let session_id = match payload.get("session_id").and_then(Value::as_str) {
+        Some(value) => python_strip(value).map_err(|_| HookDirectDefer::EventUnsupported)?,
+        None => None,
+    };
+    if let Some(session_id) = session_id {
+        let present = crate::local_store_read::claude_permission_notice_present(
+            Path::new(guard_home),
+            session_id,
+        )
+        .map_err(|_| HookDirectDefer::PermissionNotice)?;
+        if present {
+            return Err(HookDirectDefer::PermissionNotice);
+        }
+    }
+    Ok(json!({
+        "harness_response": {
+            // CLAUDE_GUARD_PERMISSION_PASSTHROUGH_KEY
+            "guard_permission_passthrough": true,
+            "hookSpecificOutput": { "hookEventName": "PermissionRequest" },
+        }
+    }))
 }
