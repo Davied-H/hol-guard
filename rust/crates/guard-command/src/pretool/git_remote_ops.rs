@@ -107,6 +107,14 @@ pub(super) fn verified(segment: &CommandSegmentV1, context: super::PathContext<'
     parse(segment, context).is_some() && super::git_probe::proven(&memo_key(segment, context))
 }
 
+/// Whether this evaluation already proved `segment` as a safe `origin` fetch.
+/// A fetch writes only refs and objects, never the configuration a later Git
+/// read in the same command depends on; a pull also updates the work tree.
+pub(super) fn verified_fetch(segment: &CommandSegmentV1, context: super::PathContext<'_>) -> bool {
+    parse(segment, context).is_some_and(|(_, upstream)| upstream.is_none())
+        && super::git_probe::proven(&memo_key(segment, context))
+}
+
 fn memo_key(
     segment: &CommandSegmentV1,
     context: super::PathContext<'_>,

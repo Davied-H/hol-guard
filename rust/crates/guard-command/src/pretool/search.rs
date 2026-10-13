@@ -11,6 +11,7 @@ mod options;
 mod roots;
 mod sibling;
 mod tree;
+mod walk_memo;
 pub(super) use agent_root::{
     agent_root_listing, skill_link_resolves_over_home, skill_listing_root,
 };
@@ -19,6 +20,7 @@ pub(super) use tree::{
     safe_glob_operand, safe_literal_bracket_tree, safe_recursive_search_target,
     safe_recursive_target, safe_unmatched_bracket_operand, SECRET_EXTENSIONS,
 };
+pub(super) use walk_memo::with_walk_memo;
 fn glob_matches(pattern: &[u8], value: &[u8]) -> bool {
     let mut previous = vec![false; value.len() + 1];
     previous[0] = true;

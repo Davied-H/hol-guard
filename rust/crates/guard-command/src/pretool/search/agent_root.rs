@@ -1,5 +1,5 @@
 //! Names-only listings of the Oh My Pi agent-state root (`ls ~/.agent`,
-//! `ls -R ~/.agent`).
+//! `ls -R ~/.agent`, `find ${HOME}/.agent -name SKILL.md`).
 //!
 //! `ls` prints names and metadata, never file contents, and Oh My Pi's own
 //! glob tool already lists these trees. The operand must resolve exactly to
@@ -16,6 +16,19 @@ pub(in crate::pretool) fn agent_root_listing(
     context: ReadContext<'_>,
     recursive: bool,
 ) -> bool {
+    // `$HOME` and `${HOME}` name the same directory a leading `~` does.
+    let spelled;
+    let value = match ["${HOME}", "$HOME"]
+        .iter()
+        .find_map(|name| value.strip_prefix(name))
+        .filter(|rest| rest.is_empty() || rest.starts_with('/'))
+    {
+        Some(rest) => {
+            spelled = format!("~{rest}");
+            spelled.as_str()
+        }
+        None => value,
+    };
     if value.is_empty()
         || value.len() > 4096
         || value.starts_with('-')

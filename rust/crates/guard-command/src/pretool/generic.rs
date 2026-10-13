@@ -147,16 +147,18 @@ pub fn evaluate_pre_tool_envelope_with_execution_context(
     execution_environment: Option<&guard_contracts::GuardExecutionEnvironmentV1>,
 ) -> PreToolResultV1 {
     let mut result = super::git_probe::with_memo(|| {
-        evaluate_envelope(
-            harness,
-            event,
-            payload,
-            controls,
-            deadline,
-            context,
-            execution_environment,
-            true,
-        )
+        super::search::with_walk_memo(|| {
+            evaluate_envelope(
+                harness,
+                event,
+                payload,
+                controls,
+                deadline,
+                context,
+                execution_environment,
+                true,
+            )
+        })
     });
     // Name what kept the extension controls from evaluating the command, a
     // code-loading setting or an open quote, so the agent can fix it and retry

@@ -28,6 +28,16 @@ const RULES: &[&str] = &[
     "command.git.stash",
 ];
 
+/// Read rules the packaged catalog ships disabled, so they never raise a
+/// review of their own.
+const READ_RULES: &[&str] = &[
+    "command.git.status",
+    "command.git.log",
+    "command.git.diff",
+    "command.git.show",
+    "command.git.ls-files",
+];
+
 const INDEX_HOOKS: &[&str] = &["post-index-change"];
 const COMMIT_HOOKS: &[&str] = &[
     "pre-commit",
@@ -126,6 +136,7 @@ fn proven(
         ..context
     };
     let mut writes: Vec<(usize, &'static [&'static str])> = Vec::new();
+    let mut safe = Vec::new();
     for (index, segment) in model.segments.iter().enumerate() {
         if segment.executable.as_deref() == Some("cd") {
             if cwd_proof
@@ -143,10 +154,26 @@ fn proven(
         if !super::segment_proof::exact_safe_segment_with_context(model, segment, false, context) {
             return false;
         }
+        safe.push(index);
     }
     let written = |index: &usize| writes.iter().any(|(write, _)| write == index);
+    // Off-by-default read rules (`command.git.status`) still record what they
+    // matched; on a segment proven above they add nothing to review.
+    let inert_match = |observation: &guard_contracts::NativeCommandObservationV1| {
+        READ_RULES.contains(&observation.rule_id.as_str())
+            && !observation.effective_segment_indexes.is_empty()
+            && observation
+                .matcher_evidence
+                .iter()
+                .map(|evidence| evidence.segment_index)
+                .chain(observation.effective_segment_indexes.iter().copied())
+                .all(|index| safe.contains(&index))
+    };
     if writes.is_empty()
         || !extensions.observations.iter().all(|observation| {
+            if observation.uncertainty_reasons.is_empty() && inert_match(observation) {
+                return true;
+            }
             let mut indexes = observation
                 .matcher_evidence
                 .iter()
@@ -276,8 +303,8 @@ fn inert(effective: &GitConfig, repository: &GitConfig) -> bool {
             .iter()
             .any(|value| !super::git_remote_ops::pull::disabled(value));
         (key.starts_with("filter.")
-            && !(super::git_remote_ops::pull::standard_lfs(key, values)
-                && !repository.contains_key(key)))
+            && (!super::git_remote_ops::pull::standard_lfs(key, values)
+                || repository.contains_key(key)))
             || key.starts_with("hook.")
             || key == "core.worktree"
             || key == "core.virtualfilesystem"

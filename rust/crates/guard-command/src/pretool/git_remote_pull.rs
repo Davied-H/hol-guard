@@ -46,8 +46,7 @@ pub(super) fn fast_forward_inert(
 ) -> bool {
     let routed = effective.iter().any(|(key, values)| {
         let enabled = values.iter().any(|value| !disabled(value));
-        (key.starts_with("filter.")
-            && !(standard_lfs(key, values) && !repository.contains_key(key)))
+        (key.starts_with("filter.") && (!standard_lfs(key, values) || repository.contains_key(key)))
             || key.starts_with("gpg.")
             || key.starts_with("hook.")
             || key == "core.worktree"
