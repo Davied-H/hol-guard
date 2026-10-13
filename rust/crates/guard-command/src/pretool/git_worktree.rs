@@ -201,7 +201,18 @@ fn no_filter_attributes(
             None => git_home.join(".config/git/attributes"),
         },
     };
-    for file in [common_dir.join("info/attributes"), global] {
+    // Git also reads the system attributes file. A Git that cannot name it
+    // (before 2.42) leaves the proof in doubt.
+    let (status, system) = git_query(base, leading, ["var", "GIT_ATTR_SYSTEM"], deadline, 4096)?;
+    let system = std::str::from_utf8(&system).ok()?.trim();
+    if !status.success() || system.is_empty() || !Path::new(system).is_absolute() {
+        return None;
+    }
+    for file in [
+        common_dir.join("info/attributes"),
+        global,
+        PathBuf::from(system),
+    ] {
         if attributes_file_mentions_filter(&file)? {
             return Some(false);
         }

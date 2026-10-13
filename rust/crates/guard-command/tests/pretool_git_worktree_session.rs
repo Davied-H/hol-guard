@@ -103,10 +103,27 @@ fn system_config_is_plain() -> bool {
         .args(["config", "--system", "--name-only", "--list"])
         .output()
         .unwrap();
+    // A filter driver only runs for paths an attributes file assigns to it.
+    // The fixture tree has none, so only the system attributes file counts.
+    let system_attributes = std::process::Command::new("git")
+        .args(["var", "GIT_ATTR_SYSTEM"])
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned());
+    let filters_inert = system_attributes.is_some_and(|path| {
+        std::fs::read(path).map_or(true, |bytes| {
+            !String::from_utf8_lossy(&bytes)
+                .to_ascii_lowercase()
+                .contains("filter")
+        })
+    });
     String::from_utf8_lossy(&output.stdout).lines().all(|key| {
         let key = key.to_ascii_lowercase();
+        if key.starts_with("filter.") {
+            return filters_inert;
+        }
         ![
-            "filter.",
             "hook.",
             "pager.",
             "include",
