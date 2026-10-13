@@ -28,6 +28,7 @@ _HEX64 = re.compile(r"[0-9a-f]{64}")
 CONTAINMENT_PROFILES = {
     "native_python_eval_readonly_containment_required": "python-eval-readonly-v1",
     "native_node_eval_readonly_containment_required": "node-eval-readonly-v1",
+    "native_bun_eval_readonly_containment_required": "node-eval-readonly-v1",
     "native_package_test_readonly_containment_required": "package-test-readonly-v1",
     "native_node_build_output_containment_required": "node-build-output-v1",
     "native_node_tool_readonly_containment_required": "node-tool-readonly-v1",
@@ -35,7 +36,17 @@ CONTAINMENT_PROFILES = {
     "native_pytest_readonly_containment_required": "pytest-readonly-v2",
     "native_vitest_readonly_containment_required": "vitest-readonly-v1",
     "native_node_test_readonly_containment_required": "node-test-readonly-v1",
+    "native_workspace_containment_required": "workspace-contained-v1",
 }
+# How a contained command reports a sandbox refusal: a denied file operation, a read-only mount,
+# or a network request the sandbox cut off. curl exits 6 or 7 when it cannot resolve or connect.
+_SANDBOX_DENIAL = re.compile(
+    r"Operation not permitted|Permission denied|Read-only file system|EPERM|EACCES|EROFS"
+    r"|Could not resolve host|ENOTFOUND|EAI_AGAIN|getaddrinfo|Network is unreachable|ECONNREFUSED"
+    r"|Temporary failure in name resolution|Name or service not known"
+    r"|nodename nor servname provided|Connection refused"
+)
+_CURL_NETWORK_EXITS = frozenset({6, 7})
 
 
 def contained_public_path(value: object) -> bool:
@@ -46,7 +57,11 @@ def contained_public_path(value: object) -> bool:
 
 
 def contained_wrapper_argv(command: object, expected_workspace: str) -> tuple[list[str] | None, str | None]:
-    """Validate the canonical 12-item ``execute-contained-test`` argv the adapter exports."""
+    """Validate the canonical ``execute-contained-test`` argv the adapter exports.
+
+    The adapter leaves out ``--home`` when Guard's home directory is the agent's own HOME, so a
+    run in the account's real home has ten items instead of twelve.
+    """
     if not isinstance(command, str):
         return None, "contained wrapper command is missing"
     try:
@@ -56,7 +71,7 @@ def contained_wrapper_argv(command: object, expected_workspace: str) -> tuple[li
     canonical = " ".join("'" + value.replace("'", "'\\''") + "'" for value in argv)
     if command != canonical:
         return None, "contained wrapper command is not canonical"
-    if len(argv) != 12 or not contained_public_path(argv[0]):
+    if len(argv) not in (10, 12) or not contained_public_path(argv[0]):
         return None, "contained wrapper is not an approved path"
     if argv[1] != "execute-contained-test" or argv[2] != "--guard-home" or not contained_public_path(argv[3]):
         return None, "contained wrapper guard-home binding is malformed"
@@ -74,7 +89,7 @@ def contained_wrapper_argv(command: object, expected_workspace: str) -> tuple[li
     if argv[8] != "--request-sha256" or _HEX64.fullmatch(argv[9]) is None:
         return None, "contained wrapper request digest is malformed"
     # The home binding alone may name the redacted home directory itself.
-    if argv[10] != "--home" or not (argv[11] == "{{home}}" or contained_public_path(argv[11])):
+    if len(argv) == 12 and (argv[10] != "--home" or not (argv[11] == "{{home}}" or contained_public_path(argv[11]))):
         return None, "contained wrapper home binding is malformed"
     return argv, None
 
@@ -182,8 +197,38 @@ def request_proofs(host_log: Path, workspace: Path, replacements: dict[str, str]
     return proofs
 
 
+def _sandbox_refused(call: dict[str, Any], details: dict[str, Any], reviewed: Any) -> bool:
+    """Whether a failed contained run shows the sandbox, not the command itself, stopped it."""
+    result = call.get("result")
+    content = result.get("content") if isinstance(result, dict) else None
+    text = (
+        " ".join(str(part.get("text", "")) for part in content if isinstance(part, dict))
+        if isinstance(content, list)
+        else ""
+    )
+    command = reviewed.get("command") if isinstance(reviewed, dict) else None
+    return bool(_SANDBOX_DENIAL.search(text)) or (
+        isinstance(command, str) and _curl_exit(command) and details.get("exitCode") in _CURL_NETWORK_EXITS
+    )
+
+
+def _curl_exit(command: str) -> bool:
+    """Whether curl may supply the command's exit status.
+
+    The shell reports the status of the last `;`, `||` or newline group. Within that group a
+    failing `&&` step stops the chain and supplies its own status, and a step's status is that of
+    the last stage of its pipeline, so any step whose pipeline ends in curl may.
+    """
+    group = re.split(r"\|\||[;\n]", command.replace("&&", "\0").strip())[-1]
+    return any(re.match(r"(?:\S*/)?curl\s", step.split("|")[-1].strip() + " ") for step in group.split("\0"))
+
+
 def _binding_error(
-    call: dict[str, Any], pre: dict[str, Any], post: list[dict[str, Any]], proofs: list[Any]
+    call: dict[str, Any],
+    pre: dict[str, Any],
+    post: list[dict[str, Any]],
+    proofs: list[Any],
+    own_exit_ok: bool = False,
 ) -> tuple[str, str] | None:
     reason = pre.get("reason_code")
     profile = CONTAINMENT_PROFILES.get(reason) if isinstance(reason, str) else None
@@ -195,7 +240,9 @@ def _binding_error(
     argv, wrapper_error = contained_wrapper_argv(wrapper, "{{workspace}}")
     if wrapper_error or argv is None:
         return "harness-error", wrapper_error or "contained wrapper is unavailable"
-    if PurePosixPath(argv[0]).name != "hol-guard" or argv[3] != "{{fixture}}/guard-home" or argv[11] != "{{home}}":
+    # Only a full task can run in the account's own home, where the adapter omits the binding.
+    homes = ([], ["--home", "{{home}}"]) if own_exit_ok else (["--home", "{{home}}"],)
+    if PurePosixPath(argv[0]).name != "hol-guard" or argv[3] != "{{fixture}}/guard-home" or argv[10:] not in homes:
         return "harness-error", "contained wrapper is not bound to the case's Guard installation"
     post_input = post[0].get("input") if len(post) == 1 else None
     if (
@@ -226,9 +273,14 @@ def _binding_error(
         or presentation.get("command") != wrapper
     ):
         return "harness-error", "contained result presentation is not bound to the original command and wrapper"
-    # OMP reports exitCode only for a failed command; a present code must be zero.
-    if call.get("is_error") is not False or details.get("exitCode", 0) != 0:
-        return "false-positive", f"Guard's contained run of ordinary work failed (exit {details.get('exitCode')})"
+    # OMP reports exitCode only for a failed command; a present code must be zero. In a full task the
+    # agent's own commands fail too (a missing directory, a test it has yet to fix), and the host would
+    # have returned the same code, so there a non-zero exit counts only when the sandbox refused it.
+    exit_code = details.get("exitCode", 0)
+    if call.get("is_error") is not False or exit_code != 0:
+        own_failure = own_exit_ok and isinstance(exit_code, int) and exit_code not in (0, 126)
+        if not own_failure or _sandbox_refused(call, details, pre.get("input")):
+            return "false-positive", f"Guard's contained run of ordinary work failed (exit {exit_code})"
     return None
 
 
@@ -259,7 +311,8 @@ def contained_calls(
             or input_matches(call.get("name", ""), call["args"], reviewed)
         ):
             continue
-        error = _binding_error(call, pre[0], [row for row in rows if row.get("event") == "PostToolUse"], proofs)
+        post = [row for row in rows if row.get("event") == "PostToolUse"]
+        error = _binding_error(call, pre[0], post, proofs, own_exit_ok=case.get("full_task_mode") is not None)
         if error:
             return {}, error
         bound[call["id"]] = reviewed

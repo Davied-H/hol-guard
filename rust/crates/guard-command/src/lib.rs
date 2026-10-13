@@ -96,6 +96,7 @@ pub mod github_workflow_approval_record;
 pub mod github_workflow_authorization;
 pub mod github_workflow_descriptor;
 pub mod github_workflow_operations;
+mod harness_config_names;
 mod home_path_text;
 pub mod homebrew_intent;
 pub mod jsonc;
@@ -141,6 +142,7 @@ mod powershell_floors;
 mod powershell_parser;
 mod powershell_reads;
 pub mod protect_request;
+mod read_only_fanout;
 pub mod rich_command_model_api;
 use parser_executables::*;
 use parser_segments::*;
@@ -149,15 +151,13 @@ pub mod environment_secret_dump;
 pub mod pretool;
 mod runtime_read_paths;
 pub mod secret_path_probe;
+pub mod sensitive_request;
 mod sfrs_agent_guidance;
 mod sfrs_benign_reads;
-#[cfg(unix)]
 mod sfrs_benign_tool_action;
 mod sfrs_constants;
 mod sfrs_credential_exfil;
-#[cfg(unix)]
 mod sfrs_destructive;
-#[cfg(unix)]
 mod sfrs_destructive_classifier;
 #[cfg(all(test, unix))]
 mod sfrs_destructive_vectors;
@@ -165,13 +165,10 @@ mod sfrs_developer_graph;
 #[cfg(all(test, unix))]
 mod sfrs_developer_graph_vectors;
 mod sfrs_developer_inspection;
-#[cfg(unix)]
 mod sfrs_developer_routines;
 #[cfg(test)]
 mod sfrs_developer_vectors;
-#[cfg(unix)]
 mod sfrs_dispatcher;
-#[cfg(unix)]
 mod sfrs_dispatcher_request;
 #[cfg(all(test, unix))]
 mod sfrs_dispatcher_vectors;
@@ -190,7 +187,6 @@ mod sfrs_gh_actions_read;
 mod sfrs_gh_bindings;
 mod sfrs_gh_body_file;
 mod sfrs_gh_body_file_check;
-#[cfg(unix)]
 mod sfrs_gh_body_safety;
 mod sfrs_gh_control_flow;
 mod sfrs_gh_definitions;
@@ -203,11 +199,11 @@ mod sfrs_gh_service;
 mod sfrs_gh_shell;
 #[cfg(test)]
 mod sfrs_gh_shell_vectors;
+mod sfrs_gh_static_body_safety;
 mod sfrs_git_audit;
 mod sfrs_git_cached_diff;
 mod sfrs_git_fetch;
 mod sfrs_git_index;
-#[cfg(unix)]
 mod sfrs_git_routines;
 #[cfg(all(test, unix))]
 mod sfrs_github_body_vectors;
@@ -240,15 +236,11 @@ mod sfrs_leaf_vectors;
 #[cfg(all(test, unix))]
 mod sfrs_net_vectors;
 mod sfrs_network_upload;
-#[cfg(unix)]
 mod sfrs_node_heredoc;
-#[cfg(unix)]
 mod sfrs_node_redaction;
-#[cfg(unix)]
 mod sfrs_node_templates;
 #[cfg(all(test, unix))]
 mod sfrs_node_vectors;
-#[cfg(unix)]
 mod sfrs_node_workflows;
 mod sfrs_patterns;
 mod sfrs_perl_read_only;
@@ -279,22 +271,16 @@ mod sfrs_request_data;
 mod sfrs_requests;
 mod sfrs_routine_dirs;
 mod sfrs_routine_move;
-#[cfg(unix)]
 mod sfrs_routine_setup;
-#[cfg(unix)]
 mod sfrs_routines_support;
 #[cfg(all(test, unix))]
 mod sfrs_routines_vectors;
 mod sfrs_search_filters;
 mod sfrs_selectors;
 mod sfrs_self_approval;
-#[cfg(unix)]
 mod sfrs_sensitive_pipeline;
-#[cfg(unix)]
 mod sfrs_shell_classifier;
-#[cfg(unix)]
 mod sfrs_shell_classifier_context;
-#[cfg(unix)]
 mod sfrs_shell_initial_risk;
 mod sfrs_shell_tokens;
 mod sfrs_shlex;
@@ -308,7 +294,6 @@ mod sfrs_substitution;
 #[cfg(test)]
 mod sfrs_token_vectors;
 mod sfrs_tool_request;
-#[cfg(unix)]
 mod sfrs_typescript_graphql;
 mod sfrs_upload_arguments;
 mod shell_command_wrappers;
@@ -317,12 +302,14 @@ mod shell_execution_context_support;
 pub mod shell_helpers;
 mod shell_model_limits;
 mod shell_read_literal_wrapper;
+pub mod shell_request_authority;
 mod shell_secret_read_flow;
 #[cfg(test)]
 mod shell_secret_read_script_operand_tests;
 mod shell_secret_read_support;
 pub mod shell_secret_reads;
 mod shell_structure;
+pub mod source_cli;
 pub mod typescript_launch_evidence;
 
 pub mod package_context_environment;
@@ -518,11 +505,14 @@ fn parse_posix_command(request: &CommandModelRequestV1) -> Result<CanonicalComma
             environment_names.push(name.to_owned());
             executable_index += 1;
         }
-        let (executable_index, wrapper_chain) =
-            match parser_wrappers::unwrap_sudo(&tokens, executable_index) {
-                Ok(value) => value,
-                Err(reason) => return Ok(uncertain(request, raw, reason)),
-            };
+        let (executable_index, wrapper_chain) = match parser_wrappers::unwrap_wrappers(
+            &tokens,
+            executable_index,
+            &mut environment_names,
+        ) {
+            Ok(value) => value,
+            Err(reason) => return Ok(uncertain(request, raw, reason)),
+        };
         let mut tokens = tokens;
         let mut executable = tokens.get(executable_index).cloned();
         let mut arguments = if executable.is_some() {
@@ -560,9 +550,29 @@ fn parse_posix_command(request: &CommandModelRequestV1) -> Result<CanonicalComma
                 "transparent_wrapper_not_yet_supported",
             ));
         }
-        if executable
+        let read_only_xargs = executable
             .as_deref()
-            .is_some_and(|value| is_nested_command_executor(value, &arguments))
+            .is_some_and(|value| executable_basename(value) == "xargs")
+            && environment_names.is_empty()
+            && wrapper_chain.is_empty()
+            && segments.last().is_some_and(|previous| {
+                let context = format!("top:{}", raw_segment.group_index);
+                read_only_fanout::xargs_follows_find(
+                    previous,
+                    raw_segment.pipeline_index,
+                    &context,
+                    &arguments,
+                ) || read_only_fanout::xargs_follows_object_names(
+                    previous,
+                    raw_segment.pipeline_index,
+                    &context,
+                    &arguments,
+                )
+            });
+        if !read_only_xargs
+            && executable
+                .as_deref()
+                .is_some_and(|value| is_nested_command_executor(value, &arguments))
         {
             return Ok(uncertain(
                 request,

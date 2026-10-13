@@ -45,6 +45,7 @@ _COMPATIBILITY_PATHS: Final = frozenset(
 )
 _TRANSPORT_IDENTITY_PATHS: Final = frozenset(
     {
+        "src/codex_plugin_scanner/guard/native_shell_request_authority.py",
         "src/codex_plugin_scanner/guard/native_restricted_pytest.py",
         # Payload-reference metadata validation; the native edge reads bytes.
         "src/codex_plugin_scanner/guard/daemon/hook_request_parsing.py",
@@ -77,6 +78,8 @@ _TRANSPORT_IDENTITY_PATHS: Final = frozenset(
         "src/codex_plugin_scanner/guard/daemon/pipx_import_paths.py",
         # Resident request transport; the observed git path is a fact, never a verdict.
         "src/codex_plugin_scanner/guard/native_codex_tool_output.py",
+        # Resident sensitive-request transport; the observed git path is a fact, never a verdict.
+        "src/codex_plugin_scanner/guard/native_sensitive_request.py",
         "src/codex_plugin_scanner/guard/frozen_runtime_commands.py",
     }
 )
@@ -118,6 +121,7 @@ _TRANSPORT_INTEGRITY_PATHS: Final = frozenset(
         "src/codex_plugin_scanner/guard/native_hook_adapter.py",
         "src/codex_plugin_scanner/guard/native_hook_adapter_wire.py",
         "src/codex_plugin_scanner/guard/native_github_cli.py",
+        "src/codex_plugin_scanner/guard/native_shell_request_authority.py",
         # Same correlation-only digest for the GitHub workflow prepare op.
         "src/codex_plugin_scanner/guard/native_github_workflow.py",
         "src/codex_plugin_scanner/guard/native_protect_request.py",
@@ -228,8 +232,6 @@ _TRANSPORT_DECODE_PATHS: Final = frozenset(
         "src/codex_plugin_scanner/guard/native_mcp_runtime_evidence.py",
         # Decodes the bounded resident runtime-detector-run response envelope.
         "src/codex_plugin_scanner/guard/native_runtime_detectors.py",
-        # Transports the native environment-secret classifier; no local script reads.
-        "src/codex_plugin_scanner/guard/runtime/secret_file_request_services/environment_secret_dump.py",
         # Decodes the bounded resident runner-authority response envelope and
         # projects typed runner state to it; Rust owns every authority answer.
         "src/codex_plugin_scanner/guard/native_runner_authority.py",
@@ -366,7 +368,6 @@ _PENDING_AUTHORITY_PATHS: Final = frozenset(
         "src/codex_plugin_scanner/guard/package_shim_frozen.py",
         "src/codex_plugin_scanner/guard/package_shim_status.py",
         "src/codex_plugin_scanner/guard/runtime/_shell_execution_context_support.py",
-        "src/codex_plugin_scanner/guard/runtime/_shell_secret_read_support.py",
         "src/codex_plugin_scanner/guard/runtime/actions.py",
         "src/codex_plugin_scanner/guard/runtime/approval_context.py",
         "src/codex_plugin_scanner/guard/runtime/browser_mcp_intent.py",
@@ -401,25 +402,17 @@ _PENDING_AUTHORITY_PATHS: Final = frozenset(
         "src/codex_plugin_scanner/guard/runtime/package_intent_common.py",
         "src/codex_plugin_scanner/guard/runtime/package_intent_parser.py",
         "src/codex_plugin_scanner/guard/runtime/package_json_scripts.py",
-        "src/codex_plugin_scanner/guard/runtime/read_only_git_audit.py",
         "src/codex_plugin_scanner/guard/runtime/routine_local_node.py",
         "src/codex_plugin_scanner/guard/runtime/routine_node_identity.py",
         "src/codex_plugin_scanner/guard/runtime/runner.py",
         "src/codex_plugin_scanner/guard/runtime/secret_file_request_services/benign_requests.py",
-        "src/codex_plugin_scanner/guard/runtime/secret_file_request_services/credential_exfiltration.py",
         "src/codex_plugin_scanner/guard/runtime/secret_file_request_services/developer_inspection.py",
-        "src/codex_plugin_scanner/guard/runtime/secret_file_request_services/interpreter_launch.py",
-        "src/codex_plugin_scanner/guard/runtime/secret_file_request_services/interpreter_observers.py",
-        "src/codex_plugin_scanner/guard/runtime/secret_file_request_services/interpreter_trust.py",
         "src/codex_plugin_scanner/guard/runtime/secret_file_request_services/local_read_operands.py",
         "src/codex_plugin_scanner/guard/runtime/secret_file_request_services/request_artifacts.py",
-        "src/codex_plugin_scanner/guard/runtime/secret_file_request_services/sensitive_read_pipeline.py",
         "src/codex_plugin_scanner/guard/runtime/secret_file_request_services/shell_quote_parsing.py",
         "src/codex_plugin_scanner/guard/runtime/secret_file_request_services/shell_static_safety.py",
         "src/codex_plugin_scanner/guard/runtime/secret_file_request_services/source_edit_context.py",
-        "src/codex_plugin_scanner/guard/runtime/secret_file_request_services/tool_action_requests.py",
         "src/codex_plugin_scanner/guard/runtime/shell_command_wrappers.py",
-        "src/codex_plugin_scanner/guard/runtime/shell_secret_reads.py",
         "src/codex_plugin_scanner/guard/runtime/skill_paths.py",
         "src/codex_plugin_scanner/guard/runtime/supply_chain_bundle_runtime.py",
         "src/codex_plugin_scanner/guard/runtime/typescript_launch_evidence.py",

@@ -72,7 +72,6 @@ from codex_plugin_scanner.guard.receipts import build_receipt
 from codex_plugin_scanner.guard.runtime import guard_run_evaluation as guard_run_evaluation
 from codex_plugin_scanner.guard.runtime import runner as guard_runner_module
 from codex_plugin_scanner.guard.runtime import runner_native_sync, wrapper_run_finish
-from codex_plugin_scanner.guard.runtime import secret_file_requests as secret_file_requests_module
 from codex_plugin_scanner.guard.runtime import wrapper_run as wrapper_run
 from codex_plugin_scanner.guard.runtime.actions import GuardActionEnvelope
 from codex_plugin_scanner.guard.runtime.approval_context import (
@@ -82,6 +81,7 @@ from codex_plugin_scanner.guard.runtime.approval_context import (
 )
 from codex_plugin_scanner.guard.runtime.package_intent_common import build_package_request_artifact
 from codex_plugin_scanner.guard.runtime.package_intent_parser import extract_package_intent_request
+from codex_plugin_scanner.guard.runtime.secret_file_request_services import constants_core, pytest_target_detection
 from codex_plugin_scanner.guard.runtime.secret_file_requests import (
     extract_sensitive_file_write_request,
     extract_sensitive_tool_action_request,
@@ -7196,7 +7196,9 @@ def test_guard_hook_emits_copilot_native_allow_response_for_noclobber_dev_null_r
     output = json.loads(capsys.readouterr().out)
 
     assert rc == 0
-    assert output["approval_reuse"]["action"] == "block"
+    # A literal `/dev/null` redirect no longer fails native evaluation, so this
+    # read-only pipeline takes the floor of `ls` and `head`.
+    assert output == {"permissionDecision": "allow"}
 
 
 def test_guard_hook_emits_copilot_native_allow_response_for_benign_node_transform_script(
@@ -7527,7 +7529,8 @@ def test_guard_hook_emits_copilot_native_allow_response_for_wrapped_command_spli
     output = json.loads(capsys.readouterr().out)
 
     assert rc == 0
-    assert output["approval_reuse"]["action"] == "block"
+    # `-S` follows the program name, so it is an argument to echo and the command only prints.
+    assert output == {"permissionDecision": "allow"}
 
 
 def test_guard_hook_emits_copilot_native_ask_response_for_node_script_argument_named_eval_flag(
@@ -16985,7 +16988,7 @@ def test_guard_runtime_requires_restricted_profile_for_simple_pytest_module_invo
     ),
 )
 def test_guard_runtime_requires_restricted_profile_for_inline_process_pytest(command, tmp_path):
-    assert secret_file_requests_module._shell_command_targets_pytest(command)
+    assert pytest_target_detection._shell_command_targets_pytest(command)
 
     match = extract_sensitive_tool_action_request("Bash", {"command": command}, cwd=tmp_path)
 
@@ -16997,7 +17000,7 @@ def test_guard_runtime_requires_restricted_profile_for_inline_process_pytest(com
 def test_guard_runtime_does_not_target_harmless_inline_process_command():
     command = "python -c \"import subprocess as sp; sp.run(['echo', 'harmless'])\""
 
-    assert not secret_file_requests_module._shell_command_targets_pytest(
+    assert not pytest_target_detection._shell_command_targets_pytest(
         command,
     )
 
@@ -17856,10 +17859,10 @@ def test_guard_runtime_keeps_mutating_pytest_flags_sensitive(tmp_path):
 
 
 def test_guard_runtime_keeps_pytest_allowlist_disjoint_from_mutating_flags():
-    pytest_mutating_flags = secret_file_requests_module._PYTHON_MODULE_MUTATING_FLAGS["pytest"]
+    pytest_mutating_flags = constants_core._PYTHON_MODULE_MUTATING_FLAGS["pytest"]
 
-    assert secret_file_requests_module._PYTEST_SAFE_FLAGS.isdisjoint(pytest_mutating_flags)
-    assert secret_file_requests_module._PYTEST_SAFE_FLAGS_WITH_VALUES.isdisjoint(pytest_mutating_flags)
+    assert constants_core._PYTEST_SAFE_FLAGS.isdisjoint(pytest_mutating_flags)
+    assert constants_core._PYTEST_SAFE_FLAGS_WITH_VALUES.isdisjoint(pytest_mutating_flags)
 
 
 def test_guard_runtime_tool_action_classification_uses_exact_action_classes():
@@ -21786,7 +21789,8 @@ def test_omitted_bundle_with_invalid_cached_authority_clears_unsigned_legacy_pol
         "2026-07-16T00:00:00Z",
         remote_write_authorized=True,
     )
-    store.set_cloud_exceptions(
+    store.set_sync_payload(
+        "cloud_exceptions",
         [
             {
                 "id": "stored-unsigned-exception",
@@ -22025,7 +22029,8 @@ def test_omitted_bundle_rematerializes_only_valid_cached_signed_policy(
         "2026-07-17T00:00:00Z",
         remote_write_authorized=True,
     )
-    store.set_cloud_exceptions(
+    store.set_sync_payload(
+        "cloud_exceptions",
         [
             {
                 "id": "stale-receipt-sync-exception",
@@ -22039,6 +22044,11 @@ def test_omitted_bundle_rematerializes_only_valid_cached_signed_policy(
         ],
         "2026-07-17T00:00:00Z",
     )
+    raw_cloud_exceptions = store.get_sync_payload("cloud_exceptions")
+    assert isinstance(raw_cloud_exceptions, list)
+    assert [item["id"] for item in raw_cloud_exceptions if isinstance(item, dict)] == [
+        "stale-receipt-sync-exception",
+    ]
     response_payload: dict[str, object] = {
         "syncedAt": "2026-07-17T00:00:01Z",
         "receiptsStored": 0,
@@ -22086,6 +22096,7 @@ def test_omitted_bundle_rematerializes_only_valid_cached_signed_policy(
     assert store.get_sync_payload("policy_bundle_last_error") == {}
     assert store.get_sync_payload("policy") == {}
     assert store.get_sync_payload("team_policy_pack") == {}
+    assert store.get_sync_payload("cloud_exceptions") == []
     assert [
         (item["harness"], item["scope"], item["artifact_id"], item["action"], item["owner"], item["source"])
         for item in store.list_policy_decisions()

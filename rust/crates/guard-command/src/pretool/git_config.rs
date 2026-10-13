@@ -24,8 +24,30 @@ pub(super) fn execution_free(
     let operation = remaining.first()?.as_str();
     if !matches!(
         operation,
-        "status" | "diff" | "log" | "show" | "branch" | "hash-object" | "config" | "merge-base"
+        "status"
+            | "diff"
+            | "log"
+            | "show"
+            | "grep"
+            | "branch"
+            | "hash-object"
+            | "config"
+            | "merge-base"
+            | "ls-tree"
+            | "cat-file"
     ) {
+        return None;
+    }
+    // Other object-read forms can run drivers; their own review floors decide.
+    if matches!(operation, "ls-tree" | "cat-file")
+        && !super::git_object_reads::read_form(operation, &remaining[1..])
+    {
+        return None;
+    }
+    // A plain configuration write is no read; its own proof decides it.
+    if operation == "config"
+        && super::git_config_reads::writes::plain_write(&remaining[1..]).is_some()
+    {
         return None;
     }
     let key = (
@@ -136,7 +158,7 @@ fn probe(
             "config",
             "--null",
             "--get-regexp",
-            "^(core\\.fsmonitor|core\\.pager|pager\\..*|diff\\.external|diff\\..*\\.(command|textconv)|filter\\..*\\.(process|clean|smudge)|log\\.showsignature|gpg\\.program|gpg\\..*\\.program|format\\.pretty|pretty\\..*|extensions\\.partialclone|remote\\..*\\.promisor)$",
+            "^(core\\.fsmonitor|core\\.pager|pager\\..*|diff\\.external|diff\\..*\\.(command|textconv)|filter\\..*\\.(process|clean|smudge)|log\\.showsignature|gpg\\.program|gpg\\..*\\.program|format\\.pretty|pretty\\..*|grep\\.fallbacktonoindex|extensions\\.partialclone|remote\\..*\\.promisor)$",
         ])
 ,
         deadline, CONFIG_LIMIT,
@@ -195,7 +217,7 @@ fn probe(
     // Like status, hash-object pages only when its own pager.* key says so;
     // config pages by default only for its listing forms.
     let pages_by_default = match operation {
-        "status" | "hash-object" | "merge-base" => false,
+        "status" | "hash-object" | "merge-base" | "ls-tree" | "cat-file" => false,
         "config" => super::git_config_reads::pages_by_default(&remaining[1..]),
         _ => true,
     };
@@ -247,13 +269,15 @@ fn probe(
             execution_environment,
             deadline,
             hashed.as_deref().unwrap_or_default(),
+            operation == "status",
         )?;
     for (key, value) in effective {
         let disabled = disabled_boolean(value);
         let unsafe_value = match key {
             "extensions.partialclone" => !value.is_empty(),
             key if key.starts_with("remote.") && key.ends_with(".promisor") => !disabled,
-            "core.fsmonitor" => matches!(operation, "status" | "diff") && !disabled,
+            // Reading the index can start the monitor; grep reads it too.
+            "core.fsmonitor" => matches!(operation, "status" | "diff" | "grep") && !disabled,
             "core.pager" => {
                 configured_paging
                     && !git_pager_disabled
@@ -286,6 +310,8 @@ fn probe(
                 matches!(operation, "log" | "show") && value.contains("%G")
             }
             "log.showsignature" => matches!(operation, "log" | "show") && !disabled,
+            // Outside a repository grep would search every file under cwd.
+            "grep.fallbacktonoindex" => operation == "grep" && !disabled,
             // A configured verification program (a very common developer
             // setting) runs only when signature verification is requested.
             // Every such request is rejected above: --show-signature,
@@ -463,7 +489,11 @@ pub(super) fn trusted_command(
         }
         found?
     };
-    super::trusted_location::trusted_location(&path, home, cwd).then_some(path)
+    let shim = super::git_session_probe::apple_developer_tools::selection_overridden(
+        &path,
+        execution_environment,
+    );
+    (!shim && super::trusted_location::trusted_location(&path, home, cwd)).then_some(path)
 }
 #[cfg(all(test, unix))]
 #[path = "git_config_home_tests.rs"]

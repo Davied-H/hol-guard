@@ -28,6 +28,7 @@ from .case_helpers import (
     _scenario_tools,
     _watch_binding,
     read_case_logs,
+    ready_watch_binding,
 )
 from .case_worker import SubprocessCaseWorker
 from .catalog import WATCH_COMMAND, WATCH_PROMPT, Scenario, catalog_digest, load_catalog
@@ -73,6 +74,7 @@ def run_case(
         root / scenario_fixture_name(scenario.id),
         realistic=first_contact and scenario.id != WORKTREE_CASE,
         linked_worktree=scenario.id == WORKTREE_CASE,
+        scenario_id=scenario.id,
     )
     stage_supply_chain(fixture.workspace, scenario.id)
     private = fixture.root / "private-evidence"
@@ -146,8 +148,6 @@ def run_case(
                     case["business_policy"], publisher.current_snapshot(), policy_snapshot
                 )
             worker = daemon._server.hook_worker
-            if scenario.oracle == "watch-command":
-                case["watch_binding_before"] = _watch_binding(worker.store)
             if scenario.oracle == "blocked-extension":
                 extension_receipt_ids = native_probe.persisted_native_receipt_ids(worker.store)
                 extension_receipt_writer = daemon._server.runtime_hook_evidence_writer
@@ -234,6 +234,7 @@ def run_case(
             if scenario.oracle == "watch-command":
                 position = command.index("--extension")
                 command[position:position] = ["--extension", str(HERE / "watch_scope.ts")]
+                case["watch_binding_before"] = ready_watch_binding(worker)
             case["returncode"], case["timed_out"] = run_process(
                 command,
                 cwd=fixture.workspace,

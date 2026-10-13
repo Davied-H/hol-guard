@@ -352,3 +352,100 @@ fn profile_preserves_denials_and_readonly_workspace() {
         assert!(profile.contains(&denial));
     }
 }
+
+// A fresh project with only source and tests is still a pytest root.
+#[test]
+fn root_test_modules_mark_a_project_but_not_a_home_or_a_link() {
+    let fixture = fixture("guard-test-module-root");
+    let resolve = |path: &Path| super::validation::resolve_workspace_with_home(path, None);
+    for (name, marks) in [
+        ("test_cli.py", true),
+        ("cli_test.py", true),
+        ("conftest.py", true),
+        ("test_.py", false),
+        ("cli.py", false),
+        ("test_cli.txt", false),
+    ] {
+        let workspace = fixture.0.join(format!("project-{name}"));
+        fs::create_dir(&workspace).unwrap();
+        fs::write(workspace.join(name), "").unwrap();
+        assert_eq!(resolve(&workspace).is_ok(), marks, "{name}");
+    }
+    let linked = fixture.0.join("linked");
+    fs::create_dir(&linked).unwrap();
+    std::os::unix::fs::symlink(
+        fixture.0.join("project-test_cli.py/test_cli.py"),
+        linked.join("test_cli.py"),
+    )
+    .unwrap();
+    assert!(resolve(&linked).is_err());
+
+    let home = fixture.0.join("caller-home");
+    fs::create_dir(&home).unwrap();
+    fs::write(home.join("test_cli.py"), "").unwrap();
+    let refused = super::validation::resolve_workspace_with_home(&home, Some(&home));
+    assert!(refused.is_err());
+}
+
+#[test]
+fn bun_inline_eval_uses_the_node_eval_profile_with_an_installer_image() {
+    let fixture = fixture("guard-bun-eval");
+    let home = fixture.0.join("caller-home");
+    let bun = home.join(".bun/bin/bun");
+    let workspace = fixture.0.join("project");
+    fs::create_dir_all(bun.parent().unwrap()).unwrap();
+    fs::create_dir(&workspace).unwrap();
+    fs::write(workspace.join("package.json"), "{}").unwrap();
+    fs::write(&bun, b"\x7fELFnative-fixture").unwrap();
+    fs::set_permissions(&bun, fs::Permissions::from_mode(0o755)).unwrap();
+    let mut launch = json!({"command":[bun,"-e","console.log(1)"],"workspace":workspace,
+        "cwd":workspace,"home":home,"platform":"darwin","backend_executable":"/usr/bin/true",
+        "search_path":""});
+    let result = evaluate("prepare_inline", &launch);
+    let plan = &result["value"];
+    assert_eq!(plan["profile_version"], "node-eval-readonly-v1", "{plan}");
+    assert_eq!(plan["command"], json!([bun, "-e", "console.log(1)"]));
+    assert_eq!(
+        plan["denied_capabilities"],
+        json!([
+            "host-home-read",
+            "host-secret-environment",
+            "network",
+            "docker-socket",
+            "workspace-write",
+            "workspace-credential-read",
+            "unapproved-process-exec",
+            "privileged-operation"
+        ])
+    );
+    launch["command"] = json!([bun, "--print", "1"]);
+    assert_eq!(
+        evaluate("prepare_inline", &launch)["value"]["command"],
+        json!([bun, "--print", "1"])
+    );
+    // Another home's installer, a repository copy, a writable or script image.
+    let invalid = |launch: &Value| {
+        assert_eq!(
+            evaluate("prepare_inline", launch)["reason_code"],
+            "inline_eval_invalid_command",
+            "{launch}"
+        );
+    };
+    let other = fixture.0.join("other-home");
+    fs::create_dir(&other).unwrap();
+    launch["home"] = json!(other);
+    invalid(&launch);
+    launch["home"] = json!(home);
+    let local = workspace.join("bun");
+    fs::copy(&bun, &local).unwrap();
+    launch["command"] = json!([local, "-e", "1"]);
+    invalid(&launch);
+    launch["command"] = json!([bun, "-e", "1"]);
+    fs::set_permissions(&bun, fs::Permissions::from_mode(0o775)).unwrap();
+    invalid(&launch);
+    fs::write(&bun, b"#!/bin/sh\n").unwrap();
+    fs::set_permissions(&bun, fs::Permissions::from_mode(0o755)).unwrap();
+    invalid(&launch);
+    launch["command"] = json!([bun, "run", "-e", "1"]);
+    invalid(&launch);
+}

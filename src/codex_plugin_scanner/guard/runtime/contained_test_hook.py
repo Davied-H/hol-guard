@@ -5,10 +5,12 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shlex
 import stat
 import sys
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 from pathlib import Path
 
 from . import restricted_git, restricted_node_test, restricted_node_tool, restricted_vitest
@@ -29,6 +31,7 @@ from .restricted_pytest_model import (
     VITEST_READ_ONLY_PROFILE_VERSION,
 )
 from .restricted_pytest_validation import _path_is_within
+from .restricted_workspace import receipt_matches, run_workspace_contained
 
 _MAX_REQUEST_BYTES = 1_048_576
 _FAILURE = "contained_test_authorization_failed"
@@ -109,6 +112,92 @@ def read_contained_test_request(path: Path, expected_sha256: str, *, workspace: 
         raise _reject() from error
 
 
+# Mirrors the native inert-assignment allowlist: these names change output or
+# presentation, never which program runs or what it loads.
+_INERT_ENVIRONMENT_NAMES = frozenset(
+    {
+        "CI",
+        "NODE_ENV",
+        "FORCE_COLOR",
+        "NO_COLOR",
+        "CLICOLOR",
+        "CLICOLOR_FORCE",
+        "TERM",
+        "TZ",
+        "LANG",
+        "LANGUAGE",
+        "COLUMNS",
+        "LINES",
+        "DEBUG",
+        "NODE_NO_WARNINGS",
+        "RUST_LOG",
+        "RUST_BACKTRACE",
+        "PYTHONUNBUFFERED",
+        "PYTHONDONTWRITEBYTECODE",
+    }
+)
+
+
+def _inert_assignment(word: str) -> tuple[str, str] | None:
+    name, separator, value = word.partition("=")
+    if (
+        separator
+        and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name)
+        and (name in _INERT_ENVIRONMENT_NAMES or name.startswith("LC_"))
+    ):
+        return name, value
+    return None
+
+
+def _split_command_prefix(command: list[str]) -> tuple[list[str], dict[str, str]]:
+    """Peel `command`/`time`/`env` prefixes and inert `NAME=value` assignments.
+
+    The native model reads `CI=1 command bun run build` as `bun run build`
+    with an inert assignment. An option such as `command -v` or `env -i`
+    keeps its prefix, and any other assignment stays in the command, so the
+    core is rejected.
+    """
+    assignments: dict[str, str] = {}
+    for _ in range(16):
+        if len(command) > 1 and command[0] in {"command", "time", "env"} and not command[1].startswith("-"):
+            command = command[1:]
+        elif command and (assignment := _inert_assignment(command[0])) is not None:
+            assignments[assignment[0]] = assignment[1]
+            command = command[1:]
+        else:
+            break
+    return command, assignments
+
+
+@contextmanager
+def _assignments_applied(assignments: Mapping[str, str]) -> Iterator[None]:
+    """Export the assignments to the runner's source environment for one run.
+
+    Each restricted profile still filters that environment, exactly as it
+    filters a variable the agent's shell exported.
+    """
+    previous = {name: os.environ.get(name) for name in assignments}
+    os.environ.update(assignments)
+    try:
+        yield
+    finally:
+        for name, value in previous.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+
+
+def _contained_receipt(receipt: object) -> bool:
+    return (
+        isinstance(receipt, Mapping)
+        and receipt.get("decision") == "deny"
+        and receipt.get("policy_action") == "sandbox-required"
+        and isinstance(receipt.get("required_execution_profile"), str)
+        and receipt.get("observe_mode") is not True
+    )
+
+
 def run_authorized_contained_test(
     payload: dict[str, object],
     *,
@@ -130,21 +219,35 @@ def run_authorized_contained_test(
         raise _reject()
     if cwd is None:
         cwd = workspace
+
+    def run_workspace(receipt: object) -> int | None:
+        """Run in the workspace sandbox when Rust issued that profile, else None."""
+        if not receipt_matches(receipt) or not isinstance(receipt, Mapping):
+            return None
+        return run_workspace_contained(
+            payload,
+            workspace=workspace,
+            cwd=cwd,
+            authorize=authorize,
+            first_receipt=receipt,
+            home_dir=home_dir,
+            timeout_seconds=timeout_seconds,
+            merge_stderr=merge_stderr,
+        )
+
     try:
-        peeled = peel_contained_wrapper(tool_input["command"], workspace=workspace, home=home_dir)
+        peeled = peel_contained_wrapper(tool_input["command"], workspace=workspace, home=home_dir, cwd=cwd)
     except (OSError, RuntimeError, ValueError) as error:
-        raise _reject() from error
+        # Pipelines and lists the wrapper cannot peel (`| grep`, `&&`) still
+        # run as issued when Rust chose the workspace sandbox for them.
+        exit_code = run_workspace(authorize(payload))
+        if exit_code is None:
+            raise _reject() from error
+        return exit_code
     if peeled is not None:
         # The wrapped original must carry the receipt; the core is then
         # re-authorized in its resolved directory by the recursive call.
-        receipt = authorize(payload)
-        if (
-            not isinstance(receipt, Mapping)
-            or receipt.get("decision") != "deny"
-            or receipt.get("policy_action") != "sandbox-required"
-            or not isinstance(receipt.get("required_execution_profile"), str)
-            or receipt.get("observe_mode") is True
-        ):
+        if not _contained_receipt(authorize(payload)):
             raise _reject()
         core, directory, output = peeled
         if not _path_is_within(directory, workspace.resolve(strict=True)):
@@ -169,39 +272,76 @@ def run_authorized_contained_test(
         sys.stdout.write(status_line)
         sys.stdout.flush()
         return 0
-    try:
-        command = shlex.split(tool_input["command"], posix=True)
-    except ValueError as error:
-        raise _reject() from error
-    package_test = is_package_test(command)
-    if package_test:
-        command = list(resolve_package_test(command, workspace=workspace, cwd=cwd))
-    from ..native_restricted_pytest import restricted_native
 
-    kinds = restricted_native("contained_kind", {"command": command}, dict)
-    if set(kinds) != {"inline_eval", "node_test", "vitest", "git", "node_tool"} or any(
-        type(value) is not bool for value in kinds.values()
-    ):
-        raise _reject()
-    inline_eval, node_test, vitest, git, node_tool = (
-        kinds[key] for key in ("inline_eval", "node_test", "vitest", "git", "node_tool")
-    )
-    inline_plan = node_tool_plan = git_plan = vitest_plan = node_test_plan = None
-    if inline_eval:
-        inline_plan = prepare_restricted_inline_eval(command, workspace=workspace, cwd=cwd)
-    elif node_tool:
-        node_tool_plan = restricted_node_tool.prepare_restricted_node_tool(command, workspace=workspace, cwd=cwd)
-    elif git:
-        git_plan = restricted_git.prepare_restricted_git(command, workspace=workspace, cwd=cwd)
-    elif vitest:
-        vitest_plan = restricted_vitest.prepare_restricted_vitest(command, workspace=workspace, cwd=cwd)
-    elif node_test:
-        node_test_plan = restricted_node_test.prepare_restricted_node_test(command, workspace=workspace, cwd=cwd)
-    else:
-        prepare_restricted_pytest(command, workspace=workspace, cwd=cwd, read_only_workspace=True)
+    try:
+        core, assignments = _split_command_prefix(shlex.split(tool_input["command"], posix=True))
+    except ValueError:
+        core, assignments = [], {}
+    if assignments:
+        # Like a wrapper: the original carries the receipt, then the core is
+        # authorized again and runs with the assignments exported. A workspace
+        # receipt runs the original as issued.
+        receipt = authorize(payload)
+        exit_code = run_workspace(receipt)
+        if exit_code is not None:
+            return exit_code
+        if not core or not _contained_receipt(receipt):
+            raise _reject()
+        with _assignments_applied(assignments):
+            return run_authorized_contained_test(
+                {**payload, "tool_input": {**tool_input, "command": shlex.join(core)}},
+                workspace=workspace,
+                authorize=authorize,
+                timeout_seconds=timeout_seconds,
+                cwd=cwd,
+                home_dir=home_dir,
+                merge_stderr=merge_stderr,
+            )
+
+    try:
+        try:
+            command, _ = _split_command_prefix(shlex.split(tool_input["command"], posix=True))
+        except ValueError as error:
+            raise _reject() from error
+        package_test = is_package_test(command)
+        if package_test:
+            command = list(resolve_package_test(command, workspace=workspace, cwd=cwd))
+        from ..native_restricted_pytest import restricted_native
+
+        kinds = restricted_native("contained_kind", {"command": command}, dict)
+        if set(kinds) != {"inline_eval", "node_test", "vitest", "git", "node_tool"} or any(
+            type(value) is not bool for value in kinds.values()
+        ):
+            raise _reject()
+        inline_eval, node_test, vitest, git, node_tool = (
+            kinds[key] for key in ("inline_eval", "node_test", "vitest", "git", "node_tool")
+        )
+        inline_plan = node_tool_plan = git_plan = vitest_plan = node_test_plan = None
+        if inline_eval:
+            inline_plan = prepare_restricted_inline_eval(command, workspace=workspace, cwd=cwd)
+        elif node_tool:
+            node_tool_plan = restricted_node_tool.prepare_restricted_node_tool(command, workspace=workspace, cwd=cwd)
+        elif git:
+            git_plan = restricted_git.prepare_restricted_git(command, workspace=workspace, cwd=cwd)
+        elif vitest:
+            vitest_plan = restricted_vitest.prepare_restricted_vitest(command, workspace=workspace, cwd=cwd)
+        elif node_test:
+            node_test_plan = restricted_node_test.prepare_restricted_node_test(command, workspace=workspace, cwd=cwd)
+        else:
+            prepare_restricted_pytest(command, workspace=workspace, cwd=cwd, read_only_workspace=True)
+    except RestrictedPytestError:
+        # The read-only planners reject the mutating shapes (`git add && git
+        # commit`, `node -e`, `./todo.py`) that Rust sends to the workspace
+        # sandbox. Only a live workspace receipt runs them; anything else fails.
+        exit_code = run_workspace(authorize(payload))
+        if exit_code is None:
+            raise
+        return exit_code
     if inline_plan is not None:
         profile = inline_plan.profile_version
-        if profile == "node-eval-readonly-v1":
+        if profile == "node-eval-readonly-v1" and Path(command[0]).name == "bun":
+            reason = "native_bun_eval_readonly_containment_required"
+        elif profile == "node-eval-readonly-v1":
             reason = "native_node_eval_readonly_containment_required"
         else:
             reason = "native_python_eval_readonly_containment_required"
@@ -230,8 +370,14 @@ def run_authorized_contained_test(
             and response.get("observe_mode") is not True
         )
 
+    # Authorize after planning so the live decision follows every file the
+    # planner read. Rust may still pick the workspace sandbox for this shape.
+    receipt = authorize(payload)
+    exit_code = run_workspace(receipt)
+    if exit_code is not None:
+        return exit_code
     if not required(
-        authorize(payload),
+        receipt,
         expected_reason=PACKAGE_TEST_REASON if package_test else reason,
         expected_profile=PACKAGE_TEST_PROFILE if package_test else profile,
     ):
@@ -244,14 +390,26 @@ def run_authorized_contained_test(
     def authorize_capability(argv: tuple[str, ...]) -> None:
         capability = {**payload, "tool_input": {**tool_input, "command": shlex.join(argv)}}
         # The approved workspace root stays in scope so a subdirectory cannot shed its denies.
-        contexts = (workspace, cwd, *((vitest_plan.cwd,) if vitest_plan is not None else ()))
+        build = node_tool_plan is not None and node_tool_plan.profile_version == NODE_BUILD_OUTPUT_PROFILE_VERSION
+        transform_plan = vitest_plan or (node_tool_plan if build else None)
+        contexts = (workspace, cwd, *((transform_plan.cwd,) if transform_plan is not None else ()))
         for directory in dict.fromkeys(contexts):
             response = authorize({**capability, "cwd": str(directory)})
             if (
                 not isinstance(response, Mapping)
                 or not (
                     (response.get("decision") == "allow" and response.get("policy_action") == "allow")
-                    or (vitest_plan is not None and required(response))
+                    # Native classifies the transform image as a read-only
+                    # Vitest capability; it runs inside the Vitest run's or the
+                    # Vite build's own profile.
+                    or (
+                        transform_plan is not None
+                        and required(
+                            response,
+                            expected_reason="native_vitest_readonly_containment_required",
+                            expected_profile=VITEST_READ_ONLY_PROFILE_VERSION,
+                        )
+                    )
                 )
                 or response.get("observe_mode") is True
             ):

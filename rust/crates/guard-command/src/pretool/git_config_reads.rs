@@ -10,6 +10,9 @@
 use std::process::Command;
 use std::time::Instant;
 
+#[path = "git_config_writes.rs"]
+pub(crate) mod writes;
+
 const LIST_LIMIT: u64 = 262_144;
 const FLAGS: &[&str] = &[
     "--local",
@@ -136,6 +139,21 @@ pub(super) fn credential_free(
         return None;
     }
     Some(entries_free(std::str::from_utf8(&output).ok()?, &printed))
+}
+
+/// Whether the text of a repository `config` file holds no credential: no
+/// `credential` section, no key or value marker, and no URL with userinfo or a
+/// query string. Screening each lowercased line is a superset of the entries.
+pub(super) fn file_text_free(text: &str) -> bool {
+    text.lines()
+        .all(|line| !line.trim().to_ascii_lowercase().starts_with("[credential"))
+        && text.lines().all(|line| {
+            let line = line.to_ascii_lowercase();
+            !KEY_MARKERS.iter().any(|marker| line.contains(marker))
+                && !VALUE_MARKERS.iter().any(|marker| line.contains(marker))
+                && !url_with_userinfo(&line)
+                && !url_with_query(&line)
+        })
 }
 
 fn entries_free(listing: &str, printed: &Printed) -> bool {

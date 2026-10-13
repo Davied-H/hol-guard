@@ -1,5 +1,8 @@
 use crate::{CanonicalCommandV1, CommandSegmentV1};
 
+#[path = "package_directory_flags.rs"]
+pub(super) mod package_dir;
+
 fn bounded_count(value: &str) -> bool {
     !value.is_empty() && value.len() <= 6 && value.bytes().all(|byte| byte.is_ascii_digit())
 }
@@ -81,7 +84,10 @@ fn text(model: &CanonicalCommandV1, start: usize, end: usize) -> Option<String> 
 /// approved root to the same directory, so the run is contained to that
 /// repository exactly as it would be from a session started there.
 #[cfg(unix)]
-fn sibling_project_root(target: &std::path::Path, home: &str) -> Option<std::path::PathBuf> {
+pub(super) fn sibling_project_root(
+    target: &std::path::Path,
+    home: &str,
+) -> Option<std::path::PathBuf> {
     use std::os::unix::fs::MetadataExt;
     let uid = nix::unistd::getuid().as_raw();
     [std::path::Path::new(home), std::path::Path::new("/tmp")]
@@ -99,7 +105,10 @@ fn sibling_project_root(target: &std::path::Path, home: &str) -> Option<std::pat
 }
 
 #[cfg(not(unix))]
-fn sibling_project_root(_target: &std::path::Path, _home: &str) -> Option<std::path::PathBuf> {
+pub(super) fn sibling_project_root(
+    _target: &std::path::Path,
+    _home: &str,
+) -> Option<std::path::PathBuf> {
     None
 }
 
@@ -112,6 +121,10 @@ pub(super) fn contained_core(
     model: &CanonicalCommandV1,
     context: super::PathContext<'_>,
 ) -> Option<CanonicalCommandV1> {
+    // `bun --cwd <dir> run build` is checked as `cd <dir> && bun run build`.
+    if let Some(projected) = package_dir::as_cd_list(model, context) {
+        return contained_core(&projected.model, context);
+    }
     if model.confidence != "exact" || model.path_overridden || !model.wrapper_chain.is_empty() {
         return None;
     }

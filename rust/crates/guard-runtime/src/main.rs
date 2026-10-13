@@ -54,6 +54,13 @@ mod binding_capture_receipt;
 mod binding_capture_record;
 #[cfg(all(test, unix))]
 mod binding_capture_vectors_tests;
+mod blocked_request_mode;
+mod bounded_hook_bridge;
+mod bounded_hook_bridge_grok;
+mod bounded_hook_bridge_grok_render;
+mod bounded_hook_bridge_grok_script;
+mod bounded_hook_bridge_hermes;
+mod bounded_hook_bridge_render;
 #[cfg(test)]
 mod bundle_parse_reuse_tests;
 mod business_document_compile;
@@ -74,6 +81,17 @@ mod claim_reuse_binding_tests;
 #[cfg(test)]
 mod claim_reuse_vectors_tests;
 mod claude_guard_question;
+mod claude_hook_bridge;
+mod claude_hook_bridge_auth;
+#[cfg(windows)]
+mod claude_hook_bridge_auth_windows;
+#[cfg(all(test, unix))]
+mod claude_hook_bridge_fixture;
+mod claude_hook_bridge_http;
+mod claude_hook_bridge_http_text;
+mod claude_hook_bridge_render;
+mod claude_hook_bridge_transport;
+mod claude_hook_bridge_url;
 mod cli_copilot_resolution;
 mod cli_runtime_support_op;
 mod cloud_action_envelope;
@@ -90,6 +108,11 @@ mod cloud_sync_privacy;
 mod codex_app_server_socket;
 mod codex_detect;
 mod codex_hook_artifacts;
+mod codex_hook_bridge;
+mod codex_hook_bridge_direct;
+mod codex_hook_bridge_transport;
+mod codex_hook_identity;
+mod codex_hook_response;
 mod codex_hooks;
 mod codex_identity;
 mod codex_proxy;
@@ -142,6 +165,9 @@ mod continuation_metadata;
 mod continuation_store;
 mod contributed_mcp_decision_op;
 mod critical_floor_op;
+mod cursor_hook_bridge;
+mod cursor_hook_bridge_response;
+mod cursor_hook_bridge_script;
 mod cursor_observer_proof_op;
 mod custom_extension_continuity;
 mod custom_extension_suggestion;
@@ -199,7 +225,14 @@ mod guard_config_harness;
 mod guard_config_iso;
 mod guard_config_load;
 mod guard_config_managed;
+mod guard_store_advisory_cache;
+#[cfg(test)]
+mod guard_store_advisory_cache_vectors_tests;
+mod guard_store_approval_request;
+mod guard_store_approval_row;
+mod guard_store_approval_write;
 mod guard_store_args;
+mod guard_store_claude_review;
 mod guard_store_clients;
 mod guard_store_cmd_activity;
 mod guard_store_cmd_api;
@@ -218,6 +251,9 @@ mod guard_store_connect_effective;
 #[cfg(test)]
 mod guard_store_connect_vectors_tests;
 mod guard_store_db;
+mod guard_store_guard_event;
+#[cfg(test)]
+mod guard_store_guard_event_tests;
 mod guard_store_inventory;
 #[cfg(test)]
 mod guard_store_inventory_page_tests;
@@ -225,6 +261,13 @@ mod guard_store_inventory_page_tests;
 mod guard_store_inventory_vectors_tests;
 mod guard_store_json;
 mod guard_store_lineage;
+mod guard_store_local_cli;
+#[cfg(test)]
+mod guard_store_local_cli_grant_vectors_tests;
+mod guard_store_local_cli_grants;
+#[cfg(test)]
+mod guard_store_local_cli_vectors_tests;
+mod guard_store_local_mcp_observation;
 mod guard_store_native_review_consume;
 #[cfg(test)]
 mod guard_store_native_review_consume_tests;
@@ -258,6 +301,7 @@ mod guard_store_receipts_vectors_tests;
 mod guard_store_sessions;
 #[cfg(test)]
 mod guard_store_sessions_vectors_tests;
+mod guard_store_silent_review;
 mod guard_store_state_ops;
 #[cfg(test)]
 mod guard_store_state_ops_vectors_tests;
@@ -300,6 +344,7 @@ mod hook_approval_context;
 mod hook_artifact_compose_op;
 mod hook_artifact_compose_reuse;
 mod hook_authority_state_op;
+mod hook_bridge_exit;
 #[cfg(all(test, unix))]
 mod hook_decision_benign_tool_action_tests;
 mod hook_decision_compose;
@@ -310,6 +355,9 @@ mod hook_decision_native_facts;
 mod hook_decision_native_facts_tests;
 mod hook_decision_op;
 mod hook_decision_settle;
+mod hook_direct;
+mod hook_direct_evidence;
+mod hook_env_stamp;
 mod hook_policy_config;
 mod hook_process_spawn;
 mod hook_render_op;
@@ -335,6 +383,9 @@ mod mcp_proxy_decision_tests;
 mod mcp_proxy_decision_vectors_tests;
 mod mcp_proxy_package;
 mod mcp_proxy_postclaim;
+mod mcp_proxy_projection;
+#[cfg(test)]
+mod mcp_proxy_projection_vectors_tests;
 mod mcp_proxy_route;
 mod mcp_proxy_shlex;
 mod mcp_proxy_signals;
@@ -355,8 +406,10 @@ mod mcp_tool_policy_grants;
 mod mcp_tool_policy_lookup;
 mod mcp_tool_policy_proxy;
 mod mcp_tool_policy_revalidate;
+mod memory_pattern;
 mod native_exact_action_op;
 mod native_hook_receipt;
+mod native_review_link;
 mod native_runtime_admission;
 mod native_runtime_resilience;
 mod oauth_refresh;
@@ -408,6 +461,8 @@ mod policy_document_op;
 mod policy_effective;
 mod policy_enforcement;
 mod policy_integrity_resolver;
+mod policy_lookup_groups;
+mod policy_lookup_reuse;
 mod policy_snapshot_build;
 mod policy_store;
 mod prompt_analyze_op;
@@ -445,11 +500,14 @@ mod runner_sync_url;
 mod runtime_cli;
 mod runtime_detector_run_op;
 mod secrets_cli;
+mod sensitive_request_op;
 #[cfg(all(test, unix))]
 #[allow(dead_code, clippy::pedantic)]
 #[path = "../../guard-command/tests/sfrs_support/mod.rs"]
 mod sfrs_support;
 mod shell_helpers_op;
+mod shell_request_authority_op;
+mod shell_request_inspection_host;
 mod shim_op;
 mod signal_projection_approval;
 mod signal_projection_decode;
@@ -584,6 +642,13 @@ fn run() -> Result<(), String> {
 }
 
 fn main() {
+    // The runtime also hosts the declarative source-compiler front end so the
+    // wheel ships a single native binary. Dispatch before the panic hook so
+    // compiler behavior (including its own exit paths) stays identical.
+    let arguments: Vec<String> = std::env::args().skip(1).collect();
+    if guard_command::source_cli::is_command(&arguments) {
+        std::process::exit(guard_command::source_cli::main(arguments));
+    }
     std::panic::set_hook(Box::new(|_| eprintln!("native_runtime_panicked")));
     if let Err(code) = run() {
         eprintln!("{code}");
