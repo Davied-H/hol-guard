@@ -101,7 +101,10 @@ fn valid_identifier(name: &str) -> bool {
     // Exclude a leading underscore because '_' itself is shell-special.
     // zsh additionally ties these lowercase arrays to PATH, CDPATH, FPATH,
     // MANPATH and MODULE_PATH, so they can change command lookup.
-    if matches!(name, "path" | "cdpath" | "fpath" | "manpath" | "module_path") {
+    if matches!(
+        name,
+        "path" | "cdpath" | "fpath" | "manpath" | "module_path"
+    ) {
         return false;
     }
     let mut chars = name.chars();
