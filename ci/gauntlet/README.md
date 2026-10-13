@@ -168,6 +168,14 @@ cleanup. Repeated attempts accumulate in their phase rather than hiding
 retry cost. The existing `elapsed_seconds` is the end-to-end measurement,
 including cold build and cleanup; a cached-wheel run must be reported as such.
 
+The native inference adapter treats sixty seconds without a model text,
+reasoning or tool-argument delta as a stalled medium/low request. Transport
+keepalives do not extend that wait. Active generation retains the existing
+four-minute round deadline, high effort retains its previous idle budget,
+and scenario/tool deadlines are unchanged. A stall remains an inference error
+with retained evidence; it can trigger a fresh full attempt, never a repaired
+completion or a stitched pass.
+
 Use an OpenAI-compatible **Chat Completions streaming** provider endpoint and a model that supports tool calls. DeepSeek or another compatible provider can be configured directly. A Codex subscription is not automatically an API credential. A local compatible server is supported explicitly; prerecorded responses are not qualification evidence.
 
 The relay identifies itself as `hol-guard-gauntlet/1.0` and supplies a stable, random `x-opencode-session` for each scenario. These routing headers support coding-agent providers without borrowing another client's identity. Session identifiers and provider credentials are never included in public evidence. Interrupting a run terminates and reaps its owned agent process group.

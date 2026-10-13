@@ -180,6 +180,9 @@ pub(crate) fn command_shape(
         return None;
     }
     let mut bootstrap = None;
+    if links::unbounded_linked_writes(model, workspace) {
+        return None;
+    }
     let linked = super::worktree_writes::linked_worktree_common_dir(workspace).is_some();
     for (index, segment) in model.segments.iter().enumerate() {
         let executable = segment.executable.as_deref()?;
@@ -196,11 +199,6 @@ pub(crate) fn command_shape(
             return None;
         }
         let name = super::executable_basename(executable);
-        // Containment cannot undo an in-workspace write through an existing
-        // hard link: its other name may be protected or outside the workspace.
-        if links::mutates_linked_destination(name, &segment.arguments, workspace) {
-            return None;
-        }
         // The sandbox has no network, so a network client would only fail,
         // and it reaches no directory outside the workspace.
         if NETWORK_CLIENTS.contains(&name)
