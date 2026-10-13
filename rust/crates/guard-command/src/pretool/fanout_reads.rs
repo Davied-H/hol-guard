@@ -11,12 +11,14 @@
 //!   symlink has type `l`, so a workspace symlink to a secret is never listed,
 //!   and `-L`, `-H` and `-follow` are not part of the shape;
 //! - a child that reads file contents needs a `-name '*.ext'` test with a
-//!   plain extension that is not a credential or key extension, so `.env`,
-//!   `.npmrc` and key files are not reachable by a broad `find`;
+//!   source or documentation extension, so `.env`, `.env.local`, `.npmrc`
+//!   and key files are not reachable by a broad `find`;
 //! - the child must pass its existing exact-safe proof with one file operand
 //!   appended, which is what keeps writes, network and execution out;
 //! - `xargs` needs `-0` after `-print0`: whitespace splitting lets a crafted
-//!   directory name such as `x /abs/secret` add a second path.
+//!   directory name such as `x /abs/secret` add a second path. Without `-r`
+//!   an empty result still runs the child with no operand, so only a child
+//!   that stays bounded then (not `rg` or a recursive `grep`) may omit it.
 //!
 //! `xargs -I`, `sh -c`, `-delete`, `-fprint`, `-ok` and non-`find` producers
 //! never reach this module; the parser leaves them uncertain.
@@ -27,19 +29,21 @@ use super::PathContext;
 use crate::read_only_fanout::{self as fanout, FindShape};
 use crate::{CanonicalCommandV1, CommandSegmentV1};
 
-const DENIED_EXTENSIONS: [&str; 26] = [
-    "env", "pem", "key", "p12", "pfx", "cer", "crt", "der", "jks", "keystore", "kdbx", "asc",
-    "gpg", "pgp", "age", "enc", "ppk", "ovpn", "npmrc", "netrc", "pgpass", "tfvars", "tfstate",
-    "secret", "secrets", "token",
+/// Source and documentation extensions a content reader may fan out over.
+/// find's `*` also matches a leading dot, so a denylist of secret extensions
+/// would still reach `.env.local` through `*.local`; configuration formats
+/// such as JSON and YAML are left out because they often hold keys.
+const SOURCE_EXTENSIONS: [&str; 46] = [
+    "ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs", "py", "pyi", "rs", "go", "java", "kt",
+    "kts", "scala", "c", "h", "cc", "cpp", "hpp", "cs", "rb", "php", "swift", "m", "dart", "lua",
+    "ex", "exs", "hs", "md", "mdx", "rst", "txt", "html", "htm", "css", "scss", "sass", "less",
+    "vue", "svelte", "sql", "graphql", "proto",
 ];
 
 fn plain_extension_pattern(pattern: &str) -> bool {
-    let Some(extension) = pattern.strip_prefix("*.") else {
-        return false;
-    };
-    (1..=8).contains(&extension.len())
-        && extension.bytes().all(|byte| byte.is_ascii_alphanumeric())
-        && !DENIED_EXTENSIONS.contains(&extension.to_ascii_lowercase().as_str())
+    pattern.strip_prefix("*.").is_some_and(|extension| {
+        SOURCE_EXTENSIONS.contains(&extension.to_ascii_lowercase().as_str())
+    })
 }
 
 fn contained_roots(shape: &FindShape<'_>, context: PathContext<'_>) -> bool {
@@ -162,6 +166,7 @@ pub(super) fn safe_xargs(
         return false;
     };
     xargs.null_separated
+        && (xargs.no_run_if_empty || fanout::bounded_without_operands(xargs.child))
         && shape.print0
         && producer_allowed(&shape, xargs.child, context)
         && child_proven(model, segment, xargs.child, context)

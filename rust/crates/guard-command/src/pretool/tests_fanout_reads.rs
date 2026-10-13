@@ -115,6 +115,13 @@ fn unproven_fanout_stays_reviewed() {
         "find src -type f -name '*.ts' -ok cat {} \\;",
         "find src -type f -name '*.ts' -execdir cat {} +",
         "find src -type f -name '*.ts' -exec sed -i s/a/b/ {} +",
+        // Extensions outside the source list, which `*` also matches after a dot.
+        "find . -type f -name '*.local' -exec cat {} +",
+        "find . -type f -name '*.envrc' -exec cat {} +",
+        "find . -type f -name '*.json' -print0 | xargs -0 cat",
+        // Empty input without `-r` runs the child with no operand.
+        "find src -type f -name '*.ts' -print0 | xargs -0 rg main",
+        "find src -type f -name '*.ts' -print0 | xargs -0 grep -rn main",
         // A `;` inside the child ends the body early and exposes more expression.
         "find src -type f -name '*.ts' -exec grep -e x -e ';' -o -delete -fprintf {} ';'",
         "find src -type f -name '*.ts' -exec grep -e x -e ';' -o -exec touch {} ';'",

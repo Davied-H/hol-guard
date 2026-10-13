@@ -45,6 +45,7 @@ pub(crate) struct FindExec<'a> {
 
 pub(crate) struct Xargs<'a> {
     pub null_separated: bool,
+    pub no_run_if_empty: bool,
     pub child: &'a [String],
 }
 
@@ -68,6 +69,29 @@ fn child_listed(child: &[String]) -> bool {
     child.first().is_some_and(|name| {
         !name.contains(['/', '\\']) && CHILDREN.contains(&executable_basename(name))
     })
+}
+
+/// Whether the child stays bounded when xargs runs it with no file operand,
+/// as it does on empty input without `-r`. The readers then read the empty
+/// input and `ls`/`stat` print metadata only, but `rg` and a recursive `grep`
+/// search the whole working directory. A short option holding `r`, `R` or
+/// `d` counts as recursive.
+pub(crate) fn bounded_without_operands(child: &[String]) -> bool {
+    let Some((name, rest)) = child.split_first() else {
+        return false;
+    };
+    match executable_basename(name) {
+        "cat" | "head" | "tail" | "wc" | "od" | "ls" | "stat" => true,
+        "grep" => !rest.iter().any(|argument| {
+            argument.starts_with("--recursive")
+                || argument.starts_with("--dereference-recursive")
+                || argument.starts_with("--directories")
+                || (argument.starts_with('-')
+                    && !argument.starts_with("--")
+                    && argument.contains(['r', 'R', 'd']))
+        }),
+        _ => false,
+    }
 }
 
 /// Flat `find` operands: roots, then a conjunction of name, type and depth
@@ -165,6 +189,7 @@ fn bounded_count(value: &str) -> bool {
 pub(crate) fn xargs(arguments: &[String]) -> Option<Xargs<'_>> {
     let arguments = without_stderr_merge(arguments);
     let mut null_separated = false;
+    let mut no_run_if_empty = false;
     let mut index = 0;
     while let Some(argument) = arguments.get(index).map(String::as_str) {
         if !argument.starts_with('-') {
@@ -173,7 +198,7 @@ pub(crate) fn xargs(arguments: &[String]) -> Option<Xargs<'_>> {
         index += 1;
         match argument {
             "-0" | "--null" => null_separated = true,
-            "-r" | "--no-run-if-empty" => {}
+            "-r" | "--no-run-if-empty" => no_run_if_empty = true,
             "-n" | "-P" | "--max-args" | "--max-procs" => {
                 if !bounded_count(arguments.get(index)?) {
                     return None;
@@ -195,6 +220,7 @@ pub(crate) fn xargs(arguments: &[String]) -> Option<Xargs<'_>> {
     let child = &arguments[index..];
     child_listed(child).then_some(Xargs {
         null_separated,
+        no_run_if_empty,
         child,
     })
 }
