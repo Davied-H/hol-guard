@@ -3,8 +3,9 @@
 //! When neither a saved exact-action decision nor an approve-once answers a
 //! review, `pause_native_pre_tool_for_approval`
 //! (`hook_native_review_approval.py`) queues the action in the approval inbox
-//! and pauses the hook with a link to it. This ports that last step for a
-//! home whose blocked-request mode is `ask`:
+//! and pauses the hook with a link to it. This ports that last step.
+//!
+//! For a home whose blocked-request mode is `ask`:
 //!
 //! - `queue_native_pre_tool_review`, with the request the review-request
 //!   builder derives from the facts the daemon published, written by the same
@@ -15,17 +16,24 @@
 //! - the `prompted` and `approval_center_url` marks the daemon records the
 //!   activity with.
 //!
-//! Every other shape defers, so the daemon still pauses the hook: a
-//! safe-alternative home, a missing fact, Claude Code (whose permission
-//! notice the daemon records), a package review the daemon may settle, and
-//! any request or write the resident could not reproduce.
+//! Any other mode keeps the agent on the silent block (`asks_for_approval` is
+//! false): the same request and its `approval.created` event
+//! (`_record_silent_native_review_event`) are written together by
+//! `add_silent_native_review_approval_request`, and the hook answers with the
+//! `render_pre_tool` block whose reason `safe_alternative_reason` writes.
+//!
+//! Every other shape defers, so the daemon still answers the hook: a missing
+//! fact, Claude Code (whose permission notice the daemon records), a package
+//! review the daemon may settle, and any request or write the resident could
+//! not reproduce.
 
 use super::consume::{repair_store_permissions, storage_gate};
 use super::review_request::{build, ExactKeys, RequestInput};
 use super::{Context, HookDirectDefer, ENVELOPE_BYTES, ESCAPE_FACTOR};
+use crate::blocked_request_mode::safe_alternative_reason;
 use crate::guard_store_approval_request::rewrite_approval_url;
 use crate::local_store_read::STORE_FILE_NAME;
-use guard_command::hook_responses::{pre_tool_review, Object};
+use guard_command::hook_responses::{pre_tool, pre_tool_review, Object};
 use guard_contracts::{
     GuardStoreRequestV1, NativeExactActionQueryV1, GUARD_STORE_REQUEST_SCHEMA,
     HOOK_RENDER_MAX_BYTES,
@@ -34,6 +42,7 @@ use serde_json::{json, Map, Value};
 use std::path::Path;
 
 const WRITE_METHOD: &str = "add_native_review_approval_request";
+const SILENT_WRITE_METHOD: &str = "add_silent_native_review_approval_request";
 /// `asks_for_approval`: the mode that pauses the hook for the inbox.
 const ASK_MODE: &str = "ask";
 /// `PACKAGE_REVIEW_REASON`: a review `native_package_review_response` may
@@ -41,6 +50,10 @@ const ASK_MODE: &str = "ask";
 const PACKAGE_REVIEW_REASON: &str = "native_package_review";
 /// The harness whose paused review also records a permission notice.
 const CLAUDE_CODE: &str = "claude-code";
+/// The mode the daemon records a silent block with.
+const SAFE_ALTERNATIVE_MODE: &str = "safe-alternative";
+/// The silent block's reason when the review gave none.
+const BLOCKED_REASON: &str = "HOL Guard blocked this action.";
 /// `_REVIEW_DEFAULT_REASON` (`hook_fail_closed.py`).
 const DEFAULT_REASON: &str = "HOL Guard requires review before this action can execute.";
 /// A hook waits this long for a busy store before the daemon takes over.
@@ -48,6 +61,8 @@ const BUSY_TIMEOUT_MS: u64 = 250;
 
 /// The facts a queued review needs, or `None` when the daemon pauses it.
 struct Facts<'a> {
+    /// `asks_for_approval`.
+    ask: bool,
     origin: &'a str,
     oauth_source: &'a str,
     host_cwd: &'a str,
@@ -81,6 +96,9 @@ pub(super) fn answer(
         },
     };
     let request = build(&input, result, receipt).ok_or(HookDirectDefer::ReviewQueue)?;
+    if !facts.ask {
+        return silent(context, result, facts.oauth_source, request);
+    }
     let approval_url = request
         .get("approval_url")
         .and_then(Value::as_str)
@@ -112,24 +130,78 @@ pub(super) fn answer(
     // Render the pause before writing, so a pause the resident cannot render
     // leaves the queue to the daemon rather than recording the hook twice.
     pause(&request_id, &approval_url).ok_or(HookDirectDefer::ReviewQueue)?;
-    let stored_id = write(context, facts.oauth_source, request)?;
+    let stored_id = write(context, WRITE_METHOD, facts.oauth_source, request)?;
     // A pending request for the same action keeps its id, so a pause the
     // resident still cannot render leaves the daemon to queue the same request.
     let approval_url = rewrite_approval_url(&approval_url, &stored_id);
     pause(&stored_id, &approval_url).ok_or(HookDirectDefer::ReviewQueue)
 }
 
-/// The published facts for an `ask` review the resident may queue.
+/// The silent block for a request queued with its `approval.created` event.
+fn silent(
+    context: &Context<'_>,
+    result: &Object,
+    oauth_source: &str,
+    request: Value,
+) -> Result<Value, HookDirectDefer> {
+    let reason = falsy_or_text(result.get("reason"), BLOCKED_REASON)?;
+    let reason_code = falsy_or_text(result.get("reason_code"), "unknown")?;
+    let mut blocked = result.clone();
+    blocked.insert("decision".to_owned(), json!("deny"));
+    blocked.insert("minimum_action".to_owned(), json!("block"));
+    blocked.insert("policy_action".to_owned(), json!("block"));
+    blocked.insert(
+        "reason".to_owned(),
+        json!(safe_alternative_reason(
+            reason,
+            Some(reason_code),
+            Some(true)
+        )),
+    );
+    // The block does not name the request, so it renders before the write.
+    let encoded = serde_json::to_vec(&blocked)
+        .map_err(|_| HookDirectDefer::ReviewQueue)?
+        .len()
+        + context.harness.len();
+    if encoded * ESCAPE_FACTOR + ENVELOPE_BYTES > HOOK_RENDER_MAX_BYTES {
+        return Err(HookDirectDefer::ReviewQueue);
+    }
+    let mut response = pre_tool(context.harness, &blocked);
+    response.insert("prompted".to_owned(), json!(false));
+    response.insert(
+        "blocked_request_mode".to_owned(),
+        json!(SAFE_ALTERNATIVE_MODE),
+    );
+    write(context, SILENT_WRITE_METHOD, oauth_source, request)?;
+    Ok(Value::Object(response))
+}
+
+/// `str(value or fallback)` for the values the resident reproduces: a string,
+/// or a falsy `None`, `False` or `""`. Anything else defers.
+fn falsy_or_text<'a>(
+    value: Option<&'a Value>,
+    fallback: &'a str,
+) -> Result<&'a str, HookDirectDefer> {
+    match value {
+        None | Some(Value::Null) | Some(Value::Bool(false)) => Ok(fallback),
+        Some(Value::String(text)) if text.is_empty() => Ok(fallback),
+        Some(Value::String(text)) => Ok(text),
+        Some(_) => Err(HookDirectDefer::ReviewQueue),
+    }
+}
+
+/// The published facts for a review the resident may queue.
 fn facts<'a>(context: &Context<'a>, result: &Object) -> Option<Facts<'a>> {
     let binding = context.binding;
     let review = &binding.review;
-    if review.blocked_request_mode.as_deref() != Some(ASK_MODE)
-        || context.harness == CLAUDE_CODE
+    let mode = review.blocked_request_mode.as_deref()?;
+    if context.harness == CLAUDE_CODE
         || result.get("reason_code").and_then(Value::as_str) == Some(PACKAGE_REVIEW_REASON)
     {
         return None;
     }
     Some(Facts {
+        ask: mode == ASK_MODE,
         origin: review.approval_center_origin.as_deref()?,
         oauth_source: review.review_oauth_source.as_deref()?,
         host_cwd: review.review_host_cwd.as_deref()?,
@@ -141,6 +213,7 @@ fn facts<'a>(context: &Context<'a>, result: &Object) -> Option<Facts<'a>> {
 /// request id, which is an earlier pending request's for the same action.
 fn write(
     context: &Context<'_>,
+    method: &str,
     oauth_source: &str,
     request: Value,
 ) -> Result<String, HookDirectDefer> {
@@ -158,7 +231,7 @@ fn write(
             .to_string_lossy()
             .into_owned(),
         guard_home: context.guard_home.to_owned(),
-        method: WRITE_METHOD.to_owned(),
+        method: method.to_owned(),
         source: oauth_source.to_owned(),
         busy_timeout_ms: BUSY_TIMEOUT_MS,
         args,

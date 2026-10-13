@@ -12,7 +12,8 @@ fn ask_binding() -> DirectLaneBinding {
     binding
 }
 
-fn queued(harness: &str, binding: &DirectLaneBinding, result: &Value) -> bool {
+/// `Some(asks_for_approval)` when the resident queues the review.
+fn queued(harness: &str, binding: &DirectLaneBinding, result: &Value) -> Option<bool> {
     let payload = Map::new();
     let context = Context {
         harness,
@@ -23,22 +24,22 @@ fn queued(harness: &str, binding: &DirectLaneBinding, result: &Value) -> bool {
         guard_home: "/home/user/.hol-guard",
         binding,
     };
-    facts(&context, result.as_object().unwrap()).is_some()
+    facts(&context, result.as_object().unwrap()).map(|facts| facts.ask)
 }
 
 #[test]
-fn only_a_fully_published_ask_home_queues() {
+fn only_a_fully_published_home_queues() {
     let review = json!({"reason_code": "native_review", "reason": "Review this."});
     let binding = ask_binding();
-    assert!(queued("codex", &binding, &review));
+    assert_eq!(queued("codex", &binding, &review), Some(true));
     // Claude Code's paused review also records a permission notice.
-    assert!(!queued(CLAUDE_CODE, &binding, &review));
+    assert_eq!(queued(CLAUDE_CODE, &binding, &review), None);
     // The daemon may settle a package review before it queues anything.
     let package = json!({"reason_code": PACKAGE_REVIEW_REASON});
-    assert!(!queued("codex", &binding, &package));
+    assert_eq!(queued("codex", &binding, &package), None);
     let mut safe_alternative = ask_binding();
     safe_alternative.review.blocked_request_mode = Some("safe-alternative".to_owned());
-    assert!(!queued("codex", &safe_alternative, &review));
+    assert_eq!(queued("codex", &safe_alternative, &review), Some(false));
     for strip in [
         (|facts: &mut DirectLaneReviewFacts| facts.blocked_request_mode = None)
             as fn(&mut DirectLaneReviewFacts),
@@ -48,11 +49,11 @@ fn only_a_fully_published_ask_home_queues() {
     ] {
         let mut partial = ask_binding();
         strip(&mut partial.review);
-        assert!(!queued("codex", &partial, &review));
+        assert_eq!(queued("codex", &partial, &review), None);
     }
     let mut no_environment = ask_binding();
     no_environment.exact_action_environment = None;
-    assert!(!queued("codex", &no_environment, &review));
+    assert_eq!(queued("codex", &no_environment, &review), None);
 }
 
 #[test]
@@ -131,12 +132,14 @@ fn an_oversized_pause_defers() {
 #[cfg(unix)]
 const WRITE_VECTORS: &str =
     include_str!("../testdata/guard_store/approval_request_write_vectors.json");
+#[cfg(unix)]
+const SILENT_VECTORS: &str = include_str!("../testdata/guard_store/silent_review_vectors.json");
 
 /// A Guard home with the daemon's store schema and its storage gate.
 #[cfg(unix)]
-fn store_home(tag: &str) -> std::path::PathBuf {
+fn store_home(tag: &str, vectors: &str) -> std::path::PathBuf {
     let home = crate::guard_store_cmd_vectors_tests::temp_home(tag);
-    let vectors: Value = serde_json::from_str(WRITE_VECTORS).unwrap();
+    let vectors: Value = serde_json::from_str(vectors).unwrap();
     let connection = rusqlite::Connection::open(home.join(STORE_FILE_NAME)).unwrap();
     for statement in vectors["schema_sql"].as_array().unwrap() {
         connection
@@ -150,7 +153,7 @@ fn store_home(tag: &str) -> std::path::PathBuf {
 #[cfg(unix)]
 #[test]
 fn the_queue_write_keeps_a_pending_request_for_the_same_action() {
-    let home = store_home("review-queue-write");
+    let home = store_home("review-queue-write", WRITE_VECTORS);
     let guard_home = home.to_string_lossy().into_owned();
     let payload = Map::new();
     let binding = ask_binding();
@@ -166,14 +169,17 @@ fn the_queue_write_keeps_a_pending_request_for_the_same_action() {
     let vectors: Value = serde_json::from_str(WRITE_VECTORS).unwrap();
     let request = vectors["scenarios"][0]["request"].clone();
     assert_eq!(
-        write(&context, "default", request.clone()),
+        write(&context, WRITE_METHOD, "default", request.clone()),
         Ok("r-new".to_owned())
     );
     let mut retry = request;
     retry["request_id"] = json!("r-retry");
     retry["approval_url"] = json!("http://127.0.0.1:4781/approvals/r-retry");
     retry["review_command"] = json!("hol-guard approvals approve r-retry");
-    assert_eq!(write(&context, "default", retry), Ok("r-new".to_owned()));
+    assert_eq!(
+        write(&context, WRITE_METHOD, "default", retry),
+        Ok("r-new".to_owned())
+    );
     let connection = rusqlite::Connection::open(home.join(STORE_FILE_NAME)).unwrap();
     let (rows, dedupe_count): (i64, i64) = connection
         .query_row(
@@ -183,5 +189,73 @@ fn the_queue_write_keeps_a_pending_request_for_the_same_action() {
         )
         .unwrap();
     assert_eq!((rows, dedupe_count), (1, 2));
+    std::fs::remove_dir_all(home).ok();
+}
+
+#[test]
+fn only_a_string_or_falsy_reason_is_reproduced() {
+    assert_eq!(falsy_or_text(None, "fallback"), Ok("fallback"));
+    for falsy in [json!(null), json!(false), json!("")] {
+        assert_eq!(falsy_or_text(Some(&falsy), "fallback"), Ok("fallback"));
+    }
+    let text = json!("Review this.");
+    assert_eq!(falsy_or_text(Some(&text), "fallback"), Ok("Review this."));
+    for other in [json!(0), json!(true), json!([]), json!({})] {
+        assert_eq!(
+            falsy_or_text(Some(&other), "fallback"),
+            Err(HookDirectDefer::ReviewQueue)
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_silent_review_blocks_after_queueing_its_request_and_event() {
+    let home = store_home("review-queue-silent", SILENT_VECTORS);
+    let guard_home = home.to_string_lossy().into_owned();
+    let payload = Map::new();
+    let mut binding = ask_binding();
+    binding.review.blocked_request_mode = Some("safe-alternative".to_owned());
+    let context = Context {
+        harness: "codex",
+        payload: &payload,
+        recorded_payload: &payload,
+        workspace: "/work/space",
+        home_dir: "/home/user",
+        guard_home: &guard_home,
+        binding: &binding,
+    };
+    let vectors: Value = serde_json::from_str(SILENT_VECTORS).unwrap();
+    let request = vectors["scenarios"][1]["request"].clone();
+    let result = json!({
+        "decision": "review",
+        "minimum_action": "require-reapproval",
+        "reason": "Deletes files.",
+        "reason_code": "native_review",
+    });
+    let response = silent(&context, result.as_object().unwrap(), "default", request).unwrap();
+    let mut blocked = result.as_object().unwrap().clone();
+    blocked.insert("decision".to_owned(), json!("deny"));
+    blocked.insert("minimum_action".to_owned(), json!("block"));
+    blocked.insert("policy_action".to_owned(), json!("block"));
+    blocked.insert(
+        "reason".to_owned(),
+        json!(safe_alternative_reason(
+            "Deletes files.",
+            Some("native_review"),
+            Some(true)
+        )),
+    );
+    let mut expected = pre_tool("codex", &blocked);
+    expected.insert("prompted".to_owned(), json!(false));
+    expected.insert("blocked_request_mode".to_owned(), json!("safe-alternative"));
+    assert_eq!(response, Value::Object(expected));
+    let connection = rusqlite::Connection::open(home.join(STORE_FILE_NAME)).unwrap();
+    let count = |sql: &str| -> i64 { connection.query_row(sql, [], |row| row.get(0)).unwrap() };
+    assert_eq!(count("select count(*) from approval_requests"), 1);
+    assert_eq!(
+        count("select count(*) from guard_events where event_name = 'approval.created'"),
+        1
+    );
     std::fs::remove_dir_all(home).ok();
 }
