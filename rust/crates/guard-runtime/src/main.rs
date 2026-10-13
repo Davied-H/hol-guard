@@ -317,6 +317,7 @@ mod guard_store_receipts_vectors_tests;
 mod guard_store_sessions;
 #[cfg(test)]
 mod guard_store_sessions_vectors_tests;
+mod guard_store_silent_review;
 mod guard_store_state_ops;
 #[cfg(test)]
 mod guard_store_state_ops_vectors_tests;
