@@ -182,16 +182,44 @@ pub(crate) fn protected_patterns(workspace: &Path) -> Result<Vec<String>, Restri
         .chain(HARNESS_INSTRUCTION_FILES)
         .copied()
         .collect();
-    Ok(vec![
-        format!("^{root}/(.*/)?({})(/.*)?$", alternatives(&directories)?),
-        format!("^{root}/(.*/)?({})$", alternatives(&files)?),
-        format!(
-            "^{root}/(.*/)?{}/({})(/.*)?$",
-            ci(".github")?,
-            alternatives(GITHUB_AGENT_DIRECTORIES)?
-        ),
-        format!("^{root}/(.*/)?{}(/.*)?$", ci(".github/workflows")?),
-    ])
+    let prefix = format!("^{root}/(.*/)?");
+    let mut patterns = bounded(&prefix, &directories, "(/.*)?$")?;
+    patterns.extend(bounded(&prefix, &files, "$")?);
+    patterns.extend(bounded(
+        &format!("{prefix}{}/", ci(".github")?),
+        GITHUB_AGENT_DIRECTORIES,
+        "(/.*)?$",
+    )?);
+    patterns.push(format!("{prefix}{}(/.*)?$", ci(".github/workflows")?));
+    Ok(patterns)
+}
+
+/// Seatbelt rejects the whole profile when one string literal reaches about
+/// 1,023 bytes, so long name lists are spread over as many rules as needed.
+const SEATBELT_PATTERN_BUDGET: usize = 900;
+
+fn bounded(
+    prefix: &str,
+    names: &[&str],
+    suffix: &str,
+) -> Result<Vec<String>, RestrictedPytestError> {
+    let mut patterns = Vec::new();
+    let mut group: Vec<String> = Vec::new();
+    let mut length = prefix.len() + suffix.len() + 2;
+    for name in names {
+        let name = ci(name)?;
+        if !group.is_empty() && length + 1 + name.len() > SEATBELT_PATTERN_BUDGET {
+            patterns.push(format!("{prefix}({}){suffix}", group.join("|")));
+            group.clear();
+            length = prefix.len() + suffix.len() + 2;
+        }
+        length += name.len() + usize::from(!group.is_empty());
+        group.push(name);
+    }
+    if !group.is_empty() {
+        patterns.push(format!("{prefix}({}){suffix}", group.join("|")));
+    }
+    Ok(patterns)
 }
 
 /// Helper paths stay unwritable at any letter case, and so does every
