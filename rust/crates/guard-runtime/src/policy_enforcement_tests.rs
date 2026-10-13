@@ -514,3 +514,54 @@ fn network_floor_decides_a_proven_plain_web_fetch() {
         assert_eq!(result.decision, decision, "{setting}");
     }
 }
+
+#[test]
+fn proven_no_scripts_install_skips_only_the_package_script_floor() {
+    let mut review = generic_result("review");
+    review.action.action_type = PreToolActionTypeV1::Package;
+    review.action.operation = PreToolOperationV1::Install;
+    review.reason_code = "native_package_review".into();
+    let mut script_policy = policy("allow");
+    script_policy
+        .risk_actions
+        .insert("package_script".into(), "require-reapproval".into());
+    let installed = snapshot(script_policy);
+    let apply = |command: &str| {
+        let payload = json!({"tool_name": "Bash", "tool_input": {"command": command}});
+        apply_pre_tool_policy(&installed, &payload, review.clone()).unwrap()
+    };
+    for command in [
+        "bun install --frozen-lockfile --ignore-scripts",
+        "npm ci --ignore-scripts",
+        "pnpm install --ignore-scripts",
+        "yarn install --mode=skip-build",
+    ] {
+        let result = apply(command);
+        assert_eq!(result.minimum_action, "review", "{command}");
+        assert_eq!(result.reason_code, "native_package_review", "{command}");
+    }
+    for command in [
+        "bun install --frozen-lockfile",
+        "bun install --ignore-scripts=false",
+        "npm run build",
+        "bun run build",
+        "npm ci --ignore-scripts && npm run build",
+        "npm_config_ignore_scripts=false npm ci --ignore-scripts",
+    ] {
+        let result = apply(command);
+        assert_eq!(result.minimum_action, "require-reapproval", "{command}");
+        assert_eq!(
+            result.reason_code, "native_policy_reapproval_required",
+            "{command}"
+        );
+    }
+    // A stronger default floor still applies to the proven form.
+    let mut strict = policy("block");
+    strict
+        .risk_actions
+        .insert("package_script".into(), "require-reapproval".into());
+    let payload =
+        json!({"tool_name": "Bash", "tool_input": {"command": "npm ci --ignore-scripts"}});
+    let blocked = apply_pre_tool_policy(&snapshot(strict), &payload, review).unwrap();
+    assert_eq!(blocked.minimum_action, "block");
+}

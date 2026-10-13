@@ -121,7 +121,7 @@ fn covers_generic_action_classes_and_dangerous_process_floor() {
             PreToolActionTypeV1::McpTool,
         ),
         (
-            json!({"toolName": "web_fetch", "url": "https://example.com/docs"}),
+            json!({"toolName": "web_fetch", "url": "http://10.0.0.5/docs"}),
             PreToolActionTypeV1::Network,
         ),
         (
