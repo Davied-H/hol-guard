@@ -76,27 +76,21 @@ function ConnectorDiscoveryControl(props: {
   error: string | null;
   onRetry: () => void;
 }) {
-  if (props.discovering) {
-    return props.showProgress ? (
-      <p aria-live="polite" className="text-sm text-brand-dark/70">
-        Checking host connections…
-      </p>
-    ) : null;
-  }
+  const message = props.discovering
+    ? (props.showProgress ? "Checking host connections…" : "")
+    : (props.error ?? "");
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-      {props.error ? (
-        <p aria-live="polite" className="text-sm text-brand-dark/70">
-          {props.error}
-        </p>
-      ) : null}
-      <button
-        type="button"
-        className="inline-flex min-h-11 items-center rounded-lg text-sm font-semibold text-brand-blue hover:text-brand-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"
-        onClick={props.onRetry}
-      >
-        {props.error ? "Check for connectors again" : "Check host connections"}
-      </button>
+      <p aria-live="polite" aria-atomic="true" className="text-sm text-brand-dark/70">{message}</p>
+      {props.discovering ? null : (
+        <button
+          type="button"
+          className="inline-flex min-h-11 items-center rounded-lg text-sm font-semibold text-brand-blue hover:text-brand-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"
+          onClick={props.onRetry}
+        >
+          {props.error ? "Check for connectors again" : "Check host connections"}
+        </button>
+      )}
     </div>
   );
 }
@@ -329,7 +323,7 @@ export function ExtensionsOverview(props: {
             discoveryControl={props.active ? (
               <ConnectorDiscoveryControl
                 discovering={discovering}
-                showProgress={addedCustomItems.length > 0}
+                showProgress={addedCustomItems.length > 0 || customItemsFilteredOut}
                 error={[discoveryError, hostDiscoveryError].filter(Boolean).join(" ") || null}
                 onRetry={() => setDiscoveryAttempt((attempt) => attempt + 1)}
               />
