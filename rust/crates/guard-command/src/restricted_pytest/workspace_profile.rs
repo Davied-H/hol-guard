@@ -213,6 +213,10 @@ fn bounded(
             group.clear();
             length = prefix.len() + suffix.len() + 2;
         }
+        // A name that does not fit in an empty group cannot be split further.
+        if length + name.len() > SEATBELT_PATTERN_BUDGET {
+            return Err(invalid());
+        }
         length += name.len() + usize::from(!group.is_empty());
         group.push(name);
     }
@@ -246,6 +250,18 @@ pub(super) fn denial_patterns(
         }
     }
     Ok(patterns)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_name_that_cannot_fit_in_a_fresh_group_is_rejected() {
+        let long = "n".repeat(SEATBELT_PATTERN_BUDGET);
+        assert!(bounded("^", &["ok", &long], "$").is_err());
+        assert!(bounded("^", &["hooks", "plugins"], "$").is_ok());
+    }
 }
 
 fn regex_rule(operations: &str, pattern: &str) -> String {
