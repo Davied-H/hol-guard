@@ -60,9 +60,26 @@ fn world(tag: &str) -> World {
         git(r, &home, &["config", "user.name", "f"]);
         std::fs::write(r.join("a.txt"), "x\n").unwrap();
         git(r, &home, &["add", "-A"]);
-        git(r, &home, &["-c", "commit.gpgsign=false", "commit", "--quiet", "-m", "one"]);
+        git(
+            r,
+            &home,
+            &[
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "--quiet",
+                "-m",
+                "one",
+            ],
+        );
     }
-    World { _cleanup: FixtureCleanup(root), home, parent, app, other }
+    World {
+        _cleanup: FixtureCleanup(root),
+        home,
+        parent,
+        app,
+        other,
+    }
 }
 
 fn reason(w: &World, cwd: &Path, command: &str) -> (String, String) {
@@ -171,7 +188,11 @@ fn sequences_with_a_running_helper_stay_reviewed() {
     // A repository whose attributes route files through a configured filter.
     let w = world("sequence-filter");
     std::fs::write(w.app.join(".gitattributes"), "*.txt filter=lfs\n").unwrap();
-    assert!(!allowed(&w, &w.app, "git rev-parse HEAD; git status --short"));
+    assert!(!allowed(
+        &w,
+        &w.app,
+        "git rev-parse HEAD; git status --short"
+    ));
 }
 
 fn read_decision(w: &World, cwd: &Path, path: &str) -> (String, String) {
@@ -231,8 +252,12 @@ fn hardening_flags_do_not_make_reads_riskier() {
     let app = w.app.display();
     let hooks = w.parent.join("no-hooks");
     for command in [
-        format!("git -C {app} -c core.fsmonitor=false -c core.hooksPath={} status", hooks.display()),
+        format!(
+            "git -C {app} -c core.fsmonitor=false -c core.hooksPath={} status",
+            hooks.display()
+        ),
         "git -c core.hooksPath=/dev/null status".to_owned(),
+        format!("git -C {app} -c core.fsmonitor=false -c core.hooksPath= log --oneline -12"),
     ] {
         assert!(allowed(&w, &w.app, &command), "{command}");
     }

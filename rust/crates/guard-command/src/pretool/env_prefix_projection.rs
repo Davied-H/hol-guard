@@ -610,9 +610,7 @@ pub(super) fn project_git_config_isolation(command: &str) -> Option<String> {
     while let Some(after) = rest.strip_prefix("export ") {
         let end = after.find([';', '&', '\n', '|', '(', ')', '<', '>', '`', '$'])?;
         let (assignments, tail) = after.split_at(end);
-        let tail = tail
-            .strip_prefix(';')
-            .or_else(|| tail.strip_prefix("&&"))?;
+        let tail = tail.strip_prefix(';').or_else(|| tail.strip_prefix("&&"))?;
         let mut count = 0;
         for token in assignments.split_whitespace() {
             let (name, value) = token.split_once('=')?;

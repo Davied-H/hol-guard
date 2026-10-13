@@ -133,18 +133,20 @@ fn repository_owned_outside_home(
     let owned = |path: &std::path::Path| {
         std::fs::symlink_metadata(path).is_ok_and(|metadata| metadata.uid() == me)
     };
-    let Some((root, metadata)) = target.ancestors().find_map(|path| {
-        Some((path, std::fs::symlink_metadata(path.join(".git")).ok()?))
-    }) else {
+    let Some((root, metadata)) = target
+        .ancestors()
+        .find_map(|path| Some((path, std::fs::symlink_metadata(path.join(".git")).ok()?)))
+    else {
         return false;
     };
     screened(root)
         && owned(root)
         && owned(&root.join(".git"))
         && (metadata.is_dir()
-            || (metadata.is_file() && linked_worktree_of_repository(root, &|primary| {
-                screened(primary) && owned(primary) && owned(&primary.join(".git"))
-            })))
+            || (metadata.is_file()
+                && linked_worktree_of_repository(root, &|primary| {
+                    screened(primary) && owned(primary) && owned(&primary.join(".git"))
+                })))
 }
 
 #[cfg(not(unix))]
@@ -410,8 +412,13 @@ pub(crate) fn git_dir_route_within_scope(value: &str, context: super::PathContex
         return false;
     };
     let real = |name: &str, directory: bool| {
-        std::fs::symlink_metadata(git_dir.join(name))
-            .is_ok_and(|m| if directory { m.is_dir() } else { m.is_file() })
+        std::fs::symlink_metadata(git_dir.join(name)).is_ok_and(|m| {
+            if directory {
+                m.is_dir()
+            } else {
+                m.is_file()
+            }
+        })
     };
     if git_dir == home
         || !real("HEAD", false)
@@ -427,8 +434,7 @@ pub(crate) fn git_dir_route_within_scope(value: &str, context: super::PathContex
     {
         return false;
     }
-    std::fs::symlink_metadata(&git_dir)
-        .is_ok_and(|m| m.uid() == nix::unistd::geteuid().as_raw())
+    std::fs::symlink_metadata(&git_dir).is_ok_and(|m| m.uid() == nix::unistd::geteuid().as_raw())
 }
 
 #[cfg(not(unix))]
