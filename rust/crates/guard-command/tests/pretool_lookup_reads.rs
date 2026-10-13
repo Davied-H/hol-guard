@@ -241,6 +241,8 @@ fn git_search_patterns_naming_environment_reads_proceed() {
             "git grep -e .ssh/ -e os.environ HEAD",
             "git log --oneline -S \"process.env.CI\" -- src/one.ts | head -5",
             "git log --oneline -G.env --grep=process.env",
+            "git log --oneline --grep .env",
+            "git log -S .ssh/ --author dev --oneline",
         ] {
             let result = classify(&home, harness, command);
             assert_eq!(result.decision, "allow", "{harness}: {command}");
@@ -263,6 +265,9 @@ fn git_searches_of_credential_paths_or_words_still_ask() {
             "git show HEAD:.env",
             "git cat-file -p HEAD:.env.local",
             "git diff -S .env",
+            "git log -p --author -S .env",
+            "git log -p --committer -G .ssh/id_rsa",
+            "git log -p --output out -S .env",
         ] {
             let result = classify(&home, harness, command);
             assert_ne!(result.decision, "allow", "{harness}: {command}");

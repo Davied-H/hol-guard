@@ -102,31 +102,114 @@ fn grep_patterns(rest: &[String]) -> Vec<usize> {
     })
 }
 
-/// The `-S`, `-G` and `--grep` values before `--`.
+/// `git log` options that take the next token as their value.
+const LOG_VALUE_OPTIONS: &[&str] = &[
+    "-n",
+    "--max-count",
+    "--skip",
+    "--since",
+    "--after",
+    "--until",
+    "--before",
+    "--author",
+    "--committer",
+];
+
+/// `git log` options that take no value.
+const LOG_FLAGS: &[&str] = &[
+    "--oneline",
+    "--all",
+    "-p",
+    "-u",
+    "--patch",
+    "-s",
+    "--no-patch",
+    "--stat",
+    "--shortstat",
+    "--numstat",
+    "--name-only",
+    "--name-status",
+    "--graph",
+    "--reverse",
+    "--follow",
+    "--merges",
+    "--no-merges",
+    "--first-parent",
+    "--abbrev-commit",
+    "--decorate",
+    "--no-decorate",
+    "--color",
+    "--no-color",
+    "-i",
+    "--regexp-ignore-case",
+    "-E",
+    "--extended-regexp",
+    "-F",
+    "--fixed-strings",
+    "--all-match",
+    "--invert-grep",
+    "--pickaxe-all",
+    "--pickaxe-regex",
+];
+
+/// `git log` options whose value is attached after `=`.
+const LOG_ATTACHED: &[&str] = &[
+    "--format=",
+    "--pretty=",
+    "--date=",
+    "--decorate=",
+    "--max-count=",
+    "--skip=",
+    "--since=",
+    "--after=",
+    "--until=",
+    "--before=",
+    "--author=",
+    "--committer=",
+];
+
+/// The `-S`, `-G` and `--grep` values before `--`. Every option must belong
+/// to the closed grammar above: an option this does not know might take the
+/// next token as its value, so the command's tokens keep every screen.
 fn log_patterns(rest: &[String]) -> Vec<usize> {
     let mut positions = Vec::new();
     let mut index = 0;
     while let Some(argument) = rest.get(index) {
-        match argument.as_str() {
-            "--" => break,
-            "-S" | "-G" | "--grep" => {
-                if index + 1 < rest.len() {
-                    positions.push(index + 1);
-                }
-                index += 2;
-                continue;
+        let value = argument.as_str();
+        if value == "--" {
+            break;
+        }
+        if matches!(value, "-S" | "-G" | "--grep") {
+            if index + 1 < rest.len() {
+                positions.push(index + 1);
             }
-            value
-                if (value.len() > 2 && (value.starts_with("-S") || value.starts_with("-G")))
-                    || value.starts_with("--grep=") =>
-            {
-                positions.push(index);
-            }
-            _ => {}
+            index += 2;
+            continue;
+        }
+        if LOG_VALUE_OPTIONS.contains(&value) {
+            index += 2;
+            continue;
+        }
+        if (value.len() > 2 && (value.starts_with("-S") || value.starts_with("-G")))
+            || value.starts_with("--grep=")
+        {
+            positions.push(index);
+        } else if value.starts_with('-') && !log_option(value) {
+            return Vec::new();
         }
         index += 1;
     }
     positions
+}
+
+fn log_option(value: &str) -> bool {
+    let count = value
+        .strip_prefix("-n")
+        .or_else(|| value.strip_prefix('-'))
+        .is_some_and(|digits| !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()));
+    count
+        || LOG_FLAGS.contains(&value)
+        || LOG_ATTACHED.iter().any(|prefix| value.starts_with(prefix))
 }
 
 #[cfg(test)]
@@ -145,6 +228,8 @@ mod tests {
         assert_eq!(positions("log --oneline -S process.env -- a.ts"), vec![3]);
         assert_eq!(positions("log -G.env --grep=.ssh/ HEAD"), vec![1, 2]);
         assert_eq!(positions("log --grep .env -- .env"), vec![2]);
+        assert_eq!(positions("log -5 --author me -n 3 -S .env"), vec![7]);
+        assert_eq!(positions("log --since=2.weeks -S x --format=%h"), vec![3]);
     }
 
     #[test]
@@ -154,6 +239,9 @@ mod tests {
         assert!(positions("show HEAD:.env").is_empty());
         assert!(positions("log -p -- .env").is_empty());
         assert!(positions("diff -S .env").is_empty());
+        assert!(positions("log -p --author -S .env").is_empty());
+        assert!(positions("log --committer -G .env -p").is_empty());
+        assert!(positions("log --output out -S x").is_empty());
         assert_eq!(positions("grep foo .env -- src"), vec![1]);
     }
 }
