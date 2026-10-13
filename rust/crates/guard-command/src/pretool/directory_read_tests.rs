@@ -334,10 +334,6 @@ fn omp_bounded_line_selectors_keep_sensitive_and_unsupported_targets_denied() {
     for target in [
         format!("{}:1-5", project.join(".env").display()),
         format!("{}:1-5", ssh.join("id_ed25519").display()),
-        "src:1-".to_owned(),
-        "src:-5".to_owned(),
-        "src:1+5".to_owned(),
-        "src:1,5".to_owned(),
         format!("{}:-5", project.join(".env").display()),
         format!("{}:3", ssh.join("id_ed25519").display()),
         "main.rs:0".to_owned(),

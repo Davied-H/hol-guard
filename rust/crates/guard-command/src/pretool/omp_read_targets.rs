@@ -98,10 +98,10 @@ enum BoundedSelectorPath {
 }
 
 /// OMP peels a selector only after proving that the complete input is not a
-/// literal filesystem path. Keep the native proof narrower than OMP: one
-/// positive bounded range (`:N-M`) or a bare file `:raw` only. Tails,
-/// open-ended ranges, compound selectors, and comma lists remain on the
-/// normal review path.
+/// literal filesystem path. The native proof accepts OMP's line windows
+/// (`line_selector`) and a bare file `:raw`, each of which reads no more than
+/// the bare path. Compound selectors such as `:1-5:raw`, time selectors and
+/// binary views remain on the normal review path.
 fn bounded_selector_path(
     value: &str,
     home_dir: Option<&str>,
