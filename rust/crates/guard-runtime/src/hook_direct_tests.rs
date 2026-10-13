@@ -455,12 +455,13 @@ fn an_edge_verdict_other_than_allow_takes_the_daemon_path() {
     assert_eq!(deferred(&run(&lane, payload)), "direct_hook_not_allow");
 }
 
-fn drain(lane: &Lane, ack_through: Option<u64>) -> Value {
+/// The next evidence page, after acknowledging `acked`, a page drained before.
+fn drain(lane: &Lane, acked: Option<&Value>) -> Value {
     let request = crate::hook_direct_evidence::HookDirectEvidenceDrainRequestV1 {
         guard_home: lane.fixture.root.to_str().unwrap().to_owned(),
         max_records: None,
-        ack_through,
-        ack_epoch: None,
+        ack_through: acked.and_then(|page| page["through"].as_u64()),
+        ack_epoch: acked.and_then(|page| page["epoch"].as_str().map(str::to_owned)),
     };
     let page =
         crate::hook_direct_evidence::drain(&request, lane.fixture.store.direct_evidence()).unwrap();
@@ -512,7 +513,7 @@ fn an_answer_queues_the_evidence_the_daemon_records() {
     assert_eq!(record["payload"], expected);
     let again = drain(&lane, None);
     assert_eq!(again["records"], page["records"]);
-    assert_eq!(drain(&lane, page["through"].as_u64())["records"], json!([]));
+    assert_eq!(drain(&lane, Some(&page))["records"], json!([]));
 }
 
 #[test]
