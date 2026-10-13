@@ -15,7 +15,7 @@ use serde_json::{json, Map, Value};
 
 const ROUTED_REASON: &str = "native_contained_execution_routed";
 const RECEIPT_ONLY_FIELD: &str = "guard_containment_receipt_only";
-#[cfg(any(target_os = "linux", test))]
+#[cfg(any(target_os = "linux", all(unix, test)))]
 const WORKSPACE_PROFILE: &str = "workspace-contained-v1";
 const PRE_TOOL_EVENTS: [&str; 2] = ["PreToolUse", "pre_tool_use"];
 const SHELL_TOOLS: [&str; 4] = ["Bash", "bash", "run_terminal_command", "run_command"];

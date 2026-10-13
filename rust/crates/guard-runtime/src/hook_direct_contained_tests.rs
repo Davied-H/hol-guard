@@ -1,3 +1,5 @@
+#![cfg(unix)]
+
 use super::request::{cleanup_stale_requests, REQUEST_DIRECTORY_PREFIX, REQUEST_FILE_NAME};
 use super::{route_on, HookDirectDefer, SinkTarget, WORKSPACE_PROFILE};
 use serde_json::{json, Map, Value};
