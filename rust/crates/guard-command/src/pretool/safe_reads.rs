@@ -361,10 +361,10 @@ pub(super) fn jq_filter_position(arguments: &[String], piped_input: bool) -> Opt
     } else {
         last.checked_sub(1)?
     };
-    (!piped_input || arguments[index].starts_with('.'))
-        .then(|| jq_filter::safe_filter(&arguments[index]))
-        .filter(|allowed| *allowed)
-        .map(|_| index)
+    if piped_input && !arguments[index].starts_with('.') {
+        return None;
+    }
+    jq_filter::safe_filter(&arguments[index]).then_some(index)
 }
 
 pub(super) fn safe_jq_stdin_arguments(arguments: &[String]) -> bool {
