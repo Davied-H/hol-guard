@@ -2,11 +2,8 @@
   "_comment": "Data-driven benign false-positive gate. 'harnesses' expands to one case per harness (id@harness). 'pending_fix' lists expanded case ids known to fail on the Linux CI host until the named fix lands; on CI the test fails if a listed case unexpectedly passes, so remove entries as fixes merge. 'pending_pr' names the in-flight PR that fixes each pending case ('unassigned' if none). 'pending_always' lists review cases whose approval row is expected to lack an Always option until #3961 lands; any other review row for read-only git, file reads or tool reads must offer Always. A plain 'git push' is not modeled here: Guard proves a push only when the shell HOME is the account's home, and this gate runs with a fixture HOME. rust/crates/guard-command/tests/pretool_git_push.rs covers the accepted pushes and the forms that keep their review.",
   "version": 1,
   "pending_fix": {
-    "session-bun-e-print@claude-code": "native_command_review_required",
-    "session-bun-e-print@codex": "native_command_review_required",
-    "session-bun-e-print@cursor": "native_command_review_required",
-    "session-bun-e-print@omp": "native_command_review_required",
-    "session-bun-e-print@zcode": "native_command_review_required",
+    "gauntlet-python-local-test-script@cursor": "native_command_review_required",
+    "pytest-quiet@cursor": "native_command_review_required",
     "session-bun-x-vite-build-tail@claude-code": "native_package_review",
     "session-bun-x-vite-build-tail@codex": "native_package_review",
     "session-bun-x-vite-build-tail@omp": "native_package_review",
@@ -4866,11 +4863,8 @@
     }
   ],
   "pending_pr": {
-    "session-bun-e-print@claude-code": "unassigned",
-    "session-bun-e-print@codex": "unassigned",
-    "session-bun-e-print@cursor": "unassigned",
-    "session-bun-e-print@omp": "unassigned",
-    "session-bun-e-print@zcode": "unassigned",
+    "gauntlet-python-local-test-script@cursor": "unassigned",
+    "pytest-quiet@cursor": "unassigned",
     "session-bun-x-vite-build-tail@claude-code": "unassigned",
     "session-bun-x-vite-build-tail@codex": "unassigned",
     "session-bun-x-vite-build-tail@omp": "unassigned",
