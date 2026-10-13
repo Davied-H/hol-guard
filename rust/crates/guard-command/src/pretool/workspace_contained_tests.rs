@@ -375,3 +375,83 @@ fn reviewable_settings_run_with_their_command_in_the_workspace_sandbox() {
     );
     let _ = std::fs::remove_dir_all(&ws);
 }
+
+#[test]
+fn recursive_removal_runs_in_the_sandbox_only_for_ignored_or_missing_targets() {
+    let root = std::env::temp_dir().join(format!("guard-ws-{}-removal", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let (home, repo) = (root.join("home"), root.join("repo"));
+    for directory in [&home, &repo.join("dist"), &repo.join("src")] {
+        std::fs::create_dir_all(directory).unwrap();
+    }
+    assert!(std::process::Command::new("git")
+        .args(["init", "--quiet"])
+        .arg(&repo)
+        .status()
+        .unwrap()
+        .success());
+    std::fs::write(repo.join(".gitignore"), "dist/\n").unwrap();
+    std::fs::write(repo.join("dist/out.js"), "1").unwrap();
+    std::fs::write(repo.join("src/a.ts"), "1").unwrap();
+    let (home, repo) = (home.canonicalize().unwrap(), repo.canonicalize().unwrap());
+    let environment = guard_contracts::GuardExecutionEnvironmentV1 {
+        path: std::env::var("PATH").unwrap(),
+        environment_names: vec!["GIT_CONFIG_NOSYSTEM".into()],
+        environment_digest: "0".repeat(64),
+        home: home.to_str().map(str::to_owned),
+        git_pager_disabled: false,
+        pager_disabled: false,
+        xdg_config_home: None,
+        git_config_no_system: true,
+        library_search_paths: Default::default(),
+    };
+    let controls = controls();
+    let reason = |command: &str| {
+        crate::pretool::evaluate_pre_tool_envelope_with_execution_context(
+            "omp",
+            "PreToolUse",
+            &serde_json::json!({"tool_name": "bash", "tool_input": {"command": command}}),
+            Some(&controls),
+            None,
+            crate::pretool::PathContext {
+                home_dir: home.to_str(),
+                cwd: repo.to_str(),
+                ..Default::default()
+            },
+            Some(&environment),
+        )
+        .reason_code
+    };
+    for command in [
+        "rm -rf dist",
+        "rm -rf dist && npm run build",
+        "rm -rf coverage",
+        "rm src/a.ts",
+        "rm -f src/a.ts dist/out.js",
+    ] {
+        let got = reason(command);
+        if host() {
+            assert_eq!(got, CONTAINED, "{command}");
+        } else {
+            assert_ne!(got, CONTAINED, "{command}");
+        }
+    }
+    // A tracked or unknown tree may hold uncommitted work the sandbox would
+    // write back as deleted.
+    for command in [
+        "rm -rf src",
+        "rm -rf src 2>&1",
+        "rm -rf dist src",
+        "rm -rf *.egg-info",
+        "npm run build && rm -rf dist",
+        "cd src && rm -rf .",
+        "rm -rf $DIR",
+        "shred -u src/a.ts",
+        "truncate -s 0 src/a.ts",
+        "rm --no-preserve-root -rf dist",
+        "GLOBIGNORE=x rm -rf dist",
+    ] {
+        assert_ne!(reason(command), CONTAINED, "{command}");
+    }
+    let _ = std::fs::remove_dir_all(&root);
+}

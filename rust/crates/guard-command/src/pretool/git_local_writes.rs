@@ -297,7 +297,7 @@ fn commit(rest: &[&str]) -> bool {
 }
 
 /// Whether the effective configuration lets these writes start no program.
-fn inert(effective: &GitConfig, repository: &GitConfig) -> bool {
+pub(in crate::pretool) fn inert(effective: &GitConfig, repository: &GitConfig) -> bool {
     !effective.iter().any(|(key, values)| {
         let enabled = values
             .iter()

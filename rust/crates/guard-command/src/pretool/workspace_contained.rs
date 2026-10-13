@@ -31,6 +31,8 @@ mod git_metadata;
 mod keeps_work;
 #[path = "workspace_contained_package.rs"]
 mod package;
+#[path = "workspace_contained_removal.rs"]
+mod removal;
 #[path = "workspace_contained_settings.rs"]
 mod settings;
 
@@ -79,7 +81,6 @@ const UNRECOVERABLE_RULES: &[&str] = &[
 // These change a remote. The sandbox has no network, so containing them would
 // only turn a consent prompt into a silent failure.
 const REMOTE_RULES: &[&str] = &["command.git.force-push", "command.git.remote-branch-delete"];
-const SHELL_DESTRUCTION: &str = "command.shell-mutations.destructive-shell";
 const CONTAINABLE_RISKS: &[&str] = &["local_secret_read", "destructive_shell"];
 const EXTENSION_REVIEW: &str = "native_command_extension_review";
 /// What the sandbox executes for one authorized command.
@@ -273,7 +274,7 @@ fn extensions_contain(
     let Some(extensions) = result.command_extensions.as_ref() else {
         return false;
     };
-    extensions.binding.uncertainty_count == 0
+    extensions.binding.uncertainty_count == removal::accepted_uncertainty(extensions, model)
         && extensions.evaluation_error.is_none()
         // The Node package-firewall permission marks package-manager use, not
         // a proven risk. A disabled one already blocked before this point.
@@ -284,7 +285,7 @@ fn extensions_contain(
                 && observation.uncertainty_reasons.is_empty()
         })
         && extensions.observations.iter().all(|observation| {
-            observation.uncertainty_reasons.is_empty()
+            (observation.uncertainty_reasons.is_empty() || removal::accepted(observation, model))
                 && (!UNRECOVERABLE_RULES.contains(&observation.rule_id.as_str())
                     || keeps_work::keeps_work(observation, model))
                 && !REMOTE_RULES.contains(&observation.rule_id.as_str())
@@ -295,77 +296,6 @@ fn extensions_contain(
                             .iter()
                             .all(|class| CONTAINABLE_RISKS.contains(&class.as_str()))
                     })
-        })
-}
-
-/// Whether a destructive argument names the whole workspace, an ancestor of
-/// it, or every entry at its root. Deleting build output stays contained;
-/// wiping the workspace loses uncommitted work like `git reset --hard`.
-fn broad_target(argument: &str, workspace: &Path) -> bool {
-    use std::path::Component;
-    if argument.starts_with('-') {
-        return false;
-    }
-    if argument.starts_with('~') || argument.contains('$') {
-        return true;
-    }
-    let path = Path::new(argument);
-    let joined = if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        workspace.join(path)
-    };
-    let mut normal = std::path::PathBuf::new();
-    for component in joined.components() {
-        match component {
-            Component::ParentDir => {
-                normal.pop();
-            }
-            Component::CurDir => {}
-            other => normal.push(other),
-        }
-    }
-    let root_glob = normal
-        .file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| {
-            // Brackets and braces can spell any name, so only a literal
-            // stem or suffix such as `*.pyc` keeps a root glob narrow.
-            name.chars().all(|c| matches!(c, '*' | '.' | '?')) || name.contains(['[', '{', '\\'])
-        });
-    // The volume may be case-insensitive, so `/Users/me/Proj` can name the
-    // workspace `/Users/me/proj`.
-    let fold = |path: &Path| std::path::PathBuf::from(path.to_string_lossy().to_ascii_lowercase());
-    let (normal, workspace) = (fold(&normal), fold(workspace));
-    workspace.starts_with(&normal) || (root_glob && normal.parent() == Some(workspace.as_path()))
-}
-
-fn destroys_workspace(
-    result: &PreToolResultV1,
-    model: &CanonicalCommandV1,
-    workspace: &Path,
-) -> bool {
-    let Some(extensions) = result.command_extensions.as_ref() else {
-        return true;
-    };
-    extensions
-        .observations
-        .iter()
-        .filter(|observation| observation.rule_id == SHELL_DESTRUCTION)
-        .flat_map(|observation| {
-            observation
-                .matcher_evidence
-                .iter()
-                .map(|evidence| evidence.segment_index)
-                .chain(observation.effective_segment_indexes.iter().copied())
-        })
-        .any(|index| {
-            model.segments.get(index).is_none_or(|segment| {
-                segment
-                    .arguments
-                    .iter()
-                    .any(|argument| broad_target(argument, workspace))
-            })
         })
 }
 
@@ -477,7 +407,8 @@ pub(super) fn convert(
         })
         .is_none()
         || command_shape(model, &workspace, command_text).is_none()
-        || destroys_workspace(result, model, &workspace)
+        || removal::destroys_workspace(result, model, &workspace)
+        || removal::loses_work(result, model, context, execution_environment)
     {
         return;
     }
