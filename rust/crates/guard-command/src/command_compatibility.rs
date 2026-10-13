@@ -278,8 +278,8 @@ pub fn compatibility_observations_with_context(
         // program.
         let git = basename(segment) == "git";
         if segment.environment_names.iter().any(|name| {
-            !environment::inert_environment_name(name)
-                && !(git && environment::git_identity_environment_name(name))
+            !(environment::inert_environment_name(name)
+                || git && environment::git_identity_environment_name(name))
         }) {
             steered.push(index);
         }

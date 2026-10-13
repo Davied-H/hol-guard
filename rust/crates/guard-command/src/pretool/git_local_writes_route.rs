@@ -33,7 +33,7 @@ pub(super) enum Route {
     /// Every Git step enters `cwd` with `-C`; `model` drops those pairs.
     Chdir {
         cwd: String,
-        model: CanonicalCommandV1,
+        model: Box<CanonicalCommandV1>,
     },
 }
 
@@ -48,7 +48,7 @@ impl Route {
     /// The command the proofs read: without the `-C <dir>` pairs.
     pub(super) fn model<'a>(&'a self, original: &'a CanonicalCommandV1) -> &'a CanonicalCommandV1 {
         match self {
-            Route::Chdir { model, .. } => model,
+            Route::Chdir { model, .. } => model.as_ref(),
             _ => original,
         }
     }
@@ -169,6 +169,6 @@ fn chdir_route(
     }
     Some(Route::Chdir {
         cwd: entered?,
-        model: rewritten,
+        model: Box::new(rewritten),
     })
 }

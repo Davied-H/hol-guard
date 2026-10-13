@@ -46,6 +46,19 @@ fn allowed(session: &Session, command: &str) -> bool {
         == "allow"
 }
 
+/// The command runs without a prompt: allowed, or run in the workspace
+/// sandbox, which takes a plain write in a main checkout before the local
+/// write proof does.
+fn assert_quiet(session: &Session, command: &str) {
+    let result = session.evaluate_at(command, &session.primary);
+    assert!(
+        matches!(result.minimum_action.as_str(), "allow" | "sandbox-required"),
+        "{command}: {} {}",
+        result.minimum_action,
+        result.reason_code
+    );
+}
+
 fn assert_allowed(session: &Session, command: &str) {
     let result = session.evaluate_at(command, &session.primary);
     assert_eq!(
@@ -80,10 +93,14 @@ fn sibling_writes_behind_git_c_match_the_cd_form() {
              git -C {sib} log --format='%h %an <%ae> %s' -3"
         ),
         format!("git -C {sib} add README.md && git -C {sib} commit -m x"),
+    ] {
+        assert_allowed(&session, &command);
+    }
+    for command in [
         format!("cd {sib} && git commit -m x"),
         format!("cd {sib} && git commit --amend --no-edit 2>&1 | tail -1; git log -1"),
     ] {
-        assert_allowed(&session, &command);
+        assert_quiet(&session, &command);
     }
     let hidden = session.home.join(".cache/service-api");
     repository(&session, &hidden);
@@ -161,7 +178,13 @@ fn stash_restores_and_identity_variables_are_local_writes() {
         ("pager.log", "sh -c id", "git stash list"),
         ("pager.status", "sh -c id", "git stash pop"),
         ("merge.custom.driver", "sh -c id", "git stash apply"),
-        ("alias.commit", "!sh -c id", "git commit -m x"),
+        // A plain commit in this main checkout takes the workspace sandbox;
+        // the identity prefix leaves it to the local write proof.
+        (
+            "alias.commit",
+            "!sh -c id",
+            "GIT_AUTHOR_NAME=dev git commit -m x",
+        ),
         (
             "core.fsmonitor",
             "/tmp/monitor",
