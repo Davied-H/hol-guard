@@ -55,6 +55,8 @@ const LOCK_STALE_AFTER: Duration = Duration::from_secs(10);
 const MAX_STARTUP_LOCK_BYTES: u64 = 4 * 1024;
 
 #[allow(unused_imports)]
+#[cfg(unix)]
+pub(crate) use resident_state_discovery::discover_same_executable_states;
 pub(crate) use resident_state_discovery::{discover_home_states, discover_home_states_prefer};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
