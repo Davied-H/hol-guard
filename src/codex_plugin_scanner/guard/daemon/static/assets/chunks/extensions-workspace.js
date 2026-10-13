@@ -8440,7 +8440,6 @@ function ConnectorDiscoveryControl(props) {
     )
   ] });
 }
-
 function CatalogFilterEmpty(props) {
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-6 rounded-2xl border border-[rgba(63,65,116,0.12)] bg-white px-4 py-6", children: [
     /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm font-semibold text-brand-dark", children: "No extensions match these filters." }),
