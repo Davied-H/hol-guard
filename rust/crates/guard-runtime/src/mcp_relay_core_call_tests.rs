@@ -43,10 +43,6 @@ fn call(id: i64) -> Value {
     json!({"jsonrpc": "2.0", "id": id, "method": "tools/call", "params": {"name": "read", "arguments": {}}})
 }
 
-fn progress() -> Value {
-    json!({"jsonrpc": "2.0", "method": "notifications/progress", "params": {"progress": 1}})
-}
-
 fn list_changed() -> Value {
     json!({"jsonrpc": "2.0", "method": "notifications/tools/list_changed"})
 }

@@ -104,6 +104,10 @@ fn echo(id: Value, method: &str) -> Value {
     json!({"jsonrpc": "2.0", "id": id, "result": {"echo": method}})
 }
 
+fn progress() -> Value {
+    json!({"jsonrpc": "2.0", "method": "notifications/progress", "params": {"progress": 1}})
+}
+
 fn relay<A: RelayAuthority>(
     child: FakeChild,
     host: FakeHost,
