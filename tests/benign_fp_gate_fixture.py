@@ -317,6 +317,8 @@ def build_fixture(root: Path) -> BenignFixture:
             _write(repository / "contracts" / "commands.json", '{"commands": []}\n')
             _write(repository / "validation" / "schema.json", '{"type": "object"}\n')
             _write(repository / "rust" / "crates" / "catalog" / "src" / "lib.rs", "pub fn catalog_read() {}\n")
+            # A real target, so the sibling `.env` negative controls prove a refusal.
+            _write(repository / ".env", "TOKEN=synthetic-not-a-secret\n")
         _git(repository, "add", "-A", home=home)
         _git(repository, "commit", "--quiet", "-m", f"{name} base", home=home)
     _session_worktree(org, home)
