@@ -11,7 +11,12 @@
 //! names under reserved test suffixes stay reviewed: those resolve to local
 //! services rather than public content. The response body never reaches a
 //! file here; the redirect projection reviews `curl ... > file` through
-//! [`NETWORK_READ_REASON`].
+//! [`NETWORK_READ_REASON`]. A URL whose path, query or fragment holds a
+//! credential shape, a JWT or a long opaque token stays reviewed, since the
+//! request line itself can carry data to the host.
+
+#[path = "url_secrets.rs"]
+mod url_secrets;
 
 pub(crate) const NETWORK_READ_REASON: &str = "native_exact_safe_network_read";
 
@@ -242,6 +247,7 @@ fn public_url(raw: &str) -> bool {
     !RESERVED_SUFFIXES
         .iter()
         .any(|suffix| host.ends_with(suffix) || host == suffix[1..])
+        && !url_secrets::carries_secret(&url)
 }
 
 #[cfg(test)]
