@@ -1,10 +1,11 @@
 //! Assignment prefixes (`NAME=value cmd`) the compatibility layer can attribute.
 //!
 //! A prefix only changes the program's environment, so the observed program
-//! and arguments still describe the command when the name is inert. Any other
-//! name can point the program, its compiler or its loader at other code
-//! (`NODE_PATH`, `RUSTFLAGS`, `GOFLAGS`, `CC`, `LD_PRELOAD`, ...). No denylist
-//! can name all of those, so only an allowlist of inert names is accepted.
+//! and arguments still describe the command when the name is inert. A name
+//! that can point the program, its compiler or its loader at other code
+//! (`NODE_PATH`, `RUSTFLAGS`, `RUSTC_WRAPPER`, `CC`, `LD_PRELOAD`, ...) is
+//! matched by name fragment rather than a closed list and fails closed. Any
+//! other name (`PORT`, `GIT_DIR`) stays uncertainty for the owners' floor.
 
 #[cfg(test)]
 use crate::CommandSegmentV1;
@@ -36,10 +37,10 @@ pub(crate) fn inert_environment_name(name: &str) -> bool {
 /// Whole-word credential names, plus the pairs `API_KEY` and `CONFIG_DIR`.
 /// `GH_TOKEN`, `GOOGLE_APPLICATION_CREDENTIALS`, `GOG_KEYRING_PASSWORD`, and
 /// `GH_CONFIG_DIR` match, so that prefix is not a reviewable context.
-/// `XDG_CONFIG_HOME`, `KUBECONFIG`, `AWS_PROFILE`, `AWS_CONFIG_FILE`,
-/// `DOCKER_CONFIG`, `CLOUDSDK_CONFIG`, `NETRC`, and `HOME` do not match and
-/// stay on the uncertainty floor. `TOKENIZERS_PARALLELISM` does not match:
-/// its word is `TOKENIZERS`, not `TOKEN`.
+/// `AWS_PROFILE` and `NETRC` do not match and stay on the uncertainty floor;
+/// config redirects such as `KUBECONFIG` and `XDG_CONFIG_HOME` fail closed
+/// through `code_loading_environment_name` instead. `TOKENIZERS_PARALLELISM`
+/// does not match: its word is `TOKENIZERS`, not `TOKEN`.
 pub(crate) fn credential_routing_environment_name(name: &str) -> bool {
     let upper = name.to_ascii_uppercase();
     let words: Vec<&str> = upper.split('_').collect();
@@ -60,6 +61,77 @@ pub(crate) fn credential_routing_environment_name(name: &str) -> bool {
             ("API" | "ACCESS" | "PRIVATE", "KEY") | ("CONFIG", "DIR")
         )
     })
+}
+
+/// Name fragments of settings that point a program, its compiler or its
+/// loader at other code or options (`NODE_OPTIONS`, `NODE_PATH`, `RUSTFLAGS`,
+/// `PYTHONSTARTUP`). Those stay unprojected, so extension controls keep
+/// failing closed on them.
+const CODE_LOADING_MARKERS: &[&str] = &[
+    "ARGS",
+    "BIN",
+    "BROWSER",
+    "CMD",
+    "COMMAND",
+    "CONF",
+    "EDITOR",
+    "EXEC",
+    "FLAGS",
+    "HOME",
+    "HOOK",
+    "IMPORT",
+    "INIT",
+    "LIB",
+    "LOAD",
+    "MODULE",
+    "OPT",
+    "PAGER",
+    "PATH",
+    "PLUGIN",
+    "REQUIRE",
+    "RUSTC",
+    "SCRIPT",
+    "STARTUP",
+    "VISUAL",
+    "WRAPPER",
+    "USERBASE",
+    "GEMFILE",
+    "LESSOPEN",
+    "LESSCLOSE",
+];
+
+/// Toolchain programs a build reads from the environment.
+const CODE_LOADING_NAMES: &[&str] = &[
+    "AR", "AS", "CC", "CPP", "CXX", "FC", "LD", "LINK", "NM", "RANLIB",
+];
+
+/// Exact names a program, its shell or Git runs as code or reads a toolchain
+/// from, which no marker above covers.
+const CODE_LOADING_EXACT: &[&str] = &[
+    "BASH_ENV",
+    "ENV",
+    "GIT_ASKPASS",
+    "GIT_EXTERNAL_DIFF",
+    "GIT_SSH",
+    "GOTOOLCHAIN",
+    "SSH_ASKPASS",
+];
+
+/// A setting that points a program, its compiler, its loader or its shell at
+/// other code (`NODE_OPTIONS`, `RUSTC_WRAPPER`, `npm_config_script_shell`,
+/// `LD_PRELOAD`, `DYLD_INSERT_LIBRARIES`, `CXX`). It is matched by fragment,
+/// not by a closed list, so new wrapper and loader names fail closed too.
+pub(crate) fn code_loading_environment_name(name: &str) -> bool {
+    let upper = name.to_ascii_uppercase();
+    let upper = upper.as_str();
+    CODE_LOADING_NAMES.contains(&upper)
+        || CODE_LOADING_EXACT.contains(&upper)
+        || ["LD_", "DYLD_", "BASH_FUNC_"]
+            .iter()
+            .any(|prefix| upper.starts_with(prefix))
+        || CODE_LOADING_MARKERS
+            .iter()
+            .any(|marker| upper.contains(marker))
 }
 
 #[cfg(test)]

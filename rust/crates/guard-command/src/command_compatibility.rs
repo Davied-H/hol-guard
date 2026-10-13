@@ -21,7 +21,7 @@ mod git;
 mod github;
 
 pub use catalog::compatibility_rule_ids;
-pub(crate) use environment::inert_environment_name;
+pub(crate) use environment::{code_loading_environment_name, inert_environment_name};
 
 pub(crate) fn github_arguments_are_read_only(arguments: &[String], text: &str) -> bool {
     github::arguments_are_read_only(arguments, text)
@@ -167,20 +167,13 @@ fn basename(segment: &CommandSegmentV1) -> String {
         .to_owned()
 }
 
-/// A loader or compiler variable makes any program run other code, and a
-/// credential name swaps whose authority it runs with, as `env NAME=` already
-/// does. Neither is a reviewable steer of that program.
+/// A code-loading setting makes any program run other code, and a credential
+/// name swaps whose authority it runs with, as `env NAME=` already does.
+/// Neither is a reviewable steer of that program.
 fn assignment_prefix_is_unsupported(segment: &CommandSegmentV1) -> bool {
     segment.environment_names.iter().any(|name| {
-        matches!(
-            name.as_str(),
-            "CC" | "GIT_SSH_COMMAND"
-                | "GOFLAGS"
-                | "LD_PRELOAD"
-                | "NODE_OPTIONS"
-                | "NODE_PATH"
-                | "RUSTFLAGS"
-        ) || environment::credential_routing_environment_name(name)
+        environment::code_loading_environment_name(name)
+            || environment::credential_routing_environment_name(name)
     })
 }
 

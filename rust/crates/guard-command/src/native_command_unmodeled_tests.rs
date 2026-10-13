@@ -282,6 +282,15 @@ fn build_commands_behind_command_time_or_plain_env_are_not_evaluation_failures()
         "RUSTFLAGS='-C linker=./x' cargo build",
         "GOFLAGS=-toolexec=./x go build",
         "CC=./x npm run build",
+        "CXX=./x cargo build",
+        "RUSTC_WRAPPER=./x cargo build",
+        "CARGO_BUILD_RUSTC_WRAPPER=./x cargo build",
+        "npm_config_script_shell=./x npm run build",
+        "npm_config_node_options=--require=./x.js npm run build",
+        "LD_LIBRARY_PATH=./x vite build",
+        "DYLD_INSERT_LIBRARIES=./x.dylib bun run build",
+        "GOTOOLCHAIN=go1.99.0 go build",
+        "BASH_ENV=./x.sh npm run build",
     ] {
         assert_eq!(decision(&controls, command).0, "block", "{command}");
     }
