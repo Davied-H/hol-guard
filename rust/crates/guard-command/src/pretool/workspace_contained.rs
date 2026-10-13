@@ -25,6 +25,8 @@ pub(crate) const PROFILE: &str = "workspace-contained-v1";
 
 #[path = "workspace_contained_chmod.rs"]
 mod chmod;
+#[path = "workspace_contained_git.rs"]
+mod git_metadata;
 #[path = "workspace_git_keeps_work.rs"]
 mod keeps_work;
 #[path = "workspace_contained_package.rs"]
@@ -175,6 +177,9 @@ pub(crate) fn command_shape(
         // Git directory outside the workspace, which the sandbox cannot
         // reach, so Git there would only fail. It keeps its review.
         if name == "git" && linked {
+            return None;
+        }
+        if name == "git" && git_metadata::writes_denied_metadata(&segment.arguments) {
             return None;
         }
         if name == "git" && segment.arguments.iter().any(|argument| argument == "init") {
