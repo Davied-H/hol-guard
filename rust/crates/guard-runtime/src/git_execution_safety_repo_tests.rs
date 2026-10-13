@@ -290,6 +290,14 @@ fn push_of_a_branch_the_command_creates_requires_that_it_does_not_exist_yet() {
         &["branch", "feature/new"],
     );
     assert!(!decide("feature/new", Some("HEAD")));
+    // A known `origin` branch of that name would be moved by the push.
+    assert!(decide("feature/three", Some("HEAD")));
+    git(
+        &fixture.repository,
+        &fixture.home,
+        &["update-ref", "refs/remotes/origin/feature/three", "HEAD"],
+    );
+    assert!(!decide("feature/three", Some("HEAD")));
     // Configuration for the new branch is still read.
     assert!(decide("feature/two", Some("HEAD")));
     fixture.config("branch.feature/two.pushRemote", "elsewhere");

@@ -27,7 +27,9 @@ fn verdict(push: &GitPushRequest<'_>) -> bool {
         push.branch.to_owned(),
         push.creates_branch,
     ));
-    push.git.is_absolute() && push.branch != "refused"
+    push.git.is_absolute()
+        && push.git.file_name().and_then(|name| name.to_str()) == Some("git")
+        && push.branch != "refused"
 }
 
 fn controls(propose: &str) -> CompiledNativeCommandControls {
@@ -240,6 +242,14 @@ fn any_unproven_step_or_connector_keeps_the_review() {
         "git add . && git commit -m x && git push origin HEAD:refs/heads/release",
         "git add . && git commit -m x && git push upstream main",
         "git checkout -b refused && git push origin refused",
+        // Only Git itself is resolved and run by the push proof.
+        "perl push origin main",
+        "git add . && git commit -m x && perl push origin main",
+        "git checkout -b feat && git add . && git commit -m x && perl push origin feat",
+        "git add . && git commit -m x && env git push origin main",
+        "git add . && git commit -m x && command git push origin main",
+        // A proposal follows the push of the work it proposes.
+        "git add . && git commit -m x && gh pr create --title T --body B && git push origin main",
         "git checkout -b b1 origin/main && git push origin b1",
         // A rename or a switch would change what a push of `HEAD` sends.
         "git branch -m b1 && git push origin HEAD",

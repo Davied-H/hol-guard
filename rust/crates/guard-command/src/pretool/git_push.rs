@@ -160,7 +160,19 @@ pub(super) fn exact_safe_command(
 /// Whether `segment` is `git push [-u] origin <branch>` from the shell's own
 /// directory, the only push a chain of local Git writes may end with.
 pub(super) fn chained(segment: &CommandSegmentV1) -> bool {
-    parse(segment).is_some_and(|push| push.directory.is_none())
+    plain_git(segment) && parse(segment).is_some_and(|push| push.directory.is_none())
+}
+
+/// Git itself, named directly: the push proof resolves and runs this program,
+/// so any other executable, a wrapper or an overridden path is refused.
+fn plain_git(segment: &CommandSegmentV1) -> bool {
+    segment
+        .executable
+        .as_deref()
+        .map(super::executable_basename)
+        == Some("git")
+        && !segment.path_overridden
+        && segment.wrapper_chain.is_empty()
 }
 
 /// Proves a push that follows proven local Git writes in one chain, with the
@@ -207,6 +219,9 @@ fn proven_push(
     let Some(environment) = execution_environment else {
         return false;
     };
+    if !plain_git(segment) {
+        return false;
+    }
     let Some(spec) = parse(segment) else {
         return false;
     };

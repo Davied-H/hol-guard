@@ -35,6 +35,11 @@ fn verdict(push: &GitPushRequest<'_>) -> bool {
     let Some(groups) = groups() else {
         return false;
     };
+    // The probes run this program in the repository: only Git itself.
+    let name = push.git.file_name().and_then(|name| name.to_str());
+    if !matches!(name, Some("git" | "git.exe")) {
+        return false;
+    }
     // `decide` trusts a supplied binary; prove it the way resolution would.
     if !binary_path_is_trusted(push.git, push.repository, push.home, &groups) {
         return false;

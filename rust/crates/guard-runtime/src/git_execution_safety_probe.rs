@@ -44,7 +44,8 @@ impl ProbeOutput {
 /// now. Without a `reference`, `branch` must be that branch or `HEAD`, which
 /// pushes the checked-out branch to the same name. A `reference` of `HEAD`
 /// says the same command first creates `branch` at the checked-out commit and
-/// switches to it (`git switch -c`), so `branch` must not exist yet.
+/// switches to it (`git switch -c`), so `branch` must not exist yet, locally
+/// or as a known `origin` branch the push would move.
 pub(crate) fn pushed_branch<'a>(
     prober: &Prober<'_>,
     current: &'a str,
@@ -54,9 +55,14 @@ pub(crate) fn pushed_branch<'a>(
     match reference {
         None => (branch == "HEAD" || branch == current).then_some(current),
         Some("HEAD") if branch != "HEAD" && branch != current => {
-            let head = format!("refs/heads/{branch}");
-            let found = prober.run(&["rev-parse", "--verify", "--quiet", &head])?;
-            (found.code == Some(1)).then_some(branch)
+            let absent = |reference: String| {
+                prober
+                    .run(&["rev-parse", "--verify", "--quiet", &reference])
+                    .is_some_and(|found| found.code == Some(1))
+            };
+            (absent(format!("refs/heads/{branch}"))
+                && absent(format!("refs/remotes/origin/{branch}")))
+            .then_some(branch)
         }
         Some(_) => None,
     }

@@ -46,6 +46,7 @@ const RULES: &[&str] = &[
 
 /// The rule a proven `git push origin <branch>` step may raise.
 const PUSH_RULE: &str = "command.git.push";
+const PROPOSE_PERMISSION: &str = "command.github.permission.propose-remote";
 
 /// Read rules the packaged catalog ships disabled, so they never raise a
 /// review of their own.
@@ -164,16 +165,14 @@ fn proven(
     {
         return None;
     }
-    // A step the user's GitHub permissions allow on its own, such as a static
-    // `gh pr create`. Nothing else may carry a permission observation.
+    // A `gh pr create` the user's GitHub permissions allow on its own. Nothing
+    // else may carry a permission observation.
     let granted = controls
         .map(|controls| controls.github_granted_segments(&extensions.permission_observations))
         .unwrap_or_default();
     let allowed_alone = |observation: &NativeCommandPermissionObservationV1| {
         let mut segments = observation.matcher_evidence.iter();
-        observation
-            .permission_id
-            .starts_with("command.github.permission.")
+        observation.permission_id == PROPOSE_PERMISSION
             && !observation.matcher_evidence.is_empty()
             && segments.all(|evidence| granted.contains(&evidence.segment_index))
     };
@@ -219,7 +218,8 @@ fn proven(
             continue;
         }
         if super::git_push::chained(segment) {
-            if push.replace(index).is_some() {
+            // A proposal opens the pull request for work the chain pushed.
+            if proposal || push.replace(index).is_some() {
                 return None;
             }
             continue;
