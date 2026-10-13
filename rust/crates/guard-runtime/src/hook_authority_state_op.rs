@@ -260,6 +260,9 @@ pub(crate) fn claude_permission_notice_direct(
     )
 }
 
+/// Event name and the function that renders its JSON from the loaded notice.
+type PromptEvent<'a> = (&'a str, &'a dyn Fn(Option<&Object>) -> Option<String>);
+
 /// The daemon's answer to a Claude `permission_prompt` notification:
 /// `_load_claude_permission_notice`, `_mark_claude_pending_permission_prompt_seen`
 /// and the event it always records, in one transaction.
@@ -274,7 +277,7 @@ pub(crate) fn claude_permission_prompt_direct(
     now: &str,
     session_id: Option<&str>,
     tool_name: Option<&str>,
-    event: (&str, &dyn Fn(Option<&Map<String, Value>>) -> Option<String>),
+    event: PromptEvent<'_>,
 ) -> Result<Option<Map<String, Value>>, DirectNoticeDefer> {
     direct_notice_transaction(store_path, key, now, session_id, tool_name, Some(event))
 }
@@ -285,7 +288,7 @@ fn direct_notice_transaction(
     now: &str,
     session_id: Option<&str>,
     tool_name: Option<&str>,
-    event: Option<(&str, &dyn Fn(Option<&Map<String, Value>>) -> Option<String>)>,
+    event: Option<PromptEvent<'_>>,
 ) -> Result<Option<Map<String, Value>>, DirectNoticeDefer> {
     let connection = Connection::open_with_flags(store_path, OpenFlags::SQLITE_OPEN_READ_WRITE)
         .map_err(|_| DirectNoticeDefer::StoreUnavailable)?;
