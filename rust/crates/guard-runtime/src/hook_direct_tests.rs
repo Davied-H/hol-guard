@@ -367,6 +367,51 @@ fn a_block_rule_saved_after_the_publish_defers() {
 }
 
 #[test]
+fn a_hook_for_an_app_guard_does_not_protect_defers() {
+    let lane = lane("unmanaged", json!({}));
+    let connection = rusqlite::Connection::open(lane.fixture.root.join("guard.db")).unwrap();
+    connection
+        .execute_batch(
+            "create table managed_installs (
+                 harness text primary key, active integer not null, workspace text,
+                 manifest_json text not null, updated_at text not null
+             );",
+        )
+        .unwrap();
+    let unmanaged = "direct_hook_harness_unmanaged";
+    // No install recorded anywhere: the daemon reviews the hook.
+    assert_ne!(run(&lane, read_payload(&lane))["reason"], unmanaged);
+    for (statement, expected_unmanaged) in [
+        // Only another app is protected, so Codex hooks are leftovers.
+        (
+            "insert into managed_installs values ('claude-code', 1, null, '{}', 'now')",
+            true,
+        ),
+        (
+            "insert into managed_installs values ('codex', 1, null, '{}', 'now')",
+            false,
+        ),
+        (
+            "update managed_installs set active = 0 where harness = 'codex'",
+            true,
+        ),
+        // Its own inactive row decides even with no other app protected.
+        (
+            "update managed_installs set active = 0 where harness = 'claude-code'",
+            true,
+        ),
+    ] {
+        connection.execute_batch(statement).unwrap();
+        let result = run(&lane, read_payload(&lane));
+        assert_eq!(
+            result["reason"] == unmanaged,
+            expected_unmanaged,
+            "{statement}: {result}"
+        );
+    }
+}
+
+#[test]
 fn an_edge_verdict_other_than_allow_takes_the_daemon_path() {
     // A sensitive read needs review, so the resident evaluates it and still
     // hands it to the daemon.
