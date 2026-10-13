@@ -37,6 +37,9 @@ pub(super) fn locations(model: &CanonicalCommandV1, workspace: &Path) -> Option<
                 let [target] = segment.arguments.as_slice() else {
                     return None;
                 };
+                if target.starts_with(['-', '~', '+']) {
+                    return None;
+                }
                 // A pipeline's cd runs in a child shell and never moves its parent.
                 let in_pipeline = model
                     .segments
@@ -48,11 +51,12 @@ pub(super) fn locations(model: &CanonicalCommandV1, workspace: &Path) -> Option<
                     next.extend([(cwd.clone(), true), (cwd, false)]);
                 } else {
                     let supplied = cwd.join(target);
-                    let moved = if supplied.exists() {
-                        supplied.canonicalize().ok()?
-                    } else {
-                        supplied
-                    };
+                    // Missing relative names may resolve through CDPATH; don't
+                    // invent a successful cwd that the real shell won't use.
+                    if !supplied.is_dir() {
+                        return None;
+                    }
+                    let moved = supplied.canonicalize().ok()?;
                     if !moved.starts_with(workspace) {
                         return None;
                     }
