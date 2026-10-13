@@ -61,7 +61,7 @@ pub(super) fn installed_package_source(
         .or_else(|_| spelled.strip_prefix(&resolved_home))
         .ok()
         .and_then(normal_names);
-    if !spelled_names.is_some_and(|spelled| spelled == names) {
+    if spelled_names.is_none_or(|spelled| spelled != names) {
         return false;
     }
     let Some(root) = install_root(&names) else {
@@ -123,12 +123,13 @@ fn python_library_directory(name: &str) -> bool {
 }
 
 /// The tool directories between home and the install root: one hidden
-/// directory at most, directly below home, and no credential name.
+/// directory at most, directly below home, no download cache, and no
+/// credential name.
 fn above_root_allowed(above: &[&str]) -> bool {
     above
         .iter()
         .skip(1)
-        .all(|name| !name.starts_with('.'))
+        .all(|name| !name.starts_with('.') && !download_cache(name))
         && above
             .iter()
             .all(|name| !guard_secure_fs::sensitive_external_filename(Path::new(name)))
@@ -137,6 +138,16 @@ fn above_root_allowed(above: &[&str]) -> bool {
         && !guard_secure_fs::credential_named_path(
             &above.iter().collect::<PathBuf>().join("entry"),
         )
+}
+
+/// A package manager's download or tarball cache, such as
+/// `~/.bun/install/cache` or `~/.npm/_cacache`, is tool state rather than an
+/// installed tree.
+fn download_cache(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "cache" | "caches" | "_cacache"
+    )
 }
 
 /// The path inside the install root: only benign project dotfiles may be
@@ -186,5 +197,12 @@ mod tests {
             let names: Vec<&str> = path.split('/').collect();
             assert_eq!(install_root(&names), root, "{path}");
         }
+    }
+
+    #[test]
+    fn download_caches_above_the_root_do_not_qualify() {
+        assert!(super::above_root_allowed(&[".bun", "install", "global"]));
+        assert!(!super::above_root_allowed(&[".bun", "install", "cache"]));
+        assert!(!super::above_root_allowed(&[".npm", "_cacache"]));
     }
 }

@@ -221,12 +221,14 @@ fn global_package_trees_list_without_their_tool_state() {
             "ls ~/.bun/install/global/node_modules 2>/dev/null",
             "ls ~/.nvm/versions/node/v1.0.0/lib/node_modules/",
             "ls -la ~/.nvm/versions/node/v1.0.0/lib/node_modules/npm",
+            // Installed package trees are readable source; a recursive
+            // listing shows only their file names.
+            "ls -R ~/.bun/install/global/node_modules",
         ],
         &[
             "ls ~/.bun/install/cache",
             "ls ~/.bun",
             "ls ~/.nvm/.cache/node_modules",
-            "ls -R ~/.bun/install/global/node_modules",
         ],
     );
 }
