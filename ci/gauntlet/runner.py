@@ -28,6 +28,7 @@ from .case_helpers import (
     _scenario_tools,
     _watch_binding,
     read_case_logs,
+    ready_watch_binding,
 )
 from .case_worker import SubprocessCaseWorker
 from .catalog import WATCH_COMMAND, WATCH_PROMPT, Scenario, catalog_digest, load_catalog
@@ -148,7 +149,7 @@ def run_case(
                 )
             worker = daemon._server.hook_worker
             if scenario.oracle == "watch-command":
-                case["watch_binding_before"] = _watch_binding(worker.store)
+                case["watch_binding_before"] = ready_watch_binding(worker)
             if scenario.oracle == "blocked-extension":
                 extension_receipt_ids = native_probe.persisted_native_receipt_ids(worker.store)
                 extension_receipt_writer = daemon._server.runtime_hook_evidence_writer
