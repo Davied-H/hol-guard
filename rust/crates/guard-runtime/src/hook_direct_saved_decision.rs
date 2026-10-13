@@ -113,6 +113,12 @@ pub(super) fn answer(edge: &[u8], context: &Context<'_>) -> Result<Value, HookDi
             .ok()
             .flatten()
             .ok_or(HookDirectDefer::SavedDecision)?;
+        // One read snapshot for the shape checks and the lookup they gate, so
+        // a decision or state the daemon commits between them cannot slip
+        // past. It ends with this block, before the approve-once spend.
+        let _snapshot = connection
+            .unchecked_transaction()
+            .map_err(|_| HookDirectDefer::SavedDecision)?;
         let store = StoreShape {
             connection: &connection,
             harness: context.harness,
