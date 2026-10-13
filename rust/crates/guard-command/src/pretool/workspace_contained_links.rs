@@ -7,13 +7,46 @@ use std::path::Path;
 mod cwd;
 
 #[cfg(unix)]
-fn linked_file(path: &Path) -> bool {
+fn linked_file(path: &Path, workspace: &Path) -> bool {
     use std::os::unix::fs::MetadataExt;
-    std::fs::metadata(path).is_ok_and(|metadata| metadata.is_file() && metadata.nlink() != 1)
+    // A parent symlink is followed by the write, while the lexical path still
+    // looks workspace-relative. Absence of a later component stops the walk;
+    // any other inspection failure cannot establish a safe destination.
+    match symlink_parent(path, workspace) {
+        Some(false) => {}
+        Some(true) | None => return true,
+    }
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => true,
+        Ok(metadata) => metadata.is_file() && metadata.nlink() != 1,
+        Err(error) => error.kind() != std::io::ErrorKind::NotFound,
+    }
+}
+
+/// `Some(true)` when a parent of `path` is a symlink or cannot be inspected.
+/// `None` means `path` is not under `workspace`, which also declines.
+#[cfg(unix)]
+fn symlink_parent(path: &Path, workspace: &Path) -> Option<bool> {
+    let relative = path.strip_prefix(workspace).ok()?;
+    let mut current = workspace.to_path_buf();
+    let mut components = relative.components().peekable();
+    while let Some(component) = components.next() {
+        if components.peek().is_none() {
+            break;
+        }
+        current.push(component);
+        match std::fs::symlink_metadata(&current) {
+            Ok(metadata) if metadata.file_type().is_symlink() => return Some(true),
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+            Err(_) => return Some(true),
+        }
+    }
+    Some(false)
 }
 
 #[cfg(not(unix))]
-fn linked_file(_path: &Path) -> bool {
+fn linked_file(_path: &Path, _workspace: &Path) -> bool {
     // Workspace containment is not admitted on non-Unix platforms.
     false
 }
@@ -45,13 +78,20 @@ pub(super) fn unbounded_linked_writes(model: &CanonicalCommandV1, workspace: &Pa
 }
 
 fn mutates_linked_destination(name: &str, arguments: &[String], workspace: &Path) -> bool {
+    if arguments.iter().any(|value| {
+        value
+            .chars()
+            .any(|c| matches!(c, '*' | '?' | '[' | ']' | '$' | '\u{60}' | '{' | '}'))
+    }) {
+        return true;
+    }
     match name {
         "cp" => copy_targets(arguments, workspace).unwrap_or(true),
         "touch" => touch_targets(arguments)
             .map(|targets| {
                 targets
                     .iter()
-                    .any(|target| linked_file(&workspace.join(target)))
+                    .any(|target| linked_file(&workspace.join(target), workspace))
             })
             .unwrap_or(true),
         _ => false,
@@ -159,7 +199,7 @@ fn copy_targets(arguments: &[String], workspace: &Path) -> Option<bool> {
         } else {
             destination.clone()
         };
-        if linked_copy_tree(&source_path, &target, recursive, &mut remaining)? {
+        if linked_copy_tree(&source_path, &target, workspace, recursive, &mut remaining)? {
             return Some(true);
         }
     }
@@ -169,10 +209,11 @@ fn copy_targets(arguments: &[String], workspace: &Path) -> Option<bool> {
 fn linked_copy_tree(
     source: &Path,
     destination: &Path,
+    workspace: &Path,
     recursive: bool,
     remaining: &mut usize,
 ) -> Option<bool> {
-    if linked_file(destination) {
+    if linked_file(destination, workspace) {
         return Some(true);
     }
     if !recursive || !source.is_dir() || !destination.exists() {
@@ -187,6 +228,7 @@ fn linked_copy_tree(
         if linked_copy_tree(
             &child.path(),
             &destination.join(child.file_name()),
+            workspace,
             true,
             remaining,
         )? {
@@ -244,6 +286,7 @@ mod tests {
             ("touch", vec!["-cm", "linked"], true),
             ("touch", vec!["source", "linked"], true),
             ("cp", vec!["--unknown", "source", "new"], true),
+            ("cp", vec!["source", "linked*"], true),
             ("cp", vec!["linked", "new"], false),
             ("cp", vec!["-fp", "source", "new"], false),
             ("touch", vec!["new"], false),
@@ -299,5 +342,68 @@ mod tests {
                 "{command}"
             );
         }
+    }
+    #[test]
+    fn a_symlinked_parent_cannot_hide_an_outside_destination() {
+        let mut root = Workspace(std::env::temp_dir().join(format!(
+            "guard-linked-parent-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+        )));
+        std::fs::create_dir_all(&root.0).unwrap();
+        root.0 = root.0.canonicalize().unwrap();
+        let outside = root.0.join("outside");
+        let workspace = root.0.join("workspace");
+        std::fs::create_dir(&outside).unwrap();
+        std::fs::create_dir(&workspace).unwrap();
+        std::fs::write(outside.join("existing"), b"sentinel").unwrap();
+        std::os::unix::fs::symlink(&outside, workspace.join("alias")).unwrap();
+        std::fs::write(workspace.join("source"), b"ordinary").unwrap();
+        std::fs::create_dir(workspace.join("sub")).unwrap();
+        std::os::unix::fs::symlink(&outside, workspace.join("sub/alias")).unwrap();
+        for (name, args) in [
+            ("touch", vec!["alias/existing"]),
+            ("touch", vec!["alias/new"]),
+            ("cp", vec!["source", "alias/existing"]),
+            ("cp", vec!["source", "alias/plain"]),
+        ] {
+            let owned = args.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>();
+            assert!(
+                mutates_linked_destination(name, &owned, &workspace),
+                "{name} {args:?}"
+            );
+            let model = crate::parse_command(&crate::CommandModelRequestV1 {
+                command: format!("{name} {}", args.join(" ")),
+                dialect: "posix".into(),
+                transport: "shell_string".into(),
+                extraction_provenance: "pre-tool-generic".into(),
+            })
+            .unwrap();
+            assert!(
+                super::super::command_shape(&model, &workspace, None).is_none(),
+                "{name} {args:?}"
+            );
+        }
+        let nested = vec!["sub/new".to_owned()];
+        assert!(!mutates_linked_destination("touch", &nested, &workspace));
+        let model = crate::parse_command(&crate::CommandModelRequestV1 {
+            command: "touch sub/new".into(),
+            dialect: "posix".into(),
+            transport: "shell_string".into(),
+            extraction_provenance: "pre-tool-generic".into(),
+        })
+        .unwrap();
+        assert!(super::super::command_shape(&model, &workspace, None).is_some());
+        let model = crate::parse_command(&crate::CommandModelRequestV1 {
+            command: "cd sub && touch alias/new".into(),
+            dialect: "posix".into(),
+            transport: "shell_string".into(),
+            extraction_provenance: "pre-tool-generic".into(),
+        })
+        .unwrap();
+        assert!(super::super::command_shape(&model, &workspace, None).is_none());
     }
 }
