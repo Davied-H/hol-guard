@@ -256,6 +256,15 @@ fn lockfiles_naming_other_sources_stay_reviewed() {
         "resolution: {integrity: sha512-AAAA+/==}",
         "resolution:\n      type: git\n      repo: https://example.invalid/left-pad.git",
     );
+    let flow_git_pnpm = PNPM_LOCK.replace(
+        "  left-pad@1.3.0:\n    resolution: {integrity: sha512-AAAA+/==}",
+        "  left-pad@1.3.0: {resolution: {type: git, repo: https://example.invalid/x.git, commit: abc}}",
+    );
+    let file_pnpm = PNPM_LOCK.replace("version: 1.3.0", "version: file:../left-pad");
+    let link_pnpm = PNPM_LOCK
+        .replace("specifier: ^1.3.0", "specifier: link:../left-pad")
+        .replace("version: 1.3.0", "version: link:../left-pad");
+    let unpinned_npm = PACKAGE_LOCK.replace(",\n      \"integrity\": \"sha512-AAAA\"", "");
     let git_npm = PACKAGE_LOCK.replace(
         "https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz",
         "git+ssh://git@example.invalid/left-pad.git#abc",
@@ -298,6 +307,18 @@ fn lockfiles_naming_other_sources_stay_reviewed() {
             PNPM,
         ),
         ("pnpm-git", vec![("pnpm-lock.yaml", &git_pnpm)], PNPM),
+        (
+            "pnpm-flow-git",
+            vec![("pnpm-lock.yaml", &flow_git_pnpm)],
+            PNPM,
+        ),
+        ("pnpm-file", vec![("pnpm-lock.yaml", &file_pnpm)], PNPM),
+        ("pnpm-link", vec![("pnpm-lock.yaml", &link_pnpm)], PNPM),
+        (
+            "npm-unpinned",
+            vec![("package-lock.json", &unpinned_npm)],
+            NPM,
+        ),
         (
             "pnpm-hooks",
             vec![
@@ -352,4 +373,52 @@ fn lockfiles_naming_other_sources_stay_reviewed() {
     );
     let result = lab.classify(&member, BUN, &[]);
     assert_ne!(result.minimum_action, "allow", "workspace member");
+
+    // An escaped key is still `workspaces` to the manager.
+    lab.project(
+        "escaped",
+        &[(
+            "package.json",
+            r#"{"name":"root","work\u0073paces":["app"]}"#,
+        )],
+    );
+    let member = lab.project(
+        "escaped/app",
+        &[("package.json", PACKAGE_JSON), ("bun.lock", BUN_LOCK)],
+    );
+    let result = lab.classify(&member, BUN, &[]);
+    assert_ne!(result.minimum_action, "allow", "escaped workspace root");
+
+    // Corepack downloads and runs a `packageManager` URL before the install.
+    let corepack = lab.project(
+        "corepack-url",
+        &[
+            (
+                "package.json",
+                r#"{"name":"fixture","packageManager":"pnpm@https://example.invalid/pnpm.tgz#sha512.abc"}"#,
+            ),
+            ("pnpm-lock.yaml", PNPM_LOCK),
+        ],
+    );
+    let result = lab.classify(&corepack, PNPM, &[]);
+    assert_ne!(result.minimum_action, "allow", "packageManager URL");
+}
+
+#[test]
+fn workspace_links_and_pinned_package_managers_still_proceed() {
+    let lab = Lab::new();
+    let workspace_pnpm = PNPM_LOCK.replace(
+        "      left-pad:\n        specifier: ^1.3.0\n        version: 1.3.0",
+        "      left-pad:\n        specifier: ^1.3.0\n        version: 1.3.0\n      shared:\n        specifier: workspace:*\n        version: link:../shared",
+    );
+    let pinned = r#"{"name":"fixture","packageManager":"pnpm@9.12.0+sha512.0123abcdef","dependencies":{"left-pad":"^1.3.0"}}"#;
+    let project = lab.project(
+        "pnpm-workspace-link",
+        &[
+            ("package.json", pinned),
+            ("pnpm-lock.yaml", &workspace_pnpm),
+        ],
+    );
+    let result = lab.classify(&project, PNPM, &[]);
+    assert_eq!(result.reason_code, "native_exact_safe_lockfile_install");
 }

@@ -58,7 +58,7 @@ pub(super) fn directory_ready(
     if !directory.is_absolute()
         || !home.is_absolute()
         || !super::super::npm_reads::configuration_inert(context)
-        || !regular(&directory.join("package.json"), MAX_CONFIG_BYTES)
+        || !manifest_inert(&directory.join("package.json"), deadline)
         || !no_workspace_root_above(directory)
     {
         return false;
@@ -133,9 +133,37 @@ fn no_workspace_root_above(directory: &Path) -> bool {
         .all(|ancestor| {
             missing(&ancestor.join("pnpm-workspace.yaml"))
                 && optional_text(&ancestor.join("package.json"), |text| {
-                    !text.contains("\"workspaces\"")
+                    // Parsed, so an escaped key still reads as `workspaces`.
+                    matches!(parse(text, None), Some(JsoncPairs::Object(root))
+                        if field(&root, "workspaces").is_none())
                 })
         })
+}
+
+/// The project's `package.json`. Corepack reads `packageManager` before the
+/// manager starts, and a URL there makes it download and run that archive, so
+/// only a plain `name@version` with an optional `+sha…` hash is accepted.
+fn manifest_inert(path: &Path, deadline: Option<Instant>) -> bool {
+    if !regular(path, MAX_CONFIG_BYTES) {
+        return false;
+    }
+    let Ok(text) = fs::read_to_string(path) else {
+        return false;
+    };
+    let Some(JsoncPairs::Object(root)) = parse(&text, deadline) else {
+        return false;
+    };
+    match field(&root, "packageManager") {
+        None => true,
+        Some(JsoncPairs::String(pin)) => pin.split_once('@').is_some_and(|(name, version)| {
+            ["npm", "pnpm", "yarn", "bun"].contains(&name)
+                && !version.is_empty()
+                && version
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '+' | '-'))
+        }),
+        Some(_) => false,
+    }
 }
 
 fn bunfig_inert(path: &Path) -> bool {
@@ -176,21 +204,36 @@ fn pnpm_workspace_inert(path: &Path) -> bool {
 /// Every resolution is a registry integrity hash: pnpm fetches those from the
 /// configured registry, which the npmrc checks keep at the default. A git
 /// commit, tarball URL or local directory resolution is refused, and so is
-/// anything this line scan could misread (block style, escapes, explicit keys).
+/// anything this line scan could misread (block style, escapes, explicit keys,
+/// a flow-style entry carrying its own resolution). A `file:` dependency is
+/// refused, and a `link:` version only follows a `workspace:` specifier.
 fn pnpm_lock_registry_only(text: &str) -> bool {
+    let mut workspace_specifier = false;
     text.lines().all(|line| {
         let trimmed = line.trim();
         if trimmed.contains(['\\', '\t']) || trimmed.starts_with(['?', '&', '*', '!']) {
             return false;
         }
-        if trimmed.contains("tarball") {
+        if trimmed.contains("tarball") || trimmed.contains("file:") {
             return false;
         }
-        let key = trimmed
-            .split_once(':')
-            .map(|(key, _)| key.trim().trim_matches(['"', '\'']));
-        if key != Some("resolution") {
-            return true;
+        let (key, value) = match trimmed.split_once(':') {
+            Some((key, value)) => (
+                Some(key.trim().trim_matches(['"', '\''])),
+                value.trim().trim_matches(['"', '\'']),
+            ),
+            None => (None, ""),
+        };
+        let specifier = std::mem::replace(&mut workspace_specifier, false);
+        match key {
+            Some("specifier") => {
+                workspace_specifier = value.starts_with("workspace:");
+                return true;
+            }
+            Some("version") if value.starts_with("link:") => return specifier,
+            _ if trimmed.contains("link:") => return false,
+            Some("resolution") => {}
+            _ => return !trimmed.contains("resolution"),
         }
         trimmed
             .strip_prefix("resolution: {integrity: ")
@@ -247,11 +290,21 @@ fn package_lock_registry_only(text: &str, deadline: Option<Instant>) -> bool {
         return false;
     };
     version
-        && packages.iter().all(|(_, entry)| {
+        && packages.iter().all(|(key, entry)| {
             let JsoncPairs::Object(entry) = entry else {
                 return false;
             };
             let link = matches!(field(entry, "link"), Some(JsoncPairs::Bool(true)));
+            // An installed package needs a hash, or npm fetches it unpinned.
+            // Folders (the root and workspace members) and bundled copies
+            // are not fetched.
+            let installed = key.starts_with("node_modules/") || key.contains("/node_modules/");
+            let bundled = matches!(field(entry, "inBundle"), Some(JsoncPairs::Bool(true)));
+            let pinned = matches!(field(entry, "integrity"),
+                Some(JsoncPairs::String(hash)) if !hash.is_empty());
+            if installed && !link && !bundled && !pinned {
+                return false;
+            }
             let resolved = match field(entry, "resolved") {
                 None => true,
                 Some(JsoncPairs::String(url)) if link => !url.contains(':'),
