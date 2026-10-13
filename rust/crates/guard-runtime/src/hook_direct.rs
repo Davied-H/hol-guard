@@ -270,11 +270,10 @@ fn answer(
         // `PostToolUse` records the same activity in either posture.
         return Err(HookDirectDefer::RecordingOnly);
     }
-    if event == USER_PROMPT_SUBMIT && !recording_only && request.harness == CLAUDE_CODE {
-        // Outside Watch the daemon adds Guard's notice to a Claude Code
-        // prompt response.
-        return Err(HookDirectDefer::PromptNotice);
-    }
+    // Outside Watch the daemon may add Guard's notice to a Claude Code
+    // prompt response.
+    let prompt_notice =
+        event == USER_PROMPT_SUBMIT && !recording_only && request.harness == CLAUDE_CODE;
     if binding.evidence_drain != Some(true) {
         return Err(HookDirectDefer::EvidenceUndrained);
     }
@@ -311,7 +310,7 @@ fn answer(
     let answered = match event {
         PRE_TOOL_USE => allow_answer(&edge)?,
         POST_TOOL_USE => post_tool_answer(&edge)?,
-        _ => prompt_answer(&edge)?,
+        _ => prompt_answer(&edge, prompt_notice)?,
     };
     let evidence = json!({
         "event": event,
@@ -368,11 +367,25 @@ fn post_tool_answer(edge: &[u8]) -> Result<Value, HookDirectDefer> {
 
 /// The edge result to return as is: the daemon passes a reviewed
 /// `UserPromptSubmit` through once it accepts the receipt, and answers one
-/// without a receipt as unavailable.
-fn prompt_answer(edge: &[u8]) -> Result<Value, HookDirectDefer> {
+/// without a receipt as unavailable. With `notice`, the daemon adds Guard's
+/// Claude Code notice for exactly these actions and leaves any other
+/// response untouched.
+fn prompt_answer(edge: &[u8], notice: bool) -> Result<Value, HookDirectDefer> {
     let parsed = reviewed_edge(edge, USER_PROMPT_SUBMIT)?;
     if !parsed.get("receipt").is_some_and(Value::is_object) {
         return Err(HookDirectDefer::EdgeFailed);
+    }
+    let action = parsed
+        .get("result")
+        .and_then(|result| result.get("minimum_action"))
+        .and_then(Value::as_str);
+    if notice
+        && matches!(
+            action,
+            Some("require-reapproval" | "block" | "sandbox-required")
+        )
+    {
+        return Err(HookDirectDefer::PromptNotice);
     }
     Ok(parsed)
 }

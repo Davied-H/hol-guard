@@ -686,15 +686,40 @@ fn a_prompt_answer_needs_its_receipt() {
         }))
         .unwrap()
     };
-    assert!(prompt_answer(&reviewed(json!({ "decision_id": "d" }))).is_ok());
+    assert!(prompt_answer(&reviewed(json!({ "decision_id": "d" })), false).is_ok());
     assert_eq!(
-        prompt_answer(&reviewed(Value::Null)),
+        prompt_answer(&reviewed(Value::Null), false),
         Err(HookDirectDefer::EdgeFailed)
     );
     assert_eq!(
-        prompt_answer(&post_edge(json!({}))),
+        prompt_answer(&post_edge(json!({})), false),
         Err(HookDirectDefer::EdgeFailed)
     );
+}
+
+#[test]
+fn only_a_prompt_the_daemon_restyles_waits_for_its_notice() {
+    let reviewed = |action: &str| {
+        serde_json::to_vec(&json!({
+            "schema": "guard-hook-edge-result.v2",
+            "event_name": "UserPromptSubmit",
+            "result": { "decision": "allow", "minimum_action": action },
+            "harness_response": {},
+            "receipt": { "decision_id": "d" },
+        }))
+        .unwrap()
+    };
+    for action in ["require-reapproval", "block", "sandbox-required"] {
+        assert_eq!(
+            prompt_answer(&reviewed(action), true),
+            Err(HookDirectDefer::PromptNotice),
+            "{action}"
+        );
+        assert!(prompt_answer(&reviewed(action), false).is_ok(), "{action}");
+    }
+    for action in ["allow", "warn", "review", ""] {
+        assert!(prompt_answer(&reviewed(action), true).is_ok(), "{action}");
+    }
 }
 
 fn prompt_payload(lane: &Lane) -> Value {
@@ -727,22 +752,18 @@ fn a_codex_prompt_is_answered_in_either_posture() {
 }
 
 #[test]
-fn a_claude_code_prompt_is_answered_only_in_watch() {
-    let enforced = lane("prompt-claude", json!({}));
-    assert_eq!(
-        deferred(&run_as(
-            &enforced,
-            "claude-code",
-            None,
-            prompt_payload(&enforced)
-        )),
-        "direct_hook_prompt_notice"
-    );
-    assert_eq!(drain(&enforced, None)["records"], json!([]));
-    let watch = lane(
-        "prompt-claude-watch",
-        json!({ "harness_postures": { "claude-code": "watch" } }),
-    );
-    let result = run_as(&watch, "claude-code", None, prompt_payload(&watch));
-    assert_eq!(result["outcome"], "answer", "{result}");
+fn a_claude_code_prompt_without_a_notice_is_answered_in_either_posture() {
+    for (label, extra) in [
+        ("prompt-claude", json!({})),
+        (
+            "prompt-claude-watch",
+            json!({ "harness_postures": { "claude-code": "watch" } }),
+        ),
+    ] {
+        let reviewed = lane(label, extra);
+        let result = run_as(&reviewed, "claude-code", None, prompt_payload(&reviewed));
+        assert_eq!(result["outcome"], "answer", "{label}: {result}");
+        let page = drain(&reviewed, None);
+        assert_eq!(page["records"][0]["harness"], "claude-code", "{label}");
+    }
 }
