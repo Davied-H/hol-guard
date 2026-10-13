@@ -98,6 +98,8 @@ fn a_list_after_cd_into_a_sibling_root_runs_contained_there() {
             tree.display()
         ),
         format!("cd {} && npm run build && ls dist", tree.display()),
+        // A removal is contained there exactly as it is in the session's own root.
+        format!("cd {} && ls && rm notes.txt", tree.display()),
         format!(
             "cd {} && npm run build && cat package.json",
             other.display()
@@ -156,7 +158,6 @@ fn a_sibling_cd_the_sink_would_not_rebase_keeps_its_review() {
             "cd {}/app-report && npm run build && rm -rf .",
             projects.display()
         ),
-        format!("cd {}/app-report && ls && rm notes.txt", projects.display()),
     ] {
         assert!(
             !contained(&reason("omp", &home, &main, &command)),

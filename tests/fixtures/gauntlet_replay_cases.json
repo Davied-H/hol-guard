@@ -9,6 +9,7 @@
     "session-bash-workspace-script-tail@pi": "native_command_review_required",
     "session-cd-vite-build-tail@pi": "native_command_review_required",
     "session-chmod-workspace-script@pi": "native_command_review_required",
+    "session-cd-tmp-sibling-bun-version@pi": "native_package_review",
     "session-ci-prefix-npm-test@pi": "native_package_review",
     "session-git-c-wt-push-feature": "native_command_review_required",
     "session-git-pull-ff-only@claude-code/realistic": "native_command_review_required",
