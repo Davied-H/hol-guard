@@ -47,7 +47,7 @@ pub(super) fn safe_rustfmt_arguments(
         index += 1;
     }
     (1..=MAX_TARGETS).contains(&targets.len())
-        && super::rust_toolchain::proxy_selects_official_toolchain(context)
+        && super::rust_toolchain::rustfmt_proxy_is_official(context)
         && targets.iter().all(|target| {
             target.ends_with(".rs")
                 && super::safe_reads::bounded_native_file_write_target(
