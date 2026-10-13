@@ -499,6 +499,7 @@ fn drain(lane: &Lane, ack_through: Option<u64>) -> Value {
         guard_home: lane.fixture.root.to_str().unwrap().to_owned(),
         max_records: None,
         ack_through,
+        ack_epoch: None,
     };
     let page =
         crate::hook_direct_evidence::drain(&request, lane.fixture.store.direct_evidence()).unwrap();
