@@ -25,10 +25,20 @@ def test_native_evaluator_produces_verified_artifacts_before_python_gates() -> N
     )
     assert "Upload matching native command projections" in names
 
-    # Native artifacts must become available to coverage as soon as compilation
-    # and source verification pass, rather than after unrelated Python workloads.
-    assert not any(step.get("uses") == "./.github/actions/setup-ci-python" for step in producer)
-    assert not any("uv run" in step.get("run", "") for step in producer)
+    # Public catalogs must be regenerated from the staged trust bindings before
+    # they are uploaded. All consumers must receive the same verified artifacts.
+    assert sum(step.get("uses") == "./.github/actions/setup-ci-python" for step in producer) == 1
+    generation = names.index("Prepare current public directory before pytest collection")
+    uploaded = names.index("Upload matching native command projections")
+    assert names.index("Verify generated native command catalogs before pytest fan-out") < generation < uploaded
+    generated = producer[generation]["run"]
+    assert "export_extension_directory.py" in generated
+    assert "render_command_extension_directory.py" in generated
+    assert "export_extension_directory.py --check" in generated
+    assert "render_command_extension_directory.py --check" in generated
+
+    # Native contract checks and replay cases do not delay the artifact producer.
+    assert not any("uv run --no-sync pytest" in step.get("run", "") for step in producer)
     assert not any("Benign false-positive and Gauntlet replay gates" in str(name) for name in names)
 
 
@@ -52,7 +62,7 @@ def test_native_replay_shards_are_complete_and_required() -> None:
 
     contracts = next(
         step for step in steps
-        if step.get("name") == "Prepare current public directory and check native contracts"
+        if step.get("name") == "Check native contract groups after artifact fan-out"
     )
     assert contracts["if"] == "matrix.shard-index == 0"
     assert "ci/package_size" in contracts["run"]
