@@ -368,7 +368,7 @@ fn prepare_tsx(
         .filter(|path| path.is_file() && path_is_within(path, &modules));
     let name = Path::new(&argv[0]).file_name().and_then(OsStr::to_str);
     if name == Some("bun") {
-        return bun::prepare_eval(input, &argv);
+        return bun::prepare_eval(input, argv);
     }
     let node = matches!(name, Some("node" | "nodejs"));
     let runtime = if node {

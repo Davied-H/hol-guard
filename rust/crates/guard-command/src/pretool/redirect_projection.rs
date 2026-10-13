@@ -158,6 +158,7 @@ fn redirect_disqualifies_containment(reason: &str) -> bool {
         "native_pytest_readonly_containment_required"
             | "native_python_eval_readonly_containment_required"
             | "native_node_eval_readonly_containment_required"
+            | "native_bun_eval_readonly_containment_required"
             | "native_workspace_containment_required"
             | crate::pretool::curl_reads::NETWORK_READ_REASON
     )

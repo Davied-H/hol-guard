@@ -289,18 +289,25 @@ fn a_repository_that_contains_the_session_home_is_not_proven() {
     }
 }
 
-const NODE_EVAL: &str = "native_node_eval_readonly_containment_required";
+const BUN_EVAL: &str = "native_bun_eval_readonly_containment_required";
 
-/// File reads, and the writes, requests and spawns the read-only boundary
-/// denies at run time, all leave the command contained rather than allowed.
+/// File reads leave the command contained rather than allowed.
 const CONTAINED: &[&str] = &[
     "bun -e \"const fs = require('fs'); console.log(JSON.parse(fs.readFileSync('package.json', 'utf8')).name)\"",
     "bun --eval \"console.log(require('fs').readdirSync('.'))\"",
     "bun -p \"require('fs').existsSync('bun.lock')\"",
     "bun --print \"require('fs').statSync('package.json').size\"",
+];
+
+/// Programs that reach for writes, requests, processes, the environment or
+/// code generation fail the screen and keep the ordinary review.
+const SCREENED: &[&str] = &[
     "bun -e \"await Bun.write('out.txt', 'x')\"",
     "bun -e \"await fetch('https://example.com')\"",
     "bun -e \"Bun.spawn(['sh', '-c', 'id'])\"",
+    "bun -e \"console.log(Bun.version.constructor('return 1')())\"",
+    "bun -e \"require('fs').writeFileSync('x', 'y')\"",
+    "bun -e \"console.log(process.env.HOME)\"",
 ];
 
 #[test]
@@ -313,8 +320,14 @@ fn bun_inline_eval_shares_the_node_eval_boundary() {
             assert_eq!(result.decision, "deny", "{harness}: {command}");
             if cfg!(target_os = "macos") {
                 assert_eq!(result.minimum_action, "sandbox-required", "{command}");
-                assert_eq!(result.reason_code, NODE_EVAL, "{command}");
+                assert_eq!(result.reason_code, BUN_EVAL, "{command}");
             }
+        }
+        for command in SCREENED {
+            let result = classify(&home, "project", Some(&plain), harness, command);
+            assert_ne!(result.reason_code, BUN_EVAL, "{harness}: {command}");
+            assert_ne!(result.decision, "allow", "{harness}: {command}");
+            assert_ne!(result.minimum_action, "sandbox-required", "{command}");
         }
     }
     let read = CONTAINED[0];
@@ -329,7 +342,7 @@ fn bun_inline_eval_shares_the_node_eval_boundary() {
         format!("{read} extra"),
     ] {
         let result = classify(&home, "project", Some(&plain), "zcode", &command);
-        assert_ne!(result.reason_code, NODE_EVAL, "{command}");
+        assert_ne!(result.reason_code, BUN_EVAL, "{command}");
         assert_ne!(result.decision, "allow", "{command}");
     }
 }
@@ -372,11 +385,11 @@ fn bun_package_permission_is_accepted_only_for_exact_inline_eval() {
     let result = evaluate(read);
     assert_ne!(result.decision, "allow");
     if cfg!(target_os = "macos") {
-        assert_eq!(result.reason_code, NODE_EVAL);
+        assert_eq!(result.reason_code, BUN_EVAL);
         assert_eq!(result.minimum_action, "sandbox-required");
     }
     let wrapped = format!("timeout 30 {read}");
     let result = evaluate(&wrapped);
-    assert_ne!(result.reason_code, NODE_EVAL, "{wrapped}");
+    assert_ne!(result.reason_code, BUN_EVAL, "{wrapped}");
     assert_ne!(result.decision, "allow", "{wrapped}");
 }

@@ -181,16 +181,29 @@ fn bun_eval_package_permission_keeps_the_node_eval_receipt() {
     };
     let rendered = pre_tool(
         "zcode",
-        &response("native_node_eval_readonly_containment_required"),
+        &response("native_bun_eval_readonly_containment_required"),
     );
     assert_eq!(
         rendered.get("required_execution_profile"),
         Some(&json!("node-eval-readonly-v1"))
     );
-    // Python evaluation never runs a package-manager image.
-    let rendered = pre_tool(
-        "zcode",
-        &response("native_python_eval_readonly_containment_required"),
+    assert_eq!(
+        rendered.get("reason_code"),
+        Some(&json!("native_bun_eval_readonly_containment_required"))
     );
-    assert_eq!(rendered.get("required_execution_profile"), None);
+    // `node -e` and Python evaluation never run a package-manager image, so
+    // the permission keeps them blocked.
+    for (harness, reason) in [
+        ("zcode", "native_node_eval_readonly_containment_required"),
+        ("omp", "native_node_eval_readonly_containment_required"),
+        ("zcode", "native_python_eval_readonly_containment_required"),
+    ] {
+        let rendered = pre_tool(harness, &response(reason));
+        assert_eq!(rendered.get("required_execution_profile"), None, "{reason}");
+        assert_eq!(
+            rendered.get("policy_action"),
+            Some(&json!("block")),
+            "{reason}"
+        );
+    }
 }
