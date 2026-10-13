@@ -283,6 +283,8 @@ fn may_inspect(arguments: &[String]) -> bool {
                         | "hash-object"
                         | "config"
                         | "merge-base"
+                        | "ls-tree"
+                        | "cat-file"
                 )
             }
         }
