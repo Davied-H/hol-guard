@@ -227,27 +227,16 @@ fn claude_permission_prompt_answer(
         None => None,
     };
     // The event is written for every prompt, so every answer needs a
-    // current binding, and a notice row also needs the daemon's key.
+    // current binding. The key travels with that binding. The transaction
+    // looks for a notice after it takes the write lock, so a notice that
+    // lands in between cannot be answered without being marked seen.
     let binding = policy_store
         .admit_direct_binding()
         .map_err(|_| HookDirectDefer::PermissionNotice)?;
-    let present = match session_id {
-        Some(session_id) => crate::local_store_read::claude_permission_notice_present(
-            Path::new(guard_home),
-            session_id,
-        )
-        .map_err(|_| HookDirectDefer::PermissionNotice)?,
-        None => false,
-    };
-    let key = if present {
-        let integrity_key = binding
-            .integrity_key
-            .as_ref()
-            .ok_or(HookDirectDefer::PermissionNotice)?;
-        Some((&integrity_key.key[..], integrity_key.key_id.as_str()))
-    } else {
-        None
-    };
+    let key = binding
+        .integrity_key
+        .as_ref()
+        .map(|integrity_key| (&integrity_key.key[..], integrity_key.key_id.as_str()));
     let store_path = Path::new(guard_home).join("guard.db");
     let now = utc_now_isoformat().ok_or(HookDirectDefer::PermissionNotice)?;
     let tool_name = notification_tool_name(payload);

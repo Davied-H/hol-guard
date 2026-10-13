@@ -233,6 +233,8 @@ struct Env<'a> {
 pub(crate) enum DirectNoticeDefer {
     StoreUnavailable,
     ForeignKey,
+    /// A notice is visible and this binding has no key to mark it seen.
+    UnkeyedNotice,
 }
 
 /// `_peek_claude_permission_notice` followed, when it finds a notice, by
@@ -267,10 +269,11 @@ type PromptEvent<'a> = (&'a str, &'a dyn Fn(Option<&Object>) -> Option<String>);
 /// `_load_claude_permission_notice`, `_mark_claude_pending_permission_prompt_seen`
 /// and the event it always records, in one transaction.
 ///
-/// `key` is `None` when the caller found no notice row for the session, or
-/// the hook names no session: no notice is loaded then, as the daemon finds
-/// none, and only the event is written. `event` renders the event's JSON
-/// text from the loaded notice. Failing to write it defers like a busy store.
+/// `key` is `None` when the binding has no integrity key, or the hook names
+/// no session. A keyed session loads its notice after `BEGIN IMMEDIATE`. A
+/// notice that is visible then, and no key is bound, defers so the daemon
+/// still marks it. `event` renders the event's JSON text from the loaded
+/// notice. Failing to write it defers like a busy store.
 pub(crate) fn claude_permission_prompt_direct(
     store_path: &std::path::Path,
     key: Option<(&[u8], &str)>,
@@ -280,6 +283,31 @@ pub(crate) fn claude_permission_prompt_direct(
     event: PromptEvent<'_>,
 ) -> Result<Option<Map<String, Value>>, DirectNoticeDefer> {
     direct_notice_transaction(store_path, key, now, session_id, tool_name, Some(event))
+}
+
+/// A notice row for this session, read on the transaction's own connection.
+fn unkeyed_notice_present(
+    connection: &Connection,
+    session_id: &str,
+) -> Result<bool, DirectNoticeDefer> {
+    if !crate::local_store_read::table_exists(connection, "sync_state")
+        .map_err(|_| DirectNoticeDefer::StoreUnavailable)?
+    {
+        return Ok(false);
+    }
+    let session_key = format!("claude_permission_notice:{session_id}");
+    connection
+        .query_row(
+            "select exists(select 1 from sync_state \
+               where state_key = ?1 or (state_key >= ?2 and state_key < ?3))",
+            params![
+                session_key,
+                format!("{session_key}:"),
+                format!("{session_key};")
+            ],
+            |row| row.get(0),
+        )
+        .map_err(|_| DirectNoticeDefer::StoreUnavailable)
 }
 
 fn direct_notice_transaction(
@@ -320,6 +348,15 @@ fn direct_notice_transaction(
                 }
             }
             notice
+        }
+        (None, Some(session_id)) => {
+            // Same connection as the write lock, so a notice committed after
+            // any earlier read is visible here and is not answered unseen.
+            if unkeyed_notice_present(&connection, session_id)? {
+                let _ = connection.execute_batch("ROLLBACK");
+                return Err(DirectNoticeDefer::UnkeyedNotice);
+            }
+            None
         }
         _ => None,
     };
