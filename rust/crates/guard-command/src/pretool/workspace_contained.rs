@@ -181,6 +181,7 @@ pub(crate) fn command_shape(
     }
     let mut bootstrap = None;
     let linked = super::worktree_writes::linked_worktree_common_dir(workspace).is_some();
+    let mut cwd_changed = false;
     for (index, segment) in model.segments.iter().enumerate() {
         let executable = segment.executable.as_deref()?;
         if executable.contains('$')
@@ -198,6 +199,11 @@ pub(crate) fn command_shape(
         let name = super::executable_basename(executable);
         // Containment cannot undo an in-workspace write through an existing
         // hard link: its other name may be protected or outside the workspace.
+        // A preceding shell directory change invalidates workspace-relative
+        // destination checks. Refuse cp/touch containment in that case.
+        if cwd_changed && matches!(name, "cp" | "touch") {
+            return None;
+        }
         if links::mutates_linked_destination(name, &segment.arguments, workspace) {
             return None;
         }
@@ -209,6 +215,9 @@ pub(crate) fn command_shape(
                 && !matches!(segment.arguments.as_slice(), [target] if below(target, workspace)))
         {
             return None;
+        }
+        if matches!(name, "cd" | "pushd" | "popd") {
+            cwd_changed = true;
         }
         if PRIVILEGE_DENY.contains(&name)
             && !(name == "chmod" && chmod::plain_mode(&segment.arguments))
