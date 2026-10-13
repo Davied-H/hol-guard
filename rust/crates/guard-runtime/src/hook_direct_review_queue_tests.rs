@@ -126,3 +126,62 @@ fn an_oversized_pause_defers() {
     )
     .is_none());
 }
+
+// The storage gate opens without following links only on Unix.
+#[cfg(unix)]
+const WRITE_VECTORS: &str =
+    include_str!("../testdata/guard_store/approval_request_write_vectors.json");
+
+/// A Guard home with the daemon's store schema and its storage gate.
+#[cfg(unix)]
+fn store_home(tag: &str) -> std::path::PathBuf {
+    let home = crate::guard_store_cmd_vectors_tests::temp_home(tag);
+    let vectors: Value = serde_json::from_str(WRITE_VECTORS).unwrap();
+    let connection = rusqlite::Connection::open(home.join(STORE_FILE_NAME)).unwrap();
+    for statement in vectors["schema_sql"].as_array().unwrap() {
+        connection
+            .execute_batch(statement.as_str().unwrap())
+            .unwrap();
+    }
+    std::fs::write(home.join("storage-access.lock"), b"").unwrap();
+    home
+}
+
+#[cfg(unix)]
+#[test]
+fn the_queue_write_keeps_a_pending_request_for_the_same_action() {
+    let home = store_home("review-queue-write");
+    let guard_home = home.to_string_lossy().into_owned();
+    let payload = Map::new();
+    let binding = ask_binding();
+    let context = Context {
+        harness: "codex",
+        payload: &payload,
+        recorded_payload: &payload,
+        workspace: "/work/space",
+        home_dir: "/home/user",
+        guard_home: &guard_home,
+        binding: &binding,
+    };
+    let vectors: Value = serde_json::from_str(WRITE_VECTORS).unwrap();
+    let request = vectors["scenarios"][0]["request"].clone();
+    assert_eq!(
+        write(&context, "default", request.clone()),
+        Ok("r-new".to_owned())
+    );
+    let mut retry = request;
+    retry["request_id"] = json!("r-retry");
+    retry["approval_url"] = json!("http://127.0.0.1:4781/approvals/r-retry");
+    retry["review_command"] = json!("hol-guard approvals approve r-retry");
+    assert_eq!(write(&context, "default", retry), Ok("r-new".to_owned()));
+    let connection = rusqlite::Connection::open(home.join(STORE_FILE_NAME)).unwrap();
+    let (rows, dedupe_count): (i64, i64) = connection
+        .query_row(
+            "select count(*), max(dedupe_count) from approval_requests",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!((rows, dedupe_count), (1, 2));
+    std::fs::remove_dir_all(home).ok();
+}

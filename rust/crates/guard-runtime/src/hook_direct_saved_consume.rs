@@ -8,8 +8,9 @@
 //! `_native_review_launch_target` (`hook_native_review_approval.py`). The
 //! resident runs the same `consume_native_review_approval` store operation the
 //! daemon asks it for, under the same shared storage gate, and answers only
-//! when it spent an approval. Every other outcome defers, so the daemon still
-//! queues the review.
+//! when it spent an approval. With no approval to spend, the resident queues
+//! the review itself (`hook_direct_review_queue.rs`); every other outcome
+//! defers to the daemon.
 
 use super::query::{self, pre_tool_command, pre_tool_input, strip};
 use super::{render, Context, HookDirectDefer};
