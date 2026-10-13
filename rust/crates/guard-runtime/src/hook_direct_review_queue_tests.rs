@@ -14,11 +14,19 @@ fn ask_binding() -> DirectLaneBinding {
 
 /// `Some(asks_for_approval)` when the resident queues the review.
 fn queued(harness: &str, binding: &DirectLaneBinding, result: &Value) -> Option<bool> {
-    let payload = Map::new();
+    queued_payload(harness, binding, result, &Map::new())
+}
+
+fn queued_payload(
+    harness: &str,
+    binding: &DirectLaneBinding,
+    result: &Value,
+    payload: &Map<String, Value>,
+) -> Option<bool> {
     let context = Context {
         harness,
-        payload: &payload,
-        recorded_payload: &payload,
+        payload,
+        recorded_payload: payload,
         workspace: "/work",
         home_dir: "/home/user",
         guard_home: "/home/user/.hol-guard",
@@ -36,9 +44,20 @@ fn only_a_fully_published_home_queues() {
     // spelling `_native_review_artifact_id` would keep stays with the daemon.
     assert_eq!(queued(CLAUDE_CODE, &binding, &review), Some(true));
     assert_eq!(queued("Claude_Code", &binding, &review), None);
-    // The daemon may settle a package review before it queues anything.
-    let package = json!({"reason_code": PACKAGE_REVIEW_REASON});
-    assert_eq!(queued("codex", &binding, &package), None);
+    // A package review without a command is left to the queue; an npm
+    // install the daemon may settle stays with it, except on Windows.
+    let package =
+        json!({"reason_code": package::PACKAGE_REVIEW_REASON, "minimum_action": "review"});
+    assert_eq!(queued("codex", &binding, &package), Some(true));
+    let install = json!({
+        "tool_input": {"command": "npm install left-pad"},
+        "guard_execution_environment": {"path": "/usr/bin", "environment_names": []},
+    });
+    let install = install.as_object().unwrap();
+    assert_eq!(
+        queued_payload("codex", &binding, &package, install),
+        cfg!(windows).then_some(true)
+    );
     let mut safe_alternative = ask_binding();
     safe_alternative.review.blocked_request_mode = Some("safe-alternative".to_owned());
     assert_eq!(queued("codex", &safe_alternative, &review), Some(false));
