@@ -286,7 +286,12 @@ pub fn compatibility_observations_with_context(
                 };
                 git::observe_with_contexts(segment, index, &mut result, context, proof_context)
             }
-            "gh" => github::observe(segment, index, &mut result),
+            "gh" => {
+                // A trailing `2>&1` only joins gh's stderr to its own stdout;
+                // every other redirect stays an argument the grammar rejects.
+                let stripped = crate::pretool::without_stderr_merge(segment);
+                github::observe(stripped.as_ref().unwrap_or(segment), index, &mut result)
+            }
             _ => {}
         }
         domains::observe(command, segment, index, &mut result, context);

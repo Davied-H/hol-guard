@@ -22,9 +22,15 @@ const MAX_TOOLCHAIN_FILE_BYTES: u64 = 4096;
 const TOOLCHAIN_KEYS: [&str; 4] = ["channel", "components", "targets", "profile"];
 
 pub(super) fn safe_version_probe(arguments: &[String], context: super::PathContext<'_>) -> bool {
-    if !matches!(arguments, [flag] if matches!(flag.as_str(), "--version" | "-V"))
-        || !context.rustup_override_absent
-    {
+    matches!(arguments, [flag] if matches!(flag.as_str(), "--version" | "-V"))
+        && proxy_selects_official_toolchain(context)
+}
+
+/// Whether the rustup proxy started from the working directory can only pick
+/// an official toolchain: no override in the environment and no toolchain
+/// file above the directory that could select another binary.
+pub(super) fn proxy_selects_official_toolchain(context: super::PathContext<'_>) -> bool {
+    if !context.rustup_override_absent {
         return false;
     }
     let Some(cwd) = context.cwd.map(Path::new) else {
