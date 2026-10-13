@@ -39,15 +39,22 @@ pub(super) const CREDENTIAL_STORE_NAMES: [&str; 20] = [
     ".vault-token",
 ];
 
-/// Credential, password-manager, keyring and browser-profile stores kept
-/// directly below `~/.config` or `~/.local/share`.
-const NESTED_CREDENTIAL_STORE_NAMES: [&str; 15] = [
+/// Harness directories that share skills, rules or Git hooks rather than an
+/// agent login. Every other harness directory (`~/.gemini`, `~/.omp`,
+/// `~/.copilot`) may hold login tokens and session files, so it keeps review
+/// like `~/.codex` and `~/.claude`.
+const HARNESS_SHARED_NAMES: [&str; 5] = [".agent", ".agents", ".clinerules", ".githooks", ".husky"];
+
+/// Credential, password-manager, keyring, browser-profile and agent-login
+/// stores kept directly below `~/.config` or `~/.local/share`.
+const NESTED_CREDENTIAL_STORE_NAMES: [&str; 17] = [
     "1password",
     "bravesoftware",
     "chromium",
     "doctl",
     "gcloud",
     "gh",
+    "github-copilot",
     "gnupg",
     "google-chrome",
     "gopass",
@@ -55,6 +62,7 @@ const NESTED_CREDENTIAL_STORE_NAMES: [&str; 15] = [
     "keyrings",
     "microsoft-edge",
     "op",
+    "opencode",
     "password-store",
     "solana",
 ];
@@ -146,7 +154,13 @@ fn clears_store_screen(path: &Path) -> bool {
         let config_child =
             parent == Some(".config") || (parent == Some("share") && grandparent == Some(".local"));
         CREDENTIAL_STORE_NAMES.contains(&name.as_str())
+            || harness_login_store(name)
             || name.starts_with(".env")
             || (config_child && NESTED_CREDENTIAL_STORE_NAMES.contains(&name.as_str()))
     })
+}
+
+fn harness_login_store(name: &str) -> bool {
+    crate::harness_config_names::HARNESS_DIRECTORIES.contains(&name)
+        && !HARNESS_SHARED_NAMES.contains(&name)
 }
