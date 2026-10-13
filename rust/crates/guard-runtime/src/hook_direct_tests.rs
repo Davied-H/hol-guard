@@ -719,7 +719,7 @@ fn a_codex_prompt_is_answered_in_either_posture() {
         let result = run(&reviewed, prompt_payload(&reviewed));
         assert_eq!(result["outcome"], "answer", "{label}: {result}");
         assert_eq!(result["edge"]["event_name"], "UserPromptSubmit", "{label}");
-        let page = drain(&reviewed);
+        let page = drain(&reviewed, None);
         let record = &page["records"][0];
         assert_eq!(record["event"], "UserPromptSubmit", "{label}");
         assert_eq!(record["receipt"], result["edge"]["receipt"], "{label}");
@@ -738,7 +738,7 @@ fn a_claude_code_prompt_is_answered_only_in_watch() {
         )),
         "direct_hook_prompt_notice"
     );
-    assert_eq!(drain(&enforced)["records"], json!([]));
+    assert_eq!(drain(&enforced, None)["records"], json!([]));
     let watch = lane(
         "prompt-claude-watch",
         json!({ "harness_postures": { "claude-code": "watch" } }),
