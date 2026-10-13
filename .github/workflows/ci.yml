@@ -180,9 +180,10 @@ jobs:
 
       - uses: ./.github/actions/setup-rust
         with:
-          # Separate dependency artifacts per package shard: cargo feature sets
-          # differ, so sharing a writer key prevents the other shards warming.
-          cache-key: ci-workspace-${{ matrix.check }}
+          # Package families use distinct caches because Cargo feature sets
+          # differ. A pair's hash:1/2 and hash:2/2 jobs compile IDENTICAL targets;
+          # only Nextest execution differs, so both halves reuse that cache.
+          cache-key: ci-workspace-${{ matrix.check == 'test-command-2' && 'test' || matrix.check == 'test-runtime-2' && 'test-runtime' || matrix.check }}
           components: clippy
       - name: Install content-addressed compiler cache
         if: matrix.check != 'clippy'
