@@ -312,12 +312,13 @@ fn answer(
         POST_TOOL_USE => post_tool_answer(&edge)?,
         _ => prompt_answer(&edge, prompt_notice)?,
     };
-    if let Some(rule_payload) =
-        rule_payload.filter(|_| answered["result"]["minimum_action"].as_str() == Some("allow"))
-    {
-        if local_cli::may_meet_custom_rule(&rule_payload, &workspace, &request_home) {
-            return Err(HookDirectDefer::LocalCliRules);
-        }
+    if local_cli::defers_for_custom_rule(
+        &answered,
+        rule_payload.as_ref(),
+        &workspace,
+        &request_home,
+    ) {
+        return Err(HookDirectDefer::LocalCliRules);
     }
     let evidence = json!({
         "event": event,
@@ -359,8 +360,6 @@ fn reviewed_edge(edge: &[u8], event: &str) -> Result<Value, HookDirectDefer> {
 ///   the edge's harness response. A saved approval never lowers a terminal
 ///   action, and the daemon checks custom block rules only against an allow.
 fn pre_tool_answer(edge: &[u8], contained: bool) -> Result<Value, HookDirectDefer> {
-    #[cfg(test)]
-    eprintln!("EDGE {}", String::from_utf8_lossy(edge));
     let parsed = reviewed_edge(edge, PRE_TOOL_USE)?;
     let result = parsed.get("result");
     let field = |name: &str| {

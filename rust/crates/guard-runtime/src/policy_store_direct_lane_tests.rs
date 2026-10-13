@@ -6,9 +6,7 @@ use super::{
     observe_input, DirectLaneDefer, DIRECT_LANE_ACK_DIRECTORY, DIRECT_LANE_ACK_FILE_NAME,
     DIRECT_LANE_ACK_SCHEMA,
 };
-use guard_policy_snapshot::{
-    EffectiveNativePolicyV3, PolicySnapshotV3, POLICY_SNAPSHOT_PUSH_SCHEMA,
-};
+use guard_policy_snapshot::{PolicySnapshotV3, POLICY_SNAPSHOT_PUSH_SCHEMA};
 use serde_json::{json, Value};
 use std::fs;
 use std::io::Write;
@@ -29,29 +27,22 @@ impl Drop for Fixture {
 }
 
 pub(crate) fn fixture(label: &str) -> Fixture {
-    open_fixture(label, None)
+    open_fixture(label, false)
 }
 
 /// Same fixture with an allow default, so a native allow is not raised to warn.
 pub(crate) fn allowing_fixture(label: &str) -> Fixture {
-    open_fixture(label, Some(policy_with_default("allow")))
+    open_fixture(label, true)
 }
 
-/// An allow-default fixture that also trusts unknown publishers, so the edge
-/// allows a launch of a local CLI it has not seen before.
-pub(crate) fn publisher_trusting_fixture(label: &str) -> Fixture {
-    let mut policy = policy_with_default("allow");
-    policy.unknown_publisher_action = "allow".into();
-    open_fixture(label, Some(policy))
-}
-
-fn open_fixture(label: &str, policy: Option<EffectiveNativePolicyV3>) -> Fixture {
+fn open_fixture(label: &str, allow_default: bool) -> Fixture {
     let root = test_root(&format!("direct-lane-{label}"));
     let key = install_test_key(&root, 9);
     let store = PolicySnapshotStore::new(&root, &"a".repeat(64)).unwrap();
-    let snapshot = match policy {
-        Some(policy) => signed_snapshot_with_policy(1, &key, &root, policy),
-        None => signed_snapshot(1, &key, &root),
+    let snapshot = if allow_default {
+        signed_snapshot_with_policy(1, &key, &root, policy_with_default("allow"))
+    } else {
+        signed_snapshot(1, &key, &root)
     };
     let input = root.join("config.toml");
     fs::write(&input, b"mode = \"enforce\"\n").unwrap();

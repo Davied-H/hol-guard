@@ -3,8 +3,7 @@ use super::{
     pre_tool_answer, prompt_answer, workspace_candidate, HookDirectDefer, HookDirectRequestV1,
 };
 use crate::policy_store::policy_store_direct_lane::tests::{
-    allowing_fixture, binding, fixture, publisher_trusting_fixture, push, write_current_ack,
-    Fixture,
+    allowing_fixture, binding, fixture, push, write_current_ack, Fixture,
 };
 use crate::policy_store::policy_store_direct_lane::DirectLaneDefer;
 use serde_json::{json, Map, Value};
@@ -299,19 +298,6 @@ fn open_lane(label: &str, extra: Value, allow_policy: bool) -> Lane {
     } else {
         fixture(&format!("hook-direct-{label}"))
     };
-    lane_on(fixture, extra)
-}
-
-/// A lane whose edge allows a first launch of a local CLI, which an
-/// unknown publisher would otherwise send to review.
-fn trusting_lane(label: &str, extra: Value) -> Lane {
-    lane_on(
-        publisher_trusting_fixture(&format!("hook-direct-{label}")),
-        extra,
-    )
-}
-
-fn lane_on(fixture: Fixture, extra: Value) -> Lane {
     let directory = fixture.root.join("repo");
     fs::create_dir_all(&directory).unwrap();
     let workspace = fs::canonicalize(&directory)
@@ -468,23 +454,21 @@ fn package_script_payload(lane: &Lane) -> Value {
 }
 
 #[test]
-fn custom_rules_defer_only_a_command_that_launches_a_local_cli() {
-    let open = trusting_lane("cli-open", json!({}));
-    let launched = run(&open, package_script_payload(&open));
-    assert_eq!(launched["outcome"], "answer", "{launched}");
-
-    let rules = trusting_lane("cli-rules", json!({ "local_cli_block_rules": true }));
+fn custom_rules_still_answer_a_command_that_launches_no_local_cli() {
+    let rules = allowing_lane("cli-rules", json!({ "local_cli_block_rules": true }));
     // `pwd` launches no local CLI, so no custom rule can block it.
     assert_eq!(run(&rules, allowed_payload(&rules))["outcome"], "answer");
+    // The edge reviews a launch it cannot prove benign, so the daemon
+    // renders that verdict whether or not a rule names the CLI.
     assert_eq!(
         deferred(&run(&rules, package_script_payload(&rules))),
-        "direct_hook_local_cli_rules"
+        "direct_hook_not_allow"
     );
 }
 
 #[test]
-fn a_block_rule_saved_after_the_publish_defers() {
-    let lane = trusting_lane("stored-rules", json!({}));
+fn a_block_rule_saved_after_the_publish_still_answers_a_command_without_a_cli() {
+    let lane = allowing_lane("stored-rules", json!({}));
     let store = lane.fixture.root.join("guard.db");
     let connection = rusqlite::Connection::open(&store).unwrap();
     connection
@@ -497,8 +481,7 @@ fn a_block_rule_saved_after_the_publish_defers() {
              insert into local_cli_command_grant values ('cli', 'run', 'allow');",
         )
         .unwrap();
-    let launched = run(&lane, package_script_payload(&lane));
-    assert_eq!(launched["outcome"], "answer", "{launched}");
+    assert_eq!(run(&lane, allowed_payload(&lane))["outcome"], "answer");
     for statement in [
         "update local_cli_command_grant set state = 'block'",
         "update local_cli_command_grant set state = 'allow'; \
@@ -506,8 +489,8 @@ fn a_block_rule_saved_after_the_publish_defers() {
     ] {
         connection.execute_batch(statement).unwrap();
         assert_eq!(
-            deferred(&run(&lane, package_script_payload(&lane))),
-            "direct_hook_local_cli_rules",
+            run(&lane, allowed_payload(&lane))["outcome"],
+            "answer",
             "{statement}"
         );
     }
@@ -893,34 +876,4 @@ fn a_claude_code_prompt_without_a_notice_is_answered_in_either_posture() {
         let page = drain(&reviewed, None);
         assert_eq!(page["records"][0]["harness"], "claude-code", "{label}");
     }
-}
-
-#[test]
-fn probe_local_cli_edge_temporary() {
-    let open = trusting_lane("cli-probe", json!({}));
-    let root = std::path::Path::new(&open.workspace);
-    fs::create_dir_all(root.join("bin")).unwrap();
-    fs::write(root.join("x.py"), b"print(1)\n").unwrap();
-    fs::write(root.join("bin/tool.sh"), b"#!/bin/sh\necho hi\n").unwrap();
-    use std::os::unix::fs::PermissionsExt;
-    fs::set_permissions(root.join("bin/tool.sh"), fs::Permissions::from_mode(0o755)).unwrap();
-    package_script_payload(&open);
-    for command in [
-        "npm run build",
-        "python3 x.py",
-        "./bin/tool.sh",
-        "npx wrangler deploy",
-    ] {
-        eprintln!("COMMAND {command}");
-        run(
-            &open,
-            json!({
-                "hook_event_name": "PreToolUse",
-                "tool_name": "Bash",
-                "tool_input": { "command": command },
-                "cwd": open.workspace,
-            }),
-        );
-    }
-    panic!("PROBE done");
 }

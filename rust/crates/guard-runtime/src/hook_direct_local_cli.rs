@@ -24,6 +24,21 @@ const COMMAND_FIELDS: [&str; 4] = ["command", "cmd", "shell_command", "shellComm
 /// The budget the daemon gives the resident for one identity derivation.
 const IDENTIFY_BUDGET_MS: u64 = 2_000;
 
+/// Whether a custom rule check must send `answered` to the daemon. The
+/// daemon checks its rules only against a `PreToolUse` the edge allowed
+/// outright, so any other answer, or a hook without rules, stands.
+pub(super) fn defers_for_custom_rule(
+    answered: &Value,
+    rule_payload: Option<&Map<String, Value>>,
+    workspace: &str,
+    home_dir: &str,
+) -> bool {
+    rule_payload.is_some_and(|payload| {
+        answered["result"]["minimum_action"].as_str() == Some("allow")
+            && may_meet_custom_rule(payload, workspace, home_dir)
+    })
+}
+
 /// `false` only when the command provably launches no local CLI a custom
 /// rule could name. A command without text or a launch directory matches no
 /// rule, as on the daemon path.

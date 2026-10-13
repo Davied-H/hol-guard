@@ -1,4 +1,4 @@
-use super::{launch_cwd, may_meet_custom_rule, pre_tool_command};
+use super::{defers_for_custom_rule, launch_cwd, may_meet_custom_rule, pre_tool_command};
 use serde_json::{json, Map, Value};
 use std::fs;
 
@@ -68,4 +68,43 @@ fn only_a_command_with_a_local_cli_may_meet_a_rule() {
         "cwd": format!("{workspace}/absent"),
     }));
     assert!(!may_meet_custom_rule(&elsewhere, &workspace, &workspace));
+}
+
+#[test]
+fn only_an_allowed_launch_under_rules_defers() {
+    // The edge reviews every local CLI launch it cannot prove benign, so this
+    // gate is reached only by a launch a later edge allows outright.
+    let workspace = scratch("gate");
+    fs::write(
+        format!("{workspace}/package.json"),
+        br#"{"name": "demo", "scripts": {"build": "tsc"}}"#,
+    )
+    .unwrap();
+    let launch = object(json!({ "tool_input": { "command": "npm run build" } }));
+    let benign = object(json!({ "tool_input": { "command": "pwd" } }));
+    let answer = |action: &str| json!({ "result": { "minimum_action": action } });
+    assert!(defers_for_custom_rule(
+        &answer("allow"),
+        Some(&launch),
+        &workspace,
+        &workspace
+    ));
+    assert!(!defers_for_custom_rule(
+        &answer("allow"),
+        Some(&benign),
+        &workspace,
+        &workspace
+    ));
+    assert!(!defers_for_custom_rule(
+        &answer("warn"),
+        Some(&launch),
+        &workspace,
+        &workspace
+    ));
+    assert!(!defers_for_custom_rule(
+        &answer("allow"),
+        None,
+        &workspace,
+        &workspace
+    ));
 }
