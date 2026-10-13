@@ -12,7 +12,7 @@ def test_macos_gates_require_every_disjoint_shard():
     workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
     job = workflow["jobs"]["macos-gates"]
     indices = job["strategy"]["matrix"]["shard-index"]
-    assert indices == list(range(4))
+    assert indices == list(range(3))
     assert job["strategy"]["fail-fast"] is False
     assert job["timeout-minutes"] == 30
     assert "macos-gates" in workflow["jobs"]["required"]["needs"]
