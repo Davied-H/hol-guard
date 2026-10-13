@@ -1,6 +1,6 @@
 use super::{
-    answered_response, bounded_direct_request, direct_event, direct_request, parse_hook_query,
-    HookQuery, CLAUDE_CODE, CODEX,
+    answered_response, bounded_direct_request, direct_event, direct_request, harness_event,
+    parse_hook_query, HookQuery, CLAUDE_CODE, CODEX,
 };
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
@@ -320,5 +320,19 @@ fn lifecycle_hooks_reach_the_resident_and_permission_hooks_do_not() {
         "beforeSubmitPrompt",
     ] {
         assert!(!direct_event(event), "{event}");
+    }
+}
+
+#[test]
+fn only_claude_code_asks_the_resident_about_its_permission_dialog() {
+    assert!(harness_event(&CLAUDE_CODE, "PermissionRequest"));
+    assert!(harness_event(&CLAUDE_CODE, "Stop"));
+    assert!(!harness_event(&CODEX, "PermissionRequest"));
+    for event in [
+        "permission_request_v2",
+        "Notification",
+        "copilotPermissionRequest",
+    ] {
+        assert!(!harness_event(&CLAUDE_CODE, event), "{event}");
     }
 }
