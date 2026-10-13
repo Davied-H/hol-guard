@@ -37,6 +37,8 @@ mod reach;
 mod removal;
 #[path = "workspace_contained_settings.rs"]
 mod settings;
+#[path = "workspace_contained_sibling.rs"]
+mod sibling;
 
 pub(super) use keeps_work::keeping_arguments;
 pub(super) use settings::carry_settings;
@@ -411,9 +413,24 @@ pub(super) fn convert(
     {
         return;
     }
-    let Some(workspace) = workspace_admissible(Path::new(cwd), context.home_dir.map(Path::new))
+    // After `cd <sibling root> &&` the sink runs the rest from that root, so
+    // the rest is checked with the root as its workspace and working directory.
+    let sibling = sibling::sibling_list(model, context);
+    let root = match &sibling {
+        Some((root, _)) => root.to_str(),
+        None => Some(cwd),
+    };
+    let Some(root) = root else {
+        return;
+    };
+    let Some(workspace) = workspace_admissible(Path::new(root), context.home_dir.map(Path::new))
     else {
         return;
+    };
+    let shaped = sibling.as_ref().map_or(model, |(_, rest)| rest);
+    let context = PathContext {
+        cwd: Some(root),
+        ..context
     };
     // Installs, one-shot executions and lockfile syncs stay with supply-chain
     // admission even when the verb check above missed their spelling.
@@ -440,7 +457,12 @@ pub(super) fn convert(
             )
         })
         .is_none()
-        || command_shape(model, &workspace, command_text).is_none()
+        || command_shape(
+            shaped,
+            &workspace,
+            command_text.filter(|_| sibling.is_none()),
+        )
+        .is_none()
         || removal::destroys_workspace(result, model, &workspace)
         || removal::loses_work(result, model, context, execution_environment)
     {
