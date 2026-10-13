@@ -161,3 +161,24 @@ fn a_leading_redirection_cannot_hide_the_command_word() {
         assert_eq!(super::for_loop_unroll::unroll(command), None, "{command}");
     }
 }
+
+#[test]
+fn a_loop_variable_the_shell_or_children_read_is_not_unrolled() {
+    for name in [
+        "PATH",
+        "HOME",
+        "IFS",
+        "LD_PRELOAD",
+        "Path",
+        "path",
+        "fpath",
+        "http_proxy",
+        "_",
+    ] {
+        let command = format!("for {name} in /tmp/x; do ls; done");
+        assert_eq!(super::for_loop_unroll::unroll(&command), None, "{command}");
+    }
+    assert!(
+        super::for_loop_unroll::unroll("for file_1 in a b; do wc -l \"$file_1\"; done").is_some()
+    );
+}

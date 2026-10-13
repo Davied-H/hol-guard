@@ -15,6 +15,26 @@ const CONTROL_WORDS: &[&str] = &[
     "if", "in", "select", "then", "time", "until", "while",
 ];
 
+/// zsh ties these lowercase names to `PATH` and friends or to shell state, so
+/// binding one changes how the body runs.
+const SHELL_SPECIAL_NAMES: &[&str] = &[
+    "_",
+    "argv",
+    "cdpath",
+    "fignore",
+    "fpath",
+    "histchars",
+    "mailpath",
+    "manpath",
+    "module_path",
+    "path",
+    "pipestatus",
+    "psvar",
+    "signals",
+    "status",
+    "watch",
+];
+
 /// The unrolled command text for a top-level `for NAME in WORD...; do BODY; done`
 /// over literal words, or `None` when the command is anything else.
 pub(super) fn unroll(command: &str) -> Option<String> {
@@ -27,7 +47,7 @@ pub(super) fn unroll(command: &str) -> Option<String> {
     let (prefix, rest) = cd_prefix(command.trim())?;
     let rest = keyword(rest, "for")?;
     let (name, rest) = next_word(rest)?;
-    if !valid_identifier(name) {
+    if !valid_identifier(name) || !ordinary_loop_name(name) {
         return None;
     }
     let rest = keyword(rest, "in")?;
@@ -458,4 +478,15 @@ fn redirect_tail(tail: &str) -> Option<String> {
         }
     }
     Some(tail.to_owned())
+}
+
+/// A loop variable must not be one the shell or child processes read. An
+/// uppercase name such as `PATH`, `HOME`, `IFS` or `LD_PRELOAD` can be an
+/// exported variable, and `*_proxy` names are lowercase environment variables,
+/// so binding either changes what the unrolled body would run.
+fn ordinary_loop_name(name: &str) -> bool {
+    name.bytes()
+        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
+        && !name.ends_with("_proxy")
+        && !SHELL_SPECIAL_NAMES.contains(&name)
 }
