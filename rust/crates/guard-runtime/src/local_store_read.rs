@@ -128,12 +128,33 @@ pub(crate) fn column_exists(
 /// How long a hook-path probe waits on a writer before giving up.
 const HOOK_PROBE_BUSY_TIMEOUT_MS: u64 = 50;
 
-/// Whether a custom command-line block rule exists, answered the way
-/// `GuardStore.has_local_cli_block_rules` answers it. A missing store or
-/// table holds no rule, since the daemon would create the table empty.
-pub(crate) fn local_cli_block_rules_exist(guard_home: &Path) -> Result<bool, StoreReadError> {
+/// What the daemon reads from the store before a hook reaches the edge.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct HookStoreProbe {
+    /// A custom command-line block rule exists, answered the way
+    /// `GuardStore.has_local_cli_block_rules` answers it.
+    pub(crate) local_cli_block_rules: bool,
+    /// The hook belongs to an app Guard is not protecting, answered the way
+    /// `_hook_harness_is_unmanaged` answers it, so the daemon passes it
+    /// through. A manifest the daemon could not parse counts as unmanaged
+    /// here, while the daemon would review it: that only sends the hook to
+    /// the daemon.
+    pub(crate) harness_unmanaged: bool,
+}
+
+/// Read the store state the daemon checks for one hook of `harness`. A
+/// missing store or table holds no rule and no managed install, since the
+/// daemon would create them empty.
+pub(crate) fn hook_store_probe(
+    guard_home: &Path,
+    harness: &str,
+) -> Result<HookStoreProbe, StoreReadError> {
+    let mut probe = HookStoreProbe {
+        local_cli_block_rules: false,
+        harness_unmanaged: false,
+    };
     let Some(connection) = open_read_only(&guard_home.join(STORE_FILE_NAME))? else {
-        return Ok(false);
+        return Ok(probe);
     };
     connection
         .busy_timeout(std::time::Duration::from_millis(HOOK_PROBE_BUSY_TIMEOUT_MS))
@@ -148,15 +169,27 @@ pub(crate) fn local_cli_block_rules_exist(guard_home: &Path) -> Result<bool, Sto
             "select exists(select 1 from local_cli_command_grant where state = 'block')",
         ),
     ] {
-        if !table_exists(&connection, table)? {
+        if probe.local_cli_block_rules || !table_exists(&connection, table)? {
             continue;
         }
-        let found: bool = connection
+        probe.local_cli_block_rules = connection
             .query_row(query, [], |row| row.get(0))
             .map_err(|_| StoreReadError::StoreUnavailable)?;
-        if found {
-            return Ok(true);
-        }
     }
-    Ok(false)
+    if table_exists(&connection, "managed_installs")? {
+        // Its own row decides; without one, another app's active install
+        // means this app's hooks are leftovers.
+        probe.harness_unmanaged = connection
+            .query_row(
+                "select case \
+                   when exists(select 1 from managed_installs where harness = ?1) \
+                     then exists(select 1 from managed_installs where harness = ?1 and active = 0) \
+                   else exists(select 1 from managed_installs where harness <> ?1 and active <> 0) \
+                 end",
+                params![harness],
+                |row| row.get(0),
+            )
+            .map_err(|_| StoreReadError::StoreUnavailable)?;
+    }
+    Ok(probe)
 }
