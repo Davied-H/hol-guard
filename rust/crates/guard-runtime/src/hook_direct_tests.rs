@@ -363,9 +363,12 @@ fn request_shapes_the_daemon_must_handle_defer() {
         deferred(&run(&lane, reference)),
         "direct_hook_payload_unsupported"
     );
-    let mut stop = allowed_payload(&lane);
-    stop["hook_event_name"] = json!("Stop");
-    assert_eq!(deferred(&run(&lane, stop)), "direct_hook_event_unsupported");
+    let mut permission = allowed_payload(&lane);
+    permission["hook_event_name"] = json!("PermissionRequest");
+    assert_eq!(
+        deferred(&run(&lane, permission)),
+        "direct_hook_event_unsupported"
+    );
     let mut environment = allowed_payload(&lane);
     environment["guard_execution_environment"] = json!("PATH=/bin");
     assert_eq!(
@@ -394,7 +397,7 @@ fn request_shapes_the_daemon_must_handle_defer() {
 fn other_harnesses_and_homes_defer() {
     let lane = lane("harness", json!({}));
     let mut request = HookDirectRequestV1 {
-        harness: "zcode".to_owned(),
+        harness: "gemini".to_owned(),
         guard_home: lane.fixture.root.to_str().unwrap().to_owned(),
         home_dir: Some(HOME.to_owned()),
         workspace: None,
@@ -775,9 +778,9 @@ fn an_answer_queues_the_evidence_the_daemon_records() {
 #[test]
 fn a_deferred_hook_queues_no_evidence() {
     let lane = lane("deferred-evidence", json!({}));
-    let mut stop = allowed_payload(&lane);
-    stop["hook_event_name"] = json!("Stop");
-    deferred(&run(&lane, stop));
+    let mut permission = allowed_payload(&lane);
+    permission["hook_event_name"] = json!("PermissionRequest");
+    deferred(&run(&lane, permission));
     assert_eq!(drain(&lane, None)["records"], json!([]));
 }
 
@@ -793,15 +796,25 @@ fn a_bounded_harness_hook_is_answered_as_codex_is() {
         record["harness_response"],
         result["edge"]["harness_response"]
     );
-    // The daemon routes a ZCode hook through its containment step.
-    let contained = allowing_lane("bounded-zcode", json!({}));
-    deferred(&run_as(
-        &contained,
-        "zcode",
-        Some(HOME),
-        allowed_payload(&contained),
-    ));
-    assert_eq!(drain(&contained, None)["records"], json!([]));
+    // A ZCode allow passes the daemon's containment step unchanged.
+    let zcode = allowing_lane("bounded-zcode", json!({}));
+    let result = run_as(&zcode, "zcode", Some(HOME), allowed_payload(&zcode));
+    assert_eq!(result["outcome"], "answer", "{result}");
+    let page = drain(&zcode, None);
+    assert_eq!(page["records"][0]["harness"], "zcode");
+    assert_eq!(
+        page["records"][0]["harness_response"],
+        result["edge"]["harness_response"]
+    );
+    let grok = allowing_lane("bounded-grok", json!({}));
+    let result = run_as(&grok, "grok", Some(HOME), allowed_payload(&grok));
+    assert_eq!(result["outcome"], "answer", "{result}");
+    let page = drain(&grok, None);
+    assert_eq!(page["records"][0]["harness"], "grok");
+    assert_eq!(
+        page["records"][0]["harness_response"],
+        result["edge"]["harness_response"]
+    );
 }
 
 #[test]
@@ -1001,3 +1014,6 @@ fn a_claude_code_prompt_without_a_notice_is_answered_in_either_posture() {
         assert_eq!(page["records"][0]["harness"], "claude-code", "{label}");
     }
 }
+
+#[path = "hook_direct_lifecycle_tests.rs"]
+mod lifecycle;

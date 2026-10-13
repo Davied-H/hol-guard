@@ -1,10 +1,10 @@
 use super::{
-    answered_response, bounded_direct_request, direct_request, parse_hook_query, HookQuery,
-    CLAUDE_CODE, CODEX,
+    answered_response, bounded_direct_request, direct_event, direct_request, grok_direct_answer,
+    grok_direct_request, parse_hook_query, HookQuery, CLAUDE_CODE, CODEX,
 };
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 fn query(guard_home: Option<&str>, home: Option<&str>, workspace: Option<&str>) -> HookQuery {
     HookQuery {
@@ -174,7 +174,7 @@ fn a_bounded_hook_asks_under_the_daemons_own_homes() {
             .map(|bytes| serde_json::from_slice::<Value>(&bytes).unwrap())
     };
     for harness in [
-        "copilot", "kimi", "devin", "openclaw", "hermes", "cline", "opencode",
+        "copilot", "kimi", "devin", "zcode", "openclaw", "hermes", "cline", "opencode",
     ] {
         assert_eq!(
             built(harness, &homes.guard_home).unwrap(),
@@ -190,8 +190,8 @@ fn a_bounded_hook_asks_under_the_daemons_own_homes() {
             "{harness}"
         );
     }
-    // ZCode routes sandbox requirements and Grok runs its own client.
-    for harness in ["zcode", "grok", "codex", "cursor", "unknown"] {
+    // Grok runs its own client, which asks with `grok_direct_request`.
+    for harness in ["grok", "codex", "cursor", "unknown"] {
         assert_eq!(built(harness, &homes.guard_home), None, "{harness}");
     }
     // The daemon would name a guard home spelled another way as written.
@@ -208,6 +208,54 @@ fn a_bounded_hook_asks_under_the_daemons_own_homes() {
         bounded_direct_request("kimi", &homes.guard_home, "[]", Duration::from_millis(1)),
         None
     );
+}
+
+#[test]
+fn a_grok_hook_asks_with_the_home_the_daemon_keeps() {
+    let homes = homes("grok");
+    let built = |guard_home: &Path, home: &str| {
+        grok_direct_request(guard_home, home, PAYLOAD, Duration::from_millis(300))
+            .map(|bytes| serde_json::from_slice::<Value>(&bytes).unwrap())
+    };
+    let mut expected = json!({
+        "operation": "hook_direct",
+        "request": {
+            "harness": "grok",
+            "guard_home": text(&homes.guard_home),
+            "deadline_budget_ms": 300,
+            "payload": {"hook_event_name": "PreToolUse", "tool_name": "Bash"},
+        },
+    });
+    // The daemon drops a blank `home` and uses its own.
+    assert_eq!(built(&homes.guard_home, "").unwrap(), expected);
+    expected["request"]["home_dir"] = json!(text(&homes.home));
+    assert_eq!(
+        built(&homes.guard_home, &format!(" {}/ ", text(&homes.home))).unwrap(),
+        expected
+    );
+    let linked = homes.root.join("linked");
+    std::os::unix::fs::symlink(&homes.home, &linked).unwrap();
+    for (guard_home, home) in [
+        (homes.guard_home.clone(), text(&homes.root).to_owned()),
+        (homes.guard_home.clone(), "user".to_owned()),
+        (homes.guard_home.clone(), " ".to_owned()),
+        (
+            homes.guard_home.clone(),
+            format!("{}/missing", text(&homes.home)),
+        ),
+        (linked.join(".hol-guard"), text(&homes.home).to_owned()),
+    ] {
+        assert_eq!(built(&guard_home, &home), None, "{home}");
+    }
+    // A prompt is prepared by the daemon, and a permission request is its own.
+    let deadline = Instant::now() + Duration::from_secs(1);
+    for event in ["UserPromptSubmit", "PermissionRequest", "Notification"] {
+        assert_eq!(
+            grok_direct_answer(&homes.guard_home, "", event, PAYLOAD, deadline),
+            None,
+            "{event}"
+        );
+    }
 }
 
 #[test]
@@ -297,4 +345,28 @@ fn a_hook_without_a_home_leaves_the_resident_the_daemon_home() {
         built(&homes, &query, PAYLOAD).unwrap()["request"]["harness"],
         "codex"
     );
+}
+
+#[test]
+fn lifecycle_hooks_reach_the_resident_and_permission_hooks_do_not() {
+    for event in [
+        "PreToolUse",
+        "PostToolUse",
+        "UserPromptSubmit",
+        "Stop",
+        "SessionStart",
+        "TaskComplete",
+    ] {
+        assert!(direct_event(event), "{event}");
+    }
+    for event in [
+        "",
+        "PermissionRequest",
+        "permission_request_v2",
+        "copilotPermissionRequest",
+        "Notification",
+        "beforeSubmitPrompt",
+    ] {
+        assert!(!direct_event(event), "{event}");
+    }
 }
