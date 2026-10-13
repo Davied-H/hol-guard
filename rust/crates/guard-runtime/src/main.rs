@@ -249,6 +249,7 @@ mod guard_store_approval_request;
 mod guard_store_approval_row;
 mod guard_store_approval_write;
 mod guard_store_args;
+mod guard_store_claude_review;
 mod guard_store_clients;
 mod guard_store_cmd_activity;
 mod guard_store_cmd_api;
