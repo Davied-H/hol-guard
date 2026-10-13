@@ -459,15 +459,15 @@ export function applyApprovalGateDraft(
     ...settings,
     approval_gate: {
       enabled: updates.enabled,
-      configured: gate?.configured ?? false,
+      configured: false,
       cooldown_seconds: updates.cooldown_seconds,
-      cooldown_active: gate?.cooldown_active ?? false,
-      cooldown_expires_at: gate?.cooldown_expires_at ?? null,
-      locked_until: gate?.locked_until ?? null,
-      fail_closed: gate?.fail_closed ?? false,
-      strict_all_decisions: updates.strict_all_decisions ?? gate?.strict_all_decisions ?? false,
-      totp_enabled: gate?.totp_enabled ?? false,
-      totp_pending: gate?.totp_pending ?? false,
+      cooldown_active: false,
+      cooldown_expires_at: null,
+      locked_until: null,
+      fail_closed: false,
+      strict_all_decisions: updates.strict_all_decisions ?? false,
+      totp_enabled: false,
+      totp_pending: false,
     },
   };
 }
