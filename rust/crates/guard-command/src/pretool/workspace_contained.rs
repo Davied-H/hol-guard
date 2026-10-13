@@ -35,6 +35,8 @@ mod package;
 mod reach;
 #[path = "workspace_contained_removal.rs"]
 mod removal;
+#[path = "workspace_contained_runner.rs"]
+mod runner;
 #[path = "workspace_contained_settings.rs"]
 mod settings;
 #[path = "workspace_contained_sibling.rs"]
@@ -408,11 +410,6 @@ pub(super) fn convert(
     let (Some(model), Some(controls), Some(cwd)) = (model, controls, context.cwd) else {
         return;
     };
-    if !extensions_contain(result, controls, model, package)
-        || (package && !package::local_package_work(model))
-    {
-        return;
-    }
     // After `cd <sibling root> &&` the sink runs the rest from that root, so
     // the rest is checked with the root as its workspace and working directory.
     let sibling = sibling::sibling_list(model, context);
@@ -432,6 +429,16 @@ pub(super) fn convert(
         cwd: Some(root),
         ..context
     };
+    // `npx vite` with vite installed runs `node_modules/.bin/vite`. `npx` and
+    // `bunx` arrive as commands rather than package actions, so a runner is
+    // held to every package check below whichever way it arrived.
+    let runners = runner::installed_tools(shaped, &workspace);
+    let package = package || runners.is_some();
+    if !extensions_contain(result, controls, model, package)
+        || (package && !package::local_package_work(model, runners.is_some()))
+    {
+        return;
+    }
     // Installs, one-shot executions and lockfile syncs stay with supply-chain
     // admission even when the verb check above missed their spelling.
     if package
@@ -443,7 +450,11 @@ pub(super) fn convert(
                 None,
                 None,
             )
-            .is_some()
+            .is_some_and(|intent| {
+                !runners
+                    .as_deref()
+                    .is_some_and(|tools| runner::intent_only_runs(&intent, tools))
+            })
         })
     {
         return;
