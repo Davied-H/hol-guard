@@ -235,8 +235,9 @@ fn after_prefix(
     Some(rest)
 }
 
-/// Whether a Git segment runs after a `cd` that is not the command's first
-/// segment.
+/// Whether a Git inspection runs after a `cd` that is not the command's first
+/// segment. Other Git operations keep their own native permission floors,
+/// which judge the moved directory themselves.
 fn git_after_later_cd(model: &CanonicalCommandV1) -> bool {
     let mut moved = false;
     model.segments.iter().enumerate().any(|(index, segment)| {
@@ -247,6 +248,34 @@ fn git_after_later_cd(model: &CanonicalCommandV1) -> bool {
         if index > 0 && basename == Some("cd") {
             moved = true;
         }
-        moved && basename == Some("git")
+        moved && basename == Some("git") && may_inspect(&segment.arguments)
     })
+}
+
+/// Whether Git arguments may name an inspection operation. Global options that
+/// relocate or reconfigure Git count as inspections, so they stay reviewed.
+fn may_inspect(arguments: &[String]) -> bool {
+    let mut index = 0;
+    while let Some(argument) = arguments.get(index) {
+        match argument.as_str() {
+            "-C" => index += 2,
+            "--no-pager" | "-P" | "--no-replace-objects" | "--literal-pathspecs" => index += 1,
+            option if option.starts_with('-') => return true,
+            operation => {
+                return matches!(
+                    operation,
+                    "status"
+                        | "diff"
+                        | "log"
+                        | "show"
+                        | "grep"
+                        | "branch"
+                        | "hash-object"
+                        | "config"
+                        | "merge-base"
+                )
+            }
+        }
+    }
+    true
 }
