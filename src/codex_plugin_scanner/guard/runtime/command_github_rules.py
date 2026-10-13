@@ -5,8 +5,41 @@ from __future__ import annotations
 from typing import Final, cast
 
 from .command_extension_specs import CommandExtensionSpec
+from .command_permission_catalog import COMMAND_PERMISSION_SCHEMA_VERSION, CommandPermissionSpec
 from .command_rules import CommandSafetyRule
-from .github_capability_contract import github_capability_contracts, github_permission_specs
+from .github_capability_contract import github_capability_contracts
+
+
+def github_permission_specs(implementation_version: str) -> tuple[CommandPermissionSpec, ...]:
+    return tuple(
+        CommandPermissionSpec(
+            permission_id=contract.permission_id,
+            schema_version=COMMAND_PERMISSION_SCHEMA_VERSION,
+            extension_id="command.github",
+            implementation_version=implementation_version,
+            label=contract.title,
+            description=contract.description,
+            risk_tier=contract.risk_tier,
+            baseline_floor=contract.action_floor,
+            default_enabled=True,
+            configurable=True,
+            fixed_reason=None,
+            typed_capabilities=(contract.capability,),
+            action_classes=() if contract.action_class is None else (contract.action_class,),
+            rule_ids=() if contract.rule_id is None else (contract.rule_id,),
+            dependencies=(),
+            conflicts=(),
+            implied_permissions=(),
+            introduced_version="2.2.0",
+            deprecated=False,
+            replacement_permission_id=None,
+            safer_guidance=contract.safer_alternatives,
+            example_command=contract.example_command,
+            family=contract.family,
+        )
+        for contract in github_capability_contracts()
+    )
+
 
 _GITHUB_CONTRACTS: Final = tuple(contract for contract in github_capability_contracts() if contract.rule_id is not None)
 GITHUB_ACTION_RISK_CLASSES: Final[dict[str, tuple[str, ...]]] = {
