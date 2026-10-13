@@ -83,11 +83,15 @@ fn opens_list_element(chars: &[char], open: usize) -> bool {
         .take(3)
         .copied()
         .collect();
+    let unescaped = |rest: &[char], op: char| {
+        !matches!(rest.first(), Some(&c) if c == op || c == '\\')
+    };
     match before.as_slice() {
-        [] | ['\n', ..] => true,
-        [';', rest @ ..] => rest.first() != Some(&';'),
-        ['&', '&', rest @ ..] => rest.first() != Some(&'&'),
-        ['|', '|', rest @ ..] => rest.first() != Some(&'|'),
+        [] => true,
+        ['\n', rest @ ..] => rest.first() != Some(&'\\'),
+        [';', rest @ ..] => unescaped(rest, ';'),
+        ['&', '&', rest @ ..] => unescaped(rest, '&'),
+        ['|', '|', rest @ ..] => unescaped(rest, '|'),
         _ => false,
     }
 }
