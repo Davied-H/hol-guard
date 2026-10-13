@@ -425,7 +425,8 @@ fn synthesizes_program(literal: &str) -> bool {
 /// quoted regex such as `"^@@|^[+-]"` stays one argument instead of starting
 /// a fake command word. Expansion characters stay in place, so `"$cmd"` in a
 /// command position is still seen, and a quoted span holding a command
-/// substitution is left untouched because its commands still run.
+/// substitution is left untouched because its commands still run. That
+/// includes `$(...)`, backticks, and Bash's `${ cmd; }` / `${| cmd; }` form.
 fn mask_double_quoted_separators(literal: &str) -> String {
     let mut out = String::with_capacity(literal.len());
     let mut span: Option<String> = None;
@@ -460,8 +461,19 @@ fn mask_double_quoted_separators(literal: &str) -> String {
     out
 }
 
+fn span_runs_a_command(quoted: &str) -> bool {
+    quoted.contains("$(")
+        || quoted.contains('`')
+        || quoted.match_indices("${").any(|(at, _)| {
+            quoted[at + 2..]
+                .chars()
+                .next()
+                .is_some_and(|character| character.is_whitespace() || character == '|')
+        })
+}
+
 fn mask_span(quoted: &str) -> String {
-    if quoted.contains("$(") || quoted.contains('`') {
+    if span_runs_a_command(quoted) {
         return quoted.to_owned();
     }
     quoted

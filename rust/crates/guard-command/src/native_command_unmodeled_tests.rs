@@ -113,6 +113,15 @@ fn quoted_regex_alternation_does_not_synthesize_a_program() {
         decision(&controls, "for f in a b; do echo \"$(x | $f)\"; done").1,
         "native_command_extension_evaluation_failed"
     );
+    // Bash 5.3 runs `${ cmd; }` and `${| cmd; }` inside double quotes too.
+    assert_eq!(
+        decision(&controls, "for f in a b; do echo \"${ $f; }\"; done").1,
+        "native_command_extension_evaluation_failed"
+    );
+    assert_eq!(
+        decision(&controls, "for f in a b; do echo \"${| $f; }\"; done").1,
+        "native_command_extension_evaluation_failed"
+    );
 }
 
 #[test]
