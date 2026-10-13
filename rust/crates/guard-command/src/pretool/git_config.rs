@@ -38,11 +38,11 @@ pub(super) fn execution_free(
     ) {
         return None;
     }
-    // Other object-read forms can run textconv or filter drivers; never clear them.
+    // Other object-read forms can run drivers; their own review floors decide.
     if matches!(operation, "ls-tree" | "cat-file")
         && !super::git_object_reads::read_form(operation, &remaining[1..])
     {
-        return Some(false);
+        return None;
     }
     // A plain configuration write is no read; its own proof decides it.
     if operation == "config"
