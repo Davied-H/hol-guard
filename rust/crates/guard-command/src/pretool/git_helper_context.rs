@@ -50,8 +50,6 @@ fn segment_runs_helpers(original: &crate::CommandSegmentV1, context: PathContext
                         }
                         // The probe screens the printed entries for credentials.
                         "config" => super::git_config_reads::read_form(&arguments[1..]).is_some(),
-                        // Grep pages its matches by default.
-                        "grep" => true,
                         // merge-base does not page by default, but pager.merge-base can.
                         "merge-base" => true,
                         // grep pages by default through pager.grep or core.pager.
