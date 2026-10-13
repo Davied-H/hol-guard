@@ -2,10 +2,12 @@
 //!
 //! With `--ignore-scripts` (or yarn's `--mode=skip-build`) no lifecycle
 //! script runs, so the installed `package_script` risk setting has nothing to
-//! govern. The proof is deliberately narrow: one plain segment, no
-//! environment prefix, no positional package names, no wrapper.
+//! govern. The proof is deliberately narrow: one plain install segment, no
+//! environment prefix, no positional package names, no wrapper. The install
+//! may follow a plain `cd <dir>` and feed a bounded `tail`/`head`, since
+//! neither runs package code.
 
-use crate::{parse_command, CommandModelRequestV1};
+use crate::{parse_command, CommandModelRequestV1, CommandSegmentV1};
 
 fn flag_disables_scripts(manager: &str, argument: &str) -> bool {
     match argument {
@@ -47,9 +49,21 @@ pub fn no_script_install_command(command: &str) -> bool {
     {
         return false;
     }
-    let [segment] = model.segments.as_slice() else {
+    let segments = model.segments.as_slice();
+    let segments = match segments.split_first() {
+        Some((first, rest)) if directory_change(first) => rest,
+        _ => segments,
+    };
+    let segments = match segments.split_last() {
+        Some((last, rest)) if output_filter(last) => rest,
+        _ => segments,
+    };
+    let [segment] = segments else {
         return false;
     };
+    if segment.pipeline_index != 0 {
+        return false;
+    }
     let Some(executable) = segment.executable.as_deref() else {
         return false;
     };
@@ -62,7 +76,16 @@ pub fn no_script_install_command(command: &str) -> bool {
     {
         return false;
     }
-    let Some((subcommand, flags)) = segment.arguments.split_first() else {
+    // A trailing `2>&1` only joins stderr to the install's own output.
+    let arguments = match segment.arguments.split_last() {
+        Some((last, rest))
+            if last == "2>&1" && segment.tokens.last().map(String::as_str) == Some("2>&1") =>
+        {
+            rest
+        }
+        _ => segment.arguments.as_slice(),
+    };
+    let Some((subcommand, flags)) = arguments.split_first() else {
         return false;
     };
     if !matches!(subcommand.as_str(), "install" | "i" | "ci") {
@@ -73,6 +96,34 @@ pub fn no_script_install_command(command: &str) -> bool {
             .iter()
             .any(|flag| flag_disables_scripts(manager, flag))
         && !flags.iter().any(|flag| flag_reenables_scripts(flag))
+}
+
+fn plain(segment: &CommandSegmentV1) -> bool {
+    segment.environment_names.is_empty()
+        && segment.wrapper_chain.is_empty()
+        && !segment.path_overridden
+        && segment.tokens.len() == segment.arguments.len() + 1
+}
+
+fn directory_change(segment: &CommandSegmentV1) -> bool {
+    plain(segment)
+        && segment.pipeline_index == 0
+        && segment.executable.as_deref() == Some("cd")
+        && matches!(segment.arguments.as_slice(), [target] if super::safe_directory_target(target))
+}
+
+fn output_filter(segment: &CommandSegmentV1) -> bool {
+    let count = |value: &str| {
+        !value.is_empty() && value.len() <= 6 && value.bytes().all(|byte| byte.is_ascii_digit())
+    };
+    plain(segment)
+        && segment.pipeline_index == 1
+        && matches!(segment.executable.as_deref(), Some("tail" | "head"))
+        && match segment.arguments.as_slice() {
+            [value] => value.strip_prefix('-').is_some_and(count),
+            [flag, value] => flag == "-n" && count(value),
+            _ => false,
+        }
 }
 
 #[cfg(test)]
@@ -89,6 +140,9 @@ mod tests {
             "yarn install --ignore-scripts",
             "yarn install --mode=skip-build",
             "/usr/bin/npm ci --ignore-scripts=true",
+            "cd /tmp/w/app && bun install --ignore-scripts",
+            "cd /tmp/w/app && bun install --frozen-lockfile --ignore-scripts 2>&1 | tail -6",
+            "bun install --ignore-scripts | head -n 20",
         ] {
             assert!(no_script_install_command(command), "{command}");
         }
@@ -105,7 +159,12 @@ mod tests {
             "npm install --ignore-scripts && npm run build",
             "bun install --ignore-scripts; rm x",
             "bun install --ignore-scripts | cat",
-            "cd /tmp/w/app && bun install --ignore-scripts",
+            "bun install --ignore-scripts | tail -f",
+            "cd /tmp/w/app && bun install --frozen-lockfile 2>&1 | tail -5",
+            "cd /tmp/w/app && npm run build && bun install --ignore-scripts",
+            "cd $(id) && bun install --ignore-scripts",
+            "cd /tmp/w/app /tmp/x && bun install --ignore-scripts",
+            "tail -5 | bun install --ignore-scripts",
             "npm_config_ignore_scripts=false bun install --ignore-scripts",
             "FOO=1 bun install --ignore-scripts",
             "env FOO=1 bun install --ignore-scripts",
