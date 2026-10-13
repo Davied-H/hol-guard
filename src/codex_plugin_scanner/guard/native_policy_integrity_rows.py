@@ -24,7 +24,7 @@ from .native_context import _canonical_request_sha256
 from .native_execution import _resident_request
 from .native_runtime import NativeRuntimeStatus, native_runtime_status
 from .native_runtime_resilience import native_record_resident_failure, native_record_resident_success
-from .policy_integrity import PolicyIntegrityVerificationResult
+from .policy_integrity import PolicyIntegrityStatus, PolicyIntegrityVerificationResult
 
 POLICY_INTEGRITY_ROWS_FEATURE = "policy-integrity-rows-v1"
 _REQUEST_SCHEMA = "guard-policy-integrity-rows-request.v1"
@@ -57,9 +57,6 @@ _ROW_COLUMNS = (
     "source",
     "updated_at",
     "workspace",
-)
-_VERIFY_STATUSES = frozenset(
-    {"valid", "missing_integrity", "tampered", "unknown_key", "rollback_detected", "degraded_mode"}
 )
 _SIGNATURE_FIELDS = frozenset(
     {"integrity_version", "integrity_generation", "payload_hash", "payload_mac", "integrity_key_id", "signed_at"}
@@ -253,12 +250,25 @@ def _optional_text(outcome: Mapping[str, object], name: str) -> str | None:
     return value
 
 
+def _verification_status(value: object) -> PolicyIntegrityStatus:
+    if value == "valid":
+        return "valid"
+    if value == "missing_integrity":
+        return "missing_integrity"
+    if value == "tampered":
+        return "tampered"
+    if value == "unknown_key":
+        return "unknown_key"
+    if value == "rollback_detected":
+        return "rollback_detected"
+    if value == "degraded_mode":
+        return "degraded_mode"
+    raise NativePolicyIntegrityUnavailableError()
+
+
 def _verification(outcome: Mapping[str, object]) -> PolicyIntegrityVerificationResult:
-    status = outcome.get("status")
-    if status not in _VERIFY_STATUSES:
-        raise NativePolicyIntegrityUnavailableError()
     return PolicyIntegrityVerificationResult(
-        status=status,  # type: ignore[arg-type]
+        status=_verification_status(outcome.get("status")),
         payload_hash=_optional_text(outcome, "payload_hash"),
         key_id=_optional_text(outcome, "key_id"),
         message=_optional_text(outcome, "message"),
