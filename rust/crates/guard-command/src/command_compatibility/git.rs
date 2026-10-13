@@ -342,14 +342,15 @@ pub(super) fn observe_with_context(
             crate::pretool::git_hash_object::read_operands(&remaining[1..]).is_some()
         });
     // `init` is a built-in, so no alias can replace it. Creating a repository
-    // in the current directory or one named target with only a quiet flag
+    // in the current directory or one absolute target with only a quiet flag
     // or an initial branch name touches none of the porcelain owners above;
     // the native proof still decides the target. Templates, separate git
     // directories and other options keep every owner uncertain.
     let plain_init = command_index == 0
         && command == "init"
         && (crate::pretool::init_arguments(&arguments[1..]).is_some()
-            || crate::pretool::git_init_target::target(&arguments[1..]).is_some());
+            || crate::pretool::git_init_target::target(&arguments[1..])
+                .is_some_and(crate::pretool::git_init_target::absolute_target));
     // A plain configuration write sets a key Git never runs; its own proof
     // still decides the repository.
     let plain_config_write = command == "config"

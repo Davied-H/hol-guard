@@ -158,6 +158,7 @@ fn init_of_a_fresh_owned_temporary_directory_is_quiet() {
         format!("git init --template={target} {target}/scratch"),
         format!("git init --separate-git-dir {target}/sep {target}/scratch"),
         format!("git init -q {target}/scratch && cd {target}/scratch && git add ."),
+        format!("git init -q {target}/scratch > {target}/init.log"),
         "git init -q /etc/guard-scratch".to_owned(),
     ] {
         session.assert_not_allow(&command);

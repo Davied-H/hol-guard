@@ -36,6 +36,16 @@ pub(crate) fn target(arguments: &[String]) -> Option<&str> {
     crate::pretool::init_arguments(&options).map(|_| target)
 }
 
+/// An absolute target without parent components; a relative target names
+/// a directory the compatibility layer cannot place.
+pub(crate) fn absolute_target(target: &str) -> bool {
+    let path = Path::new(target);
+    path.is_absolute()
+        && path
+            .components()
+            .all(|component| !matches!(component, Component::ParentDir))
+}
+
 /// A lone `git init` of a fresh directory below an owned temporary
 /// directory, with no template directory configured.
 pub(in crate::pretool) fn exact_safe_command(

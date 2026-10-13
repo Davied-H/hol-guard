@@ -2,7 +2,7 @@
 
 use crate::git_helper_fixture as fixture;
 
-#[path = "pretool_git_session_context.rs"]
+#[path = "pretool_git_session_ops/context.rs"]
 mod context;
 
 use fixture::{evaluate_pre_tool_envelope_with_context, FixtureCleanup};

@@ -150,14 +150,17 @@ pub(super) fn project(
 /// write still requires review unless its target passes the same check as a
 /// file-edit tool's write and the command itself is allowed.
 fn redirect_disqualifies_containment(reason: &str) -> bool {
-    // A file redirect is a shell effect. Pytest and inline-eval profiles are
-    // only valid for the exact command, so the projection must not inherit them.
+    // A file redirect is a shell effect. Pytest and inline-eval profiles and
+    // the proofs of Git's own writes are only valid for the exact command, so
+    // the projection must not inherit them.
     matches!(
         reason,
         "native_pytest_readonly_containment_required"
             | "native_python_eval_readonly_containment_required"
             | "native_node_eval_readonly_containment_required"
             | "native_workspace_containment_required"
+            | super::git_config_reads::writes::REASON
+            | super::git_init_target::REASON
     )
 }
 
