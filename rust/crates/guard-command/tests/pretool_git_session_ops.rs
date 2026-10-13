@@ -251,6 +251,61 @@ fn origin_refresh_is_quiet_only_for_a_proven_github_https_origin() {
 }
 
 #[test]
+fn fast_forward_pull_is_quiet_only_without_merge_or_checkout_programs() {
+    const REFRESH: &str = "native_exact_safe_git_origin_refresh";
+    let session = session("pull");
+    let primary = session.primary.display();
+    let pull = format!("git -C {primary} pull --ff-only");
+    session.config(&["branch.main.remote", "origin"]);
+    session.config(&["branch.main.merge", "refs/heads/main"]);
+    session.assert_allow(&pull, REFRESH);
+    session.assert_allow(&format!("git -C {primary} pull -q --ff-only"), REFRESH);
+    session.assert_allow(
+        &format!("git -C {primary} pull --ff-only origin main"),
+        REFRESH,
+    );
+    for command in [
+        format!("git -C {primary} pull"),
+        format!("git -C {primary} pull --rebase"),
+        format!("git -C {primary} pull --ff-only --rebase"),
+        format!("git -C {primary} pull --ff-only evil main"),
+        format!("git -C {primary} pull --ff-only origin main topic"),
+        format!("git -C {primary} pull --ff-only --upload-pack=id origin"),
+        format!("git -C {primary} -c core.sshCommand=id pull --ff-only"),
+    ] {
+        session.assert_not_allow(&command);
+    }
+    let elsewhere = session.org.display().to_string();
+    for (key, value) in [
+        ("pull.rebase", "true"),
+        ("branch.main.rebase", "merges"),
+        ("merge.verifySignatures", "true"),
+        ("gpg.program", "/tmp/gpg"),
+        ("filter.lfs.smudge", "git-lfs smudge %f"),
+        // A repository cannot vouch for its own filter, even the LFS one.
+        ("filter.lfs.process", "git-lfs filter-process"),
+        ("core.fsmonitor", "/tmp/monitor"),
+        ("core.worktree", elsewhere.as_str()),
+        ("hook.post-merge.command", "id"),
+    ] {
+        session.config(&[key, value]);
+        session.assert_not_allow(&pull);
+        session.config(&["--unset-all", key]);
+    }
+    // Git pulls from the upstream it reads, so that upstream must be origin.
+    session.config(&["branch.main.remote", "evil"]);
+    session.assert_not_allow(&pull);
+    session.config(&["branch.main.remote", "origin"]);
+    session.assert_allow(&pull, REFRESH);
+    for hook in ["post-merge", "post-index-change"] {
+        let path = session.primary.join(".git/hooks").join(hook);
+        executable_hook(&path);
+        session.assert_not_allow(&pull);
+        std::fs::remove_file(path).unwrap();
+    }
+}
+
+#[test]
 fn forged_checkout_is_not_a_push_or_removal_target() {
     let session = session("forged");
     let forged = session.home.join("forged");
