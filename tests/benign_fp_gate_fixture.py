@@ -202,6 +202,7 @@ def build_fixture(root: Path) -> BenignFixture:
     _write(home / "other-project" / "package.json", '{\n  "name": "@acme/app",\n  "version": "1.0.0"\n}\n')
     _write(home / "other-project" / ".keep", "")
     _write(home / "acme-plain" / "README.txt", "Plain notes directory.\n")
+    _write(home / "kubeconfig.yaml", "apiVersion: v1\nkind: Config\nclusters: []\n")
     _write(home / ".ssh" / "id_rsa", "-----BEGIN FIXTURE KEY-----\nnot-a-real-key\n-----END FIXTURE KEY-----\n")
     # Sibling repository outside the workspace, as in the live Gauntlet fixture.
     _git(home / "other-project", "init", "--quiet", "--initial-branch=main", home=home)
@@ -236,6 +237,9 @@ def build_fixture(root: Path) -> BenignFixture:
     _node_toolchain(parent / "dashboard")
     _write(worktree / "dashboard" / "package.json", (parent / "dashboard" / "package.json").read_text())
     (worktree / "dashboard" / "node_modules").symlink_to(parent / "dashboard" / "node_modules")
+    # Fresh worktree package whose dependencies are installed only in the canonical checkout.
+    _write(parent / "web" / "node_modules" / "left-pad" / "package.json", "{}\n")
+    _write(worktree / "web" / "package.json", "{\"private\": true}\n")
 
     # Untracked child repository nested inside the parent working tree.
     nested.mkdir(parents=True)

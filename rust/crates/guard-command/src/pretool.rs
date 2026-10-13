@@ -296,7 +296,9 @@ fn exact_safe_command_with_context(
     if !safe_scalar::bounded_total_sleep(model) {
         return false;
     }
-    if segment_proof::exact_safe_cwd_compound(model, allow_git_helper_context, context) {
+    if segment_proof::exact_safe_cwd_compound(model, allow_git_helper_context, context)
+        || safe_reads::exact_safe_sequence(model, allow_git_helper_context, context)
+    {
         return true;
     }
     if let Some(rest) = segment_proof::after_read_prefix(model, context) {
