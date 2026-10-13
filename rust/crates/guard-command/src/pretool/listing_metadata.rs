@@ -138,10 +138,15 @@ pub(in crate::pretool) fn global_package_listing_operand(
     match canonical.strip_prefix(&tool_root).ok().and_then(path_names) {
         Some(resolved) => package_tree_parts(root, &resolved),
         None => {
-            path_names(&canonical).is_some_and(|resolved| {
-                !resolved
-                    .iter()
-                    .any(|name| CACHE_PARTS.contains(&name.to_ascii_lowercase().as_str()))
+            // Only names below home can mark a tool cache; the home path
+            // itself may sit under a directory such as /tmp.
+            let home = std::fs::canonicalize(home_dir).unwrap_or_else(|_| home_dir.into());
+            let below_home = canonical.strip_prefix(&home).unwrap_or(&canonical);
+            below_home.components().all(|component| match component {
+                Component::Normal(name) => name
+                    .to_str()
+                    .is_some_and(|name| !CACHE_PARTS.contains(&name.to_ascii_lowercase().as_str())),
+                _ => true,
             }) && crate::pretool::read_paths::resolved_path_allowed_for_operation(
                 &canonical,
                 context.home_dir,

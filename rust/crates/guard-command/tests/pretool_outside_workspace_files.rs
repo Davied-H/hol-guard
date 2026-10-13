@@ -242,11 +242,17 @@ fn global_package_links_into_tool_caches_stay_reviewed() {
     let nvm_lib = fixture.home.join(".nvm/versions/node/v2.0.0/lib");
     std::fs::create_dir_all(&nvm_lib).unwrap();
     std::os::unix::fs::symlink(&nvm_cache, nvm_lib.join("node_modules")).unwrap();
+    std::os::unix::fs::symlink(
+        fixture.home.join("code/sibling"),
+        global.join("linked-checkout"),
+    )
+    .unwrap();
     check(
         &fixture,
         &[
             "ls ~/.bun/install/global/node_modules",
             "ls -la ~/.bun/install/global/node_modules/vite",
+            "ls ~/.bun/install/global/node_modules/linked-checkout",
         ],
         &[
             "ls ~/.bun/install/global/node_modules/linked",
