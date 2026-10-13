@@ -158,12 +158,13 @@ fn edge(decision: &str, minimum_action: &str) -> Vec<u8> {
 }
 
 #[test]
-fn only_an_allow_is_answered() {
+fn only_an_unconditional_allow_is_answered() {
     let answered = allow_answer(&edge("allow", "allow")).unwrap();
     assert_eq!(answered["result"]["decision"], "allow");
-    // The default `warn` policy floor allows the call.
-    let warned = allow_answer(&edge("allow", "warn")).unwrap();
-    assert_eq!(warned["result"]["minimum_action"], "warn");
+    assert_eq!(
+        allow_answer(&edge("allow", "warn")),
+        Err(HookDirectDefer::NotAllow)
+    );
     for (decision, minimum_action) in [
         ("block", "block"),
         ("deny", "review"),
@@ -368,7 +369,12 @@ fn a_block_rule_saved_after_the_publish_defers() {
              insert into local_cli_command_grant values ('cli', 'run', 'allow');",
         )
         .unwrap();
-    assert_eq!(run(&lane, allowed_payload(&lane))["outcome"], "answer");
+    // The fixture policy warns on commands, so an allow-only grant stays with
+    // the daemon. A block rule is still read before that edge decision.
+    assert_eq!(
+        deferred(&run(&lane, allowed_payload(&lane))),
+        "direct_hook_not_allow"
+    );
     for statement in [
         "update local_cli_command_grant set state = 'block'",
         "update local_cli_command_grant set state = 'allow'; \
