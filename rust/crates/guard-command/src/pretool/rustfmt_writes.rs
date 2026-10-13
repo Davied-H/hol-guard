@@ -148,7 +148,9 @@ fn declares_out_of_line_module(source: &str) -> bool {
             return true;
         }
         match skip_trivia(source, name_start + name_end) {
-            Some(next) => source[next..].starts_with(';'),
+            // Only `mod name { ... }` is demonstrably in-line. Unknown
+            // Unicode identifier continuation or punctuation stays reviewed.
+            Some(next) => !source[next..].starts_with('{'),
             None => true,
         }
     })
@@ -172,6 +174,9 @@ mod tests {
             "#[path = \"../.github/workflows/check.rs\"] mod child /**/;",
             "mod /* unterminated",
             "#[path = \"../.github/workflows/check.rs\"] mod ℘;",
+            "#[path = \"../.github/workflows/check.rs\"] mod a·b;",
+            "#[path = \"../.github/workflows/check.rs\"] mod a‿b;",
+            "#[path = \"../.github/workflows/check.rs\"] mod e\u{301}x;",
 
         ] {
             assert!(declares_out_of_line_module(source), "{source}");
