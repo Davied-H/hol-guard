@@ -1660,14 +1660,13 @@
         "category": "control_plane",
         "path": "src/codex_plugin_scanner/guard/store_extension_control_authority_commit.py",
         "symbols": [
-          "_canonical_contract_value",
           "ExtensionControlAuthorityCommitMixin.enroll_extension_control_authority",
           "ExtensionControlAuthorityCommitMixin.commit_extension_control_layers",
           "ExtensionControlAuthorityCommitMixin._bootstrap_extension_control_authority"
         ],
         "entry_points": [],
         "reason": "Write side of the extension-control authority store: enrolling the local authority and committing signed control layers.",
-        "evidence": "enroll_extension_control_authority is called only from cli/extension_controls_commands.py and commit_extension_control_layers only from daemon/extension_control_api.py; the extension-authoring exclusion already removes both from scope. _canonical_contract_value is called only from these two methods, and _bootstrap_extension_control_authority only from enroll and from the recovery method excluded by extension-control-authority-recovery. The read and verification side of the authority store (views, layer loading, transitions) is not excluded because hook evaluation reads it. The report validates that no retained symbol references them."
+        "evidence": "enroll_extension_control_authority is called only from cli/extension_controls_commands.py and commit_extension_control_layers only from daemon/extension_control_api.py; the extension-authoring exclusion already removes both from scope. _bootstrap_extension_control_authority is called only from enroll and from the recovery method excluded by extension-control-authority-recovery. The read and verification side of the authority store (views, layer loading, transitions) is not excluded because hook evaluation reads it. The report validates that no retained symbol references them."
       },
       {
         "id": "extension-control-authority-recovery",
