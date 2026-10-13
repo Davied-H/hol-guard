@@ -5,6 +5,9 @@
 //! against those files rather than turned away, and the usual sibling layout
 //! `../name` is accepted while the destination stays under home.
 
+// This session test builds its own execution environment. The shared helper
+// `evaluate_pre_tool_envelope_with_context` stays for the other Git fixtures.
+#[allow(dead_code)]
 #[path = "support/git_helper_fixture.rs"]
 mod fixture;
 
