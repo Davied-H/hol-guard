@@ -264,6 +264,7 @@ def build_fixture(root: Path) -> BenignFixture:
     _write(home / ".bun" / "install" / "global" / "node_modules" / "vite" / "package.json", "{}\n")
     _write(tmp_org / "app" / "package.json", '{"name": "app", "version": "1.0.0"}\n')
     _write(tmp_org / "app" / "src" / "index.ts", "export const railStage = 1;\n")
+    _write(tmp_org / "app" / "tests" / "index.test.ts", "import { railStage } from '../src';\n")
     _git(tmp_org / "app", "add", "-A", home=home)
     _git(tmp_org / "app", "commit", "--quiet", "-m", "app base", home=home)
     _git(tmp_org / "app", "worktree", "add", "--quiet", "-b", "followup", str(tmp_org.parent / "app-followup"), home=home)
