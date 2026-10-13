@@ -145,7 +145,8 @@ fn cd_then_read_sequence(
             let executable = segment.executable.as_deref().map(executable_basename);
             plain_segment(segment)
                 && !changes_directory(segment)
-                && cwd_read_executable(segment.executable.as_deref())
+                && (cwd_read_executable(segment.executable.as_deref())
+                    || crate::pretool::version_probes::lone_probe_segment(segment))
                 && executable
                     .is_some_and(|name| name != "gh" && (name != "git" || leading_semicolon))
                 && exact_safe_segment_with_context(model, segment, allow_git_helper_context, moved)
