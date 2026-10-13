@@ -1,12 +1,9 @@
 //! Read-only `git` invocations proven without a review.
 //!
-//! Status, diff, log, show, grep, rev-parse, merge-base, ls-files, `remote -v`,
-//! `worktree list`, branch listings, `hash-object` and `config` reads.
-//! Diff-style reads that can run a configured helper need the helper-context
-//! probe or both `--no-ext-diff` and `--no-textconv`.
-
-#[path = "git_grep.rs"]
-mod git_grep;
+//! Status, diff, log, show, grep, rev-parse, merge-base, ls-files, `remote -v`, `worktree list`,
+//! branch listings, `hash-object` and `config` reads. Diff-style reads that can run a
+//! configured helper need the helper-context probe or both `--no-ext-diff`
+//! and `--no-textconv`.
 
 fn has_argument(arguments: &[String], exact: &[&str], prefixes: &[&str]) -> bool {
     arguments.iter().any(|argument| {
@@ -32,10 +29,6 @@ pub(super) fn safe_git_arguments(
         match inspected.split_first() {
             Some((subcommand, rest)) if subcommand == "branch" => {
                 return leading_safe && super::git_branch_listing::is_listing(rest);
-            }
-            // Grep needs the configuration probe for its pager.
-            Some((subcommand, rest)) if subcommand == "grep" => {
-                return leading_safe && allow_helper_context && git_grep::safe_read(rest);
             }
             Some((subcommand, rest)) if subcommand == "hash-object" => {
                 return leading_safe
@@ -79,6 +72,11 @@ pub(super) fn safe_git_arguments(
                             | "--fork-point"
                     )
             });
+    }
+    if subcommand == "grep" {
+        // Prints matches only. It pages by default, so the configuration
+        // probe has to clear the pager first.
+        return allow_helper_context && super::git_grep::read_form(&arguments[1..]);
     }
     if subcommand == "config" {
         // Only the configuration probe can prove what the read prints.
@@ -141,7 +139,7 @@ pub(super) fn inspection_writes_nothing(
     };
     if !matches!(
         subcommand.as_str(),
-        "status" | "diff" | "log" | "show" | "merge-base"
+        "status" | "diff" | "log" | "show" | "grep" | "merge-base"
     ) {
         return false;
     }

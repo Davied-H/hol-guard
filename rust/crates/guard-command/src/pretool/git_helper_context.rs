@@ -54,6 +54,8 @@ fn segment_runs_helpers(original: &crate::CommandSegmentV1, context: PathContext
                         "grep" => true,
                         // merge-base does not page by default, but pager.merge-base can.
                         "merge-base" => true,
+                        // grep pages by default through pager.grep or core.pager.
+                        "grep" => true,
                         _ => false,
                     }
                 })

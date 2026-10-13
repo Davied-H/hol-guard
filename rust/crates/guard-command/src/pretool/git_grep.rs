@@ -1,49 +1,53 @@
-//! `git grep` reads proven without review.
+//! Closed grammar for a `git grep` invocation that only searches tracked
+//! content or named revisions and prints the matches.
 //!
-//! Grep prints matching lines of tracked content, which `git show` and
-//! `git log -p` already print. What it can run is a pager, which the shared
-//! configuration probe checks, and a textconv driver, which runs only with
-//! `--textconv`. `-O`/`--open-files-in-pager` starts a program, `-f` reads
-//! patterns from any file, and `--no-index`, `--untracked` and
-//! `--recurse-submodules` widen the search past the tracked tree, so only the
-//! options below are admitted. The pattern is search text rather than a path,
-//! so the sensitive-path screen applies to the revisions and pathspecs only.
+//! Git accepts any unambiguous prefix of a long option, so long options must
+//! match exactly. Opening matches in a program (`-O`), reading patterns from
+//! a file (`-f`), searching outside the index (`--no-index`, `--untracked`),
+//! running textconv helpers (`--textconv`) and descending into submodules are
+//! outside this grammar and stay reviewed. The configured pager still needs
+//! the configuration probe.
 
-/// Flags that change only how matches are selected or printed.
 const FLAGS: &[&str] = &[
-    "--cached",
-    "--files-with-matches",
-    "--name-only",
-    "--files-without-match",
-    "--count",
-    "--quiet",
-    "--line-number",
-    "--column",
-    "--ignore-case",
-    "--word-regexp",
-    "--invert-match",
-    "--full-name",
-    "--extended-regexp",
+    "--all-match",
+    "--and",
     "--basic-regexp",
+    "--break",
+    "--cached",
+    "--column",
+    "--count",
+    "--extended-regexp",
+    "--files-with-matches",
+    "--files-without-match",
     "--fixed-strings",
-    "--perl-regexp",
+    "--full-name",
+    "--function-context",
+    "--heading",
+    "--ignore-case",
+    "--invert-match",
+    "--line-number",
+    "--name-only",
+    "--no-break",
+    "--no-color",
+    "--no-heading",
+    "--no-recursive",
+    "--no-textconv",
+    "--not",
     "--null",
     "--only-matching",
-    "--heading",
-    "--break",
-    "--no-color",
-    "--color=never",
-    "--all-match",
+    "--or",
+    "--perl-regexp",
+    "--quiet",
+    "--recursive",
+    "--show-function",
+    "--text",
+    "--word-regexp",
+    "(",
+    ")",
 ];
-/// Short flags that may be clustered (`-il`): the long forms above plus `-I`
-/// (skip binary files) and `-h`/`-H` (file name display).
-const SHORT_FLAGS: &str = "lLcqniIwvhHEGFPzo";
-/// Options that take a count.
+
+/// Long options whose value is a count.
 const COUNTS: &[&str] = &[
-    "-A",
-    "-B",
-    "-C",
-    "-m",
     "--after-context",
     "--before-context",
     "--context",
@@ -52,101 +56,199 @@ const COUNTS: &[&str] = &[
     "--threads",
 ];
 
-/// Whether the arguments after `grep` form a bounded read.
-pub(super) fn safe_read(arguments: &[String]) -> bool {
-    let mut pattern_given = false;
-    let mut options = true;
-    let mut operands = Vec::new();
+/// Short options without a value.
+const SHORT_FLAGS: &str = "EFGHILPWachilnopqrvwz";
+
+/// Short options whose value is a count.
+const SHORT_COUNTS: &str = "ABCm";
+
+fn count(value: &str) -> bool {
+    !value.is_empty() && value.len() <= 6 && value.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+/// Whether `arguments`, the tokens after the `grep` subcommand, stay inside
+/// the read-only grammar.
+pub(crate) fn read_form(arguments: &[String]) -> bool {
+    let mut patterns = 0usize;
     let mut index = 0;
     while let Some(argument) = arguments.get(index) {
-        let word = argument.as_str();
         index += 1;
-        if !options || !word.starts_with('-') || word == "-" {
-            if word.is_empty() {
-                return false;
-            }
-            if options && !pattern_given {
-                // The first operand is the pattern unless `-e` gave one.
-                pattern_given = true;
-            } else {
-                operands.push(word);
-            }
+        if argument == "--" || !argument.starts_with('-') && !matches!(argument.as_str(), "(" | ")")
+        {
+            // Options end here: Git stops at the first non-option.
+            index -= 1;
+            break;
+        }
+        if FLAGS.contains(&argument.as_str()) {
             continue;
         }
-        if word == "--" {
-            options = false;
-            pattern_given = true;
-        } else if word == "-e" {
+        if argument == "-e" {
             if arguments.get(index).is_none() {
                 return false;
             }
             index += 1;
-            pattern_given = true;
-        } else if let Some(name) = COUNTS.iter().find(|name| word.starts_with(**name)) {
-            let value = match word[name.len()..].strip_prefix('=') {
-                Some(value) if name.starts_with("--") => value,
-                None if word.len() == name.len() => {
-                    let Some(value) = arguments.get(index) else {
-                        return false;
-                    };
-                    index += 1;
-                    value.as_str()
-                }
-                None if !name.starts_with("--") => &word[name.len()..],
-                _ => return false,
-            };
-            if value.is_empty() || value.len() > 6 || !value.bytes().all(|b| b.is_ascii_digit()) {
-                return false;
+            patterns += 1;
+            continue;
+        }
+        if let Some((name, value)) = argument.split_once('=') {
+            if COUNTS.contains(&name) && count(value) {
+                continue;
             }
-        } else if !(FLAGS.contains(&word)
-            || word
-                .strip_prefix('-')
-                .filter(|cluster| !cluster.starts_with('-') && !cluster.is_empty())
-                .is_some_and(|cluster| cluster.chars().all(|flag| SHORT_FLAGS.contains(flag))))
-        {
+            if name == "--color" && matches!(value, "never" | "auto" | "always") {
+                continue;
+            }
             return false;
         }
+        if argument == "--color" {
+            continue;
+        }
+        if COUNTS.contains(&argument.as_str()) {
+            if !arguments.get(index).is_some_and(|value| count(value)) {
+                return false;
+            }
+            index += 1;
+            continue;
+        }
+        if argument.starts_with("--") {
+            return false;
+        }
+        match short_cluster(&argument[1..]) {
+            Some(Short::Complete) => {}
+            Some(Short::NeedsCount) => {
+                if !arguments.get(index).is_some_and(|value| count(value)) {
+                    return false;
+                }
+                index += 1;
+            }
+            Some(Short::NeedsPattern) => {
+                if arguments.get(index).is_none() {
+                    return false;
+                }
+                index += 1;
+                patterns += 1;
+            }
+            Some(Short::AttachedPattern) => patterns += 1,
+            None => return false,
+        }
     }
-    pattern_given
-        && operands.iter().all(|value| {
-            !value.starts_with(':') && !super::super::sensitive_read_path_argument(value)
-        })
+    let mut operands = arguments[index..].iter();
+    if patterns == 0 {
+        // The first operand is the pattern.
+        match operands.next() {
+            Some(pattern) if pattern != "--" => {}
+            _ => return false,
+        }
+    }
+    // Revisions and pathspecs. A later option is an error in Git; refuse it
+    // here rather than rely on that.
+    let mut paths = false;
+    operands.all(|operand| {
+        if operand == "--" && !paths {
+            paths = true;
+            return true;
+        }
+        !operand.is_empty() && !operand.starts_with('-')
+    })
+}
+
+enum Short {
+    Complete,
+    NeedsCount,
+    NeedsPattern,
+    AttachedPattern,
+}
+
+/// A cluster of short options such as `-in`, `-A3` or `-ie pattern`.
+fn short_cluster(cluster: &str) -> Option<Short> {
+    if cluster.is_empty() {
+        return None;
+    }
+    // `-NUM` sets the context.
+    if count(cluster) {
+        return Some(Short::Complete);
+    }
+    for (position, flag) in cluster.char_indices() {
+        let rest = &cluster[position + flag.len_utf8()..];
+        if SHORT_FLAGS.contains(flag) {
+            continue;
+        }
+        if SHORT_COUNTS.contains(flag) {
+            return if rest.is_empty() {
+                Some(Short::NeedsCount)
+            } else {
+                count(rest).then_some(Short::Complete)
+            };
+        }
+        if flag == 'e' {
+            return Some(if rest.is_empty() {
+                Short::NeedsPattern
+            } else {
+                Short::AttachedPattern
+            });
+        }
+        return None;
+    }
+    Some(Short::Complete)
 }
 
 #[cfg(test)]
 mod tests {
-    fn words(text: &str) -> Vec<String> {
-        text.split_whitespace().map(str::to_owned).collect()
+    use super::read_form;
+
+    fn form(command: &str) -> bool {
+        let arguments: Vec<String> = command.split(' ').map(str::to_owned).collect();
+        read_form(&arguments)
     }
 
     #[test]
-    fn bounded_grep_forms_are_reads() {
-        for arguments in [
-            "-l SOME_TOKEN_NAME HEAD",
-            "-l report HEAD -- scripts",
-            "-n -i -e retry -- src",
-            "-il -C 3 retry",
-            "-A2 --max-count=5 retry HEAD~1",
-            "--cached -c retry",
+    fn searches_stay_inside_the_grammar() {
+        for command in [
+            "-l NEEDLE HEAD",
+            "-l NEEDLE HEAD -- tests",
+            "-n -i needle",
+            "-in needle",
+            "-rn needle src",
+            "-A3 needle",
+            "-C 2 needle",
+            "-3 needle",
+            "--max-depth=2 needle",
+            "--max-count 5 needle",
+            "-e one -e two",
+            "-eone",
+            "-e one --and -e two HEAD",
+            "( -e one --or -e two ) HEAD",
+            "--color=never --heading --break needle",
         ] {
-            assert!(super::safe_read(&words(arguments)), "{arguments}");
+            assert!(form(command), "{command}");
         }
-        for arguments in [
-            "",
-            "-O id retry",
-            "--open-files-in-pager=id retry",
-            "--textconv retry",
+    }
+
+    #[test]
+    fn helpers_files_and_unknown_options_stay_reviewed() {
+        for command in [
+            "-O needle",
+            "-Ovim needle",
+            "-iO needle",
+            "--open-files-in-pager needle",
+            "--open-files-in-pager=vim needle",
+            "--open needle",
             "-f patterns.txt",
-            "--no-index retry /etc",
-            "--untracked retry",
-            "--recurse-submodules retry",
-            "-p retry",
-            "retry HEAD -- .env",
-            "retry :/secrets",
-            "-A x retry",
+            "--file=patterns.txt",
+            "--no-index needle",
+            "--untracked needle",
+            "--textconv needle",
+            "--recurse-submodules needle",
+            "--ext-grep needle",
+            "--max-depth=x needle",
+            "-A x needle",
             "-e",
+            "-l",
+            "needle HEAD -O",
+            "needle HEAD -- -O",
+            "--ignore needle",
+            "-x needle",
         ] {
-            assert!(!super::safe_read(&words(arguments)), "{arguments}");
+            assert!(!form(command), "{command}");
         }
     }
 }
