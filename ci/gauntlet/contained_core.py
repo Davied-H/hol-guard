@@ -42,6 +42,8 @@ CONTAINMENT_PROFILES = {
 _SANDBOX_DENIAL = re.compile(
     r"Operation not permitted|Permission denied|Read-only file system|EPERM|EACCES|EROFS"
     r"|Could not resolve host|ENOTFOUND|EAI_AGAIN|getaddrinfo|Network is unreachable|ECONNREFUSED"
+    r"|Temporary failure in name resolution|Name or service not known"
+    r"|nodename nor servname provided|Connection refused"
 )
 _CURL_NETWORK_EXITS = frozenset({6, 7})
 
@@ -200,7 +202,7 @@ def _sandbox_refused(call: dict[str, Any], details: dict[str, Any], reviewed: An
         else ""
     )
     command = reviewed.get("command") if isinstance(reviewed, dict) else None
-    curl = isinstance(command, str) and re.search(r"(^|[\s;&|(])curl\s", command) is not None
+    curl = isinstance(command, str) and re.search(r"(^|[\s;&|(/])curl\s", command) is not None
     return bool(_SANDBOX_DENIAL.search(text)) or (curl and details.get("exitCode") in _CURL_NETWORK_EXITS)
 
 
