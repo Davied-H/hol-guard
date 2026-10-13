@@ -1,4 +1,6 @@
-use super::super::tests::{install_test_key, signed_allow_snapshot, signed_snapshot, test_root};
+use super::super::tests::{
+    install_test_key, policy_with_default, signed_snapshot, signed_snapshot_with_policy, test_root,
+};
 use super::{now_ms, PolicySnapshotStore};
 use super::{
     observe_input, DirectLaneDefer, DIRECT_LANE_ACK_DIRECTORY, DIRECT_LANE_ACK_FILE_NAME,
@@ -38,7 +40,7 @@ fn open_fixture(label: &str, allow_default: bool) -> Fixture {
     let key = install_test_key(&root, 9);
     let store = PolicySnapshotStore::new(&root, &"a".repeat(64)).unwrap();
     let snapshot = if allow_default {
-        signed_allow_snapshot(1, &key, &root)
+        signed_snapshot_with_policy(1, &key, &root, policy_with_default("allow"))
     } else {
         signed_snapshot(1, &key, &root)
     };
