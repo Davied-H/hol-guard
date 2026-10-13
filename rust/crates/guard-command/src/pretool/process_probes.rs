@@ -159,7 +159,7 @@ pub(in crate::pretool) fn safe_pg_isready_arguments(arguments: &[String]) -> boo
             "-h" | "--host" => {
                 explicit_loopback = LOOPBACK_HOSTS.contains(&value);
                 explicit_loopback
-            },
+            }
             "-p" | "--port" => port(value),
             "-t" | "--timeout" => {
                 (1..=3).contains(&value.len()) && value.bytes().all(|byte| byte.is_ascii_digit())
