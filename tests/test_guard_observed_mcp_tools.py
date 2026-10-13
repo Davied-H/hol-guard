@@ -75,6 +75,9 @@ def test_permission_mutation_retires_native_readiness_before_writing(
 
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     store = GuardStore(tmp_path / "guard-home")
+    # Discovery reaches the resident, which provisions its verifier from the
+    # current key; pin the fixture key before the first store call.
+    monkeypatch.setattr(store, "_policy_integrity_secret_material", lambda *, create: (b"f" * 32, "fixture-key"))
     tool = observed_mcp_tool("codex", "mcp__codex_apps__composio__search")
     assert tool is not None
     monkeypatch.setattr(
@@ -92,7 +95,6 @@ def test_permission_mutation_retires_native_readiness_before_writing(
         updated_at="2026-01-01T00:00:01Z",
         command_states={tool.command_id: "allow"},
     )
-    monkeypatch.setattr(store, "_policy_integrity_secret_material", lambda *, create: (b"f" * 32, "fixture-key"))
     # The observed connector's choices are compiled by the real guard-store
     # resident; give it the fixture verifier before the first publish.
     store._provision_resident_verifier()
