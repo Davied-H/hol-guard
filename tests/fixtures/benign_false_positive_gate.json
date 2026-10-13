@@ -262,6 +262,21 @@
       "expect": "allow"
     },
     {
+      "id": "neg-cargo-check-locked-host-toolchain",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cargo check --locked 2>&1 | tail -15"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
       "id": "rustc-version",
       "fix_area": "shell",
       "harnesses": [
@@ -776,6 +791,54 @@
       "tool": "read",
       "tool_input": {
         "path": "${WORKTREE}/app/registry/[slug]/page.tsx"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "write-slug-route-existing",
+      "fix_area": "write",
+      "harnesses": [
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "write",
+      "tool_input": {
+        "path": "${WORKTREE}/app/registry/[slug]/page.tsx",
+        "content": "export default function Page() { return null; }\n"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "write-dynamic-route-new-subtree",
+      "fix_area": "write",
+      "harnesses": [
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "write",
+      "tool_input": {
+        "path": "${WORKTREE}/app/api/guard/extensions/[id]/promotion/local-distribution/route.ts",
+        "content": "export async function GET() { return Response.json({}); }\n"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "write-dollar-route-file",
+      "fix_area": "write",
+      "harnesses": [
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "write",
+      "tool_input": {
+        "path": "${WORKTREE}/app/routes/posts.$slug.edit.tsx",
+        "content": "export default function Edit() { return null; }\n"
       },
       "cwd": "worktree",
       "expect": "allow"
@@ -2620,6 +2683,66 @@
       "tool": "shell",
       "tool_input": {
         "command": "rg -n export ${ORG}/service-api/src"
+      },
+      "cwd": "org_app",
+      "expect": "allow"
+    },
+    {
+      "id": "queue-sibling-grep-sed-print-ranges",
+      "fix_area": "queue",
+      "harnesses": [
+        "codex",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "grep -n \"^mod \\|^pub mod \" ${ORG}/service-api/src/index.ts | sed -n '1,12p;28,40p'"
+      },
+      "cwd": "org_app",
+      "expect": "allow"
+    },
+    {
+      "id": "queue-sibling-grep-glob-operand",
+      "fix_area": "queue",
+      "harnesses": [
+        "codex",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "grep -rln \"def.*settings\\|SETTINGS_\" ${ORG}/service-api/src/*.ts | head -8"
+      },
+      "cwd": "org_app",
+      "expect": "allow"
+    },
+    {
+      "id": "queue-sibling-rg-src-and-github",
+      "fix_area": "queue",
+      "harnesses": [
+        "codex",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "rg -n \"deadline\" ${ORG}/service-api/src ${ORG}/service-api/.github"
+      },
+      "cwd": "org_app",
+      "expect": "allow"
+    },
+    {
+      "id": "queue-sibling-rg-replace-dirs-head",
+      "fix_area": "queue",
+      "harnesses": [
+        "codex",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "rg -rn \"deadline\" ${ORG}/service-api/src ${ORG}/service-api/.github 2>/dev/null | head"
       },
       "cwd": "org_app",
       "expect": "allow"

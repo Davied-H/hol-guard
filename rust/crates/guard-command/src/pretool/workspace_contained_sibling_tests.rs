@@ -152,6 +152,12 @@ fn a_sibling_cd_the_sink_would_not_rebase_keeps_its_review() {
         ),
         // `;` after a cd into a plain directory still has no root to rebase.
         format!("cd {}/plain; npm run build", projects.display()),
+        // An absolute operand does not move the workspace, so the compile
+        // would have to write `__pycache__` into the sibling from this one.
+        format!(
+            "python3 -m py_compile {}/app-report/scripts/report.py",
+            projects.display()
+        ),
         // The rest still faces every check it would from that root.
         format!(
             "cd {}/app-report && git add -A && git status",
