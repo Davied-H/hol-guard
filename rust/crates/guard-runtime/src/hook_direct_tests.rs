@@ -3,7 +3,8 @@ use super::{
     pre_tool_answer, prompt_answer, workspace_candidate, HookDirectDefer, HookDirectRequestV1,
 };
 use crate::policy_store::policy_store_direct_lane::tests::{
-    allowing_fixture, binding, fixture, push, write_current_ack, Fixture,
+    allowing_fixture, binding, fixture, publisher_trusting_fixture, push, write_current_ack,
+    Fixture,
 };
 use crate::policy_store::policy_store_direct_lane::DirectLaneDefer;
 use serde_json::{json, Map, Value};
@@ -298,6 +299,19 @@ fn open_lane(label: &str, extra: Value, allow_policy: bool) -> Lane {
     } else {
         fixture(&format!("hook-direct-{label}"))
     };
+    lane_on(fixture, extra)
+}
+
+/// A lane whose edge allows a first launch of a local CLI, which an
+/// unknown publisher would otherwise send to review.
+fn trusting_lane(label: &str, extra: Value) -> Lane {
+    lane_on(
+        publisher_trusting_fixture(&format!("hook-direct-{label}")),
+        extra,
+    )
+}
+
+fn lane_on(fixture: Fixture, extra: Value) -> Lane {
     let directory = fixture.root.join("repo");
     fs::create_dir_all(&directory).unwrap();
     let workspace = fs::canonicalize(&directory)
@@ -455,11 +469,11 @@ fn package_script_payload(lane: &Lane) -> Value {
 
 #[test]
 fn custom_rules_defer_only_a_command_that_launches_a_local_cli() {
-    let open = allowing_lane("cli-open", json!({}));
+    let open = trusting_lane("cli-open", json!({}));
     let launched = run(&open, package_script_payload(&open));
     assert_eq!(launched["outcome"], "answer", "{launched}");
 
-    let rules = allowing_lane("cli-rules", json!({ "local_cli_block_rules": true }));
+    let rules = trusting_lane("cli-rules", json!({ "local_cli_block_rules": true }));
     // `pwd` launches no local CLI, so no custom rule can block it.
     assert_eq!(run(&rules, allowed_payload(&rules))["outcome"], "answer");
     assert_eq!(
@@ -470,7 +484,7 @@ fn custom_rules_defer_only_a_command_that_launches_a_local_cli() {
 
 #[test]
 fn a_block_rule_saved_after_the_publish_defers() {
-    let lane = allowing_lane("stored-rules", json!({}));
+    let lane = trusting_lane("stored-rules", json!({}));
     let store = lane.fixture.root.join("guard.db");
     let connection = rusqlite::Connection::open(&store).unwrap();
     connection
@@ -879,41 +893,4 @@ fn a_claude_code_prompt_without_a_notice_is_answered_in_either_posture() {
         let page = drain(&reviewed, None);
         assert_eq!(page["records"][0]["harness"], "claude-code", "{label}");
     }
-}
-
-#[test]
-fn probe_local_cli_commands_temporary() {
-    let open = allowing_lane("cli-probe", json!({}));
-    let root = std::path::Path::new(&open.workspace);
-    fs::create_dir_all(root.join("bin")).unwrap();
-    fs::write(root.join("x.py"), b"print(1)\n").unwrap();
-    fs::write(root.join("app.js"), b"console.log(1)\n").unwrap();
-    fs::write(root.join("bin/tool.sh"), b"#!/bin/sh\necho hi\n").unwrap();
-    use std::os::unix::fs::PermissionsExt;
-    fs::set_permissions(root.join("bin/tool.sh"), fs::Permissions::from_mode(0o755)).unwrap();
-    let mut report = Vec::new();
-    for command in [
-        "npm run build",
-        "python3 x.py",
-        "node app.js",
-        "bash bin/tool.sh",
-        "./bin/tool.sh",
-        "./bin/missing.sh",
-        "npx wrangler deploy",
-    ] {
-        let result = run(
-            &open,
-            json!({
-                "hook_event_name": "PreToolUse",
-                "tool_name": "Bash",
-                "tool_input": { "command": command },
-                "cwd": open.workspace,
-            }),
-        );
-        report.push(format!(
-            "{command} => {} {}",
-            result["outcome"], result["reason"]
-        ));
-    }
-    panic!("PROBE {}", report.join(" | "));
 }
