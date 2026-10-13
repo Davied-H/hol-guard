@@ -198,8 +198,9 @@ pub(crate) fn substitute(command: &str) -> Option<String> {
                         .clone()
                         .unwrap_or_else(|| chars[start..end].iter().collect());
                     // Any builtin may take a variable to set by name; zsh's
-                    // `zformat -f`, `zstyle -s` and module builtins do.
-                    if names_variable(&word, |name| assigned.contains(name)) {
+                    // `zformat -f`, `zstyle -s` and module builtins do. A
+                    // substituted word can spell `IFS` the raw text did not.
+                    if names_variable(&word, |name| name == "IFS" || assigned.contains(name)) {
                         return None;
                     }
                     sealed |= opaque(&word);

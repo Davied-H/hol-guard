@@ -192,6 +192,9 @@ fn quoted_or_escaped_names_still_count() {
         "OUT=build; getln -v'OUT'; rm -rf $OUT",
         "I\"FS\"=,; F=a,b; rm -f $F",
         "F=a,b; zformat -f 'IFS' ,; rm -f $F",
+        // Substitution can assemble `IFS` that the raw text never spells.
+        "N=I; compgen -V ${N}FS -W , ; F=a,b; rm -f $F",
+        "N=F; zformat -f I${N}S ,; F=a,b; rm -f $F",
     ] {
         assert_eq!(substituted(command), None, "{command}");
     }
