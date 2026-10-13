@@ -51,11 +51,21 @@ def _conventional_output(path: Path, workspace: Path) -> bool:
 
 def validate_build_output_root(path: Path, *, workspace: Path, cwd: Path | None = None) -> None:
     """Accept a conventional build directory, or the literal one the Vite config in `cwd` names."""
-    if path.is_symlink() or not (
-        _conventional_output(path, workspace)
-        or (cwd is not None and declared_vite_output(cwd, workspace) == path)
-        or (cwd is not None and config_bundle_directory(cwd, workspace, path.parent) == path)
-    ):
+    bundle = (
+        cwd is not None
+        and not path.is_symlink()
+        and config_bundle_directory(cwd, workspace, path.parent) == path
+    )
+    conventional = _conventional_output(path, workspace)
+    # A config that names a non-literal outDir raises. Check the bundle
+    # directory first so that recheck does not refuse a command-line --outDir.
+    declared = (
+        not bundle
+        and not conventional
+        and cwd is not None
+        and declared_vite_output(cwd, workspace) == path
+    )
+    if path.is_symlink() or not (conventional or declared or bundle):
         raise RestrictedPytestError(
             "node_build_invalid_output", "Build output must be a dedicated generated directory."
         )
@@ -203,6 +213,12 @@ def run_restricted_node_tool(
     for root in plan.output_roots:
         # Vite creates this directory itself; a sandbox grant needs it first.
         if root.name == ".vite-temp":
+            parent = root.parent
+            if root.is_symlink() or parent.is_symlink() or not parent.is_dir():
+                raise RestrictedPytestError(
+                    "node_build_invalid_output",
+                    "Vite's config bundle directory is not a real directory inside the project.",
+                )
             root.mkdir(mode=0o755, exist_ok=True)
     return run_restricted_node_plan(
         plan,

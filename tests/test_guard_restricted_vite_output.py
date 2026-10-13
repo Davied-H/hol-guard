@@ -87,6 +87,16 @@ def test_two_out_dirs_are_refused(tmp_path):
         declared_vite_output(app, tmp_path)
 
 
+def test_a_nested_package_is_never_emptied_by_a_build(tmp_path):
+    app = _dashboard(tmp_path, _config('"../packages"'))
+    nested = tmp_path / "packages/lib"
+    nested.mkdir(parents=True)
+    (nested / "package.json").write_text("{}")
+    (nested / "index.js").write_text("export {}")
+    with pytest.raises(RestrictedPytestError):
+        declared_vite_output(app, tmp_path)
+
+
 def test_a_directory_holding_sources_is_never_emptied_by_a_build(tmp_path):
     app = _dashboard(tmp_path, _config('"../web"'))
     (tmp_path / "web").mkdir()
@@ -119,6 +129,13 @@ def test_command_line_output_or_config_overrides_the_declared_directory(monkeypa
     app = _dashboard(tmp_path, _config("process.env.OUT_DIR"))
     plan = _plan(monkeypatch, app, tmp_path, *args)
     assert plan.output_roots[0] == app / "dist"
+
+
+def test_an_explicit_output_still_rechecks_the_bundle_directory(tmp_path):
+    app = _dashboard(tmp_path, _config("process.env.OUT_DIR"))
+    (app / "node_modules").mkdir()
+    bundle = app / "node_modules/.vite-temp"
+    tool.validate_build_output_root(bundle, workspace=tmp_path, cwd=app)
 
 
 def test_the_default_config_loader_gets_only_its_bundle_directory(monkeypatch, tmp_path):
@@ -160,3 +177,13 @@ def test_an_unverifiable_bundle_directory_keeps_the_runner_loader(monkeypatch, t
         )
         is None
     )
+
+
+def test_a_linked_ancestor_of_node_modules_is_not_a_bundle_grant(tmp_path):
+    app = _dashboard(tmp_path / "ws", "export default {};\n")
+    workspace = tmp_path / "ws"
+    linked = workspace / "linked"
+    linked.symlink_to(app, target_is_directory=True)
+    modules = linked / "node_modules"
+    modules.mkdir()
+    assert tool.config_bundle_directory(linked, workspace, modules) is None

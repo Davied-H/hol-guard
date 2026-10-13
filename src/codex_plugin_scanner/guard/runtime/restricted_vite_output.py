@@ -127,6 +127,8 @@ def _holds_only_built_assets(output: Path) -> bool:
         return True
     visited = 0
     for _directory, _folders, files in os.walk(output, followlinks=False):
+        if "package.json" in files:
+            return False
         for name in files:
             visited += 1
             if visited > _MAX_EXISTING_FILES:
@@ -150,6 +152,14 @@ def config_bundle_directory(cwd: Path, workspace: Path, modules: Path) -> Path |
     )
     if nearest is None or nearest != modules or not _path_is_within(nearest, workspace):
         return None
+    current = nearest
+    while current != workspace:
+        if current.is_symlink():
+            return None
+        parent = current.parent
+        if parent == current:
+            return None
+        current = parent
     temp = nearest / ".vite-temp"
     if nearest.is_symlink() or not nearest.is_dir() or temp.is_symlink():
         return None
