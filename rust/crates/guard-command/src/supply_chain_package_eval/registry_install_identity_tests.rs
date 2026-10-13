@@ -74,6 +74,9 @@ fn only_recording_options_and_exact_safety_flags_qualify() {
         "--ignore-scripts=false",
         "-g",
         "--",
+        "[REDACTED_URL]",
+        "user/zod",
+        "../local",
     ] {
         assert!(
             !only_recording_options(&tokens(&format!(
@@ -82,6 +85,10 @@ fn only_recording_options_and_exact_safety_flags_qualify() {
             "{extra}"
         );
     }
+    // A redacted option before the subcommand cannot pass as the subcommand.
+    assert!(!only_recording_options(&tokens(
+        "npm [REDACTED_URL] install zod --ignore-scripts --allow-git=none"
+    )));
 }
 
 #[test]

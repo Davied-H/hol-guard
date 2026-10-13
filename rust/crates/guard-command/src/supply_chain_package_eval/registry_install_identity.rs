@@ -248,12 +248,22 @@ const RECORDING_OPTIONS: [&str; 27] = [
     "--no-progress",
 ];
 
+/// `npm install` and the aliases npm documents for it.
+const INSTALL_SUBCOMMANDS: &[&str] = &[
+    "install", "i", "add", "in", "ins", "inst", "insta", "instal", "isnt", "isnta", "isntal",
+    "isntall",
+];
+
 /// npm expands any unambiguous prefix of a long option (`--reg=` is
 /// `--registry=`) and has multi-letter shorthands, so a denylist of risky
 /// options cannot be complete. Every option must be one of the recording
-/// options above or an exact spelling of the two safety flags.
+/// options above or an exact spelling of the two safety flags. The command
+/// shape is redacted, and redaction swaps a URL-bearing token such as
+/// `--reg=https://...` for a placeholder with no leading dash, so every operand
+/// after the subcommand must also be a plain registry spec.
 fn only_recording_options(tokens: &[String]) -> bool {
     let mut index = 1;
+    let mut subcommand_seen = false;
     while index < tokens.len() {
         let token = tokens[index].as_str();
         let next = tokens.get(index + 1).map(String::as_str);
@@ -266,7 +276,15 @@ fn only_recording_options(tokens: &[String]) -> bool {
             index += 2;
             continue;
         }
-        let known = !token.starts_with('-')
+        let operand = if token.starts_with('-') {
+            false
+        } else if subcommand_seen {
+            plain_registry_spec(token)
+        } else {
+            subcommand_seen = true;
+            INSTALL_SUBCOMMANDS.contains(&token)
+        };
+        let known = operand
             || RECORDING_OPTIONS.contains(&token)
             || matches!(
                 token,
