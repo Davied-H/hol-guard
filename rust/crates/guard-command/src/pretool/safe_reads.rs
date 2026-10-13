@@ -72,6 +72,12 @@ pub(super) fn command_read_target(
     if context.home_dir.is_some() || context.cwd.is_some() {
         bounded_read_target(value, context.home_dir, context.cwd, allow_directory)
             || (!allow_directory && read_globs::bounded_glob_file_read_target(value, context))
+            || (!allow_directory
+                && super::chain_temporary::absent_temporary_read_target(
+                    value,
+                    context.home_dir,
+                    context.cwd,
+                ))
     } else {
         safe_read_target(value)
     }
