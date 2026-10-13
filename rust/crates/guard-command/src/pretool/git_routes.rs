@@ -121,9 +121,9 @@ pub(in crate::pretool) fn repository_below_home(
 /// plus ownership: the work tree root, its `.git` entry and every path
 /// component are non-hidden, the path clears the sensitive-path screens, the
 /// root holds a real `.git` directory (or a registered linked worktree of
-/// one) and both are owned by the current user. Git itself refuses a
-/// repository owned by someone else. The configuration probe still rejects
-/// executable helpers for the `-C` target.
+/// one) and both are owned by the current user and writable by no one else.
+/// Git itself refuses a repository owned by someone else. The configuration
+/// probe still rejects executable helpers for the `-C` target.
 #[cfg(unix)]
 fn repository_owned_outside_home(
     target: &std::path::Path,
@@ -154,8 +154,11 @@ fn repository_owned_outside_home(
         return false;
     }
     let me = nix::unistd::geteuid().as_raw();
+    // Nobody else may write there either, or another user could swap the
+    // `.git` entry after this check.
     let owned = |path: &std::path::Path| {
-        std::fs::symlink_metadata(path).is_ok_and(|metadata| metadata.uid() == me)
+        std::fs::symlink_metadata(path)
+            .is_ok_and(|metadata| metadata.uid() == me && metadata.mode() & 0o022 == 0)
     };
     let Some((root, metadata)) = target
         .ancestors()

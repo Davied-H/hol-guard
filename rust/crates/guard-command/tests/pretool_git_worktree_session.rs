@@ -90,30 +90,43 @@ fn git(repository: &Path, arguments: &[&str]) -> bool {
 /// away, such as the `filter.lfs` section `git lfs install --system` writes.
 fn system_config_is_plain() -> bool {
     let output = std::process::Command::new("git")
-        .args(["config", "--system", "--name-only", "--list"])
+        .args(["config", "--system", "--list"])
         .output()
         .unwrap();
-    String::from_utf8_lossy(&output.stdout).lines().all(|key| {
-        let key = key.to_ascii_lowercase();
-        ![
-            "filter.",
-            "hook.",
-            "pager.",
-            "include",
-            "extensions.",
-            "submodule.",
-            "core.bare",
-            "core.hookspath",
-            "core.worktree",
-            "core.fsmonitor",
-            "core.sshcommand",
-            "core.gitproxy",
-            "core.askpass",
-            "core.pager",
-        ]
-        .iter()
-        .any(|prefix| key.starts_with(prefix))
-    })
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .all(|entry| {
+            let (key, value) = entry.split_once('=').unwrap_or((entry, ""));
+            let key = key.to_ascii_lowercase();
+            // The filter `git lfs install --system` writes runs the installed
+            // Git LFS program and is trusted outside the repository.
+            let standard_lfs = matches!(
+                (key.as_str(), value),
+                ("filter.lfs.clean", "git-lfs clean -- %f")
+                    | ("filter.lfs.smudge", "git-lfs smudge -- %f")
+                    | ("filter.lfs.process", "git-lfs filter-process")
+                    | ("filter.lfs.required", "true")
+            );
+            standard_lfs
+                || ![
+                    "filter.",
+                    "hook.",
+                    "pager.",
+                    "include",
+                    "extensions.",
+                    "submodule.",
+                    "core.bare",
+                    "core.hookspath",
+                    "core.worktree",
+                    "core.fsmonitor",
+                    "core.sshcommand",
+                    "core.gitproxy",
+                    "core.askpass",
+                    "core.pager",
+                ]
+                .iter()
+                .any(|prefix| key.starts_with(prefix))
+        })
 }
 
 #[test]

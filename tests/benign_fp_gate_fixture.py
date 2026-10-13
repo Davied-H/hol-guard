@@ -82,7 +82,9 @@ class BenignFixture:
             "${PRIVATE_TMP}": str(self.private_tmp),
             "${ORG}": str(self.org),
             "${ORG_WT}": str(self.org.parent / "app-portal-fix"),
+            "${TMP_ORG}": str(self.tmp_org),
             "${TMP_ORG_WT}": str(self.tmp_org.parent / "app-followup"),
+            "${TMP_REMOTE}": str(self.tmp_org.parent / "remote" / "app.git"),
         }
 
     def cwd(self, name: str) -> Path:
@@ -282,6 +284,9 @@ def build_fixture(root: Path) -> BenignFixture:
     _git(tmp_org / "app", "add", "-A", home=home)
     _git(tmp_org / "app", "commit", "--quiet", "-m", "app base", home=home)
     _git(tmp_org / "app", "worktree", "add", "--quiet", "-b", "followup", str(tmp_org.parent / "app-followup"), home=home)
+    remote = tmp_org.parent / "remote" / "app.git"
+    _git(tmp_org.parent, "clone", "--quiet", "--bare", str(tmp_org / "app"), str(remote), home=home)
+    _git(tmp_org / "app", "remote", "add", "origin", str(remote), home=home)
     return BenignFixture(
         root, home, parent, worktree, nested, gitlink_repo, guard_home, private_tmp, tmp_worktree, org, tmp_org
     )

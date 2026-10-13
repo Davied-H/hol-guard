@@ -446,6 +446,13 @@ fn bounded_write(target: &str, context: super::super::PathContext<'_>) -> bool {
     use super::super::safe_writes::{
         bounded_native_file_write_target, bounded_native_temporary_write_target,
     };
+    // Home is outside the workspace even when it sits below a temporary
+    // directory, as it does for disposable and CI accounts.
+    let path = std::path::Path::new(target);
+    let under = |base: Option<&str>| base.is_some_and(|base| path.starts_with(base));
+    if path.is_absolute() && under(context.home_dir) && !under(context.cwd) {
+        return false;
+    }
     bounded_native_file_write_target(target, context.home_dir, context.cwd)
         || bounded_native_temporary_write_target(target, context.home_dir, context.cwd)
 }

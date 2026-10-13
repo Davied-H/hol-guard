@@ -71,9 +71,13 @@ fn a_reviewable_setting_before_an_unmodeled_script_reaches_ordinary_review() {
         &root,
         &format!("NODE_PATH={} node scripts/report.mjs", modules.display()),
     );
-    assert_eq!(
-        (result.minimum_action.as_str(), result.reason_code.as_str()),
-        ("review", "native_command_review_required"),
+    // The modules sit inside the workspace, so the sandbox bounds them too.
+    assert!(
+        matches!(
+            (result.minimum_action.as_str(), result.reason_code.as_str()),
+            ("review", "native_command_review_required")
+                | ("sandbox-required", "native_workspace_containment_required")
+        ),
         "{}",
         result.reason
     );

@@ -253,8 +253,9 @@ fn printing_a_credential_variable_reads_the_secret() {
             .iter()
             .any(|item| item.rule_id == "command.shell-mutations.process-environment-secret-read")
     };
-    assert!(reads_secret("echo \"$GITHUB_TOKEN\" > p.txt"));
+    // The redirect projection hands this layer the command without `> file`.
+    assert!(reads_secret("echo \"$GITHUB_TOKEN\""));
     assert!(reads_secret("printf '%s' \"${NPM_TOKEN}\""));
-    assert!(!reads_secret("echo \"$PATH\" > p.txt"));
+    assert!(!reads_secret("echo \"$PATH\""));
     assert!(!reads_secret("echo hello"));
 }

@@ -226,9 +226,12 @@ pub(super) fn contained(
     // A projection that earns a plain allow runs in the sandbox too: the
     // redirects still need its confinement, and the command needs nothing
     // the sandbox withholds when it stays offline.
+    // A single command the bounded-write projection takes runs directly
+    // instead; one it declines, such as a write to `.gitignore`, runs here.
+    let single = super::redirect_projection::project(command, context).is_none();
     let allowed = projected.minimum_action == "allow"
         && !projected.action.sensitive_target
-        && stays_offline(&projected_text);
+        && stays_offline(&projected_text, single);
     if projected.reason_code != crate::pretool::workspace_contained::REASON && !allowed {
         return None;
     }
@@ -253,11 +256,11 @@ pub(super) fn contained(
     Some(projected)
 }
 
-/// An allowed compound command still works in the sandbox when it reaches
-/// no network, unlike GitHub and registry queries or Git remote operations.
-/// A single command keeps the bounded-write projection, which runs it
-/// directly; anything else keeps its review.
-fn stays_offline(projected: &str) -> bool {
+/// An allowed command still works in the sandbox when it reaches no
+/// network, unlike GitHub and registry queries or Git remote operations.
+/// A single command counts only when `single` says the bounded-write
+/// projection will not run it directly.
+fn stays_offline(projected: &str, single: bool) -> bool {
     let Ok(model) = crate::parse_command(&CommandModelRequestV1 {
         command: projected.to_owned(),
         dialect: "posix".into(),
@@ -266,7 +269,7 @@ fn stays_offline(projected: &str) -> bool {
     }) else {
         return false;
     };
-    model.segments.len() > 1
+    (model.segments.len() > 1 || (single && model.segments.len() == 1))
         && !model.segments.iter().any(|segment| {
             let Some(executable) = segment.executable.as_deref() else {
                 return true;

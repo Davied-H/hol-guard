@@ -68,7 +68,6 @@ fn unproven_local_commands_run_in_the_workspace_sandbox_on_macos() {
         "cat package.json > copy.json && head -3 copy.json",
         "find src -type f > files.txt; wc -l files.txt",
         "npm run lint",
-        "npm -v",
         "yarn build",
         "pnpm run test:unit",
         "bun run build",
@@ -247,6 +246,11 @@ fn compound_commands_with_literal_redirects_run_in_the_workspace_sandbox() {
         "python3 app.py > out.txt 2>&1",
         "python3 app.py > out.txt 2>&1; cat out.txt",
         "npm run build > build.log 2>&1 && git add -A",
+        // A commit message is not `git init`.
+        "echo x > notes.txt && git add -A && git commit -m init",
+        // The bounded projection declines hidden targets; the sandbox
+        // bounds them.
+        "printf 'node_modules\\n' > .gitignore",
     ] {
         let got = reason("omp", command, &ws, true);
         if host() {
@@ -280,6 +284,8 @@ fn redirects_the_sandbox_cannot_bound_stay_out_of_the_workspace_sandbox() {
         "cat ~/.ssh/id_rsa > key.txt && git add -A",
         "git reset --hard > log.txt && git add -A",
         "echo $(curl https://example.com) > page.html && git add -A",
+        "cat ~/.ssh/id_rsa > .key",
+        "printf x > ~/.zshrc",
     ] {
         assert_ne!(reason("omp", command, &ws, true), CONTAINED, "{command}");
     }

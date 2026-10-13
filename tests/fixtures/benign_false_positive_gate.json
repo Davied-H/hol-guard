@@ -4743,6 +4743,70 @@
       },
       "cwd": "tmp_org",
       "expect": "allow"
+    },
+    {
+      "id": "session-git-dir-bare-remote-config-list",
+      "fix_area": "git",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git --git-dir ${TMP_REMOTE} config --list 2>&1 | head -20"
+      },
+      "cwd": "tmp_org",
+      "expect": "allow"
+    },
+    {
+      "id": "session-ls-echo-cd-repo-git-status-remote-log",
+      "fix_area": "git",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "ls ${TMP_ORG}/.. && echo \"---\" && ls ${TMP_ORG}/ && echo \"---\" && cd ${TMP_ORG}/app && git status && echo \"---\" && git remote -v && echo \"---\" && git log --oneline -15"
+      },
+      "cwd": "tmp_org",
+      "expect": "allow"
+    },
+    {
+      "id": "session-printf-gitignore-dotfile",
+      "fix_area": "printf 'node_modules\\n' > .gitignore",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "redirect"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "session-echo-add-commit-message-init",
+      "fix_area": "echo x > notes.txt && git add -A && git commit -m init",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
     }
   ],
   "pending_pr": {

@@ -218,7 +218,7 @@ pub(crate) fn command_shape(
         if name == "git" && git_metadata::writes_denied_metadata(&segment.arguments) {
             return None;
         }
-        if name == "git" && segment.arguments.iter().any(|argument| argument == "init") {
+        if name == "git" && git_metadata::initializes(&segment.arguments) {
             if bootstrap.is_some() || segment.arguments.first().map(String::as_str) != Some("init")
             {
                 return None;

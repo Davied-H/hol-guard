@@ -437,6 +437,8 @@ fn local_writes_in_a_linked_worktree_are_quiet_only_without_programs() {
         "git add -A && git commit -m 'chore: update'",
         "git commit -am 'fix: handle retry'",
         "git commit -q -m 'fix: handle retry' 2>&1",
+        // Output kept in the worktree is a bounded file write.
+        "git add notes.md > out.txt",
         "git switch -c feat/retry",
         "git checkout -b feat/retry",
         "git stash",
@@ -452,7 +454,6 @@ fn local_writes_in_a_linked_worktree_are_quiet_only_without_programs() {
         "git commit -S -m x",
         "git -c core.hooksPath=/tmp/hooks commit -m x",
         "git add notes.md && rm -rf build",
-        "git add notes.md > out.txt",
         "git switch main",
         "git stash pop",
     ] {
