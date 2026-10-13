@@ -248,6 +248,7 @@ fn any_unproven_step_or_connector_keeps_the_review() {
         "git checkout -b feat && git add . && git commit -m x && perl push origin feat",
         "git add . && git commit -m x && env git push origin main",
         "git add . && git commit -m x && command git push origin main",
+        "git add . && git commit -m x && env -C ../other git push origin main",
         // A proposal follows the push of the work it proposes.
         "git add . && git commit -m x && gh pr create --title T --body B && git push origin main",
         "git checkout -b b1 origin/main && git push origin b1",
