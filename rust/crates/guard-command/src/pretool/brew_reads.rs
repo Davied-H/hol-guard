@@ -105,7 +105,12 @@ pub(super) fn safe_brew_arguments(arguments: &[String]) -> bool {
         ["list" | "ls", rest @ ..] => query(rest, &[LIST_FLAGS, KIND_FLAGS], true),
         ["info" | "abv", rest @ ..] => query(rest, &[INFO_FLAGS, KIND_FLAGS], true),
         ["desc", rest @ ..] => query(rest, &[KIND_FLAGS], true) && names(rest) > 0,
-        ["deps", rest @ ..] => query(rest, &[DEPS_FLAGS, KIND_FLAGS], true),
+        // Without a name or `--installed`, `deps` evaluates every available
+        // formula and cask, tap definitions included.
+        ["deps", rest @ ..] => {
+            query(rest, &[DEPS_FLAGS, KIND_FLAGS], true)
+                && (names(rest) > 0 || rest.contains(&"--installed"))
+        }
         // Without `--installed`, `uses` evaluates every available formula.
         ["uses", rest @ ..] => rest.contains(&"--installed") && query(rest, &[USES_FLAGS], true),
         ["leaves", rest @ ..] => query(rest, &[LEAVES_FLAGS], false),
