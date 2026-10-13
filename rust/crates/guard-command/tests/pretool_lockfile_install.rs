@@ -165,7 +165,8 @@ fn assert_allowed(result: &guard_contracts::PreToolResultV1, command: &str) {
     assert_eq!(
         (result.minimum_action.as_str(), result.reason_code.as_str()),
         ("allow", "native_exact_safe_lockfile_install"),
-        "{command}"
+        "{command}\n{}",
+        serde_json::to_string(result).unwrap_or_default()
     );
 }
 
