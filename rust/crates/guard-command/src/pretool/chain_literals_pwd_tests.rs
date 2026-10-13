@@ -67,11 +67,18 @@ fn a_possible_directory_change_before_a_use_keeps_it_opaque() {
         "PWD=/etc && echo $PWD",
         "export PWD=/etc; echo $(pwd)",
         "IFS=/ && echo $(pwd)",
+        // A redirection before the command word must not hide a `cd`.
+        "2>/dev/null cd /etc && cat $(pwd)/passwd",
+        "> out cd sub && echo $(pwd)",
+        "<in cd sub; echo $PWD",
+        "A=1 2>&1 cd sub && echo $(pwd)",
     ] {
         assert_eq!(project(command, d), None, "{command}");
     }
     // A change after the last use leaves the earlier uses exact.
     assert!(project("echo $(pwd) && cd sub && ls", d).is_some());
+    // A redirection after the command word leaves it visible.
+    assert!(project("ls $(pwd) 2>/dev/null; cat .gitignore", d).is_some());
 }
 
 #[test]

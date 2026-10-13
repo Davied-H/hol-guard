@@ -45,6 +45,18 @@ pub(super) fn project(command: &str, cwd: &str) -> Option<String> {
                 .iter()
                 .take_while(|&&(from, to)| assignment(&projected_chars[from..to]).is_some())
                 .count();
+            // The lexer keeps redirections as words, so one before the
+            // command word (`2>/dev/null cd /etc`) would hide that word.
+            if stage[..stage.len().min(leading + 1)]
+                .iter()
+                .any(|&(from, to)| {
+                    projected_chars[from..to]
+                        .iter()
+                        .any(|c| matches!(c, '<' | '>'))
+                })
+            {
+                return None;
+            }
             let Some(&(from, to)) = stage.get(leading) else {
                 continue;
             };
