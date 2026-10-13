@@ -68,6 +68,7 @@ pub(super) fn replaces_nothing(probe: &Probe, start: &str) -> bool {
     let Some(added) = probe.output(&[
         "--no-pager",
         "diff",
+        "--no-relative",
         "--no-renames",
         "--no-ext-diff",
         "--no-textconv",
