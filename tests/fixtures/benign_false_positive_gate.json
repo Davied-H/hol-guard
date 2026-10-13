@@ -262,6 +262,21 @@
       "expect": "allow"
     },
     {
+      "id": "neg-cargo-check-locked-host-toolchain",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cargo check --locked 2>&1 | tail -15"
+      },
+      "cwd": "worktree",
+      "expect": "not_allow"
+    },
+    {
       "id": "rustc-version",
       "fix_area": "shell",
       "harnesses": [
@@ -776,6 +791,54 @@
       "tool": "read",
       "tool_input": {
         "path": "${WORKTREE}/app/registry/[slug]/page.tsx"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "write-slug-route-existing",
+      "fix_area": "write",
+      "harnesses": [
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "write",
+      "tool_input": {
+        "path": "${WORKTREE}/app/registry/[slug]/page.tsx",
+        "content": "export default function Page() { return null; }\n"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "write-dynamic-route-new-subtree",
+      "fix_area": "write",
+      "harnesses": [
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "write",
+      "tool_input": {
+        "path": "${WORKTREE}/app/api/guard/extensions/[id]/promotion/local-distribution/route.ts",
+        "content": "export async function GET() { return Response.json({}); }\n"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "write-dollar-route-file",
+      "fix_area": "write",
+      "harnesses": [
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "write",
+      "tool_input": {
+        "path": "${WORKTREE}/app/routes/posts.$slug.edit.tsx",
+        "content": "export default function Edit() { return null; }\n"
       },
       "cwd": "worktree",
       "expect": "allow"
@@ -2897,6 +2960,66 @@
       "expect": "not_allow"
     },
     {
+      "id": "queue-sibling-grep-sed-print-ranges",
+      "fix_area": "queue",
+      "harnesses": [
+        "codex",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "grep -n \"^mod \\|^pub mod \" ${ORG}/service-api/src/index.ts | sed -n '1,12p;28,40p'"
+      },
+      "cwd": "org_app",
+      "expect": "allow"
+    },
+    {
+      "id": "queue-sibling-grep-glob-operand",
+      "fix_area": "queue",
+      "harnesses": [
+        "codex",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "grep -rln \"def.*settings\\|SETTINGS_\" ${ORG}/service-api/src/*.ts | head -8"
+      },
+      "cwd": "org_app",
+      "expect": "allow"
+    },
+    {
+      "id": "queue-sibling-rg-src-and-github",
+      "fix_area": "queue",
+      "harnesses": [
+        "codex",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "rg -n \"deadline\" ${ORG}/service-api/src ${ORG}/service-api/.github"
+      },
+      "cwd": "org_app",
+      "expect": "allow"
+    },
+    {
+      "id": "queue-sibling-rg-replace-dirs-head",
+      "fix_area": "queue",
+      "harnesses": [
+        "codex",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "rg -rn \"deadline\" ${ORG}/service-api/src ${ORG}/service-api/.github 2>/dev/null | head"
+      },
+      "cwd": "org_app",
+      "expect": "allow"
+    },
+    {
       "id": "neg-home-fd-hidden",
       "fix_area": "negative",
       "harnesses": [
@@ -4950,6 +5073,38 @@
       "expect": "allow"
     },
     {
+      "id": "session-git-log-glob-pathspec-chain",
+      "fix_area": "git",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git log --oneline HEAD~1..HEAD | wc -l; echo ---; git log --oneline HEAD~1..HEAD --name-only --diff-filter=A -- 'src/*' '*migration*' 2>/dev/null | head -30; git merge-base --is-ancestor origin/main HEAD && echo merged || echo open"
+      },
+      "cwd": "org_app",
+      "expect": "allow"
+    },
+    {
+      "id": "neg-git-log-patch-glob-pathspec",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git log -p -3 -- '*secret*' 2>/dev/null | head -60; git rev-parse HEAD"
+      },
+      "cwd": "org_app",
+      "expect": "not_allow"
+    },
+    {
       "id": "queue-git-log-range-name-only",
       "fix_area": "queue",
       "harnesses": [
@@ -5224,6 +5379,100 @@
       },
       "cwd": "org_app",
       "expect": "allow"
+    },
+    {
+      "id": "session-git-worktree-add-detached-origin-main",
+      "fix_area": "git-sibling-worktree",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git worktree add ../app-portal-review origin/main"
+      },
+      "cwd": "org_app",
+      "expect": "allow"
+    },
+    {
+      "id": "session-git-worktree-add-chain-log-status",
+      "fix_area": "git-sibling-worktree",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git worktree add -b flat-lane ../app-portal-flat origin/main && cd ../app-portal-flat && git log --oneline -3 && git status"
+      },
+      "cwd": "org_app",
+      "expect": "allow"
+    },
+    {
+      "id": "neg-git-worktree-add-chain-commit",
+      "fix_area": "git-sibling-worktree",
+      "harnesses": [
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git worktree add -b flat-lane ../app-portal-flat origin/main && cd ../app-portal-flat && git commit --allow-empty -m wip"
+      },
+      "cwd": "org_app",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-git-worktree-add-chain-push",
+      "fix_area": "git-sibling-worktree",
+      "harnesses": [
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git worktree add -b flat-lane ../app-portal-flat origin/main && cd ../app-portal-flat && git push origin flat-lane"
+      },
+      "cwd": "org_app",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-git-worktree-add-existing-repository",
+      "fix_area": "git-sibling-worktree",
+      "harnesses": [
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git worktree add ../service-api origin/main"
+      },
+      "cwd": "org_app",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-git-worktree-add-no-reference",
+      "fix_area": "git-sibling-worktree",
+      "harnesses": [
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git worktree add ../app-portal-review"
+      },
+      "cwd": "org_app",
+      "expect": "not_allow"
     },
     {
       "id": "session-sibling-worktree-fetch-log",
@@ -5992,6 +6241,37 @@
       },
       "cwd": "tmp_org",
       "expect": "allow"
+    },
+    {
+      "id": "session-git-reads-then-cd-sibling-reads",
+      "fix_area": "git-sibling-worktree",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git log --oneline -5 && git status --short | head -20 && echo \"=== other ===\" && cd ${ORG}/service-api && git log --oneline -5 && git status --short | head"
+      },
+      "cwd": "org_app",
+      "expect": "allow"
+    },
+    {
+      "id": "neg-git-checkout-then-cd-sibling-log",
+      "fix_area": "git-sibling-worktree",
+      "harnesses": [
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git checkout -b scratch && cd ${ORG}/service-api && git log --oneline -5"
+      },
+      "cwd": "org_app",
+      "expect": "not_allow"
     },
     {
       "id": "session-printf-gitignore-dotfile",

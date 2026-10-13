@@ -316,6 +316,11 @@ fn exact_safe_command_with_context(
     if let Some(rest) = segment_proof::after_read_prefix(model, context) {
         return segment_proof::exact_safe_cwd_compound(&rest, allow_git_helper_context, context);
     }
+    if let Some(rest) =
+        git_read_floor::after_safe_git_read_prefix(model, allow_git_helper_context, context)
+    {
+        return segment_proof::exact_safe_cwd_compound(&rest, allow_git_helper_context, context);
+    }
     model.segments.iter().all(|segment| {
         segment_proof::exact_safe_segment_with_context(
             model,
@@ -582,6 +587,7 @@ fn evaluate_single_command(
         ));
     }
     let reason = repo_create_reason::private_alternative_reason(&model)
+        .or_else(|| repo_create_reason::created_remote_push_reason(&model))
         .or_else(|| fanout_reads::whitespace_split_reason(&model))
         .or_else(|| compound_reason::unproven_steps_reason(&model, context))
         .or_else(|| worktree_add::outside_home_reason(&model, context));
