@@ -128,19 +128,29 @@ fn pages_large_lists_under_the_reply_budget() {
             .iter()
             .map(|row| row["publisher_key"].as_str().unwrap().to_owned())
             .collect();
-        (keys, reply["payload"]["more"].as_bool().unwrap())
+        let more = reply["payload"]["more"].as_bool().unwrap();
+        (keys, more, reply["payload"]["next"].clone())
     };
-    assert_eq!(
-        page(serde_json::json!({"limit": null})),
-        (vec!["d".into(), "c".into()], true)
-    );
-    assert_eq!(
-        page(serde_json::json!({"limit": null, "offset": 2})),
-        (vec!["b".into(), "a".into()], false)
-    );
-    assert_eq!(
-        page(serde_json::json!({"limit": 1, "offset": 3})),
-        (vec!["a".into()], false)
-    );
+    let (keys, more, next) = page(serde_json::json!({"limit": null}));
+    assert_eq!((keys, more), (vec!["d".into(), "c".into()], true));
+    assert_eq!(next["updated_at"], "2026-10-03");
+    let (keys, more, next) = page(serde_json::json!({"limit": null, "after": next}));
+    assert_eq!((keys, more), (vec!["b".into(), "a".into()], false));
+    assert_eq!(next, Value::Null);
+    // A row a sync rewrites mid-read moves ahead of the cursor instead of
+    // shifting the rest of the pages, and tied rows keep insertion order.
+    connection
+        .execute(
+            "update publisher_cache set updated_at = '2026-10-09' where publisher_key in ('c', 'a')",
+            [],
+        )
+        .unwrap();
+    let after_d = serde_json::json!({"updated_at": "2026-10-04", "rowid": 4});
+    let (keys, _, _) = page(serde_json::json!({"limit": 1, "after": after_d}));
+    assert_eq!(keys, vec!["b".to_owned()]);
+    let (keys, _, _) = page(serde_json::json!({"limit": 1}));
+    assert_eq!(keys, vec!["a".to_owned()]);
+    let bad = serde_json::json!({"method": "list_cached_advisories", "wire_args": {"after": {"rowid": 1}}});
+    assert_eq!(run_step(&home, source, &bad)["status"], "error");
     let _ = std::fs::remove_dir_all(&home);
 }

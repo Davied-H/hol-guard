@@ -10,6 +10,7 @@ use crate::guard_store_db::{exec, query_all, StoreError, StoreResult};
 use crate::guard_store_json::{dumps_sorted, py_strip};
 
 const INVALID_PAYLOAD: StoreError = StoreError::Invalid("native_advisory_payload_invalid");
+const INVALID_ARGS: StoreError = StoreError::Invalid("native_guard_store_args_invalid");
 
 /// The advisory's stripped `id`, or a digest of its canonical JSON.
 fn cache_key(advisory: &Value) -> StoreResult<String> {
@@ -30,9 +31,7 @@ fn cache_key(advisory: &Value) -> StoreResult<String> {
 /// under its cache key and return how many were written.
 pub(crate) fn cache(connection: &Connection, args: &Args) -> StoreResult<Value> {
     let now = args.str("now")?;
-    let payloads = args
-        .strings("payloads")?
-        .ok_or(StoreError::Invalid("native_guard_store_args_invalid"))?;
+    let payloads = args.strings("payloads")?.ok_or(INVALID_ARGS)?;
     for payload in &payloads {
         let advisory: Value = serde_json::from_str(payload).map_err(|_| INVALID_PAYLOAD)?;
         exec(
@@ -54,37 +53,62 @@ pub(crate) fn cache(connection: &Connection, args: &Args) -> StoreResult<Value> 
 /// under the resident's reply frame limit.
 const LIST_REPLY_BUDGET: usize = 1024 * 1024;
 
-/// One page of cached rows newest first: at most `limit` (unbounded when it
-/// is null or negative) after skipping `offset`. The payload text is returned
-/// as stored so the caller decodes it exactly as before. A page that would
-/// pass the reply budget stops early (always keeping its first row) and sets
-/// `more`, so the caller asks again from where it ended.
+/// One page of cached rows newest first (ties in insertion order, as the
+/// Python store returned them): at most `limit` (unbounded when it is null or
+/// negative), starting after the `after` cursor when given. The payload text
+/// is returned as stored so the caller decodes it exactly as before. A page
+/// that would pass the reply budget stops early (always keeping its first row),
+/// sets `more` and returns the `next` cursor to continue from. The cursor is a
+/// position in a total order, so rows a sync rewrites between pages cannot make
+/// a later page repeat rows.
 pub(crate) fn list(connection: &Connection, args: &Args) -> StoreResult<Value> {
     let limit = match args.raw("limit") {
         None => -1,
         Some(_) => args.int("limit")?,
     };
-    let offset = match args.raw("offset") {
-        None => 0,
-        Some(_) => args.int("offset")?,
+    let (filter, mut params) = match args.raw("after") {
+        None | Some(Value::Null) => ("", Vec::new()),
+        Some(after) => {
+            let updated_at = after
+                .get("updated_at")
+                .and_then(Value::as_str)
+                .ok_or(INVALID_ARGS)?;
+            let rowid = after
+                .get("rowid")
+                .and_then(Value::as_i64)
+                .ok_or(INVALID_ARGS)?;
+            (
+                "where updated_at < ? or (updated_at = ? and rowid > ?) ",
+                vec![
+                    Value::from(updated_at),
+                    Value::from(updated_at),
+                    Value::from(rowid),
+                ],
+            )
+        }
     };
+    params.push(Value::from(limit));
     let rows = query_all(
         connection,
-        "select publisher_key, payload_json, updated_at from publisher_cache \
-         order by updated_at desc limit ? offset ?",
-        &[Value::from(limit), Value::from(offset)],
+        &format!(
+            "select rowid, publisher_key, payload_json, updated_at from publisher_cache \
+             {filter}order by updated_at desc, rowid asc limit ?"
+        ),
+        &params,
     )?;
     let mut page = Vec::with_capacity(rows.len());
     let mut used = 0;
-    let mut more = false;
-    for row in rows {
+    let mut next = Value::Null;
+    for mut row in rows {
+        let rowid = row.remove("rowid").unwrap_or(Value::Null);
+        let cursor = serde_json::json!({"updated_at": row["updated_at"], "rowid": rowid});
         let row = Value::Object(row);
         used += serde_json::to_string(&row).map_or(0, |text| text.len());
         if used > LIST_REPLY_BUDGET && !page.is_empty() {
-            more = true;
-            break;
+            return Ok(serde_json::json!({"rows": page, "more": true, "next": next}));
         }
         page.push(row);
+        next = cursor;
     }
-    Ok(serde_json::json!({"rows": page, "more": more}))
+    Ok(serde_json::json!({"rows": page, "more": false, "next": Value::Null}))
 }

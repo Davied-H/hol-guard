@@ -17,10 +17,13 @@ class _PagedStore(StoreAdvisoryCacheMixin):
         self.calls.append(args)
         if method == "cache_advisories":
             return len(args["payloads"])
-        offset = int(args["offset"])
-        end = len(self.rows) if args["limit"] is None else offset + int(args["limit"])
-        page = self.rows[offset : min(end, offset + self.page_size)]
-        return {"rows": page, "more": offset + len(page) < min(end, len(self.rows))}
+        after = args["after"]
+        start = 0 if after is None else int(after["rowid"]) + 1
+        end = len(self.rows) if args["limit"] is None else start + int(args["limit"])
+        page = self.rows[start : min(end, start + self.page_size)]
+        more = start + len(page) < min(end, len(self.rows))
+        next_cursor = {"updated_at": "t", "rowid": start + len(page) - 1} if more else None
+        return {"rows": page, "more": more, "next": next_cursor}
 
 
 def _row(index: int) -> dict[str, object]:
@@ -46,8 +49,12 @@ def test_cache_sums_counts_across_batches() -> None:
 def test_list_follows_pages_until_the_limit_or_the_end() -> None:
     store = _PagedStore([_row(index) for index in range(5)], page_size=2)
     assert [item["n"] for item in store.list_cached_advisories(limit=None)] == [0, 1, 2, 3, 4]
-    assert [call["offset"] for call in store.calls] == [0, 2, 4]
+    assert [call["after"] for call in store.calls] == [
+        None,
+        {"updated_at": "t", "rowid": 1},
+        {"updated_at": "t", "rowid": 3},
+    ]
     store.calls.clear()
     assert [item["n"] for item in store.list_cached_advisories(limit=3)] == [0, 1, 2]
-    assert store.calls == [{"limit": 3, "offset": 0}, {"limit": 1, "offset": 2}]
+    assert store.calls == [{"limit": 3, "after": None}, {"limit": 1, "after": {"updated_at": "t", "rowid": 1}}]
     assert store.list_cached_advisories(limit=0) == []

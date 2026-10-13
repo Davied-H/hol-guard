@@ -20,13 +20,15 @@ class StoreAdvisoryCacheMixin:
 
     def list_cached_advisories(self, limit: int | None = 100) -> list[dict[str, object]]:
         rows: list[dict[str, object]] = []
+        after: object = None
         while True:
             remaining = None if limit is None or limit < 0 else limit - len(rows)
-            page = self._native_store_call("list_cached_advisories", {"limit": remaining, "offset": len(rows)})
+            page = self._native_store_call("list_cached_advisories", {"limit": remaining, "after": after})
             if not isinstance(page, dict) or not isinstance(page.get("rows"), list):
                 raise sqlite3.DatabaseError("native_advisory_cache_invalid")
             rows.extend(page["rows"])
-            if page.get("more") is not True or not page["rows"]:
+            after = page.get("next")
+            if page.get("more") is not True or not page["rows"] or after is None:
                 break
         if not all(isinstance(row, dict) for row in rows):
             raise sqlite3.DatabaseError("native_advisory_cache_invalid")
