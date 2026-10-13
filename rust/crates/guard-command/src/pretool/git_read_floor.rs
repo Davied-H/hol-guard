@@ -27,6 +27,12 @@ pub(super) fn requires_review(
     if let Some(rest) = after_git_read_prefix(model, context, deadline, execution_environment) {
         return requires_review(&rest, context, deadline, execution_environment);
     }
+    // Past this point every Git read is probed in one directory. A later
+    // `cd` the read prefixes above did not account for moves the reads after
+    // it somewhere this probe never looked.
+    if git_after_later_cd(model) {
+        return true;
+    }
     let destination = super::segment_proof::verified_cwd_compound_context(model, context);
     let read_context = super::PathContext {
         cwd: destination.as_deref().or(context.cwd),
@@ -141,6 +147,54 @@ fn after_git_read_prefix(
     deadline: Option<Instant>,
     execution_environment: Option<&guard_contracts::GuardExecutionEnvironmentV1>,
 ) -> Option<CanonicalCommandV1> {
+    after_prefix(model, |prefix, index| {
+        let segment = &prefix.segments[index];
+        let git = segment
+            .executable
+            .as_deref()
+            .is_some_and(|executable| super::executable_basename(executable) == "git");
+        if git {
+            super::git_remote_ops::proven_read(
+                prefix,
+                index,
+                context,
+                deadline,
+                execution_environment,
+            )
+        } else {
+            super::segment_proof::cwd_read_executable(segment.executable.as_deref())
+                && super::segment_proof::exact_safe_segment_with_context(
+                    prefix, segment, false, context,
+                )
+        }
+    })
+}
+
+/// The command from its only `cd` onward when everything before the `cd` is
+/// a read the plain segment proofs accept, Git reads included. The allow path
+/// uses this lexical split; `requires_review` still insists that each Git
+/// read in the prefix is proven helper-free before it trusts the split.
+pub(super) fn after_safe_git_read_prefix(
+    model: &CanonicalCommandV1,
+    allow_git_helper_context: bool,
+    context: super::PathContext<'_>,
+) -> Option<CanonicalCommandV1> {
+    after_prefix(model, |prefix, index| {
+        let segment = &prefix.segments[index];
+        super::segment_proof::cwd_read_executable(segment.executable.as_deref())
+            && super::segment_proof::exact_safe_segment_with_context(
+                prefix,
+                segment,
+                allow_git_helper_context,
+                context,
+            )
+    })
+}
+
+fn after_prefix(
+    model: &CanonicalCommandV1,
+    proven_segment: impl Fn(&CanonicalCommandV1, usize) -> bool,
+) -> Option<CanonicalCommandV1> {
     if model.confidence != "exact" || model.path_overridden || !model.wrapper_chain.is_empty() {
         return None;
     }
@@ -168,27 +222,10 @@ fn after_git_read_prefix(
     prefix.segments.truncate(start);
     let proven = (0..start).all(|index| {
         let segment = &prefix.segments[index];
-        let git = segment
-            .executable
-            .as_deref()
-            .is_some_and(|executable| super::executable_basename(executable) == "git");
         segment.environment_names.is_empty()
             && segment.wrapper_chain.is_empty()
             && !segment.path_overridden
-            && if git {
-                super::git_remote_ops::proven_read(
-                    &prefix,
-                    index,
-                    context,
-                    deadline,
-                    execution_environment,
-                )
-            } else {
-                super::segment_proof::cwd_read_executable(segment.executable.as_deref())
-                    && super::segment_proof::exact_safe_segment_with_context(
-                        &prefix, segment, false, context,
-                    )
-            }
+            && proven_segment(&prefix, index)
     });
     if !proven {
         return None;
@@ -196,4 +233,20 @@ fn after_git_read_prefix(
     let mut rest = model.clone();
     rest.segments = model.segments[start..].to_vec();
     Some(rest)
+}
+
+/// Whether a Git segment runs after a `cd` that is not the command's first
+/// segment.
+fn git_after_later_cd(model: &CanonicalCommandV1) -> bool {
+    let mut moved = false;
+    model.segments.iter().enumerate().any(|(index, segment)| {
+        let basename = segment
+            .executable
+            .as_deref()
+            .map(super::executable_basename);
+        if index > 0 && basename == Some("cd") {
+            moved = true;
+        }
+        moved && basename == Some("git")
+    })
 }
