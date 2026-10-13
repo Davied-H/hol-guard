@@ -36,7 +36,7 @@ from codex_plugin_scanner.guard.policy_integrity import (
 )
 
 REQUEST_SCHEMA = "guard-policy-integrity-rows-request.v1"
-KEY = hashlib.sha256(b"hol-guard policy-integrity-rows synthetic vector key").digest()
+KEY = bytes(range(32))
 KEY_REF = "guard-policy-integrity-key:00000000deadbeef"
 KEY_ID = f"{KEY_REF}:{hashlib.sha256(KEY).hexdigest()[:16]}"
 OTHER_KEY_ID = f"{KEY_REF}:0123456789abcdef"

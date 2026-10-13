@@ -6,106 +6,106 @@
     "sign": [
      {
       "integrity_generation": 1,
-      "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "integrity_version": 2,
       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
-      "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+      "payload_mac": "2ad5ce0371ceb9ca2a882fb057c3b5a74ec9a5882bd400dd5d001521af7eb3c1",
       "signed_at": "2026-10-13T12:00:00Z"
      },
      {
       "integrity_generation": 3,
-      "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "integrity_version": 2,
       "payload_hash": "15896827966ae7db6b0d05f0173b4e6e29f5ee6ee5e9130cdf97f3cf61205d07",
-      "payload_mac": "da9d3a648c0f65aa1d57027871696d892804e0f527910e6b6af34954c88c9a2b",
+      "payload_mac": "24a338d4d08da025c42e802c0a73dbae5a538ef8fc3bd86ca131d9d804db8a15",
       "signed_at": "2026-10-13T12:00:00Z"
      },
      {
       "integrity_generation": 2,
-      "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "integrity_version": 2,
       "payload_hash": "0313bfb0db554ca24e9d05c782d19d7c5a0ca88fbfafbfcc7822216e3812d638",
-      "payload_mac": "b2a1a69bdcda64a0fd2bb10b6ee402e8b71565c5cf040928ff50934e411bfc73",
+      "payload_mac": "5eead60e5bf5b4e759deb1c451138eeb68bed432b2738001c5bc02a28861c723",
       "signed_at": "2026-10-13T12:00:00Z"
      },
      {
       "integrity_generation": 1,
-      "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "integrity_version": 2,
       "payload_hash": "e7798814b208eb9316b33c6be733a7b2d88d7a5a2a7d508ad661e0a06f594ab1",
-      "payload_mac": "7e0b7b1601e9ca973366856a2acab5d9bc984ff3e2605b3eb711d55a3606f735",
+      "payload_mac": "351e3135792986128b0d172f647734bd5662280c825cabe726384ba397d3ad33",
       "signed_at": "2026-10-13T12:00:00Z"
      },
      {
       "integrity_generation": 4,
-      "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "integrity_version": 2,
       "payload_hash": "34d998c27f90da6bf8ad9b341f077e7236c15bbd9b3b17d964579b9cdffa3ce1",
-      "payload_mac": "38d334fb33b1d85ea7f6949b095a27fe1afe7874620ad783bac6e695dd69006b",
+      "payload_mac": "7fa8d09b9dcc3e5dfab99181ba2d10873d17bf91ad093f5ab9e0863659bc4bc1",
       "signed_at": "2026-10-13T12:00:00Z"
      },
      {
       "integrity_generation": 5,
-      "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "integrity_version": 2,
       "payload_hash": "01f6a79f1f633a1a4a351a641cd05b60eaac6c47baac361ac01fd209fefc651c",
-      "payload_mac": "9fa9d23e84f422b9aeaae5f6b9da73dd166f3a7a1095131da705204bf9e466d2",
+      "payload_mac": "7cc4eadd0ca2d6f6e2335a5f677a7e96f55b9773f39bf3c895e2ead71efbf497",
       "signed_at": "2026-10-13T12:00:00Z"
      },
      {
       "integrity_generation": 5,
-      "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "integrity_version": 2,
       "payload_hash": "b9c7273e212a96b6109353306e3c49783c9e95311da6d498c3d3178676c2d4f5",
-      "payload_mac": "bd834541c459403caf9cf6ba5499caaf70b23fbce9d8333fc093eb7789e4e919",
+      "payload_mac": "7b62507b7b8784374d4995c8dcfdb1a0499bef633ce12d4d1a6a8b04d1aa690c",
       "signed_at": "2026-10-13T12:00:00Z"
      },
      {
       "integrity_generation": 6,
-      "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "integrity_version": 2,
       "payload_hash": "41ef4239cf2536879e726c12a3c9c051f774e41452fea2ff4296c6a735f83cac",
-      "payload_mac": "fb20425b11cba6434b15458c68ac3291e4a589b39d64e32ec888ce0dd6a5929f",
+      "payload_mac": "34e58ce9e295c7e214d0993ad0b0f24ebeda35a3e16160f488a8e648929ab587",
       "signed_at": "2026-10-13T12:00:00Z"
      },
      {
       "integrity_generation": 2,
-      "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "integrity_version": 2,
       "payload_hash": "e6d06c812ddd21f3037625e57d97dbb5ffd4cbffc952a779b273ffb9314fc41a",
-      "payload_mac": "b618015c1f7e883504aec6a2bf25ef171e96d5ed37e24d56aa8726ebb67736f5",
+      "payload_mac": "7897d32986f8eda9fceac7b3e5caaa48013a1da925f61e22bec11318932fcfc4",
       "signed_at": "2026-10-13T12:00:00Z"
      },
      {
       "integrity_generation": 9,
-      "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "integrity_version": 2,
       "payload_hash": "bfa47501d0031e2ba363c1e7d3327c827be3c587d6ed5ea385683c331430eb72",
-      "payload_mac": "52c6d7158d1559ad0a2427c5aa22f4965c7fee89392e5592d63f4d756aead2c4",
+      "payload_mac": "2c7792d32d7f0b1fdc58452d18509eec44e2d709b74ef376be63f1c41232e0b5",
       "signed_at": "2026-10-13T12:00:00Z"
      },
      {
       "integrity_generation": 0,
-      "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "integrity_version": 2,
       "payload_hash": "4534e6bf0f248c24fc69c413010d0953dfc15669685627681023473928e7b90c",
-      "payload_mac": "9dc2e4c65cc212f012e2775a79d1a8b65b4414bafe1bed8c502cf38c2bef7d89",
+      "payload_mac": "bc7e6a7dba3164d522b46586cfda875d62b73d25709f53e41c9350a629102b4a",
       "signed_at": "2026-10-13T12:00:00Z"
      },
      {
       "integrity_generation": 9007199254740993,
-      "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "integrity_version": 2,
       "payload_hash": "cca4f08b822e679bbfe2a0d81f659e18dc79add5b47734a8d4e0b76baab3c463",
-      "payload_mac": "52e93031decd2e0141ec3aaa1b2395456067cf2b875c8b9ea8fbd57d3257cdb1",
+      "payload_mac": "7daa2df200c01d9d23c51bbc8b94f3f721c0064972e31eb673018c1869ef1e11",
       "signed_at": "2026-10-13T12:00:00Z"
      }
     ],
     "verify": []
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "sign-batch",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [
@@ -354,7 +354,7 @@
     ],
     "verify": []
    },
-   "request_sha256": "sha256:d3db901cdf9d87c5d0567dc6870101f73b87e24f21188701f7ae4bad362f02ce"
+   "request_sha256": "sha256:df7bebd2ef74842df132ed6ce1456f4027288281508454944c9638a09da2a14d"
   },
   {
    "name": "advance_generation",
@@ -362,16 +362,16 @@
     "sign": [
      {
       "integrity_generation": 2,
-      "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "integrity_version": 2,
       "payload_hash": "7bae8e80d1a45e68d810acb277b4f1578827d3eae189d772569ab96b4a8d3e4a",
-      "payload_mac": "6252c6bd2426e537be01fcbcbb7ff4992cab5d72b709a32a2dd19e4ed64475c0",
+      "payload_mac": "672a35ffdc4f0940c469726947107a0473b8abd2c04ace58e2fd602495f637ef",
       "signed_at": "2026-10-13T12:05:00Z"
      }
     ],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "hmac-sha256",
       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
       "status": "valid"
@@ -379,8 +379,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "advance-generation",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [
@@ -395,11 +395,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 1,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
-       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "payload_mac": "2ad5ce0371ceb9ca2a882fb057c3b5a74ec9a5882bd400dd5d001521af7eb3c1",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -423,11 +423,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 1,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
-       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "payload_mac": "2ad5ce0371ceb9ca2a882fb057c3b5a74ec9a5882bd400dd5d001521af7eb3c1",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -440,7 +440,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:1edbbe0eccabab37e4b8c4fac412fcf899029ad03ee45e6869eada795ae97531"
+   "request_sha256": "sha256:e865c51b6e64a291167a815a4b6db2579695abc72cf91aede4ea2eb3e952eff1"
   },
   {
    "name": "verify_plain_valid",
@@ -448,7 +448,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "hmac-sha256",
       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
       "status": "valid"
@@ -456,8 +456,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "plain_valid",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -473,11 +473,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 1,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
-       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "payload_mac": "2ad5ce0371ceb9ca2a882fb057c3b5a74ec9a5882bd400dd5d001521af7eb3c1",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -490,7 +490,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:73c078065f6af130f7cb11d6eecd29a541d402e42d7d92007df15602842a4c4b"
+   "request_sha256": "sha256:dc8ff68b9c7f56ab6639409bfa534e56c91364ac9aebcedd1bfedcf58116e3d2"
   },
   {
    "name": "verify_plain_untrusted_generation",
@@ -498,7 +498,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "hmac-sha256",
       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
       "status": "valid"
@@ -506,8 +506,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "plain_untrusted_generation",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -523,11 +523,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 1,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
-       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "payload_mac": "2ad5ce0371ceb9ca2a882fb057c3b5a74ec9a5882bd400dd5d001521af7eb3c1",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -539,7 +539,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:7fcf5d4a8d29183f27fde33c47f091a76c30e67d72c7251fddae0a5618bcd03e"
+   "request_sha256": "sha256:8d8a367a8e4292d1d34983bf8e91478617008e9c08f83483289b0863ea2b996d"
   },
   {
    "name": "verify_unicode_valid",
@@ -547,7 +547,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "hmac-sha256",
       "payload_hash": "15896827966ae7db6b0d05f0173b4e6e29f5ee6ee5e9130cdf97f3cf61205d07",
       "status": "valid"
@@ -555,8 +555,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "unicode_valid",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -572,11 +572,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 3,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": "15896827966ae7db6b0d05f0173b4e6e29f5ee6ee5e9130cdf97f3cf61205d07",
-       "payload_mac": "da9d3a648c0f65aa1d57027871696d892804e0f527910e6b6af34954c88c9a2b",
+       "payload_mac": "24a338d4d08da025c42e802c0a73dbae5a538ef8fc3bd86ca131d9d804db8a15",
        "publisher": "\u00e9diteur",
        "reason": "Freigabe f\u00fcr \u00e9tape \u2014 \u65e5\u672c\u8a9e \ud83d\ude00",
        "scope": "artifact",
@@ -589,7 +589,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:13a807bb315563e36d6e8f526e4fd4717ce0590b67a4e5c9dbb946d0e7c30a95"
+   "request_sha256": "sha256:fcf08fb5563a9f3dfe4ee2484ac733bf1d708109325d8b39c1376d03e40bf33c"
   },
   {
    "name": "verify_unicode_untrusted_generation",
@@ -597,7 +597,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "hmac-sha256",
       "payload_hash": "15896827966ae7db6b0d05f0173b4e6e29f5ee6ee5e9130cdf97f3cf61205d07",
       "status": "valid"
@@ -605,8 +605,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "unicode_untrusted_generation",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -622,11 +622,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 3,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": "15896827966ae7db6b0d05f0173b4e6e29f5ee6ee5e9130cdf97f3cf61205d07",
-       "payload_mac": "da9d3a648c0f65aa1d57027871696d892804e0f527910e6b6af34954c88c9a2b",
+       "payload_mac": "24a338d4d08da025c42e802c0a73dbae5a538ef8fc3bd86ca131d9d804db8a15",
        "publisher": "\u00e9diteur",
        "reason": "Freigabe f\u00fcr \u00e9tape \u2014 \u65e5\u672c\u8a9e \ud83d\ude00",
        "scope": "artifact",
@@ -638,7 +638,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:259b13003a867ee341acb659613e0ed42eff6d5d8fd4da00cc80e6df34794d95"
+   "request_sha256": "sha256:630eb6353971f0dffd61f1c74bb079e2a70c5c71f578f1bed5f2c0f68f6de5a7"
   },
   {
    "name": "verify_empty_strings_valid",
@@ -646,7 +646,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "hmac-sha256",
       "payload_hash": "0313bfb0db554ca24e9d05c782d19d7c5a0ca88fbfafbfcc7822216e3812d638",
       "status": "valid"
@@ -654,8 +654,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "empty_strings_valid",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -671,11 +671,11 @@
        "expires_at": "",
        "harness": "claude-code",
        "integrity_generation": 2,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": "",
        "payload_hash": "0313bfb0db554ca24e9d05c782d19d7c5a0ca88fbfafbfcc7822216e3812d638",
-       "payload_mac": "b2a1a69bdcda64a0fd2bb10b6ee402e8b71565c5cf040928ff50934e411bfc73",
+       "payload_mac": "5eead60e5bf5b4e759deb1c451138eeb68bed432b2738001c5bc02a28861c723",
        "publisher": "",
        "reason": "",
        "scope": "artifact",
@@ -688,7 +688,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:40a1192cfbb4954818d082e1806a62ed0ba1f668bf8ed7eb03f41cb5d01341e1"
+   "request_sha256": "sha256:31e2ab46687538fd61dfa4868fc4ce6194792ed101764598277734832f7060b4"
   },
   {
    "name": "verify_empty_strings_untrusted_generation",
@@ -696,7 +696,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "hmac-sha256",
       "payload_hash": "0313bfb0db554ca24e9d05c782d19d7c5a0ca88fbfafbfcc7822216e3812d638",
       "status": "valid"
@@ -704,8 +704,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "empty_strings_untrusted_generation",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -721,11 +721,11 @@
        "expires_at": "",
        "harness": "claude-code",
        "integrity_generation": 2,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": "",
        "payload_hash": "0313bfb0db554ca24e9d05c782d19d7c5a0ca88fbfafbfcc7822216e3812d638",
-       "payload_mac": "b2a1a69bdcda64a0fd2bb10b6ee402e8b71565c5cf040928ff50934e411bfc73",
+       "payload_mac": "5eead60e5bf5b4e759deb1c451138eeb68bed432b2738001c5bc02a28861c723",
        "publisher": "",
        "reason": "",
        "scope": "artifact",
@@ -737,7 +737,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:885dcf7620e3f05c65cd3cb1b8c6d32ba30839225a1ee26f60e6fe18130a174e"
+   "request_sha256": "sha256:f95ab745c1bc59b57c1ec105e6406e2b2a4dcd510747415af756db4765ab83d5"
   },
   {
    "name": "verify_nulls_valid",
@@ -745,7 +745,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "hmac-sha256",
       "payload_hash": "e7798814b208eb9316b33c6be733a7b2d88d7a5a2a7d508ad661e0a06f594ab1",
       "status": "valid"
@@ -753,8 +753,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "nulls_valid",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -770,11 +770,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 1,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": null,
        "payload_hash": "e7798814b208eb9316b33c6be733a7b2d88d7a5a2a7d508ad661e0a06f594ab1",
-       "payload_mac": "7e0b7b1601e9ca973366856a2acab5d9bc984ff3e2605b3eb711d55a3606f735",
+       "payload_mac": "351e3135792986128b0d172f647734bd5662280c825cabe726384ba397d3ad33",
        "publisher": null,
        "reason": null,
        "scope": "artifact",
@@ -787,7 +787,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:9354b1cd00fc9065b68e38a0110a66fa16c02652a5e44e04a7a639e5f4935cc2"
+   "request_sha256": "sha256:59e88be4a0d7ccac331865c08a53da957c328997067a9b076aaeb3c45fdc7341"
   },
   {
    "name": "verify_nulls_untrusted_generation",
@@ -795,7 +795,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "hmac-sha256",
       "payload_hash": "e7798814b208eb9316b33c6be733a7b2d88d7a5a2a7d508ad661e0a06f594ab1",
       "status": "valid"
@@ -803,8 +803,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "nulls_untrusted_generation",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -820,11 +820,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 1,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": null,
        "payload_hash": "e7798814b208eb9316b33c6be733a7b2d88d7a5a2a7d508ad661e0a06f594ab1",
-       "payload_mac": "7e0b7b1601e9ca973366856a2acab5d9bc984ff3e2605b3eb711d55a3606f735",
+       "payload_mac": "351e3135792986128b0d172f647734bd5662280c825cabe726384ba397d3ad33",
        "publisher": null,
        "reason": null,
        "scope": "artifact",
@@ -836,7 +836,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:39460bc1b19018cb8f1e2603b8c39039395611627108e2d1f29edafccd6319e8"
+   "request_sha256": "sha256:78b32138e4a3827f6c42d41350c62d4e92cfbb5abc0eb912e906658dfcb69925"
   },
   {
    "name": "verify_bool_decision_id_valid",
@@ -844,7 +844,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "hmac-sha256",
       "payload_hash": "34d998c27f90da6bf8ad9b341f077e7236c15bbd9b3b17d964579b9cdffa3ce1",
       "status": "valid"
@@ -852,8 +852,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "bool_decision_id_valid",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -869,11 +869,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 4,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": "34d998c27f90da6bf8ad9b341f077e7236c15bbd9b3b17d964579b9cdffa3ce1",
-       "payload_mac": "38d334fb33b1d85ea7f6949b095a27fe1afe7874620ad783bac6e695dd69006b",
+       "payload_mac": "7fa8d09b9dcc3e5dfab99181ba2d10873d17bf91ad093f5ab9e0863659bc4bc1",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -886,7 +886,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:3658b14d1c4bea00fe4e9783200c58cd8afbbb935852678cd83ea213210464fb"
+   "request_sha256": "sha256:dba4290484bf269084a4734373b68995de5963e1930a0c998d435b6fdf28341e"
   },
   {
    "name": "verify_bool_decision_id_untrusted_generation",
@@ -894,7 +894,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "hmac-sha256",
       "payload_hash": "34d998c27f90da6bf8ad9b341f077e7236c15bbd9b3b17d964579b9cdffa3ce1",
       "status": "valid"
@@ -902,8 +902,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "bool_decision_id_untrusted_generation",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -919,11 +919,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 4,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": "34d998c27f90da6bf8ad9b341f077e7236c15bbd9b3b17d964579b9cdffa3ce1",
-       "payload_mac": "38d334fb33b1d85ea7f6949b095a27fe1afe7874620ad783bac6e695dd69006b",
+       "payload_mac": "7fa8d09b9dcc3e5dfab99181ba2d10873d17bf91ad093f5ab9e0863659bc4bc1",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -935,7 +935,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:cf12af9ea5eb9b2dfa71a5ed3b398169a35c7a519fd40ef1980e2b0d028c7279"
+   "request_sha256": "sha256:ce427b472b14b5a27fb79a788311c9a5c26606316ddd8b5f7537db83c94dfc9b"
   },
   {
    "name": "verify_digit_string_decision_id_valid",
@@ -943,7 +943,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "hmac-sha256",
       "payload_hash": "01f6a79f1f633a1a4a351a641cd05b60eaac6c47baac361ac01fd209fefc651c",
       "status": "valid"
@@ -951,8 +951,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "digit_string_decision_id_valid",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -968,11 +968,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 5,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": "01f6a79f1f633a1a4a351a641cd05b60eaac6c47baac361ac01fd209fefc651c",
-       "payload_mac": "9fa9d23e84f422b9aeaae5f6b9da73dd166f3a7a1095131da705204bf9e466d2",
+       "payload_mac": "7cc4eadd0ca2d6f6e2335a5f677a7e96f55b9773f39bf3c895e2ead71efbf497",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -985,7 +985,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:e7755c089d8c8d7fa8b134c066f40aa98444ee092b0696d9f5a47db4078ec213"
+   "request_sha256": "sha256:9b112ec39ffce3c2f5aa5b393193ee83175ca432d52b1f4574189effa8ab749f"
   },
   {
    "name": "verify_digit_string_decision_id_untrusted_generation",
@@ -993,7 +993,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "hmac-sha256",
       "payload_hash": "01f6a79f1f633a1a4a351a641cd05b60eaac6c47baac361ac01fd209fefc651c",
       "status": "valid"
@@ -1001,8 +1001,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "digit_string_decision_id_untrusted_generation",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -1018,11 +1018,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 5,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": "01f6a79f1f633a1a4a351a641cd05b60eaac6c47baac361ac01fd209fefc651c",
-       "payload_mac": "9fa9d23e84f422b9aeaae5f6b9da73dd166f3a7a1095131da705204bf9e466d2",
+       "payload_mac": "7cc4eadd0ca2d6f6e2335a5f677a7e96f55b9773f39bf3c895e2ead71efbf497",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -1034,7 +1034,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:d1642fad1d99e3075d4fcaa4c82a7b610c8399118d5c7270cfdc7b4a9d480cab"
+   "request_sha256": "sha256:ab504652d8b7e19e1b97cb0c5601865576aed5552e38a73b29b218b1bfeb997b"
   },
   {
    "name": "verify_non_digit_decision_id_valid",
@@ -1042,7 +1042,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "hmac-sha256",
       "payload_hash": "b9c7273e212a96b6109353306e3c49783c9e95311da6d498c3d3178676c2d4f5",
       "status": "valid"
@@ -1050,8 +1050,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "non_digit_decision_id_valid",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -1067,11 +1067,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 5,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": "b9c7273e212a96b6109353306e3c49783c9e95311da6d498c3d3178676c2d4f5",
-       "payload_mac": "bd834541c459403caf9cf6ba5499caaf70b23fbce9d8333fc093eb7789e4e919",
+       "payload_mac": "7b62507b7b8784374d4995c8dcfdb1a0499bef633ce12d4d1a6a8b04d1aa690c",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -1084,7 +1084,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:56365950b33cbbc0b781666f1aeea8579f59babb6175e412dedd8860b3880b58"
+   "request_sha256": "sha256:f5946275b90f8ffecf76045298e0d227e691ea6a10a635b3eaa3f28f234ea32e"
   },
   {
    "name": "verify_non_digit_decision_id_untrusted_generation",
@@ -1092,7 +1092,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "hmac-sha256",
       "payload_hash": "b9c7273e212a96b6109353306e3c49783c9e95311da6d498c3d3178676c2d4f5",
       "status": "valid"
@@ -1100,8 +1100,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "non_digit_decision_id_untrusted_generation",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -1117,11 +1117,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 5,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": "b9c7273e212a96b6109353306e3c49783c9e95311da6d498c3d3178676c2d4f5",
-       "payload_mac": "bd834541c459403caf9cf6ba5499caaf70b23fbce9d8333fc093eb7789e4e919",
+       "payload_mac": "7b62507b7b8784374d4995c8dcfdb1a0499bef633ce12d4d1a6a8b04d1aa690c",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -1133,7 +1133,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:ad248c8c09af48d2aa2b95d0fa7e0adf64bcc061557ebdd25925d297f3af62be"
+   "request_sha256": "sha256:40b0b7cc5736ae5d558f51772b012994d6c1ecaa2e07df688c9d0e7399bf487f"
   },
   {
    "name": "verify_non_string_fields_valid",
@@ -1141,7 +1141,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "hmac-sha256",
       "payload_hash": "41ef4239cf2536879e726c12a3c9c051f774e41452fea2ff4296c6a735f83cac",
       "status": "valid"
@@ -1149,8 +1149,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "non_string_fields_valid",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -1168,11 +1168,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 6,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": false,
        "payload_hash": "41ef4239cf2536879e726c12a3c9c051f774e41452fea2ff4296c6a735f83cac",
-       "payload_mac": "fb20425b11cba6434b15458c68ac3291e4a589b39d64e32ec888ce0dd6a5929f",
+       "payload_mac": "34e58ce9e295c7e214d0993ad0b0f24ebeda35a3e16160f488a8e648929ab587",
        "publisher": null,
        "reason": 17,
        "scope": "artifact",
@@ -1185,7 +1185,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:f40fc8f0255d34a80edf8fe6b2b60e281b932b540413684cc02ab391caf1b6b1"
+   "request_sha256": "sha256:80167ec718028f4bfc59d723f23bc8d1cc4e428ba2ace028fab1ea29fc3e7af3"
   },
   {
    "name": "verify_non_string_fields_untrusted_generation",
@@ -1193,7 +1193,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "hmac-sha256",
       "payload_hash": "41ef4239cf2536879e726c12a3c9c051f774e41452fea2ff4296c6a735f83cac",
       "status": "valid"
@@ -1201,8 +1201,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "non_string_fields_untrusted_generation",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -1220,11 +1220,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 6,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": false,
        "payload_hash": "41ef4239cf2536879e726c12a3c9c051f774e41452fea2ff4296c6a735f83cac",
-       "payload_mac": "fb20425b11cba6434b15458c68ac3291e4a589b39d64e32ec888ce0dd6a5929f",
+       "payload_mac": "34e58ce9e295c7e214d0993ad0b0f24ebeda35a3e16160f488a8e648929ab587",
        "publisher": null,
        "reason": 17,
        "scope": "artifact",
@@ -1236,7 +1236,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:6210d2bb06685190e42bf663d69ea9511ef64d0faa5e4e7bd5f7e34be652c42e"
+   "request_sha256": "sha256:7fcb1fecc4219af642941f445b8c3ea2d233c9986c329dbb8515d52ad08c942b"
   },
   {
    "name": "verify_escapes_valid",
@@ -1244,7 +1244,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "hmac-sha256",
       "payload_hash": "e6d06c812ddd21f3037625e57d97dbb5ffd4cbffc952a779b273ffb9314fc41a",
       "status": "valid"
@@ -1252,8 +1252,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "escapes_valid",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -1269,11 +1269,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 2,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": "e6d06c812ddd21f3037625e57d97dbb5ffd4cbffc952a779b273ffb9314fc41a",
-       "payload_mac": "b618015c1f7e883504aec6a2bf25ef171e96d5ed37e24d56aa8726ebb67736f5",
+       "payload_mac": "7897d32986f8eda9fceac7b3e5caaa48013a1da925f61e22bec11318932fcfc4",
        "publisher": null,
        "reason": "line\nbreak\ttab\u0001ctl",
        "scope": "artifact",
@@ -1286,7 +1286,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:65f44bff0bf6c580b149f26bcffd09486f9f4a731fdf8eb2cb89dea45a6004ef"
+   "request_sha256": "sha256:314b09b1d9410db763b6a8d1b8696bb24cbd3df4b46e007764132e337350f4ed"
   },
   {
    "name": "verify_escapes_untrusted_generation",
@@ -1294,7 +1294,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "hmac-sha256",
       "payload_hash": "e6d06c812ddd21f3037625e57d97dbb5ffd4cbffc952a779b273ffb9314fc41a",
       "status": "valid"
@@ -1302,8 +1302,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "escapes_untrusted_generation",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -1319,11 +1319,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 2,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": "e6d06c812ddd21f3037625e57d97dbb5ffd4cbffc952a779b273ffb9314fc41a",
-       "payload_mac": "b618015c1f7e883504aec6a2bf25ef171e96d5ed37e24d56aa8726ebb67736f5",
+       "payload_mac": "7897d32986f8eda9fceac7b3e5caaa48013a1da925f61e22bec11318932fcfc4",
        "publisher": null,
        "reason": "line\nbreak\ttab\u0001ctl",
        "scope": "artifact",
@@ -1335,7 +1335,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:5db3ab062a241e6c812f25694a1be4710f36b42f7c3bffa4b64be9ac9881ddb2"
+   "request_sha256": "sha256:e31432f55a1622ee45677f6d5234805c0a76a1b4e932cfa97ed9078027736bde"
   },
   {
    "name": "verify_expiring_valid",
@@ -1343,7 +1343,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "hmac-sha256",
       "payload_hash": "bfa47501d0031e2ba363c1e7d3327c827be3c587d6ed5ea385683c331430eb72",
       "status": "valid"
@@ -1351,8 +1351,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "expiring_valid",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -1368,11 +1368,11 @@
        "expires_at": "2026-10-14T00:00:00Z",
        "harness": "claude-code",
        "integrity_generation": 9,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": "bfa47501d0031e2ba363c1e7d3327c827be3c587d6ed5ea385683c331430eb72",
-       "payload_mac": "52c6d7158d1559ad0a2427c5aa22f4965c7fee89392e5592d63f4d756aead2c4",
+       "payload_mac": "2c7792d32d7f0b1fdc58452d18509eec44e2d709b74ef376be63f1c41232e0b5",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "workspace",
@@ -1385,7 +1385,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:c69eaad050e49bb0f17e48ea737c765115ac174aaec9df3f3cfdf6b845784dd0"
+   "request_sha256": "sha256:ea7e80692c5544390f93cdb0b8d5ca887ecf01affe4c1046e704391943d4bef4"
   },
   {
    "name": "verify_expiring_untrusted_generation",
@@ -1393,7 +1393,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "hmac-sha256",
       "payload_hash": "bfa47501d0031e2ba363c1e7d3327c827be3c587d6ed5ea385683c331430eb72",
       "status": "valid"
@@ -1401,8 +1401,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "expiring_untrusted_generation",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -1418,11 +1418,11 @@
        "expires_at": "2026-10-14T00:00:00Z",
        "harness": "claude-code",
        "integrity_generation": 9,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": "bfa47501d0031e2ba363c1e7d3327c827be3c587d6ed5ea385683c331430eb72",
-       "payload_mac": "52c6d7158d1559ad0a2427c5aa22f4965c7fee89392e5592d63f4d756aead2c4",
+       "payload_mac": "2c7792d32d7f0b1fdc58452d18509eec44e2d709b74ef376be63f1c41232e0b5",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "workspace",
@@ -1434,7 +1434,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:2b58a582215ac1eb9df0871676b833dec500f2cf679eab37e7197aa9c87d3258"
+   "request_sha256": "sha256:9f94b8059ac4bb88912de6363ed0792500065f2bf1aa215711ce2f362ffe85b6"
   },
   {
    "name": "verify_generation_zero_valid",
@@ -1442,7 +1442,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "hmac-sha256",
       "payload_hash": "4534e6bf0f248c24fc69c413010d0953dfc15669685627681023473928e7b90c",
       "status": "valid"
@@ -1450,8 +1450,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "generation_zero_valid",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -1467,11 +1467,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 0,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": "4534e6bf0f248c24fc69c413010d0953dfc15669685627681023473928e7b90c",
-       "payload_mac": "9dc2e4c65cc212f012e2775a79d1a8b65b4414bafe1bed8c502cf38c2bef7d89",
+       "payload_mac": "bc7e6a7dba3164d522b46586cfda875d62b73d25709f53e41c9350a629102b4a",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -1484,7 +1484,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:cabfd2e5e0fedc5c9e2e63d6e5eb8a351e66d658258961223c6787a1b99a95bc"
+   "request_sha256": "sha256:0348ab03a498f26b481543998b6cdf2da599bc33640165c741e3c84ebfd3ee67"
   },
   {
    "name": "verify_generation_zero_untrusted_generation",
@@ -1492,7 +1492,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "hmac-sha256",
       "payload_hash": "4534e6bf0f248c24fc69c413010d0953dfc15669685627681023473928e7b90c",
       "status": "valid"
@@ -1500,8 +1500,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "generation_zero_untrusted_generation",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -1517,11 +1517,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 0,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": "4534e6bf0f248c24fc69c413010d0953dfc15669685627681023473928e7b90c",
-       "payload_mac": "9dc2e4c65cc212f012e2775a79d1a8b65b4414bafe1bed8c502cf38c2bef7d89",
+       "payload_mac": "bc7e6a7dba3164d522b46586cfda875d62b73d25709f53e41c9350a629102b4a",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -1533,7 +1533,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:1f1c6df067a5d7fec84b37b42ecc587783bc34914161be22d9b90da510e4c1ee"
+   "request_sha256": "sha256:38a4011c8573d4a84560f3bb97ad9f45a861b35e9e0fcb9d4a840f4ef6afc197"
   },
   {
    "name": "verify_generation_large_valid",
@@ -1541,7 +1541,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "hmac-sha256",
       "payload_hash": "cca4f08b822e679bbfe2a0d81f659e18dc79add5b47734a8d4e0b76baab3c463",
       "status": "valid"
@@ -1549,8 +1549,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "generation_large_valid",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -1566,11 +1566,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 9007199254740993,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": "cca4f08b822e679bbfe2a0d81f659e18dc79add5b47734a8d4e0b76baab3c463",
-       "payload_mac": "52e93031decd2e0141ec3aaa1b2395456067cf2b875c8b9ea8fbd57d3257cdb1",
+       "payload_mac": "7daa2df200c01d9d23c51bbc8b94f3f721c0064972e31eb673018c1869ef1e11",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -1583,7 +1583,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:c4eeac57358360b2aee03c34e8ab8fa5d8f5025bbcdb08a4a8cf4668c2317f32"
+   "request_sha256": "sha256:b5018f02d66ef47761c994de24d2f5eef35efb6548c689f963fed03f56463ce7"
   },
   {
    "name": "verify_generation_large_untrusted_generation",
@@ -1591,7 +1591,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "hmac-sha256",
       "payload_hash": "cca4f08b822e679bbfe2a0d81f659e18dc79add5b47734a8d4e0b76baab3c463",
       "status": "valid"
@@ -1599,8 +1599,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "generation_large_untrusted_generation",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -1616,11 +1616,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 9007199254740993,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": "cca4f08b822e679bbfe2a0d81f659e18dc79add5b47734a8d4e0b76baab3c463",
-       "payload_mac": "52e93031decd2e0141ec3aaa1b2395456067cf2b875c8b9ea8fbd57d3257cdb1",
+       "payload_mac": "7daa2df200c01d9d23c51bbc8b94f3f721c0064972e31eb673018c1869ef1e11",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -1632,7 +1632,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:199812158dc5ed61ed3a787060ce7d873d70fb07b033616e8a5ea7a8742a29c0"
+   "request_sha256": "sha256:a9733f1dc339d375c9075036d61c3210c693138de5a635ec4a07b0f33dc6575f"
   },
   {
    "name": "verify_rollback",
@@ -1640,7 +1640,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "policy_integrity_generation_rollback",
       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
       "status": "rollback_detected"
@@ -1648,8 +1648,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "rollback",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -1665,11 +1665,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 1,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
-       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "payload_mac": "2ad5ce0371ceb9ca2a882fb057c3b5a74ec9a5882bd400dd5d001521af7eb3c1",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -1682,7 +1682,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:f2a217c056d5a6a3e40e5272a4ce37b8ea64c4c138d7523b5175aa029b71f767"
+   "request_sha256": "sha256:8d1b0a05d754e17df9c6a34856d3fe35ea19b3cb11cd77b6376c614c0682e18e"
   },
   {
    "name": "verify_degraded",
@@ -1690,7 +1690,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "policy_integrity_backend_unavailable",
       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
       "status": "degraded_mode"
@@ -1698,8 +1698,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "degraded",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -1715,11 +1715,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 1,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
-       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "payload_mac": "2ad5ce0371ceb9ca2a882fb057c3b5a74ec9a5882bd400dd5d001521af7eb3c1",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -1732,7 +1732,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:e75dbc1c844dec97c26df2cba62d7b3837a5fca50f3a416d0748e2a16879cf79"
+   "request_sha256": "sha256:dced65e97df07a22ae39a7fd00a22ea344e2b7bc601ef516ededa9825c444c11"
   },
   {
    "name": "verify_degraded_unsigned",
@@ -1748,8 +1748,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "degraded_unsigned",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -1775,7 +1775,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:0fc063171c415d8c5fd39dccf5cd5243a4f53920c6fb3bc3b26385a215b90114"
+   "request_sha256": "sha256:78ebd35602355c5d3b8665401ab69084c8ee9cc16e8121f55134927c347db532"
   },
   {
    "name": "verify_missing_all",
@@ -1791,8 +1791,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "missing_all",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -1819,7 +1819,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:b1da67d281740fe583a97e81711abd1a42d936084df16dfed7a380517f7ff63b"
+   "request_sha256": "sha256:accbaaa1f0f48dc1e30aacbfc98b3964eb201c990b1d375708211e2cce02804f"
   },
   {
    "name": "verify_missing_integrity_version",
@@ -1827,7 +1827,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "policy_integrity_metadata_missing",
       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
       "status": "missing_integrity"
@@ -1835,8 +1835,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "missing_integrity_version",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -1852,11 +1852,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 1,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": null,
        "owner": "local",
        "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
-       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "payload_mac": "2ad5ce0371ceb9ca2a882fb057c3b5a74ec9a5882bd400dd5d001521af7eb3c1",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -1869,7 +1869,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:df9fa16954b58aab913aeaf12fcac1e938c1d8f0f4010ddf5799464884108c26"
+   "request_sha256": "sha256:a62806161c3810edc3500e9ac33f1b3096d569ce96b492dda37098bfce0d6fe8"
   },
   {
    "name": "verify_empty_integrity_version",
@@ -1877,7 +1877,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "policy_integrity_metadata_missing",
       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
       "status": "missing_integrity"
@@ -1885,8 +1885,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "empty_integrity_version",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -1902,11 +1902,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 1,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": "",
        "owner": "local",
        "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
-       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "payload_mac": "2ad5ce0371ceb9ca2a882fb057c3b5a74ec9a5882bd400dd5d001521af7eb3c1",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -1919,7 +1919,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:824e7233c9445cd86020613ae2bede3624eea70ce6286c81c4087bc7b31c8990"
+   "request_sha256": "sha256:0e905609eebd5320e03ed876e03fddb0d7b49ce5d964102b837bf7bc02308ae1"
   },
   {
    "name": "verify_missing_integrity_key_id",
@@ -1935,8 +1935,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "missing_integrity_key_id",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -1956,7 +1956,7 @@
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
-       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "payload_mac": "2ad5ce0371ceb9ca2a882fb057c3b5a74ec9a5882bd400dd5d001521af7eb3c1",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -1969,7 +1969,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:238d26ec8176b620ff9e2082764a98b15834b5fd5f78f50d6a3e9859d89d11c1"
+   "request_sha256": "sha256:306260cda15e3329efb61fd0e3b837daf1252ecb16b713bc076663537d991b09"
   },
   {
    "name": "verify_empty_integrity_key_id",
@@ -1985,8 +1985,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "empty_integrity_key_id",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -2006,7 +2006,7 @@
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
-       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "payload_mac": "2ad5ce0371ceb9ca2a882fb057c3b5a74ec9a5882bd400dd5d001521af7eb3c1",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -2019,7 +2019,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:3f273e604cdb2a6f8a51d3c06252b240346cb432a9fd791951face04208faaa6"
+   "request_sha256": "sha256:87313fbe8e831b3c2285b6cffc1529377ea0b003e1d1674b5e5e95e8ee1037df"
   },
   {
    "name": "verify_missing_payload_hash",
@@ -2027,7 +2027,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "policy_integrity_metadata_missing",
       "payload_hash": null,
       "status": "missing_integrity"
@@ -2035,8 +2035,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "missing_payload_hash",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -2052,11 +2052,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 1,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": null,
-       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "payload_mac": "2ad5ce0371ceb9ca2a882fb057c3b5a74ec9a5882bd400dd5d001521af7eb3c1",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -2069,7 +2069,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:b08137fb0161e63856157a061e66940f5c9a8cd2b99b3e2576fbc250dbbf7c67"
+   "request_sha256": "sha256:cee5fc85a29bbb633678c0a96860ed4c7b44f16d9cf3b9b22d1d276d3f626f72"
   },
   {
    "name": "verify_empty_payload_hash",
@@ -2077,7 +2077,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "policy_integrity_metadata_missing",
       "payload_hash": null,
       "status": "missing_integrity"
@@ -2085,8 +2085,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "empty_payload_hash",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -2102,11 +2102,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 1,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": "",
-       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "payload_mac": "2ad5ce0371ceb9ca2a882fb057c3b5a74ec9a5882bd400dd5d001521af7eb3c1",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -2119,7 +2119,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:343345b53e5ba42bc81c0ee258c322c5dff40fea34919f42f21f291a120ef21a"
+   "request_sha256": "sha256:1ef9bf1194e7224da717e1d46873499dc2453f8ff56298518622dcb4fbf467f1"
   },
   {
    "name": "verify_missing_payload_mac",
@@ -2127,7 +2127,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "policy_integrity_metadata_missing",
       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
       "status": "missing_integrity"
@@ -2135,8 +2135,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "missing_payload_mac",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -2152,7 +2152,7 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 1,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
@@ -2169,7 +2169,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:cd66a66c973c0c980ae18142d99c8692a3dd2365a98ab4c6611ab91b58fd4923"
+   "request_sha256": "sha256:6f86f213f190f77178c1c1c7a0d71f3fb91a3badfa455be7f59109c9b770f090"
   },
   {
    "name": "verify_empty_payload_mac",
@@ -2177,7 +2177,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "policy_integrity_metadata_missing",
       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
       "status": "missing_integrity"
@@ -2185,8 +2185,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "empty_payload_mac",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -2202,7 +2202,7 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 1,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
@@ -2219,7 +2219,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:f3a9841ae250881e7bb77655badf6e36a798bbfd3cafdb11545b956481c4b2ce"
+   "request_sha256": "sha256:fcad3d400a8f8e1c22edd13fcf96e0b1c641da5de3df9ebabe6ae74adf973be6"
   },
   {
    "name": "verify_missing_signed_at",
@@ -2227,7 +2227,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "policy_integrity_metadata_missing",
       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
       "status": "missing_integrity"
@@ -2235,8 +2235,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "missing_signed_at",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -2252,11 +2252,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 1,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
-       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "payload_mac": "2ad5ce0371ceb9ca2a882fb057c3b5a74ec9a5882bd400dd5d001521af7eb3c1",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -2269,7 +2269,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:ba62add9a636fe29df1a071f087e6d929f582c589a7c918a0d1518122c104362"
+   "request_sha256": "sha256:2e90b1813404d8cce5f8df8ff4701d0119628faea9d3e991f1733c21daefc205"
   },
   {
    "name": "verify_empty_signed_at",
@@ -2277,7 +2277,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "policy_integrity_metadata_missing",
       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
       "status": "missing_integrity"
@@ -2285,8 +2285,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "empty_signed_at",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -2302,11 +2302,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 1,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
-       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "payload_mac": "2ad5ce0371ceb9ca2a882fb057c3b5a74ec9a5882bd400dd5d001521af7eb3c1",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -2319,7 +2319,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:ae7ab778b532b0fc2822fef45c1ca4e046bfb743a6c8a199ab0baafdd6c6dcef"
+   "request_sha256": "sha256:ccafeb2e01679883e74e6c312b5e1ade3c4845a06ee92e7341919c0ea19289d6"
   },
   {
    "name": "verify_version_three",
@@ -2327,7 +2327,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "policy_integrity_version_unsupported",
       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
       "status": "tampered"
@@ -2335,8 +2335,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "version_three",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -2352,11 +2352,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 1,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 3,
        "owner": "local",
        "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
-       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "payload_mac": "2ad5ce0371ceb9ca2a882fb057c3b5a74ec9a5882bd400dd5d001521af7eb3c1",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -2369,7 +2369,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:0ba9c1f818a18ff179315301a9f7a5f84f74da75f2ebf3ecec5a4e7509f0838a"
+   "request_sha256": "sha256:f71d1c0101bf3a8f70239fa1ee3fe2536ab958911bfc351e590d43c520d39dbd"
   },
   {
    "name": "verify_version_zero",
@@ -2377,7 +2377,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "policy_integrity_version_unsupported",
       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
       "status": "tampered"
@@ -2385,8 +2385,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "version_zero",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -2402,11 +2402,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 1,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 0,
        "owner": "local",
        "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
-       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "payload_mac": "2ad5ce0371ceb9ca2a882fb057c3b5a74ec9a5882bd400dd5d001521af7eb3c1",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -2419,7 +2419,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:bf9ed051c35ec79df45c0d133c5349609bc1cc17c867cbe82ac1c6377ac7ce75"
+   "request_sha256": "sha256:55f14ccf4f57bf4bb14a7d82238b54c95955835d6e1c50d4005604ebbcacf5f6"
   },
   {
    "name": "verify_version_string",
@@ -2427,7 +2427,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "hmac-sha256",
       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
       "status": "valid"
@@ -2435,8 +2435,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "version_string",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -2452,11 +2452,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 1,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": "2",
        "owner": "local",
        "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
-       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "payload_mac": "2ad5ce0371ceb9ca2a882fb057c3b5a74ec9a5882bd400dd5d001521af7eb3c1",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -2469,7 +2469,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:acfbca2b1db167826ca7857fd7dfdffb7c611740a2942f7ae039085dc693e5db"
+   "request_sha256": "sha256:b29dc0a28dba39f0e5140cb3751b9c8788139f2231b881e4013fbca75958a8f9"
   },
   {
    "name": "verify_version_padded_string",
@@ -2477,7 +2477,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "hmac-sha256",
       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
       "status": "valid"
@@ -2485,8 +2485,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "version_padded_string",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -2502,11 +2502,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 1,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": " 2 ",
        "owner": "local",
        "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
-       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "payload_mac": "2ad5ce0371ceb9ca2a882fb057c3b5a74ec9a5882bd400dd5d001521af7eb3c1",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -2519,7 +2519,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:a99016fd5651ae0d1c964fda4d24aa3a4630a64bfd3dec017c7dc23be673acb4"
+   "request_sha256": "sha256:cdddeec9c3fe5e98135dc12cbddad5ef58bb1a460600a73952b5299f70cfc00d"
   },
   {
    "name": "verify_version_bool_true",
@@ -2527,7 +2527,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "policy_integrity_payload_hash_mismatch",
       "payload_hash": "cb1fbd03e3cae360130754313bd1679cef2267c79fe2b1c559b4a09adc8b5ffc",
       "status": "tampered"
@@ -2535,8 +2535,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "version_bool_true",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -2552,11 +2552,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 1,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": true,
        "owner": "local",
        "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
-       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "payload_mac": "2ad5ce0371ceb9ca2a882fb057c3b5a74ec9a5882bd400dd5d001521af7eb3c1",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -2569,7 +2569,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:704b420aa9cf6fbc8b1cf7cfba31d2bcde1a4c9b10042429338cf8041bdffc22"
+   "request_sha256": "sha256:1e17d9600409c7342a8e6908fa845256ddafdc2d3656358eb369fd132bd54634"
   },
   {
    "name": "verify_wrong_key_id",
@@ -2585,8 +2585,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "wrong_key_id",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -2606,7 +2606,7 @@
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
-       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "payload_mac": "2ad5ce0371ceb9ca2a882fb057c3b5a74ec9a5882bd400dd5d001521af7eb3c1",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -2619,7 +2619,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:eebb10eb764a3095858e35478c2a18f6910eba660e4a0aae23666febe08ffd67"
+   "request_sha256": "sha256:f62ff286f9aad0f669e6e9cacafe2cb88f66554f360aa62e34643919c87e16b5"
   },
   {
    "name": "verify_action_tampered",
@@ -2627,7 +2627,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "policy_integrity_payload_hash_mismatch",
       "payload_hash": "7e9dd970c28561765dab6bffdcc3dcbe21d4e1392e2ae26278b617afc581ca2f",
       "status": "tampered"
@@ -2635,8 +2635,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "action_tampered",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -2652,11 +2652,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 1,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
-       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "payload_mac": "2ad5ce0371ceb9ca2a882fb057c3b5a74ec9a5882bd400dd5d001521af7eb3c1",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -2669,7 +2669,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:7afb7617cac9b394c9cc804bec13de22c495229ed5e7c00c9655dd6aa9ba3945"
+   "request_sha256": "sha256:c9c7e2ccc55045485214232e541e8b6a8892cfe7c29dd30d23978c812d963497"
   },
   {
    "name": "verify_reason_tampered",
@@ -2677,7 +2677,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "policy_integrity_payload_hash_mismatch",
       "payload_hash": "638ae8cc2e12fd64417b2469cbc0cdd76105b0555cbb3a6fb59ff75346f6caed",
       "status": "tampered"
@@ -2685,8 +2685,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "reason_tampered",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -2702,11 +2702,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 1,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
-       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "payload_mac": "2ad5ce0371ceb9ca2a882fb057c3b5a74ec9a5882bd400dd5d001521af7eb3c1",
        "publisher": null,
        "reason": "approved",
        "scope": "artifact",
@@ -2719,7 +2719,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:e7a7767fa18c7658a76dd144c018aca292e43a1221daf5263e431ac8f19f8da8"
+   "request_sha256": "sha256:34f3d33aa6574630efe40ef4da215926082409b186b028612662dd310f688f93"
   },
   {
    "name": "verify_generation_tampered",
@@ -2727,7 +2727,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "policy_integrity_payload_hash_mismatch",
       "payload_hash": "7bae8e80d1a45e68d810acb277b4f1578827d3eae189d772569ab96b4a8d3e4a",
       "status": "tampered"
@@ -2735,8 +2735,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "generation_tampered",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -2752,11 +2752,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 2,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
-       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "payload_mac": "2ad5ce0371ceb9ca2a882fb057c3b5a74ec9a5882bd400dd5d001521af7eb3c1",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -2769,7 +2769,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:3b71dfe0eea2fbbfef14c95ab5a4492dc31554674f3a7172971a6eaba3d124a6"
+   "request_sha256": "sha256:3f957ae0d2acc0525a1216034ce259cb300b98461315de7b5c35a484ff4e5d39"
   },
   {
    "name": "verify_extra_column_ignored",
@@ -2777,7 +2777,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "hmac-sha256",
       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
       "status": "valid"
@@ -2785,8 +2785,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "extra_column_ignored",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -2802,11 +2802,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 1,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
-       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "payload_mac": "2ad5ce0371ceb9ca2a882fb057c3b5a74ec9a5882bd400dd5d001521af7eb3c1",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -2819,7 +2819,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:43a26fd587f331da296a6454718121f2f0d81bc74cd7a8ed843f2027607f5a26"
+   "request_sha256": "sha256:1929914e3e25ac5d9f367182f5c36669dd83cc69efbed1f92e43b5b419f9f43c"
   },
   {
    "name": "verify_hash_uppercase",
@@ -2827,7 +2827,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "policy_integrity_payload_hash_mismatch",
       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
       "status": "tampered"
@@ -2835,8 +2835,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "hash_uppercase",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -2852,11 +2852,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 1,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": "9C879D8584C240D3786B4AE728733E49032C98B51ADD58D6C89BDB691A561166",
-       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "payload_mac": "2ad5ce0371ceb9ca2a882fb057c3b5a74ec9a5882bd400dd5d001521af7eb3c1",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -2869,7 +2869,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:6f45f59569f31894f5da782ead65af14cdf8b80334d177373f8ef115d9ed8d1f"
+   "request_sha256": "sha256:ec07ab867760596ed848741c7c43d967c50c743d14103cab16acd5dbade20d39"
   },
   {
    "name": "verify_mac_tampered",
@@ -2877,7 +2877,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "policy_integrity_mac_mismatch",
       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
       "status": "tampered"
@@ -2885,8 +2885,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "mac_tampered",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -2902,11 +2902,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 1,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
-       "payload_mac": "03a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "payload_mac": "0ad5ce0371ceb9ca2a882fb057c3b5a74ec9a5882bd400dd5d001521af7eb3c1",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -2919,7 +2919,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:394f0e34b9825ba55bafa32916c4942c7acd3582c9567877801336b43aae12a8"
+   "request_sha256": "sha256:64df64e87948aa4dc03b598e67d2b9f60c4904c9e0210684103bfcbc87673f33"
   },
   {
    "name": "verify_mac_truncated",
@@ -2927,7 +2927,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "policy_integrity_mac_mismatch",
       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
       "status": "tampered"
@@ -2935,8 +2935,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "mac_truncated",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -2952,11 +2952,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 1,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
-       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f058325763",
+       "payload_mac": "2ad5ce0371ceb9ca2a882fb057c3b5a74ec9a5882bd400dd5d001521af7eb3",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -2969,7 +2969,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:a6043b01da169684097a72ffc6fb4018728594816ab0134f156d2d9ff4810cc7"
+   "request_sha256": "sha256:fa11e9176797c2b533b5ad9d5b06b4363c7297409ac657042967f029cefc03da"
   },
   {
    "name": "verify_legacy_valid",
@@ -2977,7 +2977,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "hmac-sha256",
       "payload_hash": "cb1fbd03e3cae360130754313bd1679cef2267c79fe2b1c559b4a09adc8b5ffc",
       "status": "valid"
@@ -2985,8 +2985,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "legacy_valid",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -3002,11 +3002,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": null,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 1,
        "owner": "local",
        "payload_hash": "cb1fbd03e3cae360130754313bd1679cef2267c79fe2b1c559b4a09adc8b5ffc",
-       "payload_mac": "be2a10f525125ecade42fd8d68e90801e36105df6e41df85066de1af1b6dd3d5",
+       "payload_mac": "5d92fca4c46b6c9aa162ac3531cecbed81bcdbc37ab49af51b102be18fc55da5",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -3018,7 +3018,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:46dcda5b7c4820f0a06ba5eba0b817a368a320de4ddd6491387032cabf6ec956"
+   "request_sha256": "sha256:f22832249666cf1d7e46a369c880b8b60a9bec0621d991a7ad2ca5d3e0fc1794"
   },
   {
    "name": "verify_legacy_ignores_trusted_generation",
@@ -3026,7 +3026,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "hmac-sha256",
       "payload_hash": "cb1fbd03e3cae360130754313bd1679cef2267c79fe2b1c559b4a09adc8b5ffc",
       "status": "valid"
@@ -3034,8 +3034,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "legacy_ignores_trusted_generation",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -3051,11 +3051,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": null,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 1,
        "owner": "local",
        "payload_hash": "cb1fbd03e3cae360130754313bd1679cef2267c79fe2b1c559b4a09adc8b5ffc",
-       "payload_mac": "be2a10f525125ecade42fd8d68e90801e36105df6e41df85066de1af1b6dd3d5",
+       "payload_mac": "5d92fca4c46b6c9aa162ac3531cecbed81bcdbc37ab49af51b102be18fc55da5",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -3068,7 +3068,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:b8cfc40c5ad697342f3bd47fa84f277900c7622f15444a3fb184d369a23205a8"
+   "request_sha256": "sha256:2b43c20dfa1483a5b0bfe9a465efd710f2d8babb812e69cc89914f7e89dc680a"
   },
   {
    "name": "verify_legacy_reason_unsigned",
@@ -3076,7 +3076,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "hmac-sha256",
       "payload_hash": "cb1fbd03e3cae360130754313bd1679cef2267c79fe2b1c559b4a09adc8b5ffc",
       "status": "valid"
@@ -3084,8 +3084,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "legacy_reason_unsigned",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -3101,11 +3101,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": null,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 1,
        "owner": "local",
        "payload_hash": "cb1fbd03e3cae360130754313bd1679cef2267c79fe2b1c559b4a09adc8b5ffc",
-       "payload_mac": "be2a10f525125ecade42fd8d68e90801e36105df6e41df85066de1af1b6dd3d5",
+       "payload_mac": "5d92fca4c46b6c9aa162ac3531cecbed81bcdbc37ab49af51b102be18fc55da5",
        "publisher": null,
        "reason": "changed",
        "scope": "artifact",
@@ -3117,7 +3117,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:2dfac2bff48b98b0d04b9097e8618dfc2d105c0e3799ea823ccd81a769da9b2e"
+   "request_sha256": "sha256:6766513d7123c3e8b77171955f9b0afc2341f33a99d2f7067a6f1726d5f31aac"
   },
   {
    "name": "verify_legacy_action_tampered",
@@ -3125,7 +3125,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "policy_integrity_payload_hash_mismatch",
       "payload_hash": "c2cd05682cbf8ea63af550021e07474a5b43255da41a2e4a20dd20d0df3cb71a",
       "status": "tampered"
@@ -3133,8 +3133,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "legacy_action_tampered",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -3150,11 +3150,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": null,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 1,
        "owner": "local",
        "payload_hash": "cb1fbd03e3cae360130754313bd1679cef2267c79fe2b1c559b4a09adc8b5ffc",
-       "payload_mac": "be2a10f525125ecade42fd8d68e90801e36105df6e41df85066de1af1b6dd3d5",
+       "payload_mac": "5d92fca4c46b6c9aa162ac3531cecbed81bcdbc37ab49af51b102be18fc55da5",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -3166,7 +3166,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:59181a6ffcf677717c8e17a07afccb51152220638d3231a6a36912b7f32e4302"
+   "request_sha256": "sha256:b28d1127b1678e524ad85da76d41564017b98d981f78fd5f061ce1073e98d663"
   },
   {
    "name": "verify_legacy_as_v2",
@@ -3174,7 +3174,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "policy_integrity_payload_hash_mismatch",
       "payload_hash": "904348c16ca3cbe3d8988c80d73ceda30bd366780c497c1680c8783f3a1d7e19",
       "status": "tampered"
@@ -3182,8 +3182,8 @@
     ]
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "legacy_as_v2",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
@@ -3199,11 +3199,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": null,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": "cb1fbd03e3cae360130754313bd1679cef2267c79fe2b1c559b4a09adc8b5ffc",
-       "payload_mac": "be2a10f525125ecade42fd8d68e90801e36105df6e41df85066de1af1b6dd3d5",
+       "payload_mac": "5d92fca4c46b6c9aa162ac3531cecbed81bcdbc37ab49af51b102be18fc55da5",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -3215,7 +3215,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:0568b5ef2982b297abd9522cb34b7fd40d05185ea88aff0fde3a4225c39bef67"
+   "request_sha256": "sha256:a790029c503564b205c3a3911c70c677e7f19358427773d084f52805f3e917c6"
   },
   {
    "name": "verify_without_key",
@@ -3223,7 +3223,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "policy_integrity_key_unavailable",
       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
       "status": "unknown_key"
@@ -3235,7 +3235,7 @@
       "status": "missing_integrity"
      },
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "policy_integrity_key_unavailable",
       "payload_hash": "cb1fbd03e3cae360130754313bd1679cef2267c79fe2b1c559b4a09adc8b5ffc",
       "status": "unknown_key"
@@ -3258,11 +3258,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 1,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
-       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "payload_mac": "2ad5ce0371ceb9ca2a882fb057c3b5a74ec9a5882bd400dd5d001521af7eb3c1",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -3304,11 +3304,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": null,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 1,
        "owner": "local",
        "payload_hash": "cb1fbd03e3cae360130754313bd1679cef2267c79fe2b1c559b4a09adc8b5ffc",
-       "payload_mac": "be2a10f525125ecade42fd8d68e90801e36105df6e41df85066de1af1b6dd3d5",
+       "payload_mac": "5d92fca4c46b6c9aa162ac3531cecbed81bcdbc37ab49af51b102be18fc55da5",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -3321,7 +3321,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:8bb348c76e522ab85be893588beaaaa5eae3ca9a21960dd1882a91b50351b2e3"
+   "request_sha256": "sha256:1603f2f59a857614205fc94d66d42abfc6fecc9a87f71b4cbece68a786adec62"
   },
   {
    "name": "verify_degraded_without_key",
@@ -3329,7 +3329,7 @@
     "sign": [],
     "verify": [
      {
-      "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+      "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
       "message": "policy_integrity_backend_unavailable",
       "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
       "status": "degraded_mode"
@@ -3352,11 +3352,11 @@
        "expires_at": null,
        "harness": "claude-code",
        "integrity_generation": 1,
-       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+       "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
        "integrity_version": 2,
        "owner": "local",
        "payload_hash": "9c879d8584c240d3786b4ae728733e49032c98b51add58d6c89bdb691a561166",
-       "payload_mac": "33a239f06a900da783d77ef7ccb794a8619fe1567df07d7d06b0f0583257639d",
+       "payload_mac": "2ad5ce0371ceb9ca2a882fb057c3b5a74ec9a5882bd400dd5d001521af7eb3c1",
        "publisher": null,
        "reason": "approved from the review queue",
        "scope": "artifact",
@@ -3368,7 +3368,7 @@
      }
     ]
    },
-   "request_sha256": "sha256:465351d79035df5f4b01cf019f095f8fa064443bc0cfd46169e26fb03ae0ba19"
+   "request_sha256": "sha256:aa344db186a6b69940cca42f6feb1568c87e61a9a4074a8a3c6d8d5ace497fad"
   },
   {
    "name": "empty_batch",
@@ -3377,17 +3377,17 @@
     "verify": []
    },
    "request": {
-    "integrity_key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
-    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+    "integrity_key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "integrity_key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
     "request_id": "empty",
     "schema": "guard-policy-integrity-rows-request.v1",
     "sign": [],
     "verify": []
    },
-   "request_sha256": "sha256:aad76fb9f0a0e603cfc21e52617c9996222d1fa093ec51a123f13c52720f60c1"
+   "request_sha256": "sha256:647d44cb89b90e32e591d1a8897c2ace5b881e151f453f9465fd074e74ef7c1a"
   }
  ],
- "key_b64": "ffM-EWV0-i0_dleI71GU6ezywSvKvr4nf6uF7jNU-Eg",
- "key_id": "guard-policy-integrity-key:00000000deadbeef:6502e13ad8ea6017",
+ "key_b64": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+ "key_id": "guard-policy-integrity-key:00000000deadbeef:630dcd2966c43366",
  "schema": "guard-policy-integrity-rows-vectors.v1"
 }
