@@ -492,3 +492,25 @@ fn observe_keeps_only_a_warn_floor_over_a_proven_allow_silent() {
 
 #[path = "policy_enforcement_floor_cause_tests.rs"]
 mod floor_cause;
+
+#[test]
+fn network_floor_decides_a_proven_plain_web_fetch() {
+    let mut fetch = generic_result("allow");
+    fetch.action.action_type = PreToolActionTypeV1::Network;
+    fetch.action.operation = PreToolOperationV1::Request;
+    fetch.reason_code = "native_plain_web_request".into();
+    let payload =
+        json!({"tool_name": "WebFetch", "tool_input": {"url": "https://status.example.test/"}});
+    for (setting, minimum, decision) in [
+        ("allow", "allow", "allow"),
+        ("warn", "warn", "allow"),
+        ("review", "review", "deny"),
+        ("block", "block", "deny"),
+    ] {
+        let mut network = policy("allow");
+        network.new_network_domain_action = setting.into();
+        let result = apply_pre_tool_policy(&snapshot(network), &payload, fetch.clone()).unwrap();
+        assert_eq!(result.minimum_action, minimum, "{setting}");
+        assert_eq!(result.decision, decision, "{setting}");
+    }
+}

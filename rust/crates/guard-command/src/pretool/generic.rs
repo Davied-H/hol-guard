@@ -88,6 +88,8 @@ pub fn bounded_task_metadata_output(payload: &serde_json::Value, harness: &str) 
 }
 #[path = "generic_tools.rs"]
 mod tools;
+#[path = "generic_web_fetch.rs"]
+mod web_fetch;
 pub(in crate::pretool) use tools::is_package_tool;
 
 /// Evaluate the complete raw PreToolUse payload in native code. This stays

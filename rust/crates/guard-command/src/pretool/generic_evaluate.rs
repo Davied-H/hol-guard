@@ -313,6 +313,18 @@ pub(super) fn evaluate_signals(
             "The Rust authority proved this ordinary file write targets the verified workspace, a registered worktree, the verified user home, or a private user-owned temporary directory and clears sensitive-path checks.",
         );
     }
+    if action_type == PreToolActionTypeV1::Network
+        && super::web_fetch::plain_public_web_request(signals)
+    {
+        // A plain public GET is low risk by itself; the installed
+        // new_network_domain_action floor decides whether it runs.
+        return generic_result(
+            action,
+            "allow",
+            "native_plain_web_request",
+            "The Rust authority proved this web fetch or search is a plain request for public web content; the installed network setting decides the outcome.",
+        );
+    }
     let (reason_code, reason) = review_reason(action_type);
     generic_result(action, "review", reason_code, reason)
 }
