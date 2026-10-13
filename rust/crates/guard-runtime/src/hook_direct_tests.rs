@@ -183,7 +183,7 @@ fn only_a_verdict_the_daemon_passes_through_is_answered() {
         ("deny", "block"),
         ("deny", "sandbox-required"),
     ] {
-        let answered = pre_tool_answer(&edge(decision, minimum_action)).unwrap();
+        let answered = pre_tool_answer(&edge(decision, minimum_action), false).unwrap();
         assert_eq!(answered["result"]["minimum_action"], minimum_action);
     }
     for (decision, minimum_action) in [
@@ -196,7 +196,7 @@ fn only_a_verdict_the_daemon_passes_through_is_answered() {
         ("deny", "allow"),
     ] {
         assert_eq!(
-            pre_tool_answer(&edge(decision, minimum_action)),
+            pre_tool_answer(&edge(decision, minimum_action), false),
             Err(HookDirectDefer::NotAllow),
             "{decision} {minimum_action}"
         );
@@ -207,11 +207,11 @@ fn only_a_verdict_the_daemon_passes_through_is_answered() {
         .unwrap()
         .remove("harness_response");
     assert_eq!(
-        pre_tool_answer(&serde_json::to_vec(&missing_response).unwrap()),
+        pre_tool_answer(&serde_json::to_vec(&missing_response).unwrap(), false),
         Err(HookDirectDefer::EdgeFailed)
     );
     assert_eq!(
-        pre_tool_answer(b"not json"),
+        pre_tool_answer(b"not json", false),
         Err(HookDirectDefer::EdgeFailed)
     );
 }
@@ -224,13 +224,27 @@ fn a_block_the_daemon_can_offer_to_repair_defers() {
         "minimum_action": "block",
         "reason_code": "native_command_control_authority_block",
     }));
-    assert_eq!(pre_tool_answer(&repairable), Err(HookDirectDefer::NotAllow));
+    assert_eq!(
+        pre_tool_answer(&repairable, false),
+        Err(HookDirectDefer::NotAllow)
+    );
     let other = pre_edge(json!({
         "decision": "deny",
         "minimum_action": "block",
         "reason_code": "native_command_destructive",
     }));
-    assert!(pre_tool_answer(&other).is_ok());
+    assert!(pre_tool_answer(&other, false).is_ok());
+}
+
+#[test]
+fn a_claude_code_sandbox_requirement_defers_to_contained_execution() {
+    // The daemon rewrites this Claude Code denial into a contained run.
+    assert_eq!(
+        pre_tool_answer(&edge("deny", "sandbox-required"), true),
+        Err(HookDirectDefer::NotAllow)
+    );
+    assert!(pre_tool_answer(&edge("deny", "block"), true).is_ok());
+    assert!(pre_tool_answer(&edge("deny", "sandbox-required"), false).is_ok());
 }
 
 fn post_edge(result: Value) -> Vec<u8> {
@@ -257,9 +271,10 @@ fn every_reviewed_post_tool_use_is_answered() {
         Err(HookDirectDefer::EdgeFailed)
     );
     assert_eq!(
-        pre_tool_answer(&post_edge(
-            json!({ "decision": "allow", "minimum_action": "allow" })
-        )),
+        pre_tool_answer(
+            &post_edge(json!({ "decision": "allow", "minimum_action": "allow" })),
+            false
+        ),
         Err(HookDirectDefer::EdgeFailed)
     );
 }
