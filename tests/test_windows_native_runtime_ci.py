@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import ast
 import re
+
+import yaml
 from pathlib import Path
 
 from tests.support.ci_workflow import composite_action_steps, load_ci_workflow
@@ -140,7 +142,11 @@ def test_windows_shim_admin_lane_replays_vectors_and_runs_the_native_op() -> Non
     assert job["strategy"]["fail-fast"] is False
     assert job["strategy"]["matrix"]["shim-gate"] == ["vectors", "native-op"]
     assert job["timeout-minutes"] >= 10
-    invoke = next(step for step in job["steps"] if step.get("uses") == "./.github/actions/ci-job-windows-shim-admin")
+    # load_ci_workflow() deliberately expands in-tree composites, so inspect
+    # the raw YAML when checking the call-site binding.
+    raw = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
+    raw_steps = raw["jobs"]["windows-shim-admin"]["steps"]
+    invoke = next(step for step in raw_steps if step.get("uses") == "./.github/actions/ci-job-windows-shim-admin")
     assert invoke["with"]["shim-gate"] == "${{ matrix.shim-gate }}"
 
     steps = composite_action_steps("ci-job-windows-shim-admin")
