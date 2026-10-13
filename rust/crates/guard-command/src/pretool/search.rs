@@ -258,7 +258,9 @@ pub(super) fn glob_can_select_sensitive_path(value: &str) -> bool {
             {
                 return true;
             }
-            let env_hint = hint::glob_constrained_lcs(bytes, b".env.") >= 2;
+            // A literal source extension already lets `*.ts` through; the
+            // `.env.` hint must not refuse `*.test.ts` for sharing `.e.`.
+            let env_hint = !code_extension && hint::glob_constrained_lcs(bytes, b".env.") >= 2;
             let family_hint = [
                 b"private-key".as_slice(),
                 b"private_key",
