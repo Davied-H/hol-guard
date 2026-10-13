@@ -75,8 +75,11 @@ fn sibling_checkout_sizes_proceed() {
     let sibling = sibling.to_str().unwrap();
     for (cwd, command) in [
         (&portal, "du -sh node_modules".to_owned()),
-        (&portal, "du -sh ../app-portal-fix/node_modules".to_owned()),
-        (&portal, "du -sk ../app-portal-fix/scripts".to_owned()),
+        (
+            &portal,
+            "du -sh ../../app-portal-fix/node_modules".to_owned(),
+        ),
+        (&portal, "du -sk ../../app-portal-fix/scripts".to_owned()),
         (&org, format!("du -sh {sibling}/node_modules")),
         (
             &org,
@@ -91,7 +94,10 @@ fn sibling_checkout_sizes_proceed() {
             &org,
             format!("du -sk {sibling}/node_modules 2>/dev/null | sort -n | tail -3"),
         ),
-        (&portal, "du -a ../app-portal-fix/node_modules".to_owned()),
+        (
+            &portal,
+            "du -a ../../app-portal-fix/node_modules".to_owned(),
+        ),
     ] {
         assert_eq!(decision(&home, cwd, &command), "allow", "{command}");
     }
@@ -104,8 +110,8 @@ fn du_keeps_the_ls_decision_for_secret_and_absent_paths() {
     for target in [
         "~/.ssh",
         "~/.ssh/missing-key",
-        "../app-portal-fix/.cache",
-        "../app-portal-fix/missing/../../..",
+        "../../app-portal-fix/.cache",
+        "../../app-portal-fix/missing/../../..",
     ] {
         let listing = decision(&home, &portal, &format!("ls -ld {target}"));
         let sizes = decision(&home, &portal, &format!("du -sh {target}"));
@@ -124,22 +130,22 @@ fn unproven_sibling_sizes_still_ask() {
     for (cwd, command) in [
         (
             &portal,
-            "du -sh --files0-from=../app-portal-fix/list.txt".to_owned(),
+            "du -sh --files0-from=../../app-portal-fix/list.txt".to_owned(),
         ),
         (
             &portal,
-            "du -sh --files0-from ../app-portal-fix/list.txt".to_owned(),
+            "du -sh --files0-from ../../app-portal-fix/list.txt".to_owned(),
         ),
         (
             &portal,
-            "du -sh -X ../app-portal-fix/list.txt ../app-portal-fix".to_owned(),
+            "du -sh -X ../../app-portal-fix/list.txt ../../app-portal-fix".to_owned(),
         ),
         (
             &org,
             format!("du -sh --exclude-from={sibling}/list.txt {sibling}"),
         ),
-        (&portal, "du -shL ../app-portal-fix".to_owned()),
-        (&portal, "du -h -d 1 ../app-portal-fix".to_owned()),
+        (&portal, "du -shL ../../app-portal-fix".to_owned()),
+        (&portal, "du -h -d 1 ../../app-portal-fix".to_owned()),
         (&portal, "du -sh -".to_owned()),
         (
             &org,
