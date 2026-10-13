@@ -12,6 +12,7 @@ out, so such a hook defers to this daemon.
 from __future__ import annotations
 
 import os
+import sqlite3
 from collections.abc import Iterable, Mapping
 
 # The resident accepts the review facts below in its direct-lane binding.
@@ -52,12 +53,38 @@ def uniform_blocked_request_mode(configs: Iterable[object]) -> str | None:
     return mode if isinstance(mode, str) and mode in _BLOCKED_REQUEST_MODES else None
 
 
-def approval_center_origin(store: object) -> str | None:
-    """The approval center origin the daemon links a queued review to."""
+class _ReadState:
+    """A store whose runtime state was already read once."""
 
+    def __init__(self, state: object) -> None:
+        self._state = state
+
+    def get_runtime_state(self) -> object:
+        return self._state
+
+
+def _read_origin(store: object) -> tuple[bool, str | None]:
+    # The daemon falls back to the default origin when its runtime state is
+    # unreadable. That fallback is not the origin the daemon links once the
+    # read succeeds again, so an unreadable state reports itself as unknown.
     from .daemon.hook_native_review_approval import _native_review_approval_center_url
 
-    return _text_fact(_native_review_approval_center_url(store), _MAX_REVIEW_FACT_BYTES)
+    getter = getattr(store, "get_runtime_state", None)
+    if callable(getter):
+        try:
+            store = _ReadState(getter())
+        except (OSError, RuntimeError, TypeError, ValueError, sqlite3.Error):
+            return False, None
+    return True, _text_fact(_native_review_approval_center_url(store), _MAX_REVIEW_FACT_BYTES)
+
+
+def approval_center_origin(store: object) -> str | None:
+    """The approval center origin the daemon links a queued review to.
+
+    An unreadable runtime state binds no origin, so a reviewed hook defers.
+    """
+
+    return _read_origin(store)[1]
 
 
 def review_host_cwd() -> str | None:
@@ -75,10 +102,17 @@ def _review_oauth_source(store: object) -> str | None:
     return _text_fact(getattr(store, "_guard_source", None), _MAX_REVIEW_FACT_BYTES)
 
 
-def recheckable_review_facts(store: object) -> tuple[str | None, str | None]:
-    """The review facts that no watched policy input covers."""
+def recheckable_review_facts(store: object) -> tuple[str | None, str | None] | None:
+    """The review facts that no watched policy input covers.
 
-    return approval_center_origin(store), review_host_cwd()
+    ``None`` when the runtime state could not be read, so a transient lock
+    neither reads as a moved origin nor closes the lane.
+    """
+
+    readable, origin = _read_origin(store)
+    if not readable:
+        return None
+    return origin, review_host_cwd()
 
 
 def with_review_facts(

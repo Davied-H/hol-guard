@@ -149,7 +149,8 @@ class NativePolicySnapshotPublicationMixin:
         bound = publisher._direct_lane_review_facts
         if bound is None or publisher._direct_lane_ack_target is None:
             return
-        if recheckable_review_facts(publisher.store) == bound:
+        current = recheckable_review_facts(publisher.store)
+        if current is None or current == bound:
             return
         publisher._close_direct_lane_ack()
         with publisher._condition:

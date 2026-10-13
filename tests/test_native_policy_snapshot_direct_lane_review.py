@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 import threading
 from types import SimpleNamespace
 
@@ -151,3 +152,26 @@ def test_an_unbound_or_closed_lane_is_not_rechecked() -> None:
     publisher._recheck_direct_lane_review_facts()
     assert publisher.closed_lane == 0
     assert not publisher._publish_event.is_set()
+
+
+class _LockedStore(_Store):
+    locked = False
+
+    def get_runtime_state(self) -> object:
+        if self.locked:
+            raise sqlite3.OperationalError("database is locked")
+        return self.state
+
+
+def test_an_unreadable_runtime_state_binds_no_origin_and_keeps_the_lane() -> None:
+    store = _LockedStore({"daemon_host": "127.0.0.1", "daemon_port": 5123})
+    publisher = _Publisher(store)
+    store.locked = True
+    assert review.approval_center_origin(store) is None
+    assert review.recheckable_review_facts(store) is None
+    publisher._recheck_direct_lane_review_facts()
+    assert publisher.closed_lane == 0
+    assert not publisher._publish_event.is_set()
+    store.locked = False
+    publisher._recheck_direct_lane_review_facts()
+    assert publisher.closed_lane == 0
