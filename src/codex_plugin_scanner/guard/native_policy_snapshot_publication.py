@@ -15,7 +15,6 @@ from .native_policy_snapshot_constants import (
     NativePolicySnapshotError,
 )
 from .native_policy_snapshot_direct_lane import (
-    daemon_home_dir,
     direct_lane_binding,
     local_cli_block_rules_present,
     with_direct_hook_state,
@@ -207,7 +206,7 @@ class NativePolicySnapshotPublicationMixin:
             bound_postures = valid_harness_postures(config.get(HARNESS_POSTURES_BINDING_KEY))
             direct_lane = with_direct_hook_state(
                 direct_lane,
-                home_dir=daemon_home_dir(),
+                home_dir=publisher._direct_lane_home_dir(),
                 harness_postures=bound_postures,
                 local_cli_block_rules=local_cli_block_rules,
                 evidence_drain=publisher.direct_evidence_bound(getattr(capabilities, "features", ())),

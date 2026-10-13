@@ -114,6 +114,15 @@ impl PolicySnapshotStore {
             .map(|(snapshot, _binding)| snapshot)
     }
 
+    /// The home the bound daemon gives a hook that names none.
+    pub(crate) fn direct_lane_home_dir(&self) -> Option<String> {
+        self.direct_lane.lock().ok().and_then(|binding| {
+            binding
+                .as_ref()
+                .and_then(|binding| binding.home_dir.clone())
+        })
+    }
+
     /// Admission that also returns the binding, whose daemon state the
     /// direct hook operation checks next.
     pub(crate) fn admit_direct_hook(

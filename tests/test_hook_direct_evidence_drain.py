@@ -81,11 +81,22 @@ def test_a_drained_answer_is_recorded_like_a_daemon_allow(tmp_path: Path, observ
     assert activity["receipt_id"] == RECEIPT["decision_id"]
 
 
+def test_a_drained_claude_code_answer_is_recorded_for_claude_code(
+    tmp_path: Path, observed: list[dict[str, object]]
+) -> None:
+    host = _host(tmp_path)
+    assert record_direct_hook_evidence(host, _record(harness="claude-code"))
+
+    [activity] = host.activity_writer.activity
+    assert activity["harness"] == "claude-code"
+    assert activity["policy_action"] == "allow"
+
+
 @pytest.mark.parametrize(
     "record",
     [
         "not a record",
-        _record(harness="claude-code"),
+        _record(harness="cursor"),
         _record(payload="ls"),
         _record(workspace=None),
         _record(harness_response=None),

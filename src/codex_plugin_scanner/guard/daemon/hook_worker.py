@@ -95,6 +95,7 @@ class HookWorker(HookWorkerNativeMixin):
         *,
         store: GuardStore,
         workspace: Path | None = None,
+        home_dir: Path | None = None,
         activity_writer: CommandActivityWriter | None = None,
         capture_writer: CodexBindingCaptureWriter | None = None,
         wait_for_native_policy: bool = True,
@@ -120,6 +121,9 @@ class HookWorker(HookWorkerNativeMixin):
         self._owns_policy_snapshot_publisher = publish_native_policy
         self._direct_evidence_drain: DirectHookEvidenceDrain | None = None
         if self._owns_policy_snapshot_publisher and start_native_policy:
+            bind_daemon_home = getattr(self.policy_snapshot_publisher, "bind_direct_lane_daemon_home", None)
+            if home_dir is not None and callable(bind_daemon_home):
+                bind_daemon_home(home_dir)
             if workspace is not None:
                 self.policy_snapshot_publisher.register_workspace(workspace)
             self._start_direct_evidence_drain()

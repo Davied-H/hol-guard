@@ -25,7 +25,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 pub(crate) const HOOK_DIRECT_FEATURE: &str = "hook-direct-v1";
 const HOOK_DIRECT_RESULT_SCHEMA: &str = "guard-hook-direct-result.v1";
-const DIRECT_HARNESS: &str = "codex";
+/// The harnesses whose allow the daemon returns as the edge rendered it.
+const DIRECT_HARNESSES: [&str; 2] = ["codex", "claude-code"];
 const TRANSITION_PROBE_FIELD: &str = "guard_transition_probe";
 const EXECUTION_ENVIRONMENT_FIELD: &str = "guard_execution_environment";
 const PAYLOAD_REFERENCE_FIELDS: [&str; 2] = ["guard_payload_ref", "guard_source_ref"];
@@ -55,7 +56,9 @@ const MAX_DEADLINE_BUDGET_MS: u64 = 9_000;
 pub(crate) struct HookDirectRequestV1 {
     pub(crate) harness: String,
     pub(crate) guard_home: String,
-    pub(crate) home_dir: String,
+    /// The `home` query parameter; without one the daemon uses its own.
+    #[serde(default)]
+    pub(crate) home_dir: Option<String>,
     /// The `workspace` query parameter the daemon path would receive.
     #[serde(default)]
     pub(crate) workspace: Option<String>,
@@ -151,7 +154,7 @@ fn answer(
     request: HookDirectRequestV1,
     policy_store: &PolicySnapshotStore,
 ) -> Result<Value, HookDirectDefer> {
-    if request.harness != DIRECT_HARNESS {
+    if !DIRECT_HARNESSES.contains(&request.harness.as_str()) {
         return Err(HookDirectDefer::HarnessUnsupported);
     }
     if !runtime_current() {
@@ -189,7 +192,13 @@ fn answer(
         Some(_) => return Err(HookDirectDefer::ExecutionEnvironmentInvalid),
     };
 
-    let candidate = workspace_candidate(&payload, request.workspace.as_deref(), &request.home_dir)?
+    let request_home = match request.home_dir {
+        Some(home_dir) => home_dir,
+        None => policy_store
+            .direct_lane_home_dir()
+            .ok_or(HookDirectDefer::BindingIncomplete)?,
+    };
+    let candidate = workspace_candidate(&payload, request.workspace.as_deref(), &request_home)?
         .ok_or(HookDirectDefer::WorkspaceMissing)?;
     let workspace = settled_directory(&candidate)?;
     let (snapshot, binding) = policy_store
@@ -200,7 +209,7 @@ fn answer(
         .home_dir
         .as_deref()
         .ok_or(HookDirectDefer::BindingIncomplete)?;
-    if home_dir != request.home_dir {
+    if home_dir != request_home {
         return Err(HookDirectDefer::HomeMismatch);
     }
     match binding.local_cli_block_rules {
@@ -215,7 +224,7 @@ fn answer(
     // too. An unreadable store counts as holding rules, as a failed daemon
     // probe does.
     let store =
-        crate::local_store_read::hook_store_probe(Path::new(&request.guard_home), DIRECT_HARNESS)
+        crate::local_store_read::hook_store_probe(Path::new(&request.guard_home), &request.harness)
             .map_err(|_| HookDirectDefer::LocalCliRules)?;
     if store.harness_unmanaged {
         // The daemon passes such a hook through and leaves the harness its
@@ -230,7 +239,7 @@ fn answer(
         .as_ref()
         .ok_or(HookDirectDefer::BindingIncomplete)?;
     // A per-harness override wins over the snapshot mode in both directions.
-    let recording_only = match postures.get(DIRECT_HARNESS) {
+    let recording_only = match postures.get(&request.harness) {
         Some(posture) => posture == "watch",
         None => snapshot.mode == "observe",
     };
@@ -245,7 +254,7 @@ fn answer(
     let envelope = GuardHookEnvelopeV2 {
         schema: GUARD_HOOK_ENVELOPE_V2_SCHEMA.to_owned(),
         request_id: None,
-        harness: DIRECT_HARNESS.to_owned(),
+        harness: request.harness.clone(),
         event: "PreToolUse".to_owned(),
         raw_payload: Value::Object(payload),
         deadline_budget_ms: Some(
@@ -262,7 +271,7 @@ fn answer(
         }),
         source: GuardHookSourceMetadataV2 {
             cwd: Some(workspace.clone()),
-            home_dir: request.home_dir.clone(),
+            home_dir: request_home.clone(),
             guard_home: request.guard_home,
             source_ref_external_allowed: false,
             execution_environment,
@@ -273,9 +282,9 @@ fn answer(
         .map_err(|_| HookDirectDefer::EdgeFailed)?;
     let answered = allow_answer(&edge)?;
     let evidence = json!({
-        "harness": DIRECT_HARNESS,
+        "harness": request.harness,
         "workspace": workspace,
-        "home_dir": request.home_dir,
+        "home_dir": request_home,
         "payload": Value::Object(evidence_payload),
         "receipt": answered.get("receipt").cloned().unwrap_or(Value::Null),
         "harness_response": answered["harness_response"].clone(),

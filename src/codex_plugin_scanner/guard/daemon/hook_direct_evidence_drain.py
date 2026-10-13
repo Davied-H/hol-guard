@@ -26,7 +26,7 @@ _DRAIN_INTERVAL_SECONDS = 0.25
 _DRAIN_TIMEOUT_SECONDS = 2.0
 # Pages per wake-up, so a backlog drains without starving shutdown.
 _MAX_PAGES_PER_WAKE = 8
-_DIRECT_HARNESS = "codex"
+_DIRECT_HARNESSES = frozenset({"codex", "claude-code"})
 
 
 class _DrainHost(Protocol):
@@ -57,14 +57,15 @@ def record_direct_hook_evidence(host: _DrainHost, record: object) -> bool:
     response = record.get("harness_response")
     receipt = record.get("receipt")
     if (
-        harness != _DIRECT_HARNESS
+        not isinstance(harness, str)
+        or harness not in _DIRECT_HARNESSES
         or not isinstance(payload, dict)
         or not isinstance(workspace, str)
         or not isinstance(home_dir, str)
         or not isinstance(response, dict)
     ):
         return False
-    if _hook_harness_is_unmanaged(host, _DIRECT_HARNESS):
+    if _hook_harness_is_unmanaged(host, harness):
         # The daemon passes an unmanaged harness through without recording.
         return True
     accepted = validate_native_decision_receipt(receipt) if receipt is not None else None

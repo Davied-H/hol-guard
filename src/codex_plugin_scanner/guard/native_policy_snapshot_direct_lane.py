@@ -184,6 +184,34 @@ class NativePolicySnapshotDirectLaneAck:
     _direct_lane_local_cli_revision: int | None = None
     # Set while the daemon drains direct-answer evidence from the resident.
     _direct_evidence_drain_enabled: bool = False
+    # The home the serving daemon gives a hook that names none.
+    _direct_lane_daemon_home: str | None = None
+
+    def bind_direct_lane_daemon_home(self, home_dir: Path) -> None:
+        """Record the home the serving daemon gives a hook that names none."""
+
+        try:
+            home = str(home_dir.expanduser().resolve(strict=False))
+        except (OSError, RuntimeError):
+            home = ""
+        if home == self._direct_lane_daemon_home:
+            return
+        self._direct_lane_daemon_home = home
+        request_publish = getattr(self, "request_publish", None)
+        if callable(request_publish):
+            request_publish()
+
+    def _direct_lane_home_dir(self) -> str:
+        """The home the lane answers for, or empty to keep it closed.
+
+        The daemon expands `~` with its own home but gives a hook without a
+        home the one it was started with. The resident substitutes the bound
+        home for both, so one that differs from the other binds none.
+        """
+
+        home = daemon_home_dir()
+        started = self._direct_lane_daemon_home
+        return home if started is None or started == home else ""
 
     @property
     def _acked(self) -> bool:

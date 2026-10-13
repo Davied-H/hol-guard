@@ -1,4 +1,4 @@
-use super::{answered_response, direct_request, parse_hook_query, HookQuery};
+use super::{answered_response, direct_request, parse_hook_query, HookQuery, CLAUDE_CODE, CODEX};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -94,8 +94,14 @@ fn encoded(path: &Path) -> String {
 const PAYLOAD: &str = r#"{"hook_event_name":"PreToolUse","tool_name":"Bash"}"#;
 
 fn built(homes: &Homes, query: &str, data: &str) -> Option<Value> {
-    direct_request(&homes.guard_home, query, data, Duration::from_millis(400))
-        .map(|bytes| serde_json::from_slice(&bytes).unwrap())
+    direct_request(
+        CODEX,
+        &homes.guard_home,
+        query,
+        data,
+        Duration::from_millis(400),
+    )
+    .map(|bytes| serde_json::from_slice(&bytes).unwrap())
 }
 
 #[test]
@@ -146,7 +152,6 @@ fn a_context_the_daemon_would_replace_takes_the_daemon_path() {
     let home = encoded(&homes.home);
     for query in [
         format!("home={home}"),
-        format!("guard-home={guard_home}"),
         format!("guard-home={}&home={home}", encoded(&other)),
         format!("guard-home=~%2F.hol-guard&home={home}"),
         format!("guard-home={guard_home}&home=user"),
@@ -211,4 +216,38 @@ fn a_blank_runtime_harness_keeps_the_codex_review() {
         encoded(&homes.home),
     );
     assert!(built(&homes, &query, PAYLOAD).is_some());
+}
+
+#[test]
+fn a_hook_without_a_home_leaves_the_resident_the_daemon_home() {
+    let homes = homes("no-home");
+    let query = format!("guard-home={}&workspace=/work", encoded(&homes.guard_home));
+    let request: Value = serde_json::from_slice(
+        &direct_request(
+            CLAUDE_CODE,
+            &homes.guard_home,
+            &query,
+            PAYLOAD,
+            Duration::from_millis(400),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        request,
+        json!({
+            "operation": "hook_direct",
+            "request": {
+                "harness": "claude-code",
+                "guard_home": text(&homes.guard_home),
+                "workspace": "/work",
+                "deadline_budget_ms": 400,
+                "payload": {"hook_event_name": "PreToolUse", "tool_name": "Bash"},
+            },
+        })
+    );
+    assert_eq!(
+        built(&homes, &query, PAYLOAD).unwrap()["request"]["harness"],
+        "codex"
+    );
 }

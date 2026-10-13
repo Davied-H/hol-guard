@@ -209,10 +209,14 @@ fn lane(label: &str, extra: Value) -> Lane {
 }
 
 fn run(lane: &Lane, payload: Value) -> Value {
+    run_as(lane, "codex", Some(HOME), payload)
+}
+
+fn run_as(lane: &Lane, harness: &str, home_dir: Option<&str>, payload: Value) -> Value {
     let request = HookDirectRequestV1 {
-        harness: "codex".to_owned(),
+        harness: harness.to_owned(),
         guard_home: lane.fixture.root.to_str().unwrap().to_owned(),
-        home_dir: HOME.to_owned(),
+        home_dir: home_dir.map(str::to_owned),
         workspace: None,
         deadline_budget_ms: None,
         payload,
@@ -279,9 +283,9 @@ fn request_shapes_the_daemon_must_handle_defer() {
 fn other_harnesses_and_homes_defer() {
     let lane = lane("harness", json!({}));
     let mut request = HookDirectRequestV1 {
-        harness: "claude-code".to_owned(),
+        harness: "cursor".to_owned(),
         guard_home: lane.fixture.root.to_str().unwrap().to_owned(),
-        home_dir: HOME.to_owned(),
+        home_dir: Some(HOME.to_owned()),
         workspace: None,
         deadline_budget_ms: None,
         payload: allowed_payload(&lane),
@@ -290,7 +294,7 @@ fn other_harnesses_and_homes_defer() {
         serde_json::from_slice(&evaluate(request.clone(), &lane.fixture.store).unwrap()).unwrap();
     assert_eq!(deferred(&result), "direct_hook_harness_unsupported");
     request.harness = "codex".to_owned();
-    request.home_dir = "/home/other".to_owned();
+    request.home_dir = Some("/home/other".to_owned());
     let result: Value =
         serde_json::from_slice(&evaluate(request, &lane.fixture.store).unwrap()).unwrap();
     assert_eq!(deferred(&result), "direct_hook_home_mismatch");
@@ -478,4 +482,57 @@ fn a_deferred_hook_queues_no_evidence() {
     post["hook_event_name"] = json!("PostToolUse");
     deferred(&run(&lane, post));
     assert_eq!(drain(&lane)["records"], json!([]));
+}
+
+#[test]
+fn a_claude_code_hook_answers_with_the_daemon_home_it_left_out() {
+    let lane = lane("claude-code", json!({}));
+    let result = run_as(&lane, "claude-code", None, allowed_payload(&lane));
+    assert_eq!(result["outcome"], "answer", "{result}");
+    let page = drain(&lane);
+    let record = &page["records"][0];
+    assert_eq!(record["harness"], "claude-code");
+    assert_eq!(record["home_dir"], HOME);
+    assert_eq!(
+        deferred(&run_as(
+            &lane,
+            "claude-code",
+            Some("/home/other"),
+            allowed_payload(&lane)
+        )),
+        "direct_hook_home_mismatch"
+    );
+
+    // The posture of the harness that sent the hook decides.
+    let watch = lane(
+        "claude-code-watch",
+        json!({ "harness_postures": { "claude-code": "watch" } }),
+    );
+    assert_eq!(
+        deferred(&run_as(
+            &watch,
+            "claude-code",
+            None,
+            allowed_payload(&watch)
+        )),
+        "direct_hook_recording_only"
+    );
+    assert_eq!(run(&watch, allowed_payload(&watch))["outcome"], "answer");
+
+    // Without a bound home there is none to stand in for the daemon's.
+    let homeless = lane("claude-code-homeless", json!({}));
+    let mut bound = binding(&homeless.fixture, &homeless.workspace);
+    bound["harness_postures"] = json!({});
+    bound["local_cli_block_rules"] = json!(false);
+    bound["evidence_drain"] = json!(true);
+    push(&homeless.fixture, Some(bound)).unwrap();
+    assert_eq!(
+        deferred(&run_as(
+            &homeless,
+            "claude-code",
+            None,
+            allowed_payload(&homeless)
+        )),
+        "direct_hook_binding_incomplete"
+    );
 }

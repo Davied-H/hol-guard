@@ -272,3 +272,25 @@ def test_evidence_transport_needs_a_resident_with_the_drain(tmp_path: Path) -> N
 
     status.capabilities.features = ("hook-direct-v1", DIRECT_HOOK_EVIDENCE_FEATURE)
     assert publisher.direct_evidence_transport() == (tmp_path / "guard-runtime", client)
+
+
+def test_the_lane_binds_a_home_only_when_the_daemon_gives_hooks_its_own(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "home"
+    monkeypatch.setenv("HOME", str(home))
+    publisher = _publisher(tmp_path)
+    publishes: list[None] = []
+    monkeypatch.setattr(publisher, "request_publish", lambda: publishes.append(None), raising=False)
+    resolved = str(home.resolve(strict=False))
+    assert publisher._direct_lane_home_dir() == resolved
+
+    publisher.bind_direct_lane_daemon_home(home / ".")
+    assert publisher._direct_lane_home_dir() == resolved
+    publisher.bind_direct_lane_daemon_home(home)
+    assert len(publishes) == 1
+
+    # Hooks without a home would get one `~` does not expand to.
+    publisher.bind_direct_lane_daemon_home(tmp_path / "other")
+    assert publisher._direct_lane_home_dir() == ""
+    assert len(publishes) == 2
