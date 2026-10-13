@@ -136,11 +136,25 @@ pub(super) fn answer(
     // Render the pause before writing, so a pause the resident cannot render
     // leaves the queue to the daemon rather than recording the hook twice.
     pause(&request_id, &approval_url).ok_or(HookDirectDefer::ReviewQueue)?;
-    // The daemon worker records a paused Claude Code review's permission
-    // notice once it is queued; both are written in one transaction.
+    let (method, extra) = store_method(context, result, review_binding.as_deref())?;
+    let stored_id = write(context, method, facts.oauth_source, request, extra)?;
+    // A pending request for the same action keeps its id, so a pause the
+    // resident still cannot render leaves the daemon to queue the same request.
+    let approval_url = rewrite_approval_url(&approval_url, &stored_id);
+    pause(&stored_id, &approval_url).ok_or(HookDirectDefer::ReviewQueue)
+}
+
+/// The store operation that queues an `ask` review, with its other
+/// arguments. The daemon worker records a paused Claude Code review's
+/// permission notice once it is queued; both are written in one transaction.
+fn store_method(
+    context: &Context<'_>,
+    result: &Object,
+    review_binding: Option<&str>,
+) -> Result<(&'static str, Map<String, Value>), HookDirectDefer> {
     let mut extra = Map::new();
     if canonical_harness(context.harness) == CLAUDE_CODE {
-        if let Some(notice) = notice::store_args(context, result, review_binding.as_deref())? {
+        if let Some(notice) = notice::store_args(context, result, review_binding)? {
             extra.insert("claude_notice".to_owned(), notice);
         }
     }
@@ -149,11 +163,7 @@ pub(super) fn answer(
     } else {
         CLAUDE_WRITE_METHOD
     };
-    let stored_id = write(context, method, facts.oauth_source, request, extra)?;
-    // A pending request for the same action keeps its id, so a pause the
-    // resident still cannot render leaves the daemon to queue the same request.
-    let approval_url = rewrite_approval_url(&approval_url, &stored_id);
-    pause(&stored_id, &approval_url).ok_or(HookDirectDefer::ReviewQueue)
+    Ok((method, extra))
 }
 
 /// The silent block for a request queued with its `approval.created` event.
@@ -247,9 +257,13 @@ fn write(
     request: Value,
     extra: Map<String, Value>,
 ) -> Result<String, HookDirectDefer> {
-    let now = super::super::lifecycle::utc_now_isoformat().ok_or(HookDirectDefer::ReviewQueue)?;
     let guard_home = Path::new(context.guard_home);
-    let _gate = storage_gate(guard_home).map_err(|_| HookDirectDefer::ReviewQueue)?;
+    let now = super::super::lifecycle::utc_now_isoformat();
+    let gate = storage_gate(guard_home).ok();
+    let (Some(now), Some(_gate)) = (now, gate) else {
+        forget_key(extra);
+        return Err(HookDirectDefer::ReviewQueue);
+    };
     let mut args = extra;
     args.insert("request".to_owned(), request);
     args.insert("now".to_owned(), json!(now));

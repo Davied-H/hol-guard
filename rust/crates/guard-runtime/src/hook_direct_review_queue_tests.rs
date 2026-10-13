@@ -59,6 +59,53 @@ fn only_a_fully_published_home_queues() {
 }
 
 #[test]
+fn only_a_claude_code_session_queues_with_its_notice() {
+    let mut binding = ask_binding();
+    binding.integrity_key = Some(
+        crate::policy_store::policy_store_direct_lane::DirectLaneIntegrityKey {
+            key: zeroize::Zeroizing::new(vec![7; 32]),
+            key_id: "bound".to_owned(),
+        },
+    );
+    let result = json!({"decision": "review", "reason": "Deletes files."});
+    let result = result.as_object().unwrap();
+    let method = |harness: &str, payload: Value| {
+        let payload = payload.as_object().unwrap().clone();
+        let context = Context {
+            harness,
+            payload: &payload,
+            recorded_payload: &payload,
+            workspace: "/work",
+            home_dir: "/home/user",
+            guard_home: "/home/user/.hol-guard",
+            binding: &binding,
+        };
+        store_method(&context, result, Some("rb-1"))
+            .map(|(method, extra)| (method, extra.get("claude_notice").cloned()))
+    };
+    let vectors: Value = serde_json::from_str(include_str!(
+        "../testdata/guard_store/claude_review_notice_vectors.json"
+    ))
+    .unwrap();
+    let session = vectors["scenarios"][0]["payload"].clone();
+    let (claude, notice) = method(CLAUDE_CODE, session.clone()).unwrap();
+    assert_eq!(claude, CLAUDE_WRITE_METHOD);
+    let notice = notice.expect("a notice");
+    assert_eq!(notice["session_id"], "sess-1");
+    assert_eq!(notice["integrity_key_id"], "bound");
+    assert_eq!(
+        method("codex", session.clone()).unwrap(),
+        (WRITE_METHOD, None)
+    );
+    let mut sessionless = session;
+    sessionless.as_object_mut().unwrap().remove("session_id");
+    assert_eq!(
+        method(CLAUDE_CODE, sessionless).unwrap(),
+        (WRITE_METHOD, None)
+    );
+}
+
+#[test]
 fn request_ids_are_uuid4_hex() {
     let first = request_id().unwrap();
     let second = request_id().unwrap();
