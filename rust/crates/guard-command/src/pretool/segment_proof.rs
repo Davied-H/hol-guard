@@ -425,7 +425,8 @@ pub(super) fn exact_safe_segment_with_context(
             segment.pipeline_index,
         ),
         "jq" => {
-            segment.pipeline_index > 0 && safe_reads::safe_jq_stdin_arguments(&segment.arguments)
+            (segment.pipeline_index > 0 && safe_reads::safe_jq_stdin_arguments(&segment.arguments))
+                || safe_reads::safe_jq_file_arguments(&segment.arguments, context)
         }
         "wc" => safe_reads::safe_word_count_arguments(
             &segment.arguments,

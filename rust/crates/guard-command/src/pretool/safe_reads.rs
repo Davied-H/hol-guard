@@ -308,6 +308,21 @@ fn safe_word_count_with_targets(
     saw_target || piped_input
 }
 
+/// `jq <projection> <file>` reads one bounded file through the same
+/// field/index projection the stdin form admits.
+pub(super) fn safe_jq_file_arguments(
+    arguments: &[String],
+    context: super::PathContext<'_>,
+) -> bool {
+    let Some((file, rest)) = arguments.split_last() else {
+        return false;
+    };
+    !file.starts_with('-')
+        && rest.last().is_some_and(|filter| filter.starts_with('.'))
+        && safe_jq_stdin_arguments(rest)
+        && command_read_target(file, context, false)
+}
+
 pub(super) fn safe_jq_stdin_arguments(arguments: &[String]) -> bool {
     let mut filter = None;
     for argument in arguments {
