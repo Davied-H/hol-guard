@@ -66,10 +66,24 @@ fn subcommand(arguments: &[String]) -> Option<(&str, &[String])> {
     None
 }
 
+/// Whether creating a branch may record an upstream in `.git/config`. An
+/// explicit `--track` always does. With Git's default `branch.autoSetupMerge`
+/// a remote-tracking start point does too, and telling one from a local
+/// branch needs the repository, so any start point counts unless the command
+/// says `--no-track`.
 fn tracks(arguments: &[String]) -> bool {
-    arguments.iter().any(|argument| {
+    if arguments.iter().any(|argument| {
         matches!(argument.as_str(), "-t" | "--track") || argument.starts_with("--track=")
-    })
+    }) {
+        return true;
+    }
+    !arguments.iter().any(|argument| argument == "--no-track")
+        && arguments
+            .iter()
+            .take_while(|argument| argument.as_str() != "--")
+            .filter(|argument| !argument.starts_with('-'))
+            .count()
+            >= 2
 }
 
 fn writes_config(arguments: &[String]) -> bool {
@@ -114,12 +128,17 @@ pub(super) fn writes_denied_metadata(arguments: &[String]) -> bool {
             Some("add" | "rename" | "rm" | "remove" | "set-url" | "set-branches" | "set-head")
         ),
         "lfs" => matches!(first, Some("install" | "uninstall" | "update")),
-        "branch" => rest.iter().any(|argument| {
-            BRANCH_CONFIG_WRITES.contains(&argument.as_str())
-                || argument.starts_with("--set-upstream-to=")
-                || argument.starts_with("--track=")
-        }),
+        "branch" => {
+            tracks(rest)
+                || rest.iter().any(|argument| {
+                    BRANCH_CONFIG_WRITES.contains(&argument.as_str())
+                        || argument.starts_with("--set-upstream-to=")
+                })
+        }
         "checkout" | "switch" => tracks(rest),
+        "push" => rest
+            .iter()
+            .any(|argument| matches!(argument.as_str(), "-u" | "--set-upstream")),
         "config" => writes_config(rest),
         // A clone writes a new repository's configuration; repacking updates
         // `.git/objects/info`.
@@ -158,6 +177,10 @@ mod tests {
             "git branch --set-upstream-to=origin/main",
             "git branch -m main trunk",
             "git switch -c feature --track origin/feature",
+            "git switch -c fix origin/main",
+            "git checkout -b fix origin/main",
+            "git branch fix origin/main",
+            "git push -u origin main",
             "git submodule add ../lib lib",
             "git sparse-checkout set src",
             "git lfs install",
@@ -185,6 +208,10 @@ mod tests {
             "git branch -a",
             "git branch -vv",
             "git switch -c feature",
+            "git checkout -b feature",
+            "git switch -c fix --no-track origin/main",
+            "git branch --list feat*",
+            "git push origin main",
             "git submodule status",
             "git -c core.pager=cat log --oneline",
             "git log -C --oneline",
