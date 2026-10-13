@@ -161,15 +161,6 @@ impl Lab {
     }
 }
 
-fn assert_allowed(result: &guard_contracts::PreToolResultV1, command: &str) {
-    assert_eq!(
-        (result.minimum_action.as_str(), result.reason_code.as_str()),
-        ("allow", "native_exact_safe_lockfile_install"),
-        "{command}\n{}",
-        serde_json::to_string(result).unwrap_or_default()
-    );
-}
-
 #[test]
 fn frozen_script_free_installs_from_registry_lockfiles_proceed() {
     let lab = Lab::new();
