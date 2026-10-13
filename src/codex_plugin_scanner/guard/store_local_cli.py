@@ -28,6 +28,7 @@ from .store_local_cli_rows import (
     _row_text,
     _row_values,
     _with_suggestions,
+    local_cli_rules_exist,
 )
 from .store_local_cli_schema import ensure_local_cli_schema
 from .store_mcp_catalog import load_mcp_catalogs, review_catalog_changes, write_mcp_catalog
@@ -168,13 +169,20 @@ class StoreLocalCliMixin:
         return grant
 
     def has_local_cli_block_rules(self) -> bool:
-        return self._native_store_call("local_cli_rules_exist", {"blocks_only": True}) is True
+        with self._connect() as connection:
+            ensure_local_cli_schema(connection)
+            return local_cli_rules_exist(connection, blocks_only=True)
 
     def has_local_cli_grant_rules(self) -> bool:
-        return self._native_store_call("local_cli_rules_exist", {"blocks_only": False}) is True
+        with self._connect() as connection:
+            ensure_local_cli_schema(connection)
+            return local_cli_rules_exist(connection, blocks_only=False)
 
     def read_local_cli_revision(self) -> int:
-        return _row_int(self._native_store_call("read_local_cli_revision", {}))
+        with self._connect() as connection:
+            ensure_local_cli_schema(connection)
+            row = connection.execute("select revision from local_cli_authority where singleton = 1").fetchone()
+        return 0 if row is None else _row_int(row[0])
 
     def upsert_local_cli_grant(
         self,

@@ -277,8 +277,6 @@ fn method_kind(method: &str) -> Option<Kind> {
         | "artifact_latest_diff"
         | "oauth_sources_list"
         | "read_local_cli_grant"
-        | "local_cli_rules_exist"
-        | "read_local_cli_revision"
         | "read_local_cli_command_catalog"
         | "read_local_cli_command_states"
         | "policy_source_contexts" => Kind::Read,
@@ -436,8 +434,6 @@ fn dispatch(
         "list_command_shadow_observations" => privacy::list_shadow(connection, args),
         "observed_mcp_tool_actions" => observed_mcp::observed_mcp_tool_actions(connection),
         "read_local_cli_grant" => local_cli_grants::read_grant(connection, args),
-        "local_cli_rules_exist" => local_cli_grants::rules_exist(connection, args),
-        "read_local_cli_revision" => local_cli_grants::read_revision(connection),
         "read_local_cli_command_catalog" => {
             local_cli_grants::read_command_catalog(connection, args)
         }

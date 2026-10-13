@@ -36,41 +36,17 @@ def command_state(cli_id: str, command_id: str, state: str) -> tuple[str, list[o
     )
 
 
-def rules(label: str) -> list[dict[str, object]]:
-    return [
-        call("has_local_cli_block_rules", f"{label}: blocks"),
-        call("has_local_cli_grant_rules", f"{label}: any rule"),
-    ]
-
-
 SCENARIOS: list[dict[str, object]] = [
     {
-        "name": "grants_and_rules",
+        "name": "grants",
         "steps": [
-            *rules("empty store"),
-            call("read_local_cli_revision", "seeded revision"),
             call("read_local_cli_grant", "invalid id", cli_id="local-cli.Bad"),
             call("read_local_cli_grant", "no grant", cli_id="local-cli.alpha"),
             {"sql": [grant("local-cli.alpha", H_A, revision=3)]},
             call("read_local_cli_grant", "allowed grant", cli_id="local-cli.alpha"),
-            *rules("allowed grant only"),
             {"sql": [grant("local-cli.beta", H_B, "blocked", 4)]},
             call("read_local_cli_grant", "blocked grant", cli_id="local-cli.beta"),
-            *rules("blocked grant"),
-            {"sql": [("delete from local_cli_grant", []), command_state("local-cli.alpha", "run", "allow")]},
-            *rules("command allow only"),
-            {"sql": [command_state("local-cli.alpha", "stop", "block")]},
-            *rules("command block"),
-            {"sql": [("update local_cli_authority set revision = 7", [])]},
-            call("read_local_cli_revision", "updated revision"),
-            {"sql": [("update local_cli_authority set revision = 2.5", [])]},
-            call("read_local_cli_revision", "real revision is corrupt"),
-            {"sql": [("update local_cli_authority set revision = 'x'", [])]},
-            call("read_local_cli_revision", "text revision is corrupt"),
-            {"sql": [("update local_cli_authority set revision = x'01'", [])]},
-            call("read_local_cli_revision", "blob revision is corrupt"),
-            {"sql": [("delete from local_cli_authority", [])]},
-            call("read_local_cli_revision", "missing authority row"),
+            call("read_local_cli_grant", "other grants stay unread", cli_id="local-cli.alpha"),
         ],
     },
     {

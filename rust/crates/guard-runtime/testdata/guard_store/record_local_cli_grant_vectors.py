@@ -2,7 +2,7 @@
 """Record custom-extension grant read vectors from the ORIGINAL Python store.
 
 Run against a checkout that still holds the pre-native Python reads
-(`store_local_cli_rows.local_cli_rules_exist` and friends), never against the
+(`store_local_cli._read_command_catalog` and friends), never against the
 branch under test and never from Rust output:
 
     cd <origin-main-worktree>
@@ -29,9 +29,9 @@ os.environ["HOL_GUARD_NATIVE"] = "off"
 os.environ.pop("HOL_GUARD_NATIVE_BINARY", None)
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from codex_plugin_scanner.guard import store_local_cli_rows
+from codex_plugin_scanner.guard import store_local_cli
 
-if not hasattr(store_local_cli_rows, "local_cli_rules_exist"):
+if not hasattr(store_local_cli, "_read_command_catalog"):
     sys.exit("refusing to record: the original Python grant reads are gone")
 
 from local_cli_grant_scenarios import SCENARIOS
@@ -47,9 +47,6 @@ TABLES = {
 }
 WIRE = {
     "read_local_cli_grant": ("read_local_cli_grant", lambda kw: {"cli_id": kw["cli_id"]}),
-    "has_local_cli_block_rules": ("local_cli_rules_exist", lambda kw: {"blocks_only": True}),
-    "has_local_cli_grant_rules": ("local_cli_rules_exist", lambda kw: {"blocks_only": False}),
-    "read_local_cli_revision": ("read_local_cli_revision", lambda kw: {}),
     "read_local_cli_command_catalog": ("read_local_cli_command_catalog", lambda kw: {"cli_id": kw["cli_id"]}),
     "read_local_cli_command_states": ("read_local_cli_command_states", lambda kw: {"cli_id": kw["cli_id"]}),
 }

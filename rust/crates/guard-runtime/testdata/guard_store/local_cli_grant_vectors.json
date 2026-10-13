@@ -7,7 +7,7 @@
  },
  "scenarios": [
   {
-   "name": "grants_and_rules",
+   "name": "grants",
    "seed": {
     "local_cli_authority": [
      {
@@ -20,31 +20,6 @@
     "local_cli_grant": []
    },
    "steps": [
-    {
-     "error": null,
-     "label": "empty store: blocks",
-     "method": "local_cli_rules_exist",
-     "native_payload": false,
-     "wire_args": {
-      "blocks_only": true
-     }
-    },
-    {
-     "error": null,
-     "label": "empty store: any rule",
-     "method": "local_cli_rules_exist",
-     "native_payload": false,
-     "wire_args": {
-      "blocks_only": false
-     }
-    },
-    {
-     "error": null,
-     "label": "seeded revision",
-     "method": "read_local_cli_revision",
-     "native_payload": 0,
-     "wire_args": {}
-    },
     {
      "error": null,
      "label": "invalid id",
@@ -99,24 +74,6 @@
     },
     {
      "error": null,
-     "label": "allowed grant only: blocks",
-     "method": "local_cli_rules_exist",
-     "native_payload": false,
-     "wire_args": {
-      "blocks_only": true
-     }
-    },
-    {
-     "error": null,
-     "label": "allowed grant only: any rule",
-     "method": "local_cli_rules_exist",
-     "native_payload": true,
-     "wire_args": {
-      "blocks_only": false
-     }
-    },
-    {
-     "error": null,
      "label": "",
      "method": "sql",
      "native_payload": null,
@@ -151,207 +108,18 @@
     },
     {
      "error": null,
-     "label": "blocked grant: blocks",
-     "method": "local_cli_rules_exist",
-     "native_payload": true,
-     "wire_args": {
-      "blocks_only": true
-     }
-    },
-    {
-     "error": null,
-     "label": "blocked grant: any rule",
-     "method": "local_cli_rules_exist",
-     "native_payload": true,
-     "wire_args": {
-      "blocks_only": false
-     }
-    },
-    {
-     "error": null,
-     "label": "",
-     "method": "sql",
-     "native_payload": null,
-     "sql": [
-      [
-       "delete from local_cli_grant",
-       []
-      ],
-      [
-       "insert into local_cli_command_grant (cli_id, command_id, state) values (?, ?, ?)",
-       [
-        "local-cli.alpha",
-        "run",
-        "allow"
-       ]
-      ]
-     ],
-     "wire_args": null
-    },
-    {
-     "error": null,
-     "label": "command allow only: blocks",
-     "method": "local_cli_rules_exist",
-     "native_payload": false,
-     "wire_args": {
-      "blocks_only": true
-     }
-    },
-    {
-     "error": null,
-     "label": "command allow only: any rule",
-     "method": "local_cli_rules_exist",
-     "native_payload": true,
-     "wire_args": {
-      "blocks_only": false
-     }
-    },
-    {
-     "error": null,
-     "label": "",
-     "method": "sql",
-     "native_payload": null,
-     "sql": [
-      [
-       "insert into local_cli_command_grant (cli_id, command_id, state) values (?, ?, ?)",
-       [
-        "local-cli.alpha",
-        "stop",
-        "block"
-       ]
-      ]
-     ],
-     "wire_args": null
-    },
-    {
-     "error": null,
-     "label": "command block: blocks",
-     "method": "local_cli_rules_exist",
-     "native_payload": true,
-     "wire_args": {
-      "blocks_only": true
-     }
-    },
-    {
-     "error": null,
-     "label": "command block: any rule",
-     "method": "local_cli_rules_exist",
-     "native_payload": true,
-     "wire_args": {
-      "blocks_only": false
-     }
-    },
-    {
-     "error": null,
-     "label": "",
-     "method": "sql",
-     "native_payload": null,
-     "sql": [
-      [
-       "update local_cli_authority set revision = 7",
-       []
-      ]
-     ],
-     "wire_args": null
-    },
-    {
-     "error": null,
-     "label": "updated revision",
-     "method": "read_local_cli_revision",
-     "native_payload": 7,
-     "wire_args": {}
-    },
-    {
-     "error": null,
-     "label": "",
-     "method": "sql",
-     "native_payload": null,
-     "sql": [
-      [
-       "update local_cli_authority set revision = 2.5",
-       []
-      ]
-     ],
-     "wire_args": null
-    },
-    {
-     "error": {
-      "message": "invalid local CLI row",
-      "message_exact": true,
-      "type": "ValueError"
+     "label": "other grants stay unread",
+     "method": "read_local_cli_grant",
+     "native_payload": {
+      "cli_id": "local-cli.alpha",
+      "identity_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "revision": 3,
+      "state": "allowed",
+      "updated_at": "2026-10-01T00:00:00+00:00"
      },
-     "label": "real revision is corrupt",
-     "method": "read_local_cli_revision",
-     "native_payload": null,
-     "wire_args": {}
-    },
-    {
-     "error": null,
-     "label": "",
-     "method": "sql",
-     "native_payload": null,
-     "sql": [
-      [
-       "update local_cli_authority set revision = 'x'",
-       []
-      ]
-     ],
-     "wire_args": null
-    },
-    {
-     "error": {
-      "message": "invalid local CLI row",
-      "message_exact": true,
-      "type": "ValueError"
-     },
-     "label": "text revision is corrupt",
-     "method": "read_local_cli_revision",
-     "native_payload": null,
-     "wire_args": {}
-    },
-    {
-     "error": null,
-     "label": "",
-     "method": "sql",
-     "native_payload": null,
-     "sql": [
-      [
-       "update local_cli_authority set revision = x'01'",
-       []
-      ]
-     ],
-     "wire_args": null
-    },
-    {
-     "error": {
-      "message": "invalid local CLI row",
-      "message_exact": true,
-      "type": "ValueError"
-     },
-     "label": "blob revision is corrupt",
-     "method": "read_local_cli_revision",
-     "native_payload": null,
-     "wire_args": {}
-    },
-    {
-     "error": null,
-     "label": "",
-     "method": "sql",
-     "native_payload": null,
-     "sql": [
-      [
-       "delete from local_cli_authority",
-       []
-      ]
-     ],
-     "wire_args": null
-    },
-    {
-     "error": null,
-     "label": "missing authority row",
-     "method": "read_local_cli_revision",
-     "native_payload": 0,
-     "wire_args": {}
+     "wire_args": {
+      "cli_id": "local-cli.alpha"
+     }
     }
    ]
   },

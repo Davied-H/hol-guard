@@ -81,5 +81,5 @@ fn replays_every_recorded_local_cli_grant_read() {
         }
         let _ = std::fs::remove_dir_all(&home);
     }
-    assert!(compared_steps >= 28, "only {compared_steps} recorded steps");
+    assert!(compared_steps >= 13, "only {compared_steps} recorded steps");
 }
