@@ -66,6 +66,7 @@ fn space(label: &str) -> (Space, FixtureCleanup) {
     write(&sibling.join(".env"), "SYNTHETIC_ONLY=fixture\n");
     write(&home.join(".ssh/id_rsa"), "synthetic fixture\n");
     write(&home.join(".aws/credentials"), "[default]\n");
+    write(&home.join(".rustup/settings.toml"), "version = \"12\"\ndefault_toolchain = \"stable\"\n");
     (
         Space {
             home,
