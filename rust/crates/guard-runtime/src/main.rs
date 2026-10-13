@@ -36,7 +36,6 @@ mod archive_acquisition_op;
 mod archive_inspect;
 mod archive_inspect_containment;
 mod archive_verdict_seam;
-mod blocked_request_mode;
 #[cfg(unix)]
 mod binding_capture_capture;
 #[cfg(unix)]
@@ -55,6 +54,7 @@ mod binding_capture_receipt;
 mod binding_capture_record;
 #[cfg(all(test, unix))]
 mod binding_capture_vectors_tests;
+mod blocked_request_mode;
 #[cfg(unix)]
 mod bounded_hook_bridge;
 #[cfg(unix)]
