@@ -1,5 +1,6 @@
 //! Local Git writes that keep every change reachable: `git add`, a non-forced
-//! `git rm`, `git commit -m`, a new branch at `HEAD` and a plain stash push.
+//! `git rm`, `git commit -m`, a new branch at `HEAD`, a non-forced branch
+//! rename and a plain stash push.
 //! The workspace sandbox runs them in a main checkout, but a linked worktree
 //! keeps its index, refs and objects in the shared Git directory the sandbox
 //! cannot write, and some hosts have no sandbox, so they would stop at review.
@@ -11,7 +12,7 @@
 //! --amend` replaces the local tip, but the reflog still reaches the old
 //! commit, and rewriting what a remote holds still needs a reviewed forced
 //! push. `git add -f` stays reviewed: it is how an ignored secret file gets
-//! staged.
+//! staged. `git branch -M` stays reviewed: it overwrites an existing branch.
 //!
 //! The same chain may end by publishing that work: one `git push origin
 //! <branch>` proven by the runtime push verdict, for the branch the chain
@@ -37,6 +38,7 @@ const RULES: &[&str] = &[
     "command.git.add",
     "command.git.rm",
     "command.git.commit",
+    "command.git.branch",
     "command.git.switch",
     "command.git.checkout",
     "command.git.stash",
@@ -66,6 +68,7 @@ const COMMIT_HOOKS: &[&str] = &[
     "reference-transaction",
     "pre-auto-gc",
 ];
+const BRANCH_HOOKS: &[&str] = &["reference-transaction"];
 const CHECKOUT_HOOKS: &[&str] = &[
     "post-checkout",
     "post-index-change",
@@ -194,6 +197,7 @@ fn proven(
     let mut writes: Vec<(usize, &'static [&'static str])> = Vec::new();
     let mut safe = Vec::new();
     let mut created: Vec<(usize, &str)> = Vec::new();
+    let mut moved = false;
     let mut push: Option<usize> = None;
     let mut proposal = false;
     for (index, segment) in model.segments.iter().enumerate() {
@@ -208,7 +212,10 @@ fn proven(
         }
         if let Some(hooks) = write_hooks(segment) {
             writes.push((index, hooks));
-            created.extend(created_branch(segment).map(|name| (index, name)));
+            match created_branch(segment) {
+                Some(name) => created.push((index, name)),
+                None => moved |= moves_head(segment),
+            }
             continue;
         }
         if super::git_push::chained(segment) {
@@ -281,6 +288,11 @@ fn proven(
     let Some(push) = push else {
         return Some(published);
     };
+    // A rename or a switch to another branch would change what the push
+    // sends after the verdict saw the checkout.
+    if moved {
+        return None;
+    }
     // The push sends the branch the chain checks out: the one it creates, or
     // with no creation the one checked out now. A creation after the push or a
     // second one would leave a different branch checked out than the verdict saw.
@@ -299,10 +311,11 @@ fn proven(
     .then_some(true)
 }
 
-/// The branch `git switch -c <name>` or `git checkout -b <name>` creates.
+/// The branch `git switch -c <name>` or `git checkout -b <name>` creates at
+/// the checked-out commit. A start point is not one of these forms.
 fn created_branch(original: &CommandSegmentV1) -> Option<&str> {
     match original.arguments.as_slice() {
-        [command, flag, name, ..]
+        [command, flag, name]
             if matches!(
                 (command.as_str(), flag.as_str()),
                 ("switch", "-c" | "--create") | ("checkout", "-b")
@@ -312,6 +325,15 @@ fn created_branch(original: &CommandSegmentV1) -> Option<&str> {
         }
         _ => None,
     }
+}
+
+/// Whether a write other than a branch creation may change the checked-out
+/// branch: any `checkout`, `switch` or `branch` form.
+fn moves_head(original: &CommandSegmentV1) -> bool {
+    original
+        .arguments
+        .first()
+        .is_none_or(|command| matches!(command.as_str(), "checkout" | "switch" | "branch"))
 }
 
 /// The hooks a proven write form runs, or `None` when `original` is not one.
@@ -334,6 +356,7 @@ fn write_hooks(original: &CommandSegmentV1) -> Option<&'static [&'static str]> {
         (&"add", rest) => add(rest).then_some(INDEX_HOOKS),
         (&"rm", rest) => rm(rest).then_some(INDEX_HOOKS),
         (&"commit", rest) => commit(rest).then_some(COMMIT_HOOKS),
+        (&"branch", rest) => branch_rename(rest).then_some(BRANCH_HOOKS),
         _ => super::workspace_contained::keeping_arguments(&segment.arguments)
             .then_some(CHECKOUT_HOOKS),
     }
@@ -411,6 +434,23 @@ fn commit(rest: &[&str]) -> bool {
         }
     }
     message || (amend && no_edit)
+}
+
+/// `branch -m NEW` or `branch -m OLD NEW`, options first. A rename moves the
+/// ref with its reflog and refuses an existing target, so nothing becomes
+/// unreachable. `-M`, `--force`, a copy and every other option are refused.
+fn branch_rename(rest: &[&str]) -> bool {
+    let mut moved = false;
+    let mut names = Vec::new();
+    for word in rest {
+        match *word {
+            "-m" | "--move" if !moved && names.is_empty() => moved = true,
+            "-q" | "--quiet" if names.is_empty() => {}
+            name if super::worktree_add::valid_branch_name(name) => names.push(name),
+            _ => return false,
+        }
+    }
+    moved && matches!(names.len(), 1 | 2)
 }
 
 /// Whether the effective configuration lets these writes start no program.

@@ -236,6 +236,11 @@ fn any_unproven_step_or_connector_keeps_the_review() {
         "git add . && git commit -m x && git push origin HEAD:refs/heads/release",
         "git add . && git commit -m x && git push upstream main",
         "git checkout -b refused && git push origin refused",
+        "git checkout -b b1 origin/main && git push origin b1",
+        // A rename or a switch would change what a push of `HEAD` sends.
+        "git branch -m b1 && git push origin HEAD",
+        "git checkout -b b1 && git branch -m b2 && git push origin HEAD",
+        "git switch fix/lane && git push origin HEAD",
         "git add . && git commit -m x && GIT_SSH_COMMAND=id git push origin main",
         // Every other step still needs its own proof.
         "git add -f . && git commit -m x && git push origin main",
