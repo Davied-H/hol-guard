@@ -163,7 +163,10 @@ jobs:
       - name: Configure the checked optimized test profile
         if: matrix.check == 'test'
         run: |
-          echo "CARGO_PROFILE_TEST_OPT_LEVEL=1" >> "$GITHUB_ENV"
+          # Keep dependency crates at opt-level 1 via rust/Cargo.toml.
+          # Avoid optimizing the large workspace test binaries so we spend less
+          # time in code generation. Assertions and overflow checks stay enabled.
+          echo "CARGO_PROFILE_TEST_OPT_LEVEL=0" >> "$GITHUB_ENV"
           echo "CARGO_PROFILE_TEST_DEBUG_ASSERTIONS=true" >> "$GITHUB_ENV"
           echo "CARGO_PROFILE_TEST_OVERFLOW_CHECKS=true" >> "$GITHUB_ENV"
           # Line tables keep panic backtraces readable while cutting link time
