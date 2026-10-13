@@ -111,7 +111,8 @@ pub(super) fn safe_brew_arguments(arguments: &[String]) -> bool {
         ["leaves", rest @ ..] => query(rest, &[LEAVES_FLAGS], false),
         ["services", "list", rest @ ..] => query(rest, &[SERVICES_LIST_FLAGS], false),
         ["services", "info", rest @ ..] => {
-            query(rest, &[SERVICES_INFO_FLAGS], true) && (names(rest) > 0 || rest.contains(&"--all"))
+            query(rest, &[SERVICES_INFO_FLAGS], true)
+                && (names(rest) > 0 || rest.contains(&"--all"))
         }
         _ => false,
     }
