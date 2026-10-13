@@ -31,6 +31,12 @@ strip = "symbols"
 lto = "fat"
 codegen-units = 1
 
+# Keep third-party test dependencies optimized and reusable in CI, while
+# workspace test targets compile with opt-level 0 for faster code generation.
+# Neither the shipped release profile nor runtime checks are changed.
+[profile.test.package."*"]
+opt-level = 1
+
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
