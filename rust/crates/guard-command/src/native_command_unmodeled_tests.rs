@@ -110,8 +110,13 @@ fn unmodeled_commands_take_the_strongest_floor_of_their_possible_owners() {
     // An interpreter could reach any extension, so all of them are consulted.
     assert_eq!(decision(&controls, "sh -c 'gh pr view 12'").0, "block");
     assert_eq!(
-        decision(&controls, "for f in a b; do echo $f; done").0,
+        decision(&controls, "for f in *; do echo $f; done").0,
         "review"
+    );
+    // A loop over literal words is proven as its unrolled command list.
+    assert_eq!(
+        decision(&controls, "for f in a b; do echo $f; done").0,
+        "allow"
     );
 }
 
@@ -126,8 +131,8 @@ fn a_disabled_extension_naming_the_program_still_blocks_unmodeled_commands() {
     }
     // Quoting or a path does not hide the program name.
     for command in [
-        "for x in a; do g\"\"h pr view 12; done",
-        "for x in a; do /usr/local/bin/gh pr view 12; done",
+        "for x in *; do g\"\"h pr view 12; done",
+        "for x in *; do /usr/local/bin/gh pr view 12; done",
     ] {
         assert_eq!(decision(&controls, command).0, "block", "{command}");
     }
