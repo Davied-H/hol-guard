@@ -125,3 +125,39 @@ fn a_flag_named_like_the_loop_variable_is_not_a_rebinding() {
         Some("[ -f \"a\" ] && wc -l \"a\"; [ -f \"b\" ] && wc -l \"b\"")
     );
 }
+
+#[test]
+fn a_leading_cd_stays_in_front_of_the_unrolled_list() {
+    let looped =
+        "cd sub && for f in a.ts b.ts; do node --check \"$f\" 2>&1 | head -3 && echo \"OK: $f\"; done";
+    let unrolled = "cd sub && node --check \"a.ts\" 2>&1 | head -3 && echo \"OK: a.ts\"; node --check \"b.ts\" 2>&1 | head -3 && echo \"OK: b.ts\"";
+    assert_eq!(
+        super::for_loop_unroll::unroll(looped).as_deref(),
+        Some(unrolled)
+    );
+    // A loop that reaches review carries its unrolled decision, so later
+    // layers judge the modeled commands rather than the loop.
+    assert_eq!(decide(looped), decide(unrolled));
+    for command in [
+        "cd $HOME && for f in a; do cat $f; done",
+        "cd -P sub && for f in a; do cat $f; done",
+        "cd sub; for f in a; do cat $f; done",
+        "cd sub && ls && for f in a; do cat $f; done",
+    ] {
+        assert_eq!(super::for_loop_unroll::unroll(command), None, "{command}");
+    }
+}
+
+#[test]
+fn a_leading_redirection_cannot_hide_the_command_word() {
+    for command in [
+        "for f in A=/x; do 2>/dev/null $f; done",
+        "for f in a; do >out $f; done",
+        "for f in a; do echo ok | 2>&1 $f; done",
+        "for f in a; do <in $f; done",
+        "for f in a; do /usr/bin/doc?er ps $f; done",
+        "for f in a; do echo $f | x*y; done",
+    ] {
+        assert_eq!(super::for_loop_unroll::unroll(command), None, "{command}");
+    }
+}

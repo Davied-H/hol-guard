@@ -24,7 +24,7 @@ pub(super) fn unroll(command: &str) -> Option<String> {
     {
         return None;
     }
-    let rest = command.trim();
+    let (prefix, rest) = cd_prefix(command.trim())?;
     let rest = keyword(rest, "for")?;
     let (name, rest) = next_word(rest)?;
     if !valid_identifier(name) {
@@ -42,7 +42,7 @@ pub(super) fn unroll(command: &str) -> Option<String> {
     if items.is_empty() || items.iter().any(|(text, _)| rebinds(text, name)) {
         return None;
     }
-    let mut out = String::new();
+    let mut out = prefix;
     for word in &words {
         for (text, separator) in &items {
             let step = substitute(text, word)?;
@@ -59,6 +59,22 @@ pub(super) fn unroll(command: &str) -> Option<String> {
     }
     let trimmed = out.trim_end_matches([' ', ';']);
     Some(trimmed.to_owned())
+}
+
+/// An optional leading `cd DIR && ` with a literal directory. It is kept once
+/// in front of the unrolled list. If `cd` fails the loop never runs, while the
+/// unrolled list may still run its later items; the unrolled form can only do
+/// more, so admitting it still covers the loop.
+fn cd_prefix(command: &str) -> Option<(String, &str)> {
+    let Some(rest) = keyword(command, "cd") else {
+        return Some((String::new(), command));
+    };
+    let (dir, rest) = next_word(rest)?;
+    if !safe_value(dir) || dir.starts_with('-') {
+        return None;
+    }
+    let rest = rest.trim_start_matches([' ', '\t']).strip_prefix("&&")?;
+    Some((format!("cd {dir} && "), rest.trim_start_matches([' ', '\t', '\n'])))
 }
 
 /// Consume `keyword` followed by whitespace.
@@ -394,10 +410,20 @@ const MARKER: &str = "\u{1}";
 
 fn substitute(item: &str, word: &str) -> Option<String> {
     // Every pipeline stage must start with a plain word: no marker, no
-    // assignment, no shell keyword.
+    // assignment, no shell keyword. A leading redirection such as
+    // `2>/dev/null $f` would hide the real command word from this check, so a
+    // stage that starts with one is rejected. A glob in the command word
+    // (`/usr/bin/doc?er`) could name any program, so it keeps the loop on
+    // the unmodeled path.
     for stage in item.split('|') {
         let first = stage.split_whitespace().next()?;
-        if first.contains(MARKER) || first.contains('=') || CONTROL_WORDS.contains(&first) {
+        let bare = first.trim_start_matches(|c: char| c.is_ascii_digit());
+        if first.contains(MARKER)
+            || first.contains('=')
+            || bare.starts_with(['>', '<', '&'])
+            || (first != "[" && first.contains(['*', '?', '[']))
+            || CONTROL_WORDS.contains(&first)
+        {
             return None;
         }
     }

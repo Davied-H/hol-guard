@@ -354,8 +354,9 @@ pub(super) fn evaluate_pre_tool_with_execution_context(
         return Ok(decision);
     }
     // A loop over literal words is its unrolled command list. The unrolled
-    // form goes through the same proofs; an allow there admits the loop, and
-    // a block there is never softened to review.
+    // form goes through the same proofs and replaces the loop's decision: an
+    // allow there admits the loop, a block is never softened, and a review
+    // carries the unrolled model so later layers judge modeled commands.
     let Some(unrolled) = for_loop_unroll::unroll(&request.command) else {
         return Ok(decision);
     };
@@ -370,7 +371,7 @@ pub(super) fn evaluate_pre_tool_with_execution_context(
         deadline,
         execution_environment,
     ) {
-        Ok(unrolled) if matches!(unrolled.minimum_action.as_str(), "allow" | "block") => {
+        Ok(unrolled) if matches!(unrolled.minimum_action.as_str(), "allow" | "review" | "block") => {
             Ok(unrolled)
         }
         _ => Ok(decision),
