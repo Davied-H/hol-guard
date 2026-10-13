@@ -1,4 +1,4 @@
-//! Oh My Pi `read` target proofs: bounded `:N-M` selectors and names-only
+//! Oh My Pi `read` target proofs: bounded line selectors and names-only
 //! directory listings. Kept apart from the shared command/file proofs.
 
 use super::{
@@ -162,34 +162,47 @@ fn bounded_selector_path(
     if selector.eq_ignore_ascii_case("raw") && !compound {
         return BoundedSelectorPath::RawFile(base.to_owned());
     }
-    let Some((start, end)) = selector.split_once('-') else {
+    if !line_selector(selector) {
         return if selector_like {
             BoundedSelectorPath::Unsupported
         } else {
             BoundedSelectorPath::NotSelector
         };
-    };
-    if start.is_empty()
-        || end.is_empty()
-        || !start.bytes().all(|byte| byte.is_ascii_digit())
-        || !end.bytes().all(|byte| byte.is_ascii_digit())
-    {
-        return if selector_like {
-            BoundedSelectorPath::Unsupported
-        } else {
-            BoundedSelectorPath::NotSelector
-        };
-    }
-    let Ok(start) = start.parse::<u64>() else {
-        return BoundedSelectorPath::Unsupported;
-    };
-    let Ok(end) = end.parse::<u64>() else {
-        return BoundedSelectorPath::Unsupported;
-    };
-    if start == 0 || end == 0 || end < start {
-        return BoundedSelectorPath::Unsupported;
     }
     BoundedSelectorPath::Base(base.to_owned())
+}
+
+/// OMP's line windows: `N`, `N-`, `N-M`, `N+K` and `-N`, alone or joined by
+/// commas. Each picks lines of the same file or entries of the same directory,
+/// so it reads no more than the bare path would.
+fn line_selector(selector: &str) -> bool {
+    selector.len() <= 256
+        && selector.split(',').count() <= 32
+        && selector.split(',').all(line_window)
+}
+
+fn line_window(window: &str) -> bool {
+    if let Some(count) = window.strip_prefix('-') {
+        return line_number(count).is_some();
+    }
+    if let Some((start, count)) = window.split_once('+') {
+        return line_number(start).is_some() && line_number(count).is_some();
+    }
+    match window.split_once('-') {
+        Some((start, "")) => line_number(start).is_some(),
+        Some((start, end)) => line_number(start)
+            .zip(line_number(end))
+            .is_some_and(|(start, end)| start <= end),
+        None => line_number(window).is_some(),
+    }
+}
+
+/// A positive decimal line number, digits only.
+fn line_number(text: &str) -> Option<u64> {
+    if text.is_empty() || !text.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    text.parse::<u64>().ok().filter(|number| *number > 0)
 }
 
 fn bounded_existing_file_read_target(
