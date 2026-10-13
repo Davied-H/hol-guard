@@ -125,6 +125,9 @@ fn process_ids(value: &str) -> bool {
 }
 
 pub(in crate::pretool) fn safe_pg_isready_arguments(arguments: &[String]) -> bool {
+    // An omitted -h inherits PGHOST/PGSERVICE/libpq configuration, which can
+    // route a readiness probe to an arbitrary remote address.
+    let mut explicit_loopback = false;
     let mut index = 0;
     while index < arguments.len() {
         let argument = arguments[index].as_str();
@@ -153,7 +156,10 @@ pub(in crate::pretool) fn safe_pg_isready_arguments(arguments: &[String]) -> boo
             }
         };
         let valid = match option {
-            "-h" | "--host" => LOOPBACK_HOSTS.contains(&value),
+            "-h" | "--host" => {
+                explicit_loopback = LOOPBACK_HOSTS.contains(&value);
+                explicit_loopback
+            },
             "-p" | "--port" => port(value),
             "-t" | "--timeout" => {
                 (1..=3).contains(&value.len()) && value.bytes().all(|byte| byte.is_ascii_digit())
@@ -165,7 +171,7 @@ pub(in crate::pretool) fn safe_pg_isready_arguments(arguments: &[String]) -> boo
             return false;
         }
     }
-    true
+    explicit_loopback
 }
 
 fn port(value: &str) -> bool {
@@ -209,11 +215,10 @@ mod tests {
             assert!(safe_lsof_arguments(&arguments(command)), "lsof {command}");
         }
         for command in [
-            "",
-            "-q",
+            "-h localhost -q",
             "-h localhost -p 5432",
             "--host=127.0.0.1 --port=5432 -t 3",
-            "-d app_dev -U app_user",
+            "-h ::1 -d app_dev -U app_user",
         ] {
             assert!(
                 safe_pg_isready_arguments(&arguments(command)),
@@ -243,6 +248,9 @@ mod tests {
             assert!(!safe_lsof_arguments(&arguments(command)), "lsof {command}");
         }
         for command in [
+            "",
+            "-q",
+            "-d app_dev -U app_user",
             "-h db.example.com",
             "--host=10.0.0.5",
             "-d host=db.example.com",
