@@ -19,6 +19,7 @@ use rusqlite::{Connection, OpenFlags};
 use serde_json::{json, Value};
 
 use super::context_digest_json::write_canonical_json_with_limit;
+use crate::guard_store_approval_write::add_native_review_approval_request;
 use crate::guard_store_args::Args;
 use crate::guard_store_clients as clients;
 use crate::guard_store_cmd_activity as activity;
@@ -290,6 +291,7 @@ fn method_kind(method: &str) -> Option<Kind> {
         | "workflow_capability_plan" => Kind::Snapshot,
         "workflow_capability_commit" => Kind::Write,
         "consume_native_review_approval"
+        | "add_native_review_approval_request"
         | "refresh_review_event_outbox_binding_for_identity"
         | "refresh_review_event_outbox_binding"
         | "reassign_quarantined_review_events"
@@ -442,6 +444,9 @@ fn dispatch(
         }
         "read_local_cli_command_states" => local_cli_grants::read_command_states(connection, args),
         "consume_native_review_approval" => native_review_consume::consume(connection, args),
+        "add_native_review_approval_request" => {
+            add_native_review_approval_request(connection, source, args)
+        }
         "workflow_capability_plan" => wfcap::plan(connection, args),
         "workflow_capability_commit" => wfcap::commit(connection, args),
         "record_local_cli_observation" => local_cli::record_observation(connection, args),
