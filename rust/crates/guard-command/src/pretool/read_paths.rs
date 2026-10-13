@@ -222,6 +222,7 @@ pub(super) fn resolved_path_allowed_for_operation(
         || guard_secure_fs::sensitive_path_family(canonical).is_some()
         || guard_secure_fs::credential_named_path(canonical)
         || !(guard_secure_fs::hidden_read_parts_allowed(canonical)
+            || (read_only && guard_secure_fs::hidden_empty_work_tree_file(canonical))
             || guard_safety_doc(canonical, home_dir)
             || (read_only
                 && (agent_skill_document(canonical, home_dir)

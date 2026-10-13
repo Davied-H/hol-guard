@@ -54,6 +54,7 @@ mod lookup_reads;
 mod metadata_reads;
 mod npm_reads;
 mod pytest_contained;
+mod tool_bin_listing;
 mod trusted_location;
 pub(crate) use git_routes::git_route_within_workspace;
 mod apply_patch_writes;

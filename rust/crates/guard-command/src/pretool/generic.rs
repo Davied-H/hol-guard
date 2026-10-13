@@ -167,6 +167,13 @@ pub fn evaluate_pre_tool_envelope_with_execution_context(
             .and_then(|signals| signals.command);
         if let Some(setting) = command
             .as_deref()
+            .and_then(env_prefix_projection::substituted_setting)
+        {
+            result.reason = format!(
+                "HOL Guard blocked this command because the {setting} setting is filled by a command substitution or variable expansion, which Guard does not allow in an environment prefix. Do not capture credentials or other output into a setting. Rely on the tool's own login (for example gh's active account), or run the commands separately without passing the output through the environment."
+            );
+        } else if let Some(setting) = command
+            .as_deref()
             .and_then(env_prefix_projection::code_loading_setting)
         {
             result.reason = format!(
@@ -286,7 +293,7 @@ fn evaluate_envelope(
         .command
         .as_deref()
         .filter(|_| controls.is_some() && !search_scope_proven && !apply_patch_proven)
-        .and_then(env_prefix_projection::project_reviewed)
+        .and_then(|command| env_prefix_projection::project_reviewed(command, context))
     {
         let projected_payload = payload_with_command(
             payload,
