@@ -31,6 +31,10 @@ mod git_metadata;
 mod keeps_work;
 #[path = "workspace_contained_package.rs"]
 mod package;
+#[path = "workspace_contained_settings.rs"]
+mod settings;
+
+pub(super) use settings::carry_settings;
 
 // Privilege and permission changes. This is an exclusion, not an allowlist.
 const PRIVILEGE_DENY: &[&str] = &[
@@ -475,6 +479,10 @@ pub(super) fn convert(
     {
         return;
     }
+    mark_contained(result);
+}
+
+fn mark_contained(result: &mut PreToolResultV1) {
     result.minimum_action = "sandbox-required".into();
     result.policy_action = "sandbox-required".into();
     result.decision = "deny".into();

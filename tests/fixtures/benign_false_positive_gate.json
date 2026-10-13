@@ -3506,7 +3506,7 @@
       ],
       "tool": "shell",
       "tool_input": {
-        "command": "gh api graphql -f query='mutation($t:ID!){ resolveReviewThread(input:{threadId:$t}){ thread{ id isResolved } } }' -f t=PRRT_fixture"
+        "command": "gh api graphql -f query='mutation($t:ID!){ resolveReviewThread(input:{threadId:$t}){ thread{ id isResolved } } }' -f t=PRRT_kwDOfixture1234"
       },
       "cwd": "worktree",
       "expect": "allow"

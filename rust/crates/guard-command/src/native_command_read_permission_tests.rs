@@ -70,6 +70,22 @@ fn read_only_graphql_queries_need_no_prompt_but_mutations_do() {
 }
 
 #[test]
+fn printing_escape_sequences_does_not_change_a_job_log_read() {
+    let controls = controls_with(&[]);
+    let plain = "gh api repos/o/r/actions/jobs/1/logs | grep -a -n -E 'Error|FAILED' | head -40";
+    let escaped = "gh api repos/o/r/actions/jobs/1/logs --allow-escape-sequences | grep -a -n -E 'Error|FAILED' | head -40";
+    assert_eq!(action(&controls, plain), "allow");
+    assert_eq!(action(&controls, escaped), "allow");
+    assert_ne!(
+        action(
+            &controls,
+            "gh api repos/o/r/actions/jobs/1/logs --allow-escape-sequences=yes"
+        ),
+        "allow"
+    );
+}
+
+#[test]
 fn kubectl_reads_are_an_opt_in_permission_that_never_covers_exec_or_secrets() {
     let read = "kubectl --context example -n example-namespace get deploy example-app -o jsonpath='{.status.readyReplicas}'";
     assert_ne!(action(&controls_with(&[]), read), "allow");

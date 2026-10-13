@@ -342,3 +342,36 @@ fn a_linked_worktree_contains_everything_but_git() {
     }
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[test]
+fn reviewable_settings_run_with_their_command_in_the_workspace_sandbox() {
+    let ws = workspace("settings", true);
+    for command in [
+        "PORT=4173 npm run build",
+        "PORT=4173 VITE_MODE=test npm run lint",
+        "PORT=4173 ./todo.py add x",
+    ] {
+        assert_eq!(
+            reason("omp", command, &ws, true) == CONTAINED,
+            host(),
+            "{command}"
+        );
+    }
+    // Settings that swap the program, its loader or its credentials, and
+    // commands the sandbox cannot bound, keep their review.
+    for command in [
+        "NODE_OPTIONS=--require=./x.js npm run build",
+        "PATH=/tmp/bin:/usr/bin npm run build",
+        "GITHUB_TOKEN=x npm run build",
+        "PORT=4173 curl https://example.com",
+        "PORT=4173 sudo npm run build",
+        "PORT=4173 cat /Users/nobody/.ssh/id_rsa",
+    ] {
+        assert_ne!(reason("omp", command, &ws, true), CONTAINED, "{command}");
+    }
+    assert_ne!(
+        reason("cursor", "PORT=4173 npm run build", &ws, true),
+        CONTAINED
+    );
+    let _ = std::fs::remove_dir_all(&ws);
+}

@@ -319,6 +319,22 @@ fn evaluate_envelope(
                 execution_environment,
                 false,
             );
+            // The workspace sandbox runs the exact text, settings included,
+            // so a contained verdict needs no review for them.
+            let mut projected = projected;
+            if matches!(raw.minimum_action.as_str(), "allow" | "warn" | "review")
+                && !raw.action.sensitive_target
+                && super::workspace_contained::carry_settings(
+                    &mut projected,
+                    signals.command.as_deref().unwrap_or_default(),
+                    context,
+                    execution_environment,
+                    harness,
+                    event,
+                )
+            {
+                return projected;
+            }
             return env_prefix_projection::join_reviewed(projected, raw, &reviewed.setting);
         }
     }
