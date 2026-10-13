@@ -286,6 +286,10 @@ fn recursive_search_source_globs_are_not_mistaken_for_env_files() {
             ("grep -rl --include=*.ts ordinary tests", true),
             ("grep -rl --include=.env.* ordinary tests", false),
             ("grep -rl --include=*.env.* ordinary tests", false),
+            ("grep -rl --include=.env*.ts ordinary tests", false),
+            ("grep -rl --include=.e*.ts ordinary tests", false),
+            ("grep -rl --include=?env.*.ts ordinary tests", false),
+            ("grep -rl --include=[.]env*.ts ordinary tests", false),
             // The walk still refuses a tree that holds a credential file.
             ("grep -rl --include=*.test.ts ordinary configured", false),
         ] {
