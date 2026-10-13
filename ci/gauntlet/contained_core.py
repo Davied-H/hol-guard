@@ -202,8 +202,15 @@ def _sandbox_refused(call: dict[str, Any], details: dict[str, Any], reviewed: An
         else ""
     )
     command = reviewed.get("command") if isinstance(reviewed, dict) else None
-    curl = isinstance(command, str) and re.search(r"(^|[\s;&|(/])curl\s", command) is not None
-    return bool(_SANDBOX_DENIAL.search(text)) or (curl and details.get("exitCode") in _CURL_NETWORK_EXITS)
+    return bool(_SANDBOX_DENIAL.search(text)) or (
+        isinstance(command, str) and _curl_exit(command) and details.get("exitCode") in _CURL_NETWORK_EXITS
+    )
+
+
+def _curl_exit(command: str) -> bool:
+    """Whether the command's exit status is curl's: the last command in the list runs curl."""
+    last = re.split(r"&&|\|\||[;|\n]", command.strip())[-1].strip()
+    return re.match(r"(?:\S*/)?curl\s", last) is not None
 
 
 def _binding_error(
