@@ -159,8 +159,8 @@ fn redirect_disqualifies_containment(reason: &str) -> bool {
             | "native_python_eval_readonly_containment_required"
             | "native_node_eval_readonly_containment_required"
             | "native_workspace_containment_required"
-            | super::git_config_reads::writes::REASON
-            | super::git_init_target::REASON
+            | super::super::git_config_reads::writes::REASON
+            | super::super::git_init_target::REASON
     )
 }
 
