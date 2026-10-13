@@ -41,6 +41,7 @@ mod git_read_floor;
 mod git_reads;
 use git_reads::safe_git_arguments;
 mod git_helper_context;
+mod git_local_writes;
 mod git_probe;
 mod git_push;
 mod git_remote_config;

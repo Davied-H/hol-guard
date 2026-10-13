@@ -34,6 +34,7 @@ mod package;
 #[path = "workspace_contained_settings.rs"]
 mod settings;
 
+pub(super) use keeps_work::keeping_arguments;
 pub(super) use settings::carry_settings;
 
 // Privilege and permission changes. This is an exclusion, not an allowlist.
@@ -179,7 +180,8 @@ pub(crate) fn command_shape(
         }
         // A linked worktree keeps its index, refs and objects in the shared
         // Git directory outside the workspace, which the sandbox cannot
-        // reach, so Git there would only fail. It keeps its review.
+        // reach, so Git there would only fail. It keeps its review unless
+        // `git_local_writes` proves the write starts no program.
         if name == "git" && linked {
             return None;
         }

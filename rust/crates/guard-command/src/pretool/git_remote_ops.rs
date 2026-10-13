@@ -10,7 +10,7 @@ use crate::{CanonicalCommandV1, CommandSegmentV1};
 use std::time::Instant;
 
 #[path = "git_remote_pull.rs"]
-mod pull;
+pub(super) mod pull;
 
 /// The allow reason for a proven refresh, or `None`. The fetch may sit in a
 /// chain after a verified `cd` and beside segments that are benign on their

@@ -650,6 +650,18 @@ fn evaluate_envelope(
         event,
         signals.command.as_deref(),
     );
+    super::git_local_writes::settle(
+        &mut result,
+        &pre_floor,
+        command_model,
+        super::PathContext {
+            home_dir,
+            cwd,
+            ..context
+        },
+        deadline,
+        execution_environment,
+    );
     result
 }
 

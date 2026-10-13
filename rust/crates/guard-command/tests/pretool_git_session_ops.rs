@@ -145,6 +145,10 @@ fn session(label: &str) -> Session {
 
 impl Session {
     fn evaluate(&self, command: &str) -> guard_contracts::PreToolResultV1 {
+        self.evaluate_at(command, &self.org)
+    }
+
+    fn evaluate_at(&self, command: &str, cwd: &Path) -> guard_contracts::PreToolResultV1 {
         evaluate_pre_tool_envelope_with_context(
             "codex",
             "PreToolUse",
@@ -152,7 +156,7 @@ impl Session {
             Some(&default_controls()),
             None,
             self.home.to_str(),
-            self.org.to_str(),
+            cwd.to_str(),
         )
     }
 
@@ -405,4 +409,70 @@ fn dependency_symlink_is_quiet_only_between_checkouts_of_one_repository() {
     ] {
         session.assert_not_allow(&command);
     }
+}
+
+#[test]
+fn local_writes_in_a_linked_worktree_are_quiet_only_without_programs() {
+    const WRITE: &str = "native_exact_safe_git_local_write";
+    let session = session("writes");
+    let worktree = session.worktree.display();
+    std::fs::write(session.worktree.join("notes.md"), "notes\n").unwrap();
+    let at_tree = |command: &str| session.evaluate_at(command, &session.worktree);
+    let allowed = |command: &str| {
+        let result = at_tree(command);
+        (result.minimum_action == "allow" && result.reason_code == WRITE)
+            .then_some(())
+            .ok_or(format!("{command}: {}", result.reason_code))
+    };
+    session.assert_allow(&format!("cd {worktree} && git add notes.md"), WRITE);
+    session.assert_allow(
+        &format!("cd {worktree} && git rm -q tracked.txt && git status --short | head -10"),
+        WRITE,
+    );
+    for command in [
+        "git add -A",
+        "git add -A && git commit -m 'chore: update'",
+        "git commit -am 'fix: handle retry'",
+        "git commit -q -m 'fix: handle retry' 2>&1",
+        "git switch -c feat/retry",
+        "git checkout -b feat/retry",
+        "git stash",
+    ] {
+        allowed(command).unwrap();
+    }
+    for command in [
+        "git add -f notes.md",
+        "git add -p",
+        "git rm -f tracked.txt",
+        "git commit",
+        "git commit -e -m x",
+        "git commit -S -m x",
+        "git -c core.hooksPath=/tmp/hooks commit -m x",
+        "git add notes.md && rm -rf build",
+        "git add notes.md > out.txt",
+        "git switch main",
+        "git stash pop",
+    ] {
+        assert!(allowed(command).is_err(), "{command}");
+    }
+    for (key, value) in [
+        ("filter.strip.clean", "sed -e s/x//"),
+        ("core.fsmonitor", "/tmp/monitor"),
+        ("commit.gpgSign", "true"),
+        ("hook.pre-commit.command", "id"),
+        ("diff.text.textconv", "cat"),
+        ("submodule.recurse", "true"),
+    ] {
+        session.config(&[key, value]);
+        assert!(allowed("git add -A && git commit -m x").is_err(), "{key}");
+        session.config(&["--unset-all", key]);
+    }
+    // Each form answers only for the hooks it runs.
+    let hook = session.primary.join(".git/hooks/pre-commit");
+    executable_hook(&hook);
+    allowed("git add notes.md").unwrap();
+    assert!(allowed("git commit -m x").is_err());
+    std::fs::remove_file(hook).unwrap();
+    executable_hook(&session.primary.join(".git/hooks/post-index-change"));
+    assert!(allowed("git add notes.md").is_err());
 }

@@ -43,7 +43,7 @@ pub(super) fn keeps_work(
 /// `switch -c NAME`, `checkout -b NAME`, or `stash [push] [-q] [-u] [-m MSG]`.
 /// Leading Git options such as `-c` or `-C` are refused: they can point the
 /// command at another repository or configuration.
-fn keeping_arguments(arguments: &[String]) -> bool {
+pub(in crate::pretool) fn keeping_arguments(arguments: &[String]) -> bool {
     let words: Vec<&str> = arguments.iter().map(String::as_str).collect();
     match words.as_slice() {
         ["switch", "-c" | "--create", name] | ["checkout", "-b", name] => branch_name(name),

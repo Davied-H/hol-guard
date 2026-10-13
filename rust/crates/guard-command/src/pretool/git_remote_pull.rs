@@ -65,7 +65,7 @@ pub(super) fn fast_forward_inert(
 
 /// The filter `git lfs install` writes to the user's own configuration. A
 /// repository cannot set it, and it names the installed `git-lfs` program.
-fn standard_lfs(key: &str, values: &[String]) -> bool {
+pub(in crate::pretool) fn standard_lfs(key: &str, values: &[String]) -> bool {
     let expected = match key {
         "filter.lfs.clean" => "git-lfs clean -- %f",
         "filter.lfs.smudge" => "git-lfs smudge -- %f",
@@ -76,7 +76,7 @@ fn standard_lfs(key: &str, values: &[String]) -> bool {
     values.iter().all(|value| value.trim() == expected)
 }
 
-fn disabled(value: &str) -> bool {
+pub(in crate::pretool) fn disabled(value: &str) -> bool {
     matches!(
         value.trim().to_ascii_lowercase().as_str(),
         "false" | "no" | "off" | "0"
