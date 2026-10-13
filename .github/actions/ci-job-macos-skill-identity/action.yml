@@ -7,6 +7,12 @@ inputs:
   suite:
     description: skill-identity, or gates for the benign false-positive and replay gates.
     required: true
+  shard-index:
+    description: Zero-based gate shard; unused by skill-identity.
+    default: "0"
+  shard-count:
+    description: Number of disjoint gate shards.
+    default: "1"
 runs:
   using: composite
   steps:
@@ -62,7 +68,18 @@ runs:
       # Linux CI decides stale pending markers; this run catches cases that
       # are reviewed only on macOS, where the sandbox and paths differ.
       if: inputs.suite == 'gates'
-      run: uv run --no-sync pytest -q --tb=short -n 2 --dist load --max-worker-restart 0
-        tests/test_guard_benign_false_positive_gate.py tests/test_guard_gauntlet_replay_gate.py
-        tests/test_guard_command_corpus_benign_allow.py
+      env:
+        SHARD_INDEX: ${{ inputs.shard-index }}
+        SHARD_COUNT: ${{ inputs.shard-count }}
+      run: |
+        set -o pipefail
+        gates=(tests/test_guard_benign_false_positive_gate.py
+               tests/test_guard_gauntlet_replay_gate.py
+               tests/test_guard_command_corpus_benign_allow.py)
+        uv run --no-sync pytest --collect-only -q "${gates[@]}" | grep '::' > gate-nodes.txt
+        LC_ALL=C sort gate-nodes.txt | awk -v n="$SHARD_COUNT" -v i="$SHARD_INDEX" '(NR - 1) % n == i' > gate-shard.txt
+        test -s gate-shard.txt
+        echo "shard $SHARD_INDEX runs $(wc -l < gate-shard.txt) of $(wc -l < gate-nodes.txt) gate cases"
+        uv run --no-sync python scripts/ci/run_projection_shard.py gate-shard.txt -- \
+          -q --tb=short -n 2 --dist load --max-worker-restart 0 "@gate-shard.txt"
       shell: bash
