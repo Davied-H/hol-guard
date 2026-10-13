@@ -146,6 +146,11 @@ const GUARDED_DOT_PREFIXES: &[&str] = &[
     ".zcode",
 ];
 
+/// Hidden directories a write may pass through. Any other dot directory can
+/// be configuration some tool loads on its own, such as a new agent's rules
+/// folder, so it stays reviewed.
+const SCRATCH_DOT_DIRECTORIES: &[&str] = &[".scratch", ".temp", ".tmp"];
+
 /// A write whose hidden components are plain scratch names, such as
 /// `.tmp/check.mjs` or `.write-test` in a sibling checkout. No hidden
 /// component may sit directly in the home directory, where dot names are
@@ -158,7 +163,8 @@ pub(super) fn plain_dot_scratch_target(path: &Path, home_dir: Option<&str>) -> b
     };
     let mut parent = PathBuf::new();
     let mut hidden = false;
-    for component in path.components() {
+    let components: Vec<Component<'_>> = path.components().collect();
+    for (index, component) in components.iter().enumerate() {
         if let Component::Normal(name) = component {
             let Some(name) = name.to_str() else {
                 return false;
@@ -166,7 +172,9 @@ pub(super) fn plain_dot_scratch_target(path: &Path, home_dir: Option<&str>) -> b
             if name.starts_with('.') {
                 hidden = true;
                 let lowered = name.to_ascii_lowercase();
+                let directory = index + 1 < components.len();
                 if home.starts_with(&parent)
+                    || (directory && !SCRATCH_DOT_DIRECTORIES.contains(&lowered.as_str()))
                     || GUARDED_DOT_NAMES.contains(&lowered.as_str())
                     || GUARDED_DOT_PREFIXES
                         .iter()

@@ -180,6 +180,8 @@ fn plain_dot_scratch_writes_in_sibling_checkouts() {
         ".vscode-insiders/settings.json",
         ".kiro/steering/x.md",
         ".roo/rules/x.md",
+        ".dockerignore/notes.md",
+        ".newagent/rules.md",
     ] {
         let path = sibling.join(name);
         assert!(!write_allowed(&fixture, path.to_str().unwrap()), "{name}");
