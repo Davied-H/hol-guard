@@ -41,6 +41,9 @@ use workspace::{python_strip, settled_directory, workspace_candidate};
 pub(crate) const HOOK_DIRECT_FEATURE: &str = "hook-direct-v1";
 /// The resident accepts the sink command that routes a sandbox requirement.
 pub(crate) const HOOK_DIRECT_CONTAINED_ROUTE_FEATURE: &str = "hook-direct-contained-route-v1";
+/// Advertised once the resident answers a Claude PermissionRequest from the
+/// session's notice, verified and marked seen with the bound integrity key.
+pub(crate) const HOOK_DIRECT_PERMISSION_NOTICE_FEATURE: &str = "hook-direct-permission-notice-v1";
 const HOOK_DIRECT_RESULT_SCHEMA: &str = "guard-hook-direct-result.v1";
 /// The harnesses whose allow the daemon returns as the edge rendered it.
 /// The bounded bridge harnesses after Cursor have no harness-specific step
@@ -132,6 +135,7 @@ enum HookDirectDefer {
     HomeMismatch,
     LocalCliRules,
     PromptNotice,
+    PermissionNotice,
     ExecutionEnvironmentInvalid,
     EvidenceUndrained,
     EvidenceFull,
@@ -156,6 +160,7 @@ impl HookDirectDefer {
             Self::HomeMismatch => "direct_hook_home_mismatch",
             Self::LocalCliRules => "direct_hook_local_cli_rules",
             Self::PromptNotice => "direct_hook_prompt_notice",
+            Self::PermissionNotice => "direct_hook_permission_notice",
             Self::ExecutionEnvironmentInvalid => "direct_hook_execution_environment_invalid",
             Self::EvidenceUndrained => "direct_hook_evidence_undrained",
             Self::EvidenceFull => "direct_hook_evidence_full",
@@ -455,27 +460,27 @@ fn post_tool_answer(edge: &[u8]) -> Result<Value, HookDirectDefer> {
     reviewed_edge(edge, POST_TOOL_USE)
 }
 
-/// The edge result to return as is: the daemon passes a reviewed
+/// The edge result the daemon returns: it passes a reviewed
 /// `UserPromptSubmit` through once it accepts the receipt, and answers one
-/// without a receipt as unavailable. With `notice`, the daemon adds Guard's
-/// Claude Code notice for exactly these actions and leaves any other
-/// response untouched.
+/// without a receipt as unavailable. With `notice`, it adds Guard's Claude
+/// Code notice to the response; only these actions carry one.
 fn prompt_answer(edge: &[u8], notice: bool) -> Result<Value, HookDirectDefer> {
-    let parsed = reviewed_edge(edge, USER_PROMPT_SUBMIT)?;
+    let mut parsed = reviewed_edge(edge, USER_PROMPT_SUBMIT)?;
     if !parsed.get("receipt").is_some_and(Value::is_object) {
         return Err(HookDirectDefer::EdgeFailed);
     }
-    let action = parsed
-        .get("result")
-        .and_then(|result| result.get("minimum_action"))
-        .and_then(Value::as_str);
+    let result = parsed.get("result").cloned().unwrap_or(Value::Null);
+    let action = result.get("minimum_action").and_then(Value::as_str);
     if notice
         && matches!(
             action,
             Some("require-reapproval" | "block" | "sandbox-required")
         )
     {
-        return Err(HookDirectDefer::PromptNotice);
+        let response = parsed
+            .get_mut("harness_response")
+            .ok_or(HookDirectDefer::PromptNotice)?;
+        claude_prompt_text::brand(response, &result)?;
     }
     Ok(parsed)
 }
@@ -512,6 +517,10 @@ fn direct_event(payload: &Map<String, Value>) -> Result<Option<&'static str>, Ho
     Ok(Some(PRE_TOOL_USE))
 }
 
+#[path = "hook_direct_claude_permission_text.rs"]
+mod claude_permission_text;
+#[path = "hook_direct_claude_prompt_text.rs"]
+mod claude_prompt_text;
 #[path = "hook_direct_contained.rs"]
 mod contained;
 #[path = "hook_direct_cursor.rs"]
