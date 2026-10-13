@@ -47,6 +47,51 @@ pub(super) fn proxy_selects_official_toolchain(context: super::PathContext<'_>) 
     ancestors_inert(cwd) && ancestors_inert(&physical)
 }
 
+/// Rustfmt changes files, so unlike a version banner it also needs proof
+/// that rustup's persistent default and directory override table cannot
+/// select a linked custom formatter. Never execute rustup during this check.
+pub(super) fn rustfmt_proxy_is_official(context: super::PathContext<'_>) -> bool {
+    proxy_selects_official_toolchain(context)
+        && context
+            .home_dir
+            .map(Path::new)
+            .is_some_and(rustup_settings_only_official)
+}
+
+fn rustup_settings_only_official(home: &Path) -> bool {
+    if !home.is_absolute() {
+        return false;
+    }
+    let rustup = home.join(".rustup");
+    if !fs::symlink_metadata(&rustup).is_ok_and(|metadata| metadata.is_dir()) {
+        return false;
+    }
+    let path = rustup.join("settings.toml");
+    if !fs::symlink_metadata(&path)
+        .is_ok_and(|metadata| metadata.is_file() && metadata.len() <= 32 * 1024)
+    {
+        return false;
+    }
+    let Ok(contents) = fs::read_to_string(&path) else {
+        return false;
+    };
+    let Ok(settings) = contents.parse::<toml::Table>() else {
+        return false;
+    };
+    let default_is_official = settings
+        .get("default_toolchain")
+        .and_then(toml::Value::as_str)
+        .is_some_and(official_channel);
+    // Directory overrides live outside the repository. Until their exact
+    // precedence and destination can be proven, any override keeps review.
+    let no_directory_overrides = match settings.get("overrides") {
+        None => true,
+        Some(toml::Value::Table(paths)) => paths.is_empty(),
+        _ => false,
+    };
+    default_is_official && no_directory_overrides
+}
+
 fn ancestors_inert(cwd: &Path) -> bool {
     for directory in cwd.ancestors() {
         match nearest_toolchain(directory) {
@@ -190,7 +235,8 @@ fn digits(value: &str, length: usize) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::inert_toolchain;
+    use super::{inert_toolchain, rustup_settings_only_official};
+    use std::path::Path;
 
     #[test]
     fn admits_plain_channels_only() {
@@ -238,4 +284,41 @@ mod tests {
             assert!(!inert_toolchain(contents), "{contents}");
         }
     }
+
+    #[test]
+    fn formatter_requires_official_default_and_no_directory_overrides() {
+        let root = std::env::temp_dir().join(format!(
+            "guard-rustfmt-settings-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+        ));
+        let directory = root.join(".rustup");
+        std::fs::create_dir_all(&directory).unwrap();
+        let settings = directory.join("settings.toml");
+        std::fs::write(
+            &settings,
+            "version = \"12\"\ndefault_toolchain = \"stable-x86_64-unknown-linux-gnu\"\n[overrides]\n",
+        )
+        .unwrap();
+        assert!(rustup_settings_only_official(Path::new(&root)));
+        std::fs::write(
+            &settings,
+            "default_toolchain = \"custom-formatter\"\n[overrides]\n",
+        )
+        .unwrap();
+        assert!(!rustup_settings_only_official(Path::new(&root)));
+        std::fs::write(
+            &settings,
+            "default_toolchain = \"stable\"\n[overrides]\n\"/tmp/project\" = \"custom-formatter\"\n",
+        )
+        .unwrap();
+        assert!(!rustup_settings_only_official(Path::new(&root)));
+        std::fs::write(&settings, "default_toolchain = \"stable\"\n").unwrap();
+        assert!(rustup_settings_only_official(Path::new(&root)));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
 }
