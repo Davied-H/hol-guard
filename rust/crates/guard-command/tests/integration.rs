@@ -5,11 +5,14 @@
 //! process. A new test file must be declared here, or listed as its own
 //! `[[test]]` target in Cargo.toml when it needs a separate process.
 //!
-//! The modules are public so each file's `pub` fixtures stay reachable from
-//! the crate root, as they were when the file was its own crate. Several files
-//! include the same support file, which is why `duplicate_mod` is allowed.
+//! The test modules stay public so a fixture declared in one file remains
+//! reachable from the crate root. Each shared support file is loaded once.
 
-#![allow(clippy::duplicate_mod)]
+#[path = "support/git_helper_fixture.rs"]
+pub(crate) mod git_helper_fixture;
+
+#[path = "support/business_properties.rs"]
+pub(crate) mod business_properties;
 
 pub mod business_command_properties;
 pub mod business_gmail_plain;
