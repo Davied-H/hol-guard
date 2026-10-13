@@ -98,9 +98,6 @@ function approvalBlockedReason(
 function approvalManualRetryReason(response: GuardResponse, fallbackReason: string): string {
   const reason = fallbackReason.trim() || 'Blocked by HOL Guard.';
   const approvalUrl = approvalUrlFromResponse(response);
-  // Without an approval request there is nothing to approve, and the reason
-  // already tells the agent to find a permitted alternative.
-  if (!approvalUrl && !approvalRequestId(response)) return reason;
   const retryLine = 'This OMP host cannot safely resume a blocked tool call in the background. Retry the exact original tool call after approving it in HOL Guard.';
   const urlLine = approvalUrl ? `HOL Guard approval page: ${approvalUrl}` : '';
   return [reason, retryLine, urlLine].filter(Boolean).join('\n\n');
