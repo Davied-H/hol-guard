@@ -1,4 +1,7 @@
-use super::{answered_response, direct_request, parse_hook_query, HookQuery, CLAUDE_CODE, CODEX};
+use super::{
+    answered_response, bounded_direct_request, direct_event, direct_request, parse_hook_query,
+    HookQuery, CLAUDE_CODE, CODEX,
+};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -164,6 +167,50 @@ fn a_context_the_daemon_would_replace_takes_the_daemon_path() {
 }
 
 #[test]
+fn a_bounded_hook_asks_under_the_daemons_own_homes() {
+    let homes = homes("bounded");
+    let built = |harness: &str, guard_home: &Path| {
+        bounded_direct_request(harness, guard_home, PAYLOAD, Duration::from_millis(300))
+            .map(|bytes| serde_json::from_slice::<Value>(&bytes).unwrap())
+    };
+    for harness in [
+        "copilot", "kimi", "devin", "openclaw", "hermes", "cline", "opencode",
+    ] {
+        assert_eq!(
+            built(harness, &homes.guard_home).unwrap(),
+            json!({
+                "operation": "hook_direct",
+                "request": {
+                    "harness": harness,
+                    "guard_home": text(&homes.guard_home),
+                    "deadline_budget_ms": 300,
+                    "payload": {"hook_event_name": "PreToolUse", "tool_name": "Bash"},
+                },
+            }),
+            "{harness}"
+        );
+    }
+    // ZCode routes sandbox requirements and Grok runs its own client.
+    for harness in ["zcode", "grok", "codex", "cursor", "unknown"] {
+        assert_eq!(built(harness, &homes.guard_home), None, "{harness}");
+    }
+    // The daemon would name a guard home spelled another way as written.
+    let linked = homes.root.join("linked");
+    std::os::unix::fs::symlink(&homes.home, &linked).unwrap();
+    for guard_home in [
+        linked.join(".hol-guard"),
+        homes.home.join("../user/.hol-guard"),
+        homes.root.join("missing"),
+    ] {
+        assert_eq!(built("kimi", &guard_home), None, "{}", guard_home.display());
+    }
+    assert_eq!(
+        bounded_direct_request("kimi", &homes.guard_home, "[]", Duration::from_millis(1)),
+        None
+    );
+}
+
+#[test]
 fn a_payload_that_is_not_an_object_takes_the_daemon_path() {
     let homes = homes("payload");
     let query = format!(
@@ -250,4 +297,28 @@ fn a_hook_without_a_home_leaves_the_resident_the_daemon_home() {
         built(&homes, &query, PAYLOAD).unwrap()["request"]["harness"],
         "codex"
     );
+}
+
+#[test]
+fn lifecycle_hooks_reach_the_resident_and_permission_hooks_do_not() {
+    for event in [
+        "PreToolUse",
+        "PostToolUse",
+        "UserPromptSubmit",
+        "Stop",
+        "SessionStart",
+        "TaskComplete",
+    ] {
+        assert!(direct_event(event), "{event}");
+    }
+    for event in [
+        "",
+        "PermissionRequest",
+        "permission_request_v2",
+        "copilotPermissionRequest",
+        "Notification",
+        "beforeSubmitPrompt",
+    ] {
+        assert!(!direct_event(event), "{event}");
+    }
 }
