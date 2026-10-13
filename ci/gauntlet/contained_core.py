@@ -208,9 +208,13 @@ def _sandbox_refused(call: dict[str, Any], details: dict[str, Any], reviewed: An
 
 
 def _curl_exit(command: str) -> bool:
-    """Whether the command's exit status is curl's: the last command in the list runs curl."""
-    last = re.split(r"&&|\|\||[;|\n]", command.strip())[-1].strip()
-    return re.match(r"(?:\S*/)?curl\s", last) is not None
+    """Whether curl may supply the command's exit status.
+
+    The shell reports the status of the last `;`, `||`, `|` or newline group. Within that group a
+    failing `&&` step stops the chain and supplies its own status, so any curl step there may.
+    """
+    group = re.split(r"\|\||[;|\n]", command.replace("&&", "\0").strip())[-1]
+    return any(re.match(r"(?:\S*/)?curl\s", step.strip()) for step in group.split("\0"))
 
 
 def _binding_error(

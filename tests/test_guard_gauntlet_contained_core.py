@@ -405,6 +405,9 @@ def test_unbound_containment_deny_still_interrupts(fixture, tmp_path):
         ("npm test", 6, False),
         ("npm test # curl -s https://example.com", 6, False),
         ("curl -s https://example.com; ./tests.sh", 6, False),
+        ("curl -s https://example.com && echo ok", 6, True),
+        ("npm test; cd app && curl -s https://example.com && echo ok", 7, True),
+        ("curl -s https://example.com || echo offline", 6, False),
     ],
 )
 def test_a_silent_curl_network_exit_counts_as_a_sandbox_refusal(command, exit_code, refused):
