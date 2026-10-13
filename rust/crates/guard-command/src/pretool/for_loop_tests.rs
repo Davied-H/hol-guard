@@ -161,3 +161,39 @@ fn a_leading_redirection_cannot_hide_the_command_word() {
         assert_eq!(super::for_loop_unroll::unroll(command), None, "{command}");
     }
 }
+
+#[test]
+fn environment_and_shell_special_loop_variables_are_not_unrolled() {
+    for name in [
+        "PATH",
+        "HOME",
+        "IFS",
+        "CDPATH",
+        "ENV",
+        "BASH_ENV",
+        "LD_PRELOAD",
+        "DYLD_LIBRARY_PATH",
+        "GIT_CONFIG_GLOBAL",
+        "NODE_OPTIONS",
+        "RUSTUP_HOME",
+        "PWD",
+        "OLDPWD",
+        "SHELLOPTS",
+        "PS4",
+        "_",
+        "_path",
+        "pathVar",
+    ] {
+        let command = format!("for {name} in .; do git status; done");
+        assert_eq!(
+            super::for_loop_unroll::unroll(&command),
+            None,
+            "{name} must never alter the command environment unnoticed"
+        );
+    }
+    // Lowercase loop variables still support literal read-only iteration.
+    assert_eq!(
+        super::for_loop_unroll::unroll("for file_1 in a b; do echo \"$file_1\"; done").as_deref(),
+        Some("echo \"a\"; echo \"b\"")
+    );
+}

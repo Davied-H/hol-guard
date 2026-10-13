@@ -94,11 +94,16 @@ fn next_word(text: &str) -> Option<(&str, &str)> {
 }
 
 fn valid_identifier(name: &str) -> bool {
+    // Loop variables also modify the environment seen by commands in the
+    // body. Rebinding PATH, HOME, IFS, Git configuration variables, or other
+    // exported uppercase names can change which commands actually execute.
+    // Only ordinary lowercase identifiers are admitted to this proof.
+    // Exclude a leading underscore because '_' itself is shell-special.
     let mut chars = name.chars();
     chars
         .next()
-        .is_some_and(|first| first.is_ascii_alphabetic() || first == '_')
-        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+        .is_some_and(|first| first.is_ascii_lowercase())
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
 }
 
 fn safe_value(value: &str) -> bool {
