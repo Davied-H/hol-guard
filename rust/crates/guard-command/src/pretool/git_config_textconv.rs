@@ -16,6 +16,8 @@ pub(super) fn may_run(operation: &str, options: &[&str]) -> bool {
             !(options.iter().any(|option| summary_format(option)) && options.iter().all(known))
         }
         "branch" | "hash-object" | "config" => false,
+        // Grep converts content only when asked to.
+        "grep" => options.iter().any(|option| option.starts_with("--textc")),
         _ => true,
     }
 }

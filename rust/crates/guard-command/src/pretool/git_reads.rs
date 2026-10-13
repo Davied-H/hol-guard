@@ -1,9 +1,12 @@
 //! Read-only `git` invocations proven without a review.
 //!
-//! Status, diff, log, show, rev-parse, merge-base, ls-files, `remote -v`, `worktree list`,
-//! branch listings, `hash-object` and `config` reads. Diff-style reads that can run a
-//! configured helper need the helper-context probe or both `--no-ext-diff`
-//! and `--no-textconv`.
+//! Status, diff, log, show, grep, rev-parse, merge-base, ls-files, `remote -v`,
+//! `worktree list`, branch listings, `hash-object` and `config` reads.
+//! Diff-style reads that can run a configured helper need the helper-context
+//! probe or both `--no-ext-diff` and `--no-textconv`.
+
+#[path = "git_grep.rs"]
+mod git_grep;
 
 fn has_argument(arguments: &[String], exact: &[&str], prefixes: &[&str]) -> bool {
     arguments.iter().any(|argument| {
@@ -29,6 +32,10 @@ pub(super) fn safe_git_arguments(
         match inspected.split_first() {
             Some((subcommand, rest)) if subcommand == "branch" => {
                 return leading_safe && super::git_branch_listing::is_listing(rest);
+            }
+            // Grep needs the configuration probe for its pager.
+            Some((subcommand, rest)) if subcommand == "grep" => {
+                return leading_safe && allow_helper_context && git_grep::safe_read(rest);
             }
             Some((subcommand, rest)) if subcommand == "hash-object" => {
                 return leading_safe

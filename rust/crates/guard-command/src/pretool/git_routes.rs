@@ -409,7 +409,8 @@ fn registered_worktree_of_workspace(target: &std::path::Path, workspace: &std::p
         .is_some_and(|backlink| backlink == entry)
 }
 
-/// `git --git-dir=<bare repository>` reads a repository without a work tree.
+/// `git --git-dir=<bare repository>` reads a repository without a work tree,
+/// and `--git-dir=<work tree>/.git` reads a work tree's own repository.
 /// The directory must be a real (non-symlink) bare-shaped git directory
 /// (`HEAD`, `objects/`, `refs/`) owned by the current user that clears the
 /// same non-hidden and sensitive-path screens as a `-C` route outside home.
@@ -447,17 +448,23 @@ pub(crate) fn git_dir_route_within_scope(value: &str, context: super::PathContex
             }
         })
     };
+    // A work tree's own `.git` directory passes the screens through its work tree.
+    let screened = match git_dir.file_name() {
+        Some(name) if name == ".git" => git_dir.parent().unwrap_or(git_dir.as_path()),
+        _ => git_dir.as_path(),
+    };
     if git_dir == home
+        || screened == home
         || !real("HEAD", false)
         || !real("objects", true)
         || !real("refs", true)
-        || !git_dir.components().all(|part| match part {
+        || !screened.components().all(|part| match part {
             std::path::Component::RootDir => true,
             std::path::Component::Normal(name) => !name.to_string_lossy().starts_with('.'),
             _ => false,
         })
-        || !super::read_paths::resolved_path_allowed(&git_dir, context.home_dir, context.cwd)
-        || super::read_paths::inside_agent_state_tree(&git_dir, context.home_dir)
+        || !super::read_paths::resolved_path_allowed(screened, context.home_dir, context.cwd)
+        || super::read_paths::inside_agent_state_tree(screened, context.home_dir)
     {
         return false;
     }

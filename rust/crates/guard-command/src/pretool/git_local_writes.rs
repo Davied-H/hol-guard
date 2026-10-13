@@ -1,5 +1,7 @@
 //! Local Git writes that keep every change reachable: `git add`, a non-forced
-//! `git rm`, `git commit -m`, a new branch at `HEAD` and a plain stash push.
+//! `git rm`, `git commit -m`, a new branch at `HEAD` or at a start point that
+//! replaces no untracked file, and a plain stash push, with Git reads the
+//! configuration probe proves helper-free around them.
 //! The workspace sandbox runs them in a main checkout, but a linked worktree
 //! keeps its index, refs and objects in the shared Git directory the sandbox
 //! cannot write, and some hosts have no sandbox, so they would stop at review.
@@ -18,6 +20,9 @@ use super::git_session_probe::Probe;
 use crate::{CanonicalCommandV1, CommandSegmentV1};
 use guard_contracts::{GuardExecutionEnvironmentV1, PreToolActionTypeV1, PreToolResultV1};
 use std::time::Instant;
+
+#[path = "git_local_writes_start.rs"]
+mod start;
 
 pub(crate) const REASON: &str = "native_exact_safe_git_local_write";
 
@@ -39,6 +44,7 @@ const READ_RULES: &[&str] = &[
     "command.git.diff",
     "command.git.show",
     "command.git.ls-files",
+    "command.git.grep",
 ];
 
 const INDEX_HOOKS: &[&str] = &["post-index-change"];
@@ -139,6 +145,7 @@ fn proven(
         ..context
     };
     let mut writes: Vec<(usize, &'static [&'static str])> = Vec::new();
+    let mut starts = Vec::new();
     let mut safe = Vec::new();
     for (index, segment) in model.segments.iter().enumerate() {
         if segment.executable.as_deref() == Some("cd") {
@@ -150,11 +157,14 @@ fn proven(
             }
             continue;
         }
-        if let Some(hooks) = write_hooks(segment) {
+        if let Some((hooks, point)) = write_hooks(segment) {
             writes.push((index, hooks));
+            starts.extend(point);
             continue;
         }
-        if !super::segment_proof::exact_safe_segment_with_context(model, segment, false, context) {
+        if !super::segment_proof::exact_safe_segment_with_context(model, segment, false, context)
+            && !configured_read(model, index, context, deadline, execution_environment)
+        {
             return false;
         }
         safe.push(index);
@@ -197,13 +207,52 @@ fn proven(
     let Some((effective, repository)) = probe.config() else {
         return false;
     };
-    inert(&effective, &repository) && writes.iter().all(|(_, hooks)| probe.hooks_inert(hooks))
+    // A configuration included for the branch a checkout leaves would apply
+    // to the reads after it without having been probed.
+    let branch_scoped = writes.iter().any(|(_, hooks)| *hooks == CHECKOUT_HOOKS)
+        && effective
+            .keys()
+            .any(|key| key.to_ascii_lowercase().starts_with("includeif.onbranch"));
+    inert(&effective, &repository)
+        && !branch_scoped
+        && writes.iter().all(|(_, hooks)| probe.hooks_inert(hooks))
+        && starts
+            .iter()
+            .all(|point| start::replaces_nothing(&probe, point))
+}
+
+/// A Git read whose configuration the session probe proves starts no
+/// helper. The writes proven here change no configuration it reads.
+fn configured_read(
+    model: &CanonicalCommandV1,
+    index: usize,
+    context: super::PathContext<'_>,
+    deadline: Option<Instant>,
+    execution_environment: Option<&GuardExecutionEnvironmentV1>,
+) -> bool {
+    let original = &model.segments[index];
+    let stripped = super::segment_proof::without_stderr_merge(original);
+    let segment = stripped.as_ref().unwrap_or(original);
+    segment.executable.as_deref() == Some("git")
+        && segment.environment_names.is_empty()
+        && segment.wrapper_chain.is_empty()
+        && !segment.path_overridden
+        && super::directory_targets::drive_targets_quoted(segment)
+        && super::git_config::execution_free(
+            "git",
+            &segment.arguments,
+            context,
+            deadline,
+            execution_environment,
+            super::git_helper_context::stdout_piped(model, index),
+        ) == Some(true)
+        && super::git_reads::safe_git_arguments(&segment.arguments, true, context)
 }
 
 /// The hooks a proven write form runs, or `None` when `original` is not one.
 /// Leading Git options such as `-c` or `-C` are refused: they can point the
 /// command at another repository or configuration.
-fn write_hooks(original: &CommandSegmentV1) -> Option<&'static [&'static str]> {
+fn write_hooks(original: &CommandSegmentV1) -> Option<(&'static [&'static str], Option<String>)> {
     let stripped = super::segment_proof::without_stderr_merge(original);
     let segment = stripped.as_ref().unwrap_or(original);
     if segment.executable.as_deref() != Some("git")
@@ -216,13 +265,18 @@ fn write_hooks(original: &CommandSegmentV1) -> Option<&'static [&'static str]> {
         return None;
     }
     let words: Vec<&str> = segment.arguments.iter().map(String::as_str).collect();
-    match words.split_first()? {
+    let hooks = match words.split_first()? {
         (&"add", rest) => add(rest).then_some(INDEX_HOOKS),
         (&"rm", rest) => rm(rest).then_some(INDEX_HOOKS),
         (&"commit", rest) => commit(rest).then_some(COMMIT_HOOKS),
         _ => super::workspace_contained::keeping_arguments(&segment.arguments)
             .then_some(CHECKOUT_HOOKS),
+    };
+    if let Some(hooks) = hooks {
+        return Some((hooks, None));
     }
+    let point = start::start_point(&segment.arguments)?;
+    Some((CHECKOUT_HOOKS, Some(point.to_owned())))
 }
 
 /// Options `allowed` accepts, then pathspecs, with `--` ending the options.

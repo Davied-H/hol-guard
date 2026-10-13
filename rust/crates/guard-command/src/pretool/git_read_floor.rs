@@ -25,6 +25,15 @@ pub(super) fn requires_review(
         ..context
     };
     let benign = super::segment_proof::benign_command_segments(model, context);
+    // A trailing `2>&1` is a redirect, not a Git argument.
+    let arguments: Vec<Vec<String>> = model
+        .segments
+        .iter()
+        .map(|segment| {
+            super::segment_proof::without_stderr_merge(segment)
+                .map_or_else(|| segment.arguments.clone(), |stripped| stripped.arguments)
+        })
+        .collect();
     let inspections: Vec<Option<bool>> = model
         .segments
         .iter()
@@ -37,7 +46,7 @@ pub(super) fn requires_review(
                 .and_then(|executable| {
                     super::git_config::execution_free(
                         executable,
-                        &segment.arguments,
+                        &arguments[index],
                         read_context,
                         deadline,
                         execution_environment,
@@ -73,7 +82,7 @@ pub(super) fn requires_review(
             || super::git_remote_ops::verified_fetch(segment, context)
             || (inspections[prior] == Some(true)
                 && segment.environment_names.is_empty()
-                && super::git_reads::safe_git_arguments(&segment.arguments, true, read_context))
+                && super::git_reads::safe_git_arguments(&arguments[prior], true, read_context))
     };
     model.segments.iter().enumerate().any(|(index, segment)| {
         segment.executable.as_deref().is_some_and(|executable| {

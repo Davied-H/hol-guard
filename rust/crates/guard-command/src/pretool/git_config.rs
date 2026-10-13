@@ -24,8 +24,22 @@ pub(super) fn execution_free(
     let operation = remaining.first()?.as_str();
     if !matches!(
         operation,
-        "status" | "diff" | "log" | "show" | "branch" | "hash-object" | "config" | "merge-base"
+        "status"
+            | "diff"
+            | "log"
+            | "show"
+            | "branch"
+            | "hash-object"
+            | "config"
+            | "merge-base"
+            | "grep"
     ) {
+        return None;
+    }
+    // A plain configuration write is no read; its own proof decides it.
+    if operation == "config"
+        && super::git_config_reads::writes::plain_write(&remaining[1..]).is_some()
+    {
         return None;
     }
     let key = (
@@ -254,7 +268,7 @@ fn probe(
         let unsafe_value = match key {
             "extensions.partialclone" => !value.is_empty(),
             key if key.starts_with("remote.") && key.ends_with(".promisor") => !disabled,
-            "core.fsmonitor" => matches!(operation, "status" | "diff") && !disabled,
+            "core.fsmonitor" => matches!(operation, "status" | "diff" | "grep") && !disabled,
             "core.pager" => {
                 configured_paging
                     && !git_pager_disabled
