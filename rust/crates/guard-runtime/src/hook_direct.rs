@@ -10,8 +10,9 @@
 //! `PostToolUse` of those harnesses, and a reviewed `UserPromptSubmit` with
 //! its receipt, for Codex always and for Claude Code in Watch. The daemon
 //! never changes those responses. Every other request, and every `PreToolUse`
-//! verdict the daemon turns into an approval or a repair link, defers so the
-//! caller takes the daemon path, which is unchanged.
+//! verdict the daemon turns into an approval, a repair link or a Claude Code
+//! contained run, defers so the caller takes the daemon path, which is
+//! unchanged.
 //!
 //! The daemon also records evidence after it answers. An answer is returned
 //! only once that evidence is queued for the daemon to drain.
@@ -311,7 +312,7 @@ fn answer(
     let edge = crate::edge::evaluate_envelope_with_store(envelope, policy_store)
         .map_err(|_| HookDirectDefer::EdgeFailed)?;
     let answered = match event {
-        PRE_TOOL_USE => pre_tool_answer(&edge)?,
+        PRE_TOOL_USE => pre_tool_answer(&edge, request.harness == CLAUDE_CODE)?,
         POST_TOOL_USE => post_tool_answer(&edge)?,
         _ => prompt_answer(&edge, prompt_notice)?,
     };
@@ -350,10 +351,11 @@ fn reviewed_edge(edge: &[u8], event: &str) -> Result<Value, HookDirectDefer> {
 ///   only on review and require-reapproval floors, so a warn is recorded and
 ///   run like an allow.
 /// - a terminal block or sandbox requirement. The daemon only adds a repair
-///   link to a command-control authority block; any other denial keeps the
-///   edge's harness response. A saved approval never lowers a terminal
+///   link to a command-control authority block and, with `contained`, routes
+///   a sandbox requirement to contained execution; any other denial keeps
+///   the edge's harness response. A saved approval never lowers a terminal
 ///   action, and the custom block rules the daemon reads already defer.
-fn pre_tool_answer(edge: &[u8]) -> Result<Value, HookDirectDefer> {
+fn pre_tool_answer(edge: &[u8], contained: bool) -> Result<Value, HookDirectDefer> {
     let parsed = reviewed_edge(edge, PRE_TOOL_USE)?;
     let result = parsed.get("result");
     let field = |name: &str| {
@@ -363,9 +365,10 @@ fn pre_tool_answer(edge: &[u8]) -> Result<Value, HookDirectDefer> {
     };
     let passed_through = match (field("decision"), field("minimum_action")) {
         (Some("allow"), Some("allow" | "warn")) => true,
-        (Some("deny" | "block"), Some("block" | "sandbox-required")) => {
+        (Some("deny" | "block"), Some("block")) => {
             field("reason_code") != Some(REPAIRABLE_BLOCK_REASON)
         }
+        (Some("deny" | "block"), Some("sandbox-required")) => !contained,
         _ => false,
     };
     if !passed_through {
