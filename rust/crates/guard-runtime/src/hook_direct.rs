@@ -2,14 +2,15 @@
 //! verdict unchanged.
 //!
 //! The daemon path derives the workspace, checks daemon state the snapshot
-//! does not carry, builds the edge envelope and, for an allow, returns the
+//! does not carry, builds the edge envelope and, for most verdicts, returns the
 //! edge's harness response verbatim. This operation repeats that path for the
 //! shapes where the daemon adds nothing, in a workspace the current snapshot
 //! settled, while the publisher's ACK still holds: a Codex or Claude Code
-//! `PreToolUse` allow outside Watch, and any reviewed `PostToolUse` of those
-//! harnesses, whose response the daemon never changes. Every other request,
-//! and every other `PreToolUse` verdict, defers so the caller takes the daemon
-//! path, which is unchanged.
+//! `PreToolUse` allow or terminal block outside Watch, and any reviewed
+//! `PostToolUse` of those harnesses, whose response the daemon never changes.
+//! Every other request, and every `PreToolUse` verdict the daemon turns into
+//! an approval or a repair link, defers so the caller takes the daemon path,
+//! which is unchanged.
 //!
 //! The daemon also records evidence after it answers. An answer is returned
 //! only once that evidence is queued for the daemon to drain.
@@ -45,6 +46,8 @@ const EVENT_NAME_FIELDS: [&str; 6] = [
 ];
 const PRE_TOOL_USE: &str = "PreToolUse";
 const POST_TOOL_USE: &str = "PostToolUse";
+/// The denial the daemon adds a command-control repair link to.
+const REPAIRABLE_BLOCK_REASON: &str = "native_command_control_authority_block";
 const PRE_TOOL_EVENT_NAMES: [&str; 7] = [
     "pretool",
     "pretooluse",
@@ -244,7 +247,7 @@ fn answer(
             .map_err(|_| HookDirectDefer::LocalCliRules)?;
     if store.harness_unmanaged {
         // The daemon passes such a hook through and leaves the harness its
-        // own permission flow; an allow answer would replace that flow.
+        // own permission flow; a direct answer would replace that flow.
         return Err(HookDirectDefer::HarnessUnmanaged);
     }
     if pre_tool && store.local_cli_block_rules {
@@ -298,7 +301,7 @@ fn answer(
     let edge = crate::edge::evaluate_envelope_with_store(envelope, policy_store)
         .map_err(|_| HookDirectDefer::EdgeFailed)?;
     let answered = if pre_tool {
-        allow_answer(&edge)?
+        pre_tool_answer(&edge)?
     } else {
         post_tool_answer(&edge)?
     };
@@ -330,12 +333,17 @@ fn reviewed_edge(edge: &[u8], event: &str) -> Result<Value, HookDirectDefer> {
     Ok(parsed)
 }
 
-/// The edge result to return as is, when it is an allow the daemon would
-/// pass through unchanged. A warn floor is that allow too: the daemon asks
-/// for approval only on review and require-reapproval floors, leaves an
-/// allowed command's policy unrepaired, and returns the edge's harness
-/// response as it is, so a warn is recorded and run like an allow.
-fn allow_answer(edge: &[u8]) -> Result<Value, HookDirectDefer> {
+/// The edge result to return as is, when the daemon would pass it through
+/// unchanged:
+///
+/// - an allow, with an allow or warn floor. The daemon asks for approval
+///   only on review and require-reapproval floors, so a warn is recorded and
+///   run like an allow.
+/// - a terminal block or sandbox requirement. The daemon only adds a repair
+///   link to a command-control authority block; any other denial keeps the
+///   edge's harness response. A saved approval never lowers a terminal
+///   action, and the custom block rules the daemon reads already defer.
+fn pre_tool_answer(edge: &[u8]) -> Result<Value, HookDirectDefer> {
     let parsed = reviewed_edge(edge, PRE_TOOL_USE)?;
     let result = parsed.get("result");
     let field = |name: &str| {
@@ -343,9 +351,14 @@ fn allow_answer(edge: &[u8]) -> Result<Value, HookDirectDefer> {
             .and_then(|result| result.get(name))
             .and_then(Value::as_str)
     };
-    if field("decision") != Some("allow")
-        || !matches!(field("minimum_action"), Some("allow" | "warn"))
-    {
+    let passed_through = match (field("decision"), field("minimum_action")) {
+        (Some("allow"), Some("allow" | "warn")) => true,
+        (Some("deny" | "block"), Some("block" | "sandbox-required")) => {
+            field("reason_code") != Some(REPAIRABLE_BLOCK_REASON)
+        }
+        _ => false,
+    };
+    if !passed_through {
         return Err(HookDirectDefer::NotAllow);
     }
     Ok(parsed)
