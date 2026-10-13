@@ -25,7 +25,11 @@ pub(super) fn worktree_add_execution_free(
     let (base, _binary, cwd, _git_home) =
         prepared_git_command(executable, context, execution_environment)?;
     let home = fs::canonicalize(Path::new(context.home_dir?)).ok()?;
-    if !destination.starts_with(&home) {
+    if !destination.starts_with(&home)
+        && !destination
+            .parent()
+            .is_some_and(|parent| super::git_routes::temporary_checkout_parent(parent, context))
+    {
         return Some(false);
     }
     match fs::symlink_metadata(destination) {

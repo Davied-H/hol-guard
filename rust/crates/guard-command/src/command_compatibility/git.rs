@@ -171,6 +171,25 @@ pub(super) fn inspection_arguments<'a>(
     arguments: &'a [String],
     context: crate::pretool::PathContext<'_>,
 ) -> Option<&'a [String]> {
+    // These operations run no hook, so any `core.hooksPath` leaves them as
+    // they are.
+    if let Some(remaining) = routed(arguments, context, true).filter(|remaining| {
+        matches!(
+            remaining.first().map(String::as_str),
+            Some(
+                "status"
+                    | "diff"
+                    | "log"
+                    | "show"
+                    | "hash-object"
+                    | "rev-parse"
+                    | "merge-base"
+                    | "ls-files"
+            )
+        )
+    }) {
+        return Some(remaining);
+    }
     let remaining = routed_arguments(arguments, context)?;
     matches!(
         remaining.first().map(String::as_str),
@@ -200,6 +219,16 @@ pub(super) fn routed_arguments<'a>(
     arguments: &'a [String],
     context: crate::pretool::PathContext<'_>,
 ) -> Option<&'a [String]> {
+    routed(arguments, context, false)
+}
+
+/// The arguments after leading `-C` routes and safe `-c` settings. With
+/// `hookless`, the caller runs no hook, so any `core.hooksPath` is accepted.
+fn routed<'a>(
+    arguments: &'a [String],
+    context: crate::pretool::PathContext<'_>,
+    hookless: bool,
+) -> Option<&'a [String]> {
     let mut index = 0;
     let mut saw_change_directory = false;
     while let Some(argument) = arguments.get(index) {
@@ -215,6 +244,8 @@ pub(super) fn routed_arguments<'a>(
             let boolean = value.to_ascii_lowercase();
             let safe = match key.to_ascii_lowercase().as_str() {
                 "core.fsmonitor" => matches!(boolean.as_str(), "false" | "0" | "no" | "off"),
+                // Pointing hooks at nothing only turns them off.
+                "core.hookspath" => hookless || value == "/dev/null",
                 "core.quotepath" => matches!(
                     boolean.as_str(),
                     "true" | "false" | "1" | "0" | "yes" | "no" | "on" | "off"

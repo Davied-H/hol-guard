@@ -108,6 +108,41 @@ pub(in crate::pretool) fn repository_below_home(
         })
 }
 
+/// Whether canonical `path` is a non-hidden directory strictly below the
+/// shared temporary directory whose every directory down from that root
+/// belongs to the home owner and is writable by no one else.
+pub(in crate::pretool) fn owned_temporary_directory(
+    path: &std::path::Path,
+    context: super::PathContext<'_>,
+) -> bool {
+    let Some(home) = context
+        .home_dir
+        .and_then(|home| std::fs::canonicalize(home).ok())
+    else {
+        return false;
+    };
+    owned_temporary_roots().iter().any(|root| {
+        path.strip_prefix(root).is_ok_and(|relative| {
+            !relative.as_os_str().is_empty()
+                && relative.components().all(|part| {
+                    matches!(part, std::path::Component::Normal(name) if !name.to_string_lossy().starts_with('.'))
+                })
+        }) && owned_below(root, path, &home)
+    })
+}
+
+/// Whether canonical `path` may hold a new sibling checkout: the shared
+/// temporary directory itself, whose sticky bit keeps others from moving a
+/// fresh entry, or a directory below it that `owned_temporary_directory`
+/// admits.
+pub(in crate::pretool) fn temporary_checkout_parent(
+    path: &std::path::Path,
+    context: super::PathContext<'_>,
+) -> bool {
+    owned_temporary_roots().iter().any(|root| root == path)
+        || owned_temporary_directory(path, context)
+}
+
 /// The canonical shared temporary roots (`/tmp`, which is `/private/tmp` on
 /// macOS) that sibling checkouts may sit below; none off Unix.
 fn owned_temporary_roots() -> Vec<std::path::PathBuf> {

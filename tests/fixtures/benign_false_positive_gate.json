@@ -3892,6 +3892,54 @@
       },
       "cwd": "tmp_org",
       "expect": "allow"
+    },
+    {
+      "id": "session-git-c-tmp-sibling-status-no-hooks",
+      "fix_area": "git",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git -C ${TMP_ORG_WT} -c core.fsmonitor=false -c core.hooksPath=/tmp/no-hooks status --porcelain"
+      },
+      "cwd": "tmp_org",
+      "expect": "allow"
+    },
+    {
+      "id": "session-git-worktree-add-tmp-sibling",
+      "fix_area": "git",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cd app && git worktree add ${TMP_ORG_WT}-next -b followup-next HEAD"
+      },
+      "cwd": "tmp_org",
+      "expect": "allow"
+    },
+    {
+      "id": "session-git-worktree-add-parent-sibling",
+      "fix_area": "git",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "git worktree add ../app-portal-next -b next-lane HEAD"
+      },
+      "cwd": "org_app",
+      "expect": "allow"
     }
   ],
   "pending_pr": {

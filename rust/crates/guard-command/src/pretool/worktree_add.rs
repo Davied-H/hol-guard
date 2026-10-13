@@ -296,9 +296,10 @@ fn valid_path_text(value: &str) -> bool {
         && !value.contains([
             '$', '`', '|', ';', '&', '<', '>', '\n', '\r', '\0', '*', '?', '[', ']', '{', '}', '\\',
         ])
+        // `..` is resolved below against the real parent directory.
         && !components
             .split('/')
-            .any(|part| part.is_empty() || part == "." || part == "..")
+            .any(|part| part.is_empty() || part == ".")
 }
 
 fn fresh_destination(value: &str, context: super::PathContext<'_>) -> Option<PathBuf> {
@@ -319,24 +320,31 @@ fn fresh_destination(value: &str, context: super::PathContext<'_>) -> Option<Pat
         _ => return None,
     }
     let parent_metadata = std::fs::symlink_metadata(parent).ok()?;
-    if parent_metadata.file_type().is_symlink() || !parent_metadata.is_dir() {
+    let canonical_parent = std::fs::canonicalize(parent).ok()?;
+    // A checkout directly in the shared temporary directory, or below it
+    // where the user owns every directory on the way, is as private as one
+    // below home. On macOS `/tmp` is itself a link to `/private/tmp`.
+    let temporary = super::git_routes::temporary_checkout_parent(&canonical_parent, context);
+    if (parent_metadata.file_type().is_symlink() && !(temporary && parent == Path::new("/tmp")))
+        || !canonical_parent.is_dir()
+    {
         return None;
     }
-    let canonical_parent = std::fs::canonicalize(parent).ok()?;
-    if !canonical_parent.starts_with(&home) {
+    if !canonical_parent.starts_with(&home) && !temporary {
         return None;
     }
     let leaf = target.file_name()?.to_str()?;
-    if leaf.starts_with('.') {
+    if leaf.starts_with('.') || leaf == ".." {
         return None;
     }
     let destination = canonical_parent.join(leaf);
     if protected_worktree_destination(&destination)
-        || !super::safe_writes::bounded_native_file_write_target(
-            destination.to_str()?,
-            context.home_dir,
-            context.cwd,
-        )
+        || !(temporary
+            || super::safe_writes::bounded_native_file_write_target(
+                destination.to_str()?,
+                context.home_dir,
+                context.cwd,
+            ))
     {
         return None;
     }
