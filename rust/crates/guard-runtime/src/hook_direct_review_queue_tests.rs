@@ -32,8 +32,10 @@ fn only_a_fully_published_home_queues() {
     let review = json!({"reason_code": "native_review", "reason": "Review this."});
     let binding = ask_binding();
     assert_eq!(queued("codex", &binding, &review), Some(true));
-    // Claude Code's paused review also records a permission notice.
-    assert_eq!(queued(CLAUDE_CODE, &binding, &review), None);
+    // Claude Code's paused review is queued with its permission notice; a
+    // spelling `_native_review_artifact_id` would keep stays with the daemon.
+    assert_eq!(queued(CLAUDE_CODE, &binding, &review), Some(true));
+    assert_eq!(queued("Claude_Code", &binding, &review), None);
     // The daemon may settle a package review before it queues anything.
     let package = json!({"reason_code": PACKAGE_REVIEW_REASON});
     assert_eq!(queued("codex", &binding, &package), None);
@@ -169,7 +171,13 @@ fn the_queue_write_keeps_a_pending_request_for_the_same_action() {
     let vectors: Value = serde_json::from_str(WRITE_VECTORS).unwrap();
     let request = vectors["scenarios"][0]["request"].clone();
     assert_eq!(
-        write(&context, WRITE_METHOD, "default", request.clone()),
+        write(
+            &context,
+            WRITE_METHOD,
+            "default",
+            request.clone(),
+            Map::new()
+        ),
         Ok("r-new".to_owned())
     );
     let mut retry = request;
@@ -177,7 +185,7 @@ fn the_queue_write_keeps_a_pending_request_for_the_same_action() {
     retry["approval_url"] = json!("http://127.0.0.1:4781/approvals/r-retry");
     retry["review_command"] = json!("hol-guard approvals approve r-retry");
     assert_eq!(
-        write(&context, WRITE_METHOD, "default", retry),
+        write(&context, WRITE_METHOD, "default", retry, Map::new()),
         Ok("r-new".to_owned())
     );
     let connection = rusqlite::Connection::open(home.join(STORE_FILE_NAME)).unwrap();

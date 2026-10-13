@@ -14,7 +14,11 @@
 //! - `render_pre_tool_review` (`hook_fail_closed.py`), with the approval link
 //!   `native_review_reason` (`approval_link_output.py`) signs;
 //! - the `prompted` and `approval_center_url` marks the daemon records the
-//!   activity with.
+//!   activity with;
+//! - for Claude Code, the permission notice the daemon worker then records
+//!   (`record_claude_permission_notice_for_native_review`), written with the
+//!   request by `add_claude_native_review_approval_request` in one
+//!   transaction.
 //!
 //! Any other mode keeps the agent on the silent block (`asks_for_approval` is
 //! false): the same request and its `approval.created` event
@@ -23,9 +27,9 @@
 //! `render_pre_tool` block whose reason `safe_alternative_reason` writes.
 //!
 //! Every other shape defers, so the daemon still answers the hook: a missing
-//! fact, Claude Code (whose permission notice the daemon records), a package
-//! review the daemon may settle, and any request or write the resident could
-//! not reproduce.
+//! fact, a package review the daemon may settle, a Claude Code notice the
+//! bound key cannot sign, and any request or write the resident could not
+//! reproduce.
 
 use super::consume::{repair_store_permissions, storage_gate};
 use super::review_request::{build, ExactKeys, RequestInput};
@@ -40,9 +44,11 @@ use guard_contracts::{
 };
 use serde_json::{json, Map, Value};
 use std::path::Path;
+use zeroize::Zeroize;
 
 const WRITE_METHOD: &str = "add_native_review_approval_request";
 const SILENT_WRITE_METHOD: &str = "add_silent_native_review_approval_request";
+const CLAUDE_WRITE_METHOD: &str = "add_claude_native_review_approval_request";
 /// `asks_for_approval`: the mode that pauses the hook for the inbox.
 const ASK_MODE: &str = "ask";
 /// `PACKAGE_REVIEW_REASON`: a review `native_package_review_response` may
@@ -130,7 +136,20 @@ pub(super) fn answer(
     // Render the pause before writing, so a pause the resident cannot render
     // leaves the queue to the daemon rather than recording the hook twice.
     pause(&request_id, &approval_url).ok_or(HookDirectDefer::ReviewQueue)?;
-    let stored_id = write(context, WRITE_METHOD, facts.oauth_source, request)?;
+    // The daemon worker records a paused Claude Code review's permission
+    // notice once it is queued; both are written in one transaction.
+    let mut extra = Map::new();
+    if canonical_harness(context.harness) == CLAUDE_CODE {
+        if let Some(notice) = notice::store_args(context, result, review_binding.as_deref())? {
+            extra.insert("claude_notice".to_owned(), notice);
+        }
+    }
+    let method = if extra.is_empty() {
+        WRITE_METHOD
+    } else {
+        CLAUDE_WRITE_METHOD
+    };
+    let stored_id = write(context, method, facts.oauth_source, request, extra)?;
     // A pending request for the same action keeps its id, so a pause the
     // resident still cannot render leaves the daemon to queue the same request.
     let approval_url = rewrite_approval_url(&approval_url, &stored_id);
@@ -172,7 +191,13 @@ fn silent(
         "blocked_request_mode".to_owned(),
         json!(SAFE_ALTERNATIVE_MODE),
     );
-    write(context, SILENT_WRITE_METHOD, oauth_source, request)?;
+    write(
+        context,
+        SILENT_WRITE_METHOD,
+        oauth_source,
+        request,
+        Map::new(),
+    )?;
     Ok(Value::Object(response))
 }
 
@@ -195,9 +220,12 @@ fn facts<'a>(context: &Context<'a>, result: &Object) -> Option<Facts<'a>> {
     let binding = context.binding;
     let review = &binding.review;
     let mode = review.blocked_request_mode.as_deref()?;
-    if context.harness == CLAUDE_CODE
-        || result.get("reason_code").and_then(Value::as_str) == Some(PACKAGE_REVIEW_REASON)
-    {
+    if result.get("reason_code").and_then(Value::as_str) == Some(PACKAGE_REVIEW_REASON) {
+        return None;
+    }
+    // `_native_review_artifact_id` names the notice's artifact with the
+    // harness as the daemon received it; another spelling stays with it.
+    if context.harness != CLAUDE_CODE && canonical_harness(context.harness) == CLAUDE_CODE {
         return None;
     }
     Some(Facts {
@@ -211,16 +239,18 @@ fn facts<'a>(context: &Context<'a>, result: &Object) -> Option<Facts<'a>> {
 
 /// `add_approval_request` through the daemon's store operation: the stored
 /// request id, which is an earlier pending request's for the same action.
+/// `extra` holds the method's other arguments.
 fn write(
     context: &Context<'_>,
     method: &str,
     oauth_source: &str,
     request: Value,
+    extra: Map<String, Value>,
 ) -> Result<String, HookDirectDefer> {
     let now = super::super::lifecycle::utc_now_isoformat().ok_or(HookDirectDefer::ReviewQueue)?;
     let guard_home = Path::new(context.guard_home);
     let _gate = storage_gate(guard_home).map_err(|_| HookDirectDefer::ReviewQueue)?;
-    let mut args = Map::new();
+    let mut args = extra;
     args.insert("request".to_owned(), request);
     args.insert("now".to_owned(), json!(now));
     let store_request = GuardStoreRequestV1 {
@@ -237,10 +267,21 @@ fn write(
         args,
     };
     let written = crate::guard_store_op::evaluate(&store_request).map(|(payload, _)| payload);
+    forget_key(store_request.args);
     repair_store_permissions(guard_home);
     match written {
         Ok(Value::String(request_id)) if !request_id.is_empty() => Ok(request_id),
         _ => Err(HookDirectDefer::ReviewQueue),
+    }
+}
+
+/// Wipe the bound key a Claude notice carried to the store operation.
+fn forget_key(mut args: Map<String, Value>) {
+    if let Some(Value::String(key)) = args
+        .get_mut("claude_notice")
+        .and_then(|notice| notice.get_mut("integrity_key_b64"))
+    {
+        key.zeroize();
     }
 }
 
@@ -294,6 +335,9 @@ fn now_micros() -> Option<i64> {
         .as_micros();
     i64::try_from(micros).ok()
 }
+
+#[path = "hook_direct_review_notice.rs"]
+mod notice;
 
 #[cfg(test)]
 #[path = "hook_direct_review_queue_tests.rs"]

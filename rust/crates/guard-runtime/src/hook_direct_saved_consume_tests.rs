@@ -149,8 +149,8 @@ fn an_approve_once_answers_one_retry() {
         response["hookSpecificOutput"]["permissionDecision"],
         json!("allow")
     );
-    // Spent, so the retry reaches the inbox, which Claude Code leaves to the
-    // daemon.
+    // Spent, so the retry reaches the inbox, which a home that published no
+    // review facts leaves to the daemon.
     assert!(matches!(second, Err(HookDirectDefer::ReviewQueue)));
 }
 
