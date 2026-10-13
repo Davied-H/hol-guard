@@ -287,7 +287,7 @@ pub(super) fn observe(
                 false,
             );
         } else if executable == "env"
-            || !(matches!(arguments, [only] if only == "--help" || only == "--version")
+            || !(matches!(arguments.as_slice(), [only] if only == "--help" || only == "--version")
                 || arguments
                     .iter()
                     .all(|name| super::environment::plain_printed_name(name)))
