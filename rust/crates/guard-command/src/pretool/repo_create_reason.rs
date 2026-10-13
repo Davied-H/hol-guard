@@ -31,6 +31,14 @@ pub(super) fn private_alternative_reason(model: &CanonicalCommandV1) -> Option<S
     {
         return None;
     }
+    // Already private and not pushing: there is nothing different to suggest.
+    if tail.iter().any(|argument| argument == "--private")
+        && !tail
+            .iter()
+            .any(|argument| DROPPED.contains(&argument.as_str()))
+    {
+        return None;
+    }
     let mut alternative: Vec<String> = tail
         .iter()
         .filter(|argument| !DROPPED.contains(&argument.as_str()))
