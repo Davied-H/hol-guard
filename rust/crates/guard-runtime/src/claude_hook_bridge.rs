@@ -147,7 +147,8 @@ impl Bridge<'_> {
     }
 
     /// The response a live resident answered for an allowed `PreToolUse`
-    /// hook, checked as a daemon response is; `None` takes the daemon path.
+    /// or a reviewed `PostToolUse` hook, checked as a daemon response is;
+    /// `None` takes the daemon path.
     fn direct_response(&self, state_path: &Path) -> Option<String> {
         let guard_home = state_path.parent()?;
         let query = endpoint_query(&self.config.query);

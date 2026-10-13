@@ -37,6 +37,10 @@ class _Host:
     store: object = field(default_factory=object)
     activity_writer: _Writer = field(default_factory=_Writer)
     policy_snapshot_publisher: object = field(default_factory=object)
+    post_tool_activity: list[dict[str, object]] = field(default_factory=list)
+
+    def _record_post_tool_activity(self, *, harness: str, payload: Mapping[str, object], succeeded: bool) -> None:
+        self.post_tool_activity.append({"harness": harness, "payload": payload, "succeeded": succeeded})
 
 
 def _host(tmp_path: Path) -> _Host:
@@ -124,6 +128,8 @@ def test_a_codex_receipt_reaches_the_binding_capture(
         _record(payload="ls"),
         _record(workspace=None),
         _record(harness_response=None),
+        _record(event="Stop"),
+        _record(event=None),
     ],
 )
 def test_a_malformed_record_is_not_recorded(tmp_path: Path, observed: list[dict[str, object]], record: object) -> None:
@@ -132,6 +138,7 @@ def test_a_malformed_record_is_not_recorded(tmp_path: Path, observed: list[dict[
     assert host.activity_writer.receipts == []
     assert host.activity_writer.activity == []
     assert observed == []
+    assert host.post_tool_activity == []
 
 
 def test_an_unmanaged_harness_is_passed_through_without_recording(
@@ -206,3 +213,38 @@ def test_stop_collects_what_the_resident_still_holds(tmp_path: Path, observed: l
     drain = DirectHookEvidenceDrain(host, transport=lambda: (tmp_path, lambda **_: _page([_record()], 0)))
     drain.stop()
     assert drain.recorded == 1
+
+
+POST_PAYLOAD = {
+    "hook_event_name": "PostToolUse",
+    "tool_name": "Bash",
+    "tool_input": {"command": "ls"},
+    "tool_response": {"stdout": "README.md"},
+}
+
+
+@pytest.mark.parametrize(("harness", "captured"), [("codex", 1), ("claude-code", 0)])
+def test_a_drained_post_tool_use_is_recorded_like_the_daemon_records_it(
+    tmp_path: Path, observed: list[dict[str, object]], harness: str, captured: int
+) -> None:
+    host = _host(tmp_path)
+    capture = _Capture()
+    host.capture_writer = capture  # pyright: ignore[reportAttributeAccessIssue]
+    record = _record(event="PostToolUse", harness=harness, payload=dict(POST_PAYLOAD))
+    assert record_direct_hook_evidence(host, record)
+
+    assert host.activity_writer.receipts == [RECEIPT]
+    assert len(capture.captured) == captured
+    assert host.post_tool_activity == [{"harness": harness, "payload": POST_PAYLOAD, "succeeded": True}]
+    # The pre-tool recording does not run after a tool already ran.
+    assert observed == []
+    assert host.activity_writer.activity == []
+
+
+def test_a_failed_tool_is_recorded_as_failed(tmp_path: Path, observed: list[dict[str, object]]) -> None:
+    host = _host(tmp_path)
+    payload = {**POST_PAYLOAD, "exit_code": 2}
+    assert record_direct_hook_evidence(host, _record(event="PostToolUse", payload=payload))
+
+    [activity] = host.post_tool_activity
+    assert activity["succeeded"] is False

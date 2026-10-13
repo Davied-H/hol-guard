@@ -1,6 +1,6 @@
 use super::{
-    allow_answer, evaluate, expanduser, is_pre_tool_event, normalized_workspace, normpath,
-    workspace_candidate, HookDirectDefer, HookDirectRequestV1,
+    allow_answer, direct_event, evaluate, expanduser, normalized_workspace, normpath,
+    post_tool_answer, workspace_candidate, HookDirectDefer, HookDirectRequestV1,
 };
 use crate::policy_store::policy_store_direct_lane::tests::{
     binding, fixture, push, write_current_ack, Fixture,
@@ -17,7 +17,7 @@ fn object(value: Value) -> Map<String, Value> {
 
 #[test]
 fn event_name_follows_the_daemon_rule() {
-    assert_eq!(is_pre_tool_event(&object(json!({}))), Ok(true));
+    assert_eq!(direct_event(&object(json!({}))), Ok(Some("PreToolUse")));
     for name in [
         "PreToolUse",
         " pre_tool_use ",
@@ -25,29 +25,36 @@ fn event_name_follows_the_daemon_rule() {
         "beforeShellExecution",
     ] {
         assert_eq!(
-            is_pre_tool_event(&object(json!({ "hook_event_name": name }))),
-            Ok(true),
+            direct_event(&object(json!({ "hook_event_name": name }))),
+            Ok(Some("PreToolUse")),
+            "{name}"
+        );
+    }
+    for name in ["PostToolUse", "post_tool_call", " afterShellExecution "] {
+        assert_eq!(
+            direct_event(&object(json!({ "hook_event_name": name }))),
+            Ok(Some("PostToolUse")),
             "{name}"
         );
     }
     assert_eq!(
-        is_pre_tool_event(&object(json!({ "hook_event_name": "PostToolUse" }))),
-        Ok(false)
+        direct_event(&object(json!({ "hook_event_name": "PostToolUseFailure" }))),
+        Ok(None)
     );
     // A blank or non-string field is skipped; the next named field decides.
     assert_eq!(
-        is_pre_tool_event(&object(
+        direct_event(&object(
             json!({ "event": "  ", "eventName": 3, "hookName": "Stop" })
         )),
-        Ok(false)
+        Ok(None)
     );
     assert_eq!(
-        is_pre_tool_event(&object(json!({ "event": "pretool", "hookName": "Stop" }))),
-        Ok(true)
+        direct_event(&object(json!({ "event": "pretool", "hookName": "Stop" }))),
+        Ok(Some("PreToolUse"))
     );
     assert_eq!(
-        is_pre_tool_event(&object(json!({ "event": "prétool" }))),
-        Ok(false)
+        direct_event(&object(json!({ "event": "prétool" }))),
+        Ok(None)
     );
 }
 
@@ -181,6 +188,37 @@ fn only_an_unconditional_allow_is_answered() {
     assert_eq!(allow_answer(b"not json"), Err(HookDirectDefer::EdgeFailed));
 }
 
+fn post_edge(result: Value) -> Vec<u8> {
+    serde_json::to_vec(&json!({
+        "schema": "guard-hook-edge-result.v2",
+        "event_name": "PostToolUse",
+        "result": result,
+        "harness_response": {},
+    }))
+    .unwrap()
+}
+
+#[test]
+fn every_reviewed_post_tool_use_is_answered() {
+    let blocked = json!({ "decision": "block", "minimum_action": "block" });
+    let answered = post_tool_answer(&post_edge(blocked.clone())).unwrap();
+    assert_eq!(answered["result"], blocked);
+    assert_eq!(
+        post_tool_answer(&post_edge(json!("allow"))),
+        Err(HookDirectDefer::EdgeFailed)
+    );
+    assert_eq!(
+        post_tool_answer(&edge("allow", "allow")),
+        Err(HookDirectDefer::EdgeFailed)
+    );
+    assert_eq!(
+        allow_answer(&post_edge(
+            json!({ "decision": "allow", "minimum_action": "allow" })
+        )),
+        Err(HookDirectDefer::EdgeFailed)
+    );
+}
+
 struct Lane {
     fixture: Fixture,
     workspace: String,
@@ -252,9 +290,9 @@ fn request_shapes_the_daemon_must_handle_defer() {
         deferred(&run(&lane, reference)),
         "direct_hook_payload_unsupported"
     );
-    let mut post = allowed_payload(&lane);
-    post["hook_event_name"] = json!("PostToolUse");
-    assert_eq!(deferred(&run(&lane, post)), "direct_hook_event_unsupported");
+    let mut stop = allowed_payload(&lane);
+    stop["hook_event_name"] = json!("Stop");
+    assert_eq!(deferred(&run(&lane, stop)), "direct_hook_event_unsupported");
     let mut environment = allowed_payload(&lane);
     environment["guard_execution_environment"] = json!("PATH=/bin");
     assert_eq!(
@@ -461,6 +499,7 @@ fn an_answer_queues_the_evidence_the_daemon_records() {
     let records = page["records"].as_array().unwrap();
     assert_eq!(records.len(), 1);
     let record = &records[0];
+    assert_eq!(record["event"], "PreToolUse");
     assert_eq!(record["harness"], "codex");
     assert_eq!(record["workspace"], json!(lane.workspace));
     assert_eq!(record["home_dir"], HOME);
@@ -478,9 +517,9 @@ fn an_answer_queues_the_evidence_the_daemon_records() {
 #[test]
 fn a_deferred_hook_queues_no_evidence() {
     let lane = lane("deferred-evidence", json!({}));
-    let mut post = allowed_payload(&lane);
-    post["hook_event_name"] = json!("PostToolUse");
-    deferred(&run(&lane, post));
+    let mut stop = allowed_payload(&lane);
+    stop["hook_event_name"] = json!("Stop");
+    deferred(&run(&lane, stop));
     assert_eq!(drain(&lane)["records"], json!([]));
 }
 
@@ -535,4 +574,49 @@ fn a_claude_code_hook_answers_with_the_daemon_home_it_left_out() {
         )),
         "direct_hook_binding_incomplete"
     );
+}
+
+/// A shell command that already ran.
+fn post_tool_payload(lane: &Lane) -> Value {
+    json!({
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": { "command": "pwd" },
+        "tool_response": { "stdout": "/repo", "exit_code": 0 },
+        "cwd": lane.workspace,
+    })
+}
+
+#[test]
+fn a_post_tool_use_is_answered_where_the_daemon_only_records_it() {
+    // Watch and local block rules change only how the daemon answers a
+    // `PreToolUse`; it returns every reviewed `PostToolUse` unchanged.
+    for (label, extra) in [
+        ("post", json!({})),
+        (
+            "post-watch",
+            json!({ "harness_postures": { "codex": "watch" } }),
+        ),
+        ("post-rules", json!({ "local_cli_block_rules": true })),
+    ] {
+        let lane = lane(label, extra);
+        let result = run(&lane, post_tool_payload(&lane));
+        assert_eq!(result["outcome"], "answer", "{label}: {result}");
+        assert_eq!(result["edge"]["event_name"], "PostToolUse", "{label}");
+        let page = drain(&lane);
+        let records = page["records"].as_array().unwrap();
+        assert_eq!(records.len(), 1, "{label}");
+        assert_eq!(records[0]["event"], "PostToolUse", "{label}");
+        assert_eq!(
+            records[0]["harness_response"], result["edge"]["harness_response"],
+            "{label}"
+        );
+    }
+    let watch = lane(
+        "post-claude-watch",
+        json!({ "harness_postures": { "claude-code": "watch" } }),
+    );
+    let result = run_as(&watch, "claude-code", None, post_tool_payload(&watch));
+    assert_eq!(result["outcome"], "answer", "{result}");
+    assert_eq!(drain(&watch)["records"][0]["harness"], "claude-code");
 }

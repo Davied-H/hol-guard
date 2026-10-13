@@ -2,9 +2,11 @@
 
 A direct answer skips the daemon's post-allow recording. The resident queues
 the inputs that recording needs, and this drain pulls them over the resident
-channel and records them exactly as the daemon path does after a Codex
-``PreToolUse`` allow: the decision receipt, the binding capture, the command
-activity, and the command-line observation. The publisher advertises the drain in the
+channel and records them exactly as the daemon path does. After a
+``PreToolUse`` allow that is the decision receipt, the binding capture, the
+command activity, and the command-line observation; after a reviewed
+``PostToolUse`` it is the receipt, the binding capture, and the post-tool
+command activity. The publisher advertises the drain in the
 direct-lane binding only while it runs, so a resident never answers directly
 for a daemon that would leave the evidence behind.
 """
@@ -27,6 +29,8 @@ _DRAIN_TIMEOUT_SECONDS = 2.0
 # Pages per wake-up, so a backlog drains without starving shutdown.
 _MAX_PAGES_PER_WAKE = 8
 _DIRECT_HARNESSES = frozenset({"codex", "claude-code"})
+_PRE_TOOL_USE = "PreToolUse"
+_POST_TOOL_USE = "PostToolUse"
 
 
 class _DrainHost(Protocol):
@@ -38,11 +42,13 @@ class _DrainHost(Protocol):
     def activity_writer(self) -> object | None: ...
     @property
     def policy_snapshot_publisher(self) -> object: ...
+    def _record_post_tool_activity(self, *, harness: str, payload: Mapping[str, object], succeeded: bool) -> None: ...
 
 
 def record_direct_hook_evidence(host: _DrainHost, record: object) -> bool:
-    """Record one drained answer the way the daemon records its own allow."""
+    """Record one drained answer the way the daemon records its own."""
 
+    from ..cli.commands_support_command_activity import hook_post_succeeded
     from ..native_decision_receipt import validate_native_decision_receipt
     from .hook_managed_install_state import _hook_harness_is_unmanaged
     from .hook_native_cli_observer import observe_native_pre_tool_cli
@@ -56,8 +62,11 @@ def record_direct_hook_evidence(host: _DrainHost, record: object) -> bool:
     home_dir = record.get("home_dir")
     response = record.get("harness_response")
     receipt = record.get("receipt")
+    # A record without an event predates the post-tool lane, which answered only `PreToolUse`.
+    event = record.get("event", _PRE_TOOL_USE)
     if (
-        not isinstance(harness, str)
+        event not in (_PRE_TOOL_USE, _POST_TOOL_USE)
+        or not isinstance(harness, str)
         or harness not in _DIRECT_HARNESSES
         or not isinstance(payload, dict)
         or not isinstance(workspace, str)
@@ -79,6 +88,13 @@ def record_direct_hook_evidence(host: _DrainHost, record: object) -> bool:
             # The daemon hands a Codex receipt to the binding capture as well.
             with suppress(Exception):
                 capture(guard_home=host.guard_home, payload=payload, receipt=accepted)
+    if event == _POST_TOOL_USE:
+        host._record_post_tool_activity(  # pyright: ignore[reportPrivateUsage]
+            harness=harness,
+            payload=payload,
+            succeeded=hook_post_succeeded(_POST_TOOL_USE, payload),
+        )
+        return True
     with suppress(Exception):
         observe_native_pre_tool_cli(host.store, payload=payload, workspace=Path(workspace), home_dir=Path(home_dir))
     _record_native_pre_activity(host, harness, payload, response, accepted)  # pyright: ignore[reportArgumentType]
