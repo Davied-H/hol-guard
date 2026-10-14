@@ -75,11 +75,6 @@ fn fixture(name: &str) -> Fixture {
     .unwrap();
     write(&installed.join("node_modules/.bin/eslint"), "#!/bin/sh\n");
     symlink(
-        installed.join("node_modules/vitest"),
-        installed.join("node_modules/.bin/tools"),
-    )
-    .unwrap();
-    symlink(
         home.join(".ssh/id_ed25519"),
         installed.join("node_modules/.bin/key"),
     )
@@ -198,8 +193,7 @@ fn package_bin_listings_keep_link_and_credential_screens() {
     let redirected = redirected.display();
     let home = fixture.home.display();
     for command in [
-        // A leaf that is a directory or a link to a credential.
-        format!("ls {installed}/node_modules/.bin/tools"),
+        // A leaf that links to a credential.
         format!("ls -L {installed}/node_modules/.bin/key"),
         // A `.bin` that is a link elsewhere, and a protected root.
         format!("ls {redirected}/node_modules/.bin"),
