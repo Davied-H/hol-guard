@@ -324,10 +324,8 @@ def test_pool_dispatches_requests_across_persistent_streams(
                 f"request-{index}".encode() for index in range(4)
             ]
         assert maximum_active == 4
-        # Only one stream stays parked; the three surplus streams were closed.
-        assert len(closed) == 3
-        assert len(pool._clients) == 1  # pyright: ignore[reportPrivateUsage]
-        assert len(pool._idle) == 1  # pyright: ignore[reportPrivateUsage]
+        assert len(pool._clients) == 4  # pyright: ignore[reportPrivateUsage]
+        assert len(pool._idle) == 4  # pyright: ignore[reportPrivateUsage]
     finally:
         pool.close()
     assert len(closed) == 4
