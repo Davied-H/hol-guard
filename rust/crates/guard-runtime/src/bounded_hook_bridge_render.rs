@@ -297,7 +297,12 @@ pub(crate) fn failure_payload(harness: &str, event_name: &str, reason: &str) -> 
 
 /// `_emit_failure` output: compact JSON and a newline, plus the exit code.
 pub(crate) fn failure_output(harness: &str, event_name: &str) -> (String, i32) {
-    let (payload, code) = failure_payload(harness, event_name, FAILURE_REASON);
+    failure_output_for(harness, event_name, FAILURE_REASON)
+}
+
+/// `_emit_failure(..., reason=reason)` output.
+pub(crate) fn failure_output_for(harness: &str, event_name: &str, reason: &str) -> (String, i32) {
+    let (payload, code) = failure_payload(harness, event_name, reason);
     let mut rendered = String::new();
     dumps(&payload, true, false, &mut rendered);
     rendered.push('\n');

@@ -427,11 +427,10 @@ pub(crate) fn run(python_argv: &[String]) -> i32 {
             hook_bridge_fallback::note(&home, CODEX.name, reason);
         }
     };
-    if read.is_err() {
-        note(Fallback::InputUnreadable);
-        return delegate(PRE_TOOL_USE);
-    }
-    let Some(raw_data) = bounded_hook_input(&raw) else {
+    // A hook that cannot be read, or is too large, is refused as the client
+    // refuses it.
+    let raw_data = read.ok().and_then(|_| bounded_hook_input(&raw));
+    let Some(raw_data) = raw_data else {
         write_stdout(&fail_closed(PRE_TOOL_USE));
         return 0;
     };

@@ -188,12 +188,29 @@ fn prepared_hooks_keep_python_decoding() {
     let prepared = prepare(b"\xef\xbb\xbf{\"hook_event_name\":\"user_prompt_submit\"}").unwrap();
     assert_eq!(prepared.event_name, "UserPromptSubmit");
     assert!(parsed(&prepared.data).as_dict().is_some());
-    assert_eq!(prepare(b"{\"hook_event_name\":\"\xff\"}"), None);
-    assert_eq!(prepare(b"[]"), None);
-    assert_eq!(prepare(b"not json"), None);
-    let mut oversized = b"{\"a\":\"".to_vec();
+    let refused = |event_name: &str, reason| {
+        Err(Unprepared::Refused {
+            event_name: event_name.to_owned(),
+            reason,
+        })
+    };
+    assert_eq!(
+        prepare(b"{\"hook_event_name\":\"PostToolUse\",\"x\":\"\xff\"}"),
+        refused("PreToolUse", FAILURE_REASON)
+    );
+    assert_eq!(prepare(b"[]"), refused("PreToolUse", FAILURE_REASON));
+    assert_eq!(
+        prepare(br#"[{"hook_event_name":"PostToolUse"}]"#),
+        refused("PostToolUse", FAILURE_REASON)
+    );
+    assert_eq!(prepare(b"not json"), refused("PreToolUse", FAILURE_REASON));
+    let mut oversized = br#"{"hook_event_name":"PostToolUse","a":""#.to_vec();
     oversized.resize(MAX_HOOK_INPUT_BYTES + 1, b'x');
-    assert_eq!(prepare(&oversized), None);
+    assert_eq!(prepare(&oversized), refused("PostToolUse", OVERSIZE_REASON));
+    assert_eq!(
+        prepare(br#"{"hook_event_name":"PreToolUse","x":"\ud800"}"#),
+        Err(Unprepared::Surrogates)
+    );
 }
 
 fn bridge_config(home: &GuardHome, harness: &str) -> BridgeConfig {
@@ -265,13 +282,13 @@ fn hooks_without_a_daemon_go_to_python_unasked() {
 }
 
 #[test]
-fn unreadable_hooks_go_to_python_even_past_the_deadline() {
+fn unreadable_hooks_fail_closed_without_asking_even_past_the_deadline() {
     let home = GuardHome::new("bounded-unreadable");
     assert_eq!(
         route_hook(&bridge_config(&home, "kimi"), b"[]", Instant::now()),
-        Route::Delegate {
-            daemon_tried: false,
-            reason: Fallback::InputUnparsed,
+        Route::Refuse {
+            event_name: "PreToolUse".to_owned(),
+            reason: FAILURE_REASON,
         }
     );
 }

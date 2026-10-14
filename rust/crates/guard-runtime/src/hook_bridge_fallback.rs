@@ -23,14 +23,8 @@ const MAX_LOG_BYTES: u64 = 64 * 1024;
 /// Why a native bridge handed a hook to Python.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Fallback {
-    /// The hook input could not be read.
-    InputUnreadable,
     /// The hook input was not a request the bridge could parse.
     InputUnparsed,
-    /// The hook input was larger than the bridge accepts.
-    InputOversize,
-    /// The hook's event labels disagreed.
-    EventConflict,
     /// The client runs in a mode the native bridge does not serve.
     ClientMode,
     /// No daemon was reachable.
@@ -58,10 +52,7 @@ pub(crate) enum Fallback {
 impl Fallback {
     pub(crate) fn label(self) -> &'static str {
         match self {
-            Self::InputUnreadable => "input_unreadable",
             Self::InputUnparsed => "input_unparsed",
-            Self::InputOversize => "input_oversize",
-            Self::EventConflict => "event_conflict",
             Self::ClientMode => "client_mode",
             Self::DaemonUnavailable => "daemon_unavailable",
             Self::DaemonBudget => "daemon_budget",

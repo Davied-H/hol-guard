@@ -8,8 +8,10 @@
 //! client instead, `<python> -I <script> <config>`, which
 //! `bounded_hook_bridge_grok` answers.
 //!
-//! Only a clean daemon answer is rendered here. Every other path runs the
-//! Python bridge it was given, with the original argv and stdin:
+//! A hook that is too large, cannot be decoded or is not a JSON object gets
+//! the fixed fail-closed payload Python writes for it. Only a clean daemon
+//! answer is rendered here. Every other path runs the Python bridge it was
+//! given, with the original argv and stdin:
 //! - before the daemon was asked, Python runs the whole hook again;
 //! - once the daemon was asked, Python skips the daemon and runs the
 //!   isolated CLI hook, so one hook never reaches the daemon twice.
@@ -24,7 +26,8 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use crate::bounded_hook_bridge_render::{
-    daemon_response_to_native, event_name, failure_output, Rendered, NATIVE_HARNESSES,
+    daemon_response_to_native, event_name, failure_output, failure_output_for, Rendered,
+    FAILURE_REASON, NATIVE_HARNESSES,
 };
 use crate::claude_hook_bridge_http::remaining;
 use crate::hook_bridge_exit::exit_code;
@@ -58,6 +61,8 @@ pub(crate) const PROMPT_DAEMON_BUDGET: Duration = Duration::from_secs(10);
 const STATE_FILE: &str = "daemon-state.json";
 const TOKEN_FILE: &str = "daemon-auth-token";
 const MANAGED_MARKER: &str = "HOL_GUARD_MANAGED_ZCODE";
+const OVERSIZE_REASON: &str =
+    "HOL Guard blocked this action because hook input exceeded the safe size limit.";
 const DEFAULT_EVENT: &str = "PreToolUse";
 const HOOK_DEADLINE: &str = "daemon hook deadline exhausted";
 
@@ -142,24 +147,55 @@ pub(crate) struct Prepared {
     pub(crate) event_name: String,
 }
 
+/// A hook the native bridge does not forward as it was read.
+#[derive(Debug, PartialEq)]
+pub(crate) enum Unprepared {
+    /// Refused with Python's fail-closed payload for this event and reason.
+    Refused {
+        event_name: String,
+        reason: &'static str,
+    },
+    /// A lone surrogate, which Python reads as its own character.
+    Surrogates,
+}
+
+/// `_event_name(text)`, for text that may not parse as an object.
+fn text_event_name(text: &str) -> String {
+    let value = pyjson::parse_mapping_lone_surrogates(text).map_or(PyVal::Null, |p| p.value);
+    event_name(text, &value)
+}
+
 /// `read_hook_input`'s decode and `stamp_hook_input_text`, for input the
-/// native bridge forwards exactly as Python would. `None` hands the hook to
-/// Python unchanged: oversized, undecodable, non-object or unstampable.
-pub(crate) fn prepare(raw: &[u8]) -> Option<Prepared> {
+/// native bridge forwards exactly as Python would.
+pub(crate) fn prepare(raw: &[u8]) -> Result<Prepared, Unprepared> {
+    let refused = |text: &str, reason| Unprepared::Refused {
+        event_name: text_event_name(text),
+        reason,
+    };
     if raw.len() > MAX_HOOK_INPUT_BYTES {
-        return None;
+        // `_HookInputError.prefix`: the first bytes, decoded leniently.
+        let prefix = String::from_utf8_lossy(&raw[..MAX_HOOK_INPUT_BYTES]);
+        return Err(refused(&prefix, OVERSIZE_REASON));
     }
     let body = raw.strip_prefix(b"\xef\xbb\xbf").unwrap_or(raw);
-    let text = std::str::from_utf8(body).ok()?;
+    // Undecodable input is `_emit_failure(input_text="{}")`.
+    let text = std::str::from_utf8(body).map_err(|_| refused("{}", FAILURE_REASON))?;
+    // Nesting Python cannot read, or text it cannot round-trip, is refused.
     let Stamp::Text(data) = stamp_hook_input_text(text, &current_environment()) else {
-        return None;
+        return Err(refused(text, FAILURE_REASON));
     };
-    let parsed = pyjson::parse_mapping_lone_surrogates(&data).ok()?;
-    if parsed.mapped || parsed.value.as_dict().is_none() {
-        return None;
+    let Ok(parsed) = pyjson::parse_mapping_lone_surrogates(&data) else {
+        return Err(refused(&data, FAILURE_REASON));
+    };
+    if parsed.mapped {
+        return Err(Unprepared::Surrogates);
+    }
+    if parsed.value.as_dict().is_none() {
+        // Every harness sends an object; anything else is refused.
+        return Err(refused(&data, FAILURE_REASON));
     }
     let event_name = event_name(&data, &parsed.value);
-    Some(Prepared { data, event_name })
+    Ok(Prepared { data, event_name })
 }
 
 /// What the native bridge does with one hook.
@@ -173,6 +209,11 @@ pub(crate) enum Route {
     },
     /// Write Python's fixed fail-closed payload for this event.
     Fail(String),
+    /// Write Python's fail-closed payload for this event and reason.
+    Refuse {
+        event_name: String,
+        reason: &'static str,
+    },
     /// Run the Python bridge, for `reason`; `daemon_tried` once the daemon
     /// was asked.
     Delegate {
@@ -187,8 +228,12 @@ pub(crate) fn route_hook(config: &BridgeConfig, raw: &[u8], deadline: Instant) -
         daemon_tried: false,
         reason,
     };
-    let Some(prepared) = prepare(raw) else {
-        return delegate(Fallback::InputUnparsed);
+    let prepared = match prepare(raw) {
+        Ok(prepared) => prepared,
+        Err(Unprepared::Refused { event_name, reason }) => {
+            return Route::Refuse { event_name, reason }
+        }
+        Err(Unprepared::Surrogates) => return delegate(Fallback::InputUnparsed),
     };
     if Instant::now() >= deadline {
         return Route::Fail(prepared.event_name);
@@ -330,6 +375,12 @@ fn fail(harness: &str, event_name: &str) -> i32 {
     code
 }
 
+fn refuse(harness: &str, event_name: &str, reason: &str) -> i32 {
+    let (payload, code) = failure_output_for(harness, event_name, reason);
+    write_stdout(&payload);
+    code
+}
+
 pub(crate) fn run(python_argv: &[String]) -> i32 {
     let started = Instant::now();
     if python_argv.len() == 4 && python_argv[1] == "-I" && python_argv[2] != "-c" {
@@ -360,6 +411,7 @@ pub(crate) fn run(python_argv: &[String]) -> i32 {
             exit_code
         }
         Route::Fail(event_name) => fail(&config.harness, &event_name),
+        Route::Refuse { event_name, reason } => refuse(&config.harness, &event_name, reason),
         Route::Delegate {
             daemon_tried,
             reason,
@@ -368,7 +420,7 @@ pub(crate) fn run(python_argv: &[String]) -> i32 {
             run_python(python_argv, Some(&raw), started.elapsed(), daemon_tried).unwrap_or_else(
                 || {
                     let event_name =
-                        prepare(&raw).map_or_else(|| DEFAULT_EVENT.to_owned(), |p| p.event_name);
+                        prepare(&raw).map_or_else(|_| DEFAULT_EVENT.to_owned(), |p| p.event_name);
                     fail(&config.harness, &event_name)
                 },
             )
