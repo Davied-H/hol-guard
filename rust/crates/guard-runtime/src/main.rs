@@ -471,7 +471,7 @@ mod oci_path;
 mod omp_yield_input_scan;
 mod oneshot;
 mod openclaw_detect;
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod openclaw_detect_tests;
 mod openclaw_mcp;
 mod openclaw_skills;

@@ -35,7 +35,7 @@ pub(crate) fn string_list(value: Option<&PyVal>) -> Vec<String> {
 }
 
 /// `_dict_value`: an object, else the empty one.
-fn dict<'a>(value: Option<&'a PyVal>) -> Option<&'a PyVal> {
+fn dict(value: Option<&PyVal>) -> Option<&PyVal> {
     value.filter(|value| value.as_dict().is_some())
 }
 
