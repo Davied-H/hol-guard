@@ -1,9 +1,9 @@
 //! Read-only `git` invocations proven without a review.
 //!
 //! Status, diff, log, show, grep, rev-parse, merge-base, ls-files, `remote -v`, `worktree list`,
-//! branch listings, `hash-object`, `config`, `ls-tree` and `cat-file` reads. Diff-style reads that can run a
-//! configured helper need the helper-context probe or both `--no-ext-diff`
-//! and `--no-textconv`.
+//! branch listings, `show-ref`, `for-each-ref`, `hash-object`, `config`, `ls-tree` and `cat-file`
+//! reads. Diff-style reads that can run a configured helper need the
+//! helper-context probe or both `--no-ext-diff` and `--no-textconv`.
 
 #[path = "git_log_names.rs"]
 mod log_names;
@@ -100,6 +100,10 @@ pub(super) fn safe_git_arguments(
         return allow_helper_context
             && super::git_object_reads::read_form(subcommand, &arguments[1..]);
     }
+    if matches!(subcommand, "show-ref" | "for-each-ref") {
+        return allow_helper_context
+            && super::git_ref_listings::read_form(subcommand, &arguments[1..]);
+    }
     if subcommand == "config" {
         // Only the configuration probe can prove what the read prints.
         return allow_helper_context
@@ -116,6 +120,21 @@ pub(super) fn safe_git_arguments(
         .position(|argument| argument == "--")
         .unwrap_or(arguments.len());
     let active_options = &arguments[1..option_end];
+    if subcommand == "remote"
+        && arguments
+            .get(1)
+            .is_some_and(|argument| argument == "get-url")
+    {
+        // `get-url` prints the configured URL of one remote, which `-v`
+        // already prints for every remote.
+        let Some((name, options)) = arguments[2..].split_last() else {
+            return false;
+        };
+        return !name.starts_with('-')
+            && options
+                .iter()
+                .all(|option| matches!(option.as_str(), "--push" | "--all"));
+    }
     if subcommand == "remote" {
         let has_arguments_after_options = option_end + 1 < arguments.len();
         return !active_options.is_empty()
