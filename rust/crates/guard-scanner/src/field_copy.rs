@@ -27,9 +27,18 @@ const CREDENTIAL_FIELDS: [&str; 6] = [
 ];
 
 /// Whether a credential assignment's value is an unquoted member access
-/// whose last field names a credential. A quoted value is a string literal
-/// and is never treated as a copy.
-pub(crate) fn is_field_copy(matched: &str) -> bool {
+/// whose last field names a credential and ends its statement. A quoted value
+/// is a string literal and is never treated as a copy, and neither is a
+/// member access that the rest of the line continues, as in
+/// `API_KEY = process.env.API_KEY || "literal"`.
+pub(crate) fn is_field_copy(matched: &str, rest_of_line: &str) -> bool {
+    if !rest_of_line
+        .trim()
+        .chars()
+        .all(|character| matches!(character, ';' | ',' | ')' | '}'))
+    {
+        return false;
+    }
     let Some(index) = matched.find([':', '=']) else {
         return false;
     };
@@ -72,7 +81,7 @@ mod tests {
             "password = cfg.Password",
             "token: response?.data?.accessToken",
         ] {
-            assert!(is_field_copy(matched), "{matched:?}");
+            assert!(is_field_copy(matched, ""), "{matched:?}");
         }
         for matched in [
             "password = \"admin.password\"",
@@ -84,7 +93,7 @@ mod tests {
             "token = session.token+literal",
             "password = admin.password.",
         ] {
-            assert!(!is_field_copy(matched), "{matched:?}");
+            assert!(!is_field_copy(matched, ""), "{matched:?}");
         }
     }
 
@@ -106,6 +115,7 @@ mod tests {
             "password = admin.password\npassword = hunter2-production-value",
             "token: session.token,\ntoken: \"a1b2c3d4e5f6g7h8\",",
             "password = \"admin.password\"",
+            "const API_KEY = process.env.API_KEY || \"hunter2-production-value\";",
         ] {
             assert!(credential_assignment(text), "{text:?}");
         }
