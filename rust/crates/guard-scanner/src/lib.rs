@@ -194,18 +194,9 @@ fn suppressible(classifier: &str) -> bool {
 }
 
 fn has_long_alphanumeric_run(token: &str) -> bool {
-    let mut run = 0usize;
-    for character in token.chars() {
-        if character.is_ascii_alphanumeric() {
-            run += 1;
-            if run >= 20 {
-                return true;
-            }
-        } else {
-            run = 0;
-        }
-    }
-    false
+    token
+        .split(|character: char| !character.is_ascii_alphanumeric())
+        .any(|run| run.len() >= 20)
 }
 
 fn assignment_value(matched: &str) -> Option<&str> {
