@@ -247,10 +247,21 @@ fn assignment_value(matched: &str) -> Option<&str> {
 }
 
 /// Whether the text right after a matched assignment continues the value as
-/// an expression, as in `'mock-' + real_secret` or `"mock-"$REAL`. The match
-/// then holds only a prefix of the value, so its wording proves nothing.
+/// an expression, as in `'mock-' + real_secret` or `"mock-"$REAL`, on its own
+/// line or, after a trailing `\` or an operator opening the next line, on the
+/// next. The match then holds only a prefix of the value, so its wording
+/// proves nothing.
 fn continues_as_expression(rest: &str) -> bool {
-    let line = rest.split(['\r', '\n']).next().unwrap_or_default();
+    let mut lines = rest.split('\n').map(|line| line.trim_end_matches('\r'));
+    let line = lines.next().unwrap_or_default();
+    match line.trim() {
+        "\\" => return true,
+        "" => {
+            let next = lines.find(|next| !next.trim().is_empty());
+            return next.is_some_and(|next| opens_with_operator(next.trim_start()));
+        }
+        _ => {}
+    }
     let mut characters = line.chars();
     match characters.next() {
         None => return false,
@@ -270,6 +281,23 @@ fn continues_as_expression(rest: &str) -> bool {
         trimmed.chars().next(),
         Some('+' | '.' | '|' | '~' | '%' | '&' | '$' | '"' | '\'')
     )
+}
+
+/// Whether a line continues the previous line's expression: it opens with a
+/// concatenation or `||`. A quote or `$` opening a line usually starts a new
+/// statement or entry, so it does not count here.
+fn opens_with_operator(line: &str) -> bool {
+    line.starts_with("||") || matches!(line.chars().next(), Some('+' | '.' | '~' | '%'))
+}
+
+/// Whether a value substitutes something else when it is used, as in
+/// `mock-${REAL_SECRET}`, `mock-$REAL`, `mock-$(cat key)`, `f"mock-{key}"`
+/// or `` `mock-${key}` ``. Its sample wording then proves nothing.
+fn interpolates(value: &str) -> bool {
+    value.contains(['{', '`'])
+        || value.split('$').skip(1).any(|tail| {
+            tail.starts_with(|next: char| next == '(' || next == '_' || next.is_ascii_alphabetic())
+        })
 }
 
 fn is_sample(
@@ -305,13 +333,14 @@ fn is_sample(
     if !documentation_sample_context {
         return false;
     }
-    assignment_value(matched).is_some_and(|value| {
-        doc_sample_regex().is_match(value)
-            || (!continued
-                && declared_sample_value_regex().is_match(value)
-                && !deployed_value_marker_regex().is_match(value)
-                && !has_long_alphanumeric_run(value))
-    })
+    !continued
+        && assignment_value(matched).is_some_and(|value| {
+            doc_sample_regex().is_match(value)
+                || (declared_sample_value_regex().is_match(value)
+                    && !interpolates(value)
+                    && !deployed_value_marker_regex().is_match(value)
+                    && !has_long_alphanumeric_run(value))
+        })
 }
 
 /// The matches of rule `index` in `text` that are not suppressed as samples.
@@ -605,6 +634,13 @@ mod tests {
             "password = \"mock-\"$REAL_SECRET",
             "password = 'mock-' 'real-secret-tail'",
             "password = 'mock-' || real_secret",
+            "password = 'fixture-value' + real_secret",
+            "const password = 'mock-'\n  + realTail;",
+            "const password = 'mock-'\r\n\r\n  .concat(realTail);",
+            "api_key = 'mock-' \\\n    'real-secret-tail'",
+            "password=\"mock-${REAL_SECRET}\"",
+            "password=\"mock-$REAL_SECRET\"",
+            "password=\"mock-$(cat key)\"",
         ] {
             let result = scan_text(text, false, true, MAX_SCAN_BYTES, None);
             assert!(
@@ -624,6 +660,9 @@ mod tests {
             "const apiKey = 'stub_token' && run",
             "call(api_key='stub_token')",
             "{ \"token\": \"mock-token\", \"other\": 1 }",
+            "const apiKey = 'stub_token';\nconst other = 1;",
+            "api_key: mock-token\n\"next\": 1",
+            "password = 'fixture-value'\n",
         ] {
             let result = scan_text(text, false, true, MAX_SCAN_BYTES, None);
             assert!(result.matches.is_empty(), "{text:?}");
