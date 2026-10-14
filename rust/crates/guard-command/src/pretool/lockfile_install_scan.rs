@@ -108,6 +108,44 @@ pub(super) fn directory_ready(
     }
 }
 
+/// The lockfile each manager installs from.
+fn lockfile_name(manager: Manager) -> &'static str {
+    match manager {
+        Manager::Bun => "bun.lock",
+        Manager::Pnpm => "pnpm-lock.yaml",
+        Manager::Npm => "package-lock.json",
+    }
+}
+
+/// When `directory` has no lockfile for `manager` but commits exactly one
+/// other manager's lockfile, a sentence naming the no-script install that
+/// fits it. An agent that guessed the wrong package manager can then restore
+/// dependencies instead of stopping on the review.
+pub(super) fn committed_lockfile_hint(manager: Manager, directory: &Path) -> Option<String> {
+    if !missing(&directory.join(lockfile_name(manager))) {
+        return None;
+    }
+    let committed: Vec<Manager> = [Manager::Bun, Manager::Pnpm, Manager::Npm]
+        .into_iter()
+        .filter(|other| {
+            *other != manager && regular(&directory.join(lockfile_name(*other)), MAX_LOCKFILE_BYTES)
+        })
+        .collect();
+    let [other] = committed.as_slice() else {
+        return None;
+    };
+    let form = match other {
+        Manager::Bun => "bun install --frozen-lockfile --ignore-scripts",
+        Manager::Pnpm => "pnpm install --frozen-lockfile --ignore-scripts --ignore-pnpmfile",
+        Manager::Npm => "npm ci --ignore-scripts",
+    };
+    Some(format!(
+        "This folder has no `{}`. It commits `{}`, so the install that fits it is `{form}`.",
+        lockfile_name(manager),
+        lockfile_name(*other),
+    ))
+}
+
 fn missing(path: &Path) -> bool {
     fs::symlink_metadata(path).is_err_and(|error| error.kind() == ErrorKind::NotFound)
 }
