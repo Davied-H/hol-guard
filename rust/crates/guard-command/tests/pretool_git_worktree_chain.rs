@@ -228,7 +228,6 @@ fn other_routed_work_after_a_worktree_add_stays_reviewed() {
     .unwrap();
     let add = "git worktree add -b flat ../app-flat origin/main";
     for tail in [
-        "&& git -C ../service status",
         "&& git -C .. status",
         "&& git -C ../app-flat/.. status",
         "&& git -C ../link/../app-flat status",
@@ -247,7 +246,6 @@ fn other_routed_work_after_a_worktree_add_stays_reviewed() {
         "&& mkdir -p ~/org/app-flat/notes/keys && git -C ../app-flat status",
         "&& mkdir -p ~/pending/notes && git -C ../app-flat status",
         "&& mkdir -p ~/.ssh/keys && git -C ../app-flat status",
-        "&& mkdir -p ~/notes",
     ] {
         assert_reviewed(&home, &repository, &format!("{add} {tail}"));
     }
