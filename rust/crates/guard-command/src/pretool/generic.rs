@@ -16,6 +16,9 @@ mod extract;
 mod omp;
 #[path = "generic_omp_bash_cwd.rs"]
 mod omp_bash_cwd;
+#[cfg(all(test, unix))]
+#[path = "generic_omp_bash_cwd_tests.rs"]
+mod omp_bash_cwd_tests;
 #[path = "open_quote.rs"]
 mod open_quote;
 #[path = "generic_pure_eval.rs"]
@@ -700,7 +703,7 @@ fn evaluate_envelope(
         && event == "PreToolUse"
         && matches!(
             harness,
-            "omp" | "oh-my-pi" | "zcode" | "claude-code" | "codex"
+            "omp" | "oh-my-pi" | "pi" | "zcode" | "claude-code" | "codex"
         )
         && cwd.is_some()
         && (result.action.action_type == PreToolActionTypeV1::Command
