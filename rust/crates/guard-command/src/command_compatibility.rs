@@ -289,18 +289,18 @@ pub fn compatibility_observations_with_context(
         // operand is not a redirect and stays in place.
         let merged = crate::pretool::without_stderr_merge(segment);
         let cli_segment = merged.as_ref().unwrap_or(segment);
+        let proof_context = match &leading_cd {
+            Some((cd_index, cwd)) if index > *cd_index => crate::pretool::PathContext {
+                cwd: Some(cwd.as_str()),
+                ..context
+            },
+            _ => context,
+        };
         match basename(segment).as_str() {
             "git" => {
-                let proof_context = match &leading_cd {
-                    Some((cd_index, cwd)) if index > *cd_index => crate::pretool::PathContext {
-                        cwd: Some(cwd.as_str()),
-                        ..context
-                    },
-                    _ => context,
-                };
                 git::observe_with_contexts(cli_segment, index, &mut result, context, proof_context)
             }
-            "gh" => github::observe(cli_segment, index, &mut result),
+            "gh" => github::observe(cli_segment, index, &mut result, proof_context),
             _ => {}
         }
         domains::observe(command, segment, index, &mut result, context);
