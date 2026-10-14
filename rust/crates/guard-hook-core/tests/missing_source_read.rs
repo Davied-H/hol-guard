@@ -2,6 +2,7 @@ use guard_contracts::NativeHookRequestV1;
 use guard_hook_core::review_post_tool;
 use serde_json::json;
 use sha2::{Digest, Sha256};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 struct TestRoot(std::path::PathBuf);
 
@@ -11,9 +12,11 @@ impl TestRoot {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
         let root = std::env::temp_dir().join(format!(
-            "guard-missing-source-{}-{nonce}",
-            std::process::id()
+            "guard-missing-source-{}-{nonce}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         std::fs::create_dir(&root).unwrap();
         Self(root.canonicalize().unwrap())
