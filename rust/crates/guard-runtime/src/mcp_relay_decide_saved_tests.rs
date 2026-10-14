@@ -195,21 +195,12 @@ fn a_store_without_saved_rows_answers_as_empty() {
 type Change = (&'static str, fn(&Connection));
 
 #[test]
-fn remote_bundle_and_portable_rows_defer() {
-    let changes: [Change; 3] = [
+fn remote_and_bundle_rows_defer() {
+    let changes: [Change; 2] = [
         ("remote", |c| {
             decide(c, "artifact", "allow", None, "cloud-sync")
         }),
         ("bundle", |c| sync_state(c, "policy_bundle", "{}")),
-        ("portable", |c| {
-            decide(
-                c,
-                "workspace",
-                "block",
-                Some(PROBE_PORTABLE),
-                "approval-gate",
-            )
-        }),
     ];
     for (tag, change) in changes {
         let (home, connection) = guard_home(tag);
@@ -290,9 +281,32 @@ fn a_miss_carries_the_reuse_diagnostic() {
         .is_some_and(|diagnostic| diagnostic.contains_key("reason")));
 }
 
+/// A fresh canonical directory, a Git checkout cloned from `remote` when
+/// one is named.
+#[cfg(unix)]
+fn directory(tag: &str, remote: Option<&str>) -> String {
+    let path = std::env::temp_dir().join(format!("mcp-relay-ws-{}-{tag}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&path);
+    std::fs::create_dir_all(&path).unwrap();
+    if let Some(remote) = remote {
+        let git = path.join(".git");
+        std::fs::create_dir_all(git.join("logs")).unwrap();
+        let config = format!("[remote \"origin\"]\n\turl = {remote}\n");
+        std::fs::write(git.join("config"), config).unwrap();
+        let zeros = "0".repeat(40);
+        let head = "1".repeat(40);
+        let log = format!("{zeros} {head} G <g@example.invalid> 1 +0000\tclone: from {remote}\n");
+        std::fs::write(git.join("logs/HEAD"), log).unwrap();
+    }
+    let path = std::fs::canonicalize(&path).unwrap();
+    path.to_str().unwrap().to_owned()
+}
+
+#[cfg(unix)]
 #[test]
 fn a_workspace_row_bound_elsewhere_defers_a_workspace_lookup() {
     let (home, connection) = guard_home("elsewhere");
+    let workspace = directory("elsewhere", None);
     let other = workspace_policy_key(Some("/elsewhere")).unwrap();
     decide(
         &connection,
@@ -304,7 +318,7 @@ fn a_workspace_row_bound_elsewhere_defers_a_workspace_lookup() {
     let answers = read(&home, &binding(), |saved| {
         let saved = saved.expect("saved rows");
         (
-            saved.answer(&policy_need(ARTIFACT, Some("/work"))),
+            saved.answer(&policy_need(ARTIFACT, Some(&workspace))),
             saved.answer(&policy_need(ARTIFACT, None)).is_ok(),
         )
     })
@@ -313,10 +327,12 @@ fn a_workspace_row_bound_elsewhere_defers_a_workspace_lookup() {
     assert!(answers.1);
 }
 
+#[cfg(unix)]
 #[test]
 fn a_confined_workspace_row_answers_a_workspace_lookup() {
     let (home, connection) = guard_home("confined");
-    let key = workspace_policy_key(Some("/work")).unwrap();
+    let workspace = directory("confined", None);
+    let key = workspace_policy_key(Some(&workspace)).unwrap();
     decide(
         &connection,
         "workspace",
@@ -324,14 +340,96 @@ fn a_confined_workspace_row_answers_a_workspace_lookup() {
         Some(&key),
         "approval-gate",
     );
+    let answers = read(&home, &binding(), |saved| {
+        let saved = saved.expect("saved rows");
+        (
+            saved.answer(&policy_need(ARTIFACT, Some(&workspace))),
+            // A workspace whose identity is not resolved exactly defers.
+            saved.answer(&policy_need(ARTIFACT, Some("relative/work"))),
+        )
+    })
+    .unwrap();
+    assert_eq!(answers.0.unwrap()["decision"]["action"], "block");
+    assert_eq!(answers.1, Err(SAVED_PORTABLE));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_portable_row_answers_only_the_workspace_resolving_to_it() {
+    let (home, connection) = guard_home("portable");
+    let repository = directory("repository", Some("https://github.com/example/relay.git"));
+    let plain = directory("plain", None);
+    let crate::project_identity::PortableIdentity::Identity(identity) =
+        crate::project_identity::resolve(&repository)
+    else {
+        panic!("the checkout resolves");
+    };
+    decide(
+        &connection,
+        "workspace",
+        "block",
+        Some(&identity),
+        "approval-gate",
+    );
+    let grant = json!({"kind": "grant_lookup", "harness": HARNESS, "selector": ARTIFACT});
+    let answers = read(&home, &binding(), |saved| {
+        let saved = saved.expect("saved rows");
+        (
+            saved.answer(&policy_need(ARTIFACT, Some(&repository))),
+            saved.answer(&policy_need(ARTIFACT, Some(&plain))),
+            saved.answer(&policy_need(ARTIFACT, None)),
+            saved.answer(&grant),
+        )
+    })
+    .unwrap();
+    // The portable block outranks the local miss, as the proxy composes it.
+    assert_eq!(answers.0.unwrap()["decision"]["action"], "block");
+    for answer in [answers.1, answers.2, answers.3] {
+        assert_eq!(answer, Err("mcp_relay_saved_remote_policy"));
+    }
+    // A row under another identity defers the checkout's lookup too.
+    let other = format!("{PORTABLE_PROJECT_IDENTITY_PREFIX}{}", "f".repeat(64));
+    decide(
+        &connection,
+        "workspace",
+        "block",
+        Some(&other),
+        "approval-gate",
+    );
+    let answer = read(&home, &binding(), |saved| {
+        saved
+            .expect("saved rows")
+            .answer(&policy_need(ARTIFACT, Some(&repository)))
+    })
+    .unwrap();
+    assert_eq!(answer, Err("mcp_relay_saved_remote_policy"));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_portable_allow_never_lowers_enforcement() {
+    let (home, connection) = guard_home("portable-allow");
+    let repository = directory("allow", Some("git@github.com:example/allow.git"));
+    let crate::project_identity::PortableIdentity::Identity(identity) =
+        crate::project_identity::resolve(&repository)
+    else {
+        panic!("the checkout resolves");
+    };
+    decide(
+        &connection,
+        "workspace",
+        "allow",
+        Some(&identity),
+        "approval-gate",
+    );
     let policy = read(&home, &binding(), |saved| {
         saved
             .expect("saved rows")
-            .answer(&policy_need(ARTIFACT, Some("/work")))
+            .answer(&policy_need(ARTIFACT, Some(&repository)))
     })
     .unwrap()
     .unwrap();
-    assert_eq!(policy["decision"]["action"], "block");
+    assert_eq!(policy["decision"], Value::Null);
 }
 
 #[test]
