@@ -48,6 +48,7 @@ from warm_path_probes import (
     alive_pids,
     classify_mcp_response,
     clean_env,
+    saved_decision_inputs,
     stop_services,
 )
 from warm_path_stats import describe
@@ -339,6 +340,7 @@ def run(python: Path, args: argparse.Namespace) -> dict[str, object]:
             primer.call("safe_echo", {"text": "guard"})
             document["primer_gate"] = primer.gate()
             document["direct_lane_ack_seconds"] = _wait_for_direct_lane(guard_home)
+            document["saved_decision_inputs"] = saved_decision_inputs(python, env, guard_home)
             gates: list[dict[str, object] | None] = [document["primer_gate"]]  # type: ignore[list-item]
             rounds = []
             for index in range(args.rounds):
@@ -391,6 +393,7 @@ def markdown(document: dict[str, object]) -> str:
         f"direct-lane ACK after: `{document.get('direct_lane_ack_seconds')}` s"
     )
     lines.append(f"First relay session start: `{document.get('primer_gate')}`")
+    lines.append(f"Saved-decision inputs: `{document.get('saved_decision_inputs')}`")
     lane = document.get("lane")
     if isinstance(lane, dict) and lane.get("sessions"):
         ready_ms = lane["time_to_ready_ms"]
@@ -431,6 +434,10 @@ def markdown(document: dict[str, object]) -> str:
             row = answered.get(launcher, {})
             lines.append(f"| {launcher} | {row.get('count', 0)} | {row.get('p50', 0):.2f} | {row.get('p95', 0):.2f} |")
     deferrals = document.get("deferrals", {})
+    cases_gate = document.get("relay_cases_gate")
+    if isinstance(cases_gate, dict) and cases_gate.get("ready") is False:
+        code = cases_gate.get("code")
+        lines += ["", f"The relay case session handed off (`{code}`): its outcomes are the Python proxy's."]
     if isinstance(deferrals, dict) and deferrals:
         lines += [
             "",
