@@ -160,8 +160,8 @@ fn unfiltered_walk_proven(root: &Path) -> bool {
 
 /// Oh My Pi `glob` walks below its fixed prefix and returns names only. Below
 /// a workspace cwd (not the home directory or an ancestor of it) that is the
-/// listing `find` already gets, provided no link leads the walk out of the
-/// prefix; anywhere else no sensitive file may be reachable below it.
+/// listing `find` already gets; anywhere else no sensitive file may be
+/// reachable below the prefix. Either way no link may lead the walk out of it.
 pub(super) fn omp_glob_scope_proven(
     target: &str,
     home_dir: Option<&str>,
@@ -176,17 +176,16 @@ pub(super) fn omp_glob_scope_proven(
         let home = std::fs::canonicalize(home).ok()?;
         (!home.starts_with(&cwd)).then_some(cwd)
     });
-    let ignores = if gitignore {
-        Ignores::Gitignore
-    } else {
-        Ignores::None
-    };
-    let names_walk = || {
+    let names_walk = |ignores| {
         SearchFilter::from_input(&Map::new())
             .is_some_and(|filter| walk_scope(&root, &filter, ignores, true).is_ok())
     };
-    workspace.is_some_and(|cwd| root.starts_with(cwd)) && names_walk()
-        || unfiltered_walk_proven(&root)
+    if !workspace.is_some_and(|cwd| root.starts_with(cwd)) {
+        return unfiltered_walk_proven(&root) && names_walk(Ignores::None);
+    }
+    // Without ignore rules the walk covers every entry the host can reach,
+    // so it still proves the scope when a `.ignore` file stops the first.
+    gitignore && names_walk(Ignores::Gitignore) || names_walk(Ignores::None)
 }
 
 /// Oh My Pi `grep` variant of [`content_search_scope_proven`]. The host

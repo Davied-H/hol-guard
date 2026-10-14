@@ -307,6 +307,12 @@ fn glob_path_selectors_prove_the_fixed_directory_without_allowing_escape() {
     std::os::unix::fs::symlink(f.home.join("clean"), &link).unwrap();
     assert!(!allowed(&omp(&f, "glob", json!({"path": "linked/*"}))));
     assert!(!allowed(&omp(&f, "glob", json!({"path": "linke?/*"}))));
+    // A directory link out of the prefix is refused even with no sensitive
+    // file anywhere in the tree.
+    write(f.project.join("lib/a.ts"), "synthetic marker\n");
+    assert!(allowed(&omp(&f, "glob", json!({"path": "lib/**/*.ts"}))));
+    std::os::unix::fs::symlink(f.home.join("clean"), f.project.join("lib/keys")).unwrap();
+    assert!(!allowed(&omp(&f, "glob", json!({"path": "lib/**/*.ts"}))));
     // Names only: a `.env` below the prefix is listed, never read, as with
     // `find`. A link below it that leaves the prefix stays on review.
     write(f.project.join("src/.env"), "synthetic marker\n");
