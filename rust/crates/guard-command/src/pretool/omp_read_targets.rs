@@ -63,11 +63,7 @@ fn omp_read_list(value: &str, home_dir: Option<&str>, cwd: Option<&str>) -> Opti
             Err(error) if error.kind() == std::io::ErrorKind::NotFound
         )
     };
-    if !literal_missing(value)
-        || value
-            .rsplit_once(':')
-            .is_some_and(|(base, _)| !literal_missing(base))
-    {
+    if !literal_missing(value) || selector_bases(value).any(|base| !literal_missing(base)) {
         return None;
     }
     let parts: Vec<String> = value
@@ -77,6 +73,25 @@ fn omp_read_list(value: &str, home_dir: Option<&str>, cwd: Option<&str>) -> Opti
         .map(str::to_owned)
         .collect();
     (!parts.is_empty() && parts.len() <= MAX_OMP_READ_LIST_PARTS).then_some(parts)
+}
+
+/// Paths the host could read in place of `value` by peeling a trailing read
+/// selector. It peels a `:tail` only when the tail fits its selector grammar
+/// (line windows, `raw`, `conflicts`, `img`), and at most twice, for
+/// `:1-5:raw`. Every such tail is made of letters, digits and `.+,-`, so a
+/// tail that holds the rest of a list, like `1-5; b.json`, is never peeled.
+fn selector_bases(value: &str) -> impl Iterator<Item = &str> {
+    let mut rest = value;
+    std::iter::from_fn(move || {
+        let (base, tail) = rest.rsplit_once(':')?;
+        let peelable = !tail.is_empty()
+            && tail.bytes().all(|byte| {
+                byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'+' | b',' | b'-')
+            });
+        rest = base;
+        peelable.then_some(base)
+    })
+    .take(2)
 }
 
 /// Whether `value` is OMP's `path:N-M` (or `path:raw`) form for an existing

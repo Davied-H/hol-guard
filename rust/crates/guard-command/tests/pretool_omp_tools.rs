@@ -1123,6 +1123,10 @@ fn read_lists_prove_every_part() {
             sibling.join("a.txt").display()
         ),
         "src/main.rs;~/clean/a.txt:1;".to_owned(),
+        // The host peels only a selector-shaped tail, so a window on the
+        // first part does not hide the parts after it.
+        "calc.py:1-5; src/main.rs".to_owned(),
+        "src/main.rs:raw; calc.py".to_owned(),
     ] {
         let result = omp(&f, "read", json!({"path": path}));
         assert!(allowed(&result), "{path}: {}", result.reason_code);
@@ -1160,5 +1164,7 @@ fn read_lists_prove_every_part() {
     let result = omp(&f, "read", json!({"path": "calc.py;missing.py:1-5"}));
     assert_eq!(result.reason_code, "native_exact_safe_file_read");
     let result = omp(&f, "read", json!({"path": "calc.py;missing.py"}));
+    assert_ne!(result.reason_code, "native_missing_path");
+    let result = omp(&f, "read", json!({"path": "calc.py;missing.py:1-5:raw"}));
     assert_ne!(result.reason_code, "native_missing_path");
 }
