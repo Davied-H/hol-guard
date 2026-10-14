@@ -15,6 +15,8 @@
 use regex::Regex;
 use std::sync::LazyLock;
 
+const MAX_REFERENCE_CONTINUATION_BYTES: usize = 1024;
+
 /// References that only hold as written code: a quoted value is a string
 /// literal, apart from the shell parameters below.
 static UNQUOTED_REFERENCE: LazyLock<Regex> = LazyLock::new(|| {
@@ -75,12 +77,14 @@ pub(crate) fn is_reference(matched: &str, rest_of_line: &str) -> bool {
     let single = value.len() >= 2 && value.starts_with('\'') && value.ends_with('\'');
     if double || single {
         let literal = &value[1..value.len() - 1];
-        return PLACEHOLDER.is_match(literal)
+        return (PLACEHOLDER.is_match(literal)
             || QUOTED_PARAMETER.is_match(literal)
-            || (double && EXPANDED_VARIABLE.is_match(literal));
+            || (double && EXPANDED_VARIABLE.is_match(literal)))
+            && !hides_literal("", rest_of_line);
     }
-    (PLACEHOLDER.is_match(value) || UNQUOTED_REFERENCE.is_match(value))
-        && !hides_literal(value, rest_of_line)
+    let placeholder = PLACEHOLDER.is_match(value);
+    (placeholder || UNQUOTED_REFERENCE.is_match(value))
+        && !hides_literal(if placeholder { "" } else { value }, rest_of_line)
 }
 
 /// Whether the expression that `value` starts carries a string literal later
@@ -88,6 +92,12 @@ pub(crate) fn is_reference(matched: &str, rest_of_line: &str) -> bool {
 /// annotation. A variable name directly inside a call or index, such as
 /// `getenv("TOKEN"` or `environ["TOKEN"`, is the lookup's argument.
 fn hides_literal(value: &str, rest: &str) -> bool {
+    let truncated = rest.len() > MAX_REFERENCE_CONTINUATION_BYTES;
+    let mut end = rest.len().min(MAX_REFERENCE_CONTINUATION_BYTES);
+    while !rest.is_char_boundary(end) {
+        end -= 1;
+    }
+    let rest = &rest[..end];
     let mut depth = 0i32;
     for character in value.chars() {
         match character {
@@ -107,7 +117,8 @@ fn hides_literal(value: &str, rest: &str) -> bool {
             '"' | '\'' | '`' => {
                 let body = &rest[index..];
                 let length = body.find(character).unwrap_or(body.len());
-                let argument = matches!(previous, Some('(' | '['));
+                let argument = matches!(previous, Some('(' | '['))
+                    && is_lookup_argument(value, &rest[..index - character.len_utf8()]);
                 if is_hidden_value(&body[..length], argument) {
                     return true;
                 }
@@ -127,7 +138,37 @@ fn hides_literal(value: &str, rest: &str) -> bool {
             previous = Some(character);
         }
     }
-    false
+    truncated
+}
+
+/// Only known environment lookup names may supply an inert string argument.
+/// Other calls, including fallback methods, can receive a literal credential.
+fn is_lookup_argument(value: &str, prefix: &str) -> bool {
+    let prefix = prefix.trim_end();
+    let prefix = if prefix.is_empty() { value } else { prefix };
+    let (before, indexed) = if let Some(before) = prefix.strip_suffix('[') {
+        (before, true)
+    } else if let Some(before) = prefix.strip_suffix('(') {
+        (before, false)
+    } else {
+        return false;
+    };
+    let name = before
+        .trim_end()
+        .rsplit(|c: char| !c.is_ascii_alphanumeric() && !matches!(c, '_' | '.' | ':'))
+        .next()
+        .unwrap_or("");
+    if indexed {
+        matches!(
+            name,
+            "process.env" | "import.meta.env" | "Bun.env" | "os.environ"
+        )
+    } else {
+        matches!(
+            name,
+            "os.getenv" | "os.environ.get" | "Deno.env.get" | "env::var" | "std::env::var"
+        )
+    }
 }
 
 /// Whether a literal can hold a credential: anything not blank, apart from a

@@ -1026,6 +1026,44 @@ clearer UX and an implementation plan with technical references.
 
         assert rc == 0
 
+    @pytest.mark.parametrize(
+        "source",
+        [
+            'TOKEN="$2" + "{}"',
+            'TOKEN=<your-token> + "{}"',
+            'TOKEN=std::env::var("TOKEN").unwrap_or("{}".into())',
+        ],
+    )
+    def test_codex_post_tool_use_keeps_literal_tails_guarded(self, monkeypatch, tmp_path, capsys, source: str) -> None:
+        home_dir = tmp_path / "home"
+        workspace_dir = tmp_path / "workspace"
+        _build_guard_fixture(home_dir, workspace_dir)
+        literal = "".join(("UPPER", "_PASSWORD", "_VALUE"))
+        event = {
+            "event": "PostToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"command": "rg -g '*.ts' TOKEN src"},
+            "tool_response": {"stdout": "src/config.ts:1:" + source.replace("{}", literal)},
+            "source_scope": "project",
+        }
+        monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(event)))
+        rc = main(
+            [
+                "guard",
+                "hook",
+                "--home",
+                str(home_dir),
+                "--workspace",
+                str(workspace_dir),
+                "--harness",
+                "codex",
+                "--json",
+            ]
+        )
+        output = json.loads(capsys.readouterr().out)
+        assert rc == 1
+        assert output["approval_reuse"]["action"] == "require-reapproval"
+
     def test_pi_post_tool_use_allows_native_grep_of_external_source_tree(
         self,
         monkeypatch,

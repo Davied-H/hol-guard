@@ -128,6 +128,37 @@ fn literals_after_a_reference_on_the_same_line_still_match() {
 }
 
 #[test]
+fn quoted_references_and_placeholders_do_not_hide_literal_tails() {
+    let secret = literal();
+    for text in [
+        format!("TOKEN=\"$2\"'{secret}'"),
+        format!("TOKEN=\"${{NAME:-}}\"\"{secret}\""),
+        format!("TOKEN=\"$CI_API_TOKEN\" + \"{secret}\""),
+        format!("TOKEN=\"<your-token>\" + \"{secret}\""),
+        format!("TOKEN=<your-token>\"{secret}\""),
+    ] {
+        assert!(credential_assignment(&text), "{text:?}");
+    }
+    assert!(!credential_assignment(
+        "TOKEN=\"$2\"; const label = 'ordinary text';"
+    ));
+}
+
+#[test]
+fn environment_lookup_names_do_not_suppress_fallback_literals() {
+    let secret = ["UPPER", "_PASSWORD", "_VALUE"].concat();
+    for text in [
+        format!("TOKEN=std::env::var(\"TOKEN\").unwrap_or(\"{secret}\".into())"),
+        format!("TOKEN=os.getenv(\"TOKEN\").replace(\"{secret}\", \"\")"),
+    ] {
+        assert!(credential_assignment(&text), "{text:?}");
+    }
+    assert!(!credential_assignment(
+        "TOKEN=os.getenv(\"TOKEN\", os.getenv(\"ALT_TOKEN\"))"
+    ));
+}
+
+#[test]
 fn references_without_a_hidden_literal_stay_allowed() {
     let other = literal();
     for text in [
@@ -143,6 +174,24 @@ fn references_without_a_hidden_literal_stay_allowed() {
     ] {
         assert!(!credential_assignment(&text), "{text:?}");
     }
+}
+
+#[test]
+fn overlong_continuations_stay_guarded_and_statement_boundaries_stay_allowed() {
+    assert!(credential_assignment(
+        &"TOKEN=process.env.TOKEN ".repeat(200)
+    ));
+    assert!(credential_assignment(&format!(
+        "TOKEN=process.env.TOKEN {}",
+        "界".repeat(700)
+    )));
+    assert!(!credential_assignment(
+        &"TOKEN=process.env.TOKEN; ".repeat(200)
+    ));
+    assert!(!credential_assignment(&format!(
+        "TOKEN=process.env.TOKEN; {}",
+        "label ".repeat(400)
+    )));
 }
 
 #[test]

@@ -255,12 +255,16 @@ fn counted_matches<'t>(
     documentation_sample_context: bool,
 ) -> impl Iterator<Item = regex::Match<'t>> {
     let classifier = PATTERNS[index].classifier;
+    let mut line_end = 0;
     compiled()[index].find_iter(text).filter(move |matched| {
-        let rest = &text[matched.end()..];
+        if matched.end() > line_end {
+            let rest = &text[matched.end()..];
+            line_end = matched.end() + rest.find(['\r', '\n']).unwrap_or(rest.len());
+        }
         !is_sample(
             classifier,
             matched.as_str(),
-            &rest[..rest.find(['\r', '\n']).unwrap_or(rest.len())],
+            &text[matched.end()..line_end],
             suppress_samples,
             documentation_sample_context,
         )
