@@ -91,13 +91,28 @@ def test_the_view_needs_a_bound_harness_and_keeps_unreadable_layers_out(tmp_path
     assert mcp_relay_view(harnesses, None) == {"schema": MCP_RELAY_VIEW_SCHEMA, "harnesses": harnesses}
 
 
-def test_extension_layers_fail_closed_when_the_store_cannot_read_them() -> None:
+class _Runtime:
+    def __init__(self, layers: tuple[object, ...] = ()) -> None:
+        self.layers = layers
+
+    def current(self) -> SimpleNamespace:
+        return SimpleNamespace(layers=self.layers)
+
+
+def test_extension_layers_come_from_the_runtime_and_fail_closed_without_one() -> None:
     class Broken:
-        def read_extension_control_authority_for_registry(self, registry: object) -> object:
+        def current(self) -> object:
             raise RuntimeError("unreadable")
 
+    class Store:
+        def read_extension_control_authority_for_registry(self, registry: object) -> object:
+            raise AssertionError("the view never reads the store")
+
+    assert extension_layers(_Runtime()) == []
+    assert extension_layers(None) is None
     assert extension_layers(Broken()) is None
-    assert extension_layers(object()) == []
+    assert extension_layers(Store()) is None
+    assert extension_layers(_Runtime((object(),))) is None
 
 
 class _Publisher(NativePolicySnapshotMcpRelayMixin):
@@ -105,6 +120,7 @@ class _Publisher(NativePolicySnapshotMcpRelayMixin):
         self._condition = threading.Condition()
         self._publish_event = threading.Event()
         self.store = object()
+        self._command_control_runtime: object | None = _Runtime()
         self._compiled_mcp_relay_harnesses: dict[str, object] | None = uniform_harness_views([_config(tmp_path)])
         self._direct_lane_ack_target: tuple[int, str] | None = (7, "digest")
         self.rebound = 0
@@ -125,6 +141,12 @@ def test_the_binding_carries_the_view_only_for_a_resident_that_accepts_it(tmp_pa
     assert publisher._with_mcp_relay_view(None, FEATURES) is None
     publisher._compiled_mcp_relay_harnesses = {}
     assert publisher._with_mcp_relay_view({"generation": 1}, FEATURES) == {"generation": 1}
+
+    assert view["extension_layers"] == []
+    publisher._command_control_runtime = None
+    unlayered = publisher._with_mcp_relay_view({"generation": 1}, FEATURES)
+    assert unlayered is not None and "extension_layers" not in unlayered[MCP_RELAY_BINDING_KEY]
+    publisher._command_control_runtime = _Runtime()
 
     publisher._bind_mcp_relay_view(bound, FEATURES)
     assert publisher._direct_lane_mcp_relay == view

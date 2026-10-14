@@ -227,10 +227,11 @@ fn arguments_keep_the_host_order() {
 #[test]
 fn only_integers_keep_their_number_text() {
     let parse = |text: &str| serde_json::from_str::<Value>(text).unwrap();
-    for text in ["0", "-7", "12345678901234567890123", "[1,{\"a\":2}]"] {
+    // The parser reads "-0" as the integer zero, as Python does.
+    for text in ["0", "-0", "-7", "12345678901234567890123", "[1,{\"a\":2}]"] {
         assert!(python_stable(&parse(text)), "{text}");
     }
-    for text in ["1.5", "1e5", "-0", "[1.0]", "{\"a\":2E1}"] {
+    for text in ["1.5", "1e5", "-0.0", "[1.0]", "{\"a\":2E1}"] {
         assert!(!python_stable(&parse(text)), "{text}");
     }
 }

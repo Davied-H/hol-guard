@@ -7,7 +7,8 @@ extension-control layers the store verified to the tool policy. A resident
 that decides such a call for the native relay needs the same three inputs, as
 the daemon had them when it published. A harness is bound only when the home
 and every settled workspace agree on its view, and the layers only when the
-store could read them; anything else is left out and the relay's call defers.
+publisher's command-control runtime holds readable ones; anything else is
+left out and the relay's call defers.
 """
 
 from __future__ import annotations
@@ -103,13 +104,21 @@ def uniform_harness_views(configs: Iterable[object]) -> dict[str, object]:
     return harnesses
 
 
-def extension_layers(store: object) -> list[object] | None:
-    """The verified extension-control layers, or ``None`` when unreadable."""
+def extension_layers(runtime: object) -> list[object] | None:
+    """The extension-control layers the publisher last verified.
 
-    from .native_mcp_extension_input import _authority_layers, _layer_inputs  # pyright: ignore[reportPrivateUsage]
+    They come from the command-control runtime the publisher compiled for the
+    same binding, so the view never reads the store or its authority key.
+    ``None`` when there is no runtime or its layers are unreadable.
+    """
 
+    from .native_mcp_extension_input import _layer_inputs  # pyright: ignore[reportPrivateUsage]
+
+    current = getattr(runtime, "current", None)
+    if not callable(current):
+        return None
     try:
-        layers = _stable(_layer_inputs(_authority_layers(store)))
+        layers = _stable(_layer_inputs(tuple(current().layers)))
     except Exception:
         return None
     return cast(list[object], layers) if isinstance(layers, list) else None
@@ -135,7 +144,8 @@ class NativePolicySnapshotMcpRelayMixin:
 
     def _current_mcp_relay_view(self) -> dict[str, object] | None:
         publisher = cast("NativePolicySnapshotPublisher", self)
-        return mcp_relay_view(publisher._compiled_mcp_relay_harnesses, extension_layers(publisher.store))
+        runtime = getattr(publisher, "_command_control_runtime", None)
+        return mcp_relay_view(publisher._compiled_mcp_relay_harnesses, extension_layers(runtime))
 
     def _with_mcp_relay_view(
         self, binding: dict[str, object] | None, features: Iterable[str]
@@ -157,8 +167,8 @@ class NativePolicySnapshotMcpRelayMixin:
     def _recheck_direct_lane_mcp_relay(self) -> None:
         """Rebind the lane once the view it carries moves.
 
-        Each reconcile compiles the configs again, and the extension-control
-        layers live in the store, so the view is compared here.
+        Each reconcile compiles the configs and the command-control runtime
+        again, so the view is compared here.
         """
 
         publisher = cast("NativePolicySnapshotPublisher", self)
