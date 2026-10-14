@@ -36,7 +36,7 @@ const NOTIFICATION: &str = "Notification";
 /// the edge's own response.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct DirectHarness {
-    name: &'static str,
+    pub(crate) name: &'static str,
     /// `0` turns the direct path off; the daemon then answers every hook.
     switch: &'static str,
 }
