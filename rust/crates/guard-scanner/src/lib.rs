@@ -220,6 +220,7 @@ fn assignment_value(matched: &str) -> Option<&str> {
 fn is_sample(
     classifier: &str,
     matched: &str,
+    rest_of_line: &str,
     suppress_samples: bool,
     documentation_sample_context: bool,
 ) -> bool {
@@ -227,11 +228,9 @@ fn is_sample(
         return false;
     }
     if classifier == "credential-assignment"
-        && assignment_value(matched).is_some_and(|value| {
-            inert_code_expression_regex().is_match(value)
-                || masked_value::is_masked(value)
-                || reference_value::is_reference(value)
-        })
+        && (assignment_value(matched).is_some_and(|value| {
+            inert_code_expression_regex().is_match(value) || masked_value::is_masked(value)
+        }) || reference_value::is_reference(matched, rest_of_line))
     {
         return true;
     }
@@ -265,9 +264,11 @@ fn classify_window(
             continue;
         }
         let has_match = compiled()[index].find_iter(text).any(|matched| {
+            let rest = &text[matched.end()..];
             !is_sample(
                 def.classifier,
                 matched.as_str(),
+                &rest[..rest.find(['\r', '\n']).unwrap_or(rest.len())],
                 suppress_samples,
                 documentation_sample_context,
             )
