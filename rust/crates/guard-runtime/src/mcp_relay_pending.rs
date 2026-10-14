@@ -10,6 +10,11 @@
 //!
 //! A ticket names this resident's epoch, so a commit sent to a restarted
 //! resident releases nothing, and each ticket releases its record once.
+//!
+//! Two gaps remain against the proxy. At a catalog boundary change the proxy
+//! re-resolves the call and records a fresh block or approval receipt, while
+//! the relay records nothing for it. A resident restart between the decision
+//! and the commit drops the held record.
 
 use serde::Deserialize;
 use serde_json::{json, Value};
