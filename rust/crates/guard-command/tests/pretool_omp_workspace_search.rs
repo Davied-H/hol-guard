@@ -155,3 +155,29 @@ fn globs_list_names_below_the_workspace() {
         );
     }
 }
+
+#[test]
+fn globs_pass_gitignored_links_that_leave_the_workspace() {
+    let f = fixture();
+    // A worktree package borrowing another checkout's installed packages.
+    let shared = f.root.join("shared/node_modules");
+    write(shared.join("pkg/index.js"), "synthetic fixture\n");
+    let link = f.home.join("app/web/node_modules");
+    write(f.home.join("app/web/package.json"), "{}\n");
+    std::os::unix::fs::symlink(&shared, &link).unwrap();
+    for path in ["**/*.sh", "**/*{registry,deploy,cleanup}*"] {
+        let result = omp(&f, "app", "glob", json!({"path": path}));
+        assert!(allowed(&result), "{path}: {}", result.reason_code);
+    }
+    // Without the gitignore the host walks the link, so it stays on review.
+    let input = json!({"path": "**/*.sh", "gitignore": false});
+    assert!(!allowed(&omp(&f, "app", "glob", input)));
+    // A link the gitignore does not cover still may not leave the workspace.
+    std::os::unix::fs::symlink(f.home.join(".ssh"), f.home.join("app/web/keys")).unwrap();
+    assert!(!allowed(&omp(
+        &f,
+        "app",
+        "glob",
+        json!({"path": "**/*.sh"})
+    )));
+}
