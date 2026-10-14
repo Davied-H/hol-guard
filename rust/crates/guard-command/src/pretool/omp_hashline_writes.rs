@@ -94,14 +94,18 @@ fn header_path(line: &str) -> Option<(&str, bool)> {
         Some(_) => return None,
         None => (body, false),
     };
-    // Oh My Pi rewrites quoted, starred, `Update File:`-prefixed and padded
-    // paths before opening them, and `~` or a scheme names another location,
-    // so only a path it would open as written is reported.
-    let plain = !path.is_empty()
-        && path.trim() == path
-        && !path.starts_with(['"', '\'', '*', '~'])
-        && !path.contains(['#', ':'])
-        && !path.chars().any(char::is_control);
+    // Oh My Pi trims the path with JavaScript's `trim`. Without control
+    // characters or a byte order mark, that trims exactly what `str::trim`
+    // does, so a padded path names the same file once trimmed.
+    if path.chars().any(|c| c.is_control() || c == '\u{feff}') {
+        return None;
+    }
+    let path = path.trim();
+    // Oh My Pi rewrites quoted, starred and `Update File:`-prefixed paths
+    // before opening them, and `~` or a scheme names another location, so
+    // only a path it would open as written is reported.
+    let plain =
+        !path.is_empty() && !path.starts_with(['"', '\'', '*', '~']) && !path.contains(['#', ':']);
     plain.then_some((path, tagged))
 }
 

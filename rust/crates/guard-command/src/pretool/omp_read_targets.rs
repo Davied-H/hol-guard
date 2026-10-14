@@ -13,6 +13,19 @@ pub(in crate::pretool) fn bounded_omp_file_read_target(
     home_dir: Option<&str>,
     cwd: Option<&str>,
 ) -> bool {
+    if let Some(parts) = omp_read_list(value, home_dir, cwd) {
+        return parts
+            .iter()
+            .all(|part| bounded_omp_list_part_read_target(part, home_dir, cwd));
+    }
+    bounded_omp_list_part_read_target(value, home_dir, cwd)
+}
+
+fn bounded_omp_list_part_read_target(
+    value: &str,
+    home_dir: Option<&str>,
+    cwd: Option<&str>,
+) -> bool {
     match bounded_selector_path(value, home_dir, cwd) {
         BoundedSelectorPath::Base(base) | BoundedSelectorPath::RawFile(base) => {
             return bounded_existing_file_read_target(&base, home_dir, cwd);
@@ -21,6 +34,49 @@ pub(in crate::pretool) fn bounded_omp_file_read_target(
         BoundedSelectorPath::NotSelector => {}
     }
     bounded_structured_file_read_target(value, home_dir, cwd)
+}
+
+const MAX_OMP_READ_LIST_PARTS: usize = 16;
+
+/// The parts of OMP's documented `;` read list (`a.ts:1-20; b.ts`). OMP fans
+/// the list out only when neither the whole input nor its selector base
+/// exists, then reads each trimmed, non-empty part on its own. Braces,
+/// escapes, quotes and URLs change how OMP splits or routes the input, so
+/// those stay on the single-path proofs.
+fn omp_read_list(value: &str, home_dir: Option<&str>, cwd: Option<&str>) -> Option<Vec<String>> {
+    if !value.contains(';')
+        || value.trim() != value
+        || value.len() > 4096
+        || value.contains(['{', '}', '\\', '"', '\''])
+        || value.contains("://")
+        || value.chars().any(|c| c.is_control() || c == '\u{feff}')
+        || !verified_path_context(home_dir, cwd)
+    {
+        return None;
+    }
+    let literal_missing = |path: &str| {
+        let Some(candidate) = verified_selector_candidate(path, home_dir, cwd) else {
+            return false;
+        };
+        matches!(
+            std::fs::symlink_metadata(candidate),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound
+        )
+    };
+    if !literal_missing(value)
+        || value
+            .rsplit_once(':')
+            .is_some_and(|(base, _)| !literal_missing(base))
+    {
+        return None;
+    }
+    let parts: Vec<String> = value
+        .split(';')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(str::to_owned)
+        .collect();
+    (!parts.is_empty() && parts.len() <= MAX_OMP_READ_LIST_PARTS).then_some(parts)
 }
 
 /// Whether `value` is OMP's `path:N-M` (or `path:raw`) form for an existing
@@ -302,6 +358,15 @@ pub(in crate::pretool) fn missing_read_target(
     selectors: bool,
 ) -> bool {
     let missing = |value: &str| missing_literal_path(value, home_dir, cwd);
+    if let Some(parts) = selectors
+        .then(|| omp_read_list(value, home_dir, cwd))
+        .flatten()
+    {
+        // A list names each part; only a missing part is a wrong path.
+        return parts
+            .iter()
+            .any(|part| missing_read_target(part, home_dir, cwd, true));
+    }
     if !missing(value) {
         return false;
     }

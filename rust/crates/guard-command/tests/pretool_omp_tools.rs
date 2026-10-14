@@ -1105,3 +1105,60 @@ fn eval_scalar_options_are_preserved_or_reviewed() {
         assert!(!allowed(&eval_code(&f, code)), "{code}");
     }
 }
+
+#[test]
+fn read_lists_prove_every_part() {
+    let f = fixture();
+    let sibling = f.home.join("clean");
+    // Agents read a few line windows of known files in one call; the host
+    // reads each part on its own, so each needs the proof a lone read gets.
+    for path in [
+        format!(
+            "{}:1-5; {}:2-3",
+            f.project.join("calc.py").display(),
+            f.project.join("src/main.rs").display()
+        ),
+        format!(
+            "calc.py:1-2; calc.py:4-9; {}",
+            sibling.join("a.txt").display()
+        ),
+        "src/main.rs;~/clean/a.txt:1;".to_owned(),
+    ] {
+        let result = omp(&f, "read", json!({"path": path}));
+        assert!(allowed(&result), "{path}: {}", result.reason_code);
+        assert_eq!(result.reason_code, "native_exact_safe_file_read", "{path}");
+    }
+    // A missing part is a wrong path; the agent should fix it.
+    let result = omp(&f, "read", json!({"path": "calc.py:1-5; missing.py:1-5"}));
+    assert_eq!(result.minimum_action, "block");
+    assert_eq!(result.reason_code, "native_missing_path");
+    // Sensitive, unbounded or rewritten parts keep their review, and a list
+    // of existing parts is never reported as missing.
+    for path in [
+        "calc.py; ~/.ssh/id_rsa",
+        "calc.py; ~/secret-dir/.env",
+        "calc.py; ~/.codex/auth.json:1-3",
+        "calc.py; src",
+        "calc.py; src/*.rs",
+        "calc.py; {src/main.rs,calc.py}",
+        "calc.py; ../project/calc.py:1-2",
+        "calc.py; src/main.rs:1-5:raw",
+    ] {
+        let result = omp(&f, "read", json!({"path": path}));
+        assert!(!allowed(&result), "{path}: {}", result.reason_code);
+        assert_ne!(result.reason_code, "native_missing_path", "{path}");
+    }
+    // The host peels quotes per part; that list stays unproven.
+    assert!(!allowed(&omp(
+        &f,
+        "read",
+        json!({"path": "calc.py; \"src/main.rs\""})
+    )));
+    // An existing literal that contains `;` is read whole, never split: a
+    // split here would name a missing part.
+    write(f.project.join("calc.py;missing.py"), "synthetic fixture\n");
+    let result = omp(&f, "read", json!({"path": "calc.py;missing.py:1-5"}));
+    assert_eq!(result.reason_code, "native_exact_safe_file_read");
+    let result = omp(&f, "read", json!({"path": "calc.py;missing.py"}));
+    assert_ne!(result.reason_code, "native_missing_path");
+}
