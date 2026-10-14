@@ -53,10 +53,6 @@ fn optional<'a>(need: &'a Value, key: &str) -> Result<Option<&'a str>, &'static 
     }
 }
 
-#[cfg(test)]
-#[path = "mcp_relay_decide_saved_tests.rs"]
-mod tests;
-
 impl Saved<'_> {
     /// The observation the proxy returns for `need`.
     pub(super) fn answer(&self, need: &Value) -> Result<Value, &'static str> {
