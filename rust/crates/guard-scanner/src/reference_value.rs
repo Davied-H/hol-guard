@@ -122,7 +122,8 @@ fn has_attached_literal(rest: &str) -> bool {
 }
 
 fn is_shell_word_boundary(character: char) -> bool {
-    character.is_whitespace() || matches!(character, ';' | ')' | '>' | '<' | '&' | '|')
+    // Unicode whitespace is literal shell-word content, not an IFS separator.
+    matches!(character, ' ' | '\t' | ';' | ')' | '>' | '<' | '&' | '|')
 }
 
 fn bounded_continuation(rest: &str) -> (&str, bool) {

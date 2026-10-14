@@ -141,6 +141,7 @@ fn quoted_references_and_placeholders_do_not_hide_literal_tails() {
         format!("TOKEN=\"${{NAME:-}}\"]{secret}"),
         format!("TOKEN=\"$CI_API_TOKEN\"}}{secret}"),
         format!("TOKEN=\"$2\"''{secret}"),
+        format!("TOKEN=\"$2\"\u{00a0}{secret}"),
         format!("TOKEN=\"$2\"\"<your-token>\"{secret}"),
         format!("TOKEN=\"<your-token>\" + \"{secret}\""),
         format!("TOKEN=<your-token>\"{secret}\""),

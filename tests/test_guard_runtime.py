@@ -1035,6 +1035,7 @@ clearer UX and an implementation plan with technical references.
             'TOKEN="$2",{}',
             'TOKEN="$2"]{}',
             "TOKEN=\"$2\"''{}",
+            'TOKEN="$2"\u00a0{}',
             'TOKEN=<your-token> + "{}"',
             'TOKEN=std::env::var("TOKEN").unwrap_or("{}".into())',
         ],
