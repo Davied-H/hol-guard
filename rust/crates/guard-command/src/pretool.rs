@@ -192,9 +192,9 @@ fn names_guard_outside_message(segment: &crate::CommandSegmentV1) -> bool {
         let is_message = std::mem::take(&mut message_value);
         message_value = matches!(argument.as_str(), "-m" | "--message");
         let lowered = argument.to_ascii_lowercase();
-        !is_message
-            && !lowered.starts_with("--message=")
-            && !(lowered.starts_with("-m") && !lowered.starts_with("--"))
+        let attached_message = lowered.starts_with("--message=")
+            || (lowered.starts_with("-m") && !lowered.starts_with("--"));
+        !(is_message || attached_message)
             && ["hol-guard", "plugin-guard", ".hol-guard"]
                 .iter()
                 .any(|needle| lowered.contains(needle))
