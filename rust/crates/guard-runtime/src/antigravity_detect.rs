@@ -130,7 +130,13 @@ fn extensions(inventory: &mut Inventory, items: &[PyVal]) -> Result<(), &'static
             return Err(ERR_INVALID);
         }
         let manifest = py_join(&py_path(location), "package.json");
-        let payload = json_payload(&inventory.fs(&manifest))?;
+        // A relative location is read from Python's cwd; without one it has
+        // no anchor and is never read from the resident's own directory.
+        let payload = if manifest.is_absolute() || inventory.has_cwd() {
+            json_payload(&inventory.fs(&manifest))?
+        } else {
+            PyVal::Dict(Vec::new())
+        };
         if payload.truthy() {
             inventory.found(&manifest);
         }

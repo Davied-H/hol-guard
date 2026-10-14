@@ -175,6 +175,11 @@ impl Inventory {
         }
     }
 
+    /// Whether Python's working directory came with the request.
+    pub(crate) fn has_cwd(&self) -> bool {
+        self.cwd.is_some()
+    }
+
     /// `_append_found_path`.
     pub(crate) fn found(&mut self, path: &Path) {
         let path = path.to_string_lossy();
