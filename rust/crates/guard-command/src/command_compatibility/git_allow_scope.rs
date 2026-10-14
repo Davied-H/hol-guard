@@ -204,7 +204,7 @@ fn config_setting_runs_program(setting: &str, from_environment: bool) -> bool {
 /// of a local transport, `--exec`, hook templates for a new repository,
 /// settings `clone` writes into the repository it creates, and the shell text
 /// that `rebase -x`, `difftool -x`, `filter-branch`, `submodule foreach` and
-/// `bisect run` execute, a pager `grep -O` opens, and merge strategies that
+/// `bisect run` execute, the viewer `bisect visualize` opens, a pager `grep -O` opens, and merge strategies that
 /// are not built in. Git accepts any unambiguous prefix of a long option,
 /// so prefixes count too. A `--` can be the value of an option this scan does
 /// not model, so words after it are scanned as well and a path that looks
@@ -222,7 +222,7 @@ fn subcommand_runs_program(arguments: &[String]) -> bool {
     match command {
         "filter-branch" => return true,
         "submodule" if operand() == Some("foreach") => return true,
-        "bisect" if operand() == Some("run") => return true,
+        "bisect" if matches!(operand(), Some("run" | "visualize" | "view")) => return true,
         _ => {}
     }
     let mut index = 0;
@@ -282,7 +282,7 @@ fn subcommand_runs_program(arguments: &[String]) -> bool {
             "push" | "fetch" => ("", "o"),
             "pull" => ("", "osXS"),
             "merge" => ("", "sXmFS"),
-            "cherry-pick" | "revert" => ("", "sXmS"),
+            "cherry-pick" | "revert" => ("", "XmS"),
             "rebase" => ("x", "sXCS"),
             "grep" => ("O", "efABCm"),
             "difftool" | "mergetool" => ("x", "t"),
