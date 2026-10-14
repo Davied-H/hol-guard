@@ -102,6 +102,12 @@ mod claude_hook_bridge_http_text;
 mod claude_hook_bridge_render;
 mod claude_hook_bridge_transport;
 mod claude_hook_bridge_url;
+#[cfg(unix)]
+mod claude_session_start;
+#[cfg(unix)]
+mod claude_session_start_contract;
+#[cfg(unix)]
+mod claude_session_start_live;
 mod cli_copilot_resolution;
 mod cli_runtime_support_op;
 mod cloud_action_envelope;
@@ -236,6 +242,7 @@ mod git_execution_safety_tests;
 mod github_cli_classify_op;
 mod github_workflow_context_io;
 mod github_workflow_prepare_op;
+mod grok_detect;
 mod guard_config_coerce;
 mod guard_config_harness;
 mod guard_config_iso;
@@ -372,11 +379,13 @@ mod hook_decision_native_facts_tests;
 mod hook_decision_op;
 mod hook_decision_settle;
 mod hook_direct;
+mod hook_direct_counters;
 mod hook_direct_evidence;
 mod hook_env_stamp;
 mod hook_policy_config;
 mod hook_process_spawn;
 mod hook_render_op;
+mod kimi_detect;
 mod local_cli_grant_op;
 mod local_cli_identify;
 mod local_mcp_grant_identity;

@@ -1,25 +1,25 @@
 #!/usr/bin/env python3
-"""Record Gemini, Antigravity and Devin detection vectors from the ORIGINAL
-Python implementation.
+"""Record Gemini, Antigravity, Devin, Grok and Kimi detection vectors from
+the ORIGINAL Python implementation.
 
-Run against a checkout that still holds the harness's Python discovery
-(`GeminiHarnessAdapter._entry_hook_command`, `AntigravityHarnessAdapter._mcp_source`
-or `DevinHarnessAdapter._claude_hooks_overlap`; the base of the commit that
-introduced its native `<harness>_detect` runner-authority kind), never from
-Rust output:
+Run against a checkout that still holds the original helper `ORIGINALS` names
+for the harness (the base of the commit that introduced its native
+`<harness>_detect` runner-authority kind), never from Rust output:
 
     cd <base-worktree>
     HOL_GUARD_NATIVE_BINARY=<release hol-guard-runtime> \\
-        PYTHONPATH=$PWD/src python3 <this-file> gemini <output vectors.json>
+        PYTHONPATH=$PWD/src python3 <this-file> <harness> <output vectors.json>
 
-and again with `antigravity` or `devin`. Each case materializes a fixture tree under a
-temporary root, runs the original `detect` over it and records the artifacts,
-config paths and warnings plus the request the native facade sends. Skill
-discovery and directory identity come from the release resident, so the
-recorder refuses to run without one. An inventory that would carry a lone
-surrogate is recorded as a refusal. Workspace AIBOM discovery is not part of
-the port and is switched off. `<ROOT>` stands for the fixture root, in paths
-and in file contents.
+Each case materializes a fixture tree under a temporary root, runs the
+original `detect` over it and records the artifacts, config paths and warnings
+plus the request the native facade sends. Skill discovery, directory identity
+and MCP metadata digests come from the release resident, so the recorder
+refuses to run without one. An inventory that would carry a lone surrogate is
+recorded as a refusal. Workspace AIBOM discovery is not part of the port and
+is switched off; so are the Grok executable lookup, version probe and stale
+managed-entry check, which stay in Python. The Grok system policy files are
+read from `<ROOT>/etc/grok`. `<ROOT>` stands for the fixture root, in paths, in
+file contents and in a case's environment.
 """
 
 from __future__ import annotations
@@ -36,21 +36,34 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from adapter_vector_cases import cases
 
-from codex_plugin_scanner.guard.adapters import antigravity, devin, gemini
+from codex_plugin_scanner.guard.adapters import antigravity, devin, gemini, grok, grok_config, kimi
 from codex_plugin_scanner.guard.adapters.base import HarnessContext
+from codex_plugin_scanner.guard.adapters.grok_executable import GrokExecutableResolution
 from codex_plugin_scanner.guard.models import GuardArtifact
 
 ADAPTERS = {
     "gemini": gemini.GeminiHarnessAdapter,
     "antigravity": antigravity.AntigravityHarnessAdapter,
     "devin": devin.DevinHarnessAdapter,
+    "grok": grok.GrokHarnessAdapter,
+    "kimi": kimi.KimiHarnessAdapter,
 }
-ORIGINALS = {"gemini": "_entry_hook_command", "antigravity": "_mcp_source", "devin": "_claude_hooks_overlap"}
-if not os.environ.get("HOL_GUARD_NATIVE_BINARY"):
-    sys.exit("set HOL_GUARD_NATIVE_BINARY to a release hol-guard-runtime")
+# The original helper each port removed; its presence proves the source is
+# the original Python.
+ORIGINALS = {
+    "gemini": (gemini.GeminiHarnessAdapter, "_entry_hook_command"),
+    "antigravity": (antigravity.AntigravityHarnessAdapter, "_mcp_source"),
+    "devin": (devin.DevinHarnessAdapter, "_claude_hooks_overlap"),
+    "grok": (grok_config, "append_mcp_artifacts"),
+    "kimi": (kimi.KimiHarnessAdapter, "_append_mcp_artifacts"),
+}
 
-gemini.extend_detection_with_workspace_aibom = lambda detection, **_: detection
-devin.extend_detection_with_workspace_aibom = lambda detection, **_: detection
+for module in (gemini, devin, grok, kimi):
+    module.extend_detection_with_workspace_aibom = lambda detection, **_: detection
+grok.resolve_trusted_grok_executable = lambda _context: GrokExecutableResolution(None)
+grok.GrokHarnessAdapter._version_probe = staticmethod(lambda _context, _resolution: {})
+grok.GrokHarnessAdapter._has_stale_guard_entries = lambda _self, _context: False
+SYSTEM_POLICY = ("managed_config.toml", "requirements.toml")
 
 
 def provision_native(guard_home: Path) -> None:
@@ -122,16 +135,28 @@ def scrub(value: object, root: Path) -> object:
     return json.loads(json.dumps(value, ensure_ascii=False).replace(str(root), "<ROOT>"))
 
 
-def facade_args(harness: str, context: HarnessContext) -> dict:
+def system_policy_paths(root: Path) -> list[Path]:
+    return [root / "etc" / "grok" / name for name in SYSTEM_POLICY]
+
+
+def facade_args(harness: str, context: HarnessContext, root: Path) -> dict:
     """The request the native facade sends for this context."""
 
+    home = context.home_dir
+    if harness == "kimi":
+        home = kimi.KimiHarnessAdapter._kimi_home_dir(context)
     workspace = context.workspace_dir
     request: dict[str, object] = {
         "harness": harness,
-        "home": str(context.home_dir),
+        "home": str(home),
         "workspace": None if workspace is None else str(workspace),
     }
-    if not context.home_dir.is_absolute() or (workspace is not None and not workspace.is_absolute()):
+    if harness == "grok":
+        request["grok_home"] = str(grok.GrokHarnessAdapter._grok_home_dir(context))
+        request["system_policy_paths"] = [
+            str(path) for path in system_policy_paths(root) if path.is_file() and os.access(path, os.R_OK)
+        ]
+    if not home.is_absolute() or (workspace is not None and not workspace.is_absolute()):
         request["cwd"] = os.getcwd()
     if harness == "devin":
         request["config_dir"] = str(devin.DevinHarnessAdapter._devin_config_dir(context))
@@ -141,8 +166,12 @@ def facade_args(harness: str, context: HarnessContext) -> dict:
 def run_case(harness: str, spec: dict, guard_home: Path) -> dict:
     root = Path(tempfile.mkdtemp(prefix="adapter-vec-")).resolve()
     previous_cwd = os.getcwd()
+    previous_env = {name: os.environ.get(name) for name in spec.get("env", {})}
     try:
         materialize(root, spec)
+        for name, value in spec.get("env", {}).items():
+            os.environ[name] = value.replace("<ROOT>", str(root))
+        grok.SYSTEM_MANAGED_CONFIG, grok.SYSTEM_REQUIREMENTS = system_policy_paths(root)
         base = Path() if spec["relative"] else root
         if spec["relative"]:
             os.chdir(root)
@@ -151,7 +180,7 @@ def run_case(harness: str, spec: dict, guard_home: Path) -> dict:
             workspace_dir=None if spec["workspace"] is None else base / spec["workspace"],
             guard_home=guard_home,
         )
-        args = facade_args(harness, context)
+        args = facade_args(harness, context, root)
         try:
             detection = ADAPTERS[harness]().detect(context)
             outcome: dict = {
@@ -171,6 +200,11 @@ def run_case(harness: str, spec: dict, guard_home: Path) -> dict:
         return record
     finally:
         os.chdir(previous_cwd)
+        for name, value in previous_env.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
         release(root)
 
 
@@ -178,8 +212,11 @@ def main() -> None:
     from codex_plugin_scanner.guard.native_resident_client import close_native_residents
 
     harness, destination = sys.argv[1], Path(sys.argv[2])
-    if not hasattr(ADAPTERS[harness], ORIGINALS[harness]):
+    owner, helper = ORIGINALS[harness]
+    if not hasattr(owner, helper):
         sys.exit(f"refusing to record: the original Python {harness} discovery is gone")
+    if not os.environ.get("HOL_GUARD_NATIVE_BINARY"):
+        sys.exit("set HOL_GUARD_NATIVE_BINARY to a release hol-guard-runtime")
     guard_home = Path(tempfile.mkdtemp(prefix="adapter-vec-guard-")).resolve() / "guard"
     provision_native(guard_home)
     try:

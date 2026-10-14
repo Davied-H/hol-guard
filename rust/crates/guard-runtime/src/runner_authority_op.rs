@@ -24,7 +24,9 @@ use super::context_digest_json::write_canonical_json_with_limit;
 use super::copilot_detect;
 use super::devin_detect;
 use super::gemini_detect;
+use super::grok_detect;
 use super::hermes_detect;
+use super::kimi_detect;
 use super::oci_bundle_op as oci;
 use super::pi_detect;
 use super::runner_authority_signature as signature;
@@ -128,6 +130,8 @@ pub(crate) fn dispatch(kind: &str, args: &Value) -> KindResult {
         "gemini_detect" => gemini_detect::detect(args),
         "antigravity_detect" => antigravity_detect::detect(args),
         "devin_detect" => devin_detect::detect(args),
+        "grok_detect" => grok_detect::detect(args),
+        "kimi_detect" => kimi_detect::detect(args),
         _ => Err(ERR_KIND),
     }
 }
