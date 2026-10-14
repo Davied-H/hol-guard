@@ -9,7 +9,8 @@
 //! The rule stops an unquoted value at the first space or quote, so a
 //! reference can sit in front of a literal (`apiKey: string = "..."`,
 //! `os.getenv("TOKEN", "...")`). The rest of that expression is checked, and
-//! a credential-shaped literal there keeps the match.
+//! any string literal there keeps the match, apart from a placeholder or the
+//! variable name a lookup is given.
 
 use regex::Regex;
 use std::sync::LazyLock;
@@ -82,9 +83,10 @@ pub(crate) fn is_reference(matched: &str, rest_of_line: &str) -> bool {
         && !hides_literal(value, rest_of_line)
 }
 
-/// Whether the expression that `value` starts carries a credential-shaped
-/// string literal later on the line: a default, a fallback or the value
-/// assigned after a type annotation.
+/// Whether the expression that `value` starts carries a string literal later
+/// on the line: a default, a fallback or the value assigned after a type
+/// annotation. A variable name directly inside a call or index, such as
+/// `getenv("TOKEN"` or `environ["TOKEN"`, is the lookup's argument.
 fn hides_literal(value: &str, rest: &str) -> bool {
     let mut depth = 0i32;
     for character in value.chars() {
@@ -97,6 +99,7 @@ fn hides_literal(value: &str, rest: &str) -> bool {
     if depth < 0 || value.ends_with(';') {
         return false;
     }
+    let mut previous = value.chars().last();
     let mut index = 0usize;
     while let Some(character) = rest[index..].chars().next() {
         index += character.len_utf8();
@@ -104,7 +107,8 @@ fn hides_literal(value: &str, rest: &str) -> bool {
             '"' | '\'' | '`' => {
                 let body = &rest[index..];
                 let length = body.find(character).unwrap_or(body.len());
-                if is_credential_literal(&body[..length]) {
+                let argument = matches!(previous, Some('(' | '['));
+                if is_hidden_value(&body[..length], argument) {
                     return true;
                 }
                 index += (length + character.len_utf8()).min(body.len());
@@ -119,17 +123,19 @@ fn hides_literal(value: &str, rest: &str) -> bool {
             ',' | ';' if depth == 0 => return false,
             _ => {}
         }
+        if !character.is_whitespace() {
+            previous = Some(character);
+        }
     }
     false
 }
 
-/// A literal long enough to be a credential, with no whitespace, that is not
-/// a variable name or a documentation placeholder.
-fn is_credential_literal(literal: &str) -> bool {
-    literal.chars().count() >= 8
-        && !literal.chars().any(char::is_whitespace)
-        && !VARIABLE_NAME.is_match(literal)
+/// Whether a literal can hold a credential: anything not blank, apart from a
+/// documentation placeholder or a lookup's variable-name argument.
+fn is_hidden_value(literal: &str, argument: bool) -> bool {
+    !literal.trim().is_empty()
         && !PLACEHOLDER.is_match(literal)
+        && !(argument && VARIABLE_NAME.is_match(literal))
 }
 
 #[cfg(test)]

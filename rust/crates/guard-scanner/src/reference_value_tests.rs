@@ -117,6 +117,11 @@ fn literals_after_a_reference_on_the_same_line_still_match() {
         format!("const API_KEY = process.env.API_KEY || \"{secret}\";"),
         format!("const API_KEY = process.env.API_KEY ?? `{secret}`;"),
         format!("let token = std::env::var(\"TOKEN\").unwrap_or(\"{secret}\".into());"),
+        "password: str = \"hunter2\"".to_string(),
+        "DB_PASSWORD = os.getenv(\"DB_PASSWORD\", \"s3cr3t!\")".to_string(),
+        "password: string = \"correct horse battery staple\"".to_string(),
+        "password: str = \"ADMIN\"".to_string(),
+        "token: string = 'x'".to_string(),
     ] {
         assert!(credential_assignment(&text), "{text:?}");
     }
@@ -128,6 +133,8 @@ fn references_without_a_hidden_literal_stay_allowed() {
     for text in [
         "api_key: str = os.environ[\"API_KEY\"]".to_string(),
         "TOKEN = os.getenv(\"TOKEN\", \"\")".to_string(),
+        "TOKEN = os.getenv( \"TOKEN\" )".to_string(),
+        "const apiKey: string = process.env[\"API_KEY\"] ?? \"<your-api-key>\";".to_string(),
         "const apiKey: string = process.env.API_KEY ?? \"\";".to_string(),
         "const API_KEY = process.env.API_KEY;".to_string(),
         format!("def client(api_key: str, model: str = \"{other}\"):"),
