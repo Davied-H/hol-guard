@@ -68,6 +68,14 @@ class Harness:
     def home_environment(self, home: Path) -> dict[str, str]:
         return {key: str(home / relative) for key, relative in self.home_env.items()}
 
+    def keychain_environment(self) -> dict[str, str]:
+        """The account name a macOS CLI matches its Keychain login against."""
+        if not (self.macos_keychain and sys.platform == "darwin"):
+            return {}
+        import pwd
+
+        return {"USER": pwd.getpwuid(os.getuid()).pw_name}
+
     def executable(self, explicit: str | None = None) -> str:
         """Resolve the CLI the operator selected or the first one on PATH."""
         if explicit:

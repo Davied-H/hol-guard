@@ -3,6 +3,7 @@
 import json
 import os
 import stat
+import sys
 from pathlib import Path
 
 import pytest
@@ -424,3 +425,21 @@ def test_codex_config_home_is_pinned_inside_the_fixture(tmp_path):
     environment = harness_environment(adapter("codex"), tmp_path, tmp_path / "agent", "canary", {})
     assert environment["CODEX_HOME"] == str(tmp_path / ".codex")
     assert environment["USERPROFILE"] == str(tmp_path)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the Keychain account name comes from the POSIX user database")
+def test_keychain_logins_get_the_operator_account_name(tmp_path, monkeypatch):
+    # Claude Code looks up its Keychain login by $USER and reports "Not logged in" without it.
+    import pwd
+
+    from ci.gauntlet.harness_case import harness_environment
+
+    monkeypatch.setattr(sys, "platform", "darwin")
+
+    account = pwd.getpwuid(os.getuid()).pw_name
+    environment = harness_environment(adapter("claude-code"), tmp_path, tmp_path / "agent", "canary", {})
+    assert environment["USER"] == account
+    assert adapter("cursor").keychain_environment() == {"USER": account}
+    assert adapter("codex").keychain_environment() == {}
+    monkeypatch.setattr(sys, "platform", "linux")
+    assert adapter("claude-code").keychain_environment() == {}

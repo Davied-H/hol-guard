@@ -81,6 +81,7 @@ def harness_environment(
         environment = realistic_environment(environment, home)
     environment.update(spec.extra_env)
     environment.update(spec.home_environment(home))
+    environment.update(spec.keychain_environment())
     environment.update(login_environment)
     return environment
 
