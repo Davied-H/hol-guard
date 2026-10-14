@@ -1381,7 +1381,7 @@
           "evaluate_cached_supply_chain_bundle"
         ],
         "entry_points": [],
-        "evidence": "Every excluded public symbol is called only from runtime/runner.py (cloud-sync-transport) and runtime/supply_chain_bundle.py, which only runner.py and runner_native_sync.py import; neither is in the runtime closure. load_supply_chain_verification_keys stays counted because policy_bundle_trusted_keys.py imports it. The report validates this reference closure on every run.",
+        "evidence": "Every excluded public symbol is called only from runtime/runner.py (cloud-sync-transport) and runtime/supply_chain_bundle.py, which only runner.py and runner_native_sync.py import; neither is in the runtime closure. The keyring loader that policy_bundle_trusted_keys.py imports lives in runtime/supply_chain_verification_keys.py, which stays counted, so this module and the bundle models are no longer in the runtime closure. The report validates this reference closure on every run.",
         "reason": "Cloud supply-chain bundle loading, signature and freshness checks, rollback checks and cached bundle evaluation. They run when Guard syncs the supply-chain bundle from Guard Cloud, not on a hook or proxy call."
       },
       {
