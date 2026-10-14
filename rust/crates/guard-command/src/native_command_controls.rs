@@ -409,7 +409,7 @@ impl CompiledNativeCommandControls {
                 !crate::pretool::fixed_command_floor(model)
                     && (!enabled_uncertainty
                         || model.segments.iter().all(|segment| {
-                            segment.executable.as_deref() != Some("git")
+                            crate::command_compatibility::basename(segment) != "git"
                                 || crate::command_compatibility::git_repository_routes_verified(
                                     segment, context,
                                 )

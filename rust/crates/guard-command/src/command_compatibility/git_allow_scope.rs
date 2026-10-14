@@ -76,7 +76,9 @@ const INERT_KEYS: &[&str] = &[
 /// subcommand option naming a local program. Unknown keys and unparseable
 /// global options fail closed.
 pub(crate) fn runs_configured_program(segment: &CommandSegmentV1) -> bool {
-    if segment.executable.as_deref() != Some("git") {
+    // The same normalised name the compatibility observer routes on, so
+    // `/usr/bin/git`, `git.exe` and `GIT` are judged too.
+    if crate::command_compatibility::basename(segment) != "git" {
         return false;
     }
     if segment
@@ -132,7 +134,9 @@ fn config_setting_runs_program(setting: &str, from_environment: bool) -> bool {
 /// settings `clone` writes into the repository it creates, and the shell text
 /// that `rebase -x`, `difftool -x`, `filter-branch`, `submodule foreach` and
 /// `bisect run` execute. Git accepts any unambiguous prefix of a long option,
-/// so prefixes count too. Options after `--` are operands.
+/// so prefixes count too. A `--` can be the value of an option this scan does
+/// not model, so words after it are scanned as well and a path that looks
+/// like one of these options is held.
 fn subcommand_runs_program(arguments: &[String]) -> bool {
     let Some((command, rest)) = arguments.split_first() else {
         return false;
@@ -153,9 +157,6 @@ fn subcommand_runs_program(arguments: &[String]) -> bool {
     while let Some(argument) = rest.get(index) {
         index += 1;
         let argument = argument.as_str();
-        if argument == "--" {
-            break;
-        }
         if let Some(long) = argument.strip_prefix("--") {
             let (name, attached) = match long.split_once('=') {
                 Some((name, value)) => (name, Some(value)),
@@ -180,6 +181,10 @@ fn subcommand_runs_program(arguments: &[String]) -> bool {
                     return true;
                 }
             }
+            // Push and server options carry text for the remote, even `--`.
+            if attached.is_none() && (names("push-option") || names("server-option")) {
+                index += 1;
+            }
             continue;
         }
         let Some(cluster) = argument.strip_prefix('-').filter(|rest| !rest.is_empty()) else {
@@ -192,6 +197,7 @@ fn subcommand_runs_program(arguments: &[String]) -> bool {
         let (holding, valued) = match command {
             "clone" => ("u", "cobj"),
             "ls-remote" => ("u", "o"),
+            "push" | "fetch" | "pull" => ("", "o"),
             "rebase" => ("x", "sXCS"),
             "difftool" | "mergetool" => ("x", "t"),
             _ => continue,

@@ -169,7 +169,7 @@ fn deadline_check(deadline: Option<Instant>) -> Result<(), &'static str> {
     }
 }
 
-fn basename(segment: &CommandSegmentV1) -> String {
+pub(crate) fn basename(segment: &CommandSegmentV1) -> String {
     let value = segment.executable.as_deref().unwrap_or("");
     let basename = value.rsplit(['/', '\\']).next().unwrap_or(value);
     let name = crate::command_ascii_comparison::lowercase_for_ascii_comparison(basename);

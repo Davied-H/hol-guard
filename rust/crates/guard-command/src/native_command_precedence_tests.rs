@@ -165,6 +165,13 @@ fn an_explicit_git_allow_never_settles_configured_programs() {
         "git clone -u x ../repo dst",
         "git clone --template=/tmp/t https://example.invalid/project.git dst",
         "git clone -c core.fsmonitor=x https://example.invalid/project.git dst",
+        // A `--` taken as an option value does not end the options.
+        "git push -o -- --receive-pack=p ../repo",
+        "git fetch -o -- --upload-pack=x ../repo",
+        // Any spelling of the Git executable the observer routes to Git.
+        "/usr/bin/git -c alias.x='!sh' x",
+        "git.exe -c core.fsmonitor=p status",
+        "GIT -c core.sshCommand=p push origin main",
     ] {
         let result = evaluate(&enabled, command);
         assert_ne!(
@@ -234,6 +241,14 @@ fn configured_programs_are_recognised_by_key_and_value() {
         "git difftool --ext payload",
         "git difftool --tool-help",
         "git mergetool --tool-h",
+        "git push -o -- --receive-pack=p ../repo",
+        "git fetch -o -- --upload-pack=x ../repo",
+        "git push --push-option -- --receive-pack=p ../repo",
+        "git fetch --server-option -- --upload-pack=x ../repo",
+        "git log -- --exec",
+        "/usr/bin/git -c alias.x='!sh' x",
+        "git.exe -c core.fsmonitor=p status",
+        "GIT -c core.sshCommand=p push origin main",
         "git clone -u x ../repo dst",
         "git clone -qu x ../repo dst",
         "git clone --template=/tmp/t https://example.invalid/project.git dst",
@@ -260,7 +275,9 @@ fn configured_programs_are_recognised_by_key_and_value() {
         "git clone --config=http.extraHeader=x https://example.invalid/project.git dst",
         "git clone --depth 1 https://example.invalid/project.git dst",
         "git clone -b main -o upstream https://example.invalid/project.git dst",
-        "git log -- --exec",
+        "git push -o ci.skip origin main",
+        "git push --push-option --receive-pack=x origin main",
+        "git fetch -o--upload-pack=x origin",
         "git rebase -i main",
         "git rebase -Xtheirs -s ort main",
         "git submodule update --init",
