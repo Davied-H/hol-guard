@@ -29,14 +29,18 @@ const CREDENTIAL_FIELDS: [&str; 6] = [
 /// Whether a credential assignment's value is an unquoted member access
 /// whose last field names a credential and ends its statement. A quoted value
 /// is a string literal and is never treated as a copy, and neither is a
-/// member access that the rest of the line continues, as in
-/// `API_KEY = process.env.API_KEY || "literal"`.
+/// member access that its own statement or field continues, as in
+/// `API_KEY = process.env.API_KEY || "literal"`. A following field or a
+/// trailing comment does not continue it.
 pub(crate) fn is_field_copy(matched: &str, rest_of_line: &str) -> bool {
-    if !rest_of_line
-        .trim()
-        .chars()
-        .all(|character| matches!(character, ';' | ',' | ')' | '}'))
-    {
+    let segment = rest_of_line
+        .split([',', ';'])
+        .next()
+        .unwrap_or_default()
+        .trim_start_matches(|character: char| {
+            character.is_whitespace() || matches!(character, ')' | '}')
+        });
+    if !(segment.is_empty() || segment.starts_with('#') || segment.starts_with("//")) {
         return false;
     }
     let Some(index) = matched.find([':', '=']) else {
@@ -107,6 +111,13 @@ mod tests {
         assert!(!credential_assignment(source));
         let javascript = "const client = connect({\n  token: session.token,\n  password: config.db?.password,\n});\n";
         assert!(!credential_assignment(javascript));
+        for text in [
+            "connect({ token: session.token, user: session.user })",
+            "password = admin.password  # from the URL",
+            "password: cfg.password, // database",
+        ] {
+            assert!(!credential_assignment(text), "{text:?}");
+        }
     }
 
     #[test]
