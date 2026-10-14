@@ -79,7 +79,10 @@ pub(super) fn pull_inert(
     let routed = effective.iter().any(|(key, values)| {
         let enabled = values.iter().any(|value| !disabled(value));
         (key.starts_with("filter.") && (!standard_lfs(key, values) || repository.contains_key(key)))
-            || key.starts_with("gpg.")
+            // The user's own `gpg.*` names a program that only a signature
+            // check (`*.verifysignatures` below) or commit signing (refused by
+            // `merge_inert`) starts. A repository's choice stays routed.
+            || (key.starts_with("gpg.") && repository.contains_key(key))
             || key.starts_with("hook.")
             || key == "core.worktree"
             || (key == "core.fsmonitor" && enabled)

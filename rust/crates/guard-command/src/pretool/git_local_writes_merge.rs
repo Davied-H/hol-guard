@@ -55,9 +55,9 @@ pub(super) fn cherry_pick(rest: &[&str]) -> bool {
             | "-n"
             | "--no-commit" => {}
             "-m" | "--mainline" => {
-                if !words
+                if words
                     .next()
-                    .is_some_and(|parent| parent.parse::<u8>().is_ok())
+                    .is_none_or(|parent| parent.parse::<u8>().is_err())
                 {
                     return false;
                 }

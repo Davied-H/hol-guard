@@ -193,3 +193,46 @@ fn merge_pull_from_origin_is_a_proven_refresh_without_commit_programs() {
     }
     assert_allowed(&session, &pull, &cwd, REFRESH);
 }
+
+/// The user configuration a Git LFS install, a GPG setup and a shared hooks
+/// directory leave behind.
+const USER_CONFIG: &str = "[filter \"lfs\"]\n\tclean = git-lfs clean -- %f\n\
+    \tsmudge = git-lfs smudge -- %f\n\tprocess = git-lfs filter-process\n\
+    \trequired = true\n[gpg]\n\tprogram = gpg\n[core]\n\thooksPath = ~/.config/git/hooks\n";
+
+#[test]
+fn pulls_stay_refreshes_under_the_users_own_gpg_program() {
+    let session = session("merge-pull-user-gpg");
+    let cwd = session.org.clone();
+    let primary = session.primary.display();
+    let pull = format!("git -C {primary} pull origin main --no-edit");
+    let fast_forward = format!("git -C {primary} pull --ff-only origin main");
+    let global = session.home.join(".gitconfig");
+    std::fs::create_dir_all(session.home.join(".config/git/hooks")).unwrap();
+    std::fs::write(&global, USER_CONFIG).unwrap();
+    // The program runs only when Git signs or checks a signature.
+    assert_allowed(&session, &pull, &cwd, REFRESH);
+    assert_allowed(&session, &fast_forward, &cwd, REFRESH);
+    // A program the repository picks keeps both reviewed.
+    session.config(&["gpg.program", "/tmp/gpg"]);
+    assert_reviewed(&session, &pull, &cwd);
+    assert_reviewed(&session, &fast_forward, &cwd);
+    session.config(&["--unset-all", "gpg.program"]);
+    // Signing the merge commit keeps the merge pull reviewed; a fast-forward
+    // writes no commit.
+    std::fs::write(
+        &global,
+        format!("{USER_CONFIG}[commit]\n\tgpgsign = true\n"),
+    )
+    .unwrap();
+    assert_reviewed(&session, &pull, &cwd);
+    assert_allowed(&session, &fast_forward, &cwd, REFRESH);
+    // A signature check runs the program on every pull.
+    std::fs::write(
+        &global,
+        format!("{USER_CONFIG}[merge]\n\tverifySignatures = true\n"),
+    )
+    .unwrap();
+    assert_reviewed(&session, &pull, &cwd);
+    assert_reviewed(&session, &fast_forward, &cwd);
+}
