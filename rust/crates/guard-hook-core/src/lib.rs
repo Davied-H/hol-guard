@@ -15,6 +15,8 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
+mod source_slice;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExtractedOutput {
     pub text: String,
@@ -431,7 +433,8 @@ fn review_source(
     if scan.budget_exhausted {
         return inconclusive_source();
     }
-    if !scan.matches.is_empty() {
+    if !scan.matches.is_empty() && (raw_output_matches || !clean_slice(request, text, &source.path))
+    {
         return HookReviewResponseV1::deny(
             "source_secret_match",
             "HOL Guard blocked this output because it contains sensitive content.",
@@ -464,6 +467,31 @@ fn review_source(
     let mut response = HookReviewResponseV1::allow("source_full_scan_allow");
     response.reviewed_output_sha256 = Some(source.output_sha256.clone());
     response
+}
+
+/// Whether the output is a line-numbered slice of `file` whose lines, with
+/// the context above them, match no secret rule (see [`source_slice`]). The
+/// presented text is still verified and scanned on its own afterwards.
+fn clean_slice(request: &NativeHookRequestV1, file: &str, path: &str) -> bool {
+    let output = extract_payload_output(&request.payload);
+    if output.truncated {
+        return false;
+    }
+    let Some((first, last)) = source_slice::covered_range(&output.text, file) else {
+        return false;
+    };
+    if source_slice::key_block_overlaps(file, first, last) {
+        return false;
+    }
+    let start = first.saturating_sub(source_slice::CONTEXT_LINES).max(1);
+    let scan = scan_text(
+        &source_slice::lines(file, start, last),
+        local_samples_should_be_unsuppressed(path),
+        true,
+        MAX_SCAN_BYTES,
+        deadline(request),
+    );
+    !scan.budget_exhausted && scan.matches.is_empty()
 }
 
 fn review_inline(request: &NativeHookRequestV1) -> HookReviewResponseV1 {

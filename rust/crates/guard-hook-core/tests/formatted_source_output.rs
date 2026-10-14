@@ -233,3 +233,47 @@ fn agent_plan_reads_outside_the_workspace_keep_their_original_output() {
     std::fs::write(&plan, format!("# TODO\n\n{token}\n")).unwrap();
     assert_eq!(review_post_tool(&input).reason_code, "source_secret_match");
 }
+
+#[cfg(any(unix, windows))]
+#[test]
+fn slices_that_show_no_secret_are_reviewed_on_their_own() {
+    let root = TestRoot::new();
+    let source = root.path().join("example.py");
+    let token = format!("{}{}", ["gh", "p_"].concat(), "b".repeat(30));
+    let begin = ["-----BEGIN ", "PRIVATE KEY-----"].concat();
+    let end = ["-----END ", "PRIVATE KEY-----"].concat();
+    let mut lines: Vec<String> = (1..=30).map(|number| format!("step({number})")).collect();
+    lines[1] = format!("token = '{token}'");
+    lines[19] = begin;
+    lines[20] = "c2xpY2Ugb2YgYSBrZXk=".into();
+    lines[21] = end;
+    std::fs::write(&source, lines.join("\n") + "\n").unwrap();
+    let slice = |rows: &[usize]| {
+        let body: Vec<String> = rows
+            .iter()
+            .map(|number| format!("{number}:{}", lines[number - 1]))
+            .collect();
+        format!("[example.py#ABCD]\n{}", body.join("\n"))
+    };
+
+    let clean = review_post_tool(&request(root.path(), &slice(&[10, 11, 12])));
+    assert_eq!(clean.reason_code, "output_scan_allow", "{clean:?}");
+    assert_eq!(clean.model_output_action, "allow_original");
+    let collapsed = format!("{}\n13-18:  … }}", slice(&[10, 11, 12]));
+    let clean = review_post_tool(&request(root.path(), &collapsed));
+    assert_eq!(clean.reason_code, "output_scan_allow", "{clean:?}");
+
+    for blocked in [
+        // The secret itself, the lines just below it, and a key body.
+        slice(&[2]),
+        slice(&[5, 6]),
+        slice(&[21]),
+        format!("{}\n19-24:  …", slice(&[12])),
+        // Rows that are not the file's lines keep the whole-file decision.
+        "[example.py#ABCD]\n10:step(9)".into(),
+        "[example.py#ABCD]\nstep(10)".into(),
+    ] {
+        let result = review_post_tool(&request(root.path(), &blocked));
+        assert_eq!(result.reason_code, "source_secret_match", "{blocked:?}");
+    }
+}
