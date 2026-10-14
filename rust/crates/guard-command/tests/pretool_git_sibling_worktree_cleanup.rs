@@ -151,10 +151,16 @@ fn siblings_that_are_not_linked_worktrees_of_the_session_stay_reviewed() {
 #[test]
 fn removing_the_dependency_link_and_the_worktree_is_quiet() {
     let (session, _) = report_worktree("report-remove");
+    let mut failures = Vec::new();
     for (command, reason) in [
         ("rm ../report-wt/node_modules", None),
+        ("git worktree remove ../report-wt", Some(MAINTENANCE)),
         (
-            "rm ../report-wt/node_modules && git worktree remove ../report-wt && git worktree list && git branch -v",
+            "git worktree remove ../report-wt && git worktree list",
+            Some(MAINTENANCE),
+        ),
+        (
+            "git worktree remove ../report-wt && git branch -v",
             Some(MAINTENANCE),
         ),
         (
@@ -162,16 +168,16 @@ fn removing_the_dependency_link_and_the_worktree_is_quiet() {
             Some(MAINTENANCE),
         ),
         (
-            "git worktree remove ../report-wt && git worktree list",
+            "rm ../report-wt/node_modules && git worktree remove ../report-wt && git worktree list && git branch -v",
             Some(MAINTENANCE),
         ),
     ] {
         let (action, code) = verdict(&session, command);
-        assert_eq!(action, "allow", "{command}: {code}");
-        if let Some(reason) = reason {
-            assert_eq!(code, reason, "{command}");
+        if action != "allow" || reason.is_some_and(|reason| code != reason) {
+            failures.push(format!("{command}: {action} {code}"));
         }
     }
+    assert!(failures.is_empty(), "{failures:#?}");
     std::fs::write(session.org.join("report-wt/notes.txt"), "keep\n").unwrap();
     std::os::unix::fs::symlink(
         session.primary.join("node_modules"),
