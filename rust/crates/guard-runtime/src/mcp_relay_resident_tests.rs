@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use guard_contracts::McpToolArgumentsV1;
 use serde_json::json;
 
-use super::request::{arguments, delegated_tool, launcher_home, launcher_path, python_stable};
+use super::request::{arguments, delegated_tool, launcher_home, launcher_path};
 use super::*;
 use crate::mcp_relay_decide::McpRelayDecideRequestV1;
 
@@ -98,6 +98,7 @@ fn session_facts_bind_the_launch_once() {
     assert_eq!(facts.workspace.as_deref(), workspace.to_str());
     assert_eq!(facts.hash_workspace, canonical(&workspace));
     assert_eq!(facts.launcher_path.as_deref(), Some("/usr/bin:/bin"));
+    assert_eq!(facts.path.as_deref(), Some("/usr/bin:/bin"));
     assert_eq!(facts.launcher_home, "/home/user");
     assert_eq!(
         facts.fingerprint["command"],
@@ -179,19 +180,15 @@ fn launcher_home_drops_trailing_separators() {
 }
 
 #[test]
-fn shell_and_composio_tools_are_not_sent() {
-    for name in [
-        "bash",
-        " Shell ",
-        "RUN_COMMAND",
-        "composio_x",
-        "a__COMPOSIO_SEARCH_TOOLS",
-    ] {
+fn only_composio_tools_are_not_sent() {
+    for name in ["composio_x", "a__COMPOSIO_SEARCH_TOOLS"] {
         assert!(delegated_tool(name), "{name}");
     }
-    for name in ["read", "bash_history", "my_composio_x", "composio__read"] {
+    // Shell tools reach the resident, whose package check defers an intent.
+    for name in ["read", "bash", " Shell ", "RUN_COMMAND", "my_composio_x"] {
         assert!(!delegated_tool(name), "{name}");
     }
+    assert!(!delegated_tool("composio__read"));
 }
 
 #[test]
@@ -220,20 +217,13 @@ fn arguments_keep_the_host_order() {
             text: "{\"a\":1}".to_owned()
         })
     );
-    let command = json!({"cmd": ""});
-    assert_eq!(arguments(Some(&command), None), None);
-}
-
-#[test]
-fn only_integers_keep_their_number_text() {
-    let parse = |text: &str| serde_json::from_str::<Value>(text).unwrap();
-    // The parser reads "-0" as the integer zero, as Python does.
-    for text in ["0", "-0", "-7", "12345678901234567890123", "[1,{\"a\":2}]"] {
-        assert!(python_stable(&parse(text)), "{text}");
-    }
-    for text in ["1.5", "1e5", "-0.0", "[1.0]", "{\"a\":2E1}"] {
-        assert!(!python_stable(&parse(text)), "{text}");
-    }
+    let command = json!({"cmd": "npm install left-pad"});
+    assert_eq!(
+        arguments(Some(&command), None),
+        Some(McpToolArgumentsV1::Mapping {
+            entries: vec![("cmd".to_owned(), json!("npm install left-pad"))],
+        })
+    );
 }
 
 #[test]
@@ -261,6 +251,9 @@ fn request_matches_the_decide_wire_shape() {
     let decoded: McpRelayDecideRequestV1 = serde_json::from_value(request).unwrap();
     assert_eq!(decoded.build.tool_name, "read");
     assert_eq!(decoded.hash_workspace, facts.hash_workspace);
+    assert_eq!(decoded.path.as_deref(), Some("/usr/bin:/bin"));
+    let shell = params(json!({"name": "bash", "arguments": {"command": "ls"}}));
+    assert!(decide_request(&facts, &shell, None, &catalog).is_some());
 }
 
 #[test]
@@ -272,8 +265,7 @@ fn calls_the_relay_cannot_send_are_not_requested() {
         json!({"name": "", "arguments": {}}),
         json!({"name": 7}),
         json!({"name": "caf\u{e9}"}),
-        json!({"name": "bash", "arguments": {}}),
-        json!({"name": "read", "arguments": {"a": 1.5}}),
+        json!({"name": "composio_x", "arguments": {}}),
     ] {
         assert!(
             decide_request(&facts, &params(call.clone()), None, &catalog).is_none(),
