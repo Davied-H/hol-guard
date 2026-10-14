@@ -171,7 +171,11 @@ def configured_cases() -> list[dict]:
                     SETTINGS,
                     {
                         "extensions": ["extensions/sub/in.ts", "../../../shared/out.ts", "../../../shared/wrong.txt"],
-                        "skills": ["../../../shared/skill/SKILL.md", "skills/inner/SKILL.md", "../../../shared/README.md"],
+                        "skills": [
+                            "../../../shared/skill/SKILL.md",
+                            "skills/inner/SKILL.md",
+                            "../../../shared/README.md",
+                        ],
                         "prompts": ["../../../shared/p.md", "prompts/q.md", "../../../shared/p.txt"],
                         "themes": ["../../../shared/t.yml", "themes/u.json", "../../../shared/t.toml"],
                     },
@@ -387,10 +391,15 @@ def tree_cases() -> list[dict]:
         case("default_trees_global_and_project", [*resource_tree(AGENT), *resource_tree(PROJECT)]),
         case("default_trees_project_without_workspace", resource_tree(PROJECT), no_workspace=True),
         case("workspace_is_home", [*resource_tree(AGENT), *resource_tree("home/.pi")], workspace_is_home=True),
-        case("omp_trees", [*resource_tree(OMP_AGENT), *resource_tree("work/.omp"), *resource_tree(AGENT)], harness="omp"),
+        case(
+            "omp_trees", [*resource_tree(OMP_AGENT), *resource_tree("work/.omp"), *resource_tree(AGENT)], harness="omp"
+        ),
         case(
             "omp_settings",
-            [doc(f"{OMP_AGENT}/settings.json", {"packages": ["npm:o"], "extensions": ["x.ts"]}), file(f"{OMP_AGENT}/x.ts")],
+            [
+                doc(f"{OMP_AGENT}/settings.json", {"packages": ["npm:o"], "extensions": ["x.ts"]}),
+                file(f"{OMP_AGENT}/x.ts"),
+            ],
             harness="omp",
         ),
         case(
@@ -445,7 +454,10 @@ def tree_cases() -> list[dict]:
             [
                 *resource_tree(AGENT),
                 *resource_tree(PROJECT),
-                doc(SETTINGS, {"packages": ["r"], "extensions": ["../../../shared/*.ts", "extensions/a.ts", "missing.ts"]}),
+                doc(
+                    SETTINGS,
+                    {"packages": ["r"], "extensions": ["../../../shared/*.ts", "extensions/a.ts", "missing.ts"]},
+                ),
                 file("shared/s.ts"),
             ],
             relative=True,
