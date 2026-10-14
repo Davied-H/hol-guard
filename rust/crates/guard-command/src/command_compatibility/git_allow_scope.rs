@@ -128,15 +128,27 @@ fn config_setting_runs_program(setting: &str, from_environment: bool) -> bool {
 }
 
 /// Subcommand options that make Git run a program locally: the pack programs
-/// of a local transport, `--exec`, hook templates for a new repository, and
-/// settings `clone` writes into the repository it creates. Git accepts any
-/// unambiguous prefix of a long option, so prefixes count too. Options after
-/// `--` are operands.
+/// of a local transport, `--exec`, hook templates for a new repository,
+/// settings `clone` writes into the repository it creates, and the shell text
+/// that `rebase -x`, `difftool -x`, `filter-branch`, `submodule foreach` and
+/// `bisect run` execute. Git accepts any unambiguous prefix of a long option,
+/// so prefixes count too. Options after `--` are operands.
 fn subcommand_runs_program(arguments: &[String]) -> bool {
     let Some((command, rest)) = arguments.split_first() else {
         return false;
     };
     let command = command.as_str();
+    let operand = || {
+        rest.iter()
+            .map(String::as_str)
+            .find(|a| !a.starts_with('-'))
+    };
+    match command {
+        "filter-branch" => return true,
+        "submodule" if operand() == Some("foreach") => return true,
+        "bisect" if operand() == Some("run") => return true,
+        _ => {}
+    }
     let mut index = 0;
     while let Some(argument) = rest.get(index) {
         index += 1;
@@ -154,6 +166,8 @@ fn subcommand_runs_program(arguments: &[String]) -> bool {
                 || names("receive-pack")
                 || names("exec")
                 || (matches!(command, "clone" | "init") && names("template"))
+                || (matches!(command, "difftool" | "mergetool")
+                    && (names("extcmd") || (name.starts_with("tool-") && names("tool-help"))))
             {
                 return true;
             }
@@ -171,36 +185,37 @@ fn subcommand_runs_program(arguments: &[String]) -> bool {
         let Some(cluster) = argument.strip_prefix('-').filter(|rest| !rest.is_empty()) else {
             continue;
         };
-        match command {
-            // `-u <program>` is `--upload-pack` here; for push, fetch and pull
-            // it sets the upstream or updates HEAD.
-            "ls-remote" if cluster.contains('u') => return true,
-            "clone" => {
-                for (offset, flag) in cluster.char_indices() {
-                    let attached = &cluster[offset + flag.len_utf8()..];
-                    match flag {
-                        'u' => return true,
-                        'c' | 'o' | 'b' | 'j' => {
-                            let value = if attached.is_empty() {
-                                index += 1;
-                                rest.get(index - 1).map(String::as_str)
-                            } else {
-                                Some(attached)
-                            };
-                            if flag == 'c'
-                                && value.is_none_or(|setting| {
-                                    config_setting_runs_program(setting, false)
-                                })
-                            {
-                                return true;
-                            }
-                            break;
-                        }
-                        _ => {}
-                    }
-                }
+        // Short flags that run a program, and those that take a value, which
+        // ends the cluster. `-u <program>` is `--upload-pack` for clone and
+        // ls-remote; for push, fetch and pull it sets the upstream or updates
+        // HEAD. Rebase `-S` takes its key only when attached.
+        let (holding, valued) = match command {
+            "clone" => ("u", "cobj"),
+            "ls-remote" => ("u", "o"),
+            "rebase" => ("x", "sXCS"),
+            "difftool" | "mergetool" => ("x", "t"),
+            _ => continue,
+        };
+        for (offset, flag) in cluster.char_indices() {
+            if holding.contains(flag) {
+                return true;
             }
-            _ => {}
+            if valued.contains(flag) {
+                let attached = &cluster[offset + flag.len_utf8()..];
+                let value = if attached.is_empty() && flag != 'S' {
+                    index += 1;
+                    rest.get(index - 1).map(String::as_str)
+                } else {
+                    Some(attached)
+                };
+                if command == "clone"
+                    && flag == 'c'
+                    && value.is_none_or(|setting| config_setting_runs_program(setting, false))
+                {
+                    return true;
+                }
+                break;
+            }
         }
     }
     false
