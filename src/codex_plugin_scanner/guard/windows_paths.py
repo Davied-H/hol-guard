@@ -36,7 +36,6 @@ _WINDOWS_WAIT_TIMEOUT = 0x00000102
 _WINDOWS_WAIT_FAILED = 0xFFFFFFFF
 _FOLDERID_PROFILE = uuid.UUID("5e6c858f-0e22-4760-9afe-ea3317b67173").bytes_le
 _FOLDERID_ROAMING_APPDATA = uuid.UUID("3eb685db-65f9-4cf6-a03a-e3ef65729f3d").bytes_le
-_FOLDERID_LOCAL_APPDATA = uuid.UUID("f1b32785-6fba-4fcf-9d55-7b8e7f157091").bytes_le
 
 
 class _Guid(ctypes.Structure):
@@ -479,17 +478,15 @@ def trusted_windows_roaming_appdata() -> Path:
 
 
 def trusted_windows_local_temp() -> Path:
-    """Return the Temp directory in the current user's Local AppData.
+    """Return the default Temp directory in the current user's profile.
 
-    Unlike TEMP, this does not change between processes, so a file one
-    process writes there can be found by another with a different TEMP.
+    TEMP changes between processes, and so does the Local AppData known
+    folder, which Windows expands from USERPROFILE. The profile itself comes
+    from the registry, so a file one process writes here can be found by
+    another with a different environment.
     """
 
-    local_appdata = _trusted_windows_known_folder(
-        _FOLDERID_LOCAL_APPDATA,
-        failure_reason="windows_local_appdata_unavailable",
-    )
-    return _trusted_real_directory(local_appdata / "Temp")
+    return _trusted_real_directory(trusted_windows_user_profile() / "AppData" / "Local" / "Temp")
 
 
 def _trusted_windows_known_folder(folder_id_bytes: bytes, *, failure_reason: str) -> Path:
