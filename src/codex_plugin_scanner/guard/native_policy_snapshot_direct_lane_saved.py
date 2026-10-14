@@ -180,17 +180,19 @@ class NativePolicySnapshotSavedStateMixin:
         """Refresh after a database write and rebind once the state moved.
 
         Only a write can move the state, so an unchanged database costs two
-        stats. The stamp is taken after the refresh: its own write does not
-        trigger another one.
+        stats. The stamp is taken before the refresh, so a write that lands
+        during or after it is refreshed on the next reconcile. A refresh that
+        wrote the row costs one more refresh, which writes nothing.
         """
 
         publisher = cast("NativePolicySnapshotPublisher", self)
         bound = self._direct_lane_integrity_state
         if bound is None or publisher._direct_lane_ack_target is None:
             return
-        if _database_stamp(publisher.guard_home) == self._integrity_checked_stamp:
+        stamp = _database_stamp(publisher.guard_home)
+        if stamp == self._integrity_checked_stamp:
             return
+        self._integrity_checked_stamp = stamp
         refresh_integrity_state(publisher.store)
-        self._integrity_checked_stamp = _database_stamp(publisher.guard_home)
         if _integrity_state(publisher.store) != bound:
             publisher._rebind_direct_lane()

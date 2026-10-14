@@ -109,6 +109,9 @@ def test_a_policy_write_republishes_the_state_it_leaves(tmp_path: Path) -> None:
     assert after["generation"] == signed_generation
 
 
+_REFRESH = saved.refresh_integrity_state
+
+
 class _Lane(saved.NativePolicySnapshotSavedStateMixin):
     """The publisher surface the reconcile recheck uses."""
 
@@ -117,12 +120,28 @@ class _Lane(saved.NativePolicySnapshotSavedStateMixin):
         self.guard_home = Path(store.guard_home)
         self._direct_lane_ack_target: tuple[int, str] | None = (1, "ack")
         self.rebinds = 0
+        self._bind_relay_and_saved_state(_published(store), FEATURES)
 
     def _bind_mcp_relay_view(self, binding: object, features: object) -> None:
         return None
 
     def _rebind_direct_lane(self) -> None:
+        # The republish binds the state the store holds.
         self.rebinds += 1
+        self._bind_relay_and_saved_state(
+            saved.with_saved_decision_state({}, store=self.store, features=FEATURES), FEATURES
+        )
+
+
+def _counted_refreshes(monkeypatch: pytest.MonkeyPatch) -> list[object]:
+    calls: list[object] = []
+
+    def refresh(store: object) -> None:
+        calls.append(store)
+        _REFRESH(store)
+
+    monkeypatch.setattr(saved, "refresh_integrity_state", refresh)
+    return calls
 
 
 def test_a_saved_decision_rebinds_the_lane_from_the_reconcile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -130,7 +149,6 @@ def test_a_saved_decision_rebinds_the_lane_from_the_reconcile(tmp_path: Path, mo
     # republish; only this recheck carries the state it leaves to the lane.
     store = _daemon_store(tmp_path / "guard-home")
     lane = _Lane(store)
-    lane._bind_relay_and_saved_state(_published(store), FEATURES)
     lane._recheck_direct_lane_saved_state()
     assert lane.rebinds == 0
 
@@ -141,19 +159,53 @@ def test_a_saved_decision_rebinds_the_lane_from_the_reconcile(tmp_path: Path, mo
     assert isinstance(stored, dict)
     assert stored["mode"] == "protected"
     assert stored["generation"] == signed_generation
+    assert lane._direct_lane_integrity_state == stored
 
-    # With no write since, the recheck costs two stats and refreshes nothing,
-    # including after its own refresh wrote the row.
-    refreshes: list[object] = []
-    monkeypatch.setattr(saved, "refresh_integrity_state", refreshes.append)
+    # A refresh that wrote the row costs one more refresh, which writes
+    # nothing; after that an unchanged database refreshes nothing.
+    refreshes = _counted_refreshes(monkeypatch)
     lane._recheck_direct_lane_saved_state()
-    assert (lane.rebinds, refreshes) == (1, [])
+    lane._recheck_direct_lane_saved_state()
+    assert len(refreshes) <= 1
+    settled = len(refreshes)
+    lane._recheck_direct_lane_saved_state()
+    assert (lane.rebinds, len(refreshes)) == (1, settled)
 
     # A closed lane has nothing to rebind.
     lane._direct_lane_ack_target = None
     _save_decision(store)
     lane._recheck_direct_lane_saved_state()
-    assert (lane.rebinds, refreshes) == (1, [])
+    assert (lane.rebinds, len(refreshes)) == (1, settled)
+
+
+def test_a_write_after_the_refresh_is_refreshed_on_the_next_reconcile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = _daemon_store(tmp_path / "guard-home")
+    lane = _Lane(store)
+    lane._recheck_direct_lane_saved_state()
+    late: list[int] = []
+
+    def refresh_then_write(target: object) -> None:
+        _REFRESH(target)
+        if not late:
+            late.append(_save_decision(store))
+
+    monkeypatch.setattr(saved, "refresh_integrity_state", refresh_then_write)
+    first = _save_decision(store)
+    lane._recheck_direct_lane_saved_state()
+    assert lane.rebinds == 1
+    assert late and late[0] != first
+    bound = lane._direct_lane_integrity_state
+    assert isinstance(bound, dict) and bound["generation"] == first
+
+    # The second write landed after the refresh: the next reconcile refreshes
+    # again and binds the generation it signed.
+    lane._recheck_direct_lane_saved_state()
+    assert lane.rebinds == 2
+    stored = _stored(store)
+    assert isinstance(stored, dict) and stored["generation"] == late[0]
+    assert lane._direct_lane_integrity_state == stored
 
 
 @pytest.mark.parametrize("error", [OSError("gone"), sqlite3.OperationalError("locked"), RuntimeError("resident")])
