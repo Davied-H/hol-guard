@@ -511,6 +511,9 @@ fn grep_scope(
 /// An absolute or `~` name that does not exist cannot resolve as a bounded
 /// read. Its nearest existing folder can: when Guard would let the agent search
 /// that folder, saying the name is missing tells it nothing the search would not.
+/// A folder that is not searchable as a whole still qualifies when it is an
+/// ordinary readable folder other than the filesystem root and the missing
+/// name is not sensitive: a direct read of that name gets the same answer.
 fn missing_under_searchable_folder(target: &str, home: Option<&str>, cwd: Option<&str>) -> bool {
     if target.split(['/', '\\']).any(|part| part == "..") {
         return false;
@@ -527,6 +530,10 @@ fn missing_under_searchable_folder(target: &str, home: Option<&str>, cwd: Option
             .and_then(std::path::Path::to_str)
             .is_some_and(|folder| {
                 super::super::search_scope::content_search_scope_proven(folder, home, cwd)
+                    || (std::path::Path::new(folder).parent().is_some()
+                        && super::super::read_paths::bounded_read_target(folder, home, cwd, true)
+                        && guard_secure_fs::sensitive_path_family(path).is_none()
+                        && !guard_secure_fs::credential_named_path(path))
             })
 }
 

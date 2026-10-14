@@ -466,6 +466,7 @@ fn grep_lists_naming_a_missing_file_say_so_instead_of_asking() {
         "calc.py; missing.py",
         "app-fix/src/report.ts;app-fix/src/projector.ts",
         "src/main.rs; app-fix/src/report.ts",
+        "missing.py; ~/missing-directory",
     ] {
         let result = omp(
             &f,
@@ -483,7 +484,6 @@ fn grep_lists_naming_a_missing_file_say_so_instead_of_asking() {
         "missing.py; src/*.rs",
         "missing.py; ~/.ssh",
         "missing.py; missing/.env",
-        "missing.py; ~/missing-directory",
     ] {
         let result = omp(&f, "grep", json!({"pattern": "x", "path": path}));
         assert!(!allowed(&result), "{path}");
@@ -492,15 +492,34 @@ fn grep_lists_naming_a_missing_file_say_so_instead_of_asking() {
 }
 
 #[test]
-fn grep_lists_naming_a_missing_absolute_file_say_so_when_its_folder_is_searchable() {
+fn grep_lists_naming_a_missing_absolute_file_say_so() {
     let f = fixture();
     // After a relative spelling failed, the agent named every file in the
     // worktree beside the session folder by its absolute path, one of them
     // wrong. Guard would search that folder, so it says the name is missing.
     let clean = f.home.join("clean");
+    // A test folder whose fixtures hold a key file is not searchable as a
+    // whole, but a missing test file beside it is still only missing.
+    write(
+        f.project.join("tests/report.test.ts"),
+        "synthetic fixture\n",
+    );
+    write(
+        f.project.join("tests/fixtures/tls/loopback-server.key"),
+        "synthetic fixture\n",
+    );
+    let tests = f.project.join("tests");
     for path in [
+        format!(
+            "{0}/report.test.ts;{0}/cohort-query.test.ts",
+            tests.display()
+        ),
         format!("{0}/a.txt;{0}/report-cli.ts", clean.display()),
         "~/clean/a.txt; ~/clean/missing/report.ts".to_owned(),
+        // A folder Guard would not search as a whole still answers a direct
+        // read of a missing name the same way, so the list does too.
+        "~/clean/a.txt; ~/creds-dir/report.ts".to_owned(),
+        "~/clean/a.txt; ~/report.ts".to_owned(),
     ] {
         let result = omp(
             &f,
@@ -514,8 +533,7 @@ fn grep_lists_naming_a_missing_absolute_file_say_so_when_its_folder_is_searchabl
     // that climbs out of a searchable one.
     for path in [
         "~/clean/a.txt; ~/secret-dir/report.ts".to_owned(),
-        "~/clean/a.txt; ~/creds-dir/report.ts".to_owned(),
-        "~/clean/a.txt; ~/report.ts".to_owned(),
+        "~/clean/a.txt; ~/creds-dir/credentials.yaml".to_owned(),
         "~/clean/a.txt; ~/clean/../secret-dir/report.ts".to_owned(),
         format!("{}/a.txt; /nonexistent-root/report.ts", clean.display()),
     ] {
@@ -523,6 +541,14 @@ fn grep_lists_naming_a_missing_absolute_file_say_so_when_its_folder_is_searchabl
         assert!(!allowed(&result), "{path}");
         assert_ne!(result.reason_code, "native_missing_path", "{path}");
     }
+    // The existing entries are still searched, so the folder keeps its review.
+    let result = omp(
+        &f,
+        "grep",
+        json!({"pattern": "x", "path": format!("{0}/report.test.ts;{0}", tests.display())}),
+    );
+    assert!(!allowed(&result));
+    assert_ne!(result.reason_code, "native_missing_path");
 }
 
 #[test]
