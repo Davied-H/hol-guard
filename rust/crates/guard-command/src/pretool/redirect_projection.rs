@@ -28,6 +28,16 @@ pub(super) struct RedirectProjection {
     /// Every file written is a scratch file, where a network read's body
     /// may be saved.
     pub(super) scratch_writes: bool,
+    /// The literal targets the removed redirects write.
+    written: Vec<String>,
+}
+
+impl RedirectProjection {
+    /// `text` with each later read of a written file below the working
+    /// directory spelled relative, as [`project`] spells it.
+    pub(super) fn relative_reads(&self, text: String, cwd: Option<&str>) -> String {
+        relative_saved_reads(text, &self.written, cwd)
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -157,7 +167,7 @@ pub(super) fn project(
         crate::pretool::curl_reads::output_targets::scratch_output_target(target, context)
     });
     let git_chain =
-        (chain && bounded_writes && git_chain::admits(&model, &targets)).then_some(targets);
+        (chain && bounded_writes && git_chain::admits(&model, &targets)).then(|| targets.clone());
     if model.confidence != "exact"
         || model.uncertainty_reason.is_some()
         || model.segments.is_empty()
@@ -181,6 +191,7 @@ pub(super) fn project(
         bounded_writes,
         git_chain,
         scratch_writes,
+        written: targets,
     })
 }
 
