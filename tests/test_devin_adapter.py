@@ -410,10 +410,10 @@ class TestDevinWindowsPaths:
                 raise PermissionError("denied")
             return original_open(path, *args, **kwargs)
 
-        monkeypatch.setattr(codex_hook_recovery.os, "open", deny_snapshot)
-        with pytest.raises(ValueError, match="could not be parsed"):
-            DevinHarnessAdapter().install(ctx)
-        monkeypatch.undo()
+        with monkeypatch.context() as snapshot_patch:
+            snapshot_patch.setattr(codex_hook_recovery.os, "open", deny_snapshot)
+            with pytest.raises(ValueError, match="could not be parsed"):
+                DevinHarnessAdapter().install(ctx)
         assert config_path.read_bytes() == original_bytes
 
         # Detection runs in the resident, so the file must be unreadable on disk.
