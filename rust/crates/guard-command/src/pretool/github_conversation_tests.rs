@@ -10,6 +10,10 @@ fn words(command: &str) -> Vec<String> {
 }
 
 fn segment(arguments: &[&str]) -> CommandSegmentV1 {
+    prefixed_segment(&[], arguments)
+}
+
+fn prefixed_segment(names: &[&str], arguments: &[&str]) -> CommandSegmentV1 {
     let arguments: Vec<String> = arguments.iter().map(|word| (*word).to_owned()).collect();
     let text = format!("gh {}", arguments.join(" "));
     CommandSegmentV1 {
@@ -18,7 +22,7 @@ fn segment(arguments: &[&str]) -> CommandSegmentV1 {
             .collect(),
         executable: Some("gh".to_owned()),
         arguments,
-        environment_names: Vec::new(),
+        environment_names: names.iter().map(|name| (*name).to_owned()).collect(),
         wrapper_chain: Vec::new(),
         path_overridden: false,
         execution_context: "direct".to_owned(),
@@ -57,10 +61,14 @@ impl Checkout {
     }
 
     fn allows(&self, arguments: &[&str]) -> bool {
+        self.allows_segment(&segment(arguments))
+    }
+
+    fn allows_segment(&self, segment: &CommandSegmentV1) -> bool {
         let home = self.root.to_str().unwrap();
         let cwd = self.project.to_str().unwrap();
         current_repository_write(
-            &segment(arguments),
+            segment,
             PathContext {
                 home_dir: Some(home),
                 cwd: Some(cwd),
@@ -200,7 +208,7 @@ fn selectors_and_origin_urls_name_one_github_repository() {
 fn origin_must_be_plain_and_unambiguous() {
     let plain = Checkout::new("plain", ORIGIN);
     assert_eq!(
-        origin_repository(&plain.project),
+        origin_repository(&plain.project, true),
         Some(("example-org".to_owned(), "app-portal".to_owned()))
     );
     for (label, config) in [
@@ -231,7 +239,7 @@ fn origin_must_be_plain_and_unambiguous() {
         ),
     ] {
         let checkout = Checkout::new(label, config);
-        assert_eq!(origin_repository(&checkout.project), None, "{label}");
+        assert_eq!(origin_repository(&checkout.project, false), None, "{label}");
     }
 }
 
@@ -356,4 +364,56 @@ fn other_repositories_secrets_and_unsafe_files_stay_reviewed() {
         &no_context,
         PathContext::default()
     ));
+}
+
+#[test]
+fn a_comment_without_a_selector_needs_origin_as_the_base_repository() {
+    let reply = ["pr", "comment", "12", "--body", "Done."];
+    let selected = [
+        "pr",
+        "comment",
+        "12",
+        "-R",
+        "example-org/app-portal",
+        "--body",
+        "Done.",
+    ];
+    let set_default = format!("{ORIGIN}\tgh-resolved = base\n");
+    for (label, config) in [
+        ("single", ORIGIN.to_owned()),
+        ("set-default", set_default),
+        (
+            "push-default",
+            format!("[remote]\n\tpushDefault = origin\n{ORIGIN}"),
+        ),
+    ] {
+        let checkout = Checkout::new(label, &config);
+        assert!(checkout.allows(&reply), "{label}");
+        assert!(checkout.allows(&selected), "{label}");
+    }
+    // gh ranks `upstream` and `github` above `origin`, and honors any remote
+    // `gh repo set-default` marked, so a selector-less comment could land on
+    // a repository never compared with origin. `-R origin` still passes.
+    let upstream = format!(
+        "{ORIGIN}[remote \"upstream\"]\n\turl = https://github.com/other-org/app-portal.git\n"
+    );
+    let other_default = format!(
+        "{ORIGIN}[remote \"fork\"]\n\turl = https://github.com/other-org/app-portal.git\n\tgh-resolved = base\n"
+    );
+    let resolved_elsewhere = format!("{ORIGIN}\tgh-resolved = other-org/app-portal\n");
+    for (label, config, selected_passes) in [
+        ("upstream", upstream.as_str(), true),
+        ("other-default", other_default.as_str(), true),
+        ("resolved-elsewhere", resolved_elsewhere.as_str(), true),
+        ("no-origin", "[core]\n\tbare = false\n", false),
+    ] {
+        let checkout = Checkout::new(label, config);
+        assert!(!checkout.allows(&reply), "{label}");
+        assert_eq!(checkout.allows(&selected), selected_passes, "{label}");
+    }
+    // `GH_REPO` names the base repository before any remote when no `-R` is
+    // given; `-R` itself still wins over it.
+    let checkout = Checkout::new("gh-repo", ORIGIN);
+    assert!(!checkout.allows_segment(&prefixed_segment(&["GH_REPO"], &reply)));
+    assert!(checkout.allows_segment(&prefixed_segment(&["GH_REPO"], &selected)));
 }

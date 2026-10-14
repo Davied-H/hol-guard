@@ -3,8 +3,10 @@
 //! comment or review-comment reply through `gh api`.
 //!
 //! The write can only reach the work tree's own repository: a `--repo`
-//! selector and a `gh api` path must name its `origin`, and a command without
-//! a selector targets the checkout gh resolves from the working directory.
+//! selector and a `gh api` path must name its `origin`. A command without a
+//! selector posts to the base repository gh resolves from the checkout, so it
+//! passes only when that can be nothing but `origin`: no `GH_REPO`, no other
+//! remote, and no `gh repo set-default` choice other than origin itself.
 //! The posted text is literal and must carry no credential shape, so the
 //! comment cannot carry a secret out. A `--body-file` must be a plain,
 //! bounded file in the work tree or a private temporary directory, and its
@@ -56,10 +58,14 @@ pub(crate) fn current_repository_write(
         };
         (selector, body)
     };
+    let sole = selector.is_none();
+    if sole && base_repository_override(segment) {
+        return false;
+    }
+    let Some((origin_owner, origin_repository)) = origin_repository(&root, sole) else {
+        return false;
+    };
     if let Some((owner, repository)) = selector {
-        let Some((origin_owner, origin_repository)) = origin_repository(&root) else {
-            return false;
-        };
         if !owner.eq_ignore_ascii_case(&origin_owner)
             || !repository.eq_ignore_ascii_case(&origin_repository)
         {
@@ -76,6 +82,17 @@ pub(crate) fn current_repository_write(
     !text.trim().is_empty()
         && text.len() <= MAX_BODY_BYTES
         && !super::curl_reads::url_secrets::text_carries_secret(&text)
+}
+
+/// gh takes the base repository from a non-empty `GH_REPO` before any
+/// remote when no `--repo` is given: from the segment's own prefix, or from
+/// the environment it inherits, read here from this runtime's environment.
+fn base_repository_override(segment: &CommandSegmentV1) -> bool {
+    segment
+        .environment_names
+        .iter()
+        .any(|name| name == "GH_REPO")
+        || std::env::var_os("GH_REPO").is_some_and(|value| !value.is_empty())
 }
 
 /// `[--repo <selector>] issue|pr comment [<number>] (--body <text> |
@@ -216,7 +233,13 @@ fn repository_selector(value: &str) -> Option<(&str, &str)> {
 /// repository's own configuration names, or `None` when there is none, they
 /// disagree, or the file uses a form this reader does not model (includes,
 /// URL rewrites, quoting or inline comments).
-fn origin_repository(root: &Path) -> Option<(String, String)> {
+///
+/// With `sole`, origin must also be the base repository gh resolves without
+/// a selector. gh first honors a remote's `gh-resolved` key (`gh repo
+/// set-default`) and otherwise ranks `upstream` and `github` above `origin`,
+/// so any other remote, or a `gh-resolved` value on origin other than
+/// `base`, returns `None`.
+fn origin_repository(root: &Path, sole: bool) -> Option<(String, String)> {
     let config = super::workspace_git_config::repository_config(root).ok()??;
     let mut origin = false;
     let mut found: Option<(String, String)> = None;
@@ -237,13 +260,23 @@ fn origin_repository(root: &Path) -> Option<(String, String)> {
             {
                 return None;
             }
-            origin = section == "remote" && subsection == Some("\"origin\"");
+            let remote = section == "remote";
+            origin = remote && subsection == Some("\"origin\"");
+            if sole && remote && subsection.is_some() && !origin {
+                return None;
+            }
             continue;
         }
         let (key, value) = line
             .split_once('=')
             .map_or((line, ""), |(key, value)| (key.trim(), value.trim()));
-        if !origin || !key.eq_ignore_ascii_case("url") {
+        if !origin {
+            continue;
+        }
+        if sole && key.eq_ignore_ascii_case("gh-resolved") && value != "base" {
+            return None;
+        }
+        if !key.eq_ignore_ascii_case("url") {
             continue;
         }
         if value.contains(['"', '\\', '#', ';']) {
