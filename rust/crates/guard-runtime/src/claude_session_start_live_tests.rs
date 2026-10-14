@@ -31,6 +31,7 @@ fn live_state(home: &GuardHome, port: u16) -> Map<String, Value> {
     let mut state = home.state(port);
     state.insert("pid".to_owned(), json!(std::process::id()));
     state.insert("compatibility_version".to_owned(), json!(2));
+    state.insert("package_version".to_owned(), json!(crate::PACKAGE_VERSION));
     state.insert(
         "auth_token_id".to_owned(),
         json!(hex::encode(Sha256::digest(TOKEN.as_bytes()))),
@@ -229,4 +230,32 @@ fn no_daemon_listening_is_refused() {
     let (home, listener, _state) = live_home("ss-live-closed", |_| {});
     drop(listener);
     assert!(verify(&home).is_err());
+}
+
+#[test]
+fn daemon_of_another_version_or_host_is_refused_before_any_connection() {
+    let edits: [fn(&mut Map<String, Value>); 5] = [
+        |state| {
+            state.insert("package_version".to_owned(), json!("0.0.0-stale"));
+        },
+        |state| {
+            state.remove("package_version");
+        },
+        |state| {
+            state.insert("package_version".to_owned(), json!(1));
+        },
+        |state| {
+            state.insert("host".to_owned(), json!("localhost"));
+        },
+        |state| {
+            state.insert("host".to_owned(), json!("::1"));
+        },
+    ];
+    for (index, edit) in edits.into_iter().enumerate() {
+        let (home, listener, _state) = live_home(&format!("ss-live-current-{index}"), edit);
+        listener.set_nonblocking(true).unwrap();
+        assert!(verify(&home).is_err(), "daemon {index} passed");
+        // Nothing reached the listener: the gate ran before any connection.
+        assert!(listener.accept().is_err(), "daemon {index} was contacted");
+    }
 }

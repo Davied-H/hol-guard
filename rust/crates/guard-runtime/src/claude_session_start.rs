@@ -16,9 +16,9 @@
 //! - the Guard entries of the settings file already equal what the Python
 //!   refresh would write, per `claude_session_start_contract`;
 //! - the daemon is verified live by `claude_session_start_live`: the
-//!   authenticated state, the bound auth token, the live-state gate, a
-//!   signed identity challenge, a current `/healthz` and an unchanged
-//!   generation.
+//!   authenticated state of a daemon of this package version on
+//!   `127.0.0.1`, the bound auth token, the live-state gate, a signed
+//!   identity challenge, a current `/healthz` and an unchanged generation.
 //!
 //! Only then does it print the context. Any failure, including a parse
 //! error, replaces this process with the installer's Python SessionStart
@@ -32,10 +32,14 @@
 //! differs, so every session start hands off and the Python refresh rewrites
 //! the entries the new version wants, exactly as before this lane existed.
 //!
-//! Known gap: the daemon's runtime tree signature is not checked here. A
-//! developer editable install where only Python files changed (so the
-//! runtime build is unchanged) keeps the running daemon and the installed
-//! hook entries until a session start hands off to Python.
+//! A daemon left running from another package version is never accepted,
+//! so the Python hook restarts it.
+//!
+//! Known gap, same-version tree changes only: the daemon's runtime tree
+//! signature is not checked here. A developer editable install where only
+//! Python files changed (so the package version and runtime build are
+//! unchanged) keeps the running daemon and the installed hook entries until
+//! a session start hands off to Python.
 
 use std::fs;
 use std::io::{self, Write};

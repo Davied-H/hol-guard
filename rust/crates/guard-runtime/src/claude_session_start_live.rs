@@ -2,17 +2,21 @@
 //!
 //! A read-only port of the gates `_live_guard_daemon_identity` in
 //! `daemon/manager.py` applies before it trusts a running daemon, run in
-//! process: the HMAC-authenticated `daemon-state.json`, the private auth
-//! token bound to it (`identity_binding`), the state and pid gate
-//! (`live_state_gate`), a signed identity challenge for `SessionStart` on
-//! the daemon's own listener, a current `/healthz` (`healthz_current`), and
-//! an unchanged daemon generation afterwards. It never mints the token,
-//! never writes daemon state and never starts a daemon.
+//! process: the HMAC-authenticated `daemon-state.json`, a daemon of this
+//! package version on the IPv4 loopback, the private auth token bound to it
+//! (`identity_binding`), the state and pid gate (`live_state_gate`), a
+//! signed identity challenge for `SessionStart` on the daemon's own
+//! listener, a current `/healthz` (`healthz_current`) on that same
+//! listener, and an unchanged daemon generation afterwards. It never mints
+//! the token, never writes daemon state and never starts a daemon.
 //!
-//! Python also compares the daemon's runtime tree signature with the
-//! installed source. This lane does not: a developer editable install where
-//! only Python files changed keeps the running daemon until the next
-//! session start that hands off to Python.
+//! The version gate is stricter than `daemon_state_matches_current_runtime`:
+//! a daemon left running from another package version is never accepted,
+//! so the Python hook restarts it. Python also compares the daemon's
+//! runtime tree signature with the installed source. This lane does not, so
+//! the one remaining gap is a same-version tree change: a developer
+//! editable install where only Python files changed keeps the running
+//! daemon until the next session start that hands off to Python.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -99,6 +103,20 @@ fn live_port(state: &AuthenticatedState) -> Result<u16, String> {
         .ok_or_else(|| "daemon port is invalid".to_owned())
 }
 
+/// A daemon of this package version, listening on the IPv4 loopback the
+/// installed hook URL names, so the challenge and the health check reach
+/// the listener the hook entries point at.
+fn current_daemon(state: &AuthenticatedState) -> Result<(), String> {
+    if state.payload.get("package_version").and_then(Value::as_str) != Some(crate::PACKAGE_VERSION)
+    {
+        return Err("daemon runs another package version".to_owned());
+    }
+    if state.text("host") != LOOPBACK {
+        return Err("daemon host is not the IPv4 loopback".to_owned());
+    }
+    Ok(())
+}
+
 /// A signed identity challenge for `SessionStart` on the daemon listener.
 fn challenge_verified(
     state: &AuthenticatedState,
@@ -106,7 +124,7 @@ fn challenge_verified(
     hook_event: &str,
     deadline: Instant,
 ) -> Result<(), String> {
-    let mut connection = LoopbackConnection::new(state.text("host"), port);
+    let mut connection = LoopbackConnection::new(LOOPBACK, port);
     let nonce = new_nonce().map_err(|error| error.to_string())?;
     let challenge = request_identity_challenge(
         &mut connection,
@@ -148,6 +166,7 @@ pub(crate) fn verified_daemon_url(
     deadline: Instant,
 ) -> Result<DaemonUrl, String> {
     let state = authenticated_state(state_path)?;
+    current_daemon(&state)?;
     token_bound(state_path, &state)?;
     let port = live_port(&state)?;
     challenge_verified(&state, port, hook_event, deadline)?;
