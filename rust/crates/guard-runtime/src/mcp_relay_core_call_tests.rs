@@ -19,6 +19,7 @@ impl RelayAuthority for ForwardingAuthority {
         &mut self,
         message: &Value,
         _params: &Map<String, Value>,
+        _order: Option<&[String]>,
         catalog: &RelayCatalog,
     ) -> ToolCallVerdict {
         self.decided += 1;

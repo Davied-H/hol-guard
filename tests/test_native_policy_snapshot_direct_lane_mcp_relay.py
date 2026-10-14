@@ -1,0 +1,155 @@
+from __future__ import annotations
+
+import threading
+from dataclasses import replace
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+from codex_plugin_scanner.guard.config import GuardConfig
+from codex_plugin_scanner.guard.native_policy_snapshot_direct_lane_mcp_relay import (
+    MCP_RELAY_BINDING_KEY,
+    MCP_RELAY_DECIDE_FEATURE,
+    MCP_RELAY_VIEW_SCHEMA,
+    NativePolicySnapshotMcpRelayMixin,
+    extension_layers,
+    harness_view,
+    mcp_relay_view,
+    uniform_harness_views,
+)
+
+FEATURES = (MCP_RELAY_DECIDE_FEATURE,)
+LAYERS: list[object] = [{"kind": "local-admin", "global_lockdown": False, "controls": []}]
+
+
+def _config(tmp_path: Path, **fields: object) -> GuardConfig:
+    return replace(GuardConfig(guard_home=tmp_path, workspace=None), **fields)
+
+
+def test_a_harness_view_carries_the_proxy_config_and_hash_fields(tmp_path: Path) -> None:
+    view = harness_view(_config(tmp_path, sandbox_analysis="on", managed_policy_hash="a" * 64), "codex")
+
+    assert view is not None
+    config = view["config"]
+    hash_config = view["hash_config"]
+    assert isinstance(config, dict) and isinstance(hash_config, dict)
+    assert config["mode"] == GuardConfig(guard_home=tmp_path, workspace=None).mode
+    assert set(config) == {
+        "mode",
+        "default_action",
+        "artifact_actions",
+        "publisher_actions",
+        "harness_actions",
+        "risk_actions",
+        "harness_risk_actions",
+        "security_level",
+        "protection_posture",
+        "protection_posture_explicit",
+        "managed_locked_settings",
+    }
+    assert hash_config == {
+        **config,
+        "managed_policy_hash": "a" * 64,
+        "managed_policy_status": "absent",
+        "sandbox_analysis": "on",
+    }
+
+
+def test_a_per_harness_posture_changes_only_that_harness(tmp_path: Path) -> None:
+    config = _config(tmp_path, harness_postures={"cursor": "watch"})
+
+    assert harness_view(config, "cursor") != harness_view(config, "codex")
+    assert harness_view(config, "codex") == harness_view(_config(tmp_path), "codex")
+
+
+def test_only_harnesses_every_config_agrees_on_are_bound(tmp_path: Path) -> None:
+    home = _config(tmp_path)
+    workspace = _config(tmp_path, harness_postures={"cursor": "watch"})
+
+    assert set(uniform_harness_views([home])) == {"codex", "copilot", "cursor", "opencode"}
+    assert set(uniform_harness_views([home, workspace])) == {"codex", "copilot", "opencode"}
+    assert uniform_harness_views([]) == {}
+
+
+def test_a_view_the_resident_would_read_differently_binds_nothing(tmp_path: Path) -> None:
+    assert harness_view(_config(tmp_path, risk_actions={"network": 1.5}), "codex") is None
+    assert harness_view(SimpleNamespace(), "codex") is None
+    assert uniform_harness_views([_config(tmp_path, risk_actions={"network": 1.5})]) == {}
+
+
+def test_the_view_needs_a_bound_harness_and_keeps_unreadable_layers_out(tmp_path: Path) -> None:
+    harnesses = uniform_harness_views([_config(tmp_path)])
+
+    assert mcp_relay_view({}, LAYERS) is None
+    assert mcp_relay_view(None, LAYERS) is None
+    assert mcp_relay_view(harnesses, LAYERS) == {
+        "schema": MCP_RELAY_VIEW_SCHEMA,
+        "harnesses": harnesses,
+        "extension_layers": LAYERS,
+    }
+    assert mcp_relay_view(harnesses, None) == {"schema": MCP_RELAY_VIEW_SCHEMA, "harnesses": harnesses}
+
+
+def test_extension_layers_fail_closed_when_the_store_cannot_read_them() -> None:
+    class Broken:
+        def read_extension_control_authority_for_registry(self, registry: object) -> object:
+            raise RuntimeError("unreadable")
+
+    assert extension_layers(Broken()) is None
+    assert extension_layers(object()) == []
+
+
+class _Publisher(NativePolicySnapshotMcpRelayMixin):
+    def __init__(self, tmp_path: Path) -> None:
+        self._condition = threading.Condition()
+        self._publish_event = threading.Event()
+        self.store = object()
+        self._compiled_mcp_relay_harnesses: dict[str, object] | None = uniform_harness_views([_config(tmp_path)])
+        self._direct_lane_ack_target: tuple[int, str] | None = (7, "digest")
+        self.rebound = 0
+
+    def _rebind_direct_lane(self) -> None:
+        self.rebound += 1
+        self._direct_lane_mcp_relay = None
+
+
+def test_the_binding_carries_the_view_only_for_a_resident_that_accepts_it(tmp_path: Path) -> None:
+    publisher = _Publisher(tmp_path)
+
+    bound = publisher._with_mcp_relay_view({"generation": 1}, FEATURES)
+    assert bound is not None
+    view = bound[MCP_RELAY_BINDING_KEY]
+    assert isinstance(view, dict) and set(view["harnesses"]) == {"codex", "copilot", "cursor", "opencode"}
+    assert publisher._with_mcp_relay_view({"generation": 1}, ()) == {"generation": 1}
+    assert publisher._with_mcp_relay_view(None, FEATURES) is None
+    publisher._compiled_mcp_relay_harnesses = {}
+    assert publisher._with_mcp_relay_view({"generation": 1}, FEATURES) == {"generation": 1}
+
+    publisher._bind_mcp_relay_view(bound, FEATURES)
+    assert publisher._direct_lane_mcp_relay == view
+    publisher._bind_mcp_relay_view(bound, ())
+    assert publisher._direct_lane_mcp_relay is None
+
+
+@pytest.mark.parametrize("compiled", [None, {}])
+def test_a_moved_view_rebinds_the_lane(tmp_path: Path, compiled: dict[str, object] | None) -> None:
+    publisher = _Publisher(tmp_path)
+    publisher._bind_mcp_relay_view(publisher._with_mcp_relay_view({}, FEATURES), FEATURES)
+    publisher._recheck_direct_lane_mcp_relay()
+    assert publisher.rebound == 0
+
+    publisher._compiled_mcp_relay_harnesses = compiled
+    publisher._recheck_direct_lane_mcp_relay()
+    assert publisher.rebound == 1
+    assert publisher._direct_lane_mcp_relay is None
+
+
+def test_an_unbound_or_closed_lane_is_not_rechecked(tmp_path: Path) -> None:
+    publisher = _Publisher(tmp_path)
+    publisher._compiled_mcp_relay_harnesses = None
+    publisher._recheck_direct_lane_mcp_relay()
+    publisher._bind_mcp_relay_view(publisher._with_mcp_relay_view({}, FEATURES), FEATURES)
+    publisher._direct_lane_ack_target = None
+    publisher._recheck_direct_lane_mcp_relay()
+    assert publisher.rebound == 0

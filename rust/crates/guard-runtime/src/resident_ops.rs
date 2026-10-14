@@ -115,6 +115,11 @@ pub(crate) fn evaluate_resident_bytes(
                     policy_store.ok_or_else(|| "native_policy_snapshot_unavailable".to_owned())?;
                 crate::hook_direct_evidence::drain(&request, policy_store.direct_evidence())
             }
+            ResidentOperationV1::McpRelayDecide(request) => {
+                let policy_store =
+                    policy_store.ok_or_else(|| "native_policy_snapshot_unavailable".to_owned())?;
+                crate::mcp_relay_decide::evaluate(request, policy_store)
+            }
             ResidentOperationV1::ApprovalChallenge(request) => {
                 let policy_store =
                     policy_store.ok_or_else(|| "native_policy_snapshot_unavailable".to_owned())?;
@@ -514,6 +519,7 @@ fn operation_guard_home(operation: &ResidentOperationV1) -> Option<&str> {
         ResidentOperationV1::ArchiveAcquisition(request) => Some(&request.guard_home),
         ResidentOperationV1::HookDirect(request) => Some(&request.guard_home),
         ResidentOperationV1::HookDirectEvidenceDrain(request) => Some(&request.guard_home),
+        ResidentOperationV1::McpRelayDecide(request) => Some(&request.guard_home),
         ResidentOperationV1::ApprovalReuseDiagnostic(request) => Some(&request.guard_home),
         ResidentOperationV1::ClaimApprovalReuseDecisions(request) => Some(&request.guard_home),
         ResidentOperationV1::GuardStore(request) => Some(&request.guard_home),
