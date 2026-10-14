@@ -246,9 +246,36 @@ fn assignment_value(matched: &str) -> Option<&str> {
     Some(value)
 }
 
+/// Whether the text right after a matched assignment continues the value as
+/// an expression, as in `'mock-' + real_secret` or `"mock-"$REAL`. The match
+/// then holds only a prefix of the value, so its wording proves nothing.
+fn continues_as_expression(rest: &str) -> bool {
+    let line = rest.split(['\r', '\n']).next().unwrap_or_default();
+    let mut characters = line.chars();
+    match characters.next() {
+        None => return false,
+        Some('.') => {
+            return characters.next().is_some_and(|next| !next.is_whitespace());
+        }
+        Some(first) if !first.is_whitespace() => {
+            return !matches!(first, ',' | ';' | ')' | ']' | '}' | '`');
+        }
+        Some(_) => {}
+    }
+    let trimmed = line.trim_start();
+    if trimmed.starts_with("&&") {
+        return false;
+    }
+    matches!(
+        trimmed.chars().next(),
+        Some('+' | '.' | '|' | '~' | '%' | '&' | '$' | '"' | '\'')
+    )
+}
+
 fn is_sample(
     classifier: &str,
     matched: &str,
+    continued: bool,
     suppress_samples: bool,
     documentation_sample_context: bool,
 ) -> bool {
@@ -280,7 +307,8 @@ fn is_sample(
     }
     assignment_value(matched).is_some_and(|value| {
         doc_sample_regex().is_match(value)
-            || (declared_sample_value_regex().is_match(value)
+            || (!continued
+                && declared_sample_value_regex().is_match(value)
                 && !deployed_value_marker_regex().is_match(value)
                 && !has_long_alphanumeric_run(value))
     })
@@ -298,6 +326,7 @@ fn counted_matches<'t>(
         !is_sample(
             classifier,
             matched.as_str(),
+            continues_as_expression(&text[matched.end()..]),
             suppress_samples,
             documentation_sample_context,
         )
@@ -564,6 +593,40 @@ mod tests {
                     .any(|matched| matched.classifier == "credential-assignment"),
                 "{text:?}"
             );
+        }
+    }
+
+    #[test]
+    fn declared_sample_prefixes_of_longer_expressions_are_reported() {
+        for text in [
+            "password = 'mock-' + real_secret",
+            "password = 'mock-' . $real_secret;",
+            "password = 'mock-'.$real_secret;",
+            "password = \"mock-\"$REAL_SECRET",
+            "password = 'mock-' 'real-secret-tail'",
+            "password = 'mock-' || real_secret",
+        ] {
+            let result = scan_text(text, false, true, MAX_SCAN_BYTES, None);
+            assert!(
+                result
+                    .matches
+                    .iter()
+                    .any(|matched| matched.classifier == "credential-assignment"),
+                "{text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn declared_sample_values_ending_a_statement_stay_suppressed() {
+        for text in [
+            "const apiKey = 'stub_token'.",
+            "const apiKey = 'stub_token' && run",
+            "call(api_key='stub_token')",
+            "{ \"token\": \"mock-token\", \"other\": 1 }",
+        ] {
+            let result = scan_text(text, false, true, MAX_SCAN_BYTES, None);
+            assert!(result.matches.is_empty(), "{text:?}");
         }
     }
 
