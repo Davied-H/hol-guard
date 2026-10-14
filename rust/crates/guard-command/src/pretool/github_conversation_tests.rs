@@ -126,7 +126,8 @@ fn api_write_accepts_only_comment_and_reply_posts() {
         "repos/example-org/app-portal/issues/12/comments -fbody=text --jq .id --silent",
         "-XPOST repos/example-org/app-portal/issues/12/comments --field=body=text",
     ] {
-        let parsed = api_write(&words(command));
+        let args = words(command);
+        let parsed = api_write(&args);
         assert_eq!(
             parsed.map(|(owner, repository, _)| (owner, repository)),
             Some(("example-org", "app-portal")),
