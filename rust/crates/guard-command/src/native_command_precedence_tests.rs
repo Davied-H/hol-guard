@@ -70,7 +70,6 @@ const GIT_COMMANDS_RUST_HOLDS: &[&str] = &[
     "git push --force origin main",
     "git push --delete origin feature/x",
     "git push https://example.invalid/project.git HEAD",
-    "git push --receive-pack=payload origin main",
     "git -c http.extraHeader=x push origin main",
     "git pull https://example.invalid/project.git main",
     "git fetch https://example.invalid/project.git",
@@ -158,6 +157,14 @@ fn an_explicit_git_allow_never_settles_configured_programs() {
         "git -c credential.helper='!payload' push origin main",
         "git -c diff.external=payload diff --stat",
         "git --exec-path=/tmp/helpers status --short",
+        // Subcommand options that run a program locally.
+        "git fetch --upload-pack='sh -c x' ../repo",
+        "git fetch origin --upload-pack=payload",
+        "git push --receive-pack=x ../repo",
+        "git push --receive-pack=payload origin main",
+        "git clone -u x ../repo dst",
+        "git clone --template=/tmp/t https://example.invalid/project.git dst",
+        "git clone -c core.fsmonitor=x https://example.invalid/project.git dst",
     ] {
         let result = evaluate(&enabled, command);
         assert_ne!(
@@ -171,6 +178,8 @@ fn an_explicit_git_allow_never_settles_configured_programs() {
         "git -c http.extraHeader=x push origin main",
         "git -c user.name=x -c commit.gpgSign=false commit -m x",
         "git -c core.hooksPath=/dev/null -c core.quotepath=false push origin main",
+        "git push -u origin feature",
+        "git fetch -u origin",
     ] {
         let result = evaluate(&enabled, command);
         assert_eq!(
@@ -205,6 +214,20 @@ fn configured_programs_are_recognised_by_key_and_value() {
         "git --config-env=core.pager=PAGER log",
         "GIT_PAGER=payload git log",
         "git --unknown-option status",
+        "git fetch --upload-pack='sh -c x' ../repo",
+        "git fetch --upload=x ../repo",
+        "git push --receive-pack=x ../repo",
+        "git ls-remote -u x ../repo",
+        "git ls-remote -qux ../repo",
+        "git rebase --exec 'make test' main",
+        "git clone -u x ../repo dst",
+        "git clone -qu x ../repo dst",
+        "git clone --template=/tmp/t https://example.invalid/project.git dst",
+        "git init --template /tmp/t",
+        "git clone -c core.fsmonitor=x https://example.invalid/project.git dst",
+        "git clone -ccore.sshCommand=x https://example.invalid/project.git dst",
+        "git clone --config alias.x=status https://example.invalid/project.git dst",
+        "git clone --config=core.pager=x https://example.invalid/project.git dst",
     ] {
         assert!(runs(command), "{command}");
     }
@@ -216,6 +239,14 @@ fn configured_programs_are_recognised_by_key_and_value() {
         "git --config-env=user.email=EMAIL commit -m x",
         "GIT_AUTHOR_NAME=x git commit -m x",
         "git commit -c HEAD",
+        "git push -u origin feature",
+        "git fetch -u origin",
+        "git pull -u origin main",
+        "git clone -c user.name=x https://example.invalid/project.git dst",
+        "git clone --config=http.extraHeader=x https://example.invalid/project.git dst",
+        "git clone --depth 1 https://example.invalid/project.git dst",
+        "git clone -b main -o upstream https://example.invalid/project.git dst",
+        "git log -- --exec",
     ] {
         assert!(!runs(command), "{command}");
     }

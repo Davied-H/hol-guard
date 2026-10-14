@@ -236,12 +236,11 @@ fn an_explicitly_allowed_origin_refresh_settles_only_plain_origin_fetches() {
         "enabled",
     ));
     // The user's Allow takes precedence over Rust's own view of the fetch,
-    // including an unverified remote or a remote-side program.
+    // including an unverified remote.
     for command in [
         "git fetch origin",
         "git fetch origin main",
         "pwd; git fetch origin main",
-        "git fetch origin --upload-pack=payload",
         "git fetch https://example.invalid/project.git",
     ] {
         let result = evaluate(&binding, command);
@@ -252,10 +251,12 @@ fn an_explicitly_allowed_origin_refresh_settles_only_plain_origin_fetches() {
         );
         assert!(result.explicitly_benign, "{command}");
     }
-    // A command that may also belong to a permission left at its default, or
-    // runs anything else, keeps its review.
+    // A command that may also belong to a permission left at its default,
+    // names a program Git runs locally, or runs anything else, keeps its
+    // review.
     for command in [
         "git -c core.sshCommand=payload fetch origin",
+        "git fetch origin --upload-pack=payload",
         "git -c x fetch origin",
         "git fetch origin; rm -rf /tmp/target",
         "git fetch origin; cat .env",

@@ -69,11 +69,12 @@ const INERT_KEYS: &[&str] = &[
     "pull.rebase",
 ];
 
-/// Whether a Git segment carries configuration that can make Git run a
-/// program Guard cannot read: any alias, a program-valued or unknown key
-/// from `-c`, any non-inert key from `--config-env`, `--exec-path`, or a
-/// `GIT_*` environment prefix other than the commit identity. Unknown keys
-/// and unparseable global options fail closed.
+/// Whether a Git segment carries configuration or options that can make Git
+/// run a program Guard cannot read: any alias, a program-valued or unknown
+/// key from `-c`, any non-inert key from `--config-env`, `--exec-path`, a
+/// `GIT_*` environment prefix other than the commit identity, or a
+/// subcommand option naming a local program. Unknown keys and unparseable
+/// global options fail closed.
 pub(crate) fn runs_configured_program(segment: &CommandSegmentV1) -> bool {
     if segment.executable.as_deref() != Some("git") {
         return false;
@@ -109,12 +110,97 @@ pub(crate) fn runs_configured_program(segment: &CommandSegmentV1) -> bool {
         let Some(setting) = setting else {
             return true;
         };
-        // `-c <key>` sets the boolean true. `--config-env=<key>=<variable>`
-        // names a variable, not the value.
-        let (key, value) = setting.split_once('=').unwrap_or((setting, "true"));
-        let value = (!from_environment).then_some(value);
-        if setting_runs_program(&key.to_ascii_lowercase(), value) {
+        if config_setting_runs_program(setting, from_environment) {
             return true;
+        }
+    }
+    subcommand_runs_program(&arguments[command_index..])
+}
+
+/// `-c <key>` sets the boolean true. `--config-env=<key>=<variable>` names a
+/// variable, not the value.
+fn config_setting_runs_program(setting: &str, from_environment: bool) -> bool {
+    let (key, value) = setting.split_once('=').unwrap_or((setting, "true"));
+    setting_runs_program(
+        &key.to_ascii_lowercase(),
+        (!from_environment).then_some(value),
+    )
+}
+
+/// Subcommand options that make Git run a program locally: the pack programs
+/// of a local transport, `--exec`, hook templates for a new repository, and
+/// settings `clone` writes into the repository it creates. Git accepts any
+/// unambiguous prefix of a long option, so prefixes count too. Options after
+/// `--` are operands.
+fn subcommand_runs_program(arguments: &[String]) -> bool {
+    let Some((command, rest)) = arguments.split_first() else {
+        return false;
+    };
+    let command = command.as_str();
+    let mut index = 0;
+    while let Some(argument) = rest.get(index) {
+        index += 1;
+        let argument = argument.as_str();
+        if argument == "--" {
+            break;
+        }
+        if let Some(long) = argument.strip_prefix("--") {
+            let (name, attached) = match long.split_once('=') {
+                Some((name, value)) => (name, Some(value)),
+                None => (long, None),
+            };
+            let names = |option: &str| !name.is_empty() && option.starts_with(name);
+            if names("upload-pack")
+                || names("receive-pack")
+                || names("exec")
+                || (matches!(command, "clone" | "init") && names("template"))
+            {
+                return true;
+            }
+            if command == "clone" && names("config") {
+                let setting = attached.or_else(|| rest.get(index).map(String::as_str));
+                if attached.is_none() {
+                    index += 1;
+                }
+                if setting.is_none_or(|setting| config_setting_runs_program(setting, false)) {
+                    return true;
+                }
+            }
+            continue;
+        }
+        let Some(cluster) = argument.strip_prefix('-').filter(|rest| !rest.is_empty()) else {
+            continue;
+        };
+        match command {
+            // `-u <program>` is `--upload-pack` here; for push, fetch and pull
+            // it sets the upstream or updates HEAD.
+            "ls-remote" if cluster.contains('u') => return true,
+            "clone" => {
+                for (offset, flag) in cluster.char_indices() {
+                    let attached = &cluster[offset + flag.len_utf8()..];
+                    match flag {
+                        'u' => return true,
+                        'c' | 'o' | 'b' | 'j' => {
+                            let value = if attached.is_empty() {
+                                index += 1;
+                                rest.get(index - 1).map(String::as_str)
+                            } else {
+                                Some(attached)
+                            };
+                            if flag == 'c'
+                                && value.is_none_or(|setting| {
+                                    config_setting_runs_program(setting, false)
+                                })
+                            {
+                                return true;
+                            }
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
         }
     }
     false
