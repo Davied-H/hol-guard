@@ -458,7 +458,9 @@ fn grep_scope(
         }
     }
     let targets = search_targets(input_path(input, signals)?.unwrap_or("."), context)?;
-    // A single file is proven by the ordinary bounded file-read path.
+    // A single file is proven by the ordinary bounded file-read path. An
+    // entry of a list has no such fallback, so it carries the same proof here.
+    let list = targets.len() > 1;
     targets
         .into_iter()
         .all(|target| {
@@ -466,7 +468,12 @@ fn grep_scope(
                 target,
                 context.path.home_dir,
                 context.path.cwd,
-            )
+            ) || (list
+                && super::super::read_paths::existing_regular_read_target(
+                    target,
+                    context.path.home_dir,
+                    context.path.cwd,
+                ))
         })
         .then(|| {
             directory_allow(

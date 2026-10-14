@@ -383,6 +383,29 @@ fn semicolon_path_lists_prove_every_entry() {
     );
     assert!(allowed(&result), "{}", result.reason_code);
     assert_eq!(result.reason_code, "native_bounded_search_scope");
+    // Agents often grep a few known files at once. Each file entry needs the
+    // bounded file-read proof a lone file gets.
+    let files = format!(
+        "{};{};{}",
+        f.project.join("calc.py").display(),
+        f.project.join("src/main.rs").display(),
+        sibling.join("a.txt").display()
+    );
+    for path in [files.as_str(), "calc.py; src/main.rs; src"] {
+        let result = omp(&f, "grep", json!({"pattern": "x", "path": path}));
+        assert!(allowed(&result), "{path}: {}", result.reason_code);
+        assert_eq!(result.reason_code, "native_bounded_search_scope");
+    }
+    for path in [
+        "calc.py; ~/.ssh/id_rsa",
+        "calc.py; ~/.codex/auth.json",
+        "calc.py; ~/secret-dir/.env",
+        "calc.py; missing.py",
+        "calc.py; src/*.rs",
+    ] {
+        let result = omp(&f, "grep", json!({"pattern": "x", "path": path}));
+        assert!(!allowed(&result), "{path}: {}", result.reason_code);
+    }
     for path in [
         "src; ~/.ssh",
         "src; ~/secret-dir",
