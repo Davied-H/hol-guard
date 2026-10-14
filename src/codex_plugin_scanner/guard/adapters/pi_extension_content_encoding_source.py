@@ -248,6 +248,13 @@ function isVirtualSourcePath(path: string): boolean {
   return /^[A-Za-z][A-Za-z0-9+.-]*:/.test(path);
 }
 
+// OMP answers `file.json?q=<filter>` with the filter's output, not the
+// file's bytes, so that output is reviewed inline like any other result.
+function isJsonQueryPath(path: string): boolean {
+  const queryIndex = path.indexOf('?');
+  return queryIndex !== -1 && /\.(?:jsonl?|ndjson)$/i.test(path.slice(0, queryIndex));
+}
+
 function sourceFileRefForPostToolUse(
   event: Record<string, unknown>,
   toolInput: Record<string, unknown>,
@@ -272,7 +279,7 @@ function sourceFileRefForPostToolUse(
   // before it can return the original output. Absolute paths are common in
   // Pi Read calls and must retain that provenance rather than fall back to
   // context-free output scanning.
-  if (!path || isVirtualSourcePath(path)) return null;
+  if (!path || isVirtualSourcePath(path) || isJsonQueryPath(path)) return null;
   return {
     version: 1,
     kind: 'source_file',
