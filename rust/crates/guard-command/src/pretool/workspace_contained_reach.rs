@@ -114,7 +114,7 @@ fn identity_expansions_only(segment: &CommandSegmentV1, name: &str) -> bool {
 /// expands. The sandbox launches its shell with `TMPDIR` set to the run's
 /// private temporary directory, so such a path names the sandbox's own
 /// scratch space rather than a host directory.
-fn private_temp_expansions_only(text: &str) -> bool {
+pub(in crate::pretool) fn private_temp_expansions_only(text: &str) -> bool {
     let characters: Vec<char> = text.chars().collect();
     let (mut single, mut double, mut count, mut index) = (false, false, 0usize, 0usize);
     while let Some(&current) = characters.get(index) {
@@ -149,7 +149,7 @@ fn private_temp_expansions_only(text: &str) -> bool {
 
 /// Whether `text` names `TMPDIR` anywhere other than in a `$TMPDIR` or
 /// `${TMPDIR}` expansion, as an assignment, `export` or `unset` would.
-pub(super) fn rebinds_private_temp(text: &str) -> bool {
+pub(in crate::pretool) fn rebinds_private_temp(text: &str) -> bool {
     text.match_indices("TMPDIR")
         .any(|(at, _)| !(text[..at].ends_with('$') || text[..at].ends_with("${")))
 }

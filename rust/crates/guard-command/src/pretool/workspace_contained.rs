@@ -35,6 +35,8 @@ mod links;
 mod package;
 #[path = "workspace_contained_reach.rs"]
 mod reach;
+
+pub(super) use reach::{private_temp_expansions_only, rebinds_private_temp};
 #[path = "workspace_contained_removal.rs"]
 mod removal;
 #[path = "workspace_contained_runner.rs"]

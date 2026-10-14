@@ -436,6 +436,7 @@ fn private_temp_paths_run_in_the_workspace_sandbox() {
         "OUT_DIR=\"$TMPDIR/report-test\" npm run build",
         "OUT_DIR=\"${TMPDIR}/report-test\" npm run build",
         "OUT_DIR=$TMPDIR/report-test PORT=4173 npm run build",
+        "OUT_DIR=\"$TMPDIR/report-test\" bunx vitest run src/report.test.ts",
     ] {
         assert_eq!(
             reason("omp", command, &ws, true) == CONTAINED,
@@ -455,6 +456,8 @@ fn private_temp_paths_run_in_the_workspace_sandbox() {
         "OUT_DIR='$TMPDIR/x' npm run build",
         "TMPDIR=/Users/nobody/.ssh OUT_DIR=\"$TMPDIR/x\" npm run build",
         "export TMPDIR=/Users/nobody && OUT_DIR=\"$TMPDIR/x\" npm run build",
+        "OUT_DIR=\"$HOME/x\" bunx vitest run src/report.test.ts",
+        "TMPDIR=/Users/nobody OUT_DIR=\"$TMPDIR/x\" bunx vitest run src/report.test.ts",
     ] {
         assert_ne!(reason("omp", command, &ws, true), CONTAINED, "{command}");
     }
