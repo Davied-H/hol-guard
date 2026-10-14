@@ -91,6 +91,8 @@ pub(crate) struct ResidentRelayAuthority {
     facts: Option<RelayFacts>,
     resident: Option<Resident>,
     commits: Commits,
+    /// Asks the daemon to prepare the lane when a call is deferred.
+    kick: Option<Box<dyn crate::mcp_relay_lane::LaneKick>>,
 }
 
 /// What a commit request did with one ticket.
@@ -147,6 +149,7 @@ impl ResidentRelayAuthority {
             facts: relay_facts(args, launch, process),
             resident: None,
             commits: Commits::default(),
+            kick: None,
         }
     }
 
@@ -170,7 +173,15 @@ impl ResidentRelayAuthority {
     }
 
     fn exchange(&mut self, guard_home: &Path, payload: &[u8]) -> Option<Vec<u8>> {
-        let deadline = Instant::now() + DECIDE_TIMEOUT;
+        self.exchange_until(guard_home, payload, Instant::now() + DECIDE_TIMEOUT)
+    }
+
+    fn exchange_until(
+        &mut self,
+        guard_home: &Path,
+        payload: &[u8],
+        deadline: Instant,
+    ) -> Option<Vec<u8>> {
         let state_base = guard_home.join(STATE_DIRECTORY);
         let previous = match self.resident.take() {
             Some(resident) => match send(&resident, payload, deadline) {
@@ -219,7 +230,10 @@ impl RelayAuthority for ResidentRelayAuthority {
             return no_decision();
         };
         let guard_home = PathBuf::from(&facts.guard_home);
-        let output = self.exchange(&guard_home, &payload);
+        let mut output = self.exchange(&guard_home, &payload);
+        if reply_of(output.as_deref()).is_none() && self.rekick(output.as_deref()) {
+            output = self.exchange(&guard_home, &payload);
+        }
         match output.as_deref().and_then(reply) {
             Some(Reply::Forward { ticket }) => ToolCallVerdict::Forward(ForwardTicket {
                 message: message.clone(),
@@ -283,6 +297,10 @@ fn committed(output: &[u8]) -> Sent {
 enum Reply {
     Forward { ticket: String },
     Block { message: String, data: Value },
+}
+
+fn reply_of(output: Option<&[u8]>) -> Option<Reply> {
+    output.and_then(reply)
 }
 
 fn reply(output: &[u8]) -> Option<Reply> {
@@ -349,6 +367,8 @@ fn send(resident: &Resident, payload: &[u8], deadline: Instant) -> Result<Vec<u8
 
 #[path = "mcp_relay_resident_defer.rs"]
 mod defer;
+#[path = "mcp_relay_resident_lane.rs"]
+mod lane;
 #[path = "mcp_relay_resident_request.rs"]
 mod request;
 use request::{decide_request, relay_facts};
