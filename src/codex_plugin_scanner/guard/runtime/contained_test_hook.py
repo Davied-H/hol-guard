@@ -233,8 +233,14 @@ def run_authorized_contained_test(
             # setting such as `REPORT_DIR=... vitest` in a linked worktree).
             # Ask again rooted at that directory and, when the answer is the
             # same sandbox, run the command as issued there.
+            # Only a directory the `cd` form could also root the sandbox at
+            # is asked about: inside the workspace, or a sibling repository's
+            # own root. Any other `cwd` keeps the directory change below.
             root, rooted = as_run_root(payload, workspace=workspace, home=home_dir)
-            first = authorize(rooted)
+            bounded = _path_is_within(root, workspace.resolve(strict=True)) or (
+                sibling_project_root(root, home=home_dir) == root
+            )
+            first = authorize(rooted) if bounded else None
             if receipt_matches(first) and isinstance(first, Mapping):
                 return run_workspace_contained(
                     rooted,

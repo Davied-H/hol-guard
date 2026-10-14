@@ -193,3 +193,30 @@ def test_a_rooted_question_that_loses_the_sandbox_keeps_the_directory_change(mon
             home,
             lambda _payload: {**workspace_profile(), "policy_action": "review"},
         )
+
+
+@pytest.mark.parametrize("directory", ["~", "plain"])
+def test_a_cwd_outside_any_project_never_roots_the_sandbox(monkeypatch, tmp_path, directory: str) -> None:
+    home, workspace, _worktree = session(tmp_path)
+    (home / "plain").mkdir()
+    cwd = directory if directory == "~" else str(home / directory)
+    original = {**call(cwd), "cwd": str(workspace)}
+    authorized: list[object] = []
+    launched: list[Path] = []
+
+    def launch(payload, *, workspace, cwd, authorize, first_receipt, home_dir, timeout_seconds, merge_stderr):
+        launched.append(workspace)
+        return 0
+
+    def authorize(payload: dict[str, object]) -> dict[str, object]:
+        authorized.append(payload.get("cwd"))
+        return workspace_profile()
+
+    monkeypatch.setattr(sink, "run_workspace_contained", launch)
+    sink.run_authorized_contained_test(
+        original, workspace=workspace, timeout_seconds=20, authorize=authorize, home_dir=home
+    )
+    # Never asked rooted at, nor sandboxed in, a directory outside the
+    # workspace and every sibling repository: the sandbox stays the workspace.
+    assert authorized and all(asked == str(workspace) for asked in authorized)
+    assert launched and all(root == workspace for root in launched)
