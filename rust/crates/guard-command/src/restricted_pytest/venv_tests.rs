@@ -19,10 +19,21 @@ fn fixture() -> Fixture {
     Fixture(root.canonicalize().unwrap())
 }
 
-/// A system interpreter inside the trusted roots, when the host has one.
+/// A system interpreter inside the trusted roots. CI must provide one so these
+/// tests never pass vacuously; elsewhere a missing interpreter is reported.
 fn trusted_python() -> Option<PathBuf> {
-    let base = Path::new("/usr/bin/python3").canonicalize().ok()?;
-    (path_is_within_any(&base, &TRUSTED_EXECUTABLE_ROOTS) && python_named(&base)).then_some(base)
+    let base = Path::new("/usr/bin/python3")
+        .canonicalize()
+        .ok()
+        .filter(|base| path_is_within_any(base, &TRUSTED_EXECUTABLE_ROOTS) && python_named(base));
+    if base.is_none() {
+        assert!(
+            env::var_os("CI").is_none(),
+            "venv admission tests need a trusted /usr/bin/python3 on CI"
+        );
+        eprintln!("skipping venv admission test: no trusted /usr/bin/python3");
+    }
+    base
 }
 
 fn executable(path: &Path) {
