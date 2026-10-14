@@ -28,7 +28,7 @@ fn repository(name: &str, config: &str) -> (PathBuf, PathBuf) {
 }
 
 fn hit(target: &Path, home: &Path) -> bool {
-    configured_hooks_write(target, home.to_str())
+    configured_hooks_write(target, home.to_str(), None)
 }
 
 #[test]
@@ -48,6 +48,34 @@ fn a_header_line_assignment_with_a_comment_names_a_nested_directory() {
     assert!(hit(&repo.join("scripts/githooks/pre-push"), &home));
     assert!(hit(&repo.join("scripts"), &home));
     assert!(!hit(&repo.join("scripts/build.sh"), &home));
+}
+
+#[test]
+fn a_hooks_directory_outside_the_work_tree_is_screened_from_that_repository() {
+    let base = fixture("outside");
+    let (repo, home, shared) = (
+        base.join("repo"),
+        base.join("home"),
+        base.join("shared-hooks"),
+    );
+    fs::create_dir_all(&home).unwrap();
+    fs::create_dir_all(&shared).unwrap();
+    write(
+        &repo.join(".git").join("config"),
+        &format!("[core]\n\thooksPath = {}\n", shared.display()),
+    );
+    let target = shared.join("pre-commit");
+    assert!(!configured_hooks_write(&target, home.to_str(), None));
+    assert!(configured_hooks_write(
+        &target,
+        home.to_str(),
+        Some(repo.to_str().unwrap()),
+    ));
+    assert!(!configured_hooks_write(
+        &base.join("notes.txt"),
+        home.to_str(),
+        Some(repo.to_str().unwrap()),
+    ));
 }
 
 #[test]

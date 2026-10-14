@@ -56,9 +56,14 @@ const GIT_HOOK_NAMES: &[&str] = &[
 /// True when writing `target`, an absolute path with its links resolved,
 /// creates or changes a file in a configured hooks directory, or a
 /// configuration file Git includes. The user's global files apply to every
-/// target; a repository's own files apply to the targets in its work tree,
-/// where a relative hooks directory also resolves.
-pub(super) fn configured_hooks_write(target: &Path, home: Option<&str>) -> bool {
+/// target. A repository's own files apply to targets in its work tree, and
+/// also to the hooks directory named by the repository the command runs in
+/// (`workspace`), even when that directory sits outside the work tree.
+pub(super) fn configured_hooks_write(
+    target: &Path,
+    home: Option<&str>,
+    workspace: Option<&str>,
+) -> bool {
     let home = home.and_then(|home| fs::canonicalize(home).ok());
     let home = home.as_deref();
     let mut global = Scan::new(home);
@@ -75,11 +80,41 @@ pub(super) fn configured_hooks_write(target: &Path, home: Option<&str>) -> bool 
     if global.hit(target, None).unwrap_or(true) {
         return true;
     }
-    target.ancestors().skip(1).any(|root| {
+    if repository_ancestor_hit(target.ancestors().skip(1), target, &global) {
+        return true;
+    }
+    let Some(workspace) = command_repository(workspace, home) else {
+        return false;
+    };
+    repository_ancestor_hit(workspace.ancestors(), target, &global)
+}
+
+/// True when any directory in `roots` is a repository whose hooks
+/// configuration covers `target`. A repository whose configuration cannot
+/// be decoded is a hit, so the write stays reviewed.
+fn repository_ancestor_hit<'a>(
+    mut roots: impl Iterator<Item = &'a Path>,
+    target: &Path,
+    global: &Scan<'_>,
+) -> bool {
+    roots.any(|root| {
         fs::metadata(root.join(".git")).is_ok_and(|marker| {
-            repository_hooks_write(root, &marker, target, &global).unwrap_or(true)
+            repository_hooks_write(root, &marker, target, global).unwrap_or(true)
         })
     })
+}
+
+/// The command's work tree, with `~/` resolved against `home`.
+fn command_repository(workspace: Option<&str>, home: Option<&Path>) -> Option<PathBuf> {
+    let workspace = workspace?;
+    let path = if workspace == "~" {
+        home?.to_path_buf()
+    } else if let Some(rest) = workspace.strip_prefix("~/").or(workspace.strip_prefix("~\\")) {
+        home?.join(rest)
+    } else {
+        PathBuf::from(workspace)
+    };
+    fs::canonicalize(&path).ok()
 }
 
 /// `None` when the configuration of the repository at `root` cannot be
