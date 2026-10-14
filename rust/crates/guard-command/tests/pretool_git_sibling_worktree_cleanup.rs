@@ -184,6 +184,8 @@ fn removing_the_dependency_link_and_the_worktree_is_quiet() {
         "rm ../report-wt/reports",
         "rm -r ../report-wt/node_modules",
         "rm ../report-wt/.hidden",
+        "rm -- -f ../report-wt/node_modules",
+        "rm ../report-wt/node_modules -- -f",
         "rm ../report-wt/reports/../node_modules",
         // Every step runs only after the one before it succeeded.
         "rm ../report-wt/node_modules; git worktree remove ../report-wt",

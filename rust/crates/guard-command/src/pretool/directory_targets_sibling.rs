@@ -64,11 +64,19 @@ pub(crate) fn link_removal(
     segment: &crate::CommandSegmentV1,
     context: super::super::PathContext<'_>,
 ) -> bool {
-    let operands: Vec<&String> = segment
-        .arguments
-        .iter()
-        .filter(|argument| !matches!(argument.as_str(), "-f" | "--"))
-        .collect();
+    // Options end at the first `--`; every argument after it is an operand.
+    let mut operands = Vec::new();
+    let mut options = true;
+    for argument in &segment.arguments {
+        match argument.as_str() {
+            "--" if options => options = false,
+            "-f" if options => {}
+            _ => {
+                options = false;
+                operands.push(argument);
+            }
+        }
+    }
     segment.executable.as_deref() == Some("rm")
         && !segment
             .text
