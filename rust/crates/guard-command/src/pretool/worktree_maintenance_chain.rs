@@ -83,13 +83,25 @@ fn reads(
         return false;
     }
     if super::super::executable_basename(executable) == "git" {
+        // `git worktree list` has no configuration probe; it keeps the
+        // segment proof it gets alone, pager screen included.
+        let listing = matches!(
+            segment.arguments.as_slice(),
+            [worktree, list] | [worktree, list, _]
+                if worktree == "worktree"
+                    && list == "list"
+                    && segment.arguments.get(2).is_none_or(|flag| flag == "--porcelain")
+        );
         return super::super::git_local_writes::configured_read(
             model,
             index,
             context,
             deadline,
             execution_environment,
-        );
+        ) || (listing
+            && super::super::segment_proof::exact_safe_segment_with_context(
+                model, segment, false, context,
+            ));
     }
     super::super::segment_proof::cwd_read_executable(Some(executable))
         && super::super::segment_proof::exact_safe_segment_with_context(
