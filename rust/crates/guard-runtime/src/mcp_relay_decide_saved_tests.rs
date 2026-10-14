@@ -169,9 +169,12 @@ fn a_store_without_saved_rows_answers_as_empty() {
     assert!(read(&home, &binding(), |saved| saved.is_none()).unwrap());
 }
 
+/// A named change to a seeded store.
+type Change = (&'static str, fn(&Connection));
+
 #[test]
 fn remote_bundle_and_portable_rows_defer() {
-    let changes: [(&str, fn(&Connection)); 3] = [
+    let changes: [Change; 3] = [
         ("remote", |c| {
             decide(c, "artifact", "allow", None, "cloud-sync")
         }),
