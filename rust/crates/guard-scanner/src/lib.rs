@@ -263,7 +263,7 @@ fn is_sample(
         return false;
     }
     if classifier == "credential-assignment"
-        && (field_copy::is_field_copy(matched)
+        && (field_copy::is_field_copy(matched, rest_of_line)
             || self_named_value::is_self_named(matched, rest_of_line)
             || assignment_value(matched).is_some_and(|value| {
                 inert_code_expression_regex().is_match(value) || masked_value::is_masked(value)
