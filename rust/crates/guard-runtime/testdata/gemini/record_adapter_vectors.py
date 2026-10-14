@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Record Gemini, Antigravity, Grok, Kimi, OpenCode and Cursor detection vectors from the
-ORIGINAL Python implementation.
+"""Record Gemini, Antigravity, Devin, Grok, Kimi, OpenCode and Cursor detection
+vectors from the ORIGINAL Python implementation.
 
 Run against a checkout that still holds the original helper `ORIGINALS` names
 for the harness (the base of the commit that introduced its native
@@ -43,6 +43,7 @@ from codex_plugin_scanner.ecosystems.opencode import _load_json_or_jsonc
 from codex_plugin_scanner.guard.adapters import (
     antigravity,
     cursor,
+    devin,
     gemini,
     grok,
     grok_config,
@@ -58,6 +59,7 @@ from codex_plugin_scanner.guard.models import GuardArtifact
 ADAPTERS = {
     "gemini": gemini.GeminiHarnessAdapter,
     "antigravity": antigravity.AntigravityHarnessAdapter,
+    "devin": devin.DevinHarnessAdapter,
     "grok": grok.GrokHarnessAdapter,
     "kimi": kimi.KimiHarnessAdapter,
     "opencode": opencode.OpenCodeHarnessAdapter,
@@ -68,13 +70,14 @@ ADAPTERS = {
 ORIGINALS = {
     "gemini": (gemini.GeminiHarnessAdapter, "_entry_hook_command"),
     "antigravity": (antigravity.AntigravityHarnessAdapter, "_mcp_source"),
+    "devin": (devin.DevinHarnessAdapter, "_claude_hooks_overlap"),
     "grok": (grok_config, "append_mcp_artifacts"),
     "kimi": (kimi.KimiHarnessAdapter, "_append_mcp_artifacts"),
     "opencode": (opencode_artifacts, "append_config_artifacts"),
     "cursor": (cursor, "enrich_mcp_server_metadata"),
 }
 
-for module in (gemini, grok, kimi, opencode, opencode_install_snapshot, cursor):
+for module in (gemini, devin, grok, kimi, opencode, opencode_install_snapshot, cursor):
     module.extend_detection_with_workspace_aibom = lambda detection, **_: detection
 opencode_artifacts.enrich_artifact_with_mcp_skill_firewall = lambda artifact: artifact
 cursor.enrich_artifact_with_mcp_skill_firewall = lambda artifact: artifact
@@ -216,6 +219,8 @@ def facade_args(harness: str, context: HarnessContext, root: Path, snapshot: boo
         ]
     if not home.is_absolute() or (workspace is not None and not workspace.is_absolute()):
         request["cwd"] = os.getcwd()
+    if harness == "devin":
+        request["config_dir"] = str(devin.DevinHarnessAdapter._devin_config_dir(context))
     return request
 
 

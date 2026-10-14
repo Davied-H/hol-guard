@@ -72,7 +72,7 @@ fn python_lower(text: &str) -> String {
 }
 
 /// `_string_args`: strings and numbers and booleans, rendered as `str()`.
-fn string_args(config: &PyVal) -> Vec<String> {
+pub(crate) fn scalar_args(config: &PyVal) -> Vec<String> {
     config
         .get("args")
         .and_then(PyVal::as_list)
@@ -81,7 +81,7 @@ fn string_args(config: &PyVal) -> Vec<String> {
 }
 
 /// `_mcp_transport`.
-fn transport(config: &PyVal) -> String {
+pub(crate) fn transport(config: &PyVal) -> String {
     if let Some(text) = config.get("transport").and_then(PyVal::as_str) {
         if !python_strip(text).is_empty() {
             return python_strip(text).to_owned();
@@ -138,7 +138,7 @@ pub(crate) fn mcp_server(
     if command.is_none() && url.is_none() {
         return Ok(None);
     }
-    let args = string_args(config);
+    let args = scalar_args(config);
     let transport = transport(config);
     let environment = mcp_environment(config);
     let headers = config.get("headers").map(string_pairs).unwrap_or_default();
