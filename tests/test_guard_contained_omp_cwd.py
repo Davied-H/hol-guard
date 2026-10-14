@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 from pathlib import Path
 
 import pytest
@@ -72,7 +73,7 @@ def test_a_worktree_beside_the_session_folder_becomes_the_run_root(monkeypatch, 
         exit_code, authorized, prepared = run(monkeypatch, call(spelled), workspace, home)
         assert exit_code == 0
         # The call as issued, then the explicit cd form, then the test in the worktree.
-        assert authorized == [COMMAND, f"cd {worktree} && {COMMAND}", COMMAND]
+        assert authorized == [COMMAND, f"cd {shlex.quote(str(worktree))} && {COMMAND}", COMMAND]
         assert prepared == [(worktree, worktree)]
 
 
@@ -80,7 +81,7 @@ def test_a_folder_inside_the_session_runs_there(monkeypatch, tmp_path) -> None:
     home, workspace, _worktree = session(tmp_path)
     exit_code, authorized, prepared = run(monkeypatch, call("app"), workspace, home)
     assert exit_code == 0
-    assert authorized[1] == f"cd {workspace / 'app'} && {COMMAND}"
+    assert authorized[1] == f"cd {shlex.quote(str(workspace / 'app'))} && {COMMAND}"
     assert prepared == [(workspace, workspace / "app")]
 
 
