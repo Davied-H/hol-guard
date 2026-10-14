@@ -20,7 +20,8 @@ pub(super) fn names_secret_alias(model: &CanonicalCommandV1, context: PathContex
         .segments
         .iter()
         .flat_map(|segment| segment.arguments.iter())
-        .filter_map(|argument| operand(argument))
+        .map(String::as_str)
+        .filter_map(operand)
         .any(|operand| {
             classify_secret_path(operand, cwd, home).is_none()
                 && sensitive_path(operand, cwd, home).is_some()
