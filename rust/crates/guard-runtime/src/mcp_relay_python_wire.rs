@@ -2,10 +2,11 @@
 //!
 //! The proxy decodes each host line with `json.loads` and writes the child
 //! `json.dumps` of the result through the resident, which decodes it again
-//! and frames it. Keys, key order and strings survive that unchanged; only
-//! numbers take Python's text: `-0` reads as the integer zero and a float
-//! prints as `repr(float(text))`. `python_canonical` applies exactly that,
-//! and refuses any number the proxy could not carry to the child.
+//! and frames it. Keys and strings survive that unchanged, and the resident
+//! writes the keys sorted, as the relay's own parser holds them; only numbers
+//! take Python's text: `-0` reads as the integer zero and a float prints as
+//! `repr(float(text))`. `python_canonical` applies exactly that, and refuses
+//! any number the proxy could not carry to the child.
 
 use serde_json::{Map, Number, Value};
 

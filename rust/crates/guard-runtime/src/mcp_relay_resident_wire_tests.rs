@@ -17,7 +17,7 @@ fn the_child_frame_and_the_request_share_one_python_rewrite() {
     assert_eq!(expected, catalog.snapshot());
     assert_eq!(
         serde_json::to_string(&frame).unwrap(),
-        r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"read","arguments":{"b":1.0,"a":[0,100000.0,"2.50"]}}}"#
+        r#"{"id":4,"jsonrpc":"2.0","method":"tools/call","params":{"arguments":{"a":[0,100000.0,"2.50"],"b":1.0},"name":"read"}}"#
     );
     let payload: Value = serde_json::from_slice(&payload).unwrap();
     let request = &payload["request"];
