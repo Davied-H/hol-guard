@@ -254,6 +254,15 @@ def test_generated_omp_json_query_result_stays_inline_not_source_ref(tmp_path: P
         assert _run_generated_source_ref_fixture(source, content, path)["sourceRef"] is not None
 
 
+def test_generated_omp_read_list_result_stays_inline_not_source_ref(tmp_path: Path) -> None:
+    source = _generated_source(tmp_path)
+    content = [{"type": "text", "text": "1#AB:export const a = 1;"}]
+
+    for path in (f"{tmp_path / 'a.ts'}; {tmp_path / 'b.ts'}", "src/a.ts:1-5;src/b.ts"):
+        assert _run_generated_source_ref_fixture(source, content, path)["sourceRef"] is None
+    assert _run_generated_source_ref_fixture(source, content, tmp_path / "a.ts")["sourceRef"] is not None
+
+
 def test_generated_omp_selector_review_uses_host_resolved_source_path(tmp_path: Path) -> None:
     source = _generated_source(tmp_path)
     result = _run_generated_callback_payload(
