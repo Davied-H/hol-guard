@@ -277,3 +277,43 @@ fn slices_that_show_no_secret_are_reviewed_on_their_own() {
         assert_eq!(result.reason_code, "source_secret_match", "{blocked:?}");
     }
 }
+
+#[cfg(any(unix, windows))]
+#[test]
+fn slices_of_a_value_far_below_its_credential_name_stay_blocked() {
+    let root = TestRoot::new();
+    let source = root.path().join("example.py");
+    let value = ["s3cr3t", "Value", "1234"].concat();
+    let quoted = format!("\"{value}\"");
+    let layouts: [&[&str]; 2] = [
+        &["api_key =", "", "", "", ""],
+        &["api_key", "", "", "", "=", "", "", ""],
+    ];
+    for layout in layouts {
+        let mut lines: Vec<String> = (1..=6).map(|number| format!("step({number})")).collect();
+        lines.extend(layout.iter().map(|line| line.to_string()));
+        lines.push(quoted.clone());
+        lines.extend((1..=6).map(|number| format!("done({number})")));
+        std::fs::write(&source, lines.join("\n") + "\n").unwrap();
+        let value_line = lines.len() - 6;
+        let row = |number: usize| format!("{number}:{}", lines[number - 1]);
+        let slice = |rows: &[usize]| {
+            let body: Vec<String> = rows.iter().map(|number| row(*number)).collect();
+            format!("[example.py#ABCD]\n{}", body.join("\n"))
+        };
+
+        for blocked in [
+            slice(&[value_line]),
+            slice(&[value_line, value_line + 1]),
+            format!("{}\n{}-{}:  …", slice(&[3]), 4, value_line),
+        ] {
+            let result = review_post_tool(&request(root.path(), &blocked));
+            assert_eq!(result.reason_code, "source_secret_match", "{blocked:?}");
+        }
+        // Lines the match does not reach are still reviewed on their own.
+        let clean = review_post_tool(&request(root.path(), &slice(&[value_line + 2])));
+        assert_eq!(clean.reason_code, "output_scan_allow", "{clean:?}");
+        let clean = review_post_tool(&request(root.path(), &slice(&[1, 2, 3])));
+        assert_eq!(clean.reason_code, "output_scan_allow", "{clean:?}");
+    }
+}

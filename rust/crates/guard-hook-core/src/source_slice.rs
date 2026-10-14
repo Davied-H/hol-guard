@@ -7,10 +7,15 @@
 //! the slice covers. Every numbered row must equal that line of the current
 //! file; stale or invented output keeps the whole-file decision.
 //!
-//! The scanner's rules each match within a line, except that a credential
-//! name may sit a line or two above its value. The scanned range therefore
-//! starts [`CONTEXT_LINES`] above the slice. A private key body has no marker
-//! of its own, so a slice that overlaps a key block keeps the block.
+//! A rule can match across lines: a credential name, its separator and its
+//! value may be split by any run of whitespace, blank lines included. So a
+//! slice is blocked when any match the whole-file scan counted overlaps the
+//! lines it covers, which keeps its verdict at least as strict as the
+//! whole-file one for those lines. The covered lines, with [`CONTEXT_LINES`]
+//! above them, are also scanned on their own. A private key body has no
+//! marker of its own, so a slice that overlaps a key block keeps the block.
+
+use std::ops::Range;
 
 /// Lines above a slice that are scanned with it.
 pub(crate) const CONTEXT_LINES: usize = 3;
@@ -72,6 +77,32 @@ pub(crate) fn key_block_overlaps(file: &str, first: usize, last: usize) -> bool 
     }
     // An unterminated block runs to the end of the file.
     start.is_some_and(|begin| begin <= last)
+}
+
+/// Whether any of `spans` (byte ranges of `file`) overlaps lines
+/// `first..=last` (1-based), line breaks included.
+pub(crate) fn spans_overlap(file: &str, first: usize, last: usize, spans: &[Range<usize>]) -> bool {
+    let mut start = None;
+    let mut end = file.len();
+    let mut offset = 0;
+    for (index, line) in file.split_inclusive('\n').enumerate() {
+        let number = index + 1;
+        if number == first {
+            start = Some(offset);
+        }
+        offset += line.len();
+        if number == last {
+            end = offset;
+            break;
+        }
+    }
+    let Some(start) = start else {
+        // Lines the file does not have: nothing to show, nothing to trust.
+        return true;
+    };
+    spans
+        .iter()
+        .any(|span| span.start < end && span.end > start)
 }
 
 /// File lines `first..=last` (1-based), joined.
@@ -137,6 +168,19 @@ mod tests {
         let open = concat!("a\nb\n-----BEGIN RSA ", "PRIVATE KEY-----\nbody\nbody");
         assert!(key_block_overlaps(open, 5, 5));
         assert!(!key_block_overlaps(open, 1, 2));
+    }
+
+    #[test]
+    fn spans_overlap_the_lines_they_touch() {
+        // Lines start at bytes 0, 4, 8, 14, 19 and 24.
+        let span = |start: usize, end: usize| [Range { start, end }];
+        assert!(spans_overlap(FILE, 2, 3, &span(0, 5)));
+        assert!(spans_overlap(FILE, 2, 3, &span(13, 20)));
+        assert!(spans_overlap(FILE, 6, 6, &span(10, 26)));
+        assert!(!spans_overlap(FILE, 2, 3, &span(0, 4)));
+        assert!(!spans_overlap(FILE, 2, 3, &span(14, 20)));
+        assert!(!spans_overlap(FILE, 2, 3, &[]));
+        assert!(spans_overlap(FILE, 7, 7, &[]));
     }
 
     #[test]

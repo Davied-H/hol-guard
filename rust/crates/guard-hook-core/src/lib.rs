@@ -7,7 +7,7 @@ use guard_rules::{
     MAX_CONTENT_ITEMS, MAX_DEPTH, MAX_OBJECT_KEYS, MAX_OUTPUT_CHARS, MAX_SCAN_BYTES,
     OUTPUT_TEXT_KEYS, PAYLOAD_OUTPUT_KEYS, REVIEWED_EXCERPT_CHARS,
 };
-use guard_scanner::scan_text;
+use guard_scanner::{scan_match_spans, scan_text};
 use guard_secure_fs::{classify_scannable_source_path, read_bounded, sensitive_path_family};
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
@@ -469,9 +469,10 @@ fn review_source(
     response
 }
 
-/// Whether the output is a line-numbered slice of `file` whose lines, with
-/// the context above them, match no secret rule (see [`source_slice`]). The
-/// presented text is still verified and scanned on its own afterwards.
+/// Whether the output is a line-numbered slice of `file` that no whole-file
+/// match overlaps and whose lines, with the context above them, match no
+/// secret rule (see [`source_slice`]). The presented text is still verified
+/// and scanned on its own afterwards.
 fn clean_slice(request: &NativeHookRequestV1, file: &str, path: &str) -> bool {
     let output = extract_payload_output(&request.payload);
     if output.truncated {
@@ -483,10 +484,17 @@ fn clean_slice(request: &NativeHookRequestV1, file: &str, path: &str) -> bool {
     if source_slice::key_block_overlaps(file, first, last) {
         return false;
     }
+    let local = local_samples_should_be_unsuppressed(path);
+    let Some(spans) = scan_match_spans(file, local, true, deadline(request)) else {
+        return false;
+    };
+    if source_slice::spans_overlap(file, first, last, &spans) {
+        return false;
+    }
     let start = first.saturating_sub(source_slice::CONTEXT_LINES).max(1);
     let scan = scan_text(
         &source_slice::lines(file, start, last),
-        local_samples_should_be_unsuppressed(path),
+        local,
         true,
         MAX_SCAN_BYTES,
         deadline(request),
