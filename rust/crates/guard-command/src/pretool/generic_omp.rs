@@ -256,19 +256,21 @@ fn listing_target_proven(
 ) -> bool {
     if signals.tool_name.as_deref() == Some("glob") && target.contains(['{', '}']) {
         // Below a literal directory the host matches the alternatives
-        // relative to it and returns only names that match one of them, so
-        // each expansion is proven as its own selector. Without that prefix
-        // the host prepends `**/` and searches every depth, which no single
-        // expansion covers.
+        // relative to it. Without that prefix it searches `**/<pattern>` from
+        // the cwd (`parseFindPattern`), so each expansion is proven that way:
+        // the same proof as an unbraced `**/*.sh`, never wider.
         let anchored = target
             .find(['*', '?', '[', '{'])
             .is_some_and(|index| target[..index].contains('/'));
-        return anchored
-            && brace_expansions(target).is_some_and(|expansions| {
-                expansions
-                    .iter()
-                    .all(|expansion| listing_target_proven(expansion, signals, recursive, context))
-            });
+        return brace_expansions(target).is_some_and(|expansions| {
+            expansions.iter().all(|expansion| {
+                if anchored || expansion.starts_with("**/") {
+                    return listing_target_proven(expansion, signals, recursive, context);
+                }
+                contained_selector(expansion)
+                    && listing_target_proven(&format!("**/{expansion}"), signals, true, context)
+            })
+        });
     }
     let has_glob_selector =
         signals.tool_name.as_deref() == Some("glob") && target.contains(['*', '?', '[', '{']);
@@ -282,17 +284,9 @@ fn listing_target_proven(
     } else {
         target
     };
-    // A wildcard can traverse hidden or symlinked children even when the
-    // literal prefix is ordinary. Prove the entire reachable prefix tree.
-    if has_glob_selector
-        && !super::super::search_scope::unfiltered_directory_scope_proven(
-            target,
-            context.path.home_dir,
-            context.path.cwd,
-        )
-    {
-        return false;
-    }
+    // A wildcard walks below its literal prefix and, like `find`, returns
+    // names only, so the walk from that prefix is held to the same rules.
+    let recursive = recursive || has_glob_selector;
     // `find` and a `pattern` walk the tree below the root and return names
     // only, so an ordinary project root is fine even with a `.env` inside;
     // reading that file stays gated. A walk from the home directory or above
@@ -471,13 +465,15 @@ fn grep_scope(
     // A single file is proven by the ordinary bounded file-read path. An
     // entry of a list has no such fallback, so it carries the same proof here.
     let list = targets.len() > 1;
+    let gitignore = input.get("gitignore").and_then(Value::as_bool) != Some(false);
     targets
         .into_iter()
         .all(|target| {
-            super::super::search_scope::content_search_scope_proven(
+            super::super::search_scope::omp_grep_scope_proven(
                 target,
                 context.path.home_dir,
                 context.path.cwd,
+                gitignore,
             ) || (list
                 && super::super::read_paths::existing_regular_read_target(
                     target,

@@ -478,7 +478,6 @@ fn brace_globs_prove_every_alternative() {
         "~/{clean,secret-dir}",
         "~/{clean,.ss*}",
         "~/clean/{.,x}./.ssh",
-        "{lib,app}",
         "app/{lib,{tests}}",
         "app/{lib,tests",
         "app/lib,tests}",
@@ -486,6 +485,45 @@ fn brace_globs_prove_every_alternative() {
         "app/{a,b,c,d,e,f}/{a,b,c,d,e,f}",
     ] {
         assert!(!allowed(&omp(&f, "glob", json!({"path": path}))), "{path}");
+    }
+}
+
+#[test]
+fn unanchored_brace_globs_prove_each_alternative_at_every_depth() {
+    let f = fixture();
+    let glob_in = |cwd: &std::path::Path, path: &str| {
+        evaluate_pre_tool_envelope_with_context(
+            "omp",
+            "PreToolUse",
+            &json!({"tool_name": "glob", "tool_input": {"path": path}}),
+            None,
+            None,
+            f.home.to_str(),
+            cwd.to_str(),
+        )
+    };
+    let clean = f.home.join("clean-app");
+    write(clean.join("deploy.sh"), "synthetic fixture\n");
+    write(clean.join("app/lib/index.ts"), "synthetic fixture\n");
+    // The host searches `**/<alternative>` from the cwd: the same walk as an
+    // unbraced `**/*.sh`, so both are proven the same way.
+    for path in [
+        "**/*.sh",
+        "**/*{registry,deploy,cleanup}*",
+        "*{deploy,index}*",
+        "{lib,app}",
+    ] {
+        let result = glob_in(&clean, path);
+        assert!(allowed(&result), "{path}: {}", result.reason_code);
+        assert_eq!(result.reason_code, "native_omp_directory_listing");
+    }
+    for path in [
+        "{lib,../clean}",
+        "{lib,/etc}",
+        "{lib,~/.ssh}",
+        "*{index,..}*/x",
+    ] {
+        assert!(!allowed(&glob_in(&clean, path)), "{path}");
     }
 }
 
