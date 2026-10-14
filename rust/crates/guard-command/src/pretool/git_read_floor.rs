@@ -15,8 +15,16 @@ pub(super) fn requires_review(
     execution_environment: Option<&guard_contracts::GuardExecutionEnvironmentV1>,
 ) -> bool {
     // Reads in a checkout the same command creates were proven against the
-    // repository whose configuration the new worktree shares.
-    if super::worktree_add::chain::proven(model, context, deadline, execution_environment) {
+    // repository whose configuration the new worktree shares; reads after a
+    // proven worktree removal were each proven helper-free on their own.
+    if super::worktree_add::chain::proven(model, context, deadline, execution_environment)
+        || super::worktree_maintenance::chain::proven(
+            model,
+            context,
+            deadline,
+            execution_environment,
+        )
+    {
         return false;
     }
     // A proven read prefix holds no Git segment and changes nothing a later
@@ -36,6 +44,16 @@ pub(super) fn requires_review(
         };
         return requires_review(&rest, moved, deadline, execution_environment)
             || requires_review(&rest, context, deadline, execution_environment);
+    }
+    // `cd <dir> && <head>; <tail>`: the head runs only in `<dir>`, the tail
+    // after it there or alone in the original directory when the `cd` failed.
+    if let Some((cwd, rest, tail)) = super::safe_reads::leading_and_cd(model, context) {
+        let moved = super::PathContext {
+            cwd: Some(&cwd),
+            ..context
+        };
+        return requires_review(&rest, moved, deadline, execution_environment)
+            || requires_review(&tail, context, deadline, execution_environment);
     }
     // Past this point every Git read is probed in one directory. A later
     // `cd` the read prefixes above did not account for moves the reads after

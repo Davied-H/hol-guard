@@ -59,8 +59,8 @@ const RULES: &[&str] = &[
 const PUSH_RULE: &str = "command.git.push";
 const PROPOSE_PERMISSION: &str = "command.github.permission.propose-remote";
 
-/// Read rules the packaged catalog ships disabled, so they never raise a
-/// review of their own.
+/// Rules the packaged catalog ships disabled; they count only on segments
+/// proven as reads (`git worktree list`), never raising a review of their own.
 const READ_RULES: &[&str] = &[
     "command.git.status",
     "command.git.log",
@@ -68,6 +68,7 @@ const READ_RULES: &[&str] = &[
     "command.git.show",
     "command.git.ls-files",
     "command.git.grep",
+    "command.git.worktree",
 ];
 
 const INDEX_HOOKS: &[&str] = &["post-index-change"];
@@ -398,7 +399,7 @@ fn moves_head(original: &CommandSegmentV1) -> bool {
 
 /// A Git read whose configuration the session probe proves starts no
 /// helper. The writes proven here change no configuration it reads.
-fn configured_read(
+pub(in crate::pretool) fn configured_read(
     model: &CanonicalCommandV1,
     index: usize,
     context: super::PathContext<'_>,
