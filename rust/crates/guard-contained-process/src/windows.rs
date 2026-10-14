@@ -182,16 +182,7 @@ pub(crate) fn capture(
         ));
     }
     command.verify_bindings()?;
-    let result = capture_native(
-        &command,
-        isolation.app_container.as_ref(),
-        isolation.job_limits,
-        input,
-        cap,
-        isolation.output_per_stream,
-        deadline,
-        cancel,
-    );
+    let result = capture_native(&command, &isolation, input, cap, deadline, cancel);
     let cleanup = isolation
         .app_container
         .as_mut()
@@ -214,14 +205,15 @@ fn convert(output: guard_runtime_windows_process::CapturedOutput) -> CapturedOut
 
 fn capture_native(
     command: &PinnedCommand,
-    container: Option<&AppContainer>,
-    job_limits: Option<guard_runtime_windows_process::ResourceLimits>,
+    isolation: &Isolation,
     input: &[u8],
     cap: usize,
-    per_stream: bool,
     deadline: Instant,
     cancel: &AtomicBool,
 ) -> io::Result<CapturedOutput> {
+    let container = isolation.app_container.as_ref();
+    let job_limits = isolation.job_limits;
+    let per_stream = isolation.output_per_stream;
     if Instant::now() >= deadline || cancel.load(std::sync::atomic::Ordering::Acquire) {
         return Err(io::Error::new(
             io::ErrorKind::TimedOut,

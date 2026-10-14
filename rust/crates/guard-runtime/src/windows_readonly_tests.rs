@@ -94,6 +94,26 @@ fn untrusted_first_interpreter_is_rejected() {
 }
 
 #[test]
+fn python3_falls_back_to_python_exe_in_the_same_directory() {
+    let bin = tempfile::tempdir().unwrap();
+    std::fs::write(bin.path().join("python.exe"), "").unwrap();
+    let search_path = bin.path().to_str().unwrap();
+    // The match is found, then rejected only because the directory is untrusted.
+    let error = resolve_executable("python3", search_path).unwrap_err();
+    assert!(
+        error.message.contains("installed for all users"),
+        "{}",
+        error.message
+    );
+    let error = resolve_executable("node", search_path).unwrap_err();
+    assert!(
+        error.message.contains("could not be resolved"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
 fn launch_requires_exact_options() {
     for arguments in [
         vec![COMMAND, "--", "python"],
@@ -133,7 +153,7 @@ fn installed_python_plans_and_runs_in_the_snapshot() {
     };
     let (_directory, workspace) = workspace();
     let search_path = python.parent().unwrap().to_str().unwrap();
-    let response = plan(&workspace, &["python", "test_calc.py"], search_path);
+    let response = plan(&workspace, &["python3", "test_calc.py"], search_path);
     let value = &response["value"];
     assert_eq!(value["backend"], BACKEND, "{response}");
     assert_eq!(value["profile_version"], PROFILE);

@@ -101,11 +101,16 @@ fn resolve_executable(name: &str, search_path: &str) -> Result<PathBuf, Restrict
             "Relative interpreter paths are not supported.",
         ));
     }
-    let names: Vec<String> = if Path::new(name).extension().is_some() {
+    let mut names: Vec<String> = if Path::new(name).extension().is_some() {
         vec![name.to_owned()]
     } else {
         vec![name.to_owned(), format!("{name}.exe")]
     };
+    // All-users installs ship only `python.exe`; it stands in for `python3`
+    // within the same directory, so PATH order still decides the match.
+    if name.eq_ignore_ascii_case("python3") {
+        names.push("python.exe".to_owned());
+    }
     for directory in std::env::split_paths(search_path) {
         if !directory.is_absolute() {
             continue;

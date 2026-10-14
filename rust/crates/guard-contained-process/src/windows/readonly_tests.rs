@@ -215,3 +215,29 @@ fn snapshot_budget_fails_closed() {
     });
     assert!(result.is_err());
 }
+
+#[test]
+fn hardlinked_files_fail_closed() {
+    let (_directory, workspace) = workspace();
+    let outside = tempfile::tempdir().unwrap();
+    let secret = outside.path().join("credentials");
+    fs::write(&secret, "linked-sentinel").unwrap();
+    fs::hard_link(&secret, workspace.join("notes.txt")).unwrap();
+    let cancel = AtomicBool::new(false);
+    let withhold = |_: &Path| false;
+    let result = run_readonly_snapshot(ReadonlySnapshotRun {
+        workspace: &workspace,
+        cwd: &workspace,
+        executable: Path::new(r"C:\Windows\System32\cmd.exe"),
+        arguments: &[],
+        environment: &[],
+        withhold: &withhold,
+        max_entries: 100,
+        max_bytes: 1024 * 1024,
+        output_cap: 1024,
+        deadline: Instant::now() + Duration::from_secs(60),
+        cancel: &cancel,
+        job_limits: Default::default(),
+    });
+    assert!(result.is_err());
+}
