@@ -4,6 +4,7 @@ use std::time::Instant;
 
 #[path = "worktree_add_chain.rs"]
 pub(super) mod chain;
+pub(crate) use chain::new_checkout_route;
 #[path = "worktree_add_names.rs"]
 mod names;
 
@@ -140,6 +141,34 @@ pub(super) fn exact_safe_command(
     worktree_seen
 }
 
+/// Whether segment `index` is a `git worktree add` the single-command proof
+/// admits on its own. Such an add writes the new checkout, its
+/// administrative files, a branch and that branch's upstream; it never
+/// writes configuration or hooks a later Git read in the same command uses.
+pub(super) fn proven_alone(
+    model: &CanonicalCommandV1,
+    index: usize,
+    context: super::PathContext<'_>,
+    deadline: Option<Instant>,
+    execution_environment: Option<&guard_contracts::GuardExecutionEnvironmentV1>,
+) -> bool {
+    let Some(segment) = model.segments.get(index) else {
+        return false;
+    };
+    if segment.pipeline_index != 0
+        || model
+            .segments
+            .get(index + 1)
+            .is_some_and(|next| next.pipeline_index != 0)
+        || parse(segment).is_none()
+    {
+        return false;
+    }
+    let mut alone = model.clone();
+    alone.segments = vec![segment.clone()];
+    exact_safe_command(&alone, context, deadline, execution_environment)
+}
+
 /// A review reason for a lone `git worktree add` whose new checkout would sit
 /// outside home, where the proof above never admits it. Agents told only that
 /// the command "could not be confirmed read-only" tend to copy the repository
@@ -264,19 +293,11 @@ fn proven_checkout(
     deadline: Option<Instant>,
     execution_environment: Option<&guard_contracts::GuardExecutionEnvironmentV1>,
 ) -> Option<(PathBuf, Option<String>)> {
-    if !segment.environment_names.is_empty() {
-        return None;
-    }
-    let spec = parse(segment)?;
-    let chdir_cwd = match spec.chdir {
-        Some(directory) => Some(resolve_chdir(directory, context)?),
-        None => None,
-    };
+    let (spec, destination, chdir_cwd) = planned_checkout(segment, context)?;
     let context = super::PathContext {
         cwd: chdir_cwd.as_deref().or(context.cwd),
         ..context
     };
-    let destination = fresh_destination(spec.destination, context)?;
     super::git_worktree::worktree_add_execution_free(
         segment.executable.as_deref().unwrap_or("git"),
         &spec.leading,
@@ -291,6 +312,30 @@ fn proven_checkout(
     )
     .unwrap_or(false)
     .then_some((destination, chdir_cwd))
+}
+
+/// The checkout `git worktree add` would create, with the directory its
+/// own `-C` enters, before any probe of the repository.
+fn planned_checkout<'a>(
+    segment: &'a CommandSegmentV1,
+    context: super::PathContext<'_>,
+) -> Option<(WorktreeAdd<'a>, PathBuf, Option<String>)> {
+    if !segment.environment_names.is_empty() {
+        return None;
+    }
+    let spec = parse(segment)?;
+    let chdir_cwd = match spec.chdir {
+        Some(directory) => Some(resolve_chdir(directory, context)?),
+        None => None,
+    };
+    let destination = fresh_destination(
+        spec.destination,
+        super::PathContext {
+            cwd: chdir_cwd.as_deref().or(context.cwd),
+            ..context
+        },
+    )?;
+    Some((spec, destination, chdir_cwd))
 }
 
 fn parse(segment: &CommandSegmentV1) -> Option<WorktreeAdd<'_>> {
