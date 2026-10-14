@@ -39,7 +39,7 @@ use crate::mcp_relay_authority::{
     blocked_response, no_decision_response, tool_name, ClaimTicket, ForwardTicket, RelayAuthority,
     ToolCallVerdict,
 };
-use crate::mcp_relay_catalog::RelayCatalog;
+use crate::mcp_relay_catalog::{CatalogSnapshot, RelayCatalog};
 use crate::mcp_relay_launch::Launch;
 use crate::mcp_relay_pending::COMMIT_RESULT_SCHEMA;
 use crate::resident_state::ResidentState;
@@ -68,6 +68,8 @@ pub(crate) struct RelayFacts {
     fingerprint: Map<String, Value>,
     server_identity: Value,
     launcher_path: Option<String>,
+    /// The proxy's own `PATH`, as set.
+    path: Option<String>,
     launcher_home: String,
 }
 
@@ -99,6 +101,8 @@ pub(crate) struct ResidentRelayAuthority {
     facts: Option<RelayFacts>,
     resident: Option<Resident>,
     commits: Commits,
+    /// Asks the daemon to prepare the lane when a call is deferred.
+    kick: Option<Box<dyn crate::mcp_relay_lane::LaneKick>>,
 }
 
 /// What a commit request did with one ticket.
@@ -155,6 +159,7 @@ impl ResidentRelayAuthority {
             facts: relay_facts(args, launch, process),
             resident: None,
             commits: Commits::default(),
+            kick: None,
         }
     }
 
@@ -178,7 +183,15 @@ impl ResidentRelayAuthority {
     }
 
     fn exchange(&mut self, guard_home: &Path, payload: &[u8]) -> Option<Vec<u8>> {
-        let deadline = Instant::now() + DECIDE_TIMEOUT;
+        self.exchange_until(guard_home, payload, Instant::now() + DECIDE_TIMEOUT)
+    }
+
+    fn exchange_until(
+        &mut self,
+        guard_home: &Path,
+        payload: &[u8],
+        deadline: Instant,
+    ) -> Option<Vec<u8>> {
         let state_base = guard_home.join(STATE_DIRECTORY);
         let previous = match self.resident.take() {
             Some(resident) => match send(&resident, payload, deadline) {
@@ -219,24 +232,26 @@ impl RelayAuthority for ResidentRelayAuthority {
         let id = message.get("id");
         let no_decision = || ToolCallVerdict::Respond(no_decision_response(id, params));
         let Some(facts) = self.facts.as_ref() else {
+            defer::note(defer::FACTS_UNAVAILABLE);
             return no_decision();
         };
-        let Some((payload, expected)) = decide_request(facts, params, order, catalog) else {
+        let Some((message, payload, expected)) = prepare(facts, message, order, catalog) else {
+            defer::note(defer::REQUEST_UNSENDABLE);
             return no_decision();
         };
         let guard_home = PathBuf::from(&facts.guard_home);
-        match self
-            .exchange(&guard_home, &payload)
-            .as_deref()
-            .and_then(reply)
-        {
+        let mut output = self.exchange(&guard_home, &payload);
+        if reply_of(output.as_deref()).is_none() && self.rekick(output.as_deref()) {
+            output = self.exchange(&guard_home, &payload);
+        }
+        match output.as_deref().and_then(reply) {
             Some(Reply::Forward { ticket }) => ToolCallVerdict::Forward(ForwardTicket {
-                message: message.clone(),
+                message,
                 expected,
                 evidence: Some(ticket),
             }),
             Some(Reply::Claim { ticket }) => ToolCallVerdict::Claim(ClaimTicket {
-                message: message.clone(),
+                message,
                 expected,
                 claim: ticket,
             }),
@@ -246,7 +261,10 @@ impl RelayAuthority for ResidentRelayAuthority {
                 Some(&message),
                 Some(data),
             )),
-            None => no_decision(),
+            None => {
+                defer::note(&defer::reply_cause(output.as_deref()));
+                no_decision()
+            }
         }
     }
 
@@ -312,6 +330,23 @@ impl RelayAuthority for ResidentRelayAuthority {
     }
 }
 
+/// The frame the child would read and the decide request built from it, or
+/// `None` when the call is not sent. The proxy writes the child
+/// `json.dumps(json.loads(frame))`, so the request, its evidence and the
+/// forwarded frame all come from that one rewrite. An id the rewrite would
+/// change is not sent: the host correlates the answer by the id it sent.
+fn prepare(
+    facts: &RelayFacts,
+    message: &Value,
+    order: Option<&[String]>,
+    catalog: &RelayCatalog,
+) -> Option<(Value, Vec<u8>, CatalogSnapshot)> {
+    let frame = python_canonical(message).filter(|frame| frame.get("id") == message.get("id"))?;
+    let call = frame.get("params")?.as_object()?;
+    let (payload, expected) = decide_request(facts, call, order, catalog)?;
+    Some((frame, payload, expected))
+}
+
 /// How the resident answered one commit.
 fn committed(output: &[u8]) -> Sent {
     let Ok(result) = serde_json::from_slice::<Value>(output) else {
@@ -334,6 +369,10 @@ enum Reply {
     Forward { ticket: String },
     Claim { ticket: String },
     Block { message: String, data: Value },
+}
+
+fn reply_of(output: Option<&[u8]>) -> Option<Reply> {
+    output.and_then(reply)
 }
 
 fn reply(output: &[u8]) -> Option<Reply> {
@@ -400,10 +439,20 @@ fn send(resident: &Resident, payload: &[u8], deadline: Instant) -> Result<Vec<u8
     .map_err(|error| error.retryable_teardown)
 }
 
+#[path = "mcp_relay_resident_defer.rs"]
+mod defer;
+#[path = "mcp_relay_resident_lane.rs"]
+mod lane;
+#[path = "mcp_relay_python_wire.rs"]
+mod python_wire;
 #[path = "mcp_relay_resident_request.rs"]
 mod request;
+use python_wire::python_canonical;
 use request::{decide_request, relay_facts};
 
 #[cfg(test)]
 #[path = "mcp_relay_resident_tests.rs"]
 mod tests;
+#[cfg(test)]
+#[path = "mcp_relay_resident_wire_tests.rs"]
+mod wire_tests;

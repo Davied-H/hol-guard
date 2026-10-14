@@ -24,6 +24,11 @@ pub use catalog::compatibility_rule_ids;
 pub(crate) use environment::{
     code_or_redirect_environment_name, inert_environment_name, plain_printed_name,
 };
+pub(crate) use git::{
+    repository_routes_verified as git_repository_routes_verified,
+    runs_configured_program as git_runs_configured_program,
+    subcommand_settles_uncertainty as git_subcommand_settles_uncertainty,
+};
 
 /// Whether `name` changes nothing about how the Git command it prefixes runs:
 /// an inert output or locale setting, or the commit identity.
@@ -165,7 +170,7 @@ fn deadline_check(deadline: Option<Instant>) -> Result<(), &'static str> {
     }
 }
 
-fn basename(segment: &CommandSegmentV1) -> String {
+pub(crate) fn basename(segment: &CommandSegmentV1) -> String {
     let value = segment.executable.as_deref().unwrap_or("");
     let basename = value.rsplit(['/', '\\']).next().unwrap_or(value);
     let name = crate::command_ascii_comparison::lowercase_for_ascii_comparison(basename);
@@ -200,6 +205,17 @@ pub fn compatibility_observations_with_context(
     command: &CanonicalCommandV1,
     deadline: Option<Instant>,
     context: crate::pretool::PathContext<'_>,
+) -> Result<CompatibilityObservations, &'static str> {
+    compatibility_observations_in(command, deadline, context, None)
+}
+
+/// [`compatibility_observations_with_context`] with the execution
+/// environment the command inherits, for proofs that run a metadata probe.
+pub(crate) fn compatibility_observations_in(
+    command: &CanonicalCommandV1,
+    deadline: Option<Instant>,
+    context: crate::pretool::PathContext<'_>,
+    environment: Option<&guard_contracts::GuardExecutionEnvironmentV1>,
 ) -> Result<CompatibilityObservations, &'static str> {
     deadline_check(deadline)?;
     if command.normalized_text.len() > 32_768
@@ -289,18 +305,21 @@ pub fn compatibility_observations_with_context(
         // operand is not a redirect and stays in place.
         let merged = crate::pretool::without_stderr_merge(segment);
         let cli_segment = merged.as_ref().unwrap_or(segment);
+        let proof_context = match &leading_cd {
+            Some((cd_index, cwd)) if index > *cd_index => crate::pretool::PathContext {
+                cwd: Some(cwd.as_str()),
+                ..context
+            },
+            _ => context,
+        };
         match basename(segment).as_str() {
             "git" => {
-                let proof_context = match &leading_cd {
-                    Some((cd_index, cwd)) if index > *cd_index => crate::pretool::PathContext {
-                        cwd: Some(cwd.as_str()),
-                        ..context
-                    },
-                    _ => context,
-                };
                 git::observe_with_contexts(cli_segment, index, &mut result, context, proof_context)
             }
-            "gh" => github::observe(cli_segment, index, &mut result),
+            "gh" => {
+                let probe = (proof_context, deadline, environment);
+                github::observe(cli_segment, index, &mut result, probe)
+            }
             _ => {}
         }
         domains::observe(command, segment, index, &mut result, context);

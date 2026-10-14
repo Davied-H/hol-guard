@@ -63,6 +63,7 @@ from ..native_mcp_proxy_decision import (
     package_facts,
     tool_facts,
 )
+from ..native_mcp_relay_server_report import report_mcp_relay_server
 from ..package_execution_context import build_package_execution_context
 from ..policy.engine import build_decision_v2
 from ..runtime.approval_context import (
@@ -82,7 +83,7 @@ from ..store import GuardStore
 from ..tool_decision_evidence import tool_decision_scanner_evidence as _tool_decision_scanner_evidence
 from ._env import _build_scrubbed_env
 from .native_mcp_child_io import _ChildOutputFrame, _NativeChildProcess, _NativeMcpChildIo
-from .runtime_mcp_projection import McpCallProjector
+from .runtime_mcp_projection import McpCallProjector, review_artifact_payload
 from .stdio import (
     ProxyIoTimeoutError,
     _blocked_tool_response,
@@ -147,6 +148,7 @@ def _tool_decision_after_runtime_allow(decision: ToolCallDecision, *, source: st
 _ToolCatalogState = Literal["unobserved", "pending", "complete", "invalidated", "error"]
 _TOOL_CATALOG_EXECUTION_BOUNDARY_CHANGED = "tool_catalog_changed_at_execution_boundary"
 _TOOLS_CALL_PREWRITE_QUIET_SECONDS = 0.005
+_RELAY_REPORT_EXIT_SECONDS = 2.0
 
 
 class _ToolCatalogBoundaryChangedError(RuntimeError):
@@ -327,6 +329,9 @@ class RuntimeMcpGuardProxy:
         self._tool_catalog_inflight = False
         self._tool_catalog_inflight_cursor: str | None = None
         self._tool_catalog_generation = 0
+        # The last complete catalog reported for the relay.
+        self._relay_reported_catalog: str | None = None
+        self._relay_report: threading.Thread | None = None
         self._active_process: _NativeChildProcess | None = None
         self._active_runtime_launch_identity: dict[str, object] | None = None
         self._active_executable_identity: dict[str, object] | None = None
@@ -466,6 +471,7 @@ class RuntimeMcpGuardProxy:
             self._active_server_env_values_hash = None
             self._active_server_identity = None
             self._deactivate_child_process_io()
+            self._finish_relay_report()
 
     def _reset_child_process_state(self) -> None:
         self._buffered_child_responses.clear()
@@ -3215,35 +3221,16 @@ class RuntimeMcpGuardProxy:
         policy_action: str = "require-reapproval",
         scanner_evidence: tuple[dict[str, object], ...] = (),
     ) -> dict[str, Any]:
-        """Build the artifact payload for approval center queueing.
-
-        Includes browser intent metadata when the MCP tool call is a browser
-        automation call (HGBM063-HGBM065).
-        """
+        """Build the artifact payload for approval center queueing."""
         projection = self._call_projector.project(tool_name, params, artifact)
-        changed_fields: list[str] = ["runtime_tool_call"]
-
-        if projection.browser_intent is not None:
-            changed_fields.append("runtime_browser_tool_call")
-
-        payload: dict[str, Any] = {
-            "artifact_id": artifact.artifact_id,
-            "artifact_name": artifact.name,
-            "artifact_hash": artifact_hash,
-            "artifact_type": artifact.artifact_type,
-            "source_scope": artifact.source_scope,
-            "config_path": artifact.config_path,
-            "changed_fields": changed_fields,
-            "policy_action": policy_action,
-            "launch_target": projection.display_launch_target,
-            "risk_summary": projection.risk_summary,
-            "risk_signals": list(signals),
-        }
-        if projection.browser_intent is not None:
-            payload["browser_intent"] = projection.browser_intent
-        if scanner_evidence:
-            payload["scanner_evidence"] = list(scanner_evidence)
-        return payload
+        return review_artifact_payload(
+            projection,
+            artifact,
+            artifact_hash,
+            signals,
+            policy_action=policy_action,
+            scanner_evidence=scanner_evidence,
+        )
 
     def _queue_approval_center_response(
         self,
@@ -3547,6 +3534,38 @@ class RuntimeMcpGuardProxy:
                 "response": response,
             }
         )
+        self._report_relay_server()
+
+    def _report_relay_server(self) -> None:
+        """Report a newly complete catalog so later sessions can be relayed."""
+
+        if self._tool_catalog_state != "complete":
+            return
+        try:
+            reported = json.dumps(self._tool_catalog, sort_keys=True, default=repr)
+            identity_hash = self._session_server_identity().identity_hash
+        except Exception:
+            return
+        if reported == self._relay_reported_catalog:
+            return
+        self._relay_reported_catalog = reported
+        self._relay_report = report_mcp_relay_server(
+            guard_home=self.store.guard_home,
+            harness=self.harness,
+            server_name=self.server_name,
+            source_scope=self.source_scope,
+            config_path=self.config_path,
+            server_id=self.server_id,
+            identity_hash=identity_hash,
+            tools=list(self._tool_catalog.values()),
+        )
+
+    def _finish_relay_report(self) -> None:
+        """Give an unsent report a moment before the session exits."""
+
+        report, self._relay_report = self._relay_report, None
+        if report is not None:
+            report.join(timeout=_RELAY_REPORT_EXIT_SECONDS)
 
 
 class ElicitationMcpGuardProxy(RuntimeMcpGuardProxy):

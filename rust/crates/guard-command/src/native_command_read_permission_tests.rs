@@ -121,13 +121,13 @@ fn kubectl_reads_are_allowed_by_default_and_never_cover_exec_or_secrets() {
         "kubectl get pods -n example-namespace -l app=example-app",
         "kubectl describe deploy example-app -n example-namespace",
         "kubectl get configmaps -n example-namespace",
+        "kubectl logs deploy/example-app -n example-namespace --tail 200",
     ] {
         assert_eq!(action(&defaults, command), "allow", "{command}");
     }
-    // Logs and ConfigMap data are application output that often carries
-    // credentials, so they keep the review without the permission.
+    // ConfigMap data often carries credentials, so it keeps the review
+    // without the permission, as do exec and Secret reads.
     for command in [
-        "kubectl logs deploy/example-app -n example-namespace",
         "kubectl get configmap example-config -o yaml",
         "kubectl describe configmap example-config",
         "kubectl exec deploy/example-app -- env",
@@ -307,10 +307,13 @@ fn routine_review_thread_permission_alone_covers_only_one_static_resolution() {
     let controls = controls_with(&["command.github.permission.routine-review-thread-remote"]);
     let projected =
         format!("{RESOLVE_WITH_VARIABLE} --jq .data.resolveReviewThread.thread.isResolved");
+    // Reopening a thread is the same bounded review-conversation step.
+    let unresolve = "gh api graphql -f query='mutation{unresolveReviewThread(input:{threadId:\"PRRT_kwDOexample1234\"}){thread{id}}}'";
     for command in [
         RESOLVE_WITH_VARIABLE,
         RESOLVE_LITERAL_COMMAS,
         projected.as_str(),
+        unresolve,
     ] {
         assert_eq!(action(&controls, command), "allow", "{command}");
     }
@@ -319,7 +322,6 @@ fn routine_review_thread_permission_alone_covers_only_one_static_resolution() {
         REPLY_MENTION,
         "gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$other}){thread{id}}}' -f id=PRRT_kwDOexample1234",
         "gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{id}}}' -f id=PRRT_kwDOexample1234 -f extra=1",
-        "gh api graphql -f query='mutation{unresolveReviewThread(input:{threadId:\"PRRT_kwDOexample1234\"}){thread{id}}}'",
         "gh api graphql -f query='mutation{resolveReviewThread(input:{threadId:\"PRRT_kwDOexample1234\"}){thread{id}}}' --jq 'env'",
     ] {
         assert_ne!(action(&controls, command), "allow", "{command}");
