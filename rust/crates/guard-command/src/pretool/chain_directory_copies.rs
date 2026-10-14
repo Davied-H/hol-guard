@@ -5,9 +5,13 @@
 //! the only thing an earlier `mkdir` can change is whether a destination is a
 //! directory. With several sources or a trailing slash, cp never writes the
 //! destination path itself, and the proof already checked `<dir>/<name>`. A
-//! single source without a trailing slash is only accepted when no `mkdir`
-//! in the chain creates that path or anything below it; otherwise the copy
-//! would land somewhere the proof did not check. `mkdir` creates real
+//! single source without a trailing slash is only accepted when every `mkdir`
+//! target in the chain is the destination's parent or one of its ancestors,
+//! byte for byte. Matching names instead would miss case-insensitive or
+//! normalization-insensitive volumes, where `mkdir -p src/Sub` makes
+//! `src/sub` a directory and the copy lands on a name the proof never saw.
+//! Every directory such a chain creates sits strictly above the destination,
+//! so none of them can be the destination itself. `mkdir` creates real
 //! directories, never links, so the resolved location of every later target
 //! stays the one the proof saw. Only plain peers may share the chain: nothing
 //! changes directory, renames, links or removes files.
@@ -27,7 +31,8 @@ pub(in crate::pretool) fn mkdir_chain(model: &CanonicalCommandV1) -> bool {
 }
 
 /// A `cp` segment in a [`mkdir_chain`] whose destination no `mkdir` in the
-/// chain can turn into a directory the proof did not see.
+/// chain can turn into a directory the proof did not see, however the volume
+/// compares names.
 pub(super) fn copies_beside_mkdir(
     model: &CanonicalCommandV1,
     segment: &CommandSegmentV1,
@@ -58,15 +63,16 @@ fn destination_settled(
     let Some(destination) = resolved(destination, context) else {
         return false;
     };
+    let Some(parent) = destination.parent() else {
+        return false;
+    };
     model
         .segments
         .iter()
         .filter(|peer| peer.executable.as_deref() == Some("mkdir"))
         .flat_map(|peer| peer.arguments.iter())
         .filter(|argument| !argument.starts_with('-'))
-        .all(|target| {
-            resolved(target, context).is_some_and(|target| !target.starts_with(&destination))
-        })
+        .all(|target| resolved(target, context).is_some_and(|target| parent.starts_with(target)))
 }
 
 /// The absolute location a path names once missing parts are created: the

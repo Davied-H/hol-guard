@@ -124,6 +124,8 @@ fn scratch_checkout_files_copy_into_the_workspace() {
         ),
         format!("mkdir -p src/lib/notes && cp {app}/README.md {app}/package.json src/lib/notes"),
         format!("mkdir -p src/lib && cp {app}/README.md src/lib/README.md"),
+        format!("mkdir -p src/lib/notes && cp {app}/README.md src/lib/notes/README.md"),
+        format!("mkdir -p src src/lib && cp {app}/README.md src/lib/README.md"),
     ] {
         assert!(permitted(&fixture, &command), "{command}");
     }
@@ -154,6 +156,13 @@ fn scratch_checkout_copies_keep_source_and_destination_screens() {
         // A directory the chain creates where the proof saw a file name.
         format!("mkdir -p src/out && cp {app}/README.md src/out"),
         format!("mkdir -p src/out/deep && cp {app}/README.md src/out"),
+        // Names a case- or normalization-insensitive volume treats as equal:
+        // the copy would land inside the created directory, unscreened.
+        format!("mkdir -p src/Sub && cp {app}/README.md src/sub"),
+        format!("mkdir -p src/Sub/deep && cp {app}/README.md src/sub"),
+        format!("mkdir -p src/caf\u{e9} && cp {app}/README.md src/cafe\u{301}"),
+        // A directory elsewhere in the tree keeps a file-shaped copy reviewed.
+        format!("mkdir -p build/out && cp {app}/README.md src/README.md"),
         // Flags, and peers that move, link, remove or change directory.
         format!("mkdir -p src/out && cp -R {app}/src src/out/"),
         format!("mkdir -p src/out && mv {app}/README.md src/out/"),
