@@ -134,3 +134,62 @@ def test_a_second_copy_of_the_input_is_rejected(monkeypatch, tmp_path) -> None:
     original = call(str(worktree), arguments={"command": COMMAND, "cwd": str(workspace)})
     with pytest.raises(RestrictedPytestError):
         run(monkeypatch, original, workspace, home)
+
+
+def workspace_profile() -> dict[str, object]:
+    return {
+        "decision": "deny",
+        "policy_action": "sandbox-required",
+        "reason_code": "native_workspace_containment_required",
+        "required_execution_profile": "workspace-contained-v1",
+        "command_binding_digest": "sha256:" + "0" * 64,
+    }
+
+
+def run_rooted(monkeypatch: pytest.MonkeyPatch, original: dict[str, object], workspace: Path, home: Path, verdict):
+    """Run the sink with a workspace sandbox receipt for the call as issued."""
+    authorized: list[tuple[str, object, bool]] = []
+    launched: list[tuple[dict[str, object], Path, Path]] = []
+
+    def launch(payload, *, workspace, cwd, authorize, first_receipt, home_dir, timeout_seconds, merge_stderr):
+        launched.append((payload, workspace, cwd))
+        return 0
+
+    monkeypatch.setattr(sink, "run_workspace_contained", launch)
+
+    def authorize(payload: dict[str, object]) -> dict[str, object]:
+        tool_input = payload["tool_input"]
+        authorized.append((tool_input["command"], payload.get("cwd"), "cwd" in tool_input))
+        return workspace_profile() if len(authorized) == 1 else verdict(payload)
+
+    exit_code = sink.run_authorized_contained_test(
+        original, workspace=workspace, timeout_seconds=20, authorize=authorize, home_dir=home
+    )
+    return exit_code, authorized, launched
+
+
+def test_a_workspace_sandbox_chosen_inside_cwd_runs_there_as_issued(monkeypatch, tmp_path) -> None:
+    home, workspace, worktree = session(tmp_path)
+    original = {**call(str(worktree)), "cwd": str(workspace)}
+    exit_code, authorized, launched = run_rooted(
+        monkeypatch, original, workspace, home, lambda _payload: workspace_profile()
+    )
+    assert exit_code == 0
+    # The call as issued, then the same text judged from the worktree itself.
+    assert authorized == [(COMMAND, str(workspace), True), (COMMAND, str(worktree), False)]
+    [(payload, root, cwd)] = launched
+    assert (root, cwd) == (worktree, worktree)
+    assert payload["cwd"] == str(worktree) and payload["tool_input"] == {"command": COMMAND}
+
+
+def test_a_rooted_question_that_loses_the_sandbox_keeps_the_directory_change(monkeypatch, tmp_path) -> None:
+    home, workspace, worktree = session(tmp_path)
+    original = {**call(str(worktree)), "cwd": str(workspace)}
+    with pytest.raises(RestrictedPytestError):
+        run_rooted(
+            monkeypatch,
+            original,
+            workspace,
+            home,
+            lambda _payload: {**workspace_profile(), "policy_action": "review"},
+        )

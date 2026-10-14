@@ -62,8 +62,9 @@ def requested_directory(value: object, *, workspace: Path, home: Path | None) ->
     return None if directory == root else directory
 
 
-def as_directory_change(payload: dict[str, object], *, workspace: Path, home: Path | None) -> dict[str, object]:
-    """`payload` with its `cwd` argument written as a leading `cd`."""
+def _split_directory(
+    payload: dict[str, object], *, workspace: Path, home: Path | None
+) -> tuple[Path | None, dict[str, object]]:
     tool_input = payload.get("tool_input")
     if (
         not isinstance(tool_input, dict)
@@ -72,7 +73,25 @@ def as_directory_change(payload: dict[str, object], *, workspace: Path, home: Pa
     ):
         raise _reject()
     directory = requested_directory(tool_input.get("cwd"), workspace=workspace, home=home)
-    rest = {key: value for key, value in tool_input.items() if key != "cwd"}
+    return directory, {key: value for key, value in tool_input.items() if key != "cwd"}
+
+
+def as_directory_change(payload: dict[str, object], *, workspace: Path, home: Path | None) -> dict[str, object]:
+    """`payload` with its `cwd` argument written as a leading `cd`."""
+    directory, rest = _split_directory(payload, workspace=workspace, home=home)
     if directory is not None:
-        rest["command"] = f"cd {shlex.quote(str(directory))} && {tool_input['command']}"
+        rest["command"] = f"cd {shlex.quote(str(directory))} && {rest['command']}"
     return {**payload, "tool_input": rest}
+
+
+def as_run_root(payload: dict[str, object], *, workspace: Path, home: Path | None) -> tuple[Path, dict[str, object]]:
+    """The directory `payload`'s `cwd` argument names, and the call judged from it.
+
+    Native authority judges an Oh My Pi `bash` call inside its `cwd`
+    argument, and may root the workspace sandbox there. The returned payload
+    asks the same question with that directory as the session folder, so the
+    sandbox root comes from a native verdict rather than from this sink.
+    """
+    directory, rest = _split_directory(payload, workspace=workspace, home=home)
+    root = directory if directory is not None else workspace.resolve(strict=True)
+    return root, {**payload, "cwd": str(root), "tool_input": rest}
