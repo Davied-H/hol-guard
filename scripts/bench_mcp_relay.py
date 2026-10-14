@@ -89,7 +89,6 @@ def _ensure_daemon(cli: Path, env: dict[str, str], home: Path, guard_home: Path,
             "daemon",
             "ensure",
             *("--home", str(home), "--guard-home", str(guard_home), "--workspace", str(workspace)),
-            "--json",
         ],
         env=env,
         cwd=workspace,
@@ -335,8 +334,12 @@ def run(python: Path, args: argparse.Namespace) -> dict[str, object]:
 def markdown(document: dict[str, object]) -> str:
     lines = ["## Native MCP relay vs Python proxy (measurement only)", ""]
     lines.append(f"Installer selected the relay under the test canary: `{document.get('installer_selected_relay')}`")
+    ensure_returncode = document.get("daemon_ensure_returncode")
+    if ensure_returncode not in (None, 0):
+        # Informational, never a gate: a failed ensure leaves the lane unbound.
+        lines.append(f"**FAILED: daemon ensure exited `{ensure_returncode}`; the direct lane was not bound by it.**")
     lines.append(
-        f"Daemon ensure exit code: `{document.get('daemon_ensure_returncode')}`; "
+        f"Daemon ensure exit code: `{ensure_returncode}`; "
         f"direct-lane ACK after: `{document.get('direct_lane_ack_seconds')}` s"
     )
     latency = document.get("latency", {})
