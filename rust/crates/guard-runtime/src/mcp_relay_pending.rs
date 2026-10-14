@@ -7,14 +7,17 @@
 //! ticket once the child responded. Only a committed record reaches the
 //! daemon's drain; a ticket the relay never commits (a boundary change, a
 //! decision answer that never arrived, a relay that exited) expires here.
+//! A commit the full drain refuses keeps the record held under its ticket,
+//! and the relay commits that ticket again after a later forward.
 //!
 //! A ticket names this resident's epoch, so a commit sent to a restarted
 //! resident releases nothing, and each ticket releases its record once.
 //!
-//! Two gaps remain against the proxy. At a catalog boundary change the proxy
+//! Gaps remain against the proxy. At a catalog boundary change the proxy
 //! re-resolves the call and records a fresh block or approval receipt, while
 //! the relay records nothing for it. A resident restart between the decision
-//! and the commit drops the held record.
+//! and the commit drops the held record, as does a drain that stays full
+//! past the hold's TTL or past the relay's bounded retry list.
 
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -25,7 +28,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::hook_direct_evidence::{DirectEvidenceQueue, MAX_RECORD_BYTES};
 
-const COMMIT_RESULT_SCHEMA: &str = "guard-mcp-relay-commit-result.v1";
+pub(crate) const COMMIT_RESULT_SCHEMA: &str = "guard-mcp-relay-commit-result.v1";
 /// Forwards awaiting their commit; a decision without a free slot defers.
 const MAX_HELD_RECORDS: usize = 256;
 /// A forwarded tool may run long; its evidence waits this long for the commit.
@@ -99,17 +102,64 @@ impl PendingRelayEvidence {
         Some(format!("{}:{seq}", self.epoch))
     }
 
-    /// The record a ticket of this epoch holds, released once.
-    pub(crate) fn release(&self, ticket: &str) -> Option<Value> {
-        let seq = ticket
+    /// Move a ticket's record to the drain; a refused record stays held.
+    pub(crate) fn commit_into(
+        &self,
+        ticket: &str,
+        queue: &DirectEvidenceQueue,
+        now: Instant,
+    ) -> Commit {
+        let Some(seq) = self.sequence(ticket) else {
+            return Commit::Unknown;
+        };
+        let Ok(mut state) = self.state.lock() else {
+            return Commit::Unknown;
+        };
+        let Some(index) = state.records.iter().position(|held| held.seq == seq) else {
+            return Commit::Unknown;
+        };
+        let Some(held) = state.records.remove(index) else {
+            return Commit::Unknown;
+        };
+        if now.saturating_duration_since(held.held_at) >= HOLD_TTL {
+            return Commit::Unknown;
+        }
+        match queue.try_offer(held.record) {
+            Ok(()) => Commit::Committed,
+            // The call ran: keep its record, in place and still TTL-bounded,
+            // for the relay to commit again once the drain made room.
+            Err(record) => {
+                state.records.insert(
+                    index,
+                    Held {
+                        seq: held.seq,
+                        held_at: held.held_at,
+                        record,
+                    },
+                );
+                Commit::Retained
+            }
+        }
+    }
+
+    fn sequence(&self, ticket: &str) -> Option<u64> {
+        ticket
             .strip_prefix(self.epoch.as_str())?
             .strip_prefix(':')?
             .parse::<u64>()
-            .ok()?;
-        let mut state = self.state.lock().ok()?;
-        let index = state.records.iter().position(|held| held.seq == seq)?;
-        state.records.remove(index).map(|held| held.record)
+            .ok()
     }
+}
+
+/// What one commit did with a ticket's record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Commit {
+    /// The record reached the drain.
+    Committed,
+    /// The drain was full; the record stays held under the same ticket.
+    Retained,
+    /// No record: a foreign, expired, malformed or already used ticket.
+    Unknown,
 }
 
 /// Queue a completed forward's evidence for the daemon's drain.
@@ -118,11 +168,13 @@ pub(crate) fn commit(
     pending: &PendingRelayEvidence,
     queue: &DirectEvidenceQueue,
 ) -> Result<Vec<u8>, String> {
-    let committed = pending
-        .release(&request.ticket)
-        .is_some_and(|record| queue.offer(record));
-    serde_json::to_vec(&json!({"schema": COMMIT_RESULT_SCHEMA, "committed": committed}))
-        .map_err(|_| "mcp_relay_commit_result_encoding_failed".to_owned())
+    let outcome = pending.commit_into(&request.ticket, queue, Instant::now());
+    serde_json::to_vec(&json!({
+        "schema": COMMIT_RESULT_SCHEMA,
+        "committed": outcome == Commit::Committed,
+        "retained": outcome == Commit::Retained,
+    }))
+    .map_err(|_| "mcp_relay_commit_result_encoding_failed".to_owned())
 }
 
 #[cfg(test)]

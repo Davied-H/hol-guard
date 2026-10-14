@@ -328,13 +328,13 @@ fn without_a_resident_every_call_is_blocked() {
     let mut unbound = ResidentRelayAuthority {
         facts: None,
         resident: None,
-        uncommitted: None,
+        commits: Commits::default(),
     };
     assert_eq!(unbound.decide(&message, &call, None, &catalog), expected);
     let mut unreachable = ResidentRelayAuthority {
         facts: Some(facts()),
         resident: None,
-        uncommitted: None,
+        commits: Commits::default(),
     };
     assert_eq!(
         unreachable.decide(&message, &call, None, &catalog),
@@ -342,28 +342,131 @@ fn without_a_resident_every_call_is_blocked() {
     );
 }
 
-#[test]
-fn a_forward_dropped_at_the_boundary_is_never_committed() {
-    let message = json!({"jsonrpc": "2.0", "id": 5, "method": "tools/call",
-        "params": {"name": "read", "arguments": {}}});
-    let ticket = ForwardTicket {
-        message: message.clone(),
+fn forward(id: i64, evidence: &str) -> ForwardTicket {
+    ForwardTicket {
+        message: json!({"jsonrpc": "2.0", "id": id, "method": "tools/call",
+            "params": {"name": "read", "arguments": {}}}),
         expected: RelayCatalog::default().snapshot(),
-    };
-    let mut authority = ResidentRelayAuthority {
+        evidence: Some(evidence.to_owned()),
+    }
+}
+
+fn authority() -> ResidentRelayAuthority {
+    ResidentRelayAuthority {
         facts: Some(facts()),
         resident: None,
-        uncommitted: Some("e:1".to_owned()),
-    };
-    let blocked = authority.boundary_changed(ticket.clone());
+        commits: Commits::default(),
+    }
+}
+
+fn result(id: i64) -> Value {
+    json!({"jsonrpc": "2.0", "id": id, "result": {}})
+}
+
+/// Settle with a resident that answers every ticket with `answer`.
+fn settle_with(commits: &mut Commits, answer: impl Fn(&str) -> Sent) -> Vec<String> {
+    let mut sent = Vec::new();
+    commits.settle(|ticket| {
+        sent.push(ticket.to_owned());
+        answer(ticket)
+    });
+    sent
+}
+
+#[test]
+fn a_forward_dropped_at_the_boundary_is_never_committed() {
+    let mut authority = authority();
+    let dropped = forward(5, "e:1");
+    let message = dropped.message.clone();
     assert_eq!(
-        blocked,
+        authority.boundary_changed(dropped),
         no_decision_response(message.get("id"), &params(message["params"].clone()))
     );
-    assert_eq!(authority.uncommitted, None);
+    assert!(authority.commits.due.is_empty());
 
-    authority.uncommitted = Some("e:2".to_owned());
-    let response = json!({"jsonrpc": "2.0", "id": 5, "result": {}});
-    assert_eq!(authority.complete(ticket, response.clone()), response);
-    assert_eq!(authority.uncommitted, None);
+    assert_eq!(authority.complete(forward(6, "e:2"), result(6)), result(6));
+    assert_eq!(authority.commits.due, vec!["e:2".to_owned()]);
+}
+
+#[test]
+fn a_nested_forward_commits_both_its_own_and_the_outer_record() {
+    let mut authority = authority();
+    // The outer call is in flight when the child's reverse request carries a
+    // nested call, which completes first.
+    let outer = forward(1, "e:outer");
+    let inner = forward(2, "e:inner");
+    assert_eq!(authority.complete(inner, result(2)), result(2));
+    assert_eq!(
+        settle_with(&mut authority.commits, |_| Sent::Committed),
+        vec!["e:inner".to_owned()]
+    );
+    // A nested call dropped at the boundary leaves the outer ticket intact.
+    authority.boundary_changed(forward(3, "e:dropped"));
+    assert_eq!(authority.complete(outer, result(1)), result(1));
+    assert_eq!(
+        settle_with(&mut authority.commits, |_| Sent::Committed),
+        vec!["e:outer".to_owned()]
+    );
+    assert!(authority.commits.due.is_empty() && authority.commits.retained.is_empty());
+}
+
+#[test]
+fn a_ticket_the_drain_kept_is_retried_after_a_later_forward() {
+    let mut commits = Commits::default();
+    commits.due.push("e:1".to_owned());
+    commits.due.push("e:2".to_owned());
+    // The drain is full: nothing after the first refusal is sent.
+    assert_eq!(
+        settle_with(&mut commits, |_| Sent::Retained),
+        vec!["e:1".to_owned()]
+    );
+    assert_eq!(commits.retained, ["e:1", "e:2"]);
+    // Without a new forward nothing is retried.
+    assert!(settle_with(&mut commits, |_| Sent::Committed).is_empty());
+
+    commits.due.push("e:3".to_owned());
+    let sent = settle_with(&mut commits, |ticket| {
+        if ticket == "e:2" {
+            Sent::Gone
+        } else {
+            Sent::Committed
+        }
+    });
+    assert_eq!(sent, ["e:1", "e:2", "e:3"]);
+    assert!(commits.due.is_empty() && commits.retained.is_empty());
+}
+
+#[test]
+fn retained_tickets_are_bounded_and_drop_the_oldest() {
+    let mut commits = Commits::default();
+    commits.due = (0..MAX_RETAINED + 2).map(|n| format!("e:{n}")).collect();
+    settle_with(&mut commits, |_| Sent::Retained);
+    assert_eq!(commits.retained.len(), MAX_RETAINED);
+    assert_eq!(commits.retained.front().map(String::as_str), Some("e:2"));
+    assert_eq!(
+        commits.retained.back().cloned(),
+        Some(format!("e:{}", MAX_RETAINED + 1))
+    );
+}
+
+#[test]
+fn commit_answers_map_to_what_the_resident_kept() {
+    let answer = |committed: Value, retained: Value| {
+        let body =
+            json!({"schema": COMMIT_RESULT_SCHEMA, "committed": committed, "retained": retained});
+        committed_answer(&body)
+    };
+    assert_eq!(answer(json!(true), json!(false)), Sent::Committed);
+    assert_eq!(answer(json!(false), json!(true)), Sent::Retained);
+    assert_eq!(answer(json!(false), json!(false)), Sent::Gone);
+    assert_eq!(answer(json!(null), json!(false)), Sent::Retained);
+    let foreign = json!({"schema": "other", "committed": false, "retained": false});
+    assert_eq!(committed_answer(&foreign), Sent::Retained);
+    assert_eq!(committed(b"not json"), Sent::Retained);
+    // Without a reachable resident the ticket is kept for a retry.
+    assert_eq!(authority().commit("e:1"), Sent::Retained);
+}
+
+fn committed_answer(body: &Value) -> Sent {
+    committed(&serde_json::to_vec(body).unwrap())
 }
