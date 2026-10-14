@@ -177,8 +177,9 @@ fn unfiltered_walk_proven(root: &Path) -> bool {
 }
 
 /// Oh My Pi `glob` walks below its fixed prefix and returns names only. Below
-/// a workspace cwd (not the home directory or an ancestor of it) that is the
-/// listing `find` already gets; anywhere else no sensitive file may be
+/// a workspace cwd (not the home directory or an ancestor of it), or in a
+/// linked worktree of a repository inside it, that is the listing `find`
+/// already gets; anywhere else no sensitive file may be
 /// reachable below the prefix. Either way no link may lead the walk out of it.
 pub(super) fn omp_glob_scope_proven(
     target: &str,
@@ -198,7 +199,15 @@ pub(super) fn omp_glob_scope_proven(
         SearchFilter::from_input(&Map::new())
             .is_some_and(|filter| walk_scope(&root, &filter, ignores, true, &mut None).is_ok())
     };
-    if !workspace.is_some_and(|cwd| root.starts_with(cwd)) {
+    // A linked worktree of a repository inside the workspace holds the same
+    // checkout, so its names are the workspace's too.
+    let in_workspace = workspace.is_some_and(|cwd| {
+        root.starts_with(&cwd)
+            || super::worktree_writes::linked_worktree_common_dir(&root)
+                .and_then(|common| common.parent().map(Path::to_path_buf))
+                .is_some_and(|checkout| checkout.starts_with(&cwd))
+    });
+    if !in_workspace {
         return unfiltered_walk_proven(&root) && names_walk(Ignores::None);
     }
     // Without ignore rules the walk covers every entry the host can reach,
