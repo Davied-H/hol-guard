@@ -438,8 +438,10 @@ fn a_ticket_the_drain_kept_is_retried_after_a_later_forward() {
 
 #[test]
 fn retained_tickets_are_bounded_and_drop_the_oldest() {
-    let mut commits = Commits::default();
-    commits.due = (0..MAX_RETAINED + 2).map(|n| format!("e:{n}")).collect();
+    let mut commits = Commits {
+        due: (0..MAX_RETAINED + 2).map(|n| format!("e:{n}")).collect(),
+        retained: VecDeque::new(),
+    };
     settle_with(&mut commits, |_| Sent::Retained);
     assert_eq!(commits.retained.len(), MAX_RETAINED);
     assert_eq!(commits.retained.front().map(String::as_str), Some("e:2"));
