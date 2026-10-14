@@ -23,6 +23,7 @@ pub struct PathContext<'a> {
 mod contained_wrapper;
 pub(crate) mod curl_reads;
 pub(crate) mod docker_reads;
+mod docker_start;
 pub(crate) mod kubectl_reads;
 pub(crate) mod port_probes;
 mod workspace_contained;
@@ -52,6 +53,7 @@ pub(crate) mod git_object_reads;
 mod git_read_floor;
 mod git_reads;
 mod git_ref_listings;
+mod git_rev_list;
 mod git_search_text;
 mod repo_create_reason;
 use git_reads::safe_git_arguments;
@@ -79,6 +81,7 @@ mod trusted_location;
 pub(crate) use git_routes::{git_dir_route_within_scope, git_route_within_workspace};
 mod apply_patch_writes;
 mod lockfile_install;
+mod omp_hashline_writes;
 mod pure_expression;
 mod read_paths;
 mod source_reads;
@@ -129,6 +132,7 @@ pub use generic::evaluate_pre_tool_envelope_with_execution_context;
 pub use generic::evaluate_pre_tool_envelope_with_extensions;
 pub use git_push::{install_git_push_verdict, GitPushRequest, GitPushVerdict};
 pub(crate) use segment_proof::{benign_command_segments, without_stderr_merge};
+pub(crate) use worktree_add::new_checkout_route;
 pub(crate) use worktree_add::verified_leading_cd;
 
 /// Whether this evaluation already proved `segment` as a safe `origin`
@@ -632,7 +636,8 @@ fn evaluate_single_command(
     if exact_safe_command_with_context(&model, false, context)
         && !bun_eval::node_inline_preload_configured(&model, execution_environment)
     {
-        let reason_code = curl_reads::proven_reason_code(&model);
+        let reason_code = docker_start::proven_reason_code(&model)
+            .unwrap_or_else(|| curl_reads::proven_reason_code(&model));
         return Ok(pretool_decision(
             model,
             "allow",
