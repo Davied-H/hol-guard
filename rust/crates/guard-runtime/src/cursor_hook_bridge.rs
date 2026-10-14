@@ -15,6 +15,13 @@
 //! exactly run the Python client unchanged, with the hook it already read
 //! and the time it already spent.
 //!
+//! When no live resident answers, the bridge posts the request to the
+//! loopback daemon itself, over the transport, auth token and deadlines the
+//! bounded bridge uses, and renders the daemon's answer the same way. A
+//! daemon that is unreachable, refuses the hook, runs out of time or
+//! answers anything the bridge cannot reproduce leaves the hook to the
+//! Python client, which asks the daemon again on its own terms.
+//!
 //! The client also sends an `after*` observer proof and approval binding in
 //! `hook_env`; the daemon drops `hook_env` before it reviews a hook, so only
 //! the client's CLI fallback reads them, and the bridge reads no key.
@@ -32,8 +39,10 @@ use guard_command::hook_adapter_prepare::{cursor_client_event, first_truthy, pre
 use guard_command::hook_adapter_value::{parse_python_json, OMap, OValue};
 
 use crate::bounded_hook_bridge::{
-    read_hook_input, run_python, write_stdout, Input, MAX_HOOK_INPUT_BYTES,
+    daemon_target, post_hook_text, read_hook_input, run_python, transport_deadline, write_stdout,
+    Input, DAEMON_BUDGET, MAX_HOOK_INPUT_BYTES, PROMPT_DAEMON_BUDGET,
 };
+use crate::claude_hook_bridge_http::remaining;
 use crate::claude_hook_bridge_render::py_strip;
 use crate::codex_hook_bridge_direct::{direct_answer, CURSOR};
 use crate::codex_hook_response::{POST_TOOL_USE, PRE_TOOL_USE};
@@ -44,6 +53,8 @@ use crate::hook_env_stamp::{current_environment, stamp_hook_input_text, Stamp};
 pub(crate) const BRIDGE_COMMAND: &str = "cursor-hook-bridge";
 pub(crate) const BRIDGE_FEATURE: &str = "cursor-hook-bridge-v1";
 const EVENT_FLAG: &str = "--cursor-hook-event";
+/// The harness name of the client's daemon route, `/v1/hooks/cursor`.
+const DAEMON_HARNESS: &str = "cursor";
 const PROJECT_DIR_ENV: &str = "CURSOR_PROJECT_DIR";
 const AFTER_EVENTS: [&str; 2] = ["aftershellexecution", "aftermcpexecution"];
 /// The names `_prepare_cursor_hook_payload` gives the `after*` observers.
@@ -258,9 +269,27 @@ fn answer(kind: Kind, event: &str, response: &str, guard_home: &Path) -> Option<
     }
 }
 
-/// The exit code once the bridge answered the hook, or `None` to run the
-/// client.
-fn route(client: &Client, raw: &[u8]) -> Option<i32> {
+/// The body `_daemon_hook_result` accepts from the daemon for `request`,
+/// stripped as the client strips it, or `None` when the daemon cannot be
+/// asked or does not answer within the bridge's share of the deadline. The
+/// client also sends `hook_env`, which the daemon drops unread.
+fn daemon_answer(client: &Client, request: &Request) -> Option<String> {
+    let left = remaining(client.deadline);
+    let target = daemon_target(Path::new(&client.guard_home), DAEMON_HARNESS)?;
+    let budget = match request.kind {
+        Kind::Prompt => PROMPT_DAEMON_BUDGET,
+        Kind::PreToolUse | Kind::After => DAEMON_BUDGET,
+    };
+    let deadline = transport_deadline(client.deadline, left, budget)?;
+    let path = format!("/v1/hooks/{DAEMON_HARNESS}?{}", request.query);
+    let body = post_hook_text(&target, &path, &request.data, deadline)?;
+    Some(py_strip(&body).to_owned())
+}
+
+/// The client's stdout and exit code for the hook, answered by a live
+/// resident or else by the daemon, or `None` to run the client. A resident
+/// answer the bridge cannot render runs the client without the daemon.
+fn respond(client: &Client, raw: &[u8]) -> Option<(String, i32)> {
     let request = prepared_request(client, raw)?;
     let event_name = match request.kind {
         Kind::PreToolUse => PRE_TOOL_USE,
@@ -268,15 +297,25 @@ fn route(client: &Client, raw: &[u8]) -> Option<i32> {
         Kind::After => POST_TOOL_USE,
     };
     let guard_home = Path::new(&client.guard_home);
-    let answered = direct_answer(
+    let resident = direct_answer(
         CURSOR,
         guard_home,
         &request.query,
         event_name,
         &request.data,
         client.deadline,
-    )?;
-    let (stdout, code) = answer(request.kind, &request.event, &answered, guard_home)?;
+    );
+    let answered = match resident {
+        Some(answered) => answered,
+        None => daemon_answer(client, &request)?,
+    };
+    answer(request.kind, &request.event, &answered, guard_home)
+}
+
+/// The exit code once the bridge answered the hook, or `None` to run the
+/// client.
+fn route(client: &Client, raw: &[u8]) -> Option<i32> {
+    let (stdout, code) = respond(client, raw)?;
     write_stdout(&stdout);
     Some(code)
 }
@@ -327,3 +366,7 @@ pub(crate) fn run(python_argv: &[String]) -> i32 {
 #[cfg(all(test, unix))]
 #[path = "cursor_hook_bridge_tests.rs"]
 mod tests;
+
+#[cfg(all(test, unix))]
+#[path = "cursor_hook_bridge_daemon_tests.rs"]
+mod daemon_tests;
