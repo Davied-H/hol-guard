@@ -74,6 +74,9 @@ def _record_resident_request(payload: bytes = b"") -> None:
 
 _MAX_REQUEST_BYTES = 6 * 1024 * 1024
 _MAX_PERSISTENT_CLIENTS = 16
+# Overlap still fans out to _MAX_PERSISTENT_CLIENTS streams, but each parked
+# stream is a live child process, so only this many stay parked between calls.
+_MAX_IDLE_PERSISTENT_CLIENTS = 1
 _MAX_PERSISTENT_POOLS = 16
 _MAX_FAILURE_CODE_LENGTH = 128
 # Shared bounds for probes that must confirm native resident cleanup.
@@ -153,6 +156,13 @@ def _is_resident_startup_error(response: bytes) -> bool:
     return isinstance(decoded, dict) and set(decoded) == {"error", "retryable"}
 
 
+def _client_exited(client: _PersistentNativeClient) -> bool:
+    """True only when the client's child is known to have exited."""
+
+    process = getattr(client, "_process", None)
+    return process is not None and process.poll() is not None
+
+
 class _PersistentNativeClientPool:
     """Bounded lazy pool of streams for one executable and Guard state root.
 
@@ -229,28 +239,36 @@ class _PersistentNativeClientPool:
                     clear_restart_hold(self._hold_key)
             return response
         finally:
-            close_client = False
+            retired: _PersistentNativeClient | None = None
             with self._condition:
                 if client not in self._clients:
-                    close_client = True
+                    retired = client
                 elif self._closed or response is None or _is_resident_startup_error(response):
                     self._retiring.add(client)
-                    close_client = True
+                    retired = client
+                elif len(self._idle) >= _MAX_IDLE_PERSISTENT_CLIENTS:
+                    # Surplus from overlapping requests: retire one stream so
+                    # an idle process does not keep a child alive. Keep the
+                    # healthier one parked when the parked child has exited.
+                    retired = client
+                    if _client_exited(self._idle[0]):
+                        retired, self._idle[0] = self._idle[0], client
+                    self._retiring.add(retired)
                 else:
                     self._idle.append(client)
                 self._condition.notify()
-            if close_client:
+            if retired is not None:
                 try:
-                    contained = client.close(deadline_monotonic=deadline_monotonic)
+                    contained = retired.close(deadline_monotonic=deadline_monotonic)
                 except BaseException:
                     with self._condition:
-                        if client in self._clients:
-                            self._retiring.add(client)
+                        if retired in self._clients:
+                            self._retiring.add(retired)
                     raise
                 if contained is not False:
                     with self._condition:
-                        self._clients.discard(client)
-                        self._retiring.discard(client)
+                        self._clients.discard(retired)
+                        self._retiring.discard(retired)
                         self._condition.notify_all()
 
     def close(self, *, deadline_monotonic: float | None = None) -> bool:
