@@ -175,6 +175,7 @@ fn substitutions_and_sensitive_redirects_beside_a_body_stay_reviewed() {
         format!("{repo} --body \"credential <x>\" > ~/.netrc"),
         format!("{repo} --body \"ok \\`a\\`\" | tee ~/.aws/credentials"),
         format!("{repo} --body \"credential note\" 2> ~/.ssh/config"),
+        format!("{repo} --body \"copied from ~/.aws/credentials\" 2>&1 | tail -1"),
         "node -e 'require(\"fs\").writeFileSync(\".env\", \"x\")' 'a => b'".to_owned(),
     ];
     for harness in ["omp", "zcode"] {
