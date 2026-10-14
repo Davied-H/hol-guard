@@ -7,17 +7,29 @@
 //! selector posts to the base repository gh resolves from the checkout, so it
 //! passes only when that can be nothing but `origin`: no `GH_REPO`, no other
 //! remote, and no `gh repo set-default` choice other than origin itself. With
-//! no remote at all gh resolves no base repository and posts nothing.
+//! no remote at all gh resolves no base repository and posts nothing. Git
+//! itself lists the remotes, in the environment the command inherits, so
+//! every configuration scope, include and URL rewrite counts.
 //! The posted text is literal and must carry no credential shape, so the
 //! comment cannot carry a secret out. A `--body-file` must be a plain,
 //! bounded file in the work tree or a private temporary directory, and its
 //! content passes the same scan. Anything else keeps the normal review.
 
 use crate::CommandSegmentV1;
-use std::path::Path;
+use std::time::Instant;
 
 #[path = "github_conversation_files.rs"]
 mod files;
+#[path = "github_conversation_remotes.rs"]
+mod remotes;
+
+/// Where the proof runs the segment, its deadline, and the execution
+/// environment the command inherits.
+pub(crate) type ProbeContext<'a> = (
+    super::PathContext<'a>,
+    Option<Instant>,
+    Option<&'a guard_contracts::GuardExecutionEnvironmentV1>,
+);
 
 /// GitHub rejects a comment body longer than this many characters.
 const MAX_BODY_BYTES: usize = 65_536;
@@ -31,7 +43,7 @@ enum Body<'a> {
 /// secret-free comment or reply to the work tree's own repository.
 pub(crate) fn current_repository_write(
     segment: &CommandSegmentV1,
-    context: super::PathContext<'_>,
+    (context, deadline, environment): ProbeContext<'_>,
 ) -> bool {
     let Some(cwd) = context.cwd.and_then(|cwd| std::fs::canonicalize(cwd).ok()) else {
         return false;
@@ -59,22 +71,29 @@ pub(crate) fn current_repository_write(
         };
         (selector, body)
     };
-    let sole = selector.is_none();
-    if sole && base_repository_override(segment) {
+    // gh takes the base repository from `GH_REPO` before any remote when no
+    // `--repo` is given, whether the segment sets it or inherits it.
+    let gh_repo = |name: &String| name.eq_ignore_ascii_case("GH_REPO");
+    if selector.is_none()
+        && (segment.environment_names.iter().any(gh_repo)
+            || environment.is_some_and(|stamped| stamped.environment_names.iter().any(gh_repo)))
+    {
         return false;
     }
-    let Some(origin) = origin_repository(&root, sole) else {
+    let Some(remotes) = remotes::resolve(context, deadline, environment) else {
         return false;
     };
-    if let Some((owner, repository)) = selector {
-        let Some((origin_owner, origin_repository)) = origin else {
-            return false;
-        };
-        if !owner.eq_ignore_ascii_case(&origin_owner)
-            || !repository.eq_ignore_ascii_case(&origin_repository)
-        {
-            return false;
+    match (selector, remotes.origin) {
+        (Some((owner, repository)), Some((origin_owner, origin_repository))) => {
+            if !owner.eq_ignore_ascii_case(&origin_owner)
+                || !repository.eq_ignore_ascii_case(&origin_repository)
+            {
+                return false;
+            }
         }
+        (Some(_), None) => return false,
+        (None, _) if !remotes.origin_only => return false,
+        (None, _) => {}
     }
     let text = match body {
         Body::Text(text) => text.to_owned(),
@@ -86,17 +105,6 @@ pub(crate) fn current_repository_write(
     !text.trim().is_empty()
         && text.len() <= MAX_BODY_BYTES
         && !super::curl_reads::url_secrets::text_carries_secret(&text)
-}
-
-/// gh takes the base repository from a non-empty `GH_REPO` before any
-/// remote when no `--repo` is given: from the segment's own prefix, or from
-/// the environment it inherits, read here from this runtime's environment.
-fn base_repository_override(segment: &CommandSegmentV1) -> bool {
-    segment
-        .environment_names
-        .iter()
-        .any(|name| name == "GH_REPO")
-        || std::env::var_os("GH_REPO").is_some_and(|value| !value.is_empty())
 }
 
 /// `[--repo <selector>] issue|pr comment [<number>] (--body <text> |
@@ -233,76 +241,6 @@ fn repository_selector(value: &str) -> Option<(&str, &str)> {
     (repository_name(pair.0) && repository_name(pair.1)).then_some(pair)
 }
 
-/// `Some(Some(pair))` for the GitHub owner and repository every `remote
-/// "origin"` URL in the repository's own configuration names (a linked
-/// worktree's shared one), `Some(None)` when the configuration defines no
-/// remote at all, and `None` when origin is missing or not GitHub, its URLs
-/// disagree, or the file uses a form this reader does not model (includes,
-/// URL rewrites, quoting, inline comments or a `config.worktree`).
-///
-/// With `sole`, origin must also be the base repository gh resolves without
-/// a selector. gh first honors a remote's `gh-resolved` key (`gh repo
-/// set-default`) and otherwise ranks `upstream` and `github` above `origin`,
-/// so any other remote, or a `gh-resolved` value on origin other than
-/// `base`, returns `None`.
-fn origin_repository(root: &Path, sole: bool) -> Option<Option<(String, String)>> {
-    let config = super::workspace_git_config::repository_config(root).ok()??;
-    let mut origin = false;
-    let mut remotes = false;
-    let mut found: Option<(String, String)> = None;
-    for line in config.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with(['#', ';']) {
-            continue;
-        }
-        if let Some(header) = line.strip_prefix('[') {
-            let header = header.strip_suffix(']')?;
-            let (section, subsection) = header
-                .split_once(char::is_whitespace)
-                .map_or((header, None), |(section, rest)| {
-                    (section, Some(rest.trim()))
-                });
-            let section = section.to_ascii_lowercase();
-            if matches!(section.as_str(), "include" | "includeif" | "url") || section.contains('.')
-            {
-                return None;
-            }
-            let remote = section == "remote";
-            origin = remote && subsection == Some("\"origin\"");
-            remotes |= remote && subsection.is_some();
-            if sole && remote && subsection.is_some() && !origin {
-                return None;
-            }
-            continue;
-        }
-        let (key, value) = line
-            .split_once('=')
-            .map_or((line, ""), |(key, value)| (key.trim(), value.trim()));
-        if !origin {
-            continue;
-        }
-        if sole && key.eq_ignore_ascii_case("gh-resolved") && value != "base" {
-            return None;
-        }
-        if !key.eq_ignore_ascii_case("url") {
-            continue;
-        }
-        if value.contains(['"', '\\', '#', ';']) {
-            return None;
-        }
-        let pair = github_repository(value)?;
-        if found.as_ref().is_some_and(|old| *old != pair) {
-            return None;
-        }
-        found = Some(pair);
-    }
-    match found {
-        Some(pair) => Some(Some(pair)),
-        None if !remotes => Some(None),
-        None => None,
-    }
-}
-
 /// The lowercase owner and repository of a plain GitHub HTTPS or SSH URL.
 fn github_repository(url: &str) -> Option<(String, String)> {
     let rest = [
@@ -338,6 +276,9 @@ fn positive_number(value: &str) -> bool {
         && value.bytes().any(|byte| byte != b'0')
 }
 
+#[cfg(all(test, unix))]
+#[path = "github_conversation_probe_tests.rs"]
+mod probe_tests;
 #[cfg(test)]
 #[path = "github_conversation_tests.rs"]
 mod tests;

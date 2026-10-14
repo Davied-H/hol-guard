@@ -203,6 +203,7 @@ impl CompiledNativeCommandControls {
             packages,
             deadline,
             crate::pretool::PathContext::default(),
+            None,
         )
     }
 
@@ -214,9 +215,10 @@ impl CompiledNativeCommandControls {
         packages: &[String],
         deadline: Option<Instant>,
         context: crate::pretool::PathContext<'_>,
+        environment: Option<&guard_contracts::GuardExecutionEnvironmentV1>,
     ) -> PreToolResultV1 {
         let observed = match command {
-            Some(command) => self.observe_command(command, deadline, context),
+            Some(command) => self.observe_command(command, deadline, context, environment),
             None => Ok((NativeCommandObservationBatchV1::default(), None)),
         };
         let (mut batch, unmodeled) = match observed {

@@ -201,6 +201,17 @@ pub fn compatibility_observations_with_context(
     deadline: Option<Instant>,
     context: crate::pretool::PathContext<'_>,
 ) -> Result<CompatibilityObservations, &'static str> {
+    compatibility_observations_in(command, deadline, context, None)
+}
+
+/// [`compatibility_observations_with_context`] with the execution
+/// environment the command inherits, for proofs that run a metadata probe.
+pub(crate) fn compatibility_observations_in(
+    command: &CanonicalCommandV1,
+    deadline: Option<Instant>,
+    context: crate::pretool::PathContext<'_>,
+    environment: Option<&guard_contracts::GuardExecutionEnvironmentV1>,
+) -> Result<CompatibilityObservations, &'static str> {
     deadline_check(deadline)?;
     if command.normalized_text.len() > 32_768
         || command.segments.len() > 128
@@ -300,7 +311,10 @@ pub fn compatibility_observations_with_context(
             "git" => {
                 git::observe_with_contexts(cli_segment, index, &mut result, context, proof_context)
             }
-            "gh" => github::observe(cli_segment, index, &mut result, proof_context),
+            "gh" => {
+                let probe = (proof_context, deadline, environment);
+                github::observe(cli_segment, index, &mut result, probe)
+            }
             _ => {}
         }
         domains::observe(command, segment, index, &mut result, context);

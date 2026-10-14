@@ -576,6 +576,7 @@ fn evaluate_envelope(
                 cwd,
                 ..context
             },
+            execution_environment,
         ),
         (Some(controls), _) => controls.apply_with_tool(
             None,
