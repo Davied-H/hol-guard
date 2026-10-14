@@ -470,20 +470,17 @@ fn grep_scope(
     let targets = search_targets(input_path(input, signals)?.unwrap_or("."), context)?;
     // A single file is proven by the ordinary bounded file-read path. An
     // entry of a list has no such fallback, so it carries the same proof here.
+    // A `file:N-M` entry searches only those lines of one file, so it carries
+    // the proof `read` gives the same selector.
     let list = targets.len() > 1;
+    let (home, cwd) = (context.path.home_dir, context.path.cwd);
     targets
         .into_iter()
         .all(|target| {
-            super::super::search_scope::content_search_scope_proven(
-                target,
-                context.path.home_dir,
-                context.path.cwd,
-            ) || (list
-                && super::super::read_paths::existing_regular_read_target(
-                    target,
-                    context.path.home_dir,
-                    context.path.cwd,
-                ))
+            super::super::search_scope::content_search_scope_proven(target, home, cwd)
+                || (list
+                    && super::super::read_paths::existing_regular_read_target(target, home, cwd))
+                || super::super::read_paths::bounded_omp_file_selector_target(target, home, cwd)
         })
         .then(|| {
             directory_allow(
