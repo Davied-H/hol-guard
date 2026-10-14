@@ -1030,6 +1030,7 @@ clearer UX and an implementation plan with technical references.
         "source",
         [
             'TOKEN="$2" + "{}"',
+            'TOKEN="$2"{}',
             'TOKEN=<your-token> + "{}"',
             'TOKEN=std::env::var("TOKEN").unwrap_or("{}".into())',
         ],

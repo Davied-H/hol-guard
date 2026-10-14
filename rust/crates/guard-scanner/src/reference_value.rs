@@ -77,9 +77,19 @@ pub(crate) fn is_reference(matched: &str, rest_of_line: &str) -> bool {
     let single = value.len() >= 2 && value.starts_with('\'') && value.ends_with('\'');
     if double || single {
         let literal = &value[1..value.len() - 1];
+        // Shell words can join a quoted reference to an unquoted literal.
+        // Keep the match when that continuation has no proven boundary.
+        let attached = rest_of_line.chars().next().is_some_and(|character| {
+            !character.is_whitespace()
+                && !matches!(
+                    character,
+                    '"' | '\'' | '`' | ';' | ',' | ')' | ']' | '}' | '>' | '<' | '&' | '|'
+                )
+        });
         return (PLACEHOLDER.is_match(literal)
             || QUOTED_PARAMETER.is_match(literal)
             || (double && EXPANDED_VARIABLE.is_match(literal)))
+            && !attached
             && !hides_literal("", rest_of_line);
     }
     let placeholder = PLACEHOLDER.is_match(value);
