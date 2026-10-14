@@ -24,7 +24,7 @@ fn the_child_frame_and_the_request_share_one_python_rewrite() {
     assert_eq!(request["params"], frame["params"]);
     assert_eq!(
         serde_json::to_string(&request["arguments"]).unwrap(),
-        r#"{"format":"mapping","entries":[["b",1.0],["a",[0,100000.0,"2.50"]]]}"#
+        r#"{"entries":[["b",1.0],["a",[0,100000.0,"2.50"]]],"format":"mapping"}"#
     );
 }
 

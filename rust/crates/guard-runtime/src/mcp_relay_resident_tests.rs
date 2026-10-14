@@ -98,6 +98,7 @@ fn session_facts_bind_the_launch_once() {
     assert_eq!(facts.workspace.as_deref(), workspace.to_str());
     assert_eq!(facts.hash_workspace, canonical(&workspace));
     assert_eq!(facts.launcher_path.as_deref(), Some("/usr/bin:/bin"));
+    assert_eq!(facts.path.as_deref(), Some("/usr/bin:/bin"));
     assert_eq!(facts.launcher_home, "/home/user");
     assert_eq!(
         facts.fingerprint["command"],
@@ -179,19 +180,15 @@ fn launcher_home_drops_trailing_separators() {
 }
 
 #[test]
-fn shell_and_composio_tools_are_not_sent() {
-    for name in [
-        "bash",
-        " Shell ",
-        "RUN_COMMAND",
-        "composio_x",
-        "a__COMPOSIO_SEARCH_TOOLS",
-    ] {
+fn only_composio_tools_are_not_sent() {
+    for name in ["composio_x", "a__COMPOSIO_SEARCH_TOOLS"] {
         assert!(delegated_tool(name), "{name}");
     }
-    for name in ["read", "bash_history", "my_composio_x", "composio__read"] {
+    // Shell tools reach the resident, whose package check defers an intent.
+    for name in ["read", "bash", " Shell ", "RUN_COMMAND", "my_composio_x"] {
         assert!(!delegated_tool(name), "{name}");
     }
+    assert!(!delegated_tool("composio__read"));
 }
 
 #[test]
@@ -220,8 +217,13 @@ fn arguments_keep_the_host_order() {
             text: "{\"a\":1}".to_owned()
         })
     );
-    let command = json!({"cmd": ""});
-    assert_eq!(arguments(Some(&command), None), None);
+    let command = json!({"cmd": "npm install left-pad"});
+    assert_eq!(
+        arguments(Some(&command), None),
+        Some(McpToolArgumentsV1::Mapping {
+            entries: vec![("cmd".to_owned(), json!("npm install left-pad"))],
+        })
+    );
 }
 
 #[test]
@@ -249,6 +251,9 @@ fn request_matches_the_decide_wire_shape() {
     let decoded: McpRelayDecideRequestV1 = serde_json::from_value(request).unwrap();
     assert_eq!(decoded.build.tool_name, "read");
     assert_eq!(decoded.hash_workspace, facts.hash_workspace);
+    assert_eq!(decoded.path.as_deref(), Some("/usr/bin:/bin"));
+    let shell = params(json!({"name": "bash", "arguments": {"command": "ls"}}));
+    assert!(decide_request(&facts, &shell, None, &catalog).is_some());
 }
 
 #[test]
@@ -260,7 +265,7 @@ fn calls_the_relay_cannot_send_are_not_requested() {
         json!({"name": "", "arguments": {}}),
         json!({"name": 7}),
         json!({"name": "caf\u{e9}"}),
-        json!({"name": "bash", "arguments": {}}),
+        json!({"name": "composio_x", "arguments": {}}),
     ] {
         assert!(
             decide_request(&facts, &params(call.clone()), None, &catalog).is_none(),
@@ -291,7 +296,13 @@ fn replies_map_to_forward_or_block() {
             data: json!({"guardPolicyAction": "block"}),
         })
     );
+    let claim = json!({"schema": RESULT_SCHEMA, "outcome": "claim", "ticket": "claim-1:1"});
+    let held = Some(Reply::Claim {
+        ticket: "claim-1:1".to_owned(),
+    });
+    assert_eq!(reply(&serde_json::to_vec(&claim).unwrap()), held);
     for other in [
+        json!({"schema": RESULT_SCHEMA, "outcome": "claim", "ticket": ""}),
         json!({"schema": RESULT_SCHEMA, "outcome": "defer", "reason": "x"}),
         json!({"schema": "other", "outcome": "forward", "ticket": "e:1"}),
         // A forward without a ticket could never be recorded.
@@ -318,6 +329,13 @@ fn without_a_resident_every_call_is_blocked() {
         commits: Commits::default(),
     };
     assert_eq!(unbound.decide(&message, &call, None, &catalog), expected);
+    // A claim goes only to the resident that decided the call.
+    let ticket = ClaimTicket {
+        message: message.clone(),
+        expected: catalog.snapshot(),
+        claim: "claim-1:1".to_owned(),
+    };
+    assert_eq!(unbound.claim(ticket), expected);
     let mut unreachable = ResidentRelayAuthority {
         facts: Some(facts()),
         resident: None,
