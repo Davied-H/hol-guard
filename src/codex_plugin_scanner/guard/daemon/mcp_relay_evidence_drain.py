@@ -78,6 +78,7 @@ def record_mcp_relay_evidence(store: object, guard_home: Path, record: object) -
         record["kind"] != MCP_TOOL_CALL_EVIDENCE_KIND
         or harness not in _RELAY_HARNESSES
         or not isinstance(source, str)
+        or not isinstance(policy_action, str)
         or not isinstance(tool_name, str)
         or not isinstance(params, dict)
         or params.get("name") != tool_name
