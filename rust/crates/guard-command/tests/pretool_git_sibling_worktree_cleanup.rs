@@ -1,0 +1,208 @@
+#![cfg(unix)]
+
+//! A linked worktree created beside the session's checkout and reached with
+//! `../`: committing in it, removing the dependency link placed in it, and
+//! removing it again. Only a provable linked worktree of the session's own
+//! repository gets the relative proof; any other sibling stays reviewed.
+
+use crate::pretool_git_session_ops::{git, session, Session};
+use std::path::{Path, PathBuf};
+
+const LOCAL_WRITE: &str = "native_exact_safe_git_local_write";
+const MAINTENANCE: &str = "native_exact_safe_worktree_maintenance";
+const EVALUATION_FAILED: &str = "native_command_extension_evaluation_failed";
+
+/// The session plus `org/report-wt`, a linked worktree of the cwd's
+/// repository beside it, holding `reports/weekly.md` and a `node_modules`
+/// link to the checkout's own dependencies.
+fn report_worktree(label: &str) -> (Session, PathBuf) {
+    let session = session(label);
+    let worktree = session.org.join("report-wt");
+    git(
+        &session.home,
+        &session.primary,
+        &[
+            "worktree",
+            "add",
+            "--quiet",
+            "-b",
+            "weekly-report",
+            worktree.to_str().unwrap(),
+        ],
+    );
+    std::fs::create_dir_all(worktree.join("reports")).unwrap();
+    std::fs::write(worktree.join("reports/weekly.md"), "# Weekly\n").unwrap();
+    std::os::unix::fs::symlink(
+        session.primary.join("node_modules"),
+        worktree.join("node_modules"),
+    )
+    .unwrap();
+    (session, worktree)
+}
+
+fn repository(session: &Session, directory: &Path) {
+    std::fs::create_dir_all(directory).unwrap();
+    git(&session.home, directory, &["init", "--quiet", "-b", "main"]);
+    git(
+        &session.home,
+        directory,
+        &["config", "user.name", "Guard Fixture"],
+    );
+    git(
+        &session.home,
+        directory,
+        &["config", "user.email", "guard-fixture@example.invalid"],
+    );
+    std::fs::write(directory.join("README.md"), "fixture\n").unwrap();
+    git(&session.home, directory, &["add", "README.md"]);
+    git(
+        &session.home,
+        directory,
+        &["commit", "--quiet", "-m", "fixture"],
+    );
+}
+
+fn verdict(session: &Session, command: &str) -> (String, String) {
+    let result = session.evaluate_at(command, &session.primary);
+    (result.minimum_action, result.reason_code)
+}
+
+fn assert_reviewed(session: &Session, command: &str) {
+    let (action, reason) = verdict(session, command);
+    assert!(
+        !matches!(action.as_str(), "allow" | "warn"),
+        "{command}: {action} {reason}"
+    );
+}
+
+#[test]
+fn committing_in_a_linked_worktree_beside_the_checkout_is_a_local_write() {
+    let (session, _) = report_worktree("report-commit");
+    let command = "cd ../report-wt && git add reports/weekly.md && git commit -m \"Add weekly report\" && git log --oneline -1 && git status --short";
+    let (action, reason) = verdict(&session, command);
+    assert!(
+        (action == "allow" && reason == LOCAL_WRITE) || action == "sandbox-required",
+        "{action} {reason}"
+    );
+    for command in [
+        "cd ../report-wt && git add reports/weekly.md",
+        "cd ../report-wt/ && git commit -m x",
+    ] {
+        let (action, reason) = verdict(&session, command);
+        assert!(
+            matches!(action.as_str(), "allow" | "sandbox-required"),
+            "{command}: {action} {reason}"
+        );
+    }
+    for command in [
+        // Only a plain climb to the worktree root is proved.
+        "cd ../report-wt/reports && git add weekly.md",
+        "cd ../report-wt/../report-wt && git add reports/weekly.md",
+        "cd .. && git status --short",
+        // Other steps keep their own proofs.
+        "cd ../report-wt && git add reports/weekly.md && rm -rf build",
+        "cd ../report-wt && git commit -m x && git push origin weekly-report --force",
+    ] {
+        assert_reviewed(&session, command);
+    }
+}
+
+#[test]
+fn siblings_that_are_not_linked_worktrees_of_the_session_stay_reviewed() {
+    let (session, worktree) = report_worktree("report-siblings");
+    // A sibling repository with its own `.git` directory.
+    repository(&session, &session.org.join("other"));
+    // A worktree of that other repository.
+    let foreign = session.org.join("other-wt");
+    git(
+        &session.home,
+        &session.org.join("other"),
+        &["worktree", "add", "--quiet", foreign.to_str().unwrap()],
+    );
+    std::os::unix::fs::symlink(
+        session.primary.join("node_modules"),
+        foreign.join("node_modules"),
+    )
+    .unwrap();
+    // A directory whose `.git` is a symlink to the real worktree's gitfile.
+    let linked_git = session.org.join("linked-git");
+    std::fs::create_dir_all(&linked_git).unwrap();
+    std::os::unix::fs::symlink(worktree.join(".git"), linked_git.join(".git")).unwrap();
+    std::os::unix::fs::symlink(
+        session.primary.join("node_modules"),
+        linked_git.join("node_modules"),
+    )
+    .unwrap();
+    // A symlinked spelling of the real worktree.
+    std::os::unix::fs::symlink(&worktree, session.org.join("alias-wt")).unwrap();
+    for name in ["other", "other-wt", "linked-git", "alias-wt"] {
+        for command in [
+            format!("cd ../{name} && git add README.md && git commit -m x"),
+            format!("cd ../{name} && git status --short"),
+            format!("rm ../{name}/node_modules"),
+            format!("rm ../{name}/node_modules && git worktree remove ../report-wt"),
+        ] {
+            assert_reviewed(&session, &command);
+        }
+    }
+    assert_reviewed(&session, "git worktree remove ../other-wt");
+}
+
+#[test]
+fn removing_the_dependency_link_and_the_worktree_is_quiet() {
+    let (session, _) = report_worktree("report-remove");
+    for (command, reason) in [
+        ("rm ../report-wt/node_modules", None),
+        (
+            "rm ../report-wt/node_modules && git worktree remove ../report-wt && git worktree list && git branch -v",
+            Some(MAINTENANCE),
+        ),
+        (
+            "rm -f ../report-wt/node_modules && git worktree remove ../report-wt",
+            Some(MAINTENANCE),
+        ),
+        (
+            "git worktree remove ../report-wt && git worktree list",
+            Some(MAINTENANCE),
+        ),
+    ] {
+        let (action, code) = verdict(&session, command);
+        assert_eq!(action, "allow", "{command}: {code}");
+        if let Some(reason) = reason {
+            assert_eq!(code, reason, "{command}");
+        }
+    }
+    std::fs::write(session.org.join("report-wt/notes.txt"), "keep\n").unwrap();
+    std::os::unix::fs::symlink(
+        session.primary.join("node_modules"),
+        session.org.join("report-wt/.hidden"),
+    )
+    .unwrap();
+    for command in [
+        // Only links are removed, never a file, a directory or a hidden name.
+        "rm ../report-wt/notes.txt",
+        "rm ../report-wt/reports",
+        "rm -r ../report-wt/node_modules",
+        "rm ../report-wt/.hidden",
+        "rm ../report-wt/reports/../node_modules",
+        // Every step runs only after the one before it succeeded.
+        "rm ../report-wt/node_modules; git worktree remove ../report-wt",
+        "rm ../report-wt/node_modules || git worktree remove ../report-wt",
+        "git worktree remove --force ../report-wt && git worktree list",
+        "git worktree remove ../report-wt && git worktree list | sh",
+        "git worktree remove ../report-wt && git push origin main",
+        "git worktree remove ../report-wt && npm test",
+        "git worktree remove ../report-wt && cd .. && git branch -v",
+    ] {
+        assert_reviewed(&session, command);
+    }
+}
+
+#[test]
+fn creating_and_entering_a_worktree_through_pwd_is_judged_not_failed() {
+    let session = session("report-create");
+    let command = "git worktree add ../weekly-wt -b weekly && ln -s \"$(pwd)/node_modules\" ../weekly-wt/node_modules && cd ../weekly-wt && npm run report && cat reports/weekly.md && git status --short";
+    let (action, reason) = verdict(&session, command);
+    assert_ne!(action, "allow", "{reason}");
+    assert_ne!(reason, EVALUATION_FAILED);
+}
