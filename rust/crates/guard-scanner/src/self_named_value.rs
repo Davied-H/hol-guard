@@ -27,22 +27,18 @@ const MAX_VALUE_CHARS: usize = 64;
 /// short numeric counter besides. `tail` is the text after the match: a match
 /// the value runs on past (`TOKEN=token"$more"`) is not the whole value.
 pub(crate) fn is_self_named(matched: &str, tail: &str) -> bool {
-    let complete = tail
-        .chars()
-        .next()
-        .is_none_or(|next| next.is_whitespace() || matches!(next, ',' | '}' | ')' | ']' | ';'));
-    if !complete {
-        return false;
-    }
     let Some(index) = matched.find([':', '=']) else {
         return false;
     };
     let mut value = matched[index + 1..].trim();
-    if value.len() >= 2
+    let quoted = value.len() >= 2
         && ((value.starts_with('"') && value.ends_with('"'))
-            || (value.starts_with('\'') && value.ends_with('\'')))
-    {
+            || (value.starts_with('\'') && value.ends_with('\'')));
+    if quoted {
         value = &value[1..value.len() - 1];
+    }
+    if !ends_value(tail, quoted) {
+        return false;
     }
     if value.is_empty() || value.chars().count() > MAX_VALUE_CHARS {
         return false;
@@ -64,6 +60,27 @@ pub(crate) fn is_self_named(matched: &str, tail: &str) -> bool {
         credential_word |= CREDENTIAL_WORDS.contains(&word.as_str());
     }
     credential_word
+}
+
+/// Whether `tail` begins where the assigned value ends. A closing quote ends
+/// the value before `,` `}` `)` `]` or `;`. An unquoted value stops at those
+/// characters only as delimiters: `PASSWORD=password,q7Lm` in an env file
+/// assigns everything up to the space, so a delimiter followed directly by
+/// more value text does not end it.
+fn ends_value(tail: &str, quoted: bool) -> bool {
+    let delimiter = |character: char| matches!(character, ',' | '}' | ')' | ']' | ';');
+    let mut rest = tail.chars();
+    match rest.next() {
+        None => true,
+        Some(next) if next.is_whitespace() => true,
+        Some(next) if delimiter(next) => {
+            quoted
+                || rest
+                    .next()
+                    .is_none_or(|after| after.is_whitespace() || delimiter(after))
+        }
+        Some(_) => false,
+    }
 }
 
 /// Lower-case words split at separators, case changes and digit runs. Any
@@ -123,6 +140,9 @@ mod tests {
         assert!(is_self_named("apiKey: 'api-key-12'", ""));
         assert!(is_self_named("SECRET=secret", ""));
         assert!(is_self_named(r#"refreshToken = "refreshToken2""#, ""));
+        assert!(is_self_named(r#""password":"password""#, r#","user":"u"}"#));
+        assert!(is_self_named("password: password", "}\n"));
+        assert!(is_self_named("SECRET=secret", ";"));
     }
 
     #[test]
@@ -139,6 +159,8 @@ mod tests {
         assert!(!is_self_named("password=password1234password5678", ""));
         assert!(!is_self_named("TOKEN=token", "\"$suffix\""));
         let visible = "q7Lm2Xv9Rt4Kp8Wz";
+        assert!(!is_self_named("PASSWORD=password", &format!(",{visible}")));
+        assert!(!is_self_named("TOKEN=token", &format!("}}{visible}")));
         assert!(!is_self_named(&format!(r#"token="token-{visible}""#), ""));
         assert!(!is_self_named(r#"password="password!""#, ""));
         assert!(!is_self_named(r#"token="1234""#, ""));
@@ -168,6 +190,9 @@ mod tests {
         )));
         assert!(credential_assignment(&format!(
             "TOKEN=token\"{visible}\"\n"
+        )));
+        assert!(credential_assignment(&format!(
+            "PASSWORD=password,{visible}\n"
         )));
     }
 }
