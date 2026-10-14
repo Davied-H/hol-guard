@@ -17,11 +17,13 @@ use guard_policy_snapshot::digest_bytes;
 use serde_json::Value;
 
 use super::aibom_op as aibom;
+use super::claude_code_detect;
 use super::codex_detect;
 use super::context_digest_json::write_canonical_json_with_limit;
 use super::copilot_detect;
 use super::hermes_detect;
 use super::oci_bundle_op as oci;
+use super::pi_detect;
 use super::runner_authority_signature as signature;
 use super::zcode_detect;
 use super::{
@@ -116,8 +118,10 @@ pub(crate) fn dispatch(kind: &str, args: &Value) -> KindResult {
         "aibom_mcp_metadata" => aibom::mcp_metadata(args),
         "zcode_detect" => zcode_detect::detect(args),
         "hermes_detect" => hermes_detect::detect(args),
+        "pi_detect" => pi_detect::detect(args),
         "codex_detect" => codex_detect::detect(args),
         "copilot_detect" => copilot_detect::detect(args),
+        "claude_code_detect" => claude_code_detect::detect(args),
         _ => Err(ERR_KIND),
     }
 }

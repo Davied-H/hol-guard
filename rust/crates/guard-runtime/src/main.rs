@@ -82,6 +82,10 @@ mod claim_reuse_binding_tests;
 mod claim_reuse_then_tests;
 #[cfg(test)]
 mod claim_reuse_vectors_tests;
+mod claude_code_config;
+mod claude_code_detect;
+#[cfg(all(test, unix))]
+mod claude_code_vectors_tests;
 mod claude_guard_question;
 mod claude_hook_bridge;
 mod claude_hook_bridge_auth;
@@ -409,10 +413,13 @@ mod mcp_relay_decide;
 #[cfg(unix)]
 mod mcp_relay_host;
 #[cfg(unix)]
+mod mcp_relay_lane;
+#[cfg(unix)]
 mod mcp_relay_launch;
 #[cfg(unix)]
 mod mcp_relay_order;
 mod mcp_relay_pending;
+mod mcp_relay_ready;
 #[cfg(unix)]
 mod mcp_relay_resident;
 mod mcp_runtime_evidence_op;
@@ -457,6 +464,10 @@ mod package_evaluation_compose_op;
 mod package_policy_resolve_op;
 mod package_posture_op;
 mod package_protect_projection_op;
+mod pi_detect;
+mod pi_glob;
+#[cfg(all(test, unix))]
+mod pi_vectors_tests;
 mod policy_bundle_crypto;
 mod policy_bundle_decisions;
 mod policy_bundle_delivery;
@@ -492,6 +503,7 @@ mod policy_lookup_groups;
 mod policy_lookup_reuse;
 mod policy_snapshot_build;
 mod policy_store;
+mod project_identity;
 mod prompt_analyze_op;
 mod protect_request_op;
 mod pyjson;
