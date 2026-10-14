@@ -230,6 +230,8 @@ fn rustfmt_rewrites_sibling_sources_that_pass_the_write_proof() {
     let (space, _cleanup) = space("rustfmt");
     let sibling = space.sibling.display();
     let allowed = format!("rustfmt --edition 2021 {sibling}/src/lib.rs");
+    // A real file named like a toolchain selector must not make it a target.
+    write(&space.project.join("+fmt.rs"), "pub fn f() {}\n");
     check_with(
         decide_stamped,
         &space,
@@ -245,6 +247,8 @@ fn rustfmt_rewrites_sibling_sources_that_pass_the_write_proof() {
             format!("rustfmt --edition 2021 {sibling}/README.md"),
             format!("rustfmt --config-path {sibling} {sibling}/src/lib.rs"),
             format!("rustfmt +nightly {sibling}/src/lib.rs"),
+            format!("rustfmt +fmt.rs {sibling}/src/lib.rs"),
+            format!("rustfmt {sibling}/src/lib.rs +fmt.rs"),
             format!("rustfmt --edition 2021 {sibling}/src/lib.rs && ls"),
         ],
     );

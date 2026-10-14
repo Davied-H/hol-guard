@@ -37,7 +37,9 @@ pub(super) fn safe_rustfmt_arguments(
                     if !EDITIONS.contains(&edition) {
                         return false;
                     }
-                } else if argument.starts_with('-') {
+                } else if argument.starts_with(['-', '+']) {
+                    // rustup reads a leading `+name` as a toolchain selector,
+                    // even when a file of that name exists.
                     return false;
                 } else {
                     targets.push(argument.as_str());
