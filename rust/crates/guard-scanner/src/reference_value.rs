@@ -84,7 +84,8 @@ pub(crate) fn is_reference(matched: &str, rest_of_line: &str) -> bool {
     }
     let placeholder = PLACEHOLDER.is_match(value);
     (placeholder || UNQUOTED_REFERENCE.is_match(value))
-        && !hides_literal(if placeholder { "" } else { value }, rest_of_line)
+        && ((placeholder && value.ends_with(';'))
+            || !hides_literal(if placeholder { "" } else { value }, rest_of_line))
 }
 
 /// Whether the expression that `value` starts carries a string literal later

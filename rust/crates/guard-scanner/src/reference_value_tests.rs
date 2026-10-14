@@ -142,6 +142,12 @@ fn quoted_references_and_placeholders_do_not_hide_literal_tails() {
     assert!(!credential_assignment(
         "TOKEN=\"$2\"; const label = 'ordinary text';"
     ));
+    assert!(!credential_assignment(
+        "export TOKEN=<your-token>; echo \"ready\""
+    ));
+    assert!(credential_assignment(&format!(
+        "TOKEN=\"<your-token>;\" + \"{secret}\""
+    )));
 }
 
 #[test]
