@@ -13,6 +13,7 @@ use super::*;
 use crate::claude_hook_bridge_fixture::{
     closed_port, read_request, write_private, write_response, GuardHome, Request as DaemonRequest,
 };
+use crate::cursor_hook_bridge_response::ALLOW_STDOUT;
 
 const TOKEN: &str = "cursor-daemon-token-fixture";
 const SHELL: &[u8] =
