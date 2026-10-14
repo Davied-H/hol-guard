@@ -31,12 +31,12 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent / "gemini"))
 
-from openclaw_vector_cases import openclaw_cases
-from record_adapter_vectors import artifact_dict, materialize, release, scrub
+from openclaw_vector_cases import openclaw_cases  # noqa: E402
+from record_adapter_vectors import artifact_dict, materialize, release, scrub  # noqa: E402
 
-from codex_plugin_scanner.guard.adapters import openclaw, openclaw_support
-from codex_plugin_scanner.guard.adapters.base import HarnessContext
-from codex_plugin_scanner.guard.adapters.openclaw_config import load_config
+from codex_plugin_scanner.guard.adapters import openclaw, openclaw_support  # noqa: E402
+from codex_plugin_scanner.guard.adapters.base import HarnessContext  # noqa: E402
+from codex_plugin_scanner.guard.adapters.openclaw_config import load_config  # noqa: E402
 
 openclaw._command_available = lambda _executable: False
 

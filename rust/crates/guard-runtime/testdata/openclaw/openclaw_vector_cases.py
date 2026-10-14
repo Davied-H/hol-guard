@@ -256,12 +256,12 @@ def openclaw_cases() -> list[dict]:
                 file(f"{SKILLS}/crlf/SKILL.md", "---\r\nname: crlf\r\n---\r\nline\r\nmore\rlast\r\n"),
                 file(f"{SKILLS}/unclosed/SKILL.md", "---\nname: never-closed\n"),
                 file(f"{SKILLS}/blankname/SKILL.md", "---\nname:   \ntitle: t\n---\n"),
-                file(f"{SKILLS}/spaces/SKILL.md", '---\n name : "spaced" \n---\n tail\x0bmore'),
+                file(f"{SKILLS}/spaces/SKILL.md", '---\n name : "spaced" \n---\n\u2028tail\x0bmore'),
                 file(f"{SKILLS}/big/SKILL.md", "---\nname: big\n---\n" + ("é" * 70000) + "${LATE}"),
                 file(f"{SKILLS}/plain/SKILL.md", "word " * 600),
                 raw(f"{SKILLS}/bad/SKILL.md", b"---\nname: bad\n---\n\xff\xfe"),
                 raw(f"{SKILLS}/bad/references/bad.md", b"\xc3"),
-                file(f"{SKILLS}/space dir/SKILL.md", "  nbsp  "),
+                file(f"{SKILLS}/space\u00a0dir/SKILL.md", "\u00a0 nbsp \u00a0"),
             ],
         ),
         case(
