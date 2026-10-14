@@ -30,6 +30,9 @@ const PLACEHOLDERS: [(&str, &str); 2] = [
     ),
 ];
 const IDENTITY: &str = "git_pathspec_selection_identity";
+/// Hashes the absolute initial and segment working directories, so it is bound
+/// to the recording root and only its shape replays.
+const CONTEXT_HASH: &str = "shell_execution_context_hash";
 
 fn find_git() -> Option<String> {
     let path = std::env::var_os("PATH")?;
@@ -119,6 +122,14 @@ fn artifact_mismatch(expected: &Value, actual: &Value, root: &str) -> Option<Str
             portable = false;
             if got[0] != IDENTITY || !got[1].is_string() {
                 return Some(format!("identity {got:?}"));
+            }
+        } else if want[0] == CONTEXT_HASH {
+            portable = false;
+            let hashed = got[1]
+                .as_str()
+                .is_some_and(|hash| hash.starts_with("sha256:"));
+            if got[0] != CONTEXT_HASH || !hashed {
+                return Some(format!("context hash {got:?}"));
             }
         } else if substitute(want, root) != *got {
             return Some(format!("pair {want:?} != {got:?}"));

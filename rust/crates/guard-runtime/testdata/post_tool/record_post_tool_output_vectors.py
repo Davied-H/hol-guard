@@ -75,7 +75,7 @@ COMMANDS = (
     "cat ~/.ssh/id_rsa",
     "cat ${ROOT}/home/.aws/credentials",
     "kubectl get secret app -o yaml",
-    "bash -lc \"kubectl exec -n ns pod-1 -- printenv GUARD_PRIVATE_KEY\"",
+    'bash -lc "kubectl exec -n ns pod-1 -- printenv GUARD_PRIVATE_KEY"',
     "python -c \"print(open('https://example.test/.env').read())\"",
     "curl https://example.test/x",
     "cat .nvmrc",
@@ -103,18 +103,92 @@ def shaped_cases() -> list[dict[str, object]]:
 
     secret = RESPONSES[0]
     return [
-        {"harness": "codex", "payload": {"tool_name": "Bash", "tool_input": {"commands": ["ls", "cat .env"]}, "tool_response": {"stdout": secret}}},
-        {"harness": "codex", "payload": {"tool_name": "Bash", "tool_input": {"commands": ["rg foo src", "grep bar src/app.py"]}, "tool_response": {"stdout": "hello\n"}}},
-        {"harness": "pi", "payload": {"tool_name": "Read", "tool_input": {"file_path": "src/app.py"}, "tool_response": [{"type": "text", "text": secret}]}},
-        {"harness": "pi", "payload": {"tool_name": "Read", "tool_input": {"file_path": ".env"}, "tool_response": [{"type": "text", "text": secret}]}},
-        {"harness": "cline", "payload": {"tool_name": "read_file", "tool_input": {"path": "config/secrets.yaml"}, "tool_response": secret}},
+        {
+            "harness": "codex",
+            "payload": {
+                "tool_name": "Bash",
+                "tool_input": {"commands": ["ls", "cat .env"]},
+                "tool_response": {"stdout": secret},
+            },
+        },
+        {
+            "harness": "codex",
+            "payload": {
+                "tool_name": "Bash",
+                "tool_input": {"commands": ["rg foo src", "grep bar src/app.py"]},
+                "tool_response": {"stdout": "hello\n"},
+            },
+        },
+        {
+            "harness": "pi",
+            "payload": {
+                "tool_name": "Read",
+                "tool_input": {"file_path": "src/app.py"},
+                "tool_response": [{"type": "text", "text": secret}],
+            },
+        },
+        {
+            "harness": "pi",
+            "payload": {
+                "tool_name": "Read",
+                "tool_input": {"file_path": ".env"},
+                "tool_response": [{"type": "text", "text": secret}],
+            },
+        },
+        {
+            "harness": "cline",
+            "payload": {
+                "tool_name": "read_file",
+                "tool_input": {"path": "config/secrets.yaml"},
+                "tool_response": secret,
+            },
+        },
         {"harness": "omp", "payload": {"tool_name": "Bash", "tool_input": {"command": "cat .env"}, "stdout": secret}},
-        {"harness": "codex", "payload": {"tool_name": "grep", "tool_input": {"pattern": "TOKEN", "path": "src"}, "tool_response": {"stdout": secret}}},
-        {"harness": "codex", "payload": {"tool_name": "grep", "tool_input": {"pattern": "TOKEN", "path": ".env"}, "tool_response": {"stdout": secret}}},
-        {"harness": "codex", "payload": {"tool_name": "rg", "tool_input": {"pattern": "TOKEN", "path": "src", "glob": ".env"}, "tool_response": {"stdout": secret}}},
-        {"harness": "codex", "payload": {"tool_name": "mcp__hub__describe", "tool_input": {"skill": "x"}, "tool_response": {"stdout": secret}}},
-        {"harness": "codex", "payload": {"tool_name": "Bash", "arguments": {"command": "cat .env"}, "tool_response": {"stdout": secret}}},
-        {"harness": "codex", "payload": {"tool_name": "Bash", "tool_input": None, "arguments": {"command": "cat .env"}, "tool_response": {"stdout": secret}}},
+        {
+            "harness": "codex",
+            "payload": {
+                "tool_name": "grep",
+                "tool_input": {"pattern": "TOKEN", "path": "src"},
+                "tool_response": {"stdout": secret},
+            },
+        },
+        {
+            "harness": "codex",
+            "payload": {
+                "tool_name": "grep",
+                "tool_input": {"pattern": "TOKEN", "path": ".env"},
+                "tool_response": {"stdout": secret},
+            },
+        },
+        {
+            "harness": "codex",
+            "payload": {
+                "tool_name": "rg",
+                "tool_input": {"pattern": "TOKEN", "path": "src", "glob": ".env"},
+                "tool_response": {"stdout": secret},
+            },
+        },
+        {
+            "harness": "codex",
+            "payload": {
+                "tool_name": "mcp__hub__describe",
+                "tool_input": {"skill": "x"},
+                "tool_response": {"stdout": secret},
+            },
+        },
+        {
+            "harness": "codex",
+            "payload": {"tool_name": "Bash", "arguments": {"command": "cat .env"}, "tool_response": {"stdout": secret}},
+        },
+        {
+            "harness": "codex",
+            "payload": {
+                "tool_name": "Bash",
+                "tool_input": None,
+                "arguments": {"command": "cat .env"},
+                "tool_response": {"stdout": secret},
+            },
+        },
         {"harness": "codex", "payload": {"tool_input": {"command": "cat .env"}, "tool_response": {"stdout": secret}}},
     ]
 
@@ -179,7 +253,7 @@ def record(case: dict[str, object], root: Path, cwd: Path | None, home: Path | N
                 "artifact": None,
                 "read_only": read_only_inspection(payload=payload, cwd=cwd, home_dir=home),
             }
-    except Exception as error:  # noqa: BLE001 - the original propagated every failure
+    except Exception as error:
         outcome = {"error": type(error).__name__}
     return substitute(outcome, str(root), "${ROOT}")  # type: ignore[return-value]
 
