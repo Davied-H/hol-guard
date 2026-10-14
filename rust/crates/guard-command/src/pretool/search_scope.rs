@@ -14,6 +14,9 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 const MAX_SCOPE_ENTRIES: usize = 20_000;
+/// A names-only walk checks only entry metadata and links, never contents,
+/// so it may cover an ordinary mid-size repository in full.
+const MAX_NAME_SCOPE_ENTRIES: usize = 100_000;
 
 /// Which ignore files a walk honors, matching the host that searches.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -416,6 +419,11 @@ fn walk_scope(
         tiers: Rc::new(tiers),
     }];
     let mut inspected = 0_usize;
+    let entry_limit = if names {
+        MAX_NAME_SCOPE_ENTRIES
+    } else {
+        MAX_SCOPE_ENTRIES
+    };
     while let Some(directory) = pending.pop() {
         if directory.depth > MAX_SCOPE_DEPTH {
             return Err(ScopeUnproven);
@@ -442,7 +450,7 @@ fn walk_scope(
         for entry in entries {
             let entry = entry.map_err(|_| ScopeUnproven)?;
             inspected += 1;
-            if inspected > MAX_SCOPE_ENTRIES {
+            if inspected > entry_limit {
                 return Err(ScopeUnproven);
             }
             let path = entry.path();

@@ -155,3 +155,30 @@ fn globs_list_names_below_the_workspace() {
         );
     }
 }
+
+#[test]
+fn globs_walk_a_workspace_larger_than_the_content_search_bound() {
+    let f = fixture();
+    // More entries than a content search walks, as in a mid-size repository.
+    let large = f.home.join("app/src/generated");
+    for directory in 0..120 {
+        let directory = large.join(format!("d{directory}"));
+        std::fs::create_dir_all(&directory).unwrap();
+        for file in 0..180 {
+            std::fs::File::create(directory.join(format!("f{file}.ts"))).unwrap();
+        }
+    }
+    write(f.home.join("app/docs/AGENTS.md"), "synthetic fixture\n");
+    for path in ["**/AGENTS*", "**/*.md", "src/**/f1.ts"] {
+        let result = omp(&f, "app", "glob", json!({"path": path}));
+        assert!(allowed(&result), "{path}: {}", result.reason_code);
+        assert_eq!(result.reason_code, "native_omp_directory_listing");
+    }
+    // A content search over the same tree is still bounded.
+    let input = json!({"pattern": "deploy", "path": "."});
+    assert!(!allowed(&omp(&f, "app", "grep", input)));
+    // A directory link that leaves the prefix still fails the larger walk.
+    std::os::unix::fs::symlink(f.home.join(".ssh"), large.join("d7/keys")).unwrap();
+    let result = omp(&f, "app", "glob", json!({"path": "**/AGENTS*"}));
+    assert!(!allowed(&result), "{}", result.reason_code);
+}
