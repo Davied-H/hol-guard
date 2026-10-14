@@ -7,7 +7,8 @@
 
 use super::search_scope_filter::{Override, SearchFilter};
 use super::search_scope_ignore::{
-    is_ignored, load_ignore_file, slash_path, IgnoreRule, IgnoreTiers, ScopeUnproven,
+    holds_custom_ignore_file, is_ignored, link_ignored, load_custom_rules, load_ignore_file,
+    slash_path, IgnoreRule, IgnoreTiers, ScopeUnproven,
 };
 use serde_json::{Map, Value};
 use std::path::{Path, PathBuf};
@@ -335,18 +336,6 @@ fn ancestor_custom_rules(root: &Path, tiers: &mut IgnoreTiers) -> Result<(), Sco
     Ok(())
 }
 
-fn holds_custom_ignore_file(directory: &Path) -> bool {
-    [".ignore", ".rgignore"]
-        .iter()
-        .any(|name| std::fs::symlink_metadata(directory.join(name)).is_ok())
-}
-
-fn load_custom_rules(directory: &Path, tiers: &mut IgnoreTiers) -> Result<(), ScopeUnproven> {
-    let base = slash_path(directory).ok_or(ScopeUnproven)?;
-    load_ignore_file(&directory.join(".ignore"), &base, &mut tiers.ignore)?;
-    load_ignore_file(&directory.join(".rgignore"), &base, &mut tiers.rgignore)
-}
-
 /// Repository exclude rules and `.gitignore` files from the repository root
 /// down to the search root's parent.
 fn ancestor_git_rules(root: &Path, repository: &Path) -> Result<Vec<IgnoreRule>, ScopeUnproven> {
@@ -385,8 +374,8 @@ struct PendingDirectory {
 }
 
 /// Walks the modeled search scope. With `names`, the walk models a names-only
-/// listing: sensitive names are fine, but every link must resolve inside
-/// `root`. When a sensitive file fails the proof, `blocker` names it.
+/// listing: sensitive names are fine, but every link it walks must resolve
+/// inside `root`. When a sensitive file fails the proof, `blocker` names it.
 fn walk_scope(
     root: &Path,
     filter: &SearchFilter,
@@ -461,7 +450,10 @@ fn walk_scope(
                 let target = std::fs::canonicalize(&path).ok();
                 let escapes = !target.as_deref().is_some_and(|t| t.starts_with(root));
                 if names {
-                    if escapes {
+                    // A link the ignore rules skip is never walked.
+                    let skipped =
+                        ignores != Ignores::None && link_ignored(&tiers, &path, target.as_deref())?;
+                    if escapes && !skipped {
                         return Err(ScopeUnproven);
                     }
                 } else if sensitive_scope_file(&path)
