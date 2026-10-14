@@ -39,7 +39,17 @@ def test_process_role_uses_exact_tokens(argv: list[str], role: str) -> None:
 
 def test_service_snapshot_records_roles_without_argv(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     rows = {
-        11: {"pid": 11, "name": "python3", "role": "daemon", "rss_kb": 2048, "threads": 3, "fds": 9, "cpu_s": 0.5},
+        11: {
+            "pid": 11,
+            "name": "python3",
+            "role": "daemon",
+            "rss_kb": 2048,
+            "rss_anon_kb": 1024,
+            "pss_kb": 1536,
+            "threads": 3,
+            "fds": 9,
+            "cpu_s": 0.5,
+        },
         12: {"pid": 12, "name": "runtime", "role": "mcp-relay", "rss_kb": 1024, "threads": 1, "fds": 4, "cpu_s": 0.1},
         13: {"pid": 13, "name": "python3", "role": "daemon", "rss_kb": 1024, "threads": 2, "fds": 5, "cpu_s": 0.2},
     }
@@ -50,9 +60,10 @@ def test_service_snapshot_records_roles_without_argv(monkeypatch: pytest.MonkeyP
 
     assert snapshot["processes"] == 3
     assert snapshot["rss_mb"] == 4.0
+    assert snapshot["pss_mb"] == 1.5
     assert snapshot["roles"] == {
-        "daemon": {"processes": 2, "rss_mb": 3.0, "cpu_s": 0.7},
-        "mcp-relay": {"processes": 1, "rss_mb": 1.0, "cpu_s": 0.1},
+        "daemon": {"processes": 2, "rss_mb": 3.0, "anon_mb": 1.0, "pss_mb": 1.5, "cpu_s": 0.7},
+        "mcp-relay": {"processes": 1, "rss_mb": 1.0, "anon_mb": 0.0, "pss_mb": 0.0, "cpu_s": 0.1},
     }
     assert "argv" not in str(snapshot) and "cmdline" not in str(snapshot)
 
@@ -202,8 +213,8 @@ def test_summary_reports_role_medians_and_setup() -> None:
     label = summary_module.summarize_label(rows)
 
     assert label["service_roles"] == {
-        "daemon": {"processes": 1.0, "rss_mb": 61.0},
-        "mcp-relay": {"processes": 0.5, "rss_mb": 4.0},
+        "daemon": {"processes": 1.0, "rss_mb": 61.0, "anon_mb": 0.0, "pss_mb": 0.0},
+        "mcp-relay": {"processes": 0.5, "rss_mb": 4.0, "anon_mb": 0.0, "pss_mb": 0.0},
     }
     assert label["setup"] == {"daemon_ensure=ok": 2, "warmup_call=ok": 2}
 
@@ -221,7 +232,13 @@ def test_summary_markdown_tolerates_rounds_without_roles() -> None:
                 "round": 1,
                 "results": {
                     **_round(1, "b", None, None)["results"],
-                    **_round(1, "c", {"daemon": {"processes": 1, "rss_mb": 50.0}}, None, {"daemon": 3.25})["results"],
+                    **_round(
+                        1,
+                        "c",
+                        {"daemon": {"processes": 1, "rss_mb": 50.0, "anon_mb": 20.0, "pss_mb": 30.0}},
+                        None,
+                        {"daemon": 3.25},
+                    )["results"],
                 },
             }
         ],
@@ -230,4 +247,4 @@ def test_summary_markdown_tolerates_rounds_without_roles() -> None:
     markdown = summary_module.render_markdown(document, summary_module.build_summary(document, "b", "c"))
 
     assert "Service by role (median), `b`: none recorded." in markdown
-    assert "Service by role (median), `c`: daemon 1x 50.0 MB 3.25 CPU ms/call." in markdown
+    assert "Service by role (median), `c`: daemon 1x 50.0 MB (anon 20.0, PSS 30.0) 3.25 CPU ms/call." in markdown

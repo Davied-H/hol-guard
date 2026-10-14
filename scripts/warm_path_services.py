@@ -89,6 +89,20 @@ def process_role(argv: Sequence[str]) -> str:
     return "other"
 
 
+def _pss_kb(pid: int) -> int:
+    """Proportional set size: shared pages (the one native binary every resident role maps) split
+    between the processes that map them. Zero when the kernel does not expose it."""
+
+    try:
+        rollup = Path(f"/proc/{pid}/smaps_rollup").read_text(encoding="utf-8")
+    except OSError:
+        return 0
+    for line in rollup.splitlines():
+        if line.startswith("Pss:"):
+            return int(line.split()[1])
+    return 0
+
+
 def _process_snapshot(pid: int) -> dict[str, object] | None:
     try:
         status = Path(f"/proc/{pid}/status").read_text(encoding="utf-8")
@@ -106,6 +120,8 @@ def _process_snapshot(pid: int) -> dict[str, object] | None:
         "name": fields.get("Name", "?"),
         "role": process_role(argv),
         "rss_kb": int(fields.get("VmRSS", "0 kB").split()[0]),
+        "rss_anon_kb": int(fields.get("RssAnon", "0 kB").split()[0]),
+        "pss_kb": _pss_kb(pid),
         "threads": int(fields.get("Threads", "0")),
         "fds": fds,
         "cpu_s": ticks / _CLK_TCK,
@@ -113,16 +129,30 @@ def _process_snapshot(pid: int) -> dict[str, object] | None:
 
 
 def summarize_roles(rows: Sequence[dict[str, object]]) -> dict[str, dict[str, float]]:
-    """Process count, RSS MB and CPU seconds per role, so a total can be attributed to what was running."""
+    """Process count, RSS, anonymous RSS and PSS MB and CPU seconds per role.
+
+    RSS counts a shared page in every process that maps it; anonymous RSS and PSS show how much
+    of a role's RSS is its own memory rather than shared binary text.
+    """
 
     roles: dict[str, dict[str, float]] = {}
     for row in rows:
-        entry = roles.setdefault(str(row["role"]), {"processes": 0, "rss_mb": 0.0, "cpu_s": 0.0})
+        entry = roles.setdefault(
+            str(row["role"]), {"processes": 0, "rss_mb": 0.0, "anon_mb": 0.0, "pss_mb": 0.0, "cpu_s": 0.0}
+        )
         entry["processes"] += 1
         entry["rss_mb"] += int(row["rss_kb"]) / 1024  # type: ignore[call-overload]
+        entry["anon_mb"] += int(row.get("rss_anon_kb", 0)) / 1024  # type: ignore[call-overload]
+        entry["pss_mb"] += int(row.get("pss_kb", 0)) / 1024  # type: ignore[call-overload]
         entry["cpu_s"] += float(row["cpu_s"])  # type: ignore[arg-type]
     return {
-        role: {"processes": e["processes"], "rss_mb": round(e["rss_mb"], 2), "cpu_s": round(e["cpu_s"], 4)}
+        role: {
+            "processes": e["processes"],
+            "rss_mb": round(e["rss_mb"], 2),
+            "anon_mb": round(e["anon_mb"], 2),
+            "pss_mb": round(e["pss_mb"], 2),
+            "cpu_s": round(e["cpu_s"], 4),
+        }
         for role, e in sorted(roles.items())
     }
 
@@ -156,6 +186,7 @@ def service_snapshot(baseline: set[int], root: Path) -> dict[str, object]:
         "names": sorted(Counter(str(row["name"]) for row in rows).items()),
         "roles": summarize_roles(rows),
         "rss_mb": round(sum(int(row["rss_kb"]) for row in rows) / 1024, 2),  # type: ignore[call-overload]
+        "pss_mb": round(sum(int(row.get("pss_kb", 0)) for row in rows) / 1024, 2),  # type: ignore[call-overload]
         "threads": sum(int(row["threads"]) for row in rows),  # type: ignore[call-overload]
         "fds": sum(int(row["fds"]) for row in rows),  # type: ignore[call-overload]
         "cpu_s": round(sum(float(row["cpu_s"]) for row in rows), 4),  # type: ignore[arg-type]

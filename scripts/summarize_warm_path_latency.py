@@ -40,14 +40,15 @@ def _optional_median(values: list[object]) -> float | None:
 
 
 def _role_medians(rows: list[dict[str, object]]) -> dict[str, dict[str, float]]:
-    """Median process count and RSS MB per role over the rounds that recorded roles (absent role = 0)."""
+    """Median process count and RSS, anonymous RSS and PSS MB per role over the rounds that recorded
+    roles (absent role or metric = 0)."""
 
     recorded = [r["phase"]["service"]["roles"] for r in rows if "roles" in r["phase"]["service"]]  # type: ignore[index,operator]
     names = sorted({role for roles in recorded for role in roles})
     return {
         role: {
             metric: median([float(roles.get(role, {}).get(metric, 0)) for roles in recorded])
-            for metric in ("processes", "rss_mb")
+            for metric in ("processes", "rss_mb", "anon_mb", "pss_mb")
         }
         for role in names
     }
@@ -102,6 +103,7 @@ def summarize_label(rows: list[dict[str, object]]) -> dict[str, object]:
         "client_cpu_ms_per_call": _optional_median([r["phase"].get("client_cpu_ms_per_call") for r in rows]),  # type: ignore[union-attr]
         "service_cpu_ms_per_call": median([float(r["phase"]["service_cpu_ms_per_call"]) for r in rows]),  # type: ignore[index]
         "service_rss_mb": median([float(r["phase"]["service"]["rss_mb"]) for r in rows]),  # type: ignore[index]
+        "service_pss_mb": _optional_median([r["phase"]["service"].get("pss_mb") for r in rows]),  # type: ignore[union-attr]
         "service_processes": median([float(r["phase"]["service"]["processes"]) for r in rows]),  # type: ignore[index]
         "service_fds": median([float(r["phase"]["service"]["fds"]) for r in rows]),  # type: ignore[index]
         "service_roles": _role_medians(rows),
@@ -153,6 +155,8 @@ def _format_roles(roles: dict[str, dict[str, float]], cpu_ms_per_call: dict[str,
     parts = []
     for role, values in roles.items():
         part = f"{role} {values['processes']:g}x {values['rss_mb']:.1f} MB"
+        if values.get("pss_mb"):
+            part += f" (anon {values['anon_mb']:.1f}, PSS {values['pss_mb']:.1f})"
         if cpu_ms_per_call and role in cpu_ms_per_call:
             part += f" {cpu_ms_per_call[role]:.2f} CPU ms/call"
         parts.append(part)
