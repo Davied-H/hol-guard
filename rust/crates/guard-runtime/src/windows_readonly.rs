@@ -101,31 +101,37 @@ fn resolve_executable(name: &str, search_path: &str) -> Result<PathBuf, Restrict
             "Relative interpreter paths are not supported.",
         ));
     }
-    let mut names: Vec<String> = if Path::new(name).extension().is_some() {
+    match locate(name, search_path) {
+        Some(path) => trusted_executable(&path),
+        None => Err(error(
+            UNAVAILABLE,
+            "The Python interpreter could not be resolved.",
+        )),
+    }
+}
+
+fn locate(name: &str, search_path: &str) -> Option<PathBuf> {
+    let names: Vec<String> = if Path::new(name).extension().is_some() {
         vec![name.to_owned()]
     } else {
         vec![name.to_owned(), format!("{name}.exe")]
     };
-    // All-users installs ship only `python.exe`; it stands in for `python3`
-    // within the same directory, so PATH order still decides the match.
-    if name.eq_ignore_ascii_case("python3") {
-        names.push("python.exe".to_owned());
-    }
-    for directory in std::env::split_paths(search_path) {
-        if !directory.is_absolute() {
-            continue;
-        }
-        for name in &names {
-            let path = directory.join(name);
-            if path.is_file() {
-                return trusted_executable(&path);
-            }
-        }
-    }
-    Err(error(
-        UNAVAILABLE,
-        "The Python interpreter could not be resolved.",
-    ))
+    // The shell skips a directory without `python3`, such as a virtualenv's
+    // Scripts, so the whole PATH is searched for the exact name first.
+    first_on_path(&names, search_path).or_else(|| {
+        // All-users installs ship only `python.exe`; it stands in for a
+        // missing `python3`, and PATH order still decides which one.
+        name.eq_ignore_ascii_case("python3")
+            .then(|| first_on_path(&["python.exe".to_owned()], search_path))
+            .flatten()
+    })
+}
+
+fn first_on_path(names: &[String], search_path: &str) -> Option<PathBuf> {
+    std::env::split_paths(search_path)
+        .filter(|directory| directory.is_absolute())
+        .flat_map(|directory| names.iter().map(move |name| directory.join(name)))
+        .find(|path| path.is_file())
 }
 
 fn workspace_and_cwd(

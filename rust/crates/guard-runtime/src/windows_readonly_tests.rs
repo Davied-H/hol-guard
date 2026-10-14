@@ -137,6 +137,29 @@ fn python3_falls_back_to_python_exe_in_the_same_directory() {
     );
 }
 
+/// A virtualenv's Scripts holds only `python.exe`; the shell runs the
+/// `python3` found later on PATH, and so does the plan.
+#[test]
+fn python3_later_on_path_wins_over_an_earlier_python_exe() {
+    let venv = tempfile::tempdir().unwrap();
+    std::fs::write(venv.path().join("python.exe"), "").unwrap();
+    let install = tempfile::tempdir().unwrap();
+    std::fs::write(install.path().join("python3.exe"), "").unwrap();
+    let search_path = std::env::join_paths([venv.path(), install.path()]).unwrap();
+    let search_path = search_path.to_str().unwrap();
+    assert_eq!(
+        locate("python3", search_path),
+        Some(install.path().join("python3.exe"))
+    );
+    // Without a `python3` anywhere, the first `python.exe` stands in.
+    std::fs::remove_file(install.path().join("python3.exe")).unwrap();
+    std::fs::write(install.path().join("python.exe"), "").unwrap();
+    assert_eq!(
+        locate("python3", search_path),
+        Some(venv.path().join("python.exe"))
+    );
+}
+
 #[test]
 fn launch_requires_exact_options() {
     for arguments in [
