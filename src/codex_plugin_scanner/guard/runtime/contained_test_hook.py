@@ -14,6 +14,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from . import restricted_git, restricted_node_test, restricted_node_tool, restricted_vitest
+from .contained_run_directory import as_directory_change
 from .contained_wrapper import bounded_output, peel_contained_wrapper, sibling_project_root
 from .restricted_inline_eval import prepare_restricted_inline_eval, run_restricted_inline_eval
 from .restricted_package_test import (
@@ -219,6 +220,21 @@ def run_authorized_contained_test(
         raise _reject()
     if cwd is None:
         cwd = workspace
+    if "cwd" in tool_input:
+        # Oh My Pi runs the command in its `cwd` argument. The call as issued
+        # must carry the receipt; the explicit `cd` form is then authorized
+        # and run by the wrapper path below.
+        if not _contained_receipt(authorize(payload)):
+            raise _reject()
+        return run_authorized_contained_test(
+            as_directory_change(payload, workspace=workspace, home=home_dir),
+            workspace=workspace,
+            authorize=authorize,
+            timeout_seconds=timeout_seconds,
+            cwd=cwd,
+            home_dir=home_dir,
+            merge_stderr=merge_stderr,
+        )
 
     def run_workspace(receipt: object) -> int | None:
         """Run in the workspace sandbox when Rust issued that profile, else None."""
