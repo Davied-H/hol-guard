@@ -38,8 +38,9 @@ fn binding() -> DirectLaneBinding {
     binding
 }
 
-/// A guard home whose store holds the schema marker, the published integrity
-/// state and no saved rows; the writable connection seeds it.
+/// A guard home whose store holds the schema marker, the diagnostic indexes,
+/// the published integrity state and no saved rows; the writable connection
+/// seeds it.
 fn guard_home(tag: &str) -> (PathBuf, Connection) {
     let path = tmp_store(&format!("mcp-relay-{tag}"));
     let _ = std::fs::remove_file(&path);
@@ -50,7 +51,28 @@ fn guard_home(tag: &str) -> (PathBuf, Connection) {
             "create table sync_state (state_key text primary key, payload_json text not null,
                updated_at text not null);
              create table local_cli_schema_migration (singleton integer primary key,
-               version integer not null, checksum text not null);",
+               version integer not null, checksum text not null);
+             create index idx_guard_local_once_diagnostic_artifact
+               on guard_local_once_approvals (harness, artifact_id, created_at desc, approval_id desc)
+               where claimed_at is null and action = 'allow';
+             create index idx_guard_local_once_diagnostic_hash
+               on guard_local_once_approvals (harness, artifact_hash, created_at desc, approval_id desc)
+               where claimed_at is null and action = 'allow';
+             create index idx_policy_decisions_reuse_artifact
+               on policy_decisions (action, harness, artifact_id, updated_at desc, decision_id desc);
+             create index idx_policy_decisions_reuse_hash
+               on policy_decisions (action, harness, artifact_hash, updated_at desc, decision_id desc);
+             create index idx_policy_decisions_reuse_publisher
+               on policy_decisions (action, harness, publisher, updated_at desc, decision_id desc);
+             create index idx_policy_decisions_diagnostic_harness_broad
+               on policy_decisions (harness, updated_at desc, decision_id desc)
+               where scope = 'harness' and action = 'allow' and artifact_id is null;
+             create index idx_policy_decisions_diagnostic_global_broad
+               on policy_decisions (harness, updated_at desc, decision_id desc)
+               where scope = 'global' and action = 'allow' and artifact_id is null;
+             create index idx_policy_decisions_diagnostic_publisher
+               on policy_decisions (harness, publisher, updated_at desc, decision_id desc)
+               where scope = 'publisher' and action = 'allow';",
         )
         .unwrap();
     connection
