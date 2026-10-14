@@ -132,7 +132,14 @@ fn task_wait_and_todo_are_allowed_only_for_omp() {
 #[test]
 fn artifact_references_are_allowed_only_in_exact_form() {
     let f = fixture();
-    for path in ["artifact://1", "artifact://42", "artifact://7:1-20"] {
+    for path in [
+        "artifact://1",
+        "artifact://42",
+        "artifact://7:1-20",
+        "artifact://13:raw",
+        "artifact://13:1-20:raw",
+        "artifact://13:RAW:1-20",
+    ] {
         let result = omp(&f, "read", json!({"path": path}));
         assert!(allowed(&result), "{path}");
         assert_eq!(result.reason_code, "native_omp_artifact_read");
@@ -172,6 +179,11 @@ fn artifact_references_are_allowed_only_in_exact_form() {
         "artifact://1/../../x",
         "artifact://1:5",
         "artifact://1:a-b",
+        "artifact://1:raw:raw",
+        "artifact://1:1-2:3-4",
+        "artifact://1:raw:1-2:raw",
+        "artifact://1:conflicts",
+        "artifact://1:raw:",
         "artifact://1234567890",
         "artifact:///etc/passwd",
     ] {
@@ -1107,6 +1119,50 @@ fn eval_scalar_options_are_preserved_or_reviewed() {
 }
 
 #[test]
+fn read_raw_line_windows_carry_the_file_read_proof() {
+    let f = fixture();
+    // OMP peels one line window plus `raw`, in either order, and reads those
+    // lines of the same file verbatim.
+    for path in [
+        "calc.py:1-5:raw",
+        "calc.py:raw:1-5",
+        "calc.py:raw:-5",
+        "calc.py:1-2,4-6:RAW",
+        "src/main.rs:-3:raw",
+    ] {
+        let result = omp(&f, "read", json!({"path": path}));
+        assert!(allowed(&result), "{path}: {}", result.reason_code);
+        assert_eq!(result.reason_code, "native_exact_safe_file_read", "{path}");
+    }
+    let project = |rest: &str| format!("{}/{rest}", f.project.display());
+    for path in [
+        "~/secret-dir/.env:1-5:raw".to_owned(),
+        "~/.ssh/id_rsa:raw:1-2".to_owned(),
+        "~/.codex/auth.json:raw:-3".to_owned(),
+        project("calc.py:1-5:1-2"),
+        project("calc.py:raw:raw"),
+        project("calc.py:conflicts:1-5"),
+        project("calc.py:1-5:img"),
+        project("calc.py:-5,1-2:raw"),
+        project("calc.py:0-3:raw"),
+        project("calc.py:1-5:raw:raw"),
+        project("src:1-5:raw"),
+        project("../project/calc.py:1-2:raw"),
+    ] {
+        let result = omp(&f, "read", json!({"path": path}));
+        assert!(!allowed(&result), "{path}: {}", result.reason_code);
+    }
+    // OMP's grep rejects the compound for filesystem paths, so it stays
+    // unproven there.
+    let result = omp(
+        &f,
+        "grep",
+        json!({"pattern": "x", "path": project("calc.py:raw:1-5")}),
+    );
+    assert!(!allowed(&result), "{}", result.reason_code);
+}
+
+#[test]
 fn read_lists_prove_every_part() {
     let f = fixture();
     let sibling = f.home.join("clean");
@@ -1127,6 +1183,7 @@ fn read_lists_prove_every_part() {
         // first part does not hide the parts after it.
         "calc.py:1-5; src/main.rs".to_owned(),
         "src/main.rs:raw; calc.py".to_owned(),
+        "calc.py; src/main.rs:1-5:raw".to_owned(),
     ] {
         let result = omp(&f, "read", json!({"path": path}));
         assert!(allowed(&result), "{path}: {}", result.reason_code);
@@ -1146,7 +1203,6 @@ fn read_lists_prove_every_part() {
         "calc.py; src/*.rs",
         "calc.py; {src/main.rs,calc.py}",
         "calc.py; ../project/calc.py:1-2",
-        "calc.py; src/main.rs:1-5:raw",
     ] {
         let result = omp(&f, "read", json!({"path": path}));
         assert!(!allowed(&result), "{path}: {}", result.reason_code);

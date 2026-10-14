@@ -27,7 +27,9 @@ fn bounded_omp_list_part_read_target(
     cwd: Option<&str>,
 ) -> bool {
     match bounded_selector_path(value, home_dir, cwd) {
-        BoundedSelectorPath::Base(base) | BoundedSelectorPath::RawFile(base) => {
+        BoundedSelectorPath::Base(base)
+        | BoundedSelectorPath::RawFile(base)
+        | BoundedSelectorPath::RawWindow(base) => {
             return bounded_existing_file_read_target(&base, home_dir, cwd);
         }
         BoundedSelectorPath::Unsupported => return false,
@@ -106,7 +108,9 @@ pub(in crate::pretool) fn bounded_omp_file_selector_target(
         BoundedSelectorPath::Base(base) | BoundedSelectorPath::RawFile(base) => {
             bounded_existing_file_read_target(&base, home_dir, cwd)
         }
-        BoundedSelectorPath::Unsupported | BoundedSelectorPath::NotSelector => false,
+        BoundedSelectorPath::RawWindow(_)
+        | BoundedSelectorPath::Unsupported
+        | BoundedSelectorPath::NotSelector => false,
     }
 }
 
@@ -133,7 +137,9 @@ pub(in crate::pretool) fn bounded_omp_directory_read_target(
         BoundedSelectorPath::Base(base) => {
             return bounded_omp_directory_read_target_without_selector(&base, home_dir, cwd);
         }
-        BoundedSelectorPath::RawFile(_) | BoundedSelectorPath::Unsupported => return false,
+        BoundedSelectorPath::RawFile(_)
+        | BoundedSelectorPath::RawWindow(_)
+        | BoundedSelectorPath::Unsupported => return false,
         BoundedSelectorPath::NotSelector => {}
     }
     bounded_omp_directory_read_target_without_selector(value, home_dir, cwd)
@@ -193,13 +199,17 @@ enum BoundedSelectorPath {
     /// Bare `:raw` returns the same file's bytes without line formatting, so
     /// it carries the plain file-read proof but never a directory listing.
     RawFile(String),
+    /// `:N-M:raw` or `:raw:N-M`: a line window of one file without line
+    /// formatting. Only `read` takes this compound; OMP's `grep` rejects it.
+    RawWindow(String),
 }
 
 /// OMP peels a selector only after proving that the complete input is not a
 /// literal filesystem path. The native proof accepts OMP's line windows
-/// (`line_selector`) and a bare file `:raw`, each of which reads no more than
-/// the bare path. Compound selectors such as `:1-5:raw`, time selectors and
-/// binary views remain on the normal review path.
+/// (`line_selector`), a bare file `:raw`, and the two-chunk compound of one
+/// line window plus `raw` in either order, each of which reads no more than
+/// the bare path. Other compounds, time selectors and binary views remain on
+/// the normal review path.
 fn bounded_selector_path(
     value: &str,
     home_dir: Option<&str>,
@@ -251,12 +261,16 @@ fn bounded_selector_path(
             BoundedSelectorPath::NotSelector
         };
     }
-    // `raw` alone; a colon left in the final component would be a compound
-    // selector such as `file:1-5:raw`, which stays on the review path.
+    // A colon left in the final component makes a compound selector. OMP
+    // peels exactly one line window plus `raw`, in either order; a `raw`
+    // compound of any other shape stays on the review path.
     let compound = base
         .rsplit(['/', '\\'])
         .next()
         .is_some_and(|name| name.contains(':'));
+    if let Some(file) = compound.then(|| raw_window_path(base, selector)).flatten() {
+        return BoundedSelectorPath::RawWindow(file);
+    }
     if selector.eq_ignore_ascii_case("raw") && !compound {
         return BoundedSelectorPath::RawFile(base.to_owned());
     }
@@ -268,6 +282,28 @@ fn bounded_selector_path(
         };
     }
     BoundedSelectorPath::Base(base.to_owned())
+}
+
+/// The file behind OMP's `path:N-M:raw` or `path:raw:N-M`. The window must
+/// be a range list or a lone `-N` tail, as OMP requires before peeling both
+/// chunks, and the remaining name must hold no further selector.
+fn raw_window_path(base: &str, selector: &str) -> Option<String> {
+    let (path, inner) = base.rsplit_once(':')?;
+    let window = if selector.eq_ignore_ascii_case("raw") {
+        inner
+    } else if inner.eq_ignore_ascii_case("raw") {
+        selector
+    } else {
+        return None;
+    };
+    let tail = window.starts_with('-');
+    let range_list = !window.split(',').any(|part| part.starts_with('-'));
+    let file = path.rsplit(['/', '\\']).next().unwrap_or(path);
+    (line_selector(window)
+        && (range_list || (tail && !window.contains(',')))
+        && !file.is_empty()
+        && !file.contains(':'))
+    .then(|| path.to_owned())
 }
 
 /// OMP's line windows: `N`, `N-`, `N-M`, `N+K` and `-N`, alone or joined by
