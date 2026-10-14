@@ -7,6 +7,7 @@ pub mod secret_detection;
 pub mod staged_scanner;
 
 mod masked_value;
+mod self_named_value;
 
 use guard_rules::{CONTEXT_CHARS, MAX_MATCHES, MAX_SCAN_BYTES};
 use regex::{Regex, RegexBuilder};
@@ -224,6 +225,9 @@ fn is_sample(
 ) -> bool {
     if !suppressible(classifier) {
         return false;
+    }
+    if classifier == "credential-assignment" && self_named_value::is_self_named(matched) {
+        return true;
     }
     if classifier == "credential-assignment"
         && assignment_value(matched).is_some_and(|value| {
