@@ -342,3 +342,41 @@ fn slices_of_a_value_far_below_its_credential_name_stay_blocked() {
         assert_eq!(clean.reason_code, "output_scan_allow", "{clean:?}");
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn external_source_named_for_a_credential_feature_is_scanned() {
+    let root = TestRoot::new();
+    let workspace = root.path().join("workspace");
+    let sibling = root.path().join("sibling");
+    std::fs::create_dir(&workspace).unwrap();
+    std::fs::create_dir_all(sibling.join(".git")).unwrap();
+    std::fs::create_dir_all(sibling.join("src/credentials")).unwrap();
+    let read = |file: &std::path::Path, body: &str| {
+        std::fs::write(file, body).unwrap();
+        let target = file.to_string_lossy().into_owned();
+        let output = format!("[{target}#ABCD]\n1:{}", body.trim_end());
+        let mut input = request(&workspace, &output);
+        input.payload["tool_input"]["path"] = json!(target);
+        input.payload["guard_source_ref"]["path"] = json!(target);
+        input.payload["guard_source_ref"]["tool_input_path"] = json!(target);
+        review_post_tool(&input)
+    };
+
+    let source = sibling.join("src/auth-session.ts");
+    let allowed = read(&source, "export const step = 1;\n");
+    assert_eq!(allowed.model_output_action, "allow_original", "{allowed:?}");
+
+    let token = format!("{}{}", ["gh", "p_"].concat(), "b".repeat(30));
+    let secret = read(&source, &format!("export const value = '{token}';\n"));
+    assert_ne!(secret.model_output_action, "allow_original");
+
+    for file in [
+        sibling.join("auth.json"),
+        sibling.join("api-token.txt"),
+        sibling.join("src/credentials/session.ts"),
+    ] {
+        let result = read(&file, "inert fixture\n");
+        assert_eq!(result.reason_code, "no_output_to_review", "{file:?}");
+    }
+}
