@@ -79,9 +79,6 @@ const GIT_COMMANDS_RUST_HOLDS: &[&str] = &[
     "git stash drop",
     "git checkout -- .",
     "git remote set-url origin https://example.invalid/project.git",
-    "git -c core.hooksPath=/tmp/hooks commit -m x",
-    "git -c core.fsmonitor=payload commit -m x",
-    "git -c alias.wipe='!rm -rf build' wipe",
 ];
 
 #[test]
@@ -128,7 +125,130 @@ fn a_commit_message_naming_guard_keeps_the_allow() {
     let enabled = all_git_permissions_enabled();
     let result = evaluate(
         &enabled,
-        "git -c core.hooksPath=/tmp/hooks commit -m 'fix(hol-guard): x'",
+        "git -c core.hooksPath=/dev/null commit -m 'fix(hol-guard): x'",
     );
     assert_eq!(result.minimum_action, "allow", "{}", result.reason_code);
+}
+
+/// Configuration that makes Git run a program carries text the shell reads
+/// later, or a value Guard never sees, so no Git Allow settles it.
+#[test]
+fn an_explicit_git_allow_never_settles_configured_programs() {
+    let enabled = all_git_permissions_enabled();
+    for command in [
+        // Shell alias bodies, however the Guard name is spelled or passed.
+        r#"git -c 'alias.x=!hol""-guard uninstall --yes' x"#,
+        r#"git -c 'alias.x=!rm -rf ~/.hol""-guard' x"#,
+        r#"git -c 'alias.x=!f(){ "$2" uninstall --yes; }; f' x -m hol-guard"#,
+        "git -c alias.wipe='!rm -rf build' wipe",
+        "git '-calias.x=!payload' x",
+        // Values taken from the environment.
+        "git --config-env=alias.x=PAYLOAD x",
+        "git --config-env alias.x=PAYLOAD x",
+        "git --config-env=core.sshCommand=PAYLOAD fetch origin",
+        "git --config-env=core.fsmonitor=PAYLOAD status --short",
+        "git --config-env=core.hooksPath=PAYLOAD commit -m x",
+        "git --config-env=credential.helper=PAYLOAD push origin main",
+        "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.fsmonitor GIT_CONFIG_VALUE_0=payload git status --short",
+        // Program-valued settings named on the command line.
+        r#"git -c core.fsmonitor='hol""-guard uninstall --yes' status --short"#,
+        "git -c core.fsmonitor=payload commit -m x",
+        "git -c core.hooksPath=/tmp/hooks commit -m x",
+        "git -c core.sshCommand=payload push origin main",
+        "git -c credential.helper='!payload' push origin main",
+        "git -c diff.external=payload diff --stat",
+        "git --exec-path=/tmp/helpers status --short",
+    ] {
+        let result = evaluate(&enabled, command);
+        assert_ne!(
+            result.minimum_action, "allow",
+            "{command}: {}",
+            result.reason_code
+        );
+    }
+    // Settings that name no program keep the Allow.
+    for command in [
+        "git -c http.extraHeader=x push origin main",
+        "git -c user.name=x -c commit.gpgSign=false commit -m x",
+        "git -c core.hooksPath=/dev/null -c core.quotepath=false push origin main",
+    ] {
+        let result = evaluate(&enabled, command);
+        assert_eq!(
+            result.minimum_action, "allow",
+            "{command}: {}",
+            result.reason_code
+        );
+    }
+}
+
+#[test]
+fn configured_programs_are_recognised_by_key_and_value() {
+    let runs = |command: &str| {
+        let model = crate::parse_command(
+            &serde_json::from_value(serde_json::json!({ "command": command })).unwrap(),
+        )
+        .unwrap();
+        model
+            .segments
+            .iter()
+            .any(crate::command_compatibility::git_runs_configured_program)
+    };
+    for command in [
+        "git -c alias.st=status st",
+        "git -c ALIAS.x='!payload' x",
+        "git -c include.path=/tmp/extra.cfg status",
+        "git -c core.pager=less log",
+        "git -c init.templateDir=/tmp/template clone https://example.invalid/project.git",
+        "git -c pager.log=payload log",
+        "git -c filter.x.clean=payload add .",
+        "git -c core.fsmonitor status",
+        "git --config-env=core.pager=PAGER log",
+        "GIT_PAGER=payload git log",
+        "git --unknown-option status",
+    ] {
+        assert!(runs(command), "{command}");
+    }
+    for command in [
+        "git status --short",
+        "git -C sub -c core.quotepath=false status",
+        "git -c core.fsmonitor=false -c core.pager=cat log",
+        "git -c pager.log=false log",
+        "git --config-env=user.email=EMAIL commit -m x",
+        "GIT_AUTHOR_NAME=x git commit -m x",
+        "git commit -c HEAD",
+    ] {
+        assert!(!runs(command), "{command}");
+    }
+}
+
+#[test]
+fn attached_and_unmodeled_global_options_never_verify_a_route() {
+    let verified = |command: &str| {
+        let model = crate::parse_command(
+            &serde_json::from_value(serde_json::json!({ "command": command })).unwrap(),
+        )
+        .unwrap();
+        model.segments.iter().all(|segment| {
+            crate::command_compatibility::git_repository_routes_verified(
+                segment,
+                crate::pretool::PathContext::default(),
+            )
+        })
+    };
+    for command in [
+        "git -C/outside status",
+        "git -ckey=value -C /outside status",
+        "git -c key=value -C/outside status",
+        "git --work-tree=/outside status",
+        "git --work-tree /outside status",
+        "git --namespace=x -C /outside status",
+    ] {
+        assert!(!verified(command), "{command}");
+    }
+    for command in [
+        "git status",
+        "git -c core.quotepath=false -ckey=value status",
+    ] {
+        assert!(verified(command), "{command}");
+    }
 }

@@ -1,9 +1,12 @@
 use super::{CommandSegmentV1, CompatibilityObservations};
 
+#[path = "git_allow_scope.rs"]
+mod git_allow_scope;
 #[path = "git_fetch.rs"]
 mod git_fetch;
 #[path = "git_hooks_path.rs"]
 mod git_hooks_path;
+pub(crate) use git_allow_scope::{repository_routes_verified, runs_configured_program};
 use git_hooks_path::hooks_path_names_no_hooks;
 
 const RULES: &[(&str, &str)] = &[
@@ -201,38 +204,6 @@ pub(super) fn inspection_arguments<'a>(
 
 pub(super) fn fetch_origin_shaped(arguments: &[String]) -> bool {
     git_fetch::origin_shaped_arguments(arguments)
-}
-
-/// Whether a Git segment runs in a repository Guard has proven: no environment
-/// overrides, and every `-C` or `--git-dir` route verified. Configuration and
-/// exec-path options the command itself names are ignored here; they are the
-/// command's own shape, not a repository it could not inspect.
-pub(crate) fn repository_routes_verified(
-    segment: &CommandSegmentV1,
-    context: crate::pretool::PathContext<'_>,
-) -> bool {
-    let arguments = &segment.arguments;
-    let Some(command_index) = command_index(arguments) else {
-        return false;
-    };
-    let mut routes = Vec::with_capacity(arguments.len());
-    let mut index = 0;
-    while index < command_index {
-        let argument = &arguments[index];
-        if argument == "-c" || argument == "--config-env" {
-            index += 2;
-            continue;
-        }
-        if !(argument.starts_with("--config-env=") || argument.starts_with("--exec-path")) {
-            routes.push(argument.clone());
-        }
-        index += 1;
-    }
-    routes.extend_from_slice(&arguments[command_index..]);
-    segment.environment_names.is_empty()
-        && crate::pretool::directory_targets::drive_targets_quoted(segment)
-        && crate::pretool::directory_targets::home_targets_unquoted(segment)
-        && routed(&routes, context, true).is_some()
 }
 
 pub(super) fn routed_arguments<'a>(

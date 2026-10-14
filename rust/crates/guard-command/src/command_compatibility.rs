@@ -24,7 +24,10 @@ pub use catalog::compatibility_rule_ids;
 pub(crate) use environment::{
     code_or_redirect_environment_name, inert_environment_name, plain_printed_name,
 };
-pub(crate) use git::repository_routes_verified as git_repository_routes_verified;
+pub(crate) use git::{
+    repository_routes_verified as git_repository_routes_verified,
+    runs_configured_program as git_runs_configured_program,
+};
 
 /// Whether `name` changes nothing about how the Git command it prefixes runs:
 /// an inert output or locale setting, or the commit identity.

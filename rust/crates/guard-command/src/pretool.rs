@@ -172,10 +172,16 @@ pub(super) fn normalized_haystack(value: &str) -> String {
     value.to_ascii_lowercase().replace('\\', "/")
 }
 
-/// Floors no extension permission can settle: Guard self-protection and
-/// secret exfiltration, including commands a Git alias or launcher carries.
+/// Floors no extension permission can settle: Guard self-protection, secret
+/// exfiltration, and Git configuration that runs a program Guard cannot read.
 pub(crate) fn fixed_command_floor(model: &CanonicalCommandV1) -> bool {
-    crate::command_critical_floors::guard_control_block_in_launcher_text(&model.normalized_text)
+    model
+        .segments
+        .iter()
+        .any(crate::command_compatibility::git_runs_configured_program)
+        || crate::command_critical_floors::guard_control_block_in_launcher_text(
+            &model.normalized_text,
+        )
         || crate::command_critical_floors::guard_control_block_in_command(
             &crate::canonical_command::CanonicalCommand::from_v1(model),
         )
