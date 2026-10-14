@@ -42,7 +42,7 @@ fn current_after(mutate: impl FnOnce(&mut Value)) -> bool {
     )
 }
 
-fn guard_handler(settings: &mut Value, event: &str) -> &mut Value {
+fn guard_handler<'a>(settings: &'a mut Value, event: &str) -> &'a mut Value {
     let entries = settings["hooks"][event].as_array_mut().unwrap();
     let entry = entries
         .iter_mut()
@@ -156,12 +156,12 @@ fn non_guard_entries_are_ignored() {
     assert!(current_after(|settings| {
         let user = json!({"type": "command", "command": "/usr/bin/env", "args": [], "timeout": 1});
         for event in ["PreToolUse", "Stop", "PermissionDenied", "SessionStart"] {
-            let entries = settings["hooks"][event].as_array_mut();
-            let group = json!({"matcher": "Bash", "hooks": [user.clone()]});
-            match entries {
-                Some(entries) => entries.push(group),
-                None => settings["hooks"][event] = json!([group]),
+            let entries = &mut settings["hooks"][event];
+            if entries.is_null() {
+                *entries = json!([]);
             }
+            let group = json!({"matcher": "Bash", "hooks": [user.clone()]});
+            entries.as_array_mut().unwrap().push(group);
         }
         settings["hooks"]["PostToolUse"]
             .as_array_mut()
