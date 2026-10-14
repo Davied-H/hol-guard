@@ -153,7 +153,7 @@ fn protected_or_workspace_holding_venvs_and_venv_pytest_scripts_are_rejected() {
     fs::rename(&venv, hidden.join("venv")).unwrap();
     let hidden = hidden.join("venv");
     assert!(launcher_root(&hidden.join("bin/python3")).is_none());
-    fs::rename(&hidden, &venv).unwrap();
+    fs::rename(hidden, &venv).unwrap();
     assert!(launcher_root(&venv.join("bin/python3")).is_some());
     let inner = venv.join("share/project");
     fs::create_dir_all(&inner).unwrap();
@@ -166,7 +166,7 @@ fn protected_or_workspace_holding_venvs_and_venv_pytest_scripts_are_rejected() {
         format!("#!{}\n", venv.join("bin/python3").display()),
     )
     .unwrap();
-    fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+    fs::set_permissions(script, fs::Permissions::from_mode(0o755)).unwrap();
     let search = venv.join("bin").to_string_lossy().into_owned();
     let command = vec!["pytest".to_owned()];
     assert!(resolve_pytest_executable(&command, &workspace, &workspace, &search).is_err());
