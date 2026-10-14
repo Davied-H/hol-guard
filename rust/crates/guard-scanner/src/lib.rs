@@ -7,6 +7,7 @@ pub mod secret_detection;
 pub mod staged_scanner;
 
 mod masked_value;
+mod reference_value;
 
 use guard_rules::{CONTEXT_CHARS, MAX_MATCHES, MAX_SCAN_BYTES};
 use regex::{Regex, RegexBuilder};
@@ -227,7 +228,9 @@ fn is_sample(
     }
     if classifier == "credential-assignment"
         && assignment_value(matched).is_some_and(|value| {
-            inert_code_expression_regex().is_match(value) || masked_value::is_masked(value)
+            inert_code_expression_regex().is_match(value)
+                || masked_value::is_masked(value)
+                || reference_value::is_reference(value)
         })
     {
         return true;
