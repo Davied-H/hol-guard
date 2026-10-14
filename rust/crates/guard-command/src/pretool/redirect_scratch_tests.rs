@@ -118,3 +118,31 @@ fn protected_targets_bodies_and_later_steps_keep_their_review() {
         }
     }
 }
+
+#[test]
+fn saved_reads_inspected_by_absolute_path_match_the_relative_spelling() {
+    let workspace = Workspace::new("scratch-absolute");
+    let cwd = &workspace.cwd;
+    let save = "gh api repos/example/app-portal/actions/jobs/1/logs";
+    let allowed = [
+        format!("{save} > {cwd}/.tmp/job.log 2>&1; wc -l {cwd}/.tmp/job.log"),
+        format!("{save} > .tmp/job.log 2>&1; wc -l {cwd}/.tmp/job.log"),
+        format!("ls > {cwd}/out/listing.txt && head -3 {cwd}/out/listing.txt"),
+    ];
+    let reviewed = [
+        format!("{save} > {cwd}/.tmp/job.log 2>&1; cat {cwd}/.env"),
+        format!("{save} > {cwd}/.tmp/job.log 2>&1; sh {cwd}/.tmp/job.log"),
+        format!("{save} > {cwd}/.git/hooks/pre-commit; wc -l {cwd}/.git/hooks/pre-commit"),
+        format!("{save} > {cwd}/sub/.tmp/job.log; wc -l {cwd}/sub/.tmp/job.log"),
+    ];
+    for harness in HARNESSES {
+        for command in &allowed {
+            let (action, reason) = workspace.action(harness, command);
+            assert_eq!(action, "allow", "{harness} {command}: {reason}");
+        }
+        for command in &reviewed {
+            let (action, reason) = workspace.action(harness, command);
+            assert_ne!(action, "allow", "{harness} {command}: {reason}");
+        }
+    }
+}
