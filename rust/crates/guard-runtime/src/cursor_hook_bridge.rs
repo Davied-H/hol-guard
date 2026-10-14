@@ -413,9 +413,10 @@ pub(crate) fn run(python_argv: &[String]) -> i32 {
             let mut argv = python_argv.to_vec();
             argv.push(DAEMON_REPLY_FLAG.to_owned());
             argv.push(body);
-            if let Some(code) = run_python(&argv, Some(&raw), started.elapsed(), false) {
-                return code;
-            }
+            // The daemon already has this hook: a client that cannot start
+            // must not fall back to one that posts it again.
+            return run_python(&argv, Some(&raw), started.elapsed(), false)
+                .unwrap_or_else(|| unavailable(event));
         }
         Reply::Client => {}
     }
