@@ -354,6 +354,8 @@ fn an_explicit_git_allow_settles_only_known_built_ins() {
         let result = evaluate(&enabled, command);
         assert_ne!(result.minimum_action, "allow", "{command}");
     }
+    // The fixture has no repository, so read-only commands may still wait on
+    // the execution-context probe; they must not be held as unmodeled.
     for command in [
         "git status",
         "git log --oneline",
@@ -361,9 +363,11 @@ fn an_explicit_git_allow_settles_only_known_built_ins() {
         "git config user.name x",
     ] {
         let result = evaluate(&enabled, command);
-        assert_eq!(
-            result.minimum_action, "allow",
-            "{command}: {}",
+        assert!(
+            result.minimum_action == "allow"
+                || result.reason_code == "native_git_execution_context_review",
+            "{command}: {} {}",
+            result.minimum_action,
             result.reason_code
         );
     }
