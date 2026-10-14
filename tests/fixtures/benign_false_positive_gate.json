@@ -4,10 +4,6 @@
   "pending_fix": {
     "gauntlet-python-local-test-script@cursor": "native_command_review_required",
     "pytest-quiet@cursor": "native_command_review_required",
-    "session-echo-add-commit-message-init@claude-code": "native_command_review_required",
-    "session-echo-add-commit-message-init@codex": "native_command_review_required",
-    "session-echo-add-commit-message-init@omp": "native_command_review_required",
-    "session-echo-add-commit-message-init@zcode": "native_command_review_required",
     "session-rm-workspace-file@cursor": "native_command_extension_review",
     "session-sibling-cd-vite-build-workspace@claude-code": "native_command_review_required",
     "session-sibling-cd-vite-build-workspace@codex": "native_command_review_required",
@@ -4281,6 +4277,51 @@
       "expect": "allow"
     },
     {
+      "id": "ls-home-agents-dir",
+      "fix_area": "home-dotdir-list",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "ls ${HOME}/.agents/"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "ls-home-agents-skill-dir",
+      "fix_area": "home-dotdir-list",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "ls ${HOME}/.agents/skills/"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "ls-home-config-dir",
+      "fix_area": "home-dotdir-list",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "ls ${HOME}/.config/"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
       "id": "gauntlet-grep-rln-sibling-repo",
       "fix_area": "shell",
       "harnesses": [
@@ -8197,10 +8238,6 @@
   "pending_pr": {
     "gauntlet-python-local-test-script@cursor": "unassigned",
     "pytest-quiet@cursor": "unassigned",
-    "session-echo-add-commit-message-init@claude-code": "unassigned",
-    "session-echo-add-commit-message-init@codex": "unassigned",
-    "session-echo-add-commit-message-init@omp": "unassigned",
-    "session-echo-add-commit-message-init@zcode": "unassigned",
     "session-rm-workspace-file@cursor": "unassigned",
     "session-sibling-cd-vite-build-workspace@claude-code": "unassigned",
     "session-sibling-cd-vite-build-workspace@codex": "unassigned",
