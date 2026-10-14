@@ -258,7 +258,7 @@ fn continues_as_expression(rest: &str) -> bool {
         "\\" => return true,
         "" => {
             let next = lines.find(|next| !next.trim().is_empty());
-            return next.is_some_and(|next| opens_with_operator(next.trim_start()));
+            return next.is_some_and(continues_previous_line);
         }
         _ => {}
     }
@@ -283,11 +283,24 @@ fn continues_as_expression(rest: &str) -> bool {
     )
 }
 
-/// Whether a line continues the previous line's expression: it opens with a
-/// concatenation or `||`. A quote or `$` opening a line usually starts a new
-/// statement or entry, so it does not count here.
-fn opens_with_operator(line: &str) -> bool {
-    line.starts_with("||") || matches!(line.chars().next(), Some('+' | '.' | '~' | '%'))
+/// Whether a line continues the previous line's expression: indented, and
+/// opening with a spaced `+`, `~`, `%` or `||`, or a `.` member call such as
+/// `.concat(`. Unindented lines (diff `+` lines, bullets) and `...` do not,
+/// nor does a quote or `$`, which usually starts a new statement or entry.
+fn continues_previous_line(line: &str) -> bool {
+    let operator = line.trim_start();
+    if operator.len() == line.len() {
+        return false;
+    }
+    let mut characters = operator.chars();
+    match characters.next() {
+        Some('+' | '~' | '%') => characters.next().is_some_and(char::is_whitespace),
+        Some('|') => characters.next() == Some('|'),
+        Some('.') => characters
+            .next()
+            .is_some_and(|next| next == '_' || next.is_ascii_alphabetic()),
+        _ => false,
+    }
 }
 
 /// Whether a value substitutes something else when it is used, as in
@@ -663,6 +676,10 @@ mod tests {
             "const apiKey = 'stub_token';\nconst other = 1;",
             "api_key: mock-token\n\"next\": 1",
             "password = 'fixture-value'\n",
+            "+API_KEY = \"fictional-report-key\"\n+OTHER = 1",
+            "password = 'fixture-value'\n...\n",
+            "password = 'fixture-value'\n+ next item",
+            "password = 'fixture-value'\n  ...",
         ] {
             let result = scan_text(text, false, true, MAX_SCAN_BYTES, None);
             assert!(result.matches.is_empty(), "{text:?}");
