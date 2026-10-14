@@ -110,7 +110,12 @@ def gemini_cases() -> list[dict]:
         case("settings_is_directory", dirs=[f"{G_HOME}/settings.json"]),
         case(
             "settings_duplicate_keys",
-            [file(f"{G_HOME}/settings.json", '{"mcpServers": {"d": {"command": "one"}, "e": {}, "d": {"command": "two"}}}')],
+            [
+                file(
+                    f"{G_HOME}/settings.json",
+                    '{"mcpServers": {"d": {"command": "one"}, "e": {}, "d": {"command": "two"}}}',
+                )
+            ],
         ),
         case(
             "settings_escaped_text",
@@ -188,14 +193,17 @@ def gemini_cases() -> list[dict]:
         ),
         case(
             "extensions_unreadable_child",
-            [doc(f"{G_HOME}/extensions/x/gemini-extension.json", {"name": "x"}), doc(f"{G_HOME}/extensions/y/gemini-extension.json", {"name": "y"})],
+            [
+                doc(f"{G_HOME}/extensions/x/gemini-extension.json", {"name": "x"}),
+                doc(f"{G_HOME}/extensions/y/gemini-extension.json", {"name": "y"}),
+            ],
             dir_modes={f"{G_HOME}/extensions/x": 0o000},
         ),
         case(
             "extensions_sort_order",
             [
                 doc(f"{G_HOME}/extensions/{name}/gemini-extension.json", {"publisher": name})
-                for name in ["b", "B", "a-b", "a.b", "a", "é", "_", "10", "9"]
+                for name in ["b", "C", "a-b", "a.b", "a", "é", "_", "10", "9"]
             ],
         ),
         case(
@@ -222,15 +230,37 @@ def gemini_cases() -> list[dict]:
         ),
         case(
             "skills_unreadable",
-            [file(f"{G_HOME}/skills/a/SKILL.md", SKILL), file(f"{G_HOME}/skills/a/data.bin", "d", mode=0o000), file(f"{G_HOME}/skills/locked/b/SKILL.md", SKILL)],
+            [
+                file(f"{G_HOME}/skills/a/SKILL.md", SKILL),
+                file(f"{G_HOME}/skills/a/data.bin", "d", mode=0o000),
+                file(f"{G_HOME}/skills/locked/b/SKILL.md", SKILL),
+            ],
             dir_modes={f"{G_HOME}/skills/locked": 0o000},
         ),
-        case("workspace_is_home", [*skills(f"{G_HOME}/skills"), doc(f"{G_HOME}/settings.json", {"mcpServers": {"h": {}}}), doc(f"{G_HOME}/extensions/e/gemini-extension.json", {"name": "e"})], workspace="home"),
-        case("workspace_inside_home", [doc("home/proj/.gemini/settings.json", {"mcpServers": {"p": {}}}), doc(f"{G_HOME}/settings.json", {"mcpServers": {"h": {}}})], workspace="home/proj"),
+        case(
+            "workspace_is_home",
+            [
+                *skills(f"{G_HOME}/skills"),
+                doc(f"{G_HOME}/settings.json", {"mcpServers": {"h": {}}}),
+                doc(f"{G_HOME}/extensions/e/gemini-extension.json", {"name": "e"}),
+            ],
+            workspace="home",
+        ),
+        case(
+            "workspace_inside_home",
+            [
+                doc("home/proj/.gemini/settings.json", {"mcpServers": {"p": {}}}),
+                doc(f"{G_HOME}/settings.json", {"mcpServers": {"h": {}}}),
+            ],
+            workspace="home/proj",
+        ),
         case(
             "everything",
             [
-                doc(f"{G_HOME}/settings.json", {"mcpServers": {"s": {"command": "c"}}, "hooks": {"Notification": [{"command": "n"}]}}),
+                doc(
+                    f"{G_HOME}/settings.json",
+                    {"mcpServers": {"s": {"command": "c"}}, "hooks": {"Notification": [{"command": "n"}]}},
+                ),
                 doc(f"{G_HOME}/extensions/e/gemini-extension.json", {"name": "e", "mcpServers": {"m": {"url": "u"}}}),
                 *skills(f"{G_HOME}/skills"),
                 doc(f"{G_WORK}/settings.json", {"hooks": {"BeforeModel": [{"hooks": [{"command": "x"}]}]}}),
@@ -239,11 +269,16 @@ def gemini_cases() -> list[dict]:
         ),
         case(
             "relative_context",
-            [doc(f"{G_HOME}/settings.json", {"mcpServers": {"r": {}}}), doc(f"{G_WORK}/extensions/e/gemini-extension.json", {"name": "e"})],
+            [
+                doc(f"{G_HOME}/settings.json", {"mcpServers": {"r": {}}}),
+                doc(f"{G_WORK}/extensions/e/gemini-extension.json", {"name": "e"}),
+            ],
             relative=True,
         ),
         case("relative_context_with_skills", [file(f"{G_HOME}/skills/a/SKILL.md", SKILL)], relative=True),
-        case("hook_config_huge_integer_unused", [file(f"{G_HOME}/settings.json", '{"hooks": {}, "n": ' + "9" * 30 + "}")]),
+        case(
+            "hook_config_huge_integer_unused", [file(f"{G_HOME}/settings.json", '{"hooks": {}, "n": ' + "9" * 30 + "}")]
+        ),
     ]
 
 
@@ -254,7 +289,11 @@ def antigravity_cases() -> list[dict]:
             "location": {"path": "<ROOT>/ext/full"},
             "metadata": {"publisherDisplayName": "Acme Inc"},
         },
-        {"identifier": {"id": "acme.fallback"}, "location": {"path": "<ROOT>/ext/fallback"}, "metadata": {"publisherDisplayName": "Fallback Co"}},
+        {
+            "identifier": {"id": "acme.fallback"},
+            "location": {"path": "<ROOT>/ext/fallback"},
+            "metadata": {"publisherDisplayName": "Fallback Co"},
+        },
         {"identifier": {"id": "acme.blank"}, "location": {"path": "<ROOT>/ext/blank"}},
         {"identifier": {"id": "acme.missing"}, "location": {"path": "<ROOT>/ext/missing"}, "metadata": "x"},
         {"identifier": {"id": "acme.relative"}, "location": {"path": "ext/relative"}},
@@ -286,7 +325,10 @@ def antigravity_cases() -> list[dict]:
         case("index_only_junk", [doc(A_INDEX, [1, None, "x"])]),
         case(
             "index_manifest_invalid",
-            [doc(A_INDEX, [{"identifier": {"id": "a.b"}, "location": {"path": "<ROOT>/ext/x"}}]), file("ext/x/package.json", "{")],
+            [
+                doc(A_INDEX, [{"identifier": {"id": "a.b"}, "location": {"path": "<ROOT>/ext/x"}}]),
+                file("ext/x/package.json", "{"),
+            ],
         ),
         case(
             "index_location_nul",
@@ -295,7 +337,10 @@ def antigravity_cases() -> list[dict]:
         case(
             "bridges",
             [
-                doc(A_BRIDGE, {"mcpServers": {"g": {"command": "gc", "args": ["1", 2]}, "u": {"url": "https://u"}, "bad": 1}}),
+                doc(
+                    A_BRIDGE,
+                    {"mcpServers": {"g": {"command": "gc", "args": ["1", 2]}, "u": {"url": "https://u"}, "bad": 1}},
+                ),
                 doc(A_WORK_BRIDGE, {"mcpServers": {"w": {}}}),
             ],
         ),
@@ -315,7 +360,10 @@ def antigravity_cases() -> list[dict]:
         case("vscode_with_owned_signal", [doc(A_XDG, {"a": 1}), doc(A_VSCODE, {"mcpServers": {"v": {}}})]),
         case("vscode_empty", [doc(A_BRIDGE, {"x": 1}), doc(A_VSCODE, {})]),
         case("vscode_no_workspace", [doc(A_MACOS, {"x": 1})], workspace=None),
-        case("vscode_with_skill_signal", [file("home/.gemini/antigravity/skills/a/SKILL.md", SKILL), doc(A_VSCODE, {"mcpServers": {"v": {}}})]),
+        case(
+            "vscode_with_skill_signal",
+            [file("home/.gemini/antigravity/skills/a/SKILL.md", SKILL), doc(A_VSCODE, {"mcpServers": {"v": {}}})],
+        ),
         case(
             "same_server_names",
             [
@@ -325,10 +373,22 @@ def antigravity_cases() -> list[dict]:
                 doc(A_VSCODE, {"mcpServers": {"same": {}}}),
             ],
         ),
-        case("workspace_is_home", [doc(A_BRIDGE, {"mcpServers": {"h": {}}}), *skills("home/.gemini/antigravity/skills"), doc("home/.vscode/settings.json", {"mcpServers": {"v": {}}})], workspace="home"),
+        case(
+            "workspace_is_home",
+            [
+                doc(A_BRIDGE, {"mcpServers": {"h": {}}}),
+                *skills("home/.gemini/antigravity/skills"),
+                doc("home/.vscode/settings.json", {"mcpServers": {"v": {}}}),
+            ],
+            workspace="home",
+        ),
         case(
             "relative_context",
-            [doc(A_BRIDGE, {"mcpServers": {"r": {}}}), doc(A_VSCODE, {"mcpServers": {"v": {}}}), doc(A_XDG, {"mcpServers": {"x": {}}})],
+            [
+                doc(A_BRIDGE, {"mcpServers": {"r": {}}}),
+                doc(A_VSCODE, {"mcpServers": {"v": {}}}),
+                doc(A_XDG, {"mcpServers": {"x": {}}}),
+            ],
             relative=True,
         ),
         case(
@@ -355,9 +415,21 @@ def antigravity_cases() -> list[dict]:
 
 def gemini_extra() -> list[dict]:
     return [
-        case("home_is_cwd", [doc(".gemini/settings.json", {"mcpServers": {"r": {}}}), doc(".gemini/extensions/e/gemini-extension.json", {"name": "e"})], home=".", workspace=None, relative=True),
+        case(
+            "home_is_cwd",
+            [
+                doc(".gemini/settings.json", {"mcpServers": {"r": {}}}),
+                doc(".gemini/extensions/e/gemini-extension.json", {"name": "e"}),
+            ],
+            home=".",
+            workspace=None,
+            relative=True,
+        ),
         case("hook_lone_surrogate", [file(f"{G_HOME}/settings.json", '{"hooks": {"X": [{"command": "\\udc80"}]}}')]),
-        case("extension_name_lone_surrogate", [file(f"{G_HOME}/extensions/e/gemini-extension.json", '{"name": "\\ud800"}')]),
+        case(
+            "extension_name_lone_surrogate",
+            [file(f"{G_HOME}/extensions/e/gemini-extension.json", '{"name": "\\ud800"}')],
+        ),
     ]
 
 

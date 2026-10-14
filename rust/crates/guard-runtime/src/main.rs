@@ -1,10 +1,10 @@
 #![forbid(unsafe_code)]
 #![recursion_limit = "512"]
 
-mod aibom_artifact;
 mod adapter_inventory;
 #[cfg(all(test, unix))]
 mod adapter_vectors_tests;
+mod aibom_artifact;
 mod aibom_discovery;
 mod aibom_extend;
 mod aibom_marketplace;
@@ -218,6 +218,7 @@ mod discovery_placement_op;
 mod edge;
 mod edge_git_push;
 mod encrypted_secret_store;
+mod gemini_detect;
 mod git_execution_safety_binary;
 mod git_execution_safety_checks;
 mod git_execution_safety_config;
@@ -227,7 +228,6 @@ mod git_execution_safety_probe;
 mod git_execution_safety_repo_tests;
 #[cfg(test)]
 mod git_execution_safety_tests;
-mod gemini_detect;
 mod github_cli_classify_op;
 mod github_workflow_context_io;
 mod github_workflow_prepare_op;

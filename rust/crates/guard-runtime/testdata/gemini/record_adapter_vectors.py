@@ -49,6 +49,7 @@ if not os.environ.get("HOL_GUARD_NATIVE_BINARY"):
 gemini.extend_detection_with_workspace_aibom = lambda detection, **_: detection
 ADAPTERS = {"gemini": gemini.GeminiHarnessAdapter, "antigravity": antigravity.AntigravityHarnessAdapter}
 
+
 def provision_native(guard_home: Path) -> None:
     from codex_plugin_scanner.guard import native_context
     from codex_plugin_scanner.guard.native_policy_snapshot import provision_native_policy_verifier_key

@@ -1383,6 +1383,22 @@
     },
     {
      "args": [],
+     "artifact_id": "gemini:global:C",
+     "artifact_type": "extension",
+     "command": null,
+     "config_path": "<ROOT>/home/.gemini/extensions/C/gemini-extension.json",
+     "harness": "gemini",
+     "metadata": {
+      "context_file": null
+     },
+     "name": "C",
+     "publisher": "C",
+     "source_scope": "global",
+     "transport": null,
+     "url": null
+    },
+    {
+     "args": [],
      "artifact_id": "gemini:global:_",
      "artifact_type": "extension",
      "command": null,
@@ -1456,7 +1472,7 @@
       "context_file": null
      },
      "name": "b",
-     "publisher": "B",
+     "publisher": "b",
      "source_scope": "global",
      "transport": null,
      "url": null
@@ -1488,8 +1504,8 @@
     },
     {
      "mode": 420,
-     "path": "home/.gemini/extensions/B/gemini-extension.json",
-     "text": "{\"publisher\": \"B\"}"
+     "path": "home/.gemini/extensions/C/gemini-extension.json",
+     "text": "{\"publisher\": \"C\"}"
     },
     {
      "mode": 420,
@@ -1530,6 +1546,7 @@
    "found_paths": [
     "<ROOT>/home/.gemini/extensions/10/gemini-extension.json",
     "<ROOT>/home/.gemini/extensions/9/gemini-extension.json",
+    "<ROOT>/home/.gemini/extensions/C/gemini-extension.json",
     "<ROOT>/home/.gemini/extensions/_/gemini-extension.json",
     "<ROOT>/home/.gemini/extensions/a/gemini-extension.json",
     "<ROOT>/home/.gemini/extensions/a-b/gemini-extension.json",
