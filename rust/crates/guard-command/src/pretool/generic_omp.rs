@@ -234,13 +234,35 @@ fn listing(
             return None;
         }
     }
-    let target = input_path(input, signals)?.unwrap_or(".");
+    let recursive = signals.tool_name.as_deref() == Some("find") || input.contains_key("pattern");
+    let targets = search_targets(input_path(input, signals)?.unwrap_or("."), context)?;
+    targets
+        .into_iter()
+        .all(|target| listing_target_proven(target, signals, recursive, context))
+        .then(|| {
+            directory_allow(
+                context,
+                "native_omp_directory_listing",
+                "The Rust authority proved this names-only listing targets a verified ordinary directory.",
+            )
+        })
+}
+
+fn listing_target_proven(
+    target: &str,
+    signals: &GenericSignals,
+    recursive: bool,
+    context: &OmpContext<'_>,
+) -> bool {
     let has_glob_selector =
         signals.tool_name.as_deref() == Some("glob") && target.contains(['*', '?', '[', '{']);
     // OMP glob uses `path` for the complete selector, not just a directory.
     // Prove its fixed directory prefix; the tool returns names, not contents.
     let target = if signals.tool_name.as_deref() == Some("glob") {
-        glob_directory(target)?
+        match glob_directory(target) {
+            Some(directory) => directory,
+            None => return false,
+        }
     } else {
         target
     };
@@ -253,28 +275,66 @@ fn listing(
             context.path.cwd,
         )
     {
-        return None;
+        return false;
     }
     // `find` and a `pattern` walk the tree below the root and return names
     // only, so an ordinary project root is fine even with a `.env` inside;
     // reading that file stays gated. A walk from the home directory or above
     // it reaches credential stores and agent state, so it stays on review.
-    let recursive = signals.tool_name.as_deref() == Some("find") || input.contains_key("pattern");
     if recursive && walk_covers_home(target, context) {
-        return None;
+        return false;
     }
     super::super::safe_reads::bounded_omp_directory_read_target(
         target,
         context.path.home_dir,
         context.path.cwd,
     )
-    .then(|| {
-        directory_allow(
-            context,
-            "native_omp_directory_listing",
-            "The Rust authority proved this names-only listing targets a verified ordinary directory.",
-        )
-    })
+}
+
+/// Maximum entries proven from one semicolon-delimited `path`.
+const MAX_SEARCH_TARGETS: usize = 32;
+
+/// The entries an OMP search tool walks for one `path` string. When the whole
+/// string is not an existing path, the host splits it on every top-level `;`
+/// before trying any other delimiter (`splitDelimitedPathEntry`), so
+/// `src; ../notes` searches both entries. Each returned entry still needs its
+/// own proof. `None` keeps review when the host's split could differ from this
+/// one: braces and escapes change what counts as top level, quotes are peeled
+/// per entry, and an existing literal or selector base is kept whole.
+fn search_targets<'a>(target: &'a str, context: &OmpContext<'_>) -> Option<Vec<&'a str>> {
+    if !target.contains(';') {
+        return Some(vec![target]);
+    }
+    if target.trim() != target
+        || target.starts_with('[')
+        || target.contains(['{', '}', '\\', '"', '\0', '\n', '\r'])
+    {
+        return None;
+    }
+    let literal_absent = |candidate: &str| {
+        let path = match candidate.strip_prefix("~/") {
+            Some(rest) => std::path::Path::new(context.path.home_dir?).join(rest),
+            None => std::path::Path::new(context.path.cwd?).join(candidate),
+        };
+        match std::fs::symlink_metadata(path) {
+            Err(error) => Some(error.kind() == std::io::ErrorKind::NotFound),
+            Ok(_) => Some(false),
+        }
+    };
+    if literal_absent(target) != Some(true) {
+        return None;
+    }
+    if let Some((base, _)) = target.rsplit_once(':') {
+        if literal_absent(base) != Some(true) {
+            return None;
+        }
+    }
+    let targets: Vec<&str> = target
+        .split(';')
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+        .collect();
+    (!targets.is_empty() && targets.len() <= MAX_SEARCH_TARGETS).then_some(targets)
 }
 
 /// True when the walk root is the home directory or one of its ancestors,
@@ -341,20 +401,24 @@ fn grep_scope(
             }
         }
     }
-    let target = input_path(input, signals)?.unwrap_or(".");
+    let targets = search_targets(input_path(input, signals)?.unwrap_or("."), context)?;
     // A single file is proven by the ordinary bounded file-read path.
-    super::super::search_scope::content_search_scope_proven(
-        target,
-        context.path.home_dir,
-        context.path.cwd,
-    )
-    .then(|| {
-        directory_allow(
-            context,
-            "native_bounded_search_scope",
-            "The Rust authority proved this directory search cannot reach a sensitive file.",
-        )
-    })
+    targets
+        .into_iter()
+        .all(|target| {
+            super::super::search_scope::content_search_scope_proven(
+                target,
+                context.path.home_dir,
+                context.path.cwd,
+            )
+        })
+        .then(|| {
+            directory_allow(
+                context,
+                "native_bounded_search_scope",
+                "The Rust authority proved this directory search cannot reach a sensitive file.",
+            )
+        })
 }
 
 /// `skill://<name>[/<relative.md>]` names a skill the host resolves from its

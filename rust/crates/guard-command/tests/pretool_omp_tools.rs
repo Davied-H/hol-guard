@@ -358,6 +358,58 @@ fn grep_allows_only_directories_without_reachable_secrets() {
 }
 
 #[test]
+fn semicolon_path_lists_prove_every_entry() {
+    let f = fixture();
+    let sibling = f.home.join("clean");
+    let absolute = format!("src; {}", sibling.display());
+    for path in [
+        absolute.as_str(),
+        "src;~/clean",
+        "src; ~/clean;",
+        "~/clean/*; src/*.rs",
+    ] {
+        let result = omp(
+            &f,
+            "glob",
+            json!({"path": path, "hidden": true, "gitignore": false}),
+        );
+        assert!(allowed(&result), "{path}: {}", result.reason_code);
+        assert_eq!(result.reason_code, "native_omp_directory_listing");
+    }
+    let result = omp(
+        &f,
+        "grep",
+        json!({"pattern": "fn main", "path": "src; ~/clean"}),
+    );
+    assert!(allowed(&result), "{}", result.reason_code);
+    assert_eq!(result.reason_code, "native_bounded_search_scope");
+    for path in [
+        "src; ~/.ssh",
+        "src; ~/secret-dir",
+        "src; ~/missing-directory",
+        "src; ../../../etc",
+        "src; ~/.ss*/*",
+        "src;{~/clean,~/.ssh}",
+        "src\\; ~/.ssh",
+        "\"src\"; ~/clean",
+        " src; ~/clean",
+        "[\"src\"]; ~/clean",
+        ";",
+    ] {
+        assert!(!allowed(&omp(&f, "glob", json!({"path": path}))), "{path}");
+        assert!(
+            !allowed(&omp(&f, "grep", json!({"pattern": "x", "path": path}))),
+            "{path}"
+        );
+    }
+    // An existing literal that contains `;` is searched whole, not split.
+    write(f.project.join("a;b/notes.md"), "synthetic fixture\n");
+    assert!(!allowed(&omp(&f, "glob", json!({"path": "a;b"}))));
+    write(f.project.join("c;src/notes.md"), "synthetic fixture\n");
+    assert!(!allowed(&omp(&f, "glob", json!({"path": "c;src:1-5"}))));
+}
+
+#[test]
 fn eval_allows_literal_tool_programs() {
     let f = fixture();
     for code in [
