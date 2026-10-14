@@ -73,6 +73,7 @@ mod npm_reads;
 mod postgres_reads;
 mod pytest_contained;
 mod tool_bin_listing;
+mod trailing_group;
 mod trusted_location;
 pub(crate) use git_routes::{git_dir_route_within_scope, git_route_within_workspace};
 mod apply_patch_writes;
@@ -94,6 +95,7 @@ mod search_scope;
 mod search_scope_filter;
 mod search_scope_glob;
 mod search_scope_ignore;
+mod secret_aliases;
 pub(crate) mod sed_edits;
 mod segment_proof;
 mod shell_script;
@@ -401,7 +403,14 @@ pub(super) fn evaluate_pre_tool_with_execution_context(
     // allow there admits the loop, a block is never softened, and a review
     // carries the unrolled model so later layers judge modeled commands.
     let Some(unrolled) = for_loop_unroll::unroll(&request.command) else {
-        return Ok(decision);
+        return Ok(ungrouped_decision(
+            request,
+            decision,
+            home_dir,
+            cwd,
+            deadline,
+            execution_environment,
+        ));
     };
     let unrolled_request = CommandModelRequestV1 {
         command: unrolled,
@@ -423,6 +432,30 @@ pub(super) fn evaluate_pre_tool_with_execution_context(
             Ok(unrolled)
         }
         _ => Ok(decision),
+    }
+}
+
+/// A trailing subshell group is its command list. Only an allow or a block
+/// for that list replaces the grouped review, so an approval still binds the
+/// exact text the agent sent.
+fn ungrouped_decision(
+    request: &CommandModelRequestV1,
+    decision: PreToolDecisionV1,
+    home_dir: Option<&str>,
+    cwd: Option<&str>,
+    deadline: Option<std::time::Instant>,
+    execution_environment: Option<&guard_contracts::GuardExecutionEnvironmentV1>,
+) -> PreToolDecisionV1 {
+    let Some(command) = trailing_group::unwrap(&request.command) else {
+        return decision;
+    };
+    let ungrouped = CommandModelRequestV1 {
+        command,
+        ..request.clone()
+    };
+    match evaluate_single_command(&ungrouped, home_dir, cwd, deadline, execution_environment) {
+        Ok(plain) if matches!(plain.minimum_action.as_str(), "allow" | "block") => plain,
+        _ => decision,
     }
 }
 
@@ -574,7 +607,8 @@ fn evaluate_single_command(
     if git_search_text::sensitive_beyond_patterns(
         normalized,
         git_search_text::command_without_patterns(&model),
-    ) {
+    ) || secret_aliases::names_secret_alias(&model, context)
+    {
         return Ok(pretool_decision(
             model,
             "review",
