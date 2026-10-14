@@ -68,6 +68,8 @@ fn reads_saved_to_a_workspace_scratch_file_are_allowed() {
             "gh run view 123 --log-failed > .tmp/fail.log",
             "gh api repos/example/app-portal/pulls/12/comments > .tmp/comments.json 2>&1; wc -l .tmp/comments.json",
             "ls > out/listing.txt; wc -l out/listing.txt",
+            "find bin -type f > out/files.txt; wc -l out/files.txt",
+            "cat bin/tool > out/copy.txt && head -3 out/copy.txt",
             "curl -s https://api.github.com/repos/example/app-portal > .tmp/repo.json",
             "curl -s https://api.github.com/repos/example/app-portal -o .tmp/repo.json",
         ] {
