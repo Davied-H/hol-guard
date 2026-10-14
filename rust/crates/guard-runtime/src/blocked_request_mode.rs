@@ -35,7 +35,9 @@ fn reason_code_hint(reason_code: &str) -> &'static str {
         }
         "native_network_review" => "This makes a network request that Guard has not seen before.",
         "native_file_read_review" => "This reads a file outside what Guard treats as safe to read.",
-        "native_pre_tool_unknown_review" => "Guard does not recognize this tool call.",
+        "native_pre_tool_unknown_review" => {
+            "Guard cannot check what this tool call will do before it runs."
+        }
         "native_command_review_required" => {
             "Guard could not prove this exact command is read-only. Use a simpler built-in tool \
              where one fits."
