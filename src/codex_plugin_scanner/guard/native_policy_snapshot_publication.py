@@ -94,6 +94,7 @@ class NativePolicySnapshotPublicationMixin:
                 publisher._recheck_direct_lane_review_facts()
                 publisher._recheck_direct_lane_structured_output()
                 publisher._recheck_direct_lane_mcp_relay()
+                publisher._recheck_direct_lane_saved_state()
             with publisher._condition:
                 if publisher._closed:
                     return
@@ -424,7 +425,7 @@ class NativePolicySnapshotPublicationMixin:
                         publisher._direct_lane_structured_output = bound_structured_output_view(
                             direct_lane, resident_features
                         )
-                        publisher._bind_mcp_relay_view(direct_lane, resident_features)
+                        publisher._bind_relay_and_saved_state(direct_lane, resident_features)
                         evidence_drain = isinstance(direct_lane, Mapping) and direct_lane.get("evidence_drain") is True
                         publisher._publish_direct_lane_ack(snapshot, evidence_drain=evidence_drain)
                     else:

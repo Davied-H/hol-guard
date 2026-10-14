@@ -14,11 +14,15 @@ import os
 import sqlite3
 from collections.abc import Iterable, Mapping
 from contextlib import AbstractContextManager
-from typing import cast
+from pathlib import Path
+from typing import TYPE_CHECKING, cast
 
 from .native_policy_snapshot_direct_lane import DIRECT_HOOK_SAVED_DECISION_FEATURE
 from .runtime.extension_control_runtime import current_extension_control_binding_digest
 from .store_base import _now
+
+if TYPE_CHECKING:
+    from .native_policy_snapshot_publisher import NativePolicySnapshotPublisher
 
 # Mirrors the resident limits in guard-policy-snapshot's direct_lane module.
 _MAX_ENVIRONMENT_ENTRIES = 1024
@@ -102,8 +106,9 @@ def refresh_integrity_state(store: object) -> None:
     the stored row. Readers refresh that row lazily: a fresh home has none, and
     a saved decision advances the generation after its write refreshed it. So
     the publisher refreshes it before observing its inputs, without minting a
-    key: a fresh home then binds a real state, and a policy write, which moves
-    ``guard.db``, republishes the state that write left.
+    key, so a fresh home binds a real state. A saved decision leaves the
+    effective policy unchanged and so republishes nothing; the reconcile
+    recheck below refreshes after it and rebinds the state it left.
     """
 
     connect = getattr(store, "_connect", None)
@@ -140,3 +145,52 @@ def with_saved_decision_state(
     bound["exact_action_control_digest"] = digest
     bound["policy_integrity_state"] = state
     return bound
+
+
+def _database_stamp(guard_home: Path) -> tuple[tuple[int, int] | None, ...]:
+    stamps: list[tuple[int, int] | None] = []
+    for name in ("guard.db", "guard.db-wal"):
+        try:
+            metadata = (guard_home / name).stat()
+        except OSError:
+            stamps.append(None)
+            continue
+        stamps.append((metadata.st_mtime_ns, metadata.st_size))
+    return tuple(stamps)
+
+
+class NativePolicySnapshotSavedStateMixin:
+    """Rebind the lane once the stored policy-integrity state moves past the bound one."""
+
+    # The state the open lane bound, and the database stamp it was last checked at.
+    _direct_lane_integrity_state: dict[str, object] | None = None
+    _integrity_checked_stamp: tuple[tuple[int, int] | None, ...] | None = None
+
+    def _bind_relay_and_saved_state(self, binding: object, features: Iterable[str]) -> None:
+        """Record the relay view and the integrity state an ACKed binding carries."""
+
+        publisher = cast("NativePolicySnapshotPublisher", self)
+        publisher._bind_mcp_relay_view(binding, features)
+        state = binding.get("policy_integrity_state") if isinstance(binding, Mapping) else None
+        self._direct_lane_integrity_state = (
+            dict(cast(Mapping[str, object], state)) if isinstance(state, Mapping) else None
+        )
+
+    def _recheck_direct_lane_saved_state(self) -> None:
+        """Refresh after a database write and rebind once the state moved.
+
+        Only a write can move the state, so an unchanged database costs two
+        stats. The stamp is taken after the refresh: its own write does not
+        trigger another one.
+        """
+
+        publisher = cast("NativePolicySnapshotPublisher", self)
+        bound = self._direct_lane_integrity_state
+        if bound is None or publisher._direct_lane_ack_target is None:
+            return
+        if _database_stamp(publisher.guard_home) == self._integrity_checked_stamp:
+            return
+        refresh_integrity_state(publisher.store)
+        self._integrity_checked_stamp = _database_stamp(publisher.guard_home)
+        if _integrity_state(publisher.store) != bound:
+            publisher._rebind_direct_lane()

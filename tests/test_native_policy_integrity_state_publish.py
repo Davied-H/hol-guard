@@ -72,9 +72,9 @@ def test_a_fresh_home_binds_the_state_its_store_writes(tmp_path: Path) -> None:
     assert direct_lane_integrity_key(store, FEATURES) is None
 
 
-def test_a_policy_write_republishes_the_state_it_leaves(tmp_path: Path) -> None:
-    store = _daemon_store(tmp_path / "guard-home")
-    before = _published(store)["policy_integrity_state"]
+def _save_decision(store: GuardStore) -> int:
+    """Save one local decision from another store; return the generation it signed."""
+
     writer = GuardStore(store.guard_home, prime_policy_integrity=False)
     writer.upsert_policy(
         PolicyDecision(
@@ -90,6 +90,13 @@ def test_a_policy_write_republishes_the_state_it_leaves(tmp_path: Path) -> None:
     )
     with sqlite3.connect(store.path) as connection:
         (signed_generation,) = connection.execute("select integrity_generation from policy_decisions").fetchone()
+    return int(signed_generation)
+
+
+def test_a_policy_write_republishes_the_state_it_leaves(tmp_path: Path) -> None:
+    store = _daemon_store(tmp_path / "guard-home")
+    before = _published(store)["policy_integrity_state"]
+    signed_generation = _save_decision(store)
 
     after = _published(store)["policy_integrity_state"]
 
@@ -100,6 +107,53 @@ def test_a_policy_write_republishes_the_state_it_leaves(tmp_path: Path) -> None:
     assert after == _stored(store)
     assert after["mode"] == "protected"
     assert after["generation"] == signed_generation
+
+
+class _Lane(saved.NativePolicySnapshotSavedStateMixin):
+    """The publisher surface the reconcile recheck uses."""
+
+    def __init__(self, store: GuardStore) -> None:
+        self.store = store
+        self.guard_home = Path(store.guard_home)
+        self._direct_lane_ack_target: tuple[int, str] | None = (1, "ack")
+        self.rebinds = 0
+
+    def _bind_mcp_relay_view(self, binding: object, features: object) -> None:
+        return None
+
+    def _rebind_direct_lane(self) -> None:
+        self.rebinds += 1
+
+
+def test_a_saved_decision_rebinds_the_lane_from_the_reconcile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # A saved decision leaves the effective policy unchanged, so it queues no
+    # republish; only this recheck carries the state it leaves to the lane.
+    store = _daemon_store(tmp_path / "guard-home")
+    lane = _Lane(store)
+    lane._bind_relay_and_saved_state(_published(store), FEATURES)
+    lane._recheck_direct_lane_saved_state()
+    assert lane.rebinds == 0
+
+    signed_generation = _save_decision(store)
+    lane._recheck_direct_lane_saved_state()
+    assert lane.rebinds == 1
+    stored = _stored(store)
+    assert isinstance(stored, dict)
+    assert stored["mode"] == "protected"
+    assert stored["generation"] == signed_generation
+
+    # With no write since, the recheck costs two stats and refreshes nothing,
+    # including after its own refresh wrote the row.
+    refreshes: list[object] = []
+    monkeypatch.setattr(saved, "refresh_integrity_state", refreshes.append)
+    lane._recheck_direct_lane_saved_state()
+    assert (lane.rebinds, refreshes) == (1, [])
+
+    # A closed lane has nothing to rebind.
+    lane._direct_lane_ack_target = None
+    _save_decision(store)
+    lane._recheck_direct_lane_saved_state()
+    assert (lane.rebinds, refreshes) == (1, [])
 
 
 @pytest.mark.parametrize("error", [OSError("gone"), sqlite3.OperationalError("locked"), RuntimeError("resident")])
