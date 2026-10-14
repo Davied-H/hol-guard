@@ -7,14 +7,20 @@
 //! loopback link with the daemon auth token only when the client's
 //! interpreter can import Guard; a response whose link the client may sign
 //! is left to the client.
+//!
+//! A lone surrogate escape CPython's `json.loads` keeps is read as the
+//! character [`pyjson::parse_mapping_lone_surrogates`] maps it onto and
+//! written back as the `\udXXX` escape `json.dumps` writes.
 
 use std::path::Path;
 
-use guard_command::hook_adapter_value::{OMap, OValue};
+use guard_command::hook_adapter_value::{parse_python_json, OMap, OValue};
 use guard_contracts::write_json_string;
 
 use crate::claude_hook_bridge_render::py_strip;
+use crate::hook_env_stamp::{dumps, json_string};
 use crate::native_review_link::{review_url_stays_unsigned, OPEN_GUARD};
+use crate::pyjson::{self, in_surrogate_plane};
 
 /// `print(json.dumps({"permission": "allow"}))`.
 pub(crate) const ALLOW_STDOUT: &str = "{\"permission\": \"allow\"}\n";
@@ -39,6 +45,34 @@ const DECISION_REASON_KEYS: [&str; 4] = [
     "user_title",
 ];
 
+/// `json.loads(text)` as the bridge reads it, and whether the text held a
+/// lone surrogate escape, which the value holds as its mapped character.
+/// `None` when the port cannot read the text alike, or when a lone
+/// surrogate sits beside a genuine character of the mapped range and the
+/// two could no longer be told apart.
+pub(crate) fn python_document(text: &str) -> Option<(OValue, bool)> {
+    if let Ok(value) = parse_python_json(text) {
+        return Some((value, false));
+    }
+    let parsed = pyjson::parse_mapping_lone_surrogates(text).ok()?;
+    if !parsed.mapped || parsed.collision {
+        return None;
+    }
+    let mut literal = String::new();
+    dumps(&parsed.value, false, false, &mut literal);
+    parse_python_json(&literal).ok().map(|value| (value, true))
+}
+
+/// `text`, compact `ensure_ascii` JSON of a value read by
+/// [`python_document`], with each mapped character written back as the
+/// lone `\udXXX` escape `json.dumps` writes for the surrogate.
+pub(crate) fn unmapped_json(text: &str) -> Option<String> {
+    let value = pyjson::parse(text).ok()?;
+    let mut out = String::new();
+    dumps(&value, true, true, &mut out);
+    Some(out)
+}
+
 /// `value.strip()` for a non-blank string value.
 fn stripped(value: Option<&OValue>) -> Option<&str> {
     let text = py_strip(value?.as_str()?);
@@ -61,8 +95,9 @@ fn review_url(response: &OMap) -> Option<&str> {
 }
 
 /// `_cursor_reason`, or `None` when the client would show a link it signs
-/// with Guard's Python only if its interpreter can import it.
-fn reason(response: &OMap, guard_home: &Path) -> Option<String> {
+/// with Guard's Python only if its interpreter can import it, or when the
+/// link holds a lone surrogate (`unmap`) the bridge cannot sign alike.
+fn reason(response: &OMap, guard_home: &Path, unmap: bool) -> Option<String> {
     let hook_output = response.get("hookSpecificOutput").and_then(OValue::as_map);
     let decision = response.get("decision_v2_json").and_then(OValue::as_map);
     let reason = REASON_KEYS
@@ -79,7 +114,9 @@ fn reason(response: &OMap, guard_home: &Path) -> Option<String> {
         return Some(reason.unwrap_or(DEFAULT_BLOCK_REASON).to_owned());
     };
     // `live_approval_review_url` then hands the link back unchanged.
-    if !review_url_stays_unsigned(review_url, guard_home) {
+    if (unmap && review_url.chars().any(in_surrogate_plane))
+        || !review_url_stays_unsigned(review_url, guard_home)
+    {
         return None;
     }
     let suffix = format!("{OPEN_GUARD} {review_url}.");
@@ -90,8 +127,9 @@ fn reason(response: &OMap, guard_home: &Path) -> Option<String> {
     })
 }
 
-/// `print(json.dumps(response))` for the client's string-valued answer.
-fn printed(fields: &[(&str, &str)]) -> String {
+/// `print(json.dumps(response))` for the client's string-valued answer,
+/// with mapped surrogates written back when `unmap` is set.
+fn printed(fields: &[(&str, &str)], unmap: bool) -> String {
     let mut out = vec![b'{'];
     for (index, (name, value)) in fields.iter().enumerate() {
         if index > 0 {
@@ -99,7 +137,11 @@ fn printed(fields: &[(&str, &str)]) -> String {
         }
         write_json_string(name, &mut out);
         out.extend_from_slice(b": ");
-        write_json_string(value, &mut out);
+        if unmap {
+            out.extend_from_slice(json_string(value, true, true).as_bytes());
+        } else {
+            write_json_string(value, &mut out);
+        }
     }
     out.extend_from_slice(b"}\n");
     String::from_utf8(out).expect("ensure_ascii output is ASCII")
@@ -107,22 +149,28 @@ fn printed(fields: &[(&str, &str)]) -> String {
 
 /// The client's stdout and exit code for `response`, the harness response
 /// the daemon would return for a hook the client names `event`, with
-/// `guard_home` its `GUARD_HOME`, or `None` when the bridge cannot reproduce
+/// `guard_home` its `GUARD_HOME` and `unmap` whether `response` held a lone
+/// surrogate, or `None` when the bridge cannot reproduce
 /// the client's answer. This is `_emit_cursor_response` with
 /// `_cursor_permission`: a review asks, which `beforeReadFile` and
 /// `preToolUse` turn into a denial.
-pub(crate) fn rendered(event: &str, response: &OMap, guard_home: &Path) -> Option<(String, i32)> {
+pub(crate) fn rendered(
+    event: &str,
+    response: &OMap,
+    guard_home: &Path,
+    unmap: bool,
+) -> Option<(String, i32)> {
     let permission = match response.get_str("policy_action")? {
         "allow" | "warn" => return Some((ALLOW_STDOUT.to_owned(), 0)),
         "block" | "sandbox-required" => "deny",
         "review" | "require-reapproval" => "ask",
         _ => return None,
     };
-    let reason = reason(response, guard_home)?;
+    let reason = reason(response, guard_home, unmap)?;
     let event = py_strip(event).to_lowercase();
     if event == "beforereadfile" {
         let fields = [("permission", "deny"), ("user_message", reason.as_str())];
-        return Some((printed(&fields), 2));
+        return Some((printed(&fields, unmap), 2));
     }
     let permission = if event == "pretooluse" {
         "deny"
@@ -134,5 +182,8 @@ pub(crate) fn rendered(event: &str, response: &OMap, guard_home: &Path) -> Optio
         ("user_message", reason.as_str()),
         ("agent_message", reason.as_str()),
     ];
-    Some((printed(&fields), if permission == "deny" { 2 } else { 0 }))
+    Some((
+        printed(&fields, unmap),
+        if permission == "deny" { 2 } else { 0 },
+    ))
 }

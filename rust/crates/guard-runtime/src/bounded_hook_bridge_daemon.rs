@@ -12,7 +12,7 @@ use crate::claude_hook_bridge_auth::{private_file_text, LOOPBACK_HOSTS};
 use crate::claude_hook_bridge_http::{LoopbackConnection, ResponseHead, MAX_DAEMON_RESPONSE_BYTES};
 use crate::claude_hook_bridge_transport::OVERLOAD_MARKERS;
 use crate::claude_hook_bridge_url::assert_loopback_http_url;
-use crate::pyjson::{self, PyVal};
+use crate::pyjson::{self, PyVal, SurrogateMapped};
 
 /// The loopback daemon and the token a hook is sent with.
 pub(crate) struct DaemonTarget {
@@ -185,17 +185,15 @@ fn refusal(
     }
 }
 
-/// `post_hook_json`: the daemon's JSON object, or `None` for any failure.
+/// `post_hook_json`: the daemon's JSON object, lone surrogates mapped as
+/// `json.loads` keeps them, or `None` for any failure.
 pub(crate) fn post_hook(
     target: &DaemonTarget,
     harness: &str,
     data: &str,
     deadline: Instant,
-) -> Option<Vec<(String, PyVal)>> {
+) -> Option<SurrogateMapped> {
     let text = post_hook_reply(target, &format!("/v1/hooks/{harness}"), data, deadline).ok()?;
     let parsed = pyjson::parse_mapping_lone_surrogates(&text).ok()?;
-    match parsed.value {
-        PyVal::Dict(entries) if !parsed.mapped => Some(entries),
-        _ => None,
-    }
+    parsed.value.as_dict().is_some().then_some(parsed)
 }

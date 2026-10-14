@@ -9,8 +9,7 @@
 //! `start_command` and asked once more inside the hook deadline (see
 //! `restart`); when that fails too, or the daemon is overloaded, the hook
 //! fails closed. Every other path runs the Python bridge it was given:
-//! - a raw delegate (the original argv and stdin) for client modes and
-//!   input the native bridge does not handle exactly as Python does;
+//! - a raw delegate (the original argv and stdin) for client modes;
 //! - a handoff (`--native-handoff` with the daemon's answer on stdin) for
 //!   answers that need Python's post-processing: browser approval waits,
 //!   containment routing and transition observations. A `PreToolUse` deny
@@ -257,8 +256,6 @@ fn with_browser_wait_process(
 pub(crate) enum Unprepared {
     /// Refused with the client's fail-closed answer for this event.
     Refused(String),
-    /// A lone surrogate, which Python reads as its own character.
-    Surrogates,
 }
 
 pub(crate) fn prepare(
@@ -273,8 +270,12 @@ pub(crate) fn prepare(
         return Err(refused());
     };
     let event_name = runtime_hook_event_name(&entries);
+    // A lone surrogate is forwarded re-escaped, as Python's `json.dumps`
+    // writes it. One beside a genuine U+F0000..U+F07FF character cannot be
+    // told apart from it, and an event name holding one cannot cross the
+    // identity challenge (see `hook_event_name`), so both fail closed.
     if parsed.mapped && (parsed.collision || event_name.chars().any(in_surrogate_plane)) {
-        return Err(Unprepared::Surrogates);
+        return Err(Unprepared::Refused(event_name));
     }
     let seconds = request_timeout_seconds(&event_name, hook_timeouts);
     let forwarded = if event_name == PRE_TOOL_USE {
@@ -370,7 +371,6 @@ pub(crate) fn route_hook(
         Err(Unprepared::Refused(event_name)) => {
             return (Route::Respond(fail_closed(&event_name)), None)
         }
-        Err(Unprepared::Surrogates) => return (Route::Delegate(Fallback::InputUnparsed), None),
     };
     let deadline = input_ready + prepared.timeout;
     let cap = if prepared.event_name == "UserPromptSubmit" {

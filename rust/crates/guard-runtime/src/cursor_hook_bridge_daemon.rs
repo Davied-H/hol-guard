@@ -15,7 +15,7 @@
 use std::path::Path;
 use std::time::Instant;
 
-use guard_command::hook_adapter_value::{parse_python_json, OValue};
+use guard_command::hook_adapter_value::OValue;
 
 use super::{answer, fail_closed, handoff, Client, Kind, Reply, Request, DAEMON_HARNESS};
 use crate::bounded_hook_bridge::{
@@ -24,6 +24,7 @@ use crate::bounded_hook_bridge::{
 };
 use crate::claude_hook_bridge_http::remaining;
 use crate::claude_hook_bridge_render::py_strip;
+use crate::cursor_hook_bridge_response::python_document;
 use crate::hook_bridge_daemon_start::{await_daemon, start_daemon, Attempt};
 
 /// `GUARD_ACTIONS`: the policy actions the client accepts from the daemon.
@@ -52,7 +53,7 @@ enum Settled {
 /// stripped, whose `policy_action` is one of `GUARD_ACTIONS` unless the
 /// hook is an observer.
 fn accepted(kind: Kind, body: &str) -> bool {
-    let Ok(OValue::Map(response)) = parse_python_json(py_strip(body)) else {
+    let Some((OValue::Map(response), _)) = python_document(py_strip(body)) else {
         return false;
     };
     kind == Kind::After

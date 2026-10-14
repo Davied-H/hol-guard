@@ -34,6 +34,13 @@ fn parsed(source: &str) -> PyVal {
     value
 }
 
+fn failed(event_name: &str) -> Route {
+    Route::Fail {
+        event_name: event_name.to_owned(),
+        unmap: false,
+    }
+}
+
 #[test]
 fn daemon_answers_render_as_python_renders_them() {
     for case in vectors("render") {
@@ -42,6 +49,7 @@ fn daemon_answers_render_as_python_renders_them() {
             response.as_dict().unwrap(),
             &text(&case, "harness"),
             &text(&case, "event"),
+            false,
         );
         let expected = Rendered {
             stdout: text(&case, "stdout"),
@@ -67,7 +75,7 @@ fn event_names_match_python() {
 #[test]
 fn failure_output_matches_python() {
     for case in vectors("failures") {
-        let (stdout, code) = failure_output(&text(&case, "harness"), &text(&case, "event"));
+        let (stdout, code) = failure_output(&text(&case, "harness"), &text(&case, "event"), false);
         assert_eq!(stdout, text(&case, "stdout"), "{case}");
         assert_eq!(
             i64::from(code),
@@ -200,9 +208,10 @@ fn prepared_hooks_keep_python_decoding() {
     assert_eq!(prepared.event_name, "UserPromptSubmit");
     assert!(parsed(&prepared.data).as_dict().is_some());
     let refused = |event_name: &str, reason| {
-        Err(Unprepared::Refused {
+        Err(Route::Refuse {
             event_name: event_name.to_owned(),
             reason,
+            unmap: false,
         })
     };
     assert_eq!(
@@ -218,10 +227,11 @@ fn prepared_hooks_keep_python_decoding() {
     let mut oversized = br#"{"hook_event_name":"PostToolUse","a":""#.to_vec();
     oversized.resize(MAX_HOOK_INPUT_BYTES + 1, b'x');
     assert_eq!(prepare(&oversized), refused("PostToolUse", OVERSIZE_REASON));
-    assert_eq!(
-        prepare(br#"{"hook_event_name":"PreToolUse","x":"\ud800"}"#),
-        Err(Unprepared::Surrogates)
-    );
+    let surrogate = prepare(br#"{"hook_event_name":"PreToolUse","x":"\uD800"}"#).unwrap();
+    assert!(surrogate.mapped && !surrogate.collision);
+    assert!(surrogate
+        .data
+        .starts_with(r#"{"hook_event_name":"PreToolUse","x":"\ud800","#));
 }
 
 fn bridge_config(home: &GuardHome, harness: &str) -> BridgeConfig {
@@ -321,7 +331,7 @@ fn a_failed_start_fails_closed() {
     let home = GuardHome::new("bounded-start-failed");
     assert_eq!(
         route_hook(&starting_bridge(&home, "exit 1"), PRE_TOOL, soon()),
-        Route::Fail("PreToolUse".to_owned())
+        failed("PreToolUse")
     );
 }
 
@@ -334,7 +344,7 @@ fn a_hook_without_time_for_a_start_fails_closed_without_starting() {
 
     let route = route_hook(&starting_bridge(&home, &script), PRE_TOOL, deadline);
 
-    assert_eq!(route, Route::Fail("PreToolUse".to_owned()));
+    assert_eq!(route, failed("PreToolUse"));
     assert!(!marker.exists());
 }
 
@@ -346,6 +356,7 @@ fn unreadable_hooks_fail_closed_without_asking_even_past_the_deadline() {
         Route::Refuse {
             event_name: "PreToolUse".to_owned(),
             reason: FAILURE_REASON,
+            unmap: false,
         }
     );
 }
@@ -356,7 +367,7 @@ fn a_spent_deadline_fails_closed_for_the_hook_event() {
     let prompt = br#"{"hook_event_name":"UserPromptSubmit","prompt":"hi"}"#;
     assert_eq!(
         route_hook(&bridge_config(&home, "zcode"), prompt, Instant::now()),
-        Route::Fail("UserPromptSubmit".to_owned())
+        failed("UserPromptSubmit")
     );
 }
 
@@ -370,8 +381,13 @@ fn the_daemon_answer_is_rendered_natively() {
 
     let route = route_hook(&bridge_config(&home, "kimi"), PRE_TOOL, soon());
 
-    let expected =
-        daemon_response_to_native(parsed(answer).as_dict().unwrap(), "kimi", "PreToolUse").unwrap();
+    let expected = daemon_response_to_native(
+        parsed(answer).as_dict().unwrap(),
+        "kimi",
+        "PreToolUse",
+        false,
+    )
+    .unwrap();
     assert_eq!(
         route,
         Route::Respond {
@@ -439,7 +455,7 @@ fn an_answer_the_bridge_cannot_render_fails_closed() {
 
     let route = route_hook(&bridge_config(&home, "devin"), PRE_TOOL, soon());
 
-    assert_eq!(route, Route::Fail("PreToolUse".to_owned()));
+    assert_eq!(route, failed("PreToolUse"));
     assert!(daemon.join().unwrap().is_some());
 }
 
@@ -474,3 +490,6 @@ fn python_runs_with_the_handoff_environment_and_hook_input() {
         None
     );
 }
+
+#[path = "bounded_hook_bridge_surrogate_tests.rs"]
+mod surrogates;

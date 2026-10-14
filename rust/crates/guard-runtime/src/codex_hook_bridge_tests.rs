@@ -257,17 +257,27 @@ fn input_that_is_not_an_object_is_refused() {
 }
 
 #[test]
-fn input_with_lone_surrogates_is_delegated() {
-    let pairs = timeouts(&[("PreToolUse", 30)]);
-    for raw in [
-        "{\"hook_event_name\":\"\\udc00\"}",
-        "{\"a\":\"\\ud800\u{f0001}\"}",
+fn lone_surrogates_are_forwarded_as_python_escapes_them() {
+    let pairs = timeouts(&[("Stop", 30), ("PreToolUse", 30)]);
+    for (raw, forwarded) in [
+        (
+            "{\"hook_event_name\":\"Stop\",\"a\":\"\\uD800x\\udfff\"}",
+            "{\"hook_event_name\":\"Stop\",\"a\":\"\\ud800x\\udfff\",",
+        ),
+        (
+            "{\"hook_event_name\":\"PreToolUse\",\"a\":\"\\ud800\"}",
+            "{\"hook_event_name\":\"PreToolUse\",\"a\":\"\\ud800\",",
+        ),
     ] {
-        assert_eq!(
-            prepare(raw, &pairs).unwrap_err(),
-            Unprepared::Surrogates,
-            "{raw:?}"
-        );
+        let data = prepare(raw, &pairs).expect("prepared").data;
+        assert!(data.starts_with(forwarded), "{data}");
+    }
+    for (raw, event) in [
+        ("{\"hook_event_name\":\"\\udc00\"}", "\u{f0400}"),
+        ("{\"a\":\"\\ud800\u{f0001}\"}", PRE_TOOL_USE),
+    ] {
+        let refused = Unprepared::Refused(event.to_owned());
+        assert_eq!(prepare(raw, &pairs).unwrap_err(), refused, "{raw:?}");
     }
 }
 

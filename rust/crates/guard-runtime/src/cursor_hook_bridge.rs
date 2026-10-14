@@ -34,13 +34,16 @@
 //! `_read_hook_input`, `json.loads`, `_prepare_cursor_hook_payload`,
 //! `_workspace_from_cursor_input`, `stamp_hook_input_text` and the query
 //! `_daemon_hook_result` sends. The resident answers the request the
-//! daemon would have forwarded, so a verdict is never decided here.
+//! daemon would have forwarded, so a verdict is never decided here. A lone
+//! surrogate escape the client's `json.loads` keeps is sent and rendered as
+//! its `json.dumps` writes it; a path holding one is never a workspace, as
+//! the client's `Path.is_dir()` cannot encode it.
 
 use std::path::Path;
 use std::time::{Duration, Instant};
 
 use guard_command::hook_adapter_prepare::{cursor_client_event, first_truthy, prepare_payload};
-use guard_command::hook_adapter_value::{parse_python_json, OMap, OValue};
+use guard_command::hook_adapter_value::{OMap, OValue};
 
 use crate::bounded_hook_bridge::{
     read_hook_input, run_python, write_stdout, Input, MAX_HOOK_INPUT_BYTES,
@@ -48,10 +51,11 @@ use crate::bounded_hook_bridge::{
 use crate::claude_hook_bridge_render::py_strip;
 use crate::codex_hook_bridge_direct::{direct_answer, CURSOR};
 use crate::codex_hook_response::{POST_TOOL_USE, PRE_TOOL_USE};
-use crate::cursor_hook_bridge_response::rendered;
+use crate::cursor_hook_bridge_response::{python_document, rendered, unmapped_json};
 use crate::cursor_hook_bridge_script::read_ported_script;
 use crate::hook_bridge_fallback::{self, Fallback};
 use crate::hook_env_stamp::{current_environment, stamp_hook_input_text, Stamp};
+use crate::pyjson::in_surrogate_plane;
 
 pub(crate) const BRIDGE_COMMAND: &str = "cursor-hook-bridge";
 pub(crate) const BRIDGE_FEATURE: &str = "cursor-hook-bridge-v1";
@@ -134,21 +138,27 @@ pub(crate) fn hook_query(guard_home: &str, workspace: Option<&str>, home: Option
         .join("&")
 }
 
-/// A stripped, non-blank candidate that `Path(candidate).is_dir()`.
-fn directory_candidate(value: &str) -> Option<String> {
+/// A stripped, non-blank candidate that `Path(candidate).is_dir()`. With
+/// `mapped`, one holding a lone surrogate is not: `is_dir()` cannot encode
+/// it and answers `False`.
+fn directory_candidate(value: &str, mapped: bool) -> Option<String> {
     let candidate = py_strip(value);
-    (!candidate.is_empty() && Path::new(candidate).is_dir()).then(|| candidate.to_owned())
+    let unencodable = mapped && candidate.chars().any(in_surrogate_plane);
+    (!candidate.is_empty() && !unencodable && Path::new(candidate).is_dir())
+        .then(|| candidate.to_owned())
 }
 
-/// `_workspace_from_cursor_input`. `Err` when `CURSOR_PROJECT_DIR` is not
-/// text the bridge can read as Python does.
+/// `_workspace_from_cursor_input` for a payload read with lone surrogates
+/// when `mapped`. `Err` when `CURSOR_PROJECT_DIR` is not text the bridge can
+/// read as Python does.
 pub(crate) fn workspace(
     payload: &OMap,
     project_dir: Option<std::ffi::OsString>,
+    mapped: bool,
 ) -> Result<Option<String>, ()> {
     if let Some(project_dir) = project_dir {
         let project_dir = project_dir.into_string().map_err(|_| ())?;
-        if let Some(candidate) = directory_candidate(&project_dir) {
+        if let Some(candidate) = directory_candidate(&project_dir, false) {
             return Ok(Some(candidate));
         }
     }
@@ -158,12 +168,17 @@ pub(crate) fn workspace(
     );
     if let Some(roots) = roots.and_then(OValue::as_list) {
         for root in roots {
-            if let Some(candidate) = root.as_str().and_then(directory_candidate) {
+            let candidate = root
+                .as_str()
+                .and_then(|root| directory_candidate(root, mapped));
+            if let Some(candidate) = candidate {
                 return Ok(Some(candidate));
             }
         }
     }
-    Ok(payload.get_str("cwd").and_then(directory_candidate))
+    Ok(payload
+        .get_str("cwd")
+        .and_then(|cwd| directory_candidate(cwd, mapped)))
 }
 
 /// What the bridge needs of the ported client.
@@ -228,7 +243,7 @@ fn prepared_request(client: &Client, raw: &[u8]) -> Option<Request> {
     }
     // `json.loads` skips only JSON whitespace around the document.
     let document = text.trim_matches([' ', '\t', '\n', '\r']);
-    let OValue::Map(payload) = parse_python_json(document).ok()? else {
+    let (OValue::Map(payload), mapped) = python_document(document)? else {
         return None;
     };
     // Cursor's `after*` hooks prepare as themselves; one is sent only where
@@ -251,8 +266,14 @@ fn prepared_request(client: &Client, raw: &[u8]) -> Option<Request> {
         }
         _ => return None,
     };
-    let workspace = workspace(&prepared, std::env::var_os(PROJECT_DIR_ENV)).ok()?;
-    let serialized = OValue::Map(prepared).compact_json();
+    let workspace = workspace(&prepared, std::env::var_os(PROJECT_DIR_ENV), mapped).ok()?;
+    let compact = OValue::Map(prepared).compact_json();
+    // The stamp writes the surrogates back only when it reads them as such.
+    let serialized = if mapped {
+        unmapped_json(&compact)?
+    } else {
+        compact
+    };
     let Stamp::Text(data) = stamp_hook_input_text(&serialized, &current_environment()) else {
         return None;
     };
@@ -279,11 +300,11 @@ fn answer(kind: Kind, event: &str, response: &str, guard_home: &Path) -> Option<
         Kind::PreToolUse | Kind::Prompt => response,
         Kind::After => py_strip(response),
     };
-    let OValue::Map(response) = parse_python_json(body).ok()? else {
+    let (OValue::Map(response), unmap) = python_document(body)? else {
         return None;
     };
     match kind {
-        Kind::PreToolUse | Kind::Prompt => rendered(event, &response, guard_home),
+        Kind::PreToolUse | Kind::Prompt => rendered(event, &response, guard_home, unmap),
         Kind::After => Some((AFTER_STDOUT.to_owned(), 0)),
     }
 }
@@ -308,7 +329,7 @@ fn handoff(kind: Kind, body: &str) -> Option<String> {
     if kind == Kind::After || body.len() > MAX_HANDOFF_REPLY_BYTES {
         return None;
     }
-    let OValue::Map(response) = parse_python_json(body).ok()? else {
+    let (OValue::Map(response), _) = python_document(body)? else {
         return None;
     };
     let action = response.get_str("policy_action")?;
@@ -422,3 +443,7 @@ mod daemon_tests;
 #[cfg(all(test, unix))]
 #[path = "cursor_hook_bridge_restart_tests.rs"]
 mod restart_tests;
+
+#[cfg(all(test, unix))]
+#[path = "cursor_hook_bridge_surrogate_tests.rs"]
+mod surrogate_tests;

@@ -3,6 +3,7 @@
 
 use std::time::{Duration, Instant};
 
+use guard_command::hook_adapter_value::parse_python_json;
 use serde_json::{json, Value};
 
 use super::*;
@@ -129,25 +130,29 @@ fn the_workspace_is_the_first_directory_the_client_would_pick() {
         "cwd": dir("cwd"),
     }));
     assert_eq!(
-        workspace(&payload, Some(format!("\t{}\n", dir("project")).into())),
+        workspace(
+            &payload,
+            Some(format!("\t{}\n", dir("project")).into()),
+            false
+        ),
         Ok(Some(dir("project")))
     );
     assert_eq!(
-        workspace(&payload, Some(missing.clone().into())),
+        workspace(&payload, Some(missing.clone().into()), false),
         Ok(Some(dir("root")))
     );
-    assert_eq!(workspace(&payload, None), Ok(Some(dir("root"))));
+    assert_eq!(workspace(&payload, None, false), Ok(Some(dir("root"))));
     let camel = map(json!({"workspace_roots": [], "workspaceRoots": [dir("root")]}));
-    assert_eq!(workspace(&camel, None), Ok(Some(dir("root"))));
+    assert_eq!(workspace(&camel, None, false), Ok(Some(dir("root"))));
     let not_list = map(json!({"workspace_roots": dir("root"), "cwd": dir("cwd")}));
-    assert_eq!(workspace(&not_list, None), Ok(Some(dir("cwd"))));
+    assert_eq!(workspace(&not_list, None, false), Ok(Some(dir("cwd"))));
     let nothing = map(json!({"workspace_roots": [missing], "cwd": 7}));
-    assert_eq!(workspace(&nothing, None), Ok(None));
+    assert_eq!(workspace(&nothing, None, false), Ok(None));
     #[cfg(unix)]
     {
         use std::os::unix::ffi::OsStringExt;
         let undecodable = std::ffi::OsString::from_vec(b"/\xff".to_vec());
-        assert_eq!(workspace(&nothing, Some(undecodable)), Err(()));
+        assert_eq!(workspace(&nothing, Some(undecodable), false), Err(()));
     }
     std::fs::remove_dir_all(root).unwrap();
 }
