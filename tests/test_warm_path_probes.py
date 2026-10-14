@@ -51,10 +51,22 @@ def test_service_snapshot_records_roles_without_argv(monkeypatch: pytest.MonkeyP
     assert snapshot["processes"] == 3
     assert snapshot["rss_mb"] == 4.0
     assert snapshot["roles"] == {
-        "daemon": {"processes": 2, "rss_mb": 3.0},
-        "mcp-relay": {"processes": 1, "rss_mb": 1.0},
+        "daemon": {"processes": 2, "rss_mb": 3.0, "cpu_s": 0.7},
+        "mcp-relay": {"processes": 1, "rss_mb": 1.0, "cpu_s": 0.1},
     }
     assert "argv" not in str(snapshot) and "cmdline" not in str(snapshot)
+
+
+def test_role_cpu_per_call_counts_new_roles_from_zero() -> None:
+    before = {"roles": {"daemon": {"processes": 1, "rss_mb": 1.0, "cpu_s": 2.0}}}
+    after = {
+        "roles": {
+            "daemon": {"processes": 1, "rss_mb": 1.0, "cpu_s": 2.5},
+            "mcp-relay": {"processes": 1, "rss_mb": 1.0, "cpu_s": 0.1},
+        }
+    }
+
+    assert services.role_cpu_ms_per_call(before, after, 100) == {"daemon": 5.0, "mcp-relay": 1.0}
 
 
 @pytest.mark.parametrize(
@@ -150,7 +162,13 @@ def test_mcp_phase_ensures_daemon_and_warms_up_before_the_timed_session(
     assert phase["setup"]["warmup_session"]["call_class"] == "ok"
 
 
-def _round(index: int, label: str, roles: dict[str, dict[str, float]] | None, setup: dict[str, object] | None) -> dict:
+def _round(
+    index: int,
+    label: str,
+    roles: dict[str, dict[str, float]] | None,
+    setup: dict[str, object] | None,
+    cpu_by_role: dict[str, float] | None = None,
+) -> dict:
     service: dict[str, object] = {"rss_mb": 10.0, "processes": 2, "fds": 4}
     if roles is not None:
         service["roles"] = roles
@@ -164,6 +182,8 @@ def _round(index: int, label: str, roles: dict[str, dict[str, float]] | None, se
     }
     if setup is not None:
         phase["setup"] = setup
+    if cpu_by_role is not None:
+        phase["service_cpu_ms_per_call_by_role"] = cpu_by_role
     return {"round": index, "results": {label: {"mcp": phase, "calibration_spawn_ms": {"p50": 1.0}}}}
 
 
@@ -201,7 +221,7 @@ def test_summary_markdown_tolerates_rounds_without_roles() -> None:
                 "round": 1,
                 "results": {
                     **_round(1, "b", None, None)["results"],
-                    **_round(1, "c", {"daemon": {"processes": 1, "rss_mb": 50.0}}, None)["results"],
+                    **_round(1, "c", {"daemon": {"processes": 1, "rss_mb": 50.0}}, None, {"daemon": 3.25})["results"],
                 },
             }
         ],
@@ -210,4 +230,4 @@ def test_summary_markdown_tolerates_rounds_without_roles() -> None:
     markdown = summary_module.render_markdown(document, summary_module.build_summary(document, "b", "c"))
 
     assert "Service by role (median), `b`: none recorded." in markdown
-    assert "Service by role (median), `c`: daemon 1x 50.0 MB." in markdown
+    assert "Service by role (median), `c`: daemon 1x 50.0 MB 3.25 CPU ms/call." in markdown

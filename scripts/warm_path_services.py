@@ -113,14 +113,38 @@ def _process_snapshot(pid: int) -> dict[str, object] | None:
 
 
 def summarize_roles(rows: Sequence[dict[str, object]]) -> dict[str, dict[str, float]]:
-    """Process count and RSS MB per role, so a total can be attributed to what was running."""
+    """Process count, RSS MB and CPU seconds per role, so a total can be attributed to what was running."""
 
     roles: dict[str, dict[str, float]] = {}
     for row in rows:
-        entry = roles.setdefault(str(row["role"]), {"processes": 0, "rss_mb": 0.0})
+        entry = roles.setdefault(str(row["role"]), {"processes": 0, "rss_mb": 0.0, "cpu_s": 0.0})
         entry["processes"] += 1
         entry["rss_mb"] += int(row["rss_kb"]) / 1024  # type: ignore[call-overload]
-    return {role: {"processes": e["processes"], "rss_mb": round(e["rss_mb"], 2)} for role, e in sorted(roles.items())}
+        entry["cpu_s"] += float(row["cpu_s"])  # type: ignore[arg-type]
+    return {
+        role: {"processes": e["processes"], "rss_mb": round(e["rss_mb"], 2), "cpu_s": round(e["cpu_s"], 4)}
+        for role, e in sorted(roles.items())
+    }
+
+
+def role_cpu_ms_per_call(before: dict[str, object], after: dict[str, object], calls: int) -> dict[str, float]:
+    """CPU milliseconds per call each role spent between two snapshots.
+
+    A role's processes are summed in each snapshot; a role absent before (started during the
+    timed phase) counts from zero, and one that exited is not counted, like the service total.
+    """
+
+    before_roles: dict[str, dict[str, float]] = before["roles"]  # type: ignore[assignment]
+    after_roles: dict[str, dict[str, float]] = after["roles"]  # type: ignore[assignment]
+    return {
+        role: round(
+            (float(values.get("cpu_s", 0.0)) - float(before_roles.get(role, {}).get("cpu_s", 0.0)))
+            * 1000
+            / max(1, calls),
+            3,
+        )
+        for role, values in after_roles.items()
+    }
 
 
 def service_snapshot(baseline: set[int], root: Path) -> dict[str, object]:

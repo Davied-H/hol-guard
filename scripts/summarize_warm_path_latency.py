@@ -53,6 +53,18 @@ def _role_medians(rows: list[dict[str, object]]) -> dict[str, dict[str, float]]:
     }
 
 
+def _role_cpu_medians(rows: list[dict[str, object]]) -> dict[str, float]:
+    """Median CPU ms per call per role over the rounds that recorded it (absent role = 0)."""
+
+    recorded = [
+        r["phase"]["service_cpu_ms_per_call_by_role"]  # type: ignore[index]
+        for r in rows
+        if "service_cpu_ms_per_call_by_role" in r["phase"]  # type: ignore[operator]
+    ]
+    names = sorted({role for roles in recorded for role in roles})
+    return {role: median([float(roles.get(role, 0.0)) for roles in recorded]) for role in names}
+
+
 def _setup_statuses(rows: list[dict[str, object]]) -> dict[str, int]:
     """How each round's pre-timing setup went (MCP only), e.g. ``daemon_ensure=ok``."""
 
@@ -93,6 +105,7 @@ def summarize_label(rows: list[dict[str, object]]) -> dict[str, object]:
         "service_processes": median([float(r["phase"]["service"]["processes"]) for r in rows]),  # type: ignore[index]
         "service_fds": median([float(r["phase"]["service"]["fds"]) for r in rows]),  # type: ignore[index]
         "service_roles": _role_medians(rows),
+        "service_role_cpu_ms_per_call": _role_cpu_medians(rows),
         "setup": _setup_statuses(rows),
         "calibration_spawn_p50_ms": median([float(r["calibration"]["p50"]) for r in rows]),  # type: ignore[index]
     }
@@ -136,8 +149,13 @@ def _format_optional(value: object) -> str:
     return "n/a" if value is None else f"{float(value):.1f}"  # type: ignore[arg-type]
 
 
-def _format_roles(roles: dict[str, dict[str, float]]) -> str:
-    parts = [f"{role} {values['processes']:g}x {values['rss_mb']:.1f} MB" for role, values in roles.items()]
+def _format_roles(roles: dict[str, dict[str, float]], cpu_ms_per_call: dict[str, float] | None = None) -> str:
+    parts = []
+    for role, values in roles.items():
+        part = f"{role} {values['processes']:g}x {values['rss_mb']:.1f} MB"
+        if cpu_ms_per_call and role in cpu_ms_per_call:
+            part += f" {cpu_ms_per_call[role]:.2f} CPU ms/call"
+        parts.append(part)
     return ", ".join(parts) or "none recorded"
 
 
@@ -177,9 +195,9 @@ def render_markdown(document: dict[str, object], summary: dict[str, object]) -> 
         for role in ("baseline", "candidate"):
             s = entry[role]
             setup = ", ".join(f"{key} x{count}" for key, count in sorted(s["setup"].items()))
+            roles = _format_roles(s["service_roles"], s.get("service_role_cpu_ms_per_call"))
             lines.append(
-                f"Service by role (median), `{summary[role]}`: {_format_roles(s['service_roles'])}."
-                + (f" Setup: {setup}." if setup else "")
+                f"Service by role (median), `{summary[role]}`: {roles}." + (f" Setup: {setup}." if setup else "")
             )
         flags = []
         if entry["noisy"]:
