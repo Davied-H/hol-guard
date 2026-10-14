@@ -182,7 +182,9 @@ impl<C: ChildLink, H: HostLink, A: RelayAuthority> Relay<C, H, A> {
                 HostRead::Invalid(reason) => return Err(reason.to_owned()),
             };
             if let Some(response) = self.handle(message, order.as_deref())? {
-                self.host.send(&response)?;
+                let sent = self.host.send(&response);
+                self.authority.settle();
+                sent?;
                 if is_timeout_response(&response) {
                     return Ok(RelayExit::TimedOut);
                 }
@@ -378,7 +380,9 @@ impl<C: ChildLink, H: HostLink, A: RelayAuthority> Relay<C, H, A> {
                 continue;
             }
             if let Some(response) = self.handle(message, order.as_deref())? {
-                self.host.send(&response)?;
+                let sent = self.host.send(&response);
+                self.authority.settle();
+                sent?;
             }
         }
     }

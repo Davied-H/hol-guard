@@ -8,7 +8,7 @@ pub(super) use allowances::{
 mod hidden_listing;
 #[path = "omp_read_targets.rs"]
 mod omp_targets;
-pub(super) use hidden_listing::repository_hidden_directory;
+pub(super) use hidden_listing::{home_hidden_directory, repository_hidden_directory};
 #[path = "private_temporary_workspace.rs"]
 mod private_temporary;
 use allowances::{
@@ -145,7 +145,10 @@ fn bounded_read_target_with_brackets(
     };
     if let Ok(canonical) = std::fs::canonicalize(&candidate) {
         return (canonical.is_file() || (allow_directory && canonical.is_dir()))
-            && resolved_path_allowed_for_operation(&canonical, home_dir, cwd, false, true);
+            && (resolved_path_allowed_for_operation(&canonical, home_dir, cwd, false, true)
+                || package_source::installed_package_source(
+                    &candidate, &canonical, home_dir, cwd,
+                ));
     }
     if has_brackets || parent_component {
         return false;
@@ -334,6 +337,9 @@ pub(super) fn lexical_read_path(value: &str) -> Option<String> {
     normalized.push_str(&parts.join("/"));
     Some(normalized)
 }
+
+#[path = "package_source_reads.rs"]
+mod package_source;
 
 #[cfg(test)]
 #[path = "read_output_tests.rs"]

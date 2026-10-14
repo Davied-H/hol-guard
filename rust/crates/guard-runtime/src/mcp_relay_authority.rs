@@ -24,6 +24,9 @@ pub(crate) struct ForwardTicket {
     pub(crate) message: Value,
     /// The catalog authority the decision was made against.
     pub(crate) expected: CatalogSnapshot,
+    /// The authority's handle on this forward's held evidence, so a nested
+    /// call completing first never commits or drops the outer call's record.
+    pub(crate) evidence: Option<String>,
 }
 
 /// The authority's answer for one `tools/call`.
@@ -51,6 +54,10 @@ pub(crate) trait RelayAuthority {
 
     /// Record a forwarded call's outcome and return the host response.
     fn complete(&mut self, ticket: ForwardTicket, response: Value) -> Value;
+
+    /// Finish recording after the host was sent a response, so that work
+    /// never delays the response itself.
+    fn settle(&mut self) {}
 }
 
 /// Fail-closed authority that decides nothing.

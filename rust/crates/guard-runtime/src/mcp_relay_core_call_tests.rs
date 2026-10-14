@@ -12,6 +12,7 @@ struct ForwardingAuthority {
     decided: usize,
     completed: Vec<Value>,
     boundaries: usize,
+    settled: usize,
 }
 
 impl RelayAuthority for ForwardingAuthority {
@@ -26,6 +27,7 @@ impl RelayAuthority for ForwardingAuthority {
         ToolCallVerdict::Forward(ForwardTicket {
             message: message.clone(),
             expected: catalog.snapshot(),
+            evidence: None,
         })
     }
 
@@ -37,6 +39,10 @@ impl RelayAuthority for ForwardingAuthority {
     fn complete(&mut self, _ticket: ForwardTicket, response: Value) -> Value {
         self.completed.push(response.clone());
         response
+    }
+
+    fn settle(&mut self) {
+        self.settled += 1;
     }
 }
 
@@ -114,6 +120,7 @@ fn a_forwarded_call_is_written_after_a_quiet_edge_and_completed() {
         vec![echo(json!(1), "tools/call")]
     );
     assert_eq!(relay.authority.boundaries, 0);
+    assert_eq!(relay.authority.settled, 1);
 }
 
 #[test]
