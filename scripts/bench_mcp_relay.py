@@ -27,6 +27,7 @@ import json
 import subprocess
 import sys
 import tempfile
+import time
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
@@ -51,6 +52,8 @@ NO_DECISION_MESSAGE = "HOL Guard could not obtain a native decision for this too
 # The daemon's interactive request budget; reported, never relaxed or enforced here.
 INTERACTIVE_BUDGET_MS = 750.0
 IMPROVEMENT_TARGET_PERCENT = 20.0
+_DIRECT_LANE_ACK = Path("native-runtime") / "direct-lane" / "ack.json"
+_DIRECT_LANE_WAIT_SECONDS = 60.0
 _CANARY = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "mcp-canary-server.py"
 
 # Representative tools/call shapes: plain text, empty and nested arguments,
@@ -74,6 +77,39 @@ CASES: tuple[tuple[str, str, object], ...] = (
     ("delete_workspace_file", "dangerous_delete", {"target": "notes.txt"}),
     ("unknown_tool", "not_a_listed_tool", {"text": "guard"}),
 )
+
+
+def _ensure_daemon(cli: Path, env: dict[str, str], home: Path, guard_home: Path, workspace: Path) -> int:
+    """Start the daemon for the workspace, as a hook would, so its publisher binds the resident's direct lane."""
+
+    result = subprocess.run(
+        [
+            str(cli),
+            "guard",
+            "daemon",
+            "ensure",
+            *("--home", str(home), "--guard-home", str(guard_home), "--workspace", str(workspace)),
+            "--json",
+        ],
+        env=env,
+        cwd=workspace,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    return result.returncode
+
+
+def _wait_for_direct_lane(guard_home: Path) -> float | None:
+    """Seconds until the publisher's direct-lane ACK appears, or None."""
+
+    started = time.monotonic()
+    while time.monotonic() - started < _DIRECT_LANE_WAIT_SECONDS:
+        if (guard_home / _DIRECT_LANE_ACK).is_file():
+            return round(time.monotonic() - started, 3)
+        time.sleep(0.25)
+    return None
 
 
 def _runtime_path(python: Path, env: dict[str, str]) -> str:
@@ -156,6 +192,8 @@ def _time_session(session: _Session, warmup: int, samples: int) -> dict[str, obj
     return {
         "samples_ms": ok,
         "stats_ms": describe(ok),
+        # Every answered call, including fail-closed ones: the launcher's own round-trip floor.
+        "answered_samples_ms": [elapsed for elapsed, _ in timed],
         "classes": dict(classes),
         "notes": dict(Counter(session.new_notes())),
     }
@@ -195,13 +233,20 @@ def deferral_breakdown(rows: list[dict[str, object]]) -> dict[str, object]:
 
 def compare(rounds: list[dict[str, object]]) -> dict[str, object]:
     pooled: dict[str, list[float]] = {"python": [], "relay": []}
+    answered: dict[str, list[float]] = {"python": [], "relay": []}
     for entry in rounds:
         for launcher in pooled:
             phase = entry.get(launcher)
             if isinstance(phase, dict) and "samples_ms" in phase:
                 pooled[launcher].extend(phase["samples_ms"])  # type: ignore[arg-type]
+                answered[launcher].extend(phase.get("answered_samples_ms", []))  # type: ignore[arg-type]
     stats = {launcher: describe(values) for launcher, values in pooled.items()}
-    result: dict[str, object] = {"stats_ms": stats, "target_improvement_percent": IMPROVEMENT_TARGET_PERCENT}
+    result: dict[str, object] = {
+        "stats_ms": stats,
+        # Every answered call, fail-closed ones included: each launcher's own round-trip floor.
+        "answered_stats_ms": {launcher: describe(values) for launcher, values in answered.items()},
+        "target_improvement_percent": IMPROVEMENT_TARGET_PERCENT,
+    }
     python_p95, relay_p95 = stats["python"].get("p95"), stats["relay"].get("p95")
     if python_p95 and relay_p95 is not None:
         improvement = (python_p95 - relay_p95) / python_p95 * 100.0
@@ -250,8 +295,10 @@ def run(python: Path, args: argparse.Namespace) -> dict[str, object]:
                 return session
 
             # A Python session first, so the resident both launchers ask is live.
+            document["daemon_ensure_returncode"] = _ensure_daemon(cli, env, home, guard_home, workspace)
             primer = open_session("python", "primer")
             primer.call("safe_echo", {"text": "guard"})
+            document["direct_lane_ack_seconds"] = _wait_for_direct_lane(guard_home)
             rounds = []
             for index in range(args.rounds):
                 order = ["python", "relay"] if index % 2 == 0 else ["relay", "python"]
@@ -288,6 +335,10 @@ def run(python: Path, args: argparse.Namespace) -> dict[str, object]:
 def markdown(document: dict[str, object]) -> str:
     lines = ["## Native MCP relay vs Python proxy (measurement only)", ""]
     lines.append(f"Installer selected the relay under the test canary: `{document.get('installer_selected_relay')}`")
+    lines.append(
+        f"Daemon ensure exit code: `{document.get('daemon_ensure_returncode')}`; "
+        f"direct-lane ACK after: `{document.get('direct_lane_ack_seconds')}` s"
+    )
     latency = document.get("latency", {})
     stats = latency.get("stats_ms", {}) if isinstance(latency, dict) else {}
     lines += ["", "| launcher | calls | p50 ms | p95 ms | p99 ms |", "|---|---:|---:|---:|---:|"]
@@ -307,6 +358,13 @@ def markdown(document: dict[str, object]) -> str:
         )
     elif isinstance(latency, dict) and latency.get("note"):
         lines += ["", str(latency["note"])]
+    answered = latency.get("answered_stats_ms", {}) if isinstance(latency, dict) else {}
+    if answered:
+        lines += ["", "All answered calls, fail-closed ones included (informational):", ""]
+        lines += ["| launcher | calls | p50 ms | p95 ms |", "|---|---:|---:|---:|"]
+        for launcher in ("python", "relay"):
+            row = answered.get(launcher, {})
+            lines.append(f"| {launcher} | {row.get('count', 0)} | {row.get('p50', 0):.2f} | {row.get('p95', 0):.2f} |")
     deferrals = document.get("deferrals", {})
     if isinstance(deferrals, dict) and deferrals:
         lines += [
