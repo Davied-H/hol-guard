@@ -217,9 +217,8 @@ fn is_lookup_argument(value: &str, prefix: &str) -> bool {
 /// Whether a literal can hold a credential: anything not blank, apart from a
 /// documentation placeholder or a lookup's variable-name argument.
 fn is_hidden_value(literal: &str, argument: bool) -> bool {
-    !literal.trim().is_empty()
-        && !PLACEHOLDER.is_match(literal)
-        && !(argument && VARIABLE_NAME.is_match(literal))
+    let lookup_name = argument && VARIABLE_NAME.is_match(literal);
+    !(literal.trim().is_empty() || PLACEHOLDER.is_match(literal) || lookup_name)
 }
 
 #[cfg(test)]
