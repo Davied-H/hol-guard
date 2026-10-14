@@ -207,6 +207,7 @@ fn clear_start_failure(state_path: &str) {
 }
 
 /// The hook as `_bound_hook_input` forwards it, or `None` to delegate.
+#[derive(Debug)]
 pub(crate) struct Prepared {
     pub(crate) event_name: String,
     pub(crate) data: String,
