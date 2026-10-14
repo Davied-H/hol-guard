@@ -87,13 +87,28 @@ fn ask(
     status: u16,
     body: &str,
 ) -> (Option<(String, i32)>, DaemonRequest, GuardHome) {
+    exchange(label, raw, status, body, respond)
+}
+
+/// The bridge's reply to a hook the scripted daemon answers with `body`.
+fn ask_reply(label: &str, raw: &[u8], status: u16, body: &str) -> Reply {
+    exchange(label, raw, status, body, reply).0
+}
+
+fn exchange<T>(
+    label: &str,
+    raw: &[u8],
+    status: u16,
+    body: &str,
+    bridge: fn(&Client, &[u8]) -> T,
+) -> (T, DaemonRequest, GuardHome) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     let daemon = serve_once(listener, status, body.to_owned());
     let home = daemon_home(label, "127.0.0.1", port, true);
     let client = client_for(&home, Duration::from_secs(20));
     assert!(prepared_request(&client, raw).is_some(), "{label}");
-    let answered = respond(&client, raw);
+    let answered = bridge(&client, raw);
     let request = daemon.join().unwrap().expect("the daemon was asked");
     (answered, request, home)
 }
@@ -252,6 +267,52 @@ fn a_daemon_answer_the_bridge_cannot_reproduce_is_left_to_the_client() {
     // An observer's body must still be a JSON object.
     let (answered, _request, _home) = ask("after-list", AFTER_SHELL, 200, "[]");
     assert_eq!(answered, None);
+}
+
+#[test]
+fn a_restrictive_daemon_answer_the_bridge_cannot_render_is_handed_to_the_client() {
+    // The client renders these from the bridge's copy instead of posting
+    // the hook again, so the daemon reviews it once.
+    let handed: [(&str, &str); 3] = [
+        (
+            "review-link",
+            r#"{"policy_action":"review","approval_url":"http://127.0.0.1:4781/approvals/req-1"}"#,
+        ),
+        (
+            "review-request-link",
+            r#"{"policy_action":"review","approval_requests":[{"approval_url":"http://localhost:4781/approvals/req-2"}]}"#,
+        ),
+        (
+            "block-link",
+            r#"{"policy_action":"block","approval_url":"http://127.0.0.1:4781/approvals/req-3"}"#,
+        ),
+    ];
+    for (label, body) in handed {
+        assert_eq!(
+            ask_reply(label, SHELL, 200, body),
+            Reply::Handoff(body.to_owned()),
+            "{label}"
+        );
+    }
+    let oversized = format!(
+        r#"{{"policy_action":"review","reason":"{}","approval_url":"http://127.0.0.1:4781/approvals/req-4"}}"#,
+        "r".repeat(MAX_HANDOFF_REPLY_BYTES)
+    );
+    let kept: [(&str, u16, &str); 4] = [
+        ("unknown-action", 200, r#"{"policy_action":"maybe"}"#),
+        ("server-error", 500, r#"{"policy_action":"review"}"#),
+        ("list", 200, "[]"),
+        ("oversized", 200, oversized.as_str()),
+    ];
+    for (label, status, body) in kept {
+        assert_eq!(
+            ask_reply(label, SHELL, status, body),
+            Reply::Client,
+            "{label}"
+        );
+    }
+    // An observer always renders, so it is never handed over.
+    assert_eq!(handoff(Kind::After, r#"{"policy_action":"block"}"#), None);
 }
 
 #[test]
