@@ -109,7 +109,10 @@ fn command_repository(workspace: Option<&str>, home: Option<&Path>) -> Option<Pa
     let workspace = workspace?;
     let path = if workspace == "~" {
         home?.to_path_buf()
-    } else if let Some(rest) = workspace.strip_prefix("~/").or(workspace.strip_prefix("~\\")) {
+    } else if let Some(rest) = workspace
+        .strip_prefix("~/")
+        .or(workspace.strip_prefix("~\\"))
+    {
         home?.join(rest)
     } else {
         PathBuf::from(workspace)
