@@ -24,6 +24,9 @@ const PRE_TOOL: &[u8] = br#"{"hook_event_name":"preToolUse","tool_name":"Shell",
 const PROMPT: &[u8] = br#"{"hook_event_name":"UserPromptSubmit","prompt":"hi"}"#;
 const AFTER_SHELL: &[u8] = br#"{"hook_event_name":"afterShellExecution","command":"ls","output":"a","cwd":"/nonexistent-cursor-cwd"}"#;
 
+/// A case label, the hook input, the daemon body, and the expected answer.
+type Case<'a> = (&'a str, &'a [u8], &'a str, (String, i32));
+
 /// A Guard home whose daemon state names `host:port`, with the daemon auth
 /// token or without it.
 fn daemon_home(label: &str, host: &str, port: u16, token: bool) -> GuardHome {
@@ -150,7 +153,7 @@ fn every_installed_event_is_answered_from_the_daemon() {
             ("agent_message", reason),
         ])
     };
-    let cases: [(&str, &[u8], &str, (String, i32)); 9] = [
+    let cases: [Case<'_>; 9] = [
         (
             "shell-allow",
             SHELL,
