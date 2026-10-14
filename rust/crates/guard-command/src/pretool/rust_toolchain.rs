@@ -320,5 +320,4 @@ mod tests {
         assert!(rustup_settings_only_official(Path::new(&root)));
         std::fs::remove_dir_all(root).unwrap();
     }
-
 }

@@ -7,6 +7,7 @@
 
 use crate::git_helper_fixture as fixture;
 use fixture::*;
+use guard_command::pretool::{evaluate_pre_tool_envelope_with_execution_context, PathContext};
 use serde_json::json;
 use std::path::{Path, PathBuf};
 
@@ -66,7 +67,10 @@ fn space(label: &str) -> (Space, FixtureCleanup) {
     write(&sibling.join(".env"), "SYNTHETIC_ONLY=fixture\n");
     write(&home.join(".ssh/id_rsa"), "synthetic fixture\n");
     write(&home.join(".aws/credentials"), "[default]\n");
-    write(&home.join(".rustup/settings.toml"), "version = \"12\"\ndefault_toolchain = \"stable\"\n");
+    write(
+        &home.join(".rustup/settings.toml"),
+        "version = \"12\"\ndefault_toolchain = \"stable\"\n",
+    );
     (
         Space {
             home,
@@ -89,7 +93,46 @@ fn decide(space: &Space, harness: &str, command: &str) -> guard_contracts::PreTo
     )
 }
 
+/// Rustfmt proofs read the stamped hook environment. Without one they fall
+/// back to the test process's own, which a rustup-run `cargo test` fills with
+/// `RUSTUP_TOOLCHAIN` and `RUSTUP_HOME`.
+fn decide_stamped(space: &Space, harness: &str, command: &str) -> guard_contracts::PreToolResultV1 {
+    let environment = guard_contracts::GuardExecutionEnvironmentV1 {
+        path: std::env::var("PATH").unwrap(),
+        environment_names: Vec::new(),
+        environment_digest: "0".repeat(64),
+        home: space.home.to_str().map(str::to_owned),
+        git_pager_disabled: false,
+        pager_disabled: false,
+        xdg_config_home: None,
+        git_config_no_system: false,
+        library_search_paths: Default::default(),
+    };
+    evaluate_pre_tool_envelope_with_execution_context(
+        harness,
+        "PreToolUse",
+        &json!({"tool_name": "Bash", "tool_input": {"command": command}}),
+        None,
+        None,
+        PathContext {
+            home_dir: space.home.to_str(),
+            cwd: space.project.to_str(),
+            ..PathContext::default()
+        },
+        Some(&environment),
+    )
+}
+
 fn check(space: &Space, allowed: &[String], reviewed: &[String]) {
+    check_with(decide, space, allowed, reviewed);
+}
+
+fn check_with(
+    decide: fn(&Space, &str, &str) -> guard_contracts::PreToolResultV1,
+    space: &Space,
+    allowed: &[String],
+    reviewed: &[String],
+) {
     for harness in ["codex", "claude-code"] {
         for command in allowed {
             let result = decide(space, harness, command);
@@ -187,7 +230,8 @@ fn rustfmt_rewrites_sibling_sources_that_pass_the_write_proof() {
     let (space, _cleanup) = space("rustfmt");
     let sibling = space.sibling.display();
     let allowed = format!("rustfmt --edition 2021 {sibling}/src/lib.rs");
-    check(
+    check_with(
+        decide_stamped,
         &space,
         &[
             allowed.clone(),
@@ -208,11 +252,14 @@ fn rustfmt_rewrites_sibling_sources_that_pass_the_write_proof() {
     // potentially executable formatter, even when its target is bounded.
     let rustup_settings = space.home.join(".rustup/settings.toml");
     std::fs::remove_file(&rustup_settings).unwrap();
-    check(&space, &[], &[allowed.clone()]);
-    write(&rustup_settings, "default_toolchain = \"custom-formatter\"\\n");
-    check(&space, &[], &[allowed.clone()]);
-    write(&rustup_settings, "default_toolchain = \"stable\"\\n");
-    check(&space, &[allowed.clone()], &[]);
+    check_with(decide_stamped, &space, &[], &[allowed.clone()]);
+    write(
+        &rustup_settings,
+        "default_toolchain = \"custom-formatter\"\n",
+    );
+    check_with(decide_stamped, &space, &[], &[allowed.clone()]);
+    write(&rustup_settings, "default_toolchain = \"stable\"\n");
+    check_with(decide_stamped, &space, &[allowed.clone()], &[]);
 
     // The rustup proxy reads the toolchain file above the working directory;
     // a `path` entry there selects another binary.
@@ -220,5 +267,5 @@ fn rustfmt_rewrites_sibling_sources_that_pass_the_write_proof() {
         &space.project.join("rust-toolchain.toml"),
         "[toolchain]\npath = \"/opt/synthetic-toolchain\"\n",
     );
-    check(&space, &[], &[allowed]);
+    check_with(decide_stamped, &space, &[], &[allowed]);
 }

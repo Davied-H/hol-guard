@@ -177,7 +177,6 @@ mod tests {
             "#[path = \"../.github/workflows/check.rs\"] mod a·b;",
             "#[path = \"../.github/workflows/check.rs\"] mod a‿b;",
             "#[path = \"../.github/workflows/check.rs\"] mod e\u{301}x;",
-
         ] {
             assert!(declares_out_of_line_module(source), "{source}");
         }
@@ -187,7 +186,6 @@ mod tests {
             "fn module(); let model = 1;",
             "mod nested { mod helper {} }",
             "fn modern() {}",
-
             "",
         ] {
             assert!(!declares_out_of_line_module(source), "{source}");

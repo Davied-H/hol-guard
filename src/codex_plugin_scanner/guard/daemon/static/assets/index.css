@@ -1519,6 +1519,10 @@
     min-width: calc(var(--spacing) * 11);
   }
 
+  .min-w-20 {
+    min-width: calc(var(--spacing) * 20);
+  }
+
   .min-w-24 {
     min-width: calc(var(--spacing) * 24);
   }
@@ -1650,6 +1654,10 @@
 
   .resize {
     resize: both;
+  }
+
+  .scroll-mt-24 {
+    scroll-margin-top: calc(var(--spacing) * 24);
   }
 
   .\[scrollbar-gutter\:stable\] {
@@ -6478,6 +6486,10 @@
       flex: none;
     }
 
+    .sm\:scroll-mt-4 {
+      scroll-margin-top: calc(var(--spacing) * 4);
+    }
+
     .sm\:grid-cols-2 {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
@@ -6840,6 +6852,10 @@
 
     .lg\:hidden {
       display: none;
+    }
+
+    .lg\:inline {
+      display: inline;
     }
 
     .lg\:table-cell {
