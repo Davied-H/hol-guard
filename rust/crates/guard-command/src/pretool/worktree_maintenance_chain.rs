@@ -63,19 +63,7 @@ pub(in crate::pretool) fn proven(
 /// `rm [-f] [--] <link>...` over links at the root of linked worktrees of
 /// the session's repository.
 fn unlinks(segment: &CommandSegmentV1, context: super::super::PathContext<'_>) -> bool {
-    let operands: Vec<&String> = segment
-        .arguments
-        .iter()
-        .filter(|argument| !matches!(argument.as_str(), "-f" | "--"))
-        .collect();
-    plain_step(segment)
-        && segment.executable.as_deref() == Some("rm")
-        && super::super::directory_targets::drive_targets_quoted(segment)
-        && super::super::directory_targets::home_targets_unquoted(segment)
-        && (1..=16).contains(&operands.len())
-        && operands
-            .iter()
-            .all(|value| super::super::directory_targets::sibling::removable_link(value, context))
+    plain_step(segment) && super::super::directory_targets::sibling::link_removal(segment, context)
 }
 
 /// A read the segment proofs accept on its own; a Git read must also be

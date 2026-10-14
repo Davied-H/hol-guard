@@ -56,6 +56,29 @@ pub(crate) fn removable_link(value: &str, context: super::super::PathContext<'_>
         )
 }
 
+/// `rm [-f] [--] <link>...` removing only links at the root of linked
+/// worktrees of the session's repository, which an agent places there (Git
+/// refuses to remove a worktree that still holds them). It deletes no data,
+/// so it is not a destructive delete.
+pub(crate) fn link_removal(
+    segment: &crate::CommandSegmentV1,
+    context: super::super::PathContext<'_>,
+) -> bool {
+    let operands: Vec<&String> = segment
+        .arguments
+        .iter()
+        .filter(|argument| !matches!(argument.as_str(), "-f" | "--"))
+        .collect();
+    segment.executable.as_deref() == Some("rm")
+        && !segment
+            .text
+            .contains(['>', '<', '$', '`', '|', '&', ';', '\n', '\r'])
+        && super::drive_targets_quoted(segment)
+        && super::home_targets_unquoted(segment)
+        && (1..=16).contains(&operands.len())
+        && operands.iter().all(|value| removable_link(value, context))
+}
+
 /// `value` resolved lexically: an absolute path, or a leading run of `..`
 /// from `cwd`, followed only by plain names. `None` for any other spelling,
 /// for a `cwd` that is not its own canonical path, and for a result that

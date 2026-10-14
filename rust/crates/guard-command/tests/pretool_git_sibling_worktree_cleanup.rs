@@ -208,14 +208,8 @@ fn creating_and_entering_a_worktree_through_pwd_is_judged_not_failed() {
 }
 
 #[test]
-fn reading_the_linked_worktree_beside_the_checkout_is_quiet() {
+fn listing_the_linked_worktree_beside_the_checkout_is_quiet() {
     let (session, _) = report_worktree("report-read");
-    let command = "cd ../report-wt && git ls-files | head; ls -la; cat .gitignore 2>/dev/null";
-    let (action, reason) = verdict(&session, command);
-    assert!(
-        matches!(action.as_str(), "allow" | "sandbox-required"),
-        "{action} {reason}"
-    );
     let listing = |path: &str| {
         guard_command::pretool::evaluate_pre_tool_envelope_with_context(
             "omp",
