@@ -25,6 +25,10 @@ fn reference_listings_are_proven_reads() {
             "git show-ref --exclude-existing",
             "git for-each-ref --stdin",
             "git show-ref --remotes",
+            // `%(signature)` runs the configured `gpg.program`.
+            "git for-each-ref --format='%(signature:grade)' refs/tags",
+            "git for-each-ref --format '%(refname) %(signature)' refs/heads",
+            "git for-each-ref --sort signature:signer refs/tags",
         ] {
             let result = session.evaluate_at(command, cwd);
             assert_ne!(
