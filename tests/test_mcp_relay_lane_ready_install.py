@@ -20,7 +20,11 @@ from pathlib import Path
 from typing import TypeVar, cast
 
 import pytest
-import tomllib
+
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import tomli as tomllib  # type: ignore[no-redef]
 
 pytestmark = pytest.mark.skipif(os.name != "posix", reason="the native MCP relay is Unix only")
 

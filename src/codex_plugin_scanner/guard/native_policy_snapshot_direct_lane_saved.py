@@ -99,7 +99,7 @@ def _integrity_state(store: object) -> dict[str, object] | None:
     return dict(state)
 
 
-def refresh_integrity_state(store: object) -> None:
+def refresh_integrity_state(store: object) -> bool:
     """Bring the stored policy-integrity state current with the store's own writer.
 
     The resident accepts a saved decision only while the published state equals
@@ -108,19 +108,23 @@ def refresh_integrity_state(store: object) -> None:
     the publisher refreshes it before observing its inputs, without minting a
     key, so a fresh home binds a real state. A saved decision leaves the
     effective policy unchanged and so republishes nothing; the reconcile
-    recheck below refreshes after it and rebinds the state it left.
+    recheck below refreshes after it and rebinds the state it left. Returns
+    whether the stored row moved, which a key the publisher just minted does.
     """
 
     connect = getattr(store, "_connect", None)
     refresh = getattr(store, "_refresh_policy_integrity_state", None)
-    if not callable(connect) or not callable(refresh):
-        return
+    load = getattr(store, "_load_policy_integrity_state", None)
+    if not callable(connect) or not callable(refresh) or not callable(load):
+        return False
     try:
         with cast("AbstractContextManager[object]", connect()) as connection:
+            before = load(connection)
             refresh(connection, now=_now(), create_key=False)
+            return load(connection) != before
     except (OSError, RuntimeError, ValueError, sqlite3.Error):
         # The row stays as it was; a stale or missing one fails closed.
-        return
+        return False
 
 
 def with_saved_decision_state(

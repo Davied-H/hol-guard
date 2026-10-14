@@ -15,11 +15,16 @@ from types import SimpleNamespace
 import pytest
 
 from codex_plugin_scanner.guard import native_policy_snapshot_direct_lane_saved as saved
+from codex_plugin_scanner.guard import native_policy_snapshot_publisher as publisher_api
 from codex_plugin_scanner.guard import store as guard_store_module
 from codex_plugin_scanner.guard.models import PolicyDecision
 from codex_plugin_scanner.guard.native_policy_snapshot_direct_lane import (
     DIRECT_HOOK_SAVED_DECISION_FEATURE,
     direct_lane_integrity_key,
+)
+from codex_plugin_scanner.guard.native_policy_snapshot_publisher import (
+    NativePolicySnapshotError,
+    NativePolicySnapshotPublisher,
 )
 from codex_plugin_scanner.guard.store import GuardStore
 
@@ -70,6 +75,41 @@ def test_a_fresh_home_binds_the_state_its_store_writes(tmp_path: Path) -> None:
     assert state["degraded_reasons"]
     assert state["generation"] is None
     assert direct_lane_integrity_key(store, FEATURES) is None
+
+
+def test_a_key_the_context_mints_reaches_the_first_binding(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Startup provisioning failed, so the publication context mints the key.
+    # That moves the state without a database write; the first binding must
+    # still carry the keyed state rather than the degraded one before it.
+    store = _daemon_store(tmp_path / "guard-home")
+    assert direct_lane_integrity_key(store, FEATURES) is None
+    publisher = NativePolicySnapshotPublisher(store=store)
+    contexts: list[object] = []
+    bindings: list[object] = []
+
+    def context(*, workspaces: object = None) -> tuple[object, ...]:
+        material = store._policy_integrity_secret_material(create=True)
+        contexts.append(material)
+        return (SimpleNamespace(), SimpleNamespace(features=FEATURES), material[0], {}, {}, None)
+
+    def publish(**kwargs: object) -> None:
+        bindings.append(kwargs["direct_lane"])
+        raise NativePolicySnapshotError("captured")
+
+    monkeypatch.setattr(publisher, "_publication_context", context)
+    monkeypatch.setattr(publisher_api, "_publish_snapshot_v3", publish)
+    try:
+        publisher._publish_once()
+    finally:
+        publisher.close()
+
+    assert len(contexts) == 2
+    assert len(bindings) == 1
+    binding = bindings[0]
+    assert isinstance(binding, dict)
+    state = binding["policy_integrity_state"]
+    assert state == _stored(store)
+    assert isinstance(state, dict) and state["key_id"] is not None
 
 
 def _save_decision(store: GuardStore) -> int:
@@ -217,5 +257,8 @@ def test_a_refresh_that_fails_leaves_the_row_alone(error: Exception) -> None:
         def _refresh_policy_integrity_state(self, connection: object, *, now: str, create_key: bool) -> None:
             raise AssertionError("never reached")
 
-    saved.refresh_integrity_state(_Failing())
-    saved.refresh_integrity_state(object())
+        def _load_policy_integrity_state(self, connection: object) -> None:
+            raise AssertionError("never reached")
+
+    assert saved.refresh_integrity_state(_Failing()) is False
+    assert saved.refresh_integrity_state(object()) is False
