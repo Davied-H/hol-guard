@@ -432,12 +432,7 @@ fn evaluate_envelope(
                 execution_environment,
                 false,
             );
-            return redirect_projection::join(
-                projected,
-                raw,
-                projection.writes_file,
-                projection.bounded_writes,
-            );
+            return redirect_projection::join(projected, raw, &projection);
         }
     }
     let task_metadata = event == "PreToolUse"
@@ -576,6 +571,7 @@ fn evaluate_envelope(
                 cwd,
                 ..context
             },
+            execution_environment,
         ),
         (Some(controls), _) => controls.apply_with_tool(
             None,

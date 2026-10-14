@@ -15,8 +15,8 @@ pub(super) use super::safe_writes::{
     bounded_native_file_write_target, bounded_structured_file_write_target, safe_copy_arguments,
     safe_file_mutation_arguments,
 };
-pub(super) use command_sequences::exact_safe_sequence;
 pub(crate) use command_sequences::proven_created_file_removal;
+pub(super) use command_sequences::{exact_safe_sequence, leading_semicolon_cd};
 
 pub(super) fn safe_file_predicate_arguments(
     arguments: &[String],
@@ -60,6 +60,7 @@ pub(super) fn safe_listing_arguments(
                 && !super::search::skill_link_resolves_over_home(argument, context))
             || super::listing_reads::absent_listing_operand(argument, context)
             || super::tool_bin_listing::tool_bin_listing_operand(argument, context)
+            || super::tool_bin_listing::node_bin_listing_operand(argument, context)
             || super::tool_bin_listing::credential_file_metadata_operand(argument, context)
             || super::tool_bin_listing::global_package_listing_operand(argument, context)
     })
