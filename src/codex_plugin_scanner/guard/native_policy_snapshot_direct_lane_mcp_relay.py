@@ -113,12 +113,12 @@ def extension_layers(runtime: object) -> list[object] | None:
     """
 
     from .native_mcp_extension_input import _layer_inputs  # pyright: ignore[reportPrivateUsage]
+    from .runtime.extension_control_runtime import ExtensionControlRuntime
 
-    current = getattr(runtime, "current", None)
-    if not callable(current):
+    if not isinstance(runtime, ExtensionControlRuntime):
         return None
     try:
-        layers = _stable(_layer_inputs(tuple(current().layers)))
+        layers = _stable(_layer_inputs(tuple(runtime.current().layers)))
     except Exception:
         return None
     return cast(list[object], layers) if isinstance(layers, list) else None
