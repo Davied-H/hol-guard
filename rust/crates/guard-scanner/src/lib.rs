@@ -6,6 +6,7 @@ pub mod repository_scanner;
 pub mod secret_detection;
 pub mod staged_scanner;
 
+mod field_copy;
 mod masked_value;
 mod match_spans;
 
@@ -229,9 +230,10 @@ fn is_sample(
         return false;
     }
     if classifier == "credential-assignment"
-        && assignment_value(matched).is_some_and(|value| {
-            inert_code_expression_regex().is_match(value) || masked_value::is_masked(value)
-        })
+        && (field_copy::is_field_copy(matched)
+            || assignment_value(matched).is_some_and(|value| {
+                inert_code_expression_regex().is_match(value) || masked_value::is_masked(value)
+            }))
     {
         return true;
     }
