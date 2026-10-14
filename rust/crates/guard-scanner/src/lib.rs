@@ -142,6 +142,7 @@ static COMPILED: OnceLock<Vec<Regex>> = OnceLock::new();
 static SAMPLE: OnceLock<Regex> = OnceLock::new();
 static DOC_SAMPLE: OnceLock<Regex> = OnceLock::new();
 static INERT_CODE_EXPRESSION: OnceLock<Regex> = OnceLock::new();
+static DECLARED_SAMPLE_VALUE: OnceLock<Regex> = OnceLock::new();
 
 fn compiled() -> &'static [Regex] {
     COMPILED.get_or_init(|| {
@@ -173,6 +174,20 @@ fn doc_sample_regex() -> &'static Regex {
             .case_insensitive(true)
             .build()
             .expect("documentation sample rule must compile")
+    })
+}
+
+/// Values in tests and docs that say outright they are not real, such as
+/// `fictional-report-key` or `stub_token`. Delimiters are explicit because
+/// `\b` treats `_` as a word character.
+fn declared_sample_value_regex() -> &'static Regex {
+    DECLARED_SAMPLE_VALUE.get_or_init(|| {
+        RegexBuilder::new(
+            r"(?:^|[^a-z0-9])(?:fictional|fictitious|bogus|stub|stubbed|mock|mocked|sample|placeholder|fixture|synthetic|redacted|not[-_.]?real)(?:[^a-z0-9]|$)",
+        )
+        .case_insensitive(true)
+        .build()
+        .expect("declared sample rule must compile")
     })
 }
 
@@ -248,7 +263,10 @@ fn is_sample(
     if !documentation_sample_context {
         return false;
     }
-    assignment_value(matched).is_some_and(|value| doc_sample_regex().is_match(value))
+    assignment_value(matched).is_some_and(|value| {
+        doc_sample_regex().is_match(value)
+            || (declared_sample_value_regex().is_match(value) && !has_long_alphanumeric_run(value))
+    })
 }
 
 fn classify_window(
@@ -480,5 +498,52 @@ mod tests {
                 "{text:?}"
             );
         }
+    }
+
+    #[test]
+    fn declared_sample_values_are_suppressed_in_tests_and_docs() {
+        for text in [
+            "process.env.EXAMPLE_SERVICE_API_KEY = 'fictional-report-key';",
+            "const apiKey = 'stub_token'",
+            "password: \"mocked-password\"",
+            "secret = synthetic.value.1",
+            "token = 'not-real-key'",
+        ] {
+            let result = scan_text(text, false, true, MAX_SCAN_BYTES, None);
+            assert!(result.matches.is_empty(), "{text:?}");
+        }
+    }
+
+    #[test]
+    fn declared_sample_words_do_not_hide_real_looking_values() {
+        for text in [
+            "process.env.EXAMPLE_SERVICE_API_KEY = 'fictional-Q9x7Lm2Vb8Nc4Rt6Yp1Zk3';",
+            "const apiKey = 'stubborn-production-key'",
+            "password = 'mockingbird-prod-value'",
+        ] {
+            let result = scan_text(text, false, true, MAX_SCAN_BYTES, None);
+            assert!(
+                result
+                    .matches
+                    .iter()
+                    .any(|matched| matched.classifier == "credential-assignment"),
+                "{text:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn declared_sample_words_need_documentation_context() {
+        let result = scan_text(
+            "process.env.EXAMPLE_SERVICE_API_KEY = 'fictional-report-key';",
+            true,
+            true,
+            MAX_SCAN_BYTES,
+            None,
+        );
+        assert!(result
+            .matches
+            .iter()
+            .any(|matched| matched.classifier == "credential-assignment"));
     }
 }
