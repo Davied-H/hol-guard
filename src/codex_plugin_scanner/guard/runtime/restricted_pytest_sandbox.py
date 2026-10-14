@@ -279,11 +279,14 @@ def _replay_sandbox_output(source: BinaryIO, destination: TextIO) -> None:
     source.seek(0)
     raw = source.read(_MAX_REPLAY_BYTES + 1)
     truncated = len(raw) > _MAX_REPLAY_BYTES
-    text = raw[:_MAX_REPLAY_BYTES].decode("utf-8", errors="replace")
+    # Windows programs end lines with CRLF; a lone CR stays replaced.
+    text = raw[:_MAX_REPLAY_BYTES].decode("utf-8", errors="replace").replace("\r\n", "\n")
     safe_text = "".join(character if character in {"\n", "\t"} or ord(character) >= 32 else "�" for character in text)
     if truncated:
         safe_text += "\n[HOL Guard truncated restricted pytest output]\n"
-    destination.write(safe_text)
+    # A Windows pipe may use a code page without the replacement character.
+    encoding = getattr(destination, "encoding", None) or "utf-8"
+    destination.write(safe_text.encode(encoding, errors="replace").decode(encoding))
     destination.flush()
 
 
