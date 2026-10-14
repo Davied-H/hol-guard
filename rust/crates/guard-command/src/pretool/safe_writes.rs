@@ -1,3 +1,5 @@
+#[path = "hooks_path_writes.rs"]
+mod hooks_path;
 #[path = "write_target_screens.rs"]
 mod screens;
 use super::read_paths::{
@@ -136,6 +138,7 @@ fn bounded_write_target(
         // A safe pathname can alias a protected inode through a hard link.
         && ((directory && canonical.is_dir()) || single_link_write_target(&canonical))
         && !autostart_write_target(&canonical)
+        && !hooks_path::configured_hooks_write(&canonical, home_dir)
 }
 
 pub(super) fn safe_copy_arguments(arguments: &[String], context: super::PathContext<'_>) -> bool {
@@ -353,6 +356,7 @@ fn bounded_temporary_copy_target(value: &str, context: super::PathContext<'_>) -
     resolved_path_allowed_in_scope(&target, context.home_dir, context.cwd, true)
         && guard_secure_fs::hidden_read_parts_allowed(&target)
         && !autostart_write_target(&target)
+        && !hooks_path::configured_hooks_write(&target, context.home_dir)
 }
 
 /// Windows `mktemp -d` (Git Bash `/tmp`) creates its directory in the user's
@@ -417,6 +421,7 @@ fn bounded_temporary_copy_target(value: &str, context: super::PathContext<'_>) -
         && resolved_path_allowed_in_scope(&target, context.home_dir, context.cwd, true)
         && guard_secure_fs::hidden_read_parts_allowed(&target)
         && !autostart_write_target(&target)
+        && !hooks_path::configured_hooks_write(&target, context.home_dir)
 }
 
 #[cfg(all(not(unix), not(windows)))]
