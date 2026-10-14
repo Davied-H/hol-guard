@@ -372,7 +372,7 @@ def test_windows_sink_bootstrap_has_no_escaped_backslashes(tmp_path, monkeypatch
     from codex_plugin_scanner.guard.adapters import zcode_contained_tests as adapter
 
     package_root = tmp_path / "site\\packages"
-    package_root.mkdir()
+    package_root.mkdir(parents=True)
     config = {"python_executable": sys.executable, "package_root": str(package_root)}
     monkeypatch.setattr(sys, "platform", "darwin")
     unchanged = adapter._sink_command_prefix(config)
