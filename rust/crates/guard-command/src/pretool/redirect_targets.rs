@@ -118,3 +118,55 @@ fn no_symlink_components(base: &std::path::Path, relative: &std::path::Path) -> 
     }
     true
 }
+
+/// A later step that names a file this command writes below the working
+/// directory, spelled from the root, names what the relative spelling names:
+/// `> .tmp/run.log; wc -l <cwd>/.tmp/run.log`. Rewriting exactly those words
+/// lets the read keep the floor its relative spelling gets. Only a written
+/// target is rewritten, and a chain that changes directory keeps its words.
+pub(super) fn relative_saved_reads(
+    command: String,
+    targets: &[String],
+    cwd: Option<&str>,
+) -> String {
+    let Some(root) = cwd
+        .map(|root| root.trim_end_matches('/'))
+        .filter(|root| root.starts_with('/') && !root.is_empty())
+    else {
+        return command;
+    };
+    let plain = |value: &str| {
+        !value.is_empty()
+            && !value.split('/').any(|part| matches!(part, "" | "." | ".."))
+            && !value.contains([
+                '\'', '"', '\\', '$', '`', '*', '?', '[', ']', '{', '}', '~', ' ',
+            ])
+    };
+    let pairs: Vec<(String, String)> = targets
+        .iter()
+        .filter_map(|target| match target.strip_prefix(root) {
+            Some(rest) => {
+                let rest = rest.strip_prefix('/')?;
+                plain(rest).then(|| (target.clone(), rest.to_owned()))
+            }
+            None => plain(target).then(|| (format!("{root}/{target}"), target.clone())),
+        })
+        .collect();
+    if pairs.is_empty()
+        || command
+            .split_whitespace()
+            .any(|word| matches!(word, "cd" | "pushd" | "popd"))
+    {
+        return command;
+    }
+    command
+        .split(' ')
+        .map(|word| {
+            pairs
+                .iter()
+                .find(|(absolute, _)| absolute == word)
+                .map_or(word, |(_, relative)| relative.as_str())
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}

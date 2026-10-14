@@ -157,35 +157,11 @@ fn bounded_read_target_with_brackets(
         return false;
     }
     // An unresolvable absolute or `~` target cannot prove a bounded file;
-    // a workspace-relative spelling keeps the pre-existing lexical floor. A
-    // missing file below the working directory, spelled from the root, names
-    // what its relative spelling names: `> .tmp/run.log; wc -l
-    // <cwd>/.tmp/run.log` reads the file the chain just wrote.
+    // a workspace-relative spelling keeps the pre-existing lexical floor.
     if expanded_path.is_absolute() {
-        return below_working_directory(expanded_path, home_dir, cwd)
-            .is_some_and(|relative| safe_read_target(&relative));
+        return false;
     }
     safe_read_target(path)
-}
-
-/// The spelling of `path` relative to the working directory when it lies
-/// lexically below it.
-fn below_working_directory(
-    path: &std::path::Path,
-    home_dir: Option<&str>,
-    cwd: Option<&str>,
-) -> Option<String> {
-    let root =
-        cwd.map(|root| expand_home_read_path(root, home_dir).unwrap_or_else(|| root.to_owned()))?;
-    let root = std::path::Path::new(&root);
-    // From the filesystem root every path is "below"; the root floors above
-    // must keep judging those.
-    if !root.is_absolute() || root.parent().is_none() {
-        return None;
-    }
-    let relative = path.strip_prefix(root).ok()?;
-    let relative = relative.to_str()?;
-    (!relative.is_empty()).then(|| relative.to_owned())
 }
 
 /// A drive, verbatim, or root-relative spelling does not resolve against the

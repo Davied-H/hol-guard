@@ -6,7 +6,7 @@
 
 use crate::CommandModelRequestV1;
 use guard_contracts::PreToolResultV1;
-use targets::{bounded_write, safe_output_target};
+use targets::{bounded_write, relative_saved_reads, safe_output_target};
 
 #[path = "redirect_git_chain.rs"]
 pub(super) mod git_chain;
@@ -140,6 +140,7 @@ pub(super) fn project(
     if command.split_whitespace().eq(raw.split_whitespace()) {
         return None;
     }
+    let command = relative_saved_reads(command, &targets, context.cwd);
     let model = crate::parse_command(&CommandModelRequestV1 {
         command: command.clone(),
         dialect: "posix".to_owned(),
