@@ -185,6 +185,7 @@ pub fn evaluate_pre_tool_envelope_with_execution_context(
                 );
                 payload = &projected_payload;
             }
+            omp_bash_cwd::BashCwd::Missing => return omp_bash_cwd_missing(harness, event),
             omp_bash_cwd::BashCwd::Unresolved => return omp_bash_cwd_review(harness, event),
         }
     }
@@ -252,6 +253,24 @@ fn omp_bash_cwd_review(harness: &str, event: &str) -> PreToolResultV1 {
         "review",
         "native_omp_bash_cwd_review",
         "HOL Guard could not resolve the working directory this command runs in, so it requires review. Pass an existing directory as an absolute path, a path relative to the session directory, or a path under ~.",
+    )
+}
+
+// The command cannot start, so stopping it costs nothing. Saying why lets the
+// agent fix the directory instead of waiting on an approval.
+fn omp_bash_cwd_missing(harness: &str, event: &str) -> PreToolResultV1 {
+    generic_result(
+        generic_action(
+            harness,
+            event,
+            PreToolActionTypeV1::Command,
+            PreToolOperationV1::Execute,
+            false,
+            false,
+        ),
+        "block",
+        evaluate::MISSING_PATH,
+        "HOL Guard did not run this command because its working directory does not exist.",
     )
 }
 

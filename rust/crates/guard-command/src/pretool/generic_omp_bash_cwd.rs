@@ -18,6 +18,8 @@ pub(super) enum BashCwd {
     Within(String),
     /// A directory outside the session directory, canonicalized.
     Outside(String),
+    /// A plain path naming no existing directory, so nothing would run.
+    Missing,
     /// A form the host resolves in a way Guard does not model.
     Unresolved,
 }
@@ -46,8 +48,13 @@ pub(super) fn resolve(payload: &Value, home_dir: Option<&str>, session: Option<&
     let Some(target) = literal_target(text, home_dir, session) else {
         return BashCwd::Unresolved;
     };
-    let (Ok(target), Ok(root)) = (target.canonicalize(), Path::new(session).canonicalize()) else {
+    let Ok(root) = Path::new(session).canonicalize() else {
         return BashCwd::Unresolved;
+    };
+    let target = match target.canonicalize() {
+        Ok(target) => target,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return BashCwd::Missing,
+        Err(_) => return BashCwd::Unresolved,
     };
     if !target.is_dir() {
         return BashCwd::Unresolved;

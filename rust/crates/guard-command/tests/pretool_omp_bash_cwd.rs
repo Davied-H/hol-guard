@@ -98,13 +98,13 @@ fn bash_cwd_outside_the_session_directory_is_judged_as_a_leading_cd() {
 fn unmodeled_bash_cwd_forms_require_review() {
     let session = session("omp-cwd-unresolved");
     let primary = session.primary.to_str().unwrap();
+    std::fs::write(session.org.join("notes.txt"), "notes\n").unwrap();
     for cwd in [
         json!("@app-portal"),
         json!(format!(":{primary}")),
         json!(format!("file://{primary}")),
         json!("skill://example"),
-        json!("missing"),
-        json!("tracked.txt"),
+        json!("notes.txt"),
         json!("~other"),
         json!("app\\portal"),
         json!("app\u{00a0}portal"),
@@ -131,4 +131,70 @@ fn unmodeled_bash_cwd_forms_require_review() {
         session.org.to_str(),
     );
     assert_eq!(outcome(&conflicting), ("review".into(), REVIEW.into()));
+}
+
+#[test]
+fn a_missing_bash_cwd_is_stopped_with_a_correctable_reason() {
+    let session = session("omp-cwd-missing");
+    for cwd in ["missing", "~/missing", "../app-portal-gone"] {
+        let result = omp(
+            &session,
+            json!({"command": "git status --short", "cwd": cwd}),
+        );
+        assert_eq!(
+            outcome(&result),
+            ("block".into(), "native_missing_path".into()),
+            "{cwd}"
+        );
+    }
+}
+
+fn read(session: &Session, harness: &str, tool: &str, path: &str) -> PreToolResultV1 {
+    evaluate_pre_tool_envelope_with_context(
+        harness,
+        "PreToolUse",
+        &json!({"tool_name": tool, "tool_input": {"path": path, "file_path": path}}),
+        Some(&default_controls()),
+        None,
+        session.home.to_str(),
+        session.org.to_str(),
+    )
+}
+
+#[test]
+fn a_read_of_a_missing_path_is_stopped_with_a_correctable_reason() {
+    let session = session("omp-read-missing");
+    let notes = session.home.join("notes");
+    std::fs::create_dir_all(&notes).unwrap();
+    std::fs::write(notes.join("plan.md"), "plan\n").unwrap();
+    let missing = session.home.join("app-portal-fix-gone/src/report.ts");
+    let missing = missing.to_str().unwrap();
+    for (harness, tool, path) in [
+        ("omp", "read", missing.to_owned()),
+        ("omp", "read", format!("{missing}:74-145")),
+        (
+            "omp",
+            "read",
+            "~/app-portal-fix-gone/src/report.ts".to_owned(),
+        ),
+        ("claude-code", "Read", missing.to_owned()),
+    ] {
+        let result = read(&session, harness, tool, &path);
+        assert_eq!(
+            outcome(&result),
+            ("block".into(), "native_missing_path".into()),
+            "{harness} {path}"
+        );
+    }
+    // A missing file inside the workspace is already allowed; the host reports
+    // the error itself.
+    let result = read(&session, "omp", "read", "app-portal/missing.ts");
+    assert_eq!(result.minimum_action, "allow", "{}", result.reason_code);
+    // Existing files keep their own decision, and a missing secret keeps the
+    // sensitive-path handling rather than this explanation.
+    let plan = notes.join("plan.md");
+    let result = read(&session, "omp", "read", &format!("{}:1-5", plan.display()));
+    assert_eq!(result.minimum_action, "allow", "{}", result.reason_code);
+    let result = read(&session, "omp", "read", "~/.ssh/id_gone");
+    assert_ne!(result.reason_code, "native_missing_path");
 }

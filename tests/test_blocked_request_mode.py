@@ -102,6 +102,15 @@ def test_specific_deny_text_without_queued_approval_points_to_no_approval() -> N
     assert "hol-guard approvals" not in text
 
 
+def test_missing_path_asks_the_agent_to_correct_the_path() -> None:
+    # Nothing ran and nothing waits for approval, so telling the agent not to retry would end the task.
+    reason = "HOL Guard did not run this read because the path does not exist."
+    text = safe_alternative_reason(reason, reason_code="native_missing_path", approval_queued=False)
+    assert text.startswith(reason)
+    assert "try again with the correct one" in text
+    assert "Do not retry" not in text
+
+
 def test_extension_failure_keeps_the_native_reason_without_a_generic_hint() -> None:
     reason = "HOL Guard blocked this command because it leaves a quote open."
     text = safe_alternative_reason(
