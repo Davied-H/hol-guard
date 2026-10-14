@@ -183,6 +183,7 @@ pub(crate) fn command_shape(
         return None;
     }
     let linked = super::worktree_writes::linked_worktree_common_dir(workspace).is_some();
+    let temp_fixed = !reach::rebinds_private_temp(&model.normalized_text);
     for (index, segment) in model.segments.iter().enumerate() {
         let executable = segment.executable.as_deref()?;
         if executable.contains('$')
@@ -201,7 +202,7 @@ pub(crate) fn command_shape(
         // The sandbox has no network, so a network client would only fail,
         // and it reaches no directory outside the workspace.
         if NETWORK_CLIENTS.contains(&name)
-            || reach::reaches_outside(segment, name, workspace)
+            || reach::reaches_outside(segment, name, workspace, temp_fixed)
             || (matches!(name, "cd" | "pushd")
                 && !matches!(segment.arguments.as_slice(), [target] if below(target, workspace)))
         {
