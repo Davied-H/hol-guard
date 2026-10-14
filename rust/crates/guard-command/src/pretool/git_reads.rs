@@ -133,12 +133,11 @@ pub(super) fn safe_git_arguments(
     }
     if subcommand == "remote" {
         let has_arguments_after_options = option_end + 1 < arguments.len();
-        return arguments.len() == 1
-            || (!active_options.is_empty()
-                && !has_arguments_after_options
-                && active_options
-                    .iter()
-                    .all(|argument| matches!(argument.as_str(), "-v" | "--verbose")));
+        return !active_options.is_empty()
+            && !has_arguments_after_options
+            && active_options
+                .iter()
+                .all(|argument| matches!(argument.as_str(), "-v" | "--verbose"));
     }
     if !allow_helper_context
         && matches!(subcommand, "diff" | "log" | "show")

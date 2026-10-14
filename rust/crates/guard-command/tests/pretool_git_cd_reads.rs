@@ -308,7 +308,6 @@ fn remote_url_reads_are_read_only() {
         ],
     );
     for command in [
-        "git remote".to_owned(),
         "git remote get-url origin".to_owned(),
         "git remote get-url --push origin".to_owned(),
         "git remote get-url --all origin".to_owned(),
