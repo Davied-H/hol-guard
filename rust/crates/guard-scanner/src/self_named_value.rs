@@ -23,9 +23,17 @@ const CREDENTIAL_WORDS: &[&str] = &[
 const MAX_VALUE_CHARS: usize = 64;
 
 /// Whether a credential assignment match assigns a value whose words are all
-/// words of the field name, including a credential word, with only short
-/// numeric counters besides.
-pub(crate) fn is_self_named(matched: &str) -> bool {
+/// words of the field name, including a credential word, with at most one
+/// short numeric counter besides. `tail` is the text after the match: a match
+/// the value runs on past (`TOKEN=token"$more"`) is not the whole value.
+pub(crate) fn is_self_named(matched: &str, tail: &str) -> bool {
+    let complete = tail
+        .chars()
+        .next()
+        .is_none_or(|next| next.is_whitespace() || matches!(next, ',' | '}' | ')' | ']' | ';'));
+    if !complete {
+        return false;
+    }
     let Some(index) = matched.find([':', '=']) else {
         return false;
     };
@@ -41,9 +49,11 @@ pub(crate) fn is_self_named(matched: &str) -> bool {
     }
     let name_words = words(&matched[..index]);
     let mut credential_word = false;
+    let mut counters = 0_usize;
     for word in words(value) {
         if word.chars().all(|character| character.is_ascii_digit()) {
-            if word.len() > 4 {
+            counters += 1;
+            if word.len() > 4 || counters > 1 {
                 return false;
             }
             continue;
@@ -108,22 +118,31 @@ mod tests {
 
     #[test]
     fn values_that_spell_their_field_name_are_stand_ins() {
-        assert!(is_self_named(r#"refresh_token="refresh-token-1""#));
-        assert!(is_self_named(r#""password": "password""#));
-        assert!(is_self_named("apiKey: 'api-key-12'"));
-        assert!(is_self_named("SECRET=secret"));
-        assert!(is_self_named(r#"refreshToken = "refreshToken2""#));
+        assert!(is_self_named(r#"refresh_token="refresh-token-1""#, ""));
+        assert!(is_self_named(r#""password": "password""#, ""));
+        assert!(is_self_named("apiKey: 'api-key-12'", ""));
+        assert!(is_self_named("SECRET=secret", ""));
+        assert!(is_self_named(r#"refreshToken = "refreshToken2""#, ""));
     }
 
     #[test]
     fn values_with_other_words_or_long_numbers_are_not() {
-        assert!(!is_self_named(r#"admin_password="admin""#));
-        assert!(!is_self_named(r#"refresh_token="refresh-token-918273""#));
+        assert!(!is_self_named(r#"admin_password="admin""#, ""));
+        assert!(!is_self_named(
+            r#"refresh_token="refresh-token-918273""#,
+            ""
+        ));
+        assert!(!is_self_named(
+            r#"refresh_token="refresh-token-9182-7364""#,
+            ""
+        ));
+        assert!(!is_self_named("password=password1234password5678", ""));
+        assert!(!is_self_named("TOKEN=token", "\"$suffix\""));
         let visible = "q7Lm2Xv9Rt4Kp8Wz";
-        assert!(!is_self_named(&format!(r#"token="token-{visible}""#)));
-        assert!(!is_self_named(r#"password="password!""#));
-        assert!(!is_self_named(r#"token="1234""#));
-        assert!(!is_self_named(r#"api_key="key-value""#));
+        assert!(!is_self_named(&format!(r#"token="token-{visible}""#), ""));
+        assert!(!is_self_named(r#"password="password!""#, ""));
+        assert!(!is_self_named(r#"token="1234""#, ""));
+        assert!(!is_self_named(r#"api_key="key-value""#, ""));
     }
 
     #[test]
@@ -146,6 +165,9 @@ mod tests {
         )));
         assert!(credential_assignment(&format!(
             "refresh_token=\"refresh-token-{visible}\"\n"
+        )));
+        assert!(credential_assignment(&format!(
+            "TOKEN=token\"{visible}\"\n"
         )));
     }
 }
