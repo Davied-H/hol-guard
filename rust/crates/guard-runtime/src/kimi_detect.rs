@@ -163,7 +163,7 @@ pub(crate) fn detect(args: &Value) -> KindResult {
         if !is_empty(&payload) {
             let scope = Scope {
                 harness: HARNESS,
-                scope: *scope,
+                scope,
             };
             hooks(&mut inventory, &scope, &path, &payload)?;
         }
@@ -178,7 +178,7 @@ pub(crate) fn detect(args: &Value) -> KindResult {
         if payload.truthy() {
             let scope = Scope {
                 harness: HARNESS,
-                scope: *scope,
+                scope,
             };
             mcp_servers(&mut inventory, &scope, &path, &payload)?;
         }
