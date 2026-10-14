@@ -957,7 +957,7 @@ clearer UX and an implementation plan with technical references.
                 )
             },
             "tool_response": {
-                "stdout": "src/lib/email-service.ts:12:const SMTP_TOKEN = process.env.SMTP_TOKEN",
+                "stdout": 'src/lib/email-service.ts:12:const SMTP_TOKEN = "key_a1b2c3d4e5f6g7h8"',
             },
             "source_scope": "project",
         }
@@ -981,6 +981,46 @@ clearer UX and an implementation plan with technical references.
         assert rc == 1
         assert output["continue"] is True
         assert output["approval_reuse"]["action"] == "require-reapproval"
+
+    def test_codex_post_tool_use_allows_source_that_only_references_credentials(
+        self,
+        monkeypatch,
+        tmp_path,
+        capsys,
+    ) -> None:
+        home_dir = tmp_path / "home"
+        workspace_dir = tmp_path / "workspace"
+        _build_guard_fixture(home_dir, workspace_dir)
+        event = {
+            "event": "PostToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"command": "rg -g '*.ts' TOKEN src"},
+            "tool_response": {
+                "stdout": (
+                    "src/config.ts:1:const auth_token = process.env.TOKEN;\n"
+                    "src/config.ts:2:function client(apiKey: string) {}\n"
+                ),
+            },
+            "source_scope": "project",
+        }
+        monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(event)))
+
+        rc = main(
+            [
+                "guard",
+                "hook",
+                "--home",
+                str(home_dir),
+                "--workspace",
+                str(workspace_dir),
+                "--harness",
+                "codex",
+                "--json",
+            ]
+        )
+        capsys.readouterr()
+
+        assert rc == 0
 
     def test_pi_post_tool_use_allows_native_grep_of_external_source_tree(
         self,
@@ -1676,7 +1716,7 @@ clearer UX and an implementation plan with technical references.
         home_dir = tmp_path / "home"
         workspace_dir = tmp_path / "workspace"
         _build_guard_fixture(home_dir, workspace_dir)
-        _write_text(workspace_dir / "src" / "example.ts", "const SMTP_TOKEN = process.env.SMTP_TOKEN;\n")
+        _write_text(workspace_dir / "src" / "example.ts", 'const SMTP_TOKEN = "key_a1b2c3d4e5f6g7h8";\n')
         _write_text(
             workspace_dir / ".github" / "workflows" / "publish.yml",
             "jobs:\n  build:\n    steps:\n      - name: Compute publish version\n",
@@ -1685,7 +1725,7 @@ clearer UX and an implementation plan with technical references.
             "event": "PostToolUse",
             "tool_name": "Bash",
             "tool_input": {"command": command},
-            "tool_response": {"stdout": "const SMTP_TOKEN = process.env.SMTP_TOKEN;\n"},
+            "tool_response": {"stdout": 'const SMTP_TOKEN = "key_a1b2c3d4e5f6g7h8";\n'},
             "source_scope": "project",
         }
         monkeypatch.setattr(sys, "stdin", io.StringIO(json.dumps(event)))
@@ -1726,7 +1766,7 @@ clearer UX and an implementation plan with technical references.
         home_dir = tmp_path / "home"
         workspace_dir = tmp_path / "workspace"
         _build_guard_fixture(home_dir, workspace_dir)
-        _write_text(workspace_dir / "src" / "example.ts", "const SMTP_TOKEN = process.env.SMTP_TOKEN;\n")
+        _write_text(workspace_dir / "src" / "example.ts", 'const SMTP_TOKEN = "key_a1b2c3d4e5f6g7h8";\n')
         _write_text(workspace_dir / ".github" / "workflows" / "publish.yml", "jobs: {}\n")
         _write_text(workspace_dir / ".env", "API_TOKEN=fixture-only\n")
         event = {
@@ -2167,7 +2207,7 @@ clearer UX and an implementation plan with technical references.
             "tool_name": "Bash",
             "tool_input": {"command": "rg -g '*.ts' TOKEN src"},
             "tool_response": {
-                "stdout": "src/config.ts:1:const auth_token = process.env.TOKEN",
+                "stdout": 'src/config.ts:1:const auth_token = "key_a1b2c3d4e5f6g7h8"',
             },
             "source_scope": "project",
         }
@@ -2788,7 +2828,7 @@ clearer UX and an implementation plan with technical references.
             "tool_name": "Bash",
             "tool_input": {"command": "rg -gLICENSE TOKEN src"},
             "tool_response": {
-                "stdout": "src/config.ts:1:const auth_token = process.env.TOKEN",
+                "stdout": 'src/config.ts:1:const auth_token = "key_a1b2c3d4e5f6g7h8"',
             },
             "source_scope": "project",
         }
@@ -2827,7 +2867,7 @@ clearer UX and an implementation plan with technical references.
             "tool_name": "Bash",
             "tool_input": {"command": "rg -- --follow src"},
             "tool_response": {
-                "stdout": "src/config.ts:1:const auth_token = process.env.TOKEN",
+                "stdout": 'src/config.ts:1:const auth_token = "key_a1b2c3d4e5f6g7h8"',
             },
             "source_scope": "project",
         }
