@@ -176,7 +176,7 @@ fn rooted_parent_reads_into_secret_locations_stay_reviewed() {
 
 #[test]
 fn execution_capable_repository_configuration_stays_reviewed() {
-    let mutations: [Mutation; 4] = [
+    let mutations: [Mutation; 5] = [
         ("fsmonitor", |s: &Scratch| {
             git(
                 &s.app,
@@ -204,6 +204,16 @@ fn execution_capable_repository_configuration_stays_reviewed() {
         }),
         ("hook", |s: &Scratch| {
             executable(&s.app.join(".git/hooks/post-index-change"));
+        }),
+        ("shared-hookspath", |s: &Scratch| {
+            // Not created yet: another local user could create it below the
+            // shared, world-writable `/tmp` before the read runs.
+            let hooks = format!("/tmp/guard-shared-hooks-{}", std::process::id());
+            git(
+                &s.app,
+                &s.home,
+                &["config", "core.hooksPath", hooks.as_str()],
+            );
         }),
     ];
     for (tag, mutate) in mutations {

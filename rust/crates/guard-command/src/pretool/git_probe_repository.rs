@@ -134,23 +134,52 @@ fn executable(metadata: &std::fs::Metadata) -> bool {
     metadata.is_file()
 }
 
-/// An existing path below a shared temporary root must belong to the current
-/// user and grant no group or other write access. A missing path holds
-/// nothing yet, and elsewhere the sibling and workspace route proofs already
+/// A path that lands below a shared temporary root must belong to the current
+/// user and grant no group or other write access. A missing path is judged by
+/// its nearest existing ancestor, since whoever controls that directory could
+/// create the path (a hook directory, say) between this probe and the read:
+/// a hooks path straight below the sticky, world-writable `/tmp` therefore
+/// stays reviewed. Elsewhere the sibling and workspace route proofs already
 /// decide where Git may run.
 #[cfg(unix)]
 fn owned_where_shared(path: &Path, roots: &[PathBuf]) -> bool {
     use std::os::unix::fs::MetadataExt;
-    let Ok(canonical) = std::fs::canonicalize(path) else {
+    let (existing, missing) = match std::fs::canonicalize(path) {
+        Ok(canonical) => (canonical, PathBuf::new()),
         // A dangling symlink is not missing: its target could appear later.
-        return std::fs::symlink_metadata(path).is_err();
+        Err(_) if std::fs::symlink_metadata(path).is_ok() => return false,
+        Err(_) => match nearest_existing(path) {
+            Some(pair) => pair,
+            None => return false,
+        },
     };
-    if !roots.iter().any(|root| canonical.starts_with(root)) {
+    let landing = existing.join(&missing);
+    if !roots.iter().any(|root| landing.starts_with(root)) {
         return true;
     }
     let me = nix::unistd::geteuid().as_raw();
-    std::fs::metadata(&canonical)
+    std::fs::metadata(&existing)
         .is_ok_and(|metadata| metadata.uid() == me && metadata.mode() & 0o022 == 0)
+}
+
+/// The canonical nearest ancestor of a missing `path` and the components that
+/// would still have to be created below it; `None` when an ancestor exists
+/// but does not resolve or the missing part climbs with `..`.
+#[cfg(unix)]
+fn nearest_existing(path: &Path) -> Option<(PathBuf, PathBuf)> {
+    for ancestor in path.ancestors().skip(1) {
+        if let Ok(canonical) = std::fs::canonicalize(ancestor) {
+            let missing = path.strip_prefix(ancestor).ok()?.to_path_buf();
+            let climbs = missing
+                .components()
+                .any(|component| !matches!(component, std::path::Component::Normal(_)));
+            return (!climbs).then_some((canonical, missing));
+        }
+        if std::fs::symlink_metadata(ancestor).is_ok() {
+            return None;
+        }
+    }
+    None
 }
 
 #[cfg(not(unix))]
@@ -160,8 +189,54 @@ fn owned_where_shared(_path: &Path, _roots: &[PathBuf]) -> bool {
 
 #[cfg(all(test, unix))]
 mod tests {
-    use super::absolute_lines;
-    use std::path::PathBuf;
+    use super::{absolute_lines, owned_where_shared};
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::{Path, PathBuf};
+
+    /// A fresh directory standing in for a shared temporary root.
+    fn root(tag: &str, mode: u32) -> PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "guard-probe-repository-{tag}-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("repo/.git")).unwrap();
+        for directory in [root.join("repo/.git"), root.join("repo")] {
+            std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        std::fs::set_permissions(&root, std::fs::Permissions::from_mode(mode)).unwrap();
+        std::fs::canonicalize(root).unwrap()
+    }
+
+    fn shared(root: &Path, relative: &str) -> bool {
+        owned_where_shared(&root.join(relative), &[root.to_path_buf()])
+    }
+
+    #[test]
+    fn missing_paths_others_could_create_stay_reviewed() {
+        let root = root("sticky", 0o1777);
+        // `core.hooksPath` naming a directory no one has created yet.
+        assert!(!shared(&root, "shared-hooks"));
+        assert!(!shared(&root, "shared-hooks/nested"));
+        assert!(!shared(&root, "repo/.git/missing/../../../shared-hooks"));
+        std::os::unix::fs::symlink(root.join("absent"), root.join("dangling")).unwrap();
+        assert!(!shared(&root, "dangling"));
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn missing_paths_inside_an_owned_repository_stay_allowed() {
+        let root = root("owned", 0o1777);
+        assert!(shared(&root, "repo/.git"));
+        assert!(shared(&root, "repo/.git/hooks"));
+        assert!(shared(&root, "repo/.git/hooks/nested"));
+        let elsewhere = std::fs::canonicalize(std::env::temp_dir()).unwrap();
+        assert!(owned_where_shared(
+            &root.join("shared-hooks"),
+            &[elsewhere.join("absent-root")]
+        ));
+        std::fs::remove_dir_all(&root).unwrap();
+    }
 
     #[test]
     fn rev_parse_paths_need_one_absolute_line_each() {
