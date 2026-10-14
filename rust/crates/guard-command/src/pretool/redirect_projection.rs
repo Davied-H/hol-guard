@@ -241,8 +241,14 @@ pub(super) fn join(
     }
     projected.action.sensitive_target |= raw.action.sensitive_target;
     projected.action.bounded &= raw.action.bounded;
+    // The raw text's sandbox route is the fallback for a write the parser
+    // could not bound. Once the projection has bounded every target, it
+    // discharges that route the same way it discharges the generic review.
+    let contained_fallback =
+        bounded_writes && raw.reason_code == "native_workspace_containment_required";
     if raw.reason_code != "native_command_review_required"
         && raw.reason_code != "native_command_extension_evaluation_failed"
+        && !contained_fallback
         && rank(&raw.minimum_action) > rank(&projected.minimum_action)
     {
         projected.minimum_action = raw.minimum_action;
