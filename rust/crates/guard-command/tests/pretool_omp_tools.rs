@@ -425,6 +425,30 @@ fn semicolon_path_lists_prove_every_entry() {
             "{path}"
         );
     }
+    // A glob entry without wildcards names one file, and the host returns
+    // only that name. It carries the bounded file-read proof.
+    for path in [
+        "calc.py",
+        "calc.py;src/**/main.rs",
+        "src/main.rs; ~/clean/*",
+    ] {
+        let result = omp(
+            &f,
+            "glob",
+            json!({"path": path, "hidden": true, "gitignore": false, "limit": 100}),
+        );
+        assert!(allowed(&result), "{path}: {}", result.reason_code);
+        assert_eq!(result.reason_code, "native_omp_directory_listing");
+    }
+    for path in [
+        "calc.py; ~/.ssh/id_rsa",
+        "calc.py; ~/.codex/auth.json",
+        "calc.py; ~/secret-dir/.env",
+        "~/secret-dir/.env",
+    ] {
+        let result = omp(&f, "glob", json!({"path": path}));
+        assert!(!allowed(&result), "{path}: {}", result.reason_code);
+    }
     // An existing literal that contains `;` is searched whole, not split.
     write(f.project.join("a;b/notes.md"), "synthetic fixture\n");
     assert!(!allowed(&omp(&f, "glob", json!({"path": "a;b"}))));

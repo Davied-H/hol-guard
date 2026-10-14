@@ -300,11 +300,21 @@ fn listing_target_proven(
     if recursive && walk_covers_home(target, context) {
         return false;
     }
-    super::super::safe_reads::bounded_omp_directory_read_target(
-        target,
-        context.path.home_dir,
-        context.path.cwd,
-    )
+    // A glob entry without wildcards matches only itself, so the host returns
+    // that one name. A file there carries the bounded file-read proof.
+    let literal_glob_file = signals.tool_name.as_deref() == Some("glob")
+        && !has_glob_selector
+        && super::super::read_paths::existing_regular_read_target(
+            target,
+            context.path.home_dir,
+            context.path.cwd,
+        );
+    literal_glob_file
+        || super::super::safe_reads::bounded_omp_directory_read_target(
+            target,
+            context.path.home_dir,
+            context.path.cwd,
+        )
 }
 
 /// Maximum patterns proven from one glob's `{a,b}` alternatives.
