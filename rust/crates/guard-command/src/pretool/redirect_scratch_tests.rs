@@ -16,6 +16,9 @@ impl Workspace {
         let root = std::fs::canonicalize("/tmp")
             .unwrap()
             .join(format!("guard-redirect-{label}-{}", std::process::id()));
+        // An interrupted earlier run with the same process ID leaves this
+        // tree behind; start from an empty one so the symlink below succeeds.
+        let _ = std::fs::remove_dir_all(&root);
         let project = root.join("project");
         for directory in [".tmp", ".git/hooks", "bin", "out", "sub"] {
             std::fs::create_dir_all(project.join(directory)).unwrap();
