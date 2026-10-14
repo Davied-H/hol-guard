@@ -358,6 +358,53 @@ fn grep_allows_only_directories_without_reachable_secrets() {
 }
 
 #[test]
+fn grep_path_lists_need_every_part_proven() {
+    let f = fixture();
+    let calc = f.project.join("calc.py");
+    let main = f.project.join("src/main.rs");
+    let clean = f.home.join("clean/a.txt");
+    // Oh My Pi searches each `;` part once the whole string names nothing.
+    for path in [
+        format!("{};{};{}", calc.display(), main.display(), clean.display()),
+        "calc.py;src;~/clean".to_owned(),
+        "calc.py;".to_owned(),
+    ] {
+        let result = omp(&f, "grep", json!({"pattern": "fixture", "path": path}));
+        assert!(allowed(&result), "{path}: {}", result.reason_code);
+        assert_eq!(result.reason_code, "native_bounded_search_scope");
+    }
+    for path in [
+        "calc.py;~/.ssh/id_rsa",
+        "calc.py;~/secret-dir",
+        "calc.py;~/.codex/auth.json",
+        "calc.py;.env",
+        "calc.py;missing.py",
+        "calc.py;src/*.rs",
+        "calc.py,src;~/clean",
+        "calc.py; src",
+        "calc.py;@src",
+        "calc.py;:src",
+    ] {
+        let result = omp(&f, "grep", json!({"pattern": "fixture", "path": path}));
+        assert!(!allowed(&result), "{path}: {}", result.reason_code);
+    }
+    // A real file whose name holds `;` is searched whole, so the parts prove
+    // nothing about it.
+    write(f.project.join("calc.py;src"), "synthetic fixture\n");
+    write(f.project.join("calc.py;src2/.env"), "synthetic marker\n");
+    let result = omp(&f, "grep", json!({"pattern": "x", "path": "calc.py;src2"}));
+    assert!(!allowed(&result), "{}", result.reason_code);
+    // Upstream Pi has no list syntax.
+    let result = run(
+        &f,
+        "pi",
+        "grep",
+        json!({"pattern": "x", "path": "calc.py;src"}),
+    );
+    assert_ne!(result.reason_code, "native_bounded_search_scope");
+}
+
+#[test]
 fn eval_allows_literal_tool_programs() {
     let f = fixture();
     for code in [

@@ -342,6 +342,30 @@ fn grep_scope(
         }
     }
     let target = input_path(input, signals)?.unwrap_or(".");
+    if context.harness == "omp" {
+        if let Some(parts) = search_path_list(target, context) {
+            return parts
+                .iter()
+                .all(|part| {
+                    super::super::search_scope::content_search_scope_proven(
+                        part,
+                        context.path.home_dir,
+                        context.path.cwd,
+                    ) || super::super::read_paths::existing_regular_read_target(
+                        part,
+                        context.path.home_dir,
+                        context.path.cwd,
+                    )
+                })
+                .then(|| {
+                    directory_allow(
+                        context,
+                        "native_bounded_search_scope",
+                        "The Rust authority proved every file and directory in this search list cannot reach a sensitive file.",
+                    )
+                });
+        }
+    }
     // A single file is proven by the ordinary bounded file-read path.
     super::super::search_scope::content_search_scope_proven(
         target,
@@ -355,6 +379,41 @@ fn grep_scope(
             "The Rust authority proved this directory search cannot reach a sensitive file.",
         )
     })
+}
+
+/// Oh My Pi `grep` reads a `;` in `path` as a list separator once the whole
+/// string names nothing, and searches each part. Only plain ASCII lists are
+/// modeled: no comma, whitespace, quote, glob, brace, escape, `@` or `:`, so
+/// the host's comma, whitespace, selector and prefix rewrites cannot apply
+/// and each part resolves exactly as the single-path proofs read it.
+fn search_path_list(target: &str, context: &OmpContext<'_>) -> Option<Vec<String>> {
+    if !target.contains(';')
+        || target.len() > 8192
+        || !target.bytes().all(|byte| byte.is_ascii_graphic())
+        || target.contains([
+            ',', '"', '\'', '\\', '*', '?', '[', ']', '{', '}', '@', ':', '$', '`',
+        ])
+    {
+        return None;
+    }
+    let expanded = super::super::read_paths::expand_home_read_path(target, context.path.home_dir)
+        .unwrap_or_else(|| target.to_owned());
+    let literal = std::path::Path::new(&expanded);
+    let literal = if literal.is_absolute() {
+        literal.to_path_buf()
+    } else {
+        std::path::Path::new(context.path.cwd?).join(literal)
+    };
+    match literal.symlink_metadata() {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        _ => return None,
+    }
+    let parts: Vec<String> = target
+        .split(';')
+        .filter(|part| !part.is_empty())
+        .map(str::to_owned)
+        .collect();
+    (!parts.is_empty() && parts.len() <= 64).then_some(parts)
 }
 
 /// `skill://<name>[/<relative.md>]` names a skill the host resolves from its
