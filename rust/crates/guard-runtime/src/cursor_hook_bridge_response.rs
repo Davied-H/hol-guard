@@ -7,8 +7,13 @@
 //! loopback link with the daemon auth token only when the client's
 //! interpreter can import Guard; a response whose link the client may sign
 //! is left to the client.
+//!
+//! It also holds the client's fixed answers for a hook it cannot read or
+//! review: `_cursor_unavailable_response` and
+//! `_exit_unparseable_cursor_input`.
 
 use std::path::Path;
+use std::time::Instant;
 
 use guard_command::hook_adapter_value::{OMap, OValue};
 use guard_contracts::write_json_string;
@@ -18,6 +23,15 @@ use crate::native_review_link::{review_url_stays_unsigned, OPEN_GUARD};
 
 /// `print(json.dumps({"permission": "allow"}))`.
 pub(crate) const ALLOW_STDOUT: &str = "{\"permission\": \"allow\"}\n";
+/// The client's `after*` observers, stripped and lowercased.
+pub(crate) const AFTER_EVENTS: [&str; 2] = ["aftershellexecution", "aftermcpexecution"];
+/// The client's answer to an `after*` observer: `print("{}")`.
+pub(crate) const AFTER_STDOUT: &str = "{}\n";
+/// `_cursor_unavailable_response`'s denial.
+pub(crate) const UNAVAILABLE_STDOUT: &str = "{\"permission\": \"deny\", \"user_message\": \"HOL Guard could not complete the native hook decision safely.\"}\n";
+/// `cursor_unparseable_input_permission`'s denial, which the client also
+/// prints itself when it cannot import Guard.
+pub(crate) const UNPARSEABLE_STDOUT: &str = "{\"permission\": \"deny\", \"user_message\": \"Guard could not process this hook request safely. Retry or repair Guard from a terminal.\"}\n";
 /// `_cursor_reason` when the response names no reason and no review link.
 const DEFAULT_BLOCK_REASON: &str = "HOL Guard blocked this Cursor action.";
 /// `_cursor_reason`'s lead when the response names a link but no reason.
@@ -135,4 +149,37 @@ pub(crate) fn rendered(event: &str, response: &OMap, guard_home: &Path) -> Optio
         ("agent_message", reason.as_str()),
     ];
     Some((printed(&fields), if permission == "deny" { 2 } else { 0 }))
+}
+
+/// The client's `strip().lower().replace("_", "").replace("-", "")` check
+/// for an `after*` observer.
+fn compact_after_event(event: &str) -> bool {
+    let compact: String = py_strip(event)
+        .to_lowercase()
+        .chars()
+        .filter(|character| !matches!(character, '_' | '-'))
+        .collect();
+    AFTER_EVENTS.contains(&compact.as_str())
+}
+
+/// `_cursor_unavailable_response` for a hook the client names `event`: its
+/// stdout and exit code.
+pub(crate) fn unavailable_output(event: &str) -> (&'static str, i32) {
+    if compact_after_event(event) {
+        return (AFTER_STDOUT, 0);
+    }
+    (UNAVAILABLE_STDOUT, 2)
+}
+
+/// `_exit_unparseable_cursor_input` for a hook the client names `event`
+/// from its argv and reads by `deadline`: its stdout and exit code. The
+/// client prints the same answer whether or not it can import Guard.
+pub(crate) fn unparseable_output(event: &str, deadline: Instant) -> (&'static str, i32) {
+    if Instant::now() >= deadline {
+        return unavailable_output(event);
+    }
+    if compact_after_event(event) {
+        return (AFTER_STDOUT, 0);
+    }
+    (UNPARSEABLE_STDOUT, 2)
 }

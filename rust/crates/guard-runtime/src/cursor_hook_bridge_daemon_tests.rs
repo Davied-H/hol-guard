@@ -45,6 +45,7 @@ fn client_for(home: &GuardHome, budget: Duration) -> Client {
     Client {
         guard_home: home.home_text().to_owned(),
         home: Some("/h".to_owned()),
+        event: "beforeShellExecution".to_owned(),
         deadline: Instant::now() + budget,
     }
 }
@@ -368,7 +369,6 @@ fn hooks_the_client_keeps_never_reach_the_daemon() {
         &br#"{"hook_event_name":"beforeSubmitPrompt","prompt":"hi"}"#[..],
         br#"{"hook_event_name":"afterFileEdit","file_path":"/tmp/a"}"#,
         br#"{"hook_event_name":"stop"}"#,
-        b"[]",
     ] {
         assert_eq!(prepared_request(&client, raw), None);
         assert_eq!(respond(&client, raw), None);

@@ -13,7 +13,9 @@
 //! resident has answered (and so queued the record). The client's other
 //! hooks, every other verdict and anything the bridge cannot reproduce
 //! exactly run the Python client unchanged, with the hook it already read
-//! and the time it already spent.
+//! and the time it already spent. A hook the client could not parse, which
+//! it denies (or answers with `{}` for an observer) before it asks the
+//! daemon anything, gets that answer without Python or the daemon.
 //!
 //! When no live resident answers, the bridge posts the request to the
 //! loopback daemon itself, over the transport, auth token and deadlines the
@@ -36,7 +38,7 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use guard_command::hook_adapter_prepare::{cursor_client_event, first_truthy, prepare_payload};
-use guard_command::hook_adapter_value::{parse_python_json, OMap, OValue};
+use guard_command::hook_adapter_value::{parse_python_json, OMap, OValue, PyJsonError};
 
 use crate::bounded_hook_bridge::{
     daemon_target, post_hook_text, read_hook_input, run_python, transport_deadline, write_stdout,
@@ -46,7 +48,9 @@ use crate::claude_hook_bridge_http::remaining;
 use crate::claude_hook_bridge_render::py_strip;
 use crate::codex_hook_bridge_direct::{direct_answer, CURSOR};
 use crate::codex_hook_response::{POST_TOOL_USE, PRE_TOOL_USE};
-use crate::cursor_hook_bridge_response::rendered;
+use crate::cursor_hook_bridge_response::{
+    rendered, unavailable_output, unparseable_output, AFTER_EVENTS, AFTER_STDOUT,
+};
 use crate::cursor_hook_bridge_script::read_ported_script;
 use crate::hook_bridge_fallback::{self, Fallback};
 use crate::hook_env_stamp::{current_environment, stamp_hook_input_text, Stamp};
@@ -65,32 +69,14 @@ const MAX_HANDOFF_REPLY_BYTES: usize = 16 * 1024;
 /// The harness name of the client's daemon route, `/v1/hooks/cursor`.
 const DAEMON_HARNESS: &str = "cursor";
 const PROJECT_DIR_ENV: &str = "CURSOR_PROJECT_DIR";
-const AFTER_EVENTS: [&str; 2] = ["aftershellexecution", "aftermcpexecution"];
 /// The names `_prepare_cursor_hook_payload` gives the `after*` observers.
 const PREPARED_AFTER_EVENTS: [&str; 2] = ["afterShellExecution", "afterMCPExecution"];
-/// The client's answer to an `after*` observer the daemon reviewed.
-const AFTER_STDOUT: &str = "{}\n";
 /// The event the bridge names a prompt for the resident.
 const USER_PROMPT_SUBMIT: &str = "UserPromptSubmit";
 /// The keys the daemon reads a hook's event from before `hook_event_name`.
 const EARLIER_EVENT_KEYS: [&str; 2] = ["event", "eventName"];
 /// The prompt names the daemon reviews as a `UserPromptSubmit`, compacted.
 const PROMPT_EVENTS: [&str; 3] = ["prompt", "userpromptsubmit", "userpromptsubmitted"];
-const UNAVAILABLE_STDOUT: &str = "{\"permission\": \"deny\", \"user_message\": \"HOL Guard could not complete the native hook decision safely.\"}\n";
-
-/// `_cursor_unavailable_response` for a hook whose input could not be read
-/// before the deadline: its stdout and exit code.
-fn unavailable_output(event: &str) -> (&'static str, i32) {
-    let compact: String = py_strip(event)
-        .to_lowercase()
-        .chars()
-        .filter(|character| !matches!(character, '_' | '-'))
-        .collect();
-    if AFTER_EVENTS.contains(&compact.as_str()) {
-        return ("{}\n", 0);
-    }
-    (UNAVAILABLE_STDOUT, 2)
-}
 
 fn unavailable(event: &str) -> i32 {
     let (stdout, code) = unavailable_output(event);
@@ -162,6 +148,8 @@ pub(crate) fn workspace(
 struct Client {
     guard_home: String,
     home: Option<String>,
+    /// `_cursor_hook_event_from_argv`.
+    event: String,
     deadline: Instant,
 }
 
@@ -205,26 +193,49 @@ fn prompt_event(name: &str) -> bool {
     compact.is_ascii() && PROMPT_EVENTS.contains(&compact.to_ascii_lowercase().as_str())
 }
 
-/// The request the client would send for a `PreToolUse` hook, a prompt or
-/// an `after*` observer, or `None` to run the client.
-fn prepared_request(client: &Client, raw: &[u8]) -> Option<Request> {
+/// Why the bridge does not send a hook it read.
+#[derive(Debug, PartialEq)]
+enum Unread {
+    /// Input `_main_inner` hands to `_exit_unparseable_cursor_input`.
+    Unparseable,
+    /// JSON `json.loads` reads that the port cannot represent.
+    Unported,
+}
+
+/// The object `_read_hook_input` and `json.loads` read from `raw`.
+fn hook_object(raw: &[u8]) -> Result<OMap, Unread> {
+    // `_read_hook_input` raises for a longer hook and for anything
+    // `decode("utf-8-sig")` refuses; `main` answers both as unparseable.
     if raw.len() > MAX_HOOK_INPUT_BYTES {
-        return None;
+        return Err(Unread::Unparseable);
     }
     let body = raw.strip_prefix(b"\xef\xbb\xbf").unwrap_or(raw);
-    let text = std::str::from_utf8(body).ok()?;
+    let text = std::str::from_utf8(body).map_err(|_| Unread::Unparseable)?;
     if py_strip(text).is_empty() {
-        return None;
+        return Err(Unread::Unparseable);
     }
     // `json.loads` skips only JSON whitespace around the document.
     let document = text.trim_matches([' ', '\t', '\n', '\r']);
-    let OValue::Map(payload) = parse_python_json(document).ok()? else {
-        return None;
-    };
+    match parse_python_json(document) {
+        Ok(OValue::Map(payload)) => Ok(payload),
+        Ok(_) | Err(PyJsonError::Decode) => Err(Unread::Unparseable),
+        Err(PyJsonError::Unsupported) => Err(Unread::Unported),
+    }
+}
+
+/// The request the client would send for `raw`, as [`request_for`].
+#[cfg(test)]
+fn prepared_request(client: &Client, raw: &[u8]) -> Option<Request> {
+    request_for(client, &hook_object(raw).ok()?)
+}
+
+/// The request the client would send for a `PreToolUse` hook, a prompt or
+/// an `after*` observer, or `None` to run the client.
+fn request_for(client: &Client, payload: &OMap) -> Option<Request> {
     // Cursor's `after*` hooks prepare as themselves; one is sent only where
     // the client would also answer it as an observer.
-    let event = cursor_client_event(&payload)?;
-    let prepared = prepare_payload("cursor", &payload, None).ok()?;
+    let event = cursor_client_event(payload)?;
+    let prepared = prepare_payload("cursor", payload, None).ok()?;
     let kind = match prepared.get_str("hook_event_name") {
         Some(PRE_TOOL_USE) => Kind::PreToolUse,
         // The daemon reads `event` and `eventName` before this name.
@@ -332,12 +343,23 @@ fn respond(client: &Client, raw: &[u8]) -> Option<(String, i32)> {
     }
 }
 
-/// The bridge's reply to the hook: a live resident's answer, else the
-/// daemon's. A resident answer the bridge cannot render runs the client
-/// without the daemon; a daemon answer it cannot render is handed to the
-/// client when the client can take it over.
+/// The bridge's reply to the hook: the client's own answer to input it
+/// cannot parse, else a live resident's answer, else the daemon's. A
+/// resident answer the bridge cannot render runs the client without the
+/// daemon; a daemon answer it cannot render is handed to the client when
+/// the client can take it over. The client meets a body it would not
+/// accept with daemon recovery and Guard's CLI, and a link it may sign
+/// with Guard's Python, so the bridge answers neither itself.
 fn reply(client: &Client, raw: &[u8]) -> Reply {
-    let Some(request) = prepared_request(client, raw) else {
+    let payload = match hook_object(raw) {
+        Ok(payload) => payload,
+        Err(Unread::Unparseable) => {
+            let (stdout, code) = unparseable_output(&client.event, client.deadline);
+            return Reply::Answered(stdout.to_owned(), code);
+        }
+        Err(Unread::Unported) => return Reply::Client(Fallback::InputUnparsed),
+    };
+    let Some(request) = request_for(client, &payload) else {
         return Reply::Client(Fallback::InputUnparsed);
     };
     let event_name = match request.kind {
@@ -373,7 +395,7 @@ fn reply(client: &Client, raw: &[u8]) -> Reply {
 /// The ported client the installer's argv runs, or `None` for any other
 /// argv or script.
 fn client(python_argv: &[String], started: Instant) -> Option<Client> {
-    let [_, isolated, script, flag, _event] = python_argv else {
+    let [_, isolated, script, flag, event] = python_argv else {
         return None;
     };
     if isolated != "-I" || flag != EVENT_FLAG {
@@ -384,6 +406,9 @@ fn client(python_argv: &[String], started: Instant) -> Option<Client> {
     Some(Client {
         guard_home: constants.guard_home,
         home: constants.home,
+        // `sys.argv` starts at the script, so a script named as the flag
+        // is the one the client reads its event after.
+        event: py_strip(if script == EVENT_FLAG { flag } else { event }).to_owned(),
         deadline: started.checked_add(budget)?,
     })
 }
@@ -436,3 +461,7 @@ mod tests;
 #[cfg(all(test, unix))]
 #[path = "cursor_hook_bridge_daemon_tests.rs"]
 mod daemon_tests;
+
+#[cfg(all(test, unix))]
+#[path = "cursor_hook_bridge_unparsed_tests.rs"]
+mod unparsed_tests;
