@@ -405,6 +405,52 @@ fn a_portable_row_answers_only_the_workspace_resolving_to_it() {
     assert_eq!(answer, Err("mcp_relay_saved_remote_policy"));
 }
 
+/// The claim's fresh resolve (`after_claim`) reads saved lookups through
+/// `store::saved` on the claim's write transaction, query-only, so a
+/// portable block saved after the decision outranks the claimed local allow
+/// there, and `postclaim` answers the fresh block instead of forwarding.
+#[cfg(unix)]
+#[test]
+fn a_portable_block_saved_before_the_claim_outranks_the_claimed_allow() {
+    let (home, connection) = guard_home("claim");
+    let repository = directory("claim", Some("https://github.com/example/claim.git"));
+    let key = workspace_policy_key(Some(&repository)).unwrap();
+    decide(
+        &connection,
+        "workspace",
+        "allow",
+        Some(&key),
+        "approval-gate",
+    );
+    let need = policy_need(ARTIFACT, Some(&repository));
+    let decided = read(&home, &binding(), |saved| {
+        saved.expect("saved rows").answer(&need)
+    });
+    assert_eq!(decided.unwrap().unwrap()["decision"]["action"], "allow");
+    let crate::project_identity::PortableIdentity::Identity(identity) =
+        crate::project_identity::resolve(&repository)
+    else {
+        panic!("the checkout resolves");
+    };
+    decide(
+        &connection,
+        "workspace",
+        "block",
+        Some(&identity),
+        "approval-gate",
+    );
+    let claim = Connection::open(home.join(crate::local_store_read::STORE_FILE_NAME)).unwrap();
+    let transaction = claim.unchecked_transaction().unwrap();
+    claim.execute_batch("PRAGMA query_only = ON").unwrap();
+    let saved = store::saved(&claim, &binding(), home.to_str().unwrap())
+        .unwrap()
+        .expect("saved rows");
+    let fresh = saved.answer(&need).unwrap();
+    assert_eq!(fresh["decision"]["action"], "block");
+    drop(saved);
+    drop(transaction);
+}
+
 #[cfg(unix)]
 #[test]
 fn a_portable_allow_never_lowers_enforcement() {
