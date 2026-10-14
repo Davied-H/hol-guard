@@ -608,12 +608,13 @@
           "src/codex_plugin_scanner/guard/adapters/guard_cli_attestation.py",
           "src/codex_plugin_scanner/guard/adapters/hermes_file_inspection.py",
           "src/codex_plugin_scanner/guard/adapters/managed_mcp_upstream.py",
+          "src/codex_plugin_scanner/guard/adapters/mcp_relay_native.py",
           "src/codex_plugin_scanner/guard/adapters/mcp_servers.py",
           "src/codex_plugin_scanner/guard/adapters/workspace_overrides.py",
           "src/codex_plugin_scanner/guard/adapters/zcode_config.py",
           "src/codex_plugin_scanner/guard/adapters/zcode_contained_tests.py"
         ],
-        "reason": "Reviewed: adapters: harness registry targets (codex, grok, zcode, mcp_servers, cursor native approval, hermes file inspection, capability_report, attestation and path helpers). Loaded through the dynamic adapter registry and reached from approvals.py, cursor_hooks, hook workers and launch_command for run/protect. Install/diagnostics methods share the classes with the launch and approval paths, so the files stay whole in scope."
+        "reason": "Reviewed: adapters: harness registry targets (codex, grok, zcode, mcp_servers and the MCP proxy launcher selection, cursor native approval, hermes file inspection, capability_report, attestation and path helpers). Loaded through the dynamic adapter registry and reached from approvals.py, cursor_hooks, hook workers and launch_command for run/protect. Install/diagnostics methods share the classes with the launch and approval paths, so the files stay whole in scope."
       },
       {
         "path": [
@@ -1912,19 +1913,6 @@
         "reason": "Checking whether the installed Cursor hooks still point at Guard's hook script, for the hook health report and the rebind repair. It inspects installed configuration and never runs on a hook call.",
         "evidence": "live_guard_cursor_hooks_intercept is called only from cursor_hook_health.py and live_cursor_hooks_use_frozen_control_plane only from cursor_hook_rebind.py; both are outside runtime scope. The retained frozen hook runner, managed command builder and artifact detection do not reference these two functions, and the report validates this reference closure on every run. cursor_hook_config.py is a runtime root because run_frozen_cursor_hook runs on every Cursor hook call; that entry point does not reach the excluded symbols.",
         "root_function": true
-      },
-      {
-        "id": "opencode-install-proxy-check",
-        "category": "install_config",
-        "path": "src/codex_plugin_scanner/guard/adapters/opencode_pretool.py",
-        "symbols": [
-          "opencode_config_has_mcp_servers",
-          "_mcp_command_uses_guard_proxy",
-          "opencode_config_uses_guard_proxy"
-        ],
-        "entry_points": [],
-        "reason": "Checking whether OpenCode configuration declares MCP servers and routes them through the Guard proxy, for the native install checks. It reads configuration files during install and doctor, not during a tool call.",
-        "evidence": "The only caller of opencode_config_has_mcp_servers and opencode_config_uses_guard_proxy is cli/native_install_checks.py, which is outside runtime scope. _mcp_command_uses_guard_proxy is reached only from opencode_config_uses_guard_proxy. The retained plugin path, source and install helpers do not reference them, and the report validates this reference closure on every run."
       },
       {
         "id": "edge-event-outbox-builders",

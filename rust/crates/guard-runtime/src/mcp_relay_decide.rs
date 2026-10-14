@@ -7,10 +7,10 @@
 //! the publisher's ACK holds, a harness the binding's MCP view covers, and a
 //! store whose saved lookups the resident reads as the proxy would: none at
 //! all, or only local rows the daemon's published integrity key verifies (see
-//! `mcp_relay_decide_store.rs` and `mcp_relay_decide_saved.rs`). Such a call
-//! is either forwarded (an allow or warn) or blocked (a terminal or stored
-//! block). A block's
-//! evidence is queued for the daemon's drain before the answer is returned.
+//! `mcp_relay_decide_store.rs` and `mcp_relay_decide_saved.rs`), for a call
+//! the package parser finds no intent in (`mcp_relay_decide_package.rs`).
+//! Such a call is forwarded (an allow or warn) or blocked (a terminal or
+//! stored block). A block's evidence is queued for the daemon's drain first.
 //! The proxy records a forward only after the child answered it, so a
 //! forward's evidence is held under a ticket the relay commits once the child
 //! responded; a forward the relay never completes (a catalog boundary change,
@@ -19,10 +19,11 @@
 //! A call the proxy forwards only after claiming its saved allow or one-shot
 //! approval is held for the relay to claim (see `mcp_relay_decide_claim.rs`).
 //!
+//! A call queued under `safe-alternative` blocks (`mcp_relay_decide_queue.rs`).
 //! Every other call defers, and the relay answers it with the proxy's
 //! fail-closed "no native decision" response: remote, bundle or unverifiable
-//! saved policy, a call that needs a prompt, a queue or an observe override,
-//! and any binding, lane or evidence failure.
+//! saved policy, a call that needs a prompt (the `ask` mode), an observe
+//! override, and any binding, lane or evidence failure.
 
 use crate::approval_proof_op::Disposition;
 use crate::mcp_tool_policy_decision::Decision;
@@ -40,6 +41,8 @@ use serde_json::{json, Map, Value};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
+
+pub(crate) use session::session_decidable;
 
 pub(crate) const MCP_RELAY_DECIDE_FEATURE: &str = "mcp-relay-decide-v1";
 const RESULT_SCHEMA: &str = "guard-mcp-relay-decide-result.v1";
@@ -73,6 +76,9 @@ pub(crate) struct McpRelayDecideRequestV1 {
     pub(crate) arguments: McpToolArgumentsV1,
     #[serde(default)]
     pub(crate) launcher_path: Option<String>,
+    /// The proxy's `PATH` as set, which the package parser resolves in.
+    #[serde(default)]
+    pub(crate) path: Option<String>,
     pub(crate) launcher_home: String,
     pub(crate) catalog_state: String,
     /// The `tools/call` params, which the daemon projects into evidence.
@@ -117,6 +123,8 @@ struct Resolved {
     identity: McpToolCallIdentityPayloadV1,
     decision: Decision,
     mode: String,
+    /// The bound `receipt_redaction_level`, which the inbox row is written with.
+    redaction_level: Option<String>,
 }
 
 /// The route the proxy takes for a decided call.
@@ -135,13 +143,47 @@ enum Routed {
         source: String,
         policy_action: String,
     },
+    /// Queue an approval request, as the blocked-request mode answers it.
+    Queue {
+        policy_action: String,
+    },
+    /// The queue route's safe-alternative block (`mcp_relay_decide_queue.rs`).
+    SafeAlternative {
+        policy_action: String,
+        redaction_level: String,
+    },
 }
 
 pub(crate) fn evaluate(
     request: McpRelayDecideRequestV1,
     policy_store: &PolicySnapshotStore,
 ) -> Result<Vec<u8>, String> {
-    encode(decide(&request, policy_store))
+    let answer = decide(&request, policy_store);
+    if matches!(
+        answer,
+        Err(package::PACKAGE_INTENT | package::PACKAGE_AMBIGUOUS)
+    ) {
+        mark_package_server(&request, policy_store);
+    }
+    encode(answer)
+}
+
+/// Hand later sessions of a server whose call went to the package policy to
+/// the proxy, which decides such calls (`mcp_relay_servers.rs`).
+fn mark_package_server(request: &McpRelayDecideRequestV1, policy_store: &PolicySnapshotStore) {
+    let build = &request.build;
+    let Some(identity) = build.server_identity.as_ref() else {
+        return;
+    };
+    let server = crate::mcp_relay_servers::RelayServerV1 {
+        harness: build.harness.clone(),
+        server_name: build.server_name.clone(),
+        source_scope: build.source_scope.clone(),
+        config_path: build.config_path.clone(),
+        server_id: build.server_id.clone(),
+        identity_hash: identity.identity_hash.clone(),
+    };
+    policy_store.mcp_relay_servers().record(&server, true);
 }
 
 fn encode(answer: Result<Answer, &'static str>) -> Result<Vec<u8>, String> {
@@ -184,7 +226,8 @@ fn decide(
             mode: resolved.mode.clone(),
             package_present: false,
             // Both only steer a call that is neither allowed nor blocked,
-            // which defers below whatever they are.
+            // which is answered only under `safe-alternative`, where the
+            // proxy consults neither; any other mode defers its queue route.
             asks_for_approval: false,
             inline_available: false,
             tool_name: request.build.tool_name.clone(),
@@ -219,6 +262,12 @@ fn decide(
                 .map(|ticket| Answer::Claim { ticket })
                 .ok_or(EVIDENCE_FULL)
         }
+        Routed::Queue { policy_action } => {
+            let mode = admitted.binding.review.blocked_request_mode.as_deref();
+            let level = resolved.redaction_level.as_deref();
+            let routed = queue::safe_alternative(mode, level, policy_action)?;
+            settle(request, &resolved, routed, None, policy_store)
+        }
         routed => settle(request, &resolved, routed, None, policy_store),
     }
 }
@@ -252,13 +301,14 @@ fn admit(
     })
 }
 
-/// Build the identity and run the tool policy, reading saved lookups on
-/// `connection`, which the caller holds in one transaction.
+/// Pass the package check, build the identity and run the tool policy,
+/// reading saved lookups on `connection`, held in one transaction.
 fn resolve(
     request: &McpRelayDecideRequestV1,
     admitted: &Admitted,
     connection: Option<&Connection>,
 ) -> Result<Resolved, &'static str> {
+    package::package_gate(request)?;
     let binding = &admitted.binding;
     let control_digest = binding
         .exact_action_control_digest
@@ -276,6 +326,7 @@ fn resolve(
         identity,
         decision,
         mode: view.mode,
+        redaction_level: view.receipt_redaction_level,
     })
 }
 
@@ -292,6 +343,7 @@ fn settle(
     let harness = request.build.harness.as_str();
     let tool = &request.build.tool_name;
     let server = &request.build.server_name;
+    let mut review = None;
     let (blocked, outcome, source, policy_action) = match routed {
         Routed::Forward {
             source,
@@ -326,7 +378,20 @@ fn settle(
             "policy-block".to_owned(),
             "block".to_owned(),
         ),
-        Routed::Claim { .. } => return Err(ROUTE_UNSUPPORTED),
+        Routed::SafeAlternative {
+            policy_action,
+            redaction_level,
+        } => {
+            review = Some(json!({"redaction_level": redaction_level}));
+            let (message, data) = queue::safe_alternative_block(tool, server, &decision.signals);
+            (
+                Some(Answer::Block { message, data }),
+                "block",
+                queue::SAFE_ALTERNATIVE_SOURCE.to_owned(),
+                policy_action,
+            )
+        }
+        Routed::Claim { .. } | Routed::Queue { .. } => return Err(ROUTE_UNSUPPORTED),
     };
     let mut evidence = json!({
         "kind": "mcp_tool_call",
@@ -343,6 +408,10 @@ fn settle(
     });
     if let Some(append) = evidence_append {
         evidence["evidence_append"] = Value::Array(append);
+    }
+    // The silent inbox row the drain writes after the block receipt.
+    if let Some(review) = review {
+        evidence["review"] = review;
     }
     match blocked {
         // The relay commits the ticket once the child answered the forward.
@@ -435,55 +504,18 @@ fn empty_store_answer(need: &Value) -> Result<Value, &'static str> {
     }
 }
 
-/// The proxy route for a decided call, when it is a forward or a block, or a
-/// forward that first claims the pending saved approval.
-fn route(proxy: &Value, decision: &Decision) -> Result<Routed, &'static str> {
-    if proxy["gate"].get("disable") == Some(&Value::Bool(true)) {
-        return Err(ROUTE_UNSUPPORTED);
-    }
-    let routed = &proxy["route"];
-    if !routed["need"].is_null() || !routed["decision_override"].is_null() {
-        return Err(ROUTE_UNSUPPORTED);
-    }
-    let route = &routed["route"];
-    let text = |key: &str| route.get(key).and_then(Value::as_str).map(str::to_owned);
-    let pending = decision.pending.is_some();
-    match route.get("kind").and_then(Value::as_str) {
-        Some("stored_block") if !pending => Ok(Routed::StoredBlock),
-        Some("terminal") if !pending => Ok(Routed::Terminal {
-            policy_action: text("policy_action").ok_or(ROUTE_UNSUPPORTED)?,
-        }),
-        Some("allow_and_forward") if route.get("remember") == Some(&Value::Bool(false)) => {
-            let source = text("decision_source").ok_or(ROUTE_UNSUPPORTED)?;
-            let policy_action = text("policy_action").ok_or(ROUTE_UNSUPPORTED)?;
-            // `approval_decision=decision if route["pass_approval_decision"]`:
-            // a pending decision is claimed before the forward.
-            match (pending, route.get("pass_approval_decision")) {
-                (false, _) => Ok(Routed::Forward {
-                    source,
-                    policy_action,
-                }),
-                (true, Some(Value::Bool(true))) => Ok(Routed::Claim {
-                    source,
-                    policy_action,
-                }),
-                _ => Err(ROUTE_UNSUPPORTED),
-            }
-        }
-        _ => Err(ROUTE_UNSUPPORTED),
-    }
-}
-
-/// Map a decision's view of the call arguments, for the subject.
-fn object(value: Option<&Value>) -> Option<&Map<String, Value>> {
-    value.and_then(Value::as_object)
-}
-
 #[path = "mcp_relay_decide_claim.rs"]
 mod claim;
 pub(crate) use claim::claim;
+#[path = "mcp_relay_decide_package.rs"]
+mod package;
+#[path = "mcp_relay_decide_queue.rs"]
+mod queue;
+use queue::route;
 #[path = "mcp_relay_decide_saved.rs"]
 mod saved;
+#[path = "mcp_relay_decide_session.rs"]
+mod session;
 #[path = "mcp_relay_decide_store.rs"]
 mod store;
 #[path = "mcp_relay_decide_subject.rs"]

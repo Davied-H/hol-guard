@@ -1,6 +1,9 @@
 #![forbid(unsafe_code)]
 #![recursion_limit = "512"]
 
+mod adapter_inventory;
+#[cfg(all(test, unix))]
+mod adapter_vectors_tests;
 mod aibom_artifact;
 mod aibom_discovery;
 mod aibom_extend;
@@ -12,6 +15,7 @@ mod aibom_skill_rules;
 mod aibom_skills;
 #[cfg(all(test, unix))]
 mod aibom_vectors_tests;
+mod antigravity_detect;
 mod approval;
 mod approval_bulk_eligibility_op;
 mod approval_gate_consumers;
@@ -82,6 +86,10 @@ mod claim_reuse_binding_tests;
 mod claim_reuse_then_tests;
 #[cfg(test)]
 mod claim_reuse_vectors_tests;
+mod claude_code_config;
+mod claude_code_detect;
+#[cfg(all(test, unix))]
+mod claude_code_vectors_tests;
 mod claude_guard_question;
 mod claude_hook_bridge;
 mod claude_hook_bridge_auth;
@@ -94,6 +102,12 @@ mod claude_hook_bridge_http_text;
 mod claude_hook_bridge_render;
 mod claude_hook_bridge_transport;
 mod claude_hook_bridge_url;
+#[cfg(unix)]
+mod claude_session_start;
+#[cfg(unix)]
+mod claude_session_start_contract;
+#[cfg(unix)]
+mod claude_session_start_live;
 mod cli_copilot_resolution;
 mod cli_runtime_support_op;
 mod cloud_action_envelope;
@@ -166,7 +180,11 @@ mod continuation_lineage;
 mod continuation_metadata;
 mod continuation_store;
 mod contributed_mcp_decision_op;
+mod copilot_detect;
+#[cfg(all(test, unix))]
+mod copilot_vectors_tests;
 mod critical_floor_op;
+mod cursor_detect;
 mod cursor_hook_bridge;
 mod cursor_hook_bridge_response;
 mod cursor_hook_bridge_script;
@@ -203,6 +221,7 @@ mod decision_authority_op;
 mod decision_authority_vectors_tests;
 mod developer_inspection_authority_op;
 mod developer_inspection_host;
+mod devin_detect;
 mod direct_tool_context_op;
 #[cfg(test)]
 mod direct_tool_context_tests;
@@ -211,6 +230,7 @@ mod discovery_placement_op;
 mod edge;
 mod edge_git_push;
 mod encrypted_secret_store;
+mod gemini_detect;
 mod git_execution_safety_binary;
 mod git_execution_safety_checks;
 mod git_execution_safety_config;
@@ -223,6 +243,7 @@ mod git_execution_safety_tests;
 mod github_cli_classify_op;
 mod github_workflow_context_io;
 mod github_workflow_prepare_op;
+mod grok_detect;
 mod guard_config_coerce;
 mod guard_config_harness;
 mod guard_config_iso;
@@ -359,11 +380,13 @@ mod hook_decision_native_facts_tests;
 mod hook_decision_op;
 mod hook_decision_settle;
 mod hook_direct;
+mod hook_direct_counters;
 mod hook_direct_evidence;
 mod hook_env_stamp;
 mod hook_policy_config;
 mod hook_process_spawn;
 mod hook_render_op;
+mod kimi_detect;
 mod local_cli_grant_op;
 mod local_cli_identify;
 mod local_mcp_grant_identity;
@@ -406,12 +429,16 @@ mod mcp_relay_decide;
 #[cfg(unix)]
 mod mcp_relay_host;
 #[cfg(unix)]
+mod mcp_relay_lane;
+#[cfg(unix)]
 mod mcp_relay_launch;
 #[cfg(unix)]
 mod mcp_relay_order;
 mod mcp_relay_pending;
+mod mcp_relay_ready;
 #[cfg(unix)]
 mod mcp_relay_resident;
+mod mcp_relay_servers;
 mod mcp_runtime_evidence_op;
 mod mcp_sensitive_read;
 #[cfg(test)]
@@ -445,6 +472,7 @@ mod oci_bundle_vectors_tests;
 mod oci_path;
 mod omp_yield_input_scan;
 mod oneshot;
+mod opencode_detect;
 mod package_approval_hash_op;
 mod package_audit_projection_op;
 mod package_authority_config;
@@ -454,6 +482,10 @@ mod package_evaluation_compose_op;
 mod package_policy_resolve_op;
 mod package_posture_op;
 mod package_protect_projection_op;
+mod pi_detect;
+mod pi_glob;
+#[cfg(all(test, unix))]
+mod pi_vectors_tests;
 mod policy_bundle_crypto;
 mod policy_bundle_decisions;
 mod policy_bundle_delivery;
@@ -489,6 +521,7 @@ mod policy_lookup_groups;
 mod policy_lookup_reuse;
 mod policy_snapshot_build;
 mod policy_store;
+mod project_identity;
 mod prompt_analyze_op;
 mod protect_request_op;
 mod pyjson;

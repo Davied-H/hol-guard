@@ -61,7 +61,7 @@ const HOOK_DIRECT_RESULT_SCHEMA: &str = "guard-hook-direct-result.v1";
 /// The bounded bridge harnesses after Cursor have no harness-specific step
 /// on the daemon path for the hooks answered here; the `pi` module defers
 /// the Oh My Pi steps the resident cannot repeat.
-const DIRECT_HARNESSES: [&str; 14] = [
+pub(crate) const DIRECT_HARNESSES: [&str; 14] = [
     "codex",
     CLAUDE_CODE,
     CURSOR,
@@ -137,7 +137,7 @@ pub(crate) struct HookDirectRequestV1 {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum HookDirectDefer {
+pub(crate) enum HookDirectDefer {
     HarnessUnsupported,
     HarnessUnmanaged,
     EventUnsupported,
@@ -164,7 +164,7 @@ enum HookDirectDefer {
 }
 
 impl HookDirectDefer {
-    fn code(self) -> &'static str {
+    pub(crate) fn code(self) -> &'static str {
         match self {
             Self::HarnessUnsupported => "direct_hook_harness_unsupported",
             Self::HarnessUnmanaged => "direct_hook_harness_unmanaged",
@@ -197,7 +197,7 @@ pub(crate) fn evaluate(
     request: HookDirectRequestV1,
     policy_store: &PolicySnapshotStore,
 ) -> Result<Vec<u8>, String> {
-    let body = match answer(request, policy_store) {
+    let body = match crate::hook_direct_counters::counted(request, policy_store, answer) {
         Ok(edge) => json!({
             "schema": HOOK_DIRECT_RESULT_SCHEMA,
             "outcome": "answer",
@@ -290,7 +290,7 @@ fn answer(
         .ok_or(HookDirectDefer::WorkspaceMissing)?;
     let workspace = settled_directory(&candidate)?;
     let (snapshot, binding) = policy_store
-        .admit_direct_hook(&workspace)
+        .admit_direct_hook_or_subdirectory(&workspace)
         .map_err(HookDirectDefer::Lane)?;
     if structured_mediation
         && !pi::structured_output_unrequired(

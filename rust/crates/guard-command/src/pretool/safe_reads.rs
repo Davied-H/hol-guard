@@ -8,7 +8,7 @@ pub(super) use super::directory_targets::verified_cwd_target;
 pub(super) use super::read_paths::{
     bounded_file_read_target, bounded_omp_directory_read_target, bounded_omp_file_read_target,
     bounded_omp_selector_requires_review, bounded_read_target, bounded_structured_file_read_target,
-    safe_read_target, verified_path_context,
+    missing_read_target, safe_read_target, verified_path_context,
 };
 pub(super) use super::safe_scalar::{safe_date_arguments, safe_sleep_arguments};
 pub(super) use super::safe_writes::{
@@ -16,7 +16,8 @@ pub(super) use super::safe_writes::{
     safe_file_mutation_arguments,
 };
 pub(crate) use command_sequences::proven_created_file_removal;
-pub(super) use command_sequences::{exact_safe_sequence, leading_semicolon_cd};
+pub(super) use command_sequences::{exact_safe_sequence, leading_and_cd, leading_semicolon_cd};
+pub(super) use read_globs::glob_file_matches;
 
 pub(super) fn safe_file_predicate_arguments(
     arguments: &[String],
