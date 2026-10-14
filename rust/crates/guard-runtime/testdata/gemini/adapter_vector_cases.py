@@ -434,4 +434,8 @@ def gemini_extra() -> list[dict]:
 
 
 def cases(harness: str) -> list[dict]:
+    if harness == "devin":
+        from devin_vector_cases import devin_cases
+
+        return devin_cases()
     return gemini_cases() + gemini_extra() if harness == "gemini" else antigravity_cases()

@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
-"""Record Gemini and Antigravity detection vectors from the ORIGINAL Python
-implementation.
+"""Record Gemini, Antigravity and Devin detection vectors from the ORIGINAL
+Python implementation.
 
-Run against a checkout that still holds `GeminiHarnessAdapter._entry_hook_command`
-and `AntigravityHarnessAdapter._mcp_source` (the base of the commit that
-introduced the native `gemini_detect` and `antigravity_detect` runner-authority
-kinds), never from Rust output:
+Run against a checkout that still holds the harness's Python discovery
+(`GeminiHarnessAdapter._entry_hook_command`, `AntigravityHarnessAdapter._mcp_source`
+or `DevinHarnessAdapter._claude_hooks_overlap`; the base of the commit that
+introduced its native `<harness>_detect` runner-authority kind), never from
+Rust output:
 
     cd <base-worktree>
     HOL_GUARD_NATIVE_BINARY=<release hol-guard-runtime> \\
         PYTHONPATH=$PWD/src python3 <this-file> gemini <output vectors.json>
 
-and again with `antigravity`. Each case materializes a fixture tree under a
+and again with `antigravity` or `devin`. Each case materializes a fixture tree under a
 temporary root, runs the original `detect` over it and records the artifacts,
 config paths and warnings plus the request the native facade sends. Skill
 discovery and directory identity come from the release resident, so the
@@ -35,19 +36,21 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from adapter_vector_cases import cases
 
-from codex_plugin_scanner.guard.adapters import antigravity, gemini
+from codex_plugin_scanner.guard.adapters import antigravity, devin, gemini
 from codex_plugin_scanner.guard.adapters.base import HarnessContext
 from codex_plugin_scanner.guard.models import GuardArtifact
 
-if not hasattr(gemini.GeminiHarnessAdapter, "_entry_hook_command") or not hasattr(
-    antigravity.AntigravityHarnessAdapter, "_mcp_source"
-):
-    sys.exit("refusing to record: the original Python Gemini and Antigravity discovery is gone")
+ADAPTERS = {
+    "gemini": gemini.GeminiHarnessAdapter,
+    "antigravity": antigravity.AntigravityHarnessAdapter,
+    "devin": devin.DevinHarnessAdapter,
+}
+ORIGINALS = {"gemini": "_entry_hook_command", "antigravity": "_mcp_source", "devin": "_claude_hooks_overlap"}
 if not os.environ.get("HOL_GUARD_NATIVE_BINARY"):
     sys.exit("set HOL_GUARD_NATIVE_BINARY to a release hol-guard-runtime")
 
 gemini.extend_detection_with_workspace_aibom = lambda detection, **_: detection
-ADAPTERS = {"gemini": gemini.GeminiHarnessAdapter, "antigravity": antigravity.AntigravityHarnessAdapter}
+devin.extend_detection_with_workspace_aibom = lambda detection, **_: detection
 
 
 def provision_native(guard_home: Path) -> None:
@@ -130,6 +133,8 @@ def facade_args(harness: str, context: HarnessContext) -> dict:
     }
     if not context.home_dir.is_absolute() or (workspace is not None and not workspace.is_absolute()):
         request["cwd"] = os.getcwd()
+    if harness == "devin":
+        request["config_dir"] = str(devin.DevinHarnessAdapter._devin_config_dir(context))
     return request
 
 
@@ -173,6 +178,8 @@ def main() -> None:
     from codex_plugin_scanner.guard.native_resident_client import close_native_residents
 
     harness, destination = sys.argv[1], Path(sys.argv[2])
+    if not hasattr(ADAPTERS[harness], ORIGINALS[harness]):
+        sys.exit(f"refusing to record: the original Python {harness} discovery is gone")
     guard_home = Path(tempfile.mkdtemp(prefix="adapter-vec-guard-")).resolve() / "guard"
     provision_native(guard_home)
     try:
