@@ -1,5 +1,5 @@
-use std::io::BufReader;
-use std::net::TcpListener;
+use std::io::{BufRead, BufReader, Read};
+use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 
 use super::*;
 use crate::claude_hook_bridge_fixture::{
-    challenge_answer, read_request, sign, write_private, write_response, GuardHome,
+    challenge_answer, sign, write_private, write_response, GuardHome,
 };
 
 pub(crate) const TOKEN: &str = "daemon-token-fixture";
@@ -24,6 +24,32 @@ pub(crate) enum Reply {
     Refuse(u16),
     /// Answer `/healthz`, then optionally rewrite the daemon state.
     Health(u16, &'static str, Option<(PathBuf, String)>),
+}
+
+/// The request target and body; unlike the bridge fixture's reader this
+/// accepts a `GET` without `Content-Length`, as `/healthz` sends it.
+fn read_any_request(reader: &mut BufReader<TcpStream>) -> Option<(String, Vec<u8>)> {
+    let mut line = String::new();
+    if reader.read_line(&mut line).ok()? == 0 {
+        return None;
+    }
+    let target = line.split(' ').nth(1)?.to_owned();
+    let mut length = 0;
+    loop {
+        let mut line = String::new();
+        reader.read_line(&mut line).ok()?;
+        let line = line.trim_end();
+        if line.is_empty() {
+            break;
+        }
+        let (key, value) = line.split_once(':')?;
+        if key.trim().eq_ignore_ascii_case("content-length") {
+            length = value.trim().parse().ok()?;
+        }
+    }
+    let mut body = vec![0; length];
+    reader.read_exact(&mut body).ok()?;
+    Some((target, body))
 }
 
 /// A live-looking state: this process's pid, a bound token, compatible.
@@ -60,13 +86,13 @@ pub(crate) fn serve(
                 .set_read_timeout(Some(Duration::from_secs(10)))
                 .unwrap();
             let mut writer = stream.try_clone().unwrap();
-            let Some(request) = read_request(&mut BufReader::new(stream)) else {
+            let Some((target, body)) = read_any_request(&mut BufReader::new(stream)) else {
                 continue;
             };
-            targets.push(request.target.clone());
+            targets.push(target);
             match reply {
                 Reply::Challenge => {
-                    let body: Value = serde_json::from_slice(&request.body).unwrap();
+                    let body: Value = serde_json::from_slice(&body).unwrap();
                     let answer = challenge_answer(
                         &state,
                         body["nonce"].as_str().unwrap(),
