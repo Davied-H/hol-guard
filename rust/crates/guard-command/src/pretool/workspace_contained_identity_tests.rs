@@ -4,15 +4,21 @@
 use super::identity_expansions_only;
 use crate::pretool::workspace_contained_tests::{host, reason, workspace, CONTAINED};
 
-fn segment(command: &str) -> crate::CommandSegmentV1 {
-    let model = crate::parse_command(&crate::CommandModelRequestV1 {
+/// Whether the command's first segment counts as identity-only. A command the
+/// parser cannot model has no segment, and is not counted.
+fn recognized(command: &str, name: &str) -> bool {
+    let Ok(model) = crate::parse_command(&crate::CommandModelRequestV1 {
         command: command.to_owned(),
         dialect: "posix".to_owned(),
         transport: "shell_string".to_owned(),
         extraction_provenance: "guard-shell".to_owned(),
-    })
-    .unwrap();
-    model.segments.into_iter().next().unwrap()
+    }) else {
+        return false;
+    };
+    model
+        .segments
+        .first()
+        .is_some_and(|segment| identity_expansions_only(segment, name))
 }
 
 #[test]
@@ -24,10 +30,7 @@ fn quoted_identity_expansions_are_recognized() {
         "git -c User.Name=\"${LOGNAME:-dev.user}\" commit -m x",
         "git -c \"user.name=$USER\" -c author.email=\"${EMAIL:-a@b.c}\" commit -m x",
     ] {
-        assert!(
-            identity_expansions_only(&segment(command), "git"),
-            "{command}"
-        );
+        assert!(recognized(command, "git"), "{command}");
     }
 }
 
@@ -59,16 +62,10 @@ fn other_expansions_are_not_identity_expansions() {
         "git commit -c \"$REF\"",
         "git commit -c user.name=\"$USER\"",
     ] {
-        assert!(
-            !identity_expansions_only(&segment(command), "git"),
-            "{command}"
-        );
+        assert!(!recognized(command, "git"), "{command}");
     }
     let command = "sh -c user.name=\"$USER\"";
-    assert!(
-        !identity_expansions_only(&segment(command), "sh"),
-        "{command}"
-    );
+    assert!(!recognized(command, "sh"), "{command}");
 }
 
 #[test]
