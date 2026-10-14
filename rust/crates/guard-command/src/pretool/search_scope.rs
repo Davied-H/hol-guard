@@ -74,7 +74,7 @@ pub(super) fn claude_grep_directory_scope_proven(
         return false;
     };
     !super::read_paths::inside_agent_state_tree(&root, home_dir)
-        && walk_scope(&root, &filter, Ignores::Ripgrep).is_ok()
+        && walk_scope(&root, &filter, Ignores::Ripgrep, false).is_ok()
 }
 
 /// True when a Claude `Glob` returns only names under a verified directory
@@ -155,17 +155,18 @@ pub(super) fn unfiltered_directory_scope_proven(
 
 fn unfiltered_walk_proven(root: &Path) -> bool {
     SearchFilter::from_input(&Map::new())
-        .is_some_and(|filter| walk_scope(root, &filter, Ignores::None).is_ok())
+        .is_some_and(|filter| walk_scope(root, &filter, Ignores::None, false).is_ok())
 }
 
 /// Oh My Pi `glob` walks below its fixed prefix and returns names only. Below
 /// a workspace cwd (not the home directory or an ancestor of it) that is the
-/// listing `find` already gets; anywhere else no sensitive file may be
-/// reachable below the prefix.
+/// listing `find` already gets, provided no link leads the walk out of the
+/// prefix; anywhere else no sensitive file may be reachable below it.
 pub(super) fn omp_glob_scope_proven(
     target: &str,
     home_dir: Option<&str>,
     cwd: Option<&str>,
+    gitignore: bool,
 ) -> bool {
     let Some(root) = unfiltered_directory_root(target, home_dir, cwd) else {
         return false;
@@ -175,7 +176,17 @@ pub(super) fn omp_glob_scope_proven(
         let home = std::fs::canonicalize(home).ok()?;
         (!home.starts_with(&cwd)).then_some(cwd)
     });
-    workspace.is_some_and(|cwd| root.starts_with(cwd)) || unfiltered_walk_proven(&root)
+    let ignores = if gitignore {
+        Ignores::Gitignore
+    } else {
+        Ignores::None
+    };
+    let names_walk = || {
+        SearchFilter::from_input(&Map::new())
+            .is_some_and(|filter| walk_scope(&root, &filter, ignores, true).is_ok())
+    };
+    workspace.is_some_and(|cwd| root.starts_with(cwd)) && names_walk()
+        || unfiltered_walk_proven(&root)
 }
 
 /// Oh My Pi `grep` variant of [`content_search_scope_proven`]. The host
@@ -195,7 +206,7 @@ pub(super) fn omp_grep_scope_proven(
         (!super::read_paths::inside_agent_state_tree(&root, home_dir)
             || super::read_paths::agent_state_tree_holds_only_documents(&root, home_dir))
             && SearchFilter::from_input(&Map::new())
-                .is_some_and(|filter| walk_scope(&root, &filter, Ignores::Gitignore).is_ok())
+                .is_some_and(|filter| walk_scope(&root, &filter, Ignores::Gitignore, false).is_ok())
     })
 }
 
@@ -358,7 +369,14 @@ struct PendingDirectory {
     tiers: Rc<IgnoreTiers>,
 }
 
-fn walk_scope(root: &Path, filter: &SearchFilter, ignores: Ignores) -> Result<(), ScopeUnproven> {
+/// With `names`, the walk models a names-only listing: sensitive names are
+/// fine, but every link must resolve inside `root`.
+fn walk_scope(
+    root: &Path,
+    filter: &SearchFilter,
+    ignores: Ignores,
+    names: bool,
+) -> Result<(), ScopeUnproven> {
     let repository = repository_root(root).filter(|_| ignores != Ignores::None);
     let mut tiers = IgnoreTiers::default();
     if ignores == Ignores::Ripgrep {
@@ -415,7 +433,7 @@ fn walk_scope(root: &Path, filter: &SearchFilter, ignores: Ignores) -> Result<()
             let name = name.to_str().ok_or(ScopeUnproven)?;
             // The Claude walk models ripgrep and skips .git. The host-neutral
             // walk has no such model, so it must inspect repository metadata.
-            if name == ".git" && ignores == Ignores::Ripgrep {
+            if name == ".git" && (ignores == Ignores::Ripgrep || names) {
                 continue;
             }
             // Metadata only: never follow links or open a candidate secret.
@@ -424,7 +442,12 @@ fn walk_scope(root: &Path, filter: &SearchFilter, ignores: Ignores) -> Result<()
                 // Claude's Grep does not follow links. Still refuse a link
                 // whose name or file target is sensitive, in case it would.
                 let target = std::fs::canonicalize(&path).ok();
-                if sensitive_scope_file(&path)
+                let escapes = !target.as_deref().is_some_and(|t| t.starts_with(root));
+                if names {
+                    if escapes {
+                        return Err(ScopeUnproven);
+                    }
+                } else if sensitive_scope_file(&path)
                     || target
                         .as_deref()
                         .is_some_and(|target| target.is_file() && sensitive_scope_file(target))
@@ -454,7 +477,7 @@ fn walk_scope(root: &Path, filter: &SearchFilter, ignores: Ignores) -> Result<()
                     depth: directory.depth + 1,
                     tiers: Rc::clone(&tiers),
                 });
-            } else if searched && sensitive_scope_file(&path) {
+            } else if searched && !names && sensitive_scope_file(&path) {
                 return Err(ScopeUnproven);
             }
         }

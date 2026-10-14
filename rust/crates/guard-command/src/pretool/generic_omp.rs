@@ -235,10 +235,11 @@ fn listing(
         }
     }
     let recursive = signals.tool_name.as_deref() == Some("find") || input.contains_key("pattern");
+    let gitignore = input.get("gitignore").and_then(Value::as_bool) != Some(false);
     let targets = search_targets(input_path(input, signals)?.unwrap_or("."), context)?;
     targets
         .into_iter()
-        .all(|target| listing_target_proven(target, signals, recursive, context))
+        .all(|target| listing_target_proven(target, signals, (recursive, gitignore), context))
         .then(|| {
             directory_allow(
                 context,
@@ -251,7 +252,7 @@ fn listing(
 fn listing_target_proven(
     target: &str,
     signals: &GenericSignals,
-    recursive: bool,
+    (recursive, gitignore): (bool, bool),
     context: &OmpContext<'_>,
 ) -> bool {
     if signals.tool_name.as_deref() == Some("glob") && target.contains(['{', '}']) {
@@ -262,13 +263,14 @@ fn listing_target_proven(
         let anchored = target
             .find(['*', '?', '[', '{'])
             .is_some_and(|index| target[..index].contains('/'));
+        let (options, walk) = ((recursive, gitignore), (true, gitignore));
         return brace_expansions(target).is_some_and(|expansions| {
             expansions.iter().all(|expansion| {
                 if anchored || expansion.starts_with("**/") {
-                    return listing_target_proven(expansion, signals, recursive, context);
+                    return listing_target_proven(expansion, signals, options, context);
                 }
                 contained_selector(expansion)
-                    && listing_target_proven(&format!("**/{expansion}"), signals, true, context)
+                    && listing_target_proven(&format!("**/{expansion}"), signals, walk, context)
             })
         });
     }
@@ -293,6 +295,7 @@ fn listing_target_proven(
             target,
             context.path.home_dir,
             context.path.cwd,
+            gitignore,
         )
     {
         return false;
