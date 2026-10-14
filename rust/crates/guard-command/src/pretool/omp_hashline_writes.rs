@@ -12,8 +12,8 @@
 //! `Update File:`-style noise and leading `***`, and recovers lowercase tags.
 //! This parser accepts only the plain grammar, so every target it reports is
 //! the file Oh My Pi would open. Deletes (`REM`), moves (`MV`), quoted or
-//! decorated paths, `~` and anything else it does not recognize leave the
-//! edit unproven.
+//! decorated paths, `~` other than a leading `~/`, and anything else it does
+//! not recognize leave the edit unproven.
 
 use std::path::Path;
 
@@ -102,10 +102,16 @@ fn header_path(line: &str) -> Option<(&str, bool)> {
     }
     let path = path.trim();
     // Oh My Pi rewrites quoted, starred and `Update File:`-prefixed paths
-    // before opening them, and `~` or a scheme names another location, so
-    // only a path it would open as written is reported.
-    let plain =
-        !path.is_empty() && !path.starts_with(['"', '\'', '*', '~']) && !path.contains(['#', ':']);
+    // before opening them, and a scheme names another location, so only a
+    // path it would open as written is reported. It opens a leading `~/`
+    // under the home folder, and shows paths that way, so models copy it.
+    let home_relative = path
+        .strip_prefix('~')
+        .is_none_or(|rest| rest.starts_with('/'));
+    let plain = !path.is_empty()
+        && home_relative
+        && !path.starts_with(['"', '\'', '*'])
+        && !path.contains(['#', ':']);
     plain.then_some((path, tagged))
 }
 
@@ -119,6 +125,10 @@ pub(super) fn evaluate_hashline_edit(
     let targets = hashline_targets(input)?;
     let mut missing = false;
     for (target, tagged) in &targets {
+        let target = &match target.strip_prefix("~/") {
+            Some(rest) => Path::new(home_dir?).join(rest).to_str()?.to_owned(),
+            None => target.clone(),
+        };
         // Only an ordinary name may say it is missing; a sensitive or
         // protected one keeps its review.
         let missing_target = || {
