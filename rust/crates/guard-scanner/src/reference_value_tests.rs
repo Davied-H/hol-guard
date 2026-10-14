@@ -137,6 +137,11 @@ fn quoted_references_and_placeholders_do_not_hide_literal_tails() {
         format!("TOKEN=\"$2\"{secret}"),
         format!("TOKEN=\"${{NAME:-}}\"{secret}"),
         format!("TOKEN=\"<your-token>\"{secret}"),
+        format!("TOKEN=\"$2\",{secret}"),
+        format!("TOKEN=\"${{NAME:-}}\"]{secret}"),
+        format!("TOKEN=\"$CI_API_TOKEN\"}}{secret}"),
+        format!("TOKEN=\"$2\"''{secret}"),
+        format!("TOKEN=\"$2\"\"<your-token>\"{secret}"),
         format!("TOKEN=\"<your-token>\" + \"{secret}\""),
         format!("TOKEN=<your-token>\"{secret}\""),
     ] {
@@ -144,6 +149,12 @@ fn quoted_references_and_placeholders_do_not_hide_literal_tails() {
     }
     assert!(!credential_assignment(
         "TOKEN=\"$2\"; const label = 'ordinary text';"
+    ));
+    assert!(!credential_assignment("TOKEN=\"$2\"''"));
+    assert!(!credential_assignment("{\"token\":\"${TOKEN}\"}"));
+    assert!(!credential_assignment("const obj = {token: \"${TOKEN}\"};"));
+    assert!(!credential_assignment(
+        "TOKEN=\"<your-token>\"\"<your-token>\""
     ));
     assert!(!credential_assignment(
         "export TOKEN=<your-token>; echo \"ready\""

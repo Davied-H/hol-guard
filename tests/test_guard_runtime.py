@@ -1003,6 +1003,7 @@ clearer UX and an implementation plan with technical references.
                 "stdout": (
                     "src/config.ts:1:const auth_token = process.env.TOKEN;\n"
                     "src/config.ts:2:function client(apiKey: string) {}\n"
+                    'src/config.ts:3:const obj = {token: "${TOKEN}"};\n'
                 ),
             },
             "source_scope": "project",
@@ -1031,6 +1032,9 @@ clearer UX and an implementation plan with technical references.
         [
             'TOKEN="$2" + "{}"',
             'TOKEN="$2"{}',
+            'TOKEN="$2",{}',
+            'TOKEN="$2"]{}',
+            "TOKEN=\"$2\"''{}",
             'TOKEN=<your-token> + "{}"',
             'TOKEN=std::env::var("TOKEN").unwrap_or("{}".into())',
         ],

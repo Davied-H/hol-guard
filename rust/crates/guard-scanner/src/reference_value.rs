@@ -77,19 +77,10 @@ pub(crate) fn is_reference(matched: &str, rest_of_line: &str) -> bool {
     let single = value.len() >= 2 && value.starts_with('\'') && value.ends_with('\'');
     if double || single {
         let literal = &value[1..value.len() - 1];
-        // Shell words can join a quoted reference to an unquoted literal.
-        // Keep the match when that continuation has no proven boundary.
-        let attached = rest_of_line.chars().next().is_some_and(|character| {
-            !character.is_whitespace()
-                && !matches!(
-                    character,
-                    '"' | '\'' | '`' | ';' | ',' | ')' | ']' | '}' | '>' | '<' | '&' | '|'
-                )
-        });
         return (PLACEHOLDER.is_match(literal)
             || QUOTED_PARAMETER.is_match(literal)
             || (double && EXPANDED_VARIABLE.is_match(literal)))
-            && !attached
+            && !has_attached_literal(rest_of_line)
             && !hides_literal("", rest_of_line);
     }
     let placeholder = PLACEHOLDER.is_match(value);
@@ -98,17 +89,57 @@ pub(crate) fn is_reference(matched: &str, rest_of_line: &str) -> bool {
             || !hides_literal(if placeholder { "" } else { value }, rest_of_line))
 }
 
-/// Whether the expression that `value` starts carries a string literal later
-/// on the line: a default, a fallback or the value assigned after a type
-/// annotation. A variable name directly inside a call or index, such as
-/// `getenv("TOKEN"` or `environ["TOKEN"`, is the lookup's argument.
-fn hides_literal(value: &str, rest: &str) -> bool {
+/// A shell word can concatenate empty quotes, placeholders and bare text.
+/// Only shell operators or whitespace prove the end of that word; commas
+/// and closing brackets can themselves belong to an unquoted literal.
+fn has_attached_literal(rest: &str) -> bool {
+    let (mut rest, truncated) = bounded_continuation(rest);
+    while let Some(character) = rest.chars().next() {
+        if is_shell_word_boundary(character) {
+            return false;
+        }
+        if matches!(character, ',' | ']' | '}') {
+            let tail = rest.trim_start_matches([',', ']', '}']);
+            if tail.is_empty() {
+                return truncated;
+            }
+            // Closing source delimiters must not hide text joined to them.
+            return !tail.chars().next().is_some_and(is_shell_word_boundary);
+        }
+        if !matches!(character, '"' | '\'') {
+            return true;
+        }
+        let body = &rest[1..];
+        let Some(end) = body.find(character) else {
+            return true;
+        };
+        if is_hidden_value(&body[..end], false) {
+            return true;
+        }
+        rest = &body[end + 1..];
+    }
+    truncated
+}
+
+fn is_shell_word_boundary(character: char) -> bool {
+    character.is_whitespace() || matches!(character, ';' | ')' | '>' | '<' | '&' | '|')
+}
+
+fn bounded_continuation(rest: &str) -> (&str, bool) {
     let truncated = rest.len() > MAX_REFERENCE_CONTINUATION_BYTES;
     let mut end = rest.len().min(MAX_REFERENCE_CONTINUATION_BYTES);
     while !rest.is_char_boundary(end) {
         end -= 1;
     }
-    let rest = &rest[..end];
+    (&rest[..end], truncated)
+}
+
+/// Whether the expression that `value` starts carries a string literal later
+/// on the line: a default, a fallback or the value assigned after a type
+/// annotation. A variable name directly inside a call or index, such as
+/// `getenv("TOKEN"` or `environ["TOKEN"`, is the lookup's argument.
+fn hides_literal(value: &str, rest: &str) -> bool {
+    let (rest, truncated) = bounded_continuation(rest);
     let mut depth = 0i32;
     for character in value.chars() {
         match character {
