@@ -384,6 +384,10 @@ def github_capability_contract(capability: GitHubCommandCapability) -> GitHubCap
     return _CONTRACTS[capability]
 
 
+def github_capability_contracts() -> tuple[GitHubCapabilityContract, ...]:
+    return tuple(_CONTRACTS[capability] for capability in _CAPABILITY_ORDER)
+
+
 def strongest_github_capability(capabilities: tuple[GitHubCommandCapability, ...]) -> GitHubCommandCapability:
     if not capabilities:
         raise ValueError("at least one GitHub capability is required")
