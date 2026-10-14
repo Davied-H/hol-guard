@@ -170,7 +170,8 @@ pub(super) fn proven_alone(
 }
 
 /// A review reason for a lone `git worktree add` whose new checkout would sit
-/// outside home, where the proof above never admits it. Agents told only that
+/// outside home and the temporary directories, where the proof above never
+/// admits it. Agents told only that
 /// the command "could not be confirmed read-only" tend to copy the repository
 /// by hand instead; naming the home-directory bound lets them pick a
 /// destination the proof accepts. `None` for every other command.
@@ -206,11 +207,11 @@ pub(super) fn outside_home_reason(
         Path::new(&base).join(supplied)
     };
     let parent = std::fs::canonicalize(target.parent()?).ok()?;
-    if parent.starts_with(&home) {
+    if parent.starts_with(&home) || super::git_routes::temporary_checkout_parent(&parent, context) {
         return None;
     }
     Some(
-        "HOL Guard requires review because `git worktree add` runs without review only when the new checkout's parent directory is inside your home directory. Repeat it with a destination under your home directory, such as a sibling of the repository, or ask the user to approve it in the HOL Guard inbox.".to_owned(),
+        "HOL Guard requires review because `git worktree add` runs without review only when the new checkout's parent directory is inside your home directory or a temporary directory such as `/tmp`. Repeat it with a destination under one of those, such as a sibling of the repository or a new directory in `/tmp`, or ask the user to approve it in the HOL Guard inbox.".to_owned(),
     )
 }
 
@@ -487,8 +488,9 @@ fn fresh_destination(value: &str, context: super::PathContext<'_>) -> Option<Pat
     let canonical_parent = std::fs::canonicalize(parent).ok()?;
     // A checkout below the shared temporary directory, where the user owns
     // every directory on the way, is as private as one below home. Directly
-    // in it, another user could have made the empty directory Git fills.
-    let temporary = super::git_routes::owned_temporary_directory(&canonical_parent, context);
+    // in the sticky root or the user's own temporary directory, the leaf
+    // must not exist yet, which the check above already proves.
+    let temporary = super::git_routes::temporary_checkout_parent(&canonical_parent, context);
     if parent_metadata.file_type().is_symlink() || !canonical_parent.is_dir() {
         return None;
     }
