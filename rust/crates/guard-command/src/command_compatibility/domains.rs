@@ -5,6 +5,8 @@ use super::{basename, CanonicalCommandV1, CommandSegmentV1, CompatibilityObserva
 
 #[path = "interpreter.rs"]
 mod interpreter;
+#[path = "redirects.rs"]
+mod redirects;
 
 fn sensitive(value: &str) -> bool {
     let value = value.to_ascii_lowercase().replace('\\', "/");
@@ -365,7 +367,13 @@ pub(super) fn observe(
             | "chown"
             | "chgrp"
     );
-    let redirect = segment.text.contains('>');
+    // A quoted `>` in a POSIX argument (a Markdown placeholder or arrow in a
+    // comment body) writes nothing; interpreter code keeps the raw check.
+    let redirect = if interpreter || command.dialect != "posix" {
+        segment.text.contains('>')
+    } else {
+        redirects::unquoted_redirect(&segment.text)
+    };
     if write_command || redirect || interpreter {
         if [".hol-guard", ".codex/", ".claude/", "hol-guard/config"]
             .iter()
