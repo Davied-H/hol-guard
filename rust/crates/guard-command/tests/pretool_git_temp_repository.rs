@@ -206,13 +206,16 @@ fn execution_capable_repository_configuration_stays_reviewed() {
             executable(&s.app.join(".git/hooks/post-index-change"));
         }),
         ("shared-hookspath", |s: &Scratch| {
-            // Not created yet: another local user could create it below the
-            // shared, world-writable `/tmp` before the read runs.
-            let hooks = format!("/tmp/guard-shared-hooks-{}", std::process::id());
+            // Not created yet, below a directory anyone may write: another
+            // local user could create it with a hook before the read runs.
+            let shared = s.root.join("scratch/shared");
+            std::fs::create_dir_all(&shared).unwrap();
+            std::fs::set_permissions(&shared, std::fs::Permissions::from_mode(0o777)).unwrap();
+            let hooks = shared.join("hooks");
             git(
                 &s.app,
                 &s.home,
-                &["config", "core.hooksPath", hooks.as_str()],
+                &["config", "core.hooksPath", hooks.to_str().unwrap()],
             );
         }),
     ];

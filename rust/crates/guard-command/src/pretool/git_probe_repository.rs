@@ -138,9 +138,13 @@ fn executable(metadata: &std::fs::Metadata) -> bool {
 /// user and grant no group or other write access. A missing path is judged by
 /// its nearest existing ancestor, since whoever controls that directory could
 /// create the path (a hook directory, say) between this probe and the read:
-/// a hooks path straight below the sticky, world-writable `/tmp` therefore
-/// stays reviewed. Elsewhere the sibling and workspace route proofs already
-/// decide where Git may run.
+/// below a directory another user owns or anyone may write it stays reviewed.
+/// A missing path straight below the shared root itself (`core.hooksPath=
+/// /tmp/no-hooks`) is accepted: only a hostile co-resident account racing the
+/// window between this probe and the read could create it there, while a
+/// hook planted ahead of the read already exists and `hook_inert` screens it.
+/// Elsewhere the sibling and workspace route proofs already decide where Git
+/// may run.
 #[cfg(unix)]
 fn owned_where_shared(path: &Path, roots: &[PathBuf]) -> bool {
     use std::os::unix::fs::MetadataExt;
@@ -155,6 +159,9 @@ fn owned_where_shared(path: &Path, roots: &[PathBuf]) -> bool {
     };
     let landing = existing.join(&missing);
     if !roots.iter().any(|root| landing.starts_with(root)) {
+        return true;
+    }
+    if !missing.as_os_str().is_empty() && roots.contains(&existing) {
         return true;
     }
     let me = nix::unistd::geteuid().as_raw();
@@ -214,13 +221,20 @@ mod tests {
 
     #[test]
     fn missing_paths_others_could_create_stay_reviewed() {
-        let root = root("sticky", 0o1777);
-        // `core.hooksPath` naming a directory no one has created yet.
-        assert!(!shared(&root, "shared-hooks"));
-        assert!(!shared(&root, "shared-hooks/nested"));
+        let root = root("writable", 0o1777);
+        let foreign = root.join("foreign");
+        std::fs::create_dir(&foreign).unwrap();
+        std::fs::set_permissions(&foreign, std::fs::Permissions::from_mode(0o777)).unwrap();
+        // `core.hooksPath` naming a directory not created yet below a
+        // directory anyone may write.
+        assert!(!shared(&root, "foreign/hooks"));
+        assert!(!shared(&root, "foreign/hooks/nested"));
         assert!(!shared(&root, "repo/.git/missing/../../../shared-hooks"));
         std::os::unix::fs::symlink(root.join("absent"), root.join("dangling")).unwrap();
         assert!(!shared(&root, "dangling"));
+        assert!(!shared(&root, "dangling/hooks"));
+        // The shared root itself is never owned and private.
+        assert!(!shared(&root, ""));
         std::fs::remove_dir_all(&root).unwrap();
     }
 
@@ -230,6 +244,9 @@ mod tests {
         assert!(shared(&root, "repo/.git"));
         assert!(shared(&root, "repo/.git/hooks"));
         assert!(shared(&root, "repo/.git/hooks/nested"));
+        // `core.hooksPath=/tmp/no-hooks`: missing straight below the root.
+        assert!(shared(&root, "no-hooks"));
+        assert!(shared(&root, "no-hooks/nested"));
         let elsewhere = std::fs::canonicalize(std::env::temp_dir()).unwrap();
         assert!(owned_where_shared(
             &root.join("shared-hooks"),
