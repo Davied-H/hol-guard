@@ -2,6 +2,9 @@
 #![recursion_limit = "512"]
 
 mod aibom_artifact;
+mod adapter_inventory;
+#[cfg(all(test, unix))]
+mod adapter_vectors_tests;
 mod aibom_discovery;
 mod aibom_extend;
 mod aibom_marketplace;
@@ -12,6 +15,7 @@ mod aibom_skill_rules;
 mod aibom_skills;
 #[cfg(all(test, unix))]
 mod aibom_vectors_tests;
+mod antigravity_detect;
 mod approval;
 mod approval_bulk_eligibility_op;
 mod approval_gate_consumers;
@@ -223,6 +227,7 @@ mod git_execution_safety_probe;
 mod git_execution_safety_repo_tests;
 #[cfg(test)]
 mod git_execution_safety_tests;
+mod gemini_detect;
 mod github_cli_classify_op;
 mod github_workflow_context_io;
 mod github_workflow_prepare_op;

@@ -17,9 +17,11 @@ use guard_policy_snapshot::digest_bytes;
 use serde_json::Value;
 
 use super::aibom_op as aibom;
+use super::antigravity_detect;
 use super::codex_detect;
 use super::context_digest_json::write_canonical_json_with_limit;
 use super::copilot_detect;
+use super::gemini_detect;
 use super::hermes_detect;
 use super::oci_bundle_op as oci;
 use super::pi_detect;
@@ -120,6 +122,8 @@ pub(crate) fn dispatch(kind: &str, args: &Value) -> KindResult {
         "pi_detect" => pi_detect::detect(args),
         "codex_detect" => codex_detect::detect(args),
         "copilot_detect" => copilot_detect::detect(args),
+        "gemini_detect" => gemini_detect::detect(args),
+        "antigravity_detect" => antigravity_detect::detect(args),
         _ => Err(ERR_KIND),
     }
 }
