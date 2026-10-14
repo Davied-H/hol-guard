@@ -18,6 +18,7 @@ from typing import cast
 
 from .native_policy_snapshot_direct_lane import DIRECT_HOOK_SAVED_DECISION_FEATURE
 from .runtime.extension_control_runtime import current_extension_control_binding_digest
+from .store_base import _now
 
 # Mirrors the resident limits in guard-policy-snapshot's direct_lane module.
 _MAX_ENVIRONMENT_ENTRIES = 1024
@@ -92,6 +93,29 @@ def _integrity_state(store: object) -> dict[str, object] | None:
     ):
         return None
     return dict(state)
+
+
+def refresh_integrity_state(store: object) -> None:
+    """Bring the stored policy-integrity state current with the store's own writer.
+
+    The resident accepts a saved decision only while the published state equals
+    the stored row. Readers refresh that row lazily: a fresh home has none, and
+    a saved decision advances the generation after its write refreshed it. So
+    the publisher refreshes it before observing its inputs, without minting a
+    key: a fresh home then binds a real state, and a policy write, which moves
+    ``guard.db``, republishes the state that write left.
+    """
+
+    connect = getattr(store, "_connect", None)
+    refresh = getattr(store, "_refresh_policy_integrity_state", None)
+    if not callable(connect) or not callable(refresh):
+        return
+    try:
+        with cast("AbstractContextManager[object]", connect()) as connection:
+            refresh(connection, now=_now(), create_key=False)
+    except (OSError, RuntimeError, ValueError, sqlite3.Error):
+        # The row stays as it was; a stale or missing one fails closed.
+        return
 
 
 def with_saved_decision_state(

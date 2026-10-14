@@ -26,7 +26,7 @@ from .native_policy_snapshot_direct_lane_review import (
     review_facts_bound,
     with_review_facts,
 )
-from .native_policy_snapshot_direct_lane_saved import with_saved_decision_state
+from .native_policy_snapshot_direct_lane_saved import refresh_integrity_state, with_saved_decision_state
 from .native_policy_snapshot_direct_lane_structured import (
     bound_structured_output_view,
     with_structured_output_view,
@@ -247,6 +247,7 @@ class NativePolicySnapshotPublicationMixin:
                     # now would make the ACKed digest disagree with the
                     # settled-only reconcile and withdraw readiness home-wide.
                     compiled_workspaces = frozenset(publisher._workspace_paths)
+                refresh_integrity_state(publisher.store)
                 # Observe inputs before compiling: a change after this point
                 # leaves the resident with a stat mismatch, never a stale pass.
                 # The binding is optional, so an observation failure only
