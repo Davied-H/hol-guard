@@ -58,6 +58,10 @@ fn other_expansions_are_not_identity_expansions() {
         "git -c user.name=\"$USER\" commit -m \"$MSG\"",
         "git -c user.name=\"$USER\" add \"$HOME/.ssh/id_rsa\"",
         "git -C \"$HOME\" -c user.name=dev commit -m x",
+        // A `$` that does not expand, traded for one in a redirect.
+        "git -c user.name='$x' commit -m y > \"$HOME/.bashrc\"",
+        "git -c user.name=\"\\$x\" commit -m y > \"$HOME/.bashrc\"",
+        "git -c user.name=\"$USER\" commit -m y > \"$HOME/.bashrc\"",
         // After the subcommand `-c` is no identity setting.
         "git commit -c \"$REF\"",
         "git commit -c user.name=\"$USER\"",
@@ -85,6 +89,7 @@ fn a_fresh_repository_committed_with_an_expanded_identity_runs_contained() {
         "git add -A && git -c user.name=$USER commit -m x",
         "git add -A && git -c user.name=\"$(id)\" commit -m x",
         "git add -A && git -c user.name=\"$USER\" commit -m \"$MSG\"",
+        "git add -A && git -c user.name='$x' commit -m y > \"$HOME/.bashrc\"",
     ] {
         assert_ne!(reason("omp", command, &ws, true), CONTAINED, "{command}");
     }

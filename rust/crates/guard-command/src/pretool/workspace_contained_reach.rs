@@ -66,7 +66,12 @@ fn identity_expansions_only(segment: &CommandSegmentV1, name: &str) -> bool {
     if name != "git" || segment.text.contains('`') {
         return false;
     }
-    let Some(expansions) = quoted_expansions(&segment.text) else {
+    // Every `$` in the text must expand, so a single-quoted or escaped one in
+    // an identity value cannot stand in for an expansion elsewhere, such as a
+    // redirect target.
+    let Some(expansions) = quoted_expansions(&segment.text)
+        .filter(|expansions| *expansions == segment.text.matches('$').count())
+    else {
         return false;
     };
     let mut identity = 0usize;
