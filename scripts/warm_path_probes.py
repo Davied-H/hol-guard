@@ -458,9 +458,10 @@ def run_mcp_phase(
 
 _SAVED_STATE_PROBE = """
 import json, sys
+from pathlib import Path
 from codex_plugin_scanner.guard import native_policy_snapshot_direct_lane_saved as saved
 from codex_plugin_scanner.guard.store import GuardStore
-state = saved._integrity_state(GuardStore(sys.argv[1], prime_policy_integrity=False))
+state = saved._integrity_state(GuardStore(Path(sys.argv[1]), prime_policy_integrity=False))
 print(json.dumps({"environment": saved._environment() is not None, "integrity_state": state}))
 """
 
