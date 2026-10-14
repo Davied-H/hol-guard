@@ -410,6 +410,39 @@ fn semicolon_path_lists_prove_every_entry() {
 }
 
 #[test]
+fn brace_globs_prove_every_alternative() {
+    let f = fixture();
+    write(f.project.join("app/lib/index.ts"), "synthetic fixture\n");
+    write(
+        f.project.join("app/tests/index.test.ts"),
+        "synthetic fixture\n",
+    );
+    for path in [
+        "app/{lib,tests}",
+        "app/{lib,tests}/*.ts",
+        "~/{clean,project/app/lib}",
+    ] {
+        let result = omp(&f, "glob", json!({"path": path}));
+        assert!(allowed(&result), "{path}: {}", result.reason_code);
+        assert_eq!(result.reason_code, "native_omp_directory_listing");
+    }
+    for path in [
+        "~/{clean,.ssh}",
+        "~/{clean,secret-dir}",
+        "~/{clean,.ss*}",
+        "~/clean/{.,x}./.ssh",
+        "{lib,app}",
+        "app/{lib,{tests}}",
+        "app/{lib,tests",
+        "app/lib,tests}",
+        "app/\\{lib,tests}",
+        "app/{a,b,c,d,e,f}/{a,b,c,d,e,f}",
+    ] {
+        assert!(!allowed(&omp(&f, "glob", json!({"path": path}))), "{path}");
+    }
+}
+
+#[test]
 fn eval_allows_literal_tool_programs() {
     let f = fixture();
     for code in [

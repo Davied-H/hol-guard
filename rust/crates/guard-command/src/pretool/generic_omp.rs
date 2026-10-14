@@ -254,6 +254,22 @@ fn listing_target_proven(
     recursive: bool,
     context: &OmpContext<'_>,
 ) -> bool {
+    if signals.tool_name.as_deref() == Some("glob") && target.contains(['{', '}']) {
+        // Below a literal directory the host matches the alternatives
+        // relative to it and returns only names that match one of them, so
+        // each expansion is proven as its own selector. Without that prefix
+        // the host prepends `**/` and searches every depth, which no single
+        // expansion covers.
+        let anchored = target
+            .find(['*', '?', '[', '{'])
+            .is_some_and(|index| target[..index].contains('/'));
+        return anchored
+            && brace_expansions(target).is_some_and(|expansions| {
+                expansions
+                    .iter()
+                    .all(|expansion| listing_target_proven(expansion, signals, recursive, context))
+            });
+    }
     let has_glob_selector =
         signals.tool_name.as_deref() == Some("glob") && target.contains(['*', '?', '[', '{']);
     // OMP glob uses `path` for the complete selector, not just a directory.
@@ -289,6 +305,46 @@ fn listing_target_proven(
         context.path.home_dir,
         context.path.cwd,
     )
+}
+
+/// Maximum patterns proven from one glob's `{a,b}` alternatives.
+const MAX_BRACE_EXPANSIONS: usize = 32;
+
+/// Every pattern a glob's `{a,b}` groups expand to. Nested, unmatched or
+/// escaped groups, and expansions past the bound, return `None`.
+fn brace_expansions(target: &str) -> Option<Vec<String>> {
+    if target.contains('\\') {
+        return None;
+    }
+    let mut expansions = vec![String::new()];
+    let mut rest = target;
+    while let Some(open) = rest.find(['{', '}']) {
+        if rest.as_bytes()[open] == b'}' {
+            return None;
+        }
+        let close = open + 1 + rest[open + 1..].find(['{', '}'])?;
+        if rest.as_bytes()[close] == b'{' {
+            return None;
+        }
+        let alternatives: Vec<&str> = rest[open + 1..close].split(',').collect();
+        if expansions.len() * alternatives.len() > MAX_BRACE_EXPANSIONS {
+            return None;
+        }
+        let literal = &rest[..open];
+        expansions = expansions
+            .iter()
+            .flat_map(|prefix| {
+                alternatives
+                    .iter()
+                    .map(move |alternative| format!("{prefix}{literal}{alternative}"))
+            })
+            .collect();
+        rest = &rest[close + 1..];
+    }
+    for expansion in &mut expansions {
+        expansion.push_str(rest);
+    }
+    Some(expansions)
 }
 
 /// Maximum entries proven from one semicolon-delimited `path`.
