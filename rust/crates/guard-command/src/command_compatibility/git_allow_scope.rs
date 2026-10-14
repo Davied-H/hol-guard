@@ -69,6 +69,77 @@ const INERT_KEYS: &[&str] = &[
     "pull.rebase",
 ];
 
+/// Git built-ins whose program-running options the scan below holds, so an
+/// explicit Git Allow may settle uncertainty about them. Anything else keeps
+/// its review: `send-email`, `instaweb`, `daemon`, `credential*`, `help`,
+/// bridges such as `p4`, `svn` and `cvs*`, `maintenance` (which installs
+/// scheduler jobs), and `git <name>` resolving to a `git-<name>` on `PATH`.
+const SETTLEABLE_SUBCOMMANDS: &[&str] = &[
+    "add",
+    "am",
+    "apply",
+    "archive",
+    "bisect",
+    "blame",
+    "branch",
+    "cat-file",
+    "checkout",
+    "cherry-pick",
+    "clean",
+    "clone",
+    "commit",
+    "config",
+    "describe",
+    "diff",
+    "fetch",
+    "for-each-ref",
+    "format-patch",
+    "gc",
+    "grep",
+    "init",
+    "log",
+    "ls-files",
+    "ls-remote",
+    "merge",
+    "mv",
+    "notes",
+    "pull",
+    "push",
+    "range-diff",
+    "rebase",
+    "reflog",
+    "remote",
+    "reset",
+    "restore",
+    "rev-list",
+    "rev-parse",
+    "revert",
+    "rm",
+    "shortlog",
+    "show",
+    "show-ref",
+    "sparse-checkout",
+    "stash",
+    "status",
+    "submodule",
+    "switch",
+    "symbolic-ref",
+    "tag",
+    "worktree",
+];
+
+/// Merge strategies built into Git. Any other `-s <name>` runs a
+/// `git-merge-<name>` program from the exec path or `PATH`.
+const BUILTIN_STRATEGIES: &[&str] = &["ort", "recursive", "resolve", "octopus", "ours", "subtree"];
+
+/// Whether a Git segment's subcommand is one an explicit Allow may settle
+/// uncertainty about.
+pub(crate) fn subcommand_settles_uncertainty(segment: &CommandSegmentV1) -> bool {
+    super::command_index(&segment.arguments)
+        .and_then(|index| segment.arguments.get(index))
+        .is_some_and(|command| SETTLEABLE_SUBCOMMANDS.contains(&command.as_str()))
+}
+
 /// Whether a Git segment carries configuration or options that can make Git
 /// run a program Guard cannot read: any alias, a program-valued or unknown
 /// key from `-c`, any non-inert key from `--config-env`, `--exec-path`, a
@@ -133,7 +204,8 @@ fn config_setting_runs_program(setting: &str, from_environment: bool) -> bool {
 /// of a local transport, `--exec`, hook templates for a new repository,
 /// settings `clone` writes into the repository it creates, and the shell text
 /// that `rebase -x`, `difftool -x`, `filter-branch`, `submodule foreach` and
-/// `bisect run` execute. Git accepts any unambiguous prefix of a long option,
+/// `bisect run` execute, a pager `grep -O` opens, and merge strategies that
+/// are not built in. Git accepts any unambiguous prefix of a long option,
 /// so prefixes count too. A `--` can be the value of an option this scan does
 /// not model, so words after it are scanned as well and a path that looks
 /// like one of these options is held.
@@ -167,6 +239,7 @@ fn subcommand_runs_program(arguments: &[String]) -> bool {
                 || names("receive-pack")
                 || names("exec")
                 || (matches!(command, "clone" | "init") && names("template"))
+                || (command == "grep" && names("open-files-in-pager"))
                 || (matches!(command, "difftool" | "mergetool")
                     && (names("extcmd") || (name.starts_with("tool-") && names("tool-help"))))
             {
@@ -178,6 +251,15 @@ fn subcommand_runs_program(arguments: &[String]) -> bool {
                     index += 1;
                 }
                 if setting.is_none_or(|setting| config_setting_runs_program(setting, false)) {
+                    return true;
+                }
+            }
+            if merges(command) && names("strategy") {
+                let strategy = attached.or_else(|| rest.get(index).map(String::as_str));
+                if attached.is_none() {
+                    index += 1;
+                }
+                if strategy.is_none_or(|strategy| !BUILTIN_STRATEGIES.contains(&strategy)) {
                     return true;
                 }
             }
@@ -197,8 +279,12 @@ fn subcommand_runs_program(arguments: &[String]) -> bool {
         let (holding, valued) = match command {
             "clone" => ("u", "cobj"),
             "ls-remote" => ("u", "o"),
-            "push" | "fetch" | "pull" => ("", "o"),
+            "push" | "fetch" => ("", "o"),
+            "pull" => ("", "osXS"),
+            "merge" => ("", "sXmFS"),
+            "cherry-pick" | "revert" => ("", "sXmS"),
             "rebase" => ("x", "sXCS"),
+            "grep" => ("O", "efABCm"),
             "difftool" | "mergetool" => ("x", "t"),
             _ => continue,
         };
@@ -220,11 +306,24 @@ fn subcommand_runs_program(arguments: &[String]) -> bool {
                 {
                     return true;
                 }
+                if merges(command)
+                    && flag == 's'
+                    && value.is_none_or(|strategy| !BUILTIN_STRATEGIES.contains(&strategy))
+                {
+                    return true;
+                }
                 break;
             }
         }
     }
     false
+}
+
+fn merges(command: &str) -> bool {
+    matches!(
+        command,
+        "merge" | "pull" | "rebase" | "cherry-pick" | "revert"
+    )
 }
 
 fn setting_runs_program(key: &str, value: Option<&str>) -> bool {

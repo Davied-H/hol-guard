@@ -257,6 +257,15 @@ fn configured_programs_are_recognised_by_key_and_value() {
         "git clone -ccore.sshCommand=x https://example.invalid/project.git dst",
         "git clone --config alias.x=status https://example.invalid/project.git dst",
         "git clone --config=core.pager=x https://example.invalid/project.git dst",
+        "git grep -Oless foo",
+        "git grep -nO foo",
+        "git grep --open-files-in-pager=less foo",
+        "git grep --open foo",
+        "git merge -s custom feature",
+        "git merge --strategy=custom feature",
+        "git pull -s custom origin main",
+        "git rebase -scustom main",
+        "git cherry-pick --strategy custom abc123",
     ] {
         assert!(runs(command), "{command}");
     }
@@ -279,6 +288,11 @@ fn configured_programs_are_recognised_by_key_and_value() {
         "git push --push-option --receive-pack=x origin main",
         "git fetch -o--upload-pack=x origin",
         "git rebase -i main",
+        "git grep foo",
+        "git grep -e -O foo",
+        "git merge -s ort feature",
+        "git merge --strategy-option=theirs -m 'use -s x' feature",
+        "git revert -m 1 -s recursive abc123",
         "git rebase -Xtheirs -s ort main",
         "git submodule update --init",
         "git bisect start",
@@ -321,5 +335,36 @@ fn attached_and_unmodeled_global_options_never_verify_a_route() {
         "git -c core.quotepath=false -ckey=value status",
     ] {
         assert!(verified(command), "{command}");
+    }
+}
+
+/// Uncertainty about a Git command the user allowed settles only for built-ins
+/// whose program-running options Guard holds. Other subcommands, and any
+/// `git-<name>` program on `PATH`, keep their review.
+#[test]
+fn an_explicit_git_allow_settles_only_known_built_ins() {
+    let enabled = all_git_permissions_enabled();
+    for command in [
+        "git send-email --sendmail-cmd='sh -c p' x",
+        "git send-email --smtp-server=/path/p x",
+        "git instaweb --httpd='sh -c p'",
+        "git frobnicate",
+        "git grep -Oless foo",
+    ] {
+        let result = evaluate(&enabled, command);
+        assert_ne!(result.minimum_action, "allow", "{command}");
+    }
+    for command in [
+        "git status",
+        "git log --oneline",
+        "git grep foo",
+        "git config user.name x",
+    ] {
+        let result = evaluate(&enabled, command);
+        assert_eq!(
+            result.minimum_action, "allow",
+            "{command}: {}",
+            result.reason_code
+        );
     }
 }

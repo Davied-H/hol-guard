@@ -27,6 +27,7 @@ pub(crate) use environment::{
 pub(crate) use git::{
     repository_routes_verified as git_repository_routes_verified,
     runs_configured_program as git_runs_configured_program,
+    subcommand_settles_uncertainty as git_subcommand_settles_uncertainty,
 };
 
 /// Whether `name` changes nothing about how the Git command it prefixes runs:

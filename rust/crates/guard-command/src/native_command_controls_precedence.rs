@@ -45,7 +45,8 @@ impl CompiledNativeCommandControls {
     /// permissions settles a command whose delegated floor is already allow.
     /// Guard self-protection, secret access and exfiltration, configured Git
     /// programs, disabled permissions and evaluation failures are fixed
-    /// floors, and allowed Git uncertainty needs every Git route verified.
+    /// floors. Allowed Git uncertainty also needs every Git segment to run a
+    /// built-in whose program options Guard holds, in a verified repository.
     pub(super) fn explicit_allow(
         &self,
         result: &PreToolResultV1,
@@ -62,15 +63,25 @@ impl CompiledNativeCommandControls {
             && command.is_some_and(|model| {
                 !crate::pretool::fixed_command_floor(model)
                     && (!enabled_uncertainty
-                        || model.segments.iter().all(|segment| {
-                            crate::command_compatibility::basename(segment) != "git"
-                                || crate::command_compatibility::git_repository_routes_verified(
-                                    segment, context,
-                                )
-                        }))
+                        || model
+                            .segments
+                            .iter()
+                            .all(|segment| settles_git_uncertainty(segment, context)))
                     && self.explicit_permissions_cover_command(model, batch, context)
             })
     }
+}
+
+/// Whether a segment is not Git, or runs a Git built-in whose program options
+/// Guard holds in a repository whose routes it verified.
+fn settles_git_uncertainty(
+    segment: &crate::CommandSegmentV1,
+    context: crate::pretool::PathContext<'_>,
+) -> bool {
+    use crate::command_compatibility as compatibility;
+    compatibility::basename(segment) != "git"
+        || (compatibility::git_subcommand_settles_uncertainty(segment)
+            && compatibility::git_repository_routes_verified(segment, context))
 }
 
 /// Records that the user's explicit Allow took precedence over Rust's review.
