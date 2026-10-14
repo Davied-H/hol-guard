@@ -150,6 +150,7 @@ pub(crate) enum ResidentOperationV1 {
     HookDirect(crate::hook_direct::HookDirectRequestV1),
     HookDirectEvidenceDrain(crate::hook_direct_evidence::HookDirectEvidenceDrainRequestV1),
     McpRelayDecide(crate::mcp_relay_decide::McpRelayDecideRequestV1),
+    McpRelayCommit(crate::mcp_relay_pending::McpRelayCommitRequestV1),
     ApprovalChallenge(ApprovalChallengeRequestV3),
     ApprovalValidate(ApprovalValidateRequestV3),
     ApprovalConsume(ApprovalConsumeRequestV3),

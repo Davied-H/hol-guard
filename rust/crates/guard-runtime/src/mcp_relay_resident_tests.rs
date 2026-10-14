@@ -284,10 +284,12 @@ fn calls_the_relay_cannot_send_are_not_requested() {
 
 #[test]
 fn replies_map_to_forward_or_block() {
-    let forward = json!({"schema": RESULT_SCHEMA, "outcome": "forward"});
+    let forward = json!({"schema": RESULT_SCHEMA, "outcome": "forward", "ticket": "e:1"});
     assert_eq!(
         reply(&serde_json::to_vec(&forward).unwrap()),
-        Some(Reply::Forward)
+        Some(Reply::Forward {
+            ticket: "e:1".to_owned()
+        })
     );
     let block = json!({
         "schema": RESULT_SCHEMA,
@@ -304,7 +306,11 @@ fn replies_map_to_forward_or_block() {
     );
     for other in [
         json!({"schema": RESULT_SCHEMA, "outcome": "defer", "reason": "x"}),
-        json!({"schema": "other", "outcome": "forward"}),
+        json!({"schema": "other", "outcome": "forward", "ticket": "e:1"}),
+        // A forward without a ticket could never be recorded.
+        json!({"schema": RESULT_SCHEMA, "outcome": "forward"}),
+        json!({"schema": RESULT_SCHEMA, "outcome": "forward", "ticket": ""}),
+        json!({"schema": RESULT_SCHEMA, "outcome": "forward", "ticket": 1}),
         json!({"schema": RESULT_SCHEMA, "outcome": "block", "message": "m"}),
     ] {
         assert_eq!(reply(&serde_json::to_vec(&other).unwrap()), None);
@@ -322,14 +328,42 @@ fn without_a_resident_every_call_is_blocked() {
     let mut unbound = ResidentRelayAuthority {
         facts: None,
         resident: None,
+        uncommitted: None,
     };
     assert_eq!(unbound.decide(&message, &call, None, &catalog), expected);
     let mut unreachable = ResidentRelayAuthority {
         facts: Some(facts()),
         resident: None,
+        uncommitted: None,
     };
     assert_eq!(
         unreachable.decide(&message, &call, None, &catalog),
         expected
     );
+}
+
+#[test]
+fn a_forward_dropped_at_the_boundary_is_never_committed() {
+    let message = json!({"jsonrpc": "2.0", "id": 5, "method": "tools/call",
+        "params": {"name": "read", "arguments": {}}});
+    let ticket = ForwardTicket {
+        message: message.clone(),
+        expected: RelayCatalog::default().snapshot(),
+    };
+    let mut authority = ResidentRelayAuthority {
+        facts: Some(facts()),
+        resident: None,
+        uncommitted: Some("e:1".to_owned()),
+    };
+    let blocked = authority.boundary_changed(ticket.clone());
+    assert_eq!(
+        blocked,
+        no_decision_response(message.get("id"), &params(message["params"].clone()))
+    );
+    assert_eq!(authority.uncommitted, None);
+
+    authority.uncommitted = Some("e:2".to_owned());
+    let response = json!({"jsonrpc": "2.0", "id": 5, "result": {}});
+    assert_eq!(authority.complete(ticket, response.clone()), response);
+    assert_eq!(authority.uncommitted, None);
 }

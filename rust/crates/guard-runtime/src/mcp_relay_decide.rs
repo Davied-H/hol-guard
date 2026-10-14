@@ -7,9 +7,12 @@
 //! the publisher's ACK holds, a harness the binding's MCP view covers, and a
 //! store without saved policy rows or one-shot approvals, so every saved
 //! lookup the policy names has no decision. Such a call is either forwarded
-//! (an allow or warn) or blocked (a terminal or stored block), and the
-//! evidence the proxy would record is queued for the daemon's drain before the
-//! answer is returned.
+//! (an allow or warn) or blocked (a terminal or stored block). A block's
+//! evidence is queued for the daemon's drain before the answer is returned.
+//! The proxy records a forward only after the child answered it, so a
+//! forward's evidence is held under a ticket the relay commits once the child
+//! responded; a forward the relay never completes (a catalog boundary change,
+//! a lost answer) leaves no allow receipt.
 //!
 //! Every other call defers, and the relay answers it with the proxy's
 //! fail-closed "no native decision" response: a saved policy row, a pending
@@ -26,6 +29,7 @@ use guard_contracts::{
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use std::path::Path;
+use std::time::Instant;
 
 pub(crate) const MCP_RELAY_DECIDE_FEATURE: &str = "mcp-relay-decide-v1";
 const RESULT_SCHEMA: &str = "guard-mcp-relay-decide-result.v1";
@@ -68,7 +72,7 @@ pub(crate) struct McpRelayDecideRequestV1 {
 /// What the relay does with the call.
 #[derive(Debug, Clone, PartialEq)]
 enum Answer {
-    Forward,
+    Forward { ticket: String },
     Block { message: String, data: Value },
 }
 
@@ -90,7 +94,9 @@ pub(crate) fn evaluate(
     policy_store: &PolicySnapshotStore,
 ) -> Result<Vec<u8>, String> {
     let body = match decide(&request, policy_store) {
-        Ok(Answer::Forward) => json!({"schema": RESULT_SCHEMA, "outcome": "forward"}),
+        Ok(Answer::Forward { ticket }) => {
+            json!({"schema": RESULT_SCHEMA, "outcome": "forward", "ticket": ticket})
+        }
         Ok(Answer::Block { message, data }) => json!({
             "schema": RESULT_SCHEMA,
             "outcome": "block",
@@ -150,11 +156,11 @@ fn decide(
     let routed = route(&proxy, &decision)?;
     let tool = &request.build.tool_name;
     let server = &request.build.server_name;
-    let (answer, outcome, source, policy_action) = match routed {
+    let (blocked, outcome, source, policy_action) = match routed {
         Routed::Forward {
             source,
             policy_action,
-        } => (Answer::Forward, "forward", source, policy_action),
+        } => (None, "forward", source, policy_action),
         Routed::Terminal { policy_action } => {
             let message = if policy_action == "block" {
                 format!("HOL Guard blocked tool call {tool} from {server}.")
@@ -166,20 +172,20 @@ fn decide(
             };
             let data = json!({"approvalRequests": [], "guardPolicyAction": policy_action});
             (
-                Answer::Block { message, data },
+                Some(Answer::Block { message, data }),
                 "block",
                 "policy-block".to_owned(),
                 policy_action,
             )
         }
         Routed::StoredBlock => (
-            Answer::Block {
+            Some(Answer::Block {
                 message: format!(
                     "HOL Guard blocked tool call {tool} from {server}. This exact request is \
                      already blocked by authenticated saved policy."
                 ),
                 data: json!({"approvalRequests": [], "guardPolicyAction": "block"}),
-            },
+            }),
             "block",
             "policy-block".to_owned(),
             "block".to_owned(),
@@ -198,10 +204,16 @@ fn decide(
         "identity": serde_json::to_value(&identity).map_err(|_| IDENTITY_FAILED)?,
         "decision": decision.to_value(),
     });
-    if !policy_store.direct_evidence().offer(evidence) {
-        return Err(EVIDENCE_FULL);
+    match blocked {
+        // The relay commits the ticket once the child answered the forward.
+        None => policy_store
+            .mcp_relay_pending()
+            .hold(evidence, Instant::now())
+            .map(|ticket| Answer::Forward { ticket })
+            .ok_or(EVIDENCE_FULL),
+        Some(block) if policy_store.direct_evidence().offer(evidence) => Ok(block),
+        Some(_) => Err(EVIDENCE_FULL),
     }
-    Ok(answer)
 }
 
 /// `Path.resolve(strict=True)` of a directory, as the lane settles it.

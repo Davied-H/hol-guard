@@ -3,6 +3,10 @@
 //! Each call is sent to the live resident that runs this executable as one
 //! `mcp_relay_decide` request, which builds the identity, evaluates the tool
 //! policy, routes the call and queues the evidence the proxy would record.
+//! A forward's evidence is held under a ticket, and the relay commits it with
+//! `mcp_relay_commit` once the child answered, as the proxy records a forward
+//! only after the child's response. A forward the relay drops at the catalog
+//! boundary, and one whose decision answer never arrived, is never committed.
 //! The facts the proxy fixes for a session (the launch fingerprint, the
 //! server identity, the workspace the approval hash binds and the launcher
 //! paths) are computed once, so no call hashes the executable again.
@@ -17,7 +21,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use serde_json::{Map, Value};
+use serde_json::{json, Map, Value};
 
 use crate::claude_hook_bridge_http::remaining;
 use crate::mcp_relay_args::RelayArgs;
@@ -32,6 +36,7 @@ use crate::resident_state::ResidentState;
 const STATE_DIRECTORY: &str = "native-runtime";
 const RESULT_SCHEMA: &str = "guard-mcp-relay-decide-result.v1";
 const DECIDE_TIMEOUT: Duration = Duration::from_millis(1_000);
+const COMMIT_TIMEOUT: Duration = Duration::from_millis(250);
 const MINIMUM_TIMEOUT: Duration = Duration::from_millis(50);
 /// The session facts every decision request carries.
 #[derive(Debug, Clone, PartialEq)]
@@ -78,6 +83,8 @@ struct Resident {
 pub(crate) struct ResidentRelayAuthority {
     facts: Option<RelayFacts>,
     resident: Option<Resident>,
+    /// The ticket of the forward in flight, committed once the child answers.
+    uncommitted: Option<String>,
 }
 
 impl ResidentRelayAuthority {
@@ -86,6 +93,22 @@ impl ResidentRelayAuthority {
         Self {
             facts: relay_facts(args, launch, process),
             resident: None,
+            uncommitted: None,
+        }
+    }
+
+    /// Queue a completed forward's evidence; a lost commit records nothing.
+    fn commit(&self, ticket: &str) {
+        let (Some(facts), Some(resident)) = (self.facts.as_ref(), self.resident.as_ref()) else {
+            return;
+        };
+        let payload = json!({
+            "operation": "mcp_relay_commit",
+            "request": {"guard_home": facts.guard_home, "ticket": ticket},
+        });
+        if let Ok(payload) = serde_json::to_vec(&payload) {
+            // Only the resident that issued the ticket holds its record.
+            let _ = send(resident, &payload, Instant::now() + COMMIT_TIMEOUT);
         }
     }
 
@@ -128,6 +151,7 @@ impl RelayAuthority for ResidentRelayAuthority {
         order: Option<&[String]>,
         catalog: &RelayCatalog,
     ) -> ToolCallVerdict {
+        self.uncommitted = None;
         let id = message.get("id");
         let no_decision = || ToolCallVerdict::Respond(no_decision_response(id, params));
         let Some(facts) = self.facts.as_ref() else {
@@ -142,10 +166,13 @@ impl RelayAuthority for ResidentRelayAuthority {
             .as_deref()
             .and_then(reply)
         {
-            Some(Reply::Forward) => ToolCallVerdict::Forward(ForwardTicket {
-                message: message.clone(),
-                expected,
-            }),
+            Some(Reply::Forward { ticket }) => {
+                self.uncommitted = Some(ticket);
+                ToolCallVerdict::Forward(ForwardTicket {
+                    message: message.clone(),
+                    expected,
+                })
+            }
             Some(Reply::Block { message, data }) => ToolCallVerdict::Respond(blocked_response(
                 id,
                 &tool_name(params),
@@ -157,6 +184,8 @@ impl RelayAuthority for ResidentRelayAuthority {
     }
 
     fn boundary_changed(&mut self, ticket: ForwardTicket) -> Value {
+        // The call was never written, so its evidence is never committed.
+        self.uncommitted = None;
         let params = ticket
             .message
             .get("params")
@@ -167,6 +196,9 @@ impl RelayAuthority for ResidentRelayAuthority {
     }
 
     fn complete(&mut self, _ticket: ForwardTicket, response: Value) -> Value {
+        if let Some(ticket) = self.uncommitted.take() {
+            self.commit(&ticket);
+        }
         response
     }
 }
@@ -174,7 +206,7 @@ impl RelayAuthority for ResidentRelayAuthority {
 /// What the resident decided.
 #[derive(Debug, Clone, PartialEq)]
 enum Reply {
-    Forward,
+    Forward { ticket: String },
     Block { message: String, data: Value },
 }
 
@@ -184,7 +216,13 @@ fn reply(output: &[u8]) -> Option<Reply> {
         return None;
     }
     match result.get("outcome")?.as_str()? {
-        "forward" => Some(Reply::Forward),
+        "forward" => Some(Reply::Forward {
+            ticket: result
+                .get("ticket")?
+                .as_str()
+                .filter(|ticket| !ticket.is_empty())?
+                .to_owned(),
+        }),
         "block" => Some(Reply::Block {
             message: result.get("message")?.as_str()?.to_owned(),
             data: result.get("data").filter(|data| data.is_object())?.clone(),

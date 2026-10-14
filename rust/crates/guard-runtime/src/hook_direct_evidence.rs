@@ -26,7 +26,7 @@ const MAX_QUEUED_RECORDS: usize = 1_024;
 const MAX_QUEUED_BYTES: usize = 8 * 1024 * 1024;
 /// One drain page stays well under the resident response cap.
 const MAX_DRAIN_BYTES: usize = 1536 * 1024;
-const MAX_RECORD_BYTES: usize = 1024 * 1024;
+pub(crate) const MAX_RECORD_BYTES: usize = 1024 * 1024;
 const DEFAULT_DRAIN_RECORDS: usize = 256;
 
 #[derive(Debug, Clone, Deserialize)]

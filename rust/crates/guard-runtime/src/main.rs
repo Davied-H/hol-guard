@@ -405,6 +405,7 @@ mod mcp_relay_host;
 mod mcp_relay_launch;
 #[cfg(unix)]
 mod mcp_relay_order;
+mod mcp_relay_pending;
 #[cfg(unix)]
 mod mcp_relay_resident;
 mod mcp_runtime_evidence_op;
