@@ -29,8 +29,6 @@ pub(crate) enum Fallback {
     ClientMode,
     /// The daemon did not answer.
     DaemonUnanswered,
-    /// The answer could not be rendered for the harness.
-    AnswerUnrendered,
     /// The answer needs Python to finish it.
     SemanticHandoff,
     /// Recovering from a recoverable failure did not succeed.
@@ -47,7 +45,6 @@ impl Fallback {
             Self::InputUnparsed => "input_unparsed",
             Self::ClientMode => "client_mode",
             Self::DaemonUnanswered => "daemon_unanswered",
-            Self::AnswerUnrendered => "answer_unrendered",
             Self::SemanticHandoff => "semantic_handoff",
             Self::RecoverFailed => "recover_failed",
             Self::NonRecoverable => "non_recoverable",

@@ -36,6 +36,11 @@ fn rendered_constants_are_read_back_from_the_client() {
         ScriptConstants {
             guard_home: "/g h".to_owned(),
             home: Some("/home/u".to_owned()),
+            recovery_command: vec![
+                "/bin/hol-guard".to_owned(),
+                "guard".to_owned(),
+                "daemon".to_owned(),
+            ],
             timeout_seconds: 57,
         }
     );
@@ -151,6 +156,7 @@ fn test_client() -> Client {
     Client {
         guard_home: "/g".to_owned(),
         home: Some("/h".to_owned()),
+        recovery_command: Vec::new(),
         deadline: Instant::now() + Duration::from_secs(5),
     }
 }

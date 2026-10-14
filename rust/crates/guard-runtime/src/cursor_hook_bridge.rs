@@ -11,20 +11,24 @@
 //! `afterMCPExecution` observers, which the daemon records as a `PostToolUse`
 //! and the client always answers with `{}`, the bridge prints `{}` once the
 //! resident has answered (and so queued the record). The client's other
-//! hooks, every other verdict and anything the bridge cannot reproduce
-//! exactly run the Python client unchanged, with the hook it already read
-//! and the time it already spent.
+//! hooks and hooks the bridge cannot read as the client would run the
+//! Python client unchanged, with the hook it already read and the time it
+//! already spent.
 //!
 //! When no live resident answers, the bridge posts the request to the
 //! loopback daemon itself, over the transport, auth token and deadlines the
 //! bounded bridge uses, and renders the daemon's answer the same way. A
-//! daemon that is unreachable, refuses the hook, runs out of time or
-//! answers anything the bridge cannot reproduce leaves the hook to the
-//! Python client, which asks the daemon again on its own terms.
+//! daemon that is unreachable, does not answer in time or answers with a
+//! body the client refuses is recovered with the client's own
+//! `GUARD_RECOVERY_COMMAND` and asked once more; an overloaded daemon is
+//! not. A restrictive answer the bridge cannot render is handed to the
+//! client with the daemon's reply, so the hook is never posted twice.
+//! Anything else gets the client's fail-closed `_cursor_unavailable_response`:
+//! the client's CLI fallback, which reviewed the hook in Python, never runs.
 //!
 //! The client also sends an `after*` observer proof and approval binding in
-//! `hook_env`; the daemon drops `hook_env` before it reviews a hook, so only
-//! the client's CLI fallback reads them, and the bridge reads no key.
+//! `hook_env`; the daemon drops `hook_env` before it reviews a hook, and the
+//! bridge reads no key.
 //!
 //! The bridge reproduces the client's steps up to its daemon request:
 //! `_read_hook_input`, `json.loads`, `_prepare_cursor_hook_payload`,
@@ -39,10 +43,8 @@ use guard_command::hook_adapter_prepare::{cursor_client_event, first_truthy, pre
 use guard_command::hook_adapter_value::{parse_python_json, OMap, OValue};
 
 use crate::bounded_hook_bridge::{
-    daemon_target, post_hook_text, read_hook_input, run_python, transport_deadline, write_stdout,
-    Input, DAEMON_BUDGET, MAX_HOOK_INPUT_BYTES, PROMPT_DAEMON_BUDGET,
+    read_hook_input, run_python, write_stdout, Input, MAX_HOOK_INPUT_BYTES,
 };
-use crate::claude_hook_bridge_http::remaining;
 use crate::claude_hook_bridge_render::py_strip;
 use crate::codex_hook_bridge_direct::{direct_answer, CURSOR};
 use crate::codex_hook_response::{POST_TOOL_USE, PRE_TOOL_USE};
@@ -90,6 +92,12 @@ fn unavailable_output(event: &str) -> (&'static str, i32) {
         return ("{}\n", 0);
     }
     (UNAVAILABLE_STDOUT, 2)
+}
+
+/// The client's fail-closed reply for a hook it names `event`.
+fn fail_closed(event: &str) -> Reply {
+    let (stdout, code) = unavailable_output(event);
+    Reply::Answered(stdout.to_owned(), code)
 }
 
 fn unavailable(event: &str) -> i32 {
@@ -162,6 +170,8 @@ pub(crate) fn workspace(
 struct Client {
     guard_home: String,
     home: Option<String>,
+    /// `GUARD_RECOVERY_COMMAND`, run when the daemon does not answer.
+    recovery_command: Vec<String>,
     deadline: Instant,
 }
 
@@ -278,23 +288,6 @@ fn answer(kind: Kind, event: &str, response: &str, guard_home: &Path) -> Option<
     }
 }
 
-/// The body `_daemon_hook_result` accepts from the daemon for `request`,
-/// stripped as the client strips it, or `None` when the daemon cannot be
-/// asked or does not answer within the bridge's share of the deadline. The
-/// client also sends `hook_env`, which the daemon drops unread.
-fn daemon_answer(client: &Client, request: &Request) -> Option<String> {
-    let left = remaining(client.deadline);
-    let target = daemon_target(Path::new(&client.guard_home), DAEMON_HARNESS)?;
-    let budget = match request.kind {
-        Kind::Prompt => PROMPT_DAEMON_BUDGET,
-        Kind::PreToolUse | Kind::After => DAEMON_BUDGET,
-    };
-    let deadline = transport_deadline(client.deadline, left, budget)?;
-    let path = format!("/v1/hooks/{DAEMON_HARNESS}?{}", request.query);
-    let body = post_hook_text(&target, &path, &request.data, deadline)?;
-    Some(py_strip(&body).to_owned())
-}
-
 /// What the bridge does with one hook.
 #[derive(Debug, PartialEq)]
 enum Reply {
@@ -302,7 +295,7 @@ enum Reply {
     Answered(String, i32),
     /// A daemon reply the client renders without posting the hook again.
     Handoff(String),
-    /// Run the client, for this reason.
+    /// Run the client on a hook the bridge could not read, for this reason.
     Client(Fallback),
 }
 
@@ -323,7 +316,8 @@ fn handoff(kind: Kind, body: &str) -> Option<String> {
 }
 
 /// The client's stdout and exit code for the hook, answered by a live
-/// resident or else by the daemon, or `None` to run the client.
+/// resident, the daemon or the fail-closed answer, or `None` when the
+/// client runs or renders the reply.
 #[cfg(test)]
 fn respond(client: &Client, raw: &[u8]) -> Option<(String, i32)> {
     match reply(client, raw) {
@@ -333,9 +327,7 @@ fn respond(client: &Client, raw: &[u8]) -> Option<(String, i32)> {
 }
 
 /// The bridge's reply to the hook: a live resident's answer, else the
-/// daemon's. A resident answer the bridge cannot render runs the client
-/// without the daemon; a daemon answer it cannot render is handed to the
-/// client when the client can take it over.
+/// daemon's, as `daemon::daemon_reply` settles them.
 fn reply(client: &Client, raw: &[u8]) -> Reply {
     let Some(request) = prepared_request(client, raw) else {
         return Reply::Client(Fallback::InputUnparsed);
@@ -345,29 +337,15 @@ fn reply(client: &Client, raw: &[u8]) -> Reply {
         Kind::Prompt => USER_PROMPT_SUBMIT,
         Kind::After => POST_TOOL_USE,
     };
-    let guard_home = Path::new(&client.guard_home);
     let resident = direct_answer(
         CURSOR,
-        guard_home,
+        Path::new(&client.guard_home),
         &request.query,
         event_name,
         &request.data,
         client.deadline,
     );
-    if let Some(answered) = resident {
-        return answer(request.kind, &request.event, &answered, guard_home).map_or(
-            Reply::Client(Fallback::AnswerUnrendered),
-            |(stdout, code)| Reply::Answered(stdout, code),
-        );
-    }
-    let Some(body) = daemon_answer(client, &request) else {
-        return Reply::Client(Fallback::DaemonUnanswered);
-    };
-    match answer(request.kind, &request.event, &body, guard_home) {
-        Some((stdout, code)) => Reply::Answered(stdout, code),
-        None => handoff(request.kind, &body)
-            .map_or(Reply::Client(Fallback::AnswerUnrendered), Reply::Handoff),
-    }
+    daemon::daemon_reply(client, &request, resident)
 }
 
 /// The ported client the installer's argv runs, or `None` for any other
@@ -384,6 +362,7 @@ fn client(python_argv: &[String], started: Instant) -> Option<Client> {
     Some(Client {
         guard_home: constants.guard_home,
         home: constants.home,
+        recovery_command: constants.recovery_command,
         deadline: started.checked_add(budget)?,
     })
 }
@@ -429,6 +408,9 @@ pub(crate) fn run(python_argv: &[String]) -> i32 {
         .unwrap_or_else(|| unavailable(event))
 }
 
+#[path = "cursor_hook_bridge_daemon.rs"]
+mod daemon;
+
 #[cfg(all(test, unix))]
 #[path = "cursor_hook_bridge_tests.rs"]
 mod tests;
@@ -436,3 +418,7 @@ mod tests;
 #[cfg(all(test, unix))]
 #[path = "cursor_hook_bridge_daemon_tests.rs"]
 mod daemon_tests;
+
+#[cfg(all(test, unix))]
+#[path = "cursor_hook_bridge_restart_tests.rs"]
+mod restart_tests;

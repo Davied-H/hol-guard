@@ -1,6 +1,6 @@
 //! The Cursor bridge's daemon lane: a hook no resident answered, posted to
 //! a scripted loopback daemon and answered as the client would answer the
-//! daemon's body, or left to the client.
+//! daemon's body, handed to the client, or failed closed.
 
 use std::io::BufReader;
 use std::net::TcpListener;
@@ -45,6 +45,8 @@ fn client_for(home: &GuardHome, budget: Duration) -> Client {
     Client {
         guard_home: home.home_text().to_owned(),
         home: Some("/h".to_owned()),
+        // No start command: a daemon failure fails closed at once.
+        recovery_command: Vec::new(),
         deadline: Instant::now() + budget,
     }
 }
@@ -111,6 +113,11 @@ fn exchange<T>(
     let answered = bridge(&client, raw);
     let request = daemon.join().unwrap().expect("the daemon was asked");
     (answered, request, home)
+}
+
+/// The client's `_cursor_unavailable_response` for a `before*` hook.
+fn closed() -> (String, i32) {
+    (UNAVAILABLE_STDOUT.to_owned(), 2)
 }
 
 fn printed(fields: &[(&str, &str)]) -> String {
@@ -238,8 +245,8 @@ fn every_installed_event_is_answered_from_the_daemon() {
 }
 
 #[test]
-fn a_daemon_answer_the_bridge_cannot_reproduce_is_left_to_the_client() {
-    let replies: [(&str, u16, &str); 11] = [
+fn a_daemon_answer_the_bridge_cannot_reproduce_fails_closed() {
+    let replies: [(&str, u16, &str); 9] = [
         ("server-error", 500, r#"{"policy_action":"allow"}"#),
         ("overload", 429, r#"{"error":"overload"}"#),
         ("busy", 503, r#"{"error":"busy"}"#),
@@ -249,24 +256,15 @@ fn a_daemon_answer_the_bridge_cannot_reproduce_is_left_to_the_client() {
         ("unknown-action", 200, r#"{"policy_action":"maybe"}"#),
         ("no-action", 200, "{}"),
         ("bom", 200, "\u{feff}{\"policy_action\":\"allow\"}"),
-        (
-            "signed-link",
-            200,
-            r#"{"policy_action":"review","approval_url":"http://127.0.0.1:4781/approvals/req-1"}"#,
-        ),
-        (
-            "signed-request-link",
-            200,
-            r#"{"policy_action":"review","approval_requests":[{"approval_url":"http://localhost:4781/approvals/req-2"}]}"#,
-        ),
     ];
     for (label, status, body) in replies {
         let (answered, _request, _home) = ask(label, SHELL, status, body);
-        assert_eq!(answered, None, "{label}");
+        assert_eq!(answered, Some(closed()), "{label}");
     }
-    // An observer's body must still be a JSON object.
+    // An observer's body must still be a JSON object; its fail-closed
+    // answer is the client's `{}`.
     let (answered, _request, _home) = ask("after-list", AFTER_SHELL, 200, "[]");
-    assert_eq!(answered, None);
+    assert_eq!(answered, Some(("{}\n".to_owned(), 0)));
 }
 
 #[test]
@@ -298,27 +296,17 @@ fn a_restrictive_daemon_answer_the_bridge_cannot_render_is_handed_to_the_client(
         r#"{{"policy_action":"review","reason":"{}","approval_url":"http://127.0.0.1:4781/approvals/req-4"}}"#,
         "r".repeat(MAX_HANDOFF_REPLY_BYTES)
     );
-    let unrendered = Fallback::AnswerUnrendered;
-    let kept: [(&str, u16, &str, Fallback); 4] = [
-        (
-            "unknown-action",
-            200,
-            r#"{"policy_action":"maybe"}"#,
-            unrendered,
-        ),
-        (
-            "server-error",
-            500,
-            r#"{"policy_action":"review"}"#,
-            Fallback::DaemonUnanswered,
-        ),
-        ("list", 200, "[]", unrendered),
-        ("oversized", 200, oversized.as_str(), unrendered),
+    let (stdout, code) = closed();
+    let refused: [(&str, u16, &str); 4] = [
+        ("unknown-action", 200, r#"{"policy_action":"maybe"}"#),
+        ("server-error", 500, r#"{"policy_action":"review"}"#),
+        ("list", 200, "[]"),
+        ("oversized", 200, oversized.as_str()),
     ];
-    for (label, status, body, reason) in kept {
+    for (label, status, body) in refused {
         assert_eq!(
             ask_reply(label, SHELL, status, body),
-            Reply::Client(reason),
+            Reply::Answered(stdout.clone(), code),
             "{label}"
         );
     }
@@ -327,7 +315,7 @@ fn a_restrictive_daemon_answer_the_bridge_cannot_render_is_handed_to_the_client(
 }
 
 #[test]
-fn a_daemon_the_bridge_cannot_ask_is_left_to_the_client() {
+fn a_daemon_the_bridge_cannot_ask_fails_closed() {
     let no_state = GuardHome::new("cursor-daemon-no-state");
     write_private(&no_state.home.join("daemon-auth-token"), TOKEN);
     let no_token = daemon_home("no-token", "127.0.0.1", closed_port(), false);
@@ -337,12 +325,17 @@ fn a_daemon_the_bridge_cannot_ask_is_left_to_the_client() {
     write_private(&spaced.home.join("daemon-auth-token"), "tok\n");
     for home in [&no_state, &no_token, &remote, &unreachable, &spaced] {
         let client = client_for(home, Duration::from_secs(20));
-        assert_eq!(respond(&client, SHELL), None, "{}", home.home_text());
+        assert_eq!(
+            respond(&client, SHELL),
+            Some(closed()),
+            "{}",
+            home.home_text()
+        );
     }
 }
 
 #[test]
-fn a_daemon_that_does_not_answer_in_time_leaves_the_client_time() {
+fn a_daemon_that_does_not_answer_in_time_fails_closed_in_time() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     let daemon = std::thread::spawn(move || {
@@ -355,7 +348,7 @@ fn a_daemon_that_does_not_answer_in_time_leaves_the_client_time() {
     });
     let home = daemon_home("timeout", "127.0.0.1", port, true);
     let client = client_for(&home, Duration::from_secs(2));
-    assert_eq!(respond(&client, SHELL), None);
+    assert_eq!(respond(&client, SHELL), Some(closed()));
     assert!(Instant::now() < client.deadline);
     daemon.join().unwrap();
 }

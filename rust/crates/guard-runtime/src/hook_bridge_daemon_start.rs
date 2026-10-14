@@ -1,4 +1,4 @@
-//! Daemon start for the native Codex and bounded hook bridges: what a bridge
+//! Daemon start for the native Codex, Cursor and bounded hook bridges: what a bridge
 //! does when its daemon is unreachable or did not answer, in place of the
 //! Python bridge it used to hand the hook to.
 //!

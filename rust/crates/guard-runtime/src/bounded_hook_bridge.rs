@@ -48,8 +48,10 @@ mod input;
 pub(crate) use input::read_hook_input;
 #[path = "bounded_hook_bridge_daemon.rs"]
 mod daemon;
-pub(crate) use daemon::{daemon_target, post_hook_text, transport_deadline};
-use daemon::{post_hook, DaemonTarget};
+use daemon::post_hook;
+pub(crate) use daemon::{
+    daemon_target, post_hook_reply, transport_deadline, DaemonTarget, PostFailure,
+};
 
 pub(crate) const BRIDGE_COMMAND: &str = "bounded-hook-bridge";
 pub(crate) const BRIDGE_FEATURE: &str = "bounded-hook-bridge-v1";
