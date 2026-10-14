@@ -478,7 +478,11 @@ fn grep_scope(
     // A single file is proven by the ordinary bounded file-read path. An
     // entry of a list has no such fallback, so it carries the same proof here.
     let list = targets.len() > 1;
-    let gitignore = input.get("gitignore").and_then(Value::as_bool) != Some(false);
+    // A `glob` or `type` override can re-include a gitignored file, so with
+    // either one no ignore file narrows the proof.
+    let gitignore = input.get("gitignore").and_then(Value::as_bool) != Some(false)
+        && !input.contains_key("glob")
+        && !input.contains_key("type");
     targets
         .into_iter()
         .all(|target| {

@@ -105,6 +105,14 @@ fn grep_honors_the_gitignore_the_host_honors() {
         "grep",
         json!({"pattern": "deploy", "path": ".", "gitignore": false})
     )));
+    // A `glob` or `type` override can re-include the gitignored `.env`.
+    for input in [
+        json!({"pattern": "KEY", "path": ".", "glob": ".env"}),
+        json!({"pattern": "KEY", "path": ".", "glob": "*.sh"}),
+        json!({"pattern": "KEY", "type": "sh"}),
+    ] {
+        assert!(!allowed(&omp(&f, "app", "grep", input.clone())), "{input}");
+    }
     // Naming a secret still reviews it, ignored or not.
     for path in [".env", "src/index.ts;.env", "config/.env.local", "~/.ssh"] {
         let input = json!({"pattern": "KEY", "path": path});
