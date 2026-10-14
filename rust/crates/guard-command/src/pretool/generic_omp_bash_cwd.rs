@@ -14,7 +14,9 @@ const INPUT_KEYS: [&str; 3] = ["tool_input", "toolInput", "arguments"];
 pub(super) enum BashCwd {
     /// No `cwd` argument, or one naming the session directory.
     Session,
-    /// A directory below the session directory, spelled from it.
+    /// A directory the command is judged in directly: one below the session
+    /// directory, spelled from it, or one inside a linked worktree of a
+    /// repository there, canonicalized.
     Within(String),
     /// A directory outside the session directory, canonicalized.
     Outside(String),
@@ -66,6 +68,7 @@ pub(super) fn resolve(payload: &Value, home_dir: Option<&str>, session: Option<&
             None => BashCwd::Unresolved,
         },
         Err(_) => match target.to_str() {
+            Some(text) if session_worktree(&target, &root) => BashCwd::Within(text.to_owned()),
             Some(text) if !text.contains('\'') => BashCwd::Outside(text.to_owned()),
             _ => BashCwd::Unresolved,
         },
@@ -97,4 +100,48 @@ fn literal_target(text: &str, home_dir: Option<&str>, session: &str) -> Option<P
     path.components()
         .all(|component| !matches!(component, Component::Prefix(_)))
         .then_some(path)
+}
+
+/// Whether `target` sits inside a linked worktree of a repository at or below
+/// the session directory. Guard already treats such a checkout like the
+/// workspace for writes, and the host runs the whole command there, so it is
+/// judged there directly. A leading `cd` would instead require every segment
+/// after a `;` or `||` to be proven from the session directory as well, as if
+/// the `cd` could fail.
+fn session_worktree(target: &Path, root: &Path) -> bool {
+    let Some(worktree) = target
+        .ancestors()
+        .find(|directory| directory.join(".git").symlink_metadata().is_ok())
+    else {
+        return false;
+    };
+    let Some(repository) = registered_repository(worktree) else {
+        return false;
+    };
+    repository.starts_with(root)
+        && guard_secure_fs::hidden_read_parts_allowed(target)
+        && super::super::git_routes::linked_worktree_admin(worktree, &repository).is_some()
+}
+
+/// The primary checkout a worktree's `.git` file names through
+/// `<repository>/.git/worktrees/<name>`. `linked_worktree_admin` then checks
+/// the registry's `commondir` and `gitdir` backlinks.
+fn registered_repository(worktree: &Path) -> Option<PathBuf> {
+    use std::io::Read;
+    let mut contents = String::new();
+    std::fs::File::open(worktree.join(".git"))
+        .ok()?
+        .take(4097)
+        .read_to_string(&mut contents)
+        .ok()?;
+    if contents.len() > 4096 {
+        return None;
+    }
+    let pointer = contents.lines().next()?.strip_prefix("gitdir: ")?.trim();
+    let admin = worktree.join(pointer).canonicalize().ok()?;
+    let registry = admin.parent()?;
+    let common = registry.parent()?;
+    (registry.file_name()? == "worktrees" && common.file_name()? == ".git")
+        .then(|| common.parent().map(Path::to_path_buf))
+        .flatten()
 }

@@ -82,16 +82,52 @@ fn bash_cwd_outside_the_session_directory_is_judged_as_a_leading_cd() {
             result.reason_code
         );
     }
-    let worktree = session.worktree.to_str().unwrap();
+    let notes = session.home.join("notes");
+    std::fs::create_dir_all(&notes).unwrap();
+    let directory = notes.to_str().unwrap();
     let projected = omp(
         &session,
-        json!({"command": format!("cd '{worktree}' && git status --short")}),
+        json!({"command": format!("cd '{directory}' && ls")}),
     );
+    let result = omp(&session, json!({"command": "ls", "cwd": directory}));
+    assert_eq!(outcome(&result), outcome(&projected));
+}
+
+#[test]
+fn bash_cwd_in_a_linked_worktree_of_a_session_repository_is_the_command_directory() {
+    let session = session("omp-cwd-worktree");
+    let worktree = session.worktree.to_str().unwrap();
+    // The host runs the whole list in the worktree, so the `;` tail is judged
+    // there rather than also from the session directory.
+    let probe = "test -d node_modules && printf 'present\\n' || printf 'absent'; \
+        git status --short --branch";
+    for command in [probe, "git status --short --branch", "git log --oneline -3"] {
+        let result = omp(&session, json!({"command": command, "cwd": worktree}));
+        assert_eq!(
+            result.minimum_action, "allow",
+            "{command}: {}",
+            result.reason_code
+        );
+    }
+    std::fs::write(session.worktree.join(".env"), "TOKEN=fixture\n").unwrap();
+    for command in ["cat .env", "rm -rf ~/notes"] {
+        let result = omp(&session, json!({"command": command, "cwd": worktree}));
+        assert_ne!(
+            result.minimum_action, "allow",
+            "{command}: {}",
+            result.reason_code
+        );
+    }
+    // A copied `.git` file names the worktree's registry entry, but the
+    // registry's backlink still names the real checkout.
+    let forged = session.home.join("forged");
+    std::fs::create_dir_all(&forged).unwrap();
+    std::fs::copy(session.worktree.join(".git"), forged.join(".git")).unwrap();
     let result = omp(
         &session,
-        json!({"command": "git status --short", "cwd": worktree}),
+        json!({"command": probe, "cwd": forged.to_str().unwrap()}),
     );
-    assert_eq!(outcome(&result), outcome(&projected));
+    assert_ne!(result.minimum_action, "allow", "{}", result.reason_code);
 }
 
 #[test]
