@@ -270,7 +270,7 @@ fn omp_bash_cwd_missing(harness: &str, event: &str) -> PreToolResultV1 {
         ),
         "block",
         evaluate::MISSING_PATH,
-        "HOL Guard did not run this command because its working directory does not exist.",
+        "HOL Guard did not run this command because its working directory does not exist. Check the directory, for example by listing its parent, and try again with the correct one.",
     )
 }
 

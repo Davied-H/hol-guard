@@ -34,13 +34,6 @@ _NOT_QUEUED = (
     "No approval is waiting in HOL Guard for this action. Do not retry it or work around the block; "
     "continue with a permitted alternative or tell the user what is blocked."
 )
-# The target does not exist, so nothing ran and nothing needs approving; the
-# agent should correct the path rather than stop.
-_CORRECTABLE = {
-    "native_missing_path": (
-        "Check the path, for example by listing its parent directory, and try again with the correct one."
-    ),
-}
 
 # Plain-language next steps keyed by the reason code Rust already returned.
 _REASON_CODE_HINTS = {
@@ -81,9 +74,6 @@ def safe_alternative_reason(
     if reason_code is None and approval_queued is None:
         return f"{reason.strip()} {SAFE_ALTERNATIVE_GUIDANCE}".strip()
     hint = _REASON_CODE_HINTS.get(reason_code or "", "")
-    correction = _CORRECTABLE.get(reason_code or "")
-    if correction and not approval_queued:
-        return f"{reason.strip()} {correction}"
     if not approval_queued:
         wait = _NOT_QUEUED
     elif retry_reuses_approval:

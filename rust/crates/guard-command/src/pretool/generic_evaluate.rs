@@ -368,7 +368,7 @@ pub(super) fn evaluate_signals(
             action,
             "block",
             MISSING_PATH,
-            "HOL Guard did not run this read because the path does not exist.",
+            "HOL Guard did not run this read because the path does not exist. Check the path, for example by listing its parent directory, and try again with the correct one.",
         );
     }
     let (reason_code, reason) = review_reason(action_type);

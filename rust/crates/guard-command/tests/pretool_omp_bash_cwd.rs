@@ -185,6 +185,8 @@ fn a_read_of_a_missing_path_is_stopped_with_a_correctable_reason() {
             ("block".into(), "native_missing_path".into()),
             "{harness} {path}"
         );
+        // Nothing waits for approval, so the agent must be told to fix the path.
+        assert!(result.reason.contains("try again with the correct one"));
     }
     // A missing file inside the workspace is already allowed; the host reports
     // the error itself.
