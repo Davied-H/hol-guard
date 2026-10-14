@@ -39,13 +39,20 @@ pub(in crate::pretool) fn safe_copy_arguments(
     let Some(resolved) = joined_destination(&expanded, context) else {
         return false;
     };
+    // The expansion below is a superset of the shell's (it ignores case), so
+    // its count never decides whether cp writes into a directory: a glob
+    // copy must name one with a trailing slash or an existing directory.
+    let named_directory = expanded.ends_with('/') || resolved.is_dir();
+    if !named_directory && sources.iter().any(|source| source.contains(['*', '?'])) {
+        return false;
+    }
     let Some(sources) = shell_words(sources, context) else {
         return false;
     };
     // cp places every source inside the destination when it names a
     // directory. With several sources, or a trailing slash, it never writes
     // the destination path itself.
-    let into_directory = sources.len() > 1 || expanded.ends_with('/') || resolved.is_dir();
+    let into_directory = sources.len() > 1 || named_directory;
     let absolute = Path::new(&expanded).is_absolute();
     sources.iter().all(|source| {
         let target = if into_directory {

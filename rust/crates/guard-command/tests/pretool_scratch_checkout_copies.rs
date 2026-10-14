@@ -231,6 +231,31 @@ fn scratch_checkout_globs_keep_every_screen() {
     }
 }
 
+/// The glob model ignores case, so it can see more matches than the shell
+/// passes. With one real match, `cp` writes the destination path itself.
+#[test]
+fn glob_copies_into_a_new_path_stay_reviewed() {
+    let fixture = fixture("glob-copies-new-path");
+    let app = fixture.scratch.join("app");
+    write(&app.join("src/RANKED.TS"), "export const ranked = 1;\n");
+    let app = app.display();
+    let project = fixture.project.display();
+    for command in [
+        format!("cp {app}/src/r*.ts {project}/ranked"),
+        format!("cp {app}/src/r*.ts src/ranked.ts"),
+        format!("cp {app}/src/*.ts {project}/fresh"),
+    ] {
+        assert!(!permitted(&fixture, &command), "{command}");
+    }
+    // A trailing slash or an existing directory still copies every match in.
+    for command in [
+        format!("cp {app}/src/r*.ts {project}/src/"),
+        format!("cp {app}/src/r*.ts {project}/src"),
+    ] {
+        assert!(permitted(&fixture, &command), "{command}");
+    }
+}
+
 #[test]
 fn scratch_checkout_package_bins_list() {
     let fixture = fixture("bins");

@@ -128,10 +128,13 @@ fn saved_reads_inspected_by_absolute_path_match_the_relative_spelling() {
         format!("{save} > {cwd}/.tmp/job.log 2>&1; wc -l {cwd}/.tmp/job.log"),
         format!("{save} > .tmp/job.log 2>&1; wc -l {cwd}/.tmp/job.log"),
         format!("ls > {cwd}/out/listing.txt && head -3 {cwd}/out/listing.txt"),
+        format!("{save} > .tmp/job.log 2>&1; wc -l {cwd}/.tmp/job.log;head -1 {cwd}/.tmp/job.log"),
+        format!("{save} > .tmp/job.log 2>&1; wc -l {cwd}/.tmp/job.log|tail -1"),
     ];
     let reviewed = [
         format!("{save} > {cwd}/.tmp/job.log 2>&1; cat {cwd}/.env"),
         format!("{save} > {cwd}/.tmp/job.log 2>&1; sh {cwd}/.tmp/job.log"),
+        format!("{save} > {cwd}/.tmp/job.log 2>&1; wc -l {cwd}/.tmp/job.log;sh {cwd}/.tmp/job.log"),
         format!("{save} > {cwd}/.git/hooks/pre-commit; wc -l {cwd}/.git/hooks/pre-commit"),
         format!("{save} > {cwd}/sub/.tmp/job.log; wc -l {cwd}/sub/.tmp/job.log"),
     ];
@@ -144,5 +147,33 @@ fn saved_reads_inspected_by_absolute_path_match_the_relative_spelling() {
             let (action, reason) = workspace.action(harness, command);
             assert_ne!(action, "allow", "{harness} {command}: {reason}");
         }
+    }
+}
+
+#[test]
+fn saved_reads_are_respelled_at_shell_separators_outside_quotes() {
+    use super::targets::relative_saved_reads;
+    let targets = ["/w/.tmp/a.log".to_owned()];
+    for (command, expected) in [
+        ("wc -l /w/.tmp/a.log;", "wc -l .tmp/a.log;"),
+        (
+            "wc -l /w/.tmp/a.log\nhead /w/.tmp/a.log|tail -1",
+            "wc -l .tmp/a.log\nhead .tmp/a.log|tail -1",
+        ),
+        ("(cat /w/.tmp/a.log)&&true", "(cat .tmp/a.log)&&true"),
+        ("echo '/w/.tmp/a.log'", "echo '/w/.tmp/a.log'"),
+        ("echo \"x /w/.tmp/a.log\"", "echo \"x /w/.tmp/a.log\""),
+        ("echo x\\ /w/.tmp/a.log", "echo x\\ /w/.tmp/a.log"),
+        ("cat /w/.tmp/a.log.bak", "cat /w/.tmp/a.log.bak"),
+        (
+            "true;cd sub;wc -l /w/.tmp/a.log",
+            "true;cd sub;wc -l /w/.tmp/a.log",
+        ),
+    ] {
+        assert_eq!(
+            relative_saved_reads(command.to_owned(), &targets, Some("/w")),
+            expected,
+            "{command}"
+        );
     }
 }
