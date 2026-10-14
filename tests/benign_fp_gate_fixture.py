@@ -207,7 +207,8 @@ def _session_worktree(org: Path, home: Path) -> None:
     # An existing branch no worktree has checked out, for `git worktree add <path> <branch>`.
     _git(portal, "branch", "feat/discovery-review", home=home)
     (portal / ".deploy-production.lock.d").mkdir()
-    (portal / "node_modules").mkdir()
+    # Installed, gitignored test runner whose `.bin` shim agents list from another checkout.
+    _node_package(portal, "vitest", _NODE_PACKAGES["vitest"])
     worktree = org.parent / "app-portal-fix"
     _git(portal, "worktree", "add", "--quiet", "-b", "fix/report-lane", str(worktree), home=home)
     _write(worktree / "scripts" / "report.ts", "console.log(process.env.REPORT_WINDOW ?? '7d');\n")
@@ -215,8 +216,6 @@ def _session_worktree(org: Path, home: Path) -> None:
     portal_manifest = {"name": "app-portal", "private": True, "devDependencies": {"vite": "^7.1.5"}}
     _write(worktree / "package.json", json.dumps(portal_manifest) + "\n")
     _bun_lockfile(worktree, {"vite": _NODE_PACKAGES["vite"]})
-    # Installed, gitignored test runner whose `.bin` shim agents list from another checkout.
-    _node_package(worktree, "vitest", _NODE_PACKAGES["vitest"])
     for name in ("findings", "prd", "todo"):
         _write(home / ".codex" / "plans" / f"remediation-{name}.md", f"# Remediation {name}\nSynthetic plan notes.\n")
     _write(home / ".codex" / "plans" / "remediation-evidence.json", '{"cases": []}\n')

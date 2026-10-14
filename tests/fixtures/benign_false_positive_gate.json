@@ -4087,7 +4087,7 @@
       ],
       "tool": "shell",
       "tool_input": {
-        "command": "ls ${ORG_WT}/node_modules/.bin/vitest"
+        "command": "ls ${ORG}/app-portal/node_modules/.bin/vitest"
       },
       "cwd": "worktree",
       "expect": "allow"
@@ -4103,7 +4103,7 @@
       ],
       "tool": "shell",
       "tool_input": {
-        "command": "ls ${ORG_WT}/node_modules/.bin/"
+        "command": "ls ${ORG}/app-portal/node_modules/.bin/"
       },
       "cwd": "worktree",
       "expect": "allow"
@@ -4119,7 +4119,7 @@
       ],
       "tool": "shell",
       "tool_input": {
-        "command": "ls ${ORG_WT}/node_modules/.bin/vitest 2>&1 | head -1"
+        "command": "ls ${ORG}/app-portal/node_modules/.bin/vitest 2>&1 | head -1"
       },
       "cwd": "worktree",
       "expect": "allow"
