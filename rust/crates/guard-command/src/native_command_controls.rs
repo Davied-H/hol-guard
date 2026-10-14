@@ -16,18 +16,6 @@ use crate::CanonicalCommandV1;
 #[path = "native_command_controls_risk.rs"]
 mod risk;
 
-/// Rust judgments of a command's shape that a user's explicit extension Allow
-/// may settle. Every other non-allow reason stays a floor, including helpers
-/// that repository or global Git configuration would run.
-const OVERRIDABLE_NATIVE_REASONS: &[&str] = &[
-    "native_command_review_required",
-    "native_destructive_command",
-    "native_network_review",
-    "native_package_review",
-    "native_process_service_review",
-    "native_process_service_dangerous",
-];
-
 #[derive(Debug)]
 pub struct CompiledNativeCommandControls {
     program: Arc<NativeCommandProgram>,
@@ -282,29 +270,8 @@ impl CompiledNativeCommandControls {
         let mut enabled_uncertainty = false;
         for observation in &batch.observations {
             if !observation.uncertainty_reasons.is_empty() {
-                let candidate = match self.rule_indices.get(&observation.rule_id) {
-                    Some(index) => {
-                        let rule = &self.program.rules[*index];
-                        let enabled = self
-                            .explicitly_enabled_permissions
-                            .contains(&rule.permission_id);
-                        if enabled
-                            && self.program.extensions[rule.extension_index].extension_id
-                                == "command.git"
-                        {
-                            enabled_uncertainty = true;
-                            None
-                        } else if enabled {
-                            Some("review")
-                        } else {
-                            Some(rule_floor(
-                                rule,
-                                self.program.extensions[rule.extension_index].required,
-                            ))
-                        }
-                    }
-                    None => Some("block"),
-                };
+                let candidate = self.uncertain_candidate(&observation.rule_id);
+                enabled_uncertainty |= candidate.is_none();
                 if let Some(candidate) = candidate {
                     let candidate = if rank(candidate) < rank("review") {
                         "review"
@@ -403,38 +370,13 @@ impl CompiledNativeCommandControls {
                 + usize::from(batch.evaluation_error.is_some()),
         };
         let explicit_allow = floor == "allow"
-            && batch.evaluation_error.is_none()
-            && result.action.bounded
-            && !result.action.sensitive_target
-            && (result.minimum_action == "allow"
-                || OVERRIDABLE_NATIVE_REASONS.contains(&result.reason_code.as_str()))
-            && command.is_some_and(|model| {
-                !crate::pretool::fixed_command_floor(model)
-                    && (!enabled_uncertainty
-                        || model.segments.iter().all(|segment| {
-                            crate::command_compatibility::basename(segment) != "git"
-                                || crate::command_compatibility::git_repository_routes_verified(
-                                    segment, context,
-                                )
-                        }))
-                    && self.explicit_permissions_cover_command(model, &batch, context)
-            });
+            && self.explicit_allow(&result, &batch, command, context, enabled_uncertainty);
         if enabled_uncertainty && !explicit_allow && rank(floor) < rank("review") {
             floor = "review";
             reason = "native_command_extension_uncertain";
         }
         if explicit_allow && result.minimum_action != "allow" {
-            // The user's authenticated Allow for every segment's extension
-            // permissions takes precedence over Rust's own judgment of the
-            // command. Guard self-protection, secret access and exfiltration,
-            // disabled permissions and evaluation failures are fixed floors.
-            result.minimum_action = "allow".into();
-            result.policy_action = "allow".into();
-            result.decision = "allow".into();
-            result.explicitly_benign = true;
-            result.reason_code = "native_command_explicit_permission_allow".into();
-            result.reason =
-                "This command is allowed by its authenticated extension permissions.".into();
+            precedence::settle_with_explicit_allow(&mut result);
         }
         let evaluation_error = batch.evaluation_error.clone();
         result.command_extensions = Some(NativeCommandObservationsV1 {
@@ -512,6 +454,8 @@ pub(crate) use delegated::normalized_tool;
 
 #[path = "native_command_controls_floor.rs"]
 mod floor;
+#[path = "native_command_controls_precedence.rs"]
+mod precedence;
 #[path = "native_command_unmodeled.rs"]
 mod unmodeled;
 use floor::{add_authority_repair_hint, rank, rule_floor, strengthen};
