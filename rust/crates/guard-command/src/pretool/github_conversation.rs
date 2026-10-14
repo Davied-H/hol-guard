@@ -18,6 +18,14 @@
 use crate::CommandSegmentV1;
 use std::time::Instant;
 
+/// Variables that move gh to another host than the `github.com` origin names.
+const HOST_VARIABLES: [&str; 4] = [
+    "GH_HOST",
+    "GH_ENTERPRISE_TOKEN",
+    "GITHUB_ENTERPRISE_TOKEN",
+    "GH_CONFIG_DIR",
+];
+
 #[path = "github_conversation_files.rs"]
 mod files;
 #[path = "github_conversation_remotes.rs"]
@@ -72,11 +80,20 @@ pub(crate) fn current_repository_write(
         (selector, body)
     };
     // gh takes the base repository from `GH_REPO` before any remote when no
-    // `--repo` is given, whether the segment sets it or inherits it.
-    let gh_repo = |name: &String| name.eq_ignore_ascii_case("GH_REPO");
-    if selector.is_none()
-        && (segment.environment_names.iter().any(gh_repo)
-            || environment.is_some_and(|stamped| stamped.environment_names.iter().any(gh_repo)))
+    // `--repo` is given, and the host for `--repo owner/name` and `gh api`
+    // from `GH_HOST`, an enterprise token or the hosts in `GH_CONFIG_DIR`,
+    // whether the segment sets them or inherits them.
+    let names = |test: &dyn Fn(&String) -> bool| {
+        segment.environment_names.iter().any(test)
+            || environment.is_some_and(|stamped| stamped.environment_names.iter().any(test))
+    };
+    let host = |name: &String| {
+        HOST_VARIABLES
+            .iter()
+            .any(|variable| name.eq_ignore_ascii_case(variable))
+    };
+    if names(&host)
+        || (selector.is_none() && names(&|name: &String| name.eq_ignore_ascii_case("GH_REPO")))
     {
         return false;
     }

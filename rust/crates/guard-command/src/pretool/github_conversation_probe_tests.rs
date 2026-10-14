@@ -427,4 +427,29 @@ fn global_remotes_rewrites_and_config_variables_count_like_gh() {
     }
     assert!(!checkout.allows_in(&["GH_REPO"], &reply));
     assert!(checkout.allows_in(&["GH_REPO"], &selected));
+    // A host override sends even `-R owner/name` and `gh api` elsewhere.
+    let api = segment(&[
+        "api",
+        "-X",
+        "POST",
+        "repos/example-org/app-portal/issues/12/comments",
+        "-f",
+        "body=Done.",
+    ]);
+    for name in [
+        "GH_HOST",
+        "GH_ENTERPRISE_TOKEN",
+        "GITHUB_ENTERPRISE_TOKEN",
+        "GH_CONFIG_DIR",
+    ] {
+        for write in [&reply, &selected, &api] {
+            assert!(!checkout.allows_in(&[name], write), "{name}");
+            let prefixed = CommandSegmentV1 {
+                environment_names: vec![name.to_owned()],
+                ..write.clone()
+            };
+            assert!(!checkout.allows_segment(&prefixed), "{name}");
+        }
+    }
+    assert!(checkout.allows_segment(&api));
 }
