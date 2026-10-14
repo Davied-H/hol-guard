@@ -44,7 +44,8 @@ _TOOL_GLOSSARY = {
     "claude-code": "In this harness, 'bash' means the Bash tool and the native read, write and edit tools "
     "are Read, Write and Edit.",
     "codex": "In this harness, 'bash' means your shell command tool. You have no separate read tool; "
-    "when a native read is requested, read the file with one shell command such as cat. Edits use apply_patch.",
+    "when a native read is requested, read the file with one shell command such as cat. apply_patch is your "
+    "native write and edit tool: create files with it and change them with it.",
     "cursor": "In this harness, 'bash' means your shell tool and the native read, write and edit tools "
     "are your file read, write and edit tools.",
 }
