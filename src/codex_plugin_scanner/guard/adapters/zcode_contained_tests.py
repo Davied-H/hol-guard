@@ -130,6 +130,16 @@ def _sink_command_prefix(config: Mapping[str, object]) -> tuple[str, ...]:
     return (*command[:-1], command[-1].replace(repr(root), repr(root.replace("\\", "/")), 1))
 
 
+def _request_root() -> str | None:
+    """Where the sink looks for a snapshot; on Windows not TEMP, which the
+    harness shell may set differently from this hook."""
+    if sys.platform != "win32":
+        return None
+    from ..windows_paths import trusted_windows_local_temp
+
+    return str(trusted_windows_local_temp())
+
+
 def platform_contains(response: Mapping[str, object]) -> bool:
     """macOS runs every contained profile; Linux runs the workspace sandbox;
     Windows runs installed Python in an AppContainer."""
@@ -207,7 +217,7 @@ def contained_zcode_response(
         if len(serialized) > 1_048_576:
             return None
         cleanup_stale_zcode_requests()
-        directory = Path(tempfile.mkdtemp(prefix="hol-guard-contained-test-"))
+        directory = Path(tempfile.mkdtemp(prefix="hol-guard-contained-test-", dir=_request_root()))
         # mkdtemp creates an owner-only directory; do not widen its permissions.
         request = directory / "request.json"
         descriptor = os.open(request, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)

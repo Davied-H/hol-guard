@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from codex_plugin_scanner.guard import native_restricted_pytest as transport
+from codex_plugin_scanner.guard import windows_paths
 from codex_plugin_scanner.guard.adapters.zcode_contained_tests import contained_zcode_response, platform_contains
 from codex_plugin_scanner.guard.runtime import contained_test_hook, restricted_inline_eval
 from codex_plugin_scanner.guard.runtime.restricted_pytest_model import RestrictedPytestError
@@ -106,6 +107,7 @@ def test_windows_contains_python_eval_only(monkeypatch):
 @pytest.mark.parametrize(("harness", "routed"), [("claude-code", True), ("codex", False), ("zcode", False)])
 def test_windows_routes_only_the_git_bash_harness(monkeypatch, tmp_path, harness, routed):
     monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(windows_paths, "trusted_windows_local_temp", lambda: tmp_path)
     payload = {
         "hook_event_name": "PreToolUse",
         "tool_name": "Bash",
@@ -120,6 +122,43 @@ def test_windows_routes_only_the_git_bash_harness(monkeypatch, tmp_path, harness
     }
     result = contained_zcode_response(_receipt(), input_text=json.dumps(payload), config=config, cli_args=[])
     assert (result is not None) is routed
+
+
+def test_windows_sink_finds_the_request_when_temp_differs(monkeypatch, tmp_path):
+    """The hook and the harness shell can set TEMP differently; both use the profile's."""
+    import shlex
+    import tempfile
+
+    profile_temp = (tmp_path / "profile-temp").resolve()
+    profile_temp.mkdir()
+    workspace = (tmp_path / "workspace").resolve()
+    workspace.mkdir()
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(windows_paths, "trusted_windows_local_temp", lambda: profile_temp)
+    monkeypatch.setattr(contained_test_hook, "trusted_windows_local_temp", lambda: profile_temp)
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    payload = {
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "cwd": str(workspace),
+        "tool_input": {"command": "python3 test_calc.py"},
+    }
+    config = {
+        "harness": "claude-code",
+        "python_executable": sys.executable,
+        "package_root": str(tmp_path),
+        "guard_home": str(tmp_path / "guard"),
+    }
+    result = contained_zcode_response(_receipt(), input_text=json.dumps(payload), config=config, cli_args=[])
+    assert result is not None
+    argv = shlex.split(result["hookSpecificOutput"]["updatedInput"]["command"])
+    request = Path(argv[argv.index("--request-file") + 1])
+    assert request.parent.parent == profile_temp
+    monkeypatch.setattr(tempfile, "tempdir", str(workspace))
+    read = contained_test_hook._read_windows_request(
+        request, argv[argv.index("--request-sha256") + 1], workspace=workspace
+    )
+    assert read["tool_input"] == {"command": "python3 test_calc.py"}
 
 
 def _write_request(directory: Path, workspace: Path) -> tuple[Path, str]:
@@ -146,7 +185,7 @@ def test_windows_request_must_sit_directly_in_the_temporary_directory(monkeypatc
     temporary.mkdir()
     workspace = (tmp_path / "workspace").resolve()
     workspace.mkdir()
-    monkeypatch.setattr(contained_test_hook.tempfile, "gettempdir", lambda: str(temporary))
+    monkeypatch.setattr(contained_test_hook, "trusted_windows_local_temp", lambda: temporary)
     request, digest = _write_request(temporary / "hol-guard-contained-test-a", workspace)
     payload = contained_test_hook._read_windows_request(request, digest, workspace=workspace)
     assert payload["tool_input"] == {"command": "python3 test_calc.py"}
@@ -164,7 +203,7 @@ def test_windows_request_rejects_linked_files(monkeypatch, tmp_path):
     temporary.mkdir()
     workspace = (tmp_path / "workspace").resolve()
     workspace.mkdir()
-    monkeypatch.setattr(contained_test_hook.tempfile, "gettempdir", lambda: str(temporary))
+    monkeypatch.setattr(contained_test_hook, "trusted_windows_local_temp", lambda: temporary)
     request, digest = _write_request(temporary / "hol-guard-contained-test-a", workspace)
     os.link(request, tmp_path / "second-name")
     with pytest.raises(RestrictedPytestError):

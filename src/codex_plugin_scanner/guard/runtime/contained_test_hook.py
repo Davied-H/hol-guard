@@ -9,11 +9,11 @@ import re
 import shlex
 import stat
 import sys
-import tempfile
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
 
+from ..windows_paths import trusted_windows_local_temp
 from . import restricted_git, restricted_node_test, restricted_node_tool, restricted_vitest
 from .contained_wrapper import bounded_output, peel_contained_wrapper, sibling_project_root
 from .restricted_inline_eval import prepare_restricted_inline_eval, run_restricted_inline_eval
@@ -91,7 +91,9 @@ def read_contained_test_request(path: Path, expected_sha256: str, *, workspace: 
 
 def _read_windows_request(path: Path, expected_sha256: str, *, workspace: Path) -> dict[str, object]:
     """Windows has no owner-mode bits; the snapshot must sit directly in this
-    user's temporary directory, reached without links or junctions."""
+    user's temporary directory, reached without links or junctions. The
+    directory comes from the profile, not TEMP, which the hook that wrote the
+    snapshot and the shell that runs this sink may set differently."""
     if (
         path.name != "request.json"
         or not path.parent.name.startswith("hol-guard-contained-test-")
@@ -101,7 +103,7 @@ def _read_windows_request(path: Path, expected_sha256: str, *, workspace: Path) 
     ):
         raise _reject()
     try:
-        temporary = Path(tempfile.gettempdir()).resolve(strict=True)
+        temporary = trusted_windows_local_temp()
         if os.path.normcase(path.parent.parent) != os.path.normcase(temporary):
             raise _reject()
         for candidate, regular in ((path.parent, False), (path, True)):
