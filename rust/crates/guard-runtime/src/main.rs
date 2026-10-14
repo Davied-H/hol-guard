@@ -79,6 +79,8 @@ mod claim_reuse_binding;
 #[cfg(test)]
 mod claim_reuse_binding_tests;
 #[cfg(test)]
+mod claim_reuse_then_tests;
+#[cfg(test)]
 mod claim_reuse_vectors_tests;
 mod claude_guard_question;
 mod claude_hook_bridge;
@@ -205,6 +207,7 @@ mod direct_tool_context_op;
 #[cfg(test)]
 mod direct_tool_context_tests;
 mod direct_tool_managed_bun;
+mod discovery_placement_op;
 mod edge;
 mod edge_git_push;
 mod encrypted_secret_store;
@@ -396,6 +399,7 @@ mod mcp_relay_args;
 mod mcp_relay_authority;
 #[cfg(unix)]
 mod mcp_relay_catalog;
+mod mcp_relay_claims;
 #[cfg(unix)]
 mod mcp_relay_core;
 mod mcp_relay_decide;

@@ -131,6 +131,11 @@ pub(crate) fn evaluate_resident_bytes(
                 let pending = policy_store.mcp_relay_pending();
                 crate::mcp_relay_pending::commit(&request, pending, policy_store.direct_evidence())
             }
+            ResidentOperationV1::McpRelayClaim(request) => {
+                let policy_store =
+                    policy_store.ok_or_else(|| "native_policy_snapshot_unavailable".to_owned())?;
+                crate::mcp_relay_decide::claim(&request, policy_store)
+            }
             ResidentOperationV1::ApprovalChallenge(request) => {
                 let policy_store =
                     policy_store.ok_or_else(|| "native_policy_snapshot_unavailable".to_owned())?;
@@ -491,6 +496,11 @@ pub(crate) fn evaluate_resident_bytes(
             ResidentOperationV1::CatalogRead(request) => encode_response(
                 &guard_command::catalog_read_model::evaluate_catalog_read(&request),
             ),
+            // Untrusted Cloud discovery bytes are validated and projected
+            // here; the daemon adapter only moves bytes (no Python fallback).
+            ResidentOperationV1::DiscoveryPlacementProject(request) => {
+                crate::discovery_placement_op::evaluate_discovery_placement_project(&request)
+            }
             ResidentOperationV1::DataFlowAnalyze(request) => {
                 crate::data_flow_analyze_op::evaluate_data_flow_analyze(&request)
             }
@@ -533,6 +543,7 @@ fn operation_guard_home(operation: &ResidentOperationV1) -> Option<&str> {
         ResidentOperationV1::McpRelayDecide(request) => Some(&request.guard_home),
         ResidentOperationV1::McpRelayCommit(request) => Some(&request.guard_home),
         ResidentOperationV1::McpRelayReady(request) => Some(&request.guard_home),
+        ResidentOperationV1::McpRelayClaim(request) => Some(&request.guard_home),
         ResidentOperationV1::ApprovalReuseDiagnostic(request) => Some(&request.guard_home),
         ResidentOperationV1::ClaimApprovalReuseDecisions(request) => Some(&request.guard_home),
         ResidentOperationV1::GuardStore(request) => Some(&request.guard_home),

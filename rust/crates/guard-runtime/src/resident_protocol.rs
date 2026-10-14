@@ -152,6 +152,7 @@ pub(crate) enum ResidentOperationV1 {
     McpRelayDecide(crate::mcp_relay_decide::McpRelayDecideRequestV1),
     McpRelayCommit(crate::mcp_relay_pending::McpRelayCommitRequestV1),
     McpRelayReady(crate::mcp_relay_ready::McpRelayReadyRequestV1),
+    McpRelayClaim(crate::mcp_relay_claims::McpRelayClaimRequestV1),
     ApprovalChallenge(ApprovalChallengeRequestV3),
     ApprovalValidate(ApprovalValidateRequestV3),
     ApprovalConsume(ApprovalConsumeRequestV3),
@@ -246,6 +247,7 @@ pub(crate) enum ResidentOperationV1 {
     #[allow(dead_code)]
     PromptAnalyze(PromptAnalyzeRequestV1),
     CatalogRead(guard_command::catalog_read_model::CatalogReadRequestV1),
+    DiscoveryPlacementProject(crate::discovery_placement_op::DiscoveryPlacementProjectRequest),
     DataFlowAnalyze(DataFlowAnalyzeRequestV1),
     Health(Value),
     Shutdown(Value),

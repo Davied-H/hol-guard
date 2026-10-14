@@ -1,9 +1,13 @@
+#[path = "safe_copies.rs"]
+mod copies;
+#[path = "hooks_path_writes.rs"]
+mod hooks_path;
 #[path = "write_target_screens.rs"]
 mod screens;
 use super::read_paths::{
-    bounded_file_read_target, existing_regular_read_target, expand_home_read_path,
-    resolved_location_allowed,
+    existing_regular_read_target, expand_home_read_path, resolved_location_allowed,
 };
+pub(super) use copies::safe_copy_arguments;
 pub(super) use screens::autostart_write_target;
 use screens::{home_spelling_matches_target, shared_library_part};
 
@@ -137,64 +141,7 @@ fn bounded_write_target(
         // A safe pathname can alias a protected inode through a hard link.
         && ((directory && canonical.is_dir()) || single_link_write_target(&canonical))
         && !autostart_write_target(&canonical)
-}
-
-pub(super) fn safe_copy_arguments(arguments: &[String], context: super::PathContext<'_>) -> bool {
-    let paths = match arguments {
-        [source, destination] => (source, destination),
-        [separator, source, destination] if separator == "--" => (source, destination),
-        _ => return false,
-    };
-    let expanded =
-        expand_home_read_path(paths.1, context.home_dir).unwrap_or_else(|| paths.1.clone());
-    let destination = std::path::Path::new(&expanded);
-    let destination = if destination.is_absolute() {
-        destination.to_path_buf()
-    } else if let Some(cwd) = context.cwd {
-        std::path::Path::new(
-            &expand_home_read_path(cwd, context.home_dir).unwrap_or_else(|| cwd.to_owned()),
-        )
-        .join(destination)
-    } else {
-        return false;
-    };
-    let destination = if destination.is_dir() {
-        let Some(name) = std::path::Path::new(paths.0).file_name() else {
-            return false;
-        };
-        destination.join(name)
-    } else {
-        destination
-    };
-    let Some(destination_text) = destination.to_str() else {
-        return false;
-    };
-    if destination
-        .symlink_metadata()
-        .is_ok_and(|metadata| metadata.file_type().is_symlink())
-    {
-        return false;
-    }
-    if !single_link_write_target(&destination) {
-        return false;
-    }
-    // Only a single file-to-file copy. Flags, directory destinations and
-    // recursive copies need separate evaluation; cp follows destination links.
-    !paths.0.starts_with('-')
-        && !paths.1.starts_with('-')
-        && paths.0.trim() == paths.0
-        && (bounded_file_read_target(paths.0, context.home_dir, context.cwd)
-            || super::chain_temporary::absent_temporary_read_target(
-                paths.0,
-                context.home_dir,
-                context.cwd,
-            ))
-        && (bounded_native_file_write_target(destination_text, context.home_dir, context.cwd)
-            // The temporary carve-out is only for destinations the user
-            // spelled absolutely. A relative destination joined onto a /tmp
-            // workspace must not sidestep the workspace boundary check above.
-            || (std::path::Path::new(&expanded).is_absolute()
-                && bounded_temporary_copy_target(destination_text, context)))
+        && !hooks_path::configured_hooks_write(&canonical, home_dir, workspace.to_str())
 }
 
 pub(super) fn safe_file_mutation_arguments(
@@ -354,6 +301,7 @@ fn bounded_temporary_copy_target(value: &str, context: super::PathContext<'_>) -
     resolved_path_allowed_in_scope(&target, context.home_dir, context.cwd, true)
         && guard_secure_fs::hidden_read_parts_allowed(&target)
         && !autostart_write_target(&target)
+        && !hooks_path::configured_hooks_write(&target, context.home_dir, context.cwd)
 }
 
 /// Windows `mktemp -d` (Git Bash `/tmp`) creates its directory in the user's
@@ -418,6 +366,7 @@ fn bounded_temporary_copy_target(value: &str, context: super::PathContext<'_>) -
         && resolved_path_allowed_in_scope(&target, context.home_dir, context.cwd, true)
         && guard_secure_fs::hidden_read_parts_allowed(&target)
         && !autostart_write_target(&target)
+        && !hooks_path::configured_hooks_write(&target, context.home_dir, context.cwd)
 }
 
 #[cfg(all(not(unix), not(windows)))]
