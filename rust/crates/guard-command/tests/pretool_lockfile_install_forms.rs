@@ -249,9 +249,10 @@ fn an_install_for_a_lockfile_the_project_lacks_names_the_one_it_commits() {
             "{form}"
         );
     }
-    // Two other lockfiles, none at all, or the manager's own lockfile beside
-    // a file that fails the check give no advice.
-    for (project, install) in [(&both, PNPM), (&bare, BUN), (&binary, BUN)] {
+    // Two other lockfiles, none at all, the manager's own lockfile beside a
+    // file that fails the check, or another lockfile beside a file that would
+    // send its install to review too give no advice.
+    for (project, install) in [(&both, PNPM), (&bare, BUN), (&binary, BUN), (&binary, PNPM)] {
         let result = lab.classify(project, install, &[]);
         assert_ne!(result.reason_code, ALLOWED, "{install}");
         assert!(
