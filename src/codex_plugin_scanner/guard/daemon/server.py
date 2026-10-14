@@ -120,6 +120,7 @@ from .command_queue_worker import (
     start_command_queue_worker,
     stop_command_queue_worker,
 )
+from .dashboard_bundle import pin_dashboard_bundle
 from .diagnostics import DaemonDiagnostics
 from .discovery import (
     DAEMON_DISCOVERY_CHALLENGE_TTL_SECONDS,
@@ -129,6 +130,15 @@ from .discovery import (
     load_daemon_discovery_key,
 )
 from .extension_control_api import ExtensionControlApiService
+from .extension_discovery_read import (
+    DISCOVERY_EVENTS_PATH,
+    DISCOVERY_RENDERS_PATH,
+    DISCOVERY_UNAVAILABLE,
+    DiscoveryReadError,
+    discovery_placement_projection,
+    discovery_rollout_enabled,
+    relay_discovery_measurement,
+)
 from .hook_managed_install_state import _hook_harness_is_unmanaged
 from .hook_policy_admission import prepare_native_hook_policy
 from .hook_request_auth import CHALLENGE_HOOK_PATHS, challenge_auth, request_auth
@@ -179,7 +189,23 @@ from .service_lifecycle import (
     start_serve_thread,
     startup_generation_is_current,
 )
+from .sponsored_discovery_settings import (
+    sponsored_discovery_allowed,
+    sponsored_discovery_measurement_allowed,
+    sponsored_discovery_settings,
+    update_sponsored_discovery_settings,
+)
 from .startup_phase import flush_pending_phases, record_phase_since, timed_phase
+
+# Local daemon routes. The Cloud paths stay in the read module and are the
+# only paths relayed upstream.
+_LOCAL_DISCOVERY_PREFIX = "/v1/discovery/extensions/"
+_LOCAL_DISCOVERY_PLACEMENTS = "/v1/discovery/extensions/placements"
+_LOCAL_DISCOVERY_SETTINGS = "/v1/discovery/extensions/settings"
+_LOCAL_DISCOVERY_MEASUREMENT = {
+    "/v1/discovery/extensions/renders": DISCOVERY_RENDERS_PATH,
+    "/v1/discovery/extensions/events": DISCOVERY_EVENTS_PATH,
+}
 
 _LOCAL_DASHBOARD_SESSION_REFRESH_GRACE_SECONDS = 7 * 24 * 60 * 60
 _DEFAULT_HEADLESS_CLOUD_SYNC_INTERVAL_SECONDS = 30.0
@@ -487,6 +513,7 @@ class _GuardDaemonHTTPServer(BoundedThreadingHTTPServer):
         super().__init__(server_address, handler_class)
 
     def _initialize_request_services(self) -> None:
+        from .hook_direct_counters import bind_hook_counter_sink
         from .hook_worker import HookWorker
 
         try:
@@ -497,6 +524,7 @@ class _GuardDaemonHTTPServer(BoundedThreadingHTTPServer):
                 activity_writer=self.runtime_hook_evidence_writer,
                 capture_writer=self.codex_binding_capture_writer,
             )
+            bind_hook_counter_sink(self.hook_worker, getattr(self, "diagnostics", None))
             self.extension_control_runtime = ExtensionControlRuntime(
                 self.store.read_extension_control_authority_for_registry(BUILT_IN_COMMAND_EXTENSION_REGISTRY)
             )
@@ -1265,6 +1293,44 @@ class _GuardDaemonHandler(
                 return
             self._write_json({"error": "not_found"}, status=404)
             return
+        if parsed.path.startswith(_LOCAL_DISCOVERY_PREFIX):
+            if self._query_has_guard_token(parsed.query):
+                self._record_query_token_rejection()
+                self._write_unauthorized(extra_headers=self._cors_headers_for_request())
+                return
+            if not self._header_token_is_valid():
+                self._write_unauthorized(extra_headers=self._cors_headers_for_request())
+                return
+            if not discovery_rollout_enabled():
+                self._write_json({"error": DISCOVERY_UNAVAILABLE}, status=503)
+                return
+            if parsed.path == _LOCAL_DISCOVERY_SETTINGS:
+                store = self.server.store  # type: ignore[attr-defined]
+                self._write_json(sponsored_discovery_settings(store))
+                return
+            if parsed.path != _LOCAL_DISCOVERY_PLACEMENTS:
+                self._write_json({"error": "not_found"}, status=404)
+                return
+            # Sponsored discovery is user/managed gated; a disabled preference
+            # still answers a valid policy-blocked projection rather than an
+            # error, so the dashboard can distinguish opt-out from failure.
+            store = self.server.store  # type: ignore[attr-defined]
+            allowed = sponsored_discovery_allowed(store)
+            result = discovery_placement_projection(
+                guard_home=store.guard_home,
+                policy_allowed=allowed,
+            )
+            if result is None:
+                self._write_json({"error": DISCOVERY_UNAVAILABLE}, status=501)
+                return
+            if result.error_code is not None:
+                self._write_json({"error": result.error_code}, status=result.status)
+                return
+            if result.body is None:
+                self._write_json({"error": DISCOVERY_UNAVAILABLE}, status=503)
+                return
+            self._write_discovery_body(result.body)
+            return
         if parsed.path.startswith("/v1/") and not self._header_token_is_valid():
             self._write_unauthorized(extra_headers=self._cors_headers_for_request())
             return
@@ -1343,10 +1409,15 @@ class _GuardDaemonHandler(
         except NativeDaemonRouteError:
             self._write_json(native_route_unavailable_body(), status=503)
             return
-        if route.route_class != "none" and not self._header_token_is_valid():
+        discovery_post = parsed.path.startswith(_LOCAL_DISCOVERY_PREFIX)
+        if discovery_post and self._query_has_guard_token(parsed.query):
+            self._record_query_token_rejection()
             self._write_unauthorized(extra_headers=self._cors_headers_for_request())
             return
-        if route.route_class != "none":
+        if (route.route_class != "none" or discovery_post) and not self._header_token_is_valid():
+            self._write_unauthorized(extra_headers=self._cors_headers_for_request())
+            return
+        if route.route_class != "none" or discovery_post:
             try:
                 content_length = int(self.headers.get("Content-Length", "0"))
             except ValueError:
@@ -1362,6 +1433,55 @@ class _GuardDaemonHandler(
                 "request_body_too_large": 413,
             }.get(body_error, 400)
             self._write_json({"error": body_error}, status=status)
+            return
+        if parsed.path.startswith(_LOCAL_DISCOVERY_PREFIX):
+            if not discovery_rollout_enabled():
+                self._write_json({"error": DISCOVERY_UNAVAILABLE}, status=503)
+                return
+            store = self.server.store  # type: ignore[attr-defined]
+            upstream = _LOCAL_DISCOVERY_MEASUREMENT.get(parsed.path)
+            if upstream is not None:
+                # Consent-gated relay: measurement off still allows discovery
+                # but emits no render/event POSTs and no persistent identity.
+                if not sponsored_discovery_measurement_allowed(store):
+                    self._write_json({"error": "measurement_disabled"}, status=403)
+                    return
+                if not isinstance(payload, dict):
+                    self._write_json({"error": "invalid_request"}, status=400)
+                    return
+                # Only the strictly parsed, bounded JSON moves upstream: no
+                # local credential, identifier, or inventory is attached.
+                raw = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+                try:
+                    status, body = relay_discovery_measurement(path=upstream, payload=raw)
+                except DiscoveryReadError as error:
+                    self._write_json({"error": error.code}, status=error.status)
+                    return
+                self._write_json_bytes(
+                    escape_json_for_html(body),
+                    status=status,
+                    extra_headers={"Cache-Control": "no-store"},
+                )
+                return
+            if parsed.path == _LOCAL_DISCOVERY_SETTINGS:
+                update = payload if isinstance(payload, dict) else {}
+                enabled = update.get("sponsored_discovery_enabled")
+                measurement = update.get("sponsored_discovery_measurement_enabled")
+                if enabled is not None and not isinstance(enabled, bool):
+                    self._write_json({"error": "invalid_request"}, status=400)
+                    return
+                if measurement is not None and not isinstance(measurement, bool):
+                    self._write_json({"error": "invalid_request"}, status=400)
+                    return
+                settings = update_sponsored_discovery_settings(
+                    store,
+                    sponsored_discovery_enabled=enabled if isinstance(enabled, bool) else None,
+                    sponsored_discovery_measurement_enabled=measurement if isinstance(measurement, bool) else None,
+                    now=datetime.now(timezone.utc).isoformat(),
+                )
+                self._write_json(settings)
+                return
+            self._write_json({"error": "not_found"}, status=404)
             return
         if parsed.path == "/v1/healthz/verify":
             nonce = self._optional_string(payload.get("nonce")) if payload else None
@@ -1642,6 +1762,7 @@ class _GuardDaemonHandler(
         )
 
     def _handle_runtime_hook(self, payload: dict[str, object], query: str, *, default_harness: str) -> None:
+        from .hook_direct_counters import note_hook_received
         from .hook_direct_pi_transport import pi_direct_answer
         from .hook_request_parsing import (
             HookPayloadReferenceError,
@@ -1653,6 +1774,12 @@ class _GuardDaemonHandler(
         admission_seconds = PROMPT_ADMISSION_SECONDS if prompt_event else _RUNTIME_HOOK_ADMISSION_TIMEOUT_SECONDS
         transport_deadline = self._daemon_server().request_deadline(self.request, admission_seconds)
         params = parse_qs(query)
+        # Diagnostics only: a count by the harness the worker reviews (the
+        # `runtime-harness` override first), before anything is judged.
+        note_hook_received(
+            getattr(self._daemon_server(), "hook_worker", None),
+            self._optional_string(params.get("runtime-harness", [None])[-1]) or default_harness,
+        )
         hint_missing = "guard_remaining_seconds" not in payload and "guard_remaining_ms" not in payload
         hook_deadline = RuntimeHookDeadline.for_admission(
             _runtime_hook_remaining_hint(payload),
@@ -2738,6 +2865,19 @@ class _GuardDaemonHandler(
     ) -> None:
         body = escape_json_for_html(json.dumps(payload).encode("utf-8"))
         self._write_json_bytes(body, status=status, extra_headers=extra_headers)
+
+    def _write_discovery_body(self, body: bytes) -> None:
+        """Write the native discovery projection verbatim, uncached.
+
+        The bytes are exactly what the native validator produced: this server
+        never interprets, filters, or reorders placements.
+        """
+
+        self._write_json_bytes(
+            escape_json_for_html(body),
+            status=200,
+            extra_headers={"Cache-Control": "no-store"},
+        )
 
     def _write_json_bytes(
         self,
@@ -3892,6 +4032,9 @@ def _validate_dashboard_bundle() -> None:
         raise RuntimeError(
             "Guard dashboard bundle is missing. Run `pnpm install && pnpm run build` in the dashboard directory."
         )
+    # Serve the dashboard that matches this process's code, even after an
+    # in-place upgrade replaces the files on disk.
+    pin_dashboard_bundle(_STATIC_DIR)
 
 
 def _guard_daemon_idle_timeout_seconds(

@@ -28,7 +28,7 @@ pub mod cursor_shell_command;
 pub mod policy_document;
 pub use codex_output_entry::{review_codex_tool_output, ToolOutputOutcome};
 pub use codex_output_env::{Ctx, GitCheck, GitProbe, GitRun, InspectionHost};
-mod codex_output_fnmatch;
+pub mod codex_output_fnmatch;
 mod codex_output_fs;
 mod codex_output_git_conditions;
 mod codex_output_git_config;
@@ -133,6 +133,8 @@ pub mod package_intent_common;
 pub mod package_intent_parser;
 pub mod package_manager_command;
 pub mod package_manifest_diff;
+#[cfg(not(guard_source_bootstrap))]
+mod packaged_blob;
 mod parser_executables;
 mod parser_segments;
 mod parser_wrappers;

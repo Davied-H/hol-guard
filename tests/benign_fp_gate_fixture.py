@@ -278,6 +278,8 @@ def build_fixture(root: Path) -> BenignFixture:
     _bun_lockfile(worktree, _NODE_PACKAGES)
     _write(worktree / "test_calc.py", "assert 1 + 1 == 2\nprint('ok')\n")
     _write(worktree / "scripts" / "rebuild.sh", "#!/bin/sh\necho rebuilt\n")
+    # Reply drafted for a PR review conversation, posted with `gh pr comment --body-file`.
+    _write(worktree / ".tmp" / "body.md", "Fixed in the latest push; the parser now rejects empty input.\n")
     # Worktree package borrowing the canonical checkout's installed node_modules through a symlink.
     _node_toolchain(parent / "dashboard")
     _write(worktree / "dashboard" / "package.json", (parent / "dashboard" / "package.json").read_text())
@@ -300,6 +302,10 @@ def build_fixture(root: Path) -> BenignFixture:
     private_tmp = Path(tempfile.mkdtemp(prefix="tmp.", dir=_system_tmp())).resolve()
     _write(private_tmp / "notes.txt", "first draft\n")
     _write(private_tmp / "resume-phase1.mjs", "console.log('resume');\n")
+    # Files a session preserved before resetting its checkout, copied back by glob.
+    _write(private_tmp / "preserved" / "src" / "discovery" / "catalog.ts", "export const catalog = [];\n")
+    _write(private_tmp / "preserved" / "src" / "discovery" / "rank.ts", "export const rank = 1;\n")
+    _write(private_tmp / "preserved" / "tests" / "discovery.test.ts", "export const covered = true;\n")
     # Workspace as a linked worktree under the system temp area whose registered siblings are outside cwd.
     tmp_worktree = Path(tempfile.mkdtemp(prefix="wt.", dir=_system_tmp())).resolve() / "workspace"
     _git(parent, "worktree", "add", "--quiet", "-b", "tmp-feature", str(tmp_worktree), home=home)
@@ -336,8 +342,13 @@ def build_fixture(root: Path) -> BenignFixture:
             _write(repository / "rust" / "crates" / "catalog" / "src" / "lib.rs", "pub fn catalog_read() {}\n")
             # A real target, so the sibling `.env` negative controls prove a refusal.
             _write(repository / ".env", "TOKEN=synthetic-not-a-secret\n")
+            _write(repository / ".gitignore", "node_modules/\n")
+            _node_toolchain(repository / "dashboard")
         _git(repository, "add", "-A", home=home)
         _git(repository, "commit", "--quiet", "-m", f"{name} base", home=home)
+        if name == "service-api":
+            _git(repository, "remote", "add", "origin", "https://github.com/example-org/service-api.git", home=home)
+            _git(repository, "update-ref", "refs/remotes/origin/main", "HEAD", home=home)
     _session_worktree(org, home)
     # A non-repository parent under /tmp whose repository has a linked worktree beside the parent.
     tmp_org = Path(tempfile.mkdtemp(prefix="org.", dir=_system_tmp())).resolve() / "org"

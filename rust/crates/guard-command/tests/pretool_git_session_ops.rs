@@ -18,7 +18,8 @@ pub(crate) struct Session {
     _cleanup: FixtureCleanup,
 }
 
-fn default_controls() -> guard_command::native_command_controls::CompiledNativeCommandControls {
+pub(crate) fn default_controls(
+) -> guard_command::native_command_controls::CompiledNativeCommandControls {
     let program = guard_command::native_command_program::packaged_command_program().unwrap();
     let mut binding: guard_contracts::NativeCommandControlBindingV1 =
         serde_json::from_value(json!({
@@ -268,12 +269,14 @@ fn fast_forward_pull_is_quiet_only_without_merge_or_checkout_programs() {
     session.config(&["branch.main.merge", "refs/heads/main"]);
     session.assert_allow(&pull, REFRESH);
     session.assert_allow(&format!("git -C {primary} pull -q --ff-only"), REFRESH);
+    // Without `--ff-only` the pull may write a merge commit; this repository
+    // has no hook or merge program that commit could start.
+    session.assert_allow(&format!("git -C {primary} pull"), REFRESH);
     session.assert_allow(
         &format!("git -C {primary} pull --ff-only origin main"),
         REFRESH,
     );
     for command in [
-        format!("git -C {primary} pull"),
         format!("git -C {primary} pull --rebase"),
         format!("git -C {primary} pull --ff-only --rebase"),
         format!("git -C {primary} pull --ff-only evil main"),

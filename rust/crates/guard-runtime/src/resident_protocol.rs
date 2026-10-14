@@ -67,6 +67,7 @@ pub(crate) fn capabilities() -> RuntimeCapabilitiesV1 {
         crate::policy_store::policy_store_direct_lane::HOOK_DIRECT_REVIEW_FACTS_FEATURE.into(),
         crate::hook_direct_evidence::HOOK_DIRECT_EVIDENCE_FEATURE.into(),
         crate::mcp_relay_decide::MCP_RELAY_DECIDE_FEATURE.into(),
+        crate::mcp_relay_servers::MCP_RELAY_SERVER_REPORT_FEATURE.into(),
         "native-approval-artifact-v3".into(),
         "native-approval-challenge-v3".into(),
         "native-approval-validation-v3".into(),
@@ -118,6 +119,13 @@ pub(crate) fn capabilities() -> RuntimeCapabilitiesV1 {
         // this path on Windows, where the module is not compiled.
         #[cfg(unix)]
         features.push(crate::binding_capture_op::BINDING_CAPTURE_FEATURE.into());
+        // The native SessionStart lane execs its Python fallback, so it is
+        // compiled and advertised on unix only.
+        #[cfg(unix)]
+        features.push(crate::claude_session_start::SESSION_START_FEATURE.into());
+        // The relay runs its MCP server in its own process group, so it is
+        // advertised on unix only.
+        features.push(crate::mcp_relay::RELAY_FEATURE.into());
     }
     features.push(crate::claude_hook_bridge::BRIDGE_FEATURE.into());
     features.push(crate::codex_hook_bridge::BRIDGE_FEATURE.into());
@@ -151,6 +159,9 @@ pub(crate) enum ResidentOperationV1 {
     HookDirectEvidenceDrain(crate::hook_direct_evidence::HookDirectEvidenceDrainRequestV1),
     McpRelayDecide(crate::mcp_relay_decide::McpRelayDecideRequestV1),
     McpRelayCommit(crate::mcp_relay_pending::McpRelayCommitRequestV1),
+    McpRelayReady(crate::mcp_relay_ready::McpRelayReadyRequestV1),
+    McpRelayClaim(crate::mcp_relay_claims::McpRelayClaimRequestV1),
+    McpRelayServerReport(crate::mcp_relay_servers::McpRelayServerReportRequestV1),
     ApprovalChallenge(ApprovalChallengeRequestV3),
     ApprovalValidate(ApprovalValidateRequestV3),
     ApprovalConsume(ApprovalConsumeRequestV3),
@@ -245,6 +256,7 @@ pub(crate) enum ResidentOperationV1 {
     #[allow(dead_code)]
     PromptAnalyze(PromptAnalyzeRequestV1),
     CatalogRead(guard_command::catalog_read_model::CatalogReadRequestV1),
+    DiscoveryPlacementProject(crate::discovery_placement_op::DiscoveryPlacementProjectRequest),
     DataFlowAnalyze(DataFlowAnalyzeRequestV1),
     Health(Value),
     Shutdown(Value),

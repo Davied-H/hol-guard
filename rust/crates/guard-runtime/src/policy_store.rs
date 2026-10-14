@@ -201,6 +201,8 @@ pub(crate) struct PolicySnapshotStore {
     direct_lane: Mutex<Option<Arc<policy_store_direct_lane::DirectLaneBinding>>>,
     direct_evidence: crate::hook_direct_evidence::DirectEvidenceQueue,
     mcp_relay_pending: crate::mcp_relay_pending::PendingRelayEvidence,
+    mcp_relay_claims: crate::mcp_relay_claims::HeldClaims<crate::mcp_relay_decide::ClaimContext>,
+    mcp_relay_servers: crate::mcp_relay_servers::RelayServers,
 }
 
 impl PolicySnapshotStore {
@@ -306,6 +308,8 @@ impl PolicySnapshotStore {
             direct_lane: Mutex::new(None),
             direct_evidence: crate::hook_direct_evidence::DirectEvidenceQueue::default(),
             mcp_relay_pending: crate::mcp_relay_pending::PendingRelayEvidence::default(),
+            mcp_relay_claims: crate::mcp_relay_claims::HeldClaims::default(),
+            mcp_relay_servers: crate::mcp_relay_servers::RelayServers::default(),
         })
     }
 
@@ -321,6 +325,18 @@ impl PolicySnapshotStore {
     /// Relayed forwards' evidence, waiting for the relay to commit it.
     pub(crate) fn mcp_relay_pending(&self) -> &crate::mcp_relay_pending::PendingRelayEvidence {
         &self.mcp_relay_pending
+    }
+
+    /// Relayed decisions' saved-approval claims, waiting for the relay.
+    pub(crate) fn mcp_relay_claims(
+        &self,
+    ) -> &crate::mcp_relay_claims::HeldClaims<crate::mcp_relay_decide::ClaimContext> {
+        &self.mcp_relay_claims
+    }
+
+    /// The MCP servers whose relay sessions run under the proxy.
+    pub(crate) fn mcp_relay_servers(&self) -> &crate::mcp_relay_servers::RelayServers {
+        &self.mcp_relay_servers
     }
 
     /// Migrate legacy policy files only on an explicit upgrade command.

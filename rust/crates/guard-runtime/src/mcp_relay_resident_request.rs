@@ -7,29 +7,11 @@ use guard_command::mcp_decision::{build_configured_environment_hash, build_mcp_s
 use guard_contracts::{McpToolArgumentsV1, McpToolCallServerIdentityV1};
 use serde_json::{json, Map, Value};
 
+use super::python_wire::python_canonical;
 use super::{ProcessFacts, RelayFacts};
-use crate::context_digest::python_strip;
 use crate::mcp_relay_args::RelayArgs;
 use crate::mcp_relay_catalog::{CatalogSnapshot, RelayCatalog};
 use crate::mcp_relay_launch::Launch;
-
-/// `_SHELL_TOOL_NAMES`: tools whose arguments the proxy parses as a command.
-const SHELL_TOOL_NAMES: [&str; 12] = [
-    "ash",
-    "bash",
-    "cmd",
-    "dash",
-    "powershell",
-    "pwsh",
-    "run_command",
-    "run_terminal_command",
-    "sh",
-    "shell",
-    "terminal",
-    "zsh",
-];
-/// `_command_argument`: argument keys the proxy reads as a package command.
-const COMMAND_KEYS: [&str; 4] = ["command", "cmd", "shell_command", "shellCommand"];
 
 /// The session facts, or `None` when the proxy could not have built them as
 /// the relay sees them.
@@ -109,6 +91,10 @@ pub(super) fn relay_facts(
         fingerprint,
         server_identity,
         launcher_path: launcher_path(process)?,
+        path: match &process.path {
+            Some(path) => Some(path.to_str()?.to_owned()),
+            None => None,
+        },
         launcher_home: launcher_home(process.home.as_ref()?)?,
     })
 }
@@ -172,7 +158,8 @@ pub(super) fn launcher_home(home: &OsString) -> Option<String> {
 }
 
 /// The resident request for one call and the catalog it is decided against,
-/// or `None` when the call is not sent.
+/// or `None` when the call is not sent. `params` are already
+/// `python_canonical`, as the proxy decoded them.
 pub(super) fn decide_request(
     facts: &RelayFacts,
     params: &Map<String, Value>,
@@ -194,9 +181,10 @@ pub(super) fn decide_request(
         Some(Value::Object(definition)) => {
             let mut entry = definition.clone();
             entry.remove("name");
-            if !python_stable(&Value::Object(entry.clone())) {
+            // The proxy's catalog holds the decoded `tools/list` page.
+            let Value::Object(entry) = python_canonical(&Value::Object(entry))? else {
                 return None;
-            }
+            };
             (!entry.is_empty()).then_some(entry)
         }
         Some(_) => return None,
@@ -229,6 +217,7 @@ pub(super) fn decide_request(
         },
         "arguments": serde_json::to_value(arguments).ok()?,
         "launcher_path": facts.launcher_path,
+        "path": facts.path,
         "launcher_home": facts.launcher_home,
         "catalog_state": expected.state,
         "params": params,
@@ -237,15 +226,11 @@ pub(super) fn decide_request(
     Some((serde_json::to_vec(&payload).ok()?, expected))
 }
 
-/// Tools the proxy routes through a package check or a Composio provider
-/// lookup, which the resident does not answer.
+/// Tools the proxy routes through a Composio provider lookup, which the
+/// resident does not answer. Every other call reaches the resident, which
+/// defers one the proxy's package parser finds an intent in.
 pub(super) fn delegated_tool(name: &str) -> bool {
-    let normalized = python_strip(name).to_ascii_lowercase();
-    if SHELL_TOOL_NAMES.contains(&normalized.as_str()) {
-        return true;
-    }
-    let tail = name.rsplit("__").next().unwrap_or(name);
-    tail.to_ascii_lowercase().starts_with("composio_")
+    crate::mcp_relay_servers::composio_tool(name)
 }
 
 /// The call arguments as the proxy received them, in host key order.
@@ -257,9 +242,6 @@ pub(super) fn arguments(
         None => McpToolArgumentsV1::Other { value: Value::Null },
         Some(Value::String(text)) => McpToolArgumentsV1::Json { text: text.clone() },
         Some(Value::Object(map)) => {
-            if COMMAND_KEYS.iter().any(|key| map.contains_key(*key)) {
-                return None;
-            }
             let entries = if map.len() < 2 {
                 map.iter()
                     .map(|(key, value)| (key.clone(), value.clone()))
@@ -277,30 +259,5 @@ pub(super) fn arguments(
             value: other.clone(),
         },
     };
-    let stable = match &arguments {
-        McpToolArgumentsV1::Mapping { entries } => {
-            entries.iter().all(|(_, value)| python_stable(value))
-        }
-        McpToolArgumentsV1::Json { .. } => true,
-        McpToolArgumentsV1::Other { value } => python_stable(value),
-    };
-    stable.then_some(arguments)
-}
-
-/// Whether every number keeps its text through `json.loads` and
-/// `json.dumps`: only integers in their shortest form do.
-pub(super) fn python_stable(value: &Value) -> bool {
-    match value {
-        Value::Number(number) => {
-            let text = number.to_string();
-            let digits = text.strip_prefix('-').unwrap_or(&text);
-            text != "-0"
-                && !digits.is_empty()
-                && digits.bytes().all(|byte| byte.is_ascii_digit())
-                && (digits == "0" || !digits.starts_with('0'))
-        }
-        Value::Array(items) => items.iter().all(python_stable),
-        Value::Object(map) => map.values().all(python_stable),
-        Value::Null | Value::Bool(_) | Value::String(_) => true,
-    }
+    Some(arguments)
 }
