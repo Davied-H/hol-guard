@@ -141,6 +141,9 @@ def codex_tool_output_native(
         }
     except (OSError, RuntimeError):
         return _deny(_UNAVAILABLE)
+    except (TypeError, ValueError):
+        # Lone surrogates or NaN in the hook payload cannot be encoded.
+        return _deny("native_codex_tool_output_invalid")
     _request_counter += 1
     request: dict[str, object] = {
         "schema": _REQUEST_SCHEMA,
