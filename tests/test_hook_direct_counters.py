@@ -146,6 +146,25 @@ def test_a_failed_delivery_is_retried_after_the_interval() -> None:
     assert sink.lines == [("hook_direct_counters", {"epoch": None, "resident": {}, "received": {"codex": 1}})]
 
 
+def test_a_dropped_line_is_retried_after_the_interval() -> None:
+    clock, sink = _Clock(), _Sink()
+    accepting = {"on": False}
+
+    def queue(event: str, *, detail: str) -> bool:
+        # `DaemonDiagnostics.record` returns False when its queue drops a line.
+        return accepting["on"] and sink.record(event, detail=detail)
+
+    log = HookCounterLog(clock=clock)
+    log.bind_sink(queue)
+    log.note_received("codex")
+    assert not log.maybe_log()
+    accepting["on"] = True
+    assert not log.maybe_log()
+    clock.now += 300.0
+    assert log.maybe_log()
+    assert sink.lines == [("hook_direct_counters", {"epoch": None, "resident": {}, "received": {"codex": 1}})]
+
+
 def test_receipts_are_logged_without_a_drain_transport(tmp_path: Path) -> None:
     clock, sink = _Clock(), _Sink()
     host = _Host(tmp_path, _log(clock, sink))

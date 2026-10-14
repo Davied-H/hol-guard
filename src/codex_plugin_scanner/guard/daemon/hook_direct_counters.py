@@ -137,8 +137,11 @@ class HookCounterLog:
             return False
         # The interval also paces retries; the snapshot counts as logged only
         # once the sink accepts it, so a failed delivery is retried later.
+        # `DaemonDiagnostics.record` reports a dropped line by returning False.
         self._logged_at = now
-        sink(_LOG_EVENT, detail=json.dumps(current, separators=(",", ":"), sort_keys=True))
+        delivered = sink(_LOG_EVENT, detail=json.dumps(current, separators=(",", ":"), sort_keys=True))
+        if delivered is False:
+            return False
         self._logged = current
         return True
 
