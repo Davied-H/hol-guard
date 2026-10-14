@@ -81,11 +81,9 @@ fn url_parts(value: &str) -> Mirror<Option<(String, String, String)>> {
         // a hostname is None.
         return Ok(None);
     }
-    // `SplitResult.hostname` lowercases only the text before a zone `%`.
-    let hostname = match hostname.split_once('%') {
-        Some((head, zone)) => format!("{}%{zone}", head.to_ascii_lowercase()),
-        None => hostname.to_ascii_lowercase(),
-    };
+    // `SplitResult.hostname` keeps a zone's case after `%`, but
+    // project_identity.py:_canonical_remote lowercases all of it again.
+    let hostname = hostname.to_ascii_lowercase();
     let mut host = hostname.clone();
     // `_hostinfo` reads an empty port as no port.
     match port.filter(|port| !port.is_empty()) {
@@ -209,7 +207,7 @@ mod tests {
         ok("https://H:0443/o/r.git", "remote:h/o/r");
         ok("https://h:0/o/r", "remote:h:0/o/r");
         ok("ssh://u@h:2201/o/r", "remote:h:2201/o/r");
-        ok("ssh://git@Host%25Zone/o/r", "remote:host%25Zone/o/r");
+        ok("ssh://git@Host%25Zone/o/r", "remote:host%25zone/o/r");
         assert_eq!(anchor("https://h:70000/o/r"), Ok(None));
         assert_eq!(anchor("https://h:abc/o/r"), Ok(None));
         ok("https://h:/o/r", "remote:h/o/r");
