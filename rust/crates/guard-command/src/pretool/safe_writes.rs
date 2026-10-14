@@ -1,7 +1,7 @@
-#[path = "hooks_path_writes.rs"]
-mod hooks_path;
 #[path = "safe_copies.rs"]
 mod copies;
+#[path = "hooks_path_writes.rs"]
+mod hooks_path;
 #[path = "write_target_screens.rs"]
 mod screens;
 use super::read_paths::{
