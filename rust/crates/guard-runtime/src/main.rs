@@ -166,6 +166,9 @@ mod continuation_lineage;
 mod continuation_metadata;
 mod continuation_store;
 mod contributed_mcp_decision_op;
+mod copilot_detect;
+#[cfg(all(test, unix))]
+mod copilot_vectors_tests;
 mod critical_floor_op;
 mod cursor_hook_bridge;
 mod cursor_hook_bridge_response;
@@ -406,10 +409,13 @@ mod mcp_relay_decide;
 #[cfg(unix)]
 mod mcp_relay_host;
 #[cfg(unix)]
+mod mcp_relay_lane;
+#[cfg(unix)]
 mod mcp_relay_launch;
 #[cfg(unix)]
 mod mcp_relay_order;
 mod mcp_relay_pending;
+mod mcp_relay_ready;
 #[cfg(unix)]
 mod mcp_relay_resident;
 mod mcp_runtime_evidence_op;
@@ -454,6 +460,10 @@ mod package_evaluation_compose_op;
 mod package_policy_resolve_op;
 mod package_posture_op;
 mod package_protect_projection_op;
+mod pi_detect;
+mod pi_glob;
+#[cfg(all(test, unix))]
+mod pi_vectors_tests;
 mod policy_bundle_crypto;
 mod policy_bundle_decisions;
 mod policy_bundle_delivery;
@@ -489,6 +499,7 @@ mod policy_lookup_groups;
 mod policy_lookup_reuse;
 mod policy_snapshot_build;
 mod policy_store;
+mod project_identity;
 mod prompt_analyze_op;
 mod protect_request_op;
 mod pyjson;
