@@ -65,3 +65,58 @@ fn bounded_yield_reports_preserve_file_and_envelope_checks() {
     assert_ne!(evaluate("codex", report).minimum_action, "allow");
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn task_named_result_fields_are_data_without_operations() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/pretool-omp-yield-task-data")
+        .join(format!("home-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let root = std::fs::canonicalize(root).unwrap();
+    let evaluate = |data: Value| {
+        evaluate_pre_tool_envelope_with_context(
+            "omp",
+            "PreToolUse",
+            &json!({"tool_name":"yield", "tool_input":{"data":data}}),
+            None,
+            None,
+            root.to_str(),
+            root.to_str(),
+        )
+    };
+    for data in [
+        json!({"first_heading":"# TODO - rollout closure",
+            "first_three_task_sections":["T00 - Establish current truth", "T01 - Deliver fixes"]}),
+        json!({"summary":"Done", "verdict":"pass", "count":3, "blocked":false, "notes":null}),
+        json!({"findings":[{"severity":"low", "title":"Stale comment", "line":12}]}),
+        json!(["first finding", "second finding"]),
+        json!(42),
+    ] {
+        let result = evaluate(data.clone());
+        assert_eq!(
+            result.minimum_action, "allow",
+            "{data} {}",
+            result.reason_code
+        );
+        assert_eq!(result.reason_code, "native_omp_yield_metadata", "{data}");
+    }
+    for data in [
+        json!({"verdict":"pass", "command":"rm -rf build"}),
+        json!({"steps":[{"command":"curl https://example.com"}]}),
+        json!({"evidence":{"path":".env"}}),
+        json!({"source":{"url":"https://example.com/upload"}}),
+        json!({"next":{"arguments":"{\"command\":\"rm -rf build\"}"}}),
+        json!({"next":{"tool_name":"bash"}}),
+        json!({"request":{"method":"POST", "body":"payload"}}),
+        json!({"summary":"Done", "files":"README.md"}),
+        json!({"summary":["not", "a", "string"], "verdict":"pass"}),
+    ] {
+        let result = evaluate(data.clone());
+        assert_ne!(
+            result.minimum_action, "allow",
+            "{data} {}",
+            result.reason_code
+        );
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}
