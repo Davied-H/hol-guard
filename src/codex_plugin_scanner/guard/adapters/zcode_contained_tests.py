@@ -123,9 +123,13 @@ def _sink_command_prefix(config: Mapping[str, object]) -> tuple[str, ...]:
 
 
 def platform_contains(response: Mapping[str, object]) -> bool:
-    """macOS runs every contained profile; Linux runs the workspace sandbox."""
-    return sys.platform == "darwin" or (
-        sys.platform == "linux" and response.get("required_execution_profile") == "workspace-contained-v1"
+    """macOS runs every contained profile; Linux runs the workspace sandbox;
+    Windows runs installed Python in an AppContainer."""
+    profile = response.get("required_execution_profile")
+    return (
+        sys.platform == "darwin"
+        or (sys.platform == "linux" and profile == "workspace-contained-v1")
+        or (sys.platform == "win32" and profile == "python-eval-readonly-v1")
     )
 
 
@@ -141,6 +145,9 @@ def contained_zcode_response(
     if (
         not platform_contains(response)
         or config.get("harness") not in _SINK_HARNESSES
+        # The sink command is POSIX-quoted; on Windows only Claude Code runs
+        # it through Git Bash.
+        or (sys.platform == "win32" and config.get("harness") != "claude-code")
         or response.get("decision") != "deny"
         or response.get("policy_action") != "sandbox-required"
         or response.get("observe_mode") is True
