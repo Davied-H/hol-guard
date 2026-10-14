@@ -139,9 +139,8 @@ fn removing_the_dependency_link_before_committing_in_the_worktree_is_a_local_wri
         format!("cd ../report-wt && rm missing && {commit}"),
         format!("cd ../report-wt && rm ./node_modules && {commit}"),
         format!("cd ../report-wt && rm -- -f && {commit}"),
-        format!(
-            "cd ../report-wt && git add reports/weekly.md && rm node_modules && git commit -m x"
-        ),
+        "cd ../report-wt && git add reports/weekly.md && rm node_modules && git commit -m x"
+            .to_owned(),
         // Git's own names stay reviewed, links or not.
         format!("cd ../report-wt && rm .git && {commit}"),
         format!("cd ../report-wt && rm .git/config && {commit}"),
