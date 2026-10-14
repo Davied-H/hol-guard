@@ -165,8 +165,10 @@ def test_the_binding_carries_the_view_only_for_a_resident_that_accepts_it(tmp_pa
     assert isinstance(view, dict) and set(view["harnesses"]) == {"codex", "copilot", "cursor", "opencode"}
     assert publisher._with_mcp_relay_view({"generation": 1}, ()) == {"generation": 1}
     assert publisher._with_mcp_relay_view(None, FEATURES) is None
+    harnesses = publisher._compiled_mcp_relay_harnesses
     publisher._compiled_mcp_relay_harnesses = {}
     assert publisher._with_mcp_relay_view({"generation": 1}, FEATURES) == {"generation": 1}
+    publisher._compiled_mcp_relay_harnesses = harnesses
 
     assert view["extension_layers"] == []
     publisher._command_control_runtime = None
