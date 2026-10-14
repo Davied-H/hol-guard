@@ -122,21 +122,21 @@ fn companions_absent(manager: Manager, directory: &Path) -> bool {
     absent.iter().all(|name| missing(&directory.join(name)))
 }
 
-/// When `directory` has no lockfile for `manager` but commits exactly one
+/// When `directory` has no lockfile for `manager` but holds exactly one
 /// other manager's lockfile, a sentence naming the no-script install that
 /// fits it. An agent that guessed the wrong package manager can then restore
 /// dependencies instead of stopping on the review.
-pub(super) fn committed_lockfile_hint(manager: Manager, directory: &Path) -> Option<String> {
+pub(super) fn present_lockfile_hint(manager: Manager, directory: &Path) -> Option<String> {
     if !missing(&directory.join(lockfile_name(manager))) {
         return None;
     }
-    let committed: Vec<Manager> = [Manager::Bun, Manager::Pnpm, Manager::Npm]
+    let present: Vec<Manager> = [Manager::Bun, Manager::Pnpm, Manager::Npm]
         .into_iter()
         .filter(|other| {
             *other != manager && regular(&directory.join(lockfile_name(*other)), MAX_LOCKFILE_BYTES)
         })
         .collect();
-    let [other] = committed.as_slice() else {
+    let [other] = present.as_slice() else {
         return None;
     };
     // A companion file sends the named install to review too, so naming it
@@ -150,7 +150,7 @@ pub(super) fn committed_lockfile_hint(manager: Manager, directory: &Path) -> Opt
         Manager::Npm => "npm ci --ignore-scripts",
     };
     Some(format!(
-        "This folder has no `{}`. It commits `{}`, so the install that fits it is `{form}`.",
+        "This folder has no `{}`. It has `{}`, so the install that fits it is `{form}`.",
         lockfile_name(manager),
         lockfile_name(*other),
     ))

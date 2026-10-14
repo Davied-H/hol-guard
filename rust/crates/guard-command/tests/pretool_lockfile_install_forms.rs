@@ -190,7 +190,7 @@ fn quiet_flags_follow_the_same_proof() {
 }
 
 #[test]
-fn an_install_for_a_lockfile_the_project_lacks_names_the_one_it_commits() {
+fn an_install_for_a_lockfile_the_project_lacks_names_the_one_it_has() {
     let lab = Lab::new();
     let bun = lab.project(
         "bun-only",
@@ -224,13 +224,13 @@ fn an_install_for_a_lockfile_the_project_lacks_names_the_one_it_commits() {
         (
             &bun,
             PNPM,
-            "This folder has no `pnpm-lock.yaml`. It commits `bun.lock`, so the install that \
+            "This folder has no `pnpm-lock.yaml`. It has `bun.lock`, so the install that \
              fits it is `bun install --frozen-lockfile --ignore-scripts`.",
         ),
         (
             &npm,
             BUN,
-            "This folder has no `bun.lock`. It commits `package-lock.json`, so the install \
+            "This folder has no `bun.lock`. It has `package-lock.json`, so the install \
              that fits it is `npm ci --ignore-scripts`.",
         ),
     ] {

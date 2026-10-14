@@ -75,7 +75,7 @@ pub(super) fn settle(
         ..context
     };
     if !scan::directory_ready(manager, context, xdg_config_home.as_deref(), deadline) {
-        if let Some(hint) = scan::committed_lockfile_hint(manager, Path::new(&directory)) {
+        if let Some(hint) = scan::present_lockfile_hint(manager, Path::new(&directory)) {
             result.reason.push(' ');
             result.reason.push_str(&hint);
         }
