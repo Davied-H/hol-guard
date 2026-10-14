@@ -43,8 +43,10 @@ pub(super) fn shaped(rest: &[String]) -> Option<Pull> {
     let mut fetch = Vec::new();
     for argument in rest {
         match argument.as_str() {
-            "--ff-only" if !fast_forward => fast_forward = true,
-            "-q" | "--quiet" | "--no-edit" | "--no-rebase" | "--ff" | "--no-ff" => {}
+            // `--ff`, `--no-ff` and `--ff-only` set one option; the last wins.
+            "--ff-only" => fast_forward = true,
+            "--ff" | "--no-ff" => fast_forward = false,
+            "-q" | "--quiet" | "--no-edit" | "--no-rebase" => {}
             _ => fetch.push(argument.clone()),
         }
     }
@@ -116,6 +118,8 @@ pub(in crate::pretool) fn merge_inert(effective: &GitConfig, repository: &GitCon
     !effective.iter().any(|(key, values)| {
         let enabled = values.iter().any(|value| !disabled(value));
         (key.starts_with("merge.") && (key.ends_with(".driver") || key.ends_with(".recursive")))
+            // Merging a signed tag checks its signature with `gpg.program`.
+            || (key.starts_with("gpg.") && repository.contains_key(key))
             || matches!(key.as_str(), "pull.twohead" | "pull.octopus")
             || (key.starts_with("branch.") && key.ends_with(".mergeoptions"))
             || (matches!(key.as_str(), "commit.gpgsign" | "merge.verifysignatures") && enabled)

@@ -116,6 +116,7 @@ fn merge_stays_reviewed_when_configuration_or_hooks_can_start_a_program() {
         ("pull.octopus", "custom"),
         ("branch.main.mergeoptions", "-s custom"),
         ("merge.verifySignatures", "true"),
+        ("gpg.program", "/tmp/gpg"),
         ("commit.gpgsign", "true"),
         ("core.editor", "/tmp/editor"),
         ("sequence.editor", "/tmp/editor"),
@@ -153,6 +154,8 @@ fn merge_pull_from_origin_is_a_proven_refresh_without_commit_programs() {
     let primary = session.primary.display();
     let pull = format!("git -C {primary} pull origin main --no-edit");
     let fast_forward = format!("git -C {primary} pull --ff-only origin main");
+    let last_no_ff = format!("git -C {primary} pull --ff-only --no-ff origin main");
+    let last_ff_only = format!("git -C {primary} pull --no-ff --ff-only origin main");
     for command in [
         pull.clone(),
         format!("git -C {primary} pull origin main --no-edit 2>&1 | tail -3"),
@@ -189,6 +192,8 @@ fn merge_pull_from_origin_is_a_proven_refresh_without_commit_programs() {
         executable_hook(&path);
         assert_reviewed(&session, &pull, &cwd);
         assert_allowed(&session, &fast_forward, &cwd, REFRESH);
+        assert_allowed(&session, &last_ff_only, &cwd, REFRESH);
+        assert_reviewed(&session, &last_no_ff, &cwd);
         std::fs::remove_file(path).unwrap();
     }
     assert_allowed(&session, &pull, &cwd, REFRESH);
