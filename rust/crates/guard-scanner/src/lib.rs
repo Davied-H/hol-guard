@@ -143,6 +143,7 @@ static SAMPLE: OnceLock<Regex> = OnceLock::new();
 static DOC_SAMPLE: OnceLock<Regex> = OnceLock::new();
 static INERT_CODE_EXPRESSION: OnceLock<Regex> = OnceLock::new();
 static DECLARED_SAMPLE_VALUE: OnceLock<Regex> = OnceLock::new();
+static DEPLOYED_VALUE_MARKER: OnceLock<Regex> = OnceLock::new();
 
 fn compiled() -> &'static [Regex] {
     COMPILED.get_or_init(|| {
@@ -188,6 +189,17 @@ fn declared_sample_value_regex() -> &'static Regex {
         .case_insensitive(true)
         .build()
         .expect("declared sample rule must compile")
+    })
+}
+
+/// A value that names a deployed environment, such as `fixture-prod-value`,
+/// is not treated as inert even when it also carries a sample word.
+fn deployed_value_marker_regex() -> &'static Regex {
+    DEPLOYED_VALUE_MARKER.get_or_init(|| {
+        RegexBuilder::new(r"(?:^|[^a-z0-9])(?:prod|production|live|staging|stage)(?:[^a-z0-9]|$)")
+            .case_insensitive(true)
+            .build()
+            .expect("deployed value rule must compile")
     })
 }
 
@@ -265,7 +277,9 @@ fn is_sample(
     }
     assignment_value(matched).is_some_and(|value| {
         doc_sample_regex().is_match(value)
-            || (declared_sample_value_regex().is_match(value) && !has_long_alphanumeric_run(value))
+            || (declared_sample_value_regex().is_match(value)
+                && !deployed_value_marker_regex().is_match(value)
+                && !has_long_alphanumeric_run(value))
     })
 }
 
@@ -517,11 +531,17 @@ mod tests {
     #[test]
     fn declared_sample_words_do_not_hide_real_looking_values() {
         for text in [
-            "process.env.EXAMPLE_SERVICE_API_KEY = 'fictional-Q9x7Lm2Vb8Nc4Rt6Yp1Zk3';",
-            "const apiKey = 'stubborn-production-key'",
-            "password = 'mockingbird-prod-value'",
+            // Split so repository secret scanners do not read the fixture as a key.
+            format!(
+                "process.env.EXAMPLE_SERVICE_API_KEY = 'fictional-{}';",
+                ["Q9x7Lm2V", "b8Nc4Rt6", "Yp1Zk3"].concat()
+            ),
+            "const apiKey = 'stubborn-production-key'".to_owned(),
+            "password = 'mockingbird-prod-value'".to_owned(),
+            "credential = 'fixture-prod-value'".to_owned(),
+            "token = 'mock-live-token'".to_owned(),
         ] {
-            let result = scan_text(text, false, true, MAX_SCAN_BYTES, None);
+            let result = scan_text(&text, false, true, MAX_SCAN_BYTES, None);
             assert!(
                 result
                     .matches
