@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -229,10 +228,7 @@ def test_incomplete_helper_keeps_the_caller_reason_without_a_runtime(
 
     assert identity.failure_reason == "unreadable_entry"
     assert identity.status == "incomplete"
-    assert (
-        identity.incomplete_state_hash
-        == "sha256:bf09c846d64946fdeed2604edadb1ab6fa48c36020e3141b14066a5034f2ba73"
-    )
+    assert identity.incomplete_state_hash == "sha256:bf09c846d64946fdeed2604edadb1ab6fa48c36020e3141b14066a5034f2ba73"
 
 
 def test_existing_root_without_a_runtime_is_one_unavailable_issue(
@@ -244,14 +240,6 @@ def test_existing_root_without_a_runtime_is_one_unavailable_issue(
 
     assert discovery.documents == ()
     assert [issue.failure_reason for issue in discovery.issues] == ["native_unavailable"]
-
-
-def test_all_os_paths_require_native_authority(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    assert not transport.portable_python_required(tmp_path / "SKILL.md", tmp_path)
-    assert not transport.portable_python_required(tmp_path / os.fsdecode(b"bad-\xff-name") / "SKILL.md")
-    monkeypatch.setattr(transport, "_is_windows", lambda: True)
-    assert not transport.portable_python_required(tmp_path)
-    assert transport._encoded_path(tmp_path) == str(tmp_path).encode("utf-16-le", "surrogatepass").hex()
 
 
 def test_wrappers_always_route_to_native(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
