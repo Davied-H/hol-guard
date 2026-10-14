@@ -14,8 +14,8 @@ const PLAIN_DENIES: [(&str, &str); 6] = [
         r#"{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"HOL Guard blocked this command. Open http://127.0.0.1:4781/dashboard for details."}}"#,
     ),
     (
-        r#"{"hookSpecificOutput":{"permissionDecision":"deny","permissionDecisionReason":"blocked é \ud800"},"policy_action":"deny","systemMessage":"m"}"#,
-        r#"{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"blocked é \ud800"},"systemMessage":"m"}"#,
+        r#"{"hookSpecificOutput":{"permissionDecision":"deny","permissionDecisionReason":"blocked \u00e9 \ud800"},"policy_action":"deny","systemMessage":"m"}"#,
+        r#"{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"blocked \u00e9 \ud800"},"systemMessage":"m"}"#,
     ),
     (
         r#"{"hookSpecificOutput":{"permissionDecision":"deny","permissionDecisionReason":""},"continue":true}"#,
