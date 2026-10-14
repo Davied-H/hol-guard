@@ -206,3 +206,51 @@ fn creating_and_entering_a_worktree_through_pwd_is_judged_not_failed() {
     assert_ne!(action, "allow", "{reason}");
     assert_ne!(reason, EVALUATION_FAILED);
 }
+
+#[test]
+fn reading_the_linked_worktree_beside_the_checkout_is_quiet() {
+    let (session, _) = report_worktree("report-read");
+    let command = "cd ../report-wt && git ls-files | head; ls -la; cat .gitignore 2>/dev/null";
+    let (action, reason) = verdict(&session, command);
+    assert!(
+        matches!(action.as_str(), "allow" | "sandbox-required"),
+        "{action} {reason}"
+    );
+    let listing = |path: &str| {
+        guard_command::pretool::evaluate_pre_tool_envelope_with_context(
+            "omp",
+            "PreToolUse",
+            &serde_json::json!({"tool_name": "read", "tool_input": {"path": path}}),
+            None,
+            None,
+            session.home.to_str(),
+            session.primary.to_str(),
+        )
+    };
+    for path in ["../report-wt", "../report-wt/"] {
+        let result = listing(path);
+        assert_eq!(
+            result.minimum_action, "allow",
+            "{path}: {}",
+            result.reason_code
+        );
+    }
+    repository(&session, &session.org.join("other"));
+    std::os::unix::fs::symlink(session.org.join("report-wt"), session.org.join("alias-wt"))
+        .unwrap();
+    for path in [
+        "..",
+        "../other",
+        "../alias-wt",
+        "../report-wt/reports",
+        "../report-wt/../other",
+        "../../org/other",
+    ] {
+        let result = listing(path);
+        assert_ne!(
+            result.minimum_action, "allow",
+            "{path}: {}",
+            result.reason_code
+        );
+    }
+}
