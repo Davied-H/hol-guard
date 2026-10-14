@@ -7,7 +7,10 @@ pub mod secret_detection;
 pub mod staged_scanner;
 
 mod masked_value;
+mod match_spans;
 mod self_named_value;
+
+pub use match_spans::scan_match_spans;
 
 use guard_rules::{CONTEXT_CHARS, MAX_MATCHES, MAX_SCAN_BYTES};
 use regex::{Regex, RegexBuilder};
@@ -226,13 +229,11 @@ fn is_sample(
     if !suppressible(classifier) {
         return false;
     }
-    if classifier == "credential-assignment" && self_named_value::is_self_named(matched) {
-        return true;
-    }
     if classifier == "credential-assignment"
-        && assignment_value(matched).is_some_and(|value| {
-            inert_code_expression_regex().is_match(value) || masked_value::is_masked(value)
-        })
+        && (self_named_value::is_self_named(matched)
+            || assignment_value(matched).is_some_and(|value| {
+                inert_code_expression_regex().is_match(value) || masked_value::is_masked(value)
+            }))
     {
         return true;
     }
@@ -249,10 +250,26 @@ fn is_sample(
     if sample_regex().is_match(matched) {
         return true;
     }
-    if !documentation_sample_context {
-        return false;
-    }
-    assignment_value(matched).is_some_and(|value| doc_sample_regex().is_match(value))
+    documentation_sample_context
+        && assignment_value(matched).is_some_and(|value| doc_sample_regex().is_match(value))
+}
+
+/// The matches of rule `index` in `text` that are not suppressed as samples.
+fn counted_matches<'t>(
+    index: usize,
+    text: &'t str,
+    suppress_samples: bool,
+    documentation_sample_context: bool,
+) -> impl Iterator<Item = regex::Match<'t>> {
+    let classifier = PATTERNS[index].classifier;
+    compiled()[index].find_iter(text).filter(move |matched| {
+        !is_sample(
+            classifier,
+            matched.as_str(),
+            suppress_samples,
+            documentation_sample_context,
+        )
+    })
 }
 
 fn classify_window(
@@ -265,15 +282,9 @@ fn classify_window(
         if found.contains_key(def.classifier) {
             continue;
         }
-        let has_match = compiled()[index].find_iter(text).any(|matched| {
-            !is_sample(
-                def.classifier,
-                matched.as_str(),
-                suppress_samples,
-                documentation_sample_context,
-            )
-        });
-        if has_match {
+        let mut matches =
+            counted_matches(index, text, suppress_samples, documentation_sample_context);
+        if matches.next().is_some() {
             found.insert(
                 def.classifier,
                 ScanMatch {
