@@ -457,6 +457,41 @@ fn semicolon_path_lists_prove_every_entry() {
 }
 
 #[test]
+fn grep_lists_naming_a_missing_file_say_so_instead_of_asking() {
+    let f = fixture();
+    // The agent spelled a worktree beside the session folder as if it were
+    // inside it. Nothing is searched, so Guard says why rather than queueing
+    // an approval the agent is told not to retry.
+    for path in [
+        "calc.py; missing.py",
+        "app-fix/src/report.ts;app-fix/src/projector.ts",
+        "src/main.rs; app-fix/src/report.ts",
+    ] {
+        let result = omp(
+            &f,
+            "grep",
+            json!({"pattern": "x", "path": path, "gitignore": true}),
+        );
+        assert_eq!(result.minimum_action, "block", "{path}");
+        assert_eq!(result.reason_code, "native_missing_path", "{path}");
+    }
+    // Every other entry keeps its proof, and a missing entry with a
+    // sensitive name keeps its review.
+    for path in [
+        "missing.py; ~/.ssh/id_rsa",
+        "missing.py; ~/secret-dir/.env",
+        "missing.py; src/*.rs",
+        "missing.py; ~/.ssh",
+        "missing.py; missing/.env",
+        "missing.py; ~/missing-directory",
+    ] {
+        let result = omp(&f, "grep", json!({"pattern": "x", "path": path}));
+        assert!(!allowed(&result), "{path}");
+        assert_ne!(result.reason_code, "native_missing_path", "{path}");
+    }
+}
+
+#[test]
 fn brace_globs_prove_every_alternative() {
     let f = fixture();
     write(f.project.join("app/lib/index.ts"), "synthetic fixture\n");

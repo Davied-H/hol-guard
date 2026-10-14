@@ -471,27 +471,40 @@ fn grep_scope(
     // A single file is proven by the ordinary bounded file-read path. An
     // entry of a list has no such fallback, so it carries the same proof here.
     let list = targets.len() > 1;
-    targets
-        .into_iter()
-        .all(|target| {
-            super::super::search_scope::content_search_scope_proven(
-                target,
-                context.path.home_dir,
-                context.path.cwd,
-            ) || (list
-                && super::super::read_paths::existing_regular_read_target(
-                    target,
-                    context.path.home_dir,
-                    context.path.cwd,
-                ))
-        })
-        .then(|| {
-            directory_allow(
-                context,
-                "native_bounded_search_scope",
-                "The Rust authority proved this directory search cannot reach a sensitive file.",
-            )
-        })
+    let (home, cwd) = (context.path.home_dir, context.path.cwd);
+    let proven = |target: &str| {
+        super::super::search_scope::content_search_scope_proven(target, home, cwd)
+            || (list && super::super::read_paths::existing_regular_read_target(target, home, cwd))
+    };
+    if targets.iter().all(|target| proven(target)) {
+        return Some(directory_allow(
+            context,
+            "native_bounded_search_scope",
+            "The Rust authority proved this directory search cannot reach a sensitive file.",
+        ));
+    }
+    // A list entry that names nothing is never searched, so stopping the call
+    // costs nothing. Saying why lets the agent fix the path instead of waiting
+    // on an approval. The other entries still need their proof.
+    let missing = |target: &str| {
+        super::super::read_paths::missing_read_target(target, home, cwd, true)
+            && super::super::read_paths::bounded_file_read_target(target, home, cwd)
+    };
+    (list && targets.iter().all(|target| proven(target) || missing(target))).then(|| {
+        generic_result(
+            generic_action(
+                context.harness,
+                context.event,
+                PreToolActionTypeV1::FileRead,
+                PreToolOperationV1::Read,
+                true,
+                false,
+            ),
+            "block",
+            super::evaluate::MISSING_PATH,
+            "HOL Guard did not run this search because a path in its list does not exist. Check each path, for example by listing its parent directory, and try again with the correct ones.",
+        )
+    })
 }
 
 /// `skill://<name>[/<relative.md>]` names a skill the host resolves from its
