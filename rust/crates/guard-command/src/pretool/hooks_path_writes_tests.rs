@@ -140,6 +140,30 @@ fn configuration_the_reader_cannot_decode_keeps_the_write_at_review() {
 }
 
 #[test]
+fn a_path_that_is_not_utf8_keeps_the_write_at_review() {
+    let (repo, home) = repository("non-utf8-hooks", "");
+    let config = repo.join(".git").join("config");
+    fs::write(&config, b"[core]\n\thooksPath = hooks\xff\n").unwrap();
+    assert!(hit(&repo.join("src/app.ts"), &home));
+    fs::write(&config, b"[include]\n\tpath = ../team-\xff.gitconfig\n").unwrap();
+    assert!(hit(&repo.join("src/app.ts"), &home));
+    let base = fixture("non-utf8-gitdir");
+    let tree = base.join("feature");
+    fs::create_dir_all(&tree).unwrap();
+    fs::write(tree.join(".git"), b"gitdir: ../main/.git/worktrees/f\xff\n").unwrap();
+    assert!(hit(&tree.join("src/lib.rs"), &base));
+}
+
+#[test]
+fn bytes_that_are_not_utf8_outside_a_path_leave_the_write_allowed() {
+    let (repo, home) = repository("non-utf8-name", "");
+    let config = b"[user]\n\tname = Jos\xe9\n[core]\n\thooksPath = hooks # caf\xe9\n";
+    fs::write(repo.join(".git").join("config"), config).unwrap();
+    assert!(!hit(&repo.join("src/app.ts"), &home));
+    assert!(hit(&repo.join("hooks/pre-commit"), &home));
+}
+
+#[test]
 fn the_global_configuration_applies_outside_any_repository() {
     let base = fixture("global");
     let home = base.join("home");

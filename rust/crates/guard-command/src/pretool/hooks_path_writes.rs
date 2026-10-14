@@ -11,7 +11,9 @@
 //! nothing a repository configures runs: each enclosing repository's `config`
 //! and `config.worktree`, the user's global files and every file they
 //! include. Every `core.hooksPath` found counts, whatever its precedence.
-//! Configuration this reader cannot decode keeps the write at review.
+//! Configuration this reader cannot decode keeps the write at review, and
+//! so does a path in it that is not UTF-8: Git reads those bytes as they are,
+//! so a path rebuilt from a replacement character would name another file.
 
 use std::fs;
 use std::io::Read;
@@ -167,10 +169,11 @@ impl<'a> Scan<'a> {
         let directory = path.parent()?.to_path_buf();
         for (section, key, raw) in assignments(&text)? {
             if section == "core" && key == "hookspath" {
-                self.hooks.push(decode(&raw)?);
+                self.hooks.push(decode(&raw).and_then(exact)?);
             } else if matches!(section.as_str(), "include" | "includeif") && key == "path" {
                 // Every conditional include counts, whether or not it applies.
-                if let Some(file) = self.expand(&decode(&raw)?, Some(directory.as_path()))? {
+                let value = decode(&raw).and_then(exact)?;
+                if let Some(file) = self.expand(&value, Some(directory.as_path()))? {
                     self.includes.push(file.clone());
                     self.read(&file, depth + 1)?;
                 }
@@ -241,17 +244,18 @@ fn repository_files(root: &Path, marker: &fs::Metadata) -> Option<Vec<PathBuf>> 
     if !marker.is_file() {
         return None;
     }
-    let pointer = read_config(&git)??;
+    let pointer = exact(read_config(&git)??)?;
     let admin = normalize(&root.join(native(pointer.trim().strip_prefix("gitdir:")?.trim())));
     let common = match read_config(&admin.join("commondir"))? {
-        Some(text) => normalize(&admin.join(native(text.trim()))),
+        Some(text) => normalize(&admin.join(native(exact(text)?.trim()))),
         None => admin.clone(),
     };
     Some(vec![common.join("config"), admin.join("config.worktree")])
 }
 
 /// `Some(None)` for a missing file, `Some(Some(text))` for a plain, bounded
-/// one, and `None` for anything else.
+/// one, and `None` for anything else. Bytes that are not UTF-8 become
+/// U+FFFD here, so a path read from the text must pass [`exact`].
 fn read_config(path: &Path) -> Option<Option<String>> {
     let metadata = match fs::metadata(path) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Some(None),
@@ -273,6 +277,12 @@ fn read_config(path: &Path) -> Option<Option<String>> {
         return None;
     }
     Some(Some(String::from_utf8_lossy(&bytes).into_owned()))
+}
+
+/// `value` unless it holds U+FFFD, which stands in for bytes that are not
+/// UTF-8 and so cannot name the path Git would use.
+fn exact(value: String) -> Option<String> {
+    (!value.contains(char::REPLACEMENT_CHARACTER)).then_some(value)
 }
 
 /// Section, key and undecoded value of each `key = value` line, including
