@@ -121,11 +121,14 @@ fn bounded_read_target_with_brackets(
     {
         return false;
     }
-    // The kernel resolves `..` against the physical working directory, which
-    // is what canonicalizing the cwd-joined spelling yields. Only that proof
-    // admits a parent component; every lexical fallback still rejects it.
+    // The kernel resolves `..` physically, against the working directory or
+    // the root, which is what canonicalizing the spelling yields. Only that
+    // proof admits a parent component; every lexical fallback still rejects
+    // it. Windows normalizes a rooted `..` lexically first, so there a drive,
+    // verbatim or root-relative spelling with `..` stays refused.
     let parent_component = path.split(['/', '\\']).any(|part| part == "..");
-    if parent_component && (has_brackets || path.starts_with('~') || rooted(value.trim())) {
+    let lexical_root = !cfg!(unix) && rooted(value.trim());
+    if parent_component && (has_brackets || path.starts_with('~') || lexical_root) {
         return false;
     }
     if path.starts_with('~') && expand_home_read_path(path, home_dir).is_none() {
@@ -145,7 +148,10 @@ fn bounded_read_target_with_brackets(
     };
     if let Ok(canonical) = std::fs::canonicalize(&candidate) {
         return (canonical.is_file() || (allow_directory && canonical.is_dir()))
-            && resolved_path_allowed_for_operation(&canonical, home_dir, cwd, false, true);
+            && (resolved_path_allowed_for_operation(&canonical, home_dir, cwd, false, true)
+                || package_source::installed_package_source(
+                    &candidate, &canonical, home_dir, cwd,
+                ));
     }
     if has_brackets || parent_component {
         return false;
@@ -334,6 +340,9 @@ pub(super) fn lexical_read_path(value: &str) -> Option<String> {
     normalized.push_str(&parts.join("/"));
     Some(normalized)
 }
+
+#[path = "package_source_reads.rs"]
+mod package_source;
 
 #[cfg(test)]
 #[path = "read_output_tests.rs"]

@@ -1519,6 +1519,10 @@
     min-width: calc(var(--spacing) * 11);
   }
 
+  .min-w-20 {
+    min-width: calc(var(--spacing) * 20);
+  }
+
   .min-w-24 {
     min-width: calc(var(--spacing) * 24);
   }
@@ -4686,7 +4690,17 @@
     }
   }
 
-  .text-brand-dark, .text-brand-dark\/35 {
+  .text-brand-dark, .text-brand-dark\/30 {
+    color: var(--brand-dark);
+  }
+
+  @supports (color: color-mix(in lab, red, red)) {
+    .text-brand-dark\/30 {
+      color: color-mix(in oklab, var(--brand-dark) 30%, transparent);
+    }
+  }
+
+  .text-brand-dark\/35 {
     color: var(--brand-dark);
   }
 
@@ -6848,6 +6862,10 @@
 
     .lg\:hidden {
       display: none;
+    }
+
+    .lg\:inline {
+      display: inline;
     }
 
     .lg\:table-cell {
