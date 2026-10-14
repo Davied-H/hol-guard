@@ -1,4 +1,5 @@
-use super::{evaluate, harness_bound, McpRelayReadyRequestV1, MCP_RELAY_READY_SCHEMA};
+use super::{evaluate, McpRelayReadyRequestV1, MCP_RELAY_READY_SCHEMA};
+use crate::mcp_relay_servers::{RelayServerV1, SERVER_PROXY_TOOLS, SERVER_UNKNOWN};
 use crate::policy_store::policy_store_direct_lane::tests::{
     binding, fixture, push, write_current_ack, Fixture,
 };
@@ -8,7 +9,11 @@ use std::fs;
 fn view() -> Value {
     json!({
         "schema": "guard-mcp-relay-view.v1",
-        "harnesses": {"codex": {"config": {"mode": "enforce"}, "hash_config": {}}},
+        "harnesses": {"codex": {
+            "config": {"mode": "enforce"},
+            "hash_config": {},
+            "receipt_redaction_level": "full",
+        }},
         "extension_layers": [],
     })
 }
@@ -27,6 +32,7 @@ fn bound(label: &str, extra: Value) -> (Fixture, String) {
     lane["evidence_drain"] = json!(true);
     lane["exact_action_control_digest"] = json!("c".repeat(64));
     lane["mcp_relay"] = view();
+    lane["blocked_request_mode"] = json!("safe-alternative");
     for (key, value) in extra.as_object().unwrap() {
         lane[key] = value.clone();
     }
@@ -35,11 +41,32 @@ fn bound(label: &str, extra: Value) -> (Fixture, String) {
     (fixture, workspace)
 }
 
+fn server(harness: &str) -> RelayServerV1 {
+    RelayServerV1 {
+        harness: harness.to_owned(),
+        server_name: "docs".to_owned(),
+        source_scope: "global".to_owned(),
+        config_path: "/home/user/.codex/config.toml".to_owned(),
+        server_id: None,
+        identity_hash: "a".repeat(64),
+    }
+}
+
+/// Ask for a server whose catalog was reported without a proxy tool.
 fn ask(fixture: &Fixture, workspace: &str, harness: &str) -> Value {
+    fixture
+        .store
+        .mcp_relay_servers()
+        .record(&server(harness), false);
+    ask_for(fixture, workspace, harness, server(harness))
+}
+
+fn ask_for(fixture: &Fixture, workspace: &str, harness: &str, server: RelayServerV1) -> Value {
     let request = McpRelayReadyRequestV1 {
         guard_home: fixture.root.to_str().unwrap().to_owned(),
         workspace: workspace.to_owned(),
         harness: harness.to_owned(),
+        server,
     };
     serde_json::from_slice(&evaluate(&request, &fixture.store).unwrap()).unwrap()
 }
@@ -108,16 +135,48 @@ fn a_binding_without_relay_state_is_not_ready() {
 }
 
 #[test]
-fn the_view_must_name_its_schema_and_bind_the_harness() {
-    assert_eq!(harness_bound(None, "codex"), Err("mcp_relay_view_missing"));
+fn a_session_the_resident_cannot_decide_is_not_ready() {
+    let (fixture, workspace) = bound("ask", json!({"blocked_request_mode": "ask"}));
     assert_eq!(
-        harness_bound(Some(&json!({"harnesses": {"codex": {}}})), "codex"),
-        Err("mcp_relay_view_missing")
+        ask(&fixture, &workspace, "codex"),
+        not_ready("mcp_relay_session_review_mode")
     );
-    let unbound = json!({"schema": "guard-mcp-relay-view.v1", "harnesses": {"codex": []}});
+    let mut observe = view();
+    observe["harnesses"]["codex"]["config"]["mode"] = json!("observe");
+    let (fixture, workspace) = bound("observe", json!({"mcp_relay": observe}));
     assert_eq!(
-        harness_bound(Some(&unbound), "codex"),
-        Err("mcp_relay_harness_unbound")
+        ask(&fixture, &workspace, "codex"),
+        not_ready("mcp_relay_session_observe")
     );
-    assert_eq!(harness_bound(Some(&view()), "codex"), Ok(()));
+    let (fixture, workspace) = bound("view", json!({"mcp_relay": {"harnesses": {}}}));
+    assert_eq!(
+        ask(&fixture, &workspace, "codex"),
+        not_ready("mcp_relay_view_invalid")
+    );
+}
+
+#[test]
+fn a_server_without_a_clean_catalog_report_is_not_ready() {
+    let (fixture, workspace) = bound("servers", json!({}));
+    assert_eq!(
+        ask_for(&fixture, &workspace, "codex", server("codex")),
+        not_ready(SERVER_UNKNOWN)
+    );
+    fixture
+        .store
+        .mcp_relay_servers()
+        .record(&server("codex"), true);
+    assert_eq!(
+        ask_for(&fixture, &workspace, "codex", server("codex")),
+        not_ready(SERVER_PROXY_TOOLS)
+    );
+    // A server named for another harness is never this session's.
+    fixture
+        .store
+        .mcp_relay_servers()
+        .record(&server("cursor"), false);
+    assert_eq!(
+        ask_for(&fixture, &workspace, "codex", server("cursor")),
+        not_ready(SERVER_UNKNOWN)
+    );
 }
