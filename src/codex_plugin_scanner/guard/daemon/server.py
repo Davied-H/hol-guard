@@ -1770,12 +1770,16 @@ class _GuardDaemonHandler(
             runtime_hook_event_name,
         )
 
-        # Diagnostics only: a count by harness slot, before anything is judged.
-        note_hook_received(getattr(self._daemon_server(), "hook_worker", None), default_harness)
         prompt_event = runtime_hook_event_name(payload) == "UserPromptSubmit"
         admission_seconds = PROMPT_ADMISSION_SECONDS if prompt_event else _RUNTIME_HOOK_ADMISSION_TIMEOUT_SECONDS
         transport_deadline = self._daemon_server().request_deadline(self.request, admission_seconds)
         params = parse_qs(query)
+        # Diagnostics only: a count by the harness the worker reviews (the
+        # `runtime-harness` override first), before anything is judged.
+        note_hook_received(
+            getattr(self._daemon_server(), "hook_worker", None),
+            self._optional_string(params.get("runtime-harness", [None])[-1]) or default_harness,
+        )
         hint_missing = "guard_remaining_seconds" not in payload and "guard_remaining_ms" not in payload
         hook_deadline = RuntimeHookDeadline.for_admission(
             _runtime_hook_remaining_hint(payload),

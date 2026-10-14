@@ -202,6 +202,16 @@ class DirectHookEvidenceDrain:
     def drain_once(self) -> bool:
         """Drain up to a few pages; return whether more records remain."""
 
+        try:
+            return self._drain_pages()
+        finally:
+            # Every poll, so daemon receipts are logged even when no drain
+            # transport is available.
+            if self._counters is not None:
+                with suppress(Exception):
+                    self._counters.maybe_log()
+
+    def _drain_pages(self) -> bool:
         for _ in range(_MAX_PAGES_PER_WAKE):
             page = self._fetch_page()
             if page is None:
@@ -254,9 +264,6 @@ class DirectHookEvidenceDrain:
         page = _decode_page(output, self._counters)
         if page is None:
             self.failures += 1
-        if self._counters is not None:
-            with suppress(Exception):
-                self._counters.maybe_log()
         return page
 
     def _publisher_transport(self) -> tuple[Path, Callable[..., bytes | None]] | None:

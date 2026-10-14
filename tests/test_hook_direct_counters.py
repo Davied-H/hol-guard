@@ -125,6 +125,37 @@ def test_the_log_is_change_only_and_rate_limited() -> None:
     assert sink.lines[-1][1]["received"] == {"codex": 2}
 
 
+def test_a_failed_delivery_is_retried_after_the_interval() -> None:
+    clock, sink = _Clock(), _Sink()
+    failing = {"on": True}
+
+    def flaky(event: str, *, detail: str) -> None:
+        if failing["on"]:
+            raise OSError("diagnostics unavailable")
+        sink.record(event, detail=detail)
+
+    log = HookCounterLog(clock=clock)
+    log.bind_sink(flaky)
+    log.note_received("codex")
+    with pytest.raises(OSError):
+        log.maybe_log()
+    failing["on"] = False
+    assert not log.maybe_log()
+    clock.now += 300.0
+    assert log.maybe_log()
+    assert sink.lines == [("hook_direct_counters", {"epoch": None, "resident": {}, "received": {"codex": 1}})]
+
+
+def test_receipts_are_logged_without_a_drain_transport(tmp_path: Path) -> None:
+    clock, sink = _Clock(), _Sink()
+    host = _Host(tmp_path, _log(clock, sink))
+    host.hook_counters.note_received("codex")
+    drain = DirectHookEvidenceDrain(host, transport=lambda: None)
+
+    assert drain.drain_once() is False
+    assert sink.lines == [("hook_direct_counters", {"epoch": None, "resident": {}, "received": {"codex": 1}})]
+
+
 def test_a_new_page_feeds_the_log_through_the_drain(tmp_path: Path) -> None:
     clock, sink = _Clock(), _Sink()
     host = _Host(tmp_path, _log(clock, sink))

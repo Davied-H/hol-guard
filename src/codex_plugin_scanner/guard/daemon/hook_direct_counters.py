@@ -135,8 +135,11 @@ class HookCounterLog:
         current = self.snapshot()
         if current == self._logged or (not current["resident"] and not current["received"]):
             return False
-        self._logged, self._logged_at = current, now
+        # The interval also paces retries; the snapshot counts as logged only
+        # once the sink accepts it, so a failed delivery is retried later.
+        self._logged_at = now
         sink(_LOG_EVENT, detail=json.dumps(current, separators=(",", ":"), sort_keys=True))
+        self._logged = current
         return True
 
 
