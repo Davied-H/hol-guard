@@ -32,6 +32,7 @@ use crate::claude_hook_bridge_http::{LoopbackConnection, MAX_DAEMON_RESPONSE_BYT
 use crate::claude_hook_bridge_render::py_strip;
 use crate::claude_hook_bridge_url::assert_loopback_http_url;
 use crate::codex_hook_bridge_direct::grok_direct_answer;
+use crate::hook_bridge_fallback::{self, Fallback};
 use crate::hook_env_stamp::{current_environment, dumps, set_member, stamp_hook_input_text, Stamp};
 use crate::pyjson::PyVal;
 
@@ -85,8 +86,9 @@ struct Daemon {
 pub(crate) enum Route {
     /// Write `stdout` and exit with `exit_code`.
     Respond { stdout: String, exit_code: i32 },
-    /// Run the client with the hook; the daemon was not asked.
-    Delegate,
+    /// Run the client with the hook, for this reason; the daemon was not
+    /// asked.
+    Delegate(Fallback),
 }
 
 /// The client's state after `_configure_grok_invocation`.
@@ -327,23 +329,23 @@ impl Client {
     /// [`Route::Delegate`] while the client would still answer differently.
     pub(crate) fn route(&self, raw: &[u8]) -> Route {
         if raw.len() > MAX_HOOK_INPUT_BYTES {
-            return Route::Delegate;
+            return Route::Delegate(Fallback::InputOversize);
         }
         let body = raw.strip_prefix(b"\xef\xbb\xbf").unwrap_or(raw);
         let Ok(prefix) = std::str::from_utf8(body) else {
-            return Route::Delegate;
+            return Route::Delegate(Fallback::InputUnparsed);
         };
         let Some(original) = json_object(prefix) else {
-            return Route::Delegate;
+            return Route::Delegate(Fallback::InputUnparsed);
         };
         if !event_labels_are_ascii(&original) || pretool_event_conflict(&original) {
-            return Route::Delegate;
+            return Route::Delegate(Fallback::EventConflict);
         }
         let Stamp::Text(mut text) = stamp_hook_input_text(prefix, &current_environment()) else {
-            return Route::Delegate;
+            return Route::Delegate(Fallback::InputUnparsed);
         };
         let Some(mut payload) = json_object(&text) else {
-            return Route::Delegate;
+            return Route::Delegate(Fallback::InputUnparsed);
         };
         // `_grok_invocation_payload`.
         if let Some(workspace) = &self.invocation.workspace {
@@ -362,7 +364,7 @@ impl Client {
             return Self::fail(prefix);
         }
         let Some(daemon) = self.daemon_auth() else {
-            return Route::Delegate;
+            return Route::Delegate(Fallback::DaemonUnavailable);
         };
         let cap = if event == PROMPT_EVENT { 10.0 } else { 5.0 };
         let mut timeout = (self.timeout_seconds * 0.5)
@@ -446,8 +448,11 @@ pub(crate) fn run(python_argv: &[String], started: Instant) -> i32 {
             write_stdout(&stdout);
             exit_code
         }
-        Route::Delegate => run_python(python_argv, Some(&raw), started.elapsed(), false)
-            .unwrap_or_else(|| fail_closed(&raw)),
+        Route::Delegate(reason) => {
+            hook_bridge_fallback::note(&client.guard_home, "grok", reason);
+            run_python(python_argv, Some(&raw), started.elapsed(), false)
+                .unwrap_or_else(|| fail_closed(&raw))
+        }
     }
 }
 

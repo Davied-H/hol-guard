@@ -311,15 +311,21 @@ fn a_blocked_tool_call_exits_two() {
 
 #[test]
 fn a_hook_the_bridge_cannot_read_runs_the_client_without_asking() {
-    for hook in [
-        &b"not json"[..],
-        b"[]",
-        b"\xff",
-        br#"{"hook_event_name":"PreToolUse","event":"SessionStart"}"#,
-        "{\"hook_event_name\":\"Pr\u{e9}ToolUse\"}".as_bytes(),
+    for (hook, reason) in [
+        (&b"not json"[..], Fallback::InputUnparsed),
+        (b"[]", Fallback::InputUnparsed),
+        (b"\xff", Fallback::InputUnparsed),
+        (
+            br#"{"hook_event_name":"PreToolUse","event":"SessionStart"}"#,
+            Fallback::EventConflict,
+        ),
+        (
+            "{\"hook_event_name\":\"Pr\u{e9}ToolUse\"}".as_bytes(),
+            Fallback::EventConflict,
+        ),
     ] {
         let fixture = Fixture::new("grok-delegate", vec![]);
-        assert_eq!(fixture.client().route(hook), Route::Delegate);
+        assert_eq!(fixture.client().route(hook), Route::Delegate(reason));
         assert!(fixture.requests().is_empty());
     }
 }
@@ -336,7 +342,10 @@ fn a_home_without_a_daemon_runs_the_client() {
         },
         deadline: Instant::now() + Duration::from_secs(8),
     };
-    assert_eq!(client.route(PRE_TOOL), Route::Delegate);
+    assert_eq!(
+        client.route(PRE_TOOL),
+        Route::Delegate(Fallback::DaemonUnavailable)
+    );
 }
 
 #[test]

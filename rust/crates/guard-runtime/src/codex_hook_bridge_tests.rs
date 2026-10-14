@@ -188,16 +188,20 @@ fn answers_needing_python_are_handed_off() {
 
 #[test]
 fn failures_and_odd_answers_are_delegated() {
-    for text in [
-        "",
-        "[]",
-        "{",
-        r#"{"reason_code":"daemon_hook_process_failed"}"#,
-        "{\"systemMessage\":\"\\ud800\u{f0000}\"}",
+    let unrendered = Fallback::AnswerUnrendered;
+    for (text, reason) in [
+        ("", unrendered),
+        ("[]", unrendered),
+        ("{", unrendered),
+        (
+            r#"{"reason_code":"daemon_hook_process_failed"}"#,
+            Fallback::DaemonFailed,
+        ),
+        ("{\"systemMessage\":\"\\ud800\u{f0000}\"}", unrendered),
     ] {
         assert_eq!(
             route_response(text, PRE_TOOL_USE),
-            Route::Delegate,
+            Route::Delegate(reason),
             "{text:?}"
         );
     }
@@ -360,7 +364,7 @@ fn a_daemon_failure_is_delegated() {
         r#"{"hook_event_name":"Stop"}"#,
         Instant::now(),
     );
-    assert_eq!(route, Route::Delegate);
+    assert_eq!(route, Route::Delegate(Fallback::DaemonUnanswered));
     assert!(home.home.join(START_FAILED_MARKER).exists());
     assert_eq!(daemon.join().unwrap().len(), 1);
 }
@@ -374,7 +378,7 @@ fn a_mismatched_token_is_delegated_before_the_hook_is_sent() {
         r#"{"hook_event_name":"Stop"}"#,
         Instant::now(),
     );
-    assert_eq!(route, Route::Delegate);
+    assert_eq!(route, Route::Delegate(Fallback::DaemonUnanswered));
     assert!(daemon.join().unwrap().is_empty());
 }
 
@@ -389,6 +393,6 @@ fn a_binding_capture_is_left_to_python() {
         r#"{"hook_event_name":"Stop"}"#,
         Instant::now(),
     );
-    assert_eq!(route, Route::Delegate);
+    assert_eq!(route, Route::Delegate(Fallback::ClientMode));
     assert!(prepared.is_none());
 }

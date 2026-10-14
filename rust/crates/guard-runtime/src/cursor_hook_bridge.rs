@@ -48,6 +48,7 @@ use crate::codex_hook_bridge_direct::{direct_answer, CURSOR};
 use crate::codex_hook_response::{POST_TOOL_USE, PRE_TOOL_USE};
 use crate::cursor_hook_bridge_response::rendered;
 use crate::cursor_hook_bridge_script::read_ported_script;
+use crate::hook_bridge_fallback::{self, Fallback};
 use crate::hook_env_stamp::{current_environment, stamp_hook_input_text, Stamp};
 
 pub(crate) const BRIDGE_COMMAND: &str = "cursor-hook-bridge";
@@ -301,8 +302,8 @@ enum Reply {
     Answered(String, i32),
     /// A daemon reply the client renders without posting the hook again.
     Handoff(String),
-    /// Run the client.
-    Client,
+    /// Run the client, for this reason.
+    Client(Fallback),
 }
 
 /// The reply the client takes over once the bridge posted the hook and
@@ -327,7 +328,7 @@ fn handoff(kind: Kind, body: &str) -> Option<String> {
 fn respond(client: &Client, raw: &[u8]) -> Option<(String, i32)> {
     match reply(client, raw) {
         Reply::Answered(stdout, code) => Some((stdout, code)),
-        Reply::Handoff(_) | Reply::Client => None,
+        Reply::Handoff(_) | Reply::Client(_) => None,
     }
 }
 
@@ -337,7 +338,7 @@ fn respond(client: &Client, raw: &[u8]) -> Option<(String, i32)> {
 /// client when the client can take it over.
 fn reply(client: &Client, raw: &[u8]) -> Reply {
     let Some(request) = prepared_request(client, raw) else {
-        return Reply::Client;
+        return Reply::Client(Fallback::InputUnparsed);
     };
     let event_name = match request.kind {
         Kind::PreToolUse => PRE_TOOL_USE,
@@ -354,17 +355,18 @@ fn reply(client: &Client, raw: &[u8]) -> Reply {
         client.deadline,
     );
     if let Some(answered) = resident {
-        return answer(request.kind, &request.event, &answered, guard_home)
-            .map_or(Reply::Client, |(stdout, code)| {
-                Reply::Answered(stdout, code)
-            });
+        return answer(request.kind, &request.event, &answered, guard_home).map_or(
+            Reply::Client(Fallback::AnswerUnrendered),
+            |(stdout, code)| Reply::Answered(stdout, code),
+        );
     }
     let Some(body) = daemon_answer(client, &request) else {
-        return Reply::Client;
+        return Reply::Client(Fallback::DaemonUnanswered);
     };
     match answer(request.kind, &request.event, &body, guard_home) {
         Some((stdout, code)) => Reply::Answered(stdout, code),
-        None => handoff(request.kind, &body).map_or(Reply::Client, Reply::Handoff),
+        None => handoff(request.kind, &body)
+            .map_or(Reply::Client(Fallback::AnswerUnrendered), Reply::Handoff),
     }
 }
 
@@ -404,12 +406,14 @@ pub(crate) fn run(python_argv: &[String]) -> i32 {
         // The client reads an empty hook and answers its unparseable input.
         Input::Failed => Vec::new(),
     };
-    match reply(&client, &raw) {
+    let guard_home = Path::new(&client.guard_home);
+    let reason = match reply(&client, &raw) {
         Reply::Answered(stdout, code) => {
             write_stdout(&stdout);
             return code;
         }
         Reply::Handoff(body) => {
+            hook_bridge_fallback::note(guard_home, CURSOR.name, Fallback::SemanticHandoff);
             let mut argv = python_argv.to_vec();
             argv.push(DAEMON_REPLY_FLAG.to_owned());
             argv.push(body);
@@ -418,8 +422,9 @@ pub(crate) fn run(python_argv: &[String]) -> i32 {
             return run_python(&argv, Some(&raw), started.elapsed(), false)
                 .unwrap_or_else(|| unavailable(event));
         }
-        Reply::Client => {}
-    }
+        Reply::Client(reason) => reason,
+    };
+    hook_bridge_fallback::note(guard_home, CURSOR.name, reason);
     run_python(python_argv, Some(&raw), started.elapsed(), false)
         .unwrap_or_else(|| unavailable(event))
 }

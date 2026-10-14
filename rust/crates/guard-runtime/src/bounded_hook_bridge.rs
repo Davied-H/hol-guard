@@ -28,6 +28,7 @@ use crate::bounded_hook_bridge_render::{
 };
 use crate::claude_hook_bridge_http::remaining;
 use crate::hook_bridge_exit::exit_code;
+use crate::hook_bridge_fallback::{self, Fallback};
 use crate::hook_env_stamp::{current_environment, stamp_hook_input_text, Stamp};
 use crate::pyjson::{self, PyVal};
 
@@ -172,17 +173,22 @@ pub(crate) enum Route {
     },
     /// Write Python's fixed fail-closed payload for this event.
     Fail(String),
-    /// Run the Python bridge; `daemon_tried` once the daemon was asked.
-    Delegate { daemon_tried: bool },
+    /// Run the Python bridge, for `reason`; `daemon_tried` once the daemon
+    /// was asked.
+    Delegate {
+        daemon_tried: bool,
+        reason: Fallback,
+    },
 }
 
 /// The daemon path of `run_bounded_cli_hook` after the input was read.
 pub(crate) fn route_hook(config: &BridgeConfig, raw: &[u8], deadline: Instant) -> Route {
-    let delegate = Route::Delegate {
+    let delegate = |reason| Route::Delegate {
         daemon_tried: false,
+        reason,
     };
     let Some(prepared) = prepare(raw) else {
-        return delegate;
+        return delegate(Fallback::InputUnparsed);
     };
     if Instant::now() >= deadline {
         return Route::Fail(prepared.event_name);
@@ -197,22 +203,32 @@ pub(crate) fn route_hook(config: &BridgeConfig, raw: &[u8], deadline: Instant) -
     }
     let left = remaining(deadline);
     let Some(target) = daemon_target(&config.guard_home, &config.harness) else {
-        return delegate;
+        return delegate(Fallback::DaemonUnavailable);
     };
     let Some(transport) = transport_deadline(deadline, left, budget) else {
-        return delegate;
+        return delegate(Fallback::DaemonBudget);
     };
     let answer = post_hook(&target, &config.harness, &prepared.data, transport);
+    let unrendered = if answer.is_some() {
+        Fallback::AnswerUnrendered
+    } else {
+        Fallback::DaemonUnanswered
+    };
     let rendered = answer.and_then(|response| {
         daemon_response_to_native(&response, &config.harness, &prepared.event_name)
     });
-    answered_route(rendered, prepared.event_name, deadline)
+    answered_route(rendered, unrendered, prepared.event_name, deadline)
 }
 
 /// The route for an answer the daemon or its resident gave. A recorded
 /// answer the bridge cannot render runs Python without the daemon, so the
-/// hook is never reviewed twice.
-fn answered_route(rendered: Option<Rendered>, event_name: String, deadline: Instant) -> Route {
+/// hook is never reviewed twice; `unrendered` says why there is no answer.
+fn answered_route(
+    rendered: Option<Rendered>,
+    unrendered: Fallback,
+    event_name: String,
+    deadline: Instant,
+) -> Route {
     if Instant::now() >= deadline {
         return Route::Fail(event_name);
     }
@@ -222,7 +238,10 @@ fn answered_route(rendered: Option<Rendered>, event_name: String, deadline: Inst
             stderr: rendered.stderr,
             exit_code: rendered.exit_code,
         },
-        None => Route::Delegate { daemon_tried: true },
+        None => Route::Delegate {
+            daemon_tried: true,
+            reason: unrendered,
+        },
     }
 }
 
@@ -255,6 +274,7 @@ fn direct_route(
         });
     Some(answered_route(
         rendered,
+        Fallback::AnswerUnrendered,
         prepared.event_name.clone(),
         deadline,
     ))
@@ -340,7 +360,11 @@ pub(crate) fn run(python_argv: &[String]) -> i32 {
             exit_code
         }
         Route::Fail(event_name) => fail(&config.harness, &event_name),
-        Route::Delegate { daemon_tried } => {
+        Route::Delegate {
+            daemon_tried,
+            reason,
+        } => {
+            hook_bridge_fallback::note(&config.guard_home, &config.harness, reason);
             run_python(python_argv, Some(&raw), started.elapsed(), daemon_tried).unwrap_or_else(
                 || {
                     let event_name =

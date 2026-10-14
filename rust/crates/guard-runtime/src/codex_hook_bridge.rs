@@ -32,6 +32,7 @@ use crate::codex_hook_response::{
     codex_hook_response, fail_closed, runtime_hook_event_name, PRE_TOOL_USE,
 };
 use crate::hook_bridge_exit::exit_code;
+use crate::hook_bridge_fallback::{self, Fallback};
 use crate::hook_env_stamp::{
     current_environment, dumps, json_string, set_member, stamp_hook_input_text, Stamp,
 };
@@ -272,26 +273,28 @@ pub(crate) fn prepare(raw_data: &str, hook_timeouts: &[(String, i64)]) -> Option
 pub(crate) enum Route {
     /// Write this hook JSON and exit zero.
     Respond(String),
-    /// Run the Python bridge on the original argv and stdin.
-    Delegate,
+    /// Run the Python bridge on the original argv and stdin, for this
+    /// reason.
+    Delegate(Fallback),
     /// Run the Python bridge on the daemon's answer.
     Handoff(String),
 }
 
 /// Route one daemon answer, as Python's fast path would render it.
 pub(crate) fn route_response(text: &str, event_name: &str) -> Route {
+    let unrendered = Route::Delegate(Fallback::AnswerUnrendered);
     let Ok(parsed) = pyjson::parse_mapping_lone_surrogates(text) else {
-        return Route::Delegate;
+        return unrendered;
     };
     if parsed.mapped && parsed.collision {
-        return Route::Delegate;
+        return unrendered;
     }
     let PyVal::Dict(entries) = &parsed.value else {
-        return Route::Delegate;
+        return unrendered;
     };
     if matches!(parsed.value.get("reason_code"), Some(PyVal::Str(code)) if code.starts_with(DAEMON_PROCESS_FAILURE_PREFIX))
     {
-        return Route::Delegate;
+        return Route::Delegate(Fallback::DaemonFailed);
     }
     if handoff::needs_python(&parsed.value, event_name) {
         return Route::Handoff(text.to_owned());
@@ -332,10 +335,10 @@ pub(crate) fn route_hook(
         || binding_capture_requested(&config.state_path)
         || !query_is_sendable(&config.query)
     {
-        return (Route::Delegate, None);
+        return (Route::Delegate(Fallback::ClientMode), None);
     }
     let Some(prepared) = prepare(raw_data, &config.hook_timeouts) else {
-        return (Route::Delegate, None);
+        return (Route::Delegate(Fallback::InputUnparsed), None);
     };
     let deadline = input_ready + prepared.timeout;
     let cap = if prepared.event_name == "UserPromptSubmit" {
@@ -364,10 +367,10 @@ pub(crate) fn route_hook(
         &prepared.data,
         rpc_deadline,
     ) else {
-        return (Route::Delegate, Some(prepared));
+        return (Route::Delegate(Fallback::DaemonUnanswered), Some(prepared));
     };
     let route = route_response(&text, &prepared.event_name);
-    if route != Route::Delegate {
+    if !matches!(route, Route::Delegate(_)) {
         clear_start_failure(&config.state_path);
     }
     (route, Some(prepared))
@@ -416,12 +419,18 @@ pub(crate) fn run(python_argv: &[String]) -> i32 {
             0
         })
     };
-    if read.is_err() {
-        return delegate(PRE_TOOL_USE);
-    }
     let Some(config) = parse_config(config_argument) else {
         return delegate(PRE_TOOL_USE);
     };
+    let note = |reason| {
+        if let Some(home) = guard_home(&config.state_path) {
+            hook_bridge_fallback::note(&home, CODEX.name, reason);
+        }
+    };
+    if read.is_err() {
+        note(Fallback::InputUnreadable);
+        return delegate(PRE_TOOL_USE);
+    }
     let Some(raw_data) = bounded_hook_input(&raw) else {
         write_stdout(&fail_closed(PRE_TOOL_USE));
         return 0;
@@ -433,6 +442,7 @@ pub(crate) fn run(python_argv: &[String]) -> i32 {
             0
         }
         (Route::Handoff(response), Some(prepared)) => {
+            note(Fallback::SemanticHandoff);
             let mut argv = python_argv[..python_argv.len() - 1].to_vec();
             argv.push(HANDOFF_FLAG.to_owned());
             argv.push(config_argument.clone());
@@ -442,7 +452,11 @@ pub(crate) fn run(python_argv: &[String]) -> i32 {
                 0
             })
         }
-        (_, prepared) => {
+        (route, prepared) => {
+            note(match route {
+                Route::Delegate(reason) => reason,
+                _ => Fallback::SemanticHandoff,
+            });
             let event_name = prepared.map_or_else(|| PRE_TOOL_USE.to_owned(), |p| p.event_name);
             delegate(&event_name)
         }

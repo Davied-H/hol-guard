@@ -242,21 +242,24 @@ fn hooks_without_a_daemon_go_to_python_unasked() {
     assert_eq!(
         route_hook(&bridge_config(&home, "copilot"), PRE_TOOL, soon()),
         Route::Delegate {
-            daemon_tried: false
+            daemon_tried: false,
+            reason: Fallback::DaemonUnavailable,
         }
     );
     let tokenless = home_with_endpoint("bounded-no-token", "127.0.0.1", 9, false);
     assert_eq!(
         route_hook(&bridge_config(&tokenless, "copilot"), PRE_TOOL, soon()),
         Route::Delegate {
-            daemon_tried: false
+            daemon_tried: false,
+            reason: Fallback::DaemonUnavailable,
         }
     );
     let remote = home_with_endpoint("bounded-remote", "192.0.2.1", 9, true);
     assert_eq!(
         route_hook(&bridge_config(&remote, "copilot"), PRE_TOOL, soon()),
         Route::Delegate {
-            daemon_tried: false
+            daemon_tried: false,
+            reason: Fallback::DaemonUnavailable,
         }
     );
 }
@@ -267,7 +270,8 @@ fn unreadable_hooks_go_to_python_even_past_the_deadline() {
     assert_eq!(
         route_hook(&bridge_config(&home, "kimi"), b"[]", Instant::now()),
         Route::Delegate {
-            daemon_tried: false
+            daemon_tried: false,
+            reason: Fallback::InputUnparsed,
         }
     );
 }
@@ -341,7 +345,13 @@ fn a_failed_daemon_hands_python_a_hook_it_must_not_resend() {
 
     let route = route_hook(&bridge_config(&home, "devin"), PRE_TOOL, soon());
 
-    assert_eq!(route, Route::Delegate { daemon_tried: true });
+    assert_eq!(
+        route,
+        Route::Delegate {
+            daemon_tried: true,
+            reason: Fallback::DaemonUnanswered,
+        }
+    );
     assert!(daemon.join().unwrap().is_some());
 }
 

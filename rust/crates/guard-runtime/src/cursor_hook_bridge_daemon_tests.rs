@@ -298,16 +298,27 @@ fn a_restrictive_daemon_answer_the_bridge_cannot_render_is_handed_to_the_client(
         r#"{{"policy_action":"review","reason":"{}","approval_url":"http://127.0.0.1:4781/approvals/req-4"}}"#,
         "r".repeat(MAX_HANDOFF_REPLY_BYTES)
     );
-    let kept: [(&str, u16, &str); 4] = [
-        ("unknown-action", 200, r#"{"policy_action":"maybe"}"#),
-        ("server-error", 500, r#"{"policy_action":"review"}"#),
-        ("list", 200, "[]"),
-        ("oversized", 200, oversized.as_str()),
+    let unrendered = Fallback::AnswerUnrendered;
+    let kept: [(&str, u16, &str, Fallback); 4] = [
+        (
+            "unknown-action",
+            200,
+            r#"{"policy_action":"maybe"}"#,
+            unrendered,
+        ),
+        (
+            "server-error",
+            500,
+            r#"{"policy_action":"review"}"#,
+            Fallback::DaemonUnanswered,
+        ),
+        ("list", 200, "[]", unrendered),
+        ("oversized", 200, oversized.as_str(), unrendered),
     ];
-    for (label, status, body) in kept {
+    for (label, status, body, reason) in kept {
         assert_eq!(
             ask_reply(label, SHELL, status, body),
-            Reply::Client,
+            Reply::Client(reason),
             "{label}"
         );
     }

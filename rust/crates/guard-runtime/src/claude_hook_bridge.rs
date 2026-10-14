@@ -23,6 +23,7 @@ use crate::claude_hook_bridge_url::{
     assert_loopback_http_url, endpoint_query, state_names_loopback_port, state_path_for_query,
 };
 use crate::codex_hook_bridge_direct::{direct_answer, CLAUDE_CODE};
+use crate::hook_bridge_fallback::{self, Fallback};
 use crate::hook_env_stamp::{current_environment, stamp_hook_input_text, Stamp};
 use crate::hook_process_spawn::{isolated_hook_environment, run_isolated_hook_process};
 
@@ -212,7 +213,7 @@ impl Bridge<'_> {
         } else if error.is_recoverable() {
             self.recover_retry_or_fallback(reason, state_path, kind)
         } else {
-            self.local_fallback(&reason)
+            self.local_fallback(&reason, Fallback::NonRecoverable)
         })
     }
 
@@ -237,7 +238,7 @@ impl Bridge<'_> {
                 Err(error) => reason = format!("{reason}; daemon recovery retry failed: {error}"),
             }
         }
-        self.local_fallback(&reason)
+        self.local_fallback(&reason, Fallback::RecoverFailed)
     }
 
     fn run_recovery(&self, recovery_deadline: Instant, kind: &str) -> bool {
@@ -265,7 +266,12 @@ impl Bridge<'_> {
 
     /// `_run_local_fallback`. Where Python's `json.loads` would raise on the
     /// fallback's output (and crash the bridge), this degrades instead.
-    fn local_fallback(&self, reason: &str) -> String {
+    /// `fallback` is why the bridge fell back, for the fallback log.
+    fn local_fallback(&self, reason: &str, fallback: Fallback) -> String {
+        let state_path = Path::new(&self.config.state_path);
+        if let Some(guard_home) = state_path.parent().filter(|_| state_path.is_absolute()) {
+            hook_bridge_fallback::note(guard_home, CLAUDE_CODE.name, fallback);
+        }
         let timeout = capped(self.deadline, FALLBACK_TIMEOUT);
         if timeout < MINIMUM_OPERATION {
             return degraded(
@@ -354,7 +360,7 @@ pub(crate) fn hook_response(config_text: &str, input: &mut impl Read) -> Option<
     };
     match state_path_for_query(&config.state_path, &config.query) {
         Ok(state_path) => bridge.respond(&state_path),
-        Err(reason) => Some(bridge.local_fallback(&reason)),
+        Err(reason) => Some(bridge.local_fallback(&reason, Fallback::StatePath)),
     }
 }
 
