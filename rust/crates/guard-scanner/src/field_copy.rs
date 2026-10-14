@@ -20,7 +20,7 @@ static MEMBER_ACCESS: LazyLock<Regex> = LazyLock::new(|| {
 /// `:` or `=`. Anything else after the comma, such as a literal, continues
 /// the value as a tuple or argument list.
 static NEXT_FIELD: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"^["']?[A-Za-z_][A-Za-z0-9_.-]*["']?\s*[:=]"#)
+    Regex::new(r#"^(?:"[A-Za-z_][A-Za-z0-9_.-]*"|'[A-Za-z_][A-Za-z0-9_.-]*'|[A-Za-z_][A-Za-z0-9_.-]*)\s*[:=]"#)
         .expect("next field rule must compile")
 });
 
@@ -147,6 +147,8 @@ mod tests {
             "password = \"admin.password\"",
             "const API_KEY = process.env.API_KEY || \"hunter2-production-value\";",
             "password = admin.password, \"hunter2-production-value\"",
+            "password = admin.password, \"admin:hunter2-production\"",
+            "token = session.token, 'aGVsbG8gd29ybGQgc2VjcmV0='",
         ] {
             assert!(credential_assignment(text), "{text:?}");
         }
