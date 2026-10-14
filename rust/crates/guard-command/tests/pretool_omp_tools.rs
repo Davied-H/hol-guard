@@ -272,7 +272,8 @@ fn listings_allow_verified_directories_only() {
 #[test]
 fn glob_path_selectors_prove_the_fixed_directory_without_allowing_escape() {
     let f = fixture();
-    for path in ["src/**/*.ts", "src/*.rs", "~/clean/*"] {
+    // `*.py` walks the workspace for names, as `find` does.
+    for path in ["src/**/*.ts", "src/*.rs", "~/clean/*", "*.py"] {
         let result = omp(
             &f,
             "glob",
@@ -293,7 +294,6 @@ fn glob_path_selectors_prove_the_fixed_directory_without_allowing_escape() {
         "src/[.][.]/clean/*",
         "~/.ss*/*",
         "~/*/*",
-        "*.py",
     ] {
         assert!(!allowed(&omp(&f, "glob", json!({"path": path}))), "{path}");
     }

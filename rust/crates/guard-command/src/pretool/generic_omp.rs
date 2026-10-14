@@ -286,7 +286,17 @@ fn listing_target_proven(
     };
     // A wildcard walks below its literal prefix and, like `find`, returns
     // names only, so the walk from that prefix is held to the same rules.
+    // Outside the workspace no sensitive name may be reachable below it.
     let recursive = recursive || has_glob_selector;
+    if has_glob_selector
+        && !super::super::search_scope::omp_glob_scope_proven(
+            target,
+            context.path.home_dir,
+            context.path.cwd,
+        )
+    {
+        return false;
+    }
     // `find` and a `pattern` walk the tree below the root and return names
     // only, so an ordinary project root is fine even with a `.env` inside;
     // reading that file stays gated. A walk from the home directory or above

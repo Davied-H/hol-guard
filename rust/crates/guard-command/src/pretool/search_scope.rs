@@ -158,6 +158,26 @@ fn unfiltered_walk_proven(root: &Path) -> bool {
         .is_some_and(|filter| walk_scope(root, &filter, Ignores::None).is_ok())
 }
 
+/// Oh My Pi `glob` walks below its fixed prefix and returns names only. Below
+/// a workspace cwd (not the home directory or an ancestor of it) that is the
+/// listing `find` already gets; anywhere else no sensitive file may be
+/// reachable below the prefix.
+pub(super) fn omp_glob_scope_proven(
+    target: &str,
+    home_dir: Option<&str>,
+    cwd: Option<&str>,
+) -> bool {
+    let Some(root) = unfiltered_directory_root(target, home_dir, cwd) else {
+        return false;
+    };
+    let workspace = cwd.zip(home_dir).and_then(|(cwd, home)| {
+        let cwd = std::fs::canonicalize(cwd).ok()?;
+        let home = std::fs::canonicalize(home).ok()?;
+        (!home.starts_with(&cwd)).then_some(cwd)
+    });
+    workspace.is_some_and(|cwd| root.starts_with(cwd)) || unfiltered_walk_proven(&root)
+}
+
 /// Oh My Pi `grep` variant of [`content_search_scope_proven`]. The host
 /// searches hidden files and, unless `gitignore` is false, skips what the
 /// repository's `.gitignore` files exclude. Only those files narrow the walk,
