@@ -217,6 +217,7 @@ fn query_is_sendable(query: &str) -> bool {
 }
 
 /// The hook as `_bound_hook_input` forwards it, or `None` to delegate.
+#[derive(Debug)]
 pub(crate) struct Prepared {
     pub(crate) event_name: String,
     pub(crate) data: String,
