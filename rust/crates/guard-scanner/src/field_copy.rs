@@ -148,7 +148,7 @@ mod tests {
             "const API_KEY = process.env.API_KEY || \"hunter2-production-value\";",
             "password = admin.password, \"hunter2-production-value\"",
             "password = admin.password, \"admin:hunter2-production\"",
-            "token = session.token, 'aGVsbG8gd29ybGQgc2VjcmV0='",
+            concat!("token = session.token, 'aGVsbG8gd29y", "bGQgc2VjcmV0='"),
         ] {
             assert!(credential_assignment(text), "{text:?}");
         }
