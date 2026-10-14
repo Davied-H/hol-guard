@@ -16,6 +16,23 @@ static MEMBER_ACCESS: LazyLock<Regex> = LazyLock::new(|| {
         .expect("member access rule must compile")
 });
 
+/// The start of the next field after a `,`: a bare or quoted key followed by
+/// `:` or `=`. Anything else after the comma, such as a literal, continues
+/// the value as a tuple or argument list.
+static NEXT_FIELD: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"^["']?[A-Za-z_][A-Za-z0-9_.-]*["']?\s*[:=]"#)
+        .expect("next field rule must compile")
+});
+
+/// Whether `text` holds nothing that continues a value: it is empty, a
+/// trailing comment, or closes a bracket.
+fn ends_value(text: &str) -> bool {
+    let text = text.trim_start_matches(|character: char| {
+        character.is_whitespace() || matches!(character, ')' | '}')
+    });
+    text.is_empty() || text.starts_with('#') || text.starts_with("//")
+}
+
 /// Field names that hold a credential, lowercased without `_` or `-`.
 const CREDENTIAL_FIELDS: [&str; 6] = [
     "apikey",
@@ -33,15 +50,15 @@ const CREDENTIAL_FIELDS: [&str; 6] = [
 /// `API_KEY = process.env.API_KEY || "literal"`. A following field or a
 /// trailing comment does not continue it.
 pub(crate) fn is_field_copy(matched: &str, rest_of_line: &str) -> bool {
-    let segment = rest_of_line
-        .split([',', ';'])
-        .next()
-        .unwrap_or_default()
-        .trim_start_matches(|character: char| {
-            character.is_whitespace() || matches!(character, ')' | '}')
-        });
-    if !(segment.is_empty() || segment.starts_with('#') || segment.starts_with("//")) {
+    let end = rest_of_line.find([',', ';']).unwrap_or(rest_of_line.len());
+    if !ends_value(&rest_of_line[..end]) {
         return false;
+    }
+    if rest_of_line[end..].starts_with(',') {
+        let next = rest_of_line[end + 1..].trim_start();
+        if !(ends_value(next) || NEXT_FIELD.is_match(next)) {
+            return false;
+        }
     }
     let Some(index) = matched.find([':', '=']) else {
         return false;
@@ -115,6 +132,8 @@ mod tests {
             "connect({ token: session.token, user: session.user })",
             "password = admin.password  # from the URL",
             "password: cfg.password, // database",
+            "connect(token=session.token, user=session.user)",
+            "{ token: session.token, \"user\": session.user }",
         ] {
             assert!(!credential_assignment(text), "{text:?}");
         }
@@ -127,6 +146,7 @@ mod tests {
             "token: session.token,\ntoken: \"a1b2c3d4e5f6g7h8\",",
             "password = \"admin.password\"",
             "const API_KEY = process.env.API_KEY || \"hunter2-production-value\";",
+            "password = admin.password, \"hunter2-production-value\"",
         ] {
             assert!(credential_assignment(text), "{text:?}");
         }
