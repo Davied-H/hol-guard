@@ -401,14 +401,6 @@ class TestDevinWindowsPaths:
         config_path.parent.mkdir(parents=True, exist_ok=True)
         config_path.write_text("{}", encoding="utf-8")
         original_bytes = config_path.read_bytes()
-
-        def _deny(*_args: object, **_kwargs: object) -> str:
-            raise PermissionError("denied")
-
-        monkeypatch.setattr(Path, "read_text", _deny)
-        result = DevinHarnessAdapter().detect(ctx)
-        assert str(config_path) in result.config_paths
-        assert any("could not be parsed" in warning for warning in result.warnings)
         from codex_plugin_scanner.guard import codex_hook_recovery
 
         original_open = codex_hook_recovery.os.open
@@ -423,6 +415,17 @@ class TestDevinWindowsPaths:
             DevinHarnessAdapter().install(ctx)
         monkeypatch.undo()
         assert config_path.read_bytes() == original_bytes
+
+        # Detection runs in the resident, so the file must be unreadable on disk.
+        config_path.chmod(0)
+        try:
+            if os.access(config_path, os.R_OK):
+                pytest.skip("file permissions are not enforced for this user")
+            result = DevinHarnessAdapter().detect(ctx)
+        finally:
+            config_path.chmod(0o600)
+        assert str(config_path) in result.config_paths
+        assert any("could not be parsed" in warning for warning in result.warnings)
 
     def test_missing_config_still_counts_as_absent(self, tmp_path: Path, monkeypatch) -> None:
         ctx = _ctx(tmp_path)
