@@ -161,20 +161,6 @@ fn python_name(executable: &str) -> bool {
         })
 }
 
-/// Path from `base` to `target`; both are canonical paths in one workspace.
-fn relative_to(base: &Path, target: &Path) -> PathBuf {
-    let base: Vec<_> = base.components().collect();
-    let target: Vec<_> = target.components().collect();
-    let common = base
-        .iter()
-        .zip(&target)
-        .take_while(|(left, right)| left == right)
-        .count();
-    let mut relative: PathBuf = std::iter::repeat_n("..", base.len() - common).collect();
-    relative.extend(&target[common..]);
-    relative
-}
-
 fn plan_inline(input: &Value) -> Result<Value, RestrictedPytestError> {
     let invalid = || error(INVALID, "Protected evaluation requires direct inline argv.");
     let command: Vec<String> = input
@@ -190,7 +176,7 @@ fn plan_inline(input: &Value) -> Result<Value, RestrictedPytestError> {
         &path("workspace").ok_or_else(invalid)?,
         &path("cwd").ok_or_else(invalid)?,
     )?;
-    let mut argv = normalized_command(&command)?;
+    let argv = normalized_command(&command)?;
     if !inline_eval(&argv)? || !python_name(&argv[0]) {
         return Err(invalid());
     }
@@ -198,12 +184,10 @@ fn plan_inline(input: &Value) -> Result<Value, RestrictedPytestError> {
     if !matches!(argv.get(index).map(String::as_str), Some("-c" | "-m")) {
         let script = argv
             .get(index)
-            .and_then(|script| canonical(&cwd.join(script)))
-            .filter(|script| script.is_file() && script.starts_with(&workspace))
-            .ok_or_else(|| error(INVALID, "Test script is not in the workspace."))?;
-        // The runner starts in the staged snapshot of `cwd`, so the script
-        // must name its staged copy, never the live workspace path.
-        argv[index] = relative_to(&cwd, &script).to_string_lossy().into_owned();
+            .and_then(|script| canonical(&cwd.join(script)));
+        if !script.is_some_and(|script| script.is_file() && script.starts_with(&workspace)) {
+            return Err(error(INVALID, "Test script is not in the workspace."));
+        }
     }
     let search_path = input
         .get("search_path")

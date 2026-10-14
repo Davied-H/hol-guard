@@ -80,23 +80,28 @@ fn script_outside_the_workspace_is_rejected() {
     assert_eq!(response["reason_code"], INVALID, "{response}");
 }
 
+/// The runner starts in the staged copy of `cwd`, so only a relative script
+/// path names the staged file; any other spelling could reach the live one.
 #[test]
-fn scripts_are_rewritten_relative_to_the_cwd() {
+fn only_relative_scripts_below_the_cwd_are_planned() {
     let (_directory, workspace) = workspace();
-    let nested = workspace.join("pkg").join("tests");
-    std::fs::create_dir_all(&nested).unwrap();
-    assert_eq!(
-        relative_to(&workspace, &workspace.join("test_calc.py")),
-        PathBuf::from("test_calc.py")
-    );
-    assert_eq!(
-        relative_to(&nested, &workspace.join("test_calc.py")),
-        PathBuf::from("..").join("..").join("test_calc.py")
-    );
-    assert_eq!(
-        relative_to(&workspace.join("pkg"), &nested.join("test_a.py")),
-        PathBuf::from("tests").join("test_a.py")
-    );
+    let nested = workspace.join("pkg");
+    std::fs::create_dir(&nested).unwrap();
+    let absolute = workspace.join("test_calc.py");
+    for (cwd, script) in [
+        (&workspace, absolute.to_str().unwrap()),
+        (&nested, absolute.to_str().unwrap()),
+        (&nested, "../test_calc.py"),
+        (&nested, r"..\test_calc.py"),
+    ] {
+        let response = prepare_inline(&json!({
+            "command": ["python3", script],
+            "workspace": workspace,
+            "cwd": cwd,
+            "search_path": "",
+        }));
+        assert_eq!(response["reason_code"], INVALID, "{script}: {response}");
+    }
 }
 
 #[test]
@@ -178,46 +183,13 @@ fn installed_python_plans_and_runs_in_the_snapshot() {
     assert_eq!(value["profile_version"], PROFILE);
     let command: Vec<String> = serde_json::from_value(value["command"].clone()).unwrap();
     assert_eq!(command[1], "test_calc.py");
-    let workspace_text = workspace.to_string_lossy().into_owned();
+    let workspace = workspace.to_string_lossy().into_owned();
     let mut arguments: Vec<String> = [
         COMMAND,
         "--workspace",
-        &workspace_text,
+        &workspace,
         "--cwd",
-        &workspace_text,
-        "--timeout-seconds",
-        "60",
-        "--",
-    ]
-    .into_iter()
-    .map(str::to_owned)
-    .collect();
-    arguments.extend(command);
-    assert_eq!(launch(&arguments).unwrap(), 0);
-
-    // An absolute live-workspace script runs as its staged copy from a nested cwd.
-    let nested = workspace.join("pkg");
-    std::fs::create_dir(&nested).unwrap();
-    let script = workspace.join("test_calc.py");
-    let response = prepare_inline(&json!({
-        "command": ["python3", script],
-        "workspace": workspace,
-        "cwd": nested,
-        "search_path": search_path,
-    }));
-    let command: Vec<String> = serde_json::from_value(response["value"]["command"].clone())
-        .unwrap_or_else(|_| panic!("{response}"));
-    assert_eq!(
-        PathBuf::from(&command[1]),
-        PathBuf::from("..").join("test_calc.py")
-    );
-    let nested = nested.to_string_lossy().into_owned();
-    let mut arguments: Vec<String> = [
-        COMMAND,
-        "--workspace",
-        &workspace_text,
-        "--cwd",
-        &nested,
+        &workspace,
         "--timeout-seconds",
         "60",
         "--",
