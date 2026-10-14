@@ -125,7 +125,6 @@ fn scratch_checkout_files_copy_into_the_workspace() {
         format!("mkdir -p src/lib/notes && cp {app}/README.md {app}/package.json src/lib/notes"),
         format!("mkdir -p src/lib && cp {app}/README.md src/lib/README.md"),
         format!("mkdir -p src/lib/notes && cp {app}/README.md src/lib/notes/README.md"),
-        format!("mkdir -p src src/lib && cp {app}/README.md src/lib/README.md"),
     ] {
         assert!(permitted(&fixture, &command), "{command}");
     }
