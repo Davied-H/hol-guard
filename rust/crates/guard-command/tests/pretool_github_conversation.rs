@@ -5,8 +5,6 @@ use fixture::FixtureCleanup;
 use serde_json::json;
 use std::path::{Path, PathBuf};
 
-const ORIGIN: &str = "[remote \"origin\"]\n\turl = https://github.com/example-org/app-portal.git\n";
-
 fn checkout(label: &str) -> (PathBuf, FixtureCleanup) {
     let root = std::env::temp_dir().join(format!(
         "guard-gh-conversation-{label}-{}",
@@ -14,9 +12,29 @@ fn checkout(label: &str) -> (PathBuf, FixtureCleanup) {
     ));
     let _ = std::fs::remove_dir_all(&root);
     let project = root.join("project");
-    std::fs::create_dir_all(project.join(".git")).unwrap();
     std::fs::create_dir_all(project.join(".tmp")).unwrap();
-    std::fs::write(project.join(".git/config"), ORIGIN).unwrap();
+    // A real repository, so the guard's `git remote -v` probe can answer.
+    for arguments in [
+        &["init", "--quiet"][..],
+        &[
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/example-org/app-portal.git",
+        ][..],
+    ] {
+        let status = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&project)
+            .args(arguments)
+            .env_clear()
+            .env("PATH", std::env::var("PATH").unwrap())
+            .env("HOME", &root)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .status()
+            .unwrap();
+        assert!(status.success(), "git {arguments:?}");
+    }
     let root = root.canonicalize().unwrap();
     (root.clone(), FixtureCleanup(root))
 }

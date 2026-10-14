@@ -207,6 +207,7 @@ impl CompiledNativeCommandControls {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn apply_with_tool_and_context(
         &self,
         command: Option<&CanonicalCommandV1>,
