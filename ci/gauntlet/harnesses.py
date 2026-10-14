@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -344,6 +345,18 @@ def _login_lock(source: Path) -> Iterator[None]:
         yield
     finally:
         lock.rmdir()
+
+
+def keep_login_shell_path(home: Path, path: str) -> None:
+    """Restore the runner's PATH order in macOS login shells such as Codex's ``zsh -lc``.
+
+    path_helper in /etc/zprofile moves the system directories first, so BSD tools
+    would shadow the GNU ones the fixture puts on PATH. ~/.zprofile runs after it.
+    """
+    if sys.platform != "darwin":
+        return
+    with (home / ".zprofile").open("a", encoding="utf-8") as profile:
+        profile.write(f"export PATH={shlex.quote(path)}\n")
 
 
 def credential_environment(harness: Harness) -> dict[str, str]:

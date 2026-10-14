@@ -10,7 +10,7 @@ import pytest
 
 from ci.gauntlet.catalog import load_catalog
 from ci.gauntlet.harness_judge import _relative, _tokens, assess_harness_case, effective_decision, guard_decisions
-from ci.gauntlet.harnesses import CredentialSeed, adapter, read_transcript
+from ci.gauntlet.harnesses import CredentialSeed, adapter, keep_login_shell_path, read_transcript
 from ci.gauntlet.proofs import required_checks
 
 SCENARIOS = {scenario.id: scenario for scenario in load_catalog()}
@@ -443,3 +443,14 @@ def test_keychain_logins_get_the_operator_account_name(tmp_path, monkeypatch):
     assert adapter("codex").keychain_environment() == {}
     monkeypatch.setattr(sys, "platform", "linux")
     assert adapter("claude-code").keychain_environment() == {}
+
+
+def test_macos_login_shells_keep_the_runner_path_order(tmp_path, monkeypatch):
+    # Codex runs commands through `zsh -lc`; path_helper would otherwise put BSD sed first.
+    path = os.pathsep.join(["/opt/gnu sed/bin", "/usr/bin"])
+    monkeypatch.setattr(sys, "platform", "linux")
+    keep_login_shell_path(tmp_path, path)
+    assert not (tmp_path / ".zprofile").exists()
+    monkeypatch.setattr(sys, "platform", "darwin")
+    keep_login_shell_path(tmp_path, path)
+    assert (tmp_path / ".zprofile").read_text(encoding="utf-8") == f"export PATH='{path}'\n"
