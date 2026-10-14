@@ -360,7 +360,8 @@ pub(crate) fn hook_response(config_text: &str, input: &mut impl Read) -> Option<
     };
     match state_path_for_query(&config.state_path, &config.query) {
         Ok(state_path) => bridge.respond(&state_path),
-        Err(reason) => Some(bridge.local_fallback(&reason, Fallback::StatePath)),
+        // A config whose state path does not match its Guard home is refused.
+        Err(reason) => Some(degraded(&reason, &bridge.data)),
     }
 }
 

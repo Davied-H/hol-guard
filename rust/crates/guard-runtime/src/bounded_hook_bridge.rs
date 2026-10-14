@@ -9,12 +9,14 @@
 //! `bounded_hook_bridge_grok` answers.
 //!
 //! A hook that is too large, cannot be decoded or is not a JSON object gets
-//! the fixed fail-closed payload Python writes for it. Only a clean daemon
-//! answer is rendered here. Every other path runs the Python bridge it was
-//! given, with the original argv and stdin:
+//! the fixed fail-closed payload Python writes for it, and so does a daemon
+//! answer the bridge cannot render. A clean daemon answer is rendered here.
+//! A hook with a lone surrogate, or with no daemon to answer it, runs the
+//! Python bridge it was given, with the original argv and stdin:
 //! - before the daemon was asked, Python runs the whole hook again;
-//! - once the daemon was asked, Python skips the daemon and runs the
-//!   isolated CLI hook, so one hook never reaches the daemon twice.
+//! - once the daemon was asked and did not answer, Python skips the daemon
+//!   and runs the isolated CLI hook, so one hook never reaches the daemon
+//!   twice.
 //!
 //! Past the hook deadline, or when stdin cannot be read in time, the native
 //! bridge writes the same fixed fail-closed payload Python writes. The
@@ -250,43 +252,35 @@ pub(crate) fn route_hook(config: &BridgeConfig, raw: &[u8], deadline: Instant) -
     let Some(target) = daemon_target(&config.guard_home, &config.harness) else {
         return delegate(Fallback::DaemonUnavailable);
     };
+    // Too little time for a request means the deadline is all but spent.
     let Some(transport) = transport_deadline(deadline, left, budget) else {
-        return delegate(Fallback::DaemonBudget);
+        return Route::Fail(prepared.event_name);
     };
-    let answer = post_hook(&target, &config.harness, &prepared.data, transport);
-    let unrendered = if answer.is_some() {
-        Fallback::AnswerUnrendered
-    } else {
-        Fallback::DaemonUnanswered
+    let Some(answer) = post_hook(&target, &config.harness, &prepared.data, transport) else {
+        // Python runs without the daemon, so the hook is never sent twice.
+        if Instant::now() >= deadline {
+            return Route::Fail(prepared.event_name);
+        }
+        return Route::Delegate {
+            daemon_tried: true,
+            reason: Fallback::DaemonUnanswered,
+        };
     };
-    let rendered = answer.and_then(|response| {
-        daemon_response_to_native(&response, &config.harness, &prepared.event_name)
-    });
-    answered_route(rendered, unrendered, prepared.event_name, deadline)
+    let rendered = daemon_response_to_native(&answer, &config.harness, &prepared.event_name);
+    answered_route(rendered, prepared.event_name, deadline)
 }
 
-/// The route for an answer the daemon or its resident gave. A recorded
-/// answer the bridge cannot render runs Python without the daemon, so the
-/// hook is never reviewed twice; `unrendered` says why there is no answer.
-fn answered_route(
-    rendered: Option<Rendered>,
-    unrendered: Fallback,
-    event_name: String,
-    deadline: Instant,
-) -> Route {
-    if Instant::now() >= deadline {
-        return Route::Fail(event_name);
-    }
+/// The route for an answer the daemon or its resident gave. An answer the
+/// bridge cannot render fails closed: it was recorded, so it is never
+/// reviewed again.
+fn answered_route(rendered: Option<Rendered>, event_name: String, deadline: Instant) -> Route {
     match rendered {
-        Some(rendered) => Route::Respond {
+        Some(rendered) if Instant::now() < deadline => Route::Respond {
             stdout: rendered.stdout,
             stderr: rendered.stderr,
             exit_code: rendered.exit_code,
         },
-        None => Route::Delegate {
-            daemon_tried: true,
-            reason: unrendered,
-        },
+        _ => Route::Fail(event_name),
     }
 }
 
@@ -319,7 +313,6 @@ fn direct_route(
         });
     Some(answered_route(
         rendered,
-        Fallback::AnswerUnrendered,
         prepared.event_name.clone(),
         deadline,
     ))

@@ -243,14 +243,29 @@ fn with_browser_wait_process(
     text
 }
 
-pub(crate) fn prepare(raw_data: &str, hook_timeouts: &[(String, i64)]) -> Option<Prepared> {
-    let parsed = pyjson::parse_mapping_lone_surrogates(raw_data).ok()?;
+/// A hook the native bridge does not forward as it was read.
+#[derive(Debug, PartialEq)]
+pub(crate) enum Unprepared {
+    /// Refused with the client's fail-closed answer for this event.
+    Refused(String),
+    /// A lone surrogate, which Python reads as its own character.
+    Surrogates,
+}
+
+pub(crate) fn prepare(
+    raw_data: &str,
+    hook_timeouts: &[(String, i64)],
+) -> Result<Prepared, Unprepared> {
+    // `_event_name` reads anything but a JSON object as PreToolUse, and every
+    // Codex hook is an object, so anything else is refused.
+    let refused = || Unprepared::Refused(PRE_TOOL_USE.to_owned());
+    let parsed = pyjson::parse_mapping_lone_surrogates(raw_data).map_err(|_| refused())?;
     let PyVal::Dict(entries) = parsed.value else {
-        return None;
+        return Err(refused());
     };
     let event_name = runtime_hook_event_name(&entries);
     if parsed.mapped && (parsed.collision || event_name.chars().any(in_surrogate_plane)) {
-        return None;
+        return Err(Unprepared::Surrogates);
     }
     let seconds = request_timeout_seconds(&event_name, hook_timeouts);
     let forwarded = if event_name == PRE_TOOL_USE {
@@ -258,10 +273,11 @@ pub(crate) fn prepare(raw_data: &str, hook_timeouts: &[(String, i64)]) -> Option
     } else {
         raw_data.to_owned()
     };
+    // Nesting Python cannot read, or text it cannot round-trip, is refused.
     let Stamp::Text(data) = stamp_hook_input_text(&forwarded, &current_environment()) else {
-        return None;
+        return Err(Unprepared::Refused(event_name));
     };
-    Some(Prepared {
+    Ok(Prepared {
         event_name,
         data,
         timeout: Duration::from_secs(seconds.unsigned_abs()),
@@ -280,9 +296,10 @@ pub(crate) enum Route {
     Handoff(String),
 }
 
-/// Route one daemon answer, as Python's fast path would render it.
+/// Route one daemon answer, as Python's fast path would render it. An answer
+/// that cannot be rendered is refused with the fail-closed answer.
 pub(crate) fn route_response(text: &str, event_name: &str) -> Route {
-    let unrendered = Route::Delegate(Fallback::AnswerUnrendered);
+    let unrendered = Route::Respond(fail_closed(event_name));
     let Ok(parsed) = pyjson::parse_mapping_lone_surrogates(text) else {
         return unrendered;
     };
@@ -337,8 +354,12 @@ pub(crate) fn route_hook(
     {
         return (Route::Delegate(Fallback::ClientMode), None);
     }
-    let Some(prepared) = prepare(raw_data, &config.hook_timeouts) else {
-        return (Route::Delegate(Fallback::InputUnparsed), None);
+    let prepared = match prepare(raw_data, &config.hook_timeouts) {
+        Ok(prepared) => prepared,
+        Err(Unprepared::Refused(event_name)) => {
+            return (Route::Respond(fail_closed(&event_name)), None)
+        }
+        Err(Unprepared::Surrogates) => return (Route::Delegate(Fallback::InputUnparsed), None),
     };
     let deadline = input_ready + prepared.timeout;
     let cap = if prepared.event_name == "UserPromptSubmit" {

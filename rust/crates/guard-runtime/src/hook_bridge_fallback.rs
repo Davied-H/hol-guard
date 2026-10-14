@@ -29,8 +29,6 @@ pub(crate) enum Fallback {
     ClientMode,
     /// No daemon was reachable.
     DaemonUnavailable,
-    /// Too little of the hook's time budget was left to ask the daemon.
-    DaemonBudget,
     /// The daemon did not answer.
     DaemonUnanswered,
     /// The daemon reported a process failure.
@@ -43,8 +41,6 @@ pub(crate) enum Fallback {
     RecoverFailed,
     /// The failure was not one the bridge can recover from.
     NonRecoverable,
-    /// The bridge's configured state path was not usable.
-    StatePath,
     /// The hook input did not match the native contract.
     ContractDrift,
 }
@@ -55,14 +51,12 @@ impl Fallback {
             Self::InputUnparsed => "input_unparsed",
             Self::ClientMode => "client_mode",
             Self::DaemonUnavailable => "daemon_unavailable",
-            Self::DaemonBudget => "daemon_budget",
             Self::DaemonUnanswered => "daemon_unanswered",
             Self::DaemonFailed => "daemon_failed",
             Self::AnswerUnrendered => "answer_unrendered",
             Self::SemanticHandoff => "semantic_handoff",
             Self::RecoverFailed => "recover_failed",
             Self::NonRecoverable => "non_recoverable",
-            Self::StatePath => "state_path",
             Self::ContractDrift => "contract_drift",
         }
     }

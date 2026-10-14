@@ -373,6 +373,20 @@ fn a_failed_daemon_hands_python_a_hook_it_must_not_resend() {
 }
 
 #[test]
+fn an_answer_the_bridge_cannot_render_fails_closed() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let answer = r#"{"policy_action":"block","reason":["listed"]}"#;
+    let daemon = serve_once(listener, 200, answer.to_owned());
+    let home = home_with_endpoint("bounded-unrendered", "127.0.0.1", port, true);
+
+    let route = route_hook(&bridge_config(&home, "devin"), PRE_TOOL, soon());
+
+    assert_eq!(route, Route::Fail("PreToolUse".to_owned()));
+    assert!(daemon.join().unwrap().is_some());
+}
+
+#[test]
 fn python_runs_with_the_handoff_environment_and_hook_input() {
     let shell = |script: &str| argv(&["/bin/sh", "-c", script]);
     assert_eq!(

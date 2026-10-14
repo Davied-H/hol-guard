@@ -130,7 +130,7 @@ fn non_http_fallback_url_is_a_control_plane_failure() {
 }
 
 #[test]
-fn query_for_another_home_goes_to_the_fallback() {
+fn query_for_another_home_is_refused_without_the_fallback() {
     let home = GuardHome::new("mismatch");
     let mut config: serde_json::Value =
         serde_json::from_str(&config_for(&home, fallback_exiting(3), Vec::new())).unwrap();
@@ -138,7 +138,7 @@ fn query_for_another_home_goes_to_the_fallback() {
     assert_eq!(
         degraded_reason(&respond(&config.to_string(), PRE_TOOL_USE)),
         "HOL Guard could not complete native review (daemon state path does not \
-         match the hook Guard home; fallback exited 3) and denied this action."
+         match the hook Guard home) and denied this action."
     );
 }
 

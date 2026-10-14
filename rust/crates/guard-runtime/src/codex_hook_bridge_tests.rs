@@ -187,24 +187,23 @@ fn answers_needing_python_are_handed_off() {
 }
 
 #[test]
-fn failures_and_odd_answers_are_delegated() {
-    let unrendered = Fallback::AnswerUnrendered;
-    for (text, reason) in [
-        ("", unrendered),
-        ("[]", unrendered),
-        ("{", unrendered),
-        (
-            r#"{"reason_code":"daemon_hook_process_failed"}"#,
-            Fallback::DaemonFailed,
-        ),
-        ("{\"systemMessage\":\"\\ud800\u{f0000}\"}", unrendered),
-    ] {
-        assert_eq!(
-            route_response(text, PRE_TOOL_USE),
-            Route::Delegate(reason),
-            "{text:?}"
-        );
+fn odd_answers_fail_closed_and_process_failures_are_delegated() {
+    for event_name in [PRE_TOOL_USE, "PermissionRequest", "Stop"] {
+        for text in ["", "[]", "{", "{\"systemMessage\":\"\\ud800\u{f0000}\"}"] {
+            assert_eq!(
+                route_response(text, event_name),
+                Route::Respond(fail_closed(event_name)),
+                "{event_name} {text:?}"
+            );
+        }
     }
+    assert_eq!(
+        route_response(
+            r#"{"reason_code":"daemon_hook_process_failed"}"#,
+            PRE_TOOL_USE
+        ),
+        Route::Delegate(Fallback::DaemonFailed)
+    );
     let other = r#"{"reason_code":"policy_denied","continue":true}"#;
     assert!(matches!(route_response(other, "Stop"), Route::Respond(_)));
 }
@@ -244,15 +243,29 @@ fn other_events_forward_their_own_input() {
 }
 
 #[test]
-fn unclean_input_is_delegated() {
+fn input_that_is_not_an_object_is_refused() {
+    let pairs = timeouts(&[("PreToolUse", 30)]);
+    for raw in ["[]", "{", "\"PostToolUse\"", ""] {
+        assert_eq!(
+            prepare(raw, &pairs).unwrap_err(),
+            Unprepared::Refused(PRE_TOOL_USE.to_owned()),
+            "{raw:?}"
+        );
+    }
+}
+
+#[test]
+fn input_with_lone_surrogates_is_delegated() {
     let pairs = timeouts(&[("PreToolUse", 30)]);
     for raw in [
-        "[]",
-        "{",
         "{\"hook_event_name\":\"\\udc00\"}",
         "{\"a\":\"\\ud800\u{f0001}\"}",
     ] {
-        assert!(prepare(raw, &pairs).is_none(), "{raw:?}");
+        assert_eq!(
+            prepare(raw, &pairs).unwrap_err(),
+            Unprepared::Surrogates,
+            "{raw:?}"
+        );
     }
 }
 
