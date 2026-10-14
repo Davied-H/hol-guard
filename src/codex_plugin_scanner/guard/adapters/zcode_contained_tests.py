@@ -119,7 +119,15 @@ def _sink_command_prefix(config: Mapping[str, object]) -> tuple[str, ...]:
         from ..stable_guard_cli import resolve_frozen_guard_cli
 
         return (resolve_frozen_guard_cli(),)
-    return isolated_guard_cli_command(str(config["python_executable"]), Path(str(config["package_root"])), ())
+    package_root = Path(str(config["package_root"]))
+    command = isolated_guard_cli_command(str(config["python_executable"]), package_root, ())
+    if sys.platform != "win32":
+        return command
+    # Git Bash hands a native program each doubled backslash as a single one,
+    # which breaks the escaped package root in the bootstrap. The same
+    # directory written with forward slashes needs no escaping.
+    root = str(package_root.resolve())
+    return (*command[:-1], command[-1].replace(repr(root), repr(root.replace("\\", "/")), 1))
 
 
 def platform_contains(response: Mapping[str, object]) -> bool:
