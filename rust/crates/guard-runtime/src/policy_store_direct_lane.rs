@@ -244,10 +244,10 @@ impl PolicySnapshotStore {
             .ok()
             .and_then(|binding| binding.clone())
             .ok_or(DirectLaneDefer::Unbound)?;
-        if !binding.workspaces.contains(workspace)
-            && !(file_less_subdirectory
-                && subdirectory::file_less_subdirectory(&binding.workspaces, workspace))
-        {
+        let known = binding.workspaces.contains(workspace)
+            || (file_less_subdirectory
+                && subdirectory::file_less_subdirectory(&binding.workspaces, workspace));
+        if !known {
             return Err(DirectLaneDefer::WorkspaceUnknown);
         }
         let snapshot = self.admit_binding_lease(&binding)?;
