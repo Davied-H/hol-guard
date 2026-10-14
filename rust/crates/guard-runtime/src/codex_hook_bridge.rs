@@ -4,18 +4,20 @@
 //! per hook. The native bridge forwards the hook to the authenticated
 //! loopback Guard daemon and shapes its answer for Codex.
 //!
-//! Only a clean daemon answer is rendered here. Every other path runs the
-//! Python bridge it was given:
-//! - a raw delegate (the original argv and stdin) for anything the native
-//!   bridge does not handle exactly as Python does, including every daemon
-//!   failure, so recovery, fallback and denial wording stay in Python;
+//! A clean daemon answer is rendered here. A daemon that is down, does not
+//! answer or reports a process failure is started with the install-time
+//! `start_command` and asked once more inside the hook deadline (see
+//! `restart`); when that fails too, or the daemon is overloaded, the hook
+//! fails closed. Every other path runs the Python bridge it was given:
+//! - a raw delegate (the original argv and stdin) for client modes and
+//!   input the native bridge does not handle exactly as Python does;
 //! - a handoff (`--native-handoff` with the daemon's answer on stdin) for
 //!   answers that need Python's post-processing: browser approval waits,
 //!   containment routing and transition observations. A `PreToolUse` deny
 //!   that needs none of them is rendered here (see `handoff`).
 //!
-//! The native bridge never decides a verdict. The daemon decides; the
-//! Python bridge decides whenever the daemon cannot.
+//! The native bridge never decides a verdict, and Python never decides one
+//! for it: without a daemon answer the hook fails closed.
 
 use std::borrow::Cow;
 use std::io::{self, Read, Write};
@@ -23,10 +25,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use crate::claude_hook_bridge_http::remaining;
 use crate::claude_hook_bridge_render::py_strip;
-use crate::codex_hook_bridge_direct::{direct_answer, CODEX};
-use crate::codex_hook_bridge_transport::authenticated_codex_hook_response;
+use crate::codex_hook_bridge_direct::CODEX;
 use crate::codex_hook_identity::current_process_identity;
 use crate::codex_hook_response::{
     codex_hook_response, fail_closed, runtime_hook_event_name, PRE_TOOL_USE,
@@ -63,6 +63,8 @@ pub(crate) struct BridgeConfig {
     pub(crate) state_path: String,
     pub(crate) query: String,
     pub(crate) hook_timeouts: Vec<(String, i64)>,
+    /// The daemon-start command run when the daemon is unreachable.
+    pub(crate) start_command: Vec<String>,
 }
 
 fn non_empty_strings(value: Option<&PyVal>) -> bool {
@@ -124,12 +126,18 @@ pub(crate) fn parse_config(argument: &str) -> Option<BridgeConfig> {
     let state_path = payload.get("state_path")?.as_str()?.to_owned();
     let manifest_path = payload.get("manifest_path")?.as_str()?;
     let query = payload.get("query")?.as_str()?.to_owned();
+    let start_command = payload.get("start_command");
     if manifest_path.is_empty()
         || !non_empty_strings(payload.get("fallback_command"))
-        || !non_empty_strings(payload.get("start_command"))
+        || !non_empty_strings(start_command)
     {
         return None;
     }
+    let start_command = start_command?
+        .as_list()?
+        .iter()
+        .map(|item| item.as_str().map(str::to_owned))
+        .collect::<Option<Vec<_>>>()?;
     let mut hook_timeouts = Vec::new();
     for (key, value) in payload.get("hook_timeouts")?.as_dict()? {
         let PyVal::Int(digits) = value else {
@@ -149,6 +157,7 @@ pub(crate) fn parse_config(argument: &str) -> Option<BridgeConfig> {
         state_path,
         query,
         hook_timeouts,
+        start_command,
     })
 }
 
@@ -294,6 +303,8 @@ pub(crate) enum Route {
     Delegate(Fallback),
     /// Run the Python bridge on the daemon's answer.
     Handoff(String),
+    /// The daemon reported a process failure: restart it and ask once more.
+    Restart,
 }
 
 /// Route one daemon answer, as Python's fast path would render it. An answer
@@ -311,7 +322,7 @@ pub(crate) fn route_response(text: &str, event_name: &str) -> Route {
     };
     if matches!(parsed.value.get("reason_code"), Some(PyVal::Str(code)) if code.starts_with(DAEMON_PROCESS_FAILURE_PREFIX))
     {
-        return Route::Delegate(Fallback::DaemonFailed);
+        return Route::Restart;
     }
     if handoff::needs_python(&parsed.value, event_name) {
         return Route::Handoff(text.to_owned());
@@ -367,33 +378,8 @@ pub(crate) fn route_hook(
     } else {
         RPC_TIMEOUT
     };
-    let rpc_deadline = Instant::now() + remaining(deadline).min(cap);
-    if let Some(text) = guard_home(&config.state_path).and_then(|home| {
-        direct_answer(
-            CODEX,
-            &home,
-            &config.query,
-            &prepared.event_name,
-            &prepared.data,
-            rpc_deadline,
-        )
-    }) {
-        // A resident answer never touched the daemon, so its start-failure
-        // marker stays as it was.
-        return (route_response(&text, &prepared.event_name), Some(prepared));
-    }
-    let Ok(text) = authenticated_codex_hook_response(
-        Path::new(&config.state_path),
-        &config.query,
-        &prepared.data,
-        rpc_deadline,
-    ) else {
-        return (Route::Delegate(Fallback::DaemonUnanswered), Some(prepared));
-    };
-    let route = route_response(&text, &prepared.event_name);
-    if !matches!(route, Route::Delegate(_)) {
-        clear_start_failure(&config.state_path);
-    }
+    let route = restart::daemon_route(config, &prepared, deadline, cap)
+        .unwrap_or_else(|| Route::Respond(fail_closed(&prepared.event_name)));
     (route, Some(prepared))
 }
 
@@ -472,6 +458,14 @@ pub(crate) fn run(python_argv: &[String]) -> i32 {
                 0
             })
         }
+        // `route_hook` settles every restart; one that escaped fails closed.
+        (Route::Restart, prepared) => {
+            let event_name = prepared
+                .as_ref()
+                .map_or(PRE_TOOL_USE, |p| p.event_name.as_str());
+            write_stdout(&fail_closed(event_name));
+            0
+        }
         (route, prepared) => {
             note(match route {
                 Route::Delegate(reason) => reason,
@@ -485,6 +479,8 @@ pub(crate) fn run(python_argv: &[String]) -> i32 {
 
 #[path = "codex_hook_bridge_handoff.rs"]
 mod handoff;
+#[path = "codex_hook_bridge_restart.rs"]
+mod restart;
 
 #[cfg(all(test, unix))]
 #[path = "codex_hook_bridge_tests.rs"]

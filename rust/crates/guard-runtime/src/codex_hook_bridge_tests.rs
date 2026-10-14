@@ -48,6 +48,8 @@ fn config_arguments_are_accepted_as_python_accepts_them() {
                     )
                 })
                 .collect(),
+            // Every accepted vector names the same start command.
+            start_command: vec!["y".to_owned()],
         });
         assert_eq!(parse_config(argument), expected, "{argument}");
     }
@@ -187,7 +189,7 @@ fn answers_needing_python_are_handed_off() {
 }
 
 #[test]
-fn odd_answers_fail_closed_and_process_failures_are_delegated() {
+fn odd_answers_fail_closed_and_process_failures_restart_the_daemon() {
     for event_name in [PRE_TOOL_USE, "PermissionRequest", "Stop"] {
         for text in ["", "[]", "{", "{\"systemMessage\":\"\\ud800\u{f0000}\"}"] {
             assert_eq!(
@@ -202,7 +204,7 @@ fn odd_answers_fail_closed_and_process_failures_are_delegated() {
             r#"{"reason_code":"daemon_hook_process_failed"}"#,
             PRE_TOOL_USE
         ),
-        Route::Delegate(Fallback::DaemonFailed)
+        Route::Restart
     );
     let other = r#"{"reason_code":"policy_denied","continue":true}"#;
     assert!(matches!(route_response(other, "Stop"), Route::Respond(_)));
@@ -340,8 +342,15 @@ fn config(home: &GuardHome) -> BridgeConfig {
         state_path: home.state_path.to_str().unwrap().to_owned(),
         query: "harness=codex&home=%2Fh".to_owned(),
         hook_timeouts: timeouts(&[("PreToolUse", 30), ("Stop", 10)]),
+        start_command: Vec::new(),
     }
 }
+
+fn shell(script: &str) -> Vec<String> {
+    vec!["/bin/sh".to_owned(), "-c".to_owned(), script.to_owned()]
+}
+
+const STOP: &str = r#"{"hook_event_name":"Stop"}"#;
 
 #[test]
 fn an_authenticated_answer_is_rendered() {
@@ -369,7 +378,7 @@ fn an_authenticated_answer_is_rendered() {
 }
 
 #[test]
-fn a_daemon_failure_is_delegated() {
+fn a_daemon_failure_without_a_start_command_fails_closed() {
     let (home, daemon) = codex_home("codex-503", vec![Exchange::Hook(503, "down".to_owned())]);
     write_private(&home.home.join(START_FAILED_MARKER), "{}");
     let (route, _) = route_hook(
@@ -377,13 +386,13 @@ fn a_daemon_failure_is_delegated() {
         r#"{"hook_event_name":"Stop"}"#,
         Instant::now(),
     );
-    assert_eq!(route, Route::Delegate(Fallback::DaemonUnanswered));
+    assert_eq!(route, Route::Respond(fail_closed("Stop")));
     assert!(home.home.join(START_FAILED_MARKER).exists());
     assert_eq!(daemon.join().unwrap().len(), 1);
 }
 
 #[test]
-fn a_mismatched_token_is_delegated_before_the_hook_is_sent() {
+fn a_mismatched_token_fails_closed_before_the_hook_is_sent() {
     let (home, daemon) = codex_home("codex-token", vec![Exchange::Hook(200, "{}".to_owned())]);
     write_private(&home.home.join("daemon-auth-token"), "other-token");
     let (route, _) = route_hook(
@@ -391,8 +400,77 @@ fn a_mismatched_token_is_delegated_before_the_hook_is_sent() {
         r#"{"hook_event_name":"Stop"}"#,
         Instant::now(),
     );
-    assert_eq!(route, Route::Delegate(Fallback::DaemonUnanswered));
+    assert_eq!(route, Route::Respond(fail_closed("Stop")));
     assert!(daemon.join().unwrap().is_empty());
+}
+
+#[test]
+fn a_started_daemon_answers_the_hook() {
+    let answer = r#"{"continue":true,"systemMessage":"ok"}"#;
+    let (home, daemon) = codex_home("codex-start", vec![Exchange::Hook(200, answer.to_owned())]);
+    // The daemon is listening, but its state appears only once started.
+    let staged = home.scratch("started-state.json");
+    std::fs::rename(&home.state_path, &staged).unwrap();
+    let mut bridge = config(&home);
+    bridge.start_command = shell(&format!(
+        "mv '{}' '{}'",
+        staged.display(),
+        home.state_path.display()
+    ));
+    let (route, _) = route_hook(&bridge, STOP, Instant::now());
+    assert_eq!(route, Route::Respond(answer.to_owned()));
+    assert_eq!(daemon.join().unwrap().len(), 1);
+}
+
+#[test]
+fn a_process_failure_restarts_the_daemon_and_asks_once_more() {
+    let failed = r#"{"reason_code":"daemon_hook_process_failed"}"#;
+    let answer = r#"{"continue":true,"systemMessage":"ok"}"#;
+    let script = vec![
+        Exchange::Hook(200, failed.to_owned()),
+        Exchange::Hook(200, failed.to_owned()),
+    ];
+    let (home, daemon) = codex_home("codex-process", script);
+    let mut bridge = config(&home);
+    bridge.start_command = shell("exit 0");
+    let (route, _) = route_hook(&bridge, STOP, Instant::now());
+    // A second process failure is not restarted again.
+    assert_eq!(route, Route::Respond(fail_closed("Stop")));
+    assert_eq!(daemon.join().unwrap().len(), 2);
+    let (home, daemon) = codex_home(
+        "codex-process-ok",
+        vec![
+            Exchange::Hook(200, failed.to_owned()),
+            Exchange::Hook(200, answer.to_owned()),
+        ],
+    );
+    let mut bridge = config(&home);
+    bridge.start_command = shell("exit 0");
+    let (route, _) = route_hook(&bridge, STOP, Instant::now());
+    assert_eq!(route, Route::Respond(answer.to_owned()));
+    assert_eq!(daemon.join().unwrap().len(), 2);
+}
+
+#[test]
+fn a_failed_start_fails_closed() {
+    let home = GuardHome::new("codex-start-failed");
+    let mut bridge = config(&home);
+    bridge.start_command = shell("exit 1");
+    let (route, _) = route_hook(&bridge, STOP, Instant::now());
+    assert_eq!(route, Route::Respond(fail_closed("Stop")));
+}
+
+#[test]
+fn a_hook_without_time_for_a_start_fails_closed_without_starting() {
+    let home = GuardHome::new("codex-start-late");
+    let marker = home.scratch("started");
+    let mut bridge = config(&home);
+    bridge.start_command = shell(&format!(": > '{}'", marker.display()));
+    // Three seconds less the grace leaves one, too little for a start.
+    bridge.hook_timeouts = timeouts(&[("Stop", 3)]);
+    let (route, _) = route_hook(&bridge, STOP, Instant::now());
+    assert_eq!(route, Route::Respond(fail_closed("Stop")));
+    assert!(!marker.exists());
 }
 
 #[test]

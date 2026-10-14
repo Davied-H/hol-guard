@@ -5,9 +5,9 @@
 //! same signed state, then posts the hook with the token and the proof on
 //! one loopback connection inside one absolute deadline.
 //!
-//! Any failure is returned as an error. The native bridge never recovers or
-//! retries on its own: it hands the hook to the Python bridge, which owns
-//! every recovery path.
+//! Any failure is returned as an error that says whether the daemon looked
+//! not yet up before the hook was sent, so the bridge knows when asking a
+//! starting daemon again cannot deliver the hook twice.
 
 use std::path::Path;
 use std::time::Instant;
@@ -30,6 +30,28 @@ use crate::resident_transport::constant_time_eq;
 
 const AUTH_TOKEN_FILE: &str = "daemon-auth-token";
 const HOOK_DEADLINE: &str = "daemon hook exceeded the hook deadline";
+
+/// A failed Codex hook exchange.
+#[derive(Debug)]
+pub(crate) struct HookFailure {
+    pub(crate) error: BridgeError,
+    /// The hook was not sent and the daemon looked not yet up: no signed
+    /// state, nothing answering the challenge, or a new generation.
+    pub(crate) not_up: bool,
+}
+
+/// A failure before the hook was sent.
+fn unsent(error: BridgeError, not_up: bool) -> HookFailure {
+    HookFailure { error, not_up }
+}
+
+/// A failure once the hook may have reached the daemon.
+fn sent(error: BridgeError) -> HookFailure {
+    HookFailure {
+        error,
+        not_up: false,
+    }
+}
 
 fn generation_changed(message: &str) -> BridgeError {
     BridgeError::Value(message.to_owned())
@@ -89,12 +111,13 @@ pub(crate) fn authenticated_codex_hook_response(
     query: &str,
     data: &str,
     deadline: Instant,
-) -> Result<String, BridgeError> {
-    let state = authenticated_state(state_path).map_err(BridgeError::Transport)?;
+) -> Result<String, HookFailure> {
+    let state = authenticated_state(state_path)
+        .map_err(|message| unsent(BridgeError::Transport(message), true))?;
     assert_loopback_http_url(&hook_endpoint(state.text("host"), state.port(), query))
-        .map_err(BridgeError::Value)?;
-    let hook_event = hook_event_name(data)?;
-    let nonce = new_nonce()?;
+        .map_err(|message| unsent(BridgeError::Value(message), false))?;
+    let hook_event = hook_event_name(data).map_err(|error| unsent(error, false))?;
+    let nonce = new_nonce().map_err(|error| unsent(error, false))?;
     let mut connection = LoopbackConnection::new(state.text("host"), state.port());
     let challenge = request_identity_challenge(
         &mut connection,
@@ -102,46 +125,61 @@ pub(crate) fn authenticated_codex_hook_response(
         &nonce,
         &hook_event,
         deadline,
-    )?;
+    )
+    .map_err(|error| {
+        // Nothing listening answers with a transport failure; any status
+        // came from a daemon that is up.
+        let not_up = matches!(error, BridgeError::Transport(_));
+        unsent(error, not_up)
+    })?;
     let proof = verify_challenge_response(&challenge, &state, &nonce, &hook_event)
-        .map_err(BridgeError::Value)?;
+        .map_err(|message| unsent(BridgeError::Value(message), false))?;
     require_same_generation(
         state_path,
         &state,
         "daemon state changed during identity verification",
-    )?;
-    let token = daemon_auth_token(state_path, &state).map_err(BridgeError::Value)?;
+    )
+    .map_err(|error| unsent(error, true))?;
+    let token = daemon_auth_token(state_path, &state)
+        .map_err(|message| unsent(BridgeError::Value(message), false))?;
     if remaining(deadline) < MINIMUM_OPERATION {
-        return Err(BridgeError::Transport(
-            "daemon identity challenge exhausted the hook deadline".to_owned(),
+        return Err(unsent(
+            BridgeError::Transport(
+                "daemon identity challenge exhausted the hook deadline".to_owned(),
+            ),
+            false,
         ));
     }
-    let hinted =
-        with_remaining_hint(data, remaining(deadline).as_millis()).map_err(json_failure)?;
-    let head = connection.post(
-        &format!("/v1/hooks/codex?{query}"),
-        &[
-            ("Content-Type", "application/json"),
-            ("Connection", "close"),
-            ("X-Guard-Token", &token),
-            ("X-Guard-Daemon-Nonce", &nonce),
-            ("X-Guard-Daemon-Proof", &proof),
-        ],
-        hinted.as_bytes(),
-        deadline,
-    )?;
-    let body = connection.read_body(&head, deadline, HOOK_DEADLINE, HOOK_DEADLINE)?;
+    let hinted = with_remaining_hint(data, remaining(deadline).as_millis())
+        .map_err(|error| unsent(json_failure(error), false))?;
+    let head = connection
+        .post(
+            &format!("/v1/hooks/codex?{query}"),
+            &[
+                ("Content-Type", "application/json"),
+                ("Connection", "close"),
+                ("X-Guard-Token", &token),
+                ("X-Guard-Daemon-Nonce", &nonce),
+                ("X-Guard-Daemon-Proof", &proof),
+            ],
+            hinted.as_bytes(),
+            deadline,
+        )
+        .map_err(sent)?;
+    let body = connection
+        .read_body(&head, deadline, HOOK_DEADLINE, HOOK_DEADLINE)
+        .map_err(sent)?;
     if body.len() > MAX_DAEMON_RESPONSE_BYTES {
-        return Err(BridgeError::Value(
+        return Err(sent(BridgeError::Value(
             "daemon hook response is too large".to_owned(),
-        ));
+        )));
     }
     let text = String::from_utf8_lossy(&body);
     if head.status != 200 {
-        return Err(BridgeError::Http {
+        return Err(sent(BridgeError::Http {
             status: head.status,
             detail: py_strip(&text).to_owned(),
-        });
+        }));
     }
     Ok(py_strip(&text).to_owned())
 }

@@ -140,7 +140,16 @@ fn configs_are_accepted_only_for_the_native_harnesses() {
             harness: "copilot".to_owned(),
             guard_home: PathBuf::from("/var/guard"),
             timeout: Duration::from_secs(20),
+            start_command: Vec::new(),
         })
+    );
+    let started = parse_config(&config_text(&[(
+        "start_command",
+        Some(json!(["py", "-I"])),
+    )]));
+    assert_eq!(
+        started.map(|config| config.start_command),
+        Some(argv(&["py", "-I"]))
     );
     for harness in NATIVE_HARNESSES {
         let config = parse_config(&config_text(&[("harness", Some(json!(harness)))]));
@@ -159,7 +168,7 @@ fn configs_are_accepted_only_for_the_native_harnesses() {
 
 #[test]
 fn configs_python_refuses_or_handles_elsewhere_are_not_native() {
-    let refused: [(&str, Option<Value>); 13] = [
+    let refused: [(&str, Option<Value>); 15] = [
         ("harness", Some(json!("Hermes"))),
         ("harness", Some(json!("grok"))),
         ("timeout_seconds", Some(json!(0))),
@@ -173,6 +182,8 @@ fn configs_python_refuses_or_handles_elsewhere_are_not_native() {
         ("guard_home", Some(json!("relative/guard"))),
         ("python_executable", None),
         ("package_root", Some(json!(null))),
+        ("start_command", Some(json!("guard daemon"))),
+        ("start_command", Some(json!(["guard", 1]))),
     ];
     for (key, value) in refused {
         let config = config_text(&[(key, value)]);
@@ -218,6 +229,15 @@ fn bridge_config(home: &GuardHome, harness: &str) -> BridgeConfig {
         harness: harness.to_owned(),
         guard_home: home.home.clone(),
         timeout: Duration::from_secs(20),
+        start_command: Vec::new(),
+    }
+}
+
+/// A bridge whose daemon-start command is the shell `script`.
+fn starting_bridge(home: &GuardHome, script: &str) -> BridgeConfig {
+    BridgeConfig {
+        start_command: argv(&["/bin/sh", "-c", script]),
+        ..bridge_config(home, "copilot")
     }
 }
 
@@ -254,31 +274,68 @@ fn home_with_endpoint(label: &str, host: &str, port: u16, token: bool) -> GuardH
 const PRE_TOOL: &[u8] = br#"{"hook_event_name":"PreToolUse","tool_name":"Bash"}"#;
 
 #[test]
-fn hooks_without_a_daemon_go_to_python_unasked() {
+fn legacy_configs_without_a_daemon_leave_the_restart_to_python() {
+    let fail = Route::Delegate {
+        daemon_tried: false,
+        reason: Fallback::DaemonUnanswered,
+    };
     let home = GuardHome::new("bounded-no-state");
     assert_eq!(
         route_hook(&bridge_config(&home, "copilot"), PRE_TOOL, soon()),
-        Route::Delegate {
-            daemon_tried: false,
-            reason: Fallback::DaemonUnavailable,
-        }
+        fail
     );
     let tokenless = home_with_endpoint("bounded-no-token", "127.0.0.1", 9, false);
     assert_eq!(
         route_hook(&bridge_config(&tokenless, "copilot"), PRE_TOOL, soon()),
-        Route::Delegate {
-            daemon_tried: false,
-            reason: Fallback::DaemonUnavailable,
-        }
+        fail
     );
     let remote = home_with_endpoint("bounded-remote", "192.0.2.1", 9, true);
     assert_eq!(
         route_hook(&bridge_config(&remote, "copilot"), PRE_TOOL, soon()),
-        Route::Delegate {
-            daemon_tried: false,
-            reason: Fallback::DaemonUnavailable,
-        }
+        fail
     );
+}
+
+#[test]
+fn a_started_daemon_answers_the_hook() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let answer = r#"{"policy_action":"block","reason":"blocked by policy"}"#;
+    let daemon = serve_once(listener, 200, answer.to_owned());
+    let home = home_with_endpoint("bounded-started", "127.0.0.1", port, true);
+    let staged = home.scratch("started-state.json");
+    std::fs::rename(&home.state_path, &staged).unwrap();
+    let script = format!("mv '{}' '{}'", staged.display(), home.state_path.display());
+
+    let route = route_hook(&starting_bridge(&home, &script), PRE_TOOL, soon());
+
+    assert!(
+        matches!(route, Route::Respond { exit_code: 2, .. }),
+        "{route:?}"
+    );
+    assert!(daemon.join().unwrap().is_some());
+}
+
+#[test]
+fn a_failed_start_fails_closed() {
+    let home = GuardHome::new("bounded-start-failed");
+    assert_eq!(
+        route_hook(&starting_bridge(&home, "exit 1"), PRE_TOOL, soon()),
+        Route::Fail("PreToolUse".to_owned())
+    );
+}
+
+#[test]
+fn a_hook_without_time_for_a_start_fails_closed_without_starting() {
+    let home = GuardHome::new("bounded-no-time");
+    let marker = home.scratch("started");
+    let script = format!(": > '{}'", marker.display());
+    let deadline = Instant::now() + Duration::from_secs(1);
+
+    let route = route_hook(&starting_bridge(&home, &script), PRE_TOOL, deadline);
+
+    assert_eq!(route, Route::Fail("PreToolUse".to_owned()));
+    assert!(!marker.exists());
 }
 
 #[test]
@@ -354,7 +411,7 @@ fn a_hermes_answer_is_the_flat_decision_hermes_reads() {
 }
 
 #[test]
-fn a_failed_daemon_hands_python_a_hook_it_must_not_resend() {
+fn a_daemon_that_failed_under_a_legacy_config_is_not_asked_again() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     let daemon = serve_once(listener, 500, "{}".to_owned());

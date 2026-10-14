@@ -11,16 +11,17 @@
 //! A hook that is too large, cannot be decoded or is not a JSON object gets
 //! the fixed fail-closed payload Python writes for it, and so does a daemon
 //! answer the bridge cannot render. A clean daemon answer is rendered here.
-//! A hook with a lone surrogate, or with no daemon to answer it, runs the
-//! Python bridge it was given, with the original argv and stdin:
-//! - before the daemon was asked, Python runs the whole hook again;
-//! - once the daemon was asked and did not answer, Python skips the daemon
-//!   and runs the isolated CLI hook, so one hook never reaches the daemon
-//!   twice.
+//! When no daemon is reachable, or the daemon did not answer, the bridge
+//! runs the install-time `start_command` and sends the hook once to a daemon
+//! that came up since; a daemon that was already asked is never asked
+//! twice. Without such an answer the hook fails closed. A hook with a lone
+//! surrogate, or an install whose config predates `start_command`, runs the
+//! Python bridge it was given, with the original argv and stdin.
 //!
 //! Past the hook deadline, or when stdin cannot be read in time, the native
 //! bridge writes the same fixed fail-closed payload Python writes. The
-//! native bridge never decides a verdict.
+//! native bridge never decides a verdict, and Python never decides one for
+//! it.
 
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -32,6 +33,7 @@ use crate::bounded_hook_bridge_render::{
     FAILURE_REASON, NATIVE_HARNESSES,
 };
 use crate::claude_hook_bridge_http::remaining;
+use crate::hook_bridge_daemon_start::{await_daemon, start_daemon, Attempt, TRANSPORT_FAILURE};
 use crate::hook_bridge_exit::exit_code;
 use crate::hook_bridge_fallback::{self, Fallback};
 use crate::hook_env_stamp::{current_environment, stamp_hook_input_text, Stamp};
@@ -46,8 +48,8 @@ mod input;
 pub(crate) use input::read_hook_input;
 #[path = "bounded_hook_bridge_daemon.rs"]
 mod daemon;
-use daemon::post_hook;
 pub(crate) use daemon::{daemon_target, post_hook_text, transport_deadline};
+use daemon::{post_hook, DaemonTarget};
 
 pub(crate) const BRIDGE_COMMAND: &str = "bounded-hook-bridge";
 pub(crate) const BRIDGE_FEATURE: &str = "bounded-hook-bridge-v1";
@@ -75,6 +77,8 @@ pub(crate) struct BridgeConfig {
     pub(crate) harness: String,
     pub(crate) guard_home: PathBuf,
     pub(crate) timeout: Duration,
+    /// The daemon-start command, empty when the install wrote none.
+    pub(crate) start_command: Vec<String>,
 }
 
 /// The config argument of `[python, "-I", "-c", bootstrap, config]`, with
@@ -117,6 +121,14 @@ pub(crate) fn parse_config(argument: &str) -> Option<BridgeConfig> {
     let cli_args = payload.get("cli_args")?.as_list()?;
     let harness = payload.get("harness")?.as_str()?;
     let timeout = positive_seconds(payload.get("timeout_seconds"))?;
+    let start_command = match payload.get("start_command") {
+        None => Vec::new(),
+        Some(value) => value
+            .as_list()?
+            .iter()
+            .map(|item| item.as_str().map(str::to_owned))
+            .collect::<Option<Vec<_>>>()?,
+    };
     let launcher_ok = matches!(
         payload.get("frozen_launcher"),
         None | Some(PyVal::Bool(false))
@@ -132,6 +144,7 @@ pub(crate) fn parse_config(argument: &str) -> Option<BridgeConfig> {
         harness: harness.to_owned(),
         guard_home: PathBuf::from(guard_home),
         timeout,
+        start_command,
     })
 }
 
@@ -249,22 +262,63 @@ pub(crate) fn route_hook(config: &BridgeConfig, raw: &[u8], deadline: Instant) -
         return route;
     }
     let left = remaining(deadline);
-    let Some(target) = daemon_target(&config.guard_home, &config.harness) else {
-        return delegate(Fallback::DaemonUnavailable);
-    };
-    // Too little time for a request means the deadline is all but spent.
-    let Some(transport) = transport_deadline(deadline, left, budget) else {
-        return Route::Fail(prepared.event_name);
-    };
-    let Some(answer) = post_hook(&target, &config.harness, &prepared.data, transport) else {
-        // Python runs without the daemon, so the hook is never sent twice.
-        if Instant::now() >= deadline {
-            return Route::Fail(prepared.event_name);
+    let failed = match daemon_target(&config.guard_home, &config.harness) {
+        None => None,
+        Some(target) => {
+            // Too little time for a request means the deadline is all but spent.
+            let Some(transport) = transport_deadline(deadline, left, budget) else {
+                return Route::Fail(prepared.event_name);
+            };
+            match post_hook(&target, &config.harness, &prepared.data, transport) {
+                Some(answer) => {
+                    let rendered =
+                        daemon_response_to_native(&answer, &config.harness, &prepared.event_name);
+                    return answered_route(rendered, prepared.event_name, deadline);
+                }
+                None => Some(target),
+            }
         }
+    };
+    restarted_route(config, prepared, deadline, budget, failed.as_ref())
+}
+
+/// The route once no daemon answered: start one with the configured
+/// command and send the hook once to a daemon that came up since. The
+/// daemon that `failed` already saw the hook, so it is never sent to again.
+fn restarted_route(
+    config: &BridgeConfig,
+    prepared: Prepared,
+    deadline: Instant,
+    budget: Duration,
+    failed: Option<&DaemonTarget>,
+) -> Route {
+    if config.start_command.is_empty() {
+        // An install from before the bridge carried `start_command` still
+        // leaves the restart to Python until the hook is reinstalled. A
+        // daemon that was asked is skipped there, so the hook is never sent
+        // twice.
         return Route::Delegate {
-            daemon_tried: true,
+            daemon_tried: failed.is_some(),
             reason: Fallback::DaemonUnanswered,
         };
+    }
+    if !start_daemon(&config.start_command, TRANSPORT_FAILURE, deadline) {
+        return Route::Fail(prepared.event_name);
+    }
+    let started = await_daemon(deadline, || {
+        match daemon_target(&config.guard_home, &config.harness) {
+            Some(target) if failed.is_none_or(|old| !old.same_daemon(&target)) => {
+                Attempt::Settled(target)
+            }
+            _ => Attempt::NotUp,
+        }
+    });
+    let answer = started.and_then(|target| {
+        let transport = transport_deadline(deadline, remaining(deadline), budget)?;
+        post_hook(&target, &config.harness, &prepared.data, transport)
+    });
+    let Some(answer) = answer else {
+        return Route::Fail(prepared.event_name);
     };
     let rendered = daemon_response_to_native(&answer, &config.harness, &prepared.event_name);
     answered_route(rendered, prepared.event_name, deadline)

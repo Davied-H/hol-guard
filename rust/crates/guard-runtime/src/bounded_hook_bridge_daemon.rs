@@ -1,8 +1,8 @@
 //! The loopback daemon transport the native hook bridges share: the
 //! private daemon state and auth token `try_daemon_hook` reads, the
-//! transport deadline it leaves the Python fallback, and the authenticated
-//! `POST` of one hook. Every failure is `None`, which hands the hook to the
-//! Python client the bridge was given; nothing here decides a verdict.
+//! transport deadline it leaves the rest of the hook, and the authenticated
+//! `POST` of one hook. Every failure is `None`, which the calling bridge
+//! settles; nothing here decides a verdict.
 
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -18,11 +18,20 @@ pub(crate) struct DaemonTarget {
     host: String,
     port: u16,
     token: String,
+    /// The state text the target was read from, which names its generation.
+    state: String,
+}
+
+impl DaemonTarget {
+    /// Whether `other` was read from the same daemon state and token.
+    pub(crate) fn same_daemon(&self, other: &DaemonTarget) -> bool {
+        self.state == other.state && self.token == other.token
+    }
 }
 
 /// `_daemon_hook_endpoint`: the loopback host and port the daemon state
-/// names, after the URL check `try_daemon_hook` applies.
-fn daemon_endpoint(guard_home: &Path, harness: &str) -> Option<(String, u16)> {
+/// names, after the URL check `try_daemon_hook` applies, and that state.
+fn daemon_endpoint(guard_home: &Path, harness: &str) -> Option<(String, u16, String)> {
     let path = guard_home.join(STATE_FILE);
     if std::fs::symlink_metadata(&path).ok()?.len() > MAX_STATE_BYTES {
         return None;
@@ -46,7 +55,7 @@ fn daemon_endpoint(guard_home: &Path, harness: &str) -> Option<(String, u16)> {
         host.to_owned()
     };
     assert_loopback_http_url(&format!("http://{rendered_host}:{port}/v1/hooks/{harness}")).ok()?;
-    Some((host.to_owned(), port))
+    Some((host.to_owned(), port, text))
 }
 
 /// `load_guard_daemon_auth_token`, limited to tokens urllib sends as is.
@@ -65,14 +74,19 @@ fn daemon_auth_token(guard_home: &Path) -> Option<String> {
 /// The daemon a `harness` hook is sent to, or `None` when its state or
 /// token is missing, unreadable or not one the bridge sends to.
 pub(crate) fn daemon_target(guard_home: &Path, harness: &str) -> Option<DaemonTarget> {
-    let (host, port) = daemon_endpoint(guard_home, harness)?;
+    let (host, port, state) = daemon_endpoint(guard_home, harness)?;
     let token = daemon_auth_token(guard_home)?;
-    Some(DaemonTarget { host, port, token })
+    Some(DaemonTarget {
+        host,
+        port,
+        token,
+        state,
+    })
 }
 
 /// The deadline for one daemon request: at most `budget` and half of the
-/// `left` the hook had, so the Python fallback keeps the rest. `None` when
-/// no time is left for the request.
+/// `left` the hook had, so the rest of the hook keeps the other half. `None`
+/// when no time is left for the request.
 pub(crate) fn transport_deadline(
     deadline: Instant,
     left: Duration,

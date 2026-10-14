@@ -27,12 +27,8 @@ pub(crate) enum Fallback {
     InputUnparsed,
     /// The client runs in a mode the native bridge does not serve.
     ClientMode,
-    /// No daemon was reachable.
-    DaemonUnavailable,
     /// The daemon did not answer.
     DaemonUnanswered,
-    /// The daemon reported a process failure.
-    DaemonFailed,
     /// The answer could not be rendered for the harness.
     AnswerUnrendered,
     /// The answer needs Python to finish it.
@@ -50,9 +46,7 @@ impl Fallback {
         match self {
             Self::InputUnparsed => "input_unparsed",
             Self::ClientMode => "client_mode",
-            Self::DaemonUnavailable => "daemon_unavailable",
             Self::DaemonUnanswered => "daemon_unanswered",
-            Self::DaemonFailed => "daemon_failed",
             Self::AnswerUnrendered => "answer_unrendered",
             Self::SemanticHandoff => "semantic_handoff",
             Self::RecoverFailed => "recover_failed",
@@ -109,12 +103,12 @@ mod tests {
     #[test]
     fn note_appends_one_line_per_fallback() {
         let home = tempfile::tempdir().unwrap();
-        note(home.path(), "grok", Fallback::DaemonUnavailable);
+        note(home.path(), "grok", Fallback::ClientMode);
         note(home.path(), "bad name\n", Fallback::SemanticHandoff);
         let text = std::fs::read_to_string(home.path().join(LOG_DIR).join(LOG_FILE)).unwrap();
         let lines: Vec<&str> = text.lines().collect();
         assert_eq!(lines.len(), 2);
-        assert!(lines[0].ends_with(" grok daemon_unavailable"));
+        assert!(lines[0].ends_with(" grok client_mode"));
         assert!(lines[1].ends_with(" other semantic_handoff"));
     }
 
