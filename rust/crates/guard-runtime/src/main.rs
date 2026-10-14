@@ -470,6 +470,11 @@ mod oci_bundle_vectors_tests;
 mod oci_path;
 mod omp_yield_input_scan;
 mod oneshot;
+mod openclaw_detect;
+#[cfg(test)]
+mod openclaw_detect_tests;
+mod openclaw_mcp;
+mod openclaw_skills;
 mod package_approval_hash_op;
 mod package_audit_projection_op;
 mod package_authority_config;
