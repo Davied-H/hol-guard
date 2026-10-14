@@ -6,7 +6,8 @@
 //! selector and a `gh api` path must name its `origin`. A command without a
 //! selector posts to the base repository gh resolves from the checkout, so it
 //! passes only when that can be nothing but `origin`: no `GH_REPO`, no other
-//! remote, and no `gh repo set-default` choice other than origin itself.
+//! remote, and no `gh repo set-default` choice other than origin itself. With
+//! no remote at all gh resolves no base repository and posts nothing.
 //! The posted text is literal and must carry no credential shape, so the
 //! comment cannot carry a secret out. A `--body-file` must be a plain,
 //! bounded file in the work tree or a private temporary directory, and its
@@ -62,10 +63,13 @@ pub(crate) fn current_repository_write(
     if sole && base_repository_override(segment) {
         return false;
     }
-    let Some((origin_owner, origin_repository)) = origin_repository(&root, sole) else {
+    let Some(origin) = origin_repository(&root, sole) else {
         return false;
     };
     if let Some((owner, repository)) = selector {
+        let Some((origin_owner, origin_repository)) = origin else {
+            return false;
+        };
         if !owner.eq_ignore_ascii_case(&origin_owner)
             || !repository.eq_ignore_ascii_case(&origin_repository)
         {
@@ -229,19 +233,22 @@ fn repository_selector(value: &str) -> Option<(&str, &str)> {
     (repository_name(pair.0) && repository_name(pair.1)).then_some(pair)
 }
 
-/// The GitHub owner and repository every `remote "origin"` URL in the
-/// repository's own configuration names, or `None` when there is none, they
+/// `Some(Some(pair))` for the GitHub owner and repository every `remote
+/// "origin"` URL in the repository's own configuration names (a linked
+/// worktree's shared one), `Some(None)` when the configuration defines no
+/// remote at all, and `None` when origin is missing or not GitHub, its URLs
 /// disagree, or the file uses a form this reader does not model (includes,
-/// URL rewrites, quoting or inline comments).
+/// URL rewrites, quoting, inline comments or a `config.worktree`).
 ///
 /// With `sole`, origin must also be the base repository gh resolves without
 /// a selector. gh first honors a remote's `gh-resolved` key (`gh repo
 /// set-default`) and otherwise ranks `upstream` and `github` above `origin`,
 /// so any other remote, or a `gh-resolved` value on origin other than
 /// `base`, returns `None`.
-fn origin_repository(root: &Path, sole: bool) -> Option<(String, String)> {
+fn origin_repository(root: &Path, sole: bool) -> Option<Option<(String, String)>> {
     let config = super::workspace_git_config::repository_config(root).ok()??;
     let mut origin = false;
+    let mut remotes = false;
     let mut found: Option<(String, String)> = None;
     for line in config.lines() {
         let line = line.trim();
@@ -262,6 +269,7 @@ fn origin_repository(root: &Path, sole: bool) -> Option<(String, String)> {
             }
             let remote = section == "remote";
             origin = remote && subsection == Some("\"origin\"");
+            remotes |= remote && subsection.is_some();
             if sole && remote && subsection.is_some() && !origin {
                 return None;
             }
@@ -288,7 +296,11 @@ fn origin_repository(root: &Path, sole: bool) -> Option<(String, String)> {
         }
         found = Some(pair);
     }
-    found
+    match found {
+        Some(pair) => Some(Some(pair)),
+        None if !remotes => Some(None),
+        None => None,
+    }
 }
 
 /// The lowercase owner and repository of a plain GitHub HTTPS or SSH URL.

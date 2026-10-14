@@ -60,6 +60,23 @@ impl Checkout {
         Self { root, project }
     }
 
+    /// A linked worktree whose shared repository holds `config`.
+    fn linked(label: &str, config: &str) -> Self {
+        let checkout = Self::new(label, "");
+        let project = &checkout.project;
+        std::fs::remove_dir_all(project.join(".git")).unwrap();
+        let common = checkout.root.join("main/.git");
+        let admin = common.join("worktrees/project");
+        std::fs::create_dir_all(&admin).unwrap();
+        std::fs::write(common.join("config"), config).unwrap();
+        std::fs::write(admin.join("commondir"), "../..\n").unwrap();
+        let backlink = format!("{}\n", project.join(".git").display());
+        std::fs::write(admin.join("gitdir"), backlink).unwrap();
+        let gitfile = format!("gitdir: {}\n", admin.display());
+        std::fs::write(project.join(".git"), gitfile).unwrap();
+        checkout
+    }
+
     fn allows(&self, arguments: &[&str]) -> bool {
         self.allows_segment(&segment(arguments))
     }
@@ -209,10 +226,11 @@ fn origin_must_be_plain_and_unambiguous() {
     let plain = Checkout::new("plain", ORIGIN);
     assert_eq!(
         origin_repository(&plain.project, true),
-        Some(("example-org".to_owned(), "app-portal".to_owned()))
+        Some(Some(("example-org".to_owned(), "app-portal".to_owned())))
     );
+    let bare = Checkout::new("none", "[core]\n\tbare = false\n");
+    assert_eq!(origin_repository(&bare.project, true), Some(None));
     for (label, config) in [
-        ("none", "[core]\n\tbare = false\n"),
         (
             "upstream",
             "[remote \"upstream\"]\n\turl = https://github.com/example-org/app-portal.git\n",
@@ -405,7 +423,11 @@ fn a_comment_without_a_selector_needs_origin_as_the_base_repository() {
         ("upstream", upstream.as_str(), true),
         ("other-default", other_default.as_str(), true),
         ("resolved-elsewhere", resolved_elsewhere.as_str(), true),
-        ("no-origin", "[core]\n\tbare = false\n", false),
+        (
+            "github-origin-missing",
+            "[remote \"origin\"]\n\tfetch = x\n",
+            false,
+        ),
     ] {
         let checkout = Checkout::new(label, config);
         assert!(!checkout.allows(&reply), "{label}");
@@ -416,4 +438,38 @@ fn a_comment_without_a_selector_needs_origin_as_the_base_repository() {
     let checkout = Checkout::new("gh-repo", ORIGIN);
     assert!(!checkout.allows_segment(&prefixed_segment(&["GH_REPO"], &reply)));
     assert!(checkout.allows_segment(&prefixed_segment(&["GH_REPO"], &selected)));
+}
+
+#[test]
+fn linked_worktrees_and_remote_free_checkouts_resolve_like_gh() {
+    let reply = ["pr", "comment", "12", "--body", "Done."];
+    let selected = [
+        "pr",
+        "comment",
+        "12",
+        "-R",
+        "example-org/app-portal",
+        "--body",
+        "Done.",
+    ];
+    // A linked worktree reads its shared repository's configuration.
+    let linked = Checkout::linked("linked", ORIGIN);
+    assert!(linked.allows(&reply));
+    assert!(linked.allows(&selected));
+    let upstream = format!(
+        "{ORIGIN}[remote \"upstream\"]\n\turl = https://github.com/other-org/app-portal.git\n"
+    );
+    let linked = Checkout::linked("linked-upstream", &upstream);
+    assert!(!linked.allows(&reply));
+    assert!(linked.allows(&selected));
+    // With no remote at all gh resolves no base repository and posts nothing;
+    // a `-R` selector still has to name origin.
+    for checkout in [
+        Checkout::new("remote-free", "[core]\n\tbare = false\n"),
+        Checkout::linked("linked-remote-free", "[core]\n\tbare = false\n"),
+    ] {
+        assert!(checkout.allows(&reply));
+        assert!(!checkout.allows(&selected));
+        assert!(!checkout.allows_segment(&prefixed_segment(&["GH_REPO"], &reply)));
+    }
 }
