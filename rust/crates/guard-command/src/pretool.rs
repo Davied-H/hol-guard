@@ -23,6 +23,7 @@ pub struct PathContext<'a> {
 mod contained_wrapper;
 pub(crate) mod curl_reads;
 pub(crate) mod docker_reads;
+mod docker_start;
 pub(crate) mod kubectl_reads;
 pub(crate) mod port_probes;
 mod workspace_contained;
@@ -51,6 +52,7 @@ pub(crate) mod git_init_target;
 pub(crate) mod git_object_reads;
 mod git_read_floor;
 mod git_reads;
+mod git_ref_listings;
 mod git_search_text;
 mod repo_create_reason;
 use git_reads::safe_git_arguments;
@@ -631,7 +633,8 @@ fn evaluate_single_command(
     if exact_safe_command_with_context(&model, false, context)
         && !bun_eval::node_inline_preload_configured(&model, execution_environment)
     {
-        let reason_code = curl_reads::proven_reason_code(&model);
+        let reason_code = docker_start::proven_reason_code(&model)
+            .unwrap_or_else(|| curl_reads::proven_reason_code(&model));
         return Ok(pretool_decision(
             model,
             "allow",
