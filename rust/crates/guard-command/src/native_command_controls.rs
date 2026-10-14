@@ -16,6 +16,18 @@ use crate::CanonicalCommandV1;
 #[path = "native_command_controls_risk.rs"]
 mod risk;
 
+/// Rust judgments of a command's shape that a user's explicit extension Allow
+/// may settle. Every other non-allow reason stays a floor, including helpers
+/// that repository or global Git configuration would run.
+const OVERRIDABLE_NATIVE_REASONS: &[&str] = &[
+    "native_command_review_required",
+    "native_destructive_command",
+    "native_network_review",
+    "native_package_review",
+    "native_process_service_review",
+    "native_process_service_dangerous",
+];
+
 #[derive(Debug)]
 pub struct CompiledNativeCommandControls {
     program: Arc<NativeCommandProgram>,
@@ -261,29 +273,44 @@ impl CompiledNativeCommandControls {
         // so it takes the strongest of their floors and never less than review.
         // An unmodeled command already carries the floor of its possible owners.
         let mut uncertain_floor: Option<&'static str> = unmodeled;
+        // Uncertainty about a Git rule the user explicitly allowed reviews only
+        // when that Allow does not cover the whole command, or the command runs
+        // in a repository Guard could not inspect (below).
+        let mut enabled_uncertainty = false;
         for observation in &batch.observations {
             if !observation.uncertainty_reasons.is_empty() {
                 let candidate = match self.rule_indices.get(&observation.rule_id) {
                     Some(index) => {
                         let rule = &self.program.rules[*index];
-                        if self
+                        let enabled = self
                             .explicitly_enabled_permissions
-                            .contains(&rule.permission_id)
+                            .contains(&rule.permission_id);
+                        if enabled
+                            && self.program.extensions[rule.extension_index].extension_id
+                                == "command.git"
                         {
-                            "review"
+                            enabled_uncertainty = true;
+                            None
+                        } else if enabled {
+                            Some("review")
                         } else {
-                            rule_floor(rule, self.program.extensions[rule.extension_index].required)
+                            Some(rule_floor(
+                                rule,
+                                self.program.extensions[rule.extension_index].required,
+                            ))
                         }
                     }
-                    None => "block",
+                    None => Some("block"),
                 };
-                let candidate = if rank(candidate) < rank("review") {
-                    "review"
-                } else {
-                    candidate
-                };
-                if uncertain_floor.is_none_or(|current| rank(candidate) > rank(current)) {
-                    uncertain_floor = Some(candidate);
+                if let Some(candidate) = candidate {
+                    let candidate = if rank(candidate) < rank("review") {
+                        "review"
+                    } else {
+                        candidate
+                    };
+                    if uncertain_floor.is_none_or(|current| rank(candidate) > rank(current)) {
+                        uncertain_floor = Some(candidate);
+                    }
                 }
             }
             if self.blocked_extensions.contains(&observation.extension_id) {
@@ -372,18 +399,32 @@ impl CompiledNativeCommandControls {
                     .count()
                 + usize::from(batch.evaluation_error.is_some()),
         };
-        if result.reason_code == "native_command_review_required"
-            && result.minimum_action == "review"
+        let explicit_allow = floor == "allow"
+            && batch.evaluation_error.is_none()
             && result.action.bounded
             && !result.action.sensitive_target
-            && floor == "allow"
-            && binding.uncertainty_count == 0
+            && (result.minimum_action == "allow"
+                || OVERRIDABLE_NATIVE_REASONS.contains(&result.reason_code.as_str()))
             && command.is_some_and(|model| {
-                self.explicit_permissions_cover_command(model, &batch, context)
-            })
-        {
-            // Authenticated consent to every classified command segment can
-            // settle the generic unknown-command floor, never an intrinsic risk.
+                !crate::pretool::fixed_command_floor(model)
+                    && (!enabled_uncertainty
+                        || model.segments.iter().all(|segment| {
+                            segment.executable.as_deref() != Some("git")
+                                || crate::command_compatibility::git_repository_routes_verified(
+                                    segment, context,
+                                )
+                        }))
+                    && self.explicit_permissions_cover_command(model, &batch, context)
+            });
+        if enabled_uncertainty && !explicit_allow && rank(floor) < rank("review") {
+            floor = "review";
+            reason = "native_command_extension_uncertain";
+        }
+        if explicit_allow && result.minimum_action != "allow" {
+            // The user's authenticated Allow for every segment's extension
+            // permissions takes precedence over Rust's own judgment of the
+            // command. Guard self-protection, secret access and exfiltration,
+            // disabled permissions and evaluation failures are fixed floors.
             result.minimum_action = "allow".into();
             result.policy_action = "allow".into();
             result.decision = "allow".into();
@@ -479,6 +520,10 @@ mod review_regressions;
 #[cfg(test)]
 #[path = "native_command_uncertainty_tests.rs"]
 mod uncertainty_regressions;
+
+#[cfg(test)]
+#[path = "native_command_precedence_tests.rs"]
+mod precedence_regressions;
 
 #[cfg(test)]
 #[path = "native_command_compound_controls_tests.rs"]
