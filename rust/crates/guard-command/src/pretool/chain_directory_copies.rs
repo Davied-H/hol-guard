@@ -20,14 +20,22 @@ use crate::{CanonicalCommandV1, CommandSegmentV1};
 use std::path::{Path, PathBuf};
 
 /// Two or more segments, at least one `mkdir`, and every other segment a
-/// plain chain peer.
+/// plain chain peer. Git may share a chain without a copy:
+/// `git fetch origin main && mkdir -p ~/notes`. Each Git segment still needs
+/// its own proof, and `mkdir` cannot create the hidden `.git` metadata a Git
+/// command reads. A `git worktree add` creates a directory the copy proof
+/// would not see, so copies keep the plain peers.
 pub(in crate::pretool) fn mkdir_chain(model: &CanonicalCommandV1) -> bool {
-    model.segments.len() > 1
-        && super::plain_chain(model, &["mkdir"])
-        && model
+    let named = |name: &str| {
+        model
             .segments
             .iter()
-            .any(|segment| segment.executable.as_deref() == Some("mkdir"))
+            .any(|segment| segment.executable.as_deref() == Some(name))
+    };
+    model.segments.len() > 1
+        && (super::plain_chain(model, &["mkdir"])
+            || (!named("cp") && super::plain_chain(model, &["mkdir", "git"])))
+        && named("mkdir")
 }
 
 /// A `cp` segment in a [`mkdir_chain`] whose destination no `mkdir` in the
