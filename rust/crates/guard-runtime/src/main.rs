@@ -184,6 +184,7 @@ mod copilot_detect;
 #[cfg(all(test, unix))]
 mod copilot_vectors_tests;
 mod critical_floor_op;
+mod cursor_detect;
 mod cursor_hook_bridge;
 mod cursor_hook_bridge_response;
 mod cursor_hook_bridge_script;
@@ -437,6 +438,7 @@ mod mcp_relay_pending;
 mod mcp_relay_ready;
 #[cfg(unix)]
 mod mcp_relay_resident;
+mod mcp_relay_servers;
 mod mcp_runtime_evidence_op;
 mod mcp_sensitive_read;
 #[cfg(test)]
@@ -475,6 +477,7 @@ mod openclaw_detect;
 mod openclaw_detect_tests;
 mod openclaw_mcp;
 mod openclaw_skills;
+mod opencode_detect;
 mod package_approval_hash_op;
 mod package_audit_projection_op;
 mod package_authority_config;
