@@ -488,7 +488,8 @@ fn grep_scope(
     // on an approval. The other entries still need their proof.
     let missing = |target: &str| {
         super::super::read_paths::missing_read_target(target, home, cwd, true)
-            && super::super::read_paths::bounded_file_read_target(target, home, cwd)
+            && (super::super::read_paths::bounded_file_read_target(target, home, cwd)
+                || missing_under_searchable_folder(target, home, cwd))
     };
     (list && targets.iter().all(|target| proven(target) || missing(target))).then(|| {
         generic_result(
@@ -505,6 +506,28 @@ fn grep_scope(
             "HOL Guard did not run this search because a path in its list does not exist. Check each path, for example by listing its parent directory, and try again with the correct ones.",
         )
     })
+}
+
+/// An absolute or `~` name that does not exist cannot resolve as a bounded
+/// read. Its nearest existing folder can: when Guard would let the agent search
+/// that folder, saying the name is missing tells it nothing the search would not.
+fn missing_under_searchable_folder(target: &str, home: Option<&str>, cwd: Option<&str>) -> bool {
+    if target.split(['/', '\\']).any(|part| part == "..") {
+        return false;
+    }
+    let expanded = super::super::read_paths::expand_home_read_path(target, home)
+        .unwrap_or_else(|| target.to_owned());
+    let path = std::path::Path::new(&expanded);
+    path.is_absolute()
+        && path
+            .ancestors()
+            .skip(1)
+            .find(|folder| std::fs::symlink_metadata(folder).is_ok())
+            .filter(|folder| folder.is_dir())
+            .and_then(std::path::Path::to_str)
+            .is_some_and(|folder| {
+                super::super::search_scope::content_search_scope_proven(folder, home, cwd)
+            })
 }
 
 /// `skill://<name>[/<relative.md>]` names a skill the host resolves from its

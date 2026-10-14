@@ -492,6 +492,40 @@ fn grep_lists_naming_a_missing_file_say_so_instead_of_asking() {
 }
 
 #[test]
+fn grep_lists_naming_a_missing_absolute_file_say_so_when_its_folder_is_searchable() {
+    let f = fixture();
+    // After a relative spelling failed, the agent named every file in the
+    // worktree beside the session folder by its absolute path, one of them
+    // wrong. Guard would search that folder, so it says the name is missing.
+    let clean = f.home.join("clean");
+    for path in [
+        format!("{0}/a.txt;{0}/report-cli.ts", clean.display()),
+        "~/clean/a.txt; ~/clean/missing/report.ts".to_owned(),
+    ] {
+        let result = omp(
+            &f,
+            "grep",
+            json!({"pattern": "x", "path": path, "case": false}),
+        );
+        assert_eq!(result.minimum_action, "block", "{path}");
+        assert_eq!(result.reason_code, "native_missing_path", "{path}");
+    }
+    // A folder Guard would not search keeps the review, as does a spelling
+    // that climbs out of a searchable one.
+    for path in [
+        "~/clean/a.txt; ~/secret-dir/report.ts".to_owned(),
+        "~/clean/a.txt; ~/creds-dir/report.ts".to_owned(),
+        "~/clean/a.txt; ~/report.ts".to_owned(),
+        "~/clean/a.txt; ~/clean/../secret-dir/report.ts".to_owned(),
+        format!("{}/a.txt; /nonexistent-root/report.ts", clean.display()),
+    ] {
+        let result = omp(&f, "grep", json!({"pattern": "x", "path": path}));
+        assert!(!allowed(&result), "{path}");
+        assert_ne!(result.reason_code, "native_missing_path", "{path}");
+    }
+}
+
+#[test]
 fn brace_globs_prove_every_alternative() {
     let f = fixture();
     write(f.project.join("app/lib/index.ts"), "synthetic fixture\n");
