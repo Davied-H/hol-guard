@@ -27,11 +27,11 @@ _APPROVAL_ALWAYS_ONLY = (
 )
 _APPROVAL_CANNOT_UNBLOCK = (
     "It is recorded in the HOL Guard inbox, but approving it there will not let you run it. "
-    "Do not retry it. Tell the user exactly what is blocked so they can run it themselves, "
+    "Do not retry this exact command. Tell the user exactly what is blocked so they can run it themselves, "
     "or continue with a permitted alternative."
 )
 _NOT_QUEUED = (
-    "No approval is waiting in HOL Guard for this action. Do not retry it or work around the block; "
+    "No approval is waiting in HOL Guard for this action. Do not retry the same action or work around the block; "
     "continue with a permitted alternative or tell the user what is blocked."
 )
 
@@ -56,7 +56,8 @@ _REASON_CODE_HINTS = {
     ),
     "native_pre_tool_unknown_review": "Guard cannot check what this tool call will do before it runs.",
     "native_command_review_required": (
-        "Guard could not prove this exact command is read-only. Use a simpler built-in tool where one fits."
+        "Guard could not prove this exact command is read-only. Use a simpler built-in tool where one fits. "
+        "If it chains several steps, run each step as its own command; Guard checks each one on its own."
     ),
 }
 

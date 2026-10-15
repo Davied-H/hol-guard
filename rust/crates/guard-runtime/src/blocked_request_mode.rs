@@ -13,15 +13,15 @@ const APPROVAL_WAIT: &str = "It is waiting for the user to approve it in the HOL
      (`hol-guard approvals`). Do not retry the same action until it is approved; continue with \
      other work meanwhile.";
 /// `_NOT_QUEUED`.
-const NOT_QUEUED: &str = "No approval is waiting in HOL Guard for this action. Do not retry it \
-     or work around the block; continue with a permitted alternative or tell the user what is \
+const NOT_QUEUED: &str = "No approval is waiting in HOL Guard for this action. Do not retry the \
+     same action or work around the block; continue with a permitted alternative or tell the user what is \
      blocked.";
 const APPROVAL_ALWAYS_ONLY: &str = "It is waiting in the HOL Guard inbox (`hol-guard approvals`), but approving it just once will not \
      let you run it; only \"Always allow exact action\" will. Do not retry it unless the user says they \
      chose that; continue with other work meanwhile.";
 const APPROVAL_CANNOT_UNBLOCK: &str =
     "It is recorded in the HOL Guard inbox, but approving it there will not let you run it. \
-     Do not retry it. Tell the user exactly what is blocked so they can run it themselves, \
+     Do not retry this exact command. Tell the user exactly what is blocked so they can run it themselves, \
      or continue with a permitted alternative.";
 
 /// `_REASON_CODE_HINTS`: plain-language next steps keyed by the native
@@ -51,7 +51,8 @@ fn reason_code_hint(reason_code: &str) -> &'static str {
         }
         "native_command_review_required" => {
             "Guard could not prove this exact command is read-only. Use a simpler built-in tool \
-             where one fits."
+             where one fits. If it chains several steps, run each step as its own command; Guard \
+             checks each one on its own."
         }
         _ => "",
     }
