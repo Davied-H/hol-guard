@@ -126,6 +126,18 @@ def test_route_fails_closed_when_the_adapter_exits_or_misreports(tmp_path, monke
         NativeLunaRoute(omp=str(omp)).__enter__()
 
 
+def test_startup_failure_reports_the_adapter_stderr_without_secrets(tmp_path, monkeypatch):
+    _root, omp = _sdk(tmp_path)
+    secret = "rt_" + "a1B2" * 12
+    script = f"echo 'error: refresh token rejected {secret}' >&2\necho 'Authorization: Bearer abc.def' >&2\nexit 3\n"
+    monkeypatch.setenv("PATH", str(_fake_bun(tmp_path, script)) + os.pathsep + os.environ["PATH"])
+    with pytest.raises(RuntimeError) as failure:
+        NativeLunaRoute(omp=str(omp)).__enter__()
+    message = str(failure.value)
+    assert "exited before it was ready" in message and "refresh token rejected [redacted]" in message
+    assert secret not in message and "abc.def" not in message
+
+
 def test_environment_forwards_no_provider_keys():
     names = luna_route._ENVIRONMENT_KEYS + luna_route._WINDOWS_ENVIRONMENT_KEYS
     assert not any("KEY" in name or "TOKEN" in name for name in names)
