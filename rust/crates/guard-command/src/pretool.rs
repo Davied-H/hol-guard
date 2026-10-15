@@ -127,7 +127,7 @@ mod wrangler_reads;
 
 pub mod generic;
 mod package_scripts_disabled;
-pub use package_scripts_disabled::{names_package_install, no_script_install_command};
+pub use package_scripts_disabled::{held_command_installs, no_script_install_command};
 
 pub use generic::bounded_task_metadata_output;
 pub use generic::evaluate_pre_tool_envelope;

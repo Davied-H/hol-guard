@@ -98,7 +98,7 @@ pub fn no_script_install_command(command: &str) -> bool {
 
 /// True when some step runs `npm|pnpm|bun|yarn install|i|ci|add`. Only the
 /// held-install advice uses this; it proves nothing about the command.
-pub fn names_package_install(command: &str) -> bool {
+fn names_package_install(command: &str) -> bool {
     parse_command(&CommandModelRequestV1 {
         command: command.to_owned(),
         dialect: "posix".to_owned(),
@@ -117,6 +117,14 @@ pub fn names_package_install(command: &str) -> bool {
                 .is_some_and(|verb| matches!(verb.as_str(), "install" | "i" | "ci" | "add"))
         })
     })
+}
+
+/// Whether the command in a PreTool payload has an install step.
+pub fn held_command_installs(payload: &serde_json::Value) -> bool {
+    super::generic::extract_untrusted_command_context(payload)
+        .ok()
+        .and_then(|context| context.command)
+        .is_some_and(|command| names_package_install(&command))
 }
 
 fn plain(segment: &CommandSegmentV1) -> bool {
