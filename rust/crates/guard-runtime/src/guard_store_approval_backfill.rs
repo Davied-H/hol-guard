@@ -5,9 +5,10 @@
 //! own immediate transaction. A row whose identity is rejected keeps its
 //! legacy identity and only gains its counters, exactly as the Python batch
 //! split left it. Every update fires the outbox update trigger, so a store
-//! whose scan completed is remembered for the life of the resident, as
-//! Python remembered the home for the life of its process.
+//! whose scan completed and committed is remembered for the life of the
+//! resident, as Python remembered the home for the life of its process.
 
+use std::cell::RefCell;
 use std::collections::HashSet;
 use std::sync::{Mutex, OnceLock};
 
@@ -48,9 +49,24 @@ pub(crate) fn pending(connection: &Connection) -> bool {
     })
 }
 
-/// Remember a store whose scan finished and whose write succeeded.
+thread_local! {
+    /// The store whose scan finished in the write now awaiting its commit.
+    static STAGED: RefCell<Option<String>> = const { RefCell::new(None) };
+}
+
+/// Stage a store whose scan finished and whose write succeeded; `settle`
+/// remembers it once the write's transaction commits.
 pub(crate) fn mark_complete(connection: &Connection) {
-    if let (Some(key), Ok(mut stores)) = (store_key(connection), backfilled().lock()) {
+    STAGED.with(|staged| *staged.borrow_mut() = store_key(connection));
+}
+
+/// Remember the staged store when its transaction committed, and forget it
+/// when the transaction rolled back so the next write scans again.
+pub(crate) fn settle(committed: bool) {
+    let Some(key) = STAGED.with(|staged| staged.borrow_mut().take()) else {
+        return;
+    };
+    if let (true, Ok(mut stores)) = (committed, backfilled().lock()) {
         stores.insert(key);
     }
 }
@@ -190,5 +206,25 @@ fn py_text(value: Option<&Value>) -> String {
         None | Some(Value::Null) => "None".to_owned(),
         Some(Value::String(text)) => text.clone(),
         Some(other) => other.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn completion_is_remembered_only_after_commit() {
+        let home = crate::guard_store_cmd_vectors_tests::temp_home("backfill-settle");
+        let connection = Connection::open(home.join("guard.db")).unwrap();
+        mark_complete(&connection);
+        settle(false);
+        assert!(pending(&connection), "a rolled-back scan must run again");
+        settle(true);
+        assert!(pending(&connection), "nothing staged after a rollback");
+        mark_complete(&connection);
+        settle(true);
+        assert!(!pending(&connection), "a committed scan is remembered");
+        let _ = std::fs::remove_dir_all(&home);
     }
 }

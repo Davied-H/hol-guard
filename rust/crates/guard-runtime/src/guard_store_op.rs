@@ -20,6 +20,7 @@ use serde_json::{json, Value};
 
 use super::context_digest_json::write_canonical_json_with_limit;
 use crate::guard_store_advisory_cache as advisory_cache;
+use crate::guard_store_approval_backfill;
 use crate::guard_store_approval_write::{add_approval_request, add_native_review_approval_request};
 use crate::guard_store_args::Args;
 use crate::guard_store_claude_review::add_claude_native_review_approval_request;
@@ -143,13 +144,16 @@ pub(crate) fn evaluate(request: &GuardStoreRequestV1) -> StoreResult<(Value, Opt
             if kind != Kind::Read {
                 let _ = connection.execute_batch("ROLLBACK");
             }
+            guard_store_approval_backfill::settle(false);
             return Err(error);
         }
     };
     if kind == Kind::Snapshot {
         connection.execute_batch("ROLLBACK")?;
     } else {
-        finalize_and_commit(&connection, writes)?;
+        let committed = finalize_and_commit(&connection, writes);
+        guard_store_approval_backfill::settle(committed.is_ok());
+        committed?;
     }
     let generation = (connection.total_changes() > initial_changes)
         .then(|| outbox_generation(&connection))

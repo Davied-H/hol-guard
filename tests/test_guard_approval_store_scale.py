@@ -439,8 +439,17 @@ class TestMigrationFromOldSchema:
         conn = native_approval_connection()
         req = _make_request()
         add_approval_request(conn, req, "2026-01-01T00:00:00Z")
+        index_query = (
+            "select name from sqlite_master where type = 'index' and tbl_name = 'approval_requests' and sql is not null"
+        )
+        # The store creates every approval index; drop them to start from the
+        # legacy schema the index statements upgrade.
+        for (name,) in conn.execute(index_query).fetchall():
+            conn.execute(f'drop index "{name}"')
+        assert conn.execute(index_query).fetchall() == []
         for stmt in approval_index_statements():
             conn.execute(stmt)
+        assert conn.execute(index_query).fetchall()
         rows = list_approval_requests(conn, status="pending")
         assert len(rows) == 1
 
