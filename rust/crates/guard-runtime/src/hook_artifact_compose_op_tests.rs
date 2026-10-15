@@ -197,6 +197,11 @@ fn edge_floors_after_execution_only_through_reapproval() {
         native_edge_floor(&edge("PreToolUse", deny.clone()), None),
         None
     );
+    let block = json!({"decision": "deny", "policy_action": "block"});
+    assert_eq!(
+        native_edge_floor(&edge("UserPromptSubmit", block), None),
+        None
+    );
     assert_eq!(
         native_edge_floor(&edge("PostToolUse", deny.clone()), None),
         Some(GuardAction::RequireReapproval)

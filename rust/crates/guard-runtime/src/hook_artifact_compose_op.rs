@@ -127,19 +127,33 @@ fn native_edge_floor(
         // command-control failure is not a second package verdict.
         return None;
     }
-    let typed = HookNativeEdgeV1 {
-        policy_action: edge.policy_action.clone(),
-        minimum_action: edge.minimum_action.clone(),
-        decision: edge.decision.clone(),
-    };
-    if event == Some("PostToolUse")
-        && default_action == Some("warn")
-        && is_hard(edge_action(&typed))
-    {
-        // The edge still masks output already priced as warn-tier evidence.
-        return None;
+    match event {
+        Some("PreToolUse") => {
+            // Only an explicit hard verdict floors before execution; a bare
+            // deny stays provenance for native command review to price.
+            let explicit = HookNativeEdgeV1 {
+                policy_action: edge.policy_action.clone(),
+                minimum_action: edge.minimum_action.clone(),
+                decision: Value::Null,
+            };
+            edge_floor(Some(&explicit), event)
+        }
+        Some("PostToolUse") => {
+            let typed = HookNativeEdgeV1 {
+                policy_action: edge.policy_action.clone(),
+                minimum_action: edge.minimum_action.clone(),
+                decision: edge.decision.clone(),
+            };
+            if default_action == Some("warn") && is_hard(edge_action(&typed)) {
+                // The edge still masks output already priced as warn-tier evidence.
+                return None;
+            }
+            edge_floor(Some(&typed), event)
+        }
+        // Other events take their floors from native review and artifact
+        // classes; the edge verdict is provenance there.
+        _ => None,
     }
-    edge_floor(Some(&typed), event)
 }
 
 fn policy_stack(query: &PolicyStackQueryV1) -> Value {
