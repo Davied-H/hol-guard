@@ -139,6 +139,23 @@ def test_unproven_command_review_says_its_steps_may_run_separately() -> None:
         assert "Do not retry it." not in text
 
 
+def test_review_drops_the_inbox_offer_only_when_approval_cannot_let_it_run() -> None:
+    native = (
+        "HOL Guard requires review because this command could not be confirmed read-only."
+        " Approve it in the HOL Guard inbox (choose Always for a repeated read-only command),"
+        " or split it into simpler commands."
+    )
+    for queued, reuses, offered in ((True, False, False), (False, True, False), (True, True, True)):
+        text = safe_alternative_reason(
+            native,
+            reason_code="native_command_review_required",
+            approval_queued=queued,
+            retry_reuses_approval=reuses,
+        )
+        assert text.startswith("HOL Guard requires review because this command could not be confirmed read-only.")
+        assert ("Approve it in the HOL Guard inbox" in text) is offered
+
+
 def test_unbound_review_with_exact_action_names_always_allow_as_the_only_way_through() -> None:
     text = safe_alternative_reason(
         "Blocked.",

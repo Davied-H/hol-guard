@@ -62,6 +62,14 @@ _REASON_CODE_HINTS = {
 }
 
 
+# The native review text offers inbox approval. When no approval can let the
+# action run, that offer contradicts the note that follows, so it is dropped.
+_INBOX_APPROVAL_OFFER = (
+    " Approve it in the HOL Guard inbox (choose Always for a repeated read-only command),"
+    " or split it into simpler commands."
+)
+
+
 def safe_alternative_reason(
     reason: str,
     *,
@@ -87,4 +95,7 @@ def safe_alternative_reason(
         wait = _APPROVAL_ALWAYS_ONLY
     else:
         wait = _APPROVAL_CANNOT_UNBLOCK
-    return " ".join(part for part in (reason.strip(), hint, wait) if part)
+    reason = reason.strip()
+    if wait in (_NOT_QUEUED, _APPROVAL_CANNOT_UNBLOCK):
+        reason = reason.replace(_INBOX_APPROVAL_OFFER, "")
+    return " ".join(part for part in (reason, hint, wait) if part)
