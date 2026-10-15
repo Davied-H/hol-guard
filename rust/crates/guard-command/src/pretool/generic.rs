@@ -211,8 +211,8 @@ pub fn evaluate_pre_tool_envelope_with_execution_context(
         })
     });
     // Name what kept the extension controls from evaluating the command, a
-    // code-loading setting or an open quote, so the agent can fix it and retry
-    // instead of guessing.
+    // code-loading or credential setting or an open quote, so the agent can
+    // fix it and retry instead of guessing.
     if result.reason_code == "native_command_extension_evaluation_failed" {
         let command = extract_generic_signals(payload)
             .ok()
@@ -232,6 +232,13 @@ pub fn evaluate_pre_tool_envelope_with_execution_context(
         {
             result.reason = format!(
                 "HOL Guard blocked this command because the {setting} setting is filled by a command substitution or variable expansion, which Guard does not allow in an environment prefix. Do not capture credentials or other output into a setting. Rely on the tool's own login (for example gh's active account), or run the commands separately without passing the output through the environment."
+            );
+        } else if let Some(setting) = command
+            .as_deref()
+            .and_then(env_prefix_projection::credential_setting)
+        {
+            result.reason = format!(
+                "HOL Guard blocked this command because the {setting} setting passes a credential that the installed extension controls cannot check. Do not put credentials in an environment prefix. Rely on the tool's own login or the environment the session already has, or ask the user to run the command."
             );
         } else if command
             .as_deref()
