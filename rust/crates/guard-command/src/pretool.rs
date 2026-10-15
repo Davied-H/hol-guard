@@ -222,13 +222,23 @@ fn names_guard_outside_message(segment: &crate::CommandSegmentV1) -> bool {
 /// Git pathspec could expand to a secret file name. Rust reviews such a read
 /// as an unproven shape rather than as secret access, so without this floor
 /// an explicit Allow would settle `git diff --no-index .en? README.md`. Text
-/// with whitespace, such as a comment body or a query, and a `name=value`
-/// field that is not an option are not paths, so they are not screened.
+/// with whitespace, such as a comment body or a query, is not a path. A
+/// `name=value` field that is not an option is screened only for a brace in
+/// a path-like value: the shell expands `if=.en{v..v}` to `if=.env`, while a
+/// `*` or `?` there matches only names that start with `if=`, and a compact
+/// GraphQL `query=mutation{...}` is not a path.
 fn selects_secret_outside_message(segment: &crate::CommandSegmentV1) -> bool {
     arguments_outside_message(segment).any(|argument| {
+        let path_like = match argument.split_once('=') {
+            Some(_) if argument.starts_with('-') => true,
+            Some((_, value)) => {
+                value.matches('{').count() == 1 && !value.contains(['(', ')', '"', ':'])
+            }
+            None => true,
+        };
         argument.contains(['*', '?', '[', '{'])
             && !argument.contains(char::is_whitespace)
-            && (argument.starts_with('-') || !argument.contains('='))
+            && path_like
             && sensitive_read_path_argument(argument)
     })
 }
@@ -320,6 +330,7 @@ fn sensitive_path_argument_with_credentials(value: &str, include_credential_name
         normalized.as_str(),
         normalized.split_once('=').map_or("", |(_, tail)| tail),
         normalized.rsplit_once(':').map_or("", |(_, tail)| tail),
+        pathspec_magic_path(&normalized),
     ];
     candidates.iter().any(|candidate| {
         let relative = candidate.strip_prefix("./").unwrap_or(candidate);
@@ -330,6 +341,19 @@ fn sensitive_path_argument_with_credentials(value: &str, include_credential_name
             || relative == ".git/config"
             || relative.ends_with("/.git/config")
     })
+}
+
+/// The path a Git magic pathspec names, or `""`: `:(top).env` and
+/// `:/!.env` both name `.env`.
+fn pathspec_magic_path(value: &str) -> &str {
+    let Some(rest) = value.strip_prefix(':') else {
+        return "";
+    };
+    if let Some(long) = rest.strip_prefix('(') {
+        return long.split_once(')').map_or("", |(_, path)| path);
+    }
+    let path = rest.trim_start_matches(['/', '!', '^']);
+    path.strip_prefix(':').unwrap_or(path)
 }
 
 fn destructive_command(value: &str) -> bool {

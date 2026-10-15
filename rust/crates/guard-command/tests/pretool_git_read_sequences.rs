@@ -352,6 +352,9 @@ fn an_explicit_git_allow_does_not_settle_a_glob_that_names_a_secret() {
         "git log -p -1 -- .en?",
         "git log -p -1 -- '.en*'",
         "git show HEAD -- '*.env*'",
+        "git log -p -1 -- ':(top).en*'",
+        "git log -p -1 -- ':(top,glob).en*'",
+        "git log -p -1 -- ':/!.en?'",
     ] {
         assert_ne!(action(&home, &repository, command), "allow", "{command}");
     }

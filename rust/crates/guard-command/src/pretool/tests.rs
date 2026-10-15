@@ -675,3 +675,13 @@ fn guard_control_help_and_other_subcommands_keep_review() {
         );
     }
 }
+
+#[test]
+fn magic_pathspecs_are_screened_by_the_path_they_name() {
+    for selecting in [":(top).en*", ":(top,glob).en*", ":/!.en?", ":(top).env"] {
+        assert!(sensitive_read_path_argument(selecting), "{selecting}");
+    }
+    for ordinary in [":(top)src/*.ts", ":!readme.md", ":(exclude)src"] {
+        assert!(!sensitive_read_path_argument(ordinary), "{ordinary}");
+    }
+}
