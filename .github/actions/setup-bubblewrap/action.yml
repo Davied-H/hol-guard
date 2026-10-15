@@ -17,6 +17,7 @@ runs:
       shell: bash
       env:
         BWRAP_BUILD_CACHE_DIR: ${{ runner.temp }}/bubblewrap-build
+        BWRAP_BUILD_CACHE_HIT: ${{ steps.cache.outputs.cache-hit }}
       run: bash ci/containment/install-bubblewrap.sh
     - name: Save the verified sandbox build
       if: steps.cache.outputs.cache-hit != 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'

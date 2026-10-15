@@ -43,7 +43,7 @@ def _install(tmp_path: Path, mode: str = "") -> tuple[subprocess.CompletedProces
         link = tmp_path / "cache-link"
         link.symlink_to(cache, target_is_directory=True)
         cache = link
-    elif mode == "miss":
+    elif mode in {"miss", "hit-missing-binary"}:
         binary.unlink()
     tools = tmp_path / "tools"
     tools.mkdir()
@@ -74,6 +74,7 @@ def _install(tmp_path: Path, mode: str = "") -> tuple[subprocess.CompletedProces
             **os.environ,
             "PATH": f"{tools}{os.pathsep}{os.environ['PATH']}",
             "BWRAP_BUILD_CACHE_DIR": str(cache),
+            "BWRAP_BUILD_CACHE_HIT": "false" if mode == "miss" else "true",
             "COMMAND_LOG": str(log),
             "MODE": mode,
         },
@@ -92,7 +93,16 @@ def test_cached_binary_skips_build_but_reloads_host_policy(tmp_path: Path) -> No
 
 
 @pytest.mark.parametrize(
-    "mode", ["corrupt", "bad-manifest", "missing-manifest", "wrong-version", "linked-binary", "linked-directory"]
+    "mode",
+    [
+        "corrupt",
+        "bad-manifest",
+        "missing-manifest",
+        "wrong-version",
+        "linked-binary",
+        "linked-directory",
+        "hit-missing-binary",
+    ],
 )
 def test_invalid_cached_binary_fails_before_installation(tmp_path: Path, mode: str) -> None:
     result, commands = _install(tmp_path, mode)
@@ -131,6 +141,7 @@ def test_cache_is_exact_and_only_trusted_main_can_publish() -> None:
         assert field in restore["with"]["key"]
     install = next(step for step in steps if step.get("run") == "bash ci/containment/install-bubblewrap.sh")
     assert "if" not in install
+    assert install["env"]["BWRAP_BUILD_CACHE_HIT"] == "${{ steps.cache.outputs.cache-hit }}"
     save = steps[-1]
     assert "github.event_name == 'push' && github.ref == 'refs/heads/main'" in save["if"]
     assert save["with"]["key"] == "${{ steps.cache.outputs.cache-primary-key }}"

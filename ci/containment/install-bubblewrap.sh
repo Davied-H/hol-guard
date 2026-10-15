@@ -12,6 +12,13 @@ cache_dir="${BWRAP_BUILD_CACHE_DIR:-}"
 if [[ -n "$cache_dir" ]]; then
   test ! -L "$cache_dir"
 fi
+if [[ "${BWRAP_BUILD_CACHE_HIT:-false}" == true ]]; then
+  # Exact cache entries are immutable: do not silently rebuild an incomplete
+  # hit that cannot subsequently be repaired under the same cache key.
+  test -n "$cache_dir"
+  test -f "$cache_dir/bwrap"
+  test -f "$cache_dir/bwrap.sha256"
+fi
 
 if [[ -n "$cache_dir" && ( -e "$cache_dir/bwrap" || -L "$cache_dir/bwrap" ) ]]; then
   # The image/source-keyed cache is written only by trusted main builds.
