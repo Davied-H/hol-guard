@@ -507,6 +507,7 @@ mod package_context_build_op;
 mod package_evaluation_compose_op;
 mod package_policy_resolve_op;
 mod package_posture_op;
+mod package_protect_finalize_op;
 mod package_protect_projection_op;
 mod pi_detect;
 mod pi_glob;
