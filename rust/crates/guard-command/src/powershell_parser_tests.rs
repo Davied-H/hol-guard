@@ -85,7 +85,7 @@ fn statements_and_pipelines_map_to_groups() {
 fn read_only_cmdlets_map_to_posix_reads() {
     let cases = [
         ("Get-ChildItem src", &["ls", "src"][..]),
-        ("gci -Recurse -Filter *.rs src", &["ls", "-R", "src"]),
+        ("gci -Recurse -Filter '*.rs' src", &["ls", "-R", "src"]),
         ("Get-ChildItem -Force -Path src", &["ls", "-a", "src"]),
         ("Get-ChildItem 'C:\\repo'", &["ls", "C:\\repo"]),
         (
