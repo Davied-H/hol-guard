@@ -34,7 +34,8 @@ pub(in crate::pretool) fn local_postgres_host(value: &str) -> bool {
 /// A Unix-socket directory where no other local user can stand in for the
 /// server: libpq connects to `<dir>/.s.PGSQL.<port>`, and whoever owns that
 /// socket answers the probe or query and can ask for a password. The
-/// directory must exist and belong to this user or root. In a private
+/// directory must belong to this user or root; a missing one passes only
+/// below a directory nobody else can write, where no one can create it. In a private
 /// directory a missing socket is fine, since nobody else can create one. A
 /// directory others can write must be sticky, as `/tmp` is, and then every
 /// socket psql may reach must already exist and belong to this user or root,
@@ -47,10 +48,19 @@ pub(in crate::pretool) fn trusted_postgres_socket(host: &str, port: Option<&str>
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
-        let Ok(directory) = std::fs::metadata(host) else {
-            return false;
-        };
         let uid = nix::unistd::getuid().as_raw();
+        let closed = |metadata: &std::fs::Metadata| {
+            metadata.is_dir()
+                && (metadata.uid() == uid || metadata.uid() == 0)
+                && metadata.mode() & 0o022 == 0
+        };
+        let Ok(directory) = std::fs::metadata(host) else {
+            return std::path::Path::new(host)
+                .ancestors()
+                .skip(1)
+                .find_map(|parent| std::fs::metadata(parent).ok())
+                .is_some_and(|parent| closed(&parent));
+        };
         let shared = directory.mode() & 0o022 != 0;
         if !directory.is_dir()
             || (directory.uid() != uid && directory.uid() != 0)
@@ -385,7 +395,10 @@ mod tests {
         assert!(!probe(&shared, "-q"));
         std::fs::write(shared.join(".s.PGSQL.5432"), "").unwrap();
         assert!(probe(&shared, "-q"));
-        assert!(!probe(&root.join("missing"), "-p 5432"));
+        // Only a missing directory nobody else could create passes.
+        assert!(!probe(&open.join("missing"), "-p 5432"));
+        assert!(!probe(&shared.join("missing"), "-p 5432"));
+        assert!(probe(&own.join("missing"), "-p 5432"));
         assert!(probe(&own, "-q"));
         assert!(probe(&own, "-p 5432"));
         assert!(probe(&own, "-p 55434"));

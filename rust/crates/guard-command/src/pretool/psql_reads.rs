@@ -105,7 +105,7 @@ pub(in crate::pretool) fn safe_psql_arguments(
     arguments: &[String],
     context: crate::pretool::PathContext<'_>,
 ) -> bool {
-    admitted(arguments, || {
+    admitted(arguments, trusted_default_socket, || {
         context.psqlrc_absent
             && startup_files_absent(
                 context.home_dir,
@@ -125,17 +125,31 @@ pub(in crate::pretool) fn psql_reads_startup_files(arguments: &[String]) -> bool
 /// (Homebrew, Postgres.app) use `/tmp`. Debian's and Red Hat's run directory
 /// is writable only by the server account, so nobody else can plant there.
 const SHARED_DEFAULT_SOCKET_DIRECTORY: &str = "/tmp";
+const SYSTEM_SOCKET_DIRECTORIES: &[&str] = &["/run/postgresql", "/var/run/postgresql"];
 
-fn admitted(arguments: &[String], startup_files_absent: impl FnOnce() -> bool) -> bool {
+/// Where psql connects without `-h`: a trusted `/tmp` socket, or, when `/tmp`
+/// holds no socket for the port, a distribution's server-only run directory.
+fn trusted_default_socket(port: Option<&str>) -> bool {
+    let name = format!(".s.PGSQL.{}", port.unwrap_or("5432"));
+    trusted_postgres_socket(SHARED_DEFAULT_SOCKET_DIRECTORY, port)
+        || (std::fs::symlink_metadata(Path::new(SHARED_DEFAULT_SOCKET_DIRECTORY).join(name))
+            .is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound)
+            && SYSTEM_SOCKET_DIRECTORIES
+                .iter()
+                .any(|directory| Path::new(directory).is_dir()))
+}
+
+fn admitted(
+    arguments: &[String],
+    default_socket: impl FnOnce(Option<&str>) -> bool,
+    startup_files_absent: impl FnOnce() -> bool,
+) -> bool {
     parse(arguments).is_some_and(|invocation| {
         (invocation.list || invocation.command)
-            && trusted_postgres_socket(
-                invocation
-                    .host
-                    .as_deref()
-                    .unwrap_or(SHARED_DEFAULT_SOCKET_DIRECTORY),
-                invocation.port.as_deref(),
-            )
+            && match invocation.host.as_deref() {
+                Some(host) => trusted_postgres_socket(host, invocation.port.as_deref()),
+                None => default_socket(invocation.port.as_deref()),
+            }
             && (invocation.no_psqlrc || startup_files_absent())
     })
 }
@@ -257,21 +271,19 @@ mod tests {
     }
 
     fn safe(arguments: &[&str]) -> bool {
-        admitted(&owned(arguments), || true)
+        admitted(&owned(arguments), |_| true, || true)
     }
 
     #[test]
     fn a_startup_file_keeps_a_read_without_no_psqlrc_reviewed() {
         let read = ["-h", "localhost", "-c", "select 1"];
-        assert!(!admitted(&owned(&read), || false));
-        assert!(admitted(
-            &owned(&["-X", "-h", "localhost", "-c", "select 1"]),
-            || false
-        ));
-        assert!(admitted(&owned(&["--no-psqlrc", "-l"]), || false));
-        assert!(admitted(&owned(&["-tAXc", "select 1"]), || false));
+        assert!(!admitted(&owned(&read), |_| true, || false));
+        let admitted = |arguments: &[&str]| admitted(&owned(arguments), |_| true, || false);
+        assert!(admitted(&["-X", "-h", "localhost", "-c", "select 1"]));
+        assert!(admitted(&["--no-psqlrc", "-l"]));
+        assert!(admitted(&["-tAXc", "select 1"]));
         // `X` inside a value is not the flag.
-        assert!(!admitted(&owned(&["-c", "select 'X'", "-UX"]), || false));
+        assert!(!admitted(&["-c", "select 'X'", "-UX"]));
         assert!(super::psql_reads_startup_files(&owned(&read)));
         assert!(!super::psql_reads_startup_files(&owned(&["-Xl"])));
     }
@@ -334,14 +346,30 @@ mod tests {
             if let Some(port) = port {
                 arguments.extend(["-p".to_owned(), port.to_owned()]);
             }
-            admitted(&arguments, || true)
+            admitted(&arguments, |_| false, || true)
         };
         assert!(!list(&open, None));
         assert!(!list(&open, Some("5432")));
+        // A sticky directory needs the socket to exist and belong to the user.
+        assert!(!list(&sticky, Some("5432")));
+        std::fs::write(sticky.join(".s.PGSQL.5432"), "").unwrap();
         assert!(list(&sticky, Some("5432")));
         assert!(list(&private, None));
         assert!(list(&private, Some("5432")));
-        assert!(list(&root.join("missing"), None));
+        assert!(list(&private.join("missing"), None));
+        assert!(!list(&open.join("missing"), None));
+        // Without `-h` the default socket check decides.
+        assert!(!admitted(&owned(&["-l"]), |_| false, || true));
+        assert!(!admitted(
+            &owned(&["-l"]),
+            |port| port == Some("55434"),
+            || true
+        ));
+        assert!(admitted(
+            &owned(&["-l", "-p", "55434"]),
+            |port| port == Some("55434"),
+            || true
+        ));
         std::fs::remove_dir_all(root).unwrap();
     }
 
@@ -350,7 +378,7 @@ mod tests {
         for arguments in [
             &[
                 "-h",
-                "/private/tmp",
+                "localhost",
                 "-p",
                 "55434",
                 "-U",
@@ -360,13 +388,7 @@ mod tests {
                 "-c",
                 "select current_user",
             ][..],
-            &[
-                "-h",
-                "/opt/homebrew/var/postgresql@16",
-                "-U",
-                "postgres",
-                "-l",
-            ],
+            &["-h", "127.0.0.1", "-U", "postgres", "-l"],
             &[
                 "-h",
                 "localhost",
