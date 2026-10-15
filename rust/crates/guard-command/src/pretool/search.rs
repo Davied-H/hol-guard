@@ -8,6 +8,7 @@ mod glob_class;
 mod grep;
 mod hint;
 mod options;
+mod rg_whitelist;
 mod roots;
 mod sibling;
 mod tree;
@@ -317,6 +318,9 @@ enum SearchValueRole {
     RgGlob,
     Path,
     TypeGlob,
+    /// ripgrep `-t`/`--type`: a built-in type name, whose globs may name
+    /// hidden files.
+    RgType,
     DirectoryAction,
     Other,
 }
@@ -381,6 +385,7 @@ fn safe_rg_arguments_inner(
     let mut options_enabled = true;
     let mut paths_only = false;
     let mut config_disabled = false;
+    let mut roots: Vec<&str> = Vec::new();
     for argument in arguments {
         if let Some(role) = pending_value.take() {
             if unsafe_search_value(role, argument, context) {
@@ -469,7 +474,7 @@ fn safe_rg_arguments_inner(
                     ('m', SearchValueRole::Other),
                     ('M', SearchValueRole::Other),
                     ('r', SearchValueRole::Other),
-                    ('t', SearchValueRole::Other),
+                    ('t', SearchValueRole::RgType),
                     ('T', SearchValueRole::Other),
                 ],
                 context,
@@ -495,6 +500,7 @@ fn safe_rg_arguments_inner(
             if !directories.is_empty() && directories.iter().all(|part| *part == "..") {
                 return false;
             }
+            roots.push(argument);
             // A shell glob that lexically could reach a hidden or credential
             // path is still proven when every expansion is an ordinary file,
             // or a directory below the cwd whose whole tree is ordinary.
@@ -518,6 +524,7 @@ fn safe_rg_arguments_inner(
     pending_value.is_none()
         && (!stdin_only || pattern_supplied)
         && (stdin_only || config_disabled || context.ripgrep_config_absent)
+        && (stdin_only || paths_only || rg_whitelist::roots_proven(&roots, context))
 }
 
 #[cfg(test)]

@@ -84,3 +84,7 @@ path = "tests/pretool_git_push_unregistered.rs"
 [[test]]
 name = "shim_admin_vectors"
 path = "tests/shim_admin_vectors.rs"
+
+[[test]]
+name = "pretool_rg_hidden_whitelist"
+path = "tests/pretool_rg_hidden_whitelist.rs"
