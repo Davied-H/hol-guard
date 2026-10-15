@@ -36,6 +36,48 @@ fn cmdlet_kind(name: &str) -> Option<Kind> {
     })
 }
 
+/// Read-only and directory-creating cmdlets with a POSIX equivalent Guard
+/// already proves. A form outside the bound subset keeps the cmdlet name, so it
+/// is reviewed as an unknown command, as it was before these were mapped.
+#[derive(Clone, Copy, PartialEq)]
+enum Benign {
+    List,
+    Location,
+    SetLocation,
+    TestPath,
+    Echo,
+    Search,
+    Lookup,
+    MakeDirectory,
+    Filter,
+}
+
+fn benign_kind(name: &str) -> Option<Benign> {
+    Some(match name {
+        "get-childitem" | "gci" | "dir" => Benign::List,
+        "get-location" | "gl" => Benign::Location,
+        "set-location" | "sl" => Benign::SetLocation,
+        "test-path" => Benign::TestPath,
+        "write-output" | "write-host" | "echo" => Benign::Echo,
+        "select-string" | "sls" => Benign::Search,
+        "get-command" | "gcm" => Benign::Lookup,
+        "new-item" | "ni" => Benign::MakeDirectory,
+        // Formatting cmdlets only reshape pipeline objects; none takes a path.
+        // Aliases that name a native program off Windows (`sort`) stay unmapped.
+        "select-object" | "select" | "sort-object" | "measure-object" | "measure"
+        | "group-object" | "get-unique" | "gu" | "out-string" | "out-null" | "format-table"
+        | "ft" | "format-list" | "fl" | "format-wide" | "fw" | "convertfrom-json"
+        | "convertto-json" => Benign::Filter,
+        _ => return None,
+    })
+}
+
+/// True for read-only cmdlet names that POSIX parses as an unknown word.
+pub(crate) fn is_powershell_benign(name: &str) -> bool {
+    let lowered = name.to_ascii_lowercase();
+    lowered != "echo" && benign_kind(&lowered).is_some()
+}
+
 /// True for names that only PowerShell resolves to a modeled effect, so a
 /// POSIX-exact parse of them should be redone with PowerShell semantics.
 pub(crate) fn is_powershell_specific(name: &str) -> bool {
@@ -116,6 +158,31 @@ fn path_slot(slot: Option<String>) -> Result<String, Reason> {
     slot.filter(|path| !path.is_empty()).ok_or(PARAMETER)
 }
 
+/// Rejects provider paths (`Env:`, `Variable:`, `HKCU:`), alternate data
+/// streams and drive-relative paths. Quoting hides their colon from the parser,
+/// and none of them names the file a POSIX tool would open.
+fn file_path(path: &str) -> Result<String, Reason> {
+    // `\\?\C:\...` names the same drive path without Win32 normalization.
+    let body = ["\\\\?\\", "//?/"]
+        .iter()
+        .find_map(|prefix| path.strip_prefix(prefix))
+        .unwrap_or(path);
+    let bytes = body.as_bytes();
+    let drive = bytes.len() >= 3
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && matches!(bytes[2], b'/' | b'\\');
+    let rest = if drive { &body[2..] } else { body };
+    if path.is_empty() || rest.contains(':') {
+        return Err("powershell_provider_path_not_supported");
+    }
+    Ok(path.to_owned())
+}
+
+fn file_paths(paths: Vec<String>) -> Result<Vec<String>, Reason> {
+    paths.iter().map(|path| file_path(path)).collect()
+}
+
 pub(crate) fn canonicalize(call: &PsCall) -> Result<Vec<String>, Reason> {
     match call {
         PsCall::Command { name, args } => canonicalize_command(name, args),
@@ -138,6 +205,13 @@ fn recursive_force(recurse: bool, force: bool) -> Option<String> {
 }
 
 fn canonicalize_command(name: &str, args: &[PsArg]) -> Result<Vec<String>, Reason> {
+    if let Some(benign) = benign_kind(&name.to_ascii_lowercase()) {
+        return Ok(benign_tokens(benign, args).unwrap_or_else(|_| {
+            let mut tokens = vec![name.to_owned()];
+            tokens.extend(args.iter().map(|arg| arg.value.clone()));
+            tokens
+        }));
+    }
     let kind = cmdlet_kind(&name.to_ascii_lowercase());
     let path_names: &[&str] = &["path", "literalpath"];
     let mut tokens = Vec::new();
@@ -167,7 +241,7 @@ fn canonicalize_command(name: &str, args: &[PsArg]) -> Result<Vec<String>, Reaso
                 return Err(PARAMETER);
             }
             tokens.push("cat".to_owned());
-            tokens.extend(paths);
+            tokens.extend(file_paths(paths)?);
         }
         Some(Kind::Write | Kind::Append | Kind::OutFile) => {
             let out_file = kind == Some(Kind::OutFile);
@@ -189,7 +263,7 @@ fn canonicalize_command(name: &str, args: &[PsArg]) -> Result<Vec<String>, Reaso
             } else {
                 &[&["path", "literalpath"], &["value"]]
             };
-            let path = path_slot(fill(&bound, slots)?.remove(0))?;
+            let path = file_path(&path_slot(fill(&bound, slots)?.remove(0))?)?;
             tokens.push("tee".to_owned());
             if kind == Some(Kind::Append) || bound.has("append") {
                 tokens.push("-a".to_owned());
@@ -210,7 +284,7 @@ fn canonicalize_command(name: &str, args: &[PsArg]) -> Result<Vec<String>, Reaso
             }
             tokens.push("rm".to_owned());
             tokens.extend(recursive_force(bound.has("recurse"), bound.has("force")));
-            tokens.extend(paths);
+            tokens.extend(file_paths(paths)?);
         }
         Some(Kind::Copy | Kind::Move) => {
             let bound = bind(
@@ -219,8 +293,8 @@ fn canonicalize_command(name: &str, args: &[PsArg]) -> Result<Vec<String>, Reaso
                 &["recurse", "force"],
             )?;
             let mut slots = fill(&bound, &[&["path", "literalpath"], &["destination"]])?;
-            let destination = path_slot(slots.remove(1))?;
-            let source = path_slot(slots.remove(0))?;
+            let destination = file_path(&path_slot(slots.remove(1))?)?;
+            let source = file_path(&path_slot(slots.remove(0))?)?;
             let copy = kind == Some(Kind::Copy);
             tokens.push(if copy { "cp" } else { "mv" }.to_owned());
             let recurse = copy && bound.has("recurse");
@@ -264,6 +338,131 @@ fn canonicalize_command(name: &str, args: &[PsArg]) -> Result<Vec<String>, Reaso
             tokens.push(name.to_owned());
             tokens.extend(args.iter().map(|arg| arg.value.clone()));
         }
+    }
+    Ok(tokens)
+}
+
+fn benign_tokens(benign: Benign, args: &[PsArg]) -> Result<Vec<String>, Reason> {
+    let mut tokens = Vec::new();
+    match benign {
+        Benign::List => {
+            let bound = bind(
+                args,
+                &[
+                    "path",
+                    "literalpath",
+                    "filter",
+                    "include",
+                    "exclude",
+                    "depth",
+                ],
+                &["recurse", "force", "hidden", "name", "file", "directory"],
+            )?;
+            let path = fill(&bound, &[&["path", "literalpath"], &["filter"]])?.remove(0);
+            tokens.push("ls".to_owned());
+            if bound.has("recurse") || bound.has("depth") {
+                tokens.push("-R".to_owned());
+            }
+            if bound.has("force") || bound.has("hidden") {
+                tokens.push("-a".to_owned());
+            }
+            if let Some(path) = path {
+                tokens.push(file_path(&path)?);
+            }
+        }
+        Benign::Location => {
+            if !args.is_empty() {
+                return Err(PARAMETER);
+            }
+            tokens.push("pwd".to_owned());
+        }
+        Benign::SetLocation => {
+            let bound = bind(args, &["path", "literalpath"], &[])?;
+            let path = path_slot(fill(&bound, &[&["path", "literalpath"]])?.remove(0))?;
+            tokens.extend(["cd".to_owned(), file_path(&path)?]);
+        }
+        Benign::TestPath => {
+            let bound = bind(args, &["path", "literalpath", "pathtype"], &["isvalid"])?;
+            let path = path_slot(fill(&bound, &[&["path", "literalpath"]])?.remove(0))?;
+            let predicate = match bound.value("pathtype").map(str::to_ascii_lowercase) {
+                None => "-e",
+                Some(kind) if kind == "any" => "-e",
+                Some(kind) if kind == "container" => "-d",
+                Some(kind) if kind == "leaf" => "-f",
+                Some(_) => return Err(PARAMETER),
+            };
+            tokens.extend(["test".to_owned(), predicate.to_owned(), file_path(&path)?]);
+        }
+        Benign::Echo => {
+            let bound = bind(
+                args,
+                &[
+                    "inputobject",
+                    "object",
+                    "foregroundcolor",
+                    "backgroundcolor",
+                    "separator",
+                ],
+                &["noenumerate", "nonewline"],
+            )?;
+            tokens.push("echo".to_owned());
+            tokens.extend(bound.value("inputobject").map(str::to_owned));
+            tokens.extend(bound.value("object").map(str::to_owned));
+            tokens.extend(bound.positionals.iter().cloned());
+        }
+        Benign::Search => {
+            let bound = bind(
+                args,
+                &["pattern", "path", "literalpath"],
+                &[
+                    "simplematch",
+                    "casesensitive",
+                    "list",
+                    "quiet",
+                    "notmatch",
+                    "allmatches",
+                ],
+            )?;
+            let mut slots = fill(&bound, &[&["pattern"], &["path", "literalpath"]])?;
+            let path = slots.remove(1);
+            let pattern = path_slot(slots.remove(0))?;
+            tokens.push("grep".to_owned());
+            for (switch, flag) in [
+                ("simplematch", "-F"),
+                ("list", "-l"),
+                ("quiet", "-q"),
+                ("notmatch", "-v"),
+            ] {
+                if bound.has(switch) {
+                    tokens.push(flag.to_owned());
+                }
+            }
+            if !bound.has("casesensitive") {
+                tokens.push("-i".to_owned());
+            }
+            tokens.extend(["-e".to_owned(), pattern]);
+            if let Some(path) = path {
+                tokens.push(file_path(&path)?);
+            }
+        }
+        Benign::Lookup => {
+            let bound = bind(args, &["name"], &[])?;
+            let name = path_slot(fill(&bound, &[&["name"]])?.remove(0))?;
+            tokens.extend(["command".to_owned(), "-v".to_owned(), name]);
+        }
+        Benign::MakeDirectory => {
+            let bound = bind(args, &["itemtype", "path"], &["force"])?;
+            if !bound
+                .value("itemtype")
+                .is_some_and(|kind| kind.eq_ignore_ascii_case("directory"))
+            {
+                return Err(PARAMETER);
+            }
+            let path = path_slot(fill(&bound, &[&["path"]])?.remove(0))?;
+            // New-Item creates missing parent directories, like `mkdir -p`.
+            tokens.extend(["mkdir".to_owned(), "-p".to_owned(), file_path(&path)?]);
+        }
+        Benign::Filter => tokens.push("cat".to_owned()),
     }
     Ok(tokens)
 }
