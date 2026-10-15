@@ -34,6 +34,8 @@ pub(crate) fn continues_as_expression(rest: &str) -> bool {
             return characters.next().is_some_and(|next| !next.is_whitespace());
         }
         Some('&') => return characters.next() != Some('&'),
+        // `/>` closes self-closing markup such as `<Input password="x"/>`.
+        Some('/') if characters.next() == Some('>') => return false,
         Some(first) if !first.is_whitespace() => return joins_value(first),
         Some(_) => {}
     }
@@ -107,6 +109,8 @@ mod tests {
             "\\r\\nnext line",
             "\\n",
             "</code>",
+            "/>",
+            "/>\\n",
             ": the value to use",
             "> note",
             "!",
