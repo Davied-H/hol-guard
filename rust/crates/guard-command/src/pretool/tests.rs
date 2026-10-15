@@ -685,3 +685,32 @@ fn magic_pathspecs_are_screened_by_the_path_they_name() {
         assert!(!sensitive_read_path_argument(ordinary), "{ordinary}");
     }
 }
+
+#[test]
+fn secret_selecting_globs_are_a_fixed_floor() {
+    let model = |command: &str| {
+        crate::parse_command(
+            &serde_json::from_value(serde_json::json!({"command": command})).unwrap(),
+        )
+        .unwrap()
+    };
+    for command in [
+        "git diff --no-index .en? README.md",
+        "git log -p -1 -- ':(top).en*'",
+        "dd if=.en{v..v} of=copy",
+        "dd if=.e{n..n}{v..v} of=copy",
+        "dd if={.env,x} of=copy",
+    ] {
+        assert!(fixed_command_floor(&model(command)), "{command}");
+    }
+    for command in [
+        "git log -p -1 -- 'src/*.ts'",
+        "git commit -m 'ignore *.env files'",
+        "gh api graphql -f query='mutation{resolveReviewThread(input:{threadId:\"x\"}){thread{id,isResolved}}}'",
+        "gh api graphql -f query='{viewer{login}}'",
+        "gh pr comment 1 --body 'see *.env and .en{v..v}'",
+        "dd if=out.* of=copy",
+    ] {
+        assert!(!fixed_command_floor(&model(command)), "{command}");
+    }
+}

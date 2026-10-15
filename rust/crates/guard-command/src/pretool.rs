@@ -223,16 +223,19 @@ fn names_guard_outside_message(segment: &crate::CommandSegmentV1) -> bool {
 /// as an unproven shape rather than as secret access, so without this floor
 /// an explicit Allow would settle `git diff --no-index .en? README.md`. Text
 /// with whitespace, such as a comment body or a query, is not a path. A
-/// `name=value` field that is not an option is screened only for a brace in
-/// a path-like value: the shell expands `if=.en{v..v}` to `if=.env`, while a
-/// `*` or `?` there matches only names that start with `if=`, and a compact
-/// GraphQL `query=mutation{...}` is not a path.
+/// `name=value` field that is not an option is screened only for a brace
+/// the shell expands, one with `..` or a comma, in a path-like value:
+/// `if=.e{n..n}{v..v}` becomes `if=.env`, while a `*` or `?` there matches
+/// only names that start with `if=`, and a compact GraphQL
+/// `query=mutation{...}` is not a path.
 fn selects_secret_outside_message(segment: &crate::CommandSegmentV1) -> bool {
     arguments_outside_message(segment).any(|argument| {
         let path_like = match argument.split_once('=') {
             Some(_) if argument.starts_with('-') => true,
             Some((_, value)) => {
-                value.matches('{').count() == 1 && !value.contains(['(', ')', '"', ':'])
+                value.contains('{')
+                    && (value.contains("..") || value.contains(','))
+                    && !value.contains(['(', ')', '"', ':'])
             }
             None => true,
         };
