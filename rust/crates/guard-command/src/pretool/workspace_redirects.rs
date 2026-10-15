@@ -259,9 +259,11 @@ pub(super) fn contained(
         && crate::pretool::workspace_contained::runner::runners_admitted(
             &stripped, &workspace, home,
         )
-        && super::workspace_git_environment::session_git_variables(execution_environment)
+        && crate::pretool::workspace_git_environment::session_git_variables(execution_environment)
             .and_then(|variables| {
-                super::workspace_git_config::workspace_write_denials(&workspace, home, &variables)
+                crate::pretool::workspace_git_config::workspace_write_denials(
+                    &workspace, home, &variables,
+                )
             })
             .is_some();
     if projected.reason_code != crate::pretool::workspace_contained::REASON && !allowed && !narrower
