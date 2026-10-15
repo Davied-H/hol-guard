@@ -178,7 +178,18 @@ fn a_link_others_could_retarget_leaves_the_socket_to_review() {
     std::fs::set_permissions(&open, std::fs::Permissions::from_mode(0o777)).unwrap();
     let swappable = open.join("link");
     std::os::unix::fs::symlink(&sockets, &swappable).unwrap();
+    let inside = open.join("sub");
+    std::fs::create_dir_all(&inside).unwrap();
+    std::fs::set_permissions(&inside, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let into_open = home.join("into-open");
+    std::os::unix::fs::symlink(&inside, &into_open).unwrap();
     let probe = |directory: &Path| format!("pg_isready -h {} -p 55434", directory.display());
     assert_eq!(shell(&home, &probe(&steady)), "allow");
-    assert_ne!(shell(&home, &probe(&swappable)), "allow");
+    for link in [
+        &swappable,
+        &into_open,
+        &into_open.join("..").join("into-open"),
+    ] {
+        assert_ne!(shell(&home, &probe(link)), "allow", "{}", link.display());
+    }
 }
