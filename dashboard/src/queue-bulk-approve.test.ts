@@ -7,6 +7,7 @@ import {
   summarizeBulkApproveSelection,
 } from "./approval-center-utils";
 import type { GuardApprovalGatePublicConfig } from "./guard-types";
+import { defaultUseApprovalCooldown, requiresApprovalPasswordPrompt } from "./approval-gate-utils";
 import {
   buildBulkGateCredentials,
   isBulkApproveGateReady,
@@ -150,7 +151,19 @@ assert(
 
 const gateCredentials = buildBulkGateCredentials(readyGate, "secret", "123456");
 assert(gateCredentials?.approval_password === "secret", "T-BULK-09: buildBulkGateCredentials includes password when gate is ready");
-assert(gateCredentials?.approval_gate_use_cooldown === false, "T-BULK-10: buildBulkGateCredentials never enables cooldown for bulk");
+assert(gateCredentials?.approval_gate_use_cooldown === true, "T-BULK-10: buildBulkGateCredentials follows the saved cooldown setting");
+const noCooldownCredentials = buildBulkGateCredentials({ ...readyGate, cooldown_seconds: 0 }, "secret", "");
+assert(noCooldownCredentials?.approval_gate_use_cooldown === false, "T-BULK-10b: bulk cooldown stays off when no cooldown is configured");
+assert(defaultUseApprovalCooldown(readyGate) === true, "T-COOLDOWN-01: saved cooldown is the default");
+assert(defaultUseApprovalCooldown({ ...readyGate, cooldown_seconds: 0 }) === false, "T-COOLDOWN-02: no default without a cooldown");
+assert(defaultUseApprovalCooldown({ ...readyGate, totp_enabled: true }) === false, "T-COOLDOWN-03: no default cooldown in authenticator mode");
+assert(defaultUseApprovalCooldown(null) === false, "T-COOLDOWN-04: no default without a gate");
+assert(
+  requiresApprovalPasswordPrompt(true, false, "artifact") === false,
+  "T-COOLDOWN-05: an open window skips the password prompt after a gate refresh",
+);
+assert(requiresApprovalPasswordPrompt(true, false, "global") === true, "T-COOLDOWN-06: global scope always prompts");
+assert(requiresApprovalPasswordPrompt(true, true, "artifact") === true, "T-COOLDOWN-07: strict-all always prompts");
 const totpGate = { ...readyGate, totp_enabled: true };
 assert(
   validateBulkApproveCredentials(totpGate, { password: "", totpCode: "123456" }) === null,

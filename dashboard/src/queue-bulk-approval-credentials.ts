@@ -1,3 +1,4 @@
+import { defaultUseApprovalCooldown } from "./approval-gate-utils";
 import type { GuardApprovalGatePublicConfig } from "./guard-types";
 
 export function isBulkApproveGateReady(
@@ -38,6 +39,6 @@ export function buildBulkGateCredentials(
   }
   return {
     approval_password: password.trim(),
-    approval_gate_use_cooldown: false,
+    approval_gate_use_cooldown: defaultUseApprovalCooldown(gate),
   };
 }
