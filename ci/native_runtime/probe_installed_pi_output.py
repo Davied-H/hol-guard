@@ -375,6 +375,7 @@ def _write_node_runner(path: Path) -> None:
         """\
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
+import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 
 const extensionPath = process.argv[2];
@@ -382,6 +383,62 @@ const casesPath = process.argv[3];
 const cwd = process.argv[4];
 const contentDigest = (canonical) => createHash("sha256").update(canonical).digest("hex");
 const fetchEvidence = [];
+// On POSIX the shipped extension spawns the native bridge instead of calling
+// `fetch`, so the daemon request is only observable at the spawn boundary.
+// Patching the builtin reaches the extension's own `import { spawn }` binding.
+const bridgeEvidence = [];
+const childProcess = createRequire(import.meta.url)("node:child_process");
+const originalSpawn = childProcess.spawn;
+const bridgeProofFromLine = (line, record) => {
+  let envelope;
+  try {
+    envelope = JSON.parse(line);
+  } catch {
+    return;
+  }
+  if (!envelope || typeof envelope !== "object") return;
+  if (typeof envelope.status === "number") record.status = envelope.status;
+  if (typeof envelope.body !== "string") return;
+  let body;
+  try {
+    body = JSON.parse(envelope.body);
+  } catch {
+    return;
+  }
+  if (!body || typeof body !== "object" || Array.isArray(body)) return;
+  for (const key of [
+    "decision",
+    "model_output_action",
+    "reviewed_output_sha256",
+    "observe_mode",
+    "policy_action",
+  ]) {
+    const value = body[key];
+    if (typeof value === "string" || typeof value === "boolean") record[key] = value;
+  }
+};
+childProcess.spawn = (command, args, options) => {
+  const child = originalSpawn(command, args, options);
+  if (!Array.isArray(args) || args[0] !== "pi-hook-bridge") return child;
+  // Record only the route determinant and the redacted reply. The bridge
+  // config also carries the guard home and the signed daemon query.
+  const record = { transport: "bridge", effective: false };
+  try {
+    const config = JSON.parse(args[1]);
+    if (typeof config.harness === "string") record.harness = config.harness;
+  } catch {}
+  bridgeEvidence.push(record);
+  let stdout = "";
+  child.stdout?.on("data", (chunk) => {
+    stdout += typeof chunk === "string" ? chunk : chunk.toString("utf8");
+  });
+  child.once("close", (status) => {
+    if (status !== 0) return;
+    bridgeProofFromLine(stdout.trim(), record);
+    record.effective = typeof record.status === "number";
+  });
+  return child;
+};
 const originalFetch = globalThis.fetch;
 if (typeof originalFetch !== "function") throw new Error("fetch is unavailable");
 globalThis.fetch = async (input, init) => {
@@ -437,6 +494,7 @@ const results = [];
 for (const testCase of cases) {
   const before = notifications.length;
   const fetchStart = fetchEvidence.length;
+  const bridgeStart = bridgeEvidence.length;
   const event = {
     toolCallId: testCase.id,
     toolName: "Bash",
@@ -452,6 +510,9 @@ for (const testCase of cases) {
   const inputContentAfter = JSON.stringify(event.content);
   const fetchEnd = fetchEvidence.length;
   for (const fetch of fetchEvidence.slice(fetchStart, fetchEnd)) fetch.case_id = testCase.id;
+  for (const bridge of bridgeEvidence.slice(bridgeStart, bridgeEvidence.length)) {
+    bridge.case_id = testCase.id;
+  }
   results.push({
     id: testCase.id,
     preserved: result === undefined,
@@ -462,7 +523,7 @@ for (const testCase of cases) {
     input_content_unchanged: inputContentBefore === inputContentAfter,
   });
 }
-process.stdout.write(JSON.stringify({ results, fetches: fetchEvidence }));
+process.stdout.write(JSON.stringify({ results, fetches: fetchEvidence, bridges: bridgeEvidence }));
 """,
         encoding="utf-8",
     )
@@ -497,7 +558,7 @@ def _run_node_cases(
     cases: Path,
     cwd: Path,
     env: Mapping[str, str],
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     completed = _run(
         [*node, str(runner), str(extension), str(cases), str(cwd)],
         env=env,
@@ -509,13 +570,16 @@ def _run_node_cases(
         payload = json.loads(completed.stdout.decode("utf-8"))
         results = payload["results"]
         fetches = payload["fetches"]
+        bridges = payload["bridges"]
     except (KeyError, TypeError, ValueError, UnicodeDecodeError) as exc:
         raise ProbeError("generated Pi extension returned invalid result JSON") from exc
     if not isinstance(results, list) or not all(isinstance(result, dict) for result in results):
         raise ProbeError("generated Pi extension returned an invalid result list")
     if not isinstance(fetches, list) or not all(isinstance(fetch, dict) for fetch in fetches):
         raise ProbeError("generated Pi extension returned invalid fetch evidence")
-    return results, fetches
+    if not isinstance(bridges, list) or not all(isinstance(bridge, dict) for bridge in bridges):
+        raise ProbeError("generated Pi extension returned invalid bridge evidence")
+    return results, fetches, bridges
 
 
 def _read_records(path: Path) -> dict[str, list[dict[str, Any]]]:
@@ -609,23 +673,45 @@ def _assert_real_results(
     return evidence
 
 
+_DAEMON_PROOF_KEYS = (
+    "decision",
+    "model_output_action",
+    "reviewed_output_sha256",
+    "observe_mode",
+    "policy_action",
+)
+_FETCH_EVIDENCE_KEYS = {"case_id", "method", "pathname", "status", *_DAEMON_PROOF_KEYS}
+_BRIDGE_EVIDENCE_KEYS = {"case_id", "transport", "effective", "harness", "status", *_DAEMON_PROOF_KEYS}
+
+
+def _effective_daemon_records(
+    fetches: list[dict[str, Any]],
+    bridges: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """The one record per case, whichever transport the extension used.
+
+    POSIX ships the native bridge and Windows ships ``fetch``; a bridge that
+    could not start falls back to ``fetch``, so only its fallback counts.
+    """
+    records = [dict(fetch, transport="fetch") for fetch in fetches]
+    fetched_cases = {fetch.get("case_id") for fetch in fetches}
+    for bridge in bridges:
+        if bridge.get("effective") is True:
+            records.append(bridge)
+        elif bridge.get("case_id") not in fetched_cases:
+            case_id = bridge.get("case_id")
+            raise ProbeError(f"native hook bridge returned no daemon reply and did not fall back for {case_id}")
+    return records
+
+
 def _assert_fetch_evidence(
     fetches: list[dict[str, Any]],
+    bridges: list[dict[str, Any]],
     results: list[dict[str, Any]],
     cases: list[dict[str, Any]],
 ) -> dict[str, dict[str, Any]]:
     """Validate redacted daemon responses correlated to each generated case."""
-    allowed_keys = {
-        "case_id",
-        "method",
-        "pathname",
-        "status",
-        "decision",
-        "model_output_action",
-        "reviewed_output_sha256",
-        "observe_mode",
-        "policy_action",
-    }
+    fetches = _effective_daemon_records(fetches, bridges)
     if len(fetches) != len(cases):
         raise ProbeError("generated extension did not make exactly one daemon request per real case")
     result_ids = [result.get("id") for result in results]
@@ -649,9 +735,16 @@ def _assert_fetch_evidence(
     for case in cases:
         case_id = str(case["id"])
         fetch = fetches_by_case[case_id][0]
+        bridged = fetch.get("transport") == "bridge"
+        allowed_keys = _BRIDGE_EVIDENCE_KEYS if bridged else {*_FETCH_EVIDENCE_KEYS, "transport"}
         if set(fetch) - allowed_keys:
             raise ProbeError(f"daemon fetch evidence contains unapproved fields for {case_id}")
-        if fetch.get("method") != "POST" or fetch.get("pathname") != "/v1/hooks/omp":
+        if bridged:
+            # The bridge builds the route from the harness it was handed, so
+            # that is the route determinant the extension controls.
+            if fetch.get("harness") != "omp":
+                raise ProbeError(f"generated extension used an unexpected daemon route for {case_id}")
+        elif fetch.get("method") != "POST" or fetch.get("pathname") != "/v1/hooks/omp":
             raise ProbeError(f"generated extension used an unexpected daemon route for {case_id}")
         if fetch.get("status") != 200:
             raise ProbeError(f"daemon hook response was not successful for {case_id}")
@@ -674,10 +767,14 @@ def _assert_fetch_evidence(
         for key, expected in expected_proof.items():
             if fetch.get(key) != expected:
                 raise ProbeError(f"daemon response proof mismatch for {case_id}: {key}")
+        route = (
+            {"transport": "bridge", "harness": fetch["harness"]}
+            if bridged
+            else {"transport": "fetch", "method": fetch["method"], "pathname": fetch["pathname"]}
+        )
         evidence[case_id] = {
             "case_id": case_id,
-            "method": fetch["method"],
-            "pathname": fetch["pathname"],
+            **route,
             "status": fetch["status"],
             **expected_proof,
             "sha256": digest,
@@ -1263,7 +1360,7 @@ def _run_probe(*, json_path: Path | None = None) -> dict[str, Any]:
             raise
         native_started = True
         _prepare_installed_daemon_workspace(daemon, workspace)
-        real_results, real_fetches = _run_node_cases(
+        real_results, real_fetches, real_bridges = _run_node_cases(
             node=node,
             extension=extension,
             runner=runner,
@@ -1273,7 +1370,7 @@ def _run_probe(*, json_path: Path | None = None) -> dict[str, Any]:
         )
         _assert_no_positive_cli_fallback(real_log)
         real_output_evidence = _assert_real_results(real_results, cases)
-        real_fetch_evidence = _assert_fetch_evidence(real_fetches, real_results, cases)
+        real_fetch_evidence = _assert_fetch_evidence(real_fetches, real_bridges, real_results, cases)
         native_routes = _wait_for_native_route_metrics(daemon, len(cases))
         negative_home = root / "negative-home"
         negative_guard_home = root / "negative-guard-home"
@@ -1300,7 +1397,7 @@ def _run_probe(*, json_path: Path | None = None) -> dict[str, Any]:
             negative_cases_path = root / f"{case['id']}-cases.json"
             negative_cases_path.write_text(json.dumps([case], ensure_ascii=True), encoding="utf-8")
             try:
-                case_results, _ = _run_node_cases(
+                case_results, _, _ = _run_node_cases(
                     node=node,
                     extension=negative_extension,
                     runner=runner,

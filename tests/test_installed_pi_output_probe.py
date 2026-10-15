@@ -376,7 +376,7 @@ def test_real_validation_requires_status_zero_and_exact_full_proof() -> None:
     }
 
     evidence = _assert_real_results([result], [case])
-    fetch_evidence = _assert_fetch_evidence([valid_fetch], [result], [case])
+    fetch_evidence = _assert_fetch_evidence([valid_fetch], [], [result], [case])
     fetch_status = fetch_evidence[str(case["id"])]["status"]
     assert fetch_status == 200
     assert evidence[str(case["id"])]["preserved"] is True
@@ -389,17 +389,17 @@ def test_real_validation_requires_status_zero_and_exact_full_proof() -> None:
     nonzero = deepcopy(valid_fetch)
     nonzero["status"] = 500
     with pytest.raises(ProbeError, match="not successful"):
-        _assert_fetch_evidence([nonzero], [result], [case])
+        _assert_fetch_evidence([nonzero], [], [result], [case])
 
     mismatched = deepcopy(valid_fetch)
     mismatched["reviewed_output_sha256"] = "0" * 64
     with pytest.raises(ProbeError, match="proof mismatch"):
-        _assert_fetch_evidence([mismatched], [result], [case])
+        _assert_fetch_evidence([mismatched], [], [result], [case])
 
     sensitive = deepcopy(valid_fetch)
     sensitive["headers"] = {"X-Guard-Token": "secret"}
     with pytest.raises(ProbeError, match="unapproved fields"):
-        _assert_fetch_evidence([sensitive], [result], [case])
+        _assert_fetch_evidence([sensitive], [], [result], [case])
 
 
 def test_large_non_source_accepts_only_bounded_reviewed_excerpt() -> None:
@@ -424,7 +424,7 @@ def test_large_non_source_accepts_only_bounded_reviewed_excerpt() -> None:
     evidence = _assert_real_results([result], [case])
     assert evidence[str(case["id"])]["preserved"] is False
 
-    fetch_status = _assert_fetch_evidence([fetch], [result], [case])[str(case["id"])]["status"]
+    fetch_status = _assert_fetch_evidence([fetch], [], [result], [case])[str(case["id"])]["status"]
     assert fetch_status == 200
 
     arbitrary_excerpt = deepcopy(result)
@@ -477,7 +477,7 @@ def test_fetch_evidence_correlates_case_ids_instead_of_position() -> None:
         },
     ]
     with pytest.raises(ProbeError, match="exactly one response"):
-        _assert_fetch_evidence(fetches, results, cases)
+        _assert_fetch_evidence(fetches, [], results, cases)
 
 
 def test_installed_daemon_readiness_requires_workspace_policy() -> None:
@@ -1015,3 +1015,88 @@ def test_malformed_results_are_visible_blocks_but_observe_remains_preserved() ->
         malformed_records["negative-observe"] = [_record(observe_case, malformed)]
         with pytest.raises(ProbeError, match="canonical allow metadata"):
             _assert_negative_results(malformed_results, malformed_records)
+
+
+def _bridge_record(case: dict[str, object], digest: str) -> dict[str, object]:
+    return {
+        "case_id": case["id"],
+        "transport": "bridge",
+        "effective": True,
+        "harness": "omp",
+        "status": 200,
+        "decision": "allow",
+        "model_output_action": "allow_original",
+        "reviewed_output_sha256": digest,
+    }
+
+
+def test_native_bridge_invocation_counts_as_the_daemon_request() -> None:
+    case = _cases()[0]
+    digest, _, _ = _text_digest(case["content"])
+    result = _preserved_result(case)
+
+    evidence = _assert_fetch_evidence([], [_bridge_record(case, digest)], [result], [case])
+    assert evidence[str(case["id"])]["status"] == 200
+
+
+def test_native_bridge_route_and_proof_are_checked() -> None:
+    case = _cases()[0]
+    digest, _, _ = _text_digest(case["content"])
+    result = _preserved_result(case)
+
+    wrong_route = _bridge_record(case, digest)
+    wrong_route["harness"] = "claude"
+    with pytest.raises(ProbeError, match="unexpected daemon route"):
+        _assert_fetch_evidence([], [wrong_route], [result], [case])
+
+    mismatched = _bridge_record(case, digest)
+    mismatched["reviewed_output_sha256"] = "0" * 64
+    with pytest.raises(ProbeError, match="proof mismatch"):
+        _assert_fetch_evidence([], [mismatched], [result], [case])
+
+    sensitive = _bridge_record(case, digest)
+    sensitive["guard_home"] = "/home/someone/.hol-guard"
+    with pytest.raises(ProbeError, match="unapproved fields"):
+        _assert_fetch_evidence([], [sensitive], [result], [case])
+
+
+def test_unstartable_bridge_requires_a_fetch_fallback() -> None:
+    case = _cases()[0]
+    digest, _, _ = _text_digest(case["content"])
+    result = _preserved_result(case)
+    unstartable = _bridge_record(case, digest)
+    unstartable["effective"] = False
+    del unstartable["status"]
+
+    with pytest.raises(ProbeError, match="did not fall back"):
+        _assert_fetch_evidence([], [unstartable], [result], [case])
+
+    fallback = {
+        "case_id": case["id"],
+        "method": "POST",
+        "pathname": "/v1/hooks/omp",
+        "status": 200,
+        "decision": "allow",
+        "model_output_action": "allow_original",
+        "reviewed_output_sha256": digest,
+    }
+    evidence = _assert_fetch_evidence([fallback], [unstartable], [result], [case])
+    assert evidence[str(case["id"])]["status"] == 200
+
+
+def test_bridge_and_fetch_for_one_case_is_a_duplicate_response() -> None:
+    case = _cases()[0]
+    digest, _, _ = _text_digest(case["content"])
+    result = _preserved_result(case)
+    fetch = {
+        "case_id": case["id"],
+        "method": "POST",
+        "pathname": "/v1/hooks/omp",
+        "status": 200,
+        "decision": "allow",
+        "model_output_action": "allow_original",
+        "reviewed_output_sha256": digest,
+    }
+
+    with pytest.raises(ProbeError, match="exactly one daemon request"):
+        _assert_fetch_evidence([fetch], [_bridge_record(case, digest)], [result], [case])
