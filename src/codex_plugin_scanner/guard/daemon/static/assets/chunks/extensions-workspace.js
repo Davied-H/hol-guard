@@ -1,4 +1,4 @@
-import { bj as fetchLocalCliApi, r as reactExports, bk as fetchExtensionCatalog, bl as normalizeExtensionCatalogSummary, bm as normalizeExtensionPermission, bn as ExtensionControlProtocolError, bo as ExtensionControlApiError, bp as normalizeExtensionCatalogItem, bq as guardApiCacheScope, br as fetchExtensionCatalogV2Api, bs as localPermissionDraftState, bt as setLocalPermissionDraftState, bu as newExtensionPolicyDraftIdentity, bv as extensionPolicyDraftIsDirty, bw as setLocalPermissionDraftStates, bx as buildExtensionPolicyDraftMutation, by as previewExtensionMutation, bz as isCurrentExtensionPolicyDraft, bA as applyExtensionMutation, bB as fetchEffectiveExtensionControls, bC as fetchExtensionControlHistory, j as jsxRuntimeExports, F as HiMiniSparkles, s as HiMiniCheckCircle, bD as HiMiniNoSymbol, ay as HiMiniLockClosed, R as HiMiniExclamationTriangle, aG as isApprovalProofSubmitDisabled, I as HiMiniXMark, aF as ApprovalProofFieldInputs, bE as useResolvedApprovalGate, aE as HiMiniArrowPath, y as HiMiniShieldCheck, bF as HiMiniInformationCircle, aH as buildApprovalProofCredentials, bG as GenIcon, T as HiMiniBolt, bH as HiMiniGlobeAlt, bI as HiMiniCube, M as HiMiniCloud, bJ as HiMiniServerStack, b as HiMiniCommandLine, bK as HiMiniFolder, bL as FaWindows, bM as FaAws, c as HiMiniChevronRight, K as HiMiniChevronDown, bN as approvalProofRecentlySatisfied, bO as isBulkApproveGateReady, bP as HiMiniArrowLeft, bQ as HiMiniPlus, bR as startGuardCloudConnect, bS as HiMiniArrowTopRightOnSquare, bT as fetchExtensionControlApi, ap as HiMiniClipboardDocumentCheck, aq as HiMiniClipboard, as as ApprovalProofModal, b2 as guardAwareHref, b0 as HiMiniMagnifyingGlass, aA as HiMiniAdjustmentsHorizontal, bU as HiMiniCheck, a$ as WorkspacePageHeader, bV as fetchExtensionDiscoveryApi, bW as acknowledgeDegradedExtensionControlAuthority, bX as recoverExtensionControlAuthority } from "../guard-dashboard.js";
+import { bj as fetchLocalCliApi, r as reactExports, bk as fetchExtensionCatalog, bl as normalizeExtensionCatalogSummary, bm as normalizeExtensionPermission, bn as ExtensionControlProtocolError, bo as ExtensionControlApiError, bp as normalizeExtensionCatalogItem, bq as guardApiCacheScope, br as fetchExtensionCatalogV2Api, bs as localPermissionDraftState, bt as setLocalPermissionDraftState, bu as newExtensionPolicyDraftIdentity, bv as extensionPolicyDraftIsDirty, bw as setLocalPermissionDraftStates, bx as buildExtensionPolicyDraftMutation, by as previewExtensionMutation, bz as isCurrentExtensionPolicyDraft, bA as applyExtensionMutation, bB as fetchEffectiveExtensionControls, bC as fetchExtensionControlHistory, j as jsxRuntimeExports, F as HiMiniSparkles, s as HiMiniCheckCircle, bD as HiMiniNoSymbol, ay as HiMiniLockClosed, R as HiMiniExclamationTriangle, aG as isApprovalProofSubmitDisabled, I as HiMiniXMark, aF as ApprovalProofFieldInputs, bE as useResolvedApprovalGate, aE as HiMiniArrowPath, y as HiMiniShieldCheck, bF as HiMiniInformationCircle, aH as buildApprovalProofCredentials, bG as GenIcon, T as HiMiniBolt, bH as HiMiniGlobeAlt, bI as HiMiniCube, M as HiMiniCloud, bJ as HiMiniServerStack, b as HiMiniCommandLine, bK as HiMiniFolder, bL as FaWindows, bM as FaAws, c as HiMiniChevronRight, K as HiMiniChevronDown, bN as approvalProofRecentlySatisfied, bO as isBulkApproveGateReady, bP as HiMiniArrowLeft, bQ as HiMiniPlus, bR as startGuardCloudConnect, bS as HiMiniArrowTopRightOnSquare, bT as fetchExtensionControlApi, ap as HiMiniClipboardDocumentCheck, aq as HiMiniClipboard, as as ApprovalProofModal, b2 as guardAwareHref, b0 as HiMiniMagnifyingGlass, aA as HiMiniAdjustmentsHorizontal, bU as HiMiniCheck, a$ as WorkspacePageHeader, bV as fetchExtensionDiscoveryApi, bW as HiMiniFunnel, bX as acknowledgeDegradedExtensionControlAuthority, bY as recoverExtensionControlAuthority } from "../guard-dashboard.js";
 import { u as useConfirmDialog } from "./confirm-dialog.js";
 const EXTENSION_ID_PATTERN = /^command\.[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
 const RULE_ID_PATTERN = /^command\.[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
@@ -3553,7 +3553,8 @@ function decisionBadgeClasses(result) {
   return "border-red-200 bg-red-50 text-red-800";
 }
 function ProtectionModuleRow(props) {
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { type: "button", onClick: props.onOpen, className: `${EXTENSION_ROW_CLASS} motion-reduce:transition-none`, children: [
+  const meta = rowTrustMeta(props.ruleCount, props.permissionCount, props.publisher);
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { type: "button", onClick: props.onOpen, className: `${EXTENSION_ROW_CLASS} group motion-reduce:transition-none`, children: [
     /* @__PURE__ */ jsxRuntimeExports.jsx(
       ExtensionBrandMark,
       {
@@ -3576,10 +3577,35 @@ function ProtectionModuleRow(props) {
         props.badge ? /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "rounded-full border border-brand-blue/30 bg-brand-blue/5 px-2 py-0.5 text-[11px] font-semibold text-brand-dark", "data-testid": "custom-extension-badge", children: props.badge }) : null
       ] }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "mt-0.5 block truncate text-sm text-brand-dark/70", children: props.behavior }),
+      meta ? /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "mt-1 block truncate font-mono text-[11px] text-brand-dark/50", "data-testid": "extension-row-meta", children: meta }) : null,
       props.actionLabel ? /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "mt-1 block text-sm font-semibold text-brand-blue", children: props.actionLabel }) : null
     ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx(HiMiniChevronRight, { className: "size-5 shrink-0 text-brand-dark/35", "aria-hidden": "true" })
+    props.state ? /* @__PURE__ */ jsxRuntimeExports.jsx(ExtensionStatePill, { state: props.state }) : null,
+    /* @__PURE__ */ jsxRuntimeExports.jsx(HiMiniChevronRight, { className: "size-5 shrink-0 text-brand-dark/35 transition-transform duration-150 group-hover:translate-x-0.5 motion-reduce:transition-none", "aria-hidden": "true" })
   ] });
+}
+const STATE_PILL = {
+  Allowed: { label: "On", tone: "safe", description: "Guard allows this tool" },
+  Blocked: { label: "Off", tone: "neutral", description: "Guard blocks this tool" },
+  Required: { label: "Always on", tone: "info", description: "Guard needs this tool to protect the device" },
+  Managed: { label: "Policy", tone: "info", description: "Your organization sets this tool" },
+  Lockdown: { label: "Locked", tone: "danger", description: "Lockdown blocks every tool" },
+  Unavailable: { label: "Paused", tone: "attention", description: "Protection is not running, so this setting is not enforced" }
+};
+function ExtensionStatePill({ state }) {
+  const pill = STATE_PILL[state];
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "guard-state-pill shrink-0", "data-tone": pill.tone, "data-testid": "extension-state-pill", title: pill.description, children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "guard-state-pill-dot", "aria-hidden": "true" }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "sr-only", children: "Status: " }),
+    pill.label
+  ] });
+}
+function rowTrustMeta(ruleCount, permissionCount, publisher) {
+  const parts = [];
+  if (ruleCount && ruleCount > 0) parts.push(`${ruleCount} ${ruleCount === 1 ? "rule" : "rules"}`);
+  if (permissionCount && permissionCount > 0) parts.push(`${permissionCount} ${permissionCount === 1 ? "permission" : "permissions"}`);
+  if (publisher && publisher.trim()) parts.push(`by ${publisher.trim()}`);
+  return parts.join(" · ");
 }
 function TechnicalDetails(props) {
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("details", { className: `${EXTENSION_PANEL_CLASS}`, "data-testid": props.testId, children: [
@@ -8781,13 +8807,18 @@ function CatalogExtensionRow(props) {
   }, [props]);
   const source = extensionProtectionSource(props.effective, props.extension);
   const cloudSource = source === "Synced from Guard Cloud" || source.startsWith("Managed by ");
+  const state = extensionStateLabel(props.effective, props.extension);
   return /* @__PURE__ */ jsxRuntimeExports.jsx(
     ProtectionModuleRow,
     {
       extensionId: props.extension.extension_id,
       name: extensionDisplayName(props.extension.name),
       description: props.extension.description,
-      behavior: catalogRowSecondLine(props.extension, extensionStateLabel(props.effective, props.extension)),
+      behavior: catalogRowSecondLine(props.extension, state),
+      state,
+      ruleCount: props.extension.rule_count,
+      permissionCount: props.extension.permission_count,
+      publisher: props.extension.publisher?.displayName,
       required: props.extension.required,
       mcp: props.extension.surface === "mcp",
       external: props.extension.trust_class === "external",
@@ -8815,10 +8846,42 @@ function ConnectorDiscoveryControl(props) {
   ] });
 }
 function CatalogFilterEmpty(props) {
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-6 rounded-2xl border border-[rgba(63,65,116,0.12)] bg-white px-4 py-6", children: [
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-6 flex flex-col items-start gap-1 rounded-2xl border border-dashed border-[rgba(63,65,116,0.2)] bg-white px-5 py-8 sm:items-center sm:text-center", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "mb-2 grid size-10 place-items-center rounded-full bg-brand-blue/10 text-brand-blue", "aria-hidden": "true", children: /* @__PURE__ */ jsxRuntimeExports.jsx(HiMiniFunnel, { className: "size-5" }) }),
     /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm font-semibold text-brand-dark", children: "No extensions match these filters." }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-1 text-sm leading-6 text-brand-dark/70", children: "Remove a filter or start over to see the full catalog again." }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", className: "guard-extensions-chip mt-3", onClick: props.onClear, children: "Clear filters" })
+    /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "max-w-[46ch] text-sm leading-6 text-brand-dark/70", children: "Remove a filter or start over to see the full catalog again." }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", className: "guard-extensions-chip mt-1", onClick: props.onClear, children: "Clear filters" })
+  ] });
+}
+const POSTURE_ORDER = ["Allowed", "Required", "Managed", "Blocked", "Lockdown", "Unavailable"];
+function CatalogPostureSummary(props) {
+  const { counts, external } = reactExports.useMemo(() => {
+    const tally = /* @__PURE__ */ new Map();
+    let externalCount = 0;
+    for (const extension of props.extensions) {
+      const state = extensionStateLabel(props.effective, extension);
+      tally.set(state, (tally.get(state) ?? 0) + 1);
+      if (extension.trust_class === "external") externalCount += 1;
+    }
+    return { counts: POSTURE_ORDER.flatMap((state) => tally.get(state) ? [{ state, count: tally.get(state) ?? 0 }] : []), external: externalCount };
+  }, [props.effective, props.extensions]);
+  const total = props.extensions.length;
+  if (total === 0) return null;
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-4 rounded-2xl border border-[rgba(63,65,116,0.1)] bg-white px-4 py-3", "data-testid": "catalog-posture-summary", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "guard-posture-bar", role: "img", "aria-label": counts.map(({ state, count }) => `${count} ${state.toLowerCase()}`).join(", "), children: counts.map(({ state, count }) => /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "guard-posture-segment", "data-state": state, style: { flexGrow: count } }, state)) }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("ul", { className: "mt-3 flex flex-wrap items-center gap-x-4 gap-y-2", "aria-label": "Catalog status", children: [
+      counts.map(({ state, count }) => /* @__PURE__ */ jsxRuntimeExports.jsxs("li", { className: "inline-flex items-center gap-1.5 text-sm text-brand-dark/75", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx(ExtensionStatePill, { state }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-semibold tabular-nums text-brand-dark", children: count })
+      ] }, state)),
+      external > 0 ? /* @__PURE__ */ jsxRuntimeExports.jsxs("li", { className: "inline-flex items-center gap-1.5 text-sm text-brand-dark/70 sm:ml-auto", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx(HiMiniGlobeAlt, { className: "size-4 text-brand-dark/45", "aria-hidden": "true" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-semibold tabular-nums text-brand-dark", children: external }),
+          " from outside the built-ins"
+        ] })
+      ] }) : null
+    ] })
   ] });
 }
 function ExtensionsOverview(props) {
@@ -9057,6 +9120,7 @@ function ExtensionsOverview(props) {
             ] }),
             /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex flex-wrap items-center gap-3", children: /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-sm text-brand-dark/70", "data-testid": "catalog-tool-count", "aria-live": "polite", children: catalogFilterCountCopy(visibleCatalog.length, props.catalogExtensions.length, filtering) }) })
           ] }),
+          !filtering ? /* @__PURE__ */ jsxRuntimeExports.jsx(CatalogPostureSummary, { extensions: props.catalogExtensions, effective: props.effective }) : null,
           visibleCatalog.length ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "mt-4", children: visibleCatalog.map((extension) => /* @__PURE__ */ jsxRuntimeExports.jsx(
             CatalogExtensionRow,
             {

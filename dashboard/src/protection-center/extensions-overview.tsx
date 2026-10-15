@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { HiMiniFunnel, HiMiniGlobeAlt } from "react-icons/hi2";
 
 import {
   catalogRowSecondLine,
@@ -18,9 +19,11 @@ import { CustomExtensionsSection } from "./custom-extensions-section";
 import { CatalogFilterBar, CatalogFilterTrigger } from "./components/catalog-filter-bar";
 import { PatternSearchConsole } from "./components/pattern-search-console";
 import {
+  ExtensionStatePill,
   InlineError,
   ProtectionModuleRow,
   ProtectionStatusHero,
+  type ExtensionRowState,
 } from "./components/protection-primitives";
 import { PROTECTION_TERMS } from "./copy/protection-copy";
 import {
@@ -54,12 +57,17 @@ function CatalogExtensionRow(props: {
   }, [props]);
   const source = extensionProtectionSource(props.effective, props.extension);
   const cloudSource = source === "Synced from Guard Cloud" || source.startsWith("Managed by ");
+  const state = extensionStateLabel(props.effective, props.extension);
   return (
     <ProtectionModuleRow
       extensionId={props.extension.extension_id}
       name={extensionDisplayName(props.extension.name)}
       description={props.extension.description}
-      behavior={catalogRowSecondLine(props.extension, extensionStateLabel(props.effective, props.extension))}
+      behavior={catalogRowSecondLine(props.extension, state)}
+      state={state}
+      ruleCount={props.extension.rule_count}
+      permissionCount={props.extension.permission_count}
+      publisher={props.extension.publisher?.displayName}
       required={props.extension.required}
       mcp={props.extension.surface === "mcp"}
       external={props.extension.trust_class === "external"}
@@ -99,12 +107,62 @@ function ConnectorDiscoveryControl(props: {
 
 function CatalogFilterEmpty(props: { onClear: () => void }) {
   return (
-    <div className="mt-6 rounded-2xl border border-[rgba(63,65,116,0.12)] bg-white px-4 py-6">
+    <div className="mt-6 flex flex-col items-start gap-1 rounded-2xl border border-dashed border-[rgba(63,65,116,0.2)] bg-white px-5 py-8 sm:items-center sm:text-center">
+      <span className="mb-2 grid size-10 place-items-center rounded-full bg-brand-blue/10 text-brand-blue" aria-hidden="true">
+        <HiMiniFunnel className="size-5" />
+      </span>
       <p className="text-sm font-semibold text-brand-dark">No extensions match these filters.</p>
-      <p className="mt-1 text-sm leading-6 text-brand-dark/70">Remove a filter or start over to see the full catalog again.</p>
-      <button type="button" className="guard-extensions-chip mt-3" onClick={props.onClear}>
+      <p className="max-w-[46ch] text-sm leading-6 text-brand-dark/70">Remove a filter or start over to see the full catalog again.</p>
+      <button type="button" className="guard-extensions-chip mt-1" onClick={props.onClear}>
         Clear filters
       </button>
+    </div>
+  );
+}
+
+const POSTURE_ORDER: readonly ExtensionRowState[] = ["Allowed", "Required", "Managed", "Blocked", "Lockdown", "Unavailable"];
+
+/**
+ * One glance at what Guard is doing across the whole catalog: how many tools
+ * run, how many are held back, and how many came from outside the built-ins.
+ */
+function CatalogPostureSummary(props: {
+  extensions: readonly ExtensionCatalogSummary[];
+  effective: EffectiveExtensionControls;
+}) {
+  const { counts, external } = useMemo(() => {
+    const tally = new Map<ExtensionRowState, number>();
+    let externalCount = 0;
+    for (const extension of props.extensions) {
+      const state = extensionStateLabel(props.effective, extension);
+      tally.set(state, (tally.get(state) ?? 0) + 1);
+      if (extension.trust_class === "external") externalCount += 1;
+    }
+    return { counts: POSTURE_ORDER.flatMap((state) => (tally.get(state) ? [{ state, count: tally.get(state) ?? 0 }] : [])), external: externalCount };
+  }, [props.effective, props.extensions]);
+  const total = props.extensions.length;
+  if (total === 0) return null;
+  return (
+    <div className="mt-4 rounded-2xl border border-[rgba(63,65,116,0.1)] bg-white px-4 py-3" data-testid="catalog-posture-summary">
+      <div className="guard-posture-bar" role="img" aria-label={counts.map(({ state, count }) => `${count} ${state.toLowerCase()}`).join(", ")}>
+        {counts.map(({ state, count }) => (
+          <span key={state} className="guard-posture-segment" data-state={state} style={{ flexGrow: count }} />
+        ))}
+      </div>
+      <ul className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2" aria-label="Catalog status">
+        {counts.map(({ state, count }) => (
+          <li key={state} className="inline-flex items-center gap-1.5 text-sm text-brand-dark/75">
+            <ExtensionStatePill state={state} />
+            <span className="font-semibold tabular-nums text-brand-dark">{count}</span>
+          </li>
+        ))}
+        {external > 0 ? (
+          <li className="inline-flex items-center gap-1.5 text-sm text-brand-dark/70 sm:ml-auto">
+            <HiMiniGlobeAlt className="size-4 text-brand-dark/45" aria-hidden="true" />
+            <span><span className="font-semibold tabular-nums text-brand-dark">{external}</span> from outside the built-ins</span>
+          </li>
+        ) : null}
+      </ul>
     </div>
   );
 }
@@ -380,6 +438,7 @@ export function ExtensionsOverview(props: {
                 </span>
               </div>
             </div>
+            {!filtering ? <CatalogPostureSummary extensions={props.catalogExtensions} effective={props.effective} /> : null}
             {visibleCatalog.length ? (
               <div className="mt-4">
                 {visibleCatalog.map((extension) => (
