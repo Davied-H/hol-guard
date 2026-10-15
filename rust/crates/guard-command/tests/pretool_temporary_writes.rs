@@ -151,10 +151,12 @@ fn codex_apply_patch_matches_write_in_owned_temporary_directory() {
     assert_eq!(added.minimum_action, "allow", "{added:?}");
     assert_eq!(added.reason_code, "native_exact_safe_file_write");
 
-    let outside = fixture.workspace.join("target.txt");
-    std::fs::write(&outside, "x").unwrap();
+    // A link into the workspace is just a workspace write; a link to another
+    // temporary file is the case the leaf-link screen refuses.
+    let real = fixture.scratch.join("real.txt");
+    std::fs::write(&real, "x").unwrap();
     let link = fixture.scratch.join("link.txt");
-    std::os::unix::fs::symlink(&outside, &link).unwrap();
+    std::os::unix::fs::symlink(&real, &link).unwrap();
     let shared = fixture.scratch.join("shared");
     std::fs::create_dir(&shared).unwrap();
     std::fs::set_permissions(&shared, std::fs::Permissions::from_mode(0o777)).unwrap();
