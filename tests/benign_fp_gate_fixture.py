@@ -36,6 +36,7 @@ from pathlib import Path
 
 import pytest
 
+from ci.gauntlet.realism_fixtures import REVIEW_NOTES, SESSION_SOURCE
 from codex_plugin_scanner.guard.adapters import codex_contained_tests
 
 _GIT_IDENTITY = {
@@ -284,9 +285,12 @@ def build_fixture(root: Path) -> BenignFixture:
     _node_toolchain(parent / "dashboard")
     _write(worktree / "dashboard" / "package.json", (parent / "dashboard" / "package.json").read_text())
     (worktree / "dashboard" / "node_modules").symlink_to(parent / "dashboard" / "node_modules")
+    # The live Gauntlet's placeholder docs and field-copy source, read by its shell cases.
+    _write(worktree / "docs" / "review-notes.md", REVIEW_NOTES)
+    _write(worktree / "dashboard" / "src" / "session.js", SESSION_SOURCE)
     # Fresh worktree package whose dependencies are installed only in the canonical checkout.
     _write(parent / "web" / "node_modules" / "left-pad" / "package.json", "{}\n")
-    _write(worktree / "web" / "package.json", "{\"private\": true}\n")
+    _write(worktree / "web" / "package.json", '{"private": true}\n')
 
     # Untracked child repository nested inside the parent working tree.
     nested.mkdir(parents=True)
@@ -335,7 +339,7 @@ def build_fixture(root: Path) -> BenignFixture:
         _write(repository / ".github" / "workflows" / "ci.yml", "name: ci\n")
         _write(repository / "src" / "index.ts", f"export const name = '{name}';\n")
         _write(repository / "README.md", f"# {name}\n")
-        _write(repository / "src" / "lib.rs", "pub fn name() -> &'static str {\n    \"fixture\"\n}\n")
+        _write(repository / "src" / "lib.rs", 'pub fn name() -> &\'static str {\n    "fixture"\n}\n')
         if name == "service-api":
             _write(repository / "contracts" / "commands.json", '{"commands": []}\n')
             _write(repository / "validation" / "schema.json", '{"type": "object"}\n')
