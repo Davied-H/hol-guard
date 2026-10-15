@@ -449,13 +449,10 @@ fn send(resident: &Resident, payload: &[u8], deadline: Instant) -> Result<Vec<u8
     let identity = crate::resident_client::ExpectedProcessIdentity {
         process_id: resident.state.process_id,
         start_marker: &resident.state.process_start_marker,
-        runtime: match resident.durable_digest.as_deref() {
-            Some(published) => crate::resident_client::ExpectedRuntime::DurableCopy {
-                recorded: &resident.state.runtime_sha256,
-                published,
-            },
-            None => crate::resident_client::ExpectedRuntime::Package,
-        },
+        runtime: crate::resident_client::ExpectedRuntime::for_direct_lane(
+            &resident.state.runtime_sha256,
+            resident.durable_digest.as_deref(),
+        ),
     };
     crate::resident_client::send_request_for_digest_detailed(
         &resident.state.transport,

@@ -40,6 +40,23 @@ pub(crate) enum ExpectedRuntime<'a> {
     },
 }
 
+impl<'a> ExpectedRuntime<'a> {
+    /// What a direct-lane client requires of the resident it connects to.
+    ///
+    /// A durable copy knows its own digest from the directory it was published
+    /// under, so it can accept the resident its state records without reading a
+    /// runtime. Any other launcher keeps the package expectation it had before.
+    pub(crate) fn for_direct_lane(recorded: &'a str, durable_digest: Option<&'a str>) -> Self {
+        match durable_digest {
+            Some(published) => Self::DurableCopy {
+                recorded,
+                published,
+            },
+            None => Self::Package,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct ResidentClientError {
     pub(crate) code: String,

@@ -124,8 +124,11 @@ fn discover_states(
             Err(_) => {}
         }
     }
-    // A caller on the hook path must not hash a runtime to learn that its own
-    // scope is already served, so each mode proves liveness its own way.
+    // Only a `RuntimeDigest` caller names a preferred scope, so only its
+    // states reach this check; a `SameExecutable` caller passes no preferred
+    // digest and goes straight to the fallback scopes below. The arm is kept
+    // so a preferred scope added to that mode proves liveness the way it
+    // proves it everywhere else: without hashing a runtime on the hook path.
     let preferred_live = states.iter().any(|(_, _, state)| match liveness {
         Liveness::RuntimeDigest => {
             validate_package_process_identity(state.process_id, &state.process_start_marker).is_ok()

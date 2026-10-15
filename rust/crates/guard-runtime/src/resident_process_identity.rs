@@ -352,16 +352,28 @@ mod direct_lane_identity_tests {
 mod durable_digest_tests {
     use super::durable_digest_for;
     use std::fs;
+    use std::path::{Path, PathBuf};
 
     const DIGEST: &str = "c29d7715f8a2bcfc00112233445566778899aabbccddeeff0011223344556677";
+
+    /// A copy under `base`, named `directory`, as the canonicalized
+    /// `current_exe` of `durable_runtime_digest` reaches the function: a
+    /// temporary directory is itself a symlink on macOS, and a verbatim path
+    /// on Windows, so an executable built from the raw path never has the
+    /// canonical base as its grandparent.
+    fn published(base: &Path, directory: &str) -> PathBuf {
+        let root = fs::canonicalize(base).expect("canonicalize state base");
+        let parent = root.join(directory);
+        fs::create_dir(&parent).expect("create runtime directory");
+        let executable = parent.join("hol-guard-runtime");
+        fs::write(&executable, b"runtime").expect("write runtime copy");
+        executable
+    }
 
     #[test]
     fn names_the_digest_of_a_copy_published_under_the_state_base() {
         let base = tempfile::tempdir().expect("create state base");
-        let directory = base.path().join(DIGEST);
-        fs::create_dir(&directory).expect("create digest directory");
-        let executable = directory.join("hol-guard-runtime");
-        fs::write(&executable, b"runtime").expect("write runtime copy");
+        let executable = published(base.path(), DIGEST);
         assert_eq!(
             durable_digest_for(&executable, base.path()).as_deref(),
             Some(DIGEST)
@@ -372,16 +384,10 @@ mod durable_digest_tests {
     fn refuses_a_copy_outside_the_state_base_or_without_a_digest_name() {
         let base = tempfile::tempdir().expect("create state base");
         let elsewhere = tempfile::tempdir().expect("create bundle directory");
-        let outside = elsewhere.path().join(DIGEST);
-        fs::create_dir(&outside).expect("create digest directory");
-        let runtime = outside.join("hol-guard-runtime");
-        fs::write(&runtime, b"runtime").expect("write runtime copy");
+        let runtime = published(elsewhere.path(), DIGEST);
         assert_eq!(durable_digest_for(&runtime, base.path()), None);
 
-        let named = base.path().join("native");
-        fs::create_dir(&named).expect("create plain directory");
-        let bundled = named.join("hol-guard-runtime");
-        fs::write(&bundled, b"runtime").expect("write runtime copy");
+        let bundled = published(base.path(), "native");
         assert_eq!(durable_digest_for(&bundled, base.path()), None);
     }
 }
