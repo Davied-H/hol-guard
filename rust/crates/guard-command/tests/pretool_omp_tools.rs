@@ -1320,3 +1320,42 @@ fn json_queries_read_only_the_proven_file() {
         assert!(!allowed(&result), "{path}: {}", result.reason_code);
     }
 }
+
+#[test]
+fn language_server_changes_are_reviewed_before_they_run() {
+    let fixture = fixture();
+    let main = fixture.project.join("src/main.rs");
+    let main = main.to_str().unwrap();
+    for input in [
+        json!({"action": "references", "file": main, "line": 1, "symbol": "main"}),
+        json!({"action": "hover", "file": "src/main.rs", "line": 1}),
+    ] {
+        let result = omp(&fixture, "lsp", input.clone());
+        assert!(allowed(&result), "{input}: {}", result.reason_code);
+        assert_eq!(result.reason_code, "native_omp_lsp_read", "{input}");
+    }
+    for input in [
+        json!({"action": "rename", "file": main, "line": 1, "symbol": "main", "new_name": "start"}),
+        json!({"action": "rename_file", "file": main, "new_name": "../moved.rs"}),
+        json!({"action": "code_actions", "file": main, "line": 1, "apply": true}),
+        json!({"action": "request", "file": main, "payload": "{}"}),
+        json!({"action": "reload"}),
+        json!({"action": "Rename", "file": main}),
+        json!({"file": main}),
+    ] {
+        let result = omp(&fixture, "lsp", input.clone());
+        assert_eq!(result.minimum_action, "review", "{input}");
+        assert_eq!(
+            result.reason_code, "native_omp_lsp_change_review",
+            "{input}"
+        );
+    }
+    // Pi has no lsp tool; its calls keep the generic path.
+    let result = run(
+        &fixture,
+        "pi",
+        "lsp",
+        json!({"action": "rename", "file": main, "new_name": "start"}),
+    );
+    assert_ne!(result.reason_code, "native_omp_lsp_change_review");
+}

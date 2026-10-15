@@ -667,29 +667,43 @@ fn walk_inside_session(target: &str, context: &OmpContext<'_>) -> bool {
 
 /// Oh My Pi's `lsp` tool asks the session's language servers about code.
 /// The actions its read-only sessions keep (`LSP_READONLY_ACTIONS`, checked
-/// in Oh My Pi 18.4.12 and 18.8.3) only report on files. `rename`,
-/// `rename_file`, `code_actions` (which can apply edits), `reload` and raw
-/// `request` stay unproven, as do keys outside the modeled schema. A proven
-/// call names one existing file inside the session folder, so its output
-/// meets the same scans and floors as a read of that file.
+/// in Oh My Pi 18.4.12 and 18.8.3) only report on files. Every other action
+/// can change the workspace or reach the server unchecked: `rename` and
+/// `code_actions` apply edits across files, `rename_file` moves a file to any
+/// destination, and `request` sends a raw server request. Those go to review
+/// before they run instead of reaching the generic path, which reads the
+/// `file` key as a read. A proven read names one existing file inside the
+/// session folder and uses only the modeled keys, so its output meets the
+/// same scans and floors as a read of that file.
 fn lsp_read(
     payload: &Value,
     signals: &GenericSignals,
     context: &OmpContext<'_>,
 ) -> Option<PreToolResultV1> {
     let input = strict_tool_input(payload)?;
-    let action = input.get("action")?.as_str()?;
-    if !matches!(
-        action,
-        "diagnostics"
-            | "definition"
-            | "type_definition"
-            | "implementation"
-            | "references"
-            | "hover"
-            | "symbols"
-    ) {
-        return None;
+    let action = input.get("action").and_then(Value::as_str);
+    match action {
+        Some(
+            "diagnostics" | "definition" | "type_definition" | "implementation" | "references"
+            | "hover" | "symbols",
+        ) => {}
+        // Status reports take no file and change nothing.
+        Some("status" | "capabilities") => return None,
+        _ => {
+            return Some(generic_result(
+                generic_action(
+                    context.harness,
+                    context.event,
+                    PreToolActionTypeV1::FileWrite,
+                    PreToolOperationV1::Write,
+                    false,
+                    false,
+                ),
+                "review",
+                "native_omp_lsp_change_review",
+                "HOL Guard needs review for this language server action because it can edit or move files or send a raw server request. Read-only actions such as references, definition, hover and diagnostics on a file in this folder run without review.",
+            ))
+        }
     }
     let modeled = input
         .iter()
