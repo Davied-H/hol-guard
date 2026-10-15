@@ -78,18 +78,7 @@ fn index(
     for (name, parents) in discovered {
         candidates.entry(name).or_default().extend(parents);
     }
-    for grant in grants.as_array().ok_or("Invalid Linux workspace index.")? {
-        let path = PathBuf::from(
-            grant["path"]
-                .as_str()
-                .ok_or("Invalid Linux workspace index.")?,
-        );
-        let device = grant["device"]
-            .as_u64()
-            .ok_or("Invalid Linux workspace index.")?;
-        let inode = grant["inode"]
-            .as_u64()
-            .ok_or("Invalid Linux workspace index.")?;
+    for (path, device, inode) in grants {
         indexed.insert(path, (device, inode));
     }
     Ok(())
@@ -236,12 +225,17 @@ pub(super) fn argv_with_system(
     let write_roots: Vec<_> = std::iter::once(input.private_root.clone())
         .chain(input.output_roots.iter().cloned())
         .collect();
-    let mut records = native(
-        "mapping_evidence",
-        &json!({"images":images,"read_files":indexed.keys().collect::<Vec<_>>(),
-        "runtime_roots":runtime_roots,"workspace":input.workspace,"dependency_candidates":candidates}),
+    // In process and typed: the system index can hold hundreds of thousands
+    // of paths, and a JSON round trip of it would spend the launch deadline.
+    let mut records = guard_command::restricted_pytest::mapping_evidence(
+        images.clone(),
+        indexed.keys().cloned().collect(),
+        runtime_roots.clone(),
+        input.workspace.clone(),
+        candidates,
         deadline,
-    )?;
+    )
+    .map_err(|_| "Linux runtime evidence could not be admitted.")?;
     for record in records
         .as_array_mut()
         .ok_or("Invalid executable mapping evidence.")?
@@ -279,9 +273,9 @@ pub(super) fn argv_with_system(
         "read_roots":[],"read_files":indexed.keys().collect::<Vec<_>>(),"list_roots":list_roots,"write_roots":write_roots,
         "executables":images,"read_identities":indexed.iter().map(|(p,(d,i))|json!([p,d,i])).collect::<Vec<_>>(),
         "write_identities":writes,"device_files":["/dev/null","/dev/random","/dev/urandom"]});
-    let _validated = super::plan::parse(payload.clone())?;
     let raw =
         serde_json::to_vec(&payload).map_err(|_| "Linux execution plan could not be encoded.")?;
+    let _validated = super::plan::parse(payload)?;
     if raw.len() as u64 > super::plan::MAX_BYTES || Instant::now() >= deadline {
         return Err("Linux execution plan exceeds its budget.");
     }

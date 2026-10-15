@@ -77,14 +77,9 @@ fn discovery_records_library_aliases_without_granting_link_or_secret_reads() {
     let (grants, candidates) =
         paths::collect_with_candidates(&fixture.0, 100, Instant::now() + Duration::from_secs(5))
             .unwrap();
-    let grants: BTreeSet<_> = grants
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| v["path"].as_str().unwrap())
-        .collect();
+    let grants: BTreeSet<_> = grants.into_iter().map(|(path, _, _)| path).collect();
     assert_eq!(grants.len(), 2);
-    assert!(grants.contains(fixture.0.join("id_rsa").to_str().unwrap()));
+    assert!(grants.contains(&fixture.0.join("id_rsa")));
     assert_eq!(
         candidates["libfixture.so.1"],
         BTreeSet::from([fixture.0.clone()])
@@ -106,16 +101,8 @@ fn non_utf8_names_stay_ungranted_without_aborting_discovery() {
     let (grants, candidates) =
         paths::collect_with_candidates(&fixture.0, 100, Instant::now() + Duration::from_secs(5))
             .unwrap();
-    let grants: Vec<_> = grants
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|v| v["path"].as_str().unwrap().to_owned())
-        .collect();
-    assert_eq!(
-        grants,
-        vec![fixture.0.join("plain.txt").to_str().unwrap().to_owned()]
-    );
+    let grants: Vec<_> = grants.into_iter().map(|(path, _, _)| path).collect();
+    assert_eq!(grants, vec![fixture.0.join("plain.txt")]);
     assert_eq!(candidates.keys().collect::<Vec<_>>(), vec!["plain.txt"]);
 }
 

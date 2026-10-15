@@ -15,6 +15,8 @@ const MAX_ENTRIES: usize = 240_000;
 const PROTECTED: &[&str] = &[".ssh", ".aws", ".docker", ".kube", ".gnupg", ".hol-guard"];
 const MESSAGE: &str = "Linux workspace could not be indexed safely.";
 pub(super) type Candidates = BTreeMap<String, BTreeSet<PathBuf>>;
+/// An admitted regular file and the device/inode identity it was indexed with.
+pub(super) type Grant = (PathBuf, u64, u64);
 
 struct Frame {
     path: PathBuf,
@@ -61,7 +63,13 @@ pub(super) fn child(parent: &File, name: &std::ffi::CStr, device: u64, inode: u6
 // libc uses signed dev_t on macOS and unsigned dev_t on Linux. Both become
 // the same unsigned identity reported by std::fs::Metadata and the wire DTO.
 pub(super) fn collect(root: &Path, limit: usize, deadline: Instant) -> Result<Value> {
-    collect_with_candidates(root, limit, deadline).map(|(grants, _)| grants)
+    let (grants, _) = collect_with_candidates(root, limit, deadline)?;
+    Ok(Value::Array(
+        grants
+            .into_iter()
+            .map(|(path, device, inode)| json!({"path":path,"device":device,"inode":inode}))
+            .collect(),
+    ))
 }
 
 #[allow(clippy::unnecessary_cast)]
@@ -69,7 +77,7 @@ pub(super) fn collect_with_candidates(
     root: &Path,
     limit: usize,
     deadline: Instant,
-) -> Result<(Value, Candidates)> {
+) -> Result<(Vec<Grant>, Candidates)> {
     if !root.is_absolute() || limit == 0 || limit > MAX_ENTRIES {
         return Err("Invalid Linux workspace discovery boundary.");
     }
@@ -141,10 +149,8 @@ pub(super) fn collect_with_candidates(
             )?;
             stack.push(Frame::new(path, file)?);
         } else if kind == libc::S_IFREG && metadata.st_nlink == 1 {
-            grants.push(
-                json!({"path":path,"device":metadata.st_dev as u64,"inode":metadata.st_ino as u64}),
-            );
+            grants.push((path, metadata.st_dev as u64, metadata.st_ino as u64));
         }
     }
-    Ok((Value::Array(grants), candidates))
+    Ok((grants, candidates))
 }

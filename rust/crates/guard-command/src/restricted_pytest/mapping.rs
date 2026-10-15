@@ -239,6 +239,28 @@ fn collect(input: &Input, deadline: Instant) -> Result<Value> {
     Ok(json!(records.into_values().collect::<Vec<_>>()))
 }
 
+/// Typed entry for in-process callers that already hold the read index, so a
+/// full system index is not encoded as JSON only to be parsed straight back.
+pub fn evidence(
+    images: BTreeSet<PathBuf>,
+    read_files: BTreeSet<PathBuf>,
+    runtime_roots: Vec<PathBuf>,
+    workspace: PathBuf,
+    dependency_candidates: BTreeMap<String, BTreeSet<PathBuf>>,
+    deadline: Instant,
+) -> Result<Value> {
+    check(deadline)?;
+    let input = Input {
+        images,
+        read_files,
+        runtime_roots,
+        workspace,
+        dependency_candidates: Some(dependency_candidates),
+        ..Input::default()
+    };
+    collect(&input, deadline)
+}
+
 pub(super) fn evaluate(operation: &str, input: &Value, deadline: Instant) -> Option<Value> {
     if !matches!(operation, "mapping_evidence" | "mapping_elf") {
         return None;
