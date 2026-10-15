@@ -157,6 +157,7 @@ fn only_a_live_workspace_requirement_is_a_receipt() {
     }
 }
 
+#[cfg(target_os = "macos")]
 fn plan(workspace: &str, command: &str) -> Map<String, Value> {
     json!({
         "profile_version": WORKSPACE_PROFILE,
@@ -183,6 +184,7 @@ fn plan(workspace: &str, command: &str) -> Map<String, Value> {
     .clone()
 }
 
+#[cfg(target_os = "macos")]
 fn validate(plan: Map<String, Value>, command: &str) -> Result<(), String> {
     validated_plan(Value::Object(plan), command, "/w")
         .map(|_| ())

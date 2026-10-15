@@ -248,7 +248,8 @@ fn a_native_sink_runs_the_snapshot_through_the_runtime_itself() {
         "{sink}"
     );
     assert!(sink.ends_with(" --home /h"), "{sink}");
-    assert_eq!(requests(&temp).len(), 1);
+    let request_file = format!(" --request-file {}/", temp.display());
+    assert!(sink.contains(&request_file), "{sink}");
     fs::remove_dir_all(root).unwrap();
 }
 

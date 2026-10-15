@@ -69,9 +69,9 @@ pub(super) fn validated_plan(plan: Value, command: &str, workspace: &str) -> Out
         || backend != HOST_BACKEND
         || plan["command_sha256"].as_str() != Some(hex::encode(Sha256::digest(script)).as_str())
         || !script_bound
-        || !plan["workspace"]
+        || plan["workspace"]
             .as_str()
-            .is_some_and(|text| py_normal(text) == workspace)
+            .is_none_or(|text| py_normal(text) != workspace)
         || plan["allowed_executables"] != json!([])
         || plan["read_only_roots"] != json!([])
         || !(plan["linked_git"].is_null() || linked_git(&plan["linked_git"]))
