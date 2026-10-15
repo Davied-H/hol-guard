@@ -152,6 +152,7 @@ pub(super) fn evaluate(
         "eval" => eval::evaluate(payload, signals, context),
         "glob" | "find" | "ls" => listing(payload, signals, context),
         "grep" => grep_scope(payload, signals, context),
+        "lsp" => lsp_read(payload, signals, context),
         _ => None,
     }
 }
@@ -662,6 +663,59 @@ fn walk_inside_session(target: &str, context: &OmpContext<'_>) -> bool {
         (Ok(root), Ok(cwd)) => root.starts_with(cwd),
         _ => false,
     }
+}
+
+/// Oh My Pi's `lsp` tool asks the session's language servers about code.
+/// The actions its read-only sessions keep (`LSP_READONLY_ACTIONS`, checked
+/// in Oh My Pi 18.4.12 and 18.8.3) only report on files. `rename`,
+/// `rename_file`, `code_actions` (which can apply edits), `reload` and raw
+/// `request` stay unproven, as do keys outside the modeled schema. A proven
+/// call names one existing file inside the session folder, so its output
+/// meets the same scans and floors as a read of that file.
+fn lsp_read(
+    payload: &Value,
+    signals: &GenericSignals,
+    context: &OmpContext<'_>,
+) -> Option<PreToolResultV1> {
+    let input = strict_tool_input(payload)?;
+    let action = input.get("action")?.as_str()?;
+    if !matches!(
+        action,
+        "diagnostics"
+            | "definition"
+            | "type_definition"
+            | "implementation"
+            | "references"
+            | "hover"
+            | "symbols"
+    ) {
+        return None;
+    }
+    let modeled = input
+        .iter()
+        .all(|(key, value)| match (key.as_str(), value) {
+            ("action" | "file", Value::String(_)) => true,
+            ("symbol" | "query", Value::String(text)) => text.len() <= 1024,
+            ("line", number) => number.as_u64().is_some_and(|line| line <= 10_000_000),
+            ("timeout", number) => number
+                .as_f64()
+                .is_some_and(|secs| (0.0..=300.0).contains(&secs)),
+            _ => false,
+        });
+    let file = input.get("file")?.as_str()?;
+    if !modeled || signals.path_values.len() != 1 || signals.path_values[0] != file {
+        return None;
+    }
+    let (home, cwd) = (context.path.home_dir, context.path.cwd);
+    (super::super::read_paths::existing_regular_read_target(file, home, cwd)
+        && walk_inside_session(file, context))
+    .then(|| {
+        directory_allow(
+            context,
+            "native_omp_lsp_read",
+            "The Rust authority proved this language server query reports on one ordinary file in the session folder.",
+        )
+    })
 }
 
 fn glob_directory(target: &str) -> Option<&str> {
