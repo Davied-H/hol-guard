@@ -15,7 +15,6 @@ fn process_liveness_matches_windows_process_liveness() {
     // process object rather than a reused one.
     assert_eq!(process_liveness(pid), Some(false));
     drop(child);
-    // PID 0 is the System Idle Process: OpenProcess rejects it with
-    // ERROR_INVALID_PARAMETER, which Python reads as not running.
+    // PID 0 is the System Idle Process, which Python reads as not running.
     assert_eq!(process_liveness(0), Some(false));
 }

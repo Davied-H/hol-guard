@@ -90,6 +90,11 @@ pub fn running_process_start_marker(process_id: u32) -> io::Result<String> {
 /// `Some(false)` only when Windows proves it gone (an unknown id or an
 /// exited process), `None` when that cannot be proven either way.
 pub fn process_liveness(process_id: u32) -> Option<bool> {
+    // Python answers "not running" for PID 0 without asking Windows, and
+    // `open_process` refuses it before `OpenProcess` can set an error code.
+    if process_id == 0 {
+        return Some(false);
+    }
     let process = match super::open_process(process_id, SYNCHRONIZE) {
         Ok(process) => process,
         Err(error) if error.raw_os_error() == Some(ERROR_INVALID_PARAMETER as i32) => {
