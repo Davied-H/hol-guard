@@ -21,6 +21,48 @@ pub(super) fn yield_signal_payload(payload: &Value) -> Option<Value> {
     yield_report::signal_payload(payload)
 }
 
+/// Oh My Pi 18.8 adds `path` and `paths` to an `edit` hook input, copied from
+/// the patch's `[PATH#TAG]` headers. They name no new target, so when they
+/// match the headers exactly they are dropped and the patch keeps its own
+/// proof. Any other value is not Oh My Pi's derivation and stays reviewed.
+pub(super) fn edit_signal_payload(payload: &Value) -> Option<Value> {
+    if payload.get("tool_name")?.as_str()? != "edit" {
+        return None;
+    }
+    let input = strict_tool_input(payload)?;
+    if input.len() < 2
+        || !input
+            .keys()
+            .all(|key| matches!(key.as_str(), "input" | "path" | "paths"))
+    {
+        return None;
+    }
+    let headers = super::super::omp_hashline_writes::header_paths(input.get("input")?.as_str()?)?;
+    let paths = input.get("paths")?.as_array()?;
+    if headers.is_empty()
+        || paths.len() != headers.len()
+        || !paths
+            .iter()
+            .zip(&headers)
+            .all(|(path, header)| path.as_str() == Some(*header))
+    {
+        return None;
+    }
+    match input.get("path") {
+        None if headers.len() > 1 => {}
+        Some(path) if headers.len() == 1 && path.as_str() == Some(headers[0]) => {}
+        _ => return None,
+    }
+    let projected_input = Map::from_iter([("input".to_owned(), input["input"].clone())]);
+    let mut projected = payload.clone();
+    for alias in super::extract::EMBEDDED_ARGUMENT_KEYS {
+        if projected.get(alias).is_some() {
+            projected[alias] = Value::Object(projected_input.clone());
+        }
+    }
+    Some(projected)
+}
+
 pub(super) struct OmpContext<'a> {
     pub(super) harness: &'a str,
     pub(super) event: &'a str,

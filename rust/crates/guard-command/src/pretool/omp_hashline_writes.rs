@@ -83,6 +83,23 @@ pub(super) fn hashline_targets(input: &str) -> Option<Vec<(String, bool)>> {
     (!targets.is_empty()).then_some(targets)
 }
 
+/// Every header path in order, repeats included, the way Oh My Pi lists them
+/// in the `path`/`paths` fields it adds to an edit's hook input. `None` when a
+/// header is not plain or a legacy `¶` header is present.
+pub(super) fn header_paths(input: &str) -> Option<Vec<&str>> {
+    let mut paths = Vec::new();
+    for line in input.split('\n') {
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        if line.trim_start().starts_with('¶') {
+            return None;
+        }
+        if line.starts_with('[') && line.ends_with(']') {
+            paths.push(header_path(line)?.0);
+        }
+    }
+    Some(paths)
+}
+
 fn header_path(line: &str) -> Option<(&str, bool)> {
     let body = line.strip_prefix('[')?.strip_suffix(']')?;
     let (path, tagged) = match body.rsplit_once('#') {
