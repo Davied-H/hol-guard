@@ -37,8 +37,8 @@ runs:
       # runtime crates and their host-only data generator get faster codegen.
       run: |
         cargo build --manifest-path rust/Cargo.toml --locked --release -p hol-guard-runtime --bin hol-guard-runtime \
-          --config 'profile.release.package.hol-guard-runtime.opt-level=1' \
-          --config 'profile.release.package.guard-command.opt-level=1' \
+          --config 'profile.release.package.hol-guard-runtime.opt-level=0' \
+          --config 'profile.release.package.guard-command.opt-level=0' \
           --config 'profile.release.package.guard-command-build.opt-level=0'
     - name: Upload the macOS native runtime
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

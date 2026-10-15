@@ -34,8 +34,8 @@ def test_fast_runtime_profile_is_confined_to_functional_ci_artifacts() -> None:
         steps = composite_action_steps(f"ci-job-{name}")
         build = next(step for step in steps if step.get("name", "").startswith("Build the "))
         for configuration in (
-            "profile.release.package.hol-guard-runtime.opt-level=1",
-            "profile.release.package.guard-command.opt-level=1",
+            "profile.release.package.hol-guard-runtime.opt-level=0",
+            "profile.release.package.guard-command.opt-level=0",
             "profile.release.package.guard-command-build.opt-level=0",
         ):
             assert f"--config '{configuration}'" in build["run"]
