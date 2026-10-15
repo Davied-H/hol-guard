@@ -3,15 +3,20 @@ use std::path::Path;
 /// The name Windows opens for a path component. Win32 drops trailing dots and
 /// spaces, and `name::$DATA` is the file's default stream, so `.env.`,
 /// `id_rsa ` and `.env::$DATA` all open the same file as the plain name.
-/// A name of only dots and spaces (`..`, the redacted `...`) is kept as is.
+/// Win32 trims the path before NTFS parses the stream, so `.env::$DATA.`
+/// also opens `.env`. A name of only dots and spaces (`..`, the redacted
+/// `...`) is kept as is.
 pub fn win32_name(part: &str) -> &str {
-    let part = match part.len().checked_sub(7) {
-        Some(at) if part.is_char_boundary(at) && part[at..].eq_ignore_ascii_case("::$data") => {
-            &part[..at]
+    let trimmed = part.trim_end_matches(['.', ' ']);
+    let stripped = match trimmed.len().checked_sub(7) {
+        Some(at)
+            if trimmed.is_char_boundary(at) && trimmed[at..].eq_ignore_ascii_case("::$data") =>
+        {
+            &trimmed[..at]
         }
-        _ => part,
+        _ => trimmed,
     };
-    match part.trim_end_matches(['.', ' ']) {
+    match stripped.trim_end_matches(['.', ' ']) {
         "" => part,
         name => name,
     }

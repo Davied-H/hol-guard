@@ -286,7 +286,16 @@ fn windows_name_aliases_keep_the_plain_path_classification() {
         "notes.md",
         "../shared/README.md",
     ];
-    let suffixes = [".", " ", ". .", "::$DATA", "::$data", ". ::$DATA"];
+    let suffixes = [
+        ".",
+        " ",
+        ". .",
+        "::$DATA",
+        "::$data",
+        ". ::$DATA",
+        "::$DATA.",
+        "::$DATA ",
+    ];
     for path in paths {
         let family = sensitive_path_family(Path::new(path));
         let named = credential_named_path(Path::new(path));

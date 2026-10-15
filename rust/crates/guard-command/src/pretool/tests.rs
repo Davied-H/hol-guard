@@ -409,6 +409,7 @@ fn windows_aliases_of_secret_paths_get_the_plain_path_decision() {
     // `name::$DATA` as the file's default stream.
     for (alias, plain) in [
         ("cat '.env::$DATA'", "cat .env"),
+        ("cat '.env::$DATA.'", "cat .env"),
         ("cat '.ENV. '", "cat .env"),
         ("cat ~/.npmrc.", "cat ~/.npmrc"),
         ("cat ~/.ssh./id_rsa.", "cat ~/.ssh/id_rsa"),
