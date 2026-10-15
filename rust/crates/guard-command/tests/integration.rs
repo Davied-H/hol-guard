@@ -164,6 +164,7 @@ pub mod privileged_wrapper_floor;
 pub mod reapproval_copy;
 pub mod sed_workflow_boundaries;
 pub mod sfrs_conformance;
+pub mod workspace_sandbox_tool_path;
 pub mod workspace_write_boundaries;
 
 #[test]
