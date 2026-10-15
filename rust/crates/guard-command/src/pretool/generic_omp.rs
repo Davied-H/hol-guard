@@ -640,22 +640,46 @@ fn glob_directory(target: &str) -> Option<&str> {
     let Some(index) = target.find(['*', '?', '[', '{']) else {
         return Some(target);
     };
-    let selector = target
-        .strip_prefix("~/")
-        .or_else(|| target.strip_prefix('/'))
-        .unwrap_or(target);
+    // A Windows drive root (`C:/` or, on Windows, `C:\`) anchors the
+    // selector like `/` does. On Windows a backslash is a separator there,
+    // never a glob escape.
+    let drive = matches!(
+        target.as_bytes(),
+        [letter, b':', b'/', ..] if letter.is_ascii_alphabetic()
+    ) || (cfg!(windows)
+        && matches!(
+            target.as_bytes(),
+            [letter, b':', b'\\', ..] if letter.is_ascii_alphabetic()
+        ));
+    let selector = if drive {
+        &target[3..]
+    } else {
+        target
+            .strip_prefix("~/")
+            .or_else(|| target.strip_prefix('/'))
+            .unwrap_or(target)
+    };
+    let separators: &[char] = if drive && cfg!(windows) {
+        &['/', '\\']
+    } else {
+        &['/']
+    };
     // Restrict this proof to simple globs. Alternatives and escaped syntax can
     // synthesize traversal segments that are absent from the literal input.
     if !contained_selector(selector)
         || target.starts_with("//")
         || selector.contains("..")
-        || selector.contains(['\\', '[', ']', '{', '}', '(', ')'])
+        || selector.contains(|c: char| c == '\\' && !separators.contains(&c))
+        || selector.contains(['[', ']', '{', '}', '(', ')'])
+        // A colon after a drive names an alternate data stream.
+        || (drive && selector.contains(':'))
     {
         return None;
     }
     let prefix = &target[..index];
-    match prefix.rsplit_once('/') {
+    match prefix.rsplit_once(separators) {
         Some(("", _)) => Some("/"),
+        Some((root, _)) if drive && root.len() == 2 => Some(&target[..3]),
         Some((directory, _)) => Some(directory),
         None => Some("."),
     }
@@ -864,4 +888,32 @@ fn artifact_reference(value: &str) -> bool {
         fresh
     });
     number(id) && selectors_ok
+}
+
+#[cfg(test)]
+mod glob_directory_tests {
+    use super::glob_directory;
+
+    #[test]
+    fn drive_rooted_globs_prove_their_fixed_directory() {
+        assert_eq!(
+            glob_directory("C:/Users/x/.agent/skills/**/SKILL.md"),
+            Some("C:/Users/x/.agent/skills")
+        );
+        assert_eq!(glob_directory("C:/*.md"), Some("C:/"));
+        assert_eq!(
+            glob_directory(r"C:\Users\x\.agent\skills\**\SKILL.md"),
+            cfg!(windows).then_some(r"C:\Users\x\.agent\skills")
+        );
+        for escape in [
+            "C:/Users/x/**/../../.ssh/*",
+            "C:/Users/x/{a,..}/*",
+            "C:*.md",
+            "C:/Users/x:stream/*",
+            r"C:/Users/x/\*/*",
+            r"\\?\C:\Users\x\*",
+        ] {
+            assert_eq!(glob_directory(escape), None, "{escape:?}");
+        }
+    }
 }

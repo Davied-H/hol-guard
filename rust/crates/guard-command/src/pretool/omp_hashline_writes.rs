@@ -125,10 +125,17 @@ fn header_path(line: &str) -> Option<(&str, bool)> {
     let home_relative = path
         .strip_prefix('~')
         .is_none_or(|rest| rest.starts_with('/'));
+    // A Windows drive path (`C:\Users\...` or `C:/Users/...`) is a host
+    // path: Oh My Pi only routes registered `scheme:/` names elsewhere, and
+    // no scheme is one letter. A drive-relative `C:name` stays unproven.
+    let rest = match path.as_bytes() {
+        [drive, b':', b'/' | b'\\', ..] if drive.is_ascii_alphabetic() => &path[2..],
+        _ => path,
+    };
     let plain = !path.is_empty()
         && home_relative
         && !path.starts_with(['"', '\'', '*'])
-        && !path.contains(['#', ':']);
+        && !rest.contains(['#', ':']);
     plain.then_some((path, tagged))
 }
 
