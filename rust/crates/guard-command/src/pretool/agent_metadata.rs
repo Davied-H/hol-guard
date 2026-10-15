@@ -179,6 +179,34 @@ fn bounded_user_question(input: &serde_json::Map<String, Value>) -> bool {
         })
 }
 
+/// An answered question that names HOL Guard carries approval meaning. The
+/// genuine pending Guard prompt is consumed before native review, so one that
+/// reaches the output proof is unmatched or spoofed and must stay reviewed.
+pub(super) fn names_guard_prompt(payload: &Value) -> bool {
+    ["tool_input", "tool_response"].iter().any(|key| {
+        payload
+            .get(*key)
+            .and_then(|value| value.get("questions"))
+            .and_then(Value::as_array)
+            .is_some_and(|questions| {
+                questions.iter().any(|question| {
+                    ["header", "question"].iter().any(|field| {
+                        question
+                            .get(*field)
+                            .and_then(Value::as_str)
+                            .is_some_and(|text| {
+                                text.chars()
+                                    .filter(char::is_ascii_alphanumeric)
+                                    .map(|ch| ch.to_ascii_lowercase())
+                                    .collect::<String>()
+                                    .contains("holguard")
+                            })
+                    })
+                })
+            })
+    })
+}
+
 fn bounded_option(option: &Value) -> bool {
     if option.is_string() {
         return bounded_text(Some(option), 2048);

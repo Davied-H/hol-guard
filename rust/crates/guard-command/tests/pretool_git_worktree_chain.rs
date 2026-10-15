@@ -360,3 +360,29 @@ fn home_relative_worktree_destinations_match_the_absolute_spelling() {
         assert_reviewed(&home, &repository, command);
     }
 }
+
+/// A `cd` spelled through a fixed symlinked parent, as `/tmp` is on macOS,
+/// enters the checkout Git creates at the physical path.
+#[test]
+fn cd_through_a_symlinked_temporary_parent_matches_the_checkout() {
+    let (_cleanup, home, repository) = repository("tmp-spelling");
+    let spelled_home = Path::new("/tmp")
+        .join(home.parent().unwrap().file_name().unwrap())
+        .join("home");
+    let leaf = format!("/tmp/guard-worktree-leaf-{}", std::process::id());
+    let in_home = spelled_home.join("app-tmp").display().to_string();
+    for command in [
+        format!("git worktree add --detach {in_home} origin/main && cd {in_home} && git log -1 --format='%H %s'"),
+        format!(
+            "git -C {} worktree add -q --detach {leaf} HEAD && cd {leaf} && git log -1 --format='%H %s'",
+            repository.display()
+        ),
+    ] {
+        assert_allowed(&home, &repository, &command);
+    }
+    assert_reviewed(
+        &home,
+        &repository,
+        &format!("git worktree add --detach {in_home} origin/main && cd {leaf} && git log -1"),
+    );
+}

@@ -222,6 +222,11 @@ def _review(case: GateCase, fixture: BenignFixture, worker: HookWorker) -> tuple
             workspace=fixture.cwd(case.cwd),
         ),
     )
+    # Claude's PostToolUse output carries no reason code, so a silent policy
+    # warning is visible only in the native receipt the review just wrote.
+    receipt = worker._last_native_decision_receipt
+    if "reason_code" not in result and isinstance(receipt, dict) and isinstance(receipt.get("reason_code"), str):
+        result = {**result, "reason_code": receipt["reason_code"]}
     _ROWS[case.case_id] = approval_rows(worker.store, known)
     routed = _harness_route(case, result, payload, fixture)
     return routed, worker.store.count_approval_requests(status=None) - before
