@@ -58,6 +58,7 @@ fn shell(home: &Path, command: &str) -> String {
                 npm_config_inert: false,
                 shell_home_matches: false,
                 ripgrep_config_absent: false,
+                psqlrc_absent: false,
             },
             Some(&environment),
         )
@@ -85,6 +86,10 @@ fn outside_reads_chained_with_process_probes_proceed() {
         "ls /usr/local; find /usr/local -maxdepth 1 -name '*.pid' 2>/dev/null; pgrep -fl postgres | head -4",
         "ls /usr/local; lsof -ti:3000",
         "ls /usr/local; pg_isready -h localhost -q",
+        "pg_isready -h /private/tmp -p 55434",
+        r#"psql -h /private/tmp -p 55434 -U hol -d hol -c "select current_user""#,
+        "psql -h /opt/homebrew/var/postgresql@16 -U postgres -l",
+        "ls /usr/local; psql -h localhost -tAc 'select count(*) from items'",
         "ls src; pgrep -l node",
     ] {
         assert_eq!(shell(&home, command), "allow", "{command}");
@@ -105,6 +110,13 @@ fn secret_reads_uploads_and_unproven_probes_keep_review() {
         "ls /usr/local; pg_isready -q",
         "ls /usr/local; pg_isready -h db.example.com",
         "ls /usr/local; pg_isready -d host=db.example.com",
+        "pg_isready -h /tmp,db.example.com",
+        r#"psql -h localhost -c "drop table x""#,
+        r#"psql -h localhost -c "copy items to program 'id'""#,
+        r#"psql -h db.example.com -c "select 1""#,
+        r#"psql -h localhost -c "select 1; drop table x""#,
+        r#"psql -h localhost -c "select pg_read_file('/etc/passwd')""#,
+        "psql -h localhost -f script.sql",
     ] {
         assert_ne!(shell(&home, command), "allow", "{command}");
     }

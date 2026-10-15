@@ -22,6 +22,9 @@ pub struct PathContext<'a> {
     /// `--pre`, `--hidden` or extra search paths to an `rg` command that
     /// omits `--no-config`. Literal contexts leave this false.
     pub ripgrep_config_absent: bool,
+    /// No session `PSQLRC` can name a startup file for a `psql` without
+    /// `-X`, and the shell's HOME is `home_dir`. Literal contexts leave this false.
+    pub psqlrc_absent: bool,
 }
 
 mod contained_wrapper;
@@ -56,6 +59,7 @@ mod git_config;
 pub(crate) mod git_config_reads;
 pub(crate) mod git_grep;
 pub(crate) mod git_hash_object;
+mod git_init_chain;
 pub(crate) mod git_init_target;
 pub(crate) mod git_object_reads;
 mod git_read_floor;
@@ -814,7 +818,7 @@ fn evaluate_single_command(
         ));
     }
     if exact_safe_command_with_context(&model, false, context)
-        && !bun_eval::node_inline_preload_configured(&model, execution_environment)
+        && !bun_eval::inherited_preload_configured(&model, execution_environment)
     {
         let reason_code = docker_start::proven_reason_code(&model)
             .unwrap_or_else(|| curl_reads::proven_reason_code(&model));

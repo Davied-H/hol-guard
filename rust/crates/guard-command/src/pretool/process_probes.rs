@@ -7,14 +7,76 @@
 //!   selectors with OR, so `-p` needs `-a` to stay a socket listing.
 //! * `pg_isready`: asks a local PostgreSQL server whether it accepts
 //!   connections and prints the answer. It sends no query and no password.
+//!   The server is named by a loopback host or by an absolute Unix-socket
+//!   directory such as `/tmp` or a Homebrew `var/postgresql@16`.
 //!
 //! Still reviewed:
 //! - `lsof` with file or directory operands, `+` options, repeat mode (`-r`),
 //!   output fields (`-F`), a host selector (`@host`) or any other option.
-//! - `pg_isready` against any host other than `127.0.0.1`, `localhost` or
-//!   `::1`, a connection string in `--dbname`, and any other option.
+//! - `pg_isready` against any host other than `127.0.0.1`, `localhost`, `::1`
+//!   or a socket directory, a connection string in `--dbname`, and any other
+//!   option.
 
 const LOOPBACK_HOSTS: [&str; 3] = ["127.0.0.1", "localhost", "::1"];
+
+/// A PostgreSQL host that never leaves the machine: a loopback name or address,
+/// or an absolute Unix-socket directory (libpq reads a leading `/` that way).
+/// A `,` would add a second host, `=` or `:` would start a connection string.
+pub(in crate::pretool) fn local_postgres_host(value: &str) -> bool {
+    LOOPBACK_HOSTS.contains(&value)
+        || (value.starts_with('/')
+            && value.len() <= 255
+            && value
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"/._-@+".contains(&byte)))
+}
+
+/// A Unix-socket directory where no other local user can stand in for the
+/// server: libpq connects to `<dir>/.s.PGSQL.<port>`, and whoever owns that
+/// socket answers the probe or query and can ask for a password. The directory
+/// must not be writable by other users unless it is sticky, as `/tmp` is, and
+/// each socket psql may reach (the named port's, or every one without a port,
+/// since `PGPORT` may pick any) must belong to this user or root. A loopback
+/// host and a missing directory pass: neither reaches a planted socket.
+pub(in crate::pretool) fn trusted_postgres_socket(host: &str, port: Option<&str>) -> bool {
+    if !host.starts_with('/') {
+        return true;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let directory = match std::fs::metadata(host) {
+            Ok(metadata) => metadata,
+            Err(error) => return error.kind() == std::io::ErrorKind::NotFound,
+        };
+        if !directory.is_dir() || (directory.mode() & 0o002 != 0 && directory.mode() & 0o1000 == 0)
+        {
+            return false;
+        }
+        let uid = nix::unistd::getuid().as_raw();
+        let owned = |path: &std::path::Path| match std::fs::symlink_metadata(path) {
+            Ok(metadata) => metadata.uid() == uid || metadata.uid() == 0,
+            Err(error) => error.kind() == std::io::ErrorKind::NotFound,
+        };
+        let directory = std::path::Path::new(host);
+        match port {
+            Some(port) => owned(&directory.join(format!(".s.PGSQL.{port}"))),
+            None => std::fs::read_dir(directory).is_ok_and(|entries| {
+                entries.into_iter().all(|entry| {
+                    entry.is_ok_and(|entry| {
+                        !entry.file_name().to_string_lossy().starts_with(".s.PGSQL.")
+                            || owned(&entry.path())
+                    })
+                })
+            }),
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = port;
+        true
+    }
+}
 
 pub(in crate::pretool) fn safe_lsof_arguments(arguments: &[String]) -> bool {
     let mut network = false;
@@ -125,12 +187,13 @@ fn process_ids(value: &str) -> bool {
 }
 
 pub(in crate::pretool) fn safe_pg_isready_arguments(arguments: &[String]) -> bool {
-    // The command text must name a loopback host: an omitted -h would take
+    // The command text must name a local host: an omitted -h would take
     // the target from PGHOST or a service file. This bounds what the agent
     // wrote, not the inherited libpq environment (PGHOSTADDR or a service
     // `hostaddr` still overrides -h); that environment is the user's own
     // configuration, and the probe sends only a startup packet.
-    let mut explicit_loopback = false;
+    let mut explicit_local = false;
+    let (mut host, mut port_value) = (None, None);
     let mut index = 0;
     while index < arguments.len() {
         let argument = arguments[index].as_str();
@@ -160,10 +223,14 @@ pub(in crate::pretool) fn safe_pg_isready_arguments(arguments: &[String]) -> boo
         };
         let valid = match option {
             "-h" | "--host" => {
-                explicit_loopback = LOOPBACK_HOSTS.contains(&value);
-                explicit_loopback
+                host = Some(value);
+                explicit_local = local_postgres_host(value);
+                explicit_local
             }
-            "-p" | "--port" => port(value),
+            "-p" | "--port" => {
+                port_value = Some(value);
+                port(value)
+            }
             "-t" | "--timeout" => {
                 (1..=3).contains(&value.len()) && value.bytes().all(|byte| byte.is_ascii_digit())
             }
@@ -174,17 +241,17 @@ pub(in crate::pretool) fn safe_pg_isready_arguments(arguments: &[String]) -> boo
             return false;
         }
     }
-    explicit_loopback
+    explicit_local && host.is_some_and(|host| trusted_postgres_socket(host, port_value))
 }
 
-fn port(value: &str) -> bool {
+pub(in crate::pretool) fn port(value: &str) -> bool {
     (1..=5).contains(&value.len())
         && value.bytes().all(|byte| byte.is_ascii_digit())
         && value.parse::<u16>().is_ok_and(|port| port > 0)
 }
 
 /// A database or role name, never a connection string (`host=…`, a URI).
-fn plain_name(value: &str) -> bool {
+pub(in crate::pretool) fn plain_name(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 63
         && !value.starts_with('-')
@@ -222,6 +289,8 @@ mod tests {
             "-h localhost -p 5432",
             "--host=127.0.0.1 --port=5432 -t 3",
             "-h ::1 -d app_dev -U app_user",
+            "-h /private/tmp -p 55434",
+            "--host=/opt/homebrew/var/postgresql@16 -q",
         ] {
             assert!(
                 safe_pg_isready_arguments(&arguments(command)),
@@ -256,6 +325,10 @@ mod tests {
             "-d app_dev -U app_user",
             "-h db.example.com",
             "--host=10.0.0.5",
+            "-h tmp",
+            "-h /tmp,db.example.com",
+            "-h @abstract",
+            "-h /tmp/$(id)",
             "-d host=db.example.com",
             "-d postgresql://db.example.com/app",
             "-p 0",
@@ -268,5 +341,28 @@ mod tests {
                 "pg_isready {command}"
             );
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_socket_directory_any_user_can_write_is_not_a_trusted_server() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/pg-isready-sockets")
+            .join(std::process::id().to_string());
+        let (open, own) = (root.join("open"), root.join("own"));
+        for (directory, mode) in [(&open, 0o777), (&own, 0o700)] {
+            std::fs::create_dir_all(directory).unwrap();
+            std::fs::set_permissions(directory, std::fs::Permissions::from_mode(mode)).unwrap();
+        }
+        std::fs::write(own.join(".s.PGSQL.5432"), "").unwrap();
+        let probe = |directory: &std::path::Path, port: &str| {
+            safe_pg_isready_arguments(&arguments(&format!("-h {} {port}", directory.display())))
+        };
+        assert!(!probe(&open, "-q"));
+        assert!(!probe(&open, "-p 5432"));
+        assert!(probe(&own, "-q"));
+        assert!(probe(&own, "-p 5432"));
+        std::fs::remove_dir_all(root).unwrap();
     }
 }
