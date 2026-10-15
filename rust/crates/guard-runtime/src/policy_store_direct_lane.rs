@@ -209,8 +209,8 @@ impl PolicySnapshotStore {
         })
     }
 
-    /// Admission that also returns the binding, whose daemon state the
-    /// direct operation checks next.
+    /// Admission of a settled workspace alone, with its binding.
+    #[cfg(all(test, unix))]
     pub(crate) fn admit_direct_hook(
         &self,
         workspace: &str,
