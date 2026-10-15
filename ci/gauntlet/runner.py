@@ -54,6 +54,7 @@ from .input_evidence import (
 from .interruptions import KNOWN_GAPS, load_known_gaps, report_sections, stale_gaps
 from .latency import summarize_hook_latency
 from .native_tools import cleanup_private_temp
+from .observed_extension import generate_observed_extension
 from .parallel import HostSlots, Lease, LoadGate, run_scheduled, validate_jobs
 from .provider import InferenceRelay, LoopbackCollector
 from .review_fixtures import GITHUB_REVIEW_CASE, GITHUB_STUB_CASES, WORKTREE_CASE, configure_github_review_controls
@@ -201,7 +202,7 @@ def run_case(
             extension = private / "hol-guard.ts"
             settings = private / "settings.json"
             settings.write_text("{}\n")
-            probe._generate_extension(
+            generate_observed_extension(
                 extension, guard_home=fixture.root / "guard-home", home=fixture.home, settings_path=settings
             )
             case["guard_extension_sha256"] = digest_file(extension)

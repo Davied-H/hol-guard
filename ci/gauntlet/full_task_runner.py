@@ -39,6 +39,7 @@ from .full_tasks import (
     load_full_tasks,
 )
 from .host_process import clean_environment, realistic_environment, run_process
+from .observed_extension import generate_observed_extension
 from .provider import InferenceRelay, LoopbackCollector
 from .source_identity import source_identity
 
@@ -146,7 +147,7 @@ def run_full_task(
             before = worker.store.count_approval_requests(status=None)
             extension, settings = private / "hol-guard.ts", private / "settings.json"
             settings.write_text("{}\n")
-            probe._generate_extension(extension, guard_home=guard_home, home=fixture.home, settings_path=settings)
+            generate_observed_extension(extension, guard_home=guard_home, home=fixture.home, settings_path=settings)
             case["guard_extension_sha256"] = digest_file(extension)
             environment = realistic_environment(
                 clean_environment(fixture.home, agent_dir, fixture.canary), fixture.home
