@@ -6,7 +6,8 @@
 //! client's `main` does: read the hook, ask the daemon, wait for a pending
 //! approval and write Grok's answer. A live resident that answers the hook
 //! exactly as the daemon would is asked first, and its answer is rendered
-//! as the daemon's would be; a prompt always goes to the daemon.
+//! as the daemon's would be. A prompt is asked about only once the daemon
+//! reports its workspace ready.
 //!
 //! A hook the bridge cannot read, and a home with no daemon to ask, get the
 //! client's own fail-closed answer, and so does every failure once the
@@ -316,11 +317,8 @@ impl Client {
 
     /// The resident's answer for a hook it reviews as the daemon would, asked
     /// within half the daemon's timeout so a slow resident leaves the daemon
-    /// time to answer. A prompt keeps the daemon path.
+    /// time to answer.
     fn direct_answer(&self, event: &str, text: &str, timeout: f64) -> Option<String> {
-        if event == PROMPT_EVENT {
-            return None;
-        }
         let deadline = capped(Instant::now(), timeout * 0.5, self.deadline);
         grok_direct_answer(
             &self.guard_home,
