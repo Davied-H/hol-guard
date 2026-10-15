@@ -84,8 +84,9 @@ def test_partial_cache_cannot_proceed_to_verification(tmp_path: Path, missing: s
     assert (result.returncode == 0) == (missing == "none")
 
 
-def test_macos_cache_tracks_compiler_inputs_not_unrelated_workflow_edits() -> None:
-    steps = composite_action_steps("ci-job-macos-native-runtime")
+@pytest.mark.parametrize("platform", ["macos", "windows"])
+def test_platform_cache_tracks_compiler_inputs_not_unrelated_workflow_edits(platform: str) -> None:
+    steps = composite_action_steps(f"ci-job-{platform}-native-runtime")
     identify = next(step for step in steps if step.get("id") == "runtime-platform")
     restore = next(step for step in steps if step.get("id") == "runtime-cache")
     assert "scripts.ci.native_cache_environment" in identify["run"]
