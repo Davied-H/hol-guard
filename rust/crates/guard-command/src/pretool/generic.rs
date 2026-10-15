@@ -707,6 +707,11 @@ fn evaluate_envelope(
         _ => result,
     };
     let pre_floor = (result.reason_code.clone(), result.minimum_action.clone());
+    let floor_context = super::PathContext {
+        home_dir,
+        cwd,
+        ..context
+    };
     if event == "PreToolUse"
         // Existing helper-context review may delegate only to enforced
         // read-only containment below; do not replace that protection.
@@ -714,7 +719,7 @@ fn evaluate_envelope(
         && command_model.is_some_and(|model| {
             super::git_read_floor::requires_review(
                 model,
-                super::PathContext { home_dir, cwd, ..context },
+                floor_context,
                 deadline,
                 execution_environment,
             )
@@ -729,7 +734,11 @@ fn evaluate_envelope(
         result.decision = "deny".into();
         result.explicitly_benign = false;
         result.reason_code = "native_git_execution_context_review".into();
-        result.reason = "HOL Guard requires review because this Git read may execute a configured helper, or its effective configuration could not be verified.".into();
+        result.reason = command_model
+            .and_then(|model| {
+                git_read_order_reason(model, floor_context, deadline, execution_environment)
+            })
+            .unwrap_or_else(|| "HOL Guard requires review because this Git read may execute a configured helper, or its effective configuration could not be verified.".into());
     }
     let contained_test_reason = command_model.and_then(|model| {
         super::restricted_tests::readonly_test_reason(model).or_else(|| {
@@ -872,4 +881,47 @@ fn extension_rule_matched(result: &PreToolResultV1) -> bool {
             .iter()
             .any(|row| !row.effective_segment_indexes.is_empty())
     })
+}
+
+/// The Git floor's reason when every Git read was proven helper-free on its
+/// own and only an earlier step kept that proof from carrying over. Agents
+/// given the generic helper reason stopped using Git altogether; naming the
+/// step tells them the read is fine as its own command.
+fn git_read_order_reason(
+    model: &crate::CanonicalCommandV1,
+    context: super::PathContext<'_>,
+    deadline: Option<Instant>,
+    execution_environment: Option<&guard_contracts::GuardExecutionEnvironmentV1>,
+) -> Option<String> {
+    let steps = super::git_read_floor::unsettled_steps_before_reads(
+        model,
+        context,
+        deadline,
+        execution_environment,
+    )?;
+    let named: Vec<String> = steps
+        .iter()
+        .take(3)
+        .map(|index| {
+            format!(
+                "{} ({})",
+                index + 1,
+                super::compound_reason::step_label(&model.segments[*index])
+            )
+        })
+        .collect();
+    let more = if steps.len() > named.len() {
+        " and others"
+    } else {
+        ""
+    };
+    let (noun, verb) = if steps.len() == 1 {
+        ("Step", "runs")
+    } else {
+        ("Steps", "run")
+    };
+    Some(format!(
+        "HOL Guard requires review because {noun} {}{more} {verb} before the Git read and could not be proven to leave Git's configuration unchanged. The Git read was checked and runs no configured helper; run it as its own command.",
+        named.join(", "),
+    ))
 }
