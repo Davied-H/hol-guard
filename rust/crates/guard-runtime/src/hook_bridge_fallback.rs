@@ -31,10 +31,6 @@ pub(crate) enum Fallback {
     DaemonUnanswered,
     /// The answer needs Python to finish it.
     SemanticHandoff,
-    /// Recovering from a recoverable failure did not succeed.
-    RecoverFailed,
-    /// The failure was not one the bridge can recover from.
-    NonRecoverable,
     /// The hook input did not match the native contract.
     ContractDrift,
 }
@@ -46,8 +42,6 @@ impl Fallback {
             Self::ClientMode => "client_mode",
             Self::DaemonUnanswered => "daemon_unanswered",
             Self::SemanticHandoff => "semantic_handoff",
-            Self::RecoverFailed => "recover_failed",
-            Self::NonRecoverable => "non_recoverable",
             Self::ContractDrift => "contract_drift",
         }
     }
