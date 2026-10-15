@@ -37,6 +37,7 @@ pub mod portable_command_source_fixtures;
 pub mod pretool_agent_metadata;
 pub mod pretool_brew_reads;
 pub mod pretool_bun_eval;
+pub mod pretool_cd_canonical_workspace;
 pub mod pretool_chain_temporary_files;
 pub mod pretool_contained_script_tests;
 pub mod pretool_contained_tests;
@@ -124,6 +125,7 @@ pub mod pretool_omp_workspace_search;
 pub mod pretool_omp_yield_reports;
 pub mod pretool_outside_workspace_files;
 pub mod pretool_package_directory_flags;
+pub mod pretool_package_script_routes;
 pub mod pretool_parent_relative_writes;
 pub mod pretool_pi_tools;
 pub mod pretool_private_temporary_workspace;
@@ -163,6 +165,7 @@ pub mod privileged_wrapper_floor;
 pub mod reapproval_copy;
 pub mod sed_workflow_boundaries;
 pub mod sfrs_conformance;
+pub mod workspace_sandbox_tool_path;
 pub mod workspace_write_boundaries;
 
 #[test]
