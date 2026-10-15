@@ -1,5 +1,22 @@
 use std::path::Path;
 
+/// The name Windows opens for a path component. Win32 drops trailing dots and
+/// spaces, and `name::$DATA` is the file's default stream, so `.env.`,
+/// `id_rsa ` and `.env::$DATA` all open the same file as the plain name.
+/// A name of only dots and spaces (`..`, the redacted `...`) is kept as is.
+pub fn win32_name(part: &str) -> &str {
+    let part = match part.len().checked_sub(7) {
+        Some(at) if part.is_char_boundary(at) && part[at..].eq_ignore_ascii_case("::$data") => {
+            &part[..at]
+        }
+        _ => part,
+    };
+    match part.trim_end_matches(['.', ' ']) {
+        "" => part,
+        name => name,
+    }
+}
+
 pub fn sensitive_path_family(path: &Path) -> Option<(&'static str, &'static str)> {
     let normalized = path
         .to_string_lossy()
@@ -7,6 +24,7 @@ pub fn sensitive_path_family(path: &Path) -> Option<(&'static str, &'static str)
         .to_ascii_lowercase();
     let parts: Vec<&str> = normalized
         .split('/')
+        .map(win32_name)
         .filter(|part| !part.is_empty())
         .collect();
     let basename = parts.last().copied().unwrap_or_default();
