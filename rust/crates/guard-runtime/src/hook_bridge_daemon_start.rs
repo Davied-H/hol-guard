@@ -34,7 +34,7 @@ const MINIMUM_START: Duration = Duration::from_millis(1500);
 /// Hook time the start command never uses, so one request still fits.
 const RETRY_RESERVE: Duration = Duration::from_secs(1);
 /// The shortest request worth making after a pause.
-const MINIMUM_REQUEST: Duration = Duration::from_millis(500);
+pub(crate) const MINIMUM_REQUEST: Duration = Duration::from_millis(500);
 /// The longest the bridge waits for a started daemon to come up.
 const START_WAIT: Duration = Duration::from_secs(8);
 // A daemon comes up within a few seconds; a short poll keeps a hook from

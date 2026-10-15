@@ -22,7 +22,7 @@ use crate::claude_hook_bridge_url::{
     assert_loopback_http_url, endpoint_query, state_names_loopback_port, state_path_for_query,
 };
 use crate::codex_hook_bridge_direct::{direct_answer, CLAUDE_CODE};
-use crate::hook_bridge_daemon_start::{await_daemon, Attempt};
+use crate::hook_bridge_daemon_start::{await_daemon, Attempt, MINIMUM_REQUEST};
 use crate::hook_env_stamp::{current_environment, stamp_hook_input_text, Stamp};
 use crate::hook_process_spawn::{isolated_hook_environment, run_isolated_hook_process};
 
@@ -223,13 +223,24 @@ impl Bridge<'_> {
         {
             // The recovery command only schedules the daemon start: wait for
             // a daemon that proves its identity before sending the hook again.
-            await_daemon(self.deadline, || {
-                let timeout = capped(self.deadline, DAEMON_IO_TIMEOUT);
+            // A probe never eats the time the hook itself needs.
+            let probe_end = self
+                .deadline
+                .checked_sub(MINIMUM_REQUEST)
+                .unwrap_or(self.deadline);
+            let started = await_daemon(self.deadline, || {
+                let timeout = capped(probe_end, DAEMON_IO_TIMEOUT);
                 match daemon_proves_identity(state_path, &self.data, timeout) {
                     Err(error) if error.is_recoverable() => Attempt::NotUp,
                     _ => Attempt::Settled(()),
                 }
             });
+            if started.is_none() {
+                return degraded(
+                    &format!("{reason}; daemon recovery retry failed: the restarted daemon did not answer in time"),
+                    &self.data,
+                );
+            }
             let malformed = format!("{reason}; recovered daemon returned malformed hook JSON");
             match self.exchange(state_path, self.deadline, &malformed) {
                 Ok(body) => return body,
