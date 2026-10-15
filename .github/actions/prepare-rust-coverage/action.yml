@@ -7,6 +7,9 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Prepare current source trust defaults
+      shell: bash
+      run: python3 scripts/refresh_extension_artifacts.py --trust-only
     - name: Initialize pinned Rust analysis toolchain
       shell: bash
       run: bash scripts/ci/setup_sonar_rust.sh

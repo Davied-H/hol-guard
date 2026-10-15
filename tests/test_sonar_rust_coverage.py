@@ -131,6 +131,10 @@ def test_coverage_retains_all_checked_tests_and_uses_ci_scheduling(tmp_path: Pat
 
 def test_dependency_cache_tracks_the_instrumented_build_profile() -> None:
     action = yaml.safe_load((ROOT / ".github/actions/prepare-rust-coverage/action.yml").read_text())
+    steps = action["runs"]["steps"]
+    trust = next(step for step in steps if "refresh_extension_artifacts.py --trust-only" in step.get("run", ""))
+    compile_step = next(step for step in steps if step.get("name") == "Generate current-checkout Rust coverage")
+    assert steps.index(trust) < steps.index(compile_step)
     cache = next(step for step in action["runs"]["steps"] if step.get("name") == "Cache Rust analysis dependencies")
     assert (
         "hashFiles('scripts/ci/sonar_rust_profile.sh', 'scripts/ci/rust_test_compiler.sh', 'rust/Cargo.toml')"
