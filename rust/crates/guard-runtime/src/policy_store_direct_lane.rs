@@ -297,8 +297,10 @@ impl PolicySnapshotStore {
         {
             return Err(DirectLaneDefer::Unbound);
         }
+        let (ack, waited) = self.settled_direct_lane_ack(binding.generation)?;
+        // The settle wait can sleep, so the lease is judged against the clock
+        // after it, and after a wait the snapshot must still be the bound one.
         let now = now_ms().map_err(|_| DirectLaneDefer::SnapshotUnavailable)?;
-        let ack = self.settled_direct_lane_ack(binding.generation)?;
         if ack.schema != DIRECT_LANE_ACK_SCHEMA
             || ack.generation != binding.generation
             || ack.policy_digest != binding.policy_digest
@@ -309,30 +311,52 @@ impl PolicySnapshotStore {
         if ack.lease_expires_at_ms <= now {
             return Err(DirectLaneDefer::AckExpired);
         }
+        if waited {
+            let current = self
+                .current_admitted_snapshot()
+                .map_err(|_| DirectLaneDefer::SnapshotUnavailable)?;
+            if current.generation != binding.generation
+                || current.policy_digest != binding.policy_digest
+            {
+                return Err(DirectLaneDefer::Unbound);
+            }
+            return Ok(current);
+        }
         Ok(snapshot)
     }
 
     /// The ACK file, re-read briefly while it still names a generation older
     /// than the bound one. The publisher pushes the binding before it writes
     /// the ACK, so a hook in that window would otherwise take the daemon
-    /// path and wait there for the same ACK. The wait is spent once per
-    /// generation: an ACK that never catches up delays one hook, not each.
-    fn settled_direct_lane_ack(&self, generation: u64) -> Result<DirectLaneAckV1, DirectLaneDefer> {
+    /// path and wait there for the same ACK. Only a live ACK from the
+    /// publisher is worth waiting on, and the first hook to see a generation
+    /// claims its wait: an ACK that never catches up delays one hook, and
+    /// hooks that arrive meanwhile defer at once.
+    fn settled_direct_lane_ack(
+        &self,
+        generation: u64,
+    ) -> Result<(DirectLaneAckV1, bool), DirectLaneDefer> {
+        let mut ack = self.read_direct_lane_ack()?;
+        if ack.generation >= generation
+            || !live_publisher_ack(&ack)
+            || self
+                .direct_lane_ack_wait_claimed
+                .fetch_max(generation, Ordering::AcqRel)
+                >= generation
+        {
+            return Ok((ack, false));
+        }
         let deadline = Instant::now() + DIRECT_LANE_ACK_SETTLE;
         loop {
-            let ack = self.read_direct_lane_ack()?;
-            if ack.generation >= generation
-                || self.direct_lane_ack_waited.load(Ordering::Acquire) >= generation
-            {
-                return Ok(ack);
-            }
             let now = Instant::now();
             if now >= deadline {
-                self.direct_lane_ack_waited
-                    .fetch_max(generation, Ordering::AcqRel);
-                return Ok(ack);
+                return Ok((ack, true));
             }
             std::thread::sleep(DIRECT_LANE_ACK_SETTLE_POLL.min(deadline - now));
+            ack = self.read_direct_lane_ack()?;
+            if ack.generation >= generation {
+                return Ok((ack, true));
+            }
         }
     }
 
@@ -382,6 +406,16 @@ fn observe_input(path: &str) -> Option<DirectLaneStatV1> {
 #[cfg(not(unix))]
 fn observe_input(_path: &str) -> Option<DirectLaneStatV1> {
     None
+}
+
+/// Whether `ack` is one the publisher wrote and still renews.
+fn live_publisher_ack(ack: &DirectLaneAckV1) -> bool {
+    let Ok(now) = now_ms() else {
+        return false;
+    };
+    ack.schema == DIRECT_LANE_ACK_SCHEMA
+        && ack.lease_expires_at_ms > now
+        && ack.lease_expires_at_ms <= now.saturating_add(DIRECT_LANE_ACK_MAX_LEASE_MS)
 }
 
 #[path = "policy_store_direct_lane_subdirectory.rs"]
