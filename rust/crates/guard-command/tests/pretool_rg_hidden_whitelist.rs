@@ -29,13 +29,16 @@ fn write(path: PathBuf, text: &str) {
 /// A home holding one repository per name, each with a root `.env` and
 /// the ignore files given for it.
 fn fixture(repositories: &[(&str, &[(&str, &str)])]) -> Fixture {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/pretool-rg-hidden-whitelist")
-        .join(format!(
-            "home-{}-{}",
-            std::process::id(),
-            COUNTER.fetch_add(1, Ordering::Relaxed)
-        ));
+    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target");
+    fixture_in(&base, repositories)
+}
+
+fn fixture_in(base: &Path, repositories: &[(&str, &[(&str, &str)])]) -> Fixture {
+    let root = base.join("pretool-rg-hidden-whitelist").join(format!(
+        "home-{}-{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
     std::fs::create_dir_all(&root).unwrap();
     let root = std::fs::canonicalize(root).unwrap();
     let home = root.join("home");
@@ -207,6 +210,87 @@ fn rg_file_types_that_name_dotfiles_stay_reviewed() {
             "rg -n foo --type-add 'rust:include:sh' -t rust",
             "rg -n foo --ignore-file other.ignore",
             "rg -n foo --ignore-file=other.ignore",
+        ],
+        "review",
+    );
+}
+
+#[test]
+fn a_wildcard_negation_that_matches_a_hidden_directory_keeps_rg_reviewed() {
+    // `!.c[a]rgo` re-includes the whole `.cargo` directory, credentials and
+    // all, just as `!.cargo` would.
+    let fixture = fixture(&[
+        (
+            "bracket",
+            &[
+                (".gitignore", "!.c[a]rgo\n"),
+                (".cargo/credentials.toml", "token = \"synthetic\"\n"),
+            ],
+        ),
+        (
+            "question",
+            &[
+                (".ignore", "!.confi?/\n"),
+                (".config/app.toml", "token = 1\n"),
+            ],
+        ),
+        // The same wildcard with nothing hidden to match stays allowed.
+        ("unmatched", &[(".gitignore", "!.c[a]rgo\n")]),
+    ]);
+    assert_actions(&fixture, "bracket", &["rg -n foo"], "review");
+    assert_actions(&fixture, "question", &["rg -n foo"], "review");
+    std::fs::remove_file(fixture.home.join("unmatched/.env")).unwrap();
+    assert_actions(&fixture, "unmatched", &["rg -n foo"], "allow");
+}
+
+#[test]
+fn a_gitignore_outside_any_repository_is_not_honored() {
+    // The checkout's own `target` directory sits inside a repository.
+    let fixture = fixture_in(&std::env::temp_dir(), &[]);
+    let plain = fixture.home.join("notes");
+    write(plain.join(".gitignore"), "!.env\n");
+    write(plain.join(".env"), "KEY=synthetic\n");
+    write(plain.join("todo.md"), "todo\n");
+    assert_actions(&fixture, "notes", &["rg -n foo"], "allow");
+    // A repository below it honors its own `.gitignore` all the way down.
+    let nested = plain.join("app");
+    std::fs::create_dir_all(nested.join(".git")).unwrap();
+    write(nested.join("src/.gitignore"), "!.env\n");
+    write(nested.join("src/.env"), "KEY=synthetic\n");
+    assert_actions(&fixture, "notes", &["rg -n foo"], "review");
+}
+
+#[test]
+fn a_pattern_file_search_checks_the_roots_after_it() {
+    let fixture = fixture(&[(
+        "nested",
+        &[
+            ("src/.rgignore", "!.env\n"),
+            ("src/.env", "KEY=synthetic\n"),
+            ("patterns.txt", "KEY\n"),
+            ("docs/guide.md", "guide\n"),
+        ],
+    )]);
+    // The root after the pattern file is what `rg` searches, so a root
+    // beside the re-including file stays allowed.
+    assert_actions(
+        &fixture,
+        "nested",
+        &[
+            "rg -f patterns.txt docs",
+            "rg --file patterns.txt docs",
+            "rg -fpatterns.txt docs",
+            "rg docs -f patterns.txt",
+        ],
+        "allow",
+    );
+    assert_actions(
+        &fixture,
+        "nested",
+        &[
+            "rg -f patterns.txt src",
+            "rg --file patterns.txt src",
+            "rg -fpatterns.txt src",
         ],
         "review",
     );

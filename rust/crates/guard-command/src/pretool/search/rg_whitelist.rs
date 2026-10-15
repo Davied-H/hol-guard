@@ -131,6 +131,10 @@ fn outer_sources_safe(
     // Each file with the directory its rules are relative to.
     let mut files: Vec<(PathBuf, PathBuf, bool)> = Vec::new();
     let mut repository = None;
+    // Ancestors past the limit would go unread.
+    if root.ancestors().count() > MAX_DEPTH {
+        return None;
+    }
     for directory in root.ancestors().take(MAX_DEPTH) {
         if directory != root {
             for name in [".ignore", ".rgignore"] {
@@ -165,9 +169,9 @@ fn outer_sources_safe(
     }
     let mut rules = Vec::new();
     for (file, base, git) in files {
-        let found = ignore_rules(&file, &base, git, negations)?;
+        // `rg` honors Git ignore files only inside a repository.
         if !git || repository.is_some() {
-            rules.extend(found);
+            rules.extend(ignore_rules(&file, &base, git, negations)?);
         }
     }
     Some((repository.is_some(), rules))
@@ -218,9 +222,9 @@ fn walk(
 ) -> Option<(Vec<String>, Vec<String>)> {
     let mut pruned = Vec::new();
     let mut hidden = Vec::new();
-    let mut pending = vec![(root.to_path_buf(), 0usize, outer)];
+    let mut pending = vec![(root.to_path_buf(), 0usize, outer, repository)];
     let mut entries = 0usize;
-    while let Some((directory, depth, mut rules)) = pending.pop() {
+    while let Some((directory, depth, mut rules, in_repository)) = pending.pop() {
         if depth > MAX_DEPTH {
             return None;
         }
@@ -229,12 +233,17 @@ fn walk(
             // A nested repository's own `.gitignore` replaces the outer ones.
             rules.retain(|rule| !rule.git);
         }
+        let in_repository = in_repository || nested;
         for name in IGNORE_FILES {
             let git = name == ".gitignore";
-            let found = ignore_rules(&directory.join(name), &directory, git, negations)?;
             // `rg` honors a `.gitignore` only inside a repository.
-            if !git || repository || nested {
-                rules.extend(found);
+            if !git || in_repository {
+                rules.extend(ignore_rules(
+                    &directory.join(name),
+                    &directory,
+                    git,
+                    negations,
+                )?);
             }
         }
         for entry in std::fs::read_dir(&directory).ok()? {
@@ -259,7 +268,7 @@ fn walk(
                 pruned.push(name.to_owned());
                 continue;
             }
-            pending.push((path, depth + 1, rules.clone()));
+            pending.push((path, depth + 1, rules.clone(), in_repository));
         }
     }
     Some((pruned, hidden))
@@ -322,11 +331,10 @@ fn record_negation(pattern: &str, negations: &mut Negations) {
         negations.all.push(component.to_owned());
         let screened = !super::sensitive_path_argument(component)
             && !super::glob_can_select_sensitive_path(component);
-        let harmless = if plain_name(component) {
-            !component.starts_with('.') || (screened && benign_hidden(component))
-        } else {
-            screened
-        };
+        // A wildcard such as `.c[a]rgo` can re-include a whole hidden
+        // directory, so it counts whenever it matches a hidden name.
+        let harmless = plain_name(component)
+            && (!component.starts_with('.') || (screened && benign_hidden(component)));
         if !harmless {
             negations.risky.push(component.to_owned());
         }

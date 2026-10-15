@@ -88,3 +88,7 @@ path = "tests/shim_admin_vectors.rs"
 [[test]]
 name = "pretool_rg_hidden_whitelist"
 path = "tests/pretool_rg_hidden_whitelist.rs"
+
+[[test]]
+name = "pretool_search_pattern_options"
+path = "tests/pretool_search_pattern_options.rs"
