@@ -404,10 +404,7 @@ fn delegated_deadline_failure_is_not_an_administrator_disable() {
         result.reason_code,
         "native_command_extension_evaluation_failed"
     );
-    assert_eq!(
-        result.reason,
-        "HOL Guard could not match this command to the installed extension controls, so it stays blocked. A command that runs a script or another program (such as `bash script.sh`, `env`, `xargs` or `node -e`) cannot be matched. Run the program directly, or use a built-in tool. If an ordinary command keeps getting this, ask the user to run `hol-guard doctor`."
-    );
+    assert_eq!(result.reason, super::floor::EXPIRED_DEADLINE_REASON);
 }
 
 #[test]
@@ -448,8 +445,32 @@ fn expired_extension_deadline_fail_closes_a_proven_benign_command() {
         result.reason_code,
         "native_command_extension_evaluation_failed"
     );
+    assert_eq!(result.reason, super::floor::EXPIRED_DEADLINE_REASON);
+}
+
+#[test]
+fn only_an_expired_deadline_gets_the_try_again_reason() {
+    let intrinsic = crate::pretool::evaluate_pre_tool_envelope(
+        "claude-code",
+        "PreToolUse",
+        &serde_json::json!({"tool_name": "Bash", "tool_input": {"command": "pwd"}}),
+    );
+    let failed = |deadline| {
+        let mut result = intrinsic.clone();
+        strengthen(
+            &mut result,
+            "block",
+            "native_command_extension_evaluation_failed",
+        );
+        super::floor::explain_expired_deadline(&mut result, deadline);
+        result.reason
+    };
+    let unmatched = failed(None);
+    assert!(unmatched.contains("cannot be matched"), "{unmatched}");
+    let pending = failed(Some(Instant::now() + std::time::Duration::from_secs(60)));
+    assert_eq!(pending, unmatched);
     assert_eq!(
-        result.reason,
-        "HOL Guard could not match this command to the installed extension controls, so it stays blocked. A command that runs a script or another program (such as `bash script.sh`, `env`, `xargs` or `node -e`) cannot be matched. Run the program directly, or use a built-in tool. If an ordinary command keeps getting this, ask the user to run `hol-guard doctor`."
+        failed(Some(Instant::now() - std::time::Duration::from_secs(1))),
+        super::floor::EXPIRED_DEADLINE_REASON
     );
 }

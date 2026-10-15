@@ -700,6 +700,12 @@ fn secret_selecting_globs_are_a_fixed_floor() {
         "dd if=.en{v..v} of=copy",
         "dd if=.e{n..n}{v..v} of=copy",
         "dd if={.env,x} of=copy",
+        // An `=` or whitespace inside a pattern can still match `.env`.
+        "git diff --no-index [=.]env README.md",
+        "git diff --no-index {=,.}env README.md",
+        "git log -p -1 -- '[ .]env'",
+        "git log -p -1 -- '{ ,.}env'",
+        "git log -p -1 -- 'my dir/.en?'",
     ] {
         assert!(fixed_command_floor(&model(command)), "{command}");
     }
@@ -710,6 +716,8 @@ fn secret_selecting_globs_are_a_fixed_floor() {
         "gh api graphql -f query='{viewer{login}}'",
         "gh pr comment 1 --body 'see *.env and .en{v..v}'",
         "dd if=out.* of=copy",
+        "gh pr comment 1 --body 'fix the [.]env loader'",
+        "gh api graphql -f query='query { viewer { login } }'",
     ] {
         assert!(!fixed_command_floor(&model(command)), "{command}");
     }

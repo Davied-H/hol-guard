@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::time::Instant;
 
 use guard_contracts::{NativeCommandPermissionObservationV1, PreToolResultV1};
 
@@ -89,6 +90,18 @@ pub(super) fn strengthen(result: &mut PreToolResultV1, action: &str, reason: &st
         .to_owned();
     }
 }
+
+/// An extension check that ran out of time is not a command Guard cannot
+/// match, so the agent is told to try again rather than to rewrite it.
+pub(super) fn explain_expired_deadline(result: &mut PreToolResultV1, deadline: Option<Instant>) {
+    if result.reason_code == "native_command_extension_evaluation_failed"
+        && deadline.is_some_and(|limit| Instant::now() >= limit)
+    {
+        result.reason = EXPIRED_DEADLINE_REASON.to_owned();
+    }
+}
+
+pub(super) const EXPIRED_DEADLINE_REASON: &str = "HOL Guard ran out of time checking this command against the installed extension controls, so it stays blocked. This is usually temporary while the machine is busy: run the same command again in a moment. If it keeps happening, run each chained step as its own command, or ask the user to run `hol-guard doctor`.";
 
 /// Tell the user how to restore protection when an unhealthy local authority,
 /// not an administrator lockdown, is what blocks every command. Acknowledging

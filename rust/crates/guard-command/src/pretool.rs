@@ -221,28 +221,59 @@ fn names_guard_outside_message(segment: &crate::CommandSegmentV1) -> bool {
 /// A glob or brace pattern, other than a commit message, that the shell or a
 /// Git pathspec could expand to a secret file name. Rust reviews such a read
 /// as an unproven shape rather than as secret access, so without this floor
-/// an explicit Allow would settle `git diff --no-index .en? README.md`. Text
-/// with whitespace, such as a comment body or a query, is not a path. A
-/// `name=value` field that is not an option is screened only for a brace
-/// the shell expands, one with `..` or a comma, in a path-like value:
-/// `if=.e{n..n}{v..v}` becomes `if=.env`, while a `*` or `?` there matches
-/// only names that start with `if=`, and a compact GraphQL
-/// `query=mutation{...}` is not a path.
+/// an explicit Allow would settle `git diff --no-index .en? README.md`.
+///
+/// Two kinds of text are not screened as paths:
+/// - Text whose last path component has whitespace outside any `[...]` or
+///   `{...}`, such as a comment body or a query. A match would have to hold
+///   that whitespace literally. Whitespace inside a class (`'[ .]env'`) can
+///   still match `.env`, so it is screened.
+/// - A `name=value` field whose name is a plain word and that is not an
+///   option. Only its value is screened, and only for a brace the shell
+///   expands, one with `..` or a comma, in a path-like value:
+///   `if=.e{n..n}{v..v}` becomes `if=.env`, while a `*` or `?` there matches
+///   only names that start with `if=`, and a compact GraphQL
+///   `query=mutation{...}` is not a path. An `=` inside a pattern
+///   (`[=.]env`, `{=,.}env`) is not a field, so the whole word is screened.
 fn selects_secret_outside_message(segment: &crate::CommandSegmentV1) -> bool {
     arguments_outside_message(segment).any(|argument| {
         let path_like = match argument.split_once('=') {
-            Some(_) if argument.starts_with('-') => true,
-            Some((_, value)) => {
+            Some((name, value)) if !argument.starts_with('-') && plain_field_name(name) => {
                 value.contains('{')
                     && (value.contains("..") || value.contains(','))
                     && !value.contains(['(', ')', '"', ':'])
             }
-            None => true,
+            _ => true,
         };
         argument.contains(['*', '?', '[', '{'])
-            && !argument.contains(char::is_whitespace)
+            && !whitespace_outside_patterns(argument.rsplit('/').next().unwrap_or(argument))
             && path_like
             && sensitive_read_path_argument(argument)
+    })
+}
+
+/// A field name such as `if`, `query` or `user.name`: no glob or brace
+/// character, so the `=` after it cannot be part of a pattern.
+fn plain_field_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
+}
+
+/// Whether `text` has whitespace outside every `[...]` class and `{...}`
+/// brace.
+fn whitespace_outside_patterns(text: &str) -> bool {
+    let (mut class, mut brace) = (false, 0usize);
+    text.chars().any(|c| {
+        match c {
+            '[' if !class => class = true,
+            ']' if class => class = false,
+            '{' if !class => brace += 1,
+            '}' if !class && brace > 0 => brace -= 1,
+            _ => return c.is_whitespace() && !class && brace == 0,
+        }
+        false
     })
 }
 

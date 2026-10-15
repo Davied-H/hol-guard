@@ -315,6 +315,7 @@ fn proved_listing_output_is_released_without_lowering_scans_or_floors() {
     }
 }
 
+#[cfg(unix)]
 #[test]
 fn read_only_language_server_output_is_released_like_a_file_read() {
     struct RemoveOnDrop(std::path::PathBuf);
