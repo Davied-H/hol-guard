@@ -107,9 +107,15 @@ fn scratch(label: &str) -> std::path::PathBuf {
 /// A guard home with the daemon auth token file the client may sign a
 /// loopback review link with, or without it.
 fn guard_home(label: &str, tokened: bool) -> std::path::PathBuf {
+    use std::os::unix::fs::PermissionsExt;
     let root = scratch(label);
     if tokened {
-        std::fs::write(root.join("daemon-auth-token"), "3f".repeat(32)).unwrap();
+        // The client loads the token only from a private file in a private
+        // directory.
+        std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let token = root.join("daemon-auth-token");
+        std::fs::write(&token, "3f".repeat(32)).unwrap();
+        std::fs::set_permissions(&token, std::fs::Permissions::from_mode(0o600)).unwrap();
     }
     root
 }
@@ -258,11 +264,21 @@ fn answers_match_the_client_for_every_vector() {
     for vector in vectors {
         let event = vector["event"].as_str().unwrap();
         let response = vector["response"].as_str().unwrap();
+        let Some(stdout) = vector["stdout"].as_str() else {
+            // The client signs review links and keeps lone surrogates, which
+            // the review and surrogate vectors check; anything else the
+            // bridge does not answer fails closed.
+            if !(response.contains("approval") || response.contains("\\ud800")) {
+                assert_eq!(
+                    answer(Kind::PreToolUse, event, response, &home),
+                    None,
+                    "{event:?} {response}"
+                );
+            }
+            continue;
+        };
         let code = vector["exit_code"].as_i64().unwrap();
-        let expected = Some((
-            vector["stdout"].as_str().unwrap().to_owned(),
-            i32::try_from(code).unwrap(),
-        ));
+        let expected = Some((stdout.to_owned(), i32::try_from(code).unwrap()));
         assert_eq!(
             answer(Kind::PreToolUse, event, response, &home),
             expected,

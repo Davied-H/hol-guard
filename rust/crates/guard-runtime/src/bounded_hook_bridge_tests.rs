@@ -342,7 +342,13 @@ fn a_started_daemon_answers_the_hook() {
     let route = route_hook(&starting_bridge(&home, &script), PRE_TOOL, soon());
 
     assert!(
-        matches!(route, Route::Respond { exit_code: 2, .. }),
+        // Copilot reports a deny on stdout and exits 0, as the client does.
+        matches!(
+            &route,
+            Route::Respond { stdout, exit_code: 0, .. }
+                if stdout.contains(r#""permissionDecision":"deny""#)
+                    && stdout.contains("blocked by policy")
+        ),
         "{route:?}"
     );
     assert!(daemon.join().unwrap().is_some());

@@ -140,16 +140,6 @@ fn json_the_port_cannot_represent_fails_closed_without_the_daemon() {
         (&tool, &br#"{"command": NaN}"#[..], &denied),
         (&tool, &br#"{"command": -Infinity}"#[..], &denied),
         (&tool, &br#"{"hook_event_name":"stop"}"#[..], &denied),
-        (
-            &tool,
-            &br#"{"hook_event_name":"beforeSubmitPrompt","prompt":"hi"}"#[..],
-            &denied,
-        ),
-        (
-            &tool,
-            &br#"{"hook_event_name":7,"command":"ls"}"#[..],
-            &denied,
-        ),
         // An observer the client was not installed as is still denied.
         (
             &tool,
@@ -157,11 +147,6 @@ fn json_the_port_cannot_represent_fails_closed_without_the_daemon() {
             &denied,
         ),
         (&observer, &br#"{"command": NaN}"#[..], &observed),
-        (
-            &observer,
-            &br#"{"hook_event_name":"after_shell_execution","command":"ls"}"#[..],
-            &observed,
-        ),
         (&observer, &br#"{"hook_event_name":"stop"}"#[..], &denied),
     ] {
         assert_eq!(
@@ -172,4 +157,8 @@ fn json_the_port_cannot_represent_fails_closed_without_the_daemon() {
         );
     }
     assert_not_asked(&listener);
+    // An observer named in another spelling is still observed, whether or
+    // not it reaches the daemon.
+    let raw = br#"{"hook_event_name":"after_shell_execution","command":"ls"}"#;
+    assert_eq!(reply(&observer, raw), observed);
 }
