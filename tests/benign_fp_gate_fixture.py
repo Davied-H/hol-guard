@@ -357,6 +357,28 @@ def build_fixture(root: Path) -> BenignFixture:
             _git(repository, "remote", "add", "origin", "https://github.com/example-org/service-api.git", home=home)
             _git(repository, "update-ref", "refs/remotes/origin/main", "HEAD", home=home)
     _session_worktree(org, home)
+    # Repositories whose `.gitignore` re-includes literal paths: an ordinary
+    # kept file and editor setting, and a `.env` template that stays reviewed.
+    for name, ignore, files in (
+        (
+            "web-console",
+            "dist/\n*.log\n!keep.log\n.vscode/*\n!.vscode/settings.json\n",
+            {"keep.log": "kept\n", ".vscode/settings.json": "{}\n", "src/index.ts": "export const route = 1;\n"},
+        ),
+        (
+            "billing-api",
+            ".env*\n!.env.example\n",
+            {".env.example": "TOKEN=synthetic-not-a-secret\n", "src/index.ts": "export const route = 2;\n"},
+        ),
+    ):
+        repository = home / "Code" / "ignore-rules" / name
+        repository.mkdir(parents=True)
+        _git(repository, "init", "--quiet", "--initial-branch=main", home=home)
+        _write(repository / ".gitignore", ignore)
+        for relative, text in files.items():
+            _write(repository / relative, text)
+        _git(repository, "add", "-A", home=home)
+        _git(repository, "commit", "--quiet", "-m", f"{name} base", home=home)
     # A non-repository parent under /tmp whose repository has a linked worktree beside the parent.
     tmp_org = Path(tempfile.mkdtemp(prefix="org.", dir=_system_tmp())).resolve() / "org"
     (tmp_org / "app").mkdir(parents=True)
