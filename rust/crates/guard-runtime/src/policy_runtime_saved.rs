@@ -72,9 +72,9 @@ where
         set(&mut lookup, IGNORED, field(&legacy_lookup, IGNORED).clone());
     }
     if let Some(legacy) = legacy {
-        let stronger = decision.as_ref().map_or(true, |current| {
-            severity(legacy.get("action")) > severity(current.get("action"))
-        });
+        let stronger = decision
+            .as_ref()
+            .is_none_or(|current| severity(legacy.get("action")) > severity(current.get("action")));
         if stronger {
             let merged = field(&lookup, IGNORED).clone();
             lookup = legacy_lookup;
@@ -226,7 +226,7 @@ where
     let keep = match scope {
         Some("workspace") => {
             decision_id == Some(spec.artifact_id.as_str())
-                && decision_hash.map_or(true, |hash| hash == spec.artifact_hash)
+                && decision_hash.is_none_or(|hash| hash == spec.artifact_hash)
         }
         Some("harness" | "global") => {
             let id = Some(spec.artifact_id.as_str());

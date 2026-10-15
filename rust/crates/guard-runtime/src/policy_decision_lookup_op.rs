@@ -34,6 +34,7 @@ use guard_policy_snapshot::policy_integrity::{
 
 use super::context_digest_json::write_canonical_json_with_limit;
 use crate::claim_reuse::approval_authority_revision;
+use crate::guard_store_json::dumps_sorted;
 
 pub(crate) const LOCAL_ONCE_LEGACY_AUTHORITY_KIND: &str = "legacy";
 const LOCAL_ONCE_INTEGRITY_PURPOSE: &str = "guard-local-once-approval";
@@ -172,8 +173,9 @@ pub(crate) fn runtime_scoped_exact_match_key(
     artifact_id: Option<&str>,
     runtime_exact_match_context: Option<&str>,
 ) -> Option<String> {
-    let id = artifact_id?.trim();
-    if id.is_empty() || id.starts_with("family:") {
+    // Python keys the untrimmed id; only the blank check strips.
+    let id = artifact_id?;
+    if id.trim().is_empty() || id.starts_with("family:") {
         return None;
     }
     let family_key = artifact_family_key(Some(id))?;
@@ -183,11 +185,11 @@ pub(crate) fn runtime_scoped_exact_match_key(
     let digest = match runtime_exact_match_context {
         None => sha256_hex(id.as_bytes()),
         Some(ctx) => sha256_hex(
-            canonical_json(&json!({
+            dumps_sorted(&json!({
                 "artifact_id": id,
                 "context": ctx,
                 "version": 2,
-            }))
+            }))?
             .as_bytes(),
         ),
     };
@@ -231,7 +233,7 @@ pub(crate) fn runtime_tool_action_portable_match_context(ctx: Option<&str>) -> O
         "wrapper_chain": wrapper_chain.unwrap_or_default(),
         "permission_mode": permission_mode,
     });
-    Some(canonical_json(&context))
+    dumps_sorted(&context)
 }
 
 /// `_global_runtime_scoped_exact_match_key`.
