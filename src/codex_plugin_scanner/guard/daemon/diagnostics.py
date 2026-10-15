@@ -136,6 +136,7 @@ class DaemonDiagnostics:
                 return self._thread is None or not self._thread.is_alive()
             self._closed = True
             if self._thread is None:
+                self._drain_pending()
                 self._handler.close()
                 return True
             self._stop_requested.set()
@@ -154,6 +155,29 @@ class DaemonDiagnostics:
         record.guard_event = event
         record.guard_detail = detail
         return record
+
+    def _drain_pending(self) -> None:
+        """Write queued records when no worker thread owns the handler.
+
+        Callers that run without a worker (one-shot CLI hooks) would otherwise
+        close the handler with their records still in the queue, which is how a
+        fail-closed deny can reach a harness with nothing written to the log.
+        """
+
+        handler = self._handler
+        if handler is None:
+            return
+        while True:
+            try:
+                record = self._queue.get_nowait()
+            except queue.Empty:
+                return
+            try:
+                handler.emit(record)
+            except Exception:
+                continue
+            finally:
+                self._queue.task_done()
 
     def _enqueue(self, record: logging.LogRecord) -> bool:
         if self._closed:

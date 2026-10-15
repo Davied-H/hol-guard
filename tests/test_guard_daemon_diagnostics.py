@@ -42,6 +42,23 @@ def test_daemon_diagnostics_records_exception_tracebacks(tmp_path: Path) -> None
     assert "RuntimeError: diagnostic failure" in payload["exception"]
 
 
+def test_daemon_diagnostics_without_a_worker_writes_queued_records_on_close(tmp_path: Path) -> None:
+    # One-shot callers (CLI hooks) have no worker thread to drain the queue, so
+    # close must write the pending records instead of discarding them.
+    diagnostics = DaemonDiagnostics(tmp_path / "guard-home", start_worker=False)
+
+    try:
+        raise RuntimeError("one shot failure")
+    except RuntimeError:
+        assert diagnostics.record_exception("native_hook_worker_exception", detail="harness=codex") is True
+    assert diagnostics.close(timeout_seconds=1.0) is True
+
+    payload = json.loads(diagnostics.log_path.read_text(encoding="utf-8").splitlines()[-1])
+    assert payload["event"] == "native_hook_worker_exception"
+    assert payload["detail"] == "harness=codex"
+    assert "one shot failure" in payload["exception"]
+
+
 def test_daemon_diagnostics_drops_records_when_the_queue_is_full_without_waiting(tmp_path: Path) -> None:
     diagnostics = DaemonDiagnostics(tmp_path / "guard-home", queue_capacity=1, start_worker=False)
 
