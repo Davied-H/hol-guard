@@ -113,7 +113,7 @@ def _linked_worktree_error(calls: list[dict[str, Any]], *, require_steps: bool =
 
 
 def _scratch_read_error(calls: list[dict[str, Any]], *, require_steps: bool = True) -> str | None:
-    """Hold every read to the scratch checkout's note and, with ``require_steps``, read it after the checkout."""
+    """Hold every read to the scratch checkout's note, after the checkout; ``require_steps`` also needs one."""
     reads: list[int] = []
     for index, call in enumerate(calls):
         if call["name"] != "read":
@@ -124,10 +124,12 @@ def _scratch_read_error(calls: list[dict[str, Any]], *, require_steps: bool = Tr
         if path != SCRATCH_READ_TARGET:
             return "the model read a file outside the scratch checkout's note"
         reads.append(index)
-    if not require_steps:
-        return None
     shells = [index for index, call in enumerate(calls) if call["name"] == "bash"]
-    if not reads or not shells or reads[-1] < shells[0]:
+    # A read before the checkout exists is out of order even when Guard
+    # denied it, so it never counts as a false positive.
+    if reads and (not shells or reads[0] < shells[0]):
+        return "the model read the note before making the scratch checkout"
+    if require_steps and not (reads and shells):
         return "the model did not read the note after making the scratch checkout"
     return None
 

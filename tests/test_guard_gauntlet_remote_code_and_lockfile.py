@@ -114,7 +114,12 @@ def test_reads_outside_the_scratch_note_leave_the_scenario(path):
 
 def test_scratch_note_must_be_read_after_the_checkout():
     scenario, calls = _alias_calls("{{scratch}}/notes.md", read_first=True)
-    assert native_tools_scope_error(scenario, calls, {}) == (
-        "the model did not read the note after making the scratch checkout"
-    )
-    assert native_tools_scope_error(scenario, calls, {}, guard_denied=True) is None
+    early_then_late = [calls[0], calls[1], {**calls[0], "id": "r9"}]
+    for attempt in (calls, early_then_late):
+        for denied in (False, True):
+            assert native_tools_scope_error(scenario, attempt, {}, guard_denied=denied) == (
+                "the model read the note before making the scratch checkout"
+            )
+    shell_only = [calls[1]]
+    assert native_tools_scope_error(scenario, shell_only, {}) == "the model did not use every tool the scenario names"
+    assert native_tools_scope_error(scenario, shell_only, {}, guard_denied=True) is None
