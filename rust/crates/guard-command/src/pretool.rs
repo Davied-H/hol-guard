@@ -40,6 +40,7 @@ pub(crate) mod workspace_git_environment;
 pub(crate) use directory_targets::safe_directory_target;
 mod awk_reads;
 mod base64_reads;
+mod brace_words;
 mod brew_reads;
 mod bun_eval;
 mod chain_temporary;
@@ -223,32 +224,55 @@ fn names_guard_outside_message(segment: &crate::CommandSegmentV1) -> bool {
 /// as an unproven shape rather than as secret access, so without this floor
 /// an explicit Allow would settle `git diff --no-index .en? README.md`.
 ///
-/// Two kinds of text are not screened as paths:
+/// Two kinds of text are not screened as a pattern:
 /// - Text whose last path component has whitespace outside any `[...]` or
 ///   `{...}`, such as a comment body or a query. A match would have to hold
 ///   that whitespace literally. Whitespace inside a class (`'[ .]env'`) can
 ///   still match `.env`, so it is screened.
 /// - A `name=value` field whose name is a plain word and that is not an
-///   option. Only its value is screened, and only for a brace the shell
-///   expands, one with `..` or a comma, in a path-like value:
-///   `if=.e{n..n}{v..v}` becomes `if=.env`, while a `*` or `?` there matches
-///   only names that start with `if=`, and a compact GraphQL
-///   `query=mutation{...}` is not a path. An `=` inside a pattern
-///   (`[=.]env`, `{=,.}env`) is not a field, so the whole word is screened.
+///   option. A `*` or `?` there matches only names that start with `if=`, so
+///   the field is screened only for the words its braces expand to, each as
+///   a literal path: `if=.e{n,m}v` makes `if=.env`, and
+///   `if={safe:dummy,.env}` makes `if=.env`. A `{v..v}` sequence is not
+///   followed and keeps the floor. An `=` inside a pattern (`[=.]env`,
+///   `{=,.}env`) is not a field, so the whole word is screened.
+///
+/// A class the glob check reads differently from the shell and Git is
+/// screened as `?`; see [`readable_pattern`].
 fn selects_secret_outside_message(segment: &crate::CommandSegmentV1) -> bool {
     arguments_outside_message(segment).any(|argument| {
-        let path_like = match argument.split_once('=') {
-            Some((name, value)) if !argument.starts_with('-') && plain_field_name(name) => {
-                value.contains('{')
-                    && (value.contains("..") || value.contains(','))
-                    && !value.contains(['(', ')', '"', ':'])
+        let last_component = argument.rsplit('/').next().unwrap_or(argument);
+        if !argument.contains(['*', '?', '[', '{']) || readable_pattern(last_component).1 {
+            return false;
+        }
+        match argument.split_once('=') {
+            Some((name, _)) if !argument.starts_with('-') && plain_field_name(name) => {
+                brace_words::shell_brace_words(argument).is_none_or(|words| {
+                    words.len() > 1
+                        && words.iter().any(|word| {
+                            word.split_once('=')
+                                .is_some_and(|(_, value)| sensitive_literal_path(value))
+                        })
+                })
             }
-            _ => true,
-        };
-        argument.contains(['*', '?', '[', '{'])
-            && !whitespace_outside_patterns(argument.rsplit('/').next().unwrap_or(argument))
-            && path_like
-            && sensitive_read_path_argument(argument)
+            _ => sensitive_read_path_argument(&readable_pattern(argument).0),
+        }
+    })
+}
+
+/// A path that names a secret or credential file as written, with no glob:
+/// `.env`, `id_rsa`, or `host:.env`.
+fn sensitive_literal_path(value: &str) -> bool {
+    let normalized = normalized_haystack(value);
+    [
+        normalized.as_str(),
+        normalized.rsplit_once(':').map_or("", |(_, tail)| tail),
+    ]
+    .iter()
+    .any(|candidate| {
+        let relative = Path::new(candidate.strip_prefix("./").unwrap_or(candidate));
+        sensitive_path_family(relative).is_some()
+            || guard_secure_fs::credential_named_path(relative)
     })
 }
 
@@ -261,20 +285,79 @@ fn plain_field_name(name: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
 }
 
-/// Whether `text` has whitespace outside every `[...]` class and `{...}`
-/// brace.
-fn whitespace_outside_patterns(text: &str) -> bool {
-    let (mut class, mut brace) = (false, 0usize);
-    text.chars().any(|c| {
-        match c {
-            '[' if !class => class = true,
-            ']' if class => class = false,
-            '{' if !class => brace += 1,
-            '}' if !class && brace > 0 => brace -= 1,
-            _ => return c.is_whitespace() && !class && brace == 0,
+/// `text` with each `[...]` class that the glob check cannot read replaced
+/// by `?`, and whether `text` has whitespace outside every class and brace.
+///
+/// The shell and Git take a `]` right after `[`, `[!` or `[^` as a member,
+/// let a backslash escape the next character, and read `[:space:]`-style
+/// names inside a class. So `'[] .]env'`, `'[\] .]env'` and
+/// `'[[:space:].]env'` are each one class that can match `.env`. The glob
+/// check closes a class at its first `]`, so it would read them as a short
+/// class and literal text. Such a class becomes `?`, which matches any one
+/// character. A `[` with no closing `]` is literal.
+fn readable_pattern(text: &str) -> (String, bool) {
+    let chars: Vec<char> = text.chars().collect();
+    let (mut read, mut spaced, mut brace, mut index) = (String::new(), false, 0usize, 0);
+    while let Some(&c) = chars.get(index) {
+        if c == '[' {
+            if let Some((end, readable)) = class_end(&chars, index) {
+                if readable {
+                    read.extend(&chars[index..=end]);
+                } else {
+                    read.push('?');
+                }
+                index = end + 1;
+                continue;
+            }
         }
-        false
-    })
+        match c {
+            '\\' if index + 1 < chars.len() => {
+                read.extend(&chars[index..index + 2]);
+                index += 2;
+                continue;
+            }
+            '{' => brace += 1,
+            '}' if brace > 0 => brace -= 1,
+            _ => spaced |= c.is_whitespace() && brace == 0,
+        }
+        read.push(c);
+        index += 1;
+    }
+    (read, spaced)
+}
+
+/// The index of the `]` that closes the class opened at `start`, and whether
+/// the glob check reads the class the same way: no leading `]`, no backslash
+/// and no `[:name:]`, `[=c=]` or `[.c.]` inside it.
+fn class_end(chars: &[char], start: usize) -> Option<(usize, bool)> {
+    let mut index = start + 1;
+    if matches!(chars.get(index), Some('!' | '^')) {
+        index += 1;
+    }
+    let mut readable = chars.get(index) != Some(&']');
+    if !readable {
+        index += 1;
+    }
+    while let Some(&c) = chars.get(index) {
+        match (c, chars.get(index + 1)) {
+            (']', _) => return Some((index, readable)),
+            ('\\', _) => {
+                readable = false;
+                index += 1;
+            }
+            ('[', Some(&kind @ (':' | '=' | '.'))) => {
+                readable = false;
+                if let Some(close) = (index + 2..chars.len().saturating_sub(1))
+                    .find(|&at| chars[at] == kind && chars[at + 1] == ']')
+                {
+                    index = close + 1;
+                }
+            }
+            _ => {}
+        }
+        index += 1;
+    }
+    None
 }
 
 /// A segment's arguments other than a `-m`/`--message` commit message.

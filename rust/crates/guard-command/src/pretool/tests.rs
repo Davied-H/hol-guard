@@ -706,6 +706,15 @@ fn secret_selecting_globs_are_a_fixed_floor() {
         "git log -p -1 -- '[ .]env'",
         "git log -p -1 -- '{ ,.}env'",
         "git log -p -1 -- 'my dir/.en?'",
+        // A leading `]`, a backslash or a `[:name:]` keeps the class whole.
+        "git log -p -1 -- '[] .]env'",
+        "git log -p -1 -- '[\\] .]env'",
+        "git log -p -1 -- '[!]a]env'",
+        "git log -p -1 -- '[[:space:].]env'",
+        "git log -p -1 -- '[[=.=]]env'",
+        // A brace value is screened per alternative, whatever else it holds.
+        "dd if={safe:dummy,.env} of=copy",
+        "dd if={x\\\"y,.env} of=copy",
     ] {
         assert!(fixed_command_floor(&model(command)), "{command}");
     }
@@ -718,6 +727,9 @@ fn secret_selecting_globs_are_a_fixed_floor() {
         "dd if=out.* of=copy",
         "gh pr comment 1 --body 'fix the [.]env loader'",
         "gh api graphql -f query='query { viewer { login } }'",
+        "gh pr comment 1 --body 'use arr[] and fix ]'",
+        "gh api repos/o/r/issues -f 'labels[]=bug'",
+        "git log -p -1 -- '[[:digit:]].ts'",
     ] {
         assert!(!fixed_command_floor(&model(command)), "{command}");
     }

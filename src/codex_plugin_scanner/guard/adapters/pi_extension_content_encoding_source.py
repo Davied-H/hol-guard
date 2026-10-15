@@ -275,6 +275,9 @@ function sourceFileRefForPostToolUse(
   const details = event.details;
   const detailsRecord = details !== null && typeof details === 'object' && !Array.isArray(details)
     ? (details as Record<string, unknown>) : undefined;
+  // Details that are present but not an object cannot say whether the
+  // output is one file, so the result stays inline.
+  if (details !== undefined && details !== null && detailsRecord === undefined) return null;
   if (detailsRecord?.isDirectory === true) return null;
   // When the whole path is not a file, OMP also splits it on commas or
   // spaces (`a.ts:1-5,b.ts`) and reads each part, naming every part in
