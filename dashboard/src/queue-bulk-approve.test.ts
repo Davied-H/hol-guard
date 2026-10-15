@@ -164,6 +164,19 @@ assert(
 );
 assert(requiresApprovalPasswordPrompt(true, false, "global") === true, "T-COOLDOWN-06: global scope always prompts");
 assert(requiresApprovalPasswordPrompt(true, true, "artifact") === true, "T-COOLDOWN-07: strict-all always prompts");
+const openWindowGate = { ...readyGate, cooldown_active: true };
+assert(
+  validateBulkApproveCredentials(openWindowGate, { password: "", totpCode: "" }) === null,
+  "T-BULK-13: an open cooldown window approves in bulk without the password",
+);
+assert(
+  buildBulkGateCredentials(openWindowGate, "", "")?.approval_password === undefined,
+  "T-BULK-14: an open window sends no empty password",
+);
+assert(
+  validateBulkApproveCredentials({ ...openWindowGate, strict_all_decisions: true }, { password: "", totpCode: "" }) !== null,
+  "T-BULK-15: strict-all still asks for the password inside the window",
+);
 const totpGate = { ...readyGate, totp_enabled: true };
 assert(
   validateBulkApproveCredentials(totpGate, { password: "", totpCode: "123456" }) === null,

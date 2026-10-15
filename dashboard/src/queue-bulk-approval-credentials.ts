@@ -7,6 +7,17 @@ export function isBulkApproveGateReady(
   return gate?.enabled === true && gate?.configured === true;
 }
 
+/** An open cooldown window already proves the password for non-strict approvals. */
+export function bulkApproveCooldownOpen(gate: GuardApprovalGatePublicConfig | null | undefined): boolean {
+  return (
+    isBulkApproveGateReady(gate) &&
+    gate?.totp_enabled !== true &&
+    gate?.strict_all_decisions !== true &&
+    (gate?.cooldown_seconds ?? 0) > 0 &&
+    gate?.cooldown_active === true
+  );
+}
+
 export function validateBulkApproveCredentials(
   gate: GuardApprovalGatePublicConfig | null | undefined,
   credentials: { password: string; totpCode: string },
@@ -17,7 +28,7 @@ export function validateBulkApproveCredentials(
   if (gate?.totp_enabled === true) {
     return credentials.totpCode.trim() ? null : "Enter your authenticator code to continue.";
   }
-  if (!credentials.password.trim()) {
+  if (!credentials.password.trim() && !bulkApproveCooldownOpen(gate)) {
     return "Enter your approval password to continue.";
   }
   return null;
@@ -36,6 +47,9 @@ export function buildBulkGateCredentials(
       approval_totp_code: totpCode.trim(),
       approval_gate_use_cooldown: false,
     };
+  }
+  if (!password.trim() && bulkApproveCooldownOpen(gate)) {
+    return { approval_gate_use_cooldown: true };
   }
   return {
     approval_password: password.trim(),
