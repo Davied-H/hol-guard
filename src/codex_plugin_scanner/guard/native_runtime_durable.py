@@ -26,7 +26,7 @@ from .native_runtime_values import NativeRuntimeIdentity
 
 DURABLE_RUNTIME_DIRECTORY = "native-runtime"
 _CHUNK_BYTES = 1024 * 1024
-_RUNTIME_MODE = 0o755
+_RUNTIME_MODE = 0o700
 _DIRECTORY_MODE = 0o700
 _HEX_DIGITS = frozenset("0123456789abcdef")
 
@@ -99,6 +99,8 @@ def _publish(identity: NativeRuntimeIdentity, target: Path) -> None:
             os.fsync(handle.fileno())
         if size != identity.size or digest.hexdigest() != identity.sha256:
             raise OSError("bundled native runtime changed while it was copied")
+        # The hook runtime only ever runs as its owner, so it is owner-only.
+        # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
         os.chmod(temporary, _RUNTIME_MODE)
         os.replace(temporary, target)
     finally:

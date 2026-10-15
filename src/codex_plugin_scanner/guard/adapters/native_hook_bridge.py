@@ -32,6 +32,8 @@ def native_hook_bridge_executable(feature: str, *, guard_home: Path | None = Non
         return None
     if not frozen:
         return status.identity.path
+    if guard_home is None:
+        return None
     from ..native_runtime_durable import durable_hook_runtime
 
     return durable_hook_runtime(status.identity, guard_home)
