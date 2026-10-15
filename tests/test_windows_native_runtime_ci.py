@@ -178,6 +178,13 @@ def test_windows_shim_admin_lane_replays_vectors_and_runs_the_native_op() -> Non
         "cargo test --manifest-path rust/Cargo.toml --locked -p guard-runtime-windows-process --test child_tree"
         in child_tree["run"]
     )
+    probe = next(step for step in steps if step.get("name") == "Probe an MCP server catalog natively on Windows")
+    assert probe["if"] == "inputs.shim-gate == 'native-op'"
+    assert not probe.get("continue-on-error", False)
+    assert (
+        "cargo test --manifest-path rust/Cargo.toml --locked -p guard-command --test mcp_stdio_probe_windows"
+        in probe["run"]
+    )
 
     required = load_ci_workflow()["jobs"]["required"]
     assert "windows-shim-admin" in required["needs"]

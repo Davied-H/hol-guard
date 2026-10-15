@@ -136,6 +136,19 @@ pub fn probe_env(
     env.insert("NPM_CONFIG_UPDATE_NOTIFIER".to_owned(), "false".to_owned());
     env.insert("npm_config_loglevel".to_owned(), "error".to_owned());
     env.extend(_package_cache_env(home_dir));
+    // Windows children need the system root (Winsock, node) and the
+    // command-interpreter settings `.cmd` launchers such as `npx.cmd` run
+    // through; temporary files stay in the probe directory.
+    #[cfg(windows)]
+    {
+        for name in ["SYSTEMROOT", "WINDIR", "COMSPEC", "PATHEXT"] {
+            if let Ok(value) = std::env::var(name) {
+                env.insert(name.to_owned(), value);
+            }
+        }
+        env.insert("TEMP".to_owned(), tmp.to_owned());
+        env.insert("TMP".to_owned(), tmp.to_owned());
+    }
     if let Some(extra) = extra {
         for (key, value) in extra {
             let name = key.trim();
@@ -429,9 +442,11 @@ pub fn resolve_argv_from_tokens(tokens: &[String], cwd: &Path) -> Option<Vec<Str
     Some(argv)
 }
 
-/// `shutil.which` equivalent over an explicit `search_path`.
+/// `shutil.which` equivalent over an explicit `search_path`: entries split
+/// on the platform separator, and on Windows each `PATHEXT` extension is
+/// tried, so `npx` resolves to `npx.cmd`.
 fn which(name: &str, search_path: &str) -> Option<String> {
-    if name.contains('/') {
+    if name.contains('/') || (cfg!(windows) && name.contains('\\')) {
         let p = Path::new(name);
         return if p.is_file() {
             Some(name.to_owned())
@@ -439,13 +454,16 @@ fn which(name: &str, search_path: &str) -> Option<String> {
             None
         };
     }
-    for dir in search_path.split(':') {
-        if dir.is_empty() {
+    let names = crate::mcp_decision::launcher_file_names(name);
+    for dir in std::env::split_paths(search_path) {
+        if dir.as_os_str().is_empty() {
             continue;
         }
-        let candidate = Path::new(dir).join(name);
-        if candidate.is_file() {
-            return Some(candidate.display().to_string());
+        for file in &names {
+            let candidate = dir.join(file);
+            if candidate.is_file() {
+                return Some(candidate.display().to_string());
+            }
         }
     }
     None
@@ -1482,6 +1500,18 @@ pub(crate) fn resource_uri(uri: &str) -> bool {
 // Child lifecycle (`_exchange_tools_list` + `_stop`).
 // ---------------------------------------------------------------------------
 
+/// The probe's working and temporary directory. Unix resolves symlinks as
+/// Python's probe does; Windows keeps the plain path, because a canonical
+/// `\\?\` path is not a usable working directory for `cmd.exe` launchers.
+fn probe_working_dir() -> PathBuf {
+    let temp = std::env::temp_dir();
+    if cfg!(windows) {
+        return temp;
+    }
+    temp.canonicalize()
+        .unwrap_or_else(|_| PathBuf::from("/tmp"))
+}
+
 /// Run the full bounded catalog probe for a resolved argv. Mirrors
 /// `_exchange_tools_list` + `run_mcp_catalog`: spawn as the root of a private
 /// process tree with `probe_env`, negotiate, paginate, gather skills, and
@@ -1501,10 +1531,7 @@ pub fn run_mcp_stdio_probe(
         return McpCatalog::reason_only("invalid_launch");
     }
     let timeout = timeout_seconds.max(0.05);
-    let tmp = match std::env::temp_dir().canonicalize() {
-        Ok(t) => t,
-        Err(_) => PathBuf::from("/tmp"),
-    };
+    let tmp = probe_working_dir();
     let env = probe_env(tmp.to_str().unwrap_or("/tmp"), extra_env, home_dir);
     let mut cmd = Command::new(&argv[0]);
     cmd.args(&argv[1..])
