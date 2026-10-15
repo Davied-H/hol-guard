@@ -15,7 +15,9 @@ def test_lto_experiment_cannot_replace_normal_determinism_or_publish_binaries() 
     assert benchmark["if"] == "inputs.profile_benchmark == true"
     assert benchmark["strategy"]["matrix"] == {"lto": ["fat", "thin"]}
     assert benchmark["strategy"]["fail-fast"] is False
-    assert benchmark["env"]["CARGO_PROFILE_RELEASE_CODEGEN_UNITS"] == "1"
+    units = workflow[True]["workflow_dispatch"]["inputs"]["benchmark_codegen_units"]
+    assert units["options"] == ["1", "16"] and units["default"] == "1"
+    assert benchmark["env"]["CARGO_PROFILE_RELEASE_CODEGEN_UNITS"] == "${{ inputs.benchmark_codegen_units || '1' }}"
     assert benchmark["steps"][0]["with"]["ref"] == "${{ inputs.source_sha || github.sha }}"
     size = next(step for step in benchmark["steps"] if step.get("name") == "Enforce the existing native size budget")
     assert "check_wheel_size.py --native-dir rust/target/release --platform manylinux_2_17_x86_64" in size["run"]

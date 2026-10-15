@@ -15,6 +15,12 @@ on:
         required: false
         type: boolean
         default: false
+      benchmark_codegen_units:
+        description: Code generation units for the profile benchmark only.
+        required: false
+        type: choice
+        options: ['1', '16']
+        default: '1'
 permissions:
   contents: read
 jobs:
@@ -197,7 +203,7 @@ jobs:
       SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
       REQUESTED_VERSION: ${{ inputs.version }}
       CARGO_PROFILE_RELEASE_LTO: ${{ matrix.lto }}
-      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: '1'
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: ${{ inputs.benchmark_codegen_units || '1' }}
       HOL_GUARD_BUILD_SHA: ${{ inputs.source_sha || github.sha }}
       HOL_GUARD_APPROVAL_ENROLLMENT_ROOT_HEX: ${{ vars.HOL_GUARD_APPROVAL_ENROLLMENT_ROOT_HEX }}
       HOL_GUARD_APPROVAL_ENROLLMENT_ROOT_FINGERPRINT_HEX: ${{ vars.HOL_GUARD_APPROVAL_ENROLLMENT_ROOT_FINGERPRINT_HEX }}
@@ -214,6 +220,10 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          case "$CARGO_PROFILE_RELEASE_CODEGEN_UNITS" in
+            1|16) ;;
+            *) echo "Unsupported benchmark code generation units" >&2; exit 1 ;;
+          esac
           version=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
           if [[ -n "$REQUESTED_VERSION" && "$REQUESTED_VERSION" != "$version" ]]; then
             echo "Profile benchmarks use the checked-in version without restamping" >&2
@@ -232,12 +242,13 @@ jobs:
           start=$SECONDS
           cargo build --manifest-path rust/Cargo.toml --locked --release -p hol-guard-runtime --bin hol-guard-runtime
           elapsed=$((SECONDS - start))
-          python - "$SOURCE_SHA" "$CARGO_PROFILE_RELEASE_LTO" "$elapsed" <<'PY'
+          python - "$SOURCE_SHA" "$CARGO_PROFILE_RELEASE_LTO" "$elapsed" "$CARGO_PROFILE_RELEASE_CODEGEN_UNITS" <<'PY'
           import json
           import pathlib
           import sys
           report = {
               "source_sha": sys.argv[1], "lto": sys.argv[2], "build_seconds": int(sys.argv[3]),
+              "codegen_units": int(sys.argv[4]),
               "runtime_bytes": pathlib.Path("rust/target/release/hol-guard-runtime").stat().st_size,
           }
           pathlib.Path("native-profile-benchmark.json").write_text(json.dumps(report, indent=2) + "\n")
