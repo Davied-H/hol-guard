@@ -164,7 +164,8 @@ def test_coverage_workspace_compiler_wrapper_is_executable() -> None:
     [
         ("core", "--workspace --exclude guard-command --exclude hol-guard-runtime"),
         ("command", "--package guard-command"),
-        ("runtime", "--package hol-guard-runtime"),
+        ("runtime-1", "--package hol-guard-runtime"),
+        ("runtime-2", "--package hol-guard-runtime"),
     ],
 )
 def test_partitions_preserve_every_package_target_and_report_dependency_coverage(tmp_path, partition, packages):
@@ -176,6 +177,10 @@ def test_partitions_preserve_every_package_target_and_report_dependency_coverage
     assert "--no-report" in run
     assert "--retries 0 --no-fail-fast" in run
     assert "--filter" not in run and "--ignore" not in run
+    if partition.startswith("runtime-"):
+        assert f"--partition hash:{partition[-1]}/2" in run
+    else:
+        assert "--partition" not in run
     report = next(line for line in lines if "llvm-cov report" in line)
     assert "--package" not in report and "--exclude" not in report
     assert f"coverage-reports/{partition}/rust-lcov.info" in report

@@ -2,7 +2,7 @@ name: Prepare instrumented Rust coverage partition
 description: Run one complete package group with checked codegen and fresh LLVM profiles.
 inputs:
   partition:
-    description: One of core, command or runtime.
+    description: One of core, command, runtime-1 or runtime-2.
     required: true
 runs:
   using: composite
