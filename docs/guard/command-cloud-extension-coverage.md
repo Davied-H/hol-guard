@@ -31,7 +31,7 @@ Global account, project, subscription, profile, region, output, query, configura
 
 ## DigitalOcean read proof
 
-Guard allows `doctl version`, help, and the `list` and `get` style reads of account, apps, billing, compute, Kubernetes, registry, project, VPC, network, monitoring, and NFS resources without a prompt. Some reads stay on review even though they change nothing, because they print or store credentials: `auth token`, `registry login`, `registry docker-config`, `kubernetes cluster kubeconfig`, and every `databases` read, since connection details include passwords. A read also stays on review when it passes `--access-token`, `--api-url`, `--config`, `--trace`, or `--show`. These flags put a token on the command line, send the stored token to another endpoint, switch accounts, log request traffic, or unmask secret values.
+Guard allows `doctl version`, help, and the `list` and `get` style reads of account, apps, billing, compute, Kubernetes, registry, project, VPC, network, monitoring, and NFS resources without a prompt. Some reads stay on review even though they change nothing, because they print or store credentials: `auth token`, `registry login`, `registry docker-config`, `kubernetes cluster kubeconfig`, and every `databases` read, since connection details include passwords. A read also stays on review when it passes `--access-token` or `-t`, which puts a token on the command line, `--api-url` or `-u`, which sends the stored token to another endpoint, or `--trace`, which prints each API request with its authorization header. Reads with `--config` or `--show` skip the quiet read path and fall back to the extension's ordinary rules.
 
 ## Primary references
 

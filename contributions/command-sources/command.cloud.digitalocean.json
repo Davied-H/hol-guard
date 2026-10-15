@@ -177,6 +177,33 @@
           "Authenticate once with `doctl auth init` outside the agent session and select it with --context."
         ],
         "typed_capabilities": []
+      },
+      {
+        "action_classes": [
+          "DigitalOcean credential exposure"
+        ],
+        "baseline_floor": "review",
+        "configurable": true,
+        "conflicts": [],
+        "default_enabled": true,
+        "dependencies": [],
+        "deprecated": false,
+        "description": "Identifies doctl invocations that print full API requests, including the authorization header, with --trace, or that send the account token to another API endpoint with --api-url or -u.",
+        "example_command": "doctl apps list --trace",
+        "family": null,
+        "fixed_reason": null,
+        "implementation_version": "1.0.0",
+        "implied_permissions": [],
+        "introduced_version": "3.46.0",
+        "label": "DigitalOcean request exposure",
+        "permission_id": "command.cloud.digitalocean.permission.request-exposure",
+        "replacement_permission_id": null,
+        "risk_tier": "high",
+        "safer_guidance": [
+          "Rerun without --trace, or use --verbose for diagnostics that leave out request headers.",
+          "Keep the default DigitalOcean API endpoint for authenticated commands."
+        ],
+        "typed_capabilities": []
       }
     ],
     "project_markers": [],
@@ -13071,6 +13098,173 @@
         ],
         "severity": "high",
         "title": "DigitalOcean inline access token"
+      },
+      {
+        "action_classes": [
+          "DigitalOcean credential exposure"
+        ],
+        "default_mode": "review",
+        "description": "Identifies doctl invocations that print full API requests, including the authorization header, with --trace, or that send the account token to another API endpoint with --api-url or -u.",
+        "family": null,
+        "matcher": {
+          "config": {},
+          "matchers": [
+            {
+              "config": {
+                "allow_leading_options": false,
+                "executables": [
+                  "doctl",
+                  "doctl.exe"
+                ],
+                "fail_secure_unknown_options": false,
+                "forbidden_flags": [],
+                "interspersed_flags": [
+                  "--help",
+                  "--interactive",
+                  "--show",
+                  "--trace",
+                  "--verbose",
+                  "-h",
+                  "-v"
+                ],
+                "interspersed_options_with_values": [
+                  "--access-token",
+                  "--api-url",
+                  "--config",
+                  "--context",
+                  "--http-retry-max",
+                  "--http-retry-wait-max",
+                  "--http-retry-wait-min",
+                  "--output",
+                  "-c",
+                  "-o",
+                  "-t",
+                  "-u"
+                ],
+                "inverse_flag_pairs": [],
+                "leading_options_with_values": [],
+                "options_with_values": [],
+                "required_flags": [
+                  "--trace"
+                ],
+                "required_flags_in_all_arguments": true,
+                "required_option_values": [],
+                "subcommands": []
+              },
+              "op": "executable.v1"
+            },
+            {
+              "config": {
+                "allow_leading_options": false,
+                "executables": [
+                  "doctl",
+                  "doctl.exe"
+                ],
+                "fail_secure_unknown_options": false,
+                "forbidden_flags": [],
+                "interspersed_flags": [
+                  "--help",
+                  "--interactive",
+                  "--show",
+                  "--trace",
+                  "--verbose",
+                  "-h",
+                  "-v"
+                ],
+                "interspersed_options_with_values": [
+                  "--access-token",
+                  "--api-url",
+                  "--config",
+                  "--context",
+                  "--http-retry-max",
+                  "--http-retry-wait-max",
+                  "--http-retry-wait-min",
+                  "--output",
+                  "-c",
+                  "-o",
+                  "-t",
+                  "-u"
+                ],
+                "inverse_flag_pairs": [],
+                "leading_options_with_values": [],
+                "options_with_values": [
+                  "--api-url",
+                  "-u"
+                ],
+                "required_flags": [
+                  "--api-url"
+                ],
+                "required_flags_in_all_arguments": true,
+                "required_option_values": [],
+                "subcommands": []
+              },
+              "op": "executable.v1"
+            },
+            {
+              "config": {
+                "allow_leading_options": false,
+                "executables": [
+                  "doctl",
+                  "doctl.exe"
+                ],
+                "fail_secure_unknown_options": false,
+                "forbidden_flags": [],
+                "interspersed_flags": [
+                  "--help",
+                  "--interactive",
+                  "--show",
+                  "--trace",
+                  "--verbose",
+                  "-h",
+                  "-v"
+                ],
+                "interspersed_options_with_values": [
+                  "--access-token",
+                  "--api-url",
+                  "--config",
+                  "--context",
+                  "--http-retry-max",
+                  "--http-retry-wait-max",
+                  "--http-retry-wait-min",
+                  "--output",
+                  "-c",
+                  "-o",
+                  "-t",
+                  "-u"
+                ],
+                "inverse_flag_pairs": [],
+                "leading_options_with_values": [],
+                "options_with_values": [
+                  "--api-url",
+                  "-u"
+                ],
+                "required_flags": [
+                  "-u"
+                ],
+                "required_flags_in_all_arguments": true,
+                "required_option_values": [],
+                "subcommands": []
+              },
+              "op": "executable.v1"
+            }
+          ],
+          "op": "any.v1"
+        },
+        "native_capability": null,
+        "permission_id": "command.cloud.digitalocean.permission.request-exposure",
+        "risk_classes": [
+          "credential_access",
+          "network_egress"
+        ],
+        "rule_id": "command.cloud.digitalocean.request-exposure",
+        "rule_version": "1.0.0",
+        "safe_variants": [],
+        "safer_alternatives": [
+          "Rerun without --trace, or use --verbose for diagnostics that leave out request headers.",
+          "Keep the default DigitalOcean API endpoint for authenticated commands."
+        ],
+        "severity": "high",
+        "title": "DigitalOcean request exposure"
       }
     ],
     "safer_alternatives": [
