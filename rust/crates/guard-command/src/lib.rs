@@ -113,6 +113,8 @@ pub mod launch_identity;
 pub mod launch_identity_binding;
 mod launch_identity_common;
 pub mod launch_identity_environment;
+#[cfg(windows)]
+mod launch_identity_windows;
 pub mod mcp_arguments;
 pub mod mcp_launch_environment;
 pub mod mcp_runtime_evidence;

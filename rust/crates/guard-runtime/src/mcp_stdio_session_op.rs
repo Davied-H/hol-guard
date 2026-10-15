@@ -213,7 +213,8 @@ pub(crate) fn session_open(request: &McpStdioSessionOpenRequestV1) -> Result<Vec
     if validate_session_id(&request.session_id).is_err() {
         return err_result("invalid_mcp_session_id");
     }
-    if request.owner_pid == 0 || request.owner_pid > i32::MAX as u32 {
+    // A unix pid_t is signed; Windows process IDs use the full u32 range.
+    if request.owner_pid == 0 || (cfg!(unix) && request.owner_pid > i32::MAX as u32) {
         return err_result("invalid_mcp_session_owner");
     }
     let owner_start =
