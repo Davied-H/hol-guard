@@ -66,7 +66,10 @@ pub struct PathStat {
     pub file_index: u128,
 }
 
-fn handle_info(file: &std::fs::File) -> io::Result<HandleInfo> {
+/// Read one handle's identity. `require_tag` refuses a handle whose reparse
+/// tag cannot be read; a metadata-only stat tolerates file systems that do
+/// not answer `FileAttributeTagInfo`, as `os.stat` does.
+fn handle_info(file: &std::fs::File, require_tag: bool) -> io::Result<HandleInfo> {
     let raw = file.as_raw_handle() as HANDLE;
     // SAFETY: `raw` is a live handle borrowed for the duration of each query.
     if unsafe { GetFileType(raw) } != FILE_TYPE_DISK {
@@ -90,7 +93,11 @@ fn handle_info(file: &std::fs::File) -> io::Result<HandleInfo> {
         )
     } == FALSE
     {
-        return Err(io::Error::last_os_error());
+        if require_tag {
+            return Err(io::Error::last_os_error());
+        }
+        // Only the attribute bit from the basic query decides reparse then.
+        tag_info = unsafe { zeroed::<FILE_ATTRIBUTE_TAG_INFO>() };
     }
     let reparse = information.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0
         || tag_info.NextEntryOffset & FILE_ATTRIBUTE_REPARSE_POINT != 0
@@ -143,7 +150,7 @@ fn handle_info(file: &std::fs::File) -> io::Result<HandleInfo> {
 /// Reject a handle of the wrong kind or one that names a link to another
 /// object.
 fn checked_info(file: &std::fs::File, directory: bool) -> io::Result<HandleInfo> {
-    let info = handle_info(file)?;
+    let info = handle_info(file, true)?;
     let alias = info
         .reparse_tag
         .is_some_and(|tag| tag == 0 || tag & NAME_SURROGATE_TAG_BIT != 0);
@@ -185,7 +192,7 @@ pub fn path_stat(path: &Path) -> io::Result<PathStat> {
         FILE_READ_ATTRIBUTES,
         FILE_FLAG_BACKUP_SEMANTICS,
     )?;
-    let info = handle_info(&file)?;
+    let info = handle_info(&file, false)?;
     Ok(PathStat {
         last_write_time: info.last_write_time,
         creation_time: info.creation_time,
@@ -218,7 +225,7 @@ pub fn open_skill_directory(path: &Path) -> io::Result<std::fs::File> {
 
 /// Return the identity of the file behind an open handle.
 pub fn handle_file_id(file: &std::fs::File) -> io::Result<FileId> {
-    Ok(handle_info(file)?.id)
+    Ok(handle_info(file, true)?.id)
 }
 
 /// Open an existing single-link regular file for reading by walking its
@@ -298,7 +305,7 @@ fn open_leaf(path: &Path, single_link: bool, share: DWORD) -> io::Result<std::fs
     // without FILE_FLAG_OPEN_REPARSE_POINT. The file IDs must match, so a
     // replacement between the two opens is refused.
     let content = open_raw_with_flags(path, share, GENERIC_READ, 0)?;
-    if handle_info(&content)?.id != info.id {
+    if handle_info(&content, true)?.id != info.id {
         return Err(changed("reopened placeholder is a different file"));
     }
     Ok(content)

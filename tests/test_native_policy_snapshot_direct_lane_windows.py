@@ -56,3 +56,6 @@ def test_windows_ack_is_written_privately_and_withdrawn(tmp_path: Path) -> None:
     publisher._acked = False
     publisher._renew_direct_lane_ack()
     assert not ack.exists()
+    # A second withdrawal finds nothing to delete and stays quiet.
+    publisher._renew_direct_lane_ack()
+    assert not ack.exists()

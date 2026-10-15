@@ -23,6 +23,7 @@ from pathlib import Path
 
 from .native_command_control_authority import AUTHORITY_FILE_NAME
 from .native_policy_snapshot_constants import NATIVE_RUNTIME_STATE_DIRECTORY
+from .native_policy_snapshot_direct_lane_windows import unlink_windows_ack, write_windows_ack
 
 DIRECT_LANE_PUSH_FEATURE = "policy-snapshot-direct-lane-v1"
 # The resident queues the evidence of each direct answer for the daemon to drain.
@@ -56,8 +57,6 @@ _MAX_INTEGRITY_KEY_ID_BYTES = 256
 _I64_MIN = -(1 << 63)
 _I64_MAX = (1 << 63) - 1
 _U64_MAX = (1 << 64) - 1
-# Mirrors DIRECT_LANE_ACK_MAX_BYTES, the most the resident reads.
-_ACK_MAX_BYTES = 1024
 
 # Database writes and the publisher's own command-control marker commit are
 # hints the publisher recompiles and compares; they never revoke the ACK up
@@ -423,7 +422,10 @@ class NativePolicySnapshotDirectLaneAck:
 
     def _unlink_direct_lane_ack(self) -> None:
         try:
-            self._direct_lane_ack_path().unlink()
+            if os.name == "nt":
+                unlink_windows_ack(self._direct_lane_ack_path())
+            else:
+                self._direct_lane_ack_path().unlink()
         except FileNotFoundError:
             pass
         except OSError:
@@ -448,7 +450,7 @@ class NativePolicySnapshotDirectLaneAck:
         path = self._direct_lane_ack_path()
         try:
             if os.name == "nt":
-                _write_windows_ack(self.guard_home, path, body)
+                write_windows_ack(self.guard_home, path, body)
                 self._direct_lane_lease_expires_at_ms = lease_expires_at_ms
                 return
             _ensure_private_directory(path.parent)
@@ -471,30 +473,6 @@ class NativePolicySnapshotDirectLaneAck:
             self._direct_lane_lease_expires_at_ms = 0
             return
         self._direct_lane_lease_expires_at_ms = lease_expires_at_ms
-
-
-def _write_windows_ack(guard_home: Path, path: Path, body: bytes) -> None:
-    """Commit the ACK through the private, DACL-checked Windows writer."""
-
-    from .native_policy_snapshot_windows_atomic import _windows_write_private_file_atomic
-    from .native_policy_snapshot_windows_state import (
-        _windows_ensure_private_directory,
-        _windows_private_directory_binding,
-    )
-
-    for directory in (guard_home, path.parent.parent, path.parent):
-        _windows_ensure_private_directory(directory)
-    with _windows_private_directory_binding(path.parent) as binding:
-        _windows_write_private_file_atomic(
-            parent_path=binding.path,
-            parent_handle=binding.handle,
-            directory_handles=binding.handles,
-            temporary_name=f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp",
-            destination_name=path.name,
-            payload=body,
-            maximum_bytes=_ACK_MAX_BYTES,
-            kind="direct_lane_ack",
-        )
 
 
 def _ensure_private_directory(directory: Path) -> None:
