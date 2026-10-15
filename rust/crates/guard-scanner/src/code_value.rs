@@ -19,7 +19,8 @@ static CALL: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 /// A member or module path closed by a statement end (`req.headers.token;`,
-/// `self.load()?`). The terminator keeps dotenv-style dotted values flagged.
+/// `self.load()?`). Without the terminator a dotted value stays flagged; with
+/// it, an upper-case key or a segment that looks encoded still does.
 static PATH_STATEMENT: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^[A-Za-z_][A-Za-z0-9_]*(?:(?:\.|::)[A-Za-z_][A-Za-z0-9_]*)+(?:\?;?|;)$")
         .expect("path statement rule must compile")
@@ -75,7 +76,11 @@ pub(crate) fn is_code_value(matched: &str, rest_of_line: &str) -> bool {
             && !LONG_LITERAL.is_match(rest_of_line);
     }
     if PATH_STATEMENT.is_match(value) {
-        return true;
+        // `AUTH_TOKEN=eyJ...;` is a shell assignment of a token, not a path.
+        return !environment_style_key(&matched[..index])
+            && !value
+                .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+                .any(encoded_segment);
     }
     if SNAKE_IDENTIFIER.is_match(value) {
         // `DB_PASSWORD=super_secret_pass` or `password: my_pass_phrase` is a
@@ -95,6 +100,15 @@ pub(crate) fn is_code_value(matched: &str, rest_of_line: &str) -> bool {
             .trim_end_matches(['"', '\''])
             .ends_with(|c: char| c != ' ')
         && PROSE_TAIL.is_match(rest_of_line)
+}
+
+/// A path segment long enough to be encoded material and shaped like it:
+/// digits or mixed case, as in each part of a JWT.
+fn encoded_segment(segment: &str) -> bool {
+    segment.len() >= 16
+        && (segment.chars().any(|c| c.is_ascii_digit())
+            || (segment.chars().any(|c| c.is_ascii_uppercase())
+                && segment.chars().any(|c| c.is_ascii_lowercase())))
 }
 
 /// An upper-case key such as `DB_PASSWORD` in a dotenv or shell assignment,
@@ -167,6 +181,10 @@ mod tests {
             format!("auth_token = get_token(\"{sample}\")"),
             format!("auth_token: &str = \"{sample}\""),
             format!("auth_token = {jwt}"),
+            format!("auth_token = {jwt};"),
+            format!("token={jwt};"),
+            format!("export AUTH_TOKEN={jwt}; curl https://example.test"),
+            "AUTH_TOKEN=config.session.value;".to_string(),
         ] {
             assert!(flagged(&text), "{text:?}");
         }
