@@ -16,7 +16,7 @@ use super::*;
 use crate::claude_hook_bridge_fixture::{
     closed_port, read_request, write_private, write_response, GuardHome, Request as DaemonRequest,
 };
-use crate::cursor_hook_bridge_response::ALLOW_STDOUT;
+use crate::cursor_hook_bridge_response::{ALLOW_STDOUT, UNAVAILABLE_STDOUT};
 
 const TOKEN: &str = "cursor-daemon-token-fixture";
 const SHELL: &[u8] =
@@ -309,9 +309,7 @@ fn a_restrictive_daemon_answer_with_a_loopback_link_is_signed_natively() {
         ),
     ];
     for (label, body, url, expected_code) in linked {
-        let Reply::Answered(stdout, code) = ask_reply(label, SHELL, 200, body) else {
-            panic!("{label}: the bridge did not answer");
-        };
+        let Reply::Answered(stdout, code) = ask_reply(label, SHELL, 200, body);
         assert_eq!(code, expected_code, "{label}");
         let answer: Value = serde_json::from_str(&stdout).unwrap();
         let message = answer["user_message"].as_str().unwrap();
