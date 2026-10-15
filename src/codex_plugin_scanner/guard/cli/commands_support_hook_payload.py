@@ -505,7 +505,7 @@ def _headless_approval_resolver(
                 logging.getLogger(__name__).warning(
                     "Guard approval queue unavailable: %s", queue_error, exc_info=True
                 )
-                queued = []
+                queued = approvals_queued_before(queue_error)
                 payload["approval_queue_unavailable"] = type(queue_error).__name__
             payload["approval_requests"] = queued
             _attach_primary_approval_link(
