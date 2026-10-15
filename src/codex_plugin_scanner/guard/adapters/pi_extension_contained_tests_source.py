@@ -128,10 +128,12 @@ CONTAINED_TEST_HELPERS_SOURCE = r"""
       schema: "guard-contained-test-request.v1", workspace: snapshot.cwd, payload: snapshot.payload,
     });
     if (Buffer.byteLength(serialized, "utf8") > 1_048_576) return null;
-    const directory = mkdtempSync(
-      join(windowsSink ? GUARD_CONTAINED_REQUEST_ROOT : tmpdir(), "hol-guard-contained-test-"),
-    );
+    // A request root that has since gone away denies the route like any other failure.
+    let directory: string | undefined;
     try {
+      directory = mkdtempSync(
+        join(windowsSink ? GUARD_CONTAINED_REQUEST_ROOT : tmpdir(), "hol-guard-contained-test-"),
+      );
       chmodSync(directory, 0o700);
       const requestPath = join(directory, "request.json");
       writeFileSync(requestPath, serialized, { encoding: "utf8", mode: 0o600, flag: "wx" });
@@ -153,7 +155,9 @@ CONTAINED_TEST_HELPERS_SOURCE = r"""
       }
       return { ...(input as Record<string, unknown>), command };
     } catch {
-      try { rmSync(directory, { recursive: true, force: true }); } catch {}
+      if (directory !== undefined) {
+        try { rmSync(directory, { recursive: true, force: true }); } catch {}
+      }
       return null;
     }
   }

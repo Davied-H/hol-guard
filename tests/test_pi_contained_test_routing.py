@@ -193,7 +193,10 @@ const input = prepareContainedTestInput(python, snapshot('python-call', 'python3
 const directory = containedTestRequests.get('python-call');
 const raw = directory ? readFileSync(join(directory, 'request.json'), 'utf8') : null;
 const rejected = prepareContainedTestInput(pytest, snapshot('pytest-call', 'python3 -m pytest'));
-console.log(JSON.stringify({ input, directory, raw, rejected }));
+// A request root removed after install denies the route instead of throwing.
+rmSync(process.argv[2], { recursive: true, force: true });
+const gone = prepareContainedTestInput(python, snapshot('gone-call', 'python3 test_calc.py'));
+console.log(JSON.stringify({ input, directory, raw, rejected, gone }));
 """,
         encoding="utf-8",
     )
@@ -203,6 +206,7 @@ console.log(JSON.stringify({ input, directory, raw, rejected }));
     assert completed.returncode == 0, completed.stderr
     result = json.loads(completed.stdout)
     assert result["rejected"] is None
+    assert result["gone"] is None
     assert Path(result["directory"]).parent == request_root
     argv = shlex.split(result["input"]["command"])
     assert argv[:5] == ["C:\\Program Files\\Python312\\python.exe", "-I", "-c", "import sys; print('x')", "guard"]
