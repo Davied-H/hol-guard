@@ -1,4 +1,4 @@
-use super::{custom_rule_response, launch_cwd, pre_tool_command, RuleCheck};
+use super::{custom_rule_response, launch_cwd, launches_local_cli, pre_tool_command, RuleCheck};
 use crate::context_digest_package_scripts::package_json_scripts;
 use serde_json::{json, Map, Value};
 use std::fs;
@@ -148,6 +148,29 @@ fn a_launch_without_a_blocking_grant_keeps_the_edge_response() {
         ),
     );
     assert_eq!(stale.check("npm run build", false, false), Ok(None));
+}
+
+#[test]
+fn only_a_command_that_launches_a_local_cli_reads_a_grant() {
+    let case = Case::new("launches", "");
+    let launches =
+        |payload: Value| launches_local_cli(&object(payload), &case.workspace, &case.workspace);
+    assert_eq!(
+        launches(json!({ "tool_input": { "command": "npm run build" } })),
+        Ok(true)
+    );
+    assert_eq!(
+        launches(json!({ "tool_input": { "command": "pwd" } })),
+        Ok(false)
+    );
+    assert_eq!(
+        launches(json!({ "tool_input": { "file_path": "/tmp/a" } })),
+        Ok(false)
+    );
+    assert_eq!(
+        launches(json!({ "tool_input": { "command": "npm run build" }, "cwd": "relative" })),
+        Ok(false)
+    );
 }
 
 #[test]

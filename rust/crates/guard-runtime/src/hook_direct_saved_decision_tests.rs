@@ -211,7 +211,8 @@ fn published() -> Value {
 #[test]
 fn a_local_store_with_the_decision_is_read() {
     let (_path, connection) = local_store("local");
-    assert!(shape(&connection).base().unwrap());
+    assert!(shape(&connection).supported().unwrap());
+    assert!(!shape(&connection).grants().unwrap());
     assert_eq!(
         shape(&connection).readable(&published()).unwrap(),
         Some(false)
@@ -285,7 +286,9 @@ fn a_store_the_lookup_reads_differently_defers() {
         connection.execute_batch(change).unwrap();
         let store = shape(&connection);
         assert!(
-            !(store.base().unwrap() && store.readable(&published()).unwrap().is_some()),
+            !(store.supported().unwrap()
+                && !store.grants().unwrap()
+                && store.readable(&published()).unwrap().is_some()),
             "{tag}"
         );
     }
@@ -306,7 +309,7 @@ fn a_damaged_schema_marker_defers() {
         .execute("update local_cli_schema_migration set checksum = 'x'", [])
         .unwrap();
     assert!(matches!(
-        shape(&connection).base(),
+        shape(&connection).supported(),
         Err(HookDirectDefer::SavedDecision)
     ));
 }
@@ -411,6 +414,16 @@ fn answer_with(
     action: &str,
     answering: &DirectLaneBinding,
 ) -> Result<Value, HookDirectDefer> {
+    answer_in(tag, action, answering, "")
+}
+
+/// `answer_with` in a store `seed` changed first.
+fn answer_in(
+    tag: &str,
+    action: &str,
+    answering: &DirectLaneBinding,
+    seed: &str,
+) -> Result<Value, HookDirectDefer> {
     let vectors = vectors();
     let workspace = workspace(tag);
     let full = binding();
@@ -424,6 +437,7 @@ fn answer_with(
         action,
         "approval-gate",
     );
+    connection.execute_batch(seed).unwrap();
     let guard_home = path.parent().unwrap().to_str().unwrap().to_owned();
     answer(
         &edge,
@@ -442,6 +456,17 @@ fn answer_with(
 #[test]
 fn a_saved_allow_answers_the_review() {
     let answered = answer_with("answer-allow", "allow", &binding()).unwrap();
+    let response = &answered["harness_response"];
+    assert_eq!(response["approval_reuse_status"], json!("accepted"));
+}
+
+#[test]
+fn custom_grants_leave_a_review_that_launches_no_local_cli_to_its_saved_decision() {
+    // The daemon reads a custom grant only for a command that launches a
+    // local CLI, and this `Read` names no command.
+    let seed = "create table local_cli_grant (cli_id text, state text);
+                insert into local_cli_grant values ('cli', 'blocked');";
+    let answered = answer_in("answer-grants", "allow", &binding(), seed).unwrap();
     let response = &answered["harness_response"];
     assert_eq!(response["approval_reuse_status"], json!("accepted"));
 }

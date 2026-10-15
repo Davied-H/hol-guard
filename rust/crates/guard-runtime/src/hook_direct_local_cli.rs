@@ -57,13 +57,7 @@ pub(super) fn custom_rule_response(
     {
         return Ok(None);
     }
-    let Some(command) = pre_tool_command(payload)? else {
-        return Ok(None);
-    };
-    let Some(cwd) = launch_cwd(payload, check.workspace)? else {
-        return Ok(None);
-    };
-    let Some(launch) = local_launch(command, &cwd, check.home_dir)? else {
+    let Some(launch) = launch_for(payload, check.workspace, check.home_dir)? else {
         return Ok(None);
     };
     match grant(&launch, check.guard_home)? {
@@ -77,6 +71,33 @@ pub(super) fn custom_rule_response(
                 .ok_or(())
         }
     }
+}
+
+/// Whether the daemon would read a custom grant for this `PreToolUse`: the
+/// payload names a command and a launch directory, and the command launches a
+/// local CLI. `Err` is any failure the daemon could still resolve to a launch.
+pub(super) fn launches_local_cli(
+    payload: &Map<String, Value>,
+    workspace: &str,
+    home_dir: &str,
+) -> Result<bool, ()> {
+    launch_for(payload, workspace, home_dir).map(|launch| launch.is_some())
+}
+
+/// The local CLI the daemon reads a grant for, or `None` when the payload
+/// names no command or launch directory or the command launches none.
+fn launch_for(
+    payload: &Map<String, Value>,
+    workspace: &str,
+    home_dir: &str,
+) -> Result<Option<Launch>, ()> {
+    let Some(command) = pre_tool_command(payload)? else {
+        return Ok(None);
+    };
+    let Some(cwd) = launch_cwd(payload, workspace)? else {
+        return Ok(None);
+    };
+    local_launch(command, &cwd, home_dir)
 }
 
 /// The launch identity the daemon derives: the package script's, else the
