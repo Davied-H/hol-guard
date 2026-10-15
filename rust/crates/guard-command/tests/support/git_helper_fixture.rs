@@ -19,9 +19,7 @@ pub fn evaluate_pre_tool_envelope_with_context(
     home: Option<&str>,
     cwd: Option<&str>,
 ) -> guard_contracts::PreToolResultV1 {
-    evaluate_with_shell_home(
-        harness, event, payload, controls, deadline, home, cwd, false,
-    )
+    evaluate_with_shell_home(harness, event, payload, controls, deadline, home, cwd, true)
 }
 
 /// As [`evaluate_pre_tool_envelope_with_context`], with the shell's HOME
