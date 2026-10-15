@@ -43,8 +43,16 @@ def test_warmer_and_ci_share_builds_profiles_and_per_commit_deduplication() -> N
         job, required = warm["jobs"][platform], raw_ci["jobs"][producer]
         assert job["runs-on"] == required["runs-on"]
         assert job["timeout-minutes"] == required["timeout-minutes"]
-        assert job["concurrency"] == required["concurrency"] == {
+        assert job["concurrency"] == {
             "group": f"native-ci-build-${{{{ github.sha }}}}-{platform}",
+            "cancel-in-progress": False,
+        }
+        # Other workflows can build the same SHA; they must not displace a
+        # required producer from the single pending slot in the shared group.
+        assert required["concurrency"] == {
+            "group": "${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') "
+            f"&& format('native-ci-build-{{0}}-{platform}', github.sha) "
+            f"|| format('native-ci-build-run-{{0}}-{platform}', github.run_id) }}}}",
             "cancel-in-progress": False,
         }
         assert f"./.github/actions/{action}" in [step.get("uses") for step in job["steps"]]

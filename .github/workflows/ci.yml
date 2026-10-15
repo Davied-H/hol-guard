@@ -262,7 +262,7 @@ jobs:
   native-command-evaluators:
     runs-on: ubuntu-latest
     concurrency:
-      group: native-ci-build-${{ github.sha }}-linux
+      group: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') && format('native-ci-build-{0}-linux', github.sha) || format('native-ci-build-run-{0}-linux', github.run_id) }}
       cancel-in-progress: false
     # Build and verify both binaries, regenerate their matching public projections,
     # then publish artifacts before running Python contract and replay gates.
@@ -822,7 +822,7 @@ jobs:
 
   windows-native-runtime:
     concurrency:
-      group: native-ci-build-${{ github.sha }}-windows
+      group: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') && format('native-ci-build-{0}-windows', github.sha) || format('native-ci-build-run-{0}-windows', github.run_id) }}
       cancel-in-progress: false
     needs: [plan]
     if: >-
@@ -885,7 +885,7 @@ jobs:
 
   macos-native-runtime:
     concurrency:
-      group: native-ci-build-${{ github.sha }}-macos
+      group: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') && format('native-ci-build-{0}-macos', github.sha) || format('native-ci-build-run-{0}-macos', github.run_id) }}
       cancel-in-progress: false
     needs: [plan]
     if: >-
