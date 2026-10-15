@@ -13,7 +13,7 @@ from pathlib import Path
 
 from ..windows_paths import trusted_windows_local_temp
 from . import restricted_git, restricted_node_test, restricted_node_tool, restricted_vitest
-from .contained_command_prefix import _assignments_applied, _split_command_prefix
+from .contained_command_prefix import _assignments_applied, _peel_for_receipt, _split_command_prefix
 from .contained_run_directory import as_directory_change, as_run_root
 from .contained_wrapper import anchored_sibling_root, bounded_output, peel_contained_wrapper, sibling_project_root
 from .restricted_inline_eval import prepare_restricted_inline_eval, run_restricted_inline_eval
@@ -318,13 +318,13 @@ def run_authorized_contained_test(
             merge_stderr=merge_stderr,
         )
     try:
-        core, assignments = _split_command_prefix(shlex.split(tool_input["command"], posix=True))
+        core, assignments, dropped = _peel_for_receipt(shlex.split(tool_input["command"], posix=True))
     except ValueError:
-        core, assignments = [], {}
-    if assignments:
+        core, assignments, dropped = [], {}, False
+    if assignments or dropped:
         # Like a wrapper: the original carries the receipt, then the core is
-        # authorized again and runs with the assignments exported. A workspace
-        # receipt runs the original as issued.
+        # authorized again and runs with the assignments exported (a dropped
+        # data setting too). A workspace receipt runs the original as issued.
         receipt = authorize(payload)
         exit_code = run_workspace(receipt)
         if exit_code is not None:

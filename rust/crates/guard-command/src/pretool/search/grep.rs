@@ -237,11 +237,10 @@ fn safe_arguments(
                 return false;
             }
             targets.push(argument.as_str());
-            if unsafe_search_value(SearchValueRole::Path, argument, context)
-                && !recursive
-                && !proven_glob(argument, context)
-                && !(absent.plain && absent_target(argument, context))
-            {
+            let proven = recursive
+                || proven_glob(argument, context)
+                || (absent.plain && absent_target(argument, context));
+            if !proven && unsafe_search_value(SearchValueRole::Path, argument, context) {
                 return false;
             }
         } else {
@@ -399,11 +398,16 @@ mod tests {
                 extraction_provenance: "guard-shell".to_owned(),
             })
             .unwrap();
-            let segment = model
+            // An output redirect leaves the model uncertain with no
+            // segments, which no proof admits.
+            let Some(segment) = model
                 .segments
                 .iter()
                 .find(|segment| segment.executable.as_deref() == Some("grep"))
-                .unwrap();
+            else {
+                assert!(!allowed, "{command}");
+                continue;
+            };
             assert_eq!(
                 super::safe_grep_segment(&model, segment, context),
                 allowed,

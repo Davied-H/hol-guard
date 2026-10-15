@@ -22,6 +22,9 @@ pub struct PathContext<'a> {
     /// `--pre`, `--hidden` or extra search paths to an `rg` command that
     /// omits `--no-config`. Literal contexts leave this false.
     pub ripgrep_config_absent: bool,
+    /// No session `PSQLRC` can name a startup file for a `psql` without
+    /// `-X`, and the shell's HOME is `home_dir`. Literal contexts leave this false.
+    pub psqlrc_absent: bool,
 }
 
 mod contained_wrapper;

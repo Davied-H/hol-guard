@@ -128,7 +128,7 @@ def test_sink_runs_an_anchored_script_from_the_sibling_root(monkeypatch: pytest.
 
 
 def test_plain_data_settings_are_dropped_and_others_stay() -> None:
-    assert _split_command_prefix(["REPORT_DIR=/tmp/report", "CI=1", "vitest", "run"]) == (
+    assert _split_command_prefix(["REPORT_DIR=/tmp/report", "CI=1", "vitest", "run"], drop_data=True) == (
         ["vitest", "run"],
         {"CI": "1"},
     )
@@ -138,4 +138,4 @@ def test_plain_data_settings_are_dropped_and_others_stay() -> None:
         ["REPORT_DIR=-r", "pytest"],
         ["TMPDIR=/tmp/x", "pytest"],
     ):
-        assert _split_command_prefix(command) == (command, {})
+        assert _split_command_prefix(command, drop_data=True) == (command, {})

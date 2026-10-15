@@ -191,8 +191,9 @@ fn hook_directory_inert(path: &Path) -> bool {
                 && entry
                     .and_then(|entry| entry.metadata())
                     .is_ok_and(|metadata| {
-                        !metadata.file_type().is_symlink()
-                            && !(metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
+                        let executable =
+                            metadata.is_file() && metadata.permissions().mode() & 0o111 != 0;
+                        !metadata.file_type().is_symlink() && !executable
                     })
         })
 }

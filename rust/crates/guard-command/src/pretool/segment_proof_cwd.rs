@@ -97,6 +97,7 @@ pub(in crate::pretool) fn exact_safe_cwd_compound(
                 npm_config_inert: context.npm_config_inert,
                 shell_home_matches: context.shell_home_matches,
                 ripgrep_config_absent: context.ripgrep_config_absent,
+                psqlrc_absent: context.psqlrc_absent,
                 cwd: Some(&cwd),
             },
         );
@@ -115,6 +116,7 @@ pub(in crate::pretool) fn exact_safe_cwd_compound(
                     npm_config_inert: context.npm_config_inert,
                     shell_home_matches: context.shell_home_matches,
                     ripgrep_config_absent: context.ripgrep_config_absent,
+                    psqlrc_absent: context.psqlrc_absent,
                     cwd: Some(&cwd),
                 },
             )

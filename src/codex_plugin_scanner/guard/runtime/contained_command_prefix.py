@@ -55,16 +55,17 @@ def _data_assignment(word: str) -> bool:
     )
 
 
-def _split_command_prefix(command: list[str]) -> tuple[list[str], dict[str, str]]:
+def _split_command_prefix(command: list[str], *, drop_data: bool = False) -> tuple[list[str], dict[str, str]]:
     """Peel `command`/`time`/`env` prefixes and inert `NAME=value` assignments.
 
     The native model reads `CI=1 command bun run build` as `bun run build`
-    with an inert assignment. A plain-data setting (`REPORT_DIR=/tmp/r`) is
-    dropped: native authority grants a read-only profile only when that
-    profile's environment filter would drop it too, and a workspace receipt
-    still runs the original as issued. An option such as `command -v` or
-    `env -i` keeps its prefix, and any other assignment stays in the
-    command, so the core is rejected.
+    with an inert assignment. With `drop_data`, a plain-data setting
+    (`REPORT_DIR=/tmp/r`) is dropped too: callers do so only after the
+    original drew a contained receipt, since native authority grants a
+    read-only profile only when that profile's environment filter would drop
+    the setting, and a workspace receipt still runs the original as issued.
+    An option such as `command -v` or `env -i` keeps its prefix, and any
+    other assignment stays in the command, so the core is rejected.
     """
     assignments: dict[str, str] = {}
     for _ in range(16):
@@ -73,11 +74,21 @@ def _split_command_prefix(command: list[str]) -> tuple[list[str], dict[str, str]
         elif command and (assignment := _inert_assignment(command[0])) is not None:
             assignments[assignment[0]] = assignment[1]
             command = command[1:]
-        elif len(command) > 1 and _data_assignment(command[0]):
+        elif drop_data and len(command) > 1 and _data_assignment(command[0]):
             command = command[1:]
         else:
             break
     return command, assignments
+
+
+def _peel_for_receipt(command: list[str]) -> tuple[list[str], dict[str, str], bool]:
+    """Peel with data settings dropped, and say whether one was dropped.
+
+    A dropped setting means the core is not the command as issued, so the
+    original must draw a contained receipt before the core runs.
+    """
+    core, assignments = _split_command_prefix(command, drop_data=True)
+    return core, assignments, core != _split_command_prefix(command)[0]
 
 
 @contextmanager

@@ -146,6 +146,7 @@ fn decide_with(
             npm_config_inert: false,
             shell_home_matches: false,
             ripgrep_config_absent: false,
+            psqlrc_absent: false,
         },
         Some(&environment),
     )

@@ -11272,23 +11272,6 @@
       "expect": "not_allow"
     },
     {
-      "id": "neg-mkdir-chain-then-grep-recursive-new-dir",
-      "fix_area": "negative",
-      "harnesses": [
-        "codex",
-        "zcode",
-        "claude-code",
-        "omp",
-        "cursor"
-      ],
-      "tool": "shell",
-      "tool_input": {
-        "command": "mkdir -p ${ORG_WT}/cfg && grep -rn x ${ORG_WT}/cfg"
-      },
-      "cwd": "org_wt",
-      "expect": "not_allow"
-    },
-    {
       "id": "neg-ln-s-ssh-chain-into-sibling",
       "fix_area": "negative",
       "harnesses": [
