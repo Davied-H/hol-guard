@@ -239,6 +239,15 @@ fn launches_that_load_unbound_code_stay_once_only() {
             "sloppy-this",
             "(function () { return this; })().process[key]();\n",
         ),
+        (
+            "compared-process",
+            "const k = ['dl', 'open'].join('');\n0 !== process[k]({ exports: {} }, 'x.node');\n",
+        ),
+        ("typeof-call-process", "typeof process[key](m, 'p.node');\n"),
+        ("negated-process", "-process[key](m, 'p.node');\n"),
+        ("divided-process", "const n = 1 / process[key](m, 'p.node');\n"),
+        ("labelled-process", "node:process[key](m, 'p.node');\n"),
+        ("typeof-call-module", "typeof module[key]('./p.js');\n"),
         ("quoted-member", "const key = 'binding';\n"),
         ("template-key", "x[`${a}b`]();\n"),
         ("call-key", "x['re'.concat('quire')]('./p');\n"),
@@ -290,6 +299,16 @@ fn a_graph_that_writes_files_cannot_bind_modules_it_loads_later() {
         (
             "rewrite-in-another-module",
             "import { save } from './lib/save.mjs';\nawait save(process.env.BODY);\nawait import('./plugin.mjs');\n",
+        ),
+        // Deleting the bound file lets the require fall through to another
+        // extension, so deletion counts as a write.
+        (
+            "delete-then-require",
+            "const fs = require('fs');\nfs.rmSync(__dirname + '/plugin.js');\nrequire('./plugin');\n",
+        ),
+        (
+            "unlink-then-require",
+            "const fs = require('fs');\nfs.unlinkSync(__dirname + '/plugin.js');\nrequire('./plugin');\n",
         ),
     ] {
         project.write(&format!("scripts/{name}.mjs"), source);

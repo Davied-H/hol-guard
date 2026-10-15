@@ -86,6 +86,34 @@ fn key_or_call() -> &'static Regex {
 /// `require.main === module` check, `typeof`, prose, part of a specifier, an
 /// object key or another object's property. Bracket, optional-chaining, comment-separated
 /// and aliased access all reach the loader and fail.
+/// What follows the global's own name, with the name and any space removed.
+fn tail_after_name(rest: &str) -> &str {
+    rest.trim_start_matches(|c: char| c.is_alphanumeric() || c == '_' || c == '$')
+        .trim_start()
+}
+
+/// `process[key](…)`, `process(…)` or `process?.binding(…)`: the mention
+/// reaches the real global whatever the text around it reads like, so the
+/// context exemptions below must not apply to it.
+fn calls_or_indexes(tail: &str) -> bool {
+    let mut tail = tail;
+    loop {
+        if tail.starts_with(['[', '(', '?']) {
+            return true;
+        }
+        // Step over a plain `.member` so `process.dlopen(…)` still counts, while
+        // a specifier such as `./lib/process.js` does not.
+        let Some(member) = tail.strip_prefix('.') else {
+            return false;
+        };
+        let rest = member.trim_start_matches(|c: char| c.is_alphanumeric() || c == '_' || c == '$');
+        if rest.len() == member.len() {
+            return false;
+        }
+        tail = rest.trim_start();
+    }
+}
+
 fn loader_globals_bound(source: &str) -> bool {
     // Imported `process` keeps its own name, so the member list still applies.
     let process_imports_named = process_specifier().find_iter(source).all(|found| {
@@ -103,21 +131,27 @@ fn loader_globals_bound(source: &str) -> bool {
             if process_member().is_match(rest) || module_member().is_match(rest) {
                 return true;
             }
-            if prose().is_match(rest) || before.ends_with("typeof") {
+            // `typeof process[k](…)` and the other context exemptions below read
+            // only what comes before the name; a call or computed member after it
+            // runs all the same, so none of them may excuse one.
+            let reached = calls_or_indexes(tail_after_name(rest));
+            if !reached && (prose().is_match(rest) || before.ends_with("typeof")) {
                 return true;
             }
             // An object key or method of that name, never the global itself.
             if key_or_call().is_match(rest) && (before.ends_with('{') || before.ends_with(',')) {
                 return true;
             }
-            if matches!(
-                before.get(before.len().saturating_sub(3)..),
-                Some("===" | "!==")
-            ) {
+            if !reached
+                && matches!(
+                    before.get(before.len().saturating_sub(3)..),
+                    Some("===" | "!==")
+                )
+            {
                 return true;
             }
             // `node:process`, `./module.js`, `my-module` and `@scope/module`.
-            if before.ends_with("node:") || matches!(preceding, Some('/' | '-')) {
+            if !reached && (before.ends_with("node:") || matches!(preceding, Some('/' | '-'))) {
                 return true;
             }
             // `job.process(...)`, but never a function's `this` (the global
@@ -138,7 +172,7 @@ fn writes_files() -> &'static Regex {
     static CELL: OnceLock<Regex> = OnceLock::new();
     pattern(
         &CELL,
-        r"\b(?:writeFile|appendFile|copyFile|createWriteStream|truncate|ftruncate|writev)(?:Sync)?\b|\bcpSync\b|\b(?:open|link|rename|symlink|cp)(?:Sync)?\s*\(",
+        r"\b(?:writeFile|appendFile|copyFile|createWriteStream|truncate|ftruncate|writev|unlink|rmdir)(?:Sync)?\b|\b(?:cpSync|rmSync)\b|\b(?:open|link|rename|symlink|cp|rm)(?:Sync)?\s*\(",
     )
 }
 
