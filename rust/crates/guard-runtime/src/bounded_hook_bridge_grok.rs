@@ -16,15 +16,13 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use crate::bounded_hook_bridge::{
-    read_hook_input, run_python, write_stdout, Input, MAX_HOOK_INPUT_BYTES,
-};
+use crate::bounded_hook_bridge::{read_hook_input, write_stdout, Input, MAX_HOOK_INPUT_BYTES};
 use crate::bounded_hook_bridge_grok_render::{
     approval_request_ids, approval_wait_seconds, dump_object, event_labels_are_ascii, event_name,
     failure_stdout, failure_stdout_for, is_observe_event, json_object, pretool_event_conflict,
     quote_component, rewrite_decision, to_native, WAITING_ACTIONS,
 };
-use crate::bounded_hook_bridge_grok_script::{invocation, read_ported_script, Invocation};
+use crate::bounded_hook_bridge_grok_script::{invocation, read_client_constants, Invocation};
 use crate::bounded_hook_bridge_render::member;
 use crate::claude_hook_bridge_auth::{private_file_raw, LOOPBACK_HOSTS};
 use crate::claude_hook_bridge_http::{LoopbackConnection, MAX_DAEMON_RESPONSE_BYTES};
@@ -438,7 +436,7 @@ fn fail_closed() -> i32 {
 
 /// Answer one Grok hook. `python_argv` is `[python, "-I", script, config]`.
 pub(crate) fn run(python_argv: &[String], started: Instant) -> i32 {
-    let client = read_ported_script(Path::new(&python_argv[2])).and_then(|constants| {
+    let client = read_client_constants(Path::new(&python_argv[2])).and_then(|constants| {
         let invocation = invocation(&python_argv[3], &constants.guard_home)?;
         let budget = Duration::try_from_secs_f64(constants.timeout_seconds).ok()?;
         Some(Client {
@@ -449,7 +447,9 @@ pub(crate) fn run(python_argv: &[String], started: Instant) -> i32 {
         })
     });
     let Some(client) = client else {
-        return run_python(python_argv, None, started.elapsed(), false).unwrap_or_else(fail_closed);
+        // No install writes a client this bridge cannot read, so the hook
+        // fails closed rather than running Python.
+        return fail_closed();
     };
     let Input::Read(raw) = read_hook_input(client.deadline) else {
         return fail_closed();
