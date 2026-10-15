@@ -578,7 +578,7 @@ fn evaluate_envelope(
             evaluate_pre_tool_with_execution_context(
                 &CommandModelRequestV1 {
                     command: command.to_owned(),
-                    dialect: "posix".to_owned(),
+                    dialect: tools::command_dialect(signals.tool_name.as_deref()).to_owned(),
                     transport: "shell_string".to_owned(),
                     extraction_provenance: "pre-tool-generic".to_owned(),
                 },

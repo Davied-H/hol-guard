@@ -188,12 +188,23 @@ fn is_file_read_tool(tool: &str) -> bool {
     )
 }
 
+/// Claude Code's `PowerShell` tool always runs PowerShell, whatever the host,
+/// so its command is parsed as PowerShell rather than guessed from the host.
+pub(super) fn command_dialect(tool: Option<&str>) -> &'static str {
+    if tool.is_some_and(|tool| tool.trim().eq_ignore_ascii_case("powershell")) {
+        "powershell"
+    } else {
+        "posix"
+    }
+}
+
 fn is_command_tool(tool: &str) -> bool {
     // tool_matches also recognizes namespaced forms such as functions.exec_command.
     tool_matches(
         tool,
         &[
             "bash",
+            "powershell",
             "shell",
             "terminal",
             "run_command",
