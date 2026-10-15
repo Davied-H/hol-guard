@@ -377,7 +377,7 @@ fn a_daemon_that_does_not_answer_in_time_fails_closed_in_time() {
 }
 
 #[test]
-fn hooks_the_client_keeps_never_reach_the_daemon() {
+fn hooks_the_bridge_cannot_send_fail_closed_without_the_daemon() {
     let home = daemon_home("kept", "127.0.0.1", closed_port(), true);
     let client = client_for(&home, Duration::from_secs(20));
     for raw in [
@@ -386,6 +386,6 @@ fn hooks_the_client_keeps_never_reach_the_daemon() {
         br#"{"hook_event_name":"stop"}"#,
     ] {
         assert_eq!(prepared_request(&client, raw), None);
-        assert_eq!(respond(&client, raw), None);
+        assert_eq!(respond(&client, raw), Some(closed()));
     }
 }

@@ -9,6 +9,7 @@ use serde_json::json;
 
 use super::*;
 use crate::claude_hook_bridge_fixture::{write_private, GuardHome};
+use crate::cursor_hook_bridge_response::UNAVAILABLE_STDOUT;
 
 /// `print(json.dumps(response))` for `cursor_unparseable_input_permission`.
 const DENIED: &str = "{\"permission\": \"deny\", \"user_message\": \"Guard could not process this hook request safely. Retry or repair Guard from a terminal.\"}\n";
@@ -127,23 +128,45 @@ fn an_unparseable_hook_past_its_deadline_is_unavailable() {
 }
 
 #[test]
-fn json_the_port_cannot_represent_stays_with_the_client() {
+fn json_the_port_cannot_represent_fails_closed_without_the_daemon() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let home = listening_home("kept", &listener);
-    let client = client_named(
-        &home,
-        "preToolUse",
-        Instant::now() + Duration::from_secs(20),
-    );
-    for raw in [
-        &br#"{"command": NaN}"#[..],
-        br#"{"command": -Infinity}"#,
-        br#"{"hook_event_name":"stop"}"#,
-        br#"{"hook_event_name":"beforeSubmitPrompt","prompt":"hi"}"#,
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let denied = Reply::Answered(UNAVAILABLE_STDOUT.to_owned(), 2);
+    let observed = Reply::Answered(AFTER_STDOUT.to_owned(), 0);
+    let tool = client_named(&home, "preToolUse", deadline);
+    let observer = client_named(&home, "afterShellExecution", deadline);
+    for (client, raw, expected) in [
+        (&tool, &br#"{"command": NaN}"#[..], &denied),
+        (&tool, &br#"{"command": -Infinity}"#[..], &denied),
+        (&tool, &br#"{"hook_event_name":"stop"}"#[..], &denied),
+        (
+            &tool,
+            &br#"{"hook_event_name":"beforeSubmitPrompt","prompt":"hi"}"#[..],
+            &denied,
+        ),
+        (
+            &tool,
+            &br#"{"hook_event_name":7,"command":"ls"}"#[..],
+            &denied,
+        ),
+        // An observer the client was not installed as is still denied.
+        (
+            &tool,
+            &br#"{"hook_event_name":"afterShellExecution","command": NaN}"#[..],
+            &denied,
+        ),
+        (&observer, &br#"{"command": NaN}"#[..], &observed),
+        (
+            &observer,
+            &br#"{"hook_event_name":"after_shell_execution","command":"ls"}"#[..],
+            &observed,
+        ),
+        (&observer, &br#"{"hook_event_name":"stop"}"#[..], &denied),
     ] {
         assert_eq!(
-            reply(&client, raw),
-            Reply::Client(Fallback::InputUnparsed),
+            &reply(client, raw),
+            expected,
             "{}",
             String::from_utf8_lossy(raw)
         );

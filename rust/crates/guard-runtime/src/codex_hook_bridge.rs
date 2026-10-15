@@ -9,8 +9,7 @@
 //! `start_command` and asked once more inside the hook deadline (see
 //! `restart`); when that fails too, or the daemon is overloaded, the hook
 //! fails closed. Codex Desktop, binding capture and an unsendable query are
-//! served here too (see `client`). A Desktop transition probe runs the
-//! Python bridge it was given on the original argv and stdin.
+//! served here too (see `client`).
 //!
 //! Every daemon answer is settled here (see `handoff`): a sandbox
 //! requirement is routed into contained execution (see `contain`), a
@@ -24,23 +23,18 @@
 use std::borrow::Cow;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use crate::claude_hook_bridge_render::py_strip;
-use crate::codex_hook_bridge_direct::CODEX;
 use crate::codex_hook_identity::current_process_identity;
 use crate::codex_hook_response::{
     codex_hook_response, fail_closed, runtime_hook_event_name, PRE_TOOL_USE,
 };
-use crate::hook_bridge_exit::exit_code;
-use crate::hook_bridge_fallback::{self, Fallback};
 use crate::hook_env_stamp::{current_environment, dumps, set_member, stamp_hook_input_text, Stamp};
 use crate::pyjson::{self, in_surrogate_plane, PyVal};
 
 pub(crate) const BRIDGE_COMMAND: &str = "codex-hook-bridge";
 pub(crate) const BRIDGE_FEATURE: &str = "codex-hook-bridge-v1";
-pub(crate) const ELAPSED_ENV: &str = "HOL_GUARD_CODEX_NATIVE_ELAPSED_MS";
 
 const MAX_HOOK_INPUT_BYTES: usize = 1_000_000;
 const HOOK_TIMEOUT_GRACE_SECONDS: i64 = 2;
@@ -293,9 +287,6 @@ pub(crate) fn prepare(
 pub(crate) enum Route {
     /// Write this hook JSON and exit zero.
     Respond(String),
-    /// Run the Python bridge on the original argv and stdin, for this
-    /// reason.
-    Delegate(Fallback),
     /// A transition observation (the answer's
     /// `guard_transition_observation`) to write before settling the route.
     Observed(PyVal, Box<Route>),
@@ -360,9 +351,6 @@ pub(crate) fn route_hook(
             return (Route::Respond(fail_closed(&event_name)), None)
         }
     };
-    if client::desktop_transition_probe(&prepared.data) {
-        return (Route::Delegate(Fallback::ClientMode), Some(prepared));
-    }
     client::record_ingress(&config.state_path, raw_data, &prepared);
     if !client::query_is_sendable(&config.query) {
         let route = Route::Respond(fail_closed(&prepared.event_name));
@@ -392,23 +380,6 @@ pub(crate) fn route_hook(
     (route, Some(prepared))
 }
 
-/// Run the Python bridge with `stdin`, inheriting stdout, stderr, cwd and
-/// the environment; `None` when it could not start.
-fn run_python(argv: &[String], stdin: &[u8], elapsed: Duration) -> Option<i32> {
-    let (program, args) = argv.split_first()?;
-    let mut child = Command::new(program)
-        .args(args)
-        .env(ELAPSED_ENV, elapsed.as_millis().to_string())
-        .stdin(Stdio::piped())
-        .spawn()
-        .ok()?;
-    if let Some(mut pipe) = child.stdin.take() {
-        // A child that exits without reading its input still answers.
-        let _ = pipe.write_all(stdin);
-    }
-    child.wait().ok().map(exit_code)
-}
-
 fn write_stdout(text: &str) {
     let mut stdout = io::stdout().lock();
     let _ = stdout
@@ -419,7 +390,6 @@ fn write_stdout(text: &str) {
 /// `guard-runtime codex-hook-bridge <python argv...> <config>`: the exit
 /// code Codex sees.
 pub(crate) fn run(python_argv: &[String]) -> i32 {
-    let started = Instant::now();
     let mut raw = Vec::new();
     let read = io::stdin()
         .lock()
@@ -429,19 +399,11 @@ pub(crate) fn run(python_argv: &[String]) -> i32 {
         write_stdout(&fail_closed(PRE_TOOL_USE));
         return 0;
     };
-    let delegate = |event_name: &str| {
-        run_python(python_argv, &raw, started.elapsed()).unwrap_or_else(|| {
-            write_stdout(&fail_closed(event_name));
-            0
-        })
-    };
+    // A config Python would refuse, or one this bridge does not read, leaves
+    // no daemon to ask: the hook fails closed.
     let Some(config) = parse_config(config_argument) else {
-        return delegate(PRE_TOOL_USE);
-    };
-    let note = |reason| {
-        if let Some(home) = guard_home(&config.state_path) {
-            hook_bridge_fallback::note(&home, CODEX.name, reason);
-        }
+        write_stdout(&fail_closed(PRE_TOOL_USE));
+        return 0;
     };
     // A hook that cannot be read, or is too large, is refused as the client
     // refuses it.
@@ -480,11 +442,6 @@ pub(crate) fn run(python_argv: &[String]) -> i32 {
                 .map_or(PRE_TOOL_USE, |p| p.event_name.as_str());
             write_stdout(&fail_closed(event_name));
             0
-        }
-        (Route::Delegate(reason), prepared) => {
-            note(reason);
-            let event_name = prepared.map_or_else(|| PRE_TOOL_USE.to_owned(), |p| p.event_name);
-            delegate(&event_name)
         }
     }
 }

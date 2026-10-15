@@ -6,16 +6,16 @@
 //! `beforeMCPExecution` and `beforeReadFile`) or a prompt the daemon reviews
 //! as a `UserPromptSubmit` that a live resident allows, denies or pauses for
 //! review, the bridge prints the client's own answer without starting
-//! Python; a review whose loopback link the client may sign with Guard's
-//! Python is the client's to answer. For Cursor's `afterShellExecution` and
-//! `afterMCPExecution` observers, which the daemon records as a `PostToolUse`
-//! and the client always answers with `{}`, the bridge prints `{}` once the
-//! resident has answered (and so queued the record). The client's other
-//! hooks, every other verdict and anything the bridge cannot reproduce
-//! exactly run the Python client unchanged, with the hook it already read
-//! and the time it already spent. A hook the client could not parse, which
-//! it denies (or answers with `{}` for an observer) before it asks the
-//! daemon anything, gets that answer without Python or the daemon.
+//! Python. For Cursor's `afterShellExecution` and `afterMCPExecution`
+//! observers, which the daemon records as a `PostToolUse` and the client
+//! always answers with `{}`, the bridge prints `{}` once the resident has
+//! answered (and so queued the record). A hook the client could not parse,
+//! which it denies (or answers with `{}` for an observer) before it asks
+//! the daemon anything, gets that answer without Python or the daemon. A
+//! hook the bridge cannot read or send exactly as the client would (another
+//! client event, or JSON the port does not represent) fails closed with the
+//! client's `_cursor_unavailable_response`, never more permissively than
+//! the client would answer it.
 //!
 //! When no live resident answers, the bridge posts the request to the
 //! loopback daemon itself, over the transport, auth token and deadlines the
@@ -23,10 +23,9 @@
 //! daemon that is unreachable, does not answer in time or answers with a
 //! body the client refuses is recovered with the client's own
 //! `GUARD_RECOVERY_COMMAND` and asked once more; an overloaded daemon is
-//! not. A restrictive answer the bridge cannot render is handed to the
-//! client with the daemon's reply, so the hook is never posted twice.
-//! Anything else gets the client's fail-closed `_cursor_unavailable_response`:
-//! the client's CLI fallback, which reviewed the hook in Python, never runs.
+//! not. An answer the bridge cannot render, and anything else, gets the
+//! client's fail-closed `_cursor_unavailable_response`: the client's CLI
+//! fallback, which reviewed the hook in Python, never runs.
 //!
 //! The client also sends an `after*` observer proof and approval binding in
 //! `hook_env`; the daemon drops `hook_env` before it reviews a hook, and the
@@ -58,7 +57,6 @@ use crate::cursor_hook_bridge_response::{
     unparseable_output, AFTER_EVENTS, AFTER_STDOUT,
 };
 use crate::cursor_hook_bridge_script::read_ported_script;
-use crate::hook_bridge_fallback::{self, Fallback};
 use crate::hook_env_stamp::{current_environment, stamp_hook_input_text, Stamp};
 use crate::pyjson::in_surrogate_plane;
 
@@ -320,24 +318,33 @@ fn answer(kind: Kind, event: &str, response: &str, guard_home: &Path) -> Option<
 enum Reply {
     /// The client's stdout and exit code.
     Answered(String, i32),
-    /// Run the client on a hook the bridge could not read, for this reason.
-    Client(Fallback),
 }
 
 /// The client's stdout and exit code for the hook, answered by a live
-/// resident, the daemon or the fail-closed answer, or `None` when the
-/// client runs or renders the reply.
+/// resident, the daemon or the fail-closed answer.
 #[cfg(test)]
 fn respond(client: &Client, raw: &[u8]) -> Option<(String, i32)> {
-    match reply(client, raw) {
-        Reply::Answered(stdout, code) => Some((stdout, code)),
-        Reply::Client(_) => None,
+    let Reply::Answered(stdout, code) = reply(client, raw);
+    Some((stdout, code))
+}
+
+/// The event whose fail-closed answer settles a hook the bridge cannot
+/// send: the hook's own event, unless it is an observer, which gets `{}`
+/// only when the client was also installed as one. Never more permissive
+/// than the client, which would have asked the daemon.
+fn closed_event(client: &Client, payload_event: Option<String>) -> String {
+    match payload_event {
+        Some(event) if unavailable_output(&event).1 == 0 => client.event.clone(),
+        Some(event) => event,
+        None => "preToolUse".to_owned(),
     }
 }
 
 /// The bridge's reply to the hook: the client's own answer to input it
 /// cannot parse, else a live resident's answer, else the daemon's, as
-/// `daemon::daemon_reply` settles them.
+/// `daemon::daemon_reply` settles them. A hook the bridge cannot read
+/// exactly, or cannot send as the client would, fails closed: the daemon
+/// is never asked without the exact request.
 fn reply(client: &Client, raw: &[u8]) -> Reply {
     let (payload, mapped) = match hook_object(raw) {
         Ok(read) => read,
@@ -345,10 +352,10 @@ fn reply(client: &Client, raw: &[u8]) -> Reply {
             let (stdout, code) = unparseable_output(&client.event, client.deadline);
             return Reply::Answered(stdout.to_owned(), code);
         }
-        Err(Unread::Unported) => return Reply::Client(Fallback::InputUnparsed),
+        Err(Unread::Unported) => return fail_closed(&client.event),
     };
     let Some(request) = request_for(client, &payload, mapped) else {
-        return Reply::Client(Fallback::InputUnparsed);
+        return fail_closed(&closed_event(client, cursor_client_event(&payload)));
     };
     let event_name = match request.kind {
         Kind::PreToolUse => PRE_TOOL_USE,
@@ -406,17 +413,9 @@ pub(crate) fn run(python_argv: &[String]) -> i32 {
         // The client reads an empty hook and answers its unparseable input.
         Input::Failed => Vec::new(),
     };
-    let guard_home = Path::new(&client.guard_home);
-    let reason = match reply(&client, &raw) {
-        Reply::Answered(stdout, code) => {
-            write_stdout(&stdout);
-            return code;
-        }
-        Reply::Client(reason) => reason,
-    };
-    hook_bridge_fallback::note(guard_home, CURSOR.name, reason);
-    run_python(python_argv, Some(&raw), started.elapsed(), false)
-        .unwrap_or_else(|| unavailable(event))
+    let Reply::Answered(stdout, code) = reply(&client, &raw);
+    write_stdout(&stdout);
+    code
 }
 
 #[path = "cursor_hook_bridge_daemon.rs"]

@@ -1,15 +1,11 @@
 //! The client modes the native Codex bridge serves itself: binding capture
-//! in process, an unsendable query, and which hooks are Desktop transition
-//! probes.
+//! in process and an unsendable query.
 
 use super::*;
 use crate::binding_capture_fs::initialize_marker;
 use crate::binding_capture_json::{parse_object, Json};
 use crate::binding_capture_op::now_seconds;
 
-/// Recorded from `isolated_hook_environment` and
-/// `_desktop_transition_probe_command`.
-const CLIENT_MODE: &str = include_str!("../testdata/codex_hook_bridge/client_mode.json");
 /// The fields daemon admission strips before the forwarded fingerprint.
 const TRANSPORT_FIELDS: [&str; 3] = ["guard_remaining_seconds", "guard_remaining_ms", "hook_env"];
 const PRE_TOOL: &str = r#"{"hook_event_name":"PreToolUse","session_id":"s","tool_name":"Bash","tool_input":{"command":"ls"},"tool_use_id":"c1"}"#;
@@ -98,23 +94,4 @@ fn an_unsendable_query_fails_closed_without_a_start() {
     assert_eq!(route, Route::Respond(fail_closed("Stop")));
     assert_eq!(prepared.unwrap().event_name, "Stop");
     assert!(!marker.exists());
-}
-
-#[test]
-fn every_hook_python_probes_is_left_to_python() {
-    let all: Value = serde_json::from_str(CLIENT_MODE).unwrap();
-    let cases = all["desktop_probes"].as_array().unwrap();
-    assert!(cases.iter().any(|case| case["python_probe"] == json!(true)));
-    for case in cases {
-        let data = case["data"].as_str().unwrap();
-        // serde_json keeps the last of duplicate keys, as Python does.
-        let parsed: Value = serde_json::from_str(data).unwrap();
-        let candidate = parsed["hook_event_name"] == json!(PRE_TOOL_USE)
-            && parsed.get("guard_transition_probe").is_some();
-        let native = client::carries_transition_probe(data);
-        assert_eq!(native, candidate, "{data}");
-        if case["python_probe"] == json!(true) {
-            assert!(native, "{data}");
-        }
-    }
 }

@@ -23,11 +23,6 @@ const MAX_LOG_BYTES: u64 = 64 * 1024;
 /// Why a native bridge handed a hook to Python.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Fallback {
-    /// The hook input was not a request the bridge could parse.
-    InputUnparsed,
-    /// The client asked for a mode the native bridge does not serve: a
-    /// Codex Desktop transition probe.
-    ClientMode,
     /// The hook input did not match the native contract.
     ContractDrift,
 }
@@ -35,8 +30,6 @@ pub(crate) enum Fallback {
 impl Fallback {
     pub(crate) fn label(self) -> &'static str {
         match self {
-            Self::InputUnparsed => "input_unparsed",
-            Self::ClientMode => "client_mode",
             Self::ContractDrift => "contract_drift",
         }
     }
@@ -89,12 +82,12 @@ mod tests {
     #[test]
     fn note_appends_one_line_per_fallback() {
         let home = tempfile::tempdir().unwrap();
-        note(home.path(), "grok", Fallback::ClientMode);
+        note(home.path(), "grok", Fallback::ContractDrift);
         note(home.path(), "bad name\n", Fallback::ContractDrift);
         let text = std::fs::read_to_string(home.path().join(LOG_DIR).join(LOG_FILE)).unwrap();
         let lines: Vec<&str> = text.lines().collect();
         assert_eq!(lines.len(), 2);
-        assert!(lines[0].ends_with(" grok client_mode"));
+        assert!(lines[0].ends_with(" grok contract_drift"));
         assert!(lines[1].ends_with(" other contract_drift"));
     }
 
@@ -105,7 +98,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join(LOG_FILE);
         std::fs::write(&path, vec![b'x'; MAX_LOG_BYTES as usize]).unwrap();
-        note(home.path(), "codex", Fallback::InputUnparsed);
+        note(home.path(), "codex", Fallback::ContractDrift);
         assert_eq!(std::fs::metadata(&path).unwrap().len(), MAX_LOG_BYTES);
     }
 
@@ -114,6 +107,6 @@ mod tests {
         let home = tempfile::tempdir().unwrap();
         let file = home.path().join("not-a-dir");
         std::fs::write(&file, b"").unwrap();
-        note(&file, "codex", Fallback::InputUnparsed);
+        note(&file, "codex", Fallback::ContractDrift);
     }
 }

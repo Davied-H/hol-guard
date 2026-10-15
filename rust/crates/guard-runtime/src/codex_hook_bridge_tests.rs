@@ -296,30 +296,6 @@ fn lone_surrogates_are_forwarded_as_python_escapes_them() {
     }
 }
 
-#[test]
-fn python_runs_with_the_input_and_reports_its_exit_code() {
-    let script = |body: &str| vec!["/bin/sh".to_owned(), "-c".to_owned(), body.to_owned()];
-    let check = format!(
-        "[ -n \"${ELAPSED_ENV}\" ] || exit 9; read -r line; [ \"$line\" = hello ] && exit 7; exit 8"
-    );
-    assert_eq!(
-        run_python(&script(&check), b"hello\n", Duration::ZERO),
-        Some(7)
-    );
-    assert_eq!(
-        run_python(&script("exit 0"), &vec![b'x'; 1 << 20], Duration::ZERO),
-        Some(0)
-    );
-    assert_eq!(
-        run_python(&script("kill -9 $$"), b"", Duration::ZERO),
-        Some(137)
-    );
-    assert_eq!(
-        run_python(&["/nonexistent/python".to_owned()], b"", Duration::ZERO),
-        None
-    );
-}
-
 pub(super) fn codex_home(
     label: &str,
     script: Vec<Exchange>,

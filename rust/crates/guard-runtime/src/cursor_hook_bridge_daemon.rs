@@ -8,8 +8,8 @@
 //! An overloaded daemon is never restarted, as the client never recovers
 //! one. A daemon the hook was posted to may already have seen it, so after
 //! the start the hook is sent only to a daemon that came up since. Every
-//! other outcome, and an answer the bridge cannot render or hand to the
-//! client, is the client's `_cursor_unavailable_response`; the client's
+//! other outcome, and an answer the bridge cannot render, is the client's
+//! `_cursor_unavailable_response`; the client's
 //! CLI fallback, which reviewed the hook in Python, is never run.
 
 use std::path::Path;

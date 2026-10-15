@@ -487,17 +487,51 @@ pub(crate) fn run(python_argv: &[String]) -> i32 {
     }
     let config = config_argument(python_argv).and_then(parse_config);
     let Some(config) = config else {
-        return run_python(python_argv, None, started.elapsed(), false)
-            .unwrap_or_else(|| fail("unknown", DEFAULT_EVENT, false));
+        return refuse_config(config_argument(python_argv), started);
     };
     let Some(deadline) = started.checked_add(config.timeout) else {
-        return run_python(python_argv, None, started.elapsed(), false)
-            .unwrap_or_else(|| fail(&config.harness, DEFAULT_EVENT, false));
+        return fail(&config.harness, DEFAULT_EVENT, false);
     };
     let Input::Read(raw) = read_hook_input(deadline) else {
         return fail(&config.harness, DEFAULT_EVENT, false);
     };
-    match route_hook(&config, &raw, deadline) {
+    emit(&config.harness, route_hook(&config, &raw, deadline))
+}
+
+/// `main_from_argv` for a config the native bridge does not serve: the
+/// `_emit_failure` answer Python gives a config it refuses. Python fails
+/// one without a usable timeout before reading the hook, and any other
+/// for the event the hook names. No install writes such a config for the
+/// native bridge, so the hook fails closed rather than running Python.
+fn refuse_config(argument: Option<&str>, started: Instant) -> i32 {
+    let payload = argument
+        .and_then(|text| pyjson::parse_mapping_lone_surrogates(text).ok())
+        .map(|parsed| parsed.value)
+        .filter(|value| value.as_dict().is_some());
+    let harness = payload
+        .as_ref()
+        .and_then(|value| value.get("harness")?.as_str().map(str::to_owned))
+        .unwrap_or_else(|| "unknown".to_owned());
+    let deadline = payload
+        .as_ref()
+        .and_then(|value| positive_seconds(value.get("timeout_seconds")))
+        .and_then(|timeout| started.checked_add(timeout));
+    let Some(deadline) = deadline else {
+        return fail(&harness, DEFAULT_EVENT, false);
+    };
+    let Input::Read(raw) = read_hook_input(deadline) else {
+        return fail(&harness, DEFAULT_EVENT, false);
+    };
+    let route = match prepare(&raw) {
+        Ok(prepared) => prepared.failed(),
+        Err(refused) => refused,
+    };
+    emit(&harness, route)
+}
+
+/// Write the answer for `route` and return its exit code.
+fn emit(harness: &str, route: Route) -> i32 {
+    match route {
         Route::Respond {
             stdout,
             stderr,
@@ -509,12 +543,12 @@ pub(crate) fn run(python_argv: &[String]) -> i32 {
             }
             exit_code
         }
-        Route::Fail { event_name, unmap } => fail(&config.harness, &event_name, unmap),
+        Route::Fail { event_name, unmap } => fail(harness, &event_name, unmap),
         Route::Refuse {
             event_name,
             reason,
             unmap,
-        } => refuse(&config.harness, &event_name, reason, unmap),
+        } => refuse(harness, &event_name, reason, unmap),
     }
 }
 
