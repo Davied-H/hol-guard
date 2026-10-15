@@ -259,7 +259,7 @@ pub fn evaluate_pre_tool_envelope_with_execution_context(
             .as_deref()
             .is_some_and(open_quote::leaves_quote_open)
         {
-            result.reason = "HOL Guard blocked this command because it leaves a quote open, so the shell cannot run it as written. Close or remove the stray quote and run it again.".into();
+            result.reason = "HOL Guard blocked this command because it has a shell syntax error: it leaves a quote open, so the shell cannot run it as written. Close or remove the stray quote and run it again.".into();
         }
     }
     result
