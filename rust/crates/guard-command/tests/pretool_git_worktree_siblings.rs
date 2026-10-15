@@ -41,7 +41,8 @@ fn git(home: &Path, repository: &Path, arguments: &[&str]) {
 
 /// A checkout outside home may get a sibling worktree below the shared
 /// temporary directory, but only where no other user could have placed or
-/// redirected a directory on the way, and never directly in it.
+/// redirected a directory on the way. Directly in the sticky root, only a
+/// leaf that does not exist yet is admitted.
 #[test]
 fn worktree_add_admits_fresh_temporary_siblings_only() {
     let unique = format!(
@@ -86,6 +87,7 @@ fn worktree_add_admits_fresh_temporary_siblings_only() {
     for (index, destination) in [
         organization.join("app-next").display().to_string(),
         "../app-relative".to_owned(),
+        format!("/tmp/guard-worktree-direct-{unique}"),
     ]
     .iter()
     .enumerate()
@@ -115,7 +117,8 @@ fn worktree_add_admits_fresh_temporary_siblings_only() {
         organization.join("missing/next"),
         // An autostart location stays reviewed below an owned temporary root.
         home.join("Library/LaunchAgents/next"),
-        std::path::PathBuf::from(format!("/tmp/guard-worktree-direct-{unique}")),
+        // Directly in the shared root, a directory that already exists.
+        root.clone(),
     ] {
         let command = format!("git worktree add {} -b refused HEAD", destination.display());
         let result = evaluate(&home, &repository, &command);
