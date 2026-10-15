@@ -159,6 +159,30 @@ def test_package_authority_refuses_unavailable_or_malformed_resident(
     assert native_package_authority.package_intent_parse_native(huge, guard_home=home) is None
 
 
+def test_package_intent_parse_requiring_an_answer_raises_without_one(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    home = tmp_path / "home"
+    parse = native_package_authority.package_intent_parse_native
+    unavailable = native_package_authority.NativePackageIntentUnavailableError
+    _patch_authority(monkeypatch, _status(available=False), b"{}")
+    with pytest.raises(unavailable, match="native_package_intent_unavailable"):
+        parse("npm install left-pad", guard_home=home, require_answer=True)
+    _patch_authority(
+        monkeypatch,
+        _status(),
+        b'{"schema":"guard-package-authority-result.v1","status":"ok","payload":["nope"]}',
+    )
+    with pytest.raises(unavailable, match="native_package_intent_malformed"):
+        parse("npm install left-pad", guard_home=home, require_answer=True)
+    _patch_authority(
+        monkeypatch,
+        _status(),
+        b'{"schema":"guard-package-authority-result.v1","status":"ok","payload":null}',
+    )
+    assert parse("echo hi", guard_home=home, require_answer=True) is None
+
+
 def test_program_digest_stamp_keeps_snapshot_when_runtime_digests_disagree() -> None:
     extensions = {"program_digest": OTHER, "catalog_digest": DIGEST, "trust_digest": DIGEST}
     assert _stamp_runtime_program_digest(extensions, None) is extensions
@@ -180,35 +204,56 @@ def _raise_transport(*_args: object, **_kwargs: object) -> dict[str, object]:
     raise RuntimeError("transport")
 
 
-def test_supply_chain_native_bridge_rejects_bad_call_shapes(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_supply_chain_native_bridge_fails_closed_without_an_answer(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from codex_plugin_scanner.guard.native_protect_request import NativeProtectRequestError
+
     monkeypatch.setattr(
         local_supply_chain,
         "_native_package_authority_module",
         lambda: SimpleNamespace(package_intent_parse_native=_raise_transport),
     )
-    assert (
+    with pytest.raises(NativeProtectRequestError, match="native_package_intent_unavailable"):
         local_supply_chain._parse_package_intent_native(
             "npm install left-pad",
             environment={"PATH": "/usr/bin"},
             workspace=tmp_path,
             guard_home=tmp_path,
         )
-        is None
-    )
     monkeypatch.setattr(
         local_supply_chain,
         "_native_package_authority_module",
         lambda: SimpleNamespace(package_intent_parse_native=lambda *_args, **_kwargs: {"intent_kind": "nope"}),
     )
-    assert (
+    with pytest.raises(NativeProtectRequestError, match="native_package_intent_malformed"):
         local_supply_chain._parse_package_intent_native(
             "npm install left-pad",
             environment=None,
             workspace=tmp_path,
             guard_home=tmp_path,
         )
+    calls: list[dict[str, object]] = []
+
+    def _no_intent(*_args: object, **kwargs: object) -> None:
+        calls.append(kwargs)
+        return None
+
+    monkeypatch.setattr(
+        local_supply_chain,
+        "_native_package_authority_module",
+        lambda: SimpleNamespace(package_intent_parse_native=_no_intent),
+    )
+    assert (
+        local_supply_chain._parse_package_intent_native(
+            "echo hi",
+            environment=None,
+            workspace=tmp_path,
+            guard_home=tmp_path,
+        )
         is None
     )
+    assert calls[0]["require_answer"] is True
 
 
 def test_package_evaluation_without_resident_blocks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
