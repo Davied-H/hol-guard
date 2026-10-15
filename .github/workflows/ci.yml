@@ -37,12 +37,28 @@ jobs:
           path: .
           run-id: 38812881347
           github-token: ${{ github.token }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: pytest-shard-plan-3.12
+          path: pytest-shards
+          run-id: 38812881347
+          github-token: ${{ github.token }}
       - name: Reproduce approval reuse with full failure context
         env:
           HOL_GUARD_NATIVE_BINARY: ${{ github.workspace }}/rust/target/release/hol-guard-runtime
           HOL_GUARD_NATIVE_SOURCE_COMPILER: ${{ github.workspace }}/rust/target/release/guard-command-source
           HOL_GUARD_NATIVE_TEST_SOURCE_COMPILER: ${{ github.workspace }}/rust/target/release/guard-command-source
+          HOL_GUARD_BUILD_SOURCE_COMPILER: ${{ github.workspace }}/rust/target/release/guard-command-source
           HOL_GUARD_NATIVE_REGRESSION: '1'
         run: |
           chmod 0755 rust/target/release/hol-guard-runtime rust/target/release/guard-command-source
-          uv run --no-sync pytest -q tests/test_guard_runtime.py::test_runtime_hook_package_without_workspace_invalidates_allow_after_lockfile_mutation --showlocals --tb=long
+          uv run --no-sync python - <<'PY'
+          import pathlib
+          import subprocess
+          import yaml
+          workflow = yaml.safe_load(pathlib.Path('.github/workflows/ci.yml').read_text())
+          step = next(s for s in workflow['jobs']['coverage']['steps'] if s.get('name', '').startswith('Run coverage shard'))
+          script = step['run'].replace('${' + '{ matrix.shard-index }}', '35').replace('${' + '{ github.event_name }}', 'pull_request')
+          script = script.replace('--tb=short', '--tb=long --showlocals')
+          subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', script], check=True)
+          PY
