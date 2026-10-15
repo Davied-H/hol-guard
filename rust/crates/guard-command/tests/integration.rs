@@ -124,6 +124,7 @@ pub mod pretool_omp_workspace_search;
 pub mod pretool_omp_yield_reports;
 pub mod pretool_outside_workspace_files;
 pub mod pretool_package_directory_flags;
+pub mod pretool_package_script_routes;
 pub mod pretool_parent_relative_writes;
 pub mod pretool_pi_tools;
 pub mod pretool_private_temporary_workspace;
