@@ -395,12 +395,9 @@ fn verified_selector_candidate(
             let root_path = std::path::Path::new(&root);
             let canonical_root = std::fs::canonicalize(root_path).ok()?;
             let Ok(relative) = expanded_path.strip_prefix(root_path) else {
-                let tmp_alias = std::path::Path::new("/tmp");
-                let Ok(tmp_relative) = expanded_path.strip_prefix(tmp_alias) else {
+                let Some(mapped) = through_tmp_alias(expanded_path) else {
                     continue;
                 };
-                let canonical_tmp = std::fs::canonicalize(tmp_alias).ok()?;
-                let mapped = canonical_tmp.join(tmp_relative);
                 let Ok(relative) = mapped.strip_prefix(&canonical_root) else {
                     continue;
                 };
@@ -410,13 +407,26 @@ fn verified_selector_candidate(
         }
         // Location alone is not a denial reason for OMP's names-only listing.
         // Callers still canonicalize this path and apply every sensitive-root,
-        // credential, foreign-home, and hidden-component check below.
-        return Some(expanded_path.to_path_buf());
+        // credential, foreign-home, and hidden-component check below. The
+        // same `/tmp` alias reaches directories outside both roots, such as a
+        // sibling worktree, so it is resolved here too.
+        return Some(
+            through_tmp_alias(expanded_path).unwrap_or_else(|| expanded_path.to_path_buf()),
+        );
     }
     let root = cwd
         .and_then(|root| expand_home_read_path(root, home_dir).or_else(|| Some(root.to_owned())))
         .filter(|root| std::path::Path::new(root).is_absolute())?;
     Some(std::fs::canonicalize(root).ok()?.join(expanded_path))
+}
+
+/// `/tmp/<rest>` under the platform's canonical temporary root, such as
+/// `/private/tmp` on macOS. Only the system alias itself is resolved; the
+/// caller still rejects any symlink below it.
+fn through_tmp_alias(path: &std::path::Path) -> Option<std::path::PathBuf> {
+    let tmp_alias = std::path::Path::new("/tmp");
+    let relative = path.strip_prefix(tmp_alias).ok()?;
+    Some(std::fs::canonicalize(tmp_alias).ok()?.join(relative))
 }
 
 /// Whether a structured read names a path that does not exist. The read is
