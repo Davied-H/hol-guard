@@ -136,6 +136,12 @@ def native_finalize_package_protect(
     if patch is None:
         return native_unavailable_block_evaluation(base)
     result = apply_package_evaluation_patch(base, patch)
-    if not saved_approval_claimed and any(reason.get("code") == "saved_package_approval" for reason in result.reasons):
+    # A failed claim's own evaluation keeps the saved-approval reason it was
+    # refused for; it is never executable, so only a fresh reuse is suspect.
+    if (
+        claim_failure is None
+        and not saved_approval_claimed
+        and any(reason.get("code") == "saved_package_approval" for reason in result.reasons)
+    ):
         raise NativePackageProtectFinalizeError("Native package protect finalize reused an unclaimed approval")
     return result
