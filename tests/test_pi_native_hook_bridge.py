@@ -237,6 +237,8 @@ def test_generated_extension_caps_the_bridge_daemon_budget(tmp_path: Path) -> No
         display_name="Oh My Pi",
     )
 
-    request = source.split("async function daemonGuardResponse(", 1)[1].split("const nativeReply", 1)[0]
-    assert "const budgetMs = nativeGuardBudgetMs(" in request
-    assert "parsedPayload.guard_remaining_ms = budgetMs;" in request
+    request = source.split("async function daemonGuardResponse(", 1)[1].split("\n}\n", 1)[0]
+    assert "const bridgeBudgetMs = nativeGuardBudgetMs(budgetMs, remainingMs);" in request
+    assert "payloadWithBudget(bridgeBudgetMs),\n    bridgeBudgetMs," in request
+    # A direct daemon post after the bridge is unavailable keeps the full budget.
+    assert "body: payloadWithBudget(budgetMs)," in request
