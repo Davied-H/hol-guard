@@ -276,7 +276,9 @@ def build_fixture(root: Path) -> BenignFixture:
     _write(parent / "src" / "password-reset-email.tsx", "export const Email = () => null;\n")
     _write(parent / "app" / "registry" / "[slug]" / "page.tsx", "export default function Page() { return null; }\n")
     _write(parent / ".agents" / "skills" / "x" / "SKILL.md", "---\nname: x\n---\nSynthetic skill body.\n")
-    _write(parent / ".gitignore", "node_modules/\n")
+    # Git treats a link as a file, so `node_modules/` alone leaves the borrowed
+    # `dashboard/node_modules` link below unignored.
+    _write(parent / ".gitignore", "node_modules/\ndashboard/node_modules\n")
     _git(parent, "add", "-A", home=home)
     _git(parent, "commit", "--quiet", "-m", "fixture base", home=home)
     _git(parent, "worktree", "add", "--quiet", "-b", "feature", str(worktree), home=home)
