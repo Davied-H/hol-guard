@@ -58,8 +58,6 @@ _FIXED_TOOLS = {
     "todo": "todo",
     "todo_write": "todo_write",
     "ls": "ls",
-    # Claude Code's built-in question prompt reaches Guard only after the user answers.
-    "ask_user_question": "AskUserQuestion",
 }
 # A pending marker names the open work that owns the case. "unassigned" still
 # prompts and has no owner yet. A merged PR is never a marker: once its fix
@@ -89,8 +87,6 @@ class GateCase:
     tool_input: dict[str, object]
     cwd: str
     expect: str
-    event: str = "PreToolUse"
-    tool_response: object = None
     # Variables the agent shell inherits, such as a user's RIPGREP_CONFIG_PATH.
     environment: tuple[tuple[str, str], ...] = ()
 
@@ -109,8 +105,6 @@ def _expand() -> list[GateCase]:
                     tool_input=entry["tool_input"],
                     cwd=entry["cwd"],
                     expect=entry["expect"],
-                    event=entry.get("event", "PreToolUse"),
-                    tool_response=entry.get("tool_response"),
                     environment=tuple(sorted(entry.get("environment", {}).items())),
                 )
             )
@@ -203,7 +197,7 @@ def _review(case: GateCase, fixture: BenignFixture, worker: HookWorker) -> tuple
     before = worker.store.count_approval_requests(status=None)
     known = {str(row.get("request_id")) for row in worker.store.list_approval_requests(status=None, limit=500)}
     payload: dict[str, object] = {
-        "hook_event_name": case.event,
+        "hook_event_name": "PreToolUse",
         "tool_name": _tool_name(case),
         "tool_input": _tool_input(case, fixture),
         "session_id": "benign-fp-gate",
@@ -211,8 +205,6 @@ def _review(case: GateCase, fixture: BenignFixture, worker: HookWorker) -> tuple
         "cwd": str(fixture.cwd(case.cwd)),
         "guard_execution_environment": collect_hook_execution_environment(),
     }
-    if case.tool_response is not None:
-        payload["tool_response"] = case.tool_response
     if case.harness == "cursor":
         payload.update(cursor_hook_fields(case.tool, payload))
     # Approval baselines stay from before the first attempt, so a retry never hides a row.

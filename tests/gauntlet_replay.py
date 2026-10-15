@@ -42,7 +42,6 @@ FIXED = {
     "todo": "todo",
     "todo_write": "todo_write",
     "ls": "ls",
-    "ask_user_question": "AskUserQuestion",
 }
 # Abstract tools upstream Pi also ships; omp-only tools (eval, task, todo, glob, ...) are not mirrored.
 PI_TOOLS = frozenset({"shell", "read", "write", "grep", "ls"})
@@ -68,8 +67,6 @@ class ReplayCase:
     tool_input: dict[str, object]
     cwd: str
     expect: str  # quiet | always | block
-    event: str = "PreToolUse"
-    tool_response: object = None
 
     @property
     def tool_name(self) -> str:
@@ -79,15 +76,7 @@ class ReplayCase:
 
 def _entry(entry: dict[str, Any], harness: str, expect: str) -> ReplayCase:
     return ReplayCase(
-        f"{entry['id']}@{harness}",
-        entry["id"],
-        harness,
-        entry["tool"],
-        entry["tool_input"],
-        entry["cwd"],
-        expect,
-        entry.get("event", "PreToolUse"),
-        entry.get("tool_response"),
+        f"{entry['id']}@{harness}", entry["id"], harness, entry["tool"], entry["tool_input"], entry["cwd"], expect
     )
 
 
@@ -167,7 +156,7 @@ def omp_contained(case: ReplayCase, result: dict[str, object]) -> bool:
 
 
 def interruptions(case: ReplayCase, result: dict[str, object], approvals: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    row = {"response": result, "payload": {"tool_name": case.tool_name, "hook_event_name": case.event}}
+    row = {"response": result, "payload": {"tool_name": case.tool_name, "hook_event_name": "PreToolUse"}}
     found = [] if omp_contained(case, result) else observation_interruptions(row, case.harness)
     found.extend(
         {"kind": "approval", "harness": case.harness, "tool": case.tool_name, "reason_code": a.get("reason_code")}
