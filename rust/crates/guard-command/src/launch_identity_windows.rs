@@ -68,6 +68,16 @@ pub(crate) fn executable_identity(
     if launcher_file_names(name) != [name] {
         return Err(failed("not_executable"));
     }
+    // PATHEXT can also name script hosts (`.js`, `.vbs`, `.wsf`) that
+    // `CreateProcessW` cannot start; only native images and batch files
+    // launch directly.
+    let lowered = name.to_ascii_lowercase();
+    if ![".exe", ".com", ".bat", ".cmd"]
+        .iter()
+        .any(|extension| lowered.ends_with(extension))
+    {
+        return Err(failed("not_executable"));
+    }
     let file = guard_runtime_windows_process::open_bound_executable_file(&canonical)
         .map_err(|_| failed("open_failed"))?;
     let file_id =
@@ -83,7 +93,6 @@ pub(crate) fn executable_identity(
         Ok((current, _)) if current == file_id => {}
         _ => return Err(("path_changed", Some(launch_path))),
     }
-    let lowered = name.to_ascii_lowercase();
     let native = lowered.ends_with(".exe") || lowered.ends_with(".com");
     let mut identity = Map::new();
     identity.insert("command".into(), json!(command));
