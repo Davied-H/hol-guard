@@ -93,8 +93,8 @@ fn check(f: &Fixture, cwd: &str, command: &str, want_allow: bool) {
     let r = run(f, cwd, command);
     eprintln!("{cwd}: {command} => {} {}", r.minimum_action, r.reason_code);
     assert_eq!(
-        r.minimum_action == "allow",
-        want_allow,
+        r.minimum_action,
+        if want_allow { "allow" } else { "review" },
         "{cwd}: {command}: {} {}",
         r.minimum_action,
         r.reason_code
@@ -170,10 +170,12 @@ fn searches_that_can_reach_secrets_stay_reviewed() {
 
 #[test]
 fn rg_skips_hidden_files_so_a_root_env_is_not_in_reach_without_hidden_flags() {
-    // ripgrep never opens `.env` unless `--hidden`/`-u`/`--no-ignore` style
-    // flags (all refused above) are given, tracked or ignored alike.
+    // Without `--hidden`/`-u`/`--no-ignore` style flags (all refused above)
+    // ripgrep skips `.env`, tracked or ignored alike. An ignore file that
+    // whitelists it (`custom`) does make ripgrep search it, so that workspace
+    // is left out here.
     let f = fixture();
-    for cwd in ["app", "tracked", "custom", "noignore"] {
+    for cwd in ["app", "tracked", "noignore"] {
         check(&f, cwd, "rg -n foo", true);
     }
 }

@@ -70,8 +70,11 @@ pub(crate) fn is_code_value(matched: &str, rest_of_line: &str) -> bool {
         return false;
     }
     if CALL.is_match(value) {
-        // Environment lookups carry their default as a second literal.
-        return !value.to_ascii_lowercase().contains("env")
+        // Environment lookups carry their default as a second literal. An
+        // upper-case dotenv key holds data, so `DB_PASSWORD=wrap(value)` stays
+        // a credential.
+        return !environment_style_key(&matched[..index])
+            && !value.to_ascii_lowercase().contains("env")
             && rest_of_line.matches(['"', '\'', '`']).count() <= 2
             && !LONG_LITERAL.is_match(rest_of_line);
     }
@@ -185,6 +188,7 @@ mod tests {
             format!("token={jwt};"),
             format!("export AUTH_TOKEN={jwt}; curl https://example.test"),
             "AUTH_TOKEN=config.session.value;".to_string(),
+            "DB_PASSWORD=wrap(value)".to_string(),
         ] {
             assert!(flagged(&text), "{text:?}");
         }
