@@ -35,6 +35,7 @@ fn oh_my_pi_hashline_edits_get_the_file_write_proof() {
     std::fs::write(workspace.join(".env"), "TOKEN=synthetic\n").unwrap();
     std::fs::write(workspace.join("AGENTS.md"), "rules\n").unwrap();
     std::fs::write(workspace.join(".git/config"), "[core]\n").unwrap();
+    std::fs::write(home.join(".zshrc"), "export PATH\n").unwrap();
     let in_sibling = format!(
         "[{}#0AC4]\nPUT 1.=1:\n+export const a = 3;\n",
         sibling.join("src/a.ts").display()
@@ -64,6 +65,9 @@ fn oh_my_pi_hashline_edits_get_the_file_write_proof() {
         patch(&[&absolute]),
         patch(&[&in_sibling, put_b]),
         patch(&["[src/new.ts]\nPUT >$:\n+export {};\n"]),
+        // Oh My Pi opens a leading `~/` under the home folder.
+        patch(&["[~/project/src/a.ts#0AC4]\nPUT >$:\n+// end\n", put_b]),
+        patch(&["[ ~/project-fix/src/a.ts#0AC4]\nPUT 1.=1:\n+export const a = 3;\n"]),
         patch(&[
             "[src/a.ts#0AC4]\nCUT 1.=1 @line\n",
             "[src/b.ts#1B2C]\nPUT >$ @line\n",
@@ -77,7 +81,11 @@ fn oh_my_pi_hashline_edits_get_the_file_write_proof() {
         );
     }
     // A file that does not exist cannot be edited; the agent fixes the path.
-    for input in [patch(&[missing]), patch(&[put_a, missing])] {
+    for input in [
+        patch(&[missing]),
+        patch(&[put_a, missing]),
+        patch(&["[~/project-typo/src/a.ts#0AC4]\nPUT 1.=1:\n+x\n"]),
+    ] {
         let result = evaluate("omp", &input);
         assert_eq!(
             (result.minimum_action.as_str(), result.reason_code.as_str()),
@@ -95,6 +103,9 @@ fn oh_my_pi_hashline_edits_get_the_file_write_proof() {
         patch(&["[src/a.ts#0AC4]\nREM\n"]),
         patch(&["[src/a.ts#0AC4]\nMV ../outside.ts\n"]),
         patch(&["[~/.zshrc#0AC4]\nPUT >$:\n+export X=1\n"]),
+        patch(&["[~/.ssh/config]\nPUT >$:\n+Host *\n"]),
+        patch(&["[~/project/.env#0AC4]\nPUT >$:\n+EXTRA=1\n"]),
+        patch(&["[~/project/AGENTS.md#0AC4]\nPUT >$:\n+more rules\n"]),
         patch(&["[*** Update File: src/a.ts#0AC4]\nPUT 1.=1:\n+x\n"]),
         "*** Begin Patch\n*** Update File: src/a.ts\n@@\n-export const a = 1;\n+export const a = 3;\n*** End Patch\n".to_owned(),
     ] {

@@ -761,24 +761,29 @@ pub(super) fn host_reference_reason(value: &str) -> Option<&'static str> {
 }
 
 /// `artifact://<digits>` names an Oh My Pi session artifact, never a path.
+/// It may carry an `N-M` line range, `raw`, or one of each in either order;
+/// `raw` only drops line formatting from the same artifact.
 fn artifact_reference(value: &str) -> bool {
     let Some(rest) = value.strip_prefix("artifact://") else {
         return false;
     };
-    let (id, range) = match rest.split_once(':') {
-        Some((id, range)) => (id, Some(range)),
-        None => (rest, None),
+    let mut chunks = rest.split(':');
+    let id = chunks.next().unwrap_or_default();
+    let number = |part: &str| {
+        !part.is_empty() && part.len() <= 9 && part.bytes().all(|byte| byte.is_ascii_digit())
     };
-    !id.is_empty()
-        && id.len() <= 9
-        && id.bytes().all(|byte| byte.is_ascii_digit())
-        && range.is_none_or(|range| {
-            range.split_once('-').is_some_and(|(start, end)| {
-                [start, end].iter().all(|part| {
-                    !part.is_empty()
-                        && part.len() <= 9
-                        && part.bytes().all(|byte| byte.is_ascii_digit())
-                })
-            })
-        })
+    let (mut raw, mut range) = (false, false);
+    let selectors_ok = chunks.all(|chunk| {
+        if chunk.eq_ignore_ascii_case("raw") && !raw {
+            raw = true;
+            return true;
+        }
+        let is_range = chunk
+            .split_once('-')
+            .is_some_and(|(start, end)| number(start) && number(end));
+        let fresh = is_range && !range;
+        range |= is_range;
+        fresh
+    });
+    number(id) && selectors_ok
 }
