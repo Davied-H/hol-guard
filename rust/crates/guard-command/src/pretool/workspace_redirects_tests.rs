@@ -151,7 +151,7 @@ fn the_sink_plans_every_wrapped_call_the_edge_contains() {
 #[cfg(unix)]
 #[test]
 fn the_sink_plans_package_directory_calls_whole_from_the_root() {
-    use crate::pretool::workspace_contained_tests::{reason, workspace, CONTAINED};
+    use crate::pretool::workspace_contained_tests::workspace;
     let ws = workspace("package-directory", true);
     std::fs::create_dir_all(ws.join("web")).unwrap();
     std::fs::write(ws.join("web/package.json"), "{}").unwrap();
@@ -161,11 +161,11 @@ fn the_sink_plans_package_directory_calls_whole_from_the_root() {
         "npm --prefix web run lint",
         "pnpm --dir=web run build 2>&1 | tail -20",
     ] {
-        if reason("claude-code", command, &ws, true) == CONTAINED {
-            assert!(
-                crate::restricted_pytest::workspace_exact_shape(command, &ws).is_some(),
-                "{command}"
-            );
-        }
+        // Planned whatever the host's containment, so the check never
+        // depends on the edge classifying the call as contained first.
+        assert!(
+            crate::restricted_pytest::workspace_exact_shape(command, &ws).is_some(),
+            "{command}"
+        );
     }
 }
