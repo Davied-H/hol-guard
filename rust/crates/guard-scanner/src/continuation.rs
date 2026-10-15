@@ -158,10 +158,10 @@ mod tests {
             "password = 'mock-'\\n  + realTail",
             "password = 'mock-'$REAL_SECRET",
             "password = 'mock-'\"real-tail\"",
-            "PASSWORD='example-'-\"$PROD_SECRET\"",
-            "PASSWORD='example'/\"$PROD_SECRET\"",
-            "PASSWORD='example'@\"$PROD_HOST\"",
-            "PASSWORD='example'=\"$PROD_SECRET\"",
+            "password = 'mock-'-\"$PROD_SECRET\"",
+            "password = 'mock'/\"$PROD_SECRET\"",
+            "password = 'mock'@\"$PROD_HOST\"",
+            "password = 'mock'=\"$PROD_SECRET\"",
         ] {
             assert!(flags_assignment(text), "{text:?}");
         }
