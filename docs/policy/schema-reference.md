@@ -114,6 +114,12 @@ Versioned business selectors for drafts. Publication requires an authenticated n
 
 No other fields are allowed.
 
+Conditions:
+
+- When `operations` includes `mail_read`, `mail_draft`, `mail_send`, `mail_label`, `mail_permanent_delete` or `mail_settings`, `services` must include `google_gmail`.
+- When `operations` includes `drive_read`, `drive_edit`, `drive_share` or `drive_export`, `services` must include `google_drive`.
+- When `operations` includes `calendar_read` or `calendar_invite`, `services` must include `google_calendar`.
+
 ## match
 
 | Field | Required | Type |
@@ -157,6 +163,10 @@ No other fields are allowed, except extension keys matching `^x-[a-z0-9][a-z0-9.
 
 No other fields are allowed, except extension keys matching `^x-[a-z0-9][a-z0-9.-]{0,62}$`.
 
+Conditions:
+
+- When `mode` is `until`, `expiresAt` is required; otherwise `expiresAt` must be null or omitted.
+
 ## provenance
 
 | Field | Required | Type |
@@ -199,7 +209,7 @@ null or boolean or integer (min -9007199254740991, max 9007199254740991) or stri
 | `version` | yes | `1` |
 | `id` | yes | [identifier](#identifier) |
 | `scope` | yes | one of `workflow`, `account`, `user` |
-| `match` | yes | any |
+| `match` | yes | [businessMatch](#businessmatch); `minRecipientCount`, `minRecordCount` or `minByteCount` must not be set |
 | `windowMs` | yes | integer (min 1, max 86400000) |
 | `maximumActions` | yes | integer (min 0, max 9007199254740991) |
 | `maximumRecipients` | yes | integer (min 0, max 9007199254740991) |

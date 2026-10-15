@@ -41,6 +41,11 @@ def _describe(schema: dict[str, object]) -> str:
     for key in ("oneOf", "anyOf"):
         if key in schema:
             return " or ".join(_describe(option) for option in schema[key])  # type: ignore[union-attr]
+    if isinstance(schema.get("allOf"), list):
+        parts = [_describe(part) for part in schema["allOf"] if isinstance(part, dict) and "$ref" in part]  # type: ignore[union-attr]
+        rules = _conditions(schema)
+        if parts:
+            return " and ".join(parts) + (f"; {'; '.join(rules)}" if rules else "")
     kind = schema.get("type")
     label = "/".join(kind) if isinstance(kind, list) else str(kind or "any")
     if kind == "array" and isinstance(schema.get("items"), dict):
@@ -62,6 +67,70 @@ def _describe(schema: dict[str, object]) -> str:
     if "pattern" in schema:
         limits.append(f"pattern `{schema['pattern']}`")
     return label + (f" ({', '.join(limits)})" if limits else "")
+
+
+def _names(values: object) -> str:
+    items = [f"`{value}`" for value in values] if isinstance(values, list) else []
+    if len(items) < 2:
+        return "".join(items)
+    return ", ".join(items[:-1]) + " or " + items[-1]
+
+
+def _condition_subject(condition: dict[str, object]) -> str | None:
+    properties = condition.get("properties")
+    if not isinstance(properties, dict) or len(properties) != 1:
+        return None
+    ((field, rule),) = properties.items()
+    if not isinstance(rule, dict):
+        return None
+    if "const" in rule:
+        return f"`{field}` is `{rule['const']}`"
+    contains = rule.get("contains")
+    if isinstance(contains, dict) and "enum" in contains:
+        return f"`{field}` includes {_names(contains['enum'])}"
+    if isinstance(contains, dict) and "const" in contains:
+        return f"`{field}` includes `{contains['const']}`"
+    return None
+
+
+def _requirement(branch: dict[str, object]) -> str | None:
+    required = branch.get("required")
+    if isinstance(required, list) and required:
+        return f"{_names(required)} is required"
+    properties = branch.get("properties")
+    if isinstance(properties, dict) and len(properties) == 1:
+        ((field, rule),) = properties.items()
+        if isinstance(rule, dict) and rule.get("type") == "null":
+            return f"`{field}` must be null or omitted"
+        contains = rule.get("contains") if isinstance(rule, dict) else None
+        if isinstance(contains, dict) and "const" in contains:
+            return f"`{field}` must include `{contains['const']}`"
+    return None
+
+
+def _conditions(schema: dict[str, object]) -> list[str]:
+    """Plain-language sentences for the ``allOf`` constraints the field table cannot show."""
+    sentences: list[str] = []
+    for part in schema.get("allOf", []):  # type: ignore[union-attr]
+        if not isinstance(part, dict):
+            continue
+        negated = part.get("not")
+        if isinstance(negated, dict) and isinstance(negated.get("anyOf"), list):
+            fields = [field for option in negated["anyOf"] for field in option.get("required", [])]  # type: ignore[union-attr]
+            sentences.append(f"{_names(fields)} must not be set")
+            continue
+        condition, then = part.get("if"), part.get("then")
+        if not isinstance(condition, dict) or not isinstance(then, dict):
+            continue
+        subject, outcome = _condition_subject(condition), _requirement(then)
+        if subject is None or outcome is None:
+            raise ValueError(f"unrendered schema condition: {json.dumps(part)[:200]}")
+        sentence = f"when {subject}, {outcome}"
+        otherwise = part.get("else")
+        if isinstance(otherwise, dict) and (alternative := _requirement(otherwise)):
+            sentence += f"; otherwise {alternative}"
+        sentences.append(sentence)
+    return sentences
 
 
 def _cell(text: str) -> str:
@@ -88,6 +157,9 @@ def _render_object(name: str, schema: dict[str, object]) -> list[str]:
             lines.append("")
     else:
         lines += [_describe(schema), ""]
+    rules = _conditions(schema)
+    if rules:
+        lines += ["Conditions:", ""] + [f"- {rule[0].upper()}{rule[1:]}." for rule in rules] + [""]
     return lines
 
 
@@ -136,8 +208,9 @@ def render_precedence() -> str:
 
 # How Guard picks between rules
 
-When more than one rule matches an event, Guard decides which one wins. `hol-guard policy check` and
-`hol-guard policy test` show you the winner and every rule that lost, with the reason.
+When more than one rule matches an event, Guard decides which one wins. `hol-guard policy check` shows
+you the winner and every rule that lost, with the reason. `hol-guard policy test` reports whether each test
+got the effect and rule it expected; run `policy check` on the test's event to see why a rule lost.
 
 ## The frozen runtime contract
 
@@ -161,8 +234,9 @@ has a state:
 | `not_enforced` | The rule matched but Guard does not enforce it for this kind of artifact. |
 
 When two rules tie on effect and specificity, the decision is flagged `ambiguous` and both rule ids are
-listed in `tiedRuleIds`. `policy test` reports a test that hits an ambiguous winner as `ambiguous` so you
-can tighten a match until one rule clearly wins.
+listed in `tiedRuleIds`. A test that names an expected rule (`expect.ruleId`) and hits an ambiguous winner
+is reported as `ambiguous`, so you can tighten a match until one rule clearly wins. A test that checks only
+`expect.effect` passes when the tied rules agree on the effect.
 
 If more than 256 rules match one event, Guard blocks the event without naming a rule and
 `matchLimitExceeded` is true.

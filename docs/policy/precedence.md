@@ -2,8 +2,9 @@
 
 # How Guard picks between rules
 
-When more than one rule matches an event, Guard decides which one wins. `hol-guard policy check` and
-`hol-guard policy test` show you the winner and every rule that lost, with the reason.
+When more than one rule matches an event, Guard decides which one wins. `hol-guard policy check` shows
+you the winner and every rule that lost, with the reason. `hol-guard policy test` reports whether each test
+got the effect and rule it expected; run `policy check` on the test's event to see why a rule lost.
 
 ## The frozen runtime contract
 
@@ -38,8 +39,9 @@ has a state:
 | `not_enforced` | The rule matched but Guard does not enforce it for this kind of artifact. |
 
 When two rules tie on effect and specificity, the decision is flagged `ambiguous` and both rule ids are
-listed in `tiedRuleIds`. `policy test` reports a test that hits an ambiguous winner as `ambiguous` so you
-can tighten a match until one rule clearly wins.
+listed in `tiedRuleIds`. A test that names an expected rule (`expect.ruleId`) and hits an ambiguous winner
+is reported as `ambiguous`, so you can tighten a match until one rule clearly wins. A test that checks only
+`expect.effect` passes when the tied rules agree on the effect.
 
 If more than 256 rules match one event, Guard blocks the event without naming a rule and
 `matchLimitExceeded` is true.
