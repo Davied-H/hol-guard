@@ -19,6 +19,18 @@ members = [
 ]
 resolver = "2"
 
+[profile.coverage]
+inherits = "test"
+# Compile workspace test bodies quickly; cryptographic dependency loops still
+# need optimization or the instrumented suite spends minutes in arithmetic.
+opt-level = 0
+debug = "line-tables-only"
+debug-assertions = true
+overflow-checks = true
+
+[profile.coverage.package."*"]
+opt-level = 3
+
 [profile.release]
 opt-level = "s"
 # Executable behavior is unchanged; omit symbol tables from distributed binaries.
