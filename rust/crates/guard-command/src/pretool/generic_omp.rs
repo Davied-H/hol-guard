@@ -363,12 +363,21 @@ fn listing_target_proven(
     // The proof is skipped when the walk starts inside the session folder and
     // the last component is a literal ordinary name: then every name the host
     // returns ends in that name.
-    let recursive = recursive || has_glob_selector;
+    // Below a literal directory the host runs the selector with recursion
+    // off, so a one-segment selector such as `dir/*lock*` returns only that
+    // directory's own entries: the names a listing of it returns. Outside the
+    // session folder the stricter walk below still applies.
+    let single_level = has_glob_selector
+        && !recursive
+        && single_level_selector(selector)
+        && walk_inside_session(target, context);
+    let recursive = (recursive || has_glob_selector) && !single_level;
     let literal_name = has_glob_selector
         && literal_name_selector(selector)
         && walk_inside_session(target, context);
     if has_glob_selector
         && !literal_name
+        && !single_level
         && !super::super::search_scope::omp_glob_scope_proven(
             target,
             context.path.home_dir,
@@ -444,6 +453,25 @@ fn project_skill_listing(target: &str, context: &OmpContext<'_>) -> bool {
             context.path.cwd,
             false,
         )
+}
+
+/// Whether a glob selector is a literal directory followed by one wildcard
+/// segment, such as `src/*.ts`. Oh My Pi matches that segment against the
+/// directory's own entries only: its glob tool passes `recursive: false` and
+/// its input schema has no field that turns recursion on (checked in Oh My Pi
+/// 18.4.12 and 18.8.3). `listing` rejects any key outside that schema, and a
+/// `pattern` key keeps the walk. A selector with no literal directory gains
+/// a `**/` prefix there, and `**` crosses directories, so neither is
+/// single-level.
+fn single_level_selector(selector: &str) -> bool {
+    let Some(index) = selector.find(['*', '?', '[', '{']) else {
+        return false;
+    };
+    let Some(slash) = selector[..index].rfind('/') else {
+        return false;
+    };
+    let segment = &selector[slash + 1..];
+    !segment.is_empty() && !segment.contains('/') && !segment.contains("**")
 }
 
 /// Whether a glob selector ends in a literal file name, such as
