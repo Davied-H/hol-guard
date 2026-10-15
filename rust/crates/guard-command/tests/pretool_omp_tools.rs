@@ -297,6 +297,20 @@ fn listings_of_a_missing_path_say_so_like_a_read() {
             assert_eq!(result.reason_code, "native_missing_path", "{tool} {path}");
             let read = omp(&f, "read", json!({"path": path}));
             assert_eq!(read.reason_code, "native_missing_path", "{tool} {path}");
+            // Both name the path, and a relative one says where it is read
+            // from.
+            for result in [&result, &read] {
+                assert!(
+                    result.reason.contains(&format!("`{path}` does not exist.")),
+                    "{tool} {path}: {}",
+                    result.reason
+                );
+                assert_eq!(
+                    result.reason.contains("read from the session folder"),
+                    path.starts_with(".."),
+                    "{tool} {path}"
+                );
+            }
         }
         // Sensitive names, wildcards and existing folders keep their review.
         for path in [
@@ -749,7 +763,26 @@ fn grep_naming_one_missing_file_says_so() {
         );
         assert_eq!(result.minimum_action, "block", "{path}");
         assert_eq!(result.reason_code, "native_missing_path", "{path}");
+        assert!(
+            result.reason.contains(&format!("`{path}` does not exist.")),
+            "{path}"
+        );
     }
+    // In a list, the reason names the entry that is missing, not one that
+    // exists.
+    let result = omp(
+        &f,
+        "glob",
+        json!({"path": "~/clean/a.txt;~/clean/pnpm-lock.yaml", "gitignore": false}),
+    );
+    assert_eq!(result.reason_code, "native_missing_path");
+    assert!(
+        result
+            .reason
+            .contains("`~/clean/pnpm-lock.yaml` does not exist."),
+        "{}",
+        result.reason
+    );
     // A sensitive name, a folder Guard would not search and a spelling that
     // climbs out of a searchable one keep the review.
     for path in [

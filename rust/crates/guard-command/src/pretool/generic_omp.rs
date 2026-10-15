@@ -304,7 +304,7 @@ fn listing(
         .iter()
         .all(|target| proven(target) || missing(target))
         .then(|| {
-            generic_result(
+            let mut result = generic_result(
                 generic_action(
                     context.harness,
                     context.event,
@@ -315,8 +315,14 @@ fn listing(
                 ),
                 "block",
                 super::evaluate::MISSING_PATH,
+                "",
+            );
+            result.reason = super::evaluate::missing_path_reason(
                 "HOL Guard did not run this listing because its path does not exist. Check the path, for example by listing its parent directory, and try again with the correct one.",
-            )
+                "listing",
+                targets.iter().find(|target| !proven(target)).copied(),
+            );
+            result
         })
 }
 
@@ -818,7 +824,7 @@ fn grep_scope(
         .iter()
         .all(|target| proven(target) || missing(target))
         .then(|| {
-            generic_result(
+            let mut result = generic_result(
                 generic_action(
                     context.harness,
                     context.event,
@@ -829,8 +835,14 @@ fn grep_scope(
                 ),
                 "block",
                 super::evaluate::MISSING_PATH,
+                "",
+            );
+            result.reason = super::evaluate::missing_path_reason(
                 reason,
-            )
+                "search",
+                targets.iter().find(|target| !proven(target)).copied(),
+            );
+            result
         })
 }
 

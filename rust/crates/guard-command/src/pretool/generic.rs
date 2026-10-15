@@ -646,26 +646,12 @@ fn evaluate_envelope(
             // The edit cannot apply, so stopping it costs nothing. Saying why
             // lets the agent fix the path instead of waiting on an approval.
             super::omp_hashline_writes::HashlineEdit::MissingTarget(path) => {
-                let mut result = generic_result(
-                    action,
-                    "block",
-                    evaluate::MISSING_PATH,
+                let mut result = generic_result(action, "block", evaluate::MISSING_PATH, "");
+                result.reason = evaluate::missing_path_reason(
                     "HOL Guard did not run this edit because a file it names does not exist. Check the path, for example by listing its parent directory, and try again with the correct one.",
+                    "edit",
+                    Some(&path),
                 );
-                // Name the path, and say where a relative one is read from:
-                // agents that ran commands in another folder retry the same
-                // relative path.
-                if !path.contains(|c: char| c.is_control() || c == '`') {
-                    let relative = !path.starts_with(['/', '~']);
-                    result.reason = format!(
-                        "HOL Guard did not run this edit because `{path}` does not exist.{} Check the path, for example by listing its parent directory, and try again with the correct one.",
-                        if relative {
-                            " A relative path is read from the session folder, not from the folder of an earlier command."
-                        } else {
-                            ""
-                        }
-                    );
-                }
                 result
             }
         }
