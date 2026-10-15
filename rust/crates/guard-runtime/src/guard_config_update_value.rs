@@ -6,7 +6,7 @@
 //! JSON-escaped strings. TOML datetimes keep the text Python's `str()` gave
 //! them, because that is what the Python writer stored.
 
-use guard_contracts::canonical_json::write_json_string;
+use guard_contracts::write_json_string;
 use serde_json::{Map, Number, Value};
 use toml::value::{Datetime, Offset};
 
