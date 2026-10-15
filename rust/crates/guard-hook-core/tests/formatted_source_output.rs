@@ -342,3 +342,48 @@ fn slices_of_a_value_far_below_its_credential_name_stay_blocked() {
         assert_eq!(clean.reason_code, "output_scan_allow", "{clean:?}");
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn search_path_lists_are_rechecked_entry_by_entry() {
+    let root = TestRoot::new();
+    let workspace = root.path().join("workspace");
+    let auth = workspace.join("src/components/auth");
+    let queries = workspace.join("scripts/queries.json");
+    std::fs::create_dir_all(&auth).unwrap();
+    std::fs::create_dir_all(queries.parent().unwrap()).unwrap();
+    std::fs::write(auth.join("email-auth.tsx"), "export {}\n").unwrap();
+    std::fs::write(&queries, "{}\n").unwrap();
+
+    let search = |path: String| {
+        let mut input = request(&workspace, "match\n");
+        let payload = input.payload.as_object_mut().unwrap();
+        payload.remove("guard_source_ref");
+        payload.insert("tool_name".into(), json!("grep"));
+        input.payload["tool_input"] = json!({"pattern": "attempt_id", "path": path});
+        review_post_tool(&input)
+    };
+
+    // Joined, the source file's `auth` directory and the JSON file name read
+    // as one credential path; OMP searches them as two ordinary files.
+    let list = format!(
+        "{};{}",
+        auth.join("email-auth.tsx").display(),
+        queries.display()
+    );
+    assert_eq!(search(list).model_output_action, "allow_original");
+    let relative = search("src/components/auth/email-auth.tsx; scripts/queries.json".into());
+    assert_eq!(relative.model_output_action, "allow_original");
+
+    let dotenv = format!("{};{}", queries.display(), workspace.join(".env").display());
+    assert_eq!(search(dotenv).reason_code, "sensitive_path");
+    let credentials = format!("{};{}", workspace.join(".ssh").display(), queries.display());
+    assert_eq!(search(credentials).reason_code, "sensitive_path");
+
+    // A literal path containing `;` is what OMP opens, so it is judged whole.
+    let literal = workspace.join("secrets;notes");
+    std::fs::create_dir_all(&literal).unwrap();
+    std::fs::write(literal.join("data.json"), "{}\n").unwrap();
+    let whole = search(literal.join("data.json").to_string_lossy().into_owned());
+    assert_eq!(whole.reason_code, "sensitive_path");
+}

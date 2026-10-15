@@ -13,6 +13,13 @@ pub(in crate::pretool) fn bounded_omp_file_read_target(
     home_dir: Option<&str>,
     cwd: Option<&str>,
 ) -> bool {
+    if let Some(base) = super::omp_json_query::json_query_base(value) {
+        // The host queries the file only when it exists; a missing one falls
+        // back to a workspace suffix match, which this proof does not model.
+        return value.trim() == value
+            && !base.split(['/', '\\']).any(|part| part == "..")
+            && bounded_existing_file_read_target(base, home_dir, cwd);
+    }
     if let Some(parts) = omp_read_list(value, home_dir, cwd) {
         return parts
             .iter()

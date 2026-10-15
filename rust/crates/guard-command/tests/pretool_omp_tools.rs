@@ -1224,3 +1224,34 @@ fn read_lists_prove_every_part() {
     let result = omp(&f, "read", json!({"path": "calc.py;missing.py:1-5:raw"}));
     assert_ne!(result.reason_code, "native_missing_path");
 }
+
+#[test]
+fn json_queries_read_only_the_proven_file() {
+    let f = fixture();
+    write(
+        f.project.join("scripts/queries.json"),
+        "{\"queries\": {}}\n",
+    );
+    let read = |path: String| omp(&f, "read", json!({ "path": path }));
+    for path in [
+        "scripts/queries.json?q=.queries.auth_outcomes".to_owned(),
+        "scripts/queries.json?q=.queries | keys&raw=true".to_owned(),
+        format!("{}/scripts/queries.json?q=.queries", f.project.display()),
+    ] {
+        let result = read(path.clone());
+        assert!(allowed(&result), "{path}: {}", result.reason_code);
+        assert_eq!(result.reason_code, "native_exact_safe_file_read", "{path}");
+    }
+    for path in [
+        "scripts/queries.json?q=env".to_owned(),
+        "scripts/queries.json?q=$ENV".to_owned(),
+        "scripts/queries.json?q=input_filename".to_owned(),
+        "missing.json?q=.a".to_owned(),
+        "../project/scripts/queries.json?q=.a".to_owned(),
+        "~/.codex/auth.json?q=.".to_owned(),
+        "~/creds-dir/credentials.json?q=.".to_owned(),
+    ] {
+        let result = read(path.clone());
+        assert!(!allowed(&result), "{path}: {}", result.reason_code);
+    }
+}
