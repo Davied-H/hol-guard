@@ -28,6 +28,10 @@ pub(super) struct RedirectProjection {
     /// Every file written is a scratch file, where a network read's body
     /// may be saved.
     pub(super) scratch_writes: bool,
+    /// [`crate::pretool::git_init_chain::admits`] took the chain, so only
+    /// that proof may allow it: the targets were checked in the working
+    /// directory, and a write after the `cd` lands in the new repository.
+    init_chain: bool,
     /// The literal targets the removed redirects write.
     written: Vec<String>,
 }
@@ -168,10 +172,12 @@ pub(super) fn project(
     });
     let git_chain =
         (chain && bounded_writes && git_chain::admits(&model, &targets)).then(|| targets.clone());
+    let init_chain =
+        chain && bounded_writes && crate::pretool::git_init_chain::admits(&model, &targets);
     if model.confidence != "exact"
         || model.uncertainty_reason.is_some()
         || model.segments.is_empty()
-        || (chain && git_chain.is_none() && !leading_write)
+        || (chain && git_chain.is_none() && !leading_write && !init_chain)
     {
         return None;
     }
@@ -191,6 +197,7 @@ pub(super) fn project(
         bounded_writes,
         git_chain,
         scratch_writes,
+        init_chain,
         written: targets,
     })
 }
@@ -242,7 +249,12 @@ pub(super) fn join(
     // tool loads on its own.
     let scratch_body = projection.scratch_writes
         && projected.reason_code == crate::pretool::curl_reads::NETWORK_READ_REASON;
-    if writes_file && !scratch_body && redirect_disqualifies_containment(&projected.reason_code) {
+    let other_proof =
+        projection.init_chain && projected.reason_code != crate::pretool::git_init_chain::REASON;
+    if writes_file
+        && !scratch_body
+        && (other_proof || redirect_disqualifies_containment(&projected.reason_code))
+    {
         projected.minimum_action = "review".into();
         projected.policy_action = "review".into();
         projected.decision = "deny".into();

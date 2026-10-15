@@ -7,14 +7,29 @@
 //!   selectors with OR, so `-p` needs `-a` to stay a socket listing.
 //! * `pg_isready`: asks a local PostgreSQL server whether it accepts
 //!   connections and prints the answer. It sends no query and no password.
+//!   The server is named by a loopback host or by an absolute Unix-socket
+//!   directory such as `/tmp` or a Homebrew `var/postgresql@16`.
 //!
 //! Still reviewed:
 //! - `lsof` with file or directory operands, `+` options, repeat mode (`-r`),
 //!   output fields (`-F`), a host selector (`@host`) or any other option.
-//! - `pg_isready` against any host other than `127.0.0.1`, `localhost` or
-//!   `::1`, a connection string in `--dbname`, and any other option.
+//! - `pg_isready` against any host other than `127.0.0.1`, `localhost`, `::1`
+//!   or a socket directory, a connection string in `--dbname`, and any other
+//!   option.
 
 const LOOPBACK_HOSTS: [&str; 3] = ["127.0.0.1", "localhost", "::1"];
+
+/// A PostgreSQL host that never leaves the machine: a loopback name or address,
+/// or an absolute Unix-socket directory (libpq reads a leading `/` that way).
+/// A `,` would add a second host, `=` or `:` would start a connection string.
+pub(in crate::pretool) fn local_postgres_host(value: &str) -> bool {
+    LOOPBACK_HOSTS.contains(&value)
+        || (value.starts_with('/')
+            && value.len() <= 255
+            && value
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"/._-@+".contains(&byte)))
+}
 
 pub(in crate::pretool) fn safe_lsof_arguments(arguments: &[String]) -> bool {
     let mut network = false;
@@ -125,12 +140,12 @@ fn process_ids(value: &str) -> bool {
 }
 
 pub(in crate::pretool) fn safe_pg_isready_arguments(arguments: &[String]) -> bool {
-    // The command text must name a loopback host: an omitted -h would take
+    // The command text must name a local host: an omitted -h would take
     // the target from PGHOST or a service file. This bounds what the agent
     // wrote, not the inherited libpq environment (PGHOSTADDR or a service
     // `hostaddr` still overrides -h); that environment is the user's own
     // configuration, and the probe sends only a startup packet.
-    let mut explicit_loopback = false;
+    let mut explicit_local = false;
     let mut index = 0;
     while index < arguments.len() {
         let argument = arguments[index].as_str();
@@ -160,8 +175,8 @@ pub(in crate::pretool) fn safe_pg_isready_arguments(arguments: &[String]) -> boo
         };
         let valid = match option {
             "-h" | "--host" => {
-                explicit_loopback = LOOPBACK_HOSTS.contains(&value);
-                explicit_loopback
+                explicit_local = local_postgres_host(value);
+                explicit_local
             }
             "-p" | "--port" => port(value),
             "-t" | "--timeout" => {
@@ -174,17 +189,17 @@ pub(in crate::pretool) fn safe_pg_isready_arguments(arguments: &[String]) -> boo
             return false;
         }
     }
-    explicit_loopback
+    explicit_local
 }
 
-fn port(value: &str) -> bool {
+pub(in crate::pretool) fn port(value: &str) -> bool {
     (1..=5).contains(&value.len())
         && value.bytes().all(|byte| byte.is_ascii_digit())
         && value.parse::<u16>().is_ok_and(|port| port > 0)
 }
 
 /// A database or role name, never a connection string (`host=…`, a URI).
-fn plain_name(value: &str) -> bool {
+pub(in crate::pretool) fn plain_name(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 63
         && !value.starts_with('-')
@@ -222,6 +237,8 @@ mod tests {
             "-h localhost -p 5432",
             "--host=127.0.0.1 --port=5432 -t 3",
             "-h ::1 -d app_dev -U app_user",
+            "-h /private/tmp -p 55434",
+            "--host=/opt/homebrew/var/postgresql@16 -q",
         ] {
             assert!(
                 safe_pg_isready_arguments(&arguments(command)),
@@ -256,6 +273,10 @@ mod tests {
             "-d app_dev -U app_user",
             "-h db.example.com",
             "--host=10.0.0.5",
+            "-h tmp",
+            "-h /tmp,db.example.com",
+            "-h @abstract",
+            "-h /tmp/$(id)",
             "-d host=db.example.com",
             "-d postgresql://db.example.com/app",
             "-p 0",

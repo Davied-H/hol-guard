@@ -140,6 +140,7 @@ pub(in crate::pretool) fn cwd_read_executable(executable: Option<&str>) -> bool 
                 | "ps"
                 | "lsof"
                 | "pg_isready"
+                | "psql"
                 | "ls"
                 | "cat"
                 | "base64"

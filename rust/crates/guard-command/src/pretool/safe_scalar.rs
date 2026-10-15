@@ -4,7 +4,10 @@ pub(super) const MAX_SAFE_SLEEP_SECONDS: f64 = 3600.0;
 
 #[path = "process_probes.rs"]
 mod process_probes;
-pub(super) use process_probes::{safe_lsof_arguments, safe_pg_isready_arguments};
+pub(super) use process_probes::{
+    local_postgres_host, plain_name as postgres_name, port as postgres_port, safe_lsof_arguments,
+    safe_pg_isready_arguments,
+};
 
 /// `printenv` naming only location, identity or display variables prints
 /// those values and nothing else. A bare `printenv`, an option, or any name

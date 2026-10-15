@@ -79,6 +79,7 @@ pub(crate) fn benign_command_segments(
                     | "ps"
                     | "lsof"
                     | "pg_isready"
+                    | "psql"
             ) || segment.arguments.is_empty()
                 || stdin_filter;
             // Context-free public wrappers cannot prove that a file operand or
@@ -108,6 +109,7 @@ pub(crate) fn benign_command_segments(
                         | "find"
                         | "du"
                         | "diff"
+                        | "file"
                         | "npm"
                         | "jq"
                 );
@@ -277,6 +279,7 @@ pub(super) fn exact_safe_segment_with_context(
         "du" => super::metadata_reads::safe_du_arguments(&segment.arguments, context),
         "df" => super::metadata_reads::safe_df_arguments(&segment.arguments),
         "diff" => super::metadata_reads::safe_diff_arguments(&segment.arguments, context),
+        "file" => super::metadata_reads::safe_file_arguments(&segment.arguments, context),
         "stat" => matches!(segment.arguments.as_slice(), [target]
             if !target.starts_with('-')
                 && safe_reads::bounded_read_target(target, context.home_dir, context.cwd, false)),
@@ -291,7 +294,8 @@ pub(super) fn exact_safe_segment_with_context(
         }
         "mktemp" | "mkdir" | "touch" | "mv" | "ln" | "rm" => {
             (model.segments.len() == 1
-                || (basename == "mkdir" && super::chain_temporary::mkdir_chain(model)))
+                || (basename == "mkdir" && super::chain_temporary::mkdir_chain(model))
+                || (basename == "ln" && super::symlink_writes::link_chain(model)))
                 && (basename != "ln" && basename != "rm"
                     || super::directory_targets::home_targets_unquoted(segment))
                 && (safe_reads::safe_file_mutation_arguments(basename, &segment.arguments, context)
@@ -321,6 +325,7 @@ pub(super) fn exact_safe_segment_with_context(
         "nc" | "netcat" => super::port_probes::safe_nc_segment(model, segment),
         "brew" => super::brew_reads::safe_brew_segment(model, segment),
         "pg_ctl" => super::postgres_reads::safe_pg_ctl_arguments(&segment.arguments),
+        "psql" => super::postgres_reads::safe_psql_arguments(&segment.arguments),
         "npm" => {
             super::npm_reads::read_only_neighbors(model)
                 && super::npm_reads::safe_npm_read(&segment.arguments, context)

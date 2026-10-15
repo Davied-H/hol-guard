@@ -152,6 +152,7 @@ fn safe_arguments(arguments: &[String], context: ReadContext<'_>, stdin_only: bo
             if unsafe_search_value(SearchValueRole::Path, argument, context)
                 && !recursive
                 && !proven_glob(argument, context)
+                && !absent_target(argument, context)
             {
                 return false;
             }
@@ -176,7 +177,16 @@ fn safe_arguments(arguments: &[String], context: ReadContext<'_>, stdin_only: bo
                         &excluded_directories,
                         true,
                     ) || proven_glob(target, context)
+                        || absent_target(target, context)
                 })))
+}
+
+/// A missing operand only prints an error, as a probe `ls` of the same path
+/// does: its nearest existing ancestor must be a readable directory and every
+/// missing name visible and clear of the sensitive screens. Agents pass a
+/// fixed list of roots (`src tests lib`) whether or not each one exists.
+fn absent_target(value: &str, context: ReadContext<'_>) -> bool {
+    crate::pretool::listing_reads::absent_listing_operand(value, context)
 }
 
 /// A shell glob operand whose every expansion is screened, and whose matched
@@ -196,6 +206,46 @@ fn exact_exclusion(value: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_missing_root_beside_real_ones_is_proven_but_not_a_sensitive_one() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/grep-absent-roots")
+            .join(std::process::id().to_string());
+        let home = root.join("home");
+        let repo = home.join("work/app");
+        std::fs::create_dir_all(repo.join("src")).unwrap();
+        std::fs::create_dir_all(home.join(".ssh")).unwrap();
+        std::fs::write(repo.join("src/index.ts"), "export const x = 1;\n").unwrap();
+        let (home, repo) = (
+            std::fs::canonicalize(home).unwrap(),
+            std::fs::canonicalize(repo).unwrap(),
+        );
+        let context = crate::pretool::PathContext {
+            home_dir: home.to_str(),
+            cwd: repo.to_str(),
+            ..Default::default()
+        };
+        let r = repo.display();
+        let h = home.display();
+        for (command, allowed) in [
+            (format!("-rln x {r}/src {r}/lib"), true),
+            (format!("-n x {r}/src/index.ts {r}/lib/index.ts"), true),
+            ("-rn x src tests".to_owned(), true),
+            (format!("-rln x {r}/src {h}/.ssh/missing"), false),
+            (format!("-rln x {r}/src {r}/missing/.env"), false),
+            (format!("-rln x {r}/src {r}/missing/id_rsa"), false),
+            (format!("-n x {h}/.ssh/missing"), false),
+        ] {
+            let arguments: Vec<String> = command.split(' ').map(str::to_owned).collect();
+            assert_eq!(
+                super::safe_grep_arguments(&arguments, context),
+                allowed,
+                "{command}"
+            );
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn stdin_proof_cannot_open_files_or_recurse() {
         for (arguments, allowed) in [
