@@ -82,5 +82,9 @@ name = "pretool_git_push_unregistered"
 path = "tests/pretool_git_push_unregistered.rs"
 
 [[test]]
+name = "pretool_worktree_cd_windows"
+path = "tests/pretool_worktree_cd_windows.rs"
+
+[[test]]
 name = "shim_admin_vectors"
 path = "tests/shim_admin_vectors.rs"
