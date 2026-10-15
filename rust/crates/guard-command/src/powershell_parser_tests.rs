@@ -110,7 +110,7 @@ fn read_only_cmdlets_map_to_posix_reads() {
             "sls TODO notes.md -CaseSensitive -SimpleMatch",
             &["grep", "-F", "-e", "TODO", "notes.md"],
         ),
-        ("Get-Command python", &["command", "-v", "python"]),
+        ("Get-Command python", &["which", "python"]),
         (
             "New-Item -ItemType Directory -Force build",
             &["mkdir", "-p", "build"],

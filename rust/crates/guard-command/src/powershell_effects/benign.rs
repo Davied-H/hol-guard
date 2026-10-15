@@ -147,7 +147,9 @@ pub(super) fn benign_tokens(benign: Benign, args: &[PsArg]) -> Result<Vec<String
         Benign::Lookup => {
             let bound = bind(args, &["name"], &[])?;
             let name = path_slot(fill(&bound, &[&["name"]])?.remove(0))?;
-            tokens.extend(["command".to_owned(), "-v".to_owned(), name]);
+            // `command` is a transparent wrapper to the parser, so the lookup
+            // is modeled as `which`, which Guard already proves read-only.
+            tokens.extend(["which".to_owned(), name]);
         }
         Benign::MakeDirectory => {
             let bound = bind(args, &["itemtype", "path"], &["force"])?;
