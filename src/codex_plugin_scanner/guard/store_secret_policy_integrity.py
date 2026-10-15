@@ -967,7 +967,18 @@ class StoreSecretPolicyIntegrityMixin:
 
         def compute_prepared_state(base_state: dict[str, object]) -> tuple[dict[str, object], bool]:
             with self._hold_storage_gate(exclusive=False):
-                if not self._has_local_policy_rows():
+                connect_timeout_seconds = sqlite_connect_timeout_seconds()
+                connection = sqlite3.connect(self.path, timeout=connect_timeout_seconds)
+                try:
+                    connection.execute(f"pragma busy_timeout={int(connect_timeout_seconds * 1000)}")
+                    local_row = connection.execute(
+                        "select 1 from policy_decisions "
+                        f"where source not in {_REMOTE_POLICY_SOURCE_PLACEHOLDERS} limit 1",
+                        _REMOTE_POLICY_SOURCE_PARAMS,
+                    ).fetchone()
+                finally:
+                    connection.close()
+                if local_row is None:
                     return _prepared_state_without_local_rows(base_state), True
                 return native_prepare_policy_integrity_generation(
                     guard_home=self.guard_home,
@@ -995,19 +1006,6 @@ class StoreSecretPolicyIntegrityMixin:
             self._startup_prefetched_policy_integrity_trusted_state = prepared_state
             return
         self._startup_prefetched_policy_integrity_repair_failed = True
-
-    def _has_local_policy_rows(self) -> bool:
-        connect_timeout_seconds = sqlite_connect_timeout_seconds()
-        connection = sqlite3.connect(self.path, timeout=connect_timeout_seconds)
-        try:
-            connection.execute(f"pragma busy_timeout={int(connect_timeout_seconds * 1000)}")
-            row = connection.execute(
-                f"select 1 from policy_decisions where source not in {_REMOTE_POLICY_SOURCE_PLACEHOLDERS} limit 1",
-                _REMOTE_POLICY_SOURCE_PARAMS,
-            ).fetchone()
-        finally:
-            connection.close()
-        return row is not None
 
     def _policy_integrity_result_for_row(
         self,
