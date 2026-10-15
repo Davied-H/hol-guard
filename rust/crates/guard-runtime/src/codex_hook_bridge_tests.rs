@@ -166,6 +166,7 @@ fn answers_needing_python_are_handed_off() {
         ),
         Route::Contain(..)
     ));
+    // An observation wraps the route the answer settles on.
     for (text, event) in [
         (
             r#"{"continue":true,"guard_transition_observation":{}}"#,
@@ -173,12 +174,19 @@ fn answers_needing_python_are_handed_off() {
         ),
         (r#"{"guard_transition_observation":{"a":1}}"#, PRE_TOOL_USE),
     ] {
-        assert_eq!(
-            route_response(text, event),
-            Route::Handoff(text.to_owned()),
+        assert!(
+            matches!(
+                route_response(text, event),
+                Route::Observed(PyVal::Dict(_), ref route) if matches!(**route, Route::Respond(_))
+            ),
             "{text}"
         );
     }
+    // Only an object is an observation.
+    assert!(matches!(
+        route_response(r#"{"guard_transition_observation":[]}"#, PRE_TOOL_USE),
+        Route::Respond(_)
+    ));
     // A pending approval waits natively.
     let pending = r#"{"hookSpecificOutput":{"permissionDecision":"deny","permissionDecisionReason":"http://h/requests/abcdefgh"}}"#;
     assert!(matches!(
@@ -286,28 +294,6 @@ fn lone_surrogates_are_forwarded_as_python_escapes_them() {
         let refused = Unprepared::Refused(event.to_owned());
         assert_eq!(prepare(raw, &pairs).unwrap_err(), refused, "{raw:?}");
     }
-}
-
-#[test]
-fn handoff_envelope_carries_the_exchange() {
-    let prepared = Prepared {
-        event_name: PRE_TOOL_USE.to_owned(),
-        data: "{\"a\":\"\u{e9}\"}".to_owned(),
-        timeout: Duration::from_secs(28),
-    };
-    let envelope = handoff_envelope(&prepared, "{\"b\":1}", Duration::from_millis(42));
-    assert!(envelope.is_ascii());
-    let parsed: Value = serde_json::from_str(&envelope).unwrap();
-    assert_eq!(
-        parsed,
-        json!({
-            "schema": HANDOFF_SCHEMA,
-            "hook_input": "{\"a\":\"\u{e9}\"}",
-            "event_name": "PreToolUse",
-            "daemon_response": "{\"b\":1}",
-            "elapsed_ms": 42,
-        })
-    );
 }
 
 #[test]

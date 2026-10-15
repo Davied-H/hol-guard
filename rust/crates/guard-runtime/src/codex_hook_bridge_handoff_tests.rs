@@ -125,16 +125,30 @@ fn a_sandbox_requirement_is_contained_natively() {
 }
 
 #[test]
-fn an_observation_is_handed_off() {
-    for answer in [
-        r#"{"hookSpecificOutput":{"permissionDecision":"deny"},"policy_action":"sandbox-required","guard_transition_observation":{}}"#,
-        r#"{"hookSpecificOutput":{"permissionDecision":"deny"},"guard_transition_observation":{}}"#,
-        r#"{"hookSpecificOutput":{"permissionDecision":"deny"},"guardApprovalRequestId":"req_12345678","guard_transition_observation":{}}"#,
-    ] {
-        assert_eq!(
-            route_response(answer, PRE_TOOL_USE),
-            Route::Handoff(answer.to_owned()),
-            "{answer}"
-        );
-    }
+fn an_observation_wraps_the_settled_route() {
+    let observed = |answer: &str| match route_response(answer, PRE_TOOL_USE) {
+        Route::Observed(envelope, route) => {
+            assert_eq!(envelope, PyVal::Dict(Vec::new()), "{answer}");
+            *route
+        }
+        route => panic!("{answer}: {route:?}"),
+    };
+    assert!(matches!(
+        observed(
+            r#"{"hookSpecificOutput":{"permissionDecision":"deny"},"policy_action":"sandbox-required","guard_transition_observation":{}}"#
+        ),
+        Route::Contain(..)
+    ));
+    assert_eq!(
+        observed(
+            r#"{"hookSpecificOutput":{"permissionDecision":"deny"},"guard_transition_observation":{}}"#
+        ),
+        Route::Respond(BARE_DENY.to_owned())
+    );
+    assert!(matches!(
+        observed(
+            r#"{"hookSpecificOutput":{"permissionDecision":"deny"},"guardApprovalRequestId":"req_12345678","guard_transition_observation":{}}"#
+        ),
+        Route::AwaitApproval(..)
+    ));
 }

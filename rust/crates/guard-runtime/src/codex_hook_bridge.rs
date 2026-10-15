@@ -9,16 +9,14 @@
 //! `start_command` and asked once more inside the hook deadline (see
 //! `restart`); when that fails too, or the daemon is overloaded, the hook
 //! fails closed. Codex Desktop, binding capture and an unsendable query are
-//! served here too (see `client`). Every other path runs the Python bridge
-//! it was given:
-//! - a raw delegate (the original argv and stdin) for a Desktop transition
-//!   probe;
-//! - a handoff (`--native-handoff` with the daemon's answer on stdin) for
-//!   answers that need Python's post-processing: containment routing and
-//!   transition observations (see `handoff`).
+//! served here too (see `client`). A Desktop transition probe runs the
+//! Python bridge it was given on the original argv and stdin.
 //!
-//! A `PreToolUse` deny that names a pending browser approval is held here
-//! until the browser decides or the hook deadline passes (see `approval`).
+//! Every daemon answer is settled here (see `handoff`): a sandbox
+//! requirement is routed into contained execution (see `contain`), a
+//! `PreToolUse` deny that names a pending browser approval is held until the
+//! browser decides or the hook deadline passes (see `approval`), and a
+//! transition observation is written to stderr (see `observation`).
 //!
 //! The native bridge never decides a verdict, and Python never decides one
 //! for it: without a daemon answer the hook fails closed.
@@ -37,15 +35,11 @@ use crate::codex_hook_response::{
 };
 use crate::hook_bridge_exit::exit_code;
 use crate::hook_bridge_fallback::{self, Fallback};
-use crate::hook_env_stamp::{
-    current_environment, dumps, json_string, set_member, stamp_hook_input_text, Stamp,
-};
+use crate::hook_env_stamp::{current_environment, dumps, set_member, stamp_hook_input_text, Stamp};
 use crate::pyjson::{self, in_surrogate_plane, PyVal};
 
 pub(crate) const BRIDGE_COMMAND: &str = "codex-hook-bridge";
 pub(crate) const BRIDGE_FEATURE: &str = "codex-hook-bridge-v1";
-pub(crate) const HANDOFF_FLAG: &str = "--native-handoff";
-pub(crate) const HANDOFF_SCHEMA: &str = "hol-guard.codex-native-handoff.v1";
 pub(crate) const ELAPSED_ENV: &str = "HOL_GUARD_CODEX_NATIVE_ELAPSED_MS";
 
 const MAX_HOOK_INPUT_BYTES: usize = 1_000_000;
@@ -302,8 +296,9 @@ pub(crate) enum Route {
     /// Run the Python bridge on the original argv and stdin, for this
     /// reason.
     Delegate(Fallback),
-    /// Run the Python bridge on the daemon's answer.
-    Handoff(String),
+    /// A transition observation (the answer's
+    /// `guard_transition_observation`) to write before settling the route.
+    Observed(PyVal, Box<Route>),
     /// Wait for the browser's decision on a pending approval: write the
     /// allow once the daemon records one, this rendered deny otherwise.
     AwaitApproval(approval::Pending, String),
@@ -331,40 +326,26 @@ pub(crate) fn route_response(text: &str, event_name: &str) -> Route {
     {
         return Route::Restart;
     }
-    let post = handoff::post_render(&parsed.value, event_name);
-    if post == handoff::Post::Python {
-        return Route::Handoff(text.to_owned());
+    let route = match handoff::post_render(&parsed.value, event_name) {
+        handoff::Post::Contain => Route::Contain(parsed.value.clone(), parsed.mapped),
+        post => {
+            let mut rendered = String::new();
+            dumps(
+                &codex_hook_response(entries, event_name),
+                true,
+                parsed.mapped,
+                &mut rendered,
+            );
+            match post {
+                handoff::Post::Approval(pending) => Route::AwaitApproval(pending, rendered),
+                _ => Route::Respond(rendered),
+            }
+        }
+    };
+    match parsed.value.get("guard_transition_observation") {
+        Some(envelope @ PyVal::Dict(_)) => Route::Observed(envelope.clone(), Box::new(route)),
+        _ => route,
     }
-    if post == handoff::Post::Contain {
-        return Route::Contain(parsed.value.clone(), parsed.mapped);
-    }
-    let mut rendered = String::new();
-    dumps(
-        &codex_hook_response(entries, event_name),
-        true,
-        parsed.mapped,
-        &mut rendered,
-    );
-    match post {
-        handoff::Post::Approval(pending) => Route::AwaitApproval(pending, rendered),
-        _ => Route::Respond(rendered),
-    }
-}
-
-/// The handoff envelope the Python bridge reads on stdin.
-pub(crate) fn handoff_envelope(
-    prepared: &Prepared,
-    daemon_response: &str,
-    elapsed: Duration,
-) -> String {
-    format!(
-        "{{\"schema\":\"{HANDOFF_SCHEMA}\",\"hook_input\":{},\"event_name\":{},\
-\"daemon_response\":{},\"elapsed_ms\":{}}}",
-        json_string(&prepared.data, true, false),
-        json_string(&prepared.event_name, true, false),
-        json_string(daemon_response, true, false),
-        elapsed.as_millis(),
-    )
 }
 
 /// The full native decision for one hook, given its config argument.
@@ -394,6 +375,14 @@ pub(crate) fn route_hook(
         RPC_TIMEOUT
     };
     let route = match restart::daemon_route(config, &prepared, deadline, cap) {
+        // Written first, as Python writes it before rendering the answer.
+        Some(Route::Observed(envelope, route)) => {
+            observation::write(&prepared.data, &envelope);
+            Some(*route)
+        }
+        route => route,
+    };
+    let route = match route {
         Some(Route::Contain(response, mapped)) => {
             contain::settle(config, &prepared, response, mapped, deadline)
         }
@@ -467,17 +456,6 @@ pub(crate) fn run(python_argv: &[String]) -> i32 {
             write_stdout(&text);
             0
         }
-        (Route::Handoff(response), Some(prepared)) => {
-            note(Fallback::SemanticHandoff);
-            let mut argv = python_argv[..python_argv.len() - 1].to_vec();
-            argv.push(HANDOFF_FLAG.to_owned());
-            argv.push(config_argument.clone());
-            let envelope = handoff_envelope(&prepared, &response, input_ready.elapsed());
-            run_python(&argv, envelope.as_bytes(), started.elapsed()).unwrap_or_else(|| {
-                write_stdout(&fail_closed(&prepared.event_name));
-                0
-            })
-        }
         (Route::AwaitApproval(pending, deny), prepared) => {
             let approved = prepared.is_some_and(|prepared| {
                 approval::approved(
@@ -494,9 +472,9 @@ pub(crate) fn run(python_argv: &[String]) -> i32 {
             });
             0
         }
-        // `route_hook` settles every restart and containment; one that
-        // escaped fails closed.
-        (Route::Restart | Route::Contain(..), prepared) => {
+        // `route_hook` settles every restart, containment and observation;
+        // one that escaped fails closed.
+        (Route::Restart | Route::Contain(..) | Route::Observed(..), prepared) => {
             let event_name = prepared
                 .as_ref()
                 .map_or(PRE_TOOL_USE, |p| p.event_name.as_str());
@@ -522,6 +500,8 @@ mod client;
 mod contain;
 #[path = "codex_hook_bridge_handoff.rs"]
 mod handoff;
+#[path = "codex_hook_bridge_observation.rs"]
+mod observation;
 #[path = "codex_hook_bridge_restart.rs"]
 mod restart;
 

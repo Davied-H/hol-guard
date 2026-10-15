@@ -4,10 +4,10 @@
 //! For a `PreToolUse` deny, `_bridge_output` changes the answer only in two
 //! ways: `route_codex_containment` rewrites a sandbox requirement, and
 //! `apply_browser_approval_wait` holds a deny that names a pending browser
-//! approval. Both run natively (see `contain` and `approval`); only a
-//! transition observation is still left to Python. Any other answer comes
-//! out of `_bridge_output` as `codex_hook_response(response)`, which the
-//! native bridge renders identically.
+//! approval. Both run natively (see `contain` and `approval`), as does the
+//! transition observation written before it (see `observation`). Any other
+//! answer comes out of `_bridge_output` as `codex_hook_response(response)`,
+//! which the native bridge renders identically.
 
 use super::approval::{pending_pretool_approval, Pending};
 use crate::codex_hook_response::PRE_TOOL_USE;
@@ -18,8 +18,6 @@ use crate::pyjson::PyVal;
 pub(super) enum Post {
     /// The render is the answer.
     Native,
-    /// `native_handoff_main` must run on the answer.
-    Python,
     /// `route_codex_containment` settles the sandbox requirement first.
     Contain,
     /// The deny waits for the browser's decision on this request.
@@ -28,12 +26,6 @@ pub(super) enum Post {
 
 /// How `_bridge_output` would treat `response`.
 pub(super) fn post_render(response: &PyVal, event_name: &str) -> Post {
-    if matches!(
-        response.get("guard_transition_observation"),
-        Some(PyVal::Dict(_))
-    ) {
-        return Post::Python;
-    }
     if event_name != PRE_TOOL_USE {
         return Post::Native;
     }
