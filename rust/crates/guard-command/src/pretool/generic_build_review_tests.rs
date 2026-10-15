@@ -37,6 +37,7 @@ fn installs_and_mixed_package_steps_keep_the_package_wording() {
     for command in [
         "cargo install ripgrep",
         "cargo add serde",
+        "cargo fix --allow-dirty",
         "cargo test && npm install left-pad",
         "npm install left-pad",
     ] {

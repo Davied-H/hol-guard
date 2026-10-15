@@ -223,6 +223,8 @@ def build_extension_source_body(*, harness: str, display_name: str) -> str:
         '  if (typeof fetch !== "function") {\n'
         '    return { response: null, recoveryKind: "transport-failure" };\n'
         "  }\n"
+        "  // A direct post keeps the whole budget; only the bridge is capped.\n"
+        "  const daemonPayload = payloadWithBudget(budgetMs);\n"
         "  const controller = typeof AbortController === 'function' ? new AbortController() : undefined;\n"
         "  const timeoutHandle = setTimeout(() => controller?.abort(), timeoutMs);\n"
         "  try {\n"
@@ -235,8 +237,7 @@ def build_extension_source_body(*, harness: str, display_name: str) -> str:
         "        // The local daemon closes each response; never reuse a retiring socket.\n"
         "        'Connection': 'close',\n"
         "      },\n"
-        "      // A direct post keeps the whole budget; only the bridge is capped.\n"
-        "      body: payloadWithBudget(budgetMs),\n"
+        "      body: daemonPayload,\n"
         "      signal: controller?.signal,\n"
         "    });\n"
         "    return await guardDaemonAttempt(\n"

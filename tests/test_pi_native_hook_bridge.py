@@ -241,4 +241,5 @@ def test_generated_extension_caps_the_bridge_daemon_budget(tmp_path: Path) -> No
     assert "const bridgeBudgetMs = nativeGuardBudgetMs(budgetMs, remainingMs);" in request
     assert "payloadWithBudget(bridgeBudgetMs),\n    bridgeBudgetMs," in request
     # A direct daemon post after the bridge is unavailable keeps the full budget.
-    assert "body: payloadWithBudget(budgetMs)," in request
+    assert "const daemonPayload = payloadWithBudget(budgetMs);" in request
+    assert "body: daemonPayload," in request
