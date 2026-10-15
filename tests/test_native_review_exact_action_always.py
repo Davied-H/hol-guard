@@ -6,6 +6,7 @@ import copy
 import hashlib
 import json
 import os
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -164,7 +165,10 @@ def test_node_script_token_binds_the_code_it_imports(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, native_context_digest: Path
 ) -> None:
     workspace = _wrangler_workspace(tmp_path, monkeypatch)
-    _write_executable(tmp_path / "manager-bin" / "node", "node")
+    # A native binary: a script-backed `node` never gets a reusable identity.
+    node = tmp_path / "manager-bin" / "node"
+    shutil.copyfile("/bin/echo", node)
+    node.chmod(0o755)
     imported = _node_script(workspace)
     first = _token("node scripts/report.mjs", workspace)
     assert first is not None
