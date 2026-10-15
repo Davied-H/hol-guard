@@ -278,7 +278,7 @@ def _run_guard_doctor_command(
             "doctor",
             {
                 "desktop_notifications": desktop_notification_setup_payload(result, guidance=guidance),
-                "approval_gate": approval_gate_posture(guard_home),
+                "approval_gate": approval_gate_posture(guard_home, passive=True),
             },
             getattr(args, "json", False),
         )
@@ -302,7 +302,7 @@ def _run_guard_doctor_command(
         ]
         _emit(
             "doctor",
-            {"harnesses": contracts_payload, "approval_gate": approval_gate_posture(guard_home)},
+            {"harnesses": contracts_payload, "approval_gate": approval_gate_posture(guard_home, passive=True)},
             getattr(args, "json", False),
         )
         return 0
@@ -400,7 +400,8 @@ def _run_guard_doctor_command(
 
     payload.update(protection_status_fields(posture=config.protection_posture, mode=config.mode))
     payload.update(harness_posture_summary(config))
-    payload["approval_gate"] = approval_gate_posture(guard_home)
+    # Doctor stays passive: read the gate state file, never the native resident.
+    payload["approval_gate"] = approval_gate_posture(guard_home, passive=True)
     _emit("doctor", payload, getattr(args, "json", False))
     return 0
 
