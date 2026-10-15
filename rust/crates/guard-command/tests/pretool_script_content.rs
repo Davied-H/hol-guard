@@ -243,7 +243,13 @@ fn credential_names_without_the_network_or_network_without_credentials_are_not_b
         "notify.py",
         "# Reads no wallet.dat; see the runbook.\nimport requests\nrequests.get('https://example.invalid')  # not ~/.aws/credentials\n",
     );
+    // `is_valid_rsa` names no key file.
+    fixture.write(
+        "jwks.py",
+        "import requests\n\ndef is_valid_rsa(key):\n    return key.get('kty') == 'RSA'\n\nprint([is_valid_rsa(k) for k in requests.get('https://example.invalid/jwks').json()['keys']])\n",
+    );
     for command in [
+        "python3 jwks.py",
         "python3 check_keys.py",
         "node deploy.mjs",
         "python3 netrc_upload.py",
@@ -312,6 +318,31 @@ fn local_modules_are_read_through_packages_submodules_and_past_an_unreadable_one
         "jobs/uploads/sender.py",
         "import requests\n\ndef run():\n    requests.get('https://example.invalid')\n",
     );
+    // A module in a package imports by absolute name from the script's
+    // directory, and by relative name from its package's parents.
+    fixture.write(
+        "absolute/main.py",
+        "from tasks import upload\nupload.run()\n",
+    );
+    fixture.write("absolute/tasks/__init__.py", "");
+    fixture.write(
+        "absolute/tasks/upload.py",
+        "import netclient\n\ndef run():\n    netclient.send()\n",
+    );
+    fixture.write(
+        "absolute/netclient.py",
+        "import requests\n\ndef send():\n    requests.get('https://example.invalid')\n",
+    );
+    fixture.write("relative/main.py", "from pkg.sub import run\nrun()\n");
+    fixture.write("relative/pkg/__init__.py", "");
+    fixture.write(
+        "relative/pkg/sub/__init__.py",
+        "from ..net import send\n\ndef run():\n    send()\n",
+    );
+    fixture.write(
+        "relative/pkg/net.py",
+        "import requests\n\ndef send():\n    requests.get('https://example.invalid')\n",
+    );
     // An oversized module is left out; the network use beside it still counts.
     fixture.write(
         "big/entry.mjs",
@@ -324,6 +355,8 @@ fn local_modules_are_read_through_packages_submodules_and_past_an_unreadable_one
     for command in [
         "node tools/run.js",
         "python3 jobs/main.py",
+        "python3 absolute/main.py",
+        "python3 relative/main.py",
         "node big/entry.mjs https://example.invalid",
     ] {
         let result = fixture.classify("omp", command);

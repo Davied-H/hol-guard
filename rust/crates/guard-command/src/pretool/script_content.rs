@@ -69,7 +69,7 @@ static NODE_NETWORK: LazyLock<Regex> = LazyLock::new(|| {
 /// listed, so a script that authenticates with one is not blocked.
 static CREDENTIAL_STORE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        r#"(?i)id_(?:rsa|dsa|ecdsa|ed25519)(?:[^.\w]|$)|\.aws/credentials|\.aws["']\s*[,/]\s*["']credentials|\.gnupg\b|private-keys-v1\.d|(?:default|profile [0-9]+)/(?:cookies|login data|web data)\b|cookies\.sqlite|logins\.json|key4\.db|keychains/|\.keychain(?:-db)?\b|wallet\.dat|\.ethereum/keystore|solana/id\.json|/etc/shadow\b"#,
+        r#"(?i)\bid_(?:rsa|dsa|ecdsa|ed25519)(?:[^.\w]|$)|\.aws/credentials|\.aws["']\s*[,/]\s*["']credentials|\.gnupg\b|private-keys-v1\.d|(?:default|profile [0-9]+)/(?:cookies|login data|web data)\b|cookies\.sqlite|logins\.json|key4\.db|keychains/|\.keychain(?:-db)?\b|wallet\.dat|\.ethereum/keystore|solana/id\.json|/etc/shadow\b"#,
     )
     .unwrap()
 });
@@ -234,6 +234,7 @@ fn resolve(script: &str, context: PathContext<'_>) -> Option<PathBuf> {
 /// bound, is left out so what the rest of the graph does still counts.
 /// Packages and the standard library are not read.
 fn read_graph(language: Language, entry: PathBuf) -> Option<Vec<String>> {
+    let root = entry.parent()?.to_path_buf();
     let mut seen = BTreeSet::from([entry.clone()]);
     let mut queue = VecDeque::from([entry.clone()]);
     let mut sources = Vec::new();
@@ -253,7 +254,7 @@ fn read_graph(language: Language, entry: PathBuf) -> Option<Vec<String>> {
         let directory = directory.to_path_buf();
         let imports = match language {
             Language::Node => node_imports(&source, &directory),
-            Language::Python => python_imports(&source, &directory),
+            Language::Python => python_imports(&source, &root, &directory),
         };
         for import in imports {
             if seen.len() >= MAX_FILES {
@@ -319,63 +320,61 @@ fn package_main(directory: &Path) -> Option<String> {
     manifest.get("main")?.as_str().map(str::to_owned)
 }
 
-fn python_imports(source: &str, directory: &Path) -> Vec<PathBuf> {
-    let mut modules: Vec<String> = Vec::new();
+/// The local modules a Python source imports. An absolute name resolves from
+/// the launched script's directory (`sys.path[0]`), a relative one from the
+/// importing module's package, one parent up for each dot past the first.
+fn python_imports(source: &str, root: &Path, directory: &Path) -> Vec<PathBuf> {
+    let listed = |names: &str| -> Vec<String> {
+        names
+            .split(',')
+            .filter_map(|name| {
+                name.trim_matches(['(', ')', ' ', '\t'])
+                    .split_whitespace()
+                    .next()
+            })
+            .map(str::to_owned)
+            .collect()
+    };
+    let mut modules: Vec<(usize, String)> = Vec::new();
     for capture in PYTHON_IMPORT.captures_iter(source) {
         if let Some(names) = capture.get(4) {
-            modules.extend(
-                names
-                    .as_str()
-                    .split(',')
-                    .filter_map(|name| name.split_whitespace().next())
-                    .map(str::to_owned),
-            );
+            modules.extend(listed(names.as_str()).into_iter().map(|name| (0, name)));
             continue;
         }
+        let dots = capture.get(1).map_or(0, |value| value.as_str().len());
         let module = capture.get(2).map_or("", |value| value.as_str());
+        let names = listed(capture.get(3).map_or("", |value| value.as_str()));
         if module.is_empty() {
             // `from . import a, b` imports sibling modules by name.
-            let names = capture.get(3).map_or("", |value| value.as_str());
-            modules.extend(
-                names
-                    .split(',')
-                    .filter_map(|name| {
-                        name.trim_matches(['(', ')', ' ', '\t'])
-                            .split_whitespace()
-                            .next()
-                    })
-                    .map(str::to_owned),
-            );
+            modules.extend(names.into_iter().map(|name| (dots, name)));
         } else {
             // `from pkg import a` can import the submodule `pkg.a`, which an
             // empty `pkg/__init__.py` does not name.
-            let names = capture.get(3).map_or("", |value| value.as_str());
             modules.extend(
                 names
-                    .split(',')
-                    .filter_map(|name| {
-                        name.trim_matches(['(', ')', ' ', '\t'])
-                            .split_whitespace()
-                            .next()
-                    })
-                    .map(|name| format!("{module}.{name}")),
+                    .into_iter()
+                    .map(|name| (dots, format!("{module}.{name}"))),
             );
-            modules.push(module.to_owned());
+            modules.push((dots, module.to_owned()));
         }
     }
     modules
-        .iter()
-        .filter(|module| {
+        .into_iter()
+        .filter(|(_, module)| {
             !module.is_empty()
                 && module.split('.').all(|part| {
                     !part.is_empty() && part.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
                 })
         })
-        .filter_map(|module| {
+        .filter_map(|(dots, module)| {
+            let base = match dots {
+                0 => root,
+                _ => directory.ancestors().nth(dots - 1)?,
+            };
             let relative = module.replace('.', "/");
             [
-                directory.join(format!("{relative}.py")),
-                directory.join(&relative).join("__init__.py"),
+                base.join(format!("{relative}.py")),
+                base.join(&relative).join("__init__.py"),
             ]
             .into_iter()
             .find(|candidate| candidate.is_file())
