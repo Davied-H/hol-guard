@@ -22,6 +22,7 @@ SHARD_COUNT = int(os.environ.get("CI_PYTEST_COVERAGE_SHARDS", "128"))
 _DEFAULT_TIMEOUT_SECONDS = 960.0
 REPOSITORY_PATTERN = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
 _SHARD_NAME = re.compile(r"coverage \(3\.12, (0|[1-9][0-9]*)\)")
+_MATRIX_PLACEHOLDER = "coverage (3.12, ${{ matrix.shard-index }})"
 _PENDING_STATUSES = frozenset({"queued", "in_progress", "waiting", "pending", "requested"})
 _PREREQUISITE_LABELS = {
     "plan": "Change planner",
@@ -183,6 +184,13 @@ def _snapshot(
                     # Scheduling shifts offset pages even after matrix expansion.
                     # Retry the whole snapshot; duplicates cannot fill missing shards.
                     raise _SchedulingRaceError("GitHub jobs API paginated a changing job list")
+                if any(
+                    record.get("name") == _MATRIX_PLACEHOLDER and record.get("status") in _PENDING_STATUSES
+                    for record in (previous, job)
+                ):
+                    raise _SchedulingRaceError("GitHub jobs API paginated a changing job list")
+                # Scheduling snapshots may omit even the producer while pages
+                # are changing; preserve the pre-matrix retry for that case.
                 if "native-command-evaluators" not in seen_prerequisites and not seen_shards:
                     raise _SchedulingRaceError("GitHub jobs API paginated a changing job list")
                 raise ShardWaitError("GitHub jobs API returned a duplicate job")
@@ -209,7 +217,7 @@ def _snapshot(
                 # reporting the placeholder so the actual blocker is retained.
                 invalid_shard_name_seen = True
                 pending_matrix_only &= (
-                    name == "coverage (3.12, ${{ matrix.shard-index }})"
+                    name == _MATRIX_PLACEHOLDER
                     and job.get("status") in _PENDING_STATUSES
                 )
                 continue

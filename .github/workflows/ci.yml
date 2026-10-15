@@ -270,7 +270,8 @@ jobs:
     # Build and verify both binaries, regenerate their matching public projections,
     # then publish artifacts before running Python contract and replay gates.
     # The normal cached producer targets a sub-five-minute wall clock.
-    timeout-minutes: 12
+    # Keep the former build (12 min) and planning (5 min) cold-run budgets.
+    timeout-minutes: 17
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
@@ -309,6 +310,9 @@ jobs:
       - name: Bind the compiled native runtime for test discovery
         run: echo "HOL_GUARD_NATIVE_BINARY=$GITHUB_WORKSPACE/rust/target/release/hol-guard-runtime" >> "$GITHUB_ENV"
       - uses: ./.github/actions/plan-pytest
+        # Reuse this environment instead of a second planner runner. Artifact
+        # consumers also wait for this bounded collection before fan-out.
+        timeout-minutes: 5
         with:
           python-version: "3.12"
           shard-count: ${{ env.CI_PYTEST_COVERAGE_SHARDS }}

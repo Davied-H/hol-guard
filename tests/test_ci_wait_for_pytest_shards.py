@@ -210,6 +210,19 @@ def test_retries_pagination_race_after_coverage_matrix_exists() -> None:
     assert logs[-1] == f"All {barrier.SHARD_COUNT} Python coverage shards succeeded in run {_RUN_ID}, attempt 2"
 
 
+@pytest.mark.parametrize("placeholder_first", [True, False])
+def test_retries_placeholder_id_reused_by_expanded_shard(placeholder_first: bool) -> None:
+    native = dict(_job(1000), name="native-command-evaluators")
+    placeholder = dict(_job(0), name=barrier._MATRIX_PLACEHOLDER, status="queued", conclusion=None)
+    expanded = _job(0)
+    first, last = (placeholder, expanded) if placeholder_first else (expanded, placeholder)
+    # Include the producer before a cross-page rename, as in the combined plan.
+    middle = [dict(_job(2000 + index), name=f"other-{index}") for index in range(98)]
+    calls, logs = _run([[native, first, *middle, last], [native, *_jobs()]], timeout_seconds=20)
+    assert len(calls) == 4
+    assert logs[-1] == f"All {barrier.SHARD_COUNT} Python coverage shards succeeded in run {_RUN_ID}, attempt 2"
+
+
 def test_duplicate_record_cannot_replace_a_missing_shard() -> None:
     jobs = _jobs()[:-1]
     with pytest.raises(barrier.ShardWaitError, match="Timed out"):

@@ -119,6 +119,8 @@ def test_ci_workflow_cancels_stale_runs_and_uses_precomputed_affinity_shards() -
             assert setup["with"]["python-version"] == "${{ env." + env_name + " }}"
         plan = next(step for step in plan_job["steps"] if step.get("uses") == "./.github/actions/plan-pytest")
         assert plan["with"]["python-version"] == version
+        assert plan["timeout-minutes"] == 5
+        assert plan_job["timeout-minutes"] == 12 + plan["timeout-minutes"]
         # shard-count is a `${{ env.NAME }}` reference into the workflow env block.
         raw_count = str(plan["with"]["shard-count"])
         env_ref = re.fullmatch(r"\$\{\{\s*env\.([A-Z0-9_]+)\s*\}\}", raw_count)
