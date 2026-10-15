@@ -167,7 +167,9 @@ def run_hook_phase(cli: Path, env: dict[str, str], root: Path, *, warmup: int, s
             elapsed = (time.perf_counter_ns() - started) / 1e6
             return elapsed, classify_hook_output(result.returncode, result.stdout)
 
-        warmup_ms = [call()[0] for _ in range(warmup)]
+        warmup_calls = [call() for _ in range(warmup)]
+        warmup_ms = [elapsed for elapsed, _ in warmup_calls]
+        print("hook warmup classes:", [label for _, label in warmup_calls], flush=True)
         before_service = service_snapshot(baseline, root)
         before_children = resource.getrusage(resource.RUSAGE_CHILDREN)
         observed = [call() for _ in range(samples)]
