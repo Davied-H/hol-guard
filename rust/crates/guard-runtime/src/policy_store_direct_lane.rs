@@ -23,6 +23,7 @@ use guard_policy_snapshot::{
     DirectLanePolicyIntegrityStateV1, DirectLaneSecretV1, DirectLaneStatV1,
 };
 use std::collections::{BTreeMap, BTreeSet};
+use std::time::{Duration, Instant};
 use zeroize::Zeroizing;
 
 /// The ACK lives in its own directory so that writing, renewing or unlinking
@@ -33,6 +34,11 @@ const DIRECT_LANE_ACK_SCHEMA: &str = "guard-direct-lane-ack.v1";
 const DIRECT_LANE_ACK_MAX_BYTES: u64 = 1024;
 /// A lease further ahead than this is not one the publisher would write.
 const DIRECT_LANE_ACK_MAX_LEASE_MS: u64 = 120_000;
+/// How long a hook waits for the ACK of a snapshot the resident has already
+/// bound. The publisher writes the ACK as soon as the resident accepts the
+/// push, so this covers one ACK write, not a publish.
+const DIRECT_LANE_ACK_SETTLE: Duration = Duration::from_millis(100);
+const DIRECT_LANE_ACK_SETTLE_POLL: Duration = Duration::from_millis(5);
 
 pub(crate) struct DirectLaneBinding {
     generation: u64,
@@ -292,7 +298,7 @@ impl PolicySnapshotStore {
             return Err(DirectLaneDefer::Unbound);
         }
         let now = now_ms().map_err(|_| DirectLaneDefer::SnapshotUnavailable)?;
-        let ack = self.read_direct_lane_ack()?;
+        let ack = self.settled_direct_lane_ack(binding.generation)?;
         if ack.schema != DIRECT_LANE_ACK_SCHEMA
             || ack.generation != binding.generation
             || ack.policy_digest != binding.policy_digest
@@ -304,6 +310,30 @@ impl PolicySnapshotStore {
             return Err(DirectLaneDefer::AckExpired);
         }
         Ok(snapshot)
+    }
+
+    /// The ACK file, re-read briefly while it still names a generation older
+    /// than the bound one. The publisher pushes the binding before it writes
+    /// the ACK, so a hook in that window would otherwise take the daemon
+    /// path and wait there for the same ACK. The wait is spent once per
+    /// generation: an ACK that never catches up delays one hook, not each.
+    fn settled_direct_lane_ack(&self, generation: u64) -> Result<DirectLaneAckV1, DirectLaneDefer> {
+        let deadline = Instant::now() + DIRECT_LANE_ACK_SETTLE;
+        loop {
+            let ack = self.read_direct_lane_ack()?;
+            if ack.generation >= generation
+                || self.direct_lane_ack_waited.load(Ordering::Acquire) >= generation
+            {
+                return Ok(ack);
+            }
+            let now = Instant::now();
+            if now >= deadline {
+                self.direct_lane_ack_waited
+                    .fetch_max(generation, Ordering::AcqRel);
+                return Ok(ack);
+            }
+            std::thread::sleep(DIRECT_LANE_ACK_SETTLE_POLL.min(deadline - now));
+        }
     }
 
     fn read_direct_lane_ack(&self) -> Result<DirectLaneAckV1, DirectLaneDefer> {
