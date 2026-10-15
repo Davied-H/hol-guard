@@ -56,6 +56,8 @@ _MAX_INTEGRITY_KEY_ID_BYTES = 256
 _I64_MIN = -(1 << 63)
 _I64_MAX = (1 << 63) - 1
 _U64_MAX = (1 << 64) - 1
+# Mirrors DIRECT_LANE_ACK_MAX_BYTES, the most the resident reads.
+_ACK_MAX_BYTES = 1024
 
 # Database writes and the publisher's own command-control marker commit are
 # hints the publisher recompiles and compares; they never revoke the ACK up
@@ -100,8 +102,6 @@ def direct_lane_binding(
 ) -> dict[str, object] | None:
     """Build the push binding, or None when the lane cannot be proven."""
 
-    if os.name == "nt":
-        return None
     bound_inputs: list[dict[str, object]] = []
     for path, stat_identity in inputs:
         if _hint_only(Path(path)):
@@ -422,8 +422,6 @@ class NativePolicySnapshotDirectLaneAck:
         return self.guard_home / NATIVE_RUNTIME_STATE_DIRECTORY / DIRECT_LANE_ACK_DIRECTORY / DIRECT_LANE_ACK_FILE_NAME
 
     def _unlink_direct_lane_ack(self) -> None:
-        if os.name == "nt":
-            return
         try:
             self._direct_lane_ack_path().unlink()
         except FileNotFoundError:
@@ -434,7 +432,7 @@ class NativePolicySnapshotDirectLaneAck:
 
     def _write_direct_lane_ack_locked(self) -> None:
         target = self._direct_lane_ack_target
-        if os.name == "nt" or target is None:
+        if target is None:
             return
         generation, policy_digest = target
         lease_expires_at_ms = _now_ms() + DIRECT_LANE_ACK_LEASE_MS
@@ -449,6 +447,10 @@ class NativePolicySnapshotDirectLaneAck:
         ).encode("ascii")
         path = self._direct_lane_ack_path()
         try:
+            if os.name == "nt":
+                _write_windows_ack(self.guard_home, path, body)
+                self._direct_lane_lease_expires_at_ms = lease_expires_at_ms
+                return
             _ensure_private_directory(path.parent)
             temporary = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
             descriptor = os.open(
@@ -464,11 +466,35 @@ class NativePolicySnapshotDirectLaneAck:
                 with contextlib.suppress(OSError):
                     temporary.unlink()
                 raise
-        except OSError:
+        except (OSError, RuntimeError):
             # Without a fresh ACK file the resident defers every direct hook.
             self._direct_lane_lease_expires_at_ms = 0
             return
         self._direct_lane_lease_expires_at_ms = lease_expires_at_ms
+
+
+def _write_windows_ack(guard_home: Path, path: Path, body: bytes) -> None:
+    """Commit the ACK through the private, DACL-checked Windows writer."""
+
+    from .native_policy_snapshot_windows_atomic import _windows_write_private_file_atomic
+    from .native_policy_snapshot_windows_state import (
+        _windows_ensure_private_directory,
+        _windows_private_directory_binding,
+    )
+
+    for directory in (guard_home, path.parent.parent, path.parent):
+        _windows_ensure_private_directory(directory)
+    with _windows_private_directory_binding(path.parent) as binding:
+        _windows_write_private_file_atomic(
+            parent_path=binding.path,
+            parent_handle=binding.handle,
+            directory_handles=binding.handles,
+            temporary_name=f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp",
+            destination_name=path.name,
+            payload=body,
+            maximum_bytes=_ACK_MAX_BYTES,
+            kind="direct_lane_ack",
+        )
 
 
 def _ensure_private_directory(directory: Path) -> None:

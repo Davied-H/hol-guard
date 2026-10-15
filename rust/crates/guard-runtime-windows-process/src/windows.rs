@@ -51,7 +51,8 @@ mod private_files;
 mod process_lifecycle;
 pub use bound_open::{
     directory_file_id, handle_file_id, open_bound_executable_file, open_bound_regular_file,
-    open_bound_replaceable_file, open_skill_directory, regular_file_id, FileId,
+    open_bound_replaceable_file, open_skill_directory, path_stat, regular_file_id, FileId,
+    PathStat,
 };
 pub use capture::{
     capture as capture_managed_child, capture_owned_child, capture_pipes, CaptureCommand,
