@@ -13,9 +13,12 @@ Each scenario seeds `approval_requests` (and, for the OAuth binding, the
 credential state and device rows), then writes one request through
 `GuardStore.add_approval_request`. Per scenario the vectors hold the
 returned request id or the raised error, and the resulting
-`approval_requests` and `guard_review_outbox_events` rows. Scenarios flagged
-`native_defers` seed legacy rows the daemon backfills first; the resident
-answers `null` for them and writes nothing.
+`approval_requests`, `guard_review_outbox_events` and `guard_events` rows.
+Scenarios flagged `native_defers` seed legacy rows the daemon backfills
+first; the resident answers `null` for them and writes nothing. Scenarios
+with `prompt_shown` then record the creation events as
+`queue_blocked_approvals` did (`approvals._record_created_event`) for a
+newly queued request.
 """
 
 from __future__ import annotations
@@ -30,6 +33,7 @@ from pathlib import Path
 if os.environ.get("HOL_GUARD_NATIVE") != "force" or not os.environ.get("HOL_GUARD_NATIVE_BINARY"):
     sys.exit("refusing to record: set HOL_GUARD_NATIVE=force and HOL_GUARD_NATIVE_BINARY")
 
+from codex_plugin_scanner.guard import approvals
 from codex_plugin_scanner.guard.models import GuardApprovalRequest
 from codex_plugin_scanner.guard.store import GuardStore
 
@@ -40,6 +44,7 @@ GROUP = "qg-seeded"
 TABLES = {
     "approval_requests": "request_id",
     "guard_review_outbox_events": "stream_sequence",
+    "guard_events": "event_id",
 }
 
 
@@ -270,6 +275,21 @@ SCENARIOS: list[dict[str, object]] = [
         "rows": [row("r-old")],
         "request": request("r-new", queue_group_id=GROUP),
     },
+    {"name": "created_events_prompted_review", "prompt_shown": True, "request": request("r-new", policy_action="review")},
+    {"name": "created_events_prompted_reapproval", "prompt_shown": True, "request": request("r-new")},
+    {"name": "created_events_unprompted", "prompt_shown": False, "request": request("r-new")},
+    {"name": "created_events_prompted_block", "prompt_shown": True, "request": request("r-new", policy_action="block")},
+    {
+        "name": "created_events_text_fields",
+        "prompt_shown": True,
+        "request": request("r-new", workspace=None, publisher="acme \u00e9\u2713", artifact_name="Bash \U0001f680"),
+    },
+    {
+        "name": "created_events_skipped_on_dedupe",
+        "prompt_shown": True,
+        "rows": [row("r-old")],
+        "request": request("r-new", queue_group_id=GROUP),
+    },
     {
         "name": "legacy_row_defers",
         "native_defers": True,
@@ -340,9 +360,13 @@ def run(scenario: dict[str, object]) -> dict[str, object]:
             outcome: dict[str, object] = {"result": store.add_approval_request(build(fields), NOW)}
         except ValueError as error:
             outcome = {"error": str(error)}
+        prompt_shown = scenario.get("prompt_shown")
+        if prompt_shown is not None and outcome.get("result") == fields["request_id"]:  # type: ignore[index]
+            approvals._record_created_event(store, build(fields), NOW, prompt_shown=bool(prompt_shown))
         return {
             "name": scenario["name"],
             "native_defers": bool(scenario.get("native_defers")),
+            **({"prompt_shown": scenario["prompt_shown"]} if "prompt_shown" in scenario else {}),
             "seed": seed,
             "rows": scenario.get("rows", []),
             "request": build(fields).to_dict(),
