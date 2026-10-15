@@ -229,12 +229,14 @@ fn names_guard_outside_message(segment: &crate::CommandSegmentV1) -> bool {
 ///   `{...}`, such as a comment body or a query. A match would have to hold
 ///   that whitespace literally. Whitespace inside a class (`'[ .]env'`) can
 ///   still match `.env`, so it is screened.
-/// - A `name=value` field whose name is a plain word and that is not an
-///   option. A `*` or `?` there matches only names that start with `if=`, so
+/// - A `name=value` field whose name is a plain word, that is not an
+///   option and that has no `/`. A `*` or `?` there matches only names that start with `if=`, so
 ///   the field is screened only for the words its braces expand to, each as
 ///   a literal path: `if=.e{n,m}v` makes `if=.env`, and
 ///   `if={safe:dummy,.env}` makes `if=.env`. A `{v..v}` sequence is not
-///   followed and keeps the floor. An `=` inside a pattern (`[=.]env`,
+///   followed and keeps the floor. With a `/`, Git can read the word as a
+///   path whose first component holds the `=`: `x=y/../.en*` is `.en*`. An
+///   `=` inside a pattern (`[=.]env`,
 ///   `{=,.}env`) is not a field, so the whole word is screened.
 ///
 /// A class the glob check reads differently from the shell and Git is
@@ -246,7 +248,11 @@ fn selects_secret_outside_message(segment: &crate::CommandSegmentV1) -> bool {
             return false;
         }
         match argument.split_once('=') {
-            Some((name, _)) if !argument.starts_with('-') && plain_field_name(name) => {
+            Some((name, _))
+                if !argument.starts_with('-')
+                    && !argument.contains('/')
+                    && plain_field_name(name) =>
+            {
                 brace_words::shell_brace_words(argument).is_none_or(|words| {
                     words.len() > 1
                         && words.iter().any(|word| {
