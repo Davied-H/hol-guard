@@ -6,10 +6,10 @@
 //! stdio and the child without a Python process or per-frame resident round
 //! trips. Every `tools/call` is decided in one round trip to the resident's
 //! `mcp_relay_decide` op, and anything it does not decide is blocked. A
-//! session that needs a feature the relay has not ported never reaches that
-//! point: at startup the relay hands it to the Python proxy
-//! (`mcp_relay_lane`), so installers select the relay wherever the runtime
-//! advertises it. A lane that is only not ready yet keeps the session native.
+//! session the native lane cannot serve never reaches that point: at startup
+//! the relay hands it to the Python proxy (`mcp_relay_lane`), so installers
+//! select the relay wherever the runtime advertises it. A lane the daemon
+//! has only not prepared yet keeps the session native.
 //!
 //! Unix only: the child session relies on process groups.
 
@@ -43,7 +43,7 @@ mod unix {
     use crate::mcp_relay_core::{child_response_timeout, ChildLink, Relay, RelayExit};
     use crate::mcp_relay_host::LineHost;
     use crate::mcp_relay_lane::{
-        hand_off, note, startup, unported, DaemonKick, Gate, STARTUP_BUDGET,
+        hand_off, hands_off, note, startup, DaemonKick, Gate, STARTUP_BUDGET,
     };
     use crate::mcp_relay_launch::{inherited_environment, prepare, spawn};
     use crate::mcp_relay_resident::{ProcessFacts, ResidentRelayAuthority};
@@ -86,7 +86,7 @@ mod unix {
         );
         note(&gate);
         let warming = match gate {
-            Gate::NotReady(code) if unported(&code) => return hand_off(python_argv),
+            Gate::NotReady(code) if hands_off(&code) => return hand_off(python_argv),
             Gate::NotReady(_) => true,
             Gate::Relay { .. } => false,
         };

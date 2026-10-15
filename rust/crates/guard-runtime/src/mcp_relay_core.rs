@@ -157,7 +157,8 @@ pub(crate) struct Relay<C, H, A> {
     depth: usize,
     /// A listing was captured since the catalog was last reported.
     report_due: bool,
-    /// The fingerprint of the catalog last reported.
+    /// The fingerprint of the catalog last handed to the authority, which
+    /// owns its delivery and retries it until the resident records it.
     reported: Option<String>,
 }
 
@@ -265,6 +266,8 @@ impl<C: ChildLink, H: HostLink, A: RelayAuthority> Relay<C, H, A> {
     }
 
     /// `_report_relay_server`: hand a newly whole catalog to the authority.
+    /// Each catalog is handed over once; the authority sends it off the
+    /// relay loop and sends it again from `settle` until it is recorded.
     fn report_catalog(&mut self) {
         if !std::mem::take(&mut self.report_due) {
             return;

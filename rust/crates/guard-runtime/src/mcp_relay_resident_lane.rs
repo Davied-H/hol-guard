@@ -9,32 +9,32 @@
 //!
 //! A session that started before its lane was ready stays native, and its
 //! first call waits for the lane before it is decided: the probe repeats
-//! until the lane is ready, the lane names a reason no wait clears, or the
-//! warm-up budget is spent, asking the daemon again whenever the kick
-//! interval allows. The call is then decided once, as any other.
+//! while the lane names a reason the daemon clears by preparing it, until
+//! the lane is ready, the daemon refuses, or the warm-up budget is spent,
+//! asking the daemon again whenever the kick interval allows. The call is
+//! then decided once, as any other.
 //!
 //! The resident knows a server only from a report of its whole catalog
 //! (`mcp_relay_servers.rs`), so the relay reports the catalog it relays, as
-//! the proxy does. The server's later sessions then start on the lane, or
-//! under the proxy when the catalog offers a tool the proxy decides. Only
-//! the session's own listing can report an unknown server, so its first call
-//! never waits for one.
+//! the proxy does, off the relay loop and again until the resident records
+//! it (`mcp_relay_resident_report.rs`). The server's later sessions then
+//! start on the lane, or under the proxy when the catalog offers a tool the
+//! proxy decides. Only the session's own listing can report an unknown
+//! server, so its first call never waits for one.
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
+use super::report::{self, CatalogReport, Progress};
 use super::{defer, RelayFacts, ResidentRelayAuthority};
 use crate::claude_hook_bridge_http::remaining;
-use crate::mcp_relay_lane::{kickable, unported, Kick, LaneKick, RETRY_BUDGET, WARM_UP_BUDGET};
+use crate::mcp_relay_lane::{kickable, Kick, LaneKick, RETRY_BUDGET, WARM_UP_BUDGET};
 use crate::mcp_relay_ready::MCP_RELAY_READY_SCHEMA;
-use crate::mcp_relay_servers::SERVER_UNKNOWN;
 
 /// The pause between probes while the first call waits for the lane.
 const WARM_UP_POLL: Duration = Duration::from_millis(100);
-/// How long the relay waits for the resident to take a catalog report.
-const REPORT_TIMEOUT: Duration = Duration::from_millis(500);
 
 impl ResidentRelayAuthority {
     /// Ask the daemon to prepare the lane for a deferred call.
@@ -64,13 +64,18 @@ impl ResidentRelayAuthority {
             let probe = (Instant::now() + RETRY_BUDGET).min(deadline);
             match self.lane_ready(probe) {
                 Ok(()) => return,
-                Err(code) if unported(&code) || code == SERVER_UNKNOWN => return,
+                // Only a lane the daemon has not prepared yet is worth the
+                // wait; any other reason is the call's to answer.
+                Err(code) if !kickable(&code) => return,
                 Err(_) => {}
             }
             if let Some(kick) = self.kick.as_mut() {
-                // The kick rate-limits itself, so this asks the daemon at
-                // most once per kick interval.
-                let _ = kick.kick((Instant::now() + RETRY_BUDGET).min(deadline));
+                // The kick rate-limits itself (`Kick::Skipped`), so this asks
+                // the daemon at most once per kick interval.
+                let deadline = (Instant::now() + RETRY_BUDGET).min(deadline);
+                if kick.kick(deadline) == Kick::Refused {
+                    return;
+                }
             }
             let left = remaining(deadline);
             if left.is_zero() {
@@ -110,9 +115,9 @@ impl ResidentRelayAuthority {
         ready_answer(&output)
     }
 
-    /// `_report_relay_server`: report the session server's whole catalog.
-    /// Best effort: a report the resident never took leaves the server
-    /// unknown, and its later sessions start native again.
+    /// `_report_relay_server`: report the session server's whole catalog,
+    /// replacing a report of an older catalog still pending. The report is
+    /// sent off the relay loop and sent again until the resident records it.
     pub(super) fn report_server(&mut self, tools: &[Value]) {
         let Some(facts) = self.facts.as_ref() else {
             return;
@@ -125,11 +130,26 @@ impl ResidentRelayAuthority {
                 "tools": tools,
             },
         });
-        let guard_home = PathBuf::from(&facts.guard_home);
         let Ok(payload) = serde_json::to_vec(&payload) else {
             return;
         };
-        let _ = self.exchange_until(&guard_home, &payload, Instant::now() + REPORT_TIMEOUT);
+        let guard_home = PathBuf::from(&facts.guard_home);
+        if let Some(previous) = self.report.take() {
+            previous.supersede();
+        }
+        self.report = Some(CatalogReport::new(guard_home, payload, report::deliver));
+        self.poll_report();
+    }
+
+    /// Read the pending catalog report's answer and retry it when it is
+    /// due; never waits for the resident.
+    pub(super) fn poll_report(&mut self) {
+        let Some(report) = self.report.as_mut() else {
+            return;
+        };
+        if report.poll(Instant::now()) != Progress::Pending {
+            self.report = None;
+        }
     }
 
     /// Whether a call deferred with `output` gets its one retry: the lane

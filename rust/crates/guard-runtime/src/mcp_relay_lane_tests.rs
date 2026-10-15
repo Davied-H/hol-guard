@@ -1,6 +1,6 @@
 use super::{
-    ensure_argv, gate_line, kickable, startup, unported, Gate, Kick, LaneKick, DAEMON_REFUSED,
-    DAEMON_UNREACHABLE,
+    ensure_argv, gate_line, hands_off, kickable, startup, warms_up, Gate, Kick, LaneKick,
+    DAEMON_REFUSED, DAEMON_UNREACHABLE,
 };
 use crate::mcp_relay_args::parse;
 use std::cell::Cell;
@@ -89,6 +89,24 @@ fn a_down_or_refusing_daemon_is_not_ready_at_once() {
 }
 
 #[test]
+fn a_skipped_kick_keeps_probing_until_the_deadline() {
+    let (count, probe) = probes(3, "direct_lane_unbound");
+    let mut fake = kick(Kick::Skipped);
+    let gate = startup(&mut |_| probe(&count), &mut fake, BUDGET);
+    assert!(matches!(gate, Gate::Relay { kicked: false, .. }));
+    assert_eq!((count.get(), fake.kicks), (4, 1));
+    let (count, probe) = probes(usize::MAX, "direct_lane_unbound");
+    let mut fake = kick(Kick::Skipped);
+    let gate = startup(
+        &mut |_| probe(&count),
+        &mut fake,
+        Duration::from_millis(150),
+    );
+    assert_eq!(gate, Gate::NotReady("direct_lane_unbound".to_owned()));
+    assert!(!hands_off("direct_lane_unbound"));
+}
+
+#[test]
 fn a_reason_the_daemon_cannot_clear_is_not_ready_without_a_kick() {
     for code in [
         "mcp_relay_facts_unavailable",
@@ -154,27 +172,50 @@ fn the_gate_line_has_a_fixed_shape() {
 }
 
 #[test]
-fn only_features_the_relay_lacks_send_a_session_to_the_python_proxy() {
-    for code in [
-        "mcp_relay_session_review_mode",
-        "mcp_relay_saved_remote_policy",
-        "mcp_relay_session_server_proxy_tools",
-        "mcp_relay_facts_unavailable",
-        DAEMON_REFUSED,
-    ] {
-        assert!(unported(code), "{code}");
-    }
+fn only_a_lane_the_daemon_has_not_prepared_yet_keeps_the_session_native() {
     for code in [
         DAEMON_UNREACHABLE,
         "direct_lane_unbound",
+        "direct_lane_snapshot_unavailable",
+        "direct_lane_ack_missing",
+        "direct_lane_ack_mismatch",
+        "direct_lane_ack_expired",
+        "direct_lane_workspace_unknown",
+        "direct_lane_input_changed",
+        "mcp_relay_harness_unbound",
+        "mcp_relay_view_missing",
         "mcp_relay_resident_unreachable",
-        "mcp_relay_runtime_superseded",
-        "mcp_relay_evidence_undrained",
-        "mcp_relay_binding_incomplete",
         "mcp_relay_session_server_unknown",
     ] {
-        assert!(!unported(code), "{code}");
+        assert!(warms_up(code) && !hands_off(code), "{code}");
     }
+    // Every other reason `mcp_relay_ready`, the probe or the gate can name
+    // runs the session as the Python proxy, as before the lane warmed up.
+    for code in [
+        DAEMON_REFUSED,
+        "direct_lane_unsupported",
+        "mcp_relay_runtime_superseded",
+        "mcp_relay_workspace_invalid",
+        "mcp_relay_evidence_undrained",
+        "mcp_relay_binding_incomplete",
+        "mcp_relay_view_invalid",
+        "mcp_relay_layers_unavailable",
+        "mcp_relay_session_review_mode",
+        "mcp_relay_session_redaction_unbound",
+        "mcp_relay_store_unreadable",
+        "mcp_relay_saved_remote_policy",
+        "mcp_relay_saved_policy_unverifiable",
+        "mcp_relay_session_server_proxy_tools",
+        "mcp_relay_facts_unavailable",
+        "mcp_relay_request_unsendable",
+        "mcp_relay_reply_invalid",
+    ] {
+        assert!(hands_off(code), "{code}");
+    }
+    assert!(
+        hands_off("mcp_relay_a_code_added_later"),
+        "an unknown code hands off"
+    );
 }
 
 #[test]

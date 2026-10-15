@@ -95,7 +95,9 @@ pub(crate) trait RelayAuthority {
     fn settle(&mut self) {}
 
     /// A listing made the catalog whole: `tools` is every advertised
-    /// definition. Called once the host has the listing's response.
+    /// definition. Called once per catalog, after the host has the listing's
+    /// response; the authority owns delivery, never blocks on it, and keeps
+    /// a report the resident did not record due for a later `settle`.
     fn catalog_complete(&mut self, _tools: &[Value]) {}
 }
 

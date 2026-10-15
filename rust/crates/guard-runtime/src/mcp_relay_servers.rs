@@ -32,7 +32,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 pub(crate) const MCP_RELAY_SERVER_REPORT_FEATURE: &str = "mcp-relay-server-report-v1";
-const REPORT_SCHEMA: &str = "guard-mcp-relay-server-report-result.v1";
+pub(crate) const REPORT_SCHEMA: &str = "guard-mcp-relay-server-report-result.v1";
 /// No session reported the server's catalog yet.
 pub(crate) const SERVER_UNKNOWN: &str = "mcp_relay_session_server_unknown";
 /// The server offers a tool whose calls the proxy decides.
