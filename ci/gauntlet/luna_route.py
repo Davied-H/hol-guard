@@ -124,11 +124,13 @@ def _drain(stream: Any, sink: deque[str], done: threading.Event) -> None:
     with suppress(OSError, ValueError):
         partial = False
         while chunk := stream.readline(STDERR_LINE_CHARS):
+            # A short chunk without a newline is the end of the stream, not a cut.
+            cut = len(chunk) >= STDERR_LINE_CHARS and not chunk.endswith("\n")
             if not partial:
                 # Drop the word a cut line ends on: it may be the start of a secret
                 # too short for redaction to recognize.
-                sink.append(chunk if chunk.endswith("\n") else chunk.rpartition(" ")[0] + " ...")
-            partial = not chunk.endswith("\n")
+                sink.append(chunk.rpartition(" ")[0] + " ..." if cut else chunk)
+            partial = cut
     with suppress(OSError):
         stream.close()
     done.set()
