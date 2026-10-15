@@ -52,6 +52,10 @@ fn fixture(repositories: &[(&str, &[(&str, &str)])]) -> Fixture {
 }
 
 fn action(fixture: &Fixture, cwd: &str, command: &str) -> String {
+    evaluate(fixture, cwd, command).minimum_action
+}
+
+fn evaluate(fixture: &Fixture, cwd: &str, command: &str) -> guard_contracts::PreToolResultV1 {
     let cwd = fixture.home.join(cwd);
     evaluate_pre_tool_envelope_with_context(
         "claude-code",
@@ -62,7 +66,6 @@ fn action(fixture: &Fixture, cwd: &str, command: &str) -> String {
         fixture.home.to_str(),
         cwd.to_str(),
     )
-    .minimum_action
 }
 
 fn assert_actions(fixture: &Fixture, cwd: &str, commands: &[&str], expected: &str) {
@@ -113,6 +116,19 @@ fn an_ignore_file_that_re_includes_a_hidden_secret_keeps_rg_reviewed() {
         assert_actions(&fixture, cwd, &["rg -n foo", "rg foo ."], "review");
     }
     assert_actions(&fixture, "reentered", &["rg -n foo"], "review");
+    // The review names the narrower search Guard can prove.
+    let result = evaluate(&fixture, "template", "rg -n foo");
+    assert!(
+        result.reason.contains("Name the directories to search"),
+        "{}",
+        result.reason
+    );
+    let other = evaluate(&fixture, "template", "rg -n foo | sh");
+    assert!(
+        !other.reason.contains("Name the directories"),
+        "{}",
+        other.reason
+    );
     // A root below the re-including file still honors it, when a hidden
     // file it names is there.
     assert_actions(&fixture, "nested", &["rg -n foo src"], "review");
@@ -134,12 +150,14 @@ fn benign_negations_and_pruned_directories_keep_rg_allowed() {
             &[
                 (
                     ".gitignore",
-                    ".env\n/target\nnode_modules/\n!.gitkeep\n!*.rs\n!/docs/\n",
+                    ".env\n/target\nnode_modules/\nrust/target\n!.gitkeep\n!*.rs\n!/docs/\n",
                 ),
                 ("logs/.gitkeep", ""),
                 // `rg` never enters these, so their rules do not apply.
                 ("target/.ignore", "!.env\n"),
                 ("web/node_modules/pkg/.ignore", "!.env\n"),
+                ("rust/target/.ignore", "!.env\n"),
+                ("rust/src/lib.rs", "pub fn f() {}\n"),
             ],
         ),
         // A rule that would re-include a template that is not there.
@@ -149,9 +167,10 @@ fn benign_negations_and_pruned_directories_keep_rg_allowed() {
     assert_actions(
         &fixture,
         "benign",
-        &["rg -n foo", "rg foo .", "rg -n foo src"],
+        &["rg -n foo", "rg foo .", "rg -n foo src", "rg -n foo rust"],
         "allow",
     );
+    assert_actions(&fixture, "absent", &["rg -n foo"], "allow");
     assert_actions(
         &fixture,
         "plain",

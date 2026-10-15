@@ -368,17 +368,48 @@ pub(super) fn safe_grep_stdin_arguments(arguments: &[String]) -> bool {
 }
 
 pub(super) fn safe_rg_stdin_arguments(arguments: &[String]) -> bool {
-    safe_rg_arguments_inner(arguments, crate::pretool::PathContext::default(), true)
+    safe_rg_arguments_inner(
+        arguments,
+        crate::pretool::PathContext::default(),
+        true,
+        true,
+    )
 }
 
 fn safe_rg_arguments(arguments: &[String], context: ReadContext<'_>) -> bool {
-    safe_rg_arguments_inner(arguments, context, false)
+    safe_rg_arguments_inner(arguments, context, false, true)
+}
+
+/// A review reason for a lone `rg` held back only because an ignore file
+/// under its roots re-includes a hidden file it would then read. Told just
+/// that the command "could not be confirmed read-only", agents split it
+/// further; naming the directories to search is what Guard can prove.
+/// `None` for every other command.
+pub(super) fn rg_hidden_whitelist_reason(
+    model: &crate::CanonicalCommandV1,
+    context: ReadContext<'_>,
+) -> Option<String> {
+    let [segment] = model.segments.as_slice() else {
+        return None;
+    };
+    let held = model.confidence == "exact"
+        && !model.path_overridden
+        && model.wrapper_chain.is_empty()
+        && segment.environment_names.is_empty()
+        && super::executable_basename(segment.executable.as_deref()?) == "rg"
+        && safe_rg_arguments_inner(&segment.arguments, context, false, false)
+        && !safe_rg_arguments_inner(&segment.arguments, context, false, true);
+    held.then(|| {
+        "HOL Guard requires review because an ignore file here re-includes a hidden file (for example a `!.env.example` rule), so rg would read that file too. Name the directories to search, such as `rg PATTERN src docs`, or list names with `rg --files`."
+            .to_owned()
+    })
 }
 
 fn safe_rg_arguments_inner(
     arguments: &[String],
     context: ReadContext<'_>,
     stdin_only: bool,
+    prove_roots: bool,
 ) -> bool {
     let mut pending_value: Option<SearchValueRole> = None;
     let mut pattern_supplied = false;
@@ -524,7 +555,7 @@ fn safe_rg_arguments_inner(
     pending_value.is_none()
         && (!stdin_only || pattern_supplied)
         && (stdin_only || config_disabled || context.ripgrep_config_absent)
-        && (stdin_only || paths_only || rg_whitelist::roots_proven(&roots, context))
+        && (stdin_only || paths_only || !prove_roots || rg_whitelist::roots_proven(&roots, context))
 }
 
 #[cfg(test)]
