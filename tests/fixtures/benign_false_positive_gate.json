@@ -11423,6 +11423,214 @@
       },
       "cwd": "org_app",
       "expect": "not_allow"
+    },
+    {
+      "id": "session-python-tmp-sibling-checkout-script",
+      "fix_area": "shell",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "python3 ${TMP_ORG}/app/scripts/report.py --top 40"
+      },
+      "cwd": "tmp_worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "session-python-compile-sibling-checkout-module",
+      "fix_area": "shell",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "python3 -m py_compile ${ORG}/service-api/src/daemon/read.py"
+      },
+      "cwd": "org_app",
+      "expect": "allow"
+    },
+    {
+      "id": "session-cd-quiet-sequenced-sibling-vite-build",
+      "fix_area": "shell",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cd ${ORG}/service-api/dashboard 2>/dev/null; ${ORG}/service-api/dashboard/node_modules/.bin/vite build"
+      },
+      "cwd": "org_app",
+      "expect": "allow"
+    },
+    {
+      "id": "session-cd-sequenced-sibling-vite-build",
+      "fix_area": "shell",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cd ${ORG}/service-api/dashboard; ./node_modules/.bin/vite build"
+      },
+      "cwd": "org_app",
+      "expect": "allow"
+    },
+    {
+      "id": "session-bun-sibling-worktree-script-help",
+      "fix_area": "shell",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "bun ${ORG_WT}/scripts/report.ts --help"
+      },
+      "cwd": "org_app",
+      "expect": "allow"
+    },
+    {
+      "id": "session-bun-sibling-checkout-vite-bin-build",
+      "fix_area": "shell",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "bun ${ORG}/service-api/dashboard/node_modules/vite/bin/vite.js build --root ${ORG}/service-api/dashboard"
+      },
+      "cwd": "org_app",
+      "expect": "allow"
+    },
+    {
+      "id": "session-env-report-dir-sibling-dashboard-vitest",
+      "fix_area": "shell",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cd ${ORG}/service-api/dashboard && POSTHOG_REPORT_DIR=/tmp/posthog-report-tests ./node_modules/.bin/vitest run"
+      },
+      "cwd": "org_app",
+      "expect": "allow"
+    },
+    {
+      "id": "neg-env-node-options-sibling-dashboard-vitest",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cd ${ORG}/service-api/dashboard && NODE_OPTIONS=--require=${PRIVATE_TMP}/resume-phase1.mjs ./node_modules/.bin/vitest run"
+      },
+      "cwd": "org_app",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-python-plain-home-dir-script",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "python3 ${HOME}/acme-plain/probe_py.py"
+      },
+      "cwd": "org_app",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-bun-private-tmp-script",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "bun ${PRIVATE_TMP}/resume-phase1.mjs"
+      },
+      "cwd": "org_app",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-python-sibling-script-ssh-operand",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "python3 ${ORG}/service-api/src/daemon/read.py ${HOME}/.ssh/id_rsa"
+      },
+      "cwd": "org_app",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-cd-quiet-sequenced-private-tmp-node",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cd ${PRIVATE_TMP} 2>/dev/null; node ${PRIVATE_TMP}/resume-phase1.mjs"
+      },
+      "cwd": "org_app",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-env-node-options-bunx-vitest",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cd ${ORG}/app-portal && NODE_OPTIONS=--require=${PRIVATE_TMP}/resume-phase1.mjs bunx vitest run"
+      },
+      "cwd": "org_app",
+      "expect": "not_allow"
     }
   ],
   "pending_pr": {

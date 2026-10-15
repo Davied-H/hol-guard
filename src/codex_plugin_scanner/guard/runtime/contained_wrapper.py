@@ -17,6 +17,9 @@ from .restricted_pytest_validation import _path_is_within
 
 _MERGE = re.compile(r"2>&1(?=[ \t|]|\Z)")
 _HOME_CD = re.compile(r"[ \t]*cd[ \t]+~(?=/|[ \t])")
+# `cd <dir> 2>/dev/null; …` only silences a cd the sink resolves itself first.
+_QUIET_CD = re.compile(r"([ \t]*cd[ \t]+[^ \t;&|<>'\"]+)[ \t]+2>/dev/null(?=[ \t]*(?:;|&&))")
+_ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 _OPERATOR = frozenset("();<>|&\n")
 # Characters the shell would expand; native authority only upgrades exact parses.
 _UNQUOTED_EXPANSION = frozenset("$`*?[{")
@@ -151,6 +154,40 @@ def sibling_project_root(directory: Path, *, home: Path | None) -> Path | None:
     return None
 
 
+def anchored_sibling_root(command: str, *, workspace: Path, cwd: Path, home: Path | None) -> Path | None:
+    """The sibling repository an absolute script or tool names, as native authority anchors it.
+
+    One plain command, such as `python3 <sibling>/scripts/report.py --top 40`
+    or `<sibling>/node_modules/.bin/vite build`, whose first absolute word
+    lies in a repository outside the workspace. The workspace
+    sandbox is then rooted at that path's repository, as after `cd <root> &&`;
+    native authority re-checks every other word from there. A relative word
+    that names a file from `cwd` would move with the root, so it keeps None.
+    """
+    try:
+        tokens, exact = _lex(command)
+    except ValueError:
+        return None
+    words = [value for value, _operator in tokens]
+    if not exact or not words or any(operator for _value, operator in tokens) or words[0] == "cd":
+        return None
+    values = [word.partition("=")[2] if word.startswith("-") else word for word in words]
+    if _ASSIGNMENT.match(words[0]) or any(
+        value and not value.startswith("/") and os.path.lexists(cwd / value) for value in values
+    ):
+        return None
+    anchor = next((word for word in words if word.startswith("/")), None)
+    inside = workspace.resolve(strict=True)
+    try:
+        path = Path(anchor).resolve(strict=True) if anchor is not None else None
+        root = sibling_project_root(path, home=home) if path is not None else None
+    except (OSError, RuntimeError):
+        return None
+    if path is None or root is None or _path_is_within(path, inside) or _path_is_within(root, inside):
+        return None
+    return root
+
+
 _DIRECTORY_FLAGS = {"bun": ("--cwd",), "yarn": ("--cwd",), "npm": ("--prefix", "-C"), "pnpm": ("--dir", "-C")}
 _PLAIN_WORD = re.compile(r"[A-Za-z0-9/._@+=:,-]+")
 
@@ -224,15 +261,18 @@ def peel_contained_wrapper(
     when it names a sibling repository's root from `cwd`, such as a linked
     worktree beside the checkout; after a cd into a sibling root, the core may
     be an `&&` list of plain commands, which is re-authorized there. Only a cd
-    into a sibling root may end in `;`: the directory is resolved here and
-    nothing runs when it is gone, so the core never falls back to the
-    session directory the way the shell would after a failed cd. Raises
+    into a sibling repository may end in `;` or carry `2>/dev/null`: the
+    directory is resolved here and nothing runs when it is gone, so the core
+    never falls back to the session directory the way the shell would after a
+    failed cd. Raises
     ValueError (or OSError for a missing cd target) for shapes native
     authority never upgrades.
     """
     status = _STATUS_ECHO.search(command)
     if status is not None:
         command = command[: status.start()]
+    if (quiet := _QUIET_CD.match(command)) is not None:
+        command = quiet.group(1) + command[quiet.end() :]
     home_cd = home is not None and _HOME_CD.match(command) is not None
     if home_cd:
         # The cd target's leading `~` is the one expansion proved; lex it as `.`.
@@ -268,7 +308,7 @@ def peel_contained_wrapper(
         sibling_root = sibling_project_root(directory, home=home) == directory and not _path_is_within(
             directory, inside
         )
-        if sequenced and not sibling_root:
+        if (sequenced or quiet is not None) and _path_is_within(directory, inside):
             raise ValueError("unsupported cd prefix")
         tokens, wrapped = tokens[3:], True
         joined = _joined_list(tokens) if sibling_root else None

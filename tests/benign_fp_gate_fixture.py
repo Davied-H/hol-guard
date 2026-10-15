@@ -276,6 +276,7 @@ def build_fixture(root: Path) -> BenignFixture:
     _write(home / "other-project" / "package.json", '{\n  "name": "@acme/app",\n  "version": "1.0.0"\n}\n')
     _write(home / "other-project" / ".keep", "")
     _write(home / "acme-plain" / "README.txt", "Plain notes directory.\n")
+    _write(home / "acme-plain" / "probe_py.py", "print('probe')\n")
     _write(home / "kubeconfig.yaml", _KUBECONFIG)
     _write(home / ".ssh" / "id_rsa", "-----BEGIN FIXTURE KEY-----\nnot-a-real-key\n-----END FIXTURE KEY-----\n")
     # Sibling repository outside the workspace, as in the live Gauntlet fixture.
@@ -379,6 +380,7 @@ def build_fixture(root: Path) -> BenignFixture:
             _write(repository / "contracts" / "commands.json", '{"commands": []}\n')
             _write(repository / "validation" / "schema.json", '{"type": "object"}\n')
             _write(repository / "rust" / "crates" / "catalog" / "src" / "lib.rs", "pub fn catalog_read() {}\n")
+            _write(repository / "src" / "daemon" / "read.py", "print('daemon read')\n")
             # A real target, so the sibling `.env` negative controls prove a refusal.
             _write(repository / ".env", "TOKEN=synthetic-not-a-secret\n")
             _write(repository / ".gitignore", "node_modules/\n")
@@ -431,6 +433,7 @@ def build_fixture(root: Path) -> BenignFixture:
     _write(tmp_org / "app" / "package.json", '{"name": "app", "version": "1.0.0"}\n')
     _write(tmp_org / "app" / "src" / "index.ts", "export const railStage = 1;\n")
     _write(tmp_org / "app" / "tests" / "index.test.ts", "import { railStage } from '../src';\n")
+    _write(tmp_org / "app" / "scripts" / "report.py", "print('report')\n")
     _git(tmp_org / "app", "add", "-A", home=home)
     _git(tmp_org / "app", "commit", "--quiet", "-m", "app base", home=home)
     followup = str(tmp_org.parent / "app-followup")

@@ -493,7 +493,7 @@ fn evaluate_envelope(
             {
                 return projected;
             }
-            return env_prefix_projection::join_reviewed(projected, raw, &reviewed.setting);
+            return env_prefix_projection::join_reviewed(projected, raw, &reviewed);
         }
     }
 

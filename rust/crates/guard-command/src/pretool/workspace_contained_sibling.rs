@@ -4,7 +4,10 @@
 //! workspace (`contained_wrapper.py`), so the classifier holds the remainder
 //! to the checks it would face from a session started in that root. The sink
 //! resolves the root itself and runs nothing when it is gone, so `cd <root>;`
-//! cannot fall back to the session directory and is peeled like `&&`.
+//! cannot fall back to the session directory and is peeled like `&&`. A
+//! plain command whose script or tool lies in a sibling repository
+//! (`python3 ../other/scripts/report.py`, spelled absolute) runs from that
+//! root the same way.
 use super::PathContext;
 use crate::{CanonicalCommandV1, CommandSegmentV1};
 use std::path::{Path, PathBuf};
@@ -18,7 +21,9 @@ pub(super) fn sibling_run(
 ) -> Option<(PathBuf, Option<CanonicalCommandV1>)> {
     match sibling_list(model, context) {
         Some((root, rest)) => Some((root, Some(rest))),
-        None => sibling_cd_root(model, context).map(|root| (root, None)),
+        None => sibling_cd_root(model, context)
+            .or_else(|| sibling_anchor(model, context))
+            .map(|root| (root, None)),
     }
 }
 
@@ -59,6 +64,8 @@ fn sibling_list(
 /// exists must resolve into the root or, for a linked worktree, its main
 /// checkout: the trees the sandbox can read. A `node_modules` link into
 /// another directory keeps its review instead of failing in the sandbox.
+/// `cd <dir> 2>/dev/null; <one command>` runs the command from the root when
+/// the `cd` fails, so its paths must be readable from there too.
 fn sibling_cd_root(model: &CanonicalCommandV1, context: PathContext<'_>) -> Option<PathBuf> {
     let [spelled] = model.segments.first()?.arguments.as_slice() else {
         return None;
@@ -66,24 +73,115 @@ fn sibling_cd_root(model: &CanonicalCommandV1, context: PathContext<'_>) -> Opti
     if !Path::new(spelled).is_absolute() {
         return None;
     }
-    let target = super::super::segment_proof::verified_cwd_compound_context(model, context)?;
+    let sequenced =
+        super::super::segment_proof::verified_cwd_compound_context(model, context).is_none();
+    let target = super::super::segment_proof::verified_cwd_list_context(model, context, true)?;
     let target = PathBuf::from(target);
     let workspace = std::fs::canonicalize(context.cwd?).ok()?;
     if target.starts_with(&workspace) {
         return None;
     }
     let root = super::super::contained_wrapper::sibling_project_root(&target, context.home_dir?)?;
-    let core = super::super::contained_wrapper::contained_core(model, context)?;
-    let mut trees = vec![root.clone()];
-    if let Some(checkout) = super::super::worktree_writes::linked_worktree_common_dir(&root)
+    let core = if sequenced {
+        sequenced_core(model)?
+    } else {
+        super::super::contained_wrapper::contained_core(model, context)?
+    };
+    let trees = readable_trees(&root);
+    core.segments
+        .iter()
+        .all(|segment| {
+            names_readable(segment, &target, &trees)
+                && (!sequenced || names_readable(segment, &root, &trees))
+        })
+        .then_some(root)
+}
+
+/// The one plain command after `cd <dir>;`, with no other list, pipe or
+/// redirect.
+fn sequenced_core(model: &CanonicalCommandV1) -> Option<CanonicalCommandV1> {
+    let [cd, core] = model.segments.as_slice() else {
+        return None;
+    };
+    let rest: String = model.normalized_text.chars().skip(cd.span.end).collect();
+    if model.confidence != "exact"
+        || core.pipeline_index != 0
+        || core.executable.as_deref() == Some("cd")
+        || rest.matches(';').count() != 1
+        || rest.contains(['<', '>', '|', '&'])
+    {
+        return None;
+    }
+    let mut peeled = model.clone();
+    peeled.segments = vec![core.clone()];
+    Some(peeled)
+}
+
+/// The repository root for one plain command whose first absolute word
+/// names an existing path in a sibling repository: a script (`python3
+/// <root>/scripts/report.py`), a module (`python3 -m py_compile <path>`) or an
+/// installed tool (`bun <root>/node_modules/vite/bin/vite.js build`). The sink
+/// runs the text as issued from that root (`anchored_sibling_root`), as for
+/// `cd <root> && …`, under the same root rules: a directory with no
+/// repository, such as a private temporary or plain home directory, has
+/// none. A relative word that names a path from the session directory would
+/// name another one there, so that command keeps its review.
+fn sibling_anchor(model: &CanonicalCommandV1, context: PathContext<'_>) -> Option<PathBuf> {
+    let [segment] = model.segments.as_slice() else {
+        return None;
+    };
+    let executable = segment.executable.as_deref()?;
+    if model.confidence != "exact"
+        || !model.wrapper_chain.is_empty()
+        || !segment.wrapper_chain.is_empty()
+        || !segment.environment_names.is_empty()
+        || segment.pipeline_index != 0
+        || executable == "cd"
+        || model
+            .normalized_text
+            .contains(['<', '>', '|', '&', ';', '$', '`'])
+    {
+        return None;
+    }
+    let cwd = std::fs::canonicalize(context.cwd?).ok()?;
+    let words = || std::iter::once(executable).chain(segment.arguments.iter().map(String::as_str));
+    let anchor = words()
+        .filter(|word| !word.starts_with('-'))
+        .find(|word| Path::new(word).is_absolute())?;
+    let anchor = std::fs::canonicalize(anchor).ok()?;
+    let root = super::super::contained_wrapper::sibling_project_root(&anchor, context.home_dir?)?;
+    if anchor.starts_with(&cwd)
+        || root.starts_with(&cwd)
+        || words().any(|word| {
+            let value = word_path(word);
+            !value.is_empty()
+                && !Path::new(value).is_absolute()
+                && std::fs::symlink_metadata(cwd.join(value)).is_ok()
+        })
+    {
+        return None;
+    }
+    names_readable(segment, &root, &readable_trees(&root)).then_some(root)
+}
+
+/// The trees the sandbox rooted at `root` can read: the root and, for a
+/// linked worktree, its main checkout.
+fn readable_trees(root: &Path) -> Vec<PathBuf> {
+    let mut trees = vec![root.to_path_buf()];
+    if let Some(checkout) = super::super::worktree_writes::linked_worktree_common_dir(root)
         .and_then(|common| common.parent().map(Path::to_path_buf))
     {
         trees.push(checkout);
     }
-    core.segments
-        .iter()
-        .all(|segment| names_readable(segment, &target, &trees))
-        .then_some(root)
+    trees
+}
+
+/// The path a word names: the value of a `--option=value` word, else the word.
+fn word_path(word: &str) -> &str {
+    match word.split_once('=') {
+        Some((option, value)) if option.starts_with('-') => value,
+        _ => word,
+    }
 }
 
 /// Whether every word of `segment` that names an existing path from
@@ -94,10 +192,7 @@ fn names_readable(segment: &CommandSegmentV1, directory: &Path, trees: &[PathBuf
         .iter()
         .chain(&segment.arguments)
         .all(|word| {
-            let value = match word.split_once('=') {
-                Some((option, value)) if option.starts_with('-') => value,
-                _ => word.as_str(),
-            };
+            let value = word_path(word);
             let path = directory.join(value);
             value.is_empty()
                 || std::fs::symlink_metadata(&path).is_err()
