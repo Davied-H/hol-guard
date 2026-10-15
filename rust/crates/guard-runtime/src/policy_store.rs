@@ -204,6 +204,12 @@ pub(crate) struct PolicySnapshotStore {
     state: Mutex<PolicyState>,
     direct_lane: Mutex<Option<Arc<policy_store_direct_lane::DirectLaneBinding>>>,
     direct_lane_ack_wait_claimed: AtomicU64,
+    /// A settle budget, in milliseconds, that replaces the shipped one, or
+    /// zero for the shipped one. Tests that race an ACK into that window
+    /// widen it: a stalled runner can close the window before the racing
+    /// write lands, and the settled wait then reads as a mismatch.
+    #[cfg(test)]
+    pub(crate) direct_lane_ack_settle_override_ms: AtomicU64,
     direct_evidence: crate::hook_direct_evidence::DirectEvidenceQueue,
     mcp_relay_pending: crate::mcp_relay_pending::PendingRelayEvidence,
     mcp_relay_claims: crate::mcp_relay_claims::HeldClaims<crate::mcp_relay_decide::ClaimContext>,
@@ -313,6 +319,8 @@ impl PolicySnapshotStore {
             }),
             direct_lane: Mutex::new(None),
             direct_lane_ack_wait_claimed: AtomicU64::new(0),
+            #[cfg(test)]
+            direct_lane_ack_settle_override_ms: AtomicU64::new(0),
             direct_evidence: crate::hook_direct_evidence::DirectEvidenceQueue::default(),
             mcp_relay_pending: crate::mcp_relay_pending::PendingRelayEvidence::default(),
             mcp_relay_claims: crate::mcp_relay_claims::HeldClaims::default(),

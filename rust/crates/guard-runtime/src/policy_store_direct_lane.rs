@@ -336,7 +336,7 @@ impl PolicySnapshotStore {
         {
             return Ok((ack, false));
         }
-        let deadline = Instant::now() + DIRECT_LANE_ACK_SETTLE;
+        let deadline = Instant::now() + self.direct_lane_ack_settle();
         loop {
             let now = Instant::now();
             if now >= deadline {
@@ -348,6 +348,21 @@ impl PolicySnapshotStore {
                 return Ok((ack, true));
             }
         }
+    }
+
+    /// How long this store's next hook waits for the ACK of the snapshot it is
+    /// bound to.
+    fn direct_lane_ack_settle(&self) -> Duration {
+        #[cfg(test)]
+        {
+            let widened = self
+                .direct_lane_ack_settle_override_ms
+                .load(Ordering::Acquire);
+            if widened > 0 {
+                return Duration::from_millis(widened);
+            }
+        }
+        DIRECT_LANE_ACK_SETTLE
     }
 
     fn read_direct_lane_ack(&self) -> Result<DirectLaneAckV1, DirectLaneDefer> {
