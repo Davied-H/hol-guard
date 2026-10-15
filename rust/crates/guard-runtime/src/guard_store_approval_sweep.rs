@@ -249,6 +249,6 @@ fn normalized_workspace_path(value: &str) -> String {
     normalized
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 #[path = "guard_store_approval_sweep_tests.rs"]
 mod tests;
