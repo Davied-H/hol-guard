@@ -49,12 +49,13 @@ pub(crate) fn continues_as_expression(rest: &str) -> bool {
 
 /// Whether a character written directly after a value joins more onto it:
 /// a word or `$` substitution (shell concatenation), another quoted string,
-/// or a concatenation or formatting operator.
+/// a shell word character such as `-`, `/`, `@` or `=` that the shell keeps
+/// in the same word, or a concatenation or formatting operator.
 fn joins_value(character: char) -> bool {
     character.is_alphanumeric()
         || matches!(
             character,
-            '_' | '$' | '"' | '\'' | '+' | '%' | '|' | '~' | '&'
+            '_' | '$' | '"' | '\'' | '+' | '%' | '|' | '~' | '&' | '-' | '/' | '@' | '='
         )
 }
 
@@ -127,6 +128,10 @@ mod tests {
             "%real",
             "|| real",
             "&real",
+            "-\"$PROD_SECRET\"",
+            "/$PROD_SECRET",
+            "@$PROD_HOST",
+            "=$PROD_SECRET",
             "\\n  + realTail",
             "\\n\\n  .concat(realTail)",
             "\\n\n  + realTail",
@@ -153,6 +158,10 @@ mod tests {
             "password = 'mock-'\\n  + realTail",
             "password = 'mock-'$REAL_SECRET",
             "password = 'mock-'\"real-tail\"",
+            "PASSWORD='example-'-\"$PROD_SECRET\"",
+            "PASSWORD='example'/\"$PROD_SECRET\"",
+            "PASSWORD='example'@\"$PROD_HOST\"",
+            "PASSWORD='example'=\"$PROD_SECRET\"",
         ] {
             assert!(flags_assignment(text), "{text:?}");
         }
