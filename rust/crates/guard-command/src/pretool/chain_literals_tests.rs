@@ -347,6 +347,13 @@ mod envelope {
                 format!("cat {d}/package.json; wc -l {d}/package.json"),
             ),
         ] {
+            // A sandbox launches the raw text, so a literal the workspace
+            // sandbox contains leaves a raw `$PWD` form at its review.
+            let (literal_action, literal_reason) = verdict(&literal, &ws);
+            if host() && literal_action == "sandbox-required" && literal_reason == CONTAINED {
+                assert_eq!(verdict(&raw, &ws).0, "review", "{raw}");
+                continue;
+            }
             assert_judged_as_literal(&raw, &literal, &ws);
         }
         assert_eq!(verdict("cat $(pwd)/package.json", &ws).0, "allow");

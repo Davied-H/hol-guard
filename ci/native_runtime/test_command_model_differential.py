@@ -42,6 +42,9 @@ EXACT_FIXTURES = (
     # authority, not by the structural parser), so parity must hold.
     "bash ./script.sh",
     "sh script.sh",
+    # The `time` keyword prefix is modeled on ordinary programs, so the timed
+    # program is the exact single segment rather than an unsupported wrapper.
+    "time tool",
 )
 UNCERTAIN_FIXTURES = (
     "echo $(uname)",
@@ -53,7 +56,6 @@ UNCERTAIN_FIXTURES = (
     "sudo -i rm -rf /tmp/example",
     "sudo -s rm -rf /tmp/example",
     "env FOO=bar tool",
-    "time tool",
     "stdbuf -o0 tool",
     "sh -c 'rm -rf /tmp/example'",
     "eval 'rm -rf /tmp/example'",

@@ -171,6 +171,8 @@ mod consumer_result;
 mod consumer_url;
 #[cfg(unix)]
 mod contained_op;
+#[cfg(unix)]
+mod contained_workspace_sink;
 mod content_sensitivity_op;
 mod context_digest;
 mod context_digest_json;
@@ -377,6 +379,8 @@ mod hook_artifact_compose_op;
 mod hook_artifact_compose_reuse;
 mod hook_authority_state_op;
 mod hook_bridge_daemon_start;
+// Only the unix Claude session-start bridge records a fallback.
+#[cfg(unix)]
 mod hook_bridge_fallback;
 #[cfg(all(test, unix))]
 mod hook_decision_benign_tool_action_tests;
