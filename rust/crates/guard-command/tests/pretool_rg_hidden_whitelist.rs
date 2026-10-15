@@ -312,3 +312,24 @@ fn a_path_rule_above_the_search_root_does_not_prune() {
     assert_actions(&fixture, "subdir/rust", &["rg -n foo"], "review");
     assert_actions(&fixture, "subdir/rust", &["rg -n foo src"], "allow");
 }
+
+#[test]
+fn a_nested_repository_exclude_file_is_honored() {
+    let fixture = fixture(&[(
+        "outer",
+        &[
+            ("vendor/lib/.git/info/exclude", "!.env\n"),
+            ("vendor/lib/.env", "KEY=synthetic\n"),
+            ("vendor/lib/src/lib.rs", "pub fn f() {}\n"),
+        ],
+    )]);
+    // `rg` reads the nested clone's own `info/exclude`, which is local and
+    // never committed.
+    assert_actions(
+        &fixture,
+        "outer",
+        &["rg -n foo", "rg -n foo vendor"],
+        "review",
+    );
+    assert_actions(&fixture, "outer", &["rg -n foo src"], "allow");
+}

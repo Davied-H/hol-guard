@@ -6,6 +6,9 @@
 use guard_command::pretool::evaluate_pre_tool_envelope_with_context;
 use serde_json::json;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static COUNTER: AtomicU64 = AtomicU64::new(0);
 
 struct Fixture {
     root: PathBuf,
@@ -22,7 +25,11 @@ impl Drop for Fixture {
 fn fixture() -> Fixture {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../target/pretool-search-pattern-options")
-        .join(format!("home-{}", std::process::id()));
+        .join(format!(
+            "home-{}-{}",
+            std::process::id(),
+            COUNTER.fetch_add(1, Ordering::Relaxed)
+        ));
     let repository = root.join("home/project");
     std::fs::create_dir_all(repository.join(".git")).unwrap();
     std::fs::create_dir_all(repository.join("src")).unwrap();

@@ -238,6 +238,15 @@ fn walk(
         if nested {
             // A nested repository's own `.gitignore` replaces the outer ones.
             rules.retain(|rule| !rule.git);
+            // `rg` also honors that repository's own `info/exclude`.
+            for git in git_directories(&directory.join(".git"))? {
+                rules.extend(ignore_rules(
+                    &git.join("info/exclude"),
+                    &directory,
+                    true,
+                    negations,
+                )?);
+            }
         }
         let in_repository = in_repository || nested;
         for name in IGNORE_FILES {
