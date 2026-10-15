@@ -458,7 +458,7 @@ mod tests {
         std::os::unix::fs::symlink(&own, open.join("link")).unwrap();
         assert!(!probe(&open.join("link/missing"), "-p 5432"));
         // The checkout's own ancestry decides the positive case on CI hosts.
-        let steady = steady_ancestry(&root);
+        let steady = super::steady_ancestry(&root);
         assert_eq!(probe(&own.join("missing"), "-p 5432"), steady);
         assert!(probe(&own, "-q"));
         assert!(probe(&own, "-p 5432"));
