@@ -195,6 +195,7 @@ fn a_pi_post_tool_use_source_reference_is_reviewed_by_the_resident() {
         // fixture's warn floor would turn a clean read into the silent warning.
         let config = json!({ "structured_output_config": structured_output_view("absent") });
         let lane = allowing_lane(&format!("pi-source-{harness}"), config);
+        let mut acked: Option<Value> = None;
         for (content, reason) in [
             ("ordinary notes\n".to_owned(), "source_full_scan_allow"),
             (format!("token = '{token}'\n"), "source_secret_match"),
@@ -210,13 +211,14 @@ fn a_pi_post_tool_use_source_reference_is_reviewed_by_the_resident() {
                 result["edge"]["result"]["reason_code"], reason,
                 "{harness}: {result}"
             );
-            let page = drain(&lane, None);
+            let page = drain(&lane, acked.as_ref());
             let records = page["records"].as_array().unwrap();
             assert_eq!(records.len(), 1, "{harness} {reason}");
             assert_eq!(
                 records[0]["harness_response"],
                 result["edge"]["harness_response"]
             );
+            acked = Some(page);
         }
         let mut encrypted = post_tool_payload(&lane);
         encrypted["guard_payload_ref"] = json!({ "path": "/tmp/payload.bin" });
