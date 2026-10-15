@@ -15,6 +15,8 @@ use std::path::{Component, Path, PathBuf};
 /// Git and a second `ln` stay out: nothing may write through, replace or
 /// re-anchor the fresh link before a later step runs. Redirects stay out too,
 /// since a write to `<link>/file` could not be proven before the link exists.
+/// `grep` and `rg` only filter piped output: a file operand could read
+/// through the fresh link, which did not exist when the operand was proven.
 pub(super) fn link_chain(model: &crate::CanonicalCommandV1) -> bool {
     let links = |name: &str| {
         model
@@ -30,6 +32,9 @@ pub(super) fn link_chain(model: &crate::CanonicalCommandV1) -> bool {
         && model.segments.iter().all(|segment| {
             !segment.text.replace("2>&1", "").contains(['>', '<'])
                 && (segment.executable.as_deref() != Some("ln") || segment.pipeline_index == 0)
+                && (!matches!(segment.executable.as_deref(), Some("grep" | "rg"))
+                    || (segment.pipeline_index > 0
+                        && super::segment_proof::stdin_filter_segment(segment)))
         })
 }
 

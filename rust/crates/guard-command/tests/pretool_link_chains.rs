@@ -51,6 +51,11 @@ fn dependency_link_chains_keep_every_boundary_of_the_single_link() {
         format!("{link} && cd {worktree} && ls"),
         format!("{link} && ln -s {primary}/node_modules {worktree}/node_modules/pkg/inner"),
         format!("{link} && git -C {worktree} status"),
+        // A search operand could read through the fresh link.
+        format!("ln -s {primary}/node_modules {worktree}/cfg && grep -rn . {worktree}/cfg/"),
+        format!("ln -s {primary}/node_modules {worktree}/cfg && grep -n x {worktree}/cfg/pkg/a.js"),
+        format!("{link} && grep -Rn x {worktree}/"),
+        format!("{link} && rg -n x {worktree}/node_modules"),
         // The link itself still has to be proven.
         format!("ln -s {home}/.ssh {worktree}/ssh-link && ls -la {worktree}/"),
         format!("ln -s {primary}/node_modules {worktree}/tracked.txt && ls -la {worktree}/"),
@@ -59,6 +64,20 @@ fn dependency_link_chains_keep_every_boundary_of_the_single_link() {
         format!("ln -s {unrelated}/node_modules {worktree}/node_modules && ls {worktree}"),
     ] {
         for cwd in [&session.org, &session.primary] {
+            assert_ne!(action(&session, &command, cwd), "allow", "{command}");
+        }
+    }
+}
+
+#[test]
+fn a_directory_created_earlier_in_the_chain_is_not_a_proven_missing_root() {
+    let session = session("mkdir-grep-deny");
+    let worktree = session.worktree.display();
+    for command in [
+        format!("mkdir -p {worktree}/cfg && grep -rn x {worktree}/cfg"),
+        format!("mkdir {worktree}/cfg && grep -n x {worktree}/cfg/a.json"),
+    ] {
+        for cwd in [&session.org, &session.worktree] {
             assert_ne!(action(&session, &command, cwd), "allow", "{command}");
         }
     }

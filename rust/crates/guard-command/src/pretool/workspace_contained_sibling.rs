@@ -125,7 +125,11 @@ fn sequenced_core(model: &CanonicalCommandV1) -> Option<CanonicalCommandV1> {
 /// `cd <root> && …`, under the same root rules: a directory with no
 /// repository, such as a private temporary or plain home directory, has
 /// none. A relative word that names a path from the session directory would
-/// name another one there, so that command keeps its review.
+/// name another one there, so that command keeps its review. The session's
+/// own repository is no sibling: a root that holds it, or a path inside it,
+/// keeps the review, as in `anchored_sibling_root`. Below a temporary
+/// directory, where any session can `git init`, the root must be a linked
+/// worktree of a checkout in home or outside the temporary directories.
 fn sibling_anchor(model: &CanonicalCommandV1, context: PathContext<'_>) -> Option<PathBuf> {
     let [segment] = model.segments.as_slice() else {
         return None;
@@ -143,15 +147,16 @@ fn sibling_anchor(model: &CanonicalCommandV1, context: PathContext<'_>) -> Optio
     {
         return None;
     }
-    let cwd = std::fs::canonicalize(context.cwd?).ok()?;
+    let (cwd, home) = (std::fs::canonicalize(context.cwd?).ok()?, context.home_dir?);
+    let workspace = super::super::contained_wrapper::sibling_project_root(&cwd, home)
+        .unwrap_or_else(|| cwd.clone());
     let words = || std::iter::once(executable).chain(segment.arguments.iter().map(String::as_str));
-    let anchor = words()
-        .filter(|word| !word.starts_with('-'))
-        .find(|word| Path::new(word).is_absolute())?;
-    let anchor = std::fs::canonicalize(anchor).ok()?;
-    let root = super::super::contained_wrapper::sibling_project_root(&anchor, context.home_dir?)?;
-    if anchor.starts_with(&cwd)
-        || root.starts_with(&cwd)
+    let anchor = std::fs::canonicalize(executed_path(executable, &segment.arguments)?).ok()?;
+    let root = super::super::contained_wrapper::sibling_project_root(&anchor, home)?;
+    if anchor.starts_with(&workspace)
+        || root.starts_with(&workspace)
+        || workspace.starts_with(&root)
+        || !temporary_anchor_trusted(&root, home)
         || words().any(|word| {
             let value = word_path(word);
             !value.is_empty()
@@ -162,6 +167,70 @@ fn sibling_anchor(model: &CanonicalCommandV1, context: PathContext<'_>) -> Optio
         return None;
     }
     names_readable(segment, &root, &readable_trees(&root)).then_some(root)
+}
+
+/// The absolute path a command runs from a sibling: the executable itself
+/// (`<root>/node_modules/.bin/vite build`), the script an interpreter is given
+/// first (`bun <root>/scripts/x.ts`), or the file `python3 -m py_compile`
+/// checks. A path that is only an operand (`rm`, `jq`, `rg`, `cat <root>/f`)
+/// runs nothing from the sibling, so it keeps its own proof or review.
+fn executed_path<'a>(executable: &'a str, arguments: &'a [String]) -> Option<&'a str> {
+    let absolute = |word: &&str| Path::new(word).is_absolute();
+    if absolute(&executable) {
+        return Some(executable);
+    }
+    let name = super::super::executable_basename(executable);
+    let python = name == "python"
+        || name.strip_prefix("python3").is_some_and(|minor| {
+            minor.is_empty()
+                || minor.strip_prefix('.').is_some_and(|minor| {
+                    !minor.is_empty() && minor.bytes().all(|b| b.is_ascii_digit())
+                })
+        });
+    match arguments {
+        [module, compiler, path, ..]
+            if python
+                && module == "-m"
+                && matches!(compiler.as_str(), "py_compile" | "compileall") =>
+        {
+            Some(path.as_str()).filter(absolute)
+        }
+        [script, ..] if python || SCRIPT_RUNNERS.contains(&name) => {
+            Some(script.as_str()).filter(absolute)
+        }
+        _ => None,
+    }
+}
+
+/// Interpreters whose first operand is the script they run.
+const SCRIPT_RUNNERS: &[&str] = &[
+    "node", "bun", "deno", "tsx", "ts-node", "ruby", "perl", "sh", "bash",
+];
+
+/// Whether `root` lies in home or outside the shared temporary directories
+/// (`/tmp`, `/var/folders`, `$TMPDIR`), or is a linked worktree whose shared
+/// `.git` does.
+fn temporary_anchor_trusted(root: &Path, home: &str) -> bool {
+    let home = std::fs::canonicalize(home).ok();
+    let mut temporary: Vec<PathBuf> = ["/tmp", "/private/tmp", "/var/folders"]
+        .into_iter()
+        .map(PathBuf::from)
+        .chain(std::env::var_os("TMPDIR").map(PathBuf::from))
+        .filter(|path| path.is_absolute())
+        .collect();
+    temporary.extend(
+        temporary
+            .iter()
+            .filter_map(|path| std::fs::canonicalize(path).ok())
+            .collect::<Vec<_>>(),
+    );
+    let trusted = |path: &Path| {
+        home.as_ref().is_some_and(|home| path.starts_with(home))
+            || !temporary.iter().any(|base| path.starts_with(base))
+    };
+    trusted(root)
+        || super::super::worktree_writes::linked_worktree_dirs(root)
+            .is_some_and(|(common, _)| trusted(&common))
 }
 
 /// The trees the sandbox rooted at `root` can read: the root and, for a

@@ -31,6 +31,53 @@ pub(in crate::pretool) fn local_postgres_host(value: &str) -> bool {
                 .all(|byte| byte.is_ascii_alphanumeric() || b"/._-@+".contains(&byte)))
 }
 
+/// A Unix-socket directory where no other local user can stand in for the
+/// server: libpq connects to `<dir>/.s.PGSQL.<port>`, and whoever owns that
+/// socket answers the probe or query and can ask for a password. The directory
+/// must not be writable by other users unless it is sticky, as `/tmp` is, and
+/// each socket psql may reach (the named port's, or every one without a port,
+/// since `PGPORT` may pick any) must belong to this user or root. A loopback
+/// host and a missing directory pass: neither reaches a planted socket.
+pub(in crate::pretool) fn trusted_postgres_socket(host: &str, port: Option<&str>) -> bool {
+    if !host.starts_with('/') {
+        return true;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let directory = match std::fs::metadata(host) {
+            Ok(metadata) => metadata,
+            Err(error) => return error.kind() == std::io::ErrorKind::NotFound,
+        };
+        if !directory.is_dir() || (directory.mode() & 0o002 != 0 && directory.mode() & 0o1000 == 0)
+        {
+            return false;
+        }
+        let uid = nix::unistd::getuid().as_raw();
+        let owned = |path: &std::path::Path| match std::fs::symlink_metadata(path) {
+            Ok(metadata) => metadata.uid() == uid || metadata.uid() == 0,
+            Err(error) => error.kind() == std::io::ErrorKind::NotFound,
+        };
+        let directory = std::path::Path::new(host);
+        match port {
+            Some(port) => owned(&directory.join(format!(".s.PGSQL.{port}"))),
+            None => std::fs::read_dir(directory).is_ok_and(|entries| {
+                entries.into_iter().all(|entry| {
+                    entry.is_ok_and(|entry| {
+                        !entry.file_name().to_string_lossy().starts_with(".s.PGSQL.")
+                            || owned(&entry.path())
+                    })
+                })
+            }),
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = port;
+        true
+    }
+}
+
 pub(in crate::pretool) fn safe_lsof_arguments(arguments: &[String]) -> bool {
     let mut network = false;
     let mut pid = false;
@@ -146,6 +193,7 @@ pub(in crate::pretool) fn safe_pg_isready_arguments(arguments: &[String]) -> boo
     // `hostaddr` still overrides -h); that environment is the user's own
     // configuration, and the probe sends only a startup packet.
     let mut explicit_local = false;
+    let (mut host, mut port_value) = (None, None);
     let mut index = 0;
     while index < arguments.len() {
         let argument = arguments[index].as_str();
@@ -175,10 +223,14 @@ pub(in crate::pretool) fn safe_pg_isready_arguments(arguments: &[String]) -> boo
         };
         let valid = match option {
             "-h" | "--host" => {
+                host = Some(value);
                 explicit_local = local_postgres_host(value);
                 explicit_local
             }
-            "-p" | "--port" => port(value),
+            "-p" | "--port" => {
+                port_value = Some(value);
+                port(value)
+            }
             "-t" | "--timeout" => {
                 (1..=3).contains(&value.len()) && value.bytes().all(|byte| byte.is_ascii_digit())
             }
@@ -189,7 +241,7 @@ pub(in crate::pretool) fn safe_pg_isready_arguments(arguments: &[String]) -> boo
             return false;
         }
     }
-    explicit_local
+    explicit_local && host.is_some_and(|host| trusted_postgres_socket(host, port_value))
 }
 
 pub(in crate::pretool) fn port(value: &str) -> bool {
@@ -289,5 +341,28 @@ mod tests {
                 "pg_isready {command}"
             );
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_socket_directory_any_user_can_write_is_not_a_trusted_server() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/pg-isready-sockets")
+            .join(std::process::id().to_string());
+        let (open, own) = (root.join("open"), root.join("own"));
+        for (directory, mode) in [(&open, 0o777), (&own, 0o700)] {
+            std::fs::create_dir_all(directory).unwrap();
+            std::fs::set_permissions(directory, std::fs::Permissions::from_mode(mode)).unwrap();
+        }
+        std::fs::write(own.join(".s.PGSQL.5432"), "").unwrap();
+        let probe = |directory: &std::path::Path, port: &str| {
+            safe_pg_isready_arguments(&arguments(&format!("-h {} {port}", directory.display())))
+        };
+        assert!(!probe(&open, "-q"));
+        assert!(!probe(&open, "-p 5432"));
+        assert!(probe(&own, "-q"));
+        assert!(probe(&own, "-p 5432"));
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

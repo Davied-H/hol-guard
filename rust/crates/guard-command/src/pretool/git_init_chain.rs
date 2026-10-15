@@ -15,9 +15,10 @@
 //!   identity;
 //! * the target's parent is a temporary directory only the user can write,
 //!   so no one else can add a hook to the new repository before it runs;
-//! * the new repository's hooks are Git's own samples, so the configuration
-//!   may set no `core.hooksPath`, and must start no filter, fsmonitor,
-//!   signing or hook program, as for the other local Git writes.
+//! * the new repository's hooks are Git's own samples, so an inherited
+//!   `core.hooksPath` must name a directory only the user can write with no
+//!   executable hook in it, and the configuration must start no filter,
+//!   fsmonitor, signing or hook program, as for the other local Git writes.
 //!
 //! Nothing outside the new directory changes. A target that already exists,
 //! another step, another `-c` setting or a hidden file keeps the review.
@@ -132,10 +133,73 @@ fn proven(
         deadline,
         execution_environment,
     )?;
-    let hooks_path = effective
-        .keys()
-        .any(|key| key.eq_ignore_ascii_case("core.hookspath"));
-    (!hooks_path && super::git_local_writes::inert(&effective, &repository)).then_some(git)
+    let hooks_inert = effective
+        .iter()
+        .filter(|(key, _)| key.eq_ignore_ascii_case("core.hookspath"))
+        .all(|(_, values)| hooks_path_inert(values, context.home_dir));
+    (hooks_inert && super::git_local_writes::inert(&effective, &repository)).then_some(git)
+}
+
+/// Whether an inherited `core.hooksPath` (a developer's global
+/// `~/.config/git/hooks`) can run nothing for this chain: each value is
+/// absolute or below home, and names a directory that only the user can
+/// write and that holds no executable file or link, or a missing one whose
+/// nearest existing ancestor only the user can write. A relative or
+/// shared location (`/tmp/hooks`) keeps the review.
+fn hooks_path_inert(values: &[String], home: Option<&str>) -> bool {
+    values.iter().all(|value| {
+        let path = match value.strip_prefix("~/") {
+            Some(rest) => match home {
+                Some(home) if Path::new(home).is_absolute() => Path::new(home).join(rest),
+                _ => return false,
+            },
+            None if Path::new(value).is_absolute() && !value.contains("..") => {
+                Path::new(value).to_path_buf()
+            }
+            None => return false,
+        };
+        hook_directory_inert(&path)
+    })
+}
+
+#[cfg(unix)]
+fn hook_directory_inert(path: &Path) -> bool {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    let me = nix::unistd::geteuid().as_raw();
+    let private = |path: &Path| {
+        fs::symlink_metadata(path).is_ok_and(|metadata| {
+            metadata.is_dir() && metadata.uid() == me && metadata.mode() & 0o022 == 0
+        })
+    };
+    let mut existing = path;
+    while fs::symlink_metadata(existing).is_err() {
+        let Some(parent) = existing.parent() else {
+            return false;
+        };
+        existing = parent;
+    }
+    if existing != path {
+        return private(existing);
+    }
+    let Ok(entries) = fs::read_dir(path) else {
+        return false;
+    };
+    private(path)
+        && path.parent().is_some_and(private)
+        && entries.take(257).enumerate().all(|(index, entry)| {
+            index < 256
+                && entry
+                    .and_then(|entry| entry.metadata())
+                    .is_ok_and(|metadata| {
+                        !metadata.file_type().is_symlink()
+                            && !(metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
+                    })
+        })
+}
+
+#[cfg(not(unix))]
+fn hook_directory_inert(_path: &Path) -> bool {
+    false
 }
 
 /// Turn the generic review of a proven chain into an allow when the only

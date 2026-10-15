@@ -6,7 +6,9 @@
 //! reads a value. Every other call keeps its review: file and large-object
 //! access (`pg_read_file`, `pg_ls_dir`, `lo_import`, `lo_export`), remote
 //! links (`dblink`), settings and sequences (`set_config`, `nextval`),
-//! schema-qualified or quoted function names, and any user function.
+//! schema-qualified or quoted function names, and any user function. Server
+//! settings are not read through a query either: `current_setting` and the
+//! `pg_settings` and `pg_file_settings` views keep their review.
 //!
 //! Also reviewed: a second statement, backslash meta-commands, comments,
 //! dollar quoting, `SELECT … INTO` (creates a table), row locks
@@ -72,7 +74,6 @@ const PAREN_WORDS: &[&str] = &[
     "current_database",
     "current_schema",
     "current_schemas",
-    "current_setting",
     "date_part",
     "date_trunc",
     "floor",
@@ -133,6 +134,9 @@ pub(super) fn read_only_statement(statement: &str) -> bool {
         || statement.contains([';', '\\', '$', '`', '\0'])
         || statement.contains("--")
         || statement.contains("/*")
+        || ["pg_settings", "pg_file_settings"]
+            .iter()
+            .any(|view| statement.to_ascii_lowercase().contains(view))
     {
         return false;
     }
@@ -311,6 +315,12 @@ mod tests {
             "select pg_terminate_backend(123)",
             "select pg_reload_conf()",
             "select 1 & 2",
+            "select current_setting('data_directory')",
+            "SELECT Current_Setting('config_file', true)",
+            "select name, setting from pg_settings",
+            "select * from pg_catalog.pg_settings where name = 'port'",
+            "select * from \"PG_SETTINGS\"",
+            "select sourcefile from pg_file_settings",
         ] {
             assert!(!read_only_statement(statement), "{statement}");
         }

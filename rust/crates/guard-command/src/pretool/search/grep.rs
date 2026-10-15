@@ -2,15 +2,103 @@ use super::{
     options, short_search_option, tree, unsafe_search_value, ReadContext, SearchValueRole,
 };
 
+/// Which missing operands a proof may accept.
+#[derive(Clone, Copy)]
+struct AbsentOperands {
+    plain: bool,
+    recursive: bool,
+}
+
+/// The operand proof alone, as if `grep` were the whole command.
 pub(super) fn safe_grep_arguments(arguments: &[String], context: ReadContext<'_>) -> bool {
-    safe_arguments(arguments, context, false)
+    let absent = AbsentOperands {
+        plain: true,
+        recursive: true,
+    };
+    safe_arguments(arguments, context, false, absent)
+}
+
+/// A `grep` segment inside its command. A missing operand is proven only
+/// while it stays missing: no other segment may create a file, directory or
+/// link there (`ln -s <dir> <repo>/cfg && grep -rn . <repo>/cfg/` reads through
+/// the fresh link). A recursive search walks whatever appears at a missing
+/// root, so it accepts one only beside `cd` and downstream stdin filters.
+pub(crate) fn safe_grep_segment(
+    model: &crate::CanonicalCommandV1,
+    segment: &crate::CommandSegmentV1,
+    context: ReadContext<'_>,
+) -> bool {
+    let others: Vec<&crate::CommandSegmentV1> = model
+        .segments
+        .iter()
+        .filter(|other| other.span != segment.span)
+        .collect();
+    let absent = AbsentOperands {
+        plain: others.iter().all(|other| creates_nothing(other, false)),
+        recursive: others.iter().all(|other| creates_nothing(other, true)),
+    };
+    safe_arguments(&segment.arguments, context, false, absent)
+}
+
+/// A peer that cannot create a filesystem entry: no output redirect beyond
+/// `/dev/null`, and a command that only prints, filters or changes directory.
+/// `strict` admits only `cd` and stdin filters after a pipe.
+fn creates_nothing(segment: &crate::CommandSegmentV1, strict: bool) -> bool {
+    let text = ["2>&1", "2>/dev/null", ">/dev/null"]
+        .iter()
+        .fold(segment.text.clone(), |text, quiet| text.replace(quiet, ""));
+    if text.contains('>') || !segment.wrapper_chain.is_empty() || segment.path_overridden {
+        return false;
+    }
+    match segment.executable.as_deref() {
+        Some("cd") => true,
+        Some(_) if strict => {
+            segment.pipeline_index > 0
+                && crate::pretool::segment_proof::stdin_filter_segment(segment)
+        }
+        Some(executable) => matches!(
+            executable,
+            "cat"
+                | "cut"
+                | "diff"
+                | "echo"
+                | "grep"
+                | "head"
+                | "jq"
+                | "ls"
+                | "nl"
+                | "printf"
+                | "pwd"
+                | "rg"
+                | "tail"
+                | "test"
+                | "tr"
+                | "true"
+                | "wc"
+        ),
+        None => false,
+    }
 }
 
 pub(super) fn safe_stdin_arguments(arguments: &[String]) -> bool {
-    safe_arguments(arguments, crate::pretool::PathContext::default(), true)
+    let absent = AbsentOperands {
+        plain: false,
+        recursive: false,
+    };
+    safe_arguments(
+        arguments,
+        crate::pretool::PathContext::default(),
+        true,
+        absent,
+    )
 }
 
-fn safe_arguments(arguments: &[String], context: ReadContext<'_>, stdin_only: bool) -> bool {
+fn safe_arguments(
+    arguments: &[String],
+    context: ReadContext<'_>,
+    stdin_only: bool,
+    absent: AbsentOperands,
+) -> bool {
     let mut pending_value: Option<SearchValueRole> = None;
     let mut pattern_supplied = false;
     let mut options_enabled = true;
@@ -152,7 +240,7 @@ fn safe_arguments(arguments: &[String], context: ReadContext<'_>, stdin_only: bo
             if unsafe_search_value(SearchValueRole::Path, argument, context)
                 && !recursive
                 && !proven_glob(argument, context)
-                && !absent_target(argument, context)
+                && !(absent.plain && absent_target(argument, context))
             {
                 return false;
             }
@@ -167,18 +255,36 @@ fn safe_arguments(arguments: &[String], context: ReadContext<'_>, stdin_only: bo
         // use exclusions as proof when an include could re-enable a file.
         && (!includes_present || (excluded_files.is_empty() && excluded_directories.is_empty()))
         && (!stdin_only || (pattern_supplied && !recursive))
-        && (!recursive
-            || (!targets.is_empty()
-                && targets.iter().all(|target| {
-                    tree::safe_recursive_target_excluding(
-                        target,
-                        context,
-                        &excluded_files,
-                        &excluded_directories,
-                        true,
-                    ) || proven_glob(target, context)
-                        || absent_target(target, context)
-                })))
+        && (!recursive || {
+            let proven = |target: &str| {
+                tree::safe_recursive_target_excluding(
+                    target,
+                    context,
+                    &excluded_files,
+                    &excluded_directories,
+                    true,
+                ) || proven_glob(target, context)
+            };
+            recursive_targets_proven(&targets, proven, absent.recursive.then_some(context))
+        })
+}
+
+/// Every recursive root is proven, or missing beside at least one proven
+/// root (`grep -rn x src tests` with no `tests`): a search whose only roots
+/// are missing (`grep -rn x src/missing.ts`) proves nothing it reads.
+fn recursive_targets_proven(
+    targets: &[&str],
+    proven: impl Fn(&str) -> bool,
+    absent: Option<ReadContext<'_>>,
+) -> bool {
+    let mut real = false;
+    targets.iter().copied().all(|target| {
+        if proven(target) {
+            real = true;
+            return true;
+        }
+        absent.is_some_and(|context| absent_target(target, context))
+    }) && real
 }
 
 /// A missing operand only prints an error, as a probe `ls` of the same path
@@ -239,6 +345,67 @@ mod tests {
             let arguments: Vec<String> = command.split(' ').map(str::to_owned).collect();
             assert_eq!(
                 super::safe_grep_arguments(&arguments, context),
+                allowed,
+                "{command}"
+            );
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_missing_operand_is_not_proven_beside_a_step_that_could_create_it() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/grep-absent-chains")
+            .join(std::process::id().to_string());
+        let home = root.join("home");
+        let repo = home.join("work/app");
+        std::fs::create_dir_all(repo.join("src")).unwrap();
+        std::fs::write(repo.join("src/index.ts"), "export const x = 1;\n").unwrap();
+        let (home, repo) = (
+            std::fs::canonicalize(home).unwrap(),
+            std::fs::canonicalize(repo).unwrap(),
+        );
+        let context = crate::pretool::PathContext {
+            home_dir: home.to_str(),
+            cwd: repo.to_str(),
+            ..Default::default()
+        };
+        let r = repo.display();
+        for (command, allowed) in [
+            (format!("grep -rln x {r}/src {r}/cfg"), true),
+            (format!("grep -rn x {r}/src {r}/cfg | head -5"), true),
+            (format!("cd {r} && grep -rn x src cfg"), true),
+            (
+                format!("cat {r}/src/index.ts && grep -n x {r}/cfg/app.json"),
+                true,
+            ),
+            (
+                format!("ln -s {r}/src {r}/cfg && grep -rn . {r}/cfg/"),
+                false,
+            ),
+            (
+                format!("ln -s {r}/src {r}/cfg && grep -n x {r}/cfg/app.json"),
+                false,
+            ),
+            (format!("mkdir -p {r}/cfg && grep -rn x {r}/cfg"), false),
+            (format!("touch {r}/cfg && grep -n x {r}/cfg"), false),
+            (format!("echo x > {r}/cfg; grep -n x {r}/cfg"), false),
+            (format!("cat {r}/src/index.ts && grep -rn x {r}/cfg"), false),
+        ] {
+            let model = crate::parse_command(&crate::CommandModelRequestV1 {
+                command: command.clone(),
+                dialect: "posix".to_owned(),
+                transport: "shell_string".to_owned(),
+                extraction_provenance: "guard-shell".to_owned(),
+            })
+            .unwrap();
+            let segment = model
+                .segments
+                .iter()
+                .find(|segment| segment.executable.as_deref() == Some("grep"))
+                .unwrap();
+            assert_eq!(
+                super::safe_grep_segment(&model, segment, context),
                 allowed,
                 "{command}"
             );

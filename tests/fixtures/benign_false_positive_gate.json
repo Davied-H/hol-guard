@@ -11238,6 +11238,57 @@
       "expect": "allow"
     },
     {
+      "id": "neg-ln-s-sibling-chain-then-grep-recursive-through-link",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "ln -s ${ORG}/app-portal/node_modules ${ORG_WT}/cfg && grep -rn . ${ORG_WT}/cfg/"
+      },
+      "cwd": "org",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-ln-s-sibling-chain-then-grep-absent-file-through-link",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "ln -s ${ORG}/app-portal/node_modules ${ORG_WT}/cfg && grep -n x ${ORG_WT}/cfg/config.json"
+      },
+      "cwd": "org",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-mkdir-chain-then-grep-recursive-new-dir",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "mkdir -p ${ORG_WT}/cfg && grep -rn x ${ORG_WT}/cfg"
+      },
+      "cwd": "org_wt",
+      "expect": "not_allow"
+    },
+    {
       "id": "neg-ln-s-ssh-chain-into-sibling",
       "fix_area": "negative",
       "harnesses": [
@@ -11340,6 +11391,46 @@
       "expect": "allow"
     },
     {
+      "id": "session-neg-psql-inherited-psqlrc-without-no-psqlrc",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "psql -h localhost -c \"select 1\""
+      },
+      "cwd": "org_app",
+      "environment": {
+        "PSQLRC": "psqlrc"
+      },
+      "expect": "not_allow"
+    },
+    {
+      "id": "session-psql-inherited-psqlrc-with-no-psqlrc",
+      "fix_area": "shell",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "psql -X -h localhost -c \"select 1\""
+      },
+      "cwd": "org_app",
+      "environment": {
+        "PSQLRC": "psqlrc"
+      },
+      "expect": "allow"
+    },
+    {
       "id": "session-psql-homebrew-socket-list",
       "fix_area": "shell",
       "harnesses": [
@@ -11435,10 +11526,43 @@
       ],
       "tool": "shell",
       "tool_input": {
-        "command": "python3 ${TMP_ORG}/app/scripts/report.py --top 40"
+        "command": "cd ${TMP_ORG}/app && python3 scripts/report.py --top 40"
       },
       "cwd": "tmp_worktree",
       "expect": "allow"
+    },
+    {
+      "id": "neg-python-script-in-fresh-private-tmp-repository",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "python3 ${PRIVATE_TMP}/scratch-repo/run.py"
+      },
+      "cwd": "org_app",
+      "expect": "not_allow"
+    },
+    {
+      "id": "neg-python-tmp-main-checkout-script-without-cd",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "python3 ${TMP_ORG}/app/scripts/report.py --top 40"
+      },
+      "cwd": "tmp_worktree",
+      "expect": "not_allow"
     },
     {
       "id": "session-python-compile-sibling-checkout-module",

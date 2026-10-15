@@ -640,7 +640,7 @@ fn evaluate_single_command(
         ));
     }
     if exact_safe_command_with_context(&model, false, context)
-        && !bun_eval::node_inline_preload_configured(&model, execution_environment)
+        && !bun_eval::inherited_preload_configured(&model, execution_environment)
     {
         let reason_code = docker_start::proven_reason_code(&model)
             .unwrap_or_else(|| curl_reads::proven_reason_code(&model));

@@ -247,7 +247,10 @@ fn leaf_glob_operand(value: &str, context: super::PathContext<'_>) -> bool {
         || pattern.is_empty()
         || value.contains(['$', '`', '|', ';', '&', '<', '>', '\n', '\r', '\0', '\\'])
         || value.contains(['{', '}', '(', ')', '!'])
-        || super::sensitive_read_path_argument(value)
+        // A trailing wildcard can always spell a credential name, so the
+        // pattern only screens its fixed path; every match is screened below.
+        || super::sensitive_path_argument(value)
+        || super::sensitive_read_path_argument(directory)
         || !safe_reads::safe_listing_arguments(&[directory.to_owned()], context)
     {
         return false;
@@ -292,8 +295,11 @@ fn leaf_glob_operand(value: &str, context: super::PathContext<'_>) -> bool {
         let Some(text) = path.to_str() else {
             return false;
         };
+        // A hidden directory (`.config`, `.cache`) may hold credentials whose
+        // names the listing would print, so a wildcard never reaches into one.
         let listed = if std::fs::metadata(&path).is_ok_and(|metadata| metadata.is_dir()) {
-            safe_reads::safe_listing_arguments(&[text.to_owned()], context)
+            !name.starts_with('.')
+                && safe_reads::safe_listing_arguments(&[text.to_owned()], context)
         } else {
             !super::sensitive_read_path_argument(text)
                 && std::fs::canonicalize(&path).is_ok_and(|canonical| {

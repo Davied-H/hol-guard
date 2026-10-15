@@ -229,6 +229,7 @@ def _session_worktree(org: Path, home: Path) -> None:
     for name in ("findings", "prd", "todo"):
         _write(home / ".codex" / "plans" / f"remediation-{name}.md", f"# Remediation {name}\nSynthetic plan notes.\n")
     _write(home / ".codex" / "plans" / "remediation-evidence.json", '{"cases": []}\n')
+    _write(home / ".codex" / "plans" / "todo.md", "# Todo\n- Synthetic plan item.\n")
     _write(home / ".codex" / "auth.json", '{"tokens": "synthetic-not-a-secret"}\n')
     # Claude Code home: a memory note agents read, beside a login and a settings file that must stay guarded.
     _write(home / ".claude" / "projects" / "p" / "memory" / "note.md", "# Note\nSynthetic memory note.\n")
@@ -346,6 +347,9 @@ def build_fixture(root: Path) -> BenignFixture:
     _write(private_tmp / "preserved" / "src" / "discovery" / "catalog.ts", "export const catalog = [];\n")
     _write(private_tmp / "preserved" / "src" / "discovery" / "rank.ts", "export const rank = 1;\n")
     _write(private_tmp / "preserved" / "tests" / "discovery.test.ts", "export const covered = true;\n")
+    # A repository any session could `git init` in the shared temp area: no sibling root for its scripts.
+    _write(private_tmp / "scratch-repo" / "run.py", "print('run')\n")
+    _git(private_tmp / "scratch-repo", "init", "--quiet", "--initial-branch=main", home=home)
     # Workspace as a linked worktree under the system temp area whose registered siblings are outside cwd.
     tmp_worktree = Path(tempfile.mkdtemp(prefix="wt.", dir=_system_tmp())).resolve() / "workspace"
     _git(parent, "worktree", "add", "--quiet", "-b", "tmp-feature", str(tmp_worktree), home=home)

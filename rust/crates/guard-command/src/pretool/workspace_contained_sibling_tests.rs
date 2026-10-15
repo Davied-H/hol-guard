@@ -402,6 +402,12 @@ fn a_script_outside_a_sibling_repository_keeps_its_review() {
         format!("REPORT=1 python3 {}", script.display()),
         format!("python3 {} | wc -l", script.display()),
         format!("python3 {} && ls", script.display()),
+        // A sibling path that is only an operand runs nothing from there.
+        format!("rm {}", script.display()),
+        format!("cat {}", script.display()),
+        format!("jq . {}/package.json", tree.display()),
+        format!("rg -n report {}/scripts", tree.display()),
+        format!("python3 -c 1 {}", script.display()),
     ] {
         assert!(
             !contained(&reason("omp", &home, &main, &command)),
@@ -445,4 +451,40 @@ fn a_setting_after_a_sibling_cd_runs_contained_from_that_root() {
         );
     }
     let _ = std::fs::remove_dir_all(home.parent().unwrap());
+}
+
+#[test]
+fn a_temporary_or_enclosing_repository_is_no_sibling_root() {
+    let (home, main, tree) = fixture();
+    sibling_scripts(&home, &tree);
+    let root = home.parent().unwrap().to_path_buf();
+    // A fresh `git init` below `/tmp`, outside home.
+    std::fs::create_dir_all(root.join("scratch/.git")).unwrap();
+    std::fs::write(root.join("scratch/run.py"), "").unwrap();
+    // A linked worktree below `/tmp` of the checkout in home.
+    let (linked, admin) = (root.join("linked"), main.join(".git/worktrees/linked"));
+    std::fs::create_dir_all(&admin).unwrap();
+    std::fs::create_dir_all(linked.join("scripts")).unwrap();
+    std::fs::write(admin.join("commondir"), "../..\n").unwrap();
+    std::fs::write(admin.join("gitdir"), format!("{}/.git\n", linked.display())).unwrap();
+    std::fs::write(
+        linked.join(".git"),
+        format!("gitdir: {}\n", admin.display()),
+    )
+    .unwrap();
+    std::fs::write(linked.join("scripts/run.py"), "").unwrap();
+    std::fs::create_dir_all(tree.join("web")).unwrap();
+    let run = |cwd: &Path, script: PathBuf| {
+        contained(&reason(
+            "omp",
+            &home,
+            cwd,
+            &format!("python3 {}", script.display()),
+        ))
+    };
+    assert!(!run(&main, root.join("scratch/run.py")));
+    assert_eq!(run(&main, linked.join("scripts/run.py")), host());
+    // From a subdirectory, the session's own checkout is not a sibling.
+    assert!(!run(&tree.join("web"), tree.join("scripts/report.py")));
+    let _ = std::fs::remove_dir_all(root);
 }

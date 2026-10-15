@@ -158,11 +158,15 @@ def anchored_sibling_root(command: str, *, workspace: Path, cwd: Path, home: Pat
     """The sibling repository an absolute script or tool names, as native authority anchors it.
 
     One plain command, such as `python3 <sibling>/scripts/report.py --top 40`
-    or `<sibling>/node_modules/.bin/vite build`, whose first absolute word
-    lies in a repository outside the workspace. The workspace
+    or `<sibling>/node_modules/.bin/vite build`, whose executed path
+    (`_executed_path`) lies in a repository outside the workspace. The workspace
     sandbox is then rooted at that path's repository, as after `cd <root> &&`;
     native authority re-checks every other word from there. A relative word
     that names a file from `cwd` would move with the root, so it keeps None.
+    The workspace's own repository is no sibling: a root that holds it, or a
+    path inside it, keeps None. Below a temporary directory, where any
+    session can `git init`, the root must be a linked worktree of a checkout
+    outside the temporary directories (or in home).
     """
     try:
         tokens, exact = _lex(command)
@@ -176,16 +180,108 @@ def anchored_sibling_root(command: str, *, workspace: Path, cwd: Path, home: Pat
         value and not value.startswith("/") and os.path.lexists(cwd / value) for value in values
     ):
         return None
-    anchor = next((word for word in words if word.startswith("/")), None)
-    inside = workspace.resolve(strict=True)
+    anchor = _executed_path(words)
     try:
+        inside = workspace.resolve(strict=True)
+        inside = sibling_project_root(inside, home=home) or inside
         path = Path(anchor).resolve(strict=True) if anchor is not None else None
         root = sibling_project_root(path, home=home) if path is not None else None
+        if path is None or root is None or not _temp_anchor_trusted(root, home=home):
+            return None
     except (OSError, RuntimeError):
         return None
-    if path is None or root is None or _path_is_within(path, inside) or _path_is_within(root, inside):
+    if _path_is_within(path, inside) or _path_is_within(root, inside) or _path_is_within(inside, root):
         return None
     return root
+
+
+_SCRIPT_RUNNERS = frozenset({"node", "bun", "deno", "tsx", "ts-node", "ruby", "perl", "sh", "bash"})
+_PYTHON = re.compile(r"python(?:3(?:\.[0-9]+)?)?")
+
+
+def _executed_path(words: list[str]) -> str | None:
+    """The absolute path a command runs: the executable, an interpreter's first
+    operand, or the file `python3 -m py_compile` checks. A path that is only an
+    operand (`rm`, `jq`, `rg`, `cat <sibling>/f`) runs nothing from there.
+    native authority applies the same rule (`workspace_contained_sibling.rs`).
+    """
+    executable, arguments = words[0], words[1:]
+    if executable.startswith("/"):
+        return executable
+    name = executable.rsplit("/", 1)[-1]
+    python = _PYTHON.fullmatch(name) is not None
+    if python and arguments[:1] == ["-m"] and len(arguments) >= 3 and arguments[1] in {"py_compile", "compileall"}:
+        candidate = arguments[2]
+    elif (python or name in _SCRIPT_RUNNERS) and arguments:
+        candidate = arguments[0]
+    else:
+        return None
+    return candidate if candidate.startswith("/") else None
+
+
+def _temp_roots() -> tuple[Path, ...]:
+    """The shared temporary directories, as spelled and as resolved."""
+    spelled = [Path("/tmp"), Path("/private/tmp"), Path("/var/folders")]
+    if os.environ.get("TMPDIR", "").startswith("/"):
+        spelled.append(Path(os.environ["TMPDIR"]))
+    return tuple(dict.fromkeys([*spelled, *(path.resolve(strict=False) for path in spelled)]))
+
+
+def _temp_anchor_trusted(root: Path, *, home: Path | None) -> bool:
+    """A root in home or outside the temporary directories, or a linked
+    worktree there whose shared `.git` lies in home or outside them.
+    native authority applies the same rule (`workspace_contained_sibling.rs`).
+    """
+    home_root = home.resolve(strict=False) if home is not None else None
+    temp = _temp_roots()
+
+    def trusted(path: Path) -> bool:
+        if home_root is not None and home_root.exists() and _path_is_within(path, home_root):
+            return True
+        return not any(_path_is_within(path, base) for base in temp)
+
+    if trusted(root):
+        return True
+    common = _linked_worktree_common(root)
+    return common is not None and trusted(common)
+
+
+def _metadata_line(path: Path) -> str | None:
+    """One short line of git metadata, or None for anything else."""
+    try:
+        with path.open("rb") as handle:
+            raw = handle.read(4097)
+    except OSError:
+        return None
+    text = raw.decode("utf-8", "replace").strip()
+    return text if 0 < len(raw) <= 4096 and "\n" not in text and "\0" not in text else None
+
+
+def _linked_worktree_common(root: Path) -> Path | None:
+    """The shared `.git` of the linked worktree rooted at `root`, as
+    `worktree_writes::linked_worktree_dirs` proves it: a plain gitfile naming
+    an admin entry under `<common>/worktrees` whose `gitdir` names it back.
+    """
+    gitfile = root / ".git"
+    if not gitfile.is_file() or gitfile.is_symlink():
+        return None
+    text = _metadata_line(gitfile)
+    if text is None or not text.startswith("gitdir: "):
+        return None
+    admin = (root / text.removeprefix("gitdir: ")).resolve(strict=True)
+    common_text, backlink_text = _metadata_line(admin / "commondir"), _metadata_line(admin / "gitdir")
+    if common_text is None or backlink_text is None:
+        return None
+    common = (admin / common_text).resolve(strict=True)
+    linked = (
+        common.name == ".git"
+        and common.is_dir()
+        and admin.parent == common / "worktrees"
+        and (admin / backlink_text).resolve(strict=True) == root / ".git"
+        and not _path_is_within(root, common)
+        and not _path_is_within(common, root)
+    )
+    return common if linked else None
 
 
 _DIRECTORY_FLAGS = {"bun": ("--cwd",), "yarn": ("--cwd",), "npm": ("--prefix", "-C"), "pnpm": ("--dir", "-C")}

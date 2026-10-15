@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import shutil
+import tempfile
+from functools import partial
 from pathlib import Path
 
 import pytest
@@ -60,9 +63,41 @@ def test_an_absolute_script_in_a_sibling_repository_anchors_its_root(tmp_path: P
         f"cd {sibling} && python3 {script}",
         f"python3 {workspace / 'notes.txt'}",
         f"python3 $HOME/{script.relative_to(home)}",
+        # A sibling path that is only an operand runs nothing from there.
+        f"rm {script}",
+        f"cat {script}",
+        f"jq . {script}",
+        f"rg -n report {sibling}",
+        f"python3 -c 1 {script}",
     ):
         assert anchored_sibling_root(command, workspace=workspace, cwd=workspace, home=home) is None, command
     assert anchored_sibling_root(f"python3 {script}", workspace=workspace, cwd=workspace, home=None) is None
+
+
+def test_a_temporary_or_enclosing_repository_anchors_no_root(tmp_path: Path) -> None:
+    home, workspace, sibling = sibling_home(tmp_path)
+    temporary = Path(tempfile.mkdtemp(prefix="guard-anchor-", dir="/tmp")).resolve()
+    try:
+        # A fresh `git init` in the shared temporary directory, outside home.
+        (temporary / "scratch" / ".git").mkdir(parents=True)
+        (temporary / "scratch" / "run.py").write_text("")
+        # A linked worktree there whose shared `.git` is a checkout in home.
+        linked, admin = temporary / "linked", sibling.resolve() / ".git" / "worktrees" / "linked"
+        (linked / "scripts").mkdir(parents=True)
+        admin.mkdir(parents=True)
+        (admin / "commondir").write_text("../..\n")
+        (admin / "gitdir").write_text(f"{linked / '.git'}\n")
+        (linked / ".git").write_text(f"gitdir: {admin}\n")
+        (linked / "scripts" / "run.py").write_text("")
+        anchored = partial(anchored_sibling_root, workspace=workspace, cwd=workspace, home=home)
+        assert anchored(f"python3 {temporary / 'scratch' / 'run.py'}") is None
+        assert anchored(f"python3 {linked / 'scripts' / 'run.py'}") == linked
+        # From a subdirectory, the session's own checkout is not a sibling.
+        dashboard = sibling / "dashboard"
+        script = sibling / "scripts" / "report.py"
+        assert anchored_sibling_root(f"python3 {script}", workspace=dashboard, cwd=dashboard, home=home) is None
+    finally:
+        shutil.rmtree(temporary, ignore_errors=True)
 
 
 def test_sink_runs_an_anchored_script_from_the_sibling_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

@@ -127,4 +127,30 @@ fn a_scratch_repository_made_and_committed_in_one_chain_is_quiet() {
         global(&["--unset-all", key]);
     }
     allowed(&session, &commit, &session.org).unwrap();
+
+    // A developer's global hooks directory with no executable hook in it is
+    // inert; an executable hook there, or a relative spelling, is not.
+    let hooks = session.home.join(".config/git/hooks");
+    for (value, ready) in [
+        ("~/.config/git/hooks", false),
+        ("~/.config/git/hooks", true),
+    ] {
+        if ready {
+            std::fs::create_dir_all(&hooks).unwrap();
+            std::fs::write(hooks.join("pre-commit.sample"), "#!/bin/sh\n").unwrap();
+        }
+        global(&["core.hooksPath", value]);
+        allowed(&session, &commit, &session.org).unwrap();
+    }
+    std::fs::write(hooks.join("pre-commit"), "#!/bin/sh\nid\n").unwrap();
+    std::fs::set_permissions(
+        hooks.join("pre-commit"),
+        std::fs::Permissions::from_mode(0o755),
+    )
+    .unwrap();
+    assert!(allowed(&session, &commit, &session.org).is_err());
+    std::fs::remove_file(hooks.join("pre-commit")).unwrap();
+    global(&["core.hooksPath", "hooks"]);
+    assert!(allowed(&session, &commit, &session.org).is_err());
+    global(&["--unset-all", "core.hooksPath"]);
 }
