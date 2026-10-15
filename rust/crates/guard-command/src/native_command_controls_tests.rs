@@ -406,7 +406,7 @@ fn delegated_deadline_failure_is_not_an_administrator_disable() {
     );
     assert_eq!(
         result.reason,
-        "HOL Guard could not check this command against the installed extension controls, so it stays blocked. Split it into simpler commands, or ask the user to run `hol-guard doctor` if this keeps happening."
+        "HOL Guard could not match this command to the installed extension controls, so it stays blocked. A command that runs a script or another program (such as `bash script.sh`, `env`, `xargs` or `node -e`) cannot be matched. Run the program directly, or use a built-in tool. If an ordinary command keeps getting this, ask the user to run `hol-guard doctor`."
     );
 }
 
@@ -450,6 +450,6 @@ fn expired_extension_deadline_fail_closes_a_proven_benign_command() {
     );
     assert_eq!(
         result.reason,
-        "HOL Guard could not check this command against the installed extension controls, so it stays blocked. Split it into simpler commands, or ask the user to run `hol-guard doctor` if this keeps happening."
+        "HOL Guard could not match this command to the installed extension controls, so it stays blocked. A command that runs a script or another program (such as `bash script.sh`, `env`, `xargs` or `node -e`) cannot be matched. Run the program directly, or use a built-in tool. If an ordinary command keeps getting this, ask the user to run `hol-guard doctor`."
     );
 }
