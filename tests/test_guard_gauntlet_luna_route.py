@@ -1,11 +1,14 @@
 """Check the native Luna route's readiness validation, process lifecycle and CLI guards."""
 
+import io
 import json
 import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
+from collections import deque
 from pathlib import Path
 
 import pytest
@@ -136,6 +139,15 @@ def test_startup_failure_reports_the_adapter_stderr_without_secrets(tmp_path, mo
     message = str(failure.value)
     assert "exited before it was ready" in message and "refresh token rejected [redacted]" in message
     assert secret not in message and "abc.def" not in message
+
+
+def test_stderr_drain_bounds_long_lines_and_keeps_reading(tmp_path, monkeypatch):
+    monkeypatch.setattr(luna_route, "STDERR_LINE_CHARS", 32)
+    stream = io.StringIO("short\n" + "word " * 20 + "rt_" + "a1B2" * 12 + "\nnext \ufffd line\n")
+    sink: deque[str] = deque(maxlen=luna_route.STDERR_LINES)
+    done = threading.Event()
+    luna_route._drain(stream, sink, done)
+    assert done.is_set() and list(sink) == ["short\n", "word word word word word word ...", "next \ufffd line\n"]
 
 
 def test_environment_forwards_no_provider_keys():

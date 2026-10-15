@@ -48,6 +48,7 @@ def parse_backend(value: str) -> tuple[str, str]:
 
 STARTUP_SECONDS = 60.0
 STDERR_LINES = 20
+STDERR_LINE_CHARS = 1024
 # Long opaque runs (tokens, keys, JWTs) and bearer values never reach an error message.
 _SECRET = re.compile(r"(?i)bearer\s+\S+|[A-Za-z0-9_\-+=]{24,}")
 STOP_SECONDS = 5.0
@@ -119,10 +120,15 @@ def validate_ready(line: str, effort: str = DEFAULT_EFFORT, backend: tuple[str, 
 
 
 def _drain(stream: Any, sink: deque[str], done: threading.Event) -> None:
-    """Keep the last lines of a stream until it closes."""
+    """Keep the last lines of a stream until it closes, each cut to a bounded length."""
     with suppress(OSError, ValueError):
-        for line in stream:
-            sink.append(line)
+        partial = False
+        while chunk := stream.readline(STDERR_LINE_CHARS):
+            if not partial:
+                # Drop the word a cut line ends on: it may be the start of a secret
+                # too short for redaction to recognize.
+                sink.append(chunk if chunk.endswith("\n") else chunk.rpartition(" ")[0] + " ...")
+            partial = not chunk.endswith("\n")
     with suppress(OSError):
         stream.close()
     done.set()
@@ -184,6 +190,9 @@ class NativeLunaRoute:
             "env": environment,
             "cwd": self.sdk_root,
             "text": True,
+            # A byte the locale cannot decode must not end the stderr drain early.
+            "encoding": "utf-8",
+            "errors": "replace",
         }
         if os.name == "nt":
             from . import windows_job
