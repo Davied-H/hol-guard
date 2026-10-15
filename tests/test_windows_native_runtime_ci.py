@@ -169,6 +169,15 @@ def test_windows_shim_admin_lane_replays_vectors_and_runs_the_native_op() -> Non
     assert not native_op.get("continue-on-error", False)
     assert "cargo test --manifest-path rust/Cargo.toml --locked -p guard-command --test shim_admin_vectors" in vector["run"]
     assert "cargo test --manifest-path rust/Cargo.toml --locked -p hol-guard-runtime --bin hol-guard-runtime shim_op" in native_op["run"]
+    child_tree = next(
+        step for step in steps if step.get("name") == "Contain MCP server process trees in a JobObject on Windows"
+    )
+    assert child_tree["if"] == "inputs.shim-gate == 'native-op'"
+    assert not child_tree.get("continue-on-error", False)
+    assert (
+        "cargo test --manifest-path rust/Cargo.toml --locked -p guard-runtime-windows-process --test child_tree"
+        in child_tree["run"]
+    )
 
     required = load_ci_workflow()["jobs"]["required"]
     assert "windows-shim-admin" in required["needs"]

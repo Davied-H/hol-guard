@@ -6,17 +6,18 @@
 //! stdio MCP server, negotiates `server/discover` (modern 2026-07-28) with a
 //! legacy `initialize` fallback (2025-11-25 + older), performs bounded
 //! `tools/list` cursor pagination, optionally lists the declared skills
-//! extension, and tears the process group down on every exit path.
-//!
-//! `#[cfg(unix)]` because the launch attributes and process-group teardown are
-//! unix-only.
+//! extension, and tears the child's process tree down on every exit path: a
+//! private process group on unix, a kill-on-close JobObject on Windows.
 
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashSet};
 use std::io::{Read, Write};
+#[cfg(unix)]
 use std::os::unix::process::CommandExt;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
@@ -44,6 +45,17 @@ const _MIN_SKILLS_VERSION: (i64, u32, u32) = (2026, 7, 28);
 /// resolver surface that may invoke a shim package.
 const _STRICT_PACKAGE_LAUNCHERS: &[&str] = &["bunx", "npx", "pipx", "uvx"];
 
+#[cfg(windows)]
+pub fn probe_search_path() -> String {
+    std::env::var("PATH")
+        .unwrap_or_default()
+        .split(';')
+        .filter(|e| !e.is_empty() && !is_package_shim_dir(e))
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+#[cfg(unix)]
 pub fn probe_search_path() -> String {
     let fallback = std::env::var("PATH")
         .unwrap_or_else(|_| "/usr/bin:/bin:/opt/homebrew/bin:/usr/local/bin".to_owned());
@@ -1471,8 +1483,9 @@ pub(crate) fn resource_uri(uri: &str) -> bool {
 // ---------------------------------------------------------------------------
 
 /// Run the full bounded catalog probe for a resolved argv. Mirrors
-/// `_exchange_tools_list` + `run_mcp_catalog`: spawn in a private process
-/// group with `probe_env`, negotiate, paginate, gather skills, and tear down.
+/// `_exchange_tools_list` + `run_mcp_catalog`: spawn as the root of a private
+/// process tree with `probe_env`, negotiate, paginate, gather skills, and
+/// tear down.
 pub fn run_mcp_stdio_probe(
     argv: &[String],
     timeout_seconds: f64,
@@ -1501,16 +1514,15 @@ pub fn run_mcp_stdio_probe(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
-    let child = cmd.process_group(0).spawn();
-    let mut child = match child {
-        Ok(c) => c,
+    let (mut child, tree) = match ChildTree::spawn(&mut cmd) {
+        Ok(spawned) => spawned,
         Err(_) => return McpCatalog::reason_only("transport_failed"),
     };
     let deadline = Instant::now() + Duration::from_secs_f64(timeout);
     let mut session = match RpcSession::spawn(&mut child, Arc::clone(cancellation)) {
         Some(s) => s,
         None => {
-            stop_child(&mut child);
+            stop_child(&mut child, &tree);
             return McpCatalog::reason_only("transport_failed");
         }
     };
@@ -1520,7 +1532,7 @@ pub fn run_mcp_stdio_probe(
     } else {
         exchange_tools_list(&mut session, catalog, deadline, connection_identity_hash)
     };
-    stop_child(&mut child);
+    stop_child(&mut child, &tree);
     if cancellation.load(Ordering::Acquire) {
         McpCatalog::reason_only("cancelled")
     } else {
@@ -1528,21 +1540,62 @@ pub fn run_mcp_stdio_probe(
     }
 }
 
-/// `_stop` — kill the process group (created via `process_group(0)`), then
-/// reap the direct child. Group signalling goes through `nix::killpg` —
-/// a raw `/bin/kill` spawn silently no-ops on images that ship no kill
-/// binary (e.g. `python:3.12-slim`, the coverage-test container).
-fn stop_child(child: &mut Child) {
-    let pid = child.id() as i32;
-    if pid > 0 {
-        kill_process_group(pid);
-    }
+/// `_stop` — kill the child's process tree, then reap the direct child.
+fn stop_child(child: &mut Child, tree: &ChildTree) {
+    tree.kill();
     let _ = child.kill();
     let _ = child.wait();
 }
 
+/// A launched child and every process it starts: a private process group
+/// on unix (`process_group(0)`), a kill-on-close JobObject on Windows that
+/// the child joins while still suspended.
+pub(crate) struct ChildTree {
+    #[cfg(unix)]
+    group: i32,
+    #[cfg(windows)]
+    job: guard_runtime_windows_process::ChildTree,
+}
+
+impl ChildTree {
+    /// Spawn `command` as the root of a new tree.
+    pub(crate) fn spawn(command: &mut Command) -> std::io::Result<(Child, Self)> {
+        #[cfg(unix)]
+        {
+            let child = command.process_group(0).spawn()?;
+            let group = child.id() as i32;
+            Ok((child, Self { group }))
+        }
+        #[cfg(windows)]
+        {
+            let mut child = command
+                .creation_flags(guard_runtime_windows_process::CHILD_TREE_CREATION_FLAGS)
+                .spawn()?;
+            match guard_runtime_windows_process::ChildTree::adopt_suspended(&child) {
+                Ok(job) => Ok((child, Self { job })),
+                Err(error) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    Err(error)
+                }
+            }
+        }
+    }
+
+    /// Kill every process in the tree. Idempotent.
+    pub(crate) fn kill(&self) {
+        #[cfg(unix)]
+        kill_process_group(self.group);
+        #[cfg(windows)]
+        let _ = self.job.terminate();
+    }
+}
+
 /// `os.killpg(child.pid, SIGKILL)` — group id equals the child pid after
-/// `process_group(0)`; `nix::killpg` keeps the call safe-Rust.
+/// `process_group(0)`; `nix::killpg` keeps the call safe-Rust. Group
+/// signalling never spawns `/bin/kill`, which silently no-ops on images that
+/// ship no kill binary (e.g. `python:3.12-slim`, the coverage-test container).
+#[cfg(unix)]
 pub(crate) fn kill_process_group(pgid: i32) {
     if process_group_operand(pgid).is_none() {
         return;
@@ -1553,6 +1606,7 @@ pub(crate) fn kill_process_group(pgid: i32) {
     );
 }
 
+#[cfg(unix)]
 pub(crate) fn process_group_operand(pgid: i32) -> Option<String> {
     // 0 targets the caller's group; -1 targets nearly every process. Neither
     // can identify a fresh child-owned group, including the reserved ID 1.
