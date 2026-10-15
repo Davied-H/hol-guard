@@ -175,6 +175,9 @@ def test_package_intent_parse_requiring_an_answer_raises_without_one(
     )
     with pytest.raises(unavailable, match="native_package_intent_malformed"):
         parse("npm install left-pad", guard_home=home, require_answer=True)
+    _patch_authority(monkeypatch, _status(), b'{"schema":"guard-package-authority-result.v1","status":"ok"}')
+    with pytest.raises(unavailable, match="native_package_intent_malformed"):
+        parse("npm install left-pad", guard_home=home, require_answer=True)
     _patch_authority(
         monkeypatch,
         _status(),

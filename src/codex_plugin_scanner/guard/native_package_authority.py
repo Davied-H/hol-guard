@@ -180,7 +180,8 @@ def package_intent_parse_native(
         return None
     payload = response.get("payload")
     if not isinstance(payload, dict):
-        if require_answer and payload is not None:
+        # An explicit null is the resident's no-intent answer; an omitted field is not.
+        if require_answer and (payload is not None or "payload" not in response):
             raise NativePackageIntentUnavailableError("native_package_intent_malformed")
         return None
     runtime_private_metadata = response.get("runtime_private_metadata")
