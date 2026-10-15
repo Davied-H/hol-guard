@@ -17,7 +17,10 @@ use crate::guard_store_approval_write::oauth_source;
 use crate::guard_store_args::Args;
 use crate::guard_store_db::{exec, query_all, query_one, text, value_error, Row, StoreResult};
 use crate::guard_store_json::py_strip;
+use crate::MAX_NATIVE_RESPONSE_BYTES;
 
+/// The reported duplicate ids, leaving room for the response envelope.
+const REPLY_LIMIT_BYTES: usize = MAX_NATIVE_RESPONSE_BYTES - 64 * 1024;
 const REQUEST_COLUMNS: &str =
     "request_id, harness, artifact_id, artifact_hash, status, policy_action, \
      decision_v2_json, action_envelope_json";
@@ -153,6 +156,11 @@ pub(crate) fn resolve_matching_duplicate_requests(
         ],
     )?;
     let ids = resolvable_ids(&rows, guard_home)?;
+    // The reply goes out after the commit; a list too large to send fails
+    // here, before anything is written.
+    if serde_json::to_vec(&ids).map_or(usize::MAX, |bytes| bytes.len()) > REPLY_LIMIT_BYTES {
+        return value_error("approval_duplicate_group_too_large");
+    }
     resolve_ids(connection, &ids, &resolution)?;
     Ok(Value::from(ids))
 }
