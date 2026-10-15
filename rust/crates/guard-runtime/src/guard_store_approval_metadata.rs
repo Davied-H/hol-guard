@@ -12,7 +12,8 @@ use crate::guard_store_db::{exec, query_all, query_one, StoreResult};
 
 /// `get_approval_extension_allow_hint`: the private queue-time hint as an
 /// object, or `None` when the row, the column (a store from before it
-/// existed) or an object-valued cell is missing.
+/// existed) or an object-valued cell is missing. A BLOB cell reads as NULL:
+/// Python decoded `str(bytes)`, which is never a JSON object.
 pub(crate) fn get_approval_extension_allow_hint(
     connection: &Connection,
     args: &Args<'_>,
@@ -27,7 +28,9 @@ pub(crate) fn get_approval_extension_allow_hint(
     }
     match query_one(
         connection,
-        "select extension_allow_hint_json from approval_requests where request_id = ?",
+        "select case when typeof(extension_allow_hint_json) = 'blob' then null \
+         else extension_allow_hint_json end as extension_allow_hint_json \
+         from approval_requests where request_id = ?",
         &[Value::from(args.str("request_id")?)],
     )? {
         Some(row) => json_object(&row, "extension_allow_hint_json"),

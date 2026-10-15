@@ -108,3 +108,28 @@ fn a_hint_the_reply_cannot_carry_reads_as_scope_unavailable() {
         let _ = std::fs::remove_dir_all(&home);
     }
 }
+
+#[test]
+fn a_blob_hint_reads_as_no_hint() {
+    let vectors: Value = serde_json::from_str(VECTORS).unwrap();
+    let scenario = &vectors["scenarios"][0];
+    let home = temp_home("approval-metadata-blob-hint");
+    let path = home.join("guard.db");
+    seed(&path, &vectors, scenario);
+    Connection::open(&path)
+        .unwrap()
+        .execute(
+            "update approval_requests set extension_allow_hint_json = ?1 \
+             where request_id = 'h-object'",
+            [br#"{"k": 1}"#.to_vec()],
+        )
+        .unwrap();
+    let actual = store_call(
+        &home,
+        scenario["calls"][0]["source"].as_str().unwrap(),
+        "get_approval_extension_allow_hint",
+        json!({"request_id": "h-object"}),
+    );
+    assert_eq!(actual, Ok(Value::Null));
+    let _ = std::fs::remove_dir_all(&home);
+}
