@@ -237,14 +237,42 @@ fn listing(
     let recursive = signals.tool_name.as_deref() == Some("find") || input.contains_key("pattern");
     let gitignore = input.get("gitignore").and_then(Value::as_bool) != Some(false);
     let targets = search_targets(input_path(input, signals)?.unwrap_or("."), context)?;
+    let proven =
+        |target: &str| listing_target_proven(target, signals, (recursive, gitignore), context);
+    if targets.iter().all(|target| proven(target)) {
+        return Some(directory_allow(
+            context,
+            "native_omp_directory_listing",
+            "The Rust authority proved this names-only listing targets a verified ordinary directory.",
+        ));
+    }
+    // A literal path that names nothing lists nothing, so stopping the call
+    // costs nothing. A read of the same path gets the same answer, so saying
+    // why reveals no more and lets the agent fix the path instead of waiting
+    // on an approval. Sensitive names keep their review.
+    let (home, cwd) = (context.path.home_dir, context.path.cwd);
+    let missing = |target: &str| {
+        !signals.sensitive_target
+            && super::super::read_paths::missing_read_target(target, home, cwd, false)
+            && !super::super::sensitive_command(target)
+            && !super::super::sensitive_read_path_argument(target)
+    };
     targets
-        .into_iter()
-        .all(|target| listing_target_proven(target, signals, (recursive, gitignore), context))
+        .iter()
+        .all(|target| proven(target) || missing(target))
         .then(|| {
-            directory_allow(
-                context,
-                "native_omp_directory_listing",
-                "The Rust authority proved this names-only listing targets a verified ordinary directory.",
+            generic_result(
+                generic_action(
+                    context.harness,
+                    context.event,
+                    PreToolActionTypeV1::FileRead,
+                    PreToolOperationV1::Read,
+                    true,
+                    false,
+                ),
+                "block",
+                super::evaluate::MISSING_PATH,
+                "HOL Guard did not run this listing because its path does not exist. Check the path, for example by listing its parent directory, and try again with the correct one.",
             )
         })
 }
@@ -635,29 +663,37 @@ fn grep_scope(
             "The Rust authority proved this directory search cannot reach a sensitive file.",
         ));
     }
-    // A list entry that names nothing is never searched, so stopping the call
-    // costs nothing. Saying why lets the agent fix the path instead of waiting
-    // on an approval. The other entries still need their proof.
+    // A path that names nothing is never searched, so stopping the call costs
+    // nothing. Saying why lets the agent fix the path instead of waiting on
+    // an approval. The other entries of a list still need their proof.
     let missing = |target: &str| {
         super::super::read_paths::missing_read_target(target, home, cwd, true)
             && (super::super::read_paths::bounded_file_read_target(target, home, cwd)
                 || missing_under_searchable_folder(target, home, cwd))
     };
-    (list && targets.iter().all(|target| proven(target) || missing(target))).then(|| {
-        generic_result(
-            generic_action(
-                context.harness,
-                context.event,
-                PreToolActionTypeV1::FileRead,
-                PreToolOperationV1::Read,
-                true,
-                false,
-            ),
-            "block",
-            super::evaluate::MISSING_PATH,
-            "HOL Guard did not run this search because a path in its list does not exist. Check each path, for example by listing its parent directory, and try again with the correct ones.",
-        )
-    })
+    let reason = if list {
+        "HOL Guard did not run this search because a path in its list does not exist. Check each path, for example by listing its parent directory, and try again with the correct ones."
+    } else {
+        "HOL Guard did not run this search because its path does not exist. Check the path, for example by listing its parent directory, and try again with the correct one."
+    };
+    targets
+        .iter()
+        .all(|target| proven(target) || missing(target))
+        .then(|| {
+            generic_result(
+                generic_action(
+                    context.harness,
+                    context.event,
+                    PreToolActionTypeV1::FileRead,
+                    PreToolOperationV1::Read,
+                    true,
+                    false,
+                ),
+                "block",
+                super::evaluate::MISSING_PATH,
+                reason,
+            )
+        })
 }
 
 /// An absolute or `~` name that does not exist cannot resolve as a bounded

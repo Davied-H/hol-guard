@@ -270,6 +270,38 @@ fn listings_allow_verified_directories_only() {
 }
 
 #[test]
+fn listings_of_a_missing_path_say_so_like_a_read() {
+    let f = fixture();
+    // The agent guessed where a worktree beside the session folder would be.
+    // A read of that path is told it does not exist, so a listing is too.
+    for tool in ["glob", "find", "ls"] {
+        for path in [
+            "~/missing-worktree",
+            "../missing-worktree",
+            "~/clean/missing",
+        ] {
+            let result = omp(&f, tool, json!({"path": path}));
+            assert_eq!(result.minimum_action, "block", "{tool} {path}");
+            assert_eq!(result.reason_code, "native_missing_path", "{tool} {path}");
+            let read = omp(&f, "read", json!({"path": path}));
+            assert_eq!(read.reason_code, "native_missing_path", "{tool} {path}");
+        }
+        // Sensitive names, wildcards and existing folders keep their review.
+        for path in [
+            "~/.ssh/missing",
+            "~/missing/.env",
+            ".env",
+            "~/missing-*",
+            "~/secret-dir",
+        ] {
+            let result = omp(&f, tool, json!({"path": path}));
+            assert!(!allowed(&result), "{tool} {path}");
+            assert_ne!(result.reason_code, "native_missing_path", "{tool} {path}");
+        }
+    }
+}
+
+#[test]
 fn project_skill_folders_list_by_name() {
     let f = fixture();
     write(
@@ -686,6 +718,39 @@ fn grep_lists_naming_a_missing_absolute_file_say_so() {
     );
     assert!(!allowed(&result));
     assert_ne!(result.reason_code, "native_missing_path");
+}
+
+#[test]
+fn grep_naming_one_missing_file_says_so() {
+    let f = fixture();
+    // The agent guessed a lockfile name the repository does not use. Nothing
+    // is searched, so Guard says the path is missing, as it does for a read.
+    let clean = f.home.join("clean");
+    for path in [
+        "~/clean/pnpm-lock.yaml".to_owned(),
+        format!("{}/pnpm-lock.yaml", clean.display()),
+    ] {
+        let result = omp(
+            &f,
+            "grep",
+            json!({"pattern": "x", "path": path, "case": false, "gitignore": false}),
+        );
+        assert_eq!(result.minimum_action, "block", "{path}");
+        assert_eq!(result.reason_code, "native_missing_path", "{path}");
+    }
+    // A sensitive name, a folder Guard would not search and a spelling that
+    // climbs out of a searchable one keep the review.
+    for path in [
+        "missing/.env",
+        "~/secret-dir/report.ts",
+        "~/creds-dir/credentials.yaml",
+        "~/clean/../secret-dir/report.ts",
+        "/nonexistent-root/report.ts",
+    ] {
+        let result = omp(&f, "grep", json!({"pattern": "x", "path": path}));
+        assert!(!allowed(&result), "{path}");
+        assert_ne!(result.reason_code, "native_missing_path", "{path}");
+    }
 }
 
 #[test]
