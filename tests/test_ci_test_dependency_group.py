@@ -66,7 +66,7 @@ def test_staged_evaluator_wheel_selects_test_tools_without_installing_the_source
 def test_staged_evaluator_compiler_uses_a_fast_non_shipping_profile() -> None:
     workflow = yaml.safe_load((ROOT / ".github/workflows/evaluation-wheel-ci.yml").read_text())
     environment = workflow["env"]
-    assert environment["CARGO_PROFILE_RELEASE_OPT_LEVEL"] == "1"
+    assert environment["CARGO_PROFILE_RELEASE_OPT_LEVEL"] == "0"
     assert environment["CARGO_PROFILE_RELEASE_LTO"] == "false"
     assert environment["CARGO_PROFILE_RELEASE_CODEGEN_UNITS"] == "16"
     job = workflow["jobs"]["staged-evaluator-wheel"]

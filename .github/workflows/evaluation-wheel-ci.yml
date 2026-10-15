@@ -13,7 +13,7 @@ permissions:
 env:
   UV_HTTP_TIMEOUT: "120"
   # This compiler generates wheel data; it is not a shipped enforcement binary.
-  CARGO_PROFILE_RELEASE_OPT_LEVEL: "1"
+  CARGO_PROFILE_RELEASE_OPT_LEVEL: "0"
   CARGO_PROFILE_RELEASE_LTO: "false"
   CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
 
