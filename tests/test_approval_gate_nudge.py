@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 from rich.console import Console
@@ -11,7 +13,9 @@ from codex_plugin_scanner.guard import approval_gate_nudge
 from codex_plugin_scanner.guard.approval_gate import ApprovalGateError
 from codex_plugin_scanner.guard.approval_gate_nudge import APPROVAL_GATE_NUDGE, approval_gate_posture
 from codex_plugin_scanner.guard.approval_gate_state import APPROVAL_GATE_STATE_FILE, ApprovalGatePublicConfig
+from codex_plugin_scanner.guard.cli import commands_dispatch_admin as dispatch_admin
 from codex_plugin_scanner.guard.cli.render_approval_gate_nudge import print_approval_gate_nudge
+from codex_plugin_scanner.guard.desktop_notifications import DesktopNotificationSetupResult
 
 
 def _fail_public_config(guard_home: Path) -> object:
@@ -99,3 +103,46 @@ def test_guard_doctor_surfaces_nudge(tmp_path: Path, capsys: pytest.CaptureFixtu
 
     assert rc == 0
     assert payload["approval_gate"]["status"] == "not_set"
+
+
+def _doctor_mode(tmp_path: Path, capsys: pytest.CaptureFixture[str], mode: str, *, as_json: bool) -> str:
+    args = argparse.Namespace(
+        notifications=mode == "notifications",
+        harnesses=mode == "harnesses",
+        force_notification_settings=False,
+        harness=None,
+        json=as_json,
+    )
+    rc = dispatch_admin._run_guard_doctor_command(
+        args, guard_home=tmp_path, context=cast(Any, object()), store=cast(Any, object()), config=cast(Any, object())
+    )
+    assert rc == 0
+    return capsys.readouterr().out
+
+
+@pytest.mark.parametrize("mode", ["notifications", "harnesses"])
+def test_guard_doctor_modes_surface_nudge_in_json_and_text(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], mode: str
+) -> None:
+    monkeypatch.setattr(dispatch_admin, "desktop_notification_setup_supported", lambda: False)
+    monkeypatch.setattr(
+        dispatch_admin,
+        "ensure_desktop_notification_setup",
+        lambda _guard_home, *, approval_url, force=False: DesktopNotificationSetupResult(
+            platform="Linux",
+            supported=False,
+            preview_sent=False,
+            settings_opened=False,
+            settings_url=None,
+            already_prompted=False,
+            notifier_path=None,
+        ),
+    )
+
+    payload = json.loads(_doctor_mode(tmp_path, capsys, mode, as_json=True))
+    assert payload["approval_gate"]["status"] == "not_set"
+    assert payload["approval_gate"]["nudge"] == APPROVAL_GATE_NUDGE
+
+    text = " ".join(_doctor_mode(tmp_path, capsys, mode, as_json=False).split())
+    assert "only you can approve blocked actions" in text
+    assert "Settings > Approval gate" in text
