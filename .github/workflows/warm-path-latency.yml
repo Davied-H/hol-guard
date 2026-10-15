@@ -66,19 +66,26 @@ jobs:
           python3 scripts/bench_warm_path_latency.py --target "candidate=$CANDIDATE_SHA=$RUNNER_TEMP/src-candidate/.venv/bin/python" \
             --rounds 1 --paths mcp --mcp-warmup 50 --mcp-samples 3000 --json profile/mcp-bench.json
           wait "$profiler" || true
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: ${{ !cancelled() }}
+        with:
+          name: resident-profile-mcp
+          path: profile/
+          if-no-files-found: warn
       - name: Profile resident during warm hooks
         if: ${{ !cancelled() }}
+        timeout-minutes: 6
         run: |
           set -euo pipefail
           source scripts/ci/native-proof-environment.sh
           bash scripts/ci/profile_resident.sh profile/hook 20 30 &
           profiler=$!
           python3 scripts/bench_warm_path_latency.py --target "candidate=$CANDIDATE_SHA=$RUNNER_TEMP/src-candidate/.venv/bin/python" \
-            --rounds 1 --paths hook --hook-warmup 20 --hook-samples 2000 --json profile/hook-bench.json
+            --rounds 1 --paths hook --hook-warmup 20 --hook-samples 600 --json profile/hook-bench.json
           wait "$profiler" || true
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: ${{ !cancelled() }}
+        if: ${{ always() }}
         with:
-          name: resident-profile
-          path: profile/
+          name: resident-profile-hook
+          path: profile/hook*
           if-no-files-found: warn
