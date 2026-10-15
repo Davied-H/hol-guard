@@ -119,7 +119,13 @@ fn a_network_script_keeps_its_review_instead_of_a_sandbox_without_network() {
             let result = fixture.classify(harness, command);
             assert_eq!(result.decision, "deny", "{harness}: {command}");
             assert_eq!(result.minimum_action, "review", "{harness}: {command}");
-            assert_eq!(result.reason_code, REVIEW, "{harness}: {command}");
+            // `bun run` may name a package script, so it keeps its package review.
+            let expected = if command.starts_with("bun run") {
+                "native_package_review"
+            } else {
+                REVIEW
+            };
+            assert_eq!(result.reason_code, expected, "{harness}: {command}");
         }
     }
     if cfg!(target_os = "macos") {
