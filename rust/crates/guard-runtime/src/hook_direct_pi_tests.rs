@@ -191,8 +191,10 @@ fn source_read_payload(lane: &Lane, content: &str) -> Value {
 fn a_pi_post_tool_use_source_reference_is_reviewed_by_the_resident() {
     let token = format!("{}{}", ["gh", "p_"].concat(), "b".repeat(30));
     for harness in ["pi", "omp"] {
+        // The allowing policy keeps the source scan's own reason; the default
+        // fixture's warn floor would turn a clean read into the silent warning.
         let config = json!({ "structured_output_config": structured_output_view("absent") });
-        let lane = lane(&format!("pi-source-{harness}"), config);
+        let lane = allowing_lane(&format!("pi-source-{harness}"), config);
         for (content, reason) in [
             ("ordinary notes\n".to_owned(), "source_full_scan_allow"),
             (format!("token = '{token}'\n"), "source_secret_match"),
