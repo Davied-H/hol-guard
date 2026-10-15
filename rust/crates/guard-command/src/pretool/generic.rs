@@ -627,7 +627,7 @@ fn evaluate_envelope(
             ),
             "allow",
             "native_exact_safe_file_write",
-            "The Rust authority proved every file this patch adds or updates is an ordinary workspace file that clears sensitive-path checks.",
+            "The Rust authority proved every file this patch adds or updates is an ordinary file in the verified workspace, a registered worktree, the verified user home, or a private user-owned temporary directory and clears sensitive-path checks.",
         )
     } else if let Some(edit) = omp_hashline_edit {
         let action = generic_action(
