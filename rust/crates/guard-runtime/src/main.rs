@@ -103,11 +103,8 @@ mod claude_hook_bridge_http_text;
 mod claude_hook_bridge_render;
 mod claude_hook_bridge_transport;
 mod claude_hook_bridge_url;
-#[cfg(unix)]
 mod claude_session_start;
-#[cfg(unix)]
 mod claude_session_start_contract;
-#[cfg(unix)]
 mod claude_session_start_live;
 mod cli_copilot_resolution;
 mod cli_runtime_support_op;

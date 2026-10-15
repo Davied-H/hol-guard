@@ -86,6 +86,20 @@ pub fn running_process_start_marker(process_id: u32) -> io::Result<String> {
     process_start_marker_for_handle(&process)
 }
 
+/// Whether a process runs, as `windows_process_liveness` answers it:
+/// `Some(false)` only when Windows proves it gone (an unknown id or an
+/// exited process), `None` when that cannot be proven either way.
+pub fn process_liveness(process_id: u32) -> Option<bool> {
+    let process = match super::open_process(process_id, SYNCHRONIZE) {
+        Ok(process) => process,
+        Err(error) if error.raw_os_error() == Some(ERROR_INVALID_PARAMETER as i32) => {
+            return Some(false)
+        }
+        Err(_) => return None,
+    };
+    process_is_running(&process).ok()
+}
+
 /// Wait for a process to terminate, treating an already-gone PID as exited.
 pub fn wait_for_process_exit(process_id: u32, timeout: std::time::Duration) -> io::Result<bool> {
     let process =
