@@ -11,9 +11,11 @@
 //! fails closed. Every other path runs the Python bridge it was given:
 //! - a raw delegate (the original argv and stdin) for client modes;
 //! - a handoff (`--native-handoff` with the daemon's answer on stdin) for
-//!   answers that need Python's post-processing: browser approval waits,
-//!   containment routing and transition observations. A `PreToolUse` deny
-//!   that needs none of them is rendered here (see `handoff`).
+//!   answers that need Python's post-processing: containment routing and
+//!   transition observations (see `handoff`).
+//!
+//! A `PreToolUse` deny that names a pending browser approval is held here
+//! until the browser decides or the hook deadline passes (see `approval`).
 //!
 //! The native bridge never decides a verdict, and Python never decides one
 //! for it: without a daemon answer the hook fails closed.
@@ -305,6 +307,9 @@ pub(crate) enum Route {
     Delegate(Fallback),
     /// Run the Python bridge on the daemon's answer.
     Handoff(String),
+    /// Wait for the browser's decision on a pending approval: write the
+    /// allow once the daemon records one, this rendered deny otherwise.
+    AwaitApproval(approval::Pending, String),
     /// The daemon reported a process failure: restart it and ask once more.
     Restart,
 }
@@ -326,7 +331,8 @@ pub(crate) fn route_response(text: &str, event_name: &str) -> Route {
     {
         return Route::Restart;
     }
-    if handoff::needs_python(&parsed.value, event_name) {
+    let post = handoff::post_render(&parsed.value, event_name);
+    if post == handoff::Post::Python {
         return Route::Handoff(text.to_owned());
     }
     let mut rendered = String::new();
@@ -336,7 +342,10 @@ pub(crate) fn route_response(text: &str, event_name: &str) -> Route {
         parsed.mapped,
         &mut rendered,
     );
-    Route::Respond(rendered)
+    match post {
+        handoff::Post::Approval(pending) => Route::AwaitApproval(pending, rendered),
+        _ => Route::Respond(rendered),
+    }
 }
 
 /// The handoff envelope the Python bridge reads on stdin.
@@ -459,6 +468,22 @@ pub(crate) fn run(python_argv: &[String]) -> i32 {
                 0
             })
         }
+        (Route::AwaitApproval(pending, deny), prepared) => {
+            let approved = prepared.is_some_and(|prepared| {
+                approval::approved(
+                    Path::new(&config.state_path),
+                    &pending,
+                    &prepared.data,
+                    input_ready + prepared.timeout,
+                )
+            });
+            write_stdout(&if approved {
+                approval::allow_rendered()
+            } else {
+                deny
+            });
+            0
+        }
         // `route_hook` settles every restart; one that escaped fails closed.
         (Route::Restart, prepared) => {
             let event_name = prepared
@@ -478,6 +503,8 @@ pub(crate) fn run(python_argv: &[String]) -> i32 {
     }
 }
 
+#[path = "codex_hook_bridge_approval.rs"]
+mod approval;
 #[path = "codex_hook_bridge_handoff.rs"]
 mod handoff;
 #[path = "codex_hook_bridge_restart.rs"]

@@ -16,7 +16,7 @@ const VECTORS: &str = include_str!("../testdata/codex_hook_bridge/vectors.json")
 /// where Python refuses the argument).
 const BASE64URL_CONFIGS: &str =
     include_str!("../testdata/codex_hook_bridge/base64url_configs.json");
-const TOKEN: &str = "codex-token-fixture";
+pub(super) const TOKEN: &str = "codex-token-fixture";
 
 fn vectors(section: &str) -> Vec<Value> {
     let all: Value = serde_json::from_str(VECTORS).unwrap();
@@ -159,10 +159,6 @@ fn clean_answers_are_rendered_natively() {
 fn answers_needing_python_are_handed_off() {
     for (text, event) in [
         (
-            r#"{"hookSpecificOutput":{"permissionDecision":"deny","permissionDecisionReason":"http://h/requests/abcdefgh"}}"#,
-            PRE_TOOL_USE,
-        ),
-        (
             r#"{"hookSpecificOutput":{"permissionDecision":"allow"},"policy_action":"sandbox-required"}"#,
             PRE_TOOL_USE,
         ),
@@ -178,6 +174,12 @@ fn answers_needing_python_are_handed_off() {
             "{text}"
         );
     }
+    // A pending approval waits natively.
+    let pending = r#"{"hookSpecificOutput":{"permissionDecision":"deny","permissionDecisionReason":"http://h/requests/abcdefgh"}}"#;
+    assert!(matches!(
+        route_response(pending, PRE_TOOL_USE),
+        Route::AwaitApproval(..)
+    ));
     // Python compares the decision exactly; other spellings stay native.
     let spaced = r#"{"hookSpecificOutput":{"permissionDecision":"Deny"}}"#;
     assert!(matches!(
@@ -327,7 +329,7 @@ fn python_runs_with_the_input_and_reports_its_exit_code() {
     );
 }
 
-fn codex_home(
+pub(super) fn codex_home(
     label: &str,
     script: Vec<Exchange>,
 ) -> (

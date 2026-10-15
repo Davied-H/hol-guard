@@ -94,14 +94,18 @@ fn daemon_auth_token(state_path: &Path, state: &AuthenticatedState) -> Result<St
     }
 }
 
-/// `http://{host}:{port}/v1/hooks/codex?{query}`, bracketing an IPv6 host.
-fn hook_endpoint(host: &str, port: u16, query: &str) -> String {
-    let rendered = if host.contains(':') {
-        format!("[{host}]")
+/// `http://{host}:{port}`, bracketing an IPv6 host.
+fn daemon_url(host: &str, port: u16) -> String {
+    if host.contains(':') {
+        format!("http://[{host}]:{port}")
     } else {
-        host.to_owned()
-    };
-    format!("http://{rendered}:{port}/v1/hooks/codex?{query}")
+        format!("http://{host}:{port}")
+    }
+}
+
+/// `http://{host}:{port}/v1/hooks/codex?{query}`.
+fn hook_endpoint(host: &str, port: u16, query: &str) -> String {
+    format!("{}/v1/hooks/codex?{query}", daemon_url(host, port))
 }
 
 /// One authenticated Codex hook exchange: the daemon's stripped response
@@ -182,6 +186,81 @@ pub(crate) fn authenticated_codex_hook_response(
         }));
     }
     Ok(py_strip(&text).to_owned())
+}
+
+/// Why an approval request to the daemon gave no answer: `Retry` where
+/// Python's call raised `OSError` or `HTTPException` (nothing was settled,
+/// the same request may be sent again), `Refused` where it raised
+/// `ValueError` (a status other than 200, an oversized or malformed body).
+#[derive(Debug, PartialEq)]
+pub(crate) enum ApprovalFailure {
+    Retry,
+    Refused,
+}
+
+const APPROVAL_DEADLINE: &str = "daemon request exceeded the hook deadline";
+
+/// `_daemon_json_get` (`path` is `None`) or `_daemon_json_post` with
+/// `body`, authenticated with the daemon token the signed state names. A
+/// 404 answers `None` to a GET, as it does in Python; so does a request
+/// with less than the minimum operation time left.
+pub(crate) fn approval_request(
+    state_path: &Path,
+    path: &str,
+    body: Option<&[u8]>,
+    deadline: Instant,
+) -> Result<Option<crate::pyjson::PyVal>, ApprovalFailure> {
+    if remaining(deadline) < MINIMUM_OPERATION {
+        return Ok(None);
+    }
+    // A daemon whose state cannot be read is not up, which `OSError`
+    // reports in Python.
+    let state = authenticated_state(state_path).map_err(|_| ApprovalFailure::Retry)?;
+    let endpoint = format!("{}{path}", daemon_url(state.text("host"), state.port()));
+    assert_loopback_http_url(&endpoint).map_err(|_| ApprovalFailure::Refused)?;
+    let token = daemon_auth_token(state_path, &state).map_err(|_| ApprovalFailure::Refused)?;
+    let mut connection = LoopbackConnection::new(state.text("host"), state.port());
+    let sent = match body {
+        Some(body) => connection.post(
+            path,
+            &[
+                ("Connection", "close"),
+                ("Content-Type", "application/json"),
+                ("X-Guard-Token", &token),
+            ],
+            body,
+            deadline,
+        ),
+        None => connection.get(
+            path,
+            &[("Connection", "close"), ("X-Guard-Token", &token)],
+            deadline,
+        ),
+    };
+    let failure = |error: BridgeError| match error {
+        BridgeError::Transport(_) => ApprovalFailure::Retry,
+        BridgeError::Value(_) | BridgeError::Http { .. } => ApprovalFailure::Refused,
+    };
+    let head = sent.map_err(failure)?;
+    let text = connection
+        .read_body(&head, deadline, APPROVAL_DEADLINE, APPROVAL_DEADLINE)
+        .map_err(failure)?;
+    if text.len() > MAX_DAEMON_RESPONSE_BYTES {
+        return Err(ApprovalFailure::Refused);
+    }
+    if head.status != 200 {
+        return if head.status == 404 && body.is_none() {
+            Ok(None)
+        } else {
+            Err(ApprovalFailure::Refused)
+        };
+    }
+    match crate::pyjson::parse_mapping_lone_surrogates(py_strip(&String::from_utf8_lossy(&text))) {
+        Ok(parsed) if matches!(parsed.value, crate::pyjson::PyVal::Dict(_)) => {
+            Ok(Some(parsed.value))
+        }
+        _ => Err(ApprovalFailure::Refused),
+    }
 }
 
 #[cfg(all(test, unix))]

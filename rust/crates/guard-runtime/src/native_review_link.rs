@@ -20,7 +20,7 @@ const SESSION_AUDIENCE: &str = "guard-local-daemon";
 const SESSION_VERSION: &str = "guard-local-daemon-session.v1";
 const SESSION_TTL_MICROS: i64 = 12 * 60 * 60 * 1_000_000;
 pub(crate) const OPEN_GUARD: &str = "Open HOL Guard to approve or keep this blocked:";
-const SIGNED_LINK_UNAVAILABLE: &str =
+pub(crate) const SIGNED_LINK_UNAVAILABLE: &str =
     "HOL Guard could not create a signed approval link; open Inbox from Guard on this device, then retry.";
 const LOOPBACK_HOSTS: [&str; 3] = ["127.0.0.1", "::1", "localhost"];
 /// `auth_token_path(guard_home)` (`daemon/auth_token.py`).
@@ -184,6 +184,22 @@ pub(crate) fn review_url_stays_unsigned(url: &str, guard_home: &std::path::Path)
         guard_home.join(AUTH_TOKEN_FILE).symlink_metadata(),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound
     )
+}
+
+/// `authenticated_approval_review_url(url, guard_home=...)` for a link this
+/// module reproduces: an external link unchanged, a loopback link signed
+/// with `auth_token`, and `None` when no safe link can be made (no token,
+/// or a link shape this module does not reproduce).
+pub(crate) fn approval_browser_url(
+    url: &str,
+    auth_token: impl FnOnce() -> Option<String>,
+    now_micros: i64,
+) -> Option<String> {
+    let link = approval_link(url)?;
+    if !link.loopback {
+        return Some(url.to_owned());
+    }
+    browser_url(&link, &auth_token()?, now_micros)
 }
 
 /// `native_review_reason(canonical_harness, reason, approval_url, guard_home=...)`
