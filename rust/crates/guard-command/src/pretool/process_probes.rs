@@ -49,17 +49,8 @@ pub(in crate::pretool) fn trusted_postgres_socket(host: &str, port: Option<&str>
     {
         use std::os::unix::fs::MetadataExt;
         let uid = nix::unistd::getuid().as_raw();
-        let closed = |metadata: &std::fs::Metadata| {
-            metadata.is_dir()
-                && (metadata.uid() == uid || metadata.uid() == 0)
-                && metadata.mode() & 0o022 == 0
-        };
         let Ok(directory) = std::fs::metadata(host) else {
-            return std::path::Path::new(host)
-                .ancestors()
-                .skip(1)
-                .find_map(|parent| std::fs::metadata(parent).ok())
-                .is_some_and(|parent| closed(&parent));
+            return missing_directory_protected(std::path::Path::new(host), uid);
         };
         let shared = directory.mode() & 0o022 != 0;
         if !directory.is_dir()
@@ -277,6 +268,71 @@ pub(in crate::pretool) fn plain_name(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.'))
 }
 
+/// A missing socket directory nobody else can create or redirect: its
+/// nearest existing ancestor is a real directory closed to other writers, and
+/// every directory above it, both as spelled and as resolved, belongs to this
+/// user or root and is closed or sticky, so no link along the way can be
+/// swapped before psql connects.
+#[cfg(unix)]
+fn missing_directory_protected(path: &std::path::Path, uid: u32) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    if std::fs::symlink_metadata(path).is_ok() {
+        return false;
+    }
+    let Some(existing) = path
+        .ancestors()
+        .skip(1)
+        .find(|parent| std::fs::symlink_metadata(parent).is_ok())
+    else {
+        return false;
+    };
+    let Ok(resolved) = existing.canonicalize() else {
+        return false;
+    };
+    std::fs::symlink_metadata(existing).is_ok_and(|metadata| {
+        metadata.is_dir()
+            && (metadata.uid() == uid || metadata.uid() == 0)
+            && metadata.mode() & 0o022 == 0
+    }) && existing
+        .ancestors()
+        .skip(1)
+        .all(|path| steady_directory(path, uid))
+        && resolved
+            .ancestors()
+            .skip(1)
+            .all(|path| steady_directory(path, uid))
+}
+
+/// A directory entry, read without following a link, that belongs to this
+/// user or root and that other users cannot rename entries in.
+#[cfg(unix)]
+fn steady_directory(path: &std::path::Path, uid: u32) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    std::fs::symlink_metadata(path).is_ok_and(|metadata| {
+        (metadata.uid() == uid || metadata.uid() == 0)
+            && (metadata.mode() & 0o022 == 0 || metadata.mode() & 0o1000 != 0)
+    })
+}
+
+/// Variables that change which startup files psql reads or which server
+/// libpq reaches without `-h`, `-p` or `service=` on the command line.
+pub(super) const PSQL_VARIABLES: [&str; 7] = [
+    "PSQLRC",
+    "PGSYSCONFDIR",
+    "PGHOST",
+    "PGHOSTADDR",
+    "PGPORT",
+    "PGSERVICE",
+    "PGSERVICEFILE",
+];
+
+/// Whether every ancestor of `path` is a [`steady_directory`] for this user.
+#[cfg(all(test, unix))]
+pub(super) fn steady_ancestry(path: &std::path::Path) -> bool {
+    let uid = nix::unistd::getuid().as_raw();
+    path.ancestors().all(|path| steady_directory(path, uid))
+}
+
 #[cfg(test)]
 mod tests {
     use super::{safe_lsof_arguments, safe_pg_isready_arguments};
@@ -398,7 +454,12 @@ mod tests {
         // Only a missing directory nobody else could create passes.
         assert!(!probe(&open.join("missing"), "-p 5432"));
         assert!(!probe(&shared.join("missing"), "-p 5432"));
-        assert!(probe(&own.join("missing"), "-p 5432"));
+        // A link to a closed directory that another user could swap away.
+        std::os::unix::fs::symlink(&own, open.join("link")).unwrap();
+        assert!(!probe(&open.join("link/missing"), "-p 5432"));
+        // The checkout's own ancestry decides the positive case on CI hosts.
+        let steady = steady_ancestry(&root);
+        assert_eq!(probe(&own.join("missing"), "-p 5432"), steady);
         assert!(probe(&own, "-q"));
         assert!(probe(&own, "-p 5432"));
         assert!(probe(&own, "-p 55434"));

@@ -143,12 +143,12 @@ fn trusted_default_socket(port: Option<&str>) -> bool {
                 .any(|directory| Path::new(directory).is_dir()))
 }
 
-/// The psql the shell would run: the first absolute `PATH` entry holding one.
+/// The psql `PATH` runs; unknown once a relative or empty entry precedes it.
 fn first_psql(path: Option<&std::ffi::OsStr>) -> Option<std::path::PathBuf> {
     std::env::split_paths(path?)
-        .filter(|directory| directory.is_absolute())
-        .map(|directory| directory.join("psql"))
-        .find(|candidate| candidate.is_file())
+        .map(|directory| directory.is_absolute().then(|| directory.join("psql")))
+        .find(|candidate| candidate.as_ref().is_none_or(|psql| psql.is_file()))
+        .flatten()
         .and_then(|psql| psql.canonicalize().ok())
 }
 
@@ -360,9 +360,14 @@ mod tests {
             "/usr/lib/postgresql-evil/psql"
         )));
         assert_eq!(first_psql(None), None);
-        assert_eq!(first_psql(Some(std::ffi::OsStr::new("relative:bin"))), None);
+        assert_eq!(
+            first_psql(Some(std::ffi::OsStr::new("relative:/usr/bin"))),
+            None
+        );
+        assert_eq!(first_psql(Some(std::ffi::OsStr::new(":/usr/bin"))), None);
     }
 
+    #[cfg(unix)]
     #[test]
     fn a_socket_directory_another_user_can_plant_in_is_refused() {
         use std::os::unix::fs::PermissionsExt;
@@ -395,7 +400,8 @@ mod tests {
         assert!(list(&sticky, Some("5432")));
         assert!(list(&private, None));
         assert!(list(&private, Some("5432")));
-        assert!(list(&private.join("missing"), None));
+        use crate::pretool::safe_scalar::steady_ancestry;
+        assert_eq!(list(&private.join("missing"), None), steady_ancestry(&root));
         assert!(!list(&open.join("missing"), None));
         // Without `-h` the default socket check decides.
         assert!(!admitted(&owned(&["-l"]), |_| false, || true));

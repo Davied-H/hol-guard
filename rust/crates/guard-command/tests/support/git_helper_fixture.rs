@@ -24,8 +24,8 @@ pub fn evaluate_pre_tool_envelope_with_context(
     )
 }
 
-/// As [`evaluate_pre_tool_envelope_with_context`], stating whether the
-/// shell's HOME is the `home` checked.
+/// As [`evaluate_pre_tool_envelope_with_context`], with the shell's HOME
+/// either `home` or, when it should not match, the working directory.
 #[allow(clippy::too_many_arguments)]
 pub fn evaluate_with_shell_home(
     harness: &str,
@@ -43,14 +43,16 @@ pub fn evaluate_with_shell_home(
         ("PATH", path.clone()),
         ("GIT_CONFIG_NOSYSTEM", "1".to_owned()),
     ]);
-    if let Some(home) = home {
+    // A mismatched shell stamps the working directory as its HOME.
+    let shell_home = if shell_home_matches { home } else { cwd };
+    if let Some(home) = shell_home {
         environment.insert("HOME", home.to_owned());
     }
     let context = guard_contracts::GuardExecutionEnvironmentV1 {
         path,
         environment_names: environment.keys().map(|key| (*key).to_owned()).collect(),
         environment_digest: hex::encode(Sha256::digest(serde_json::to_vec(&environment).unwrap())),
-        home: home.map(str::to_owned),
+        home: shell_home.map(str::to_owned),
         git_pager_disabled: false,
         pager_disabled: false,
         xdg_config_home: None,
@@ -69,7 +71,7 @@ pub fn evaluate_with_shell_home(
             cdpath_unset: false,
             rustup_override_absent: false,
             npm_config_inert: false,
-            shell_home_matches,
+            shell_home_matches: false,
             ripgrep_config_absent: false,
             psqlrc_absent: false,
         },

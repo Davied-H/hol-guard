@@ -391,23 +391,23 @@ impl<'a> super::PathContext<'a> {
             canonical(declared).is_some_and(|declared| canonical(&shell) == Some(declared))
         });
         // psql runs the system psqlrc `PGSYSCONFDIR` may relocate, then the
-        // file `PSQLRC` names, else `~/.psqlrc` from the shell's HOME. A
+        // file `PSQLRC` names, else `~/.psqlrc` from the shell's HOME; libpq
+        // takes its server from the host, port and service variables. A
         // stamped name counts whatever its value; `psql_reads` checks
         // `home_dir` itself, so a stamped HOME must name that directory.
         let psqlrc_absent = match execution_environment {
             Some(environment) => {
                 environment.has_valid_shape()
                     && !environment.environment_names.iter().any(|name| {
-                        ["PSQLRC", "PGSYSCONFDIR"]
+                        super::safe_scalar::PSQL_VARIABLES
                             .iter()
                             .any(|variable| name.eq_ignore_ascii_case(variable))
                     })
                     && (environment.home.is_none() || shell_home_matches)
             }
-            None => {
-                std::env::var_os("PSQLRC").is_none_or(|value| value.is_empty())
-                    && std::env::var_os("PGSYSCONFDIR").is_none()
-            }
+            None => super::safe_scalar::PSQL_VARIABLES
+                .iter()
+                .all(|variable| std::env::var_os(variable).is_none()),
         };
         Self {
             home_dir,
