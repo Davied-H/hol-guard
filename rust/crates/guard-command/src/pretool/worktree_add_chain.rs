@@ -435,7 +435,13 @@ fn cd_target(
         }
     }
     // The shell then enters the lexical target physically, through any
-    // symlinked parent such as `/tmp` on macOS, just as `-C` does.
+    // symlinked parent such as `/tmp` on macOS, just as `-C` does. A link
+    // someone else could swap before the `cd` runs is never followed.
     let leaf = target.file_name()?;
-    Some(std::fs::canonicalize(target.parent()?).ok()?.join(leaf))
+    let parent = target.parent()?;
+    let home = std::fs::canonicalize(context.home_dir?).ok()?;
+    if !super::destination::fixed_symlinks(parent, &home) {
+        return None;
+    }
+    Some(std::fs::canonicalize(parent).ok()?.join(leaf))
 }

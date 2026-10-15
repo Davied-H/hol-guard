@@ -90,15 +90,27 @@ pub(super) fn fresh_destination(
 
 /// Whether every symlink on the way to `path` sits where only root or the
 /// home owner could replace it: a directory one of them owns that no one
-/// else can write, or a sticky one when the link is theirs too. Such a link
-/// (`/tmp` on macOS, or one the user made) leads where it led when checked.
+/// else can write, or a sticky one when the link is theirs too. Each link's
+/// own target is held to the same rule, hop by hop, so a fixed link cannot
+/// lead on through one someone else could swap. Such a link (`/tmp` on
+/// macOS, or one the user made) leads where it led when checked.
 #[cfg(unix)]
-fn fixed_symlinks(path: &Path, home: &Path) -> bool {
+pub(super) fn fixed_symlinks(path: &Path, home: &Path) -> bool {
     use std::os::unix::fs::MetadataExt;
     let Ok(owner) = std::fs::metadata(home).map(|metadata| metadata.uid()) else {
         return false;
     };
-    let trusted = |uid: u32| uid == 0 || uid == owner;
+    fixed_from(path, &|uid| uid == 0 || uid == owner, MAX_LINK_HOPS)
+}
+
+/// Bounds the hops `fixed_symlinks` follows, well below the kernel's own
+/// limit, so a cycle or a long chain stays reviewed.
+#[cfg(unix)]
+const MAX_LINK_HOPS: usize = 8;
+
+#[cfg(unix)]
+fn fixed_from(path: &Path, trusted: &dyn Fn(u32) -> bool, hops: usize) -> bool {
+    use std::os::unix::fs::MetadataExt;
     path.ancestors().all(|ancestor| {
         let Ok(link) = std::fs::symlink_metadata(ancestor) else {
             return false;
@@ -109,17 +121,27 @@ fn fixed_symlinks(path: &Path, home: &Path) -> bool {
         let Some(directory) = ancestor.parent() else {
             return false;
         };
-        std::fs::metadata(directory).is_ok_and(|metadata| {
+        let fixed = std::fs::metadata(directory).is_ok_and(|metadata| {
             trusted(metadata.uid())
                 && (metadata.mode() & 0o022 == 0
                     || (metadata.mode() & 0o1000 != 0 && trusted(link.uid())))
-        })
+        });
+        // A `..` in a link target resolves physically, past what the
+        // lexical walk sees, so such a link is not followed.
+        fixed
+            && hops > 0
+            && std::fs::read_link(ancestor).is_ok_and(|target| {
+                !target
+                    .components()
+                    .any(|component| component == std::path::Component::ParentDir)
+                    && fixed_from(&directory.join(target), trusted, hops - 1)
+            })
     })
 }
 
 /// Off Unix there is no owner to check, so a symlinked parent stays reviewed.
 #[cfg(not(unix))]
-fn fixed_symlinks(path: &Path, _home: &Path) -> bool {
+pub(super) fn fixed_symlinks(path: &Path, _home: &Path) -> bool {
     std::fs::symlink_metadata(path).is_ok_and(|metadata| !metadata.file_type().is_symlink())
 }
 

@@ -386,3 +386,35 @@ fn cd_through_a_symlinked_temporary_parent_matches_the_checkout() {
         &format!("git worktree add --detach {in_home} origin/main && cd {leaf} && git log -1"),
     );
 }
+
+/// A `cd` through a link someone else could swap before it runs, or a
+/// destination through a fixed link that leads on through such a link,
+/// stays reviewed: the read could land where the proof never looked.
+#[test]
+fn swappable_links_on_the_way_to_the_checkout_stay_reviewed() {
+    let (_cleanup, home, repository) = repository("swappable-link");
+    let organization = repository.parent().unwrap();
+    // `elsewhere` is writable by every user without the sticky bit, so
+    // anyone could repoint a link in it.
+    let swappable = home.parent().unwrap().join("elsewhere").join("org");
+    std::os::unix::fs::symlink(organization, &swappable).unwrap();
+    std::os::unix::fs::symlink(&swappable, home.join("via")).unwrap();
+    let destination = organization.join("app-flat").display().to_string();
+    let add = format!("git worktree add -b flat {destination} origin/main");
+    assert_allowed(
+        &home,
+        &repository,
+        &format!("{add} && cd {destination} && git log -1"),
+    );
+    let swapped = swappable.join("app-flat").display().to_string();
+    assert_reviewed(
+        &home,
+        &repository,
+        &format!("{add} && cd {swapped} && git log -1"),
+    );
+    assert_reviewed(
+        &home,
+        &repository,
+        "git worktree add -b flat ~/via/app-flat origin/main",
+    );
+}
