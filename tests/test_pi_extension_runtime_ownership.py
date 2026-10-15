@@ -268,3 +268,21 @@ def test_frozen_runtime_owns_the_extension_through_its_own_executable(monkeypatc
     monkeypatch.setattr(pi_extension_runtime_ownership.sys, "executable", "/opt/guard/hol-guard")
 
     assert pi_extension_runtime_ownership._installing_runtime_cli_candidates() == ("/opt/guard/hol-guard",)
+
+
+@pytest.mark.skipif(pi_extension_runtime_ownership.os.name == "nt", reason="POSIX script names")
+def test_user_install_prefers_its_own_scripts_directory(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    user_site = Path(pi_extension_runtime_ownership.__file__).resolve().parent
+    monkeypatch.setattr(pi_extension_runtime_ownership.sys, "frozen", False, raising=False)
+    monkeypatch.setattr(pi_extension_runtime_ownership.site, "ENABLE_USER_SITE", True)
+    monkeypatch.setattr(pi_extension_runtime_ownership.site, "getusersitepackages", lambda: str(user_site))
+    monkeypatch.setattr(
+        pi_extension_runtime_ownership.sysconfig,
+        "get_path",
+        lambda name, scheme=None: str(tmp_path / ("user-bin" if scheme else "global-bin")),
+    )
+
+    assert pi_extension_runtime_ownership._installing_runtime_cli_candidates() == (
+        str(tmp_path / "user-bin" / "hol-guard"),
+        str(tmp_path / "global-bin" / "hol-guard"),
+    )

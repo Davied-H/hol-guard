@@ -102,7 +102,9 @@ def _installing_runtime_cli_candidates() -> tuple[str, ...]:
     scripts = [sysconfig.get_path("scripts")]
     user_site = site.getusersitepackages() if site.ENABLE_USER_SITE else None
     if user_site and Path(__file__).resolve().is_relative_to(Path(user_site).resolve()):
-        scripts.append(sysconfig.get_path("scripts", sysconfig.get_preferred_scheme("user")))
+        # A user install's own entry point outranks an unrelated one beside
+        # the interpreter.
+        scripts.insert(0, sysconfig.get_path("scripts", sysconfig.get_preferred_scheme("user")))
     name = "hol-guard.exe" if os.name == "nt" else "hol-guard"
     return tuple(str(Path(directory) / name) for directory in scripts if directory)
 
