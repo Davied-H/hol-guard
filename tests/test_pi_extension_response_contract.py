@@ -267,7 +267,9 @@ def test_generated_omp_read_list_result_stays_inline_not_source_ref(tmp_path: Pa
     split = {"displayReadTargets": ["src/a.ts", "src/b.ts"]}
     assert _run_generated_source_ref_fixture(source, content, comma_path, details=split)["sourceRef"] is None
     single = {"displayReadTargets": ["src/a.ts"]}
-    assert _run_generated_source_ref_fixture(source, content, tmp_path / "a.ts", details=single)["sourceRef"] is not None
+    assert (
+        _run_generated_source_ref_fixture(source, content, tmp_path / "a.ts", details=single)["sourceRef"] is not None
+    )
 
 
 def test_generated_omp_selector_review_uses_host_resolved_source_path(tmp_path: Path) -> None:
