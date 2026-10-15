@@ -1,5 +1,5 @@
 use super::{
-    ensure_argv, gate_line, kickable, startup, Gate, Kick, LaneKick, DAEMON_REFUSED,
+    ensure_argv, gate_line, kickable, startup, unported, Gate, Kick, LaneKick, DAEMON_REFUSED,
     DAEMON_UNREACHABLE,
 };
 use crate::mcp_relay_args::parse;
@@ -60,7 +60,7 @@ fn an_unbound_lane_relays_once_the_daemon_binds_it() {
 }
 
 #[test]
-fn a_lane_still_unbound_at_the_deadline_hands_off_with_its_code() {
+fn a_lane_still_unbound_at_the_deadline_is_not_ready_with_its_code() {
     let (count, probe) = probes(usize::MAX, "direct_lane_ack_missing");
     let mut fake = kick(Kick::Requested);
     let started = Instant::now();
@@ -69,13 +69,13 @@ fn a_lane_still_unbound_at_the_deadline_hands_off_with_its_code() {
         &mut fake,
         Duration::from_millis(150),
     );
-    assert_eq!(gate, Gate::HandOff("direct_lane_ack_missing".to_owned()));
+    assert_eq!(gate, Gate::NotReady("direct_lane_ack_missing".to_owned()));
     assert!(started.elapsed() >= Duration::from_millis(150));
     assert_eq!(fake.kicks, 1);
 }
 
 #[test]
-fn a_down_or_refusing_daemon_hands_off_at_once() {
+fn a_down_or_refusing_daemon_is_not_ready_at_once() {
     for (answer, code) in [
         (Kick::DaemonUnreachable, DAEMON_UNREACHABLE),
         (Kick::Refused, DAEMON_REFUSED),
@@ -83,13 +83,13 @@ fn a_down_or_refusing_daemon_hands_off_at_once() {
         let (count, probe) = probes(usize::MAX, "direct_lane_unbound");
         let mut fake = kick(answer);
         let gate = startup(&mut |_| probe(&count), &mut fake, BUDGET);
-        assert_eq!(gate, Gate::HandOff(code.to_owned()));
+        assert_eq!(gate, Gate::NotReady(code.to_owned()));
         assert_eq!((count.get(), fake.kicks), (1, 1));
     }
 }
 
 #[test]
-fn a_reason_the_daemon_cannot_clear_hands_off_without_a_kick() {
+fn a_reason_the_daemon_cannot_clear_is_not_ready_without_a_kick() {
     for code in [
         "mcp_relay_facts_unavailable",
         "mcp_relay_reply_invalid",
@@ -100,7 +100,7 @@ fn a_reason_the_daemon_cannot_clear_hands_off_without_a_kick() {
         let (count, probe) = probes(usize::MAX, code);
         let mut fake = kick(Kick::Requested);
         let gate = startup(&mut |_| probe(&count), &mut fake, BUDGET);
-        assert_eq!(gate, Gate::HandOff(code.to_owned()));
+        assert_eq!(gate, Gate::NotReady(code.to_owned()));
         assert_eq!(fake.kicks, 0);
     }
 }
@@ -142,9 +142,38 @@ fn the_gate_line_has_a_fixed_shape() {
         "hol-guard mcp-relay: lane ready: kicked 42 ms\n"
     );
     assert_eq!(
-        gate_line(&Gate::HandOff("direct_lane_unbound".to_owned())),
-        "hol-guard mcp-relay: python proxy: direct_lane_unbound\n"
+        gate_line(&Gate::NotReady("direct_lane_unbound".to_owned())),
+        "hol-guard mcp-relay: lane not ready: direct_lane_unbound\n"
     );
+    assert_eq!(
+        gate_line(&Gate::NotReady(
+            "mcp_relay_session_server_unknown".to_owned()
+        )),
+        "hol-guard mcp-relay: python proxy: mcp_relay_session_server_unknown\n"
+    );
+}
+
+#[test]
+fn only_features_the_relay_lacks_send_a_session_to_the_python_proxy() {
+    for code in [
+        "mcp_relay_session_review_mode",
+        "mcp_relay_saved_remote_policy",
+        "mcp_relay_session_server_unknown",
+        "mcp_relay_facts_unavailable",
+        DAEMON_REFUSED,
+    ] {
+        assert!(unported(code), "{code}");
+    }
+    for code in [
+        DAEMON_UNREACHABLE,
+        "direct_lane_unbound",
+        "mcp_relay_resident_unreachable",
+        "mcp_relay_runtime_superseded",
+        "mcp_relay_evidence_undrained",
+        "mcp_relay_binding_incomplete",
+    ] {
+        assert!(!unported(code), "{code}");
+    }
 }
 
 #[test]

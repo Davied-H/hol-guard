@@ -58,6 +58,7 @@ RELAY_COMMAND = "mcp-relay"
 DEFER_LINE_PREFIX = "hol-guard mcp-relay: no native decision: "
 LANE_READY_PREFIX = "hol-guard mcp-relay: lane ready: "
 HAND_OFF_PREFIX = "hol-guard mcp-relay: python proxy: "
+NOT_READY_PREFIX = "hol-guard mcp-relay: lane not ready: "
 NO_DECISION_MESSAGE = "HOL Guard could not obtain a native decision for this tool call."
 # The daemon's interactive request budget; reported, never relaxed or enforced here.
 INTERACTIVE_BUDGET_MS = 750.0
@@ -180,6 +181,8 @@ class _Session:
                 return {"ready": True, "kicked": how == "kicked", "ms": float(rest.split()[0])}
             if line.startswith(HAND_OFF_PREFIX):
                 return {"ready": False, "code": line[len(HAND_OFF_PREFIX) :].strip()}
+            if line.startswith(NOT_READY_PREFIX):
+                return {"ready": False, "native": True, "code": line[len(NOT_READY_PREFIX) :].strip()}
         return None
 
     def close(self) -> None:

@@ -328,6 +328,7 @@ fn without_a_resident_every_call_is_blocked() {
         resident: None,
         commits: Commits::default(),
         kick: None,
+        warming: false,
     };
     assert_eq!(unbound.decide(&message, &call, None, &catalog), expected);
     // A claim goes only to the resident that decided the call.
@@ -342,6 +343,7 @@ fn without_a_resident_every_call_is_blocked() {
         resident: None,
         commits: Commits::default(),
         kick: None,
+        warming: false,
     };
     assert_eq!(
         unreachable.decide(&message, &call, None, &catalog),
@@ -364,6 +366,7 @@ fn authority() -> ResidentRelayAuthority {
         resident: None,
         commits: Commits::default(),
         kick: None,
+        warming: false,
     }
 }
 

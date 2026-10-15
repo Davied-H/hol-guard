@@ -28,6 +28,7 @@ fn kicked(answer: Kick) -> (ResidentRelayAuthority, std::rc::Rc<std::cell::Cell<
         resident: None,
         commits: Commits::default(),
         kick: None,
+        warming: false,
     }
     .with_kick(Box::new(FakeKick {
         answer,
@@ -75,12 +76,40 @@ fn without_a_kick_a_deferral_is_never_retried() {
 }
 
 #[test]
+fn only_the_first_call_of_a_warming_session_waits_for_the_lane() {
+    let (mut authority, kicks) = kicked(Kick::Requested);
+    authority.warm_up_within(Duration::from_millis(150));
+    assert_eq!(kicks.get(), 0, "a session that started ready never waits");
+    let mut authority = authority.warming(true);
+    let started = Instant::now();
+    authority.warm_up_within(Duration::from_millis(150));
+    assert!(started.elapsed() >= Duration::from_millis(150));
+    assert!(kicks.get() >= 1);
+    assert!(!authority.warming);
+    let asked = kicks.get();
+    authority.warm_up_within(Duration::from_millis(150));
+    assert_eq!(kicks.get(), asked);
+}
+
+#[test]
+fn a_lane_no_wait_can_clear_ends_the_warm_up_at_once() {
+    let (mut authority, kicks) = kicked(Kick::Requested);
+    authority.facts = None;
+    let mut authority = authority.warming(true);
+    let started = Instant::now();
+    authority.warm_up_within(Duration::from_secs(5));
+    assert!(started.elapsed() < Duration::from_secs(1));
+    assert_eq!(kicks.get(), 0);
+}
+
+#[test]
 fn the_probe_names_why_it_could_not_ask() {
     let mut unbound = ResidentRelayAuthority {
         facts: None,
         resident: None,
         commits: Commits::default(),
         kick: None,
+        warming: false,
     };
     let deadline = Instant::now() + Duration::from_millis(200);
     assert_eq!(

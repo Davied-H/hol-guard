@@ -7,12 +7,13 @@
 //! starts the MCP server it asks the resident whether the lane is ready for
 //! its workspace and harness. When it is not, the relay asks the daemon to
 //! prepare the workspace through the hook readiness route and waits a short,
-//! bounded time. A lane that is still not ready, a resident that cannot be
-//! reached, or a daemon that is down hands the session to the Python proxy:
-//! the relay execs the exact proxy argv it was given, with its environment
-//! unchanged, and the proxy decides every call as it does without the relay.
-//! A daemon that is down also gets one detached `guard daemon ensure`, so a
-//! later session can bind; the relay never waits for it.
+//! bounded time. A daemon that is down gets one detached `guard daemon
+//! ensure`. A lane that is still not ready keeps the session native: the
+//! first `tools/call` waits, within `WARM_UP_BUDGET`, for the daemon to bind
+//! it, and a call the lane still cannot decide is refused. Only a session
+//! the native lane cannot serve at all, one that needs a feature the relay
+//! has not ported (`unported`), goes to the Python proxy: the relay execs the
+//! exact proxy argv it was given, with its environment unchanged.
 //!
 //! The readiness answer only steers which launcher runs. Each call is still
 //! admitted by the resident's `mcp_relay_decide`, which repeats every check
@@ -37,6 +38,10 @@ use crate::mcp_relay_args::RelayArgs;
 pub(crate) const STARTUP_BUDGET: Duration = Duration::from_millis(500);
 /// How long one deferred call may wait for the daemon before it is retried.
 pub(crate) const RETRY_BUDGET: Duration = Duration::from_millis(250);
+/// How long the first call of a session that started before its lane was
+/// ready waits for the daemon to bind it: past one kick interval, so a
+/// daemon the startup kick had to start is asked once more.
+pub(crate) const WARM_UP_BUDGET: Duration = Duration::from_secs(8);
 /// The daemon is asked at most once per interval within a session.
 const KICK_INTERVAL: Duration = Duration::from_secs(5);
 const POLL_INTERVAL: Duration = Duration::from_millis(25);
@@ -81,13 +86,33 @@ pub(crate) fn kickable(code: &str) -> bool {
         )
 }
 
+/// The reasons the native lane cannot serve a session however long it
+/// waits: features the relay has not ported yet, launches it cannot
+/// describe, and a daemon that will not prepare the native lane. Such a
+/// session runs as the Python proxy.
+pub(crate) fn unported(code: &str) -> bool {
+    matches!(
+        code,
+        DAEMON_REFUSED
+            | "mcp_relay_session_review_mode"
+            | "mcp_relay_session_redaction_unbound"
+            | "mcp_relay_saved_remote_policy"
+            | "mcp_relay_session_server_unknown"
+            | "mcp_relay_session_server_proxy_tools"
+            | "mcp_relay_view_invalid"
+            | "mcp_relay_layers_unavailable"
+            | "mcp_relay_facts_unavailable"
+            | "mcp_relay_workspace_invalid"
+    )
+}
+
 /// How the session starts.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Gate {
     /// The lane was ready; `kicked` when the daemon had to prepare it first.
     Relay { kicked: bool, elapsed: Duration },
-    /// Launch the Python proxy instead, for the named reason.
-    HandOff(String),
+    /// The lane was not ready, for the named reason.
+    NotReady(String),
 }
 
 /// Ask `ready` until the lane is ready or `budget` is spent, asking the
@@ -109,15 +134,15 @@ pub(crate) fn startup(
         Err(code) => code,
     };
     if !kickable(&code) {
-        return Gate::HandOff(code);
+        return Gate::NotReady(code);
     }
     let kick_deadline = deadline
         .checked_sub(PROBE_RESERVE)
         .map_or(started, |kick_deadline| kick_deadline.max(started));
     match kick.kick(kick_deadline) {
         Kick::Requested => {}
-        Kick::DaemonUnreachable => return Gate::HandOff(DAEMON_UNREACHABLE.to_owned()),
-        Kick::Refused => return Gate::HandOff(DAEMON_REFUSED.to_owned()),
+        Kick::DaemonUnreachable => return Gate::NotReady(DAEMON_UNREACHABLE.to_owned()),
+        Kick::Refused => return Gate::NotReady(DAEMON_REFUSED.to_owned()),
     }
     loop {
         match ready(deadline) {
@@ -128,11 +153,11 @@ pub(crate) fn startup(
                 }
             }
             Err(next) if kickable(&next) => code = next,
-            Err(next) => return Gate::HandOff(next),
+            Err(next) => return Gate::NotReady(next),
         }
         let left = remaining(deadline);
         if left.is_zero() {
-            return Gate::HandOff(code);
+            return Gate::NotReady(code);
         }
         std::thread::sleep(left.min(POLL_INTERVAL));
     }
@@ -146,7 +171,8 @@ pub(crate) fn gate_line(gate: &Gate) -> String {
             if *kicked { "kicked" } else { "start" },
             elapsed.as_millis()
         ),
-        Gate::HandOff(code) => format!("{LINE_PREFIX}python proxy: {code}\n"),
+        Gate::NotReady(code) if unported(code) => format!("{LINE_PREFIX}python proxy: {code}\n"),
+        Gate::NotReady(code) => format!("{LINE_PREFIX}lane not ready: {code}\n"),
     }
 }
 

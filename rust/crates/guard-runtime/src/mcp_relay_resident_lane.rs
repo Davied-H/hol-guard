@@ -6,21 +6,68 @@
 //! within the retry budget, and is decided once more; a deferral that remains
 //! is refused as before. A deferred decision queues nothing, so the retry
 //! never records a call twice.
+//!
+//! A session that started before its lane was ready stays native, and its
+//! first call waits for the lane before it is decided: the probe repeats
+//! until the lane is ready, the lane names a reason no wait clears, or the
+//! warm-up budget is spent, asking the daemon again whenever the kick
+//! interval allows. The call is then decided once, as any other.
 
 use std::path::PathBuf;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
 use super::{defer, ResidentRelayAuthority};
-use crate::mcp_relay_lane::{kickable, Kick, LaneKick, RETRY_BUDGET};
+use crate::claude_hook_bridge_http::remaining;
+use crate::mcp_relay_lane::{kickable, unported, Kick, LaneKick, RETRY_BUDGET, WARM_UP_BUDGET};
 use crate::mcp_relay_ready::MCP_RELAY_READY_SCHEMA;
+
+/// The pause between probes while the first call waits for the lane.
+const WARM_UP_POLL: Duration = Duration::from_millis(100);
 
 impl ResidentRelayAuthority {
     /// Ask the daemon to prepare the lane for a deferred call.
     pub(crate) fn with_kick(mut self, kick: Box<dyn LaneKick>) -> Self {
         self.kick = Some(kick);
         self
+    }
+
+    /// Whether the first call waits for a lane that was not ready at startup.
+    pub(crate) fn warming(mut self, warming: bool) -> Self {
+        self.warming = warming;
+        self
+    }
+
+    /// Before the session's first call only: wait for the lane the startup
+    /// gate found not ready.
+    pub(super) fn warm_up(&mut self) {
+        self.warm_up_within(WARM_UP_BUDGET);
+    }
+
+    fn warm_up_within(&mut self, budget: Duration) {
+        if !std::mem::take(&mut self.warming) {
+            return;
+        }
+        let deadline = Instant::now() + budget;
+        loop {
+            let probe = (Instant::now() + RETRY_BUDGET).min(deadline);
+            match self.lane_ready(probe) {
+                Ok(()) => return,
+                Err(code) if unported(&code) => return,
+                Err(_) => {}
+            }
+            if let Some(kick) = self.kick.as_mut() {
+                // The kick rate-limits itself, so this asks the daemon at
+                // most once per kick interval.
+                let _ = kick.kick((Instant::now() + RETRY_BUDGET).min(deadline));
+            }
+            let left = remaining(deadline);
+            if left.is_zero() {
+                return;
+            }
+            std::thread::sleep(left.min(WARM_UP_POLL));
+        }
     }
 
     /// The workspace the session's decisions are admitted under.

@@ -32,6 +32,7 @@ pytestmark = pytest.mark.skipif(os.name != "posix", reason="the native MCP relay
 
 _LANE_READY = "hol-guard mcp-relay: lane ready: "
 _HAND_OFF = "hol-guard mcp-relay: python proxy: "
+_NOT_READY = "hol-guard mcp-relay: lane not ready: "
 _SERVER_UNKNOWN = _HAND_OFF + "mcp_relay_session_server_unknown"
 _SERVER = """
 import json
@@ -197,7 +198,7 @@ class _Install:
 
 def _start_line(stderr: str) -> str:
     for line in stderr.splitlines():
-        if line.startswith((_LANE_READY, _HAND_OFF)):
+        if line.startswith((_LANE_READY, _HAND_OFF, _NOT_READY)):
             return line
     raise AssertionError(f"the relay wrote no start line: {stderr[-2000:]}")
 
