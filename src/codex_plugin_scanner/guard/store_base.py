@@ -1128,15 +1128,44 @@ def _set_private_mode(path: Path, mode: int) -> None:
         return
 
 
+# Binding a Windows directory opens every ancestor and re-reads the DACL. The
+# store repairs guard home after each connection closes, so a hook request paid
+# for that walk several times. Within one process, a directory bound recently
+# under the same identity is skipped; a recreated directory is bound at once.
+_WINDOWS_PRIVATE_DIRECTORY_RECHECK_SECONDS = 30.0
+_windows_private_directory_lock = threading.Lock()
+_windows_private_directory_bound: dict[str, tuple[int, int, float]] = {}
+
+
 def _set_windows_private_directory(path: Path) -> None:
     from .native_policy_snapshot import NativePolicySnapshotError
     from .native_policy_snapshot_windows_state import _windows_ensure_private_directory
 
+    key = os.path.normcase(os.path.abspath(path))
+    try:
+        stat = os.stat(path)
+    except OSError:
+        stat = None
+    now = time.monotonic()
+    if stat is not None:
+        with _windows_private_directory_lock:
+            bound = _windows_private_directory_bound.get(key)
+        if (
+            bound is not None
+            and bound[:2] == (stat.st_dev, stat.st_ino)
+            and now - bound[2] < _WINDOWS_PRIVATE_DIRECTORY_RECHECK_SECONDS
+        ):
+            return
     try:
         _windows_ensure_private_directory(path)
     except (NativePolicySnapshotError, OSError, RuntimeError, TypeError, ValueError) as exc:
+        with _windows_private_directory_lock:
+            _windows_private_directory_bound.pop(key, None)
         _store_logger.debug("Could not set Windows private directory on %s: %s", path, exc)
         return
+    if stat is not None:
+        with _windows_private_directory_lock:
+            _windows_private_directory_bound[key] = (stat.st_dev, stat.st_ino, now)
 
 
 def _system_keyring_availability_cache_path(guard_home: Path) -> Path:
