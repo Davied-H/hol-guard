@@ -15,8 +15,8 @@
 //! runs the install-time `start_command` and sends the hook once to a daemon
 //! that came up since; a daemon that was already asked is never asked
 //! twice. Without such an answer the hook fails closed. An install whose
-//! config predates `start_command` runs the Python bridge it was given, with
-//! the original argv and stdin. A lone surrogate is forwarded and rendered
+//! config predates `start_command` gets the command that install would
+//! write, built from its config. A lone surrogate is forwarded and rendered
 //! as the `\udXXX` escape Python's `json.dumps` writes for it.
 //!
 //! Past the hook deadline, or when stdin cannot be read in time, the native
@@ -34,9 +34,9 @@ use crate::bounded_hook_bridge_render::{
     FAILURE_REASON, NATIVE_HARNESSES,
 };
 use crate::claude_hook_bridge_http::remaining;
+use crate::guard_store_json::py_repr_str;
 use crate::hook_bridge_daemon_start::{await_daemon, start_daemon, Attempt, TRANSPORT_FAILURE};
 use crate::hook_bridge_exit::exit_code;
-use crate::hook_bridge_fallback::{self, Fallback};
 use crate::hook_env_stamp::{current_environment, stamp_hook_input_text, Stamp};
 use crate::pyjson::{self, PyVal, SurrogateMapped};
 
@@ -118,14 +118,17 @@ pub(crate) fn parse_config(argument: &str) -> Option<BridgeConfig> {
     }
     let payload = parsed.value;
     payload.as_dict()?;
-    payload.get("python_executable")?.as_str()?;
-    payload.get("package_root")?.as_str()?;
+    let python_executable = payload.get("python_executable")?.as_str()?;
+    let package_root = payload.get("package_root")?.as_str()?;
     let guard_home = payload.get("guard_home")?.as_str()?;
     let cli_args = payload.get("cli_args")?.as_list()?;
     let harness = payload.get("harness")?.as_str()?;
     let timeout = positive_seconds(payload.get("timeout_seconds"))?;
     let start_command = match payload.get("start_command") {
-        None => Vec::new(),
+        None => {
+            let cli_args: Vec<&str> = cli_args.iter().filter_map(PyVal::as_str).collect();
+            daemon_start_command(python_executable, package_root, guard_home, &cli_args)
+        }
         Some(value) => value
             .as_list()?
             .iter()
@@ -149,6 +152,53 @@ pub(crate) fn parse_config(argument: &str) -> Option<BridgeConfig> {
         timeout,
         start_command,
     })
+}
+
+/// `daemon_start_command(python_executable, package_root, guard_home,
+/// cli_args)` (`bounded_cli_hook_native.py`) for an install whose config
+/// predates `start_command`: the config already holds the resolved package
+/// root and Guard home, and the canonical home is the `--home` argument,
+/// else `Path.home()`.
+fn daemon_start_command(
+    python_executable: &str,
+    package_root: &str,
+    guard_home: &str,
+    cli_args: &[&str],
+) -> Vec<String> {
+    let home_dir = cli_args
+        .windows(2)
+        .find(|pair| pair[0] == "--home")
+        .map(|pair| pair[1].to_owned())
+        .or_else(python_home);
+    let Some(home_dir) = home_dir else {
+        return Vec::new();
+    };
+    let bootstrap = format!(
+        "import os,sys;\
+sys.path.insert(0, {});\
+from pathlib import Path;\
+from codex_plugin_scanner.guard.daemon import schedule_guard_daemon_recovery;\
+failure_kind=os.environ.get('HOL_GUARD_HOOK_FAILURE_KIND','transport-failure');\
+failure_kind=failure_kind if failure_kind in \
+{{'overload','transport-failure','authenticated-control-plane-failure'}} \
+else 'transport-failure';\
+schedule_guard_daemon_recovery(Path({}),home_dir=Path({}),failure_kind=failure_kind)",
+        py_repr_str(package_root),
+        py_repr_str(guard_home),
+        py_repr_str(&home_dir),
+    );
+    vec![
+        python_executable.to_owned(),
+        "-I".to_owned(),
+        "-c".to_owned(),
+        bootstrap,
+    ]
+}
+
+/// `str(Path.home())`: `HOME` on POSIX, `USERPROFILE` on Windows.
+fn python_home() -> Option<String> {
+    let name = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+    std::env::var(name).ok().filter(|home| !home.is_empty())
 }
 
 #[derive(Debug, PartialEq)]
@@ -262,12 +312,6 @@ pub(crate) enum Route {
         reason: &'static str,
         unmap: bool,
     },
-    /// Run the Python bridge, for `reason`; `daemon_tried` once the daemon
-    /// was asked.
-    Delegate {
-        daemon_tried: bool,
-        reason: Fallback,
-    },
 }
 
 /// The daemon path of `run_bounded_cli_hook` after the input was read.
@@ -317,17 +361,10 @@ fn restarted_route(
     budget: Duration,
     failed: Option<&DaemonTarget>,
 ) -> Route {
-    if config.start_command.is_empty() {
-        // An install from before the bridge carried `start_command` still
-        // leaves the restart to Python until the hook is reinstalled. A
-        // daemon that was asked is skipped there, so the hook is never sent
-        // twice.
-        return Route::Delegate {
-            daemon_tried: failed.is_some(),
-            reason: Fallback::DaemonUnanswered,
-        };
-    }
-    if !start_daemon(&config.start_command, TRANSPORT_FAILURE, deadline) {
+    // An empty command (no home to start the daemon for) fails closed.
+    if config.start_command.is_empty()
+        || !start_daemon(&config.start_command, TRANSPORT_FAILURE, deadline)
+    {
         return prepared.failed();
     }
     let started = await_daemon(deadline, || {
@@ -478,18 +515,6 @@ pub(crate) fn run(python_argv: &[String]) -> i32 {
             reason,
             unmap,
         } => refuse(&config.harness, &event_name, reason, unmap),
-        Route::Delegate {
-            daemon_tried,
-            reason,
-        } => {
-            hook_bridge_fallback::note(&config.guard_home, &config.harness, reason);
-            run_python(python_argv, Some(&raw), started.elapsed(), daemon_tried).unwrap_or_else(
-                || match prepare(&raw) {
-                    Ok(prepared) => fail(&config.harness, &prepared.event_name, prepared.mapped),
-                    Err(_) => fail(&config.harness, DEFAULT_EVENT, false),
-                },
-            )
-        }
     }
 }
 

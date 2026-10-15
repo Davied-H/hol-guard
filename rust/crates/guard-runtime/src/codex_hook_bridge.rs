@@ -481,11 +481,8 @@ pub(crate) fn run(python_argv: &[String]) -> i32 {
             write_stdout(&fail_closed(event_name));
             0
         }
-        (route, prepared) => {
-            note(match route {
-                Route::Delegate(reason) => reason,
-                _ => Fallback::SemanticHandoff,
-            });
+        (Route::Delegate(reason), prepared) => {
+            note(reason);
             let event_name = prepared.map_or_else(|| PRE_TOOL_USE.to_owned(), |p| p.event_name);
             delegate(&event_name)
         }

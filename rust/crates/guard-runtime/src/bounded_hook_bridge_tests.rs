@@ -148,7 +148,12 @@ fn configs_are_accepted_only_for_the_native_harnesses() {
             harness: "copilot".to_owned(),
             guard_home: PathBuf::from("/var/guard"),
             timeout: Duration::from_secs(20),
-            start_command: Vec::new(),
+            start_command: daemon_start_command(
+                "/usr/bin/python3",
+                "/opt/guard",
+                "/var/guard",
+                &["guard", "hook", "--harness", "copilot"],
+            ),
         })
     );
     let started = parse_config(&config_text(&[(
@@ -172,6 +177,26 @@ fn configs_are_accepted_only_for_the_native_harnesses() {
         Some(Duration::from_millis(500))
     );
     assert!(parse_config(&config_text(&[("frozen_launcher", None)])).is_some());
+}
+
+#[test]
+fn a_config_without_a_start_command_gets_the_one_install_writes() {
+    // Recorded from `daemon_start_command` in `bounded_cli_hook_native.py`.
+    let expected = r#"import os,sys;sys.path.insert(0, "/nonexistent-guard/pkg'q");from pathlib import Path;from codex_plugin_scanner.guard.daemon import schedule_guard_daemon_recovery;failure_kind=os.environ.get('HOL_GUARD_HOOK_FAILURE_KIND','transport-failure');failure_kind=failure_kind if failure_kind in {'overload','transport-failure','authenticated-control-plane-failure'} else 'transport-failure';schedule_guard_daemon_recovery(Path('/nonexistent-guard/home'),home_dir=Path('/nonexistent-guard/user'),failure_kind=failure_kind)"#;
+    let command = daemon_start_command(
+        "/usr/bin/python3",
+        "/nonexistent-guard/pkg'q",
+        "/nonexistent-guard/home",
+        &[
+            "guard",
+            "hook",
+            "--home",
+            "/nonexistent-guard/user",
+            "--harness",
+            "copilot",
+        ],
+    );
+    assert_eq!(command, argv(&["/usr/bin/python3", "-I", "-c", expected]));
 }
 
 #[test]
@@ -284,11 +309,8 @@ fn home_with_endpoint(label: &str, host: &str, port: u16, token: bool) -> GuardH
 const PRE_TOOL: &[u8] = br#"{"hook_event_name":"PreToolUse","tool_name":"Bash"}"#;
 
 #[test]
-fn legacy_configs_without_a_daemon_leave_the_restart_to_python() {
-    let fail = Route::Delegate {
-        daemon_tried: false,
-        reason: Fallback::DaemonUnanswered,
-    };
+fn configs_without_a_start_command_fail_closed_when_no_daemon_answers() {
+    let fail = failed("PreToolUse");
     let home = GuardHome::new("bounded-no-state");
     assert_eq!(
         route_hook(&bridge_config(&home, "copilot"), PRE_TOOL, soon()),
@@ -427,7 +449,7 @@ fn a_hermes_answer_is_the_flat_decision_hermes_reads() {
 }
 
 #[test]
-fn a_daemon_that_failed_under_a_legacy_config_is_not_asked_again() {
+fn a_daemon_that_failed_without_a_start_command_is_not_asked_again() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     let daemon = serve_once(listener, 500, "{}".to_owned());
@@ -435,13 +457,7 @@ fn a_daemon_that_failed_under_a_legacy_config_is_not_asked_again() {
 
     let route = route_hook(&bridge_config(&home, "devin"), PRE_TOOL, soon());
 
-    assert_eq!(
-        route,
-        Route::Delegate {
-            daemon_tried: true,
-            reason: Fallback::DaemonUnanswered,
-        }
-    );
+    assert_eq!(route, failed("PreToolUse"));
     assert!(daemon.join().unwrap().is_some());
 }
 
