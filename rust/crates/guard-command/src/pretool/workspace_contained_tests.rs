@@ -436,6 +436,7 @@ fn private_temp_paths_run_in_the_workspace_sandbox() {
         "OUT_DIR=\"$TMPDIR/report-test\" npm run build",
         "OUT_DIR=\"${TMPDIR}/report-test\" npm run build",
         "OUT_DIR=$TMPDIR/report-test PORT=4173 npm run build",
+        "OUT_DIR=\"${TMPDIR:-/tmp}/report-test\" npm run build",
     ] {
         assert_eq!(
             reason("omp", command, &ws, true) == CONTAINED,

@@ -330,10 +330,11 @@ fn literal_word(chars: &[char], token: &ShellToken) -> bool {
     literal_chars(&chars[token.start..token.end])
 }
 
-/// The raw word's only expansions are `$TMPDIR` or `${TMPDIR}` and nothing
-/// in the command rebinds `TMPDIR`. Only a reviewed projection drops such a
-/// setting: the projection never settles below review, and moving it to the
-/// workspace sandbox, which sets `TMPDIR` itself, re-checks the raw command.
+/// The raw word's only expansions are `$TMPDIR`, `${TMPDIR}` or
+/// `${TMPDIR:-/tmp}` and nothing in the command rebinds `TMPDIR`. Only a
+/// reviewed projection drops such a setting: the projection never settles
+/// below review, and moving it to the workspace sandbox, which sets `TMPDIR`
+/// itself, re-checks the raw command.
 fn private_temp_word(chars: &[char], token: &ShellToken) -> bool {
     let word: String = chars[token.start..token.end].iter().collect();
     let command: String = chars.iter().collect();
@@ -342,7 +343,12 @@ fn private_temp_word(chars: &[char], token: &ShellToken) -> bool {
     {
         return false;
     }
+    let fallback = format!(
+        "${}",
+        crate::pretool::workspace_contained::PRIVATE_TEMP_WITH_FALLBACK
+    );
     let rest: Vec<char> = word
+        .replace(&fallback, "")
         .replace("${TMPDIR}", "")
         .replace("$TMPDIR", "")
         .chars()
