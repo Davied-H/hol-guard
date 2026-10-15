@@ -37,7 +37,6 @@ jobs:
           path: .
           run-id: 38812881347
           github-token: ${{ github.token }}
-      - uses: ./.github/actions/setup-bubblewrap
       - name: Reproduce approval reuse with full failure context
         env:
           HOL_GUARD_NATIVE_BINARY: ${{ github.workspace }}/rust/target/release/hol-guard-runtime
