@@ -91,6 +91,8 @@ class GateCase:
     expect: str
     event: str = "PreToolUse"
     tool_response: object = None
+    # Variables the agent shell inherits, such as a user's RIPGREP_CONFIG_PATH.
+    environment: tuple[tuple[str, str], ...] = ()
 
 
 def _expand() -> list[GateCase]:
@@ -109,6 +111,7 @@ def _expand() -> list[GateCase]:
                     expect=entry["expect"],
                     event=entry.get("event", "PreToolUse"),
                     tool_response=entry.get("tool_response"),
+                    environment=tuple(sorted(entry.get("environment", {}).items())),
                 )
             )
     return expanded
@@ -164,8 +167,10 @@ def gate_environment(tmp_path_factory: pytest.TempPathFactory) -> Iterator[tuple
     # the agent environment. A test-only GIT_CONFIG_GLOBAL, and later the
     # LD_LIBRARY_PATH that setup-python exports on CI runners, each hid every
     # Git read case behind a review that real agents never see.
+    # A developer's RIPGREP_CONFIG_PATH likewise keeps every rg case on
+    # review; a case that models one sets it through its environment.
     for name in list(os.environ):
-        if name.upper().startswith(("GIT_", "LD_", "DYLD_")):
+        if name.upper().startswith(("GIT_", "LD_", "DYLD_")) or name.upper() == "RIPGREP_CONFIG_PATH":
             patch.delenv(name)
     patch.setenv("XDG_CONFIG_HOME", str(fixture.home / ".config"))
     patch.setenv("HOL_GUARD_NATIVE", "force")
@@ -344,7 +349,10 @@ def test_benign_agent_work_is_allowed_and_negative_controls_are_not(
     case: GateCase, gate_environment: tuple[BenignFixture, HookWorker]
 ) -> None:
     fixture, worker = gate_environment
-    result, approvals = _review(case, fixture, worker)
+    with pytest.MonkeyPatch.context() as patch:
+        for name, value in case.environment:
+            patch.setenv(name, value)
+        result, approvals = _review(case, fixture, worker)
     description = _describe(case, result, approvals)
     if case.expect == "not_allow":
         assert case.case_id not in _PENDING_FIX, "negative controls cannot be pending_fix"
