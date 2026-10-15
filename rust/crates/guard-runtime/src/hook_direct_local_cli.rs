@@ -62,8 +62,13 @@ pub(super) fn custom_rule_response(
     };
     match grant(&launch, check.guard_home)? {
         Verdict::Unchanged => Ok(None),
-        Verdict::Unverified => Err(()),
-        Verdict::Blocked(_) if check.own_shape => Err(()),
+        Verdict::Unverified | Verdict::Blocked(_) if check.own_shape => Err(()),
+        Verdict::Unverified => {
+            let result = result.as_object().ok_or(())?;
+            block::unverified_response(check.harness, result, check.recording_only)
+                .map(Some)
+                .ok_or(())
+        }
         Verdict::Blocked(name) => {
             let result = result.as_object().ok_or(())?;
             block::block_response(check.harness, result, &name, check.recording_only)
