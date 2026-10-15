@@ -19,6 +19,24 @@ pub fn evaluate_pre_tool_envelope_with_context(
     home: Option<&str>,
     cwd: Option<&str>,
 ) -> guard_contracts::PreToolResultV1 {
+    evaluate_with_shell_home(
+        harness, event, payload, controls, deadline, home, cwd, false,
+    )
+}
+
+/// As [`evaluate_pre_tool_envelope_with_context`], stating whether the
+/// shell's HOME is the `home` checked.
+#[allow(clippy::too_many_arguments)]
+pub fn evaluate_with_shell_home(
+    harness: &str,
+    event: &str,
+    payload: &serde_json::Value,
+    controls: Option<&guard_command::native_command_controls::CompiledNativeCommandControls>,
+    deadline: Option<std::time::Instant>,
+    home: Option<&str>,
+    cwd: Option<&str>,
+    shell_home_matches: bool,
+) -> guard_contracts::PreToolResultV1 {
     use sha2::{Digest, Sha256};
     let path = std::env::var("PATH").unwrap();
     let mut environment = std::collections::BTreeMap::from([
@@ -51,7 +69,7 @@ pub fn evaluate_pre_tool_envelope_with_context(
             cdpath_unset: false,
             rustup_override_absent: false,
             npm_config_inert: false,
-            shell_home_matches: false,
+            shell_home_matches,
             ripgrep_config_absent: false,
             psqlrc_absent: false,
         },

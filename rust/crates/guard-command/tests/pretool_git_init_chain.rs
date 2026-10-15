@@ -42,6 +42,24 @@ fn allowed(session: &Session, command: &str, cwd: &Path) -> Result<(), String> {
         .ok_or(format!("{command}: {}", result.reason_code))
 }
 
+/// As [`allowed`], with the shell's HOME known to be (or not be) the session
+/// home Git expands `~/` from.
+fn allowed_home(session: &Session, command: &str, shell_home_matches: bool) -> Result<(), String> {
+    let result = crate::git_helper_fixture::evaluate_with_shell_home(
+        "codex",
+        "PreToolUse",
+        &serde_json::json!({"tool_name":"bash", "tool_input":{"command":command}}),
+        Some(&crate::pretool_git_session_ops::default_controls()),
+        None,
+        session.home.to_str(),
+        session.org.to_str(),
+        shell_home_matches,
+    );
+    (result.minimum_action == "allow" && result.reason_code == CHAIN)
+        .then_some(())
+        .ok_or(format!("{command}: {}", result.reason_code))
+}
+
 #[test]
 fn a_scratch_repository_made_and_committed_in_one_chain_is_quiet() {
     let session = session("init-chain");
@@ -140,7 +158,9 @@ fn a_scratch_repository_made_and_committed_in_one_chain_is_quiet() {
             std::fs::write(hooks.join("pre-commit.sample"), "#!/bin/sh\n").unwrap();
         }
         global(&["core.hooksPath", value]);
-        allowed(&session, &commit, &session.org).unwrap();
+        allowed_home(&session, &commit, true).unwrap();
+        // Git expands `~/` from the shell's HOME, which must be the home checked.
+        assert!(allowed_home(&session, &commit, false).is_err());
     }
     std::fs::write(hooks.join("pre-commit"), "#!/bin/sh\nid\n").unwrap();
     std::fs::set_permissions(

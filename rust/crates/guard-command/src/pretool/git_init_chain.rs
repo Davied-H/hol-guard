@@ -145,7 +145,13 @@ fn proven(
     let hooks_inert = effective
         .iter()
         .filter(|(key, _)| key.eq_ignore_ascii_case("core.hookspath"))
-        .all(|(_, values)| hooks_path_inert(values, context.home_dir));
+        // Git expands `~/` from the shell's HOME, so it must be the home checked.
+        .all(|(_, values)| {
+            hooks_path_inert(
+                values,
+                context.home_dir.filter(|_| context.shell_home_matches),
+            )
+        });
     (hooks_inert && super::git_local_writes::inert(&effective, &repository)).then_some(git)
 }
 
