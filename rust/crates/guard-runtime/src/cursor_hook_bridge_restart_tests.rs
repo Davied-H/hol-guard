@@ -15,7 +15,7 @@ use serde_json::json;
 use super::daemon::recovery_argv;
 use super::*;
 use crate::claude_hook_bridge_fixture::{read_request, write_private, write_response, GuardHome};
-use crate::cursor_hook_bridge_response::ALLOW_STDOUT;
+use crate::cursor_hook_bridge_response::{ALLOW_STDOUT, UNAVAILABLE_STDOUT};
 
 const TOKEN: &str = "cursor-restart-token-fixture";
 const SHELL: &[u8] =
@@ -103,6 +103,7 @@ fn client_for(home: &GuardHome, command: Vec<String>, budget: Duration) -> Clien
         guard_home: home.home_text().to_owned(),
         home: Some("/h".to_owned()),
         recovery_command: command,
+        event: "beforeShellExecution".to_owned(),
         deadline: Instant::now() + budget,
     }
 }

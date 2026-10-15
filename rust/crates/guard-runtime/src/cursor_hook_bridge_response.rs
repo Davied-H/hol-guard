@@ -11,10 +11,15 @@
 //! A lone surrogate escape CPython's `json.loads` keeps is read as the
 //! character [`pyjson::parse_mapping_lone_surrogates`] maps it onto and
 //! written back as the `\udXXX` escape `json.dumps` writes.
+//!
+//! It also holds the client's fixed answers for a hook it cannot read or
+//! review: `_cursor_unavailable_response` and
+//! `_exit_unparseable_cursor_input`.
 
 use std::path::Path;
+use std::time::Instant;
 
-use guard_command::hook_adapter_value::{parse_python_json, OMap, OValue};
+use guard_command::hook_adapter_value::{parse_python_json, OMap, OValue, PyJsonError};
 use guard_contracts::write_json_string;
 
 use crate::claude_hook_bridge_render::py_strip;
@@ -24,6 +29,15 @@ use crate::pyjson::{self, in_surrogate_plane};
 
 /// `print(json.dumps({"permission": "allow"}))`.
 pub(crate) const ALLOW_STDOUT: &str = "{\"permission\": \"allow\"}\n";
+/// The client's `after*` observers, stripped and lowercased.
+pub(crate) const AFTER_EVENTS: [&str; 2] = ["aftershellexecution", "aftermcpexecution"];
+/// The client's answer to an `after*` observer: `print("{}")`.
+pub(crate) const AFTER_STDOUT: &str = "{}\n";
+/// `_cursor_unavailable_response`'s denial.
+pub(crate) const UNAVAILABLE_STDOUT: &str = "{\"permission\": \"deny\", \"user_message\": \"HOL Guard could not complete the native hook decision safely.\"}\n";
+/// `cursor_unparseable_input_permission`'s denial, which the client also
+/// prints itself when it cannot import Guard.
+pub(crate) const UNPARSEABLE_STDOUT: &str = "{\"permission\": \"deny\", \"user_message\": \"Guard could not process this hook request safely. Retry or repair Guard from a terminal.\"}\n";
 /// `_cursor_reason` when the response names no reason and no review link.
 const DEFAULT_BLOCK_REASON: &str = "HOL Guard blocked this Cursor action.";
 /// `_cursor_reason`'s lead when the response names a link but no reason.
@@ -51,16 +65,28 @@ const DECISION_REASON_KEYS: [&str; 4] = [
 /// surrogate sits beside a genuine character of the mapped range and the
 /// two could no longer be told apart.
 pub(crate) fn python_document(text: &str) -> Option<(OValue, bool)> {
-    if let Ok(value) = parse_python_json(text) {
-        return Some((value, false));
+    read_python_document(text).ok()
+}
+
+/// [`python_document`], telling text CPython refuses
+/// ([`PyJsonError::Decode`]) from text it reads that the port cannot
+/// ([`PyJsonError::Unsupported`]).
+pub(crate) fn read_python_document(text: &str) -> Result<(OValue, bool), PyJsonError> {
+    match parse_python_json(text) {
+        Ok(value) => return Ok((value, false)),
+        Err(PyJsonError::Decode) => return Err(PyJsonError::Decode),
+        Err(PyJsonError::Unsupported) => {}
     }
-    let parsed = pyjson::parse_mapping_lone_surrogates(text).ok()?;
+    let unsupported = PyJsonError::Unsupported;
+    let parsed = pyjson::parse_mapping_lone_surrogates(text).map_err(|_| unsupported)?;
     if !parsed.mapped || parsed.collision {
-        return None;
+        return Err(PyJsonError::Unsupported);
     }
     let mut literal = String::new();
     dumps(&parsed.value, false, false, &mut literal);
-    parse_python_json(&literal).ok().map(|value| (value, true))
+    parse_python_json(&literal)
+        .map(|value| (value, true))
+        .map_err(|_| PyJsonError::Unsupported)
 }
 
 /// `text`, compact `ensure_ascii` JSON of a value read by
@@ -186,4 +212,37 @@ pub(crate) fn rendered(
         printed(&fields, unmap),
         if permission == "deny" { 2 } else { 0 },
     ))
+}
+
+/// The client's `strip().lower().replace("_", "").replace("-", "")` check
+/// for an `after*` observer.
+fn compact_after_event(event: &str) -> bool {
+    let compact: String = py_strip(event)
+        .to_lowercase()
+        .chars()
+        .filter(|character| !matches!(character, '_' | '-'))
+        .collect();
+    AFTER_EVENTS.contains(&compact.as_str())
+}
+
+/// `_cursor_unavailable_response` for a hook the client names `event`: its
+/// stdout and exit code.
+pub(crate) fn unavailable_output(event: &str) -> (&'static str, i32) {
+    if compact_after_event(event) {
+        return (AFTER_STDOUT, 0);
+    }
+    (UNAVAILABLE_STDOUT, 2)
+}
+
+/// `_exit_unparseable_cursor_input` for a hook the client names `event`
+/// from its argv and reads by `deadline`: its stdout and exit code. The
+/// client prints the same answer whether or not it can import Guard.
+pub(crate) fn unparseable_output(event: &str, deadline: Instant) -> (&'static str, i32) {
+    if Instant::now() >= deadline {
+        return unavailable_output(event);
+    }
+    if compact_after_event(event) {
+        return (AFTER_STDOUT, 0);
+    }
+    (UNPARSEABLE_STDOUT, 2)
 }

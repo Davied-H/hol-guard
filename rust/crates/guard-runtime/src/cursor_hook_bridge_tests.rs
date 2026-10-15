@@ -7,6 +7,7 @@ use guard_command::hook_adapter_value::parse_python_json;
 use serde_json::{json, Value};
 
 use super::*;
+use crate::cursor_hook_bridge_response::UNAVAILABLE_STDOUT;
 use crate::cursor_hook_bridge_script::{normalize, ported_constants, ScriptConstants};
 
 fn client_text(guard_home: &str, hook_argv: &str, timeout: &str) -> String {
@@ -162,6 +163,7 @@ fn test_client() -> Client {
         guard_home: "/g".to_owned(),
         home: Some("/h".to_owned()),
         recovery_command: Vec::new(),
+        event: "preToolUse".to_owned(),
         deadline: Instant::now() + Duration::from_secs(5),
     }
 }

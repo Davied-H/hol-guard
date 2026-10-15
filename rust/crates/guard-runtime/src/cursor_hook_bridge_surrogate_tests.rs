@@ -27,6 +27,7 @@ fn surrogate_client() -> Client {
         guard_home: "/g".to_owned(),
         home: Some("/h".to_owned()),
         recovery_command: Vec::new(),
+        event: "preToolUse".to_owned(),
         deadline: Instant::now() + Duration::from_secs(5),
     }
 }
