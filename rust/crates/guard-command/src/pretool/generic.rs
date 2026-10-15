@@ -330,14 +330,23 @@ fn evaluate_envelope(
         });
     // Oh My Pi sends an edit as `edit` with a hashline patch in `input`. Its
     // `+` rows are file content, so the patch has its own proof too.
+    // Oh My Pi 18.8 copies the headers into `path`/`paths`; the proof reads
+    // the edit without those copies once they are shown to match.
+    let edit_payload = (event == "PreToolUse" && harness == "omp")
+        .then(|| omp::edit_signal_payload(payload))
+        .flatten();
+    let edit_signals = edit_payload
+        .as_ref()
+        .and_then(|projected| extract_generic_signals(projected).ok());
+    let edit_signals = edit_signals.as_ref().unwrap_or(&signals);
     let omp_hashline_edit = (event == "PreToolUse"
         && harness == "omp"
-        && signals.tool_name.as_deref() == Some("edit")
-        && signals.url_values.is_empty()
-        && signals.path_values.is_empty()
-        && signals.command.is_none()
-        && !signals.independent_sensitive_target)
-        .then(|| omp::strict_tool_input(payload))
+        && edit_signals.tool_name.as_deref() == Some("edit")
+        && edit_signals.url_values.is_empty()
+        && edit_signals.path_values.is_empty()
+        && edit_signals.command.is_none()
+        && !edit_signals.independent_sensitive_target)
+        .then(|| omp::strict_tool_input(edit_payload.as_ref().unwrap_or(payload)))
         .flatten()
         .filter(|input| input.len() == 1)
         .and_then(|input| input.get("input")?.as_str())
@@ -575,6 +584,7 @@ fn evaluate_envelope(
     // A link to a secret file is that secret under another name.
     signals.sensitive_target |=
         super::secret_aliases::decision_names_secret_alias(command_decision.as_ref(), context);
+    let hashline_edit_proven = omp_hashline_edit.is_some();
     let mut result = if search_scope_proven {
         generic_result(
             generic_action(
@@ -648,6 +658,18 @@ fn evaluate_envelope(
             cwd,
         )
     };
+    // An Oh My Pi hashline edit writes the files its headers name, whatever
+    // its `path` field says, so only the hashline proof may allow it.
+    if harness == "omp"
+        && !hashline_edit_proven
+        && result.reason_code == "native_exact_safe_file_write"
+        && signals.tool_name.as_deref() == Some("edit")
+        && omp::strict_tool_input(payload)
+            .is_none_or(|input| input.contains_key("input") || input.contains_key("_input"))
+    {
+        let (reason_code, reason) = result::review_reason(PreToolActionTypeV1::FileWrite);
+        result = generic_result(result.action.clone(), "review", reason_code, reason);
+    }
     if result.reason_code == "native_file_read_review" {
         if let Some(note) = omp::grep_review_note(payload, &signals, &omp_context) {
             result.reason = format!("{} {note}", result.reason);
