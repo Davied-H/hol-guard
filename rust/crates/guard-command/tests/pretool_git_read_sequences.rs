@@ -263,3 +263,47 @@ fn an_unproven_step_before_a_proven_git_read_is_named() {
         helper.reason
     );
 }
+
+// Agents name commits with Git's brace suffixes, as in
+// `git rev-parse <sha>^{commit}`. A brace with no comma is literal text to the
+// shell, so the read keeps its proof. A brace that spells a sensitive name
+// still does not.
+#[test]
+fn git_brace_revision_suffixes_are_not_globs() {
+    let root = std::env::temp_dir().join(format!("guard brace revision {}", std::process::id()));
+    let _cleanup = FixtureCleanup(root.clone());
+    let home = root.join("home");
+    let repository = root.join("repository");
+    for directory in [&home, &repository] {
+        std::fs::create_dir_all(directory).unwrap();
+    }
+    let home = home.canonicalize().unwrap();
+    let repository = repository.canonicalize().unwrap();
+    git(&repository, &home, &["init", "--quiet"]);
+    git(
+        &repository,
+        &home,
+        &["config", "user.email", "fixture@example.test"],
+    );
+    git(&repository, &home, &["config", "user.name", "fixture"]);
+    std::fs::write(repository.join("package.json"), "{}\n").unwrap();
+    git(&repository, &home, &["add", "-A"]);
+    git(&repository, &home, &["commit", "--quiet", "-m", "fixture"]);
+
+    for command in [
+        "git rev-parse HEAD^{commit}",
+        "git rev-parse --verify 'HEAD^{tree}'",
+        "git rev-parse HEAD@{0}",
+        "git log -1 HEAD^{commit}",
+        "git status --short && git rev-parse HEAD^{commit} && git show -s --format='%H %s' HEAD && git worktree list",
+    ] {
+        assert_eq!(action(&home, &repository, command), "allow", "{command}");
+    }
+    for command in [
+        "git log -1 -- '{.env}'",
+        "git log -1 -- 'config/{.env,x}'",
+        "git diff HEAD -- '{.env,README.md}'",
+    ] {
+        assert_ne!(action(&home, &repository, command), "allow", "{command}");
+    }
+}

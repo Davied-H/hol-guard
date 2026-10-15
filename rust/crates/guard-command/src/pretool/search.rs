@@ -190,6 +190,18 @@ fn expand_brace_globs(pattern: &str) -> Option<Vec<String>> {
         let open = candidate.find('{')?;
         let close = candidate[open + 1..].find('}')? + open + 1;
         let choices: Vec<&str> = candidate[open + 1..close].split(',').collect();
+        // A brace with no comma, such as Git's `HEAD^{commit}` or `@{u}`, is
+        // literal text to the shell and a single alternative to a glob, so it
+        // is checked as its inner text: `{.env}` still names `.env`.
+        if choices.len() == 1 && !choices[0].contains('{') {
+            expanded.push(format!(
+                "{}{}{}",
+                &candidate[..open],
+                choices[0],
+                &candidate[close + 1..]
+            ));
+            continue;
+        }
         if choices.len() < 2 || expanded.len() + choices.len() > 16 {
             return None;
         }
