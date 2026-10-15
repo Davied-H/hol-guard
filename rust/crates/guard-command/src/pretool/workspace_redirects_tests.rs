@@ -160,6 +160,8 @@ fn the_sink_plans_package_directory_calls_whole_from_the_root() {
         "yarn --cwd web test",
         "npm --prefix web run lint",
         "pnpm --dir=web run build 2>&1 | tail -20",
+        "pnpm -C web run build",
+        "npm -C web test",
     ] {
         // Planned whatever the host's containment, so the check never
         // depends on the edge classifying the call as contained first.

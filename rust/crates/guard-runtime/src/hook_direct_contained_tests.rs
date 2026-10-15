@@ -286,6 +286,8 @@ fn only_plain_workspace_runs_take_the_native_sink() {
     assert!(shape("npm --prefix sub test"));
     assert!(shape("bun --cwd sub run build 2>&1 | tail -5"));
     assert!(shape("pnpm --dir=sub/. run lint"));
+    assert!(shape("pnpm -C sub run build"));
+    assert!(shape("npm -C sub test 2>&1 | tail -20"));
     let inner = format!(
         "cd {}/sub && pytest",
         root.join("tmp/../work space").display()
@@ -310,6 +312,13 @@ fn only_plain_workspace_runs_take_the_native_sink() {
         "pnpm --directory sub run lint",
         "npm --prefix 'sub' test",
         "git -C sub status",
+        // Only npm and pnpm take the short flag natively, and only as its
+        // own word.
+        "make -C sub test",
+        "pnpm -Csub run build",
+        "pnpm -C . run build",
+        "pnpm -C sub run build && git -C sub status",
+        "pytest -C sub",
         // The daemon plans a `cd` to the root, or out of it, again there.
         "cd . && pytest",
         "cd sub/.. && pytest",
