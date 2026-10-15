@@ -112,11 +112,15 @@ def _build_guard_product_payload(
     runtime_state = store.get_runtime_state()
     approval_center_url = load_guard_daemon_endpoint_url(context.guard_home)
     from ..harness_posture import harness_posture_summary
+    from ..protection_coverage import protection_is_in_effect
     from ..protection_posture import protection_status_fields
 
     payload: dict[str, object] = {
         "generated_at": _now(),
         **protection_status_fields(posture=config.protection_posture, mode=config.mode),
+        # The posture alone cannot tell a reader whether anything is registered
+        # to apply it, so state that separately rather than leaving it implied.
+        "protection_in_effect": protection_is_in_effect(harnesses),
         **harness_posture_summary(config),
         "guard_home": _redacted_path(context.guard_home, context.home_dir),
         "workspace": _redacted_path(context.workspace_dir, context.home_dir),
