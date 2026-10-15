@@ -441,8 +441,8 @@ def review_native_artifact_hook(
                             "updated_at": _now(),
                         },
                     )
-                except RuntimeError:
-                    # A local queue past its native deadline keeps the native deny.
+                except (RuntimeError, OSError):
+                    # A local queue past a native or store deadline (TimeoutError) keeps the native deny.
                     queued = []
                 _bind_hook_blocked_operation_queue(
                     harness=args.harness,
