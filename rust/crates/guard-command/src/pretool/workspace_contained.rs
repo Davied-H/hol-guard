@@ -412,6 +412,9 @@ pub(super) fn convert(
     let (Some(model), Some(controls), Some(cwd)) = (model, controls, context.cwd) else {
         return;
     };
+    if super::script_content::keeps_network_review(result, model, context) {
+        return;
+    }
     let projected = super::contained_wrapper::package_dir::as_cd_list(model, context);
     let (issued, model) = (model, projected.as_ref().map_or(model, |list| &list.model));
     let command_text = projected
