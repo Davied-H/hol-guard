@@ -600,13 +600,15 @@ jobs:
           partition: ${{ matrix.partition }}
 
   sonar:
-    needs: [sonar-context, sonar-rust-coverage]
+    needs: [sonar-context, sonar-rust-coverage, native-workspace, coverage]
     if: >-
       !cancelled() &&
       needs.sonar-context.outputs.has-token == 'true' &&
-      needs.sonar-rust-coverage.result == 'success'
+      needs.sonar-rust-coverage.result == 'success' &&
+      needs.native-workspace.result == 'success' &&
+      needs.coverage.result == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 15
     permissions:
       contents: read
       actions: read
