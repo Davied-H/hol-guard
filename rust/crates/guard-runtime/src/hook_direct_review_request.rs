@@ -139,7 +139,7 @@ pub(super) fn build(
 pub(super) fn envelope_query<'a>(input: &RequestInput<'a>) -> Option<EnvelopeQuery<'a>> {
     // An empty workspace scopes the request to the harness and Guard home,
     // which the daemon fills in.
-    if !cfg!(unix) || input.workspace.is_empty() {
+    if input.workspace.is_empty() {
         return None;
     }
     let text = |name: &str| {
@@ -149,12 +149,8 @@ pub(super) fn envelope_query<'a>(input: &RequestInput<'a>) -> Option<EnvelopeQue
             .map(String::as_str)
             .filter(|value| !value.is_empty())
     };
-    // `os.path.expanduser("~")`; without `HOME` it reads the password
-    // database, which the published environment cannot answer.
-    let home = input.environment.get("HOME")?;
-    let trimmed = home.trim_end_matches('/');
-    let tilde_home = if trimmed.is_empty() { "/" } else { trimmed };
-    let resolved = (!tilde_home.starts_with('~')).then(|| tilde_home.to_owned());
+    let tilde_home = expanded_home(input.environment)?;
+    let resolved = (!tilde_home.starts_with('~')).then_some(tilde_home);
     Some(EnvelopeQuery {
         workspace: input.workspace,
         home_dir: input.home_dir,
@@ -166,6 +162,28 @@ pub(super) fn envelope_query<'a>(input: &RequestInput<'a>) -> Option<EnvelopeQue
             cwd: input.host_cwd.map(str::to_owned),
         },
     })
+}
+
+/// `os.path.expanduser("~")` in the daemon's published environment. Without
+/// `HOME` it reads the password database, which that environment cannot
+/// answer.
+#[cfg(unix)]
+fn expanded_home(environment: &BTreeMap<String, String>) -> Option<String> {
+    let trimmed = environment.get("HOME")?.trim_end_matches('/');
+    Some(if trimmed.is_empty() { "/" } else { trimmed }.to_owned())
+}
+
+/// `ntpath.expanduser("~")`: `USERPROFILE` as it stands. Without it the
+/// daemon joins `HOMEDRIVE` and `HOMEPATH`, which is left to the daemon.
+/// `os.environ` spells Windows names in upper case, as published.
+#[cfg(windows)]
+fn expanded_home(environment: &BTreeMap<String, String>) -> Option<String> {
+    environment.get("USERPROFILE").cloned()
+}
+
+#[cfg(not(any(unix, windows)))]
+fn expanded_home(_environment: &BTreeMap<String, String>) -> Option<String> {
+    None
 }
 
 /// `native_action_envelope`, run in process.

@@ -241,3 +241,27 @@ fn false_and_float_zero_uncertainty_are_hint_candidates() {
         assert_eq!(allow_hint_candidate(payload, result), Some(true));
     }
 }
+
+#[cfg(windows)]
+#[test]
+fn windows_expanded_home_matches_cpython() {
+    for profile in [
+        r"C:\Users\Guard Tester",
+        r"C:\Users\Guard Tester\",
+        "~guard",
+    ] {
+        let output = std::process::Command::new("python")
+            .args(["-c", "import os; print(os.path.expanduser('~'), end='')"])
+            .env("USERPROFILE", profile)
+            .output()
+            .expect("python runs");
+        assert!(output.status.success(), "{profile:?}");
+        let cpython = String::from_utf8(output.stdout).expect("utf-8");
+        let environment = BTreeMap::from([("USERPROFILE".to_owned(), profile.to_owned())]);
+        assert_eq!(expanded_home(&environment), Some(cpython), "{profile:?}");
+    }
+    // Without `USERPROFILE` ntpath joins `HOMEDRIVE` and `HOMEPATH`; the
+    // review is left to the daemon.
+    let environment = BTreeMap::from([("HOMEPATH".to_owned(), r"\Users\guard".to_owned())]);
+    assert_eq!(expanded_home(&environment), None);
+}
