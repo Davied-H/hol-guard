@@ -52,5 +52,5 @@ def test_only_trusted_main_pushes_write_windows_compiler_cache() -> None:
     assert "hashFiles('rust/**', 'contributions/**', 'contracts/**', 'spec/**'" in restore["with"]["key"]
     assert "env.CARGO_PROFILE_RELEASE_LTO" in restore["with"]["key"]
     assert "env.CARGO_PROFILE_RELEASE_CODEGEN_UNITS" in restore["with"]["key"]
-    assert "functional-profile-v2" in restore["with"]["key"]
+    assert "env.CARGO_PROFILE_RELEASE_OPT_LEVEL" in restore["with"]["key"]
     assert "'.github/actions/ci-job-windows-native-runtime/action.yml'" in restore["with"]["key"]
