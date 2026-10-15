@@ -168,7 +168,7 @@ fn family_key_value(family_key: &str) -> &str {
 
 /// `_runtime_scoped_exact_match_key` — `runtime-exact:<digest>`; `None` unless
 /// the artifact is a scoped family member.
-fn runtime_scoped_exact_match_key(
+pub(crate) fn runtime_scoped_exact_match_key(
     artifact_id: Option<&str>,
     runtime_exact_match_context: Option<&str>,
 ) -> Option<String> {
@@ -200,7 +200,7 @@ fn runtime_scoped_exact_match_key(
 /// broad rule matches the identical executable action across workspaces. Parses
 /// the runtime exact-match context JSON, requires `raw_command_text`, and rebuilds
 /// the canonical context payload with the location fields nulled.
-fn runtime_tool_action_portable_match_context(ctx: Option<&str>) -> Option<String> {
+pub(crate) fn runtime_tool_action_portable_match_context(ctx: Option<&str>) -> Option<String> {
     let ctx = ctx?;
     let payload: Value = serde_json::from_str(ctx).ok()?;
     let payload = payload.as_object()?;
