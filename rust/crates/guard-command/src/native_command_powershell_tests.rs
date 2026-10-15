@@ -97,13 +97,19 @@ fn mapped_effects_match_posix_decisions() {
         ),
         (
             "Get-Content package.json | ConvertFrom-Json",
-            "cat package.json | cat",
+            "cat package.json | head",
         ),
         ("New-Item -ItemType Directory build", "mkdir -p build"),
+        ("Get-ChildItem src | Select-Object Name", "ls src | head"),
     ] {
         assert_eq!(action(powershell), action(posix), "{powershell}");
     }
     assert_ne!(action("[IO.File]::ReadAllText('.env')").0, "allow");
+    // A formatting cmdlet opens no file, so the pipeline adds no read floor.
+    assert_eq!(
+        action("Get-ChildItem src | Select-Object Name").0,
+        action("Get-ChildItem src").0
+    );
     for command in [
         "Get-Content 'Env:GITHUB_TOKEN'",
         "Get-ChildItem 'Env:'",

@@ -74,7 +74,7 @@ fn statements_and_pipelines_map_to_groups() {
     let model = windows("Get-ChildItem src | Select-Object Name");
     assert_eq!(model.confidence, "exact");
     assert_eq!(model.segments[1].pipeline_index, 1);
-    assert_eq!(canonical(&model), [words(&["ls", "src"]), words(&["cat"])]);
+    assert_eq!(canonical(&model), [words(&["ls", "src"]), words(&["head"])]);
     // POSIX only sees an unknown word, so the PowerShell model is used.
     assert_eq!(canonical(&windows("dir")), [words(&["ls"])]);
     // A form outside the subset keeps the POSIX model.
@@ -115,13 +115,18 @@ fn read_only_cmdlets_map_to_posix_reads() {
             "New-Item -ItemType Directory -Force build",
             &["mkdir", "-p", "build"],
         ),
-        ("Select-Object -First 5", &["cat"]),
+        ("Select-Object -First 5", &["head"]),
         // Unbound forms keep the cmdlet name and are reviewed as before.
         (
             "Get-ChildItem -FollowSymlink src",
             &["Get-ChildItem", "-FollowSymlink", "src"],
         ),
         ("Get-Location -Stack", &["Get-Location", "-Stack"]),
+        // `-IsValid` checks path syntax, not whether the file exists.
+        (
+            "Test-Path -IsValid .env",
+            &["Test-Path", "-IsValid", ".env"],
+        ),
         (
             "New-Item -ItemType File a.txt",
             &["New-Item", "-ItemType", "File", "a.txt"],
