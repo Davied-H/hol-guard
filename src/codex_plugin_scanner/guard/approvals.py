@@ -310,7 +310,7 @@ def queue_blocked_approvals(
     }
     payloads: list[dict[str, object]] = []
     # One store write per item keeps the former order: each request is
-    # written, announced and read back before the next one is written.
+    # written, read back and announced before the next one is written.
     # The resident derives the request's surfaces, incident copy and
     # continuation snapshot; Python keeps the notices.
     try:
@@ -332,13 +332,15 @@ def queue_blocked_approvals(
             )
             for entry in queued:
                 request_id = str(entry["request_id"])
-                if notify:
-                    notice = cast(dict[str, str], entry["notice"])
-                    _notify_pending_approval(store=store, request=_QueuedNotice(**notice))
+                # Read back before announcing, so a failed notice still leaves
+                # the persisted request in the partial result.
                 request_payload = store.get_approval_request(request_id)
                 if request_payload is None:
                     raise RuntimeError(f"Persisted approval request not found: {request_id}")
                 payloads.append(request_payload)
+                if notify:
+                    notice = cast(dict[str, str], entry["notice"])
+                    _notify_pending_approval(store=store, request=_QueuedNotice(**notice))
             if error is not None:
                 raise error
     except Exception as failure:

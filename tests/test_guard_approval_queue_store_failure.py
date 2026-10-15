@@ -320,3 +320,45 @@ def test_store_failure_reply_keeps_requests_queued_before_it(tmp_path: Path, mon
 
     assert [request["request_id"] for request in result["approval_requests"]] == ["req-1"]
     assert result["approval_queue_unavailable"] == "OperationalError"
+
+
+def test_partial_queue_never_waits_to_resume_the_launch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    guard_home = tmp_path / "guard"
+    store = GuardStore(guard_home)
+    config = GuardConfig(guard_home=guard_home, workspace=None)
+    context = HarnessContext(home_dir=tmp_path / "home", workspace_dir=None, guard_home=guard_home)
+    args = argparse.Namespace(harness="claude-code", json=False)
+
+    def partly_failing_queue(**_kwargs):
+        error = sqlite3.OperationalError("database is locked")
+        error.queued_approvals = [{"request_id": "req-1"}]  # type: ignore[attr-defined]
+        raise error
+
+    def no_daemon(*_a, **_k):
+        raise RuntimeError("no daemon")
+
+    def must_not_wait(**_kwargs):
+        raise AssertionError("approving req-1 alone must not resume the launch")
+
+    monkeypatch.setattr(payload_module, "queue_blocked_approvals", partly_failing_queue)
+    monkeypatch.setattr(payload_module, "schedule_guard_daemon_ensure", lambda *_a, **_k: "http://127.0.0.1:4455")
+    monkeypatch.setattr(payload_module, "_managed_install_for", lambda *_a, **_k: None)
+    monkeypatch.setattr(payload_module, "approval_prompt_flow", lambda *_a, **_k: {"tier": "native-or-center"})
+    monkeypatch.setattr(payload_module, "load_guard_surface_daemon_client", no_daemon)
+    monkeypatch.setattr(payload_module, "wait_for_approval_requests", must_not_wait)
+
+    resolver = payload_module._headless_approval_resolver(args=args, context=context, store=store, config=config)
+    result = resolver(
+        _detection(),
+        {
+            "blocked": True,
+            "artifacts": [
+                {"artifact_id": "art-1", "policy_action": "require-reapproval"},
+                {"artifact_id": "art-2", "policy_action": "require-reapproval"},
+            ],
+        },
+    )
+
+    assert result["blocked"] is True
+    assert result["approval_wait"]["resolved"] is False
+    assert result["approval_wait"]["pending_request_ids"] == ["req-1"]

