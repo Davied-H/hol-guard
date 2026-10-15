@@ -245,7 +245,10 @@ fn launches_that_load_unbound_code_stay_once_only() {
         ),
         ("typeof-call-process", "typeof process[key](m, 'p.node');\n"),
         ("negated-process", "-process[key](m, 'p.node');\n"),
-        ("divided-process", "const n = 1 / process[key](m, 'p.node');\n"),
+        (
+            "divided-process",
+            "const n = 1 / process[key](m, 'p.node');\n",
+        ),
         ("labelled-process", "node:process[key](m, 'p.node');\n"),
         ("typeof-call-module", "typeof module[key]('./p.js');\n"),
         ("quoted-member", "const key = 'binding';\n"),
