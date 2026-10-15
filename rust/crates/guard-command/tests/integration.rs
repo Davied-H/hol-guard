@@ -134,6 +134,7 @@ pub mod pretool_scratch_checkout_copies;
 pub mod pretool_search_data;
 pub mod pretool_sibling_glob_reads;
 pub mod pretool_sibling_glob_search;
+pub mod pretool_sibling_ignore_negations;
 pub mod pretool_sibling_read_filters;
 pub mod pretool_sibling_sequence_reads;
 pub mod pretool_skill_listings;
