@@ -186,6 +186,19 @@ pub(crate) fn review_url_stays_unsigned(url: &str, guard_home: &std::path::Path)
     )
 }
 
+/// `live_approval_review_url(url, guard_home=...)` with `auth_token` what
+/// `load_guard_daemon_auth_token` read: a loopback link this module
+/// reproduces, signed; any other link, or a link without a token,
+/// unchanged.
+pub(crate) fn live_review_url(url: &str, auth_token: Option<&str>, now_micros: i64) -> String {
+    match (approval_link(url), auth_token) {
+        (Some(link), Some(token)) if link.loopback => {
+            browser_url(&link, token, now_micros).unwrap_or_else(|| url.to_owned())
+        }
+        _ => url.to_owned(),
+    }
+}
+
 /// `authenticated_approval_review_url(url, guard_home=...)` for a link this
 /// module reproduces: an external link unchanged, a loopback link signed
 /// with `auth_token`, and `None` when no safe link can be made (no token,

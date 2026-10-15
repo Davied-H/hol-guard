@@ -70,8 +70,6 @@ fn answers_with_lone_surrogates_print_as_the_client_prints_them() {
             expected,
             "{event} {response}"
         );
-        let restrictive = !response.contains("\"allow\"");
-        assert_eq!(handoff(Kind::PreToolUse, &response).is_some(), restrictive);
     }
 }
 

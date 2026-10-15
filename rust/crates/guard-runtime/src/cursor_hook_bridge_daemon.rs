@@ -17,7 +17,7 @@ use std::time::Instant;
 
 use guard_command::hook_adapter_value::OValue;
 
-use super::{answer, fail_closed, handoff, Client, Kind, Reply, Request, DAEMON_HARNESS};
+use super::{answer, fail_closed, Client, Kind, Reply, Request, DAEMON_HARNESS};
 use crate::bounded_hook_bridge::{
     daemon_target, post_hook_reply, transport_deadline, DaemonTarget, PostFailure, DAEMON_BUDGET,
     PROMPT_DAEMON_BUDGET,
@@ -63,8 +63,7 @@ fn accepted(kind: Kind, body: &str) -> bool {
 }
 
 /// The reply for a body the resident or the daemon answered: the client's
-/// own answer, a restrictive reply the client renders without posting the
-/// hook again, or the fail-closed answer when neither is possible.
+/// own answer, or the fail-closed answer when the bridge cannot render it.
 fn settle(client: &Client, request: &Request, body: &str) -> Settled {
     if !accepted(request.kind, body) {
         return Settled::Refused;
@@ -73,9 +72,7 @@ fn settle(client: &Client, request: &Request, body: &str) -> Settled {
     if let Some((stdout, code)) = answer(request.kind, &request.event, body, guard_home) {
         return Settled::Reply(Reply::Answered(stdout, code));
     }
-    Settled::Reply(
-        handoff(request.kind, body).map_or_else(|| fail_closed(&request.event), Reply::Handoff),
-    )
+    Settled::Reply(fail_closed(&request.event))
 }
 
 /// The deadline for one daemon request inside the bridge's share of the

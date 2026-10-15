@@ -7,7 +7,7 @@ use guard_command::hook_adapter_value::parse_python_json;
 use serde_json::{json, Value};
 
 use super::*;
-use crate::cursor_hook_bridge_response::UNAVAILABLE_STDOUT;
+use crate::cursor_hook_bridge_response::{FIXED_NOW, UNAVAILABLE_STDOUT};
 use crate::cursor_hook_bridge_script::{normalize, ported_constants, ScriptConstants};
 
 fn client_text(guard_home: &str, hook_argv: &str, timeout: &str) -> String {
@@ -258,10 +258,11 @@ fn answers_match_the_client_for_every_vector() {
     for vector in vectors {
         let event = vector["event"].as_str().unwrap();
         let response = vector["response"].as_str().unwrap();
-        let expected = vector["stdout"].as_str().map(|stdout| {
-            let code = vector["exit_code"].as_i64().unwrap();
-            (stdout.to_owned(), i32::try_from(code).unwrap())
-        });
+        let code = vector["exit_code"].as_i64().unwrap();
+        let expected = Some((
+            vector["stdout"].as_str().unwrap().to_owned(),
+            i32::try_from(code).unwrap(),
+        ));
         assert_eq!(
             answer(Kind::PreToolUse, event, response, &home),
             expected,
@@ -283,6 +284,17 @@ fn reviews_and_prompts_match_the_client_in_either_guard_home() {
     );
     let vectors = fixture["vectors"].as_array().unwrap();
     assert!(vectors.len() >= 200);
+    FIXED_NOW.with(|now| now.set(fixture["now_micros"].as_i64()));
+    let signed = vectors
+        .iter()
+        .filter(|vector| {
+            vector["stdout"]
+                .as_str()
+                .unwrap()
+                .contains("#guard-token=gld1.")
+        })
+        .count();
+    assert!(signed >= 30);
     let untokened = guard_home("review-untokened", false);
     let tokened = guard_home("review-tokened", true);
     for vector in vectors {
@@ -298,10 +310,11 @@ fn reviews_and_prompts_match_the_client_in_either_guard_home() {
         } else {
             Kind::PreToolUse
         };
-        let expected = vector["stdout"].as_str().map(|stdout| {
-            let code = vector["exit_code"].as_i64().unwrap();
-            (stdout.to_owned(), i32::try_from(code).unwrap())
-        });
+        let code = vector["exit_code"].as_i64().unwrap();
+        let expected = Some((
+            vector["stdout"].as_str().unwrap().to_owned(),
+            i32::try_from(code).unwrap(),
+        ));
         assert_eq!(
             answer(kind, event, response, home),
             expected,
@@ -310,13 +323,12 @@ fn reviews_and_prompts_match_the_client_in_either_guard_home() {
             vector["case"]
         );
     }
-    // A link shape the bridge does not reproduce is left to a client that
-    // holds a token.
+    // A link the client leaves unsigned is shown as it is.
     let odd = r#"{"policy_action":"review","reason":"r","approval_url":"https://guard.example/approvals/a?b=c"}"#;
-    assert_eq!(
-        answer(Kind::PreToolUse, "beforeShellExecution", odd, &tokened),
-        None
-    );
+    let (stdout, code) = answer(Kind::PreToolUse, "beforeShellExecution", odd, &tokened).unwrap();
+    assert_eq!(code, 0);
+    assert!(stdout.contains("a?b=c.") && !stdout.contains("guard-token"));
+    FIXED_NOW.with(|now| now.set(None));
     std::fs::remove_dir_all(untokened).unwrap();
     std::fs::remove_dir_all(tokened).unwrap();
 }

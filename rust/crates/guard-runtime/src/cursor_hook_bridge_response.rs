@@ -4,9 +4,8 @@
 //! allows, denials and reviews a resident answers, byte for byte as the
 //! client's `print(json.dumps(response))` writes them. `_cursor_reason`
 //! rewrites a review link through `live_approval_review_url`, which signs a
-//! loopback link with the daemon auth token only when the client's
-//! interpreter can import Guard; a response whose link the client may sign
-//! is left to the client.
+//! loopback link with the daemon auth token; the bridge signs it the same
+//! way.
 //!
 //! A lone surrogate escape CPython's `json.loads` keeps is read as the
 //! character [`pyjson::parse_mapping_lone_surrogates`] maps it onto and
@@ -17,15 +16,16 @@
 //! `_exit_unparseable_cursor_input`.
 
 use std::path::Path;
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use guard_command::hook_adapter_value::{parse_python_json, OMap, OValue, PyJsonError};
 use guard_contracts::write_json_string;
 
 use crate::claude_hook_bridge_render::py_strip;
+use crate::daemon_policy_authority::load_guard_daemon_auth_token;
 use crate::hook_env_stamp::{dumps, json_string};
-use crate::native_review_link::{review_url_stays_unsigned, OPEN_GUARD};
-use crate::pyjson::{self, in_surrogate_plane};
+use crate::native_review_link::{live_review_url, OPEN_GUARD};
+use crate::pyjson;
 
 /// `print(json.dumps({"permission": "allow"}))`.
 pub(crate) const ALLOW_STDOUT: &str = "{\"permission\": \"allow\"}\n";
@@ -120,10 +120,26 @@ fn review_url(response: &OMap) -> Option<&str> {
         .find_map(|item| stripped(item.as_map()?.get("approval_url")))
 }
 
-/// `_cursor_reason`, or `None` when the client would show a link it signs
-/// with Guard's Python only if its interpreter can import it, or when the
-/// link holds a lone surrogate (`unmap`) the bridge cannot sign alike.
-fn reason(response: &OMap, guard_home: &Path, unmap: bool) -> Option<String> {
+#[cfg(test)]
+thread_local! {
+    /// The session clock a test fixes, in place of the system clock.
+    pub(crate) static FIXED_NOW: std::cell::Cell<Option<i64>> = const { std::cell::Cell::new(None) };
+}
+
+/// The current UTC time in microseconds since the epoch.
+fn now_micros() -> Option<i64> {
+    #[cfg(test)]
+    if let Some(now) = FIXED_NOW.with(std::cell::Cell::get) {
+        return Some(now);
+    }
+    let since = SystemTime::now().duration_since(UNIX_EPOCH).ok()?;
+    i64::try_from(since.as_micros()).ok()
+}
+
+/// `_cursor_reason`, with a loopback review link signed as
+/// `live_approval_review_url` signs it from `guard_home`'s daemon auth
+/// token. A link this bridge does not reproduce is shown unsigned.
+fn reason(response: &OMap, guard_home: &Path) -> String {
     let hook_output = response.get("hookSpecificOutput").and_then(OValue::as_map);
     let decision = response.get("decision_v2_json").and_then(OValue::as_map);
     let reason = REASON_KEYS
@@ -137,20 +153,22 @@ fn reason(response: &OMap, guard_home: &Path, unmap: bool) -> Option<String> {
         )
         .find_map(stripped);
     let Some(review_url) = review_url(response) else {
-        return Some(reason.unwrap_or(DEFAULT_BLOCK_REASON).to_owned());
+        return reason.unwrap_or(DEFAULT_BLOCK_REASON).to_owned();
     };
-    // `live_approval_review_url` then hands the link back unchanged.
-    if (unmap && review_url.chars().any(in_surrogate_plane))
-        || !review_url_stays_unsigned(review_url, guard_home)
-    {
-        return None;
-    }
-    let suffix = format!("{OPEN_GUARD} {review_url}.");
-    Some(match reason {
+    let token = load_guard_daemon_auth_token(guard_home);
+    let live_url = now_micros().map_or_else(
+        || review_url.to_owned(),
+        |now| live_review_url(review_url, token.as_deref(), now),
+    );
+    let suffix = format!("{OPEN_GUARD} {live_url}.");
+    match reason {
         None => format!("{NEEDS_APPROVAL} {suffix}"),
-        Some(reason) if reason.contains(review_url) => reason.to_owned(),
+        Some(reason) if live_url != review_url && reason.contains(review_url) => {
+            reason.replacen(review_url, &live_url, 1)
+        }
+        Some(reason) if reason.contains(&live_url) => reason.to_owned(),
         Some(reason) => format!("{reason} {suffix}"),
-    })
+    }
 }
 
 /// `print(json.dumps(response))` for the client's string-valued answer,
@@ -192,7 +210,7 @@ pub(crate) fn rendered(
         "review" | "require-reapproval" => "ask",
         _ => return None,
     };
-    let reason = reason(response, guard_home, unmap)?;
+    let reason = reason(response, guard_home);
     let event = py_strip(event).to_lowercase();
     if event == "beforereadfile" {
         let fields = [("permission", "deny"), ("user_message", reason.as_str())];

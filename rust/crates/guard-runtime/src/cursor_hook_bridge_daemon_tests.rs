@@ -1,13 +1,16 @@
 //! The Cursor bridge's daemon lane: a hook no resident answered, posted to
 //! a scripted loopback daemon and answered as the client would answer the
-//! daemon's body, handed to the client, or failed closed.
+//! daemon's body, or failed closed.
 
 use std::io::BufReader;
 use std::net::TcpListener;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
+use base64ct::{Base64UrlUnpadded, Encoding};
+use hmac::{Hmac, Mac};
 use serde_json::{json, Value};
+use sha2::Sha256;
 
 use super::*;
 use crate::claude_hook_bridge_fixture::{
@@ -268,41 +271,62 @@ fn a_daemon_answer_the_bridge_cannot_reproduce_fails_closed() {
     assert_eq!(answered, Some(("{}\n".to_owned(), 0)));
 }
 
+/// Whether `token` is a dashboard session token signed with [`TOKEN`].
+fn signed_with_fixture_token(token: &str) -> bool {
+    let mut parts = token.split('.');
+    let (Some("gld1"), Some(payload), Some(signature), None) =
+        (parts.next(), parts.next(), parts.next(), parts.next())
+    else {
+        return false;
+    };
+    let mut mac = <Hmac<Sha256>>::new_from_slice(TOKEN.as_bytes()).unwrap();
+    mac.update(payload.as_bytes());
+    Base64UrlUnpadded::encode_string(&mac.finalize().into_bytes()) == signature
+}
+
 #[test]
-fn a_restrictive_daemon_answer_the_bridge_cannot_render_is_handed_to_the_client() {
-    // The client renders these from the bridge's copy instead of posting
-    // the hook again, so the daemon reviews it once.
-    let handed: [(&str, &str); 3] = [
+fn a_restrictive_daemon_answer_with_a_loopback_link_is_signed_natively() {
+    // The bridge signs the link as the client would and answers the hook
+    // itself, so the daemon reviews it once and no client runs.
+    let linked: [(&str, &str, &str, i32); 3] = [
         (
             "review-link",
             r#"{"policy_action":"review","approval_url":"http://127.0.0.1:4781/approvals/req-1"}"#,
+            "http://127.0.0.1:4781/approvals/req-1",
+            0,
         ),
         (
             "review-request-link",
             r#"{"policy_action":"review","approval_requests":[{"approval_url":"http://localhost:4781/approvals/req-2"}]}"#,
+            "http://localhost:4781/approvals/req-2",
+            0,
         ),
         (
             "block-link",
             r#"{"policy_action":"block","approval_url":"http://127.0.0.1:4781/approvals/req-3"}"#,
+            "http://127.0.0.1:4781/approvals/req-3",
+            2,
         ),
     ];
-    for (label, body) in handed {
-        assert_eq!(
-            ask_reply(label, SHELL, 200, body),
-            Reply::Handoff(body.to_owned()),
-            "{label}"
-        );
+    for (label, body, url, expected_code) in linked {
+        let Reply::Answered(stdout, code) = ask_reply(label, SHELL, 200, body) else {
+            panic!("{label}: the bridge did not answer");
+        };
+        assert_eq!(code, expected_code, "{label}");
+        let answer: Value = serde_json::from_str(&stdout).unwrap();
+        let message = answer["user_message"].as_str().unwrap();
+        let prefix = format!("{url}#guard-token=");
+        let token = message
+            .split_once(&prefix)
+            .and_then(|(_, rest)| rest.strip_suffix('.'))
+            .unwrap_or_else(|| panic!("{label}: {message}"));
+        assert!(signed_with_fixture_token(token), "{label}: {token}");
     }
-    let oversized = format!(
-        r#"{{"policy_action":"review","reason":"{}","approval_url":"http://127.0.0.1:4781/approvals/req-4"}}"#,
-        "r".repeat(MAX_HANDOFF_REPLY_BYTES)
-    );
     let (stdout, code) = closed();
-    let refused: [(&str, u16, &str); 4] = [
+    let refused: [(&str, u16, &str); 3] = [
         ("unknown-action", 200, r#"{"policy_action":"maybe"}"#),
         ("server-error", 500, r#"{"policy_action":"review"}"#),
         ("list", 200, "[]"),
-        ("oversized", 200, oversized.as_str()),
     ];
     for (label, status, body) in refused {
         assert_eq!(
@@ -311,8 +335,6 @@ fn a_restrictive_daemon_answer_the_bridge_cannot_render_is_handed_to_the_client(
             "{label}"
         );
     }
-    // An observer always renders, so it is never handed over.
-    assert_eq!(handoff(Kind::After, r#"{"policy_action":"block"}"#), None);
 }
 
 #[test]

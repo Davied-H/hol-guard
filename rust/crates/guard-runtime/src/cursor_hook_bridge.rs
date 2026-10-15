@@ -65,14 +65,6 @@ use crate::pyjson::in_surrogate_plane;
 pub(crate) const BRIDGE_COMMAND: &str = "cursor-hook-bridge";
 pub(crate) const BRIDGE_FEATURE: &str = "cursor-hook-bridge-v1";
 const EVENT_FLAG: &str = "--cursor-hook-event";
-/// `_NATIVE_DAEMON_REPLY_FLAG`: hands the client a daemon reply the bridge
-/// received and could not render, so the client never asks again.
-const DAEMON_REPLY_FLAG: &str = "--cursor-native-daemon-reply";
-/// `_NATIVE_DAEMON_REPLY_ACTIONS`: the replies the client takes over.
-const HANDOFF_ACTIONS: [&str; 4] = ["review", "require-reapproval", "sandbox-required", "block"];
-/// A longer reply is not put on the client's command line, which Windows
-/// caps at 32,767 characters; the client then asks the daemon again.
-const MAX_HANDOFF_REPLY_BYTES: usize = 16 * 1024;
 /// The harness name of the client's daemon route, `/v1/hooks/cursor`.
 const DAEMON_HARNESS: &str = "cursor";
 const PROJECT_DIR_ENV: &str = "CURSOR_PROJECT_DIR";
@@ -328,26 +320,8 @@ fn answer(kind: Kind, event: &str, response: &str, guard_home: &Path) -> Option<
 enum Reply {
     /// The client's stdout and exit code.
     Answered(String, i32),
-    /// A daemon reply the client renders without posting the hook again.
-    Handoff(String),
     /// Run the client on a hook the bridge could not read, for this reason.
     Client(Fallback),
-}
-
-/// The reply the client takes over once the bridge posted the hook and
-/// cannot render the daemon's answer, so the daemon never reviews the hook
-/// twice: a JSON object whose `policy_action` restricts the action, which
-/// is what `_native_daemon_reply_from_argv` accepts. An observer always
-/// renders, so it is never handed over.
-fn handoff(kind: Kind, body: &str) -> Option<String> {
-    if kind == Kind::After || body.len() > MAX_HANDOFF_REPLY_BYTES {
-        return None;
-    }
-    let (OValue::Map(response), _) = python_document(body)? else {
-        return None;
-    };
-    let action = response.get_str("policy_action")?;
-    HANDOFF_ACTIONS.contains(&action).then(|| body.to_owned())
 }
 
 /// The client's stdout and exit code for the hook, answered by a live
@@ -357,7 +331,7 @@ fn handoff(kind: Kind, body: &str) -> Option<String> {
 fn respond(client: &Client, raw: &[u8]) -> Option<(String, i32)> {
     match reply(client, raw) {
         Reply::Answered(stdout, code) => Some((stdout, code)),
-        Reply::Handoff(_) | Reply::Client(_) => None,
+        Reply::Client(_) => None,
     }
 }
 
@@ -437,16 +411,6 @@ pub(crate) fn run(python_argv: &[String]) -> i32 {
         Reply::Answered(stdout, code) => {
             write_stdout(&stdout);
             return code;
-        }
-        Reply::Handoff(body) => {
-            hook_bridge_fallback::note(guard_home, CURSOR.name, Fallback::SemanticHandoff);
-            let mut argv = python_argv.to_vec();
-            argv.push(DAEMON_REPLY_FLAG.to_owned());
-            argv.push(body);
-            // The daemon already has this hook: a client that cannot start
-            // must not fall back to one that posts it again.
-            return run_python(&argv, Some(&raw), started.elapsed(), false)
-                .unwrap_or_else(|| unavailable(event));
         }
         Reply::Client(reason) => reason,
     };
