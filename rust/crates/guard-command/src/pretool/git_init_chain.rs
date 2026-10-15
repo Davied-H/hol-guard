@@ -180,12 +180,23 @@ fn hook_directory_inert(path: &Path) -> bool {
             metadata.is_dir() && metadata.uid() == me && metadata.mode() & 0o022 == 0
         })
     };
+    // Every higher ancestor belongs to the user or root and stays closed to
+    // other writers unless sticky, so nobody can rename the checked tree away.
+    let steady = |path: &Path| {
+        fs::symlink_metadata(path).is_ok_and(|metadata| {
+            (metadata.uid() == me || metadata.uid() == 0)
+                && (metadata.mode() & 0o022 == 0 || metadata.mode() & 0o1000 != 0)
+        })
+    };
     let mut existing = path;
     while fs::symlink_metadata(existing).is_err() {
         let Some(parent) = existing.parent() else {
             return false;
         };
         existing = parent;
+    }
+    if !existing.ancestors().skip(1).all(steady) {
+        return false;
     }
     if existing != path {
         return private(existing);
@@ -316,5 +327,28 @@ mod tests {
         for target in [".gitattributes", "sub/a.txt", "/tmp/o/a.txt", ""] {
             assert!(!admits(&chain, &[target.to_owned()]), "{target}");
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn hooks_below_an_ancestor_others_can_rename_keep_the_review() {
+        use std::os::unix::fs::PermissionsExt;
+        let open = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/hook-ancestors")
+            .join(std::process::id().to_string());
+        let hooks = open.join("home/hooks");
+        std::fs::create_dir_all(&hooks).unwrap();
+        for path in [&hooks, &open.join("home"), &open] {
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        // The checkout's own ancestors decide the baseline; only the open
+        // directory changes below.
+        let baseline = super::hook_directory_inert(&hooks);
+        std::fs::set_permissions(&open, std::fs::Permissions::from_mode(0o777)).unwrap();
+        assert!(!super::hook_directory_inert(&hooks));
+        assert!(!super::hook_directory_inert(&hooks.join("missing")));
+        std::fs::set_permissions(&open, std::fs::Permissions::from_mode(0o1777)).unwrap();
+        assert_eq!(super::hook_directory_inert(&hooks), baseline);
+        std::fs::remove_dir_all(&open).unwrap();
     }
 }

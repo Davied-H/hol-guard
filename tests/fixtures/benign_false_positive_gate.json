@@ -11351,7 +11351,7 @@
       ],
       "tool": "shell",
       "tool_input": {
-        "command": "pg_isready -h /private/tmp -p 55434"
+        "command": "pg_isready -h ${PRIVATE_TMP}/pg-run -p 55434"
       },
       "cwd": "org_app",
       "expect": "allow"
@@ -11368,7 +11368,7 @@
       ],
       "tool": "shell",
       "tool_input": {
-        "command": "psql -h /private/tmp -p 55434 -U hol -d hol -c \"select current_user\""
+        "command": "psql -h ${PRIVATE_TMP}/pg-run -p 55434 -U hol -d hol -c \"select current_user\""
       },
       "cwd": "org_app",
       "expect": "allow"
@@ -11425,7 +11425,7 @@
       ],
       "tool": "shell",
       "tool_input": {
-        "command": "psql -h /opt/homebrew/var/postgresql@16 -U postgres -l"
+        "command": "psql -h ${PRIVATE_TMP}/pg-run -U postgres -l"
       },
       "cwd": "org_app",
       "expect": "allow"
@@ -11443,6 +11443,91 @@
       "tool": "shell",
       "tool_input": {
         "command": "psql -h localhost -c \"drop table x\""
+      },
+      "cwd": "org_app",
+      "expect": "not_allow"
+    },
+    {
+      "id": "session-neg-pg-isready-shared-tmp-missing-socket",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "pg_isready -h /tmp -p 55434"
+      },
+      "cwd": "org_app",
+      "expect": "not_allow"
+    },
+    {
+      "id": "session-neg-psql-show-all-settings",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "psql -h localhost -c \"show all\""
+      },
+      "cwd": "org_app",
+      "expect": "not_allow"
+    },
+    {
+      "id": "session-neg-psql-show-config-file",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "psql -h localhost -c \"show config_file\""
+      },
+      "cwd": "org_app",
+      "expect": "not_allow"
+    },
+    {
+      "id": "session-neg-psql-number-glued-into",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "psql -h localhost -c \"select 1into scratch_copy\""
+      },
+      "cwd": "org_app",
+      "expect": "not_allow"
+    },
+    {
+      "id": "session-neg-psql-number-glued-for-update",
+      "fix_area": "negative",
+      "harnesses": [
+        "codex",
+        "zcode",
+        "claude-code",
+        "omp",
+        "cursor"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "psql -h localhost -c \"select * from items where id=1for update\""
       },
       "cwd": "org_app",
       "expect": "not_allow"

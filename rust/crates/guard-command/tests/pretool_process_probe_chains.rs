@@ -29,6 +29,15 @@ fn home() -> PathBuf {
     std::fs::canonicalize(home).unwrap()
 }
 
+/// A private Unix-socket directory beside the home, as a local server makes.
+fn socket_directory(home: &Path) -> String {
+    use std::os::unix::fs::PermissionsExt;
+    let directory = home.parent().unwrap().join("pgsock");
+    std::fs::create_dir_all(&directory).unwrap();
+    std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700)).unwrap();
+    directory.to_str().unwrap().to_owned()
+}
+
 /// The decision both shell harnesses reach, or "mixed" when they differ.
 fn shell(home: &Path, command: &str) -> String {
     let environment = guard_contracts::GuardExecutionEnvironmentV1 {
@@ -74,6 +83,14 @@ fn shell(home: &Path, command: &str) -> String {
 #[test]
 fn outside_reads_chained_with_process_probes_proceed() {
     let home = home();
+    let sockets = socket_directory(&home);
+    for command in [
+        format!("pg_isready -h {sockets} -p 55434"),
+        format!(r#"psql -h {sockets} -p 55434 -U hol -d hol -c "select current_user""#),
+        format!("psql -h {sockets} -U postgres -l"),
+    ] {
+        assert_eq!(shell(&home, &command), "allow", "{command}");
+    }
     for command in [
         "pgrep -l node",
         "pgrep -fl postgres | head -4",
@@ -86,9 +103,6 @@ fn outside_reads_chained_with_process_probes_proceed() {
         "ls /usr/local; find /usr/local -maxdepth 1 -name '*.pid' 2>/dev/null; pgrep -fl postgres | head -4",
         "ls /usr/local; lsof -ti:3000",
         "ls /usr/local; pg_isready -h localhost -q",
-        "pg_isready -h /private/tmp -p 55434",
-        r#"psql -h /private/tmp -p 55434 -U hol -d hol -c "select current_user""#,
-        "psql -h /opt/homebrew/var/postgresql@16 -U postgres -l",
         "ls /usr/local; psql -h localhost -tAc 'select count(*) from items'",
         "ls src; pgrep -l node",
     ] {
@@ -111,6 +125,10 @@ fn secret_reads_uploads_and_unproven_probes_keep_review() {
         "ls /usr/local; pg_isready -h db.example.com",
         "ls /usr/local; pg_isready -d host=db.example.com",
         "pg_isready -h /tmp,db.example.com",
+        "pg_isready -h /tmp -p 55434",
+        r#"psql -h /tmp -p 55434 -U hol -d hol -c "select current_user""#,
+        r#"psql -h localhost -c "show all""#,
+        r#"psql -h localhost -c "select 1into scratch_copy""#,
         r#"psql -h localhost -c "drop table x""#,
         r#"psql -h localhost -c "copy items to program 'id'""#,
         r#"psql -h db.example.com -c "select 1""#,

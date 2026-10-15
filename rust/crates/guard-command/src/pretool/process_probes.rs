@@ -33,11 +33,13 @@ pub(in crate::pretool) fn local_postgres_host(value: &str) -> bool {
 
 /// A Unix-socket directory where no other local user can stand in for the
 /// server: libpq connects to `<dir>/.s.PGSQL.<port>`, and whoever owns that
-/// socket answers the probe or query and can ask for a password. The directory
-/// must not be writable by other users unless it is sticky, as `/tmp` is, and
-/// each socket psql may reach (the named port's, or every one without a port,
-/// since `PGPORT` may pick any) must belong to this user or root. A loopback
-/// host and a missing directory pass: neither reaches a planted socket.
+/// socket answers the probe or query and can ask for a password. The
+/// directory must exist and belong to this user or root. In a private
+/// directory a missing socket is fine, since nobody else can create one. A
+/// directory others can write must be sticky, as `/tmp` is, and then every
+/// socket psql may reach must already exist and belong to this user or root,
+/// because a missing name could be planted before the client connects. Without
+/// a port that means every socket present plus the default `5432` one.
 pub(in crate::pretool) fn trusted_postgres_socket(host: &str, port: Option<&str>) -> bool {
     if !host.starts_with('/') {
         return true;
@@ -45,30 +47,35 @@ pub(in crate::pretool) fn trusted_postgres_socket(host: &str, port: Option<&str>
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
-        let directory = match std::fs::metadata(host) {
-            Ok(metadata) => metadata,
-            Err(error) => return error.kind() == std::io::ErrorKind::NotFound,
+        let Ok(directory) = std::fs::metadata(host) else {
+            return false;
         };
-        if !directory.is_dir() || (directory.mode() & 0o002 != 0 && directory.mode() & 0o1000 == 0)
+        let uid = nix::unistd::getuid().as_raw();
+        let shared = directory.mode() & 0o022 != 0;
+        if !directory.is_dir()
+            || (directory.uid() != uid && directory.uid() != 0)
+            || (shared && directory.mode() & 0o1000 == 0)
         {
             return false;
         }
-        let uid = nix::unistd::getuid().as_raw();
         let owned = |path: &std::path::Path| match std::fs::symlink_metadata(path) {
             Ok(metadata) => metadata.uid() == uid || metadata.uid() == 0,
-            Err(error) => error.kind() == std::io::ErrorKind::NotFound,
+            Err(error) => !shared && error.kind() == std::io::ErrorKind::NotFound,
         };
         let directory = std::path::Path::new(host);
         match port {
             Some(port) => owned(&directory.join(format!(".s.PGSQL.{port}"))),
-            None => std::fs::read_dir(directory).is_ok_and(|entries| {
-                entries.into_iter().all(|entry| {
-                    entry.is_ok_and(|entry| {
-                        !entry.file_name().to_string_lossy().starts_with(".s.PGSQL.")
-                            || owned(&entry.path())
+            None => {
+                (!shared || owned(&directory.join(".s.PGSQL.5432")))
+                    && std::fs::read_dir(directory).is_ok_and(|entries| {
+                        entries.into_iter().all(|entry| {
+                            entry.is_ok_and(|entry| {
+                                !entry.file_name().to_string_lossy().starts_with(".s.PGSQL.")
+                                    || owned(&entry.path())
+                            })
+                        })
                     })
-                })
-            }),
+            }
         }
     }
     #[cfg(not(unix))]
@@ -289,8 +296,6 @@ mod tests {
             "-h localhost -p 5432",
             "--host=127.0.0.1 --port=5432 -t 3",
             "-h ::1 -d app_dev -U app_user",
-            "-h /private/tmp -p 55434",
-            "--host=/opt/homebrew/var/postgresql@16 -q",
         ] {
             assert!(
                 safe_pg_isready_arguments(&arguments(command)),
@@ -350,8 +355,18 @@ mod tests {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../target/pg-isready-sockets")
             .join(std::process::id().to_string());
-        let (open, own) = (root.join("open"), root.join("own"));
-        for (directory, mode) in [(&open, 0o777), (&own, 0o700)] {
+        let (open, group, shared, own) = (
+            root.join("open"),
+            root.join("group"),
+            root.join("shared"),
+            root.join("own"),
+        );
+        for (directory, mode) in [
+            (&open, 0o777),
+            (&group, 0o770),
+            (&shared, 0o1777),
+            (&own, 0o700),
+        ] {
             std::fs::create_dir_all(directory).unwrap();
             std::fs::set_permissions(directory, std::fs::Permissions::from_mode(mode)).unwrap();
         }
@@ -361,8 +376,19 @@ mod tests {
         };
         assert!(!probe(&open, "-q"));
         assert!(!probe(&open, "-p 5432"));
+        assert!(!probe(&group, "-p 5432"));
+        // A missing socket in a shared directory could be planted later.
+        assert!(!probe(&shared, "-q"));
+        assert!(!probe(&shared, "-p 55434"));
+        std::fs::write(shared.join(".s.PGSQL.55434"), "").unwrap();
+        assert!(probe(&shared, "-p 55434"));
+        assert!(!probe(&shared, "-q"));
+        std::fs::write(shared.join(".s.PGSQL.5432"), "").unwrap();
+        assert!(probe(&shared, "-q"));
+        assert!(!probe(&root.join("missing"), "-p 5432"));
         assert!(probe(&own, "-q"));
         assert!(probe(&own, "-p 5432"));
+        assert!(probe(&own, "-p 55434"));
         std::fs::remove_dir_all(root).unwrap();
     }
 }

@@ -148,7 +148,7 @@ def sibling_project_root(directory: Path, *, home: Path | None) -> Path | None:
         candidate = directory
         while candidate != base:
             if os.path.lexists(candidate / ".git"):
-                return candidate if candidate.stat().st_uid == os.getuid() else None
+                return candidate if candidate.stat().st_uid == getattr(os, "getuid", lambda: -1)() else None
             candidate = candidate.parent
         return None
     return None
@@ -174,13 +174,15 @@ def anchored_sibling_root(command: str, *, workspace: Path, cwd: Path, home: Pat
     ):
         return None
     anchor = _executed_path(words)
+    if anchor is None:
+        return None
     try:
+        path = Path(anchor).resolve(strict=True)
+        root = sibling_project_root(path, home=home)
+        if root is None or not _temp_anchor_trusted(root, home=home):
+            return None
         inside = workspace.resolve(strict=True)
         inside = sibling_project_root(inside, home=home) or inside
-        path = Path(anchor).resolve(strict=True) if anchor is not None else None
-        root = sibling_project_root(path, home=home) if path is not None else None
-        if path is None or root is None or not _temp_anchor_trusted(root, home=home):
-            return None
     except (OSError, RuntimeError):
         return None
     if _path_is_within(path, inside) or _path_is_within(root, inside) or _path_is_within(inside, root):

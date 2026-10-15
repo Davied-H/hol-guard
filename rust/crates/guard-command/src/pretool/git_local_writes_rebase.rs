@@ -123,6 +123,28 @@ pub(super) fn resumable(probe: &Probe) -> bool {
     known
         && fs::read_to_string(merge.join("git-rebase-todo"))
             .is_ok_and(|todo| todo.lines().all(step))
+        && fs::read_to_string(merge.join("author-script")).map_or_else(
+            |error| error.kind() == std::io::ErrorKind::NotFound,
+            |text| author_script(&text),
+        )
+}
+
+/// An `author-script` of single-quoted author assignments only. Older Git
+/// sourced this file as shell, so anything beyond a quoted name, email or
+/// date keeps the review.
+fn author_script(text: &str) -> bool {
+    text.lines().filter(|line| !line.is_empty()).all(|line| {
+        let Some((key, value)) = line.split_once('=') else {
+            return false;
+        };
+        matches!(
+            key,
+            "GIT_AUTHOR_NAME" | "GIT_AUTHOR_EMAIL" | "GIT_AUTHOR_DATE"
+        ) && value
+            .strip_prefix('\'')
+            .and_then(|value| value.strip_suffix('\''))
+            .is_some_and(|inner| inner.replace("'\\''", "").find('\'').is_none())
+    })
 }
 
 /// A todo line that is blank, a comment or one of the steps above.
@@ -138,7 +160,7 @@ fn step(line: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{resume, step};
+    use super::{author_script, resume, step};
 
     #[test]
     fn only_continue_with_replay_steps_is_a_resumable_form() {
@@ -164,6 +186,19 @@ mod tests {
             "",
         ] {
             assert!(step(line), "{line}");
+        }
+        assert!(author_script(
+            "GIT_AUTHOR_NAME='A O'\\''B'\nGIT_AUTHOR_EMAIL='a@b.c'\nGIT_AUTHOR_DATE='@1 +0000'\n"
+        ));
+        for script in [
+            "GIT_AUTHOR_NAME='a'; id\n",
+            "GIT_AUTHOR_NAME='a'$(id)''\n",
+            "GIT_AUTHOR_NAME=\"$(id)\"\n",
+            "GIT_AUTHOR_NAME='a'\nid\n",
+            "PATH='/tmp'\n",
+            "GIT_AUTHOR_NAME='a' id\n",
+        ] {
+            assert!(!author_script(script), "{script}");
         }
         for line in [
             "exec id",

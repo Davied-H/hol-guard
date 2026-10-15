@@ -1,9 +1,9 @@
 //! The one SQL statement a read-only `psql -c` may carry.
 //!
-//! Admitted: a single `SELECT` or `SHOW`, optionally ending in one `;`. The
-//! text is scanned, not parsed. A word directly before `(` must be a keyword
-//! that opens a subquery, list or window, or a built-in that only computes or
-//! reads a value. Every other call keeps its review: file and large-object
+//! Admitted: a single `SELECT`, or a `SHOW` of one setting on a short list,
+//! optionally ending in one `;`. The text is scanned, not parsed. A word
+//! directly before `(` must be a keyword that opens a subquery, list or
+//! window, or a built-in that only computes or reads a value. Every other call keeps its review: file and large-object
 //! access (`pg_read_file`, `pg_ls_dir`, `lo_import`, `lo_export`), remote
 //! links (`dblink`), settings and sequences (`set_config`, `nextval`),
 //! schema-qualified or quoted function names, and any user function. Server
@@ -117,6 +117,41 @@ const PAREN_WORDS: &[&str] = &[
     "version",
 ];
 
+/// Settings a `SHOW` may name. File locations, `SHOW ALL` and every other
+/// setting keep their review, as `current_setting` does.
+const SHOWN_SETTINGS: &[&str] = &[
+    "client_encoding",
+    "datestyle",
+    "intervalstyle",
+    "is_superuser",
+    "max_connections",
+    "port",
+    "search_path",
+    "server_encoding",
+    "server_version",
+    "server_version_num",
+    "standard_conforming_strings",
+    "statement_timeout",
+    "timezone",
+    "transaction_isolation",
+    "transaction_read_only",
+];
+
+/// The setting a `SHOW name` statement names, or `None` for any other text.
+/// A `SHOW` that is not one plain name still answers `Some("")`.
+fn shown_setting(statement: &str) -> Option<&str> {
+    let (verb, rest) = statement.split_once(|c: char| c.is_ascii_whitespace())?;
+    if !verb.eq_ignore_ascii_case("show") {
+        return None;
+    }
+    let name = rest.trim();
+    let plain = !name.is_empty()
+        && name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_');
+    Some(if plain { name } else { "" })
+}
+
 #[derive(Clone, Copy)]
 enum Previous {
     Start,
@@ -139,6 +174,9 @@ pub(super) fn read_only_statement(statement: &str) -> bool {
             .any(|view| statement.to_ascii_lowercase().contains(view))
     {
         return false;
+    }
+    if let Some(name) = shown_setting(statement) {
+        return SHOWN_SETTINGS.contains(&name.to_ascii_lowercase().as_str());
     }
     let bytes = statement.as_bytes();
     let mut previous = Previous::Start;
@@ -213,10 +251,25 @@ pub(super) fn read_only_statement(statement: &str) -> bool {
                 continue;
             }
             _ if byte.is_ascii_digit() => {
-                while index < bytes.len()
-                    && (bytes[index].is_ascii_alphanumeric() || bytes[index] == b'.')
+                // Older servers split `1into` into `1 into`, so a word glued
+                // to a number must not hide from the keyword checks.
+                while index < bytes.len() && (bytes[index].is_ascii_digit() || bytes[index] == b'.')
                 {
                     index += 1;
+                }
+                if index < bytes.len() && matches!(bytes[index], b'e' | b'E') {
+                    index += 1;
+                    if index < bytes.len() && matches!(bytes[index], b'+' | b'-') {
+                        index += 1;
+                    }
+                    while index < bytes.len() && bytes[index].is_ascii_digit() {
+                        index += 1;
+                    }
+                }
+                if index < bytes.len()
+                    && (bytes[index].is_ascii_alphabetic() || bytes[index] == b'_')
+                {
+                    return false;
                 }
                 previous = Previous::Other;
                 after_dot = false;
@@ -273,6 +326,8 @@ mod tests {
             "select count(*) filter (where done) over (partition by owner) from tasks",
             "show server_version",
             "SHOW search_path",
+            "show TimeZone",
+            "select 1.5e3, 2e-1, 0.25",
         ] {
             assert!(read_only_statement(statement), "{statement}");
         }
@@ -321,6 +376,15 @@ mod tests {
             "select * from pg_catalog.pg_settings where name = 'port'",
             "select * from \"PG_SETTINGS\"",
             "select sourcefile from pg_file_settings",
+            "select 1into scratch_copy",
+            "select * from items where id=1for update",
+            "select 1e5into x",
+            "select 0x1f",
+            "show all",
+            "show data_directory",
+            "SHOW config_file",
+            "show hba_file",
+            "show search_path, port",
         ] {
             assert!(!read_only_statement(statement), "{statement}");
         }
