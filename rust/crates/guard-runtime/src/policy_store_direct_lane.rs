@@ -209,8 +209,8 @@ impl PolicySnapshotStore {
         })
     }
 
-    /// Admission that also returns the binding, whose daemon state the
-    /// direct operation checks next.
+    /// Admission of a settled workspace alone, with its binding.
+    #[cfg(all(test, unix))]
     pub(crate) fn admit_direct_hook(
         &self,
         workspace: &str,
@@ -218,9 +218,9 @@ impl PolicySnapshotStore {
         self.admit_direct(workspace, false)
     }
 
-    /// Hook admission, which also covers a file-less subdirectory of a
-    /// settled workspace on the current ACK, as the daemon's hook readiness
-    /// does (`policy_store_direct_lane_subdirectory.rs`).
+    /// Hook admission, which also covers a file-less directory the current
+    /// ACK already holds, as the daemon's hook readiness does
+    /// (`policy_store_direct_lane_subdirectory.rs`).
     pub(crate) fn admit_direct_hook_or_subdirectory(
         &self,
         workspace: &str,
@@ -231,7 +231,7 @@ impl PolicySnapshotStore {
     fn admit_direct(
         &self,
         workspace: &str,
-        file_less_subdirectory: bool,
+        file_less_covered: bool,
     ) -> Result<(Arc<AdmittedPolicySnapshot>, Arc<DirectLaneBinding>), DirectLaneDefer> {
         if !cfg!(unix) {
             // Stat identity parity with the publisher is only established
@@ -245,8 +245,8 @@ impl PolicySnapshotStore {
             .and_then(|binding| binding.clone())
             .ok_or(DirectLaneDefer::Unbound)?;
         let known = binding.workspaces.contains(workspace)
-            || (file_less_subdirectory
-                && subdirectory::file_less_subdirectory(&binding.workspaces, workspace));
+            || (file_less_covered
+                && subdirectory::file_less_covered(&binding.workspaces, workspace));
         if !known {
             return Err(DirectLaneDefer::WorkspaceUnknown);
         }
