@@ -262,6 +262,7 @@ mod guard_store_advisory_cache;
 mod guard_store_advisory_cache_vectors_tests;
 mod guard_store_approval_request;
 mod guard_store_approval_row;
+mod guard_store_approval_backfill;
 mod guard_store_approval_write;
 mod guard_store_args;
 mod guard_store_claude_review;
