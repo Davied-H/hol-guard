@@ -1,10 +1,6 @@
 #![forbid(unsafe_code)]
 #![recursion_limit = "512"]
 
-#[cfg(all(target_os = "linux", target_env = "musl"))]
-#[global_allocator]
-static GLOBAL_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
-
 mod adapter_inventory;
 #[cfg(all(test, unix))]
 mod adapter_vectors_tests;
