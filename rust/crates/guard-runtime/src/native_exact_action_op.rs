@@ -13,6 +13,7 @@ mod git_config;
 mod git_identity;
 mod launch;
 mod launcher_sets;
+mod node_script;
 mod operands;
 mod reasons;
 pub(crate) mod runner_bin;
