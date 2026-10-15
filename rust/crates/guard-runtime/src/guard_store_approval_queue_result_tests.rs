@@ -91,3 +91,12 @@ fn replays_every_recorded_queue_result_resolution() {
     }
     assert!(replayed >= 100, "replayed {replayed} calls");
 }
+
+#[test]
+fn a_reply_too_large_to_send_fails_before_the_commit() {
+    let small = json!({"resolved": true, "item": {"request_id": "req-1"}});
+    assert_eq!(super::fits(small.clone()).unwrap(), small);
+    let large =
+        json!({"resolved": true, "item": {"preview": "x".repeat(super::REPLY_LIMIT_BYTES)}});
+    assert!(super::fits(large).is_err());
+}

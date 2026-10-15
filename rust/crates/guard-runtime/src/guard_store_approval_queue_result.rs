@@ -18,8 +18,9 @@ use crate::guard_store_approval_reads::get_approval_request;
 use crate::guard_store_approval_resolve::{resolve_duplicates, set_resolution};
 use crate::guard_store_approval_sweep::{resolution, resolution_block_reason};
 use crate::guard_store_args::Args;
-use crate::guard_store_db::{exec, query_all, query_one, StoreError, StoreResult};
+use crate::guard_store_db::{exec, query_all, query_one, value_error, StoreError, StoreResult};
 use crate::guard_store_json::dumps_sorted;
+use crate::MAX_NATIVE_RESPONSE_BYTES;
 
 /// `exact_cloud_review.EXACT_CLOUD_REVIEW_REVOCATION_STATE_KEY`.
 const REVOCATION_STATE_KEY: &str = "guard_exact_cloud_review_revocation";
@@ -41,6 +42,8 @@ const RECEIPT_BINDINGS: [&str; 12] = [
 const WORKSPACE_REVIEW_REASON: &str = "Native workspace review decision";
 /// `_REMAINING_SUMMARIES`.
 const REMAINING_SUMMARIES: usize = 10;
+/// The reply, leaving room for the response envelope.
+const REPLY_LIMIT_BYTES: usize = MAX_NATIVE_RESPONSE_BYTES - 64 * 1024;
 
 /// `resolve_request_with_queue_result`.
 pub(crate) fn resolve_request_with_queue_result(
@@ -50,13 +53,13 @@ pub(crate) fn resolve_request_with_queue_result(
 ) -> StoreResult<Value> {
     let request_id = args.str("request_id")?;
     let resolution = resolution(args)?;
-    queue_result(
+    fits(queue_result(
         connection,
         guard_home,
         request_id,
         &resolution,
         args.opt_str("cwd")?,
-    )
+    )?)
 }
 
 /// `resolve_native_workspace_review_request` after the caller validated the
@@ -144,7 +147,17 @@ pub(crate) fn resolve_native_workspace_review_request(
         )?;
     }
     result["native_replayed"] = Value::Bool(replayed);
-    Ok(result)
+    fits(result)
+}
+
+/// The reply goes out after the commit. One too large to send fails here, so
+/// the caller's transaction rolls the resolution back instead of committing a
+/// decision the dashboard never hears about.
+fn fits(reply: Value) -> StoreResult<Value> {
+    if serde_json::to_vec(&reply).map_or(usize::MAX, |bytes| bytes.len()) > REPLY_LIMIT_BYTES {
+        return value_error("approval_queue_result_too_large");
+    }
+    Ok(reply)
 }
 
 /// The Python `resolve_request_with_queue_result` body: resolve the pending
