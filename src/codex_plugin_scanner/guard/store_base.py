@@ -16,6 +16,7 @@ import logging
 import os
 import re
 import sqlite3
+import stat as stat_module
 import subprocess
 import sys
 import threading
@@ -1132,9 +1133,23 @@ def _set_private_mode(path: Path, mode: int) -> None:
 # store repairs guard home after each connection closes, so a hook request paid
 # for that walk several times. Within one process, a directory bound recently
 # under the same identity is skipped; a recreated directory is bound at once.
+# A path that passes through a junction or link is bound every time, since the
+# directory it reaches can change without the final identity changing first.
 _WINDOWS_PRIVATE_DIRECTORY_RECHECK_SECONDS = 30.0
 _windows_private_directory_lock = threading.Lock()
 _windows_private_directory_bound: dict[str, tuple[int, int, float]] = {}
+
+
+def _windows_path_is_direct(path: str) -> bool:
+    """True when no component of an absolute path is a reparse point (a junction or link)."""
+    current = Path(path)
+    try:
+        for component in (current, *current.parents):
+            if getattr(os.lstat(component), "st_file_attributes", 0) & stat_module.FILE_ATTRIBUTE_REPARSE_POINT:
+                return False
+    except OSError:
+        return False
+    return True
 
 
 def _set_windows_private_directory(path: Path) -> None:
@@ -1147,7 +1162,7 @@ def _set_windows_private_directory(path: Path) -> None:
     except OSError:
         stat = None
     now = time.monotonic()
-    if stat is not None:
+    if stat is not None and _windows_path_is_direct(key):
         with _windows_private_directory_lock:
             bound = _windows_private_directory_bound.get(key)
         if (
