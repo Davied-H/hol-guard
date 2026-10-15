@@ -17,6 +17,7 @@ runs:
       shell: bash
       run: bash scripts/ci/setup_sonar_rust.sh
     - name: Cache Rust analysis dependencies
+      id: coverage-cache
       uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
       with:
         workspaces: rust
@@ -25,6 +26,27 @@ runs:
         shared-key: sonar-${{ inputs.partition }}-${{ hashFiles('scripts/ci/sonar_rust_profile.sh', 'scripts/ci/rust_test_compiler.sh', 'rust/Cargo.toml') }}
         cache-on-failure: true
         save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    - name: Check for restored instrumented dependencies
+      id: restored-dependencies
+      if: steps.coverage-cache.outputs.cache-hit != 'true'
+      shell: bash
+      # A partial hit already restored compatible crates. Never unpack an older
+      # monolithic archive over that dependency set.
+      run: |
+        restored=false
+        if [ -d rust/target ] && [ -n "$(find rust/target -type f \( -name '*.rlib' -o -name '*.rmeta' \) -print -quit)" ]; then
+          restored=true
+        fi
+        echo "restored=$restored" >> "$GITHUB_OUTPUT"
+    - name: Seed instrumented dependencies from the compatible workspace cache
+      if: steps.coverage-cache.outputs.cache-hit != 'true' && steps.restored-dependencies.outputs.restored != 'true'
+      uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+      with:
+        workspaces: rust
+        # Same compiler recipe and archive path set as the previous producer.
+        # This fallback is a reader; only the partition cache above may save.
+        shared-key: sonar-${{ hashFiles('scripts/ci/sonar_rust_profile.sh', 'scripts/ci/rust_test_compiler.sh', 'rust/Cargo.toml') }}
+        save-if: 'false'
     - uses: ./.github/actions/setup-bubblewrap
     - name: Provision the checked test linker
       shell: bash
