@@ -138,7 +138,13 @@ pub(crate) fn evaluate(request: &GuardStoreRequestV1) -> StoreResult<(Value, Opt
         Kind::Snapshot => connection.execute_batch("BEGIN")?,
         Kind::Read => {}
     }
-    let outcome = dispatch(&connection, &request.source, &request.method, &args);
+    let outcome = dispatch(
+        &connection,
+        &request.source,
+        &request.guard_home,
+        &request.method,
+        &args,
+    );
     let payload = match outcome {
         Ok(payload) => payload,
         Err(error) => {
@@ -367,6 +373,7 @@ fn method_kind(method: &str) -> Option<Kind> {
 fn dispatch(
     connection: &Connection,
     source: &str,
+    guard_home: &str,
     method: &str,
     args: &Args,
 ) -> StoreResult<Value> {
@@ -531,8 +538,12 @@ fn dispatch(
         }
         "latest_receipt_rowid" => receipt_reads::latest_rowid(connection, args),
         "get_receipt" => receipt_reads::get_receipt(connection, args),
-        "get_approval_request" => approval_reads::get_approval_request(connection, args),
-        "list_approval_requests" => approval_reads::list_approval_requests(connection, args),
+        "get_approval_request" => {
+            approval_reads::get_approval_request(connection, guard_home, args)
+        }
+        "list_approval_requests" => {
+            approval_reads::list_approval_requests(connection, guard_home, args)
+        }
         "get_receipt_for_approval_request" => {
             receipt_reads::get_for_approval_request(connection, args)
         }

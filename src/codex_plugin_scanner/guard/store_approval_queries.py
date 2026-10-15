@@ -41,7 +41,7 @@ class StoreApprovalQueriesMixin:
             marker = _decode_page_cursor(cursor)
             if marker is None:
                 raise InvalidApprovalCursorError("invalid approval queue cursor")
-        args = {
+        args: dict[str, object] = {
             "status": status,
             "harness": harness,
             "limit": limit,
@@ -50,11 +50,15 @@ class StoreApprovalQueriesMixin:
         }
         items: list[dict[str, object]] = []
         while True:
-            # The resident returns bounded chunks; each continues at the next row.
-            page = self._native_approval_read("list_approval_requests", {**args, "offset": len(items)})
+            # The resident returns bounded chunks; each continues after the sort
+            # key of the previous chunk's last row.
+            page = self._native_approval_read("list_approval_requests", args)
             items.extend(page["items"])
             if page["complete"]:
                 return [_with_approval_hints(item) for item in items]
+            args["after"] = page["after"]
+            if limit is not None and limit >= 0:
+                args["limit"] = limit - len(items)
 
     def list_pending_approval_summaries(
         self,
