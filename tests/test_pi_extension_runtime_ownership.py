@@ -286,3 +286,26 @@ def test_user_install_prefers_its_own_scripts_directory(tmp_path: Path, monkeypa
         str(tmp_path / "user-bin" / "hol-guard"),
         str(tmp_path / "global-bin" / "hol-guard"),
     )
+
+
+def test_windows_sink_uses_the_profile_temp_and_stays_off_without_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from codex_plugin_scanner.guard import windows_paths
+
+    package_root = tmp_path / "site packages"
+    monkeypatch.setattr(windows_paths, "trusted_windows_local_temp", lambda: tmp_path / "Temp")
+    command, root = pi_extension_runtime_ownership._windows_contained_sink("python.exe", package_root)
+    assert root == str(tmp_path / "Temp")
+    assert command[:3] == ("python.exe", "-I", "-c")
+    assert command[-1] == "guard"
+
+    def unavailable() -> Path:
+        raise OSError("no profile")
+
+    monkeypatch.setattr(windows_paths, "trusted_windows_local_temp", unavailable)
+    assert pi_extension_runtime_ownership._windows_contained_sink("python.exe", package_root) == ((), "")
+    if pi_extension_runtime_ownership.os.name != "nt":
+        source = _source(tmp_path)
+        assert "const GUARD_CONTAINED_SINK_COMMAND: string[] = [];\n" in source
+        assert 'const GUARD_CONTAINED_REQUEST_ROOT = "";\n' in source
