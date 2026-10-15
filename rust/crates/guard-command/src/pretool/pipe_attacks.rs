@@ -184,10 +184,11 @@ fn shell_reads_stdin(arguments: &[String]) -> bool {
 fn dumps_environment(words: &[String]) -> bool {
     let arguments = words.get(1..).unwrap_or_default();
     match program(words) {
-        Some("env") => arguments
+        Some("env") => env_prints_inherited_environment(arguments),
+        // Named variables print only those values.
+        Some("printenv") => arguments
             .iter()
             .all(|argument| matches!(argument.as_str(), "-0" | "--null")),
-        Some("printenv") => true,
         Some("export") => arguments.iter().all(|argument| argument == "-p"),
         Some("declare" | "typeset") => arguments.iter().all(|argument| {
             argument.starts_with('-') && (argument.contains('x') || argument.contains('p'))
@@ -195,6 +196,24 @@ fn dumps_environment(words: &[String]) -> bool {
         Some("set") => arguments.is_empty(),
         _ => words.iter().any(|word| word.ends_with("/environ")),
     }
+}
+
+/// `env` with nothing to run prints the environment it inherited, adjusted
+/// by any unsets and assignments, unless it starts from an empty one.
+fn env_prints_inherited_environment(arguments: &[String]) -> bool {
+    let mut index = 0;
+    while let Some(argument) = arguments.get(index) {
+        match argument.as_str() {
+            "-i" | "-" | "--ignore-environment" => return false,
+            "-u" | "--unset" => index += 1,
+            "-0" | "--null" => {}
+            other if other.starts_with("--unset=") => {}
+            other if assignment_name(other).is_some() => {}
+            _ => return false,
+        }
+        index += 1;
+    }
+    true
 }
 
 /// A network client that sends what it reads on standard input.
@@ -215,9 +234,13 @@ fn sends_stdin(words: &[String]) -> bool {
             .iter()
             .any(|argument| argument.contains("/dev/stdin")),
         Some(
-            "nc" | "ncat" | "netcat" | "socat" | "telnet" | "ssh" | "openssl" | "http" | "https"
-            | "xh" | "xhs" | "curlie",
+            "nc" | "ncat" | "netcat" | "socat" | "telnet" | "ssh" | "http" | "https" | "xh" | "xhs"
+            | "curlie",
         ) => true,
+        // Other `openssl` commands hash or encode locally.
+        Some("openssl") => arguments
+            .first()
+            .is_some_and(|command| command == "s_client"),
         _ => false,
     }
 }
