@@ -230,7 +230,8 @@ fn replace_with_current_ack_until(root: &Path, policy_digest: &str, lease_expire
 fn widen_settle_budget(fixture: &Fixture) {
     fixture
         .store
-        .direct_lane_ack_settle_override_ms
+        .direct_lane_ack_wait
+        .settle_override_ms
         .store(10_000, Ordering::Release);
 }
 
@@ -252,7 +253,7 @@ fn an_ack_behind_the_bound_snapshot_is_awaited_briefly() {
     let lease = now_ms().unwrap() + 30_000;
     write_ack(&fixture.root, 0, &digest, lease, 0o600);
     widen_settle_budget(&fixture);
-    let claimed = &fixture.store.direct_lane_ack_wait_claimed;
+    let claimed = &fixture.store.direct_lane_ack_wait.claimed;
     std::thread::scope(|scope| {
         scope.spawn(|| {
             await_settle_wait(claimed, 1);
@@ -263,7 +264,8 @@ fn an_ack_behind_the_bound_snapshot_is_awaited_briefly() {
     assert_eq!(
         fixture
             .store
-            .direct_lane_ack_wait_claimed
+            .direct_lane_ack_wait
+            .claimed
             .load(Ordering::Acquire),
         1
     );
@@ -276,7 +278,7 @@ fn an_ack_that_expires_during_the_wait_is_expired() {
     let digest = fixture.snapshot.policy_digest.clone();
     write_ack(&fixture.root, 0, &digest, now_ms().unwrap() + 30_000, 0o600);
     widen_settle_budget(&fixture);
-    let claimed = &fixture.store.direct_lane_ack_wait_claimed;
+    let claimed = &fixture.store.direct_lane_ack_wait.claimed;
     std::thread::scope(|scope| {
         scope.spawn(|| {
             await_settle_wait(claimed, 1);
@@ -306,7 +308,8 @@ fn an_older_ack_the_publisher_stopped_renewing_is_not_awaited() {
     assert_eq!(
         fixture
             .store
-            .direct_lane_ack_wait_claimed
+            .direct_lane_ack_wait
+            .claimed
             .load(Ordering::Acquire),
         0
     );
@@ -327,7 +330,8 @@ fn an_ack_that_never_catches_up_delays_only_one_hook() {
     assert_eq!(
         fixture
             .store
-            .direct_lane_ack_wait_claimed
+            .direct_lane_ack_wait
+            .claimed
             .load(Ordering::Acquire),
         1
     );
