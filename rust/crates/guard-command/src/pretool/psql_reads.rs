@@ -128,15 +128,34 @@ const SHARED_DEFAULT_SOCKET_DIRECTORY: &str = "/tmp";
 const SYSTEM_SOCKET_DIRECTORIES: &[&str] = &["/run/postgresql", "/var/run/postgresql"];
 
 /// Where psql connects without `-h`: a trusted `/tmp` socket, or, when `/tmp`
-/// holds no socket for the port, a distribution's server-only run directory.
+/// holds no socket for the port, a distribution's server-only run directory,
+/// but only for a Debian-packaged psql whose libpq defaults to it. Other
+/// builds default to `/tmp`, where a missing name could be planted.
 fn trusted_default_socket(port: Option<&str>) -> bool {
     let name = format!(".s.PGSQL.{}", port.unwrap_or("5432"));
     trusted_postgres_socket(SHARED_DEFAULT_SOCKET_DIRECTORY, port)
         || (std::fs::symlink_metadata(Path::new(SHARED_DEFAULT_SOCKET_DIRECTORY).join(name))
             .is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound)
+            && first_psql(std::env::var_os("PATH").as_deref())
+                .is_some_and(|psql| distribution_client(&psql))
             && SYSTEM_SOCKET_DIRECTORIES
                 .iter()
                 .any(|directory| Path::new(directory).is_dir()))
+}
+
+/// The psql the shell would run: the first absolute `PATH` entry holding one.
+fn first_psql(path: Option<&std::ffi::OsStr>) -> Option<std::path::PathBuf> {
+    std::env::split_paths(path?)
+        .filter(|directory| directory.is_absolute())
+        .map(|directory| directory.join("psql"))
+        .find(|candidate| candidate.is_file())
+        .and_then(|psql| psql.canonicalize().ok())
+}
+
+/// Debian's client wrapper or a binary below its versioned client tree.
+fn distribution_client(psql: &Path) -> bool {
+    psql == Path::new("/usr/share/postgresql-common/pg_wrapper")
+        || psql.starts_with("/usr/lib/postgresql")
 }
 
 fn admitted(
@@ -324,6 +343,25 @@ mod tests {
     }
 
     #[cfg(unix)]
+    #[test]
+    fn only_a_debian_packaged_psql_may_use_the_run_directory() {
+        assert!(distribution_client(Path::new(
+            "/usr/share/postgresql-common/pg_wrapper"
+        )));
+        assert!(distribution_client(Path::new(
+            "/usr/lib/postgresql/16/bin/psql"
+        )));
+        assert!(!distribution_client(Path::new("/usr/local/bin/psql")));
+        assert!(!distribution_client(Path::new(
+            "/home/linuxbrew/.linuxbrew/bin/psql"
+        )));
+        assert!(!distribution_client(Path::new(
+            "/usr/lib/postgresql-evil/psql"
+        )));
+        assert_eq!(first_psql(None), None);
+        assert_eq!(first_psql(Some(std::ffi::OsStr::new("relative:bin"))), None);
+    }
+
     #[test]
     fn a_socket_directory_another_user_can_plant_in_is_refused() {
         use std::os::unix::fs::PermissionsExt;
