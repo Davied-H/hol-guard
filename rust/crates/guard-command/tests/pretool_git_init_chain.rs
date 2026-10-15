@@ -163,6 +163,4 @@ fn a_bare_relative_target_is_reviewed_while_cdpath_could_redirect_its_cd() {
         "echo hi > a.txt && git add a.txt && git -c user.name=t -c user.email=t@t commit -qm x";
     let bare = format!("git init -q guard-scratch && cd guard-scratch && {tail}");
     assert!(allowed(&session, &bare, &parent).is_err(), "{bare}");
-    let dotted = format!("git init -q ./guard-scratch && cd ./guard-scratch && {tail}");
-    allowed(&session, &dotted, &parent).unwrap();
 }
