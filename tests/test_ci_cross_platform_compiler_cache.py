@@ -30,7 +30,15 @@ def test_fast_runtime_profile_is_confined_to_functional_ci_artifacts() -> None:
     for name in ("macos-native-runtime", "windows-native-runtime"):
         job = workflow["jobs"][name]
         assert job["timeout-minutes"] == 5
-        assert job["env"]["CARGO_PROFILE_RELEASE_OPT_LEVEL"] == "1"
+        assert "CARGO_PROFILE_RELEASE_OPT_LEVEL" not in job.get("env", {})
+        steps = composite_action_steps(f"ci-job-{name}")
+        build = next(step for step in steps if step.get("name", "").startswith("Build the "))
+        for configuration in (
+            "profile.release.package.hol-guard-runtime.opt-level=1",
+            "profile.release.package.guard-command.opt-level=1",
+            "profile.release.package.guard-command-build.opt-level=0",
+        ):
+            assert f"--config '{configuration}'" in build["run"]
     for name in ("native-release-size", "native-command-evaluators"):
         assert "CARGO_PROFILE_RELEASE_OPT_LEVEL" not in workflow["jobs"][name].get("env", {})
     assert "macos-native-runtime" in workflow["jobs"]["required"]["needs"]
