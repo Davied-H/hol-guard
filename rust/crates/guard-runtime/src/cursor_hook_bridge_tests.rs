@@ -268,7 +268,8 @@ fn answers_match_the_client_for_every_vector() {
             // The client signs review links and keeps lone surrogates, which
             // the review and surrogate vectors check; anything else the
             // bridge does not answer fails closed.
-            if !(response.contains("approval") || response.contains("\\ud800")) {
+            if !(response.to_ascii_lowercase().contains("approval") || response.contains("\\ud800"))
+            {
                 assert_eq!(
                     answer(Kind::PreToolUse, event, response, &home),
                     None,
