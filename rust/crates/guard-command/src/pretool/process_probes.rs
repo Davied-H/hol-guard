@@ -316,7 +316,7 @@ fn steady_directory(path: &std::path::Path, uid: u32) -> bool {
 
 /// Variables that change which startup files psql reads or which server
 /// libpq reaches without `-h`, `-p` or `service=` on the command line.
-pub(super) const PSQL_VARIABLES: [&str; 7] = [
+pub(in crate::pretool) const PSQL_VARIABLES: [&str; 7] = [
     "PSQLRC",
     "PGSYSCONFDIR",
     "PGHOST",
@@ -328,7 +328,7 @@ pub(super) const PSQL_VARIABLES: [&str; 7] = [
 
 /// Whether every ancestor of `path` is a [`steady_directory`] for this user.
 #[cfg(all(test, unix))]
-pub(super) fn steady_ancestry(path: &std::path::Path) -> bool {
+pub(in crate::pretool) fn steady_ancestry(path: &std::path::Path) -> bool {
     let uid = nix::unistd::getuid().as_raw();
     path.ancestors().all(|path| steady_directory(path, uid))
 }
