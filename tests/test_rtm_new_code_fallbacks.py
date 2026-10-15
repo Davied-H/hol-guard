@@ -350,3 +350,59 @@ def test_unclaimed_saved_package_approval_is_dropped_without_a_resident(
     assert result.policy_action == "block"
     assert result.reasons[0]["code"] == "native_package_evaluation_unavailable"
     assert all(package["decision"] == "block" for package in result.packages)
+
+
+_VERDICT = {
+    "decision": "allow",
+    "risk_summary": "",
+    "user_copy": {"title": "t", "summary": "s", "next_step": None, "dashboard_url": None, "headline": "h"},
+    "record_monitor_evidence": False,
+}
+
+
+@pytest.mark.parametrize(
+    ("current_action", "observe_mode", "claim_failed", "with_current", "patch"),
+    (
+        # A fixed current action (claim failed, observe mode) cannot be rewritten.
+        ("block", False, True, True, {"policy_action": "allow", **_VERDICT}),
+        ("review", True, False, True, {"policy_action": "allow", **_VERDICT}),
+        # No rebuilt authority: the reply can only reject the reuse.
+        ("block", False, False, False, {"policy_action": "allow", **_VERDICT}),
+        # An action change must carry its verdict.
+        ("allow", False, False, True, {"policy_action": "allow"}),
+        # Only a claimed approval may be reused.
+        ("block", False, False, True, {"reasons": [{"code": "saved_package_approval"}]}),
+    ),
+)
+def test_package_protect_finalize_rejects_replies_breaking_request_invariants(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    current_action: str,
+    observe_mode: bool,
+    claim_failed: bool,
+    with_current: bool,
+    patch: dict[str, object],
+) -> None:
+    blocked = _PackageEvaluation(policy_action="block", decision="block")
+    initial = SimpleNamespace(
+        artifact=SimpleNamespace(artifact_id="package:npm:left-pad"), artifact_hash="hash", evaluation=blocked
+    )
+    current = SimpleNamespace(
+        artifact=initial.artifact,
+        artifact_hash="hash",
+        evaluation=blocked,
+        current_action=current_action,
+        observe_mode=observe_mode,
+    )
+    monkeypatch.setattr(native_package_protect_finalize, "_call", lambda _request, _home: dict(patch))
+
+    with pytest.raises(native_package_protect_finalize.NativePackageProtectFinalizeError):
+        native_package_protect_finalize.native_finalize_package_protect(
+            initial=initial,
+            current=current if with_current else None,
+            claim_failure=blocked if claim_failed else None,
+            saved_approval_claimed=False,
+            claim_disposition=None,
+            stored_policy=None,
+            store=SimpleNamespace(guard_home=tmp_path),
+        )

@@ -22,6 +22,7 @@ from .native_context import _canonical_request_sha256, _resolve_digest_home, ens
 from .native_package_approval_hash import _evaluation_view
 from .native_package_authority import _REQUEST_SCHEMA, _RESULT_SCHEMA, _request_id, _resident_request
 from .native_package_evaluation_compose import (
+    _VERDICT_KEYS,
     NativePackageEvaluationComposeError,
     apply_package_evaluation_patch,
     native_unavailable_block_evaluation,
@@ -135,13 +136,41 @@ def native_finalize_package_protect(
     patch = _call(request, guard_home)
     if patch is None:
         return native_unavailable_block_evaluation(base)
-    result = apply_package_evaluation_patch(base, patch)
-    # A failed claim's own evaluation keeps the saved-approval reason it was
-    # refused for; it is never executable, so only a fresh reuse is suspect.
-    if (
-        claim_failure is None
-        and not saved_approval_claimed
-        and any(reason.get("code") == "saved_package_approval" for reason in result.reasons)
-    ):
+    _check_reply(
+        base,
+        patch,
+        current=current,
+        claim_failure=claim_failure,
+        saved_approval_claimed=saved_approval_claimed,
+    )
+    return apply_package_evaluation_patch(base, patch)
+
+
+def _check_reply(
+    base: Any,
+    patch: Mapping[str, Any],
+    *,
+    current: Any | None,
+    claim_failure: Any | None,
+    saved_approval_claimed: bool,
+) -> None:
+    """Reject replies that break the request's invariants; never recomputes the verdict."""
+
+    effective = patch.get("policy_action", base.policy_action)
+    if effective != base.policy_action and not set(patch) >= _VERDICT_KEYS:
+        raise NativePackageProtectFinalizeError("Native package protect finalize changed the action without a verdict")
+    if current is None:
+        # Nothing rebuilt to run: the reply can only reject the reuse.
+        if effective == "allow":
+            raise NativePackageProtectFinalizeError("Native package protect finalize allowed an unbound launch")
+        return
+    if (claim_failure is not None or current.observe_mode) and effective != current.current_action:
+        raise NativePackageProtectFinalizeError("Native package protect finalize changed a fixed current action")
+    reasons = patch.get("reasons", base.reasons)
+    reuses_saved = isinstance(reasons, list) and any(
+        isinstance(reason, Mapping) and reason.get("code") == "saved_package_approval" for reason in reasons
+    )
+    # A failed claim keeps the saved-approval reason it was refused for, but
+    # the check above pins its action to the current one.
+    if claim_failure is None and not saved_approval_claimed and reuses_saved:
         raise NativePackageProtectFinalizeError("Native package protect finalize reused an unclaimed approval")
-    return result
