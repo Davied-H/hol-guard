@@ -97,7 +97,7 @@ pub(super) fn route(
 /// runtime's own sink for the calls `native` names it for.
 struct Host {
     platform: fn(&str) -> bool,
-    native: fn(&Value, &Map<String, Value>) -> Option<String>,
+    native: fn(&Value, &Map<String, Value>, &str) -> Option<String>,
 }
 
 /// `route` on `host`, with request snapshots under `temp`.
@@ -118,7 +118,7 @@ fn route_on(
     let Some(original) = shell_input(payload) else {
         return Ok(None);
     };
-    let native = (host.native)(response, original);
+    let native = (host.native)(response, original, target.workspace);
     request::write_and_route(temp, payload, original, target, native.as_deref())
 }
 
@@ -126,8 +126,8 @@ fn route_on(
 /// workspace sandbox of a shape the native sink reproduces. Any other call
 /// keeps the daemon's sink.
 #[cfg(target_os = "macos")]
-fn native_sink(response: &Value, original: &Map<String, Value>) -> Option<String> {
-    if !native_shape(response, original)
+fn native_sink(response: &Value, original: &Map<String, Value>, workspace: &str) -> Option<String> {
+    if !native_shape(response, original, workspace)
         || std::env::var_os(NATIVE_SINK_SWITCH).is_some_and(|value| value == "0")
     {
         return None;
@@ -140,7 +140,11 @@ fn native_sink(response: &Value, original: &Map<String, Value>) -> Option<String
 }
 
 #[cfg(not(target_os = "macos"))]
-fn native_sink(_response: &Value, _original: &Map<String, Value>) -> Option<String> {
+fn native_sink(
+    _response: &Value,
+    _original: &Map<String, Value>,
+    _workspace: &str,
+) -> Option<String> {
     None
 }
 
@@ -149,7 +153,7 @@ fn native_sink(_response: &Value, _original: &Map<String, Value>) -> Option<Stri
 /// the workspace itself, with no pipe, redirection of stderr, exit-status
 /// read, home expansion or directory change the sink does not yet replay.
 #[cfg(any(target_os = "macos", all(unix, test)))]
-fn native_shape(response: &Value, original: &Map<String, Value>) -> bool {
+fn native_shape(response: &Value, original: &Map<String, Value>, workspace: &str) -> bool {
     use crate::contained_workspace_sink::{PUBLISH_REASON, WORKSPACE_PROFILE, WORKSPACE_REASON};
     let text = |name: &str| response.get(name).and_then(Value::as_str);
     let Some(command) = original.get("command").and_then(Value::as_str) else {
@@ -159,10 +163,50 @@ fn native_shape(response: &Value, original: &Map<String, Value>) -> bool {
         && text("required_execution_profile") == Some(WORKSPACE_PROFILE)
         && text("reason") != Some(PUBLISH_REASON)
         && !original.contains_key("cwd")
-        && !command.trim_start().starts_with("cd")
+        && (!command.trim_start().starts_with("cd") || inner_directory_change(command, workspace))
         && !NATIVE_SINK_UNSUPPORTED
             .iter()
             .any(|fragment| command.contains(fragment))
+}
+
+/// Whether a leading `cd` leaves the call as the daemon's sink runs it: a
+/// plain target naming a directory strictly inside the workspace, then `&&`.
+/// The daemon runs such a command whole, `cd` included, from the workspace
+/// root, as the native sink does. A `cd` to the root itself or out to a
+/// sibling repository is planned again there, so it keeps the daemon's sink.
+#[cfg(any(target_os = "macos", all(unix, test)))]
+fn inner_directory_change(command: &str, workspace: &str) -> bool {
+    let plain = |text: &str| {
+        !text.is_empty()
+            && text
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"/._-+@,=:".contains(&byte))
+    };
+    let Some(rest) = command.trim_start_matches([' ', '\t']).strip_prefix("cd") else {
+        return false;
+    };
+    let Some(target) = rest
+        .strip_prefix([' ', '\t'])
+        .map(|rest| rest.trim_start_matches([' ', '\t']))
+        .and_then(|rest| rest.split_once([' ', '\t']))
+        .filter(|(target, after)| {
+            plain(target)
+                && after
+                    .trim_start_matches([' ', '\t'])
+                    .strip_prefix("&&")
+                    .is_some_and(|core| core.starts_with([' ', '\t']) && !core.trim().is_empty())
+        })
+        .map(|(target, _)| target)
+    else {
+        return false;
+    };
+    let (Ok(root), Ok(directory)) = (
+        std::fs::canonicalize(workspace),
+        std::fs::canonicalize(std::path::Path::new(workspace).join(target)),
+    ) else {
+        return false;
+    };
+    directory.is_dir() && directory != root && directory.starts_with(&root)
 }
 
 /// Whether the daemon routes this edge response: a contained-run denial
