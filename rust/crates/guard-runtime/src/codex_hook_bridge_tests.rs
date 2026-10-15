@@ -48,8 +48,10 @@ fn config_arguments_are_accepted_as_python_accepts_them() {
                     )
                 })
                 .collect(),
-            // Every accepted vector names the same start command.
+            // Every accepted vector names the same start and fallback
+            // commands.
             start_command: vec!["y".to_owned()],
+            fallback_command: vec!["x".to_owned()],
         });
         assert_eq!(parse_config(argument), expected, "{argument}");
     }
@@ -157,11 +159,14 @@ fn clean_answers_are_rendered_natively() {
 
 #[test]
 fn answers_needing_python_are_handed_off() {
-    for (text, event) in [
-        (
+    assert!(matches!(
+        route_response(
             r#"{"hookSpecificOutput":{"permissionDecision":"allow"},"policy_action":"sandbox-required"}"#,
-            PRE_TOOL_USE,
+            PRE_TOOL_USE
         ),
+        Route::Contain(..)
+    ));
+    for (text, event) in [
         (
             r#"{"continue":true,"guard_transition_observation":{}}"#,
             "Stop",
@@ -355,6 +360,7 @@ fn config(home: &GuardHome) -> BridgeConfig {
         query: "harness=codex&home=%2Fh".to_owned(),
         hook_timeouts: timeouts(&[("PreToolUse", 30), ("Stop", 10)]),
         start_command: Vec::new(),
+        fallback_command: Vec::new(),
     }
 }
 

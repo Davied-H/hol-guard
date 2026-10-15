@@ -1,6 +1,7 @@
 use super::super::approval::Pending;
 use crate::codex_hook_bridge::{route_response, Route};
 use crate::codex_hook_response::PRE_TOOL_USE;
+use crate::pyjson::PyVal;
 
 /// Daemon answers and what Python's `native_handoff_main` wrote for each,
 /// recorded from `codex_daemon_hook_bridge.py`.
@@ -106,9 +107,27 @@ fn a_request_key_python_refuses_keeps_the_deny() {
 }
 
 #[test]
-fn a_sandbox_requirement_or_an_observation_is_handed_off() {
+fn a_sandbox_requirement_is_contained_natively() {
+    let answer = r#"{"hookSpecificOutput":{"permissionDecision":"deny"},"policy_action":"sandbox-required"}"#;
+    let Route::Contain(response, mapped) = route_response(answer, PRE_TOOL_USE) else {
+        panic!("a sandbox requirement is settled by `contain`");
+    };
+    assert_eq!(
+        response.get("policy_action").and_then(PyVal::as_str),
+        Some("sandbox-required")
+    );
+    assert!(!mapped);
+    // Only a `PreToolUse` answer is contained.
+    assert!(matches!(
+        route_response(answer, "PermissionRequest"),
+        Route::Respond(_)
+    ));
+}
+
+#[test]
+fn an_observation_is_handed_off() {
     for answer in [
-        r#"{"hookSpecificOutput":{"permissionDecision":"deny"},"policy_action":"sandbox-required"}"#,
+        r#"{"hookSpecificOutput":{"permissionDecision":"deny"},"policy_action":"sandbox-required","guard_transition_observation":{}}"#,
         r#"{"hookSpecificOutput":{"permissionDecision":"deny"},"guard_transition_observation":{}}"#,
         r#"{"hookSpecificOutput":{"permissionDecision":"deny"},"guardApprovalRequestId":"req_12345678","guard_transition_observation":{}}"#,
     ] {

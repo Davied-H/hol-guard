@@ -86,7 +86,7 @@ fn hex_value(byte: u8) -> Option<u8> {
 
 /// `unquote(text.replace("+", " "))`. Python replaces bytes that are not
 /// UTF-8; this returns `None` instead, so such a query takes the daemon path.
-fn unquote_plus(text: &str) -> Option<String> {
+pub(crate) fn unquote_plus(text: &str) -> Option<String> {
     let bytes = text.as_bytes();
     let mut decoded = Vec::with_capacity(bytes.len());
     let mut index = 0;

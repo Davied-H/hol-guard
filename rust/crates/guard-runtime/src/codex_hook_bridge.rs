@@ -68,6 +68,9 @@ pub(crate) struct BridgeConfig {
     pub(crate) hook_timeouts: Vec<(String, i64)>,
     /// The daemon-start command run when the daemon is unreachable.
     pub(crate) start_command: Vec<String>,
+    /// The isolated Python fallback; its interpreter and bootstrap start
+    /// the contained-execution sink.
+    pub(crate) fallback_command: Vec<String>,
 }
 
 fn non_empty_strings(value: Option<&PyVal>) -> bool {
@@ -136,11 +139,15 @@ pub(crate) fn parse_config(argument: &str) -> Option<BridgeConfig> {
     {
         return None;
     }
-    let start_command = start_command?
-        .as_list()?
-        .iter()
-        .map(|item| item.as_str().map(str::to_owned))
-        .collect::<Option<Vec<_>>>()?;
+    let strings = |value: &PyVal| {
+        value
+            .as_list()?
+            .iter()
+            .map(|item| item.as_str().map(str::to_owned))
+            .collect::<Option<Vec<_>>>()
+    };
+    let start_command = strings(start_command?)?;
+    let fallback_command = strings(payload.get("fallback_command")?)?;
     let mut hook_timeouts = Vec::new();
     for (key, value) in payload.get("hook_timeouts")?.as_dict()? {
         let PyVal::Int(digits) = value else {
@@ -161,6 +168,7 @@ pub(crate) fn parse_config(argument: &str) -> Option<BridgeConfig> {
         query,
         hook_timeouts,
         start_command,
+        fallback_command,
     })
 }
 
@@ -301,6 +309,9 @@ pub(crate) enum Route {
     AwaitApproval(approval::Pending, String),
     /// The daemon reported a process failure: restart it and ask once more.
     Restart,
+    /// A `PreToolUse` sandbox requirement (parsed, surrogate-mapped) for
+    /// `contain::settle`.
+    Contain(PyVal, bool),
 }
 
 /// Route one daemon answer, as Python's fast path would render it. An answer
@@ -323,6 +334,9 @@ pub(crate) fn route_response(text: &str, event_name: &str) -> Route {
     let post = handoff::post_render(&parsed.value, event_name);
     if post == handoff::Post::Python {
         return Route::Handoff(text.to_owned());
+    }
+    if post == handoff::Post::Contain {
+        return Route::Contain(parsed.value.clone(), parsed.mapped);
     }
     let mut rendered = String::new();
     dumps(
@@ -379,8 +393,13 @@ pub(crate) fn route_hook(
     } else {
         RPC_TIMEOUT
     };
-    let route = restart::daemon_route(config, &prepared, deadline, cap)
-        .unwrap_or_else(|| Route::Respond(fail_closed(&prepared.event_name)));
+    let route = match restart::daemon_route(config, &prepared, deadline, cap) {
+        Some(Route::Contain(response, mapped)) => {
+            contain::settle(config, &prepared, response, mapped, deadline)
+        }
+        Some(route) => route,
+        None => Route::Respond(fail_closed(&prepared.event_name)),
+    };
     (route, Some(prepared))
 }
 
@@ -475,8 +494,9 @@ pub(crate) fn run(python_argv: &[String]) -> i32 {
             });
             0
         }
-        // `route_hook` settles every restart; one that escaped fails closed.
-        (Route::Restart, prepared) => {
+        // `route_hook` settles every restart and containment; one that
+        // escaped fails closed.
+        (Route::Restart | Route::Contain(..), prepared) => {
             let event_name = prepared
                 .as_ref()
                 .map_or(PRE_TOOL_USE, |p| p.event_name.as_str());
@@ -498,6 +518,8 @@ pub(crate) fn run(python_argv: &[String]) -> i32 {
 mod approval;
 #[path = "codex_hook_bridge_client.rs"]
 mod client;
+#[path = "codex_hook_bridge_contain.rs"]
+mod contain;
 #[path = "codex_hook_bridge_handoff.rs"]
 mod handoff;
 #[path = "codex_hook_bridge_restart.rs"]
