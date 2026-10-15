@@ -165,3 +165,20 @@ fn skipping_startup_files_leaves_libpq_routing_variables_checked() {
         assert_ne!(shell_with(&home, command, &[name]), "allow", "{name}");
     }
 }
+
+#[test]
+fn a_link_others_could_retarget_leaves_the_socket_to_review() {
+    use std::os::unix::fs::PermissionsExt;
+    let home = home();
+    let sockets = socket_directory(&home);
+    let steady = home.join("steady-link");
+    std::os::unix::fs::symlink(&sockets, &steady).unwrap();
+    let open = home.parent().unwrap().join("open");
+    std::fs::create_dir_all(&open).unwrap();
+    std::fs::set_permissions(&open, std::fs::Permissions::from_mode(0o777)).unwrap();
+    let swappable = open.join("link");
+    std::os::unix::fs::symlink(&sockets, &swappable).unwrap();
+    let probe = |directory: &Path| format!("pg_isready -h {} -p 55434", directory.display());
+    assert_eq!(shell(&home, &probe(&steady)), "allow");
+    assert_ne!(shell(&home, &probe(&swappable)), "allow");
+}

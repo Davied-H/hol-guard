@@ -56,6 +56,7 @@ pub(in crate::pretool) fn trusted_postgres_socket(host: &str, port: Option<&str>
         if !directory.is_dir()
             || (directory.uid() != uid && directory.uid() != 0)
             || (shared && directory.mode() & 0o1000 == 0)
+            || !unswappable(std::path::Path::new(host), uid)
         {
             return false;
         }
@@ -301,6 +302,24 @@ fn missing_directory_protected(path: &std::path::Path, uid: u32) -> bool {
             .ancestors()
             .skip(1)
             .all(|path| steady_directory(path, uid))
+}
+
+/// Whether nobody else can swap an entry along `path` as spelled, so a link
+/// on the way cannot be retargeted once Guard has checked where it leads:
+/// every component, read without following it, belongs to this user or root,
+/// and the directory holding it, resolved, is a [`steady_directory`].
+#[cfg(unix)]
+fn unswappable(path: &std::path::Path, uid: u32) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    path.ancestors().all(|entry| {
+        std::fs::symlink_metadata(entry)
+            .is_ok_and(|metadata| metadata.uid() == uid || metadata.uid() == 0)
+            && entry.parent().is_none_or(|parent| {
+                parent
+                    .canonicalize()
+                    .is_ok_and(|parent| steady_directory(&parent, uid))
+            })
+    })
 }
 
 /// What a `psql` read inherits from the session.

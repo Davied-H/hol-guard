@@ -390,30 +390,8 @@ impl<'a> super::PathContext<'a> {
         let shell_home_matches = home_dir.zip(shell_home).is_some_and(|(declared, shell)| {
             canonical(declared).is_some_and(|declared| canonical(&shell) == Some(declared))
         });
-        // psql runs the system psqlrc `PGSYSCONFDIR` may relocate, then the
-        // file `PSQLRC` names, else `~/.psqlrc` from the shell's HOME; libpq
-        // takes its server from the host, port and service variables. A
-        // stamped name counts whatever its value; `psql_reads` checks
-        // `home_dir` itself, so a stamped HOME must name that directory.
-        let unset = |variables: &[&str]| match execution_environment {
-            Some(environment) => {
-                environment.has_valid_shape()
-                    && !environment.environment_names.iter().any(|name| {
-                        variables
-                            .iter()
-                            .any(|variable| name.eq_ignore_ascii_case(variable))
-                    })
-            }
-            None => variables
-                .iter()
-                .all(|variable| std::env::var_os(variable).is_none()),
-        };
-        let psql_environment = super::safe_scalar::PsqlEnvironment {
-            startup_files_absent: unset(&super::safe_scalar::PSQL_STARTUP_VARIABLES)
-                && execution_environment
-                    .is_none_or(|environment| environment.home.is_none() || shell_home_matches),
-            routing_unset: unset(&super::safe_scalar::PSQL_ROUTING_VARIABLES),
-        };
+        let psql_environment =
+            super::safe_scalar::psql_environment(execution_environment, shell_home_matches);
         Self {
             home_dir,
             cwd,
