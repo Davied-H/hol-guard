@@ -157,16 +157,9 @@ def sibling_project_root(directory: Path, *, home: Path | None) -> Path | None:
 def anchored_sibling_root(command: str, *, workspace: Path, cwd: Path, home: Path | None) -> Path | None:
     """The sibling repository an absolute script or tool names, as native authority anchors it.
 
-    One plain command, such as `python3 <sibling>/scripts/report.py --top 40`
-    or `<sibling>/node_modules/.bin/vite build`, whose executed path
-    (`_executed_path`) lies in a repository outside the workspace. The workspace
-    sandbox is then rooted at that path's repository, as after `cd <root> &&`;
-    native authority re-checks every other word from there. A relative word
-    that names a file from `cwd` would move with the root, so it keeps None.
-    The workspace's own repository is no sibling: a root that holds it, or a
-    path inside it, keeps None. Below a temporary directory, where any
-    session can `git init`, the root must be a linked worktree of a checkout
-    outside the temporary directories (or in home).
+    One plain command whose executed path (`_executed_path`) lies in a repository outside the
+    workspace roots the sandbox there, as after `cd <root> &&`. A relative word naming a file from
+    `cwd`, the workspace's own repository, or an untrusted temporary root keeps None.
     """
     try:
         tokens, exact = _lex(command)
@@ -177,7 +170,7 @@ def anchored_sibling_root(command: str, *, workspace: Path, cwd: Path, home: Pat
         return None
     values = [word.partition("=")[2] if word.startswith("-") else word for word in words]
     if _ASSIGNMENT.match(words[0]) or any(
-        value and not value.startswith("/") and os.path.lexists(cwd / value) for value in values
+        value and not Path(value).is_absolute() and os.path.lexists(cwd / value) for value in values
     ):
         return None
     anchor = _executed_path(words)
@@ -200,13 +193,10 @@ _PYTHON = re.compile(r"python(?:3(?:\.[0-9]+)?)?")
 
 
 def _executed_path(words: list[str]) -> str | None:
-    """The absolute path a command runs: the executable, an interpreter's first
-    operand, or the file `python3 -m py_compile` checks. A path that is only an
-    operand (`rm`, `jq`, `rg`, `cat <sibling>/f`) runs nothing from there.
-    native authority applies the same rule (`workspace_contained_sibling.rs`).
-    """
+    """The absolute path a command runs: the executable, an interpreter's first operand, or the
+    file `python3 -m py_compile` checks, as `workspace_contained_sibling.rs` selects it."""
     executable, arguments = words[0], words[1:]
-    if executable.startswith("/"):
+    if Path(executable).is_absolute():
         return executable
     name = executable.rsplit("/", 1)[-1]
     python = _PYTHON.fullmatch(name) is not None
@@ -216,7 +206,7 @@ def _executed_path(words: list[str]) -> str | None:
         candidate = arguments[0]
     else:
         return None
-    return candidate if candidate.startswith("/") else None
+    return candidate if Path(candidate).is_absolute() else None
 
 
 def _temp_roots() -> tuple[Path, ...]:

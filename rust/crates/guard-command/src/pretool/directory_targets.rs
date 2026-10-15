@@ -390,19 +390,24 @@ impl<'a> super::PathContext<'a> {
         let shell_home_matches = home_dir.zip(shell_home).is_some_and(|(declared, shell)| {
             canonical(declared).is_some_and(|declared| canonical(&shell) == Some(declared))
         });
-        // psql runs the file `PSQLRC` names, else `~/.psqlrc` from the shell's
-        // HOME. A stamped name counts whatever its value; `psql_reads` checks
+        // psql runs the system psqlrc `PGSYSCONFDIR` may relocate, then the
+        // file `PSQLRC` names, else `~/.psqlrc` from the shell's HOME. A
+        // stamped name counts whatever its value; `psql_reads` checks
         // `home_dir` itself, so a stamped HOME must name that directory.
         let psqlrc_absent = match execution_environment {
             Some(environment) => {
                 environment.has_valid_shape()
-                    && !environment
-                        .environment_names
-                        .iter()
-                        .any(|name| name.eq_ignore_ascii_case("PSQLRC"))
+                    && !environment.environment_names.iter().any(|name| {
+                        ["PSQLRC", "PGSYSCONFDIR"]
+                            .iter()
+                            .any(|variable| name.eq_ignore_ascii_case(variable))
+                    })
                     && (environment.home.is_none() || shell_home_matches)
             }
-            None => std::env::var_os("PSQLRC").is_none_or(|value| value.is_empty()),
+            None => {
+                std::env::var_os("PSQLRC").is_none_or(|value| value.is_empty())
+                    && std::env::var_os("PGSYSCONFDIR").is_none()
+            }
         };
         Self {
             home_dir,

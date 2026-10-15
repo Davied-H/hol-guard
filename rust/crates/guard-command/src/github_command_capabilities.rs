@@ -1286,7 +1286,7 @@ fn parse_api_arguments(args: &[String]) -> Result<ApiArgs, GitHubCommandAssessme
                     has_dynamic_option_value || value_is_dynamic(&value, true);
             } else if option_name == "--input" {
                 has_input = true;
-            } else if value_is_dynamic(&value, true) {
+            } else if value_is_dynamic(&value, true) || jq_env(&option_name, &value) {
                 has_dynamic_option_value = true;
             }
             index += consumed;
@@ -1697,7 +1697,7 @@ fn routine_review_thread_arguments_are_static(args: &[String]) -> bool {
 
 #[path = "github_review_thread_jq.rs"]
 mod review_thread_jq;
-use review_thread_jq::jq_is_plain_path;
+use review_thread_jq::{jq_env, jq_is_plain_path};
 
 // ---------------------------------------------------------------------------
 // github_graphql_capabilities.py

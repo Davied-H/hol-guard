@@ -26,7 +26,7 @@
 use crate::{CanonicalCommandV1, CommandSegmentV1};
 use guard_contracts::{GuardExecutionEnvironmentV1, PreToolResultV1};
 use std::fs;
-use std::path::Path;
+use std::path::{Component, Path};
 use std::time::Instant;
 
 pub(crate) const REASON: &str = "native_exact_safe_git_init_chain";
@@ -123,6 +123,15 @@ fn proven(
     let target = Path::new(super::git_init_target::target(
         &model.segments[0].arguments[1..],
     )?);
+    // `cd` searches CDPATH for a relative operand that does not start with a
+    // `.` or `..` component, and could enter some other repository.
+    let first = target.components().next();
+    if !target.is_absolute()
+        && !matches!(first, Some(Component::CurDir | Component::ParentDir))
+        && !context.cdpath_unset
+    {
+        return None;
+    }
     let parent = Path::new(context.cwd?).join(target).parent()?.to_path_buf();
     if !super::git_routes::private_temporary_parent(&fs::canonicalize(parent).ok()?, context) {
         return None;

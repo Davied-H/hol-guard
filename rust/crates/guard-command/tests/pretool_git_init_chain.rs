@@ -154,3 +154,15 @@ fn a_scratch_repository_made_and_committed_in_one_chain_is_quiet() {
     assert!(allowed(&session, &commit, &session.org).is_err());
     global(&["--unset-all", "core.hooksPath"]);
 }
+
+#[test]
+fn a_bare_relative_target_is_reviewed_while_cdpath_could_redirect_its_cd() {
+    let session = session("init-chain-cdpath");
+    let (parent, _cleanup) = owned_parent();
+    let tail =
+        "echo hi > a.txt && git add a.txt && git -c user.name=t -c user.email=t@t commit -qm x";
+    let bare = format!("git init -q guard-scratch && cd guard-scratch && {tail}");
+    assert!(allowed(&session, &bare, &parent).is_err(), "{bare}");
+    let dotted = format!("git init -q ./guard-scratch && cd ./guard-scratch && {tail}");
+    allowed(&session, &dotted, &parent).unwrap();
+}

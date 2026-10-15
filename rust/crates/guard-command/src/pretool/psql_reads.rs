@@ -9,10 +9,11 @@
 //! environment assignments never reach this proof.
 //!
 //! Without `-X`, psql runs the system `psqlrc` (part of the install, trusted
-//! as Git's template directory is), then `PSQLRC` or `~/.psqlrc`, either of
-//! which can run `\!` shell commands. Such a read is admitted only when
-//! neither can exist. A Unix-socket directory must also be one no other user
-//! can plant a server socket in.
+//! as Git's template directory is, unless `PGSYSCONFDIR` moves it), then
+//! `PSQLRC` or `~/.psqlrc`, any of which can run `\!` shell commands. Such a
+//! read is admitted only when none can exist. A Unix-socket directory, named
+//! or the shared `/tmp` default when `-h` is absent, must also be one no
+//! other user can plant a server socket in.
 //!
 //! Still reviewed: script files (`-f`), output and log files (`-o`, `-L`),
 //! variables other than `ON_ERROR_STOP`, print settings other than the pager
@@ -120,13 +121,21 @@ pub(in crate::pretool) fn psql_reads_startup_files(arguments: &[String]) -> bool
     parse(arguments).is_none_or(|invocation| !invocation.no_psqlrc)
 }
 
+/// The default socket directory other users can write: upstream builds
+/// (Homebrew, Postgres.app) use `/tmp`. Debian's and Red Hat's run directory
+/// is writable only by the server account, so nobody else can plant there.
+const SHARED_DEFAULT_SOCKET_DIRECTORY: &str = "/tmp";
+
 fn admitted(arguments: &[String], startup_files_absent: impl FnOnce() -> bool) -> bool {
     parse(arguments).is_some_and(|invocation| {
         (invocation.list || invocation.command)
-            && invocation
-                .host
-                .as_deref()
-                .is_none_or(|host| trusted_postgres_socket(host, invocation.port.as_deref()))
+            && trusted_postgres_socket(
+                invocation
+                    .host
+                    .as_deref()
+                    .unwrap_or(SHARED_DEFAULT_SOCKET_DIRECTORY),
+                invocation.port.as_deref(),
+            )
             && (invocation.no_psqlrc || startup_files_absent())
     })
 }
@@ -145,6 +154,7 @@ fn startup_files_absent(
         return false;
     };
     set(psqlrc).is_none()
+        && std::env::var_os("PGSYSCONFDIR").is_none()
         && no_startup_file(home, ".psqlrc")
         && set(shell_home).is_none_or(|shell| no_startup_file(Path::new(shell), ".psqlrc"))
         && set(appdata).is_none_or(|appdata| {
