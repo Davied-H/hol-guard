@@ -188,7 +188,8 @@ pub(super) fn normalized_haystack(value: &str) -> String {
 }
 
 /// Floors no extension permission can settle: Guard self-protection, secret
-/// exfiltration, and Git configuration that runs a program Guard cannot read.
+/// exfiltration, a glob that could name a secret file, and Git configuration
+/// that runs a program Guard cannot read.
 pub(crate) fn fixed_command_floor(model: &CanonicalCommandV1) -> bool {
     model
         .segments
@@ -202,23 +203,48 @@ pub(crate) fn fixed_command_floor(model: &CanonicalCommandV1) -> bool {
         )
         || ps::sensitive_exfiltration(model, sensitive_command, exfiltration_command)
         || model.segments.iter().any(names_guard_outside_message)
+        || model.segments.iter().any(selects_secret_outside_message)
 }
 
 /// A Git alias, hook or config value can carry a program the parser never
 /// models; any argument naming Guard, other than a commit message, keeps the
 /// native decision.
 fn names_guard_outside_message(segment: &crate::CommandSegmentV1) -> bool {
+    arguments_outside_message(segment).any(|argument| {
+        let lowered = argument.to_ascii_lowercase();
+        ["hol-guard", "plugin-guard", ".hol-guard"]
+            .iter()
+            .any(|needle| lowered.contains(needle))
+    })
+}
+
+/// A glob or brace pattern, other than a commit message, that the shell or a
+/// Git pathspec could expand to a secret file name. Rust reviews such a read
+/// as an unproven shape rather than as secret access, so without this floor
+/// an explicit Allow would settle `git diff --no-index .en? README.md`. Text
+/// with whitespace, such as a comment body or a query, and a `name=value`
+/// field that is not an option are not paths, so they are not screened.
+fn selects_secret_outside_message(segment: &crate::CommandSegmentV1) -> bool {
+    arguments_outside_message(segment).any(|argument| {
+        argument.contains(['*', '?', '[', '{'])
+            && !argument.contains(char::is_whitespace)
+            && (argument.starts_with('-') || !argument.contains('='))
+            && sensitive_read_path_argument(argument)
+    })
+}
+
+/// A segment's arguments other than a `-m`/`--message` commit message.
+fn arguments_outside_message(
+    segment: &crate::CommandSegmentV1,
+) -> impl Iterator<Item = &String> + '_ {
     let mut message_value = false;
-    segment.arguments.iter().any(|argument| {
+    segment.arguments.iter().filter(move |argument| {
         let is_message = std::mem::take(&mut message_value);
         message_value = matches!(argument.as_str(), "-m" | "--message");
         let lowered = argument.to_ascii_lowercase();
         let attached_message = lowered.starts_with("--message=")
             || (lowered.starts_with("-m") && !lowered.starts_with("--"));
         !(is_message || attached_message)
-            && ["hol-guard", "plugin-guard", ".hol-guard"]
-                .iter()
-                .any(|needle| lowered.contains(needle))
     })
 }
 

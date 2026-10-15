@@ -316,3 +316,51 @@ fn git_brace_revision_suffixes_are_not_globs() {
         assert_ne!(action(&home, &repository, command), "allow", "{command}");
     }
 }
+
+// An explicit Git Allow settles Rust's review of an unproven read, but a glob
+// that bash or a Git pathspec could expand to a secret file name keeps the
+// review: `.en?` is `.env` once the shell expands it.
+#[test]
+fn an_explicit_git_allow_does_not_settle_a_glob_that_names_a_secret() {
+    let root = std::env::temp_dir().join(format!("guard allow secret glob {}", std::process::id()));
+    let _cleanup = FixtureCleanup(root.clone());
+    let home = root.join("home");
+    let repository = root.join("repository");
+    for directory in [&home, &repository] {
+        std::fs::create_dir_all(directory).unwrap();
+    }
+    let home = home.canonicalize().unwrap();
+    let repository = repository.canonicalize().unwrap();
+    git(&repository, &home, &["init", "--quiet"]);
+    git(
+        &repository,
+        &home,
+        &["config", "user.email", "fixture@example.test"],
+    );
+    git(&repository, &home, &["config", "user.name", "fixture"]);
+    std::fs::create_dir_all(repository.join("src")).unwrap();
+    std::fs::write(repository.join("src/index.ts"), "export {};\n").unwrap();
+    std::fs::write(repository.join("README.md"), "fixture\n").unwrap();
+    git(&repository, &home, &["add", "-A"]);
+    git(&repository, &home, &["commit", "--quiet", "-m", "fixture"]);
+    std::fs::write(repository.join(".env"), "FIXTURE=1\n").unwrap();
+
+    for command in [
+        "git diff --no-index .en? README.md",
+        "git diff --no-index .en{v..v} README.md",
+        "git diff --no-index .e*v README.md",
+        "git log -p -1 -- .en?",
+        "git log -p -1 -- '.en*'",
+        "git show HEAD -- '*.env*'",
+    ] {
+        assert_ne!(action(&home, &repository, command), "allow", "{command}");
+    }
+    // An ordinary glob and a brace revision keep the Allow.
+    for command in [
+        "git diff --no-index src/inde? README.md",
+        "git log -p -1 -- 'src/*.ts'",
+        "git log -1 HEAD@{0}",
+    ] {
+        assert_eq!(action(&home, &repository, command), "allow", "{command}");
+    }
+}
