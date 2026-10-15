@@ -214,44 +214,51 @@ fn valid_prompt_risk_classes(value: &PyVal) -> bool {
     true
 }
 
+/// `receipt.get(name)`, or `None` when the receipt lacks the field.
+fn at<'a>(receipt: &'a PyVal, name: &str) -> &'a PyVal {
+    receipt.get(name).unwrap_or(&PyVal::Null)
+}
+
 /// `_validate_receipt_identity`.
-fn valid_identity(field: &dyn Fn(&str) -> &PyVal) -> bool {
-    let event_name = string(field("event_name"));
-    let payload_kind = string(field("payload_kind"));
-    string(field("schema")) == Some(SCHEMA)
-        && equals_one(field("version"))
-        && string(field("authority")) == Some("rust")
-        && string(field("decision_id")).is_some_and(hex64)
-        && string(field("request_id")).is_some_and(|text| identifier(text, true, 256))
-        && string(field("request_digest")).is_some_and(hex64)
-        && string(field("harness")).is_some_and(|text| identifier(text, false, 64))
+fn valid_identity(receipt: &PyVal) -> bool {
+    let event_name = string(at(receipt, "event_name"));
+    let payload_kind = string(at(receipt, "payload_kind"));
+    string(at(receipt, "schema")) == Some(SCHEMA)
+        && equals_one(at(receipt, "version"))
+        && string(at(receipt, "authority")) == Some("rust")
+        && string(at(receipt, "decision_id")).is_some_and(hex64)
+        && string(at(receipt, "request_id")).is_some_and(|text| identifier(text, true, 256))
+        && string(at(receipt, "request_digest")).is_some_and(hex64)
+        && string(at(receipt, "harness")).is_some_and(|text| identifier(text, false, 64))
         && event_name.is_some_and(|text| EVENTS.contains(&text))
         && payload_kind.is_some_and(|text| PAYLOAD_KINDS.contains(&text))
         && (event_name != Some("UserPromptSubmit") || payload_kind == Some("inline"))
-        && integer(field("policy_generation"), 1, i64::MAX.into())
+        && integer(at(receipt, "policy_generation"), 1, i64::MAX.into())
 }
 
 /// `_validate_receipt_policy`.
-fn valid_policy(receipt: &PyVal, field: &dyn Fn(&str) -> &PyVal) -> bool {
-    let prompt = string(field("event_name")) == Some("UserPromptSubmit");
-    let optional_digest = |name: &str| match field(name) {
+fn valid_policy(receipt: &PyVal) -> bool {
+    let prompt = string(at(receipt, "event_name")) == Some("UserPromptSubmit");
+    let optional_digest = |name: &str| match at(receipt, name) {
         PyVal::Null => true,
         value => string(value).is_some_and(hex64),
     };
-    let action = |name: &str| matches!(field(name), PyVal::Null) || one_of(field(name), &ACTIONS);
+    let action = |name: &str| {
+        matches!(at(receipt, name), PyVal::Null) || one_of(at(receipt, name), &ACTIONS)
+    };
     ["policy_digest", "rule_digest", "runtime_identity", "reviewed_output_sha256"]
         .iter()
         .all(|name| optional_digest(name))
-        && one_of(field("decision"), &["allow", "deny"])
-        && one_of(field("model_output_action"), &MODEL_ACTIONS)
-        && (!prompt || string(field("model_output_action")) == Some("not_applicable"))
+        && one_of(at(receipt, "decision"), &["allow", "deny"])
+        && one_of(at(receipt, "model_output_action"), &MODEL_ACTIONS)
+        && (!prompt || string(at(receipt, "model_output_action")) == Some("not_applicable"))
         && receipt
             .get("prompt_risk_classes")
             .is_none_or(|classes| prompt && valid_prompt_risk_classes(classes))
         && action("policy_action")
         && action("observed_policy_action")
         // `_IDENTIFIER` allows 128 characters, under the 512-byte string cap.
-        && string(field("reason_code")).is_some_and(|text| identifier(text, true, 128))
+        && string(at(receipt, "reason_code")).is_some_and(|text| identifier(text, true, 128))
         && ["origin_authentication", "execution_intent_digest", "business_review_binding"]
             .iter()
             .all(|name| receipt.get(name).is_none_or(|value| string(value).is_some_and(hex64)))
@@ -280,27 +287,27 @@ fn sorted(value: &PyVal) -> PyVal {
 }
 
 /// `_validate_receipt_limits`.
-fn valid_limits(receipt: &PyVal, field: &dyn Fn(&str) -> &PyVal) -> bool {
+fn valid_limits(receipt: &PyVal) -> bool {
     [
         "workspace_bound",
         "source_ref_external_allowed",
         "observe_mode",
     ]
     .iter()
-    .all(|name| matches!(field(name), PyVal::Bool(_)))
-        && (matches!(field("deadline_budget_ms"), PyVal::Null)
-            || integer(field("deadline_budget_ms"), 1, 9_000))
+    .all(|name| matches!(at(receipt, name), PyVal::Bool(_)))
+        && (matches!(at(receipt, "deadline_budget_ms"), PyVal::Null)
+            || integer(at(receipt, "deadline_budget_ms"), 1, 9_000))
         && dumps_sorted(receipt, true).len() <= MAX_BYTES
 }
 
 /// `canonical_receipt_bytes`: the identity the decision id commits to.
-fn canonical_identity(receipt: &PyVal, field: &dyn Fn(&str) -> &PyVal) -> String {
+fn canonical_identity(receipt: &PyVal) -> String {
     let mut identity = vec![
         ("schema".to_owned(), PyVal::Str(IDENTITY_SCHEMA.to_owned())),
         ("version".to_owned(), PyVal::Int("1".to_owned())),
     ];
     for name in IDENTITY {
-        identity.push((name.to_owned(), field(name).clone()));
+        identity.push((name.to_owned(), at(receipt, name).clone()));
     }
     for name in IDENTITY_OPTIONAL {
         if let Some(value) = receipt.get(name) {
@@ -328,12 +335,9 @@ pub(super) fn valid(receipt: &PyVal) -> bool {
     {
         return false;
     }
-    let field = |name: &str| receipt.get(name).unwrap_or(&PyVal::Null);
-    if !valid_identity(&field) || !valid_policy(receipt, &field) || !valid_limits(receipt, &field) {
+    if !valid_identity(receipt) || !valid_policy(receipt) || !valid_limits(receipt) {
         return false;
     }
-    let expected = hex::encode(Sha256::digest(
-        canonical_identity(receipt, &field).as_bytes(),
-    ));
-    string(field("decision_id")) == Some(expected.as_str())
+    let expected = hex::encode(Sha256::digest(canonical_identity(receipt).as_bytes()));
+    string(at(receipt, "decision_id")) == Some(expected.as_str())
 }

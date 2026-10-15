@@ -1,5 +1,5 @@
 //! What the native Codex bridge does with a daemon answer after rendering
-//! it, as Python's `native_handoff_main` would through `_bridge_output`.
+//! it, as Python's bridge `main` does through `_bridge_output`.
 //!
 //! For a `PreToolUse` deny, `_bridge_output` changes the answer only in two
 //! ways: `route_codex_containment` rewrites a sandbox requirement, and

@@ -3,7 +3,7 @@ use crate::codex_hook_bridge::{route_response, Route};
 use crate::codex_hook_response::PRE_TOOL_USE;
 use crate::pyjson::PyVal;
 
-/// Daemon answers and what Python's `native_handoff_main` wrote for each,
+/// Daemon answers and what Python's `_bridge_output` wrote for each,
 /// recorded from `codex_daemon_hook_bridge.py`.
 const PLAIN_DENIES: [(&str, &str); 6] = [
     (
