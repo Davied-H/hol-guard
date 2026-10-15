@@ -63,18 +63,42 @@ function endsWord(text: string, end: number): boolean {
  * wherever they occur.
  */
 export function wordMatch(text: string, term: string): "exact" | "prefix" | null {
-  const lower = text.toLowerCase();
-  // Case folding that changes length would misalign the case checks below.
-  const source = lower.length === text.length ? text : lower;
+  const { folded, origin } = foldCase(text);
   const anchored = WORD_CHAR.test(term[0] ?? "");
   const closes = WORD_CHAR.test(term[term.length - 1] ?? "");
   let found: "prefix" | null = null;
-  for (let index = lower.indexOf(term); index !== -1; index = lower.indexOf(term, index + 1)) {
-    if (anchored && !startsWord(source, index)) continue;
-    if (!closes || endsWord(source, index + term.length)) return "exact";
+  for (let index = folded.indexOf(term); index !== -1; index = folded.indexOf(term, index + 1)) {
+    if (anchored && (splitsCharacter(origin, index) || !startsWord(text, origin?.[index] ?? index))) continue;
+    const end = index + term.length;
+    if (!closes || (!splitsCharacter(origin, end) && endsWord(text, origin?.[end] ?? end))) return "exact";
     found = "prefix";
   }
   return found;
+}
+
+// Lowercases `text` and maps each lowercased position back to the original,
+// so word-boundary checks keep the original case even when folding changes
+// the length ("İ" lowercases to two code units). `origin` is null when every
+// position already lines up.
+function foldCase(text: string): { folded: string; origin: number[] | null } {
+  const lower = text.toLowerCase();
+  if (lower.length === text.length) return { folded: lower, origin: null };
+  let folded = "";
+  const origin: number[] = [];
+  for (let index = 0; index < text.length; ) {
+    const character = String.fromCodePoint(text.codePointAt(index)!);
+    const lowered = character.toLowerCase();
+    folded += lowered;
+    for (let unit = 0; unit < lowered.length; unit += 1) origin.push(index);
+    index += character.length;
+  }
+  origin.push(text.length);
+  return { folded, origin };
+}
+
+// True when `index` falls inside the lowercased form of one original character.
+function splitsCharacter(origin: number[] | null, index: number): boolean {
+  return origin !== null && index > 0 && index < origin.length - 1 && origin[index] === origin[index - 1];
 }
 
 type TermMatch = { band: number; exact: boolean };

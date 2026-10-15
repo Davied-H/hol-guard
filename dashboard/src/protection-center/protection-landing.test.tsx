@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 
 import type { ExtensionCatalogItem, ExtensionPermission } from "../extension-controls-api";
 import { FIXED_PROTECTION_PERMISSION, protectionModuleFixture } from "./fixtures/protection-fixtures";
-import { searchCommandPatterns } from "./model/protection-landing";
+import { searchCommandPatterns, wordMatch } from "./model/protection-landing";
 
 const hits = (extensions: readonly ExtensionCatalogItem[]) =>
   extensions.flatMap((extension) => extension.permissions.map((permission) => ({ extension, permission })));
@@ -193,6 +193,8 @@ const hits = (extensions: readonly ExtensionCatalogItem[]) =>
     "terms that start with punctuation still match flags",
   );
   assert.equal(searchCommandPatterns(hits(catalog), "itocean").length, 0, "mid-word fragments do not match");
+  assert.equal(wordMatch("İstanbulGit", "git"), "exact", "a camelCase hump survives case folding that changes length");
+  assert.equal(wordMatch("İstanbulGit", "bulgit"), null, "folded text still rejects mid-word fragments");
 }
 
 console.log("protection-landing.test.tsx: all assertions passed");

@@ -8394,17 +8394,35 @@ function endsWord(text, end) {
   return end >= text.length || !WORD_CHAR.test(text[end]);
 }
 function wordMatch(text, term) {
-  const lower = text.toLowerCase();
-  const source = lower.length === text.length ? text : lower;
+  const { folded, origin } = foldCase(text);
   const anchored = WORD_CHAR.test(term[0] ?? "");
   const closes = WORD_CHAR.test(term[term.length - 1] ?? "");
   let found = null;
-  for (let index = lower.indexOf(term); index !== -1; index = lower.indexOf(term, index + 1)) {
-    if (anchored && !startsWord(source, index)) continue;
-    if (!closes || endsWord(source, index + term.length)) return "exact";
+  for (let index = folded.indexOf(term); index !== -1; index = folded.indexOf(term, index + 1)) {
+    if (anchored && (splitsCharacter(origin, index) || !startsWord(text, origin?.[index] ?? index))) continue;
+    const end = index + term.length;
+    if (!closes || !splitsCharacter(origin, end) && endsWord(text, origin?.[end] ?? end)) return "exact";
     found = "prefix";
   }
   return found;
+}
+function foldCase(text) {
+  const lower = text.toLowerCase();
+  if (lower.length === text.length) return { folded: lower, origin: null };
+  let folded = "";
+  const origin = [];
+  for (let index = 0; index < text.length; ) {
+    const character = String.fromCodePoint(text.codePointAt(index));
+    const lowered = character.toLowerCase();
+    folded += lowered;
+    for (let unit = 0; unit < lowered.length; unit += 1) origin.push(index);
+    index += character.length;
+  }
+  origin.push(text.length);
+  return { folded, origin };
+}
+function splitsCharacter(origin, index) {
+  return origin !== null && index > 0 && index < origin.length - 1 && origin[index] === origin[index - 1];
 }
 function termMatch(term, bands) {
   for (let band = IDENTITY_MATCH; band <= CONTEXT_MATCH; band += 1) {
