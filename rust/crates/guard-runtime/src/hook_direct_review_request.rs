@@ -173,12 +173,30 @@ fn expanded_home(environment: &BTreeMap<String, String>) -> Option<String> {
     Some(if trimmed.is_empty() { "/" } else { trimmed }.to_owned())
 }
 
-/// `ntpath.expanduser("~")`: `USERPROFILE` as it stands. Without it the
-/// daemon joins `HOMEDRIVE` and `HOMEPATH`, which is left to the daemon.
-/// `os.environ` spells Windows names in upper case, as published.
+/// `ntpath.expanduser("~")`: `USERPROFILE` as it stands, else
+/// `ntpath.join(HOMEDRIVE, HOMEPATH)`. `os.environ` spells Windows names in
+/// upper case, as published.
 #[cfg(windows)]
 fn expanded_home(environment: &BTreeMap<String, String>) -> Option<String> {
-    environment.get("USERPROFILE").cloned()
+    if let Some(profile) = environment.get("USERPROFILE") {
+        return Some(profile.clone());
+    }
+    let drive = environment.get("HOMEDRIVE").map_or("", String::as_str);
+    join_home_drive(drive, environment.get("HOMEPATH")?)
+}
+
+/// `ntpath.join(drive, path)` where it is plain concatenation: an empty or
+/// letter drive, and a path that names no drive and does not start a UNC
+/// share. Other shapes go through `splitroot`, so the daemon joins them.
+#[cfg(any(windows, test))]
+fn join_home_drive(drive: &str, path: &str) -> Option<String> {
+    let letter_drive = matches!(drive.as_bytes(), [letter, b':'] if letter.is_ascii_alphabetic());
+    let separators = path
+        .bytes()
+        .take_while(|byte| matches!(byte, b'\\' | b'/'))
+        .count();
+    ((drive.is_empty() || letter_drive) && !path.contains(':') && separators < 2)
+        .then(|| format!("{drive}{path}"))
 }
 
 #[cfg(not(any(unix, windows)))]
