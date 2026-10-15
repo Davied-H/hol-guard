@@ -6,8 +6,9 @@
 //! client's `main` does: read the hook, ask the daemon, wait for a pending
 //! approval and write Grok's answer. A live resident that answers the hook
 //! exactly as the daemon would is asked first, and its answer is rendered
-//! as the daemon's would be. A prompt is asked about only once the daemon
-//! reports its workspace ready.
+//! as the daemon's would be. The resident answers a prompt only for a
+//! workspace whose published policy it holds, so the daemon's readiness
+//! check runs only for a prompt the resident leaves to the daemon.
 //!
 //! A hook the bridge cannot read, and a home with no daemon to ask, get the
 //! client's own fail-closed answer, and so does every failure once the
@@ -206,7 +207,7 @@ impl Client {
         payload: &mut Vec<(String, PyVal)>,
         deadline: Instant,
     ) -> Option<()> {
-        let mut left = seconds_left(deadline);
+        let left = seconds_left(deadline);
         if left <= 0.0 {
             return None;
         }
@@ -231,20 +232,22 @@ impl Client {
             {
                 return None;
             }
-            left = seconds_left(deadline);
-            if left <= 0.0 {
-                return None;
-            }
         }
-        payload.retain(|(key, _)| key != "guard_remaining_seconds");
-        // `max(1, int(remaining * 1000))`; the cast truncates like `int`.
-        let millis = ((left * 1000.0) as u64).max(1);
-        set_member(
-            payload,
-            "guard_remaining_ms",
-            PyVal::Int(millis.to_string()),
-        );
-        Some(())
+        stamp_remaining(payload, deadline)
+    }
+
+    /// The resident's answer for a prompt stamped with the time left, asked
+    /// before any readiness check. The resident answers only from the
+    /// published policy it holds for the prompt's workspace with a current
+    /// acknowledgement, which is the state the readiness check waits for.
+    fn prompt_direct_answer(
+        &self,
+        payload: &[(String, PyVal)],
+        deadline: Instant,
+    ) -> Option<String> {
+        let mut stamped = payload.to_vec();
+        stamp_remaining(&mut stamped, deadline)?;
+        self.direct_answer(PROMPT_EVENT, &dump_object(&stamped), seconds_left(deadline))
     }
 
     /// `_apply_grok_wait`: hold a PreToolUse review open until every
@@ -388,21 +391,27 @@ impl Client {
         if timeout <= 0.0 {
             return Self::fail(prefix);
         }
-        if event == PROMPT_EVENT {
+        let resident = if event == PROMPT_EVENT {
             let deadline = capped(Instant::now(), timeout, self.deadline);
-            if self
-                .prepare_prompt(&daemon, &mut payload, deadline)
-                .is_none()
-            {
-                return Self::fail(prefix);
+            let resident = self.prompt_direct_answer(&payload, deadline);
+            if resident.is_none() {
+                if self
+                    .prepare_prompt(&daemon, &mut payload, deadline)
+                    .is_none()
+                {
+                    return Self::fail(prefix);
+                }
+                text = dump_object(&payload);
+                timeout = seconds_left(deadline);
+                if timeout <= 0.0 {
+                    return Self::fail(prefix);
+                }
             }
-            text = dump_object(&payload);
-            timeout = seconds_left(deadline);
-            if timeout <= 0.0 {
-                return Self::fail(prefix);
-            }
-        }
-        let answer = match self.direct_answer(&event, &text, timeout) {
+            resident
+        } else {
+            self.direct_answer(&event, &text, timeout)
+        };
+        let answer = match resident {
             Some(answer) => json_object(&answer),
             None => {
                 timeout = timeout.min(seconds_left(self.deadline));
@@ -478,6 +487,24 @@ pub(crate) fn run(python_argv: &[String], started: Instant) -> i32 {
     let Route::Respond { stdout, exit_code } = client.route(&raw);
     write_stdout(&stdout);
     exit_code
+}
+
+/// Stamp the time left as the daemon receives it. `None` once the deadline
+/// has passed.
+fn stamp_remaining(payload: &mut Vec<(String, PyVal)>, deadline: Instant) -> Option<()> {
+    let left = seconds_left(deadline);
+    if left <= 0.0 {
+        return None;
+    }
+    payload.retain(|(key, _)| key != "guard_remaining_seconds");
+    // `max(1, int(remaining * 1000))`; the cast truncates like `int`.
+    let millis = ((left * 1000.0) as u64).max(1);
+    set_member(
+        payload,
+        "guard_remaining_ms",
+        PyVal::Int(millis.to_string()),
+    );
+    Some(())
 }
 
 #[cfg(all(test, unix))]

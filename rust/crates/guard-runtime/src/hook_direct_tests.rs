@@ -1000,8 +1000,8 @@ fn a_codex_prompt_is_answered_in_either_posture() {
     }
 }
 
-/// The Grok bridge asks once the daemon reports the workspace ready, with
-/// the time left stamped as the daemon receives it.
+/// The Grok bridge asks with the time left stamped as the daemon receives
+/// it, before the daemon's readiness check.
 #[test]
 fn a_grok_prompt_the_bridge_prepared_is_answered_in_either_posture() {
     for (label, extra) in [
