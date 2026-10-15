@@ -75,7 +75,9 @@ def test_pnpm_exec_is_read_as_a_local_bin_run(monkeypatch, tmp_path):
     base = SimpleNamespace(workspace=tmp_path, cwd=tmp_path, executable="/usr/bin/node", denied_capabilities=())
     monkeypatch.setattr(tool, "prepare_restricted_node_test", lambda *args, **kwargs: base)
     monkeypatch.setattr(tool, "replace", lambda original, **changes: SimpleNamespace(**{**vars(original), **changes}))
-    plan = tool.prepare_restricted_node_tool(["pnpm", "exec", "tsc", "--noEmit", "--pretty", "false"], workspace=tmp_path)
+    plan = tool.prepare_restricted_node_tool(
+        ["pnpm", "exec", "tsc", "--noEmit", "--pretty", "false"], workspace=tmp_path
+    )
     assert plan.profile_version == "node-tool-readonly-v1"
     assert plan.command == ("/usr/bin/node", str(entry), "--noEmit", "--pretty", "false")
 
