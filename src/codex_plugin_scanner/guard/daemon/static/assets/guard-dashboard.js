@@ -20300,36 +20300,6 @@ function TabBar(props) {
     tab.value
   )) });
 }
-function isBulkApproveGateReady(gate) {
-  return gate?.enabled === true && gate?.configured === true;
-}
-function validateBulkApproveCredentials(gate, credentials) {
-  if (!isBulkApproveGateReady(gate)) {
-    return "Set up an approval gate in Settings before bulk approval.";
-  }
-  if (gate?.totp_enabled === true) {
-    return credentials.totpCode.trim() ? null : "Enter your authenticator code to continue.";
-  }
-  if (!credentials.password.trim()) {
-    return "Enter your approval password to continue.";
-  }
-  return null;
-}
-function buildBulkGateCredentials(gate, password, totpCode) {
-  if (!isBulkApproveGateReady(gate)) {
-    return void 0;
-  }
-  if (gate?.totp_enabled === true) {
-    return {
-      approval_totp_code: totpCode.trim(),
-      approval_gate_use_cooldown: false
-    };
-  }
-  return {
-    approval_password: password.trim(),
-    approval_gate_use_cooldown: false
-  };
-}
 function approvalGateLockRemainingSeconds(gate, nowMs = Date.now()) {
   if (gate?.enabled === false) return 0;
   if (!gate?.locked_until) return 0;
@@ -20357,6 +20327,39 @@ function requiresApprovalPasswordPrompt(cooldownActive, strictAllDecisions, sele
     return true;
   }
   return strictAllDecisions;
+}
+function defaultUseApprovalCooldown(gate) {
+  return (gate?.cooldown_seconds ?? 0) > 0 && gate?.totp_enabled !== true;
+}
+function isBulkApproveGateReady(gate) {
+  return gate?.enabled === true && gate?.configured === true;
+}
+function validateBulkApproveCredentials(gate, credentials) {
+  if (!isBulkApproveGateReady(gate)) {
+    return "Set up an approval gate in Settings before bulk approval.";
+  }
+  if (gate?.totp_enabled === true) {
+    return credentials.totpCode.trim() ? null : "Enter your authenticator code to continue.";
+  }
+  if (!credentials.password.trim()) {
+    return "Enter your approval password to continue.";
+  }
+  return null;
+}
+function buildBulkGateCredentials(gate, password, totpCode) {
+  if (!isBulkApproveGateReady(gate)) {
+    return void 0;
+  }
+  if (gate?.totp_enabled === true) {
+    return {
+      approval_totp_code: totpCode.trim(),
+      approval_gate_use_cooldown: false
+    };
+  }
+  return {
+    approval_password: password.trim(),
+    approval_gate_use_cooldown: defaultUseApprovalCooldown(gate)
+  };
 }
 function approvalProofRecentlySatisfied(gate) {
   return gate?.totp_enabled === true && gate.totp_recent_satisfied === true;
@@ -29557,9 +29560,9 @@ function ApprovalPasswordModal(props) {
                 className: "h-4 w-4 accent-brand-blue"
               }
             ),
-            "Skip password for next ",
+            "Skip the password for the next ",
             approvalGateCooldownLabel(props.gate.cooldown_seconds).toLowerCase(),
-            " (use cooldown)"
+            " (uncheck to be asked every time)"
           ] })
         ] }) }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-6 flex flex-col gap-2 sm:flex-row sm:justify-end", children: [
@@ -31558,7 +31561,7 @@ function ReviewDecisionCard(props) {
   const [errorMessage, setErrorMessage] = reactExports.useState(null);
   const [approvalPassword, setApprovalPassword] = reactExports.useState("");
   const [approvalTotpCode, setApprovalTotpCode] = reactExports.useState("");
-  const [useCooldown, setUseCooldown] = reactExports.useState(false);
+  const [cooldownOptOut, setCooldownOptOut] = reactExports.useState(false);
   const [pendingAction, setPendingAction] = reactExports.useState(null);
   const [extensionDialogActive, setExtensionDialogActive] = reactExports.useState(false);
   const [pendingContractKey, setPendingContractKey] = reactExports.useState(null);
@@ -31566,6 +31569,7 @@ function ReviewDecisionCard(props) {
   const [effectiveApprovalGate, setEffectiveApprovalGate] = reactExports.useState(props.approvalGate);
   const allowButtonRef = reactExports.useRef(null);
   const approvalGate = effectiveApprovalGate;
+  const useCooldown = defaultUseApprovalCooldown(approvalGate) && !cooldownOptOut;
   const availableScopeChoices = reactExports.useMemo(
     () => item ? standardScopeChoicesForRequest(item, "allow") : [],
     [item]
@@ -31604,7 +31608,7 @@ function ReviewDecisionCard(props) {
       setErrorMessage(null);
       setApprovalPassword("");
       setApprovalTotpCode("");
-      setUseCooldown(false);
+      setCooldownOptOut(false);
       setPendingAction(null);
       setPendingContractKey(null);
       setRememberExactAction(false);
@@ -31623,11 +31627,11 @@ function ReviewDecisionCard(props) {
     }
   }, [decisionContractKey]);
   const handleResolve = reactExports.useCallback(
-    async (action) => {
+    async (action, gateOverride) => {
       if (!item || resolutionBlockReason !== null) return;
       const requestId = item.request_id;
       const requestedScope = action === "allow" ? allowScope : blockScope;
-      const gate = approvalGate;
+      const gate = gateOverride ?? approvalGate;
       const gateRequired = approvalGateRequiredForResolution(gate, action, requestedScope);
       if (gateRequired && approvalGateIsLocked(gate)) {
         setErrorMessage(
@@ -31659,15 +31663,23 @@ function ReviewDecisionCard(props) {
             persistExactAction
           }),
           ...proof,
-          ...includeGateFields ? { approval_gate_use_cooldown: useCooldown } : {}
+          ...includeGateFields ? {
+            approval_gate_use_cooldown: defaultUseApprovalCooldown(gate) && !cooldownOptOut
+          } : {}
         });
         if (!isStillShown(requestId)) return;
         setResolved({ requestId, action, persistedExactAction: persistExactAction });
         setApprovalPassword("");
         setApprovalTotpCode("");
-        setUseCooldown(false);
+        setCooldownOptOut(false);
         setPendingAction(null);
         setPendingContractKey(null);
+        if (gateRequired && (gate?.cooldown_seconds ?? 0) > 0) {
+          void fetchResolvedApprovalGate().then((refreshed) => {
+            if (refreshed && isStillShown(requestId)) setEffectiveApprovalGate(refreshed);
+          }).catch(() => {
+          });
+        }
       } catch (err) {
         if (!isStillShown(requestId)) return;
         const message = err instanceof Error ? err.message : "Something went wrong. Try again.";
@@ -31696,7 +31708,7 @@ function ReviewDecisionCard(props) {
       approvalGate,
       approvalPassword,
       approvalTotpCode,
-      useCooldown,
+      cooldownOptOut,
       resolutionBlockReason
     ]
   );
@@ -31721,25 +31733,39 @@ function ReviewDecisionCard(props) {
         );
         return;
       }
-      const gateEnabled = gateRequired && gate?.configured === true && requiresApprovalPasswordPrompt(
-        gate.cooldown_active,
-        gate.strict_all_decisions,
-        requestedScope
-      );
-      if (!gateEnabled) {
-        void handleResolve(action);
-        return;
-      }
-      setErrorMessage(null);
-      if (!approvalProofRecentlySatisfied(gate)) {
-        setPendingAction(action);
-        setPendingContractKey(decisionContractKey);
-        return;
-      }
       void (async () => {
-        const fresh = await fetchResolvedApprovalGate().catch(() => gate);
-        if (approvalProofRecentlySatisfied(fresh ?? gate)) {
-          void handleResolve(action);
+        let current = gate;
+        if (gateRequired && (gate?.cooldown_seconds ?? 0) > 0 && gate?.totp_enabled !== true) {
+          const fresh2 = await fetchResolvedApprovalGate().catch(() => null);
+          if (fresh2) {
+            current = fresh2;
+            setEffectiveApprovalGate(fresh2);
+          }
+        }
+        if (approvalGateRequiredForResolution(current, action, requestedScope) && approvalGateIsLocked(current)) {
+          setErrorMessage(
+            `Approval gate is temporarily locked. Try again in ${approvalGateLockRemainingSeconds(current)} seconds.`
+          );
+          return;
+        }
+        const gateEnabled = approvalGateRequiredForResolution(current, action, requestedScope) && current?.configured === true && requiresApprovalPasswordPrompt(
+          current.cooldown_active,
+          current.strict_all_decisions,
+          requestedScope
+        );
+        if (!gateEnabled) {
+          void handleResolve(action, current);
+          return;
+        }
+        setErrorMessage(null);
+        if (!approvalProofRecentlySatisfied(current)) {
+          setPendingAction(action);
+          setPendingContractKey(decisionContractKey);
+          return;
+        }
+        const fresh = await fetchResolvedApprovalGate().catch(() => current);
+        if (approvalProofRecentlySatisfied(fresh ?? current)) {
+          void handleResolve(action, fresh ?? current);
           return;
         }
         if (fresh) setEffectiveApprovalGate(fresh);
@@ -31813,7 +31839,7 @@ function ReviewDecisionCard(props) {
     setPendingContractKey(null);
     setApprovalPassword("");
     setApprovalTotpCode("");
-    setUseCooldown(false);
+    setCooldownOptOut(false);
   }, []);
   const handleToggleConsequences = reactExports.useCallback(() => {
     setShowConsequences((visible) => !visible);
@@ -31842,7 +31868,7 @@ function ReviewDecisionCard(props) {
     [reviewedRequestId]
   );
   const handleUseCooldownChange = reactExports.useCallback((event) => {
-    setUseCooldown(event.target.checked);
+    setCooldownOptOut(!event.target.checked);
   }, []);
   if (!detail || !item) {
     if (props.detailError) {
