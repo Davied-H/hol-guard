@@ -259,10 +259,8 @@ fn answer(
         // A probe carries a request identity only the daemon assigns.
         return Err(HookDirectDefer::TransitionProbe);
     }
-    // The edge refuses an encrypted payload reference, and the daemon accepts
-    // the edge's review of a source reference only after a tool ran. A
-    // `PostToolUse` source reference goes to the edge, which reads the file
-    // as it does for the daemon.
+    // The edge refuses an encrypted payload reference and reviews a source
+    // reference only after a tool ran, reading the file as the daemon does.
     if payload.contains_key(ENCRYPTED_PAYLOAD_FIELD)
         || (payload.contains_key(SOURCE_REFERENCE_FIELD) && event != POST_TOOL_USE)
     {
