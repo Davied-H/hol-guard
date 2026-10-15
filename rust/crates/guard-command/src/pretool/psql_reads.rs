@@ -105,15 +105,15 @@ pub(in crate::pretool) fn safe_psql_arguments(
     arguments: &[String],
     context: crate::pretool::PathContext<'_>,
 ) -> bool {
-    admitted(arguments, trusted_default_socket, || {
-        context.psqlrc_absent
-            && startup_files_absent(
+    context.psqlrc_absent
+        && admitted(arguments, trusted_default_socket, || {
+            startup_files_absent(
                 context.home_dir,
                 std::env::var_os("PSQLRC").as_deref(),
                 std::env::var_os("HOME").as_deref(),
                 std::env::var_os("APPDATA").as_deref(),
             )
-    })
+        })
 }
 
 /// Whether psql would read `PSQLRC` or a home startup file: no `-X`.

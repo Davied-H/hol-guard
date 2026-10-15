@@ -40,9 +40,16 @@ fn socket_directory(home: &Path) -> String {
 
 /// The decision both shell harnesses reach, or "mixed" when they differ.
 fn shell(home: &Path, command: &str) -> String {
+    shell_with(home, command, &[])
+}
+
+/// [`shell`] with more variable names stamped in the agent's environment.
+fn shell_with(home: &Path, command: &str, names: &[&str]) -> String {
+    let mut environment_names = vec!["GIT_CONFIG_NOSYSTEM".to_owned()];
+    environment_names.extend(names.iter().map(|name| (*name).to_owned()));
     let environment = guard_contracts::GuardExecutionEnvironmentV1 {
         path: std::env::var("PATH").unwrap(),
-        environment_names: vec!["GIT_CONFIG_NOSYSTEM".into()],
+        environment_names,
         environment_digest: "0".repeat(64),
         home: Some(home.to_str().unwrap().to_owned()),
         git_pager_disabled: false,
@@ -137,5 +144,21 @@ fn secret_reads_uploads_and_unproven_probes_keep_review() {
         "psql -h localhost -f script.sql",
     ] {
         assert_ne!(shell(&home, command), "allow", "{command}");
+    }
+}
+
+#[test]
+fn skipping_startup_files_leaves_libpq_routing_variables_checked() {
+    let home = home();
+    let command = "psql -X -h localhost -c 'select 1'";
+    assert_eq!(shell(&home, command), "allow", "{command}");
+    for name in [
+        "PGHOSTADDR",
+        "PGHOST",
+        "PGPORT",
+        "PGSERVICE",
+        "PGSERVICEFILE",
+    ] {
+        assert_ne!(shell_with(&home, command, &[name]), "allow", "{name}");
     }
 }
