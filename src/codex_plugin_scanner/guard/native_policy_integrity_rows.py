@@ -32,6 +32,7 @@ from .native_runtime_resilience import native_record_resident_failure, native_re
 from .policy_integrity import PolicyIntegrityStatus, PolicyIntegrityVerificationResult
 
 POLICY_INTEGRITY_ROWS_FEATURE = "policy-integrity-rows-v1"
+POLICY_INTEGRITY_GENERATION_FEATURE = "policy-integrity-generation-v1"
 _REQUEST_SCHEMA = "guard-policy-integrity-rows-request.v1"
 _RESULT_SCHEMA = "guard-policy-integrity-rows-result.v1"
 _KEY_FIELD = "integrity_key_b64"
@@ -146,7 +147,7 @@ def native_prepare_policy_integrity_generation(
         "guard_home": str(guard_home),
         "trusted_state": dict(trusted_state),
     }
-    payload = _resident_payload(guard_home, request)
+    payload = _resident_payload(guard_home, request, required_feature=POLICY_INTEGRITY_GENERATION_FEATURE)
     outcome = payload.get("generation")
     if payload.get("verify") != [] or payload.get("sign") != [] or not isinstance(outcome, dict):
         raise NativePolicyIntegrityUnavailableError()
@@ -292,7 +293,12 @@ def _request(
     return request
 
 
-def _resident_payload(guard_home: Path, request: dict[str, object]) -> dict[str, object]:
+def _resident_payload(
+    guard_home: Path,
+    request: dict[str, object],
+    *,
+    required_feature: str = POLICY_INTEGRITY_ROWS_FEATURE,
+) -> dict[str, object]:
     status = native_runtime_status()
     try:
         response = _resident_request(
@@ -300,7 +306,7 @@ def _resident_payload(guard_home: Path, request: dict[str, object]) -> dict[str,
             request=request,
             guard_home=guard_home,
             timeout_seconds=_TIMEOUT_SECONDS,
-            required_feature=POLICY_INTEGRITY_ROWS_FEATURE,
+            required_feature=required_feature,
             response_schema=_RESULT_SCHEMA,
             max_request_bytes=_MAX_REQUEST_BYTES,
             record_success=False,

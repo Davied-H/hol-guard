@@ -25,6 +25,9 @@ pub const POLICY_INTEGRITY_ROWS_REQUEST_SCHEMA: &str = "guard-policy-integrity-r
 pub const POLICY_INTEGRITY_ROWS_RESULT_SCHEMA: &str = "guard-policy-integrity-rows-result.v1";
 /// Capability advertised by the runtime when this operation is available.
 pub const POLICY_INTEGRITY_ROWS_FEATURE: &str = "policy-integrity-rows-v1";
+/// Capability advertised by the runtime when the request may carry a
+/// `generation` section.
+pub const POLICY_INTEGRITY_GENERATION_FEATURE: &str = "policy-integrity-generation-v1";
 
 /// Largest canonical request serialization the op will accept.
 pub const POLICY_INTEGRITY_ROWS_MAX_BYTES: usize = 4 * 1024 * 1024;

@@ -45,9 +45,10 @@ class _Resident:
 
     def __call__(self, **kwargs: object) -> dict[str, object] | None:
         assert kwargs["operation"] == "policy_integrity_rows"
-        assert kwargs["required_feature"] == "policy-integrity-rows-v1"
         request = kwargs["request"]
         assert isinstance(request, dict)
+        expected_feature = "policy-integrity-generation-v1" if "generation" in request else "policy-integrity-rows-v1"
+        assert kwargs["required_feature"] == expected_feature
         self.requests.append(request)
         verify = request["verify"]
         sign = request["sign"]
