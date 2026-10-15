@@ -1472,8 +1472,16 @@
     max-width: 46ch;
   }
 
+  .max-w-\[52ch\] {
+    max-width: 52ch;
+  }
+
   .max-w-\[55\%\] {
     max-width: 55%;
+  }
+
+  .max-w-\[60ch\] {
+    max-width: 60ch;
   }
 
   .max-w-\[70vw\] {
@@ -4703,17 +4711,7 @@
     }
   }
 
-  .text-brand-dark, .text-brand-dark\/30 {
-    color: var(--brand-dark);
-  }
-
-  @supports (color: color-mix(in lab, red, red)) {
-    .text-brand-dark\/30 {
-      color: color-mix(in oklab, var(--brand-dark) 30%, transparent);
-    }
-  }
-
-  .text-brand-dark\/35 {
+  .text-brand-dark, .text-brand-dark\/35 {
     color: var(--brand-dark);
   }
 
@@ -6737,6 +6735,10 @@
       line-height: var(--tw-leading, var(--text-xl--line-height));
     }
 
+    .sm\:text-\[1\.75rem\] {
+      font-size: 1.75rem;
+    }
+
     .sm\:break-normal {
       overflow-wrap: normal;
       word-break: normal;
@@ -8215,6 +8217,238 @@ input:focus-visible, button:focus-visible, a:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .guard-posture-segment {
     animation: none;
+  }
+}
+
+.guard-sponsor-label {
+  letter-spacing: .02em;
+  color: #5b21a6;
+  background: var(--brand-purple);
+  border-radius: 9999px;
+  align-items: center;
+  padding: .0625rem .5rem;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.25rem;
+  display: inline-flex;
+}
+
+@supports (color: color-mix(in lab, red, red)) {
+  .guard-sponsor-label {
+    background: color-mix(in srgb, var(--brand-purple) 14%, #fff);
+  }
+}
+
+.guard-sponsor-label {
+  border: 1px solid var(--brand-purple);
+}
+
+@supports (color: color-mix(in lab, red, red)) {
+  .guard-sponsor-label {
+    border: 1px solid color-mix(in srgb, var(--brand-purple) 35%, transparent);
+  }
+}
+
+.guard-sponsor-label-inverse {
+  color: #fff;
+  background: #ffffff24;
+  border-color: #ffffff47;
+}
+
+.guard-discover-hero {
+  isolation: isolate;
+  color: #fff;
+  background: radial-gradient(120% 140% at 100% 0%, var(--brand-purple) 0%, transparent 55%), radial-gradient(90% 120% at 0% 100%, var(--brand-blue) 0%, transparent 60%), var(--brand-dark);
+  border-radius: 1.5rem;
+  flex-direction: column;
+  min-height: 15rem;
+  padding: 1.5rem;
+  display: flex;
+  position: relative;
+  overflow: hidden;
+}
+
+@supports (color: color-mix(in lab, red, red)) {
+  .guard-discover-hero {
+    background: radial-gradient(120% 140% at 100% 0%, color-mix(in srgb, var(--brand-purple) 55%, transparent) 0%, transparent 55%), radial-gradient(90% 120% at 0% 100%, color-mix(in srgb, var(--brand-blue) 45%, transparent) 0%, transparent 60%), var(--brand-dark);
+  }
+}
+
+.guard-discover-hero {
+  animation: guard-discover-rise .42s var(--ease-out-quint) both;
+  box-shadow: 0 24px 60px -32px #3f4174a6;
+}
+
+@media (min-width: 640px) {
+  .guard-discover-hero {
+    padding: 2rem;
+  }
+}
+
+.guard-discover-tile {
+  border: 1px solid var(--brand-purple);
+  background: #fff;
+  border-radius: 1.25rem;
+  flex-direction: column;
+  padding: 1.25rem;
+  display: flex;
+}
+
+@supports (color: color-mix(in lab, red, red)) {
+  .guard-discover-tile {
+    border: 1px solid color-mix(in srgb, var(--brand-purple) 22%, #3f41741a);
+  }
+}
+
+.guard-discover-tile {
+  transition: border-color .18s var(--ease-out-quart), transform .18s var(--ease-out-quart), box-shadow .18s var(--ease-out-quart);
+  animation: guard-discover-rise .42s var(--ease-out-quint) both;
+  box-shadow: 0 1px #3f41740a;
+}
+
+.guard-discover-tile:hover {
+  border-color: var(--brand-purple);
+  transform: translateY(-2px);
+}
+
+@supports (color: color-mix(in lab, red, red)) {
+  .guard-discover-tile:hover {
+    border-color: color-mix(in srgb, var(--brand-purple) 45%, transparent);
+  }
+}
+
+.guard-discover-tile:hover {
+  box-shadow: 0 16px 36px -24px #3f417473;
+}
+
+.guard-discover-cta {
+  color: #fff;
+  background: var(--brand-dark);
+  min-height: 44px;
+  transition: background-color .16s var(--ease-out-quart);
+  border-radius: .75rem;
+  align-items: center;
+  gap: .5rem;
+  padding: 0 1rem;
+  font-size: .875rem;
+  font-weight: 600;
+  display: inline-flex;
+}
+
+.guard-discover-cta:hover {
+  background: #2d2f56;
+}
+
+.guard-discover-cta:focus-visible, .guard-featured-row:focus-within {
+  outline: 2px solid var(--brand-blue);
+  outline-offset: 2px;
+}
+
+.guard-discover-cta-inverse {
+  color: var(--brand-dark);
+  background: #fff;
+}
+
+.guard-discover-cta-inverse:hover {
+  background: #ffffffe0;
+}
+
+.guard-discover-offers {
+  border: 1px dashed var(--brand-dark);
+  border-radius: 1.25rem;
+  flex-direction: column;
+  padding: 1.25rem;
+  display: flex;
+}
+
+@supports (color: color-mix(in lab, red, red)) {
+  .guard-discover-offers {
+    border: 1px dashed color-mix(in srgb, var(--brand-dark) 22%, transparent);
+  }
+}
+
+.guard-discover-offers {
+  background: var(--brand-blue);
+}
+
+@supports (color: color-mix(in lab, red, red)) {
+  .guard-discover-offers {
+    background: color-mix(in srgb, var(--brand-blue) 5%, #fff);
+  }
+}
+
+.guard-discover-offer {
+  background: #fff;
+  border: 1px solid #3f41741a;
+  border-radius: .875rem;
+  flex-direction: column;
+  gap: .125rem;
+  padding: .75rem .875rem;
+  display: flex;
+}
+
+.guard-discover-offer[data-availability="sold_out"] {
+  opacity: .6;
+}
+
+.guard-discover-skeleton {
+  background: linear-gradient(100deg, #3f41740d 30%, #3f41741a 50%, #3f41740d 70%) 0 0 / 200% 100%;
+  border-radius: 1.5rem;
+  height: 15rem;
+  animation: 1.4s linear infinite guard-discover-shimmer;
+}
+
+.guard-featured-row {
+  border: 1px solid var(--brand-purple);
+  border-radius: 1rem;
+  margin-bottom: .5rem;
+}
+
+@supports (color: color-mix(in lab, red, red)) {
+  .guard-featured-row {
+    border: 1px solid color-mix(in srgb, var(--brand-purple) 30%, transparent);
+  }
+}
+
+.guard-featured-row {
+  background: linear-gradient(180deg, var(--brand-purple) 0%, #fff 70%);
+}
+
+@supports (color: color-mix(in lab, red, red)) {
+  .guard-featured-row {
+    background: linear-gradient(180deg, color-mix(in srgb, var(--brand-purple) 7%, #fff) 0%, #fff 70%);
+  }
+}
+
+@keyframes guard-discover-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes guard-discover-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .guard-discover-hero, .guard-discover-tile, .guard-discover-skeleton {
+    animation: none;
+  }
+
+  .guard-discover-tile, .guard-discover-cta {
+    transition: none;
+  }
+
+  .guard-discover-tile:hover {
+    transform: none;
   }
 }
 
