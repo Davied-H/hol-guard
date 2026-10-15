@@ -269,6 +269,7 @@ mod guard_store_approval_read_rows;
 mod guard_store_approval_read_scope;
 mod guard_store_approval_reads;
 mod guard_store_approval_request;
+mod guard_store_approval_resolve;
 mod guard_store_approval_row;
 mod guard_store_approval_sweep;
 mod guard_store_approval_write;
@@ -510,6 +511,7 @@ mod package_posture_op;
 mod package_protect_projection_op;
 mod pi_detect;
 mod pi_glob;
+mod pi_hook_bridge;
 #[cfg(all(test, unix))]
 mod pi_vectors_tests;
 mod policy_bundle_crypto;
