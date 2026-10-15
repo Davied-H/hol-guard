@@ -103,7 +103,8 @@ def _installing_runtime_cli_candidates() -> tuple[str, ...]:
     user_site = site.getusersitepackages() if site.ENABLE_USER_SITE else None
     if user_site and Path(__file__).resolve().is_relative_to(Path(user_site).resolve()):
         scripts.append(sysconfig.get_path("scripts", sysconfig.get_preferred_scheme("user")))
-    return tuple(str(Path(directory) / "hol-guard") for directory in scripts if directory)
+    name = "hol-guard.exe" if os.name == "nt" else "hol-guard"
+    return tuple(str(Path(directory) / name) for directory in scripts if directory)
 
 
 def _windows_cli_bootstrap(package_root: Path, *, guard_home: Path, harness: str) -> str:
