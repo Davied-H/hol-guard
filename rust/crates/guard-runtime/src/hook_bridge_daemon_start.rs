@@ -1,4 +1,4 @@
-//! Daemon start for the native Codex, Cursor and bounded hook bridges: what a bridge
+//! Daemon start for the native Claude, Codex, Cursor and bounded hook bridges: what a bridge
 //! does when its daemon is unreachable or did not answer, in place of the
 //! Python bridge it used to hand the hook to.
 //!
@@ -37,8 +37,10 @@ const RETRY_RESERVE: Duration = Duration::from_secs(1);
 const MINIMUM_REQUEST: Duration = Duration::from_millis(500);
 /// The longest the bridge waits for a started daemon to come up.
 const START_WAIT: Duration = Duration::from_secs(8);
-const FIRST_POLL: Duration = Duration::from_millis(250);
-const MAX_POLL: Duration = Duration::from_secs(1);
+// A daemon comes up within a few seconds; a short poll keeps a hook from
+// idling up to a second after it is ready.
+const FIRST_POLL: Duration = Duration::from_millis(50);
+const MAX_POLL: Duration = Duration::from_millis(250);
 
 /// Run `command` to start the daemon, inside `deadline`. `true` when it
 /// exited zero in time. An empty command, a hook with less than
