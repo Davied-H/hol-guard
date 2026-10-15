@@ -5,7 +5,7 @@
 //! of failing inside a sandbox that withholds the network, and a script that
 //! pairs a credential store with the network is blocked. It can only raise a
 //! decision. An absent, unreadable, oversized or unrecognized script changes
-//! nothing.
+//! nothing; a local module that cannot be read is left out of its graph.
 
 use std::collections::{BTreeSet, VecDeque};
 use std::path::{Path, PathBuf};
@@ -20,6 +20,7 @@ use guard_contracts::PreToolResultV1;
 const MAX_FILE_BYTES: usize = 256 * 1024;
 const MAX_TOTAL_BYTES: usize = 1024 * 1024;
 const MAX_FILES: usize = 32;
+const MAX_MANIFEST_BYTES: usize = 64 * 1024;
 
 const NODE_EXTENSIONS: &[&str] = &["js", "mjs", "cjs", "jsx", "ts", "mts", "cts", "tsx"];
 
@@ -78,7 +79,7 @@ static NODE_RELATIVE: LazyLock<Regex> = LazyLock::new(|| {
         .unwrap()
 });
 static PYTHON_IMPORT: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?m)^[ \t]*(?:from[ \t]+(\.*)([\w.]*)[ \t]+import[ \t]+([\w, \t()]+)|import[ \t]+([\w., \t]+))")
+    Regex::new(r"(?m)^[ \t]*(?:from[ \t]+(\.*)([\w.]*)[ \t]+import[ \t]+([\w, \t()*]+)|import[ \t]+([\w., \t]+))")
         .unwrap()
 });
 
@@ -90,15 +91,15 @@ pub(super) struct Findings {
     pub(super) credential_store: bool,
 }
 
-/// What the scripts this command launches do, or `None` when it launches
-/// none whose source could be read.
-pub(super) fn assess(model: &CanonicalCommandV1, context: PathContext<'_>) -> Option<Findings> {
+/// What each script this command launches does, one entry per script whose
+/// source could be read.
+pub(super) fn assess(model: &CanonicalCommandV1, context: PathContext<'_>) -> Vec<Findings> {
+    let mut findings = Vec::new();
     if model.confidence != "exact"
         || !read_paths::verified_path_context(context.home_dir, context.cwd)
     {
-        return None;
+        return findings;
     }
-    let mut findings: Option<Findings> = None;
     for (index, segment) in model.segments.iter().enumerate() {
         let Some((language, script)) = launched_script(segment) else {
             continue;
@@ -118,21 +119,26 @@ pub(super) fn assess(model: &CanonicalCommandV1, context: PathContext<'_>) -> Op
         let Some(sources) = read_graph(language, path) else {
             continue;
         };
-        let found = findings.get_or_insert_with(Findings::default);
+        let mut found = Findings::default();
         for source in sources {
+            let code = code_lines(language, &source);
             found.network |= match language {
-                Language::Python => PYTHON_NETWORK.is_match(&source),
-                Language::Node => NODE_NETWORK.is_match(&source),
+                Language::Python => PYTHON_NETWORK.is_match(&code),
+                Language::Node => NODE_NETWORK.is_match(&code),
             };
-            found.credential_store |= CREDENTIAL_STORE.is_match(&source);
+            found.credential_store |= CREDENTIAL_STORE.is_match(&code);
         }
+        findings.push(found);
     }
     findings
 }
 
-/// Whether a launched script reads a credential store and uses the network.
+/// Whether one launched script both reads a credential store and uses the
+/// network. Two scripts that each do one of them are not paired.
 pub(super) fn exfiltrates(model: &CanonicalCommandV1, context: PathContext<'_>) -> bool {
-    assess(model, context).is_some_and(|found| found.network && found.credential_store)
+    assess(model, context)
+        .iter()
+        .any(|found| found.network && found.credential_store)
 }
 
 /// Keeps the review of a command whose script uses the network: the sandbox
@@ -142,7 +148,7 @@ pub(super) fn keeps_network_review(
     model: &CanonicalCommandV1,
     context: PathContext<'_>,
 ) -> bool {
-    if !assess(model, context).is_some_and(|found| found.network) {
+    if !assess(model, context).iter().any(|found| found.network) {
         return false;
     }
     result.reason = concat!(
@@ -223,21 +229,28 @@ fn resolve(script: &str, context: PathContext<'_>) -> Option<PathBuf> {
 }
 
 /// The script's source and that of the local modules it imports, breadth
-/// first, within the file and byte bounds. Packages and the standard library
-/// are not read.
+/// first, within the file and byte bounds, or `None` when the script itself
+/// cannot be read. A module that cannot be read, or would pass the byte
+/// bound, is left out so what the rest of the graph does still counts.
+/// Packages and the standard library are not read.
 fn read_graph(language: Language, entry: PathBuf) -> Option<Vec<String>> {
     let mut seen = BTreeSet::from([entry.clone()]);
-    let mut queue = VecDeque::from([entry]);
+    let mut queue = VecDeque::from([entry.clone()]);
     let mut sources = Vec::new();
     let mut total = 0usize;
     while let Some(path) = queue.pop_front() {
-        let read = guard_secure_fs::read_bounded(&path, MAX_FILE_BYTES).ok()?;
-        total += read.bytes.len();
-        if total > MAX_TOTAL_BYTES {
-            return None;
-        }
-        let source = String::from_utf8(read.bytes).ok()?;
-        let directory = path.parent()?.to_path_buf();
+        let source = guard_secure_fs::read_bounded(&path, MAX_FILE_BYTES)
+            .ok()
+            .filter(|read| total + read.bytes.len() <= MAX_TOTAL_BYTES)
+            .and_then(|read| String::from_utf8(read.bytes).ok());
+        let (Some(source), Some(directory)) = (source, path.parent()) else {
+            if path == entry {
+                return None;
+            }
+            continue;
+        };
+        total += source.len();
+        let directory = directory.to_path_buf();
         let imports = match language {
             Language::Node => node_imports(&source, &directory),
             Language::Python => python_imports(&source, &directory),
@@ -258,24 +271,52 @@ fn read_graph(language: Language, entry: PathBuf) -> Option<Vec<String>> {
 fn node_imports(source: &str, directory: &Path) -> Vec<PathBuf> {
     NODE_RELATIVE
         .captures_iter(source)
-        .filter_map(|capture| {
-            let base = directory.join(&capture[1]);
-            let index = NODE_EXTENSIONS
-                .iter()
-                .map(|extension| base.join(format!("index.{extension}")));
-            std::iter::once(base.clone())
-                .chain(
-                    NODE_EXTENSIONS
-                        .iter()
-                        .map(|extension| PathBuf::from(format!("{}.{extension}", base.display()))),
-                )
-                .chain(index)
-                .find(|candidate| {
-                    candidate.is_file() && NODE_EXTENSIONS.contains(&extension(candidate).as_str())
-                })
-        })
+        .filter_map(|capture| node_module(&directory.join(&capture[1])))
         .filter_map(|path| std::fs::canonicalize(path).ok())
         .collect()
+}
+
+/// The file Node loads for a relative specifier: the path itself, the path
+/// with an extension, or for a directory its `package.json` `main` and then
+/// its `index` file.
+fn node_module(base: &Path) -> Option<PathBuf> {
+    let mut candidates = with_extension(base);
+    if base.is_dir() {
+        if let Some(main) = package_main(base) {
+            let main = base.join(main);
+            candidates.extend(with_extension(&main));
+            candidates.extend(index_files(&main));
+        }
+        candidates.extend(index_files(base));
+    }
+    candidates.into_iter().find(|candidate| {
+        candidate.is_file() && NODE_EXTENSIONS.contains(&extension(candidate).as_str())
+    })
+}
+
+fn with_extension(path: &Path) -> Vec<PathBuf> {
+    std::iter::once(path.to_path_buf())
+        .chain(
+            NODE_EXTENSIONS
+                .iter()
+                .map(|extension| PathBuf::from(format!("{}.{extension}", path.display()))),
+        )
+        .collect()
+}
+
+fn index_files(directory: &Path) -> Vec<PathBuf> {
+    NODE_EXTENSIONS
+        .iter()
+        .map(|extension| directory.join(format!("index.{extension}")))
+        .collect()
+}
+
+/// A local package directory's `main` entry.
+fn package_main(directory: &Path) -> Option<String> {
+    let read =
+        guard_secure_fs::read_bounded(&directory.join("package.json"), MAX_MANIFEST_BYTES).ok()?;
+    let manifest: serde_json::Value = serde_json::from_slice(&read.bytes).ok()?;
+    manifest.get("main")?.as_str().map(str::to_owned)
 }
 
 fn python_imports(source: &str, directory: &Path) -> Vec<PathBuf> {
@@ -306,6 +347,19 @@ fn python_imports(source: &str, directory: &Path) -> Vec<PathBuf> {
                     .map(str::to_owned),
             );
         } else {
+            // `from pkg import a` can import the submodule `pkg.a`, which an
+            // empty `pkg/__init__.py` does not name.
+            let names = capture.get(3).map_or("", |value| value.as_str());
+            modules.extend(
+                names
+                    .split(',')
+                    .filter_map(|name| {
+                        name.trim_matches(['(', ')', ' ', '\t'])
+                            .split_whitespace()
+                            .next()
+                    })
+                    .map(|name| format!("{module}.{name}")),
+            );
             modules.push(module.to_owned());
         }
     }
@@ -328,6 +382,39 @@ fn python_imports(source: &str, directory: &Path) -> Vec<PathBuf> {
         })
         .filter_map(|path| std::fs::canonicalize(path).ok())
         .collect()
+}
+
+/// The source without its comments, so a path named in a note is not read
+/// as one the script opens. Only whole-line comments, block comments that
+/// open a line and comments after whitespace are dropped; a comment marker
+/// inside a string can drop the rest of that line, which only lowers what
+/// the scan finds.
+fn code_lines(language: Language, source: &str) -> String {
+    let marker = match language {
+        Language::Python => "#",
+        Language::Node => "//",
+    };
+    let mut code = String::with_capacity(source.len());
+    let mut in_block = false;
+    for line in source.lines() {
+        let trimmed = line.trim_start();
+        if language == Language::Node && (in_block || trimmed.starts_with("/*")) {
+            in_block = !trimmed.contains("*/");
+            if in_block || trimmed.trim_end().ends_with("*/") {
+                continue;
+            }
+        }
+        if trimmed.starts_with(marker) {
+            continue;
+        }
+        let end = line
+            .match_indices(marker)
+            .find(|(at, _)| line[..*at].ends_with([' ', '\t']))
+            .map_or(line.len(), |(at, _)| at);
+        code.push_str(&line[..end]);
+        code.push('\n');
+    }
+    code
 }
 
 fn extension(path: &Path) -> String {

