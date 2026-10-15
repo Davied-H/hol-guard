@@ -910,10 +910,14 @@ mod glob_directory_tests {
             "C:/Users/x/{a,..}/*",
             "C:*.md",
             "C:/Users/x:stream/*",
-            r"C:/Users/x/\*/*",
             r"\\?\C:\Users\x\*",
         ] {
             assert_eq!(glob_directory(escape), None, "{escape:?}");
         }
+        // A backslash escapes the star on Unix and separates on Windows.
+        assert_eq!(
+            glob_directory(r"C:/Users/x/\*/*"),
+            cfg!(windows).then_some("C:/Users/x/")
+        );
     }
 }

@@ -255,14 +255,20 @@ pub(super) fn is_stderr_to_null_redirect(
 
 /// `/dev/null` is the null device on Unix. On Windows, Git Bash (the shell
 /// harnesses run POSIX commands in) maps it to the null device too, while
-/// PowerShell and cmd open `\dev\null` on the current drive. That open fails
-/// without writing anything while the drive has no `\dev`, so the sink is
-/// inert there only in that case.
+/// PowerShell and cmd open `\dev\null` on the shell's current drive. That
+/// open fails without writing anything while the drive has no `\dev`. The
+/// shell may have changed drive since Guard started, or earlier in the same
+/// command, so the sink is inert only while no drive letter has a `\dev`.
 fn stderr_null_sink_is_inert() -> bool {
     cfg!(unix)
         || (cfg!(windows)
-            && std::fs::symlink_metadata("/dev")
-                .is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound))
+            && (b'A'..=b'Z').all(|drive| {
+                std::fs::symlink_metadata(format!("{}:\\dev", drive as char)).is_err_and(|error| {
+                    // Not found, no such drive, or no media in the drive.
+                    error.kind() == std::io::ErrorKind::NotFound
+                        || matches!(error.raw_os_error(), Some(15 | 21))
+                })
+            }))
 }
 
 pub(super) fn starts_at_shell_token_boundary(

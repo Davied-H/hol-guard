@@ -39,13 +39,15 @@ fn plain_hashline_patches_report_each_file_once() {
         targets("*** Begin Patch\n[~/project/src/a.ts#0AC4]\nPUT 1.=1:\n+x\n[ ~/src/b.ts]\nPUT >$:\n+y\n*** End Patch\n"),
         Some(vec!["~/project/src/a.ts".to_owned(), "~/src/b.ts".to_owned()])
     );
-    // Windows drive paths name host files, with either separator.
+    // Windows drive paths name host files. A forward slash works anywhere;
+    // a backslash separates only on Windows.
     assert_eq!(
-        targets("[C:\\Users\\x\\other-project\\notes.md#FB48]\nPUT 1.=1:\n+x\n[C:/Users/x/p/a.md]\nPUT >$:\n+y\n"),
-        Some(vec![
-            "C:\\Users\\x\\other-project\\notes.md".to_owned(),
-            "C:/Users/x/p/a.md".to_owned()
-        ])
+        targets("[C:/Users/x/p/a.md]\nPUT >$:\n+y\n"),
+        Some(vec!["C:/Users/x/p/a.md".to_owned()])
+    );
+    assert_eq!(
+        targets("[C:\\Users\\x\\other-project\\notes.md#FB48]\nPUT 1.=1:\n+x\n"),
+        cfg!(windows).then(|| vec!["C:\\Users\\x\\other-project\\notes.md".to_owned()])
     );
     // The envelope is optional, as in Oh My Pi.
     assert_eq!(

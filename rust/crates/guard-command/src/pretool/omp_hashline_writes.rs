@@ -127,9 +127,11 @@ fn header_path(line: &str) -> Option<(&str, bool)> {
         .is_none_or(|rest| rest.starts_with('/'));
     // A Windows drive path (`C:\Users\...` or `C:/Users/...`) is a host
     // path: Oh My Pi only routes registered `scheme:/` names elsewhere, and
-    // no scheme is one letter. A drive-relative `C:name` stays unproven.
+    // no scheme is one letter. A drive-relative `C:name` stays unproven, and
+    // so does a backslash spelling off Windows, where it is one relative name.
     let rest = match path.as_bytes() {
-        [drive, b':', b'/' | b'\\', ..] if drive.is_ascii_alphabetic() => &path[2..],
+        [drive, b':', b'/', ..] if drive.is_ascii_alphabetic() => &path[2..],
+        [drive, b':', b'\\', ..] if cfg!(windows) && drive.is_ascii_alphabetic() => &path[2..],
         _ => path,
     };
     let plain = !path.is_empty()
