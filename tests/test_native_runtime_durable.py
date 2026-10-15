@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from codex_plugin_scanner.guard import native_runtime
+from codex_plugin_scanner.guard import native_runtime, native_runtime_durable
 from codex_plugin_scanner.guard.adapters.native_hook_bridge import native_hook_bridge_executable
 from codex_plugin_scanner.guard.native_runtime_durable import durable_hook_runtime, durable_runtime_path
 from codex_plugin_scanner.guard.native_runtime_values import (
@@ -42,6 +42,7 @@ def test_publishes_a_content_addressed_copy_under_the_guard_home(tmp_path: Path)
     copy = durable_hook_runtime(identity, guard_home)
 
     assert copy == guard_home / "native-runtime" / identity.sha256 / "hol-guard-runtime"
+    assert copy is not None
     assert copy.read_bytes() == identity.path.read_bytes()
     assert os.access(copy, os.X_OK)
 
@@ -112,6 +113,43 @@ def test_a_group_writable_copy_is_republished_owner_only(tmp_path: Path) -> None
 
     assert durable_hook_runtime(identity, guard_home) == target
     assert stat.S_IMODE(target.stat().st_mode) & 0o022 == 0
+
+
+@_POSIX_ONLY
+def test_a_copy_without_its_exec_bit_is_republished_executable(tmp_path: Path) -> None:
+    identity = _bundled_runtime(tmp_path)
+    guard_home = tmp_path / "guard-home"
+    target = durable_hook_runtime(identity, guard_home)
+    assert target is not None
+    target.chmod(0o600)
+
+    assert durable_hook_runtime(identity, guard_home) == target
+    assert os.access(target, os.X_OK)
+
+
+def test_a_verified_copy_is_hashed_once_until_it_changes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    identity = _bundled_runtime(tmp_path)
+    guard_home = tmp_path / "guard-home"
+    target = durable_hook_runtime(identity, guard_home)
+    assert target is not None
+    hashed: list[Path] = []
+    real_sha256 = native_runtime_durable._file_sha256
+
+    def counting_sha256(path: Path) -> str:
+        hashed.append(path)
+        return real_sha256(path)
+
+    monkeypatch.setattr(native_runtime_durable, "_file_sha256", counting_sha256)
+
+    assert durable_hook_runtime(identity, guard_home) == target
+    assert durable_hook_runtime(identity, guard_home) == target
+    assert hashed == []
+
+    target.write_bytes(b"tampered runtime bytes")
+
+    assert durable_hook_runtime(identity, guard_home) == target
+    assert target.read_bytes() == identity.path.read_bytes()
+    assert hashed
 
 
 def test_a_bundle_that_does_not_match_its_identity_is_never_published(tmp_path: Path) -> None:

@@ -386,6 +386,12 @@ def run_bounded_cli_hook(
             deadline_monotonic=deadline,
         )
     )
+    if daemon_result is None and runtime_frozen:
+        from .bounded_cli_hook_frozen_recovery import ask_after_frozen_recovery
+
+        daemon_result = ask_after_frozen_recovery(
+            guard_home=guard_home, harness=harness, input_text=input_text, cli_args=cli_args, deadline=deadline
+        )
     if time.monotonic() >= deadline:
         return fail()
     if daemon_result is not None:
@@ -407,7 +413,7 @@ def run_bounded_cli_hook(
             print(daemon_stderr, file=sys.stderr)
         return daemon_exit
     if runtime_frozen:
-        # A frozen Guard has no cold evaluator: without a daemon answer the hook fails closed.
+        # A frozen Guard has no cold evaluator: without a recovered daemon the hook fails closed.
         return fail()
     if harness == "grok" and _event_name(input_text).lower().replace("_", "").replace("-", "") in {
         "userpromptsubmit",

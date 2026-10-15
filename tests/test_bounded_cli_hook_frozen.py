@@ -8,7 +8,12 @@ from typing import cast
 
 import pytest
 
-from codex_plugin_scanner.guard.adapters import bounded_cli_hook_bridge, bounded_cli_hook_daemon, desktop_hook_proxy
+from codex_plugin_scanner.guard.adapters import (
+    bounded_cli_hook_bridge,
+    bounded_cli_hook_daemon,
+    bounded_cli_hook_frozen_recovery,
+    desktop_hook_proxy,
+)
 from codex_plugin_scanner.guard.codex_hook_launch_runtime import BoundedHookProcessResult, isolated_hook_environment
 
 from .bounded_cli_hook_test_support import config as _config
@@ -353,15 +358,48 @@ def test_frozen_runtime_without_a_daemon_answer_fails_closed(
         del args, kwargs
         raise AssertionError("a frozen Guard must not start a cold evaluator")
 
+    recoveries: list[tuple[str, ...]] = []
+
+    def failed_recovery(command: tuple[str, ...], **kwargs: object) -> BoundedHookProcessResult:
+        del kwargs
+        recoveries.append(tuple(command))
+        return BoundedHookProcessResult(returncode=1, stdout="", output_limit_exceeded=False, timed_out=False)
+
     monkeypatch.setattr(bounded_cli_hook_bridge.sys, "frozen", True, raising=False)
     monkeypatch.setattr(bounded_cli_hook_bridge.sys, "executable", "/app/hol-guard")
     monkeypatch.setattr(bounded_cli_hook_daemon, "try_daemon_hook", no_daemon)
     monkeypatch.setattr(bounded_cli_hook_bridge, "run_isolated_hook_process", forbidden_runner)
+    monkeypatch.setattr(bounded_cli_hook_frozen_recovery, "run_isolated_hook_process", failed_recovery)
     output = io.StringIO()
     with redirect_stdout(output):
         returncode = bounded_cli_hook_bridge.run_bounded_cli_hook(config, input_text="{}")
 
-    # A validated frozen config still asks the daemon; nothing runs once it is silent.
+    # A validated frozen config asks the daemon and recovers it; no evaluator runs once that fails.
     assert asked == [str(config["harness"])]
+    assert [command[:2] for command in recoveries] == [("/app/hol-guard", "--_hol-guard-codex-daemon-recover")]
     expected = ("block", 2) if variant == "hermes" else ("deny", 0)
     assert (_json_object(output.getvalue())["decision"], returncode) == expected
+
+
+def test_frozen_runtime_asks_the_recovered_daemon_once_more(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    config = _frozen_config(tmp_path, "hermes")
+    answers: list[tuple[str, str, int] | None] = [None, ('{"decision":"allow"}', "", 0)]
+
+    def daemon(**kwargs: object) -> tuple[str, str, int] | None:
+        del kwargs
+        return answers.pop(0)
+
+    def recovered(command: tuple[str, ...], **kwargs: object) -> BoundedHookProcessResult:
+        del command, kwargs
+        return BoundedHookProcessResult(returncode=0, stdout="", output_limit_exceeded=False, timed_out=False)
+
+    monkeypatch.setattr(bounded_cli_hook_bridge.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(bounded_cli_hook_bridge.sys, "executable", "/app/hol-guard")
+    monkeypatch.setattr(bounded_cli_hook_daemon, "try_daemon_hook", daemon)
+    monkeypatch.setattr(bounded_cli_hook_frozen_recovery, "run_isolated_hook_process", recovered)
+    output = io.StringIO()
+    with redirect_stdout(output):
+        returncode = bounded_cli_hook_bridge.run_bounded_cli_hook(config, input_text="{}")
+
+    assert answers == []
+    assert (_json_object(output.getvalue())["decision"], returncode) == ("allow", 0)

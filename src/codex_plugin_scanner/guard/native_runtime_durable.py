@@ -8,9 +8,11 @@ names a content-addressed copy under the Guard home, which is always
 user-writable: ``<guard_home>/native-runtime/<sha256>/hol-guard-runtime``.
 
 The copy is published only from bytes that hash to the validated runtime
-identity, and is reused only while it is a regular, owner-owned file with the
-same size and digest and no group or world write bit. Anything else yields
-``None`` so the caller keeps its fail-closed launcher.
+identity, and is reused only while it is a regular, owner-owned, owner-executable
+file with the same size and digest and no group or world write bit. Anything
+else yields ``None`` so the caller keeps its fail-closed launcher. A copy whose
+digest was verified is not hashed again in the same process until its file
+metadata changes.
 """
 
 from __future__ import annotations
@@ -22,6 +24,7 @@ import tempfile
 from contextlib import suppress
 from pathlib import Path
 
+from .durable_io import fsync_directory
 from .native_runtime_values import NativeRuntimeIdentity
 
 DURABLE_RUNTIME_DIRECTORY = "native-runtime"
@@ -29,6 +32,7 @@ _CHUNK_BYTES = 1024 * 1024
 _RUNTIME_MODE = 0o700
 _DIRECTORY_MODE = 0o700
 _HEX_DIGITS = frozenset("0123456789abcdef")
+_verified_copies: dict[Path, tuple[object, ...]] = {}
 
 
 def durable_runtime_path(identity: NativeRuntimeIdentity, guard_home: Path) -> Path:
@@ -62,12 +66,26 @@ def _is_trusted_copy(path: Path, identity: NativeRuntimeIdentity) -> bool:
         return False
     if not stat.S_ISREG(metadata.st_mode) or metadata.st_size != identity.size:
         return False
-    if os.name != "nt" and (metadata.st_uid != os.getuid() or stat.S_IMODE(metadata.st_mode) & 0o022):
+    mode = stat.S_IMODE(metadata.st_mode)
+    if os.name != "nt" and (metadata.st_uid != os.getuid() or mode & 0o022 or not mode & stat.S_IXUSR):
         return False
+    verified = (
+        identity.sha256,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+        metadata.st_ino,
+        metadata.st_dev,
+    )
+    if _verified_copies.get(path) == verified:
+        return True
     try:
-        return _file_sha256(path) == identity.sha256
+        trusted = _file_sha256(path) == identity.sha256
     except OSError:
         return False
+    if trusted:
+        _verified_copies[path] = verified
+    return trusted
 
 
 def _ensure_private_directory(path: Path) -> None:
@@ -103,6 +121,7 @@ def _publish(identity: NativeRuntimeIdentity, target: Path) -> None:
         # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
         os.chmod(temporary, _RUNTIME_MODE)
         os.replace(temporary, target)
+        fsync_directory(target.parent)
     finally:
         with suppress(OSError):
             temporary.unlink()
