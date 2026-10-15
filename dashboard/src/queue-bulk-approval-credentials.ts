@@ -1,4 +1,4 @@
-import { defaultUseApprovalCooldown } from "./approval-gate-utils";
+import { defaultUseApprovalCooldown, type BulkGateCredentials } from "./approval-gate-utils";
 import type { GuardApprovalGatePublicConfig } from "./guard-types";
 
 export function isBulkApproveGateReady(
@@ -55,4 +55,15 @@ export function buildBulkGateCredentials(
     approval_password: password.trim(),
     approval_gate_use_cooldown: defaultUseApprovalCooldown(gate),
   };
+}
+
+/**
+ * The proof a bulk submit carries: a password or code, an open cooldown
+ * window (which the caller rechecks against a fresh gate), or none.
+ */
+export function bulkApprovalProof(credentials: BulkGateCredentials | undefined): "secret" | "cooldown" | null {
+  if (credentials?.approval_password?.trim() || credentials?.approval_totp_code?.trim()) {
+    return "secret";
+  }
+  return credentials?.approval_gate_use_cooldown === true ? "cooldown" : null;
 }

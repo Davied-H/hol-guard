@@ -20367,6 +20367,12 @@ function buildBulkGateCredentials(gate, password, totpCode) {
     approval_gate_use_cooldown: defaultUseApprovalCooldown(gate)
   };
 }
+function bulkApprovalProof(credentials) {
+  if (credentials?.approval_password?.trim() || credentials?.approval_totp_code?.trim()) {
+    return "secret";
+  }
+  return credentials?.approval_gate_use_cooldown === true ? "cooldown" : null;
+}
 function approvalProofRecentlySatisfied(gate) {
   return gate?.totp_enabled === true && gate.totp_recent_satisfied === true;
 }
@@ -34636,15 +34642,35 @@ function App() {
     const updated = await retryResume(resolvedRequestId);
     setCodexResume(updated);
   }, [resolvedRequestId]);
+  const refreshApprovalGate = reactExports.useCallback(async () => {
+    try {
+      const payload = await fetchSettings();
+      const gate = payload.settings.approval_gate;
+      if (gate === void 0) {
+        return null;
+      }
+      setApprovalGate(gate);
+      return gate;
+    } catch {
+      return null;
+    }
+  }, []);
   const handleBulkApprove = reactExports.useCallback(async (ids, gateCredentials) => {
     if (bulkApproveInFlight.current) {
       return;
     }
-    if (!gateCredentials?.approval_password?.trim() && !gateCredentials?.approval_totp_code?.trim()) {
+    const proof = bulkApprovalProof(gateCredentials);
+    if (gateCredentials === void 0 || proof === null) {
       throw new Error("Bulk approval requires approval proof.");
     }
     bulkApproveInFlight.current = true;
     try {
+      if (proof === "cooldown") {
+        const freshGate = await refreshApprovalGate();
+        if (!bulkApproveCooldownOpen(freshGate)) {
+          throw new Error("Your approval window has closed. Enter your approval password to continue.");
+        }
+      }
       const result = await bulkAllowReadOnce({
         requestIds: ids,
         approval_password: gateCredentials.approval_password,
@@ -34661,10 +34687,13 @@ function App() {
       }
       const label = `${result.resolved_count} item${result.resolved_count !== 1 ? "s" : ""} approved.`;
       setResolutionMessage(label);
+    } catch (error) {
+      await refreshApprovalGate();
+      throw error;
     } finally {
       bulkApproveInFlight.current = false;
     }
-  }, [refreshStateAfterAction, setResolutionMessage]);
+  }, [refreshApprovalGate, refreshStateAfterAction, setResolutionMessage]);
   const handleRetry = reactExports.useCallback(() => {
     setRuntime({ kind: "loading" });
     setRequests({ kind: "loading" });
