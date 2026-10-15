@@ -138,8 +138,9 @@ fn now_micros() -> Option<i64> {
 
 /// `_cursor_reason`, with a loopback review link signed as
 /// `live_approval_review_url` signs it from `guard_home`'s daemon auth
-/// token. A link this bridge does not reproduce is shown unsigned.
-fn reason(response: &OMap, guard_home: &Path) -> String {
+/// token. A link this bridge does not reproduce is shown unsigned, unless
+/// the client would sign it: then `None`, and the bridge does not answer.
+fn reason(response: &OMap, guard_home: &Path) -> Option<String> {
     let hook_output = response.get("hookSpecificOutput").and_then(OValue::as_map);
     let decision = response.get("decision_v2_json").and_then(OValue::as_map);
     let reason = REASON_KEYS
@@ -153,22 +154,22 @@ fn reason(response: &OMap, guard_home: &Path) -> String {
         )
         .find_map(stripped);
     let Some(review_url) = review_url(response) else {
-        return reason.unwrap_or(DEFAULT_BLOCK_REASON).to_owned();
+        return Some(reason.unwrap_or(DEFAULT_BLOCK_REASON).to_owned());
     };
     let token = load_guard_daemon_auth_token(guard_home);
-    let live_url = now_micros().map_or_else(
-        || review_url.to_owned(),
-        |now| live_review_url(review_url, token.as_deref(), now),
-    );
+    let live_url = match now_micros() {
+        Some(now) => live_review_url(review_url, token.as_deref(), now)?,
+        None => review_url.to_owned(),
+    };
     let suffix = format!("{OPEN_GUARD} {live_url}.");
-    match reason {
+    Some(match reason {
         None => format!("{NEEDS_APPROVAL} {suffix}"),
         Some(reason) if live_url != review_url && reason.contains(review_url) => {
             reason.replacen(review_url, &live_url, 1)
         }
         Some(reason) if reason.contains(&live_url) => reason.to_owned(),
         Some(reason) => format!("{reason} {suffix}"),
-    }
+    })
 }
 
 /// `print(json.dumps(response))` for the client's string-valued answer,
@@ -210,7 +211,7 @@ pub(crate) fn rendered(
         "review" | "require-reapproval" => "ask",
         _ => return None,
     };
-    let reason = reason(response, guard_home);
+    let reason = reason(response, guard_home)?;
     let event = py_strip(event).to_lowercase();
     if event == "beforereadfile" {
         let fields = [("permission", "deny"), ("user_message", reason.as_str())];

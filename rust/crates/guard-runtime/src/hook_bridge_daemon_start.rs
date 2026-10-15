@@ -57,6 +57,9 @@ pub(crate) fn start_daemon(command: &[String], failure_kind: &str, deadline: Ins
     let mut environment = start_environment(&source);
     environment.insert(FAILURE_KIND_ENV.to_owned(), failure_kind.to_owned());
     let timeout = (left - RETRY_RESERVE).min(START_TIMEOUT);
+    // An absolute deadline overrides the timeout, so pass the start's own
+    // deadline: the hook's would let the start eat the retry reserve.
+    let start_deadline = (Instant::now() + timeout).min(deadline);
     let result = run_isolated_hook_process(
         command,
         "",
@@ -65,7 +68,7 @@ pub(crate) fn start_daemon(command: &[String], failure_kind: &str, deadline: Ins
         Some(timeout.as_secs_f64()),
         None,
         None,
-        Some(deadline),
+        Some(start_deadline),
     );
     result.returncode == Some(0)
         && !result.timed_out

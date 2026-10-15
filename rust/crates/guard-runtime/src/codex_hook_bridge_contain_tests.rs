@@ -275,8 +275,8 @@ const RENDERED_DENY: &str = r#"{"hookSpecificOutput":{"hookEventName":"PreToolUs
 
 #[test]
 fn a_denial_outside_a_codex_launch_carries_the_update_hint() {
-    // The test runner is not launched by Codex, so no Codex applies the
-    // rewrite.
+    // No launching Codex applies the rewrite, whatever launched the runner.
+    FIXED_CODEX_APPLIES.with(|applies| applies.set(Some(false)));
     let deadline = Instant::now() + Duration::from_secs(5);
     let route = settle(
         &bridge("harness=codex&home=%2Fh"),
@@ -285,6 +285,7 @@ fn a_denial_outside_a_codex_launch_carries_the_update_hint() {
         false,
         deadline,
     );
+    FIXED_CODEX_APPLIES.with(|applies| applies.set(None));
     assert_eq!(
         route,
         Route::Respond(format!(

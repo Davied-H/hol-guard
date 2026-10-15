@@ -186,16 +186,46 @@ pub(crate) fn review_url_stays_unsigned(url: &str, guard_home: &std::path::Path)
     )
 }
 
+/// Whether `is_loopback_approval_url` may accept `url`: `urlparse`'s
+/// hostname read conservatively, so a doubtful link counts as loopback.
+fn maybe_loopback(url: &str) -> bool {
+    if url.contains(['\t', '\r', '\n']) {
+        return true;
+    }
+    // `urlsplit` drops leading C0 controls and spaces before it parses.
+    let url = url.trim_start_matches(|character: char| character <= ' ');
+    let Some((scheme, rest)) = url.split_once(':') else {
+        return false;
+    };
+    let web = scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https");
+    let Some(rest) = rest.strip_prefix("//").filter(|_| web) else {
+        return false;
+    };
+    let netloc = &rest[..rest.find(['/', '?', '#']).unwrap_or(rest.len())];
+    let host = netloc.rsplit_once('@').map_or(netloc, |(_, host)| host);
+    let host = match host.strip_prefix('[') {
+        Some(bracketed) => bracketed
+            .split_once(']')
+            .map_or(bracketed, |(host, _)| host),
+        None => host.split_once(':').map_or(host, |(host, _)| host),
+    };
+    LOOPBACK_HOSTS.contains(&host.to_ascii_lowercase().as_str())
+}
+
 /// `live_approval_review_url(url, guard_home=...)` with `auth_token` what
 /// `load_guard_daemon_auth_token` read: a loopback link this module
 /// reproduces, signed; any other link, or a link without a token,
-/// unchanged.
-pub(crate) fn live_review_url(url: &str, auth_token: Option<&str>, now_micros: i64) -> String {
+/// unchanged. `None` for a loopback link the client would sign that this
+/// module does not reproduce, so the caller never shows it unsigned.
+pub(crate) fn live_review_url(
+    url: &str,
+    auth_token: Option<&str>,
+    now_micros: i64,
+) -> Option<String> {
     match (approval_link(url), auth_token) {
-        (Some(link), Some(token)) if link.loopback => {
-            browser_url(&link, token, now_micros).unwrap_or_else(|| url.to_owned())
-        }
-        _ => url.to_owned(),
+        (Some(link), Some(token)) if link.loopback => browser_url(&link, token, now_micros),
+        (None, Some(_)) if maybe_loopback(url) => None,
+        _ => Some(url.to_owned()),
     }
 }
 

@@ -81,6 +81,24 @@ fn text<'a>(value: &'a PyVal, name: &str) -> Option<&'a str> {
     value.get(name).and_then(PyVal::as_str)
 }
 
+#[cfg(test)]
+thread_local! {
+    /// Whether the launching Codex applies `updatedInput`, as a test fixes
+    /// it, in place of probing the processes that launched the test runner.
+    pub(super) static FIXED_CODEX_APPLIES: std::cell::Cell<Option<bool>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// Whether the Codex process that launched the hook applies `updatedInput`.
+fn launching_codex_applies(deadline: Instant) -> bool {
+    #[cfg(test)]
+    if let Some(applies) = FIXED_CODEX_APPLIES.with(std::cell::Cell::get) {
+        return applies;
+    }
+    launching_codex_executable()
+        .is_some_and(|executable| codex_applies_updated_input(&executable, deadline))
+}
+
 fn contain(
     config: &BridgeConfig,
     prepared: &Prepared,
@@ -106,9 +124,7 @@ fn contain(
     {
         return Contained::Unchanged;
     }
-    let applies = launching_codex_executable()
-        .is_some_and(|executable| codex_applies_updated_input(&executable, deadline));
-    if !applies {
+    if !launching_codex_applies(deadline) {
         return Contained::Hint;
     }
     if payload.mapped && payload.collision {
