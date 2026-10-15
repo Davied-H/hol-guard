@@ -122,10 +122,10 @@ fn hook_input_is_bounded_and_normalized() {
 
 #[test]
 fn only_sendable_queries_stay_native() {
-    assert!(query_is_sendable("home=%2Fh&harness=codex"));
-    assert!(query_is_sendable(""));
+    assert!(client::query_is_sendable("home=%2Fh&harness=codex"));
+    assert!(client::query_is_sendable(""));
     for query in ["a b", "a\tb", "caf\u{e9}", "a\u{7f}"] {
-        assert!(!query_is_sendable(query), "{query:?}");
+        assert!(!client::query_is_sendable(query), "{query:?}");
     }
 }
 
@@ -485,17 +485,5 @@ fn a_hook_without_time_for_a_start_fails_closed_without_starting() {
     assert!(!marker.exists());
 }
 
-#[test]
-fn a_binding_capture_is_left_to_python() {
-    let home = GuardHome::new("codex-capture");
-    let diagnostics = home.home.join(CAPTURE_MARKER[0]);
-    std::fs::create_dir_all(&diagnostics).unwrap();
-    std::os::unix::fs::symlink("/nonexistent", diagnostics.join(CAPTURE_MARKER[1])).unwrap();
-    let (route, prepared) = route_hook(
-        &config(&home),
-        r#"{"hook_event_name":"Stop"}"#,
-        Instant::now(),
-    );
-    assert_eq!(route, Route::Delegate(Fallback::ClientMode));
-    assert!(prepared.is_none());
-}
+#[path = "codex_hook_bridge_client_tests.rs"]
+mod client_tests;

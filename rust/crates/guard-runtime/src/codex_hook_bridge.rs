@@ -8,8 +8,11 @@
 //! answer or reports a process failure is started with the install-time
 //! `start_command` and asked once more inside the hook deadline (see
 //! `restart`); when that fails too, or the daemon is overloaded, the hook
-//! fails closed. Every other path runs the Python bridge it was given:
-//! - a raw delegate (the original argv and stdin) for client modes;
+//! fails closed. Codex Desktop, binding capture and an unsendable query are
+//! served here too (see `client`). Every other path runs the Python bridge
+//! it was given:
+//! - a raw delegate (the original argv and stdin) for a Desktop transition
+//!   probe;
 //! - a handoff (`--native-handoff` with the daemon's answer on stdin) for
 //!   answers that need Python's post-processing: containment routing and
 //!   transition observations (see `handoff`).
@@ -54,7 +57,6 @@ const BROWSER_WAIT_PROCESS_KEY: &str = "guard_codex_browser_wait_process";
 const BROWSER_WAIT_TIMEOUT_KEY: &str = "guard_codex_browser_wait_timeout_seconds";
 const STATE_FILE: &str = "daemon-state.json";
 const START_FAILED_MARKER: &str = "daemon-start-failed.json";
-const CAPTURE_MARKER: [&str; 2] = ["diagnostics", "codex-binding-capture.v2.json"];
 const DAEMON_PROCESS_FAILURE_PREFIX: &str = "daemon_hook_process_";
 
 /// The fields of `bridge_config_from_argv` the native bridge reads, after
@@ -195,13 +197,6 @@ fn guard_home(state_path: &str) -> Option<PathBuf> {
         .flatten()
 }
 
-fn binding_capture_requested(state_path: &str) -> bool {
-    guard_home(state_path).is_some_and(|home| {
-        let marker = home.join(CAPTURE_MARKER[0]).join(CAPTURE_MARKER[1]);
-        std::fs::symlink_metadata(marker).is_ok()
-    })
-}
-
 /// `clear_start_failure(state_path)`.
 fn clear_start_failure(state_path: &str) {
     let path = Path::new(state_path);
@@ -210,12 +205,6 @@ fn clear_start_failure(state_path: &str) {
         _ => Path::new("."),
     };
     let _ = std::fs::remove_file(parent.join(START_FAILED_MARKER));
-}
-
-/// The query goes into the request line verbatim; `http.client` refuses
-/// controls, spaces and non-ASCII, which Python handles as a failure.
-fn query_is_sendable(query: &str) -> bool {
-    query.bytes().all(|byte| (0x21..=0x7e).contains(&byte))
 }
 
 /// The hook as `_bound_hook_input` forwards it, or `None` to delegate.
@@ -370,18 +359,20 @@ pub(crate) fn route_hook(
     raw_data: &str,
     input_ready: Instant,
 ) -> (Route, Option<Prepared>) {
-    if std::env::var_os("HOL_GUARD_DESKTOP").is_some_and(|value| value == "1")
-        || binding_capture_requested(&config.state_path)
-        || !query_is_sendable(&config.query)
-    {
-        return (Route::Delegate(Fallback::ClientMode), None);
-    }
     let prepared = match prepare(raw_data, &config.hook_timeouts) {
         Ok(prepared) => prepared,
         Err(Unprepared::Refused(event_name)) => {
             return (Route::Respond(fail_closed(&event_name)), None)
         }
     };
+    if client::desktop_transition_probe(&prepared.data) {
+        return (Route::Delegate(Fallback::ClientMode), Some(prepared));
+    }
+    client::record_ingress(&config.state_path, raw_data, &prepared);
+    if !client::query_is_sendable(&config.query) {
+        let route = Route::Respond(fail_closed(&prepared.event_name));
+        return (route, Some(prepared));
+    }
     let deadline = input_ready + prepared.timeout;
     let cap = if prepared.event_name == "UserPromptSubmit" {
         PROMPT_RPC_TIMEOUT
@@ -505,6 +496,8 @@ pub(crate) fn run(python_argv: &[String]) -> i32 {
 
 #[path = "codex_hook_bridge_approval.rs"]
 mod approval;
+#[path = "codex_hook_bridge_client.rs"]
+mod client;
 #[path = "codex_hook_bridge_handoff.rs"]
 mod handoff;
 #[path = "codex_hook_bridge_restart.rs"]

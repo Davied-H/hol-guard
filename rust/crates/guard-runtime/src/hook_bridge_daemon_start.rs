@@ -13,6 +13,8 @@
 //! daemon, and every other outcome is the caller's fail-closed answer. The
 //! start command runs only on this failure path, never per hook.
 
+use std::collections::BTreeMap;
+use std::path::Path;
 use std::time::{Duration, Instant};
 
 use crate::claude_hook_bridge::home_directory;
@@ -23,6 +25,8 @@ use crate::hook_process_spawn::{isolated_hook_environment, run_isolated_hook_pro
 pub(crate) const TRANSPORT_FAILURE: &str = "transport-failure";
 
 const FAILURE_KIND_ENV: &str = "HOL_GUARD_HOOK_FAILURE_KIND";
+const DESKTOP_ENV: &str = "HOL_GUARD_DESKTOP";
+const DESKTOP_PROXY_ENV: &str = "HOL_GUARD_DESKTOP_HOOK_PROXY";
 /// The longest the start command may run, as `_DAEMON_START_TIMEOUT_SECONDS`.
 const START_TIMEOUT: Duration = Duration::from_secs(8);
 /// Below this much hook time the start is skipped and the hook fails closed.
@@ -47,10 +51,10 @@ pub(crate) fn start_daemon(command: &[String], failure_kind: &str, deadline: Ins
     let Some(home) = home_directory() else {
         return false;
     };
-    let source: std::collections::BTreeMap<String, String> = std::env::vars_os()
+    let source: BTreeMap<String, String> = std::env::vars_os()
         .filter_map(|(key, value)| Some((key.into_string().ok()?, value.into_string().ok()?)))
         .collect();
-    let mut environment = isolated_hook_environment(&source);
+    let mut environment = start_environment(&source);
     environment.insert(FAILURE_KIND_ENV.to_owned(), failure_kind.to_owned());
     let timeout = (left - RETRY_RESERVE).min(START_TIMEOUT);
     let result = run_isolated_hook_process(
@@ -67,6 +71,21 @@ pub(crate) fn start_daemon(command: &[String], failure_kind: &str, deadline: Ins
         && !result.timed_out
         && !result.output_limit_exceeded
         && !result.containment_failed
+}
+
+/// `isolated_hook_environment()`: the allowlisted keys plus, for a Desktop
+/// hook, the signed proxy selectors (`desktop_hook_proxy_context`), so a
+/// Desktop daemon start runs as Python's did.
+fn start_environment(source: &BTreeMap<String, String>) -> BTreeMap<String, String> {
+    let mut environment = isolated_hook_environment(source);
+    let proxy = source.get(DESKTOP_PROXY_ENV).filter(|proxy| {
+        !proxy.is_empty() && !proxy.contains('\0') && Path::new(proxy.as_str()).is_absolute()
+    });
+    if let (Some("1"), Some(proxy)) = (source.get(DESKTOP_ENV).map(String::as_str), proxy) {
+        environment.insert(DESKTOP_ENV.to_owned(), "1".to_owned());
+        environment.insert(DESKTOP_PROXY_ENV.to_owned(), proxy.clone());
+    }
+    environment
 }
 
 /// One ask of a daemon that may still be starting.
@@ -164,5 +183,28 @@ mod tests {
         let never = await_daemon(started + Duration::from_secs(1), || Attempt::<()>::NotUp);
         assert_eq!(never, None);
         assert!(started.elapsed() < Duration::from_secs(1));
+    }
+
+    #[test]
+    fn the_start_environment_keeps_the_desktop_proxy_as_python_does() {
+        let all: serde_json::Value = serde_json::from_str(include_str!(
+            "../testdata/codex_hook_bridge/client_mode.json"
+        ))
+        .unwrap();
+        let environment = |value: &serde_json::Value| -> BTreeMap<String, String> {
+            value
+                .as_object()
+                .unwrap()
+                .iter()
+                .map(|(key, value)| (key.clone(), value.as_str().unwrap().to_owned()))
+                .collect()
+        };
+        for case in all["start_environments"].as_array().unwrap() {
+            assert_eq!(
+                start_environment(&environment(&case["source"])),
+                environment(&case["expected"]),
+                "{case}"
+            );
+        }
     }
 }

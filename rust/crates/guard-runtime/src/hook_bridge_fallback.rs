@@ -25,7 +25,8 @@ const MAX_LOG_BYTES: u64 = 64 * 1024;
 pub(crate) enum Fallback {
     /// The hook input was not a request the bridge could parse.
     InputUnparsed,
-    /// The client runs in a mode the native bridge does not serve.
+    /// The client asked for a mode the native bridge does not serve: a
+    /// Codex Desktop transition probe.
     ClientMode,
     /// The daemon did not answer.
     DaemonUnanswered,
