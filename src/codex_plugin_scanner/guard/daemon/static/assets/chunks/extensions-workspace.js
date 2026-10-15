@@ -8370,7 +8370,6 @@ const PROTECTION_CENTER_PERFORMANCE_BUDGETS = Object.freeze({
 });
 const COMMAND_PATTERN_DISPLAY_LIMIT = 24;
 const IDENTITY_MATCH = 0;
-const EXAMPLE_MATCH = 1;
 const CONTEXT_MATCH = 2;
 const RISK_TIER_SEVERITY = { critical: 3, high: 2, medium: 1, low: 0 };
 function catalogOriginRank(extension) {
@@ -8378,15 +8377,41 @@ function catalogOriginRank(extension) {
 }
 function patternSearchBands(extension, permission) {
   return [
-    [permission.label, extension.name, extension.extension_id, ...extension.executables].join(" ").toLowerCase(),
-    [permission.example_command ?? "", permission.permission_id].join(" ").toLowerCase(),
-    [permission.description, permission.family ?? ""].join(" ").toLowerCase()
+    [permission.label, extension.name, extension.extension_id, ...extension.executables].join(" "),
+    [permission.example_command ?? "", permission.permission_id].join(" "),
+    [permission.description, permission.family ?? ""].join(" ")
   ];
 }
-function termBand(term, bands) {
-  if (bands[IDENTITY_MATCH].includes(term)) return IDENTITY_MATCH;
-  if (bands[EXAMPLE_MATCH].includes(term)) return EXAMPLE_MATCH;
-  return CONTEXT_MATCH;
+const WORD_CHAR = /[\p{L}\p{N}]/u;
+const LOWER = new RegExp("\\p{Ll}", "u");
+const UPPER = new RegExp("\\p{Lu}", "u");
+function startsWord(text, index) {
+  if (index === 0) return true;
+  const previous = text[index - 1];
+  return !WORD_CHAR.test(previous) || LOWER.test(previous) && UPPER.test(text[index]);
+}
+function endsWord(text, end) {
+  return end >= text.length || !WORD_CHAR.test(text[end]);
+}
+function wordMatch(text, term) {
+  const lower = text.toLowerCase();
+  const source = lower.length === text.length ? text : lower;
+  const anchored = WORD_CHAR.test(term[0] ?? "");
+  const closes = WORD_CHAR.test(term[term.length - 1] ?? "");
+  let found = null;
+  for (let index = lower.indexOf(term); index !== -1; index = lower.indexOf(term, index + 1)) {
+    if (anchored && !startsWord(source, index)) continue;
+    if (!closes || endsWord(source, index + term.length)) return "exact";
+    found = "prefix";
+  }
+  return found;
+}
+function termMatch(term, bands) {
+  for (let band = IDENTITY_MATCH; band <= CONTEXT_MATCH; band += 1) {
+    const match = wordMatch(bands[band], term);
+    if (match) return { band, exact: match === "exact" };
+  }
+  return null;
 }
 function commandPatternQuery(rawQuery) {
   const normalized = rawQuery.trim().toLowerCase().slice(0, PROTECTION_CENTER_PERFORMANCE_BUDGETS.humanSearchCharacterCap);
@@ -8399,14 +8424,16 @@ function searchCommandPatterns(candidates, rawQuery, limit = COMMAND_PATTERN_DIS
   const matches = [];
   for (const { extension, permission } of candidates) {
     const bands = patternSearchBands(extension, permission);
-    const text = bands.join(" ");
-    if (!terms.every((term) => text.includes(term))) continue;
-    const score = Math.max(...terms.map((term) => termBand(term, bands)));
-    matches.push({ extension, permission, score });
+    const termMatches = terms.map((term) => termMatch(term, bands));
+    if (termMatches.some((match) => match === null)) continue;
+    const found = termMatches;
+    const score = Math.max(...found.map((match) => match.band));
+    const partial = found.filter((match) => !match.exact).length;
+    matches.push({ extension, permission, score, partial });
   }
   return matches.sort(
-    (left, right) => left.score - right.score || catalogOriginRank(left.extension) - catalogOriginRank(right.extension) || (RISK_TIER_SEVERITY[right.permission.risk_tier] ?? 0) - (RISK_TIER_SEVERITY[left.permission.risk_tier] ?? 0) || left.permission.label.localeCompare(right.permission.label) || left.extension.name.localeCompare(right.extension.name)
-  ).slice(0, limit);
+    (left, right) => left.score - right.score || left.partial - right.partial || catalogOriginRank(left.extension) - catalogOriginRank(right.extension) || (RISK_TIER_SEVERITY[right.permission.risk_tier] ?? 0) - (RISK_TIER_SEVERITY[left.permission.risk_tier] ?? 0) || left.permission.label.localeCompare(right.permission.label) || left.extension.name.localeCompare(right.extension.name)
+  ).slice(0, limit).map(({ partial: _partial, ...match }) => match);
 }
 function useDebounce(value, delay) {
   const [debouncedValue, setDebouncedValue] = reactExports.useState(value);
@@ -8523,8 +8550,8 @@ function PatternSearchConsole(props) {
     const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
     if (!terms.length) return [];
     return props.catalog.filter((extension) => {
-      const text = [extension.name, extension.extension_id, ...extension.executables, ...extension.aliases].join(" ").toLowerCase();
-      return terms.every((term) => text.includes(term));
+      const text = [extension.name, extension.extension_id, ...extension.executables, ...extension.aliases].join(" ");
+      return terms.every((term) => wordMatch(text, term) !== null);
     });
   }, [props.catalog, query]);
   const grouped = reactExports.useMemo(() => {
