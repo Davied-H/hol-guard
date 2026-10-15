@@ -40,7 +40,8 @@ fn git(home: &Path, repository: &Path, arguments: &[&str]) {
 }
 
 /// `org/app` below a fresh home, with a remote-tracking `origin/main`, a
-/// sibling repository and a symlink beside it that leads out of `org`.
+/// sibling repository and a symlink beside it that leads out of `org` into a
+/// directory every user can write, where no checkout is admitted.
 fn repository(name: &str) -> (FixtureCleanup, PathBuf, PathBuf) {
     let unique = format!(
         "{}-{}",
@@ -87,6 +88,11 @@ fn repository(name: &str) -> (FixtureCleanup, PathBuf, PathBuf) {
     directory(&sibling);
     git(&home, &sibling, &["init", "--quiet"]);
     directory(&root.join("elsewhere"));
+    std::fs::set_permissions(
+        root.join("elsewhere"),
+        std::fs::Permissions::from_mode(0o777),
+    )
+    .unwrap();
     std::os::unix::fs::symlink(root.join("elsewhere"), organization.join("link")).unwrap();
     (cleanup, home, repository)
 }
@@ -327,7 +333,8 @@ fn existing_branch_worktree_add_neighbours_stay_reviewed() {
 /// An unquoted `~/` destination is the shell's HOME, here the declared one,
 /// so it names the same checkout as the absolute spelling. Quoted, Git would
 /// create a literal `~` directory, and other users' homes, hidden leaves,
-/// existing paths and symlinked parents stay reviewed as before.
+/// existing paths and a symlinked parent leading somewhere unowned stay
+/// reviewed as before.
 #[test]
 fn home_relative_worktree_destinations_match_the_absolute_spelling() {
     let (_cleanup, home, repository) = repository("home-relative");
