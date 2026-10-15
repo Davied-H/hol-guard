@@ -30,7 +30,10 @@ def test_fast_runtime_profile_is_confined_to_functional_ci_artifacts() -> None:
     for name in ("macos-native-runtime", "windows-native-runtime"):
         job = workflow["jobs"][name]
         assert job["timeout-minutes"] == 5
-        assert "CARGO_PROFILE_RELEASE_OPT_LEVEL" not in job.get("env", {})
+        if name == "macos-native-runtime":
+            assert job["env"]["CARGO_PROFILE_RELEASE_OPT_LEVEL"] == "0"
+        else:
+            assert "CARGO_PROFILE_RELEASE_OPT_LEVEL" not in job.get("env", {})
         steps = composite_action_steps(f"ci-job-{name}")
         build = next(step for step in steps if step.get("name", "").startswith("Build the "))
         for configuration in (
