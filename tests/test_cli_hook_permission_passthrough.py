@@ -14,7 +14,7 @@ class _NoReview:
         raise AssertionError(f"passthrough permission requests must not reach the edge ({name})")
 
 
-@pytest.mark.parametrize("harness", ("codex", "devin", "zcode"))
+@pytest.mark.parametrize("harness", ("devin", "zcode"))
 @pytest.mark.parametrize("event_name", ("PermissionRequest", "permission_request", "permissionRequestV2"))
 def test_permission_request_gets_no_decision(harness: str, event_name: str) -> None:
     output = io.StringIO()

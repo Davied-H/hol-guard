@@ -69,8 +69,9 @@ from .commands_support_workspace import _workspace_from_hook_payload
 _NATIVE_EDGE_EVENTS = frozenset({"PreToolUse", "PostToolUse", "UserPromptSubmit"})
 # Harnesses whose PermissionRequest hook gets no decision, as on the daemon
 # path: each raises it only for a call its PreToolUse hook already sent to
-# Guard. Copilot keeps its own permission-request flow on this path.
-_PERMISSION_PASSTHROUGH_HARNESSES = frozenset({"codex", "devin", "zcode"})
+# Guard. Copilot and Codex keep their own permission-request flows on this
+# path.
+_PERMISSION_PASSTHROUGH_HARNESSES = frozenset({"devin", "zcode"})
 
 
 def run_native_hook_pipeline(
