@@ -138,3 +138,8 @@ def test_dependency_cache_tracks_the_instrumented_build_profile() -> None:
         run["env"]["SCCACHE_GHA_RW_MODE"]
         == "${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') && 'READ_WRITE' || 'READ_ONLY' }}"
     )
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Unix Cargo wrappers require executable mode bits")
+def test_coverage_workspace_compiler_wrapper_is_executable() -> None:
+    assert os.access(ROOT / "scripts/ci/rust_test_compiler.sh", os.X_OK)
