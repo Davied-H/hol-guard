@@ -11,8 +11,11 @@
 //! published in the direct-lane binding.
 
 use super::HookDirectDefer;
-use serde_json::{json, Map, Value};
+#[cfg(unix)]
+use serde_json::json;
+use serde_json::{Map, Value};
 
+#[cfg(unix)]
 const ROUTED_REASON: &str = "native_contained_execution_routed";
 const RECEIPT_ONLY_FIELD: &str = "guard_containment_receipt_only";
 #[cfg(any(target_os = "linux", all(unix, test)))]
@@ -29,7 +32,9 @@ const NATIVE_SINK_UNSUPPORTED: [&str; 8] =
 const PRE_TOOL_EVENTS: [&str; 2] = ["PreToolUse", "pre_tool_use"];
 const SHELL_TOOLS: [&str; 4] = ["Bash", "bash", "run_terminal_command", "run_command"];
 
-/// Where the rewritten call runs, as the daemon would name it.
+/// Where the rewritten call runs, as the daemon would name it. Only the unix
+/// request writer reads it; Windows defers every route.
+#[cfg_attr(not(unix), allow(dead_code))]
 pub(super) struct SinkTarget<'a> {
     /// The argv prefix that starts the daemon's Guard CLI.
     pub(super) command: &'a [String],
@@ -218,6 +223,7 @@ fn shell_input(payload: &Map<String, Value>) -> Option<&Map<String, Value>> {
 }
 
 /// The harness response that runs `command` in place of the original call.
+#[cfg(unix)]
 fn routed_response(original: &Map<String, Value>, command: &[String]) -> Value {
     let mut updated = original.clone();
     updated.insert(

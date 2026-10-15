@@ -45,7 +45,7 @@ pub(super) use reach::{private_temp_expansions_only, rebinds_private_temp};
 #[path = "workspace_contained_removal.rs"]
 mod removal;
 #[path = "workspace_contained_runner.rs"]
-mod runner;
+pub(super) mod runner;
 #[path = "workspace_contained_settings.rs"]
 mod settings;
 #[path = "workspace_contained_sibling.rs"]

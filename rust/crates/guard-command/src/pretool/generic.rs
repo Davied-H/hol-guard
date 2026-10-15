@@ -485,6 +485,7 @@ fn evaluate_envelope(
                 && super::workspace_contained::carry_settings(
                     &mut projected,
                     signals.command.as_deref().unwrap_or_default(),
+                    &reviewed.command,
                     context,
                     execution_environment,
                     harness,

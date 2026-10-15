@@ -383,11 +383,12 @@ fn a_linked_worktree_contains_everything_but_git() {
     std::fs::write(tree.join(".git"), format!("gitdir: {}\n", admin.display())).unwrap();
     std::fs::write(tree.join("package.json"), "{}").unwrap();
     for command in ["rm notes.txt", "npm run build", "chmod +x scripts/run.sh"] {
-        assert_eq!(
-            reason("omp", command, &tree, true) == CONTAINED,
-            host(),
-            "{command}"
-        );
+        let got = reason("omp", command, &tree, true);
+        // macOS claims the build with its narrower node build-output profile.
+        let narrower = cfg!(target_os = "macos")
+            && command == "npm run build"
+            && got == "native_node_build_output_containment_required";
+        assert_eq!(got == CONTAINED || narrower, host(), "{command}");
     }
     // Its index and objects live in the shared Git directory, out of reach.
     for command in ["git add -A", "git rm -q src/a.ts", "npm test && git status"] {
