@@ -5,8 +5,8 @@ a temporary home. The lane is ready only once the daemon publishes the
 exact-action state, which on a fresh home needs the policy-integrity row the
 publisher refreshes; a policy write advances that state, and the daemon has to
 republish the generation the write signed. A server no session reported a
-catalog of runs under the Python proxy, which reports it; its later sessions
-start on the ready lane.
+catalog of starts native and reports the catalog it relays; its later
+sessions start on the ready lane.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ pytestmark = pytest.mark.skipif(os.name != "posix", reason="the native MCP relay
 _LANE_READY = "hol-guard mcp-relay: lane ready: "
 _HAND_OFF = "hol-guard mcp-relay: python proxy: "
 _NOT_READY = "hol-guard mcp-relay: lane not ready: "
-_SERVER_UNKNOWN = _HAND_OFF + "mcp_relay_session_server_unknown"
+_SERVER_UNKNOWN = _NOT_READY + "mcp_relay_session_server_unknown"
 _SERVER = """
 import json
 import sys

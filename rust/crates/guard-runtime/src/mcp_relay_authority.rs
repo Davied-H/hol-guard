@@ -93,6 +93,10 @@ pub(crate) trait RelayAuthority {
     /// Finish recording after the host was sent a response, so that work
     /// never delays the response itself.
     fn settle(&mut self) {}
+
+    /// A listing made the catalog whole: `tools` is every advertised
+    /// definition. Called once the host has the listing's response.
+    fn catalog_complete(&mut self, _tools: &[Value]) {}
 }
 
 /// Fail-closed authority that decides nothing.

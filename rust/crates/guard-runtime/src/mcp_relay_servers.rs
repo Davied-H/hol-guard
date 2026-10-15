@@ -15,8 +15,8 @@
 //! - the Python proxy reports a server's catalog once it has the whole of it;
 //! - `mcp_relay_decide` marks a server when it defers a call to the package
 //!   policy, which covers a command the schema did not declare;
-//! - a server the resident has no report of is unknown and runs under the
-//!   proxy, which reports it.
+//! - the native relay reports the catalog it relays the same way, so an
+//!   unknown server's session starts native and reports it.
 //!
 //! A mark never clears while the resident runs. The registry is bounded: a
 //! server past the bound stays unknown. It only steers which launcher runs.

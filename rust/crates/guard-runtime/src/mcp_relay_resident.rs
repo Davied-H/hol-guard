@@ -333,6 +333,10 @@ impl RelayAuthority for ResidentRelayAuthority {
         commits.settle(|ticket| self.commit(ticket));
         self.commits = commits;
     }
+
+    fn catalog_complete(&mut self, tools: &[Value]) {
+        self.report_server(tools);
+    }
 }
 
 /// The frame the child would read and the decide request built from it, or

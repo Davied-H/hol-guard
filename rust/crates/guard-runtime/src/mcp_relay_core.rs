@@ -8,6 +8,8 @@
 //! catalog mirror, and every `tools/call` goes to the `RelayAuthority` after
 //! the child stream is drained. A forwarded call is written only after a
 //! pre-write quiet edge with the catalog it was decided against unchanged.
+//! A listing that makes the catalog whole is reported to the authority once
+//! the host has its response, as the proxy's `_report_relay_server` does.
 
 use std::time::Duration;
 
@@ -153,6 +155,10 @@ pub(crate) struct Relay<C, H, A> {
     client_responses: ResponseBuffers,
     timeout: Duration,
     depth: usize,
+    /// A listing was captured since the catalog was last reported.
+    report_due: bool,
+    /// The fingerprint of the catalog last reported.
+    reported: Option<String>,
 }
 
 impl<C: ChildLink, H: HostLink, A: RelayAuthority> Relay<C, H, A> {
@@ -166,6 +172,8 @@ impl<C: ChildLink, H: HostLink, A: RelayAuthority> Relay<C, H, A> {
             client_responses: ResponseBuffers::default(),
             timeout,
             depth: 0,
+            report_due: false,
+            reported: None,
         }
     }
 
@@ -187,6 +195,7 @@ impl<C: ChildLink, H: HostLink, A: RelayAuthority> Relay<C, H, A> {
                 let sent = self.host.send(&response);
                 self.authority.settle();
                 sent?;
+                self.report_catalog();
                 if is_timeout_response(&response) {
                     return Ok(RelayExit::TimedOut);
                 }
@@ -255,6 +264,22 @@ impl<C: ChildLink, H: HostLink, A: RelayAuthority> Relay<C, H, A> {
         self.authority.claim(ticket)
     }
 
+    /// `_report_relay_server`: hand a newly whole catalog to the authority.
+    fn report_catalog(&mut self) {
+        if !std::mem::take(&mut self.report_due) {
+            return;
+        }
+        let Some(tools) = self.catalog.complete_tools() else {
+            return;
+        };
+        let fingerprint = self.catalog.snapshot().fingerprint;
+        if fingerprint.is_none() || fingerprint == self.reported {
+            return;
+        }
+        self.reported = fingerprint;
+        self.authority.catalog_complete(&tools);
+    }
+
     /// A non-`tools/call` request; `tools/list` also drives the catalog.
     fn forward_request(&mut self, message: &Value) -> Result<Value, String> {
         let listing = (method(message) == Some("tools/list")).then(|| {
@@ -269,6 +294,7 @@ impl<C: ChildLink, H: HostLink, A: RelayAuthority> Relay<C, H, A> {
         match (response, listing) {
             (Ok(response), Some((cursor, generation))) => {
                 self.catalog.capture(cursor, generation, &response);
+                self.report_due = true;
                 Ok(response)
             }
             (Err(error), Some((_, generation))) => {

@@ -12,19 +12,29 @@
 //! until the lane is ready, the lane names a reason no wait clears, or the
 //! warm-up budget is spent, asking the daemon again whenever the kick
 //! interval allows. The call is then decided once, as any other.
+//!
+//! The resident knows a server only from a report of its whole catalog
+//! (`mcp_relay_servers.rs`), so the relay reports the catalog it relays, as
+//! the proxy does. The server's later sessions then start on the lane, or
+//! under the proxy when the catalog offers a tool the proxy decides. Only
+//! the session's own listing can report an unknown server, so its first call
+//! never waits for one.
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
-use super::{defer, ResidentRelayAuthority};
+use super::{defer, RelayFacts, ResidentRelayAuthority};
 use crate::claude_hook_bridge_http::remaining;
 use crate::mcp_relay_lane::{kickable, unported, Kick, LaneKick, RETRY_BUDGET, WARM_UP_BUDGET};
 use crate::mcp_relay_ready::MCP_RELAY_READY_SCHEMA;
+use crate::mcp_relay_servers::SERVER_UNKNOWN;
 
 /// The pause between probes while the first call waits for the lane.
 const WARM_UP_POLL: Duration = Duration::from_millis(100);
+/// How long the relay waits for the resident to take a catalog report.
+const REPORT_TIMEOUT: Duration = Duration::from_millis(500);
 
 impl ResidentRelayAuthority {
     /// Ask the daemon to prepare the lane for a deferred call.
@@ -54,7 +64,7 @@ impl ResidentRelayAuthority {
             let probe = (Instant::now() + RETRY_BUDGET).min(deadline);
             match self.lane_ready(probe) {
                 Ok(()) => return,
-                Err(code) if unported(&code) => return,
+                Err(code) if unported(&code) || code == SERVER_UNKNOWN => return,
                 Err(_) => {}
             }
             if let Some(kick) = self.kick.as_mut() {
@@ -88,14 +98,7 @@ impl ResidentRelayAuthority {
                 "guard_home": facts.guard_home,
                 "workspace": facts.workspace.as_deref().unwrap_or(&facts.hash_workspace),
                 "harness": facts.harness,
-                "server": {
-                    "harness": facts.harness,
-                    "server_name": facts.server_name,
-                    "source_scope": facts.source_scope,
-                    "config_path": facts.config_path,
-                    "server_id": facts.server_id,
-                    "identity_hash": facts.server_identity.get("identity_hash"),
-                },
+                "server": server(facts),
             },
         });
         let guard_home = PathBuf::from(&facts.guard_home);
@@ -105,6 +108,28 @@ impl ResidentRelayAuthority {
             .exchange_until(&guard_home, &payload, deadline)
             .ok_or_else(|| defer::RESIDENT_UNREACHABLE.to_owned())?;
         ready_answer(&output)
+    }
+
+    /// `_report_relay_server`: report the session server's whole catalog.
+    /// Best effort: a report the resident never took leaves the server
+    /// unknown, and its later sessions start native again.
+    pub(super) fn report_server(&mut self, tools: &[Value]) {
+        let Some(facts) = self.facts.as_ref() else {
+            return;
+        };
+        let payload = json!({
+            "operation": "mcp_relay_server_report",
+            "request": {
+                "guard_home": facts.guard_home,
+                "server": server(facts),
+                "tools": tools,
+            },
+        });
+        let guard_home = PathBuf::from(&facts.guard_home);
+        let Ok(payload) = serde_json::to_vec(&payload) else {
+            return;
+        };
+        let _ = self.exchange_until(&guard_home, &payload, Instant::now() + REPORT_TIMEOUT);
     }
 
     /// Whether a call deferred with `output` gets its one retry: the lane
@@ -119,6 +144,18 @@ impl ResidentRelayAuthority {
         };
         kickable(&code) && kick.kick(Instant::now() + RETRY_BUDGET) == Kick::Requested
     }
+}
+
+/// The session's server, as the resident's registry names it.
+fn server(facts: &RelayFacts) -> Value {
+    json!({
+        "harness": facts.harness,
+        "server_name": facts.server_name,
+        "source_scope": facts.source_scope,
+        "config_path": facts.config_path,
+        "server_id": facts.server_id,
+        "identity_hash": facts.server_identity.get("identity_hash"),
+    })
 }
 
 /// The resident's readiness answer.

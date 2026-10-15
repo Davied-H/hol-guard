@@ -97,7 +97,6 @@ pub(crate) fn unported(code: &str) -> bool {
             | "mcp_relay_session_review_mode"
             | "mcp_relay_session_redaction_unbound"
             | "mcp_relay_saved_remote_policy"
-            | "mcp_relay_session_server_unknown"
             | "mcp_relay_session_server_proxy_tools"
             | "mcp_relay_view_invalid"
             | "mcp_relay_layers_unavailable"

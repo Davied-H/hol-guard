@@ -6,8 +6,9 @@
 //! session's calls at all (`mcp_relay_decide_session.rs`): a config that
 //! prompts (in either mode, observe included) or a store holding remote
 //! policy sends the session to the Python proxy, and so does a server whose
-//! catalog the resident has no report of or whose catalog offers a tool the
-//! proxy decides (`mcp_relay_servers.rs`).
+//! catalog offers a tool the proxy decides (`mcp_relay_servers.rs`). A
+//! server whose catalog the resident has no report of is not ready either,
+//! but its session stays native and reports the catalog it relays.
 //! The answer is only `ready` or `not_ready` with the lane's defer code. It
 //! carries no verdict, no binding state and no key, and it never stands in
 //! for a decision: each call is still admitted by `mcp_relay_decide`, which

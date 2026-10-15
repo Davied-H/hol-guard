@@ -147,9 +147,9 @@ fn the_gate_line_has_a_fixed_shape() {
     );
     assert_eq!(
         gate_line(&Gate::NotReady(
-            "mcp_relay_session_server_unknown".to_owned()
+            "mcp_relay_session_server_proxy_tools".to_owned()
         )),
-        "hol-guard mcp-relay: python proxy: mcp_relay_session_server_unknown\n"
+        "hol-guard mcp-relay: python proxy: mcp_relay_session_server_proxy_tools\n"
     );
 }
 
@@ -158,7 +158,7 @@ fn only_features_the_relay_lacks_send_a_session_to_the_python_proxy() {
     for code in [
         "mcp_relay_session_review_mode",
         "mcp_relay_saved_remote_policy",
-        "mcp_relay_session_server_unknown",
+        "mcp_relay_session_server_proxy_tools",
         "mcp_relay_facts_unavailable",
         DAEMON_REFUSED,
     ] {
@@ -171,6 +171,7 @@ fn only_features_the_relay_lacks_send_a_session_to_the_python_proxy() {
         "mcp_relay_runtime_superseded",
         "mcp_relay_evidence_undrained",
         "mcp_relay_binding_incomplete",
+        "mcp_relay_session_server_unknown",
     ] {
         assert!(!unported(code), "{code}");
     }
