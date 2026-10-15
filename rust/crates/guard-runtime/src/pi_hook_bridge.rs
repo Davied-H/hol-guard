@@ -106,8 +106,9 @@ pub(crate) fn reply(
     let target = daemon_target(&config.guard_home, config.harness.name)?;
     let path = format!("/v1/hooks/{}?{}", config.harness.name, config.query);
     let (status, body) = target.post_status(&path, data, deadline)?;
-    // `fetch` decodes the body as UTF-8 and drops a leading BOM.
-    let text = String::from_utf8(body).ok()?;
+    // `fetch` decodes the body as UTF-8, replacing malformed bytes, and
+    // drops a leading BOM.
+    let text = String::from_utf8_lossy(&body);
     let text = text.strip_prefix('\u{feff}').unwrap_or(&text).to_owned();
     Some((status, text))
 }

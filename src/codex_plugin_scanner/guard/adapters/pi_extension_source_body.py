@@ -194,22 +194,24 @@ def build_extension_source_body(*, harness: str, display_name: str) -> str:
         "  timeoutMs: number = GUARD_DAEMON_TIMEOUT_MS,\n"
         "  deadlineAt?: number,\n"
         "): Promise<GuardDaemonAttempt> {\n"
-        "  const connection = loadGuardDaemonConnection();\n"
-        '  if (!connection) return { response: null, recoveryKind: "transport-failure" };\n'
         '  const workspace = typeof cwd === "string" && cwd ? cwd : process.cwd();\n'
         "  const params = new URLSearchParams({ 'guard-home': GUARD_HOME });\n"
         "  if (workspace) params.set('workspace', workspace);\n"
         "  if (!GUARD_HOME_DIR_IS_DEFAULT && GUARD_HOME_DIR) params.set('home', GUARD_HOME_DIR);\n"
+        "  const remainingMs = deadlineAt === undefined ? timeoutMs : deadlineAt - Date.now();\n"
+        "  const budgetMs = Math.min(60_000, Math.max(1, Math.min(timeoutMs, remainingMs)));\n"
         "  let daemonPayload = serializedPayload;\n"
         "  try {\n"
         "    const parsedPayload = JSON.parse(serializedPayload) as Record<string, unknown>;\n"
-        "    const remainingMs = deadlineAt === undefined ? timeoutMs : deadlineAt - Date.now();\n"
-        "    parsedPayload.guard_remaining_ms = Math.min(60_000, Math.max(1, Math.min(timeoutMs, remainingMs)));\n"
+        "    parsedPayload.guard_remaining_ms = budgetMs;\n"
         "    daemonPayload = JSON.stringify(parsedPayload);\n"
         "  } catch {}\n"
-        "  const nativeReply = await nativeGuardReply(params.toString(), daemonPayload, timeoutMs);\n"
+        "  // The bridge finds a live resident without the daemon's state or token.\n"
+        "  const nativeReply = await nativeGuardReply(params.toString(), daemonPayload, budgetMs);\n"
         '  if (nativeReply === null) return { response: null, recoveryKind: "transport-failure" };\n'
         "  if (nativeReply !== undefined) return guardDaemonAttempt(nativeReply, serializedPayload);\n"
+        "  const connection = loadGuardDaemonConnection();\n"
+        '  if (!connection) return { response: null, recoveryKind: "transport-failure" };\n'
         '  if (typeof fetch !== "function") {\n'
         '    return { response: null, recoveryKind: "transport-failure" };\n'
         "  }\n"

@@ -293,7 +293,13 @@ fn request_body(
     if let Some(workspace) = workspace {
         request["workspace"] = Value::String(workspace);
     }
-    serde_json::to_vec(&json!({ "operation": "hook_direct", "request": request })).ok()
+    serde_json::to_vec(&json!({
+        "operation": "hook_direct",
+        // Without a budget the resident client falls back to 750 ms.
+        "deadline_budget_ms": budget_ms,
+        "request": request,
+    }))
+    .ok()
 }
 
 /// The harness response of an `answer`, or `None` for a defer or anything
