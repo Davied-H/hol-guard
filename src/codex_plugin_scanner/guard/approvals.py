@@ -344,7 +344,7 @@ def queue_blocked_approvals(
     except Exception as failure:
         # Requests written before the failure stay queued, so a caller that
         # keeps the deny can still point the user at them.
-        failure.queued_approvals = payloads  # type: ignore[attr-defined]
+        failure.queued_approvals = payloads  # pyright: ignore[reportAttributeAccessIssue]
         raise
     return payloads
 
