@@ -290,3 +290,42 @@ def test_retained_archive_evaluation_without_resident_blocks(monkeypatch: pytest
     assert result.decision == "block"
     assert result.reasons[0]["code"] == "native_supply_chain_eval_unavailable"
     assert result.external_archive_downloads == ()
+
+
+def test_unclaimed_saved_package_approval_is_dropped_without_a_resident(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    evaluation = SimpleNamespace(policy_action="review", name="current")
+    saved = SimpleNamespace(policy_action="allow", name="saved")
+    current = SimpleNamespace(
+        artifact=SimpleNamespace(artifact_id="package:npm:left-pad"),
+        artifact_hash="hash",
+        evaluation=evaluation,
+        current_action="review",
+        execution_context=None,
+        observe_mode=False,
+        additional_current_action=None,
+        additional_policy_context=None,
+        invoking_harness=None,
+    )
+    monkeypatch.setattr(local_supply_chain, "_build_package_protect_authority", lambda **_kwargs: current)
+    monkeypatch.setattr(local_supply_chain, "approval_context_tokens_validation_reason", lambda *_args: None)
+    monkeypatch.setattr(local_supply_chain, "_apply_stored_package_policy_override", lambda *_args, **_kwargs: saved)
+    monkeypatch.setattr(
+        local_supply_chain, "_evaluation_uses_saved_package_approval", lambda candidate: candidate is saved
+    )
+    monkeypatch.setattr(local_supply_chain, "evaluate_approval_reuse", lambda *_args, **_kwargs: None)
+    authority, result = local_supply_chain._final_package_protect_authority(
+        initial=current,
+        initial_saved_evaluation=None,
+        saved_approval_pending=False,
+        command=["npm", "install", "left-pad"],
+        store=SimpleNamespace(guard_home=tmp_path),
+        workspace_dir=tmp_path,
+        now="2026-10-15T00:00:00Z",
+        config=None,
+        current_config_provider=None,
+        additional_authority_provider=None,
+    )
+    assert authority is current
+    assert result is evaluation

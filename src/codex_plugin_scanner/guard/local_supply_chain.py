@@ -862,8 +862,11 @@ def _final_package_protect_authority(
             saved_decision_present=True,
             validation_reason=APPROVAL_REUSE_CLAIM_FAILED,
         )
-        if reuse is not None:
-            resolved = _package_evaluation_with_rejected_reuse(current_evaluation, reuse)
+        # An unreachable resident cannot reject the unclaimed approval, so fall
+        # back to the current evaluation rather than launching on it.
+        resolved = (
+            current_evaluation if reuse is None else _package_evaluation_with_rejected_reuse(current_evaluation, reuse)
+        )
     return current, resolved
 
 
