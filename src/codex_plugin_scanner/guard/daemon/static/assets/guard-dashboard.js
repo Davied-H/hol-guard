@@ -20334,7 +20334,7 @@ function defaultUseApprovalCooldown(gate) {
 function isBulkApproveGateReady(gate) {
   return gate?.enabled === true && gate?.configured === true;
 }
-function bulkApproveCooldownOpen$1(gate) {
+function bulkApproveCooldownOpen(gate) {
   return isBulkApproveGateReady(gate) && gate?.totp_enabled !== true && gate?.strict_all_decisions !== true && (gate?.cooldown_seconds ?? 0) > 0 && gate?.cooldown_active === true;
 }
 function validateBulkApproveCredentials(gate, credentials) {
@@ -20344,7 +20344,7 @@ function validateBulkApproveCredentials(gate, credentials) {
   if (gate?.totp_enabled === true) {
     return credentials.totpCode.trim() ? null : "Enter your authenticator code to continue.";
   }
-  if (!credentials.password.trim() && !bulkApproveCooldownOpen$1(gate)) {
+  if (!credentials.password.trim() && !bulkApproveCooldownOpen(gate)) {
     return "Enter your approval password to continue.";
   }
   return null;
@@ -20359,7 +20359,7 @@ function buildBulkGateCredentials(gate, password, totpCode) {
       approval_gate_use_cooldown: false
     };
   }
-  if (!password.trim() && bulkApproveCooldownOpen$1(gate)) {
+  if (!password.trim() && bulkApproveCooldownOpen(gate)) {
     return { approval_gate_use_cooldown: true };
   }
   return {

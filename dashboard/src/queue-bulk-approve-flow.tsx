@@ -2,7 +2,7 @@ import { useMemo, type ChangeEvent } from "react";
 import { bulkApproveConsequenceCopyForSelection } from "./approval-retry-guidance";
 import { BulkDrawerShell } from "./queue-bulk-drawer-shell";
 import { toneRing, toneChip, toneIcon } from "./queue-bulk-risk-presentation";
-import { isBulkApproveGateReady } from "./queue-bulk-approval-credentials";
+import { bulkApproveCooldownOpen, isBulkApproveGateReady } from "./queue-bulk-approval-credentials";
 import {
   HiMiniCheckCircle,
   HiMiniExclamationTriangle,
