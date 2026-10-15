@@ -536,6 +536,7 @@
           "src/codex_plugin_scanner/guard/native_*.py",
           "src/codex_plugin_scanner/guard/proxy/*",
           "src/codex_plugin_scanner/guard/runtime/restricted_*.py",
+          "src/codex_plugin_scanner/guard/runtime/git_execution_safety.py",
           "src/codex_plugin_scanner/guard/runtime/verified_*.py",
           "src/codex_plugin_scanner/guard/runtime/supply_chain*.py",
           "src/codex_plugin_scanner/guard/runtime/package_request_evaluation.py",
@@ -2106,12 +2107,6 @@
       },
       {
         "path": "src/codex_plugin_scanner/guard/codex_config.py",
-        "count": 1,
-        "resolution": "external",
-        "evidence": "Selects the stdlib tomllib module (Python 3.11+) or the third-party tomli backport by interpreter version; both are external to the package, so the call adds no in-package module."
-      },
-      {
-        "path": "src/codex_plugin_scanner/guard/config.py",
         "count": 1,
         "resolution": "external",
         "evidence": "Selects the stdlib tomllib module (Python 3.11+) or the third-party tomli backport by interpreter version; both are external to the package, so the call adds no in-package module."

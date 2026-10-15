@@ -3,6 +3,10 @@ use super::*;
 pub(super) fn run() -> Result<(), String> {
     let args: Vec<String> = env::args().skip(1).collect();
     match args.as_slice() {
+        [command, ..] if command == "restricted-linux-launch" => {
+            let digest = if args.len() == 2 { args[1].as_str() } else { "" };
+            std::process::exit(restricted_linux_launch::launch(digest))
+        }
         [command] if command == "capabilities" => write_json(&capabilities()),
         [command, flag] if command == "capabilities" && flag == "--json" => {
             write_json(&capabilities())
@@ -61,6 +65,10 @@ pub(super) fn run() -> Result<(), String> {
         }
         [command, flag] if guard_config_load::is_command(command) && flag == "--stdin" => {
             let response = guard_config_load::run_command(io::stdin().lock())?;
+            write_bytes_response(&response)
+        }
+        [command, flag] if guard_config_update::is_command(command) && flag == "--stdin" => {
+            let response = guard_config_update::run_command(io::stdin().lock())?;
             write_bytes_response(&response)
         }
         [command, flag] if policy_effective::is_command(command) && flag == "--stdin" => {
