@@ -60,6 +60,12 @@ security-framework = "3.7.0"
 guard-contained-process = { path = "../guard-contained-process" }
 windows-permissions.workspace = true
 
+# Static musl release builds use mimalloc: musl's mallocng was the largest
+# single cost in warm resident request profiles. Other targets keep the
+# platform allocator.
+[target.'cfg(all(target_os = "linux", target_env = "musl"))'.dependencies]
+mimalloc = { version = "0.1.52", default-features = false }
+
 [target.'cfg(all(unix, target_os = "linux"))'.dependencies]
 seccompiler = "0.5.0"
 landlock = "=0.4.7"

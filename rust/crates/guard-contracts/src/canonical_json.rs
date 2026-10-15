@@ -124,34 +124,53 @@ pub fn write_json_string(text: &str, out: &mut Vec<u8>) {
 }
 
 fn write_json_string_with_ascii<const ENSURE_ASCII: bool>(text: &str, out: &mut Vec<u8>) {
+    out.reserve(text.len() + 2);
     out.push(b'"');
-    for ch in text.chars() {
-        match ch {
-            '"' => out.extend_from_slice(b"\\\""),
-            '\\' => out.extend_from_slice(b"\\\\"),
-            '\u{08}' => out.extend_from_slice(b"\\b"),
-            '\u{09}' => out.extend_from_slice(b"\\t"),
-            '\u{0a}' => out.extend_from_slice(b"\\n"),
-            '\u{0c}' => out.extend_from_slice(b"\\f"),
-            '\u{0d}' => out.extend_from_slice(b"\\r"),
-            ch if (ch as u32) < 0x20 || (ENSURE_ASCII && (ch as u32) > 0x7e) => {
-                let code = ch as u32;
-                if code > 0xffff {
-                    let shifted = code - 0x1_0000;
-                    let high = 0xd800 + (shifted >> 10);
-                    let low = 0xdc00 + (shifted & 0x3ff);
-                    out.extend_from_slice(format!("\\u{high:04x}\\u{low:04x}").as_bytes());
-                } else {
-                    out.extend_from_slice(format!("\\u{code:04x}").as_bytes());
-                }
-            }
-            ch => {
-                let mut buf = [0u8; 4];
-                out.extend_from_slice(ch.encode_utf8(&mut buf).as_bytes());
-            }
+    // Unescaped spans are copied whole; only escaped characters are written
+    // individually.
+    let mut pending = 0;
+    for (index, ch) in text.char_indices() {
+        let short: &[u8] = match ch {
+            '"' => b"\\\"",
+            '\\' => b"\\\\",
+            '\u{08}' => b"\\b",
+            '\u{09}' => b"\\t",
+            '\u{0a}' => b"\\n",
+            '\u{0c}' => b"\\f",
+            '\u{0d}' => b"\\r",
+            ch if (ch as u32) < 0x20 || (ENSURE_ASCII && (ch as u32) > 0x7e) => b"",
+            _ => continue,
+        };
+        out.extend_from_slice(&text.as_bytes()[pending..index]);
+        pending = index + ch.len_utf8();
+        if !short.is_empty() {
+            out.extend_from_slice(short);
+            continue;
+        }
+        let code = ch as u32;
+        if code > 0xffff {
+            let shifted = code - 0x1_0000;
+            write_unicode_escape(0xd800 + (shifted >> 10), out);
+            write_unicode_escape(0xdc00 + (shifted & 0x3ff), out);
+        } else {
+            write_unicode_escape(code, out);
         }
     }
+    out.extend_from_slice(&text.as_bytes()[pending..]);
     out.push(b'"');
+}
+
+/// Write a lowercase `\uXXXX` escape for a UTF-16 code unit.
+fn write_unicode_escape(unit: u32, out: &mut Vec<u8>) {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    out.extend_from_slice(&[
+        b'\\',
+        b'u',
+        HEX[((unit >> 12) & 0xf) as usize],
+        HEX[((unit >> 8) & 0xf) as usize],
+        HEX[((unit >> 4) & 0xf) as usize],
+        HEX[(unit & 0xf) as usize],
+    ]);
 }
 
 /// Format a finite float exactly as CPython `repr()`/`json.dumps` does:
@@ -194,4 +213,40 @@ pub fn python_float_repr(value: f64) -> String {
         "{sign}{mantissa}e{exponent_sign}{:02}",
         exponent_value.abs()
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const MIXED: &str = "a\"b\\c\u{08}\t\n\u{0c}\r\u{01}\u{1f}~\u{7f} é€😀z";
+
+    #[test]
+    fn ascii_string_escapes_match_cpython() {
+        let mut out = b"prefix".to_vec();
+        write_json_string(MIXED, &mut out);
+        assert_eq!(
+            out,
+            b"prefix\"a\\\"b\\\\c\\b\\t\\n\\f\\r\\u0001\\u001f~\\u007f \\u00e9\\u20ac\\ud83d\\ude00z\""
+        );
+    }
+
+    #[test]
+    fn utf8_string_escapes_match_cpython() {
+        let mut out = Vec::new();
+        write_canonical_json_utf8(&Value::String(MIXED.to_owned()), &mut out)
+            .expect("string encodes");
+        assert_eq!(
+            String::from_utf8(out).expect("utf-8 output"),
+            "\"a\\\"b\\\\c\\b\\t\\n\\f\\r\\u0001\\u001f~\u{7f} é€😀z\""
+        );
+    }
+
+    #[test]
+    fn unescaped_and_empty_strings_copy_through() {
+        let mut out = Vec::new();
+        write_json_string("", &mut out);
+        write_json_string("plain text", &mut out);
+        assert_eq!(out, b"\"\"\"plain text\"");
+    }
 }
