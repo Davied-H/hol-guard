@@ -1469,7 +1469,7 @@ jobs:
             native-installed-slo.json.stderr
             native-artifact-evidence.json
             native-stop-diagnostic.json
-          if-no-files-found: error
+          if-no-files-found: ${{ job.status == 'success' && 'error' || 'warn' }}
 
   macos-regression:
     name: macOS installed regression shard ${{ matrix.shard }} (${{ matrix.runner }})
