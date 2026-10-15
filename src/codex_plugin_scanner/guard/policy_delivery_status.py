@@ -168,7 +168,8 @@ def format_policy_status(payload: dict[str, object]) -> str:
     live = payload["live"] if isinstance(payload["live"], dict) else {}
     ack = payload["lastAck"] if isinstance(payload["lastAck"], dict) else {}
     delivery = payload["delivery"] if isinstance(payload["delivery"], dict) else {}
-    local = payload["local"] if isinstance(payload.get("local"), dict) else None
+    local_value = payload.get("local")
+    local = local_value if isinstance(local_value, dict) else None
     lines = [
         f"Local policy: {local['documentId']} ({local['rules']} rules)" if local else "Local policy: none",
         f"Live version: {live.get('version') or 'none'}",
