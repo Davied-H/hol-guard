@@ -140,7 +140,6 @@ fn startup_files_absent(
     shell_home: Option<&std::ffi::OsStr>,
     appdata: Option<&std::ffi::OsStr>,
 ) -> bool {
-    let set = |value: Option<&std::ffi::OsStr>| value.filter(|value| !value.is_empty());
     let Some(home) = home_dir.map(Path::new).filter(|home| home.is_absolute()) else {
         return false;
     };
@@ -150,6 +149,10 @@ fn startup_files_absent(
         && set(appdata).is_none_or(|appdata| {
             no_startup_file(&Path::new(appdata).join("postgresql"), "psqlrc.conf")
         })
+}
+
+fn set(value: Option<&std::ffi::OsStr>) -> Option<&std::ffi::OsStr> {
+    value.filter(|value| !value.is_empty())
 }
 
 fn no_startup_file(directory: &Path, name: &str) -> bool {
