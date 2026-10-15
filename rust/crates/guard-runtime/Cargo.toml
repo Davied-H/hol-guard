@@ -64,7 +64,7 @@ windows-permissions.workspace = true
 # single cost in warm resident request profiles. Other targets keep the
 # platform allocator.
 [target.'cfg(all(target_os = "linux", target_env = "musl"))'.dependencies]
-mimalloc = { version = "0.1.52", default-features = false }
+mimalloc = { version = "0.1.52", default-features = false, features = ["no_thp"] }
 
 [target.'cfg(all(unix, target_os = "linux"))'.dependencies]
 seccompiler = "0.5.0"
