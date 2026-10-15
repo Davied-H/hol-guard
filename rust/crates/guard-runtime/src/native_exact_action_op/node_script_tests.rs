@@ -213,6 +213,35 @@ fn launches_that_load_unbound_code_stay_once_only() {
         ("package-imports", "import x from '#internal';\n"),
         ("data-url", "import 'data:text/javascript,1';\n"),
         ("addon", "require('./native.node');\n"),
+        ("from-comment", "import x from /* c */ './payload.mjs';\n"),
+        (
+            "from-line-comment",
+            "export * from // c\n'./payload.mjs';\n",
+        ),
+        (
+            "computed-module",
+            "module[\"re\".concat(\"quire\")](\"./p.js\");\n",
+        ),
+        ("computed-process", "process['dlopen'](module, 'p.node');\n"),
+        ("optional-process", "process?.binding('spawn_sync');\n"),
+        ("comment-process", "process/**/.dlopen(m, 'p.node');\n"),
+        ("execve", "process.execve('/bin/sh');\n"),
+        ("process-alias", "const p = process;\np[name]('x');\n"),
+        ("process-destructure", "const { binding } = process;\n"),
+        ("process-argument", "run(process);\n"),
+        ("module-alias", "const m = module;\nm[key]('./p.js');\n"),
+        (
+            "renamed-process",
+            "import p from 'node:process';\np[key]();\n",
+        ),
+        ("required-process", "const p = require('node:process');\n"),
+        (
+            "sloppy-this",
+            "(function () { return this; })().process[key]();\n",
+        ),
+        ("quoted-member", "const key = 'binding';\n"),
+        ("template-key", "x[`${a}b`]();\n"),
+        ("call-key", "x['re'.concat('quire')]('./p');\n"),
     ] {
         project.write(&format!("bad/{name}.mjs"), source);
         project.write("bad/native.node", "binary");
@@ -222,6 +251,60 @@ fn launches_that_load_unbound_code_stay_once_only() {
             "{name}"
         );
     }
+}
+
+#[test]
+fn ordinary_process_and_module_use_still_binds() {
+    let project = report_project();
+    project.write(
+        "scripts/cli.mjs",
+        "import process from 'node:process';\nimport { writeFileSync } from 'node:fs';\nimport { total } from './lib/sum.mjs';\n// process each row, then exit\nif (typeof process !== 'undefined' && process.argv[2]) {\n  const rows = [1, 2, Number(process.env.EXTRA ?? 0)];\n  writeFileSync('out.json', JSON.stringify([total(rows), rows[rows.length - 1]]));\n  console.log(['done', String(rows.length)]);\n  process.exit(0);\n}\n",
+    );
+    project.write(
+        "scripts/tool.cjs",
+        "const fs = require('fs');\nconst { parse } = require('csv-lite');\nconst job = { process: (rows) => rows };\nfunction main() { fs.writeFileSync('out.json', String(job.process(parse))); }\nif (require.main === module) main();\nmodule.exports = { main };\n",
+    );
+    for script in ["scripts/cli.mjs", "scripts/tool.cjs"] {
+        assert!(bind(&project, &[script], &[]).is_ok(), "{script}");
+    }
+}
+
+#[test]
+fn a_graph_that_writes_files_cannot_bind_modules_it_loads_later() {
+    let project = report_project();
+    project.write("scripts/plugin.mjs", "export default 1;\n");
+    project.write("scripts/plugin.js", "module.exports = 1;\n");
+    project.write(
+        "scripts/lib/save.mjs",
+        "import { writeFile } from 'node:fs/promises';\nexport const save = (body) => writeFile(new URL('../plugin.mjs', import.meta.url), body);\n",
+    );
+    for (name, source) in [
+        (
+            "rewrite-then-import",
+            "import { writeFileSync } from 'node:fs';\nwriteFileSync(new URL('./plugin.mjs', import.meta.url), process.env.BODY);\nawait import('./plugin.mjs');\n",
+        ),
+        (
+            "rewrite-then-require",
+            "const fs = require('fs');\nfs.writeFileSync(__dirname + '/plugin.js', process.env.BODY);\nrequire('./plugin.js');\n",
+        ),
+        (
+            "rewrite-in-another-module",
+            "import { save } from './lib/save.mjs';\nawait save(process.env.BODY);\nawait import('./plugin.mjs');\n",
+        ),
+    ] {
+        project.write(&format!("scripts/{name}.mjs"), source);
+        assert_eq!(
+            bind(&project, &[&format!("scripts/{name}.mjs")], &[]),
+            Err("mutable_launcher"),
+            "{name}"
+        );
+    }
+    // Static imports load before the script runs, so a write cannot reach them.
+    project.write(
+        "scripts/static.mjs",
+        "import { writeFileSync } from 'node:fs';\nimport value from './plugin.mjs';\nwriteFileSync('out.json', String(value));\n",
+    );
+    assert!(bind(&project, &["scripts/static.mjs"], &[]).is_ok());
 }
 
 #[test]

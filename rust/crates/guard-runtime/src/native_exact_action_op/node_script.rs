@@ -5,19 +5,19 @@
 //! installed manifest (the `runner-local-bin` standard) and each builtin by
 //! name. A module that loads code by a computed name, evaluates strings,
 //! starts processes or reaches the module loader keeps the launch once-only,
-//! as do `NODE_OPTIONS` and `NODE_PATH`. The scan is lexical and errs toward
-//! refusal: a refused launch keeps today's approve-once behaviour.
+//! as do a graph that writes files and loads a local module at run time, and
+//! `NODE_OPTIONS` and `NODE_PATH`. The scan (`node_source`) is lexical and
+//! errs toward refusal: a refused launch keeps today's approve-once behaviour.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::Path;
-use std::sync::OnceLock;
 
 use guard_command::secret_path_probe::is_request_secret_path;
-use regex::Regex;
 use serde_json::{json, Value};
 
 use super::context::Ctx;
 use super::fs_path;
+use super::node_source::{module_specifiers, source_writes_files};
 use super::reasons::{Proof, MUTABLE_LAUNCHER, SENSITIVE_PATH};
 
 pub(super) const NODE_LAUNCHERS: [&str; 2] = ["node", "nodejs"];
@@ -109,110 +109,6 @@ const REFUSED_BUILTINS: &[&str] = &[
     "worker_threads",
 ];
 
-fn pattern(cell: &'static OnceLock<Regex>, source: &str) -> &'static Regex {
-    cell.get_or_init(|| Regex::new(source).expect("static pattern"))
-}
-
-/// A quoted specifier without escapes; `'` and `"` only, never a template.
-const LITERAL: &str = r#"(?:'([^'\\\n]*)'|"([^"\\\n]*)")"#;
-
-/// Constructs that evaluate strings, reach the loader or hide an identifier.
-fn forbidden() -> &'static Regex {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    pattern(
-        &CELL,
-        r#"\beval\b|\bFunction\s*\(|\bcreateRequire\b|\bgetBuiltinModule\b|\bWorker\s*\(|\barguments\b|\bimportScripts\b|\bprocess\s*\.\s*(?:binding|dlopen|mainModule)\b|\bmodule\s*\.\s*(?:require|register|constructor|paths)\b|\brequire\s*\.\s*(?:extensions|cache)\b|\.\s*constructor\b|\[\s*['"`]constructor|\[[^\]\n]*['"`]\s*\+|\[[^\]\n]*\+\s*['"`]|\bfromCharCode\b|\bglobalThis\b|\bglobal\s*[.\[]|\bReflect\b|\bWebAssembly\b|\\u(?:[0-9a-fA-F]{4}|\{)"#,
-    )
-}
-
-fn from_prefix() -> &'static Regex {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    pattern(&CELL, r#"\bfrom\s*['"`]"#)
-}
-
-fn from_literal() -> &'static Regex {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    pattern(&CELL, &format!(r"^from\s*{LITERAL}"))
-}
-
-fn import_word() -> &'static Regex {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    pattern(&CELL, r"\bimport\b")
-}
-
-fn import_literal() -> &'static Regex {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    pattern(&CELL, &format!(r"^import\s*{LITERAL}"))
-}
-
-fn import_call() -> &'static Regex {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    pattern(
-        &CELL,
-        &format!(r"^import\s*\(\s*{LITERAL}\s*(?:,[^()]*)?\)"),
-    )
-}
-
-/// `import.meta` and a static clause whose specifier the `from` rule reads.
-fn import_other() -> &'static Regex {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    pattern(&CELL, r"^import(?:\s*\.\s*meta\b|\s+[\w$*{]|\s*[{*])")
-}
-
-fn require_word() -> &'static Regex {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    pattern(&CELL, r"\brequire\b")
-}
-
-fn require_call() -> &'static Regex {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    pattern(&CELL, &format!(r"^require\s*\(\s*{LITERAL}\s*\)"))
-}
-
-fn require_inert() -> &'static Regex {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    pattern(&CELL, r"^require\s*\.\s*(?:resolve|main)\b")
-}
-
-fn literal_of(captures: &regex::Captures<'_>) -> String {
-    captures
-        .get(1)
-        .or_else(|| captures.get(2))
-        .map_or(String::new(), |found| found.as_str().to_owned())
-}
-
-/// Every module specifier `source` names, or `None` when it can load code by
-/// a name the text does not spell out.
-fn module_specifiers(source: &str) -> Option<Vec<String>> {
-    if forbidden().is_match(source) {
-        return None;
-    }
-    let mut found = Vec::new();
-    for start in from_prefix().find_iter(source).map(|m| m.start()) {
-        found.push(literal_of(&from_literal().captures(&source[start..])?));
-    }
-    for start in import_word().find_iter(source).map(|m| m.start()) {
-        let rest = &source[start..];
-        if let Some(captures) = import_literal()
-            .captures(rest)
-            .or_else(|| import_call().captures(rest))
-        {
-            found.push(literal_of(&captures));
-        } else if !import_other().is_match(rest) {
-            return None;
-        }
-    }
-    for start in require_word().find_iter(source).map(|m| m.start()) {
-        let rest = &source[start..];
-        if let Some(captures) = require_call().captures(rest) {
-            found.push(literal_of(&captures));
-        } else if !require_inert().is_match(rest) {
-            return None;
-        }
-    }
-    Some(found)
-}
-
 /// The `node` arguments' script, or `None` for any option that loads code.
 fn script_argument(arguments: &[String]) -> Option<&str> {
     for argument in arguments {
@@ -234,6 +130,10 @@ fn extension(path: &str) -> String {
     fs_path::name(path)
         .rsplit_once('.')
         .map_or(String::new(), |(_, ext)| ext.to_lowercase())
+}
+
+fn is_relative(specifier: &str) -> bool {
+    specifier.starts_with("./") || specifier.starts_with("../") || specifier.starts_with('/')
 }
 
 /// A package specifier's name: `pkg` or `@scope/pkg`.
@@ -356,8 +256,7 @@ impl Graph<'_> {
         if specifier.starts_with("node:") || REFUSED_BUILTINS.contains(&builtin) {
             return Err(MUTABLE_LAUNCHER);
         }
-        if specifier.starts_with("./") || specifier.starts_with("../") || specifier.starts_with('/')
-        {
+        if is_relative(specifier) {
             return self.resolve_file(importer, specifier);
         }
         let name = package_name(specifier).ok_or(MUTABLE_LAUNCHER)?;
@@ -400,13 +299,21 @@ pub(super) fn node_script(arguments: &[String], cwd: &str, ctx: &Ctx) -> Proof<V
         total: 0,
     };
     graph.add_module(resolved.clone())?;
+    let (mut writes, mut loads_local_at_run_time) = (false, false);
     while let Some(module) = graph.queue.pop_front() {
         let (digest, bytes) = graph.digest(&module, MAX_MODULE_BYTES)?;
         let source = String::from_utf8(bytes).map_err(|_| MUTABLE_LAUNCHER)?;
         graph.modules.insert(module.clone(), digest);
+        writes |= source_writes_files(&source);
         for specifier in module_specifiers(&source).ok_or(MUTABLE_LAUNCHER)? {
-            graph.resolve(&module, &specifier)?;
+            loads_local_at_run_time |= specifier.runtime && is_relative(&specifier.name);
+            graph.resolve(&module, &specifier.name)?;
         }
+    }
+    // A module loaded at run time is bound as it was before launch; a graph
+    // that can write files could replace it first.
+    if writes && loads_local_at_run_time {
+        return Err(MUTABLE_LAUNCHER);
     }
     let entries = |map: &BTreeMap<String, String>| -> Vec<Value> {
         map.iter()
