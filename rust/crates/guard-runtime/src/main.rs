@@ -268,6 +268,7 @@ mod guard_store_approval_metadata;
 mod guard_store_approval_page_reads;
 mod guard_store_approval_queue;
 mod guard_store_approval_queue_item;
+mod guard_store_approval_queue_result;
 mod guard_store_approval_read_rows;
 mod guard_store_approval_read_scope;
 mod guard_store_approval_reads;
