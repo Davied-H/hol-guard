@@ -17,8 +17,8 @@ returned request id or the raised error, and the resulting
 Scenarios flagged `native_defers` seed legacy rows the daemon backfills
 first; the resident answers `null` for them and writes nothing. Scenarios
 with `prompt_shown` then record the creation events as
-`queue_blocked_approvals` did (`approvals._record_created_event`) for a
-newly queued request.
+`queue_blocked_approvals` did for a newly queued request, through the copy
+of its former `_record_created_event` below.
 """
 
 from __future__ import annotations
@@ -33,7 +33,6 @@ from pathlib import Path
 if os.environ.get("HOL_GUARD_NATIVE") != "force" or not os.environ.get("HOL_GUARD_NATIVE_BINARY"):
     sys.exit("refusing to record: set HOL_GUARD_NATIVE=force and HOL_GUARD_NATIVE_BINARY")
 
-from codex_plugin_scanner.guard import approvals
 from codex_plugin_scanner.guard.models import GuardApprovalRequest
 from codex_plugin_scanner.guard.store import GuardStore
 
@@ -275,7 +274,11 @@ SCENARIOS: list[dict[str, object]] = [
         "rows": [row("r-old")],
         "request": request("r-new", queue_group_id=GROUP),
     },
-    {"name": "created_events_prompted_review", "prompt_shown": True, "request": request("r-new", policy_action="review")},
+    {
+        "name": "created_events_prompted_review",
+        "prompt_shown": True,
+        "request": request("r-new", policy_action="review"),
+    },
     {"name": "created_events_prompted_reapproval", "prompt_shown": True, "request": request("r-new")},
     {"name": "created_events_unprompted", "prompt_shown": False, "request": request("r-new")},
     {"name": "created_events_prompted_block", "prompt_shown": True, "request": request("r-new", policy_action="block")},
@@ -346,6 +349,27 @@ def build(fields: dict[str, object]) -> GuardApprovalRequest:
     return GuardApprovalRequest(**values)  # type: ignore[arg-type]
 
 
+def record_created_event(store: GuardStore, request: GuardApprovalRequest, *, prompt_shown: bool) -> None:
+    """The former `approvals._record_created_event`, kept as the recorded reference."""
+
+    created = (
+        "request_id",
+        "harness",
+        "artifact_id",
+        "artifact_name",
+        "artifact_type",
+        "policy_action",
+        "recommended_scope",
+        "source_scope",
+        "workspace",
+        "publisher",
+    )
+    store.add_event("approval.created", {key: getattr(request, key) for key in created}, NOW)
+    if prompt_shown and request.policy_action in {"review", "require-reapproval"}:
+        shown = ("request_id", "harness", "artifact_id", "policy_action")
+        store.add_event("guard.protection.ask_once_shown", {key: getattr(request, key) for key in shown}, NOW)
+
+
 def run(scenario: dict[str, object]) -> dict[str, object]:
     with tempfile.TemporaryDirectory(prefix="approval-write-") as root:
         store = GuardStore(Path(root) / "guard-home", prime_policy_integrity=False, source=SOURCE)
@@ -362,7 +386,7 @@ def run(scenario: dict[str, object]) -> dict[str, object]:
             outcome = {"error": str(error)}
         prompt_shown = scenario.get("prompt_shown")
         if prompt_shown is not None and outcome.get("result") == fields["request_id"]:  # type: ignore[index]
-            approvals._record_created_event(store, build(fields), NOW, prompt_shown=bool(prompt_shown))
+            record_created_event(store, build(fields), prompt_shown=bool(prompt_shown))
         return {
             "name": scenario["name"],
             "native_defers": bool(scenario.get("native_defers")),
