@@ -3592,6 +3592,9 @@ const STATE_PILL = {
   Lockdown: { label: "Locked", tone: "danger", description: "Lockdown blocks every tool" },
   Unavailable: { label: "Paused", tone: "attention", description: "Protection is not running, so this setting is not enforced" }
 };
+function extensionStatePillLabel(state) {
+  return STATE_PILL[state].label;
+}
 function ExtensionStatePill({ state }) {
   const pill = STATE_PILL[state];
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "guard-state-pill shrink-0", "data-tone": pill.tone, "data-testid": "extension-state-pill", title: pill.description, children: [
@@ -9037,7 +9040,7 @@ function CatalogPostureSummary(props) {
   const total = props.extensions.length;
   if (total === 0) return null;
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-4 rounded-2xl border border-[rgba(63,65,116,0.1)] bg-white px-4 py-3", "data-testid": "catalog-posture-summary", children: [
-    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "guard-posture-bar", role: "img", "aria-label": counts.map(({ state, count }) => `${count} ${state.toLowerCase()}`).join(", "), children: counts.map(({ state, count }) => /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "guard-posture-segment", "data-state": state, style: { flexGrow: count } }, state)) }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "guard-posture-bar", role: "img", "aria-label": counts.map(({ state, count }) => `${count} ${extensionStatePillLabel(state).toLowerCase()}`).join(", "), children: counts.map(({ state, count }) => /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "guard-posture-segment", "data-state": state, style: { flexGrow: count } }, state)) }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("ul", { className: "mt-3 flex flex-wrap items-center gap-x-4 gap-y-2", "aria-label": "Catalog status", children: [
       counts.map(({ state, count }) => /* @__PURE__ */ jsxRuntimeExports.jsxs("li", { className: "inline-flex items-center gap-1.5 text-sm text-brand-dark/75", children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx(ExtensionStatePill, { state }),

@@ -144,6 +144,11 @@ const STATE_PILL: Record<ExtensionRowState, { label: string; tone: string; descr
   Unavailable: { label: "Paused", tone: "attention", description: "Protection is not running, so this setting is not enforced" },
 };
 
+/** The word a person actually sees for a state, for reuse in accessible names. */
+export function extensionStatePillLabel(state: ExtensionRowState): string {
+  return STATE_PILL[state].label;
+}
+
 /** Compact, color-plus-word state so the list scans without opening a row. */
 export function ExtensionStatePill({ state }: { state: ExtensionRowState }) {
   const pill = STATE_PILL[state];

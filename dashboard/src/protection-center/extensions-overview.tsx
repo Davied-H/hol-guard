@@ -22,6 +22,7 @@ import { CatalogFilterBar, CatalogFilterTrigger } from "./components/catalog-fil
 import { PatternSearchConsole } from "./components/pattern-search-console";
 import {
   ExtensionStatePill,
+  extensionStatePillLabel,
   InlineError,
   ProtectionModuleRow,
   ProtectionStatusHero,
@@ -186,7 +187,7 @@ function CatalogPostureSummary(props: {
   if (total === 0) return null;
   return (
     <div className="mt-4 rounded-2xl border border-[rgba(63,65,116,0.1)] bg-white px-4 py-3" data-testid="catalog-posture-summary">
-      <div className="guard-posture-bar" role="img" aria-label={counts.map(({ state, count }) => `${count} ${state.toLowerCase()}`).join(", ")}>
+      <div className="guard-posture-bar" role="img" aria-label={counts.map(({ state, count }) => `${count} ${extensionStatePillLabel(state).toLowerCase()}`).join(", ")}>
         {counts.map(({ state, count }) => (
           <span key={state} className="guard-posture-segment" data-state={state} style={{ flexGrow: count }} />
         ))}
