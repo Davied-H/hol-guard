@@ -2,6 +2,7 @@
 //! `testdata/policy_integrity_generation/record_vectors.py`, plus the request
 //! failures that have no Python counterpart.
 
+use base64ct::{Base64UrlUnpadded, Encoding};
 use guard_contracts::{
     PolicyIntegrityGenerationRequestV1, PolicyIntegrityRowsRequestV1,
     POLICY_INTEGRITY_ROWS_REQUEST_SCHEMA,
@@ -101,7 +102,7 @@ fn rows_op_answers_the_generation_section() {
     let request: PolicyIntegrityRowsRequestV1 = serde_json::from_value(json!({
         "schema": POLICY_INTEGRITY_ROWS_REQUEST_SCHEMA,
         "request_id": "unit",
-        "integrity_key_b64": vectors["integrity_key_b64"],
+        "integrity_key_b64": Base64UrlUnpadded::encode_string(&key()),
         "integrity_key_id": vectors["integrity_key_id"],
         "verify": [],
         "sign": [],

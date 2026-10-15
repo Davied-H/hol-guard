@@ -15,12 +15,11 @@ per-row verification is supplied here, through the frozen v1/v2 envelope in
 ``tests/policy_integrity_fixture.py``; the Rust test verifies the same rows
 with the resident's own verifier, so a mismatch in either fails the test.
 
-The key is synthetic and exists only in this file's output.
+The key is synthetic: bytes 0..31. Only its id is written to the vectors.
 """
 
 from __future__ import annotations
 
-import base64
 import copy
 import hashlib
 import hmac
@@ -237,7 +236,6 @@ def main(output: Path) -> None:
             }
         )
     document = {
-        "integrity_key_b64": base64.urlsafe_b64encode(KEY).rstrip(b"=").decode("ascii"),
         "integrity_key_id": KEY_ID,
         "cases": cases,
     }
