@@ -12,12 +12,15 @@ from __future__ import annotations
 import calendar
 import hashlib
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Final, cast
 
+from .business_policy_document_import import compile_document_for_import
 from .models import PolicyDecision
 from .policy_document import GuardPolicyDocument
+from .policy_document_diagnostics import COMMAND_EXPRESSION_CODE
+from .policy_document_io import PolicyCompilationError
 from .policy_document_types import CompiledPolicyRow
 from .runtime.command_policy import CommandPolicyRule, compile_command_policy_rules
 from .runtime.command_policy import evaluate_command_policy_rules as _evaluate_command_rules
@@ -358,7 +361,11 @@ def decide_command(document: GuardPolicyDocument, command: str, *, now: str) -> 
     rules: tuple[CommandPolicyRule, ...] = compile_command_policy_rules(document)
     evaluation = _evaluate_command_rules(rules, command)
     matching = set(evaluation.matching_rule_ids)
-    selected = evaluation.matching_rule_ids[0] if evaluation.matching_rule_ids else None
+    # The evaluation lists matches in document order; the deciding rule is the first one that asked for the
+    # strongest action, and only matches with that same action tie with it.
+    selected = next(
+        (rule.rule_id for rule in rules if rule.rule_id in matching and rule.action == evaluation.action), None
+    )
     candidates: list[dict[str, object]] = []
     tied: list[str] = []
     for index, rule in enumerate(rules):
@@ -366,6 +373,8 @@ def decide_command(document: GuardPolicyDocument, command: str, *, now: str) -> 
             candidates.append({"ruleId": rule.rule_id, "rowIndex": index, "state": "unmatched", "reason": "command"})
         elif rule.rule_id == selected:
             candidates.append({"ruleId": rule.rule_id, "rowIndex": index, "state": "selected", "reason": None})
+        elif rule.action != evaluation.action:
+            candidates.append({"ruleId": rule.rule_id, "rowIndex": index, "state": "outranked", "reason": "block_wins"})
         else:
             tied.append(rule.rule_id)
             candidates.append({"ruleId": rule.rule_id, "rowIndex": index, "state": "outranked", "reason": "tie"})
@@ -384,11 +393,28 @@ def decide_command(document: GuardPolicyDocument, command: str, *, now: str) -> 
     return decision
 
 
+def compile_local_rows(document: GuardPolicyDocument) -> tuple[CompiledPolicyRow, ...]:
+    """Compiled rows for local evaluation.
+
+    Command-expression rules need the Guard 3.1 runtime and have no local row, so they are left out and
+    the rest of the document still decides tool and artifact events.
+    """
+
+    try:
+        return tuple(compile_document_for_import(document))
+    except PolicyCompilationError as error:
+        if error.code != COMMAND_EXPRESSION_CODE:
+            raise
+    portable = replace(document, rules=tuple(rule for rule in document.rules if rule.match.command_expression is None))
+    return tuple(compile_document_for_import(portable))
+
+
 __all__ = [
     "POLICY_MATCH_LIMIT",
     "POLICY_TOOL_FAMILIES",
     "PolicyEvent",
     "PolicyEventError",
+    "compile_local_rows",
     "decide_command",
     "decide_rows",
     "parse_event",

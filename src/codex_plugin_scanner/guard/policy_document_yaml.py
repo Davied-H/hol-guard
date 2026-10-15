@@ -303,7 +303,13 @@ def _schema_expectation(error: ValidationError) -> tuple[object | None, str | No
     schema = error.schema if isinstance(error.schema, dict) else {}
     if validator == "additionalProperties" and isinstance(instance, dict):
         allowed = sorted(schema.get("properties", {})) if isinstance(schema.get("properties"), dict) else []
-        unknown = sorted(str(key) for key in instance if key not in allowed)
+        patterns = schema.get("patternProperties")
+        extension_patterns = [str(pattern) for pattern in patterns] if isinstance(patterns, dict) else []
+        unknown = sorted(
+            str(key)
+            for key in instance
+            if key not in allowed and not any(re.search(pattern, str(key)) for pattern in extension_patterns)
+        )
         hints = []
         for key in unknown[:3]:
             close = difflib.get_close_matches(key, allowed, n=1)

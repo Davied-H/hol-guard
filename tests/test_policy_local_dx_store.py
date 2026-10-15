@@ -295,9 +295,125 @@ def test_import_apply_can_be_declined_interactively(
     monkeypatch.setattr("sys.stdin", type("Tty", (), {"isatty": lambda self: True})())
     monkeypatch.setattr("builtins.input", lambda _prompt="": "n")
 
-    code = main(["guard", "policy", "import", str(source), "--replace", "--apply", "--home", str(home), "--json"])
-    payload_text = capsys.readouterr().out
+    code = main(["guard", "policy", "import", str(source), "--replace", "--apply", "--home", str(home)])
+    output = capsys.readouterr().out
 
     assert code == 4
-    assert "import_declined" in payload_text
+    assert "block-shell-in-ci" in output
+    assert "Import cancelled" in output
     assert GuardStore(home).list_policy_decisions() == []
+
+
+def test_json_import_never_prompts_for_a_change_it_did_not_show(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "home"
+    source = tmp_path / "policy.yaml"
+    shutil.copyfile(SCOPES, source)
+    source.chmod(0o600)
+    monkeypatch.setattr("sys.stdin", type("Tty", (), {"isatty": lambda self: True})())
+
+    def prompt(_prompt: str = "") -> str:
+        raise AssertionError("JSON mode must not prompt")
+
+    monkeypatch.setattr("builtins.input", prompt)
+
+    code, payload = _json(capsys, home, "import", str(source), "--replace", "--apply")
+
+    assert code == 4
+    assert payload["error"] == "confirmation_required"
+    assert GuardStore(home).list_policy_decisions() == []
+
+
+def test_fmt_check_accepts_a_canonical_file_that_has_no_modeline(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    exported = tmp_path / "exported.yaml"
+    assert main(["guard", "policy", "export", "--home", str(tmp_path / "home"), "--output", str(exported)]) == 0
+    capsys.readouterr()
+    plain = tmp_path / "plain.yaml"
+    plain.write_text(exported.read_text(encoding="utf-8").removeprefix(POLICY_MODELINE + "\n"), encoding="utf-8")
+    plain.chmod(0o600)
+
+    assert main(["guard", "policy", "fmt", str(plain), "--check"]) == 0
+    capsys.readouterr()
+
+
+def test_status_reads_version_two_integer_versions_and_observed_at(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    home = tmp_path / "home"
+    store = GuardStore(home)
+    store.set_sync_payload("policy_bundle", {"bundleVersion": 8, "bundleHash": "ab" * 32}, NOW)
+    store.set_sync_payload("policy_bundle_ack", {"status": "applied", "observedAt": NOW, "bundleVersion": 8}, NOW)
+
+    _, payload = _json(capsys, home, "status", "--offline")
+
+    assert payload["live"]["version"] == "8"
+    assert payload["lastAck"] == {"status": "applied", "appliedAt": NOW, "version": "8", "currentVersion": True}
+
+
+def test_status_reports_the_locally_installed_policy(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    home = tmp_path / "home"
+    _install_scopes(home)
+
+    _, payload = _json(capsys, home, "status", "--offline")
+    text_code = main(["guard", "policy", "status", "--offline", "--home", str(home)])
+    text = capsys.readouterr().out
+
+    assert payload["local"]["rules"] > 0
+    assert payload["live"]["version"] is None
+    assert text_code == 0
+    assert f"Local policy: {payload['local']['documentId']}" in text
+
+
+def test_status_never_repairs_sign_in_state_and_survives_runtime_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from codex_plugin_scanner.guard.policy_delivery_status import fetch_policy_delivery
+    from codex_plugin_scanner.guard.runtime import runner
+
+    def repair(*_args: object, **_kwargs: object) -> dict[str, object]:
+        raise AssertionError("status is a read and must not repair sign-in state")
+
+    def unavailable(*_args: object, **_kwargs: object) -> dict[str, object]:
+        raise runner.GuardSyncNotAvailableError("rate limited", retryable=True)
+
+    monkeypatch.setattr(runner, "prepare_guard_cloud_connect_authorization", repair)
+    monkeypatch.setattr(runner, "_resolve_guard_sync_auth_context", unavailable)
+
+    assert fetch_policy_delivery(GuardStore(tmp_path / "home")) == {"available": False, "reason": "unavailable"}
+
+
+def test_history_explain_survives_a_policy_that_cannot_be_read(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from codex_plugin_scanner.guard.native_policy_snapshot_constants import NativePolicySnapshotError
+
+    store = GuardStore(tmp_path / "home")
+    _receipt(store, "receipt-3", harness="codex", artifact_id="pkg:npm/anything", decision="allow")
+
+    def unreadable(_store: GuardStore) -> None:
+        raise NativePolicySnapshotError("native_business_source_unreadable")
+
+    monkeypatch.setattr("codex_plugin_scanner.guard.policy_decision_explain.active_policy_document", unreadable)
+    args = argparse.Namespace(receipt_id="receipt-3", json=True, script=False, history_command="explain")
+
+    assert _run_guard_history_command(args, store=store) == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["matched_rule"]["note"] == "receipt_not_evaluable"
+    assert payload["receipt"]["receipt_id"] == "receipt-3"
+
+
+def test_receipt_explanations_say_publisher_and_workspace_scopes_were_not_replayed(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    home = tmp_path / "home"
+    store = _install_scopes(home)
+    _receipt(store, "receipt-4", harness="codex", artifact_id="pkg:npm/acme-reviewed", decision="warn")
+
+    _, payload = _json(capsys, home, "explain", "receipt-4")
+
+    assert payload["note"] == "publisher_and_workspace_scopes_not_replayed"
+    assert payload["decision"]["ruleId"] == "allow-acme-reviewed"

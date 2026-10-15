@@ -9,12 +9,16 @@ begin on the command line read the same. Names are the same in both places.
 
 | Starter | What it does |
 | --- | --- |
-| `safe-defaults` | Blocks installs from unknown publishers and asks before agents touch secrets. This is the default. |
-| `package-firewall` | Blocks known compromised packages and holds anything from a new publisher for review. |
-| `secrets-guard` | Asks before an agent reads environment variables or files into a prompt. |
-| `mcp-guard` | Asks before an agent connects to an MCP server, so new servers never start silently. |
+| `safe-defaults` | Blocks agents from reading environment variables; unknown publishers default to block. This is the default. |
+| `package-firewall` | Blocks known compromised packages and sets new publishers to review in the defaults. |
+| `secrets-guard` | Blocks agents from reading environment variables or files into a prompt. |
+| `mcp-guard` | Blocks agents from starting MCP servers until you narrow or remove the rule. |
 | `team-baseline` | A shared floor for every device: compromised packages and secret reads are blocked outright. |
 | `blank` | No rules. Guard asks at the device and you add rules as you learn what your agents do. |
+
+Every rule in a starter is a `block` rule that local import enforces. The `defaults` section
+(`defaultAction`, `unknownPublisherAction`) records bundle defaults for Guard Cloud; a local import does not
+turn a default into a rule, so a starter's example tests for an unlisted package or tool expect `default`.
 
 List them any time with `hol-guard policy init --list`.
 

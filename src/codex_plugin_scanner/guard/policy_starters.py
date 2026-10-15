@@ -56,7 +56,7 @@ _BLOCK_ENV_SECRETS = StarterRule(
 _BLOCK_SECRET_FILES = StarterRule(
     slug="secret-files",
     effect="block",
-    description="Agents may not read files into prompts without a person approving it.",
+    description="Agents may not read files into prompts.",
     match_field="tools",
     match_values=("prompt-file",),
     example_name="Claude Code reads a file into a prompt",
@@ -76,34 +76,34 @@ POLICY_STARTERS: tuple[PolicyStarter, ...] = (
     PolicyStarter(
         id="safe-defaults",
         name="Safe defaults",
-        summary="Blocks installs from unknown publishers and asks before agents touch secrets.",
+        summary="Blocks agents from reading environment variables; unknown publishers default to block.",
         defaults=(("mode", "prompt"), ("defaultAction", "warn"), ("unknownPublisherAction", "block")),
         rules=(_BLOCK_ENV_SECRETS,),
     ),
     PolicyStarter(
         id="package-firewall",
         name="Package firewall",
-        summary="Blocks known compromised packages and holds anything from a new publisher for review.",
+        summary="Blocks known compromised packages and sets new publishers to review in the defaults.",
         defaults=(("mode", "enforce"), ("defaultAction", "warn"), ("unknownPublisherAction", "review")),
         rules=(_BLOCK_COMPROMISED,),
     ),
     PolicyStarter(
         id="secrets-guard",
         name="Secrets guard",
-        summary="Asks before an agent reads environment variables or files into a prompt.",
+        summary="Blocks agents from reading environment variables or files into a prompt.",
         defaults=(("mode", "prompt"), ("defaultAction", "allow"), ("unknownPublisherAction", "review")),
         rules=(_BLOCK_ENV_SECRETS, _BLOCK_SECRET_FILES),
     ),
     PolicyStarter(
         id="mcp-guard",
         name="MCP server guard",
-        summary="Asks before an agent connects to an MCP server, so new servers never start silently.",
+        summary="Blocks agents from starting MCP servers until you narrow or remove the rule.",
         defaults=(("mode", "prompt"), ("defaultAction", "allow"), ("unknownPublisherAction", "review")),
         rules=(
             StarterRule(
                 slug="mcp-servers",
                 effect="block",
-                description="Agents may not start MCP servers until someone allows them.",
+                description="Agents may not start MCP servers until this rule is narrowed or removed.",
                 match_field="tools",
                 match_values=("mcp",),
                 example_name="Cursor starts an MCP server",

@@ -15,11 +15,12 @@ from typing import Final, Literal, TypeAlias, cast
 
 from jsonschema import Draft202012Validator
 
-from .business_policy_document_import import compile_document_for_import
-from .policy_decision_engine import PolicyEventError, decide_rows, parse_event
+from .business_policy_document_import import has_business_rules
+from .policy_decision_engine import PolicyEventError, compile_local_rows, decide_rows, parse_event
 from .policy_document import GuardPolicyDocument, canonical_policy_document_bytes, policy_document_digest
 
 TESTS_EXTENSION: Final = "x-hol.tests"
+BUSINESS_RULES_CODE: Final = "business_rules_not_evaluated_locally"
 TestStatus: TypeAlias = Literal["pass", "fail", "ambiguous"]
 
 
@@ -129,11 +130,35 @@ def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _unsupported_results(cases: list[dict[str, object]]) -> tuple[PolicyTestResult, ...]:
+    """Business rules have no local rows, so no example can be decided here; say so instead of passing."""
+
+    message = f"{BUSINESS_RULES_CODE}: business rules are not evaluated locally, so this example was not run."
+    results: list[PolicyTestResult] = []
+    for case in cases:
+        expect = cast(dict[str, object], case["expect"])
+        results.append(
+            PolicyTestResult(
+                str(case["id"]),
+                cast("str | None", case.get("name")),
+                "fail",
+                str(expect["effect"]),
+                cast("str | None", expect.get("ruleId")),
+                "unsupported",
+                None,
+                message,
+            )
+        )
+    return tuple(results)
+
+
 def run_policy_tests(document: GuardPolicyDocument, *, now: str | None = None) -> PolicyTestRun:
     """Decide every stored example and compare it with the expectation."""
 
     cases = stored_tests(document)
-    rows = compile_document_for_import(document)
+    if has_business_rules(document):
+        return PolicyTestRun(document.metadata.id, policy_document_digest(document), _unsupported_results(cases))
+    rows = compile_local_rows(document)
     evaluation_time = now or _now()
     results: list[PolicyTestResult] = []
     for case in cases:
@@ -171,6 +196,7 @@ def run_policy_tests(document: GuardPolicyDocument, *, now: str | None = None) -
 
 
 __all__ = [
+    "BUSINESS_RULES_CODE",
     "TESTS_EXTENSION",
     "PolicyTestResult",
     "PolicyTestRun",

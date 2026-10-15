@@ -16,11 +16,11 @@ from pathlib import Path
 from typing import Any, Protocol, TextIO, cast
 
 from ..approval_gate import ApprovalGateError
-from ..business_policy_document_import import compile_document_for_import
+from ..business_policy_document_import import has_business_rules
 from ..native_policy_document import NativePolicyDocumentError
 from ..native_policy_snapshot_constants import NativePolicySnapshotError
 from ..policy_authority import PolicyAuthorityError
-from ..policy_decision_engine import PolicyEventError, decide_command, decide_rows, parse_event
+from ..policy_decision_engine import PolicyEventError, compile_local_rows, decide_command, decide_rows, parse_event
 from ..policy_decision_explain import explain_receipt_decision
 from ..policy_delivery_status import format_policy_status, policy_status_payload
 from ..policy_document import GuardPolicyDocument, policy_document_digest
@@ -28,7 +28,14 @@ from ..policy_document_diagnostics import PolicyValidationReport, StructuredDiag
 from ..policy_document_io import PolicyCompilationError, PolicyFileTrustError, write_private_policy_text
 from ..policy_document_yaml import PolicyDocumentError
 from ..policy_starters import DEFAULT_STARTER, POLICY_STARTERS, find_starter, render_starter_yaml
-from ..policy_tests_runner import PolicyTestRun, PolicyTestsInvalidError, run_policy_tests, stored_tests
+from ..policy_tests_runner import (
+    BUSINESS_RULES_CODE,
+    PolicyTestRun,
+    PolicyTestsInvalidError,
+    run_policy_tests,
+    stored_tests,
+)
+from ..runtime.command_expression import CommandExpressionError
 from ..store import GuardStore
 
 FILE_COMMANDS = frozenset({"init", "validate", "test", "check"})
@@ -253,7 +260,9 @@ def _read_event_text(raw: str, input_text: str | None) -> str:
 def _render_decision(decision: dict[str, object]) -> str:
     rule = decision.get("ruleId")
     lookup = cast("dict[str, object]", decision["lookup"])
-    head = f"Decision: {decision['effect']}" + (f" by rule {rule}" if rule else " (no rule matched)")
+    action = decision.get("action")
+    outcome = action if rule and decision["effect"] == "default" and isinstance(action, str) else decision["effect"]
+    head = f"Decision: {outcome}" + (f" by rule {rule}" if rule else " (no rule matched)")
     if decision.get("matchLimitExceeded"):
         head += " (more than 256 rules matched; blocked without a rule)"
     lines = [head]
@@ -277,6 +286,10 @@ def _run_check(args: Any, output_stream: TextIO | None, input_text: str | None) 
     if document is None:
         return 4
     command_text = getattr(args, "command_text", None)
+    if has_business_rules(document):
+        message = "Business rules are not evaluated locally, so this file cannot be checked here."
+        _emit(output_stream, {"error": BUSINESS_RULES_CODE, "message": message}, as_json=as_json)
+        return 4
     try:
         if command_text is not None:
             decision = decide_command(document, str(command_text), now=_now())
@@ -288,9 +301,14 @@ def _run_check(args: Any, output_stream: TextIO | None, input_text: str | None) 
                 value = json.loads(raw)
             except ValueError as error:
                 raise PolicyEventError("event_invalid_json", "The event is not valid JSON.") from error
-            decision = decide_rows(tuple(compile_document_for_import(document)), parse_event(value), now=_now())
+            decision = decide_rows(compile_local_rows(document), parse_event(value), now=_now())
     except PolicyEventError as error:
         _emit(output_stream, {"error": error.code, "message": str(error)}, as_json=as_json)
+        return 4
+    except CommandExpressionError as error:
+        _emit(
+            output_stream, {"error": str(error), "message": f"The command cannot be checked: {error}."}, as_json=as_json
+        )
         return 4
     decision["document"] = {"id": document.metadata.id, "digest": policy_document_digest(document)}
     _emit(output_stream, decision, as_json=as_json, text=_render_decision(decision))
@@ -331,9 +349,14 @@ def confirm_policy_import(
 
     if bool(getattr(args, "yes", False)):
         return None
+    if wants_json(args):
+        # JSON output is parsed by tools: never mix a prompt into it, and never ask for a change that was not shown.
+        return {
+            "error": "confirmation_required",
+            "message": "Run a dry run to review the diff, then re-run with --yes to apply it without a prompt.",
+        }
     target = output_stream or sys.stdout
-    if not wants_json(args):
-        target.write((diff_text or "No policy changes.").rstrip("\n") + "\n")
+    target.write((diff_text or "No policy changes.").rstrip("\n") + "\n")
     if input_text is None and not sys.stdin.isatty():
         return {
             "error": "confirmation_required",
@@ -370,6 +393,8 @@ def run_policy_explain_decision(args: Any, store: GuardStore, output_stream: Tex
         "Replayed against the policy that is Live now:",
     ]
     lines.append(_render_decision(cast("dict[str, object]", decision)) if decision else f"  {payload.get('note')}")
+    if decision and payload.get("note"):
+        lines.append(f"  Note: {payload['note']} (receipts do not record the publisher or workspace).")
     _emit(output_stream, payload, as_json=as_json, text="\n".join(lines))
     return 0
 

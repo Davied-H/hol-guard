@@ -68,10 +68,13 @@ names an unknown rule is `x_hol_tests_invalid` and exits 4.
 hol-guard policy check <file> --event <json|-> | --command "<command>" [--format json]
 ```
 
-Decides one event against the file and prints the Decision: the effect (`allow`, `warn`, `review`, `block`
-or `default`), the winning rule, every candidate with its state and reason, and whether the result was
+Decides one event against the file and prints the Decision: the effect (`allow`, `block` or `default`), the
+winning rule, every candidate with its state and reason, and whether the result was
 ambiguous. `--event -` reads the event from standard input (up to 64 KiB). `--command` checks a shell
-command against command rules. The JSON shape is
+command against command rules; for those, `action` carries the strongest action asked for, including `warn` and
+`review`, which have no `allow` or `block` effect. Command rules need the Guard 3.1 runtime, so `--event` and
+`policy test` decide with the file's other rules. A file with business rules cannot be checked or tested
+locally: `check` exits 4 and `test` fails each example with `business_rules_not_evaluated_locally`. The JSON shape is
 [`decision.schema.json`](../../spec/guard-policy/v1alpha1/decision.schema.json). See
 [precedence](precedence.md) for how the winner is chosen.
 
@@ -81,7 +84,8 @@ command against command rules. The JSON shape is
 hol-guard policy status [--offline] [--format json]
 ```
 
-Shows the Live policy version, mode, last sync, last acknowledgement and any rejection reason. Unless
+Shows the policy installed on this device, then the Cloud bundle's version, mode, last sync, last
+acknowledgement and any rejection reason. Unless
 `--offline`, it also reads Guard Cloud's delivery state. If you are signed out, offline or Cloud does not
 offer the route, `delivery.available` is `false` with a `reason` and the command still succeeds.
 
@@ -93,7 +97,9 @@ hol-guard policy explain [<decisionId>] [--format json]
 
 With a decision id (a receipt id), replays that receipt's event against the policy that is Live now and
 names the rule that would decide it today. Unknown ids are `decision_not_found`. Without an id it
-explains the Live policy as a whole. `hol-guard history explain` also includes a `matched_rule` field.
+explains the Live policy as a whole. Receipts do not record the publisher or workspace, so when the Live policy has
+rules scoped to either, the result carries the note `publisher_and_workspace_scopes_not_replayed`.
+`hol-guard history explain` also includes a `matched_rule` field.
 
 ## diff
 
@@ -112,6 +118,6 @@ hol-guard policy import <file> (--merge | --replace) [--dry-run | --apply] [--ye
 ```
 
 `export` writes the Live policy with the editor modeline, to standard output unless `--output` is given. `fmt` rewrites a file in canonical form and
-`--check` exits 1 if it is not already canonical. `import` is a dry run unless you pass `--apply`: it prints the diff against Live and stops. With
-`--apply` it asks you to confirm the diff, or you can pass `--yes`. Applying still goes
+`--check` exits 1 if it is not already canonical (a missing modeline alone does not count). `import` is a dry run unless you pass `--apply`: it prints the diff against Live and stops. With
+`--apply` it asks you to confirm the diff, or you can pass `--yes`. With `--format json` there is no prompt: run a dry run to see the diff, then pass `--yes`. Applying still goes
 through Guard's approval gate; `--yes` only skips the diff confirmation. No environment variable is needed.

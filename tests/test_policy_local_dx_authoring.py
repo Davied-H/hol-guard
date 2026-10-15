@@ -385,3 +385,114 @@ def test_file_commands_need_no_guard_home(
 def test_unknown_file_command_is_refused() -> None:
     with pytest.raises(ValueError, match="unknown_policy_file_command"):
         run_policy_file_command(type("Args", (), {"policy_command": "nope"})())
+
+
+_TOOL_RULE_AND_TESTS = """\
+    - id: block-env
+      enabled: true
+      effect: block
+      description: No environment reads.
+      match:
+        tools:
+          - prompt-env-read
+      lifetime:
+        mode: permanent
+      provenance:
+        source: builder
+        createdAt: 2026-10-14T00:00:00Z
+  x-hol.tests:
+    - id: env-blocked
+      event:
+        harness: codex
+        tool: prompt-env-read
+      expect:
+        effect: block
+        ruleId: block-env
+    - id: package-falls-through
+      event:
+        harness: codex
+        artifact: pkg:npm/left-pad
+      expect:
+        effect: default
+"""
+
+
+def _command_and_tool_policy(tmp_path: Path) -> Path:
+    source = (FIXTURES / "parity" / "command-rules.yaml").read_text(encoding="utf-8")
+    target = tmp_path / "mixed.yaml"
+    target.write_text(source + _TOOL_RULE_AND_TESTS, encoding="utf-8")
+    target.chmod(0o600)
+    return target
+
+
+def test_policy_test_and_check_event_decide_with_the_other_rules_when_a_command_rule_exists(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    target = _command_and_tool_policy(tmp_path)
+
+    test_code, tested = _json(capsys, "test", str(target))
+    check_code, checked = _json(capsys, "check", str(target), "--event", '{"harness":"codex","tool":"prompt-env-read"}')
+
+    assert (test_code, tested["passed"], tested["total"]) == (0, 2, 2)
+    assert (check_code, checked["ruleId"]) == (0, "block-env")
+
+
+def test_policy_check_rejects_a_blank_command_with_exit_four(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    target = _private_copy(FIXTURES / "parity" / "command-rules.yaml", tmp_path)
+
+    code, payload = _json(capsys, "check", str(target), "--command", "   ")
+
+    assert code == 4
+    assert payload["error"] == "command_value_required"
+
+
+def test_policy_tests_do_not_pass_examples_for_a_business_policy_that_has_no_local_rows() -> None:
+    from codex_plugin_scanner.guard.policy_document_yaml import parse_policy_document_yaml
+    from codex_plugin_scanner.guard.policy_tests_runner import run_policy_tests
+
+    source = (FIXTURES / "valid" / "business-selector.yaml").read_text(encoding="utf-8")
+    tests = "  x-hol.tests:\n    - id: anything\n      event:\n        harness: codex\n        tool: shell\n"
+    document = parse_policy_document_yaml(
+        source.rstrip("\n") + "\n" + tests + "      expect:\n        effect: default\n"
+    )
+
+    run = run_policy_tests(document, now="2026-10-14T12:00:00Z")
+
+    assert (run.passed, run.failed) == (0, 1)
+    assert run.results[0].message.startswith("business_rules_not_evaluated_locally")
+
+
+def test_policy_check_refuses_a_business_policy_it_cannot_evaluate(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    target = _private_copy(FIXTURES / "valid" / "business-selector.yaml", tmp_path)
+
+    code, payload = _json(capsys, "check", str(target), "--event", '{"harness":"codex","tool":"shell"}')
+
+    assert code == 4
+    assert payload["error"] == "business_rules_not_evaluated_locally"
+
+
+def test_validate_does_not_tell_users_to_rename_valid_extension_keys(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    source = (FIXTURES / "valid" / "basic.yaml").read_text(encoding="utf-8")
+    target = tmp_path / "extension.yaml"
+    target.write_text(source.replace("defaultAction:", "x-note: kept\n    defaultActon:", 1), encoding="utf-8")
+    target.chmod(0o600)
+
+    code, payload = _json(capsys, "validate", str(target))
+
+    assert code == 4
+    extra = next(item for item in payload["diagnostics"] if item["code"] == "schema_additionalProperties")
+    assert "x-note" not in extra["suggestion"]
+    assert "defaultAction" in extra["suggestion"]
+
+
+@pytest.mark.parametrize("starter", [item for item in POLICY_STARTERS if item.rules])
+def test_starter_summaries_do_not_promise_approval_prompts_their_block_rules_do_not_give(starter) -> None:
+    assert all(rule.effect == "block" for rule in starter.rules)
+    assert "ask" not in starter.summary.lower()
+    assert not any("approving" in rule.description for rule in starter.rules)

@@ -11,6 +11,8 @@ import urllib.error
 import urllib.parse
 from typing import Final
 
+from .policy_decision_explain import ACTIVE_POLICY_ERRORS, active_policy_document
+from .policy_document import policy_document_digest
 from .store import GuardStore
 from .synced_policy import synced_policy_bundle_validation
 
@@ -23,6 +25,14 @@ def _text(value: object, limit: int = 200) -> str | None:
     return value.strip()[:limit] if isinstance(value, str) and value.strip() else None
 
 
+def _version_text(value: object) -> str | None:
+    """A bundle version as text: legacy bundles carry a string, version-two bundles an integer."""
+
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value)
+    return _text(value)
+
+
 def normalized_policy_delivery_url(sync_url: str) -> str:
     """Map the receipts sync URL onto the Cloud policy delivery route on the same host."""
 
@@ -33,6 +43,22 @@ def normalized_policy_delivery_url(sync_url: str) -> str:
             path = suffix.replace("/receipts/sync", "/policy/delivery")
             return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, path, parsed.query, ""))
     return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, DELIVERY_PATH, parsed.query, ""))
+
+
+def _local_policy(store: GuardStore) -> dict[str, object] | None:
+    """The policy installed on this device (imported file or synced rules), apart from Cloud bundle metadata."""
+
+    try:
+        document = active_policy_document(store)
+    except ACTIVE_POLICY_ERRORS:
+        return None
+    if not document.rules:
+        return None
+    return {
+        "documentId": document.metadata.id,
+        "digest": policy_document_digest(document),
+        "rules": len(document.rules),
+    }
 
 
 def local_policy_status(store: GuardStore) -> dict[str, object]:
@@ -48,10 +74,11 @@ def local_policy_status(store: GuardStore) -> dict[str, object]:
     defaults = validated.get("policyDefaults") if validated is not None else None
     mode = _text(defaults.get("mode")) if isinstance(defaults, dict) else None
     reason = rejection or _text(last_error.get("reason") if isinstance(last_error, dict) else None)
-    live_version = _text(bundle.get("bundleVersion"))
-    ack_version = _text(ack.get("bundleVersion"))
+    live_version = _version_text(bundle.get("bundleVersion"))
+    ack_version = _version_text(ack.get("bundleVersion"))
     ack_status = _text(ack.get("status"))
     return {
+        "local": _local_policy(store),
         "live": {
             "version": live_version,
             "bundleHash": _text(bundle.get("bundleHash")),
@@ -62,7 +89,7 @@ def local_policy_status(store: GuardStore) -> dict[str, object]:
         "lastSync": _text(summary.get("synced_at") if isinstance(summary, dict) else None),
         "lastAck": {
             "status": ack_status,
-            "appliedAt": _text(ack.get("appliedAt")),
+            "appliedAt": _text(ack.get("appliedAt")) or _text(ack.get("observedAt")),
             "version": ack_version,
             "currentVersion": live_version is not None and ack_version == live_version,
         },
@@ -98,11 +125,9 @@ def fetch_policy_delivery(store: GuardStore) -> dict[str, object]:
         _guard_sync_request,
         _resolve_guard_sync_auth_context,
         _urlopen_json_with_timeout_retry,
-        prepare_guard_cloud_connect_authorization,
     )
 
     try:
-        prepare_guard_cloud_connect_authorization(store)
         auth_context = _resolve_guard_sync_auth_context(store)
         request_url = normalized_policy_delivery_url(str(auth_context["sync_url"]))
         request = _guard_sync_request(
@@ -115,6 +140,9 @@ def fetch_policy_delivery(store: GuardStore) -> dict[str, object]:
         return {"available": False, "reason": "not_supported" if error.code == 404 else f"http_{error.code}"}
     except (OSError, ValueError, KeyError):
         return {"available": False, "reason": "unreachable"}
+    except RuntimeError:
+        # A non-object response, a rate-limited refresh or an unavailable sync: status still prints.
+        return {"available": False, "reason": "unavailable"}
     if not isinstance(response, dict):
         return {"available": False, "reason": "invalid_response"}
     version = response.get("versionNumber")
@@ -140,7 +168,9 @@ def format_policy_status(payload: dict[str, object]) -> str:
     live = payload["live"] if isinstance(payload["live"], dict) else {}
     ack = payload["lastAck"] if isinstance(payload["lastAck"], dict) else {}
     delivery = payload["delivery"] if isinstance(payload["delivery"], dict) else {}
+    local = payload["local"] if isinstance(payload.get("local"), dict) else None
     lines = [
+        f"Local policy: {local['documentId']} ({local['rules']} rules)" if local else "Local policy: none",
         f"Live version: {live.get('version') or 'none'}",
         f"Mode: {live.get('mode') or 'unknown'}",
         f"Last sync: {payload.get('lastSync') or 'never'}",

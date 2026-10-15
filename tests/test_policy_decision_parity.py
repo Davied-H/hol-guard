@@ -134,3 +134,77 @@ def test_fixture_x_hol_tests_all_pass_in_the_engine(relative: str) -> None:
 
     assert run.results
     assert [result.id for result in run.results if result.status != "pass"] == []
+
+
+_STACKED_COMMAND_POLICY = """\
+apiVersion: guard.hashgraphonline.com/v1alpha1
+kind: GuardPolicy
+metadata:
+  id: policy.stacked-commands
+  name: Stacked command rules
+  revision: 1
+spec:
+  defaults:
+    mode: enforce
+  rules:
+{rules}
+"""
+_COMMAND_RULE = """\
+    - id: {rule_id}
+      enabled: true
+      effect: {effect}
+      description: Docker rule.
+      match:
+        commands:
+          combinator: any
+          conditions:
+            - field: command
+              operator: startsWith
+              value: docker
+      lifetime:
+        mode: permanent
+      provenance:
+        source: builder
+        createdAt: 2026-10-14T00:00:00Z"""
+
+
+def _stacked(*rules: tuple[str, str]):
+    text = _STACKED_COMMAND_POLICY.format(
+        rules="\n".join(_COMMAND_RULE.format(rule_id=rule_id, effect=effect) for rule_id, effect in rules)
+    )
+    return parse_policy_document_yaml(text)
+
+
+def test_command_decision_names_the_strongest_rule_not_the_first_match() -> None:
+    from codex_plugin_scanner.guard.policy_decision_engine import decide_command
+
+    document = _stacked(("allow-docker", "allow"), ("block-docker", "block"), ("block-docker-too", "block"))
+
+    decision = decide_command(document, "docker compose up", now="2026-10-14T12:00:00Z")
+
+    assert (decision["effect"], decision["ruleId"]) == ("block", "block-docker")
+    assert decision["tiedRuleIds"] == ["block-docker-too"]
+    by_rule = {item["ruleId"]: item for item in decision["candidates"]}
+    assert (by_rule["allow-docker"]["state"], by_rule["allow-docker"]["reason"]) == ("outranked", "block_wins")
+    assert by_rule["block-docker-too"]["reason"] == "tie"
+
+
+def test_command_decision_with_only_weaker_matches_is_not_ambiguous() -> None:
+    from codex_plugin_scanner.guard.policy_decision_engine import decide_command
+
+    decision = decide_command(
+        _stacked(("allow-docker", "allow"), ("block-docker", "block")), "docker ps", now="2026-10-14T12:00:00Z"
+    )
+
+    assert decision["ambiguous"] is False
+    assert decision["ruleId"] == "block-docker"
+
+
+def test_command_warn_decision_is_rendered_by_its_action_not_as_a_default() -> None:
+    from codex_plugin_scanner.guard.cli.commands_dispatch_policy_dx import _render_decision
+    from codex_plugin_scanner.guard.policy_decision_engine import decide_command
+
+    decision = decide_command(_stacked(("review-docker", "review")), "docker ps", now="2026-10-14T12:00:00Z")
+
+    assert (decision["effect"], decision["action"]) == ("default", "review")
+    assert _render_decision(decision).splitlines()[0] == "Decision: review by rule review-docker"

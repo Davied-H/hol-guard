@@ -161,8 +161,10 @@ def _run_guard_policy_document_command(
             path = Path(args.file)
             original = read_trusted_policy_text(path)
             document = load_trusted_policy_document(path)
-            formatted = with_modeline(format_policy_document_yaml(document))
-            changed = original != formatted
+            canonical = format_policy_document_yaml(document)
+            formatted = with_modeline(canonical)
+            # A file formatted before the modeline existed is still canonical, so --check accepts it.
+            changed = original not in (canonical, formatted) if bool(args.check) else original != formatted
             if bool(args.check):
                 _write_payload(
                     "policy fmt",

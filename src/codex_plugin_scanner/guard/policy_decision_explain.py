@@ -10,16 +10,29 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import cast
 
-from .business_policy_document_import import (
-    compile_document_for_import,
-    has_business_rules,
-    read_business_document_for_store,
-)
-from .policy_decision_engine import PolicyEvent, PolicyEventError, decide_rows, parse_event
+from .business_policy_document_import import has_business_rules, read_business_document_for_store
+from .native_policy_document import NativePolicyDocumentError
+from .native_policy_snapshot_constants import NativePolicySnapshotError
+from .policy_decision_engine import PolicyEvent, PolicyEventError, compile_local_rows, decide_rows, parse_event
 from .policy_document import GuardPolicyDocument, policy_document_digest
 from .policy_document_io import build_policy_document_from_rows
-from .policy_document_types import PolicyCompilationError
+from .policy_document_types import CompiledPolicyRow, PolicyCompilationError
+from .policy_document_yaml import PolicyDocumentError
 from .store import GuardStore
+
+# Reading or compiling the Live policy can fail on an unreadable business source or a native refusal.
+ACTIVE_POLICY_ERRORS = (
+    NativePolicyDocumentError,
+    NativePolicySnapshotError,
+    PolicyCompilationError,
+    PolicyDocumentError,
+    PolicyEventError,
+    TypeError,
+    ValueError,
+)
+# Receipts record the harness and artifact, not the publisher or workspace, so rules scoped to those cannot
+# be replayed faithfully.
+CONTEXT_NOT_RECORDED_NOTE = "publisher_and_workspace_scopes_not_replayed"
 
 
 def active_policy_document(store: GuardStore) -> GuardPolicyDocument:
@@ -40,6 +53,10 @@ def _canonical_time(value: object) -> str | None:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _scoped_to_unrecorded_context(rows: tuple[CompiledPolicyRow, ...]) -> bool:
+    return any(row.decision.scope in ("publisher", "workspace") for row in rows)
 
 
 def receipt_event(receipt: dict[str, object]) -> PolicyEvent:
@@ -68,15 +85,17 @@ def matched_rule_for_receipt(store: GuardStore, receipt: dict[str, object]) -> d
         if has_business_rules(document):
             result["note"] = "business_rules_not_evaluated_locally"
             return result
-        rows = compile_document_for_import(document)
+        rows = compile_local_rows(document)
         decision = decide_rows(
-            tuple(rows),
+            rows,
             receipt_event(receipt),
             now=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         )
-    except (PolicyEventError, PolicyCompilationError):
+    except ACTIVE_POLICY_ERRORS:
         result["note"] = "receipt_not_evaluable"
         return result
+    if _scoped_to_unrecorded_context(rows):
+        result["note"] = CONTEXT_NOT_RECORDED_NOTE
     rule_id = cast("str | None", decision["ruleId"])
     result["effect"] = decision["effect"]
     result["rule_id"] = rule_id
@@ -93,7 +112,6 @@ def explain_receipt_decision(store: GuardStore, receipt_id: str) -> dict[str, ob
     receipt = store.get_receipt(receipt_id)
     if receipt is None:
         return None
-    document = active_policy_document(store)
     payload: dict[str, object] = {
         "decisionId": receipt_id,
         "receipt": {
@@ -104,25 +122,30 @@ def explain_receipt_decision(store: GuardStore, receipt_id: str) -> dict[str, ob
         },
         "evaluatedAgainst": "current_policy",
     }
-    if has_business_rules(document):
-        payload["note"] = "business_rules_not_evaluated_locally"
-        return payload
     try:
-        rows = compile_document_for_import(document)
+        document = active_policy_document(store)
+        if has_business_rules(document):
+            payload["note"] = "business_rules_not_evaluated_locally"
+            return payload
+        rows = compile_local_rows(document)
         decision = decide_rows(
-            tuple(rows),
+            rows,
             receipt_event(receipt),
             now=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         )
-    except (PolicyEventError, PolicyCompilationError):
+    except ACTIVE_POLICY_ERRORS:
         payload["note"] = "receipt_not_evaluable"
         return payload
+    if _scoped_to_unrecorded_context(rows):
+        payload["note"] = CONTEXT_NOT_RECORDED_NOTE
     decision["document"] = {"id": document.metadata.id, "digest": policy_document_digest(document)}
     payload["decision"] = decision
     return payload
 
 
 __all__ = [
+    "ACTIVE_POLICY_ERRORS",
+    "CONTEXT_NOT_RECORDED_NOTE",
     "active_policy_document",
     "explain_receipt_decision",
     "matched_rule_for_receipt",
