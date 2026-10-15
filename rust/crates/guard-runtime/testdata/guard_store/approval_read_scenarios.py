@@ -233,7 +233,11 @@ SHAPE_ROWS = [
     row("r-decision-null", decision_v2_json=None, action_envelope_json=None, policy_action="block"),
     row("r-unknown-action", policy_action="frobnicate", decision_v2_json=None),
     row("r-long-unknown-action", policy_action="z" * 70, decision_v2_json='{"score": NaN}'),
-    row("r-huge-int", risk_signals_json="[" + "9" * 4301 + "]", changed_fields_json="[2.5, -0.0, 1e16, 1E-7, 100000000000000000000000]"),
+    row(
+        "r-huge-int",
+        risk_signals_json="[" + "9" * 4301 + "]",
+        changed_fields_json="[2.5, -0.0, 1e16, 1E-7, 100000000000000000000000]",
+    ),
     row(
         "r-evidence",
         scanner_evidence_json=json.dumps([TRUSTED_TOOL, {"source": "scanner", "rule": "x"}, "skip"]),

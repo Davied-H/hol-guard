@@ -175,7 +175,7 @@ fn py_int(cell: &Value) -> StoreResult<Value> {
             Some(0) => "1".to_owned(),
             Some(integer) => integer.to_string(),
             None => match number.as_f64() {
-                Some(float) if float == 0.0 => "1".to_owned(),
+                Some(0.0) => "1".to_owned(),
                 Some(float) if float.is_finite() => format!("{:.0}", float.trunc()),
                 _ => number.to_string(),
             },

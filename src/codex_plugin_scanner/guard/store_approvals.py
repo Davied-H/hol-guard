@@ -30,6 +30,9 @@ from .store_approval_projection import (
     _row_to_approval_summary as _row_to_approval_summary,
 )
 from .store_approval_projection import (
+    _row_to_draft as _row_to_draft,
+)
+from .store_approval_projection import (
     _row_to_payload as _row_to_payload,
 )
 from .store_approval_projection import (
@@ -146,41 +149,99 @@ def list_approval_requests(
     return _rows_to_payloads(rows, guard_home=connection_guard_home(connection))
 
 
-def get_approval_request(connection: sqlite3.Connection, request_id: str) -> dict[str, object] | None:
-    """One queue payload read inside a caller's transaction; `GuardStore` reads natively."""
-
+def get_approval_request(
+    connection: sqlite3.Connection, request_id: str, *, derive_scope: bool = True
+) -> dict[str, object] | None:
+    columns = _approval_columns(connection)
     row = connection.execute(
-        f"select {_APPROVAL_COLUMNS} from approval_requests where request_id = ?", (request_id,)
+        f"""
+        select request_id, harness, artifact_id, artifact_name, artifact_type, artifact_hash, publisher, policy_action,
+               recommended_scope, changed_fields_json, source_scope,
+                {_column_expr(columns, "oauth_source", "NULL")}, config_path, workspace, launch_target,
+                {_column_expr(columns, "normalized_identity_key", "NULL")},
+                {_column_expr(columns, "action_identity", "NULL")},
+                {_column_expr(columns, "queue_group_id", "NULL")},
+                {_column_expr(columns, "dedupe_count", "1")},
+                {_column_expr(columns, "last_seen_at", "created_at")},
+                transport,
+                risk_summary, risk_signals_json, artifact_label, source_label, trigger_summary, why_now,
+                launch_summary, risk_headline, action_envelope_json, decision_v2_json,
+                {_column_expr(columns, "fallback_cli_command", "NULL")},
+                {_column_expr(columns, "raw_command_text", "NULL")},
+                {_column_expr(columns, "guard_version", "NULL")},
+                {_column_expr(columns, "first_seen_guard_version", "NULL")},
+                {_column_expr(columns, "last_seen_guard_version", "NULL")},
+                {_column_expr(columns, "scanner_evidence_json", "'[]'")},
+                {_column_expr(columns, "watch_only_observation", "0")},
+                {_column_expr(columns, "browser_intent_json", "NULL")}, review_command,
+                {_column_expr(columns, "continuation_snapshot_json", "NULL")},
+                {_column_expr(columns, "extension_allow_hint_json", "NULL")},
+                approval_url, status, resolution_action, resolution_scope, reason, created_at, resolved_at
+        from approval_requests
+        where request_id = ?
+        """,
+        (request_id,),
     ).fetchone()
     if row is None:
         return None
     guard_home = connection_guard_home(connection)
-    payload = _row_to_payload(row, guard_home=guard_home)
+    if derive_scope:
+        payload = _row_to_payload(row, guard_home=guard_home)
+    else:
+        payload, contract_error = _row_to_draft(row, _project_listing_rows([row], guard_home=guard_home)[0])
+        if contract_error is not None:
+            payload["decision_contract_error"] = contract_error
     reason = row["reason"]
-    if row["status"] != "expired" or not isinstance(reason, str) or not reason.startswith(_SUPERSEDED_PREFIX):
-        return payload
-    replacement = reason.removeprefix(_SUPERSEDED_PREFIX)
-    if not re.fullmatch(r"[A-Za-z0-9-]{1,64}", replacement):
-        return payload
-    candidate = connection.execute(
-        """select policy_action, decision_v2_json, action_envelope_json from approval_requests
-        where request_id = ? and status = 'pending' and harness = ?
-        and artifact_id = ? and workspace IS ? and oauth_source IS ? and queue_group_id IS ?""",
-        (replacement, row["harness"], row["artifact_id"], row["workspace"], row["oauth_source"], row["queue_group_id"]),
-    ).fetchone()
-    if candidate is not None and _project_listing_rows([candidate], guard_home=guard_home)[0].contract_error is None:
-        payload["superseded_by_request_id"] = replacement
+    if (
+        row["status"] == "expired"
+        and isinstance(reason, str)
+        and reason.startswith("superseded_by_fresh_review:")
+        and {"oauth_source", "queue_group_id"} <= columns
+    ):
+        replacement = reason.removeprefix("superseded_by_fresh_review:")
+        if re.fullmatch(r"[A-Za-z0-9-]{1,64}", replacement):
+            candidate = connection.execute(
+                """select policy_action, decision_v2_json, action_envelope_json from approval_requests
+                where request_id = ? and status = 'pending' and harness = ?
+                and artifact_id = ? and workspace IS ? and oauth_source IS ? and queue_group_id IS ?""",
+                (
+                    replacement,
+                    row["harness"],
+                    row["artifact_id"],
+                    row["workspace"],
+                    row["oauth_source"],
+                    row["queue_group_id"],
+                ),
+            ).fetchone()
+            if (
+                candidate is not None
+                and _project_listing_rows([candidate], guard_home=guard_home)[0].contract_error is None
+            ):
+                payload["superseded_by_request_id"] = replacement
     return payload
 
 
 def get_approval_extension_allow_hint(connection: sqlite3.Connection, request_id: str) -> dict[str, object] | None:
     """Return the private queue-time hint; it never rides along on request payloads."""
 
+    if "extension_allow_hint_json" not in _approval_columns(connection):
+        return None
     row = connection.execute(
         "select extension_allow_hint_json from approval_requests where request_id = ?",
         (request_id,),
     ).fetchone()
     return _json_object(row[0]) if row is not None else None
+
+
+def _approval_columns(connection: sqlite3.Connection) -> set[str]:
+    rows = connection.execute("pragma table_info(approval_requests)").fetchall()
+    return {str(row["name"]) for row in rows}
+
+
+def _column_expr(existing: set[str], column_name: str, fallback_sql: str) -> str:
+    if column_name in existing:
+        return column_name
+    return f"{fallback_sql} as {column_name}"
 
 
 def _approval_search_clause(search: str) -> tuple[str, list[object]]:

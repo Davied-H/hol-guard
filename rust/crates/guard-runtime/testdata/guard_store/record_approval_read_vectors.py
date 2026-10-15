@@ -77,9 +77,7 @@ def mark_long(value: object) -> object:
     return value
 
 
-def call(
-    store: GuardStore, spec: dict[str, object], rows: list[dict[str, object]]
-) -> dict[str, object]:
+def call(store: GuardStore, spec: dict[str, object], rows: list[dict[str, object]]) -> dict[str, object]:
     if spec["method"] == "get":
         recorded: dict[str, object] = dict(spec)
         invoke = lambda: store.get_approval_request(  # noqa: E731
