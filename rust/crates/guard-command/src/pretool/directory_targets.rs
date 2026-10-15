@@ -53,6 +53,9 @@ pub(super) fn verified_cwd_target(value: &str, context: super::PathContext<'_>) 
         value
     };
     let supplied = std::path::Path::new(value);
+    // Only a spelling the command anchors itself may name its target through
+    // a link; a relative operand follows the shell's logical `$PWD`.
+    let anchored = supplied.is_absolute();
     let joined;
     let supplied = if supplied.is_absolute() {
         supplied
@@ -62,7 +65,7 @@ pub(super) fn verified_cwd_target(value: &str, context: super::PathContext<'_>) 
     };
     let canonical = std::fs::canonicalize(supplied).ok()?;
     // Non-aliased targets avoid CDPATH and logical/physical cwd ambiguity.
-    if !absolute_path_spelling_matches(supplied, &canonical)
+    if !absolute_path_spelling_matches(supplied, &canonical, anchored)
         || !canonical.is_dir()
         || !super::read_paths::resolved_path_allowed(&canonical, context.home_dir, context.cwd)
     {
@@ -112,7 +115,11 @@ fn relative_cwd_target(value: &str, context: super::PathContext<'_>) -> Option<s
     Some(joined)
 }
 
-fn absolute_path_spelling_matches(supplied: &std::path::Path, canonical: &std::path::Path) -> bool {
+fn absolute_path_spelling_matches(
+    supplied: &std::path::Path,
+    canonical: &std::path::Path,
+    anchored: bool,
+) -> bool {
     if canonical == supplied {
         return true;
     }
@@ -135,18 +142,19 @@ fn absolute_path_spelling_matches(supplied: &std::path::Path, canonical: &std::p
     // directory. A link in a directory others can write stays rejected.
     #[cfg(unix)]
     {
-        path_trust::trusted_link_spelling(supplied, canonical)
+        anchored && path_trust::trusted_link_spelling(supplied, canonical)
     }
     // Windows canonical paths carry the verbatim prefix.
     #[cfg(windows)]
     {
+        let _ = anchored;
         supplied
             .to_str()
             .is_some_and(|text| exact_drive_spelling(text, canonical))
     }
     #[cfg(not(any(unix, windows)))]
     {
-        let _ = (supplied, canonical);
+        let _ = (supplied, canonical, anchored);
         false
     }
 }

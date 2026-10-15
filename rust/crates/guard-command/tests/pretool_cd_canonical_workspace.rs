@@ -72,12 +72,7 @@ fn shell(home: &str, cwd: &str, command: &str) -> String {
             PathContext {
                 home_dir: Some(home),
                 cwd: Some(cwd),
-                cdpath_unset: false,
-                rustup_override_absent: false,
-                npm_config_inert: false,
-                shell_home_matches: false,
-                ripgrep_config_absent: false,
-                psql_environment: Default::default(),
+                ..PathContext::default()
             },
             Some(&environment),
         )
