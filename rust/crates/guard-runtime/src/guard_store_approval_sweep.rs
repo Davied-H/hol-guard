@@ -41,6 +41,12 @@ pub(crate) fn resolve_matching_approval_requests(
     let harness = args.opt_str("harness")?;
     let artifact_id = args.opt_str("artifact_id")?;
     let artifact_hash = args.opt_str("artifact_hash")?;
+    let resolution = [
+        Value::from(args.str("resolution_action")?),
+        Value::from(args.str("resolution_scope")?),
+        Value::from(args.opt_str("reason")?),
+        Value::from(args.str("resolved_at")?),
+    ];
     let rows = match args.str("scope")? {
         "workspace" => {
             let (Some(harness), Some(workspace)) = (harness, args.opt_str("workspace")?) else {
@@ -96,12 +102,7 @@ pub(crate) fn resolve_matching_approval_requests(
     };
     let ids = resolvable_ids(&rows, guard_home)?;
     for chunk in ids.chunks(ID_BATCH) {
-        let mut params = vec![
-            Value::from(args.str("resolution_action")?),
-            Value::from(args.str("resolution_scope")?),
-            Value::from(args.opt_str("reason")?),
-            Value::from(args.str("resolved_at")?),
-        ];
+        let mut params = resolution.to_vec();
         params.extend(chunk.iter().map(|id| Value::from(id.as_str())));
         exec(
             connection,
