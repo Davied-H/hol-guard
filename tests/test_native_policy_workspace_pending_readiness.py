@@ -144,6 +144,8 @@ def test_stricter_pending_overlay_does_not_withdraw_ack_in_background_loop(
     first, stricter = tmp_path / "first", tmp_path / "stricter"
     first.mkdir()
     stricter.mkdir()
+    # An overlay makes `first` a workspace of its own, so it needs a publish.
+    (first / ".hol-guard.toml").write_text("", encoding="utf-8")
     (stricter / ".hol-guard.toml").write_text('sandbox_analysis = "strict"\n', encoding="utf-8")
     publisher.start()
     try:

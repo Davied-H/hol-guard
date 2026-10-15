@@ -30,6 +30,10 @@ class NativePolicySnapshotWorkspaceReadinessMixin:
         if workspace is None:
             return False
         candidate = publisher._resolved_workspace(workspace)
+        with publisher._condition:
+            # Only a new or deferred workspace needs the overlay scans below.
+            if candidate in publisher._workspace_paths and candidate not in publisher._deferred_workspace_paths:
+                return False
         file_less = publisher._file_less_canonical_workspace(candidate)
         free_ancestors = file_less and publisher._overlay_free_ancestors(candidate)
         with publisher._condition:
