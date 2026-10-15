@@ -120,3 +120,61 @@ fn task_named_result_fields_are_data_without_operations() {
     }
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn task_named_fields_may_name_files_that_clear_the_read_proof() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../target/pretool-omp-yield-task-files")
+        .join(format!("home-{}", std::process::id()));
+    std::fs::create_dir_all(root.join("src/jobs")).unwrap();
+    let root = std::fs::canonicalize(root).unwrap();
+    std::fs::write(root.join("src/jobs/run-outcomes.ts"), "export {};\n").unwrap();
+    std::fs::write(root.join(".env"), "synthetic secret").unwrap();
+    std::os::unix::fs::symlink(root.join(".env"), root.join("linked.ts")).unwrap();
+    let evaluate = |data: Value| {
+        evaluate_pre_tool_envelope_with_context(
+            "omp",
+            "PreToolUse",
+            &json!({"tool_name":"yield", "tool_input":{"data":data}}),
+            None,
+            None,
+            root.to_str(),
+            root.to_str(),
+        )
+    };
+    // A review task hands back what it found and where; a worktree file it
+    // names may not exist relative to the session directory.
+    for data in [
+        json!({"changed_files":[], "status":"blocked",
+            "intended_changes":[{"change":"Throw when a row fails", "file":"src/jobs/run-outcomes.ts"}],
+            "read_only_evidence":["Lines 116-119 update the checkpoint only after success"]}),
+        json!({"findings":[{"defect":"Rejects every window", "design":"Remove the rejection",
+            "file":"scripts/report.ts", "lines":"121-132"}]}),
+        json!([{"file":"src/jobs/run-outcomes.ts", "note":"read only"}]),
+        json!({"summary":"Done", "files":[{"path":"src/missing.ts"}]}),
+    ] {
+        let result = evaluate(data.clone());
+        assert_eq!(
+            result.minimum_action, "allow",
+            "{data} {}",
+            result.reason_code
+        );
+        assert_eq!(result.reason_code, "native_omp_yield_metadata", "{data}");
+    }
+    for data in [
+        json!({"findings":[{"defect":"x", "file":".env"}]}),
+        json!({"findings":[{"defect":"x", "file":"linked.ts"}]}),
+        json!({"findings":[{"defect":"x", "file":"~/.ssh/id_ed25519"}]}),
+        json!({"findings":[{"defect":"x", "file":"missing/.env"}]}),
+        json!([{"file":".env"}]),
+        json!({"steps":[{"command":"cat src/jobs/run-outcomes.ts"}]}),
+    ] {
+        let result = evaluate(data.clone());
+        assert_ne!(
+            result.minimum_action, "allow",
+            "{data} {}",
+            result.reason_code
+        );
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}

@@ -38,9 +38,11 @@ pub(super) fn signal_payload(payload: &Value) -> Option<Value> {
                         "summary" | "report" | "architecture" | "contents" | "files"
                     )
                 });
-            if !task.is_empty() && !plain_task_data(&Value::Object(task)) {
-                return None;
-            }
+            let task_paths = if task.is_empty() {
+                Vec::new()
+            } else {
+                plain_task_data(&Value::Object(task))?
+            };
             if !typed.iter().all(|(key, value)| match key.as_str() {
                 "summary" | "report" | "architecture" | "contents" => value.is_string(),
                 "files" => value.as_array().is_some_and(|files| {
@@ -62,14 +64,26 @@ pub(super) fn signal_payload(payload: &Value) -> Option<Value> {
             }) {
                 return None;
             }
-            if let Some(files) = report.get("files").and_then(Value::as_array) {
-                // Preserve every referenced path for the ordinary sensitive-file
-                // and symlink proof. The raw report still reaches output scanning.
-                projected_input.get_mut("data")?["files"] =
-                    Value::Array(files.iter().map(|file| file["path"].clone()).collect());
+            let mut references: Vec<Value> = report
+                .get("files")
+                .and_then(Value::as_array)
+                .map(|files| files.iter().map(|file| file["path"].clone()).collect())
+                .unwrap_or_default();
+            references.extend(task_paths.into_iter().map(Value::String));
+            // Preserve every referenced path for the ordinary sensitive-file
+            // and symlink proof. Task-named fields are projected to the paths
+            // they name; the raw report still reaches output scanning.
+            let mut projected_report: Map<String, Value> = typed
+                .into_iter()
+                .filter(|(key, _)| key != "files")
+                .collect();
+            if !references.is_empty() {
+                projected_report.insert("files".into(), Value::Array(references));
             }
-        } else if !data.is_string() && !plain_task_data(data) {
-            return None;
+            projected_input.insert("data".into(), Value::Object(projected_report));
+        } else if !data.is_string() {
+            let paths = plain_task_data(data)?;
+            projected_input.insert("data".into(), json!({"files": paths}));
         }
     } else if !input.contains_key("error") {
         return None;
@@ -86,9 +100,10 @@ pub(super) fn signal_payload(payload: &Value) -> Option<Value> {
 /// Result fields a task names for itself, such as those a parent's output
 /// schema asks for, are data handed back to the parent agent; Oh My Pi runs
 /// nothing from them. They are accepted only when no key at any depth names
-/// tool arguments and the ordinary signal extractor finds no command, path,
-/// URL, package, prompt, request or environment reference in them.
-fn plain_task_data(value: &Value) -> bool {
+/// tool arguments and the ordinary signal extractor finds no command, URL,
+/// package, prompt, request or environment reference in them. The paths they
+/// name are returned so each one gets the same proof as a `files` entry.
+fn plain_task_data(value: &Value) -> Option<Vec<String>> {
     fn keys_are_plain(value: &Value, depth: usize) -> bool {
         match value {
             Value::Object(record) => {
@@ -107,21 +122,21 @@ fn plain_task_data(value: &Value) -> bool {
         }
     }
     if !keys_are_plain(value, 0) {
-        return false;
+        return None;
     }
     // `data` itself reads as a request body, so the probe wraps the fields
     // under a neutral key.
     let probe = json!({"tool_name": "yield", "tool_input": {"result": value}});
-    super::super::extract::extract_generic_signals(&probe).is_ok_and(|signals| {
-        signals.command.is_none()
-            && !signals.package_present
-            && signals.path_values.is_empty()
-            && signals.url_values.is_empty()
-            && !signals.request_body_or_method
-            && !signals.business_action_present
-            && !signals.prompt_present
-            && !signals.env_reference
-    })
+    let signals = super::super::extract::extract_generic_signals(&probe).ok()?;
+    (signals.command.is_none()
+        && !signals.package_present
+        && signals.path_values.len() <= 24
+        && signals.url_values.is_empty()
+        && !signals.request_body_or_method
+        && !signals.business_action_present
+        && !signals.prompt_present
+        && !signals.env_reference)
+        .then_some(signals.path_values)
 }
 
 pub(super) fn references_are_readable(paths: &[String], context: &OmpContext<'_>) -> bool {
@@ -139,6 +154,11 @@ pub(super) fn references_are_readable(paths: &[String], context: &OmpContext<'_>
             context.execution_environment,
             true,
         );
-        result.minimum_action == "allow" && !result.action.sensitive_target
+        // A reference to a path that does not exist names nothing to read.
+        // The read proof reports a missing path only when its name is not
+        // sensitive, so sensitive names keep their review.
+        (result.minimum_action == "allow"
+            || result.reason_code == super::super::evaluate::MISSING_PATH)
+            && !result.action.sensitive_target
     })
 }
