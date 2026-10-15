@@ -297,7 +297,7 @@ mod sfrs_static_safety;
 mod sfrs_static_vectors;
 mod sfrs_stdin_sources;
 mod sfrs_substitution;
-#[cfg(all(test, not(windows)))]
+#[cfg(test)]
 mod sfrs_token_vectors;
 mod sfrs_tool_request;
 mod sfrs_typescript_graphql;
