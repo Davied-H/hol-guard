@@ -55,13 +55,21 @@ SINGLE_ROWS = [
     row("r-sandbox", policy_action="sandbox-required", decision_v2_json=SANDBOX_DECISION, last_seen_at=seen(3)),
     row("r-malformed", decision_v2_json="{bad", last_seen_at=seen(4)),
     row("r-unknown", policy_action="frobnicate", decision_v2_json=None, last_seen_at=seen(5)),
-    row("r-null-decision", policy_action="block", decision_v2_json=None, action_envelope_json=None, last_seen_at=seen(6)),
+    row(
+        "r-null-decision", policy_action="block", decision_v2_json=None, action_envelope_json=None, last_seen_at=seen(6)
+    ),
     row("r-resolved", status="resolved", resolution_action="block", resolution_scope="global", last_seen_at=seen(7)),
     row("r-expired", status="expired", reason="superseded_by_fresh_review:r-ok", last_seen_at=seen(8)),
     row("r-claude", harness="claude", artifact_id="claude:native-pretool:tool-action:Bash", last_seen_at=seen(9)),
     row("r-hash-b", artifact_hash=HASH_B, last_seen_at=seen(10)),
     row("r-blank-harness", harness="", last_seen_at=seen(11)),
-    row("r-bad-columns", changed_fields_json="{bad", risk_signals_json="nope", scanner_evidence_json="{", last_seen_at=seen(12)),
+    row(
+        "r-bad-columns",
+        changed_fields_json="{bad",
+        risk_signals_json="nope",
+        scanner_evidence_json="{",
+        last_seen_at=seen(12),
+    ),
     row("r-surrogate", decision_v2_json='{"action": "ask", "s": "\\ud800"}', last_seen_at=seen(13)),
     row(" r-ok ", last_seen_at=seen(14)),
     row("r-nan", decision_v2_json='{"score": NaN}', last_seen_at=seen(15)),
@@ -72,14 +80,20 @@ SINGLE_CALLS = (
     + [resolution("resolve_one_request_only", request_id) for request_id in SINGLE_IDS]
     + [harness_native(request_id) for request_id in [*SINGLE_IDS, "   "]]
     + [
-        resolution("resolve_approval_request", "r-ok", resolution_action="block", resolution_scope="global", reason=None),
-        resolution("resolve_one_request_only", "r-ok", resolution_action="block", resolution_scope="harness", reason=None),
+        resolution(
+            "resolve_approval_request", "r-ok", resolution_action="block", resolution_scope="global", reason=None
+        ),
+        resolution(
+            "resolve_one_request_only", "r-ok", resolution_action="block", resolution_scope="harness", reason=None
+        ),
         harness_native("r-ok", reason=None),
         harness_native("r-ok", expected_harness="claude"),
         harness_native("r-ok", expected_harness=""),
         harness_native("r-blank-harness", expected_harness=""),
         harness_native("r-claude", expected_harness="claude"),
-        harness_native("r-claude", expected_harness="claude", expected_artifact_id="claude:native-pretool:tool-action:Bash"),
+        harness_native(
+            "r-claude", expected_harness="claude", expected_artifact_id="claude:native-pretool:tool-action:Bash"
+        ),
         harness_native("r-ok", expected_artifact_id="native-review:codex:cmd"),
         harness_native("r-ok", expected_artifact_id="native-review:codex:other"),
         harness_native("r-ok", expected_artifact_id=""),
