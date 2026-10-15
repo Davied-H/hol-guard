@@ -282,8 +282,9 @@ fn parse(arguments: &[String]) -> Option<Invocation> {
 
 #[cfg(test)]
 mod tests {
-    use super::{admitted, startup_files_absent};
+    use super::{admitted, distribution_client, first_psql, startup_files_absent};
     use std::ffi::OsStr;
+    use std::path::Path;
 
     fn owned(arguments: &[&str]) -> Vec<String> {
         arguments.iter().map(|value| (*value).to_owned()).collect()
