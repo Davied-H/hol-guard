@@ -276,7 +276,9 @@ pub(super) fn descendant_allowed(path: &Path, root: &Path, is_file: bool) -> boo
         .to_ascii_lowercase();
     !SECRET_EXTENSIONS.contains(&extension.as_str())
         && (!guard_secure_fs::credential_named_path(relative)
-            || path.strip_prefix(root).is_ok_and(synthetic_fixture))
+            || path
+                .strip_prefix(root)
+                .is_ok_and(|relative| synthetic_fixture(root, relative)))
 }
 
 /// Directories that hold a project's test data.
@@ -294,18 +296,31 @@ const FIXTURE_DIRECTORIES: &[&str] = &[
 
 /// Test trees name their vectors for what they exercise
 /// (`testdata/secrets_cli/vectors.json`, `tests/fixtures/tokens.json`), so a
-/// credential name below a test-data directory inside the walk marks data a
-/// test reads, not a store. Key containers, hidden names and the sensitive
-/// families (`.env`, `*.key`, `.npmrc`) are refused before this is asked.
-fn synthetic_fixture(relative: &Path) -> bool {
-    relative.parent().is_some_and(|parent| {
-        parent.components().any(|part| {
-            matches!(part, std::path::Component::Normal(name)
-            if name.to_str().is_some_and(|name| {
-                FIXTURE_DIRECTORIES.contains(&name.to_ascii_lowercase().as_str())
-            }))
-        })
-    })
+/// credential name at or below a test-data directory inside the walk marks
+/// data a test reads, not a store. A test directory inside a credential
+/// directory (`secrets/tests/prod.json`), or a walk rooted in one, is still a
+/// store. Key containers, hidden names and the sensitive families (`.env`,
+/// `*.key`, `.npmrc`) are refused before this is asked.
+fn synthetic_fixture(root: &Path, relative: &Path) -> bool {
+    let Some(parent) = relative.parent() else {
+        return false;
+    };
+    let mut above = root.to_path_buf();
+    for part in parent.components() {
+        let std::path::Component::Normal(name) = part else {
+            return false;
+        };
+        if name
+            .to_str()
+            .is_some_and(|name| FIXTURE_DIRECTORIES.contains(&name.to_ascii_lowercase().as_str()))
+        {
+            // Every directory above the test directory is checked as a
+            // directory, below a neutral entry name.
+            return !guard_secure_fs::credential_named_path(&above.join("entry"));
+        }
+        above.push(name);
+    }
+    false
 }
 
 pub(super) fn walk(

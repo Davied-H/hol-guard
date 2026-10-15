@@ -396,7 +396,8 @@ fn stdin_stage(
 /// resolves `..` against its logical `$PWD`, while Git created the checkout
 /// at a physical path, so the two agree only when the reported cwd has no
 /// symlinked component and the lexical target equals the canonical
-/// destination, which the caller compares.
+/// destination, which the caller compares. A leading root-owned system
+/// alias (macOS `/tmp`) resolves the same way for both.
 fn cd_target(
     segment: &CommandSegmentV1,
     context: super::super::PathContext<'_>,
@@ -434,5 +435,5 @@ fn cd_target(
             other => target.push(other),
         }
     }
-    Some(target)
+    Some(super::super::git_routes::system_alias_resolved(&target))
 }

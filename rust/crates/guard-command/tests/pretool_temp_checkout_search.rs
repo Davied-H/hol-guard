@@ -101,7 +101,7 @@ fn rg_over_a_temporary_checkout_with_test_vectors_is_quiet() {
 
 #[test]
 fn rg_over_a_temporary_checkout_keeps_real_credentials_reviewed() {
-    let bench = bench("credentials");
+    let bench = bench("stores");
     let crates = bench.crates.display();
     let search = format!("rg -n Route {crates} --type rust -l | head -30");
     for (file, contents) in [
@@ -110,6 +110,9 @@ fn rg_over_a_temporary_checkout_keeps_real_credentials_reviewed() {
         ("runtime/testdata/keys/server.pem", "pem\n"),
         ("runtime/tests/fixtures/deploy.key", "key\n"),
         ("runtime/tests/.npmrc", "registry\n"),
+        // A test directory inside a credential directory is still a store.
+        ("runtime/secrets/tests/prod.json", "{}\n"),
+        ("runtime/credentials/fixtures/aws.json", "{}\n"),
     ] {
         let path = bench.crates.join(file);
         write(&path, contents);
@@ -121,6 +124,16 @@ fn rg_over_a_temporary_checkout_keeps_real_credentials_reviewed() {
         );
         std::fs::remove_file(&path).unwrap();
     }
+    // So is a search rooted in a credential directory.
+    write(&bench.crates.join("secrets/tests/prod.json"), "{}\n");
+    let rooted = format!("rg -n Route {crates}/secrets");
+    let result = decide(&bench, &rooted);
+    assert_ne!(
+        result.minimum_action, "allow",
+        "{rooted}: {}",
+        result.reason_code
+    );
+    std::fs::remove_dir_all(bench.crates.join("secrets")).unwrap();
     for command in [
         format!("rg --pre cat Route {crates}"),
         format!("rg --pre-glob '*.json' --pre cat Route {crates}"),

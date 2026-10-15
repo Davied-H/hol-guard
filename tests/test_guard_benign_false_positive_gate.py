@@ -291,16 +291,20 @@ def _rendered_text(result: dict[str, object]) -> bool:
     return any(result.get(key) for key in _RENDERED_KEYS) or any(specific.get(key) for key in _RENDERED_SPECIFIC_KEYS)
 
 
-def _quiet_allow(result: dict[str, object], approvals: int) -> bool:
+def _quiet_allow(result: dict[str, object], approvals: int, event: str = "PreToolUse") -> bool:
     """Allowed with no approval row and nothing rendered.
 
     A warn whose reason is a silent code (the policy floor on a proven action)
-    is quiet: the receipt records it, but the harness shows nothing.
+    is quiet: the receipt records it, but the harness shows nothing. A
+    PostToolUse response carries no reason code at all, so there a warn is
+    quiet when the harness renders nothing.
     """
     reason = _reason(result)
     if _decision(result) != "allow" or approvals != 0 or _rendered_text(result):
         return False
     if result.get("policy_action") == "warn" and reason in _SILENT_WARNING_CODES:
+        return True
+    if event == "PostToolUse" and result.get("policy_action") == "warn" and not reason:
         return True
     return result.get("policy_action") in (None, "allow") and not (
         reason.startswith("native_") and (reason.endswith("_review") or reason.endswith("_warning"))
@@ -363,7 +367,7 @@ def test_benign_agent_work_is_allowed_and_negative_controls_are_not(
     if case.case_id in _PENDING_FIX:
         _assert_pending(case.case_id, _PENDING_FIX[case.case_id], result, approvals, description)
     else:
-        assert _quiet_allow(result, approvals), f"benign work was reviewed: {description}"
+        assert _quiet_allow(result, approvals, case.event), f"benign work was reviewed: {description}"
     if case.case_id in _PENDING_ALWAYS:
         if gap:
             pytest.xfail(f"{_PENDING_ALWAYS[case.case_id]}: review row without Always: {description}")

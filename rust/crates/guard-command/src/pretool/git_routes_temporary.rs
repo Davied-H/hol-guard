@@ -134,6 +134,41 @@ pub(in crate::pretool) fn owned_temporary_roots() -> Vec<std::path::PathBuf> {
     roots
 }
 
+/// `path` with a leading root-owned system alias such as macOS `/tmp`
+/// (a link to `/private/tmp`) replaced by the directory it names. Only root
+/// can create or retarget an entry directly in `/`, so the alias names the
+/// same directory for Git, for the shell's `cd` and for this proof. Any
+/// other link keeps the path unchanged and fails the checks that follow.
+#[cfg(unix)]
+pub(in crate::pretool) fn system_alias_resolved(path: &std::path::Path) -> std::path::PathBuf {
+    use std::os::unix::fs::MetadataExt;
+    let mut components = path.components();
+    let (Some(std::path::Component::RootDir), Some(std::path::Component::Normal(first))) =
+        (components.next(), components.next())
+    else {
+        return path.to_path_buf();
+    };
+    let alias = std::path::Path::new("/").join(first);
+    let root_owned = |metadata: &std::fs::Metadata| metadata.uid() == 0;
+    let trusted = std::fs::symlink_metadata("/")
+        .is_ok_and(|root| root_owned(&root) && root.mode() & 0o022 == 0)
+        && std::fs::symlink_metadata(&alias)
+            .is_ok_and(|link| link.file_type().is_symlink() && root_owned(&link));
+    match trusted
+        .then(|| std::fs::canonicalize(&alias).ok())
+        .flatten()
+    {
+        Some(resolved) if components.as_path().as_os_str().is_empty() => resolved,
+        Some(resolved) => resolved.join(components.as_path()),
+        None => path.to_path_buf(),
+    }
+}
+
+#[cfg(not(unix))]
+pub(in crate::pretool) fn system_alias_resolved(path: &std::path::Path) -> std::path::PathBuf {
+    path.to_path_buf()
+}
+
 /// Whether every directory strictly below `root` down to `path` belongs to
 /// the owner of `home` and grants no group or other write access.
 #[cfg(unix)]
@@ -162,4 +197,38 @@ pub(super) fn owned_below(
     _home: &std::path::Path,
 ) -> bool {
     false
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::system_alias_resolved;
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn only_a_root_owned_top_level_alias_resolves() {
+        // `/tmp` is a root-owned link on macOS and a plain directory on
+        // Linux; either way the proof and the shell land in the same place.
+        let shared = std::fs::canonicalize("/tmp").unwrap();
+        assert_eq!(
+            system_alias_resolved(Path::new("/tmp/hg-alias-leaf")),
+            shared.join("hg-alias-leaf")
+        );
+        assert_eq!(system_alias_resolved(Path::new("/tmp")), shared);
+        assert_eq!(
+            system_alias_resolved(Path::new("relative/leaf")),
+            PathBuf::from("relative/leaf")
+        );
+        // A link the user owns keeps its spelling, so the symlinked-parent
+        // check that follows still refuses it.
+        let base = std::fs::canonicalize(std::env::temp_dir())
+            .unwrap()
+            .join(format!("hg-alias-{}", std::process::id()));
+        std::fs::create_dir_all(base.join("real")).unwrap();
+        let link = base.join("link");
+        let _ = std::fs::remove_file(&link);
+        std::os::unix::fs::symlink(base.join("real"), &link).unwrap();
+        let through_link = link.join("leaf");
+        assert_eq!(system_alias_resolved(&through_link), through_link);
+        let _ = std::fs::remove_dir_all(&base);
+    }
 }
