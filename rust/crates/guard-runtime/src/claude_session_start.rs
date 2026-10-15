@@ -222,13 +222,29 @@ pub(crate) fn context_output(event: &str, context: &str) -> String {
 }
 
 /// The bridge's daemon-start command, as the hook bridges run it.
+/// The recovery reservation a scheduled daemon start holds, beside the
+/// daemon state in the Guard home.
+const RECOVERY_RESERVATION_FILE: &str = "daemon-recovery-reservation.json";
+
+/// A zero exit from the recovery command does not prove a start: it also
+/// returns quietly when recovery is disabled or the spawn failed. A held
+/// recovery reservation does, whether this start or a concurrent one claimed
+/// it.
+fn start_scheduled(state_path: &Path) -> bool {
+    state_path
+        .with_file_name(RECOVERY_RESERVATION_FILE)
+        .symlink_metadata()
+        .is_ok_and(|metadata| metadata.is_file())
+}
+
 fn recovery_command(bridge_config: &Map<String, Value>) -> Option<Vec<String>> {
     strings(bridge_config.get("recovery_command")).filter(|argv| !argv.is_empty())
 }
 
 /// The context to print when every check passes, or why one failed.
 /// `start` runs the recovery command for a daemon that is provably down;
-/// `true` means it scheduled the start.
+/// `true` means it exited cleanly, and a held recovery reservation must then
+/// prove the start was scheduled.
 pub(crate) fn session_output(
     config_text: &str,
     environment: &SessionEnvironment,
@@ -267,6 +283,9 @@ pub(crate) fn session_output(
         let command = recovery_command(&config.daemon_hook.bridge_config).ok_or(INVALID_CONFIG)?;
         if !start(&command) {
             return Err("daemon start failed".to_owned());
+        }
+        if !start_scheduled(state_path) {
+            return Err("daemon start was not scheduled".to_owned());
         }
     }
     Ok(context_output(

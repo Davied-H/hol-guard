@@ -301,6 +301,7 @@ fn stopped_daemon_with_current_settings_is_started_and_prints_the_context() {
     let settings = write_settings(&home, &guard.state_path, &url);
     let before = fs::read(&settings).unwrap();
     let mut started = Vec::new();
+    let reservation = guard.state_path.with_file_name(RECOVERY_RESERVATION_FILE);
 
     let output = session_output(
         &config_text(&home, &guard.state_path, &runtime_build()),
@@ -308,6 +309,7 @@ fn stopped_daemon_with_current_settings_is_started_and_prints_the_context() {
         deadline(),
         |command| {
             started.push(command.to_vec());
+            fs::write(&reservation, "{}").unwrap();
             true
         },
     );
@@ -315,6 +317,27 @@ fn stopped_daemon_with_current_settings_is_started_and_prints_the_context() {
     assert_eq!(output.as_deref(), Ok(CONTEXT));
     assert_eq!(started, [recovery_command()]);
     assert_eq!(fs::read(&settings).unwrap(), before);
+}
+
+#[test]
+fn stopped_daemon_whose_start_schedules_nothing_hands_off() {
+    let (guard, url) = stopped_home("ss-stopped-unscheduled", |_| {});
+    let home = claude_home(&guard);
+    write_settings(&home, &guard.state_path, &url);
+    let mut attempts = 0;
+
+    let output = session_output(
+        &config_text(&home, &guard.state_path, &runtime_build()),
+        &environment(&home),
+        deadline(),
+        |_| {
+            attempts += 1;
+            true
+        },
+    );
+
+    assert_eq!(output, Err("daemon start was not scheduled".to_owned()));
+    assert_eq!(attempts, 1);
 }
 
 #[test]

@@ -66,6 +66,24 @@ fn pid_running(_pid: i64) -> bool {
     false
 }
 
+/// Whether `pid` provably no longer runs. Only `ESRCH` proves it: a pid
+/// that belongs to another user (`EPERM`), or any other probe error, is not
+/// proof the daemon stopped.
+#[cfg(unix)]
+fn pid_gone(pid: i64) -> bool {
+    let Ok(pid) = i32::try_from(pid) else {
+        return false;
+    };
+    pid > 0
+        && nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None)
+            == Err(nix::errno::Errno::ESRCH)
+}
+
+#[cfg(not(unix))]
+fn pid_gone(_pid: i64) -> bool {
+    false
+}
+
 /// `identity_binding` with the token read from the private token file.
 fn token_bound(state_path: &Path, state: &AuthenticatedState) -> Result<(), String> {
     let parent = state_path.parent().unwrap_or_else(|| Path::new("."));
@@ -180,8 +198,9 @@ pub(crate) fn verified_daemon_url(
 
 /// The loopback URL of a daemon that is provably down: its authenticated
 /// state names a daemon of this package version on `127.0.0.1` whose pid no
-/// longer runs, as after a reboot or a crash. A running pid, even one that
-/// does not answer, is not down, so the caller hands it to Python.
+/// longer runs (`ESRCH`), as after a reboot or a crash. A running pid, even
+/// one that does not answer, or one this user may not signal, is not down,
+/// so the caller hands it to Python.
 pub(crate) fn stopped_daemon_url(state_path: &Path) -> Result<DaemonUrl, String> {
     let state = authenticated_state(state_path)?;
     current_daemon(&state)?;
@@ -191,8 +210,8 @@ pub(crate) fn stopped_daemon_url(state_path: &Path) -> Result<DaemonUrl, String>
         .and_then(Value::as_i64)
         .filter(|pid| *pid > 0)
         .ok_or("daemon state names no pid")?;
-    if pid_running(pid) {
-        return Err("daemon process is still running".to_owned());
+    if !pid_gone(pid) {
+        return Err("daemon process is not provably stopped".to_owned());
     }
     match state.port() {
         0 => Err("daemon port is invalid".to_owned()),

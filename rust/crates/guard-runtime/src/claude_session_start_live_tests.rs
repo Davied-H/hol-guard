@@ -305,6 +305,12 @@ fn a_running_unidentified_foreign_or_unsigned_daemon_is_not_down() {
     let (home, _listener, _state) = live_home("ss-down-running", |_| {});
     assert!(stopped_daemon_url(&home.state_path).is_err(), "running pid");
 
+    // pid 1 runs as root: an unprivileged probe gets EPERM, not ESRCH.
+    let (home, _listener, _state) = live_home("ss-down-foreign-pid", |state| {
+        state.insert("pid".to_owned(), json!(1));
+    });
+    assert!(stopped_daemon_url(&home.state_path).is_err(), "foreign pid");
+
     let edits: [fn(&mut Map<String, Value>); 4] = [
         |state| {
             state.insert("pid".to_owned(), json!(0));
