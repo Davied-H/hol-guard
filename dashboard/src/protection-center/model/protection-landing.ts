@@ -29,18 +29,62 @@ function catalogOriginRank(extension: ExtensionCatalogSummary): number {
   return extension.source === "local-admin" ? 1 : 0;
 }
 
+// Bands keep their original case so camelCase humps ("Ocean" in
+// "DigitalOcean") still count as word starts.
 function patternSearchBands(extension: ExtensionCatalogSummary, permission: ExtensionPermission): [string, string, string] {
   return [
-    [permission.label, extension.name, extension.extension_id, ...extension.executables].join(" ").toLowerCase(),
-    [permission.example_command ?? "", permission.permission_id].join(" ").toLowerCase(),
-    [permission.description, permission.family ?? ""].join(" ").toLowerCase(),
+    [permission.label, extension.name, extension.extension_id, ...extension.executables].join(" "),
+    [permission.example_command ?? "", permission.permission_id].join(" "),
+    [permission.description, permission.family ?? ""].join(" "),
   ];
 }
 
-function termBand(term: string, bands: [string, string, string]): number {
-  if (bands[IDENTITY_MATCH].includes(term)) return IDENTITY_MATCH;
-  if (bands[EXAMPLE_MATCH].includes(term)) return EXAMPLE_MATCH;
-  return CONTEXT_MATCH;
+const WORD_CHAR = /[\p{L}\p{N}]/u;
+const LOWER = /\p{Ll}/u;
+const UPPER = /\p{Lu}/u;
+
+function startsWord(text: string, index: number): boolean {
+  if (index === 0) return true;
+  const previous = text[index - 1]!;
+  return !WORD_CHAR.test(previous) || (LOWER.test(previous) && UPPER.test(text[index]!));
+}
+
+// A whole word ends at punctuation or whitespace only: "git" is a prefix of
+// "GitHub", not the whole of it.
+function endsWord(text: string, end: number): boolean {
+  return end >= text.length || !WORD_CHAR.test(text[end]!);
+}
+
+/**
+ * How `term` (already lowercased) occurs in `text`: "exact" when it is a whole
+ * word, "prefix" when it starts a word, null otherwise. A term that only occurs
+ * inside a word does not match, so "git" finds Git and GitHub but not
+ * DigitalOcean. Terms that start with punctuation ("--force", ".github") match
+ * wherever they occur.
+ */
+export function wordMatch(text: string, term: string): "exact" | "prefix" | null {
+  const lower = text.toLowerCase();
+  // Case folding that changes length would misalign the case checks below.
+  const source = lower.length === text.length ? text : lower;
+  const anchored = WORD_CHAR.test(term[0] ?? "");
+  const closes = WORD_CHAR.test(term[term.length - 1] ?? "");
+  let found: "prefix" | null = null;
+  for (let index = lower.indexOf(term); index !== -1; index = lower.indexOf(term, index + 1)) {
+    if (anchored && !startsWord(source, index)) continue;
+    if (!closes || endsWord(source, index + term.length)) return "exact";
+    found = "prefix";
+  }
+  return found;
+}
+
+type TermMatch = { band: number; exact: boolean };
+
+function termMatch(term: string, bands: [string, string, string]): TermMatch | null {
+  for (let band = IDENTITY_MATCH; band <= CONTEXT_MATCH; band += 1) {
+    const match = wordMatch(bands[band]!, term);
+    if (match) return { band, exact: match === "exact" };
+  }
+  return null;
 }
 
 /** The bounded query a pattern search sends: trimmed, lowercased, capped. */
@@ -61,24 +105,30 @@ export function searchCommandPatterns(
   const query = commandPatternQuery(rawQuery);
   if (!query) return [];
   const terms = query.split(" ");
-  const matches: CommandPatternMatch[] = [];
+  const matches: (CommandPatternMatch & { partial: number })[] = [];
   for (const { extension, permission } of candidates) {
     const bands = patternSearchBands(extension, permission);
-    const text = bands.join(" ");
-    if (!terms.every((term) => text.includes(term))) continue;
+    const termMatches = terms.map((term) => termMatch(term, bands));
+    if (termMatches.some((match) => match === null)) continue;
+    const found = termMatches as TermMatch[];
     // The query is as strong as its weakest term: "github export" against a
     // permission whose prose carries "github" and whose example carries
     // "export" scores as a context match.
-    const score = Math.max(...terms.map((term) => termBand(term, bands)));
-    matches.push({ extension, permission, score });
+    const score = Math.max(...found.map((match) => match.band));
+    // Within a band, whole-word hits outrank prefixes: "git" lists Git's
+    // settings before GitHub's.
+    const partial = found.filter((match) => !match.exact).length;
+    matches.push({ extension, permission, score, partial });
   }
   return matches
     .sort((left, right) =>
       left.score - right.score ||
+      left.partial - right.partial ||
       catalogOriginRank(left.extension) - catalogOriginRank(right.extension) ||
       (RISK_TIER_SEVERITY[right.permission.risk_tier] ?? 0) - (RISK_TIER_SEVERITY[left.permission.risk_tier] ?? 0) ||
       left.permission.label.localeCompare(right.permission.label) ||
       left.extension.name.localeCompare(right.extension.name),
     )
-    .slice(0, limit);
+    .slice(0, limit)
+    .map(({ partial: _partial, ...match }) => match);
 }
