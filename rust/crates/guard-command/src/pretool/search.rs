@@ -190,10 +190,12 @@ fn expand_brace_globs(pattern: &str) -> Option<Vec<String>> {
         let open = candidate.find('{')?;
         let close = candidate[open + 1..].find('}')? + open + 1;
         let choices: Vec<&str> = candidate[open + 1..close].split(',').collect();
-        // A brace with no comma, such as Git's `HEAD^{commit}` or `@{u}`, is
-        // literal text to the shell and a single alternative to a glob, so it
-        // is checked as its inner text: `{.env}` still names `.env`.
-        if choices.len() == 1 && !choices[0].contains('{') {
+        // A brace with no comma and no `..`, such as Git's `HEAD^{commit}` or
+        // `@{u}`, is literal text to the shell and a single alternative to a
+        // glob, so it is checked as its inner text: `{.env}` still names
+        // `.env`. A `..` sequence such as `.en{v..v}` expands in bash, so it
+        // keeps failing closed.
+        if choices.len() == 1 && !choices[0].contains('{') && !choices[0].contains("..") {
             expanded.push(format!(
                 "{}{}{}",
                 &candidate[..open],
@@ -516,4 +518,28 @@ fn safe_rg_arguments_inner(
     pending_value.is_none()
         && (!stdin_only || pattern_supplied)
         && (stdin_only || config_disabled || context.ripgrep_config_absent)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::glob_can_select_sensitive_path;
+
+    #[test]
+    fn brace_sequences_still_select_sensitive_names() {
+        // Git's brace suffixes are one literal alternative.
+        for literal in ["head^{commit}", "4dc51cdaa1^{tree}", "head@{0}", "@{u}"] {
+            assert!(!glob_can_select_sensitive_path(literal), "{literal}");
+        }
+        // Bash expands a `..` sequence: `.en{v..v}` is `.env`.
+        for selecting in [
+            ".en{v..v}",
+            ".npmr{c..c}",
+            "config/.en{v..v}",
+            ".en{v..v..1}",
+            "{.env}",
+            "{.env,readme.md}",
+        ] {
+            assert!(glob_can_select_sensitive_path(selecting), "{selecting}");
+        }
+    }
 }

@@ -266,8 +266,8 @@ fn an_unproven_step_before_a_proven_git_read_is_named() {
 
 // Agents name commits with Git's brace suffixes, as in
 // `git rev-parse <sha>^{commit}`. A brace with no comma is literal text to the
-// shell, so the read keeps its proof. A brace that spells a sensitive name
-// still does not.
+// shell, so the read keeps its proof. A brace that spells a sensitive name,
+// or a `..` sequence that bash expands, still does not.
 #[test]
 fn git_brace_revision_suffixes_are_not_globs() {
     let root = std::env::temp_dir().join(format!("guard brace revision {}", std::process::id()));
@@ -299,7 +299,16 @@ fn git_brace_revision_suffixes_are_not_globs() {
     ] {
         assert_eq!(action(&home, &repository, command), "allow", "{command}");
     }
+    // A brace with `..` is a sequence: bash expands `.en{v..v}` to `.env`.
+    std::fs::write(repository.join(".env"), "FIXTURE=1\n").unwrap();
+    std::fs::write(repository.join(".npmrc"), "fixture=1\n").unwrap();
+    std::fs::create_dir_all(repository.join(".ssh")).unwrap();
     for command in [
+        "cat .en{v..v}",
+        "cat .npmr{c..c}",
+        "cat .git-credential{s..s}",
+        "cat .en{v..v..1}",
+        "grep -r x .ss{h..h}",
         "git log -1 -- '{.env}'",
         "git log -1 -- 'config/{.env,x}'",
         "git diff HEAD -- '{.env,README.md}'",
