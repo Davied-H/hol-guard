@@ -282,6 +282,10 @@ fn only_plain_workspace_runs_take_the_native_sink() {
     assert!(shape(
         "cd sub && pytest -q 2>&1 | head -40; echo \"EXIT:$?\""
     ));
+    // A package directory inside the workspace runs whole from its root too.
+    assert!(shape("npm --prefix sub test"));
+    assert!(shape("bun --cwd sub run build 2>&1 | tail -5"));
+    assert!(shape("pnpm --dir=sub/. run lint"));
     let inner = format!(
         "cd {}/sub && pytest",
         root.join("tmp/../work space").display()
@@ -293,6 +297,18 @@ fn only_plain_workspace_runs_take_the_native_sink() {
     for command in [
         "ls ~/work",
         "npm --prefix web test",
+        // Like `cd`, a package directory at the root, out of it, after a
+        // `cd`, or spelled any other way keeps the daemon's sink.
+        "npm --prefix . test",
+        "bun --cwd .. run build",
+        "bun --cwd sub/.. run build",
+        "bun --cwd file run build",
+        "bun --cwd run build",
+        "npm --prefix -w sub test",
+        "cd sub && bun --cwd sub run build",
+        "npm --prefix sub test && bun --cwd ../x run y",
+        "pnpm --directory sub run lint",
+        "npm --prefix 'sub' test",
         "git -C sub status",
         // The daemon plans a `cd` to the root, or out of it, again there.
         "cd . && pytest",
