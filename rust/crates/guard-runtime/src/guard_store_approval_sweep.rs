@@ -29,8 +29,9 @@ const RUNTIME_EXACT_FAMILIES: [&str; 5] = [
 const MAX_REPORTED_IDS: usize = 200;
 /// `_SQLITE_ID_BATCH_SIZE`.
 const ID_BATCH: usize = 500;
-const SWEEP_COLUMNS: &str = "request_id, artifact_id, artifact_hash, config_path, policy_action, \
-     decision_v2_json, action_envelope_json";
+/// The columns the resolvability projection reads.
+const PROJECTION_COLUMNS: &str =
+    "request_id, policy_action, decision_v2_json, action_envelope_json";
 
 pub(crate) fn resolve_matching_approval_requests(
     connection: &Connection,
@@ -48,8 +49,8 @@ pub(crate) fn resolve_matching_approval_requests(
             query_all(
                 connection,
                 &format!(
-                    "select {SWEEP_COLUMNS} from approval_requests \
-                     where status = 'pending' and harness = ? {ORDER}"
+                    "select {PROJECTION_COLUMNS}, artifact_id, artifact_hash, config_path \
+                     from approval_requests where status = 'pending' and harness = ? {ORDER}"
                 ),
                 &[Value::from(harness)],
             )?
@@ -86,7 +87,9 @@ pub(crate) fn resolve_matching_approval_requests(
                 .join(" and ");
             query_all(
                 connection,
-                &format!("select {SWEEP_COLUMNS} from approval_requests where {clause} {ORDER}"),
+                &format!(
+                    "select {PROJECTION_COLUMNS} from approval_requests where {clause} {ORDER}"
+                ),
                 &params,
             )?
         }
