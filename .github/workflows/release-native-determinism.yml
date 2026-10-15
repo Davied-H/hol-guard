@@ -10,10 +10,16 @@ on:
         description: Release version stamped into the binaries; defaults to the checked-in version.
         required: false
         type: string
+      profile_benchmark:
+        description: Compare Linux fat and thin LTO without producing release artifacts.
+        required: false
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
   compare:
+    if: inputs.profile_benchmark != true
     name: Cached vs cold release binaries (${{ matrix.target }})
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
@@ -177,3 +183,75 @@ jobs:
             fi
           done
           exit "$status"
+
+  profile-benchmark:
+    name: Native LTO benchmark (${{ matrix.lto }})
+    if: inputs.profile_benchmark == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        lto: [fat, thin]
+    env:
+      SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
+      REQUESTED_VERSION: ${{ inputs.version }}
+      CARGO_PROFILE_RELEASE_LTO: ${{ matrix.lto }}
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: '1'
+      HOL_GUARD_BUILD_SHA: ${{ inputs.source_sha || github.sha }}
+      HOL_GUARD_APPROVAL_ENROLLMENT_ROOT_HEX: ${{ vars.HOL_GUARD_APPROVAL_ENROLLMENT_ROOT_HEX }}
+      HOL_GUARD_APPROVAL_ENROLLMENT_ROOT_FINGERPRINT_HEX: ${{ vars.HOL_GUARD_APPROVAL_ENROLLMENT_ROOT_FINGERPRINT_HEX }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+        with:
+          ref: ${{ inputs.source_sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: '3.12'
+      - name: Bind the benchmark source and version
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          version=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+          if [[ -n "$REQUESTED_VERSION" && "$REQUESTED_VERSION" != "$version" ]]; then
+            echo "Profile benchmarks use the checked-in version without restamping" >&2
+            exit 1
+          fi
+          echo "HOL_GUARD_PACKAGE_VERSION=$version" >> "$GITHUB_ENV"
+      - name: Verify the measured runtime authority
+        run: python scripts/ci/native_approval_contract_gate.py --root . --require-release-root
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: native-lto-benchmark-${{ matrix.lto }}
+      - name: Measure a full native build
+        shell: bash
+        run: |
+          set -euo pipefail
+          start=$SECONDS
+          cargo build --manifest-path rust/Cargo.toml --locked --release -p hol-guard-runtime --bin hol-guard-runtime
+          elapsed=$((SECONDS - start))
+          python - "$SOURCE_SHA" "$CARGO_PROFILE_RELEASE_LTO" "$elapsed" <<'PY'
+          import json
+          import pathlib
+          import sys
+          report = {
+              "source_sha": sys.argv[1], "lto": sys.argv[2], "build_seconds": int(sys.argv[3]),
+              "runtime_bytes": pathlib.Path("rust/target/release/hol-guard-runtime").stat().st_size,
+          }
+          pathlib.Path("native-profile-benchmark.json").write_text(json.dumps(report, indent=2) + "\n")
+          print(json.dumps(report))
+          PY
+      - name: Enforce the existing native size budget
+        run: python scripts/ci/check_wheel_size.py --native-dir rust/target/release --platform manylinux_2_17_x86_64
+      - name: Check the measured runtime
+        run: rust/target/release/hol-guard-runtime self-test --json
+      - name: Preserve benchmark measurements
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: native-profile-benchmark-${{ matrix.lto }}
+          path: native-profile-benchmark.json
+          if-no-files-found: error
+          retention-days: 7
