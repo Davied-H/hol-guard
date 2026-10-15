@@ -21,11 +21,11 @@ const WORKSPACE_PROFILE: &str = "workspace-contained-v1";
 #[cfg(target_os = "macos")]
 const NATIVE_SINK_SWITCH: &str = "HOL_GUARD_NATIVE_CONTAINED_SINK";
 /// Command text whose meaning depends on what the native sink does not yet
-/// replay: pipes, stderr folding, exit-status reads, home expansion, and
-/// tool flags that move the working directory.
+/// replay: home expansion and tool flags that move the working directory.
+/// Pipes, stderr folding and exit-status reads run whole in the sandbox, as
+/// the edge classified them, so the shell gives them their own meaning.
 #[cfg(any(target_os = "macos", all(unix, test)))]
-const NATIVE_SINK_UNSUPPORTED: [&str; 8] =
-    ["|", "2>&1", "$?", "~", "--cwd", "--prefix", "--dir", " -C"];
+const NATIVE_SINK_UNSUPPORTED: [&str; 5] = ["~", "--cwd", "--prefix", "--dir", " -C"];
 const PRE_TOOL_EVENTS: [&str; 2] = ["PreToolUse", "pre_tool_use"];
 const SHELL_TOOLS: [&str; 4] = ["Bash", "bash", "run_terminal_command", "run_command"];
 

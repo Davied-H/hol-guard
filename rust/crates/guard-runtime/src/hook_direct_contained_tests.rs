@@ -273,6 +273,15 @@ fn only_plain_workspace_runs_take_the_native_sink() {
     // A `cd` into the workspace runs whole from its root on either sink.
     assert!(shape("cd sub && pytest"));
     assert!(shape("\tcd  sub/.  &&  pytest -q"));
+    // Output filters, stderr folding and status reads run whole in the
+    // sandbox, with the shell's own meaning.
+    assert!(shape("pytest | tee log"));
+    assert!(shape("pytest 2>&1"));
+    assert!(shape("pytest; echo $?"));
+    assert!(shape("npm run build 2>&1 | tail -20"));
+    assert!(shape(
+        "cd sub && pytest -q 2>&1 | head -40; echo \"EXIT:$?\""
+    ));
     let inner = format!(
         "cd {}/sub && pytest",
         root.join("tmp/../work space").display()
@@ -282,9 +291,6 @@ fn only_plain_workspace_runs_take_the_native_sink() {
         "a space in the target is not one plain word"
     );
     for command in [
-        "pytest | tee log",
-        "pytest 2>&1",
-        "pytest; echo $?",
         "ls ~/work",
         "npm --prefix web test",
         "git -C sub status",
@@ -302,7 +308,6 @@ fn only_plain_workspace_runs_take_the_native_sink() {
         "cd $HOME && pytest",
         "cd missing && pytest",
         "cd file && pytest",
-        "cd sub && cd .. && pytest x | y",
         "\ncd sub && pytest",
         "cdk deploy",
     ] {
