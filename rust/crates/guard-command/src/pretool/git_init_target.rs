@@ -3,9 +3,8 @@
 //! Initializing a repository copies Git's template directory into it, and a
 //! configured `init.templateDir` can copy in hooks that later commands there
 //! would run. A target that does not exist yet, directly inside a temporary
-//! directory only the user can write, or directly in the sticky shared root
-//! or the user's private macOS temporary directory, gets a repository with
-//! Git's own samples and touches nothing else. A configured template directory, a
+//! directory only the user can write, gets a repository with Git's own
+//! samples and touches nothing else. A configured template directory, a
 //! conditional include that could set one for the new repository, a target
 //! that already exists and every other `init` option keep their review.
 
@@ -48,8 +47,7 @@ pub(crate) fn absolute_target(target: &str) -> bool {
 }
 
 /// A lone `git init` of a fresh directory below an owned temporary
-/// directory, or directly in a temporary root, with no template directory
-/// configured. The same parents `git worktree add` may check out into.
+/// directory, with no template directory configured.
 pub(in crate::pretool) fn exact_safe_command(
     model: &CanonicalCommandV1,
     context: super::PathContext<'_>,
@@ -90,7 +88,7 @@ pub(in crate::pretool) fn exact_safe_command(
             .is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound)
     };
     if name.to_string_lossy().starts_with('.')
-        || !super::git_routes::temporary_checkout_parent(&parent, context)
+        || !super::git_routes::owned_temporary_directory(&parent, context)
         || !fresh(target.as_path())
         || !fresh(parent.join(name).as_path())
     {
