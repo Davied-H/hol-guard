@@ -7,6 +7,9 @@ computation to fall back to: when the resident is unavailable, or a reply is
 unbound or malformed, :class:`NativePolicyIntegrityUnavailableError` is raised
 and the caller's operation fails closed.
 
+The same op decides startup's trusted control state from the store's local
+rows: :func:`native_prepare_policy_integrity_generation`.
+
 The reply digest binds every request field except ``integrity_key_b64``, so it
 never covers key bytes.
 """
@@ -121,6 +124,40 @@ def native_sign_policy_rows(
     return [_signature(outcome, item) for outcome, item in zip(outcomes, items, strict=True)]
 
 
+def native_prepare_policy_integrity_generation(
+    *,
+    guard_home: Path,
+    store_path: Path,
+    key: bytes,
+    key_id: str,
+    trusted_state: Mapping[str, object],
+) -> tuple[dict[str, object], bool]:
+    """The control state startup should trust, and whether every local row
+    still verifies at ``trusted_state``'s generation.
+
+    The resident reads ``store_path`` read-only, so the caller holds the
+    store's shared gate around this call.
+    """
+
+    _ensure_verifier_key(guard_home, key)
+    request = _request(key=key, key_id=key_id, verify=[], sign=[])
+    request["generation"] = {
+        "store_path": str(store_path),
+        "guard_home": str(guard_home),
+        "trusted_state": dict(trusted_state),
+    }
+    payload = _resident_payload(guard_home, request)
+    outcome = payload.get("generation")
+    if payload.get("verify") != [] or payload.get("sign") != [] or not isinstance(outcome, dict):
+        raise NativePolicyIntegrityUnavailableError()
+    prepared_state, still_matches = outcome.get("prepared_state"), outcome.get("still_matches")
+    if set(outcome) != {"prepared_state", "still_matches"} or not isinstance(prepared_state, dict):
+        raise NativePolicyIntegrityUnavailableError()
+    if not isinstance(still_matches, bool):
+        raise NativePolicyIntegrityUnavailableError()
+    return prepared_state, still_matches
+
+
 def _run(
     guard_home: Path,
     *,
@@ -219,16 +256,43 @@ def _request_chunk(
     field: str,
     items: list[dict[str, object]],
 ) -> list[Mapping[str, object]]:
+    request = _request(
+        key=key,
+        key_id=key_id,
+        verify=items if field == "verify" else [],
+        sign=items if field == "sign" else [],
+    )
+    payload = _resident_payload(guard_home, request)
+    outcomes = payload.get(field)
+    other = payload.get("sign" if field == "verify" else "verify")
+    if not isinstance(outcomes, list) or len(outcomes) != len(items) or other != []:
+        raise NativePolicyIntegrityUnavailableError()
+    if "generation" in payload or not all(isinstance(outcome, dict) for outcome in outcomes):
+        raise NativePolicyIntegrityUnavailableError()
+    return outcomes
+
+
+def _request(
+    *,
+    key: bytes | None,
+    key_id: str | None,
+    verify: list[dict[str, object]],
+    sign: list[dict[str, object]],
+) -> dict[str, object]:
     request: dict[str, object] = {
         "schema": _REQUEST_SCHEMA,
         "request_id": f"policy-integrity-rows-{uuid4().hex}",
-        "verify": items if field == "verify" else [],
-        "sign": items if field == "sign" else [],
+        "verify": verify,
+        "sign": sign,
     }
     if key is not None:
         request[_KEY_FIELD] = base64.urlsafe_b64encode(key).rstrip(b"=").decode("ascii")
     if key_id is not None:
         request["integrity_key_id"] = key_id
+    return request
+
+
+def _resident_payload(guard_home: Path, request: dict[str, object]) -> dict[str, object]:
     status = native_runtime_status()
     try:
         response = _resident_request(
@@ -245,13 +309,9 @@ def _request_chunk(
     except (TypeError, ValueError):
         response = None
     payload = _bound_payload(response, request, guard_home, status)
-    outcomes = payload.get(field) if payload is not None else None
-    other = payload.get("sign" if field == "verify" else "verify") if payload is not None else None
-    if not isinstance(outcomes, list) or len(outcomes) != len(items) or other != []:
+    if payload is None:
         raise NativePolicyIntegrityUnavailableError()
-    if not all(isinstance(outcome, dict) for outcome in outcomes):
-        raise NativePolicyIntegrityUnavailableError()
-    return outcomes
+    return payload
 
 
 def _bound_payload(
