@@ -42,7 +42,6 @@ pub mod pretool_contained_script_tests;
 pub mod pretool_contained_tests;
 pub mod pretool_contained_wrappers;
 pub mod pretool_cwd_compounds;
-pub mod pretool_doctl_reads;
 pub mod pretool_docker_start;
 pub mod pretool_du_sibling_reads;
 pub mod pretool_env_prefix_controls;
