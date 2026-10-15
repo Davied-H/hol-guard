@@ -428,7 +428,8 @@ class NativePolicySnapshotDirectLaneAck:
                 self._direct_lane_ack_path().unlink()
         except FileNotFoundError:
             pass
-        except OSError:
+        except (OSError, RuntimeError):
+            # A failed Windows binding or delete raises NativePolicySnapshotError.
             # The lease still bounds how long the resident can trust it.
             self._direct_lane_lease_expires_at_ms = 0
 
