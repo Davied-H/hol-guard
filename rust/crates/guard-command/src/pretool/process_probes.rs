@@ -303,6 +303,15 @@ fn missing_directory_protected(path: &std::path::Path, uid: u32) -> bool {
             .all(|path| steady_directory(path, uid))
 }
 
+/// What a `psql` read inherits from the session.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PsqlEnvironment {
+    /// No startup variable is set and the shell's HOME is `home_dir`.
+    pub startup_files_absent: bool,
+    /// No routing variable is set.
+    pub routing_unset: bool,
+}
+
 /// A directory entry, read without following a link, that belongs to this
 /// user or root and that other users cannot rename entries in.
 #[cfg(unix)]
@@ -314,11 +323,12 @@ fn steady_directory(path: &std::path::Path, uid: u32) -> bool {
     })
 }
 
-/// Variables that change which startup files psql reads or which server
-/// libpq reaches without `-h`, `-p` or `service=` on the command line.
-pub(in crate::pretool) const PSQL_VARIABLES: [&str; 7] = [
-    "PSQLRC",
-    "PGSYSCONFDIR",
+/// Variables that change which startup files psql reads; `-X` skips them.
+pub(in crate::pretool) const PSQL_STARTUP_VARIABLES: [&str; 2] = ["PSQLRC", "PGSYSCONFDIR"];
+
+/// Variables that change which server libpq reaches without `-h`, `-p` or
+/// `service=` on the command line, with or without `-X`.
+pub(in crate::pretool) const PSQL_ROUTING_VARIABLES: [&str; 5] = [
     "PGHOST",
     "PGHOSTADDR",
     "PGPORT",

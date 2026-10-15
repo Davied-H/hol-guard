@@ -39,7 +39,7 @@ pub(crate) fn benign_command_segments(
         npm_config_inert: context.npm_config_inert,
         shell_home_matches: context.shell_home_matches,
         ripgrep_config_absent: context.ripgrep_config_absent,
-        psqlrc_absent: context.psqlrc_absent,
+        psql_environment: context.psql_environment,
         cwd: cwd.as_deref().or(context.cwd),
     };
     let segment_benign: Vec<bool> = model

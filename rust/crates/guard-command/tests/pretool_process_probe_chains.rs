@@ -74,7 +74,7 @@ fn shell_with(home: &Path, command: &str, names: &[&str]) -> String {
                 npm_config_inert: false,
                 shell_home_matches: false,
                 ripgrep_config_absent: false,
-                psqlrc_absent: false,
+                psql_environment: Default::default(),
             },
             Some(&environment),
         )
@@ -152,6 +152,9 @@ fn skipping_startup_files_leaves_libpq_routing_variables_checked() {
     let home = home();
     let command = "psql -X -h localhost -c 'select 1'";
     assert_eq!(shell(&home, command), "allow", "{command}");
+    for name in ["PSQLRC", "PGSYSCONFDIR"] {
+        assert_eq!(shell_with(&home, command, &[name]), "allow", "{name}");
+    }
     for name in [
         "PGHOSTADDR",
         "PGHOST",

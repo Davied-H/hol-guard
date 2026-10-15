@@ -395,19 +395,24 @@ impl<'a> super::PathContext<'a> {
         // takes its server from the host, port and service variables. A
         // stamped name counts whatever its value; `psql_reads` checks
         // `home_dir` itself, so a stamped HOME must name that directory.
-        let psqlrc_absent = match execution_environment {
+        let unset = |variables: &[&str]| match execution_environment {
             Some(environment) => {
                 environment.has_valid_shape()
                     && !environment.environment_names.iter().any(|name| {
-                        super::safe_scalar::PSQL_VARIABLES
+                        variables
                             .iter()
                             .any(|variable| name.eq_ignore_ascii_case(variable))
                     })
-                    && (environment.home.is_none() || shell_home_matches)
             }
-            None => super::safe_scalar::PSQL_VARIABLES
+            None => variables
                 .iter()
                 .all(|variable| std::env::var_os(variable).is_none()),
+        };
+        let psql_environment = super::safe_scalar::PsqlEnvironment {
+            startup_files_absent: unset(&super::safe_scalar::PSQL_STARTUP_VARIABLES)
+                && execution_environment
+                    .is_none_or(|environment| environment.home.is_none() || shell_home_matches),
+            routing_unset: unset(&super::safe_scalar::PSQL_ROUTING_VARIABLES),
         };
         Self {
             home_dir,
@@ -417,7 +422,7 @@ impl<'a> super::PathContext<'a> {
             npm_config_inert,
             shell_home_matches,
             ripgrep_config_absent,
-            psqlrc_absent,
+            psql_environment,
         }
     }
 }

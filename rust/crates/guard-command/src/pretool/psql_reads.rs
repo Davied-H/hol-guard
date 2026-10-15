@@ -105,14 +105,15 @@ pub(in crate::pretool) fn safe_psql_arguments(
     arguments: &[String],
     context: crate::pretool::PathContext<'_>,
 ) -> bool {
-    context.psqlrc_absent
+    context.psql_environment.routing_unset
         && admitted(arguments, trusted_default_socket, || {
-            startup_files_absent(
-                context.home_dir,
-                std::env::var_os("PSQLRC").as_deref(),
-                std::env::var_os("HOME").as_deref(),
-                std::env::var_os("APPDATA").as_deref(),
-            )
+            context.psql_environment.startup_files_absent
+                && startup_files_absent(
+                    context.home_dir,
+                    std::env::var_os("PSQLRC").as_deref(),
+                    std::env::var_os("HOME").as_deref(),
+                    std::env::var_os("APPDATA").as_deref(),
+                )
         })
 }
 
@@ -173,10 +174,9 @@ fn admitted(
     })
 }
 
-/// No startup file psql would run without `-X`: `PSQLRC` unset or empty, and
-/// no `.psqlrc` or `.psqlrc-<version>` in the account home or the shell's
-/// `HOME` (`psqlrc.conf` below `%APPDATA%\postgresql` on Windows). Names are
-/// compared without case, as a case-insensitive filesystem opens them.
+/// No startup file psql would run without `-X`: `PSQLRC` unset or empty, no
+/// `.psqlrc[-<version>]` in the account or shell `HOME` (`%APPDATA%\postgresql\psqlrc.conf`
+/// on Windows), names compared without case as a case-insensitive filesystem opens them.
 fn startup_files_absent(
     home_dir: Option<&str>,
     psqlrc: Option<&std::ffi::OsStr>,
