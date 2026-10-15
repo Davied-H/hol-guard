@@ -171,7 +171,13 @@ fn outer_sources_safe(
     for (file, base, git) in files {
         // `rg` honors Git ignore files only inside a repository.
         if !git || repository.is_some() {
-            rules.extend(ignore_rules(&file, &base, git, negations)?);
+            // `rg` before 15 skips slash rules from files above the search
+            // root, so only a root-level file's path rules may prune.
+            let found = ignore_rules(&file, &base, git, negations)?;
+            rules.extend(found.into_iter().filter(|rule| match &rule.target {
+                Target::Name(_) => true,
+                Target::Path(_) => base == root,
+            }));
         }
     }
     Some((repository.is_some(), rules))

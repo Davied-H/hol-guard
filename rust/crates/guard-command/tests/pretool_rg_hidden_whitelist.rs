@@ -295,3 +295,20 @@ fn a_pattern_file_search_checks_the_roots_after_it() {
         "review",
     );
 }
+
+#[test]
+fn a_path_rule_above_the_search_root_does_not_prune() {
+    let fixture = fixture(&[(
+        "subdir",
+        &[
+            (".gitignore", "rust/target\n"),
+            ("rust/target/.ignore", "!.env\n"),
+            ("rust/target/.env", "KEY=synthetic\n"),
+            ("rust/src/lib.rs", "pub fn f() {}\n"),
+        ],
+    )]);
+    // `rg` before 15 skips slash rules from parent ignore files, so a
+    // search from `rust` enters `target` and reads its `.env`.
+    assert_actions(&fixture, "subdir/rust", &["rg -n foo"], "review");
+    assert_actions(&fixture, "subdir/rust", &["rg -n foo src"], "allow");
+}
