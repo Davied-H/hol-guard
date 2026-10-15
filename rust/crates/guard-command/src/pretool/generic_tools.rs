@@ -190,8 +190,18 @@ fn is_file_read_tool(tool: &str) -> bool {
 
 /// Claude Code's `PowerShell` tool always runs PowerShell, whatever the host,
 /// so its command is parsed as PowerShell rather than guessed from the host.
+/// A namespaced spelling such as `functions.PowerShell` names the same tool;
+/// an MCP server's tool does not.
 pub(super) fn command_dialect(tool: Option<&str>) -> &'static str {
-    if tool.is_some_and(|tool| tool.trim().eq_ignore_ascii_case("powershell")) {
+    let powershell = tool.is_some_and(|tool| {
+        let tool = tool.trim();
+        !is_mcp_tool(tool)
+            && tool
+                .rsplit('.')
+                .next()
+                .is_some_and(|leaf| leaf.eq_ignore_ascii_case("powershell"))
+    });
+    if powershell {
         "powershell"
     } else {
         "posix"
