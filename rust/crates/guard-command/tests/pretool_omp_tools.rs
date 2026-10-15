@@ -1392,3 +1392,62 @@ fn language_server_changes_are_reviewed_before_they_run() {
     );
     assert_ne!(result.reason_code, "native_omp_lsp_change_review");
 }
+
+#[test]
+fn scratch_folders_at_the_top_of_the_session_folder_are_readable() {
+    let f = fixture();
+    for file in [
+        "project/.tmp/report-smoke/cohorts.jsonl",
+        "project/.temp/a.txt",
+        "project/.scratch/notes.md",
+        "project/.tmp/.env",
+        "project/.tmp/.cache/x.txt",
+        "project/.tmp/credentials.json",
+        "project/.foo/a.txt",
+        "project/src/.tmp/a.txt",
+        ".tmp/a.txt",
+    ] {
+        write(f.home.join(file), "synthetic fixture\n");
+    }
+    std::os::unix::fs::symlink(f.home.join(".ssh"), f.project.join(".tmp/keys")).unwrap();
+    let report = f.project.join(".tmp/report-smoke");
+    for (tool, input) in [
+        ("read", json!({"path": ".tmp/report-smoke/cohorts.jsonl"})),
+        ("read", json!({"path": ".temp/a.txt"})),
+        ("read", json!({"path": ".scratch/notes.md"})),
+        ("ls", json!({"path": ".tmp"})),
+        ("ls", json!({"path": ".tmp/report-smoke"})),
+        (
+            "glob",
+            json!({"path": report, "gitignore": false, "hidden": true, "limit": 20}),
+        ),
+    ] {
+        let result = omp(&f, tool, input.clone());
+        assert!(allowed(&result), "{tool} {input}: {}", result.reason_code);
+    }
+    for (tool, input) in [
+        ("read", json!({"path": ".tmp/.env"})),
+        ("read", json!({"path": ".tmp/.cache/x.txt"})),
+        ("read", json!({"path": ".tmp/credentials.json"})),
+        ("read", json!({"path": ".tmp/keys/id_rsa"})),
+        ("read", json!({"path": ".foo/a.txt"})),
+        ("read", json!({"path": "src/.tmp/a.txt"})),
+        ("read", json!({"path": "~/.tmp/a.txt"})),
+        ("ls", json!({"path": ".tmp/keys"})),
+        ("ls", json!({"path": ".foo"})),
+    ] {
+        let result = omp(&f, tool, input.clone());
+        assert!(!allowed(&result), "{tool} {input}");
+    }
+    // With the home as the session folder, `.tmp` is a home dot folder.
+    let from_home = evaluate_pre_tool_envelope_with_context(
+        "omp",
+        "PreToolUse",
+        &json!({"tool_name": "read", "tool_input": {"path": ".tmp/a.txt"}}),
+        None,
+        None,
+        f.home.to_str(),
+        f.home.to_str(),
+    );
+    assert!(!allowed(&from_home));
+}
