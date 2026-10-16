@@ -561,6 +561,10 @@
         "reason": "Reviewed and retained in runtime scope: the direct-evidence drain hands each MCP tool call the native relay decided to the receipt writers the Python MCP proxy calls. It validates the queued record, records a forward or block exactly as the resident decided it, and drops any record it cannot validate; it never recomputes a verdict."
       },
       {
+        "path": "src/codex_plugin_scanner/guard/daemon/mcp_relay_package_evidence_drain.py",
+        "reason": "Reviewed and retained in runtime scope: the package half of the same drain. It writes the receipt the proxy's package lane writes, against the package request's own artifact, rebuilding that artifact from the parser input the resident read and dropping any record whose rebuilt artifact is not the one the resident decided; it never recomputes a verdict."
+      },
+      {
         "path": [
           "src/codex_plugin_scanner/guard/cli/codex_live_hook_completion.py",
           "src/codex_plugin_scanner/guard/cli/commands.py",
