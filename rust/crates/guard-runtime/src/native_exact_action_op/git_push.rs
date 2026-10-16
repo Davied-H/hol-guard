@@ -347,48 +347,87 @@ fn check_ssh_config(text: &str, allows_system_include: bool) -> Proof<()> {
 }
 
 /// Every file that decides which commits the refspecs send: `HEAD`,
-/// `packed-refs` and each loose ref a short name can resolve to.
+/// `packed-refs` and each loose ref a source can resolve to. A name may be
+/// per-worktree (`refs/worktree/`, `refs/bisect/`, `$GIT_DIR/<name>`) or
+/// shared, so a linked worktree pins it under both its git dir and the common
+/// dir. A symbolic loose ref names a file this does not follow, so it fails
+/// closed, and so does a pseudoref (`ORIG_HEAD`, `FETCH_HEAD`, ...), which
+/// everyday commands rewrite.
 fn ref_state(git_dir: &str, common_dir: &str, sources: &[&str]) -> Proof<BTreeMap<String, String>> {
     if fs_path::is_dir(&fs_path::join(common_dir, "reftable")) {
         return Err(UNPROVEN_LAUNCH);
     }
     let head = fs_path::join(git_dir, "HEAD");
-    let mut paths = vec![head.clone(), fs_path::join(common_dir, "packed-refs")];
+    let mut names = Vec::new();
     for source in sources {
         if *source == "HEAD" {
             let text = fs_path::read_bounded(&head, MAX_CONFIG_BYTES).ok_or(UNPROVEN_LAUNCH)?;
-            let text = String::from_utf8_lossy(&text);
-            if let Some(target) = text.trim().strip_prefix("ref: ") {
-                if !target.starts_with("refs/") || !is_plain_ref(target) {
-                    return Err(UNPROVEN_LAUNCH);
-                }
-                paths.push(fs_path::join(common_dir, target));
+            if let Some(target) = symbolic_target(&text)? {
+                names.push(target);
             }
+        } else if is_pseudoref(source) {
+            return Err(MUTABLE_LAUNCHER);
         } else if source.starts_with("refs/") {
-            paths.push(fs_path::join(common_dir, source));
+            names.push((*source).to_owned());
         } else {
-            for name in [
+            names.extend([
+                (*source).to_owned(),
                 format!("refs/{source}"),
                 format!("refs/tags/{source}"),
                 format!("refs/heads/{source}"),
                 format!("refs/remotes/{source}"),
                 format!("refs/remotes/{source}/HEAD"),
-            ] {
-                paths.push(fs_path::join(common_dir, &name));
-            }
+            ]);
         }
     }
     let mut digests = BTreeMap::new();
-    for path in paths {
-        let digest = if fs_path::is_file(&path) {
-            let data = fs_path::read_bounded(&path, MAX_CONFIG_BYTES).ok_or(UNPROVEN_LAUNCH)?;
-            fs_path::sha256_hex(&data)
-        } else {
-            "absent".to_owned()
-        };
-        digests.insert(path, digest);
+    digests.insert(head.clone(), file_digest(&head)?);
+    let packed = fs_path::join(common_dir, "packed-refs");
+    digests.insert(packed.clone(), file_digest(&packed)?);
+    for name in names {
+        for dir in [git_dir, common_dir] {
+            let path = fs_path::join(dir, &name);
+            if fs_path::is_file(&path) {
+                let text = fs_path::read_bounded(&path, MAX_CONFIG_BYTES).ok_or(UNPROVEN_LAUNCH)?;
+                if symbolic_target(&text)?.is_some() {
+                    return Err(UNPROVEN_LAUNCH);
+                }
+            }
+            digests.insert(path.clone(), file_digest(&path)?);
+        }
     }
     Ok(digests)
+}
+
+/// `ORIG_HEAD`, `FETCH_HEAD`, `MERGE_HEAD` and the like: git resolves an
+/// all-caps name from `$GIT_DIR` before any `refs/` path.
+fn is_pseudoref(name: &str) -> bool {
+    !name.contains('/')
+        && name.chars().any(|character| character.is_ascii_uppercase())
+        && name.chars().all(|character| {
+            character.is_ascii_uppercase() || character.is_ascii_digit() || character == '_'
+        })
+}
+
+/// The target of a `ref: <name>` file, or `None` for a direct object id.
+fn symbolic_target(data: &[u8]) -> Proof<Option<String>> {
+    let text = String::from_utf8_lossy(data);
+    let Some(target) = text.trim().strip_prefix("ref:") else {
+        return Ok(None);
+    };
+    let target = target.trim();
+    if !target.starts_with("refs/") || !is_plain_ref(target) {
+        return Err(UNPROVEN_LAUNCH);
+    }
+    Ok(Some(target.to_owned()))
+}
+
+fn file_digest(path: &str) -> Proof<String> {
+    if !fs_path::is_file(path) {
+        return Ok("absent".to_owned());
+    }
+    let data = fs_path::read_bounded(path, MAX_CONFIG_BYTES).ok_or(UNPROVEN_LAUNCH)?;
+    Ok(fs_path::sha256_hex(&data))
 }
 
 /// What a `git push` reads from config beyond the read-only helpers: the
