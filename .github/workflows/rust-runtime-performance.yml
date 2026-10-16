@@ -34,7 +34,7 @@ jobs:
           test "$CACHE_HIT" = true
           test -s "$RUNNER_TEMP/runtime-test-archive.tar.zst"
           echo "exact_cache_key=$CACHE_KEY"
-          git diff --exit-code ce0a800162118331cd852951ef754d959fe1ecbe -- rust scripts contributions contracts spec tests/fixtures src/codex_plugin_scanner/guard/contracts .cargo .github/actions .github/workflows/ci.yml
+          git diff --exit-code 05038cc40c416e0c208f429a45e1bf31837a461a -- rust scripts contributions contracts spec tests/fixtures src/codex_plugin_scanner/guard/contracts .cargo .github/actions .github/workflows/ci.yml
       - uses: ./.github/actions/setup-rust
         with:
           cache-key: ci-workspace-test-runtime-${{ matrix.partition }}
