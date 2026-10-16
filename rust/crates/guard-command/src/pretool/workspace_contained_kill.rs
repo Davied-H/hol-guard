@@ -5,24 +5,35 @@
 //! daemon this session knows nothing about, so it keeps its review.
 
 /// Whether `arguments` (after `kill`) name only the shell's own jobs.
+///
+/// `kill` reads a signal only in its first word. Every word after that is an
+/// operand, so the `-1` in `kill -9 -1 %1` is the pid that signals every
+/// process the user can reach, and the `-4821` in `kill -9 -4821 %1` is a
+/// process group. Reading them as options would have let both run beside a
+/// job specification with no review at all.
 pub(super) fn jobs_only(arguments: &[String]) -> bool {
     let mut words = arguments.iter();
     let mut jobs = 0;
+    let mut first = true;
     while let Some(word) = words.next() {
-        // `-s TERM` and `-n 9` carry the signal in the next word.
-        if word == "-s" || word == "-n" {
-            if words.next().is_none() {
-                return false;
+        if std::mem::take(&mut first) {
+            // `-s TERM` and `-n 9` carry the signal in the next word.
+            if word == "-s" || word == "-n" {
+                if words.next().is_none() {
+                    return false;
+                }
+                continue;
             }
-            continue;
-        }
-        if let Some(option) = word.strip_prefix('-') {
-            // `-l` and `-L` list signal names and reach no process, but they
-            // also name no job, so they are not this form.
-            if option.is_empty() || option.starts_with('l') || option.starts_with('L') {
-                return false;
+            // `--` ends the options without naming a signal.
+            if word == "--" {
+                continue;
             }
-            continue;
+            if let Some(signal) = word.strip_prefix('-') {
+                if !signal_name(signal) {
+                    return false;
+                }
+                continue;
+            }
         }
         if !job(word) {
             return false;
@@ -30,6 +41,17 @@ pub(super) fn jobs_only(arguments: &[String]) -> bool {
         jobs += 1;
     }
     jobs > 0
+}
+
+/// A signal written against the first word: `9`, `TERM` or `SIGTERM`. `-l`
+/// and `-L` list signal names and reach no process, but they also name no
+/// job, so they are not this form.
+fn signal_name(signal: &str) -> bool {
+    !signal.is_empty()
+        && !signal.starts_with(['l', 'L'])
+        && signal
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric())
 }
 
 /// A job specification: `%1`, `%%`, `%+`, `%-`, `%vite` or `%?build`. A name

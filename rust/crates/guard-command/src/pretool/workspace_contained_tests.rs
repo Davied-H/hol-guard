@@ -64,6 +64,8 @@ fn unproven_local_commands_run_in_the_workspace_sandbox_on_macos() {
         "kill %1",
         "kill -9 %1",
         "kill -s TERM %vite",
+        "kill -SIGTERM %1",
+        "kill -- %1",
         "kill %+ %-",
         "rm -f init_repo.py",
         "rm a.py && rm -rf __pycache__",
@@ -204,6 +206,12 @@ fn commands_with_network_privilege_or_escape_stay_at_review() {
         "kill %1 4821",
         "kill -l",
         "kill %$name",
+        // Only the first word is a signal: every `-N` after it is a pid or a
+        // process group, and both reach past this shell's own jobs.
+        "kill -9 -1 %1",
+        "kill -9 -4821 %1",
+        "kill -s TERM -1 %1",
+        "kill -- -1 %1",
         "echo $(x)",
         "echo hi > ../out",
         "git reset --hard",
