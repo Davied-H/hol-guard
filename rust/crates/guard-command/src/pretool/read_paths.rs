@@ -12,7 +12,9 @@ mod hidden_listing;
 mod omp_json_query;
 #[path = "omp_read_targets.rs"]
 mod omp_targets;
-pub(super) use hidden_listing::{home_hidden_directory, repository_hidden_directory};
+pub(super) use hidden_listing::{
+    home_hidden_content_read, home_hidden_directory, repository_hidden_directory,
+};
 #[path = "private_temporary_workspace.rs"]
 mod private_temporary;
 #[path = "workspace_scratch_reads.rs"]

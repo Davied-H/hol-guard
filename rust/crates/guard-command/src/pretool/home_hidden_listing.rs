@@ -16,7 +16,9 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::credential_store_names::clears_store_screen;
+use crate::credential_store_names::{
+    clears_store_screen, hidden_content_read_allowed, lowered_names,
+};
 pub(super) use crate::credential_store_names::{CREDENTIAL_STORE_NAMES, HARNESS_HOME_NAMES};
 
 /// Whether `value` names an existing directory below a hidden component of
@@ -26,6 +28,33 @@ pub(in crate::pretool) fn home_hidden_directory(
     home_dir: Option<&str>,
     cwd: Option<&str>,
 ) -> bool {
+    let Some((canonical, relative)) = resolved_home_entry(value, home_dir, cwd) else {
+        return false;
+    };
+    let Some(first) = relative.components().next() else {
+        return false;
+    };
+    // Only the home entry itself is hidden: a dot-directory nested deeper
+    // (`~/.nvm/.cache`) is private state of the tool that owns it.
+    let mut names = relative.components().skip(1);
+    canonical.is_dir()
+        && first.as_os_str().to_string_lossy().starts_with('.')
+        && !names.any(|name| name.as_os_str().to_string_lossy().starts_with('.'))
+        && clears_store_screen(&relative)
+        && super::super::resolved_location_allowed(&canonical, home_dir, cwd, false)
+}
+
+/// The canonical path of `value` and its path relative to the home directory,
+/// for a spelling that names an entry of the home directory and nothing else.
+///
+/// The spelled path must be the resolved one: a link anywhere below the home
+/// directory could dress another store, or the home directory itself, as an
+/// ordinary dot-directory.
+fn resolved_home_entry(
+    value: &str,
+    home_dir: Option<&str>,
+    cwd: Option<&str>,
+) -> Option<(PathBuf, PathBuf)> {
     if value.is_empty()
         || value.len() > 4096
         || value.starts_with('-')
@@ -41,38 +70,65 @@ pub(in crate::pretool) fn home_hidden_directory(
         || value.split(['/', '\\']).any(|part| part == "..")
         || !super::super::verified_path_context(home_dir, cwd)
     {
-        return false;
+        return None;
     }
-    let (Some(raw_home), Some(expanded)) = (home_dir, expanded(value, home_dir, cwd)) else {
-        return false;
-    };
-    let Ok(home) = std::fs::canonicalize(raw_home) else {
-        return false;
-    };
-    let Ok(canonical) = std::fs::canonicalize(&expanded) else {
-        return false;
-    };
-    // The spelled path must be the resolved one: a link anywhere below the
-    // home directory could dress another store, or the home directory
-    // itself, as an ordinary dot-directory.
-    let Some(relative) = expanded
+    let raw_home = home_dir?;
+    let expanded = expanded(value, home_dir, cwd)?;
+    let home = std::fs::canonicalize(raw_home).ok()?;
+    let canonical = std::fs::canonicalize(&expanded).ok()?;
+    let relative = expanded
         .strip_prefix(raw_home)
         .or_else(|_| expanded.strip_prefix(&home))
         .ok()
-        .filter(|relative| home.join(relative) == canonical)
-    else {
+        .filter(|relative| home.join(relative) == canonical)?;
+    Some((canonical.clone(), relative.to_path_buf()))
+}
+
+/// Paths a narrower rule already answers, with bounds this screen cannot see.
+///
+/// [`crate::sfrs_agent_guidance`] admits `sed -n '1,200p' ~/.hol-support/SAFETY.md`
+/// and refuses the same file at 501 lines or over a reversed range, and the
+/// skill-document rule answers a `SKILL.md` the same way. A target screen sees
+/// neither bound, so where one of those rules owns the path its verdict stands
+/// rather than being given a second, looser answer here.
+fn narrow_guidance_rule_owns(lowered: &[String]) -> bool {
+    match lowered.last().map(String::as_str) {
+        Some("skill.md") => lowered
+            .windows(2)
+            .any(|pair| pair[1] == "skills" && pair[0].starts_with('.')),
+        Some("safety.md") => lowered.iter().any(|part| part == ".hol-support"),
+        _ => false,
+    }
+}
+
+/// Whether `value` names an existing file below a hidden entry of the home
+/// directory that returns no credential.
+///
+/// The listing screen above answers `ls ~/.agents/skills/`; this answers the
+/// read that follows it, `cat ~/.agents/skills/release-check/scripts/run.sh`.
+/// A hidden component used to end that lookup on its own, so an ordinary
+/// source read under a toolchain, a shared skill tree or a repository's own
+/// workflows collected an approval nobody answered.
+///
+/// What a hidden component has to clear is
+/// [`hidden_content_read_allowed`]: the stores the listing screen refuses, the
+/// harness homes entered anywhere but their document side, and the file names
+/// a token is normally written under. The path itself is canonicalized and
+/// compared with the spelling first, so a link cannot dress a credential store
+/// as an ordinary dot-directory.
+pub(in crate::pretool) fn home_hidden_content_read(
+    value: &str,
+    home_dir: Option<&str>,
+    cwd: Option<&str>,
+) -> bool {
+    let Some((canonical, relative)) = resolved_home_entry(value, home_dir, cwd) else {
         return false;
     };
-    let Some(first) = relative.components().next() else {
-        return false;
-    };
-    // Only the home entry itself is hidden: a dot-directory nested deeper
-    // (`~/.nvm/.cache`) is private state of the tool that owns it.
-    let mut names = relative.components().skip(1);
-    canonical.is_dir()
-        && first.as_os_str().to_string_lossy().starts_with('.')
-        && !names.any(|name| name.as_os_str().to_string_lossy().starts_with('.'))
-        && clears_store_screen(relative)
+    let lowered = lowered_names(&relative);
+    canonical.is_file()
+        && lowered.first().is_some_and(|first| first.starts_with('.'))
+        && hidden_content_read_allowed(&lowered)
+        && !narrow_guidance_rule_owns(&lowered)
         && super::super::resolved_location_allowed(&canonical, home_dir, cwd, false)
 }
 

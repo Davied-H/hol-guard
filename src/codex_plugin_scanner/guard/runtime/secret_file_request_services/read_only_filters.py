@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import os
 import re
-from itertools import pairwise
 from pathlib import Path
 
-from ..credential_store_names import hidden_content_read_allowed
 from ..false_positive_rules import (
     SOURCE_INSPECTION_BENIGN_DOTFILES,
     SOURCE_INSPECTION_EXTENSIONS,
@@ -375,22 +373,6 @@ def _read_only_lookup_arg_is_redirection(arg: str) -> bool:
     return _split_attached_redirection_token(arg) is not None
 
 
-def _narrow_guidance_rule_owns(lowered: list[str]) -> bool:
-    """Whether a narrower rule already answers this path, with bounds this one cannot see.
-
-    ``agent_guidance_reads`` admits ``sed -n '1,200p' ~/.hol-support/SAFETY.md``
-    and refuses the same file at 501 lines, over a reversed range, or across a
-    symlink that leaves the home directory; ``target_is_known_skill_doc_path``
-    answers a skill document the same way above. A target screen sees none of
-    that, so where one of those rules owns the path its verdict stands rather
-    than being given a second, looser answer here.
-    """
-    last = lowered[-1] if lowered else ""
-    if last == "skill.md":
-        return any(parent.startswith(".") and child == "skills" for parent, child in pairwise(lowered))
-    return last == "safety.md" and ".hol-support" in lowered
-
-
 def _read_only_lookup_target_is_safe(target: str, *, allow_dirs: bool, home_dir: Path | None = None) -> bool:
     stripped = target.strip().strip("'\"")
     if stripped in {"", "."}:
@@ -410,20 +392,8 @@ def _read_only_lookup_target_is_safe(target: str, *, allow_dirs: bool, home_dir:
         return False
     if target_is_known_skill_doc_path(stripped, home_dir=home_dir):
         return True
-    # A hidden component used to end the lookup on its own, which is why an
-    # ordinary `ls ~/.nvm/versions/node/v25.2.1/lib` collected a review nobody
-    # answered. What a hidden component has to clear is the credential screen,
-    # not the fact of being hidden: the stores the listing screen refuses, and
-    # the file names a token is normally written under.
     hidden_parts = [part for part in lowered_parts if part.startswith(".")]
-    credential_screen_clears = hidden_content_read_allowed(lowered_parts) and not _narrow_guidance_rule_owns(
-        lowered_parts
-    )
-    if (
-        hidden_parts
-        and not all(part in SOURCE_INSPECTION_BENIGN_DOTFILES for part in hidden_parts)
-        and not credential_screen_clears
-    ):
+    if hidden_parts and not all(part in SOURCE_INSPECTION_BENIGN_DOTFILES for part in hidden_parts):
         return False
     if any(part in SOURCE_INSPECTION_PARTS for part in lowered_parts):
         return True
