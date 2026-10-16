@@ -101,7 +101,7 @@ pub(super) fn parse_yarn_intent(
             "yarn",
             "install",
             tokens,
-            collect_package_specs(&working_tokens[2..])
+            collect_package_specs_with(&working_tokens[2..], YARN_VALUE_OPTIONS)
                 .iter()
                 .map(|s| js_target(s))
                 .collect(),
@@ -130,7 +130,7 @@ pub(super) fn parse_bun_intent(
         "bun",
         "install",
         tokens,
-        collect_package_specs(&tokens[2..])
+        collect_package_specs_with(&tokens[2..], BUN_VALUE_OPTIONS)
             .iter()
             .map(|s| js_target(s))
             .collect(),

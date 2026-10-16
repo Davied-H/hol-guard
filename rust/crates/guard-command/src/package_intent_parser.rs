@@ -70,6 +70,10 @@ mod tests;
 #[path = "package_intent_parser/uvx_value_options_tests.rs"]
 mod uvx_value_options_tests;
 
+#[cfg(test)]
+#[path = "package_intent_parser/bun_value_options_tests.rs"]
+mod bun_value_options_tests;
+
 // ---------------------------------------------------------------------------
 // Module constants  (package_intent_parser.py :51-131)
 // ---------------------------------------------------------------------------
