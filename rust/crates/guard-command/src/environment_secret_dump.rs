@@ -45,6 +45,10 @@ static ENV_DUMPS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
     .map(compile_python_pattern)
     .collect()
 });
+/// What follows `process.env` in a dotted read of one port variable, such as
+/// `PORT` or `DEV_PORT`, on lowercased text.
+static PORT_MEMBER: LazyLock<Regex> =
+    LazyLock::new(|| compile_fancy(r"^\s*\.\s*(?:[a-z0-9]+_)*port(?![a-z0-9_$])"));
 static PYTHON_NAME: LazyLock<Regex> =
     LazyLock::new(|| compile_fancy(r"^pythonw?(?:\d+(?:\.\d+)*)?(?:\.exe)?$"));
 static ASSIGNMENT: LazyLock<Regex> = LazyLock::new(|| compile_fancy(r"^[A-Za-z_][A-Za-z0-9_]*=.*"));
@@ -93,6 +97,15 @@ pub fn printenv_may_print_secret(text: &str) -> bool {
                     || sensitive_name(name).unwrap_or(true)
             })
     })
+}
+
+/// Whether lowercased `text` reads the Node process environment other than
+/// through dotted reads of port variables (`process.env.PORT`): the whole
+/// object, a computed key, or any other variable. A port variable holds a
+/// port number, and a dev server reads it to choose where to listen.
+pub fn node_environment_read_beyond_ports(text: &str) -> bool {
+    text.match_indices("process.env")
+        .any(|(start, found)| !matches(&PORT_MEMBER, &text[start + found.len()..]).unwrap_or(false))
 }
 fn script_reads_secrets(script: &str) -> Result<bool, &'static str> {
     for pattern in ENV_DUMPS.iter() {

@@ -425,7 +425,8 @@ pub(super) fn credential_keyword_text(value: &str) -> bool {
 }
 
 /// Credential locations and environment reads: `.env`, `~/.ssh`,
-/// `process.env` and the like.
+/// `process.env` and the like. A dotted read of a port variable such as
+/// `process.env.PORT` reads no secret.
 fn sensitive_location_text(value: &str) -> bool {
     let lowered = normalized_haystack(value);
     let needles = [
@@ -456,7 +457,7 @@ fn sensitive_location_text(value: &str) -> bool {
     needles.iter().any(|needle| lowered.contains(needle))
         || crate::environment_secret_dump::printenv_may_print_secret(&lowered)
         || lowered.contains("os.environ")
-        || lowered.contains("process.env")
+        || crate::environment_secret_dump::node_environment_read_beyond_ports(&lowered)
 }
 
 fn sensitive_path_argument(value: &str) -> bool {
