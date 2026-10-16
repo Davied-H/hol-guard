@@ -76,9 +76,9 @@ fn shim_refused() -> &'static Regex {
             r"|SourceFileLoader|SourcelessFileLoader|ExtensionFileLoader|FunctionType|CodeType",
             r"|getattr|setattr|delattr|globals|vars|builtins|attrgetter|methodcaller",
             r"|rename|renames|unlink|rmtree|symlink|symlink_to|hardlink_to|link|truncate|ftruncate",
-            r"|makedirs|mkdir|copyfile|copytree|copy2|move|write|writelines|write_text|write_bytes",
+            r"|makedirs|mkdir|rmdir|removedirs|copyfile|copytree|copy2|move|write|writelines|write_text|write_bytes",
             r"|writestr|FileIO|mmap|chmod|chown|utime|extractall|unpack_archive",
-            r"|subprocess|ctypes|marshal|pickle|codecs)\b|\bos\s*\.\s*replace\b",
+            r"|subprocess|ctypes|marshal|pickle|codecs)\b|\.\s*replace\b",
         ),
     )
 }

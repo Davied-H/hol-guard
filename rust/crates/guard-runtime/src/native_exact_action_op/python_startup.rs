@@ -88,6 +88,7 @@ impl Graph<'_> {
             if scanned.writes {
                 return Err(MUTABLE_LAUNCHER);
             }
+            self.startup_replaces = self.startup_replaces.join(scanned.replaces);
             let code = readable(text).ok_or(MUTABLE_LAUNCHER)?;
             self.startup_code.push((path.to_owned(), references(&code)));
             scanned.imports
@@ -198,6 +199,7 @@ impl Graph<'_> {
                 if scanned.writes {
                     return Err(MUTABLE_LAUNCHER);
                 }
+                self.startup_replaces = self.startup_replaces.join(scanned.replaces);
                 let code = readable(&rewritten).ok_or(MUTABLE_LAUNCHER)?;
                 self.startup_code.push((path.to_owned(), references(&code)));
                 for name in named {
@@ -271,6 +273,9 @@ impl Graph<'_> {
         }
         for directory in layout.library.iter().chain(&path_directories) {
             self.add_customize(&path_directories, directory)?;
+        }
+        if self.startup_replaces.writes() {
+            return Err(MUTABLE_LAUNCHER);
         }
         // Only the shim itself may call a function that loads a package.
         let called = self.shim_loaders.iter().any(|(path, loaders)| {

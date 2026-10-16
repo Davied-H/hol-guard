@@ -9,6 +9,9 @@ use std::sync::OnceLock;
 
 use regex::Regex;
 
+use replace::call_arguments;
+pub(super) use replace::Replaces;
+
 /// One import statement's module: the leading dots of a relative import,
 /// the dotted name, and the names a `from` import takes from it.
 pub(super) struct Import {
@@ -23,6 +26,8 @@ pub(super) struct Scan {
     /// Whether the file can write files: a graph that writes can replace a
     /// module before an import loads it.
     pub(super) writes: bool,
+    /// What its `.replace` calls can do, which depends on the whole graph.
+    pub(super) replaces: Replaces,
 }
 
 fn pattern(cell: &'static OnceLock<Regex>, source: &str) -> &'static Regex {
@@ -124,51 +129,6 @@ fn opens_for_writing(code: &str, source: &str) -> bool {
             }
             positional += 1;
             (method || positional > 1) && !reading_mode().is_match(text)
-        })
-    })
-}
-
-/// The byte ranges of the arguments of the call whose parentheses open just
-/// before `start`, or `None` when the call does not close.
-fn call_arguments(code: &str, start: usize) -> Option<Vec<std::ops::Range<usize>>> {
-    let mut depth = 0usize;
-    let mut arguments = Vec::new();
-    let mut from = start;
-    for (offset, byte) in code[start..].bytes().enumerate() {
-        let at = start + offset;
-        match byte {
-            b'(' | b'[' | b'{' => depth += 1,
-            b')' | b']' | b'}' if depth > 0 => depth -= 1,
-            b')' => {
-                arguments.push(from..at);
-                return Some(arguments);
-            }
-            b',' if depth == 0 => {
-                arguments.push(from..at);
-                from = at + 1;
-            }
-            _ => {}
-        }
-    }
-    None
-}
-
-fn replace_call() -> &'static Regex {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    pattern(&CELL, r"\.\s*replace\s*\(")
-}
-
-/// Whether some `.replace` call can move a file: `Path.replace(target)` takes
-/// one argument, where the string and bytes forms take an old and a new value.
-fn replaces_path(code: &str) -> bool {
-    replace_call().find_iter(code).any(|found| {
-        call_arguments(code, found.end()).is_none_or(|arguments| {
-            let arguments: Vec<&str> = arguments
-                .into_iter()
-                .map(|range| code[range].trim())
-                .filter(|argument| !argument.is_empty())
-                .collect();
-            arguments.len() < 2 || arguments.iter().any(|argument| argument.starts_with('*'))
         })
     })
 }
@@ -369,11 +329,13 @@ pub(super) fn scan(source: &str) -> Option<Scan> {
     if forbidden().is_match(&code) {
         return None;
     }
+    let replaces = replace::replaces(&code);
     Some(Scan {
         imports: imports_in(&code)?,
         writes: writes_files().is_match(&code)
             || opens_for_writing(&code, source)
-            || replaces_path(&code),
+            || replaces.writes(),
+        replaces,
     })
 }
 
@@ -432,6 +394,8 @@ pub(super) fn imports_in(code: &str) -> Option<Vec<Import>> {
     Some(imports)
 }
 
+#[path = "python_replace.rs"]
+mod replace;
 #[cfg(test)]
 #[path = "python_source_tests.rs"]
 mod tests;

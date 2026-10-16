@@ -122,6 +122,8 @@ fn writes_are_seen_in_code_only() {
         "open('x', ('w'))\n",
         "open('x'\n",
         "Path('payload.py').replace('json.py')\n",
+        "Path.replace(Path('payload.py'), 'json.py')\n",
+        "type(staged).replace(staged, target)\n",
         "staged.replace(target)\n",
         "Path(a).replace(*pair)\n",
         "Path(a).replace(\n",
@@ -142,6 +144,39 @@ fn writes_are_seen_in_code_only() {
         "name = str.replace(name, '-', '_')\n",
     ] {
         assert!(!scan(source).unwrap().writes, "{source}");
+    }
+    // A path class reached as a value makes a two-argument `replace` a move.
+    for source in [
+        "pathlib.Path.replace(Path('a'), 'json.py')\n",
+        "PosixPath.replace(a, b)\n",
+        "type(p).replace(p, t)\n",
+        "t = type\nt(p).replace(p, q)\n",
+        "from pathlib import Path as P\nP.replace(a, b)\n",
+        "P = Path\nP.replace(a, b)\n",
+        "cls = [Path][0]\ncls.replace(a, b)\n",
+        "d = {'k': Path}\nd['k'].replace(a, b)\n",
+        "f = lambda: Path\nf().replace(a, b)\n",
+        "class M(Path):\n    pass\nM.replace(a, b)\n",
+        "def g(c=Path):\n    return c.replace(a, b)\n",
+        "for C in (Path,):\n    C.replace(a, b)\n",
+        "m = p.replace\nm('json.py')\n",
+        "isinstance(x, (Path, str))\nk.replace(a, b)\n",
+    ] {
+        assert!(
+            scan(source).is_none_or(|found| found.writes || found.replaces.writes()),
+            "{source}"
+        );
+    }
+    for source in [
+        "from pathlib import Path\nname = name.replace('-', '_')\nout = Path(__file__).parent / name\n",
+        "from pathlib import Path\ndef f(p: Path, q: Optional[Path] = None) -> list[Path]:\n    return [p]\ns = s.replace('a', 'b')\n",
+        "parser.add_argument('--out', type=Path)\nline = line.replace('x', ' ')\n",
+        "out: Path = Path.home()\nif isinstance(out, Path):\n    t = t.replace('x', 'y')\n",
+        "from pathlib import (\n    Path,\n    PurePath,\n)\nx = y.replace(a, b)\ndef h(a: dict[str, Path]) -> None: ...\n",
+        "parser.add_argument('--n', type=int)\nv = v.replace(a, b)\n",
+    ] {
+        let found = scan(source).unwrap();
+        assert!(!found.writes && !found.replaces.writes(), "{source}");
     }
     assert!(
         !scan("# open( the door\nprint('shutil.rmtree(x)')\ntext = text.replace('a', 'b')\n")

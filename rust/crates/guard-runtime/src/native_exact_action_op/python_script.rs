@@ -20,7 +20,7 @@ use serde_json::{json, Value};
 use super::context::Ctx;
 use super::fs_path;
 use super::python_modules::{REFUSED_MODULES, STANDARD_MODULES};
-use super::python_source::{scan, Import};
+use super::python_source::{scan, Import, Replaces};
 use super::reasons::{Proof, MUTABLE_LAUNCHER, SENSITIVE_PATH};
 use startup::runs_in_place;
 
@@ -99,6 +99,8 @@ struct Graph<'a> {
     shim_loaders: Vec<(String, BTreeSet<String>)>,
     /// Each startup source and `.pth` import line, as names it uses.
     startup_code: Vec<(String, String)>,
+    /// What the startup sources' `.replace` calls can do together.
+    startup_replaces: Replaces,
     standard: BTreeSet<String>,
     listings: BTreeMap<String, Vec<String>>,
     queue: VecDeque<String>,
@@ -347,6 +349,7 @@ pub(super) fn python_script(
         startup: BTreeMap::new(),
         shim_loaders: Vec::new(),
         startup_code: Vec::new(),
+        startup_replaces: Replaces::default(),
         standard: BTreeSet::new(),
         listings: BTreeMap::new(),
         queue: VecDeque::new(),
@@ -355,12 +358,14 @@ pub(super) fn python_script(
     // Python never runs cached bytecode for the script itself.
     graph.queue.push_back(resolved.clone());
     let mut writes = false;
+    let mut replaces = Replaces::default();
     while let Some(module) = graph.queue.pop_front() {
         let (digest, bytes) = graph.digest(&module)?;
         let source = String::from_utf8(bytes).map_err(|_| MUTABLE_LAUNCHER)?;
         let scanned = scan(source.trim_start_matches('\u{feff}')).ok_or(MUTABLE_LAUNCHER)?;
         graph.modules.insert(module.clone(), digest);
         writes |= scanned.writes;
+        replaces = replaces.join(scanned.replaces);
         for import in &scanned.imports {
             graph.resolve(&module, module == resolved, import)?;
         }
@@ -368,7 +373,7 @@ pub(super) fn python_script(
     // A local module is bound as it was before launch; a graph that can
     // write files could replace one before it is imported, or create one
     // beside the script that shadows a standard module.
-    if writes && (graph.modules.len() > 1 || graph.script_directory) {
+    if (writes || replaces.writes()) && (graph.modules.len() > 1 || graph.script_directory) {
         return Err(MUTABLE_LAUNCHER);
     }
     if !options.no_site {

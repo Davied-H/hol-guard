@@ -301,6 +301,16 @@ fn a_single_file_script_that_writes_files_is_bound() {
         "import json\nfrom pathlib import Path\n\nwith open('in.json') as a, open('in.json', 'rb') as b, Path('x').open(encoding='utf-8') as c:\n    print(json.load(a), b.read(), c.read())\n",
     );
     assert!(bind(&project, &["read.py"], &[]).is_ok());
+    // A path class reached in one module moves a file through a
+    // two-argument `replace` in another.
+    project.write("paths.py", "from pathlib import Path as P\n");
+    project.write("swap.py", "from paths import P\nP.replace(a, b)\n");
+    assert_eq!(bind(&project, &["swap.py"], &[]), Err("mutable_launcher"));
+    project.write(
+        "names.py",
+        "from pathlib import Path\n\nname = 'a-b'.replace('-', '_')\nprint(Path(name))\n",
+    );
+    assert!(bind(&project, &["names.py"], &[]).is_ok());
 }
 
 #[test]
