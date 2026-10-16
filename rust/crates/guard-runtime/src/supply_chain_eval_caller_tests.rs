@@ -97,8 +97,8 @@ fn a_profile_that_did_not_load_refuses_the_network() {
     let invalid = root.path().join("policy.json");
     fs::write(&invalid, b"{").expect("write");
     assert_eq!(
-        CallerEgressFulfilment::resolve_policy(&explicit(&invalid)),
-        Err(CallerEgressFulfilment::policy_unhonoured()),
+        CallerEgressFulfilment::resolve_policy(&explicit(&invalid)).err(),
+        Some(CallerEgressFulfilment::policy_unhonoured()),
         "an invalid profile is not the unmanaged network"
     );
 
@@ -121,10 +121,31 @@ fn a_profile_that_did_not_load_refuses_the_network() {
     )
     .expect("write");
     assert_eq!(
-        CallerEgressFulfilment::resolve_policy(&tampered),
-        Err(CallerEgressFulfilment::policy_unhonoured()),
+        CallerEgressFulfilment::resolve_policy(&tampered).err(),
+        Some(CallerEgressFulfilment::policy_unhonoured()),
         "a profile this machine does not own is not the unmanaged network"
     );
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let blocked = root.path().join("blocked.json");
+        fs::write(&blocked, b"{}").expect("write");
+        let mut permissions = fs::metadata(&blocked).expect("metadata").permissions();
+        permissions.set_mode(0o000);
+        fs::set_permissions(&blocked, permissions.clone()).expect("block");
+        let refusal = CallerEgressFulfilment::resolve_policy(&explicit(&blocked)).err();
+        let hidden = fs::File::open(&blocked).is_err();
+        permissions.set_mode(0o644);
+        fs::set_permissions(&blocked, permissions).expect("restore");
+        if hidden {
+            assert_eq!(
+                refusal,
+                Some(CallerEgressFulfilment::policy_unhonoured()),
+                "an unreadable profile is not the unmanaged network"
+            );
+        }
+    }
 }
 
 #[test]
@@ -132,7 +153,9 @@ fn a_machine_whose_authority_this_runtime_cannot_read_still_exchanges() {
     // Every Windows machine reports an unreadable authority, because the
     // registry is the authority and this runtime does not read it yet. Refusing
     // here would refuse every Windows evaluation, managed or not, where the
-    // Python path reads the registry and exchanges under what it finds.
+    // Python path reads the registry and exchanges under what it finds. On a
+    // managed Windows machine this is a gap the native registry read closes,
+    // not a rule: see `caller_network_policy`.
     let registry = ManagedPolicySource {
         system: MachineSystem::Windows,
         policy_path: None,

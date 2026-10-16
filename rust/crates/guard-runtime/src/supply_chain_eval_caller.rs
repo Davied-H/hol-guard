@@ -63,8 +63,18 @@ static NO_EGRESS_POLICY: NoEgressPolicy = NoEgressPolicy;
 /// authority and this runtime does not read it yet, so refusing there would
 /// refuse every Windows evaluation — including the unmanaged machines Python
 /// reads the registry on and reports as having no policy. Such a machine
-/// exchanges under the unmanaged default until the registry is read natively,
-/// which is no weaker than the Python path it replaces.
+/// exchanges under the unmanaged default until the registry is read natively.
+///
+/// On a managed Windows machine that is a known gap, and the narrower one of
+/// the two: an administrator whose registry policy sets a proxy, a CA, or
+/// `allowPublicRegistries: false` has those honoured on the Python path and not
+/// here, where this caller exchanges directly under the unmanaged default. The
+/// alternative is worse rather than safer — every Windows machine reports the
+/// same status, so refusing would refuse package evaluation on all of them,
+/// managed and unmanaged alike, and a caller that cannot evaluate has no
+/// verdict to enforce an administrator's policy with either. Reading HKLM
+/// natively closes it, and until it is read, a Windows front end that has a
+/// managed registry policy to honour belongs on the Python path.
 pub(crate) fn caller_network_policy(
     managed: &ManagedPolicySource,
 ) -> Result<ManagedNetworkPolicy, &'static str> {
