@@ -15,7 +15,9 @@ Rust and release-native keys also carry a compiler-environment hash ahead of
 the content suffix. A newer environment replaces that job's older caches, but
 those older keys are a different family under the suffix rule, so they stay
 until they fill the 10 GB eviction cap and push out caches the next run
-restores. Only the newest environment of each job is kept.
+restores. The two newest saves of each job are kept: a job from an older
+commit can finish last, and its save must not be treated as the only current
+environment.
 
 Content-addressed sccache entries have no family: each main push writes objects
 for the workspace crates it changed, and the previous objects are never read
@@ -100,10 +102,16 @@ def rust_job_name(key: str) -> str | None:
 
 
 def superseded_compiler_generations(entries: Iterable[Mapping[str, Any]]) -> list[int]:
-    """Return ids of main-branch Rust caches older than the newest environment of their job."""
+    """Return ids of main-branch Rust caches older than the two newest saves of their job.
 
-    newest: dict[str, Mapping[str, Any]] = {}
-    candidates: list[tuple[str, Mapping[str, Any]]] = []
+    Save order is not compiler-environment order. An older run can finish after
+    a newer one and write its cache last, so the single newest ``createdAt`` is
+    not proof of the environment the next build will restore. Keeping two saves
+    leaves that late cache in place and still drops a generation neither of
+    those saves is using.
+    """
+
+    grouped: dict[str, list[Mapping[str, Any]]] = {}
     for entry in entries:
         key, ref, created, entry_id = entry.get("key"), entry.get("ref"), entry.get("createdAt"), entry.get("id")
         if ref != MAIN_REF or not isinstance(key, str) or not isinstance(created, str):
@@ -113,11 +121,12 @@ def superseded_compiler_generations(entries: Iterable[Mapping[str, Any]]) -> lis
         job = rust_job_name(key)
         if job is None:
             continue
-        candidates.append((job, entry))
-        current = newest.get(job)
-        if current is None or (created, entry_id) > (current["createdAt"], current["id"]):
-            newest[job] = entry
-    return sorted(entry["id"] for job, entry in candidates if entry is not newest[job])
+        grouped.setdefault(job, []).append(entry)
+    selected: list[int] = []
+    for job_entries in grouped.values():
+        ranked = sorted(job_entries, key=lambda item: (item["createdAt"], item["id"]))
+        selected.extend(item["id"] for item in ranked[:-2])
+    return sorted(selected)
 
 
 def _accessed(entry: Mapping[str, Any]) -> datetime | None:
