@@ -23,16 +23,25 @@ jobs:
         run: python3 -c 'import os; os.utime("scripts/ci/native_cache_environment.py", (1700000000, 1700000000))'
       - uses: ./.github/actions/restore-runtime-tests
         id: first
-      - name: Change only the timestamp of the imported helper
+      - name: Change the helper timestamp and add generated Cargo output
         run: |
           python3 -c 'import os; os.utime("scripts/ci/native_cache_environment.py", (1730000000, 1730000000))'
+          mkdir -p rust/target
+          cp scripts/ci/native_cache_environment.py rust/target/key-invariance-generated
           git diff --exit-code HEAD -- rust scripts contributions contracts spec tests/fixtures src/codex_plugin_scanner/guard/contracts .cargo .github/actions .github/workflows/ci.yml
       - uses: ./.github/actions/restore-runtime-tests
         id: second
+      - name: Change an authored compiled fixture as a negative control
+        run: |
+          jq 'if type == "object" then . + {"_cache_key_probe":true} else . + [{"_cache_key_probe":true}] end' tests/fixtures/mcp_tool_policy/parity_vectors.json > "$RUNNER_TEMP/changed-fixture.json"
+          cp "$RUNNER_TEMP/changed-fixture.json" tests/fixtures/mcp_tool_policy/parity_vectors.json
+      - uses: ./.github/actions/restore-runtime-tests
+        id: changed-source
       - name: Require identical keys for identical source and report real cache hits
         env:
           FIRST: ${{ steps.first.outputs.cache-primary-key }}
           SECOND: ${{ steps.second.outputs.cache-primary-key }}
+          CHANGED_SOURCE: ${{ steps.changed-source.outputs.cache-primary-key }}
           FIRST_HIT: ${{ steps.first.outputs.cache-hit }}
           SECOND_HIT: ${{ steps.second.outputs.cache-hit }}
         run: |
@@ -42,3 +51,5 @@ jobs:
           find scripts src/codex_plugin_scanner/guard/contracts -name '*.pyc' -print | wc -l
           test -n "$FIRST"
           test "$FIRST" = "$SECOND"
+          test "$SECOND" != "$CHANGED_SOURCE"
+          echo 'authored_fixture_negative_control=passed'
