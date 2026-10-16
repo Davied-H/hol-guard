@@ -173,11 +173,7 @@ def _vite_output(args: Sequence[str], *, workspace: Path, cwd: Path) -> Path:
     # `--outDir` wins. Otherwise read the config the command names, or the
     # default vite.config.* when it names none. Skipping a named config used
     # to grant `dist` while Vite wrote the directory that file declared.
-    declared = (
-        None
-        if output_name
-        else declared_vite_output(cwd, workspace, config=_explicit_vite_config(args, cwd))
-    )
+    declared = None if output_name else declared_vite_output(cwd, workspace, config=_explicit_vite_config(args, cwd))
     output = declared or cwd / (output_name or "dist")
     validate_build_output_root(output, workspace=workspace, cwd=None if declared is None else cwd)
     return output
