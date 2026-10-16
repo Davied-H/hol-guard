@@ -137,29 +137,17 @@ pub(super) fn package_inputs<'a, 'c>(
     })
 }
 
-/// Decide the package call the gate found an intent in.
+/// Decide the package call the gate found an intent in, from the inputs its
+/// own evaluation resolves (`package_inputs`).
 pub(super) fn decide_package_leg(
     request: &McpRelayDecideRequestV1,
-    view: &HarnessView,
-    saved: Option<&Saved<'_>>,
-    control_digest: &str,
-    identity: &McpToolCallIdentityPayloadV1,
-    intent: &PackageIntent,
+    inputs: PackageInputs<'_, '_>,
     subject: &McpToolPolicySubjectV1,
     binding: QueueBinding<'_>,
 ) -> Result<Packaged, &'static str> {
-    let inputs = package_inputs(
-        request,
-        view,
-        saved,
-        control_digest,
-        identity,
-        intent,
-        request.package_evaluation.as_ref(),
-    )?;
     let resolved = inputs.resolve()?;
     let outcome = package_lane::decide_package(
-        &view.mode,
+        &inputs.view.mode,
         &request.build.tool_name,
         &request.build.server_name,
         &resolved,
@@ -185,7 +173,6 @@ pub(super) fn decide_package_leg(
 /// (`mcp_relay_decide_package_claim.rs`), so the lane's own second resolution
 /// — the one that would re-raise the pending claim this call is spending — is
 /// not run at all.
-#[allow(dead_code)]
 pub(super) struct Reresolved {
     /// The package request's own artifact, rebuilt from the claimed call.
     pub(super) artifact: GuardArtifact,
@@ -200,7 +187,6 @@ pub(super) struct Reresolved {
 /// `evaluation` is the one the relay re-read the request with after the
 /// claim, which is what the proxy resolves the post-claim package policy
 /// from; everything else is the claimed call's own.
-#[allow(dead_code)]
 pub(super) fn reresolve_package_leg(
     request: &McpRelayDecideRequestV1,
     view: &HarnessView,

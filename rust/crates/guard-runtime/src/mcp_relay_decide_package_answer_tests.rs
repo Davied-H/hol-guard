@@ -34,8 +34,14 @@ fn policy(reasons: serde_json::Value) -> PackagePolicy {
 #[test]
 fn a_stored_package_block_names_the_authenticated_saved_policy() {
     let policy = policy(json!([{"code": "saved_package_block"}]));
-    let (message, data) = block(&PackageRoute::StoredPackageBlock, TOOL, SERVER, &policy)
-        .expect("a stopped call answers with a block");
+    let (message, data) = block(
+        &PackageRoute::StoredPackageBlock,
+        TOOL,
+        SERVER,
+        &policy,
+        &[],
+    )
+    .expect("a stopped call answers with a block");
     assert_eq!(
         message,
         "HOL Guard blocked package install request install_package from registry. This exact \
@@ -67,7 +73,7 @@ fn a_terminal_package_action_reads_as_a_block_or_a_missing_sandbox() {
         let route = PackageRoute::TerminalPackage {
             policy_action: action.to_owned(),
         };
-        let (message, data) = block(&route, TOOL, SERVER, &policy(json!([])))
+        let (message, data) = block(&route, TOOL, SERVER, &policy(json!([])), &[])
             .expect("a stopped call answers with a block");
         assert_eq!(message, expected, "{action}");
         assert_eq!(data["guardPolicyAction"], json!(action), "{action}");
@@ -81,7 +87,7 @@ fn a_forwarded_call_answers_with_no_block_and_records_the_action_it_ran_under() 
     let route = PackageRoute::Forward {
         policy_action: "warn".to_owned(),
     };
-    assert_eq!(block(&route, TOOL, SERVER, &policy(json!([]))), None);
+    assert_eq!(block(&route, TOOL, SERVER, &policy(json!([])), &[]), None);
     assert_eq!(decision_source(&route), "policy-warn");
     assert_eq!(decision_label(&route), "package-warn");
     // A stopped call records the block source instead.

@@ -117,9 +117,9 @@ pub(super) struct PackagePolicy {
     /// The saved row the resolution accepted, when it reused one.
     pub(super) reused_decision: Option<Value>,
     /// What the lookup would have done with the saved row. A relayed call
-    /// resolves read-only and never claims one, so nothing reads it; it is
-    /// kept because the resolution the proxy reports carries it.
-    #[allow(dead_code)]
+    /// resolves read-only, so the row is never spent here; the claim lane
+    /// holds this against the row it does spend, to ask whether the claimed
+    /// approval still authorizes the review the fresh resolution reports.
     pub(super) claim_disposition: Option<String>,
 }
 
@@ -234,8 +234,9 @@ fn hydrate(
 ) -> Result<Facts, &'static str> {
     let mut decision: Option<Value> = None;
     let mut ignored_integrity = false;
-    // `policy_workspaces` is the one runtime identity or none at all.
-    for workspace in policy_workspace {
+    // `policy_workspace` is the one runtime identity or none at all, so there
+    // is a single row to read rather than a list to walk.
+    if let Some(workspace) = policy_workspace {
         let lookup = saved.package_candidate(&probe(artifact, artifact_hash, workspace))?;
         let found = lookup.get("decision").cloned().unwrap_or(Value::Null);
         ignored_integrity = lookup
@@ -243,10 +244,6 @@ fn hydrate(
             .is_some_and(|ignored| !ignored.is_null());
         if found.is_object() {
             decision = Some(found);
-            break;
-        }
-        if ignored_integrity {
-            break;
         }
     }
     if decision.is_none() && ignored_integrity {
@@ -266,14 +263,11 @@ fn hydrate(
         diagnosed_reason: None,
         diagnosed_stored_hash: None,
     };
-    if facts.decision.is_none() {
-        for workspace in policy_workspace {
-            let (reason, stored) = saved.diagnosed(&probe(artifact, artifact_hash, workspace))?;
-            if let Some(reason) = reason.as_str() {
-                facts.diagnosed_reason = Some(reason.to_owned());
-                facts.diagnosed_stored_hash = stored.as_str().map(str::to_owned);
-                break;
-            }
+    if let (None, Some(workspace)) = (facts.decision.as_ref(), policy_workspace) {
+        let (reason, stored) = saved.diagnosed(&probe(artifact, artifact_hash, workspace))?;
+        if let Some(reason) = reason.as_str() {
+            facts.diagnosed_reason = Some(reason.to_owned());
+            facts.diagnosed_stored_hash = stored.as_str().map(str::to_owned);
         }
     }
     Ok(facts)

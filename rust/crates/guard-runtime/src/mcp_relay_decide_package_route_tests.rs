@@ -189,13 +189,13 @@ fn a_forward_with_a_saved_approval_still_to_spend_is_the_claim_lanes() {
     pending_tool.pending = Some(Map::new());
     assert_eq!(
         compose("enforce", &pending_tool, &policy("allow")),
-        Err(PACKAGE_PENDING_CLAIM),
+        Ok(Decided::ClaimPackage),
     );
     let mut pending_package = policy("allow");
     pending_package.reused_decision = Some(json!({"decision_id": 7}));
     assert_eq!(
         compose("enforce", &tool(GuardAction::Allow), &pending_package),
-        Err(PACKAGE_PENDING_CLAIM),
+        Ok(Decided::ClaimPackage),
     );
 }
 

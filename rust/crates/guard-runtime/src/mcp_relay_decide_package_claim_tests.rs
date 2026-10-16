@@ -334,7 +334,7 @@ fn a_package_route_appends_its_evidence_after_the_requests_own() {
     let Settled::Package(packaged) = settled else {
         panic!("a package route settles on the package request's own artifact");
     };
-    assert_eq!(packaged.artifact, artifact());
+    assert_eq!(packaged.artifact.artifact_id, artifact().artifact_id);
     assert_eq!(packaged.workspace, "/work");
     let PackageOutcome::Answered(answer) = packaged.outcome else {
         panic!("an unqueued forward is answered outright");

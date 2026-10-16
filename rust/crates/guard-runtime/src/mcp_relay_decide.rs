@@ -153,6 +153,7 @@ enum Answer {
 }
 
 /// The lane admission one decision was made under.
+#[derive(Clone)]
 struct Admitted {
     workspace: String,
     snapshot: Arc<AdmittedPolicySnapshot>,
@@ -166,12 +167,21 @@ pub(crate) struct ClaimContext {
     claimed: Claimed,
 }
 
+/// One held claim: a tool call's, or a package call's.
+///
+/// The two spend differently — a package claim re-resolves twice and carries
+/// an evaluation of its own — so the lane holds which it raised, and the claim
+/// request is answered by the spend that matches.
+pub(crate) enum HeldClaim {
+    Tool(ClaimContext),
+    Package(PackageClaimContext),
+}
+
 /// A package call that forwards only once the approvals its two policies
 /// left are claimed. Unlike a tool call's, the claim carries an evaluation of
 /// its own: the relay re-reads the package request after the claim, with the
 /// external archive network authorized, and the policy is re-resolved from
 /// that (`mcp_relay_decide_package_spend.rs`).
-#[allow(dead_code)]
 pub(crate) struct PackageClaimContext {
     request: McpRelayDecideRequestV1,
     admitted: Admitted,
@@ -205,13 +215,12 @@ enum PackageLeg<'a> {
     /// Re-resolve a claimed one, from the evaluation the relay re-read the
     /// request with after the claim: the stored policy alone, because the
     /// route a claimed call takes is the post-claim revalidation's.
-    #[allow(dead_code)]
     Claimed(&'a PackageIntent, &'a Map<String, Value>),
 }
 
 /// The package leg one resolve produced, for the caller that asked for it.
 enum Legged {
-    Decided(package_leg::Packaged),
+    Decided(Box<package_leg::Packaged>),
     Reresolved(package_leg::Reresolved),
 }
 
@@ -219,13 +228,12 @@ impl Legged {
     /// The decided leg, for the decide path that asked for a route.
     fn decided(&self) -> Option<&package_leg::Packaged> {
         match self {
-            Self::Decided(packaged) => Some(packaged),
+            Self::Decided(packaged) => Some(packaged.as_ref()),
             Self::Reresolved(_) => None,
         }
     }
 
     /// The re-resolution, for the claim that asked for a policy.
-    #[allow(dead_code)]
     fn reresolved(self) -> Option<package_leg::Reresolved> {
         match self {
             Self::Reresolved(reresolved) => Some(reresolved),
@@ -450,7 +458,7 @@ fn decide(
             };
             policy_store
                 .mcp_relay_claims()
-                .hold(context, Instant::now())
+                .hold(HeldClaim::Tool(context), Instant::now())
                 .map(|ticket| Answer::Claim { ticket })
                 .ok_or(EVIDENCE_FULL)
         }
@@ -570,21 +578,28 @@ fn resolve(
     let subject = subject::subject(request, &identity, &view)?;
     let decision = run_policy(&subject, saved.as_ref())?;
     let packaged = match leg {
-        Some(PackageLeg::Decide(intent)) => Some(Legged::Decided(package_leg::decide_package_leg(
-            request,
-            &view,
-            saved.as_ref(),
-            &control_digest,
-            &identity,
-            intent,
-            &subject,
-            // The queue route of the package lane is answered by the same
-            // bound mode and redaction level the tool lane's queue route is.
-            package_lane::QueueBinding {
-                blocked_request_mode: binding.review.blocked_request_mode.as_deref(),
-                redaction_level: view.receipt_redaction_level.as_deref(),
-            },
-        )?)),
+        Some(PackageLeg::Decide(intent)) => {
+            let inputs = package_leg::package_inputs(
+                request,
+                &view,
+                saved.as_ref(),
+                &control_digest,
+                &identity,
+                intent,
+                request.package_evaluation.as_ref(),
+            )?;
+            Some(Legged::Decided(Box::new(package_leg::decide_package_leg(
+                request,
+                inputs,
+                &subject,
+                // The queue route of the package lane is answered by the same
+                // bound mode and redaction level the tool lane's queue route is.
+                package_lane::QueueBinding {
+                    blocked_request_mode: binding.review.blocked_request_mode.as_deref(),
+                    redaction_level: view.receipt_redaction_level.as_deref(),
+                },
+            )?)))
+        }
         Some(PackageLeg::Claimed(intent, evaluation)) => {
             Some(Legged::Reresolved(package_leg::reresolve_package_leg(
                 request,
@@ -794,6 +809,22 @@ fn settle_package(
             )?;
             &queued
         }
+        // Nothing is answered and nothing is written: the rows are held
+        // against a ticket, and the call is decided again once the claim that
+        // spends them commits.
+        package_lane::PackageOutcome::ClaimPackage(leg) => {
+            let claimed = package_claim::claimed(leg, resolved, &packaged.artifact)?;
+            let context = PackageClaimContext {
+                request: request.clone(),
+                admitted: admitted.clone(),
+                claimed,
+            };
+            return policy_store
+                .mcp_relay_claims()
+                .hold(HeldClaim::Package(context), Instant::now())
+                .map(|ticket| Answer::Claim { ticket })
+                .ok_or(EVIDENCE_FULL);
+        }
         package_lane::PackageOutcome::ToolLeg(leg) => {
             let routed = match leg {
                 ToolLeg::StoredBlock => Routed::StoredBlock {
@@ -900,8 +931,7 @@ mod package_answer;
 mod package_archive;
 #[path = "mcp_relay_decide_package_ask.rs"]
 mod package_ask;
-// What the claimed package lane composes; its spend lands with the claim.
-#[allow(dead_code)]
+// What the claimed package lane composes, short of the store write.
 #[path = "mcp_relay_decide_package_claim.rs"]
 mod package_claim;
 #[path = "mcp_relay_decide_package_config.rs"]
@@ -914,17 +944,14 @@ mod package_leg;
 mod package_observe;
 #[path = "mcp_relay_decide_package_policy.rs"]
 mod package_policy;
-// The claimed package lane this decides for lands with the claim's own spend.
-#[allow(dead_code)]
+// The revalidation a claimed package call is decided again by.
 #[path = "mcp_relay_decide_package_postclaim.rs"]
 mod package_postclaim;
 #[path = "mcp_relay_decide_package_receipt.rs"]
 mod package_receipt;
 #[path = "mcp_relay_decide_package_route.rs"]
 mod package_route;
-// What a claimed package call spends, and the answer it commits with; the
-// resident reaches it once the lane holds a package claim.
-#[allow(dead_code)]
+// What a claimed package call spends, and the answer it commits with.
 #[path = "mcp_relay_decide_package_spend.rs"]
 mod package_spend;
 #[path = "mcp_relay_decide_policy.rs"]

@@ -164,7 +164,7 @@ struct Queued {
 /// Which queue a committed claim writes: the package lane's own row, or the
 /// approval-center row a queued tool leg takes.
 enum Write {
-    Package(package_leg::Packaged),
+    Package(Box<package_leg::Packaged>),
     Tool {
         prepared: ask::Prepared,
         append: Vec<Value>,

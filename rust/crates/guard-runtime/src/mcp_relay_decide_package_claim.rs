@@ -57,6 +57,53 @@ pub(super) struct PackageClaimed {
     pub(super) package_digest: String,
 }
 
+/// The rows a forward would spend, as the lane reports them.
+///
+/// The lane sees both resolutions and nothing else; the artifact identities
+/// the revalidation is held to belong to the decision the caller settles, so
+/// it is the caller that completes this into a `PackageClaimed`.
+pub(super) struct ClaimLeg {
+    tool: Option<Map<String, Value>>,
+    tool_disposition: Option<Disposition>,
+    package: Option<Map<String, Value>>,
+    package_disposition: Option<Disposition>,
+    package_digest: String,
+}
+
+/// The rows the two resolutions of one forward left unspent.
+pub(super) fn claim_leg(authority: &Decision, policy: &PackagePolicy) -> ClaimLeg {
+    ClaimLeg {
+        tool: authority.pending.clone(),
+        tool_disposition: authority.claim_disposition,
+        package: pending(policy).cloned(),
+        package_disposition: Disposition::parse(policy.claim_disposition.as_deref()),
+        package_digest: policy.artifact_hash.clone(),
+    }
+}
+
+/// The leg held against the identities the decision was made under: the tool
+/// call's artifact, and the package request's own.
+pub(super) fn claimed(
+    leg: &ClaimLeg,
+    resolved: &Resolved,
+    artifact: &GuardArtifact,
+) -> Result<PackageClaimed, &'static str> {
+    Ok(PackageClaimed {
+        tool: leg.tool.clone(),
+        tool_disposition: leg.tool_disposition,
+        package: leg.package.clone(),
+        package_disposition: leg.package_disposition,
+        tool_artifact_id: resolved.identity.artifact.artifact_id.clone(),
+        tool_artifact_hash: resolved
+            .identity
+            .artifact_hash
+            .clone()
+            .ok_or(IDENTITY_FAILED)?,
+        package_artifact_id: artifact.artifact_id.clone(),
+        package_digest: leg.package_digest.clone(),
+    })
+}
+
 /// The pending rows one package claim spends, in the proxy's own order:
 /// `tuple(claim for claim in (pending_tool, pending_package) if claim is not
 /// None)` (`runtime_mcp.py:1679`).
@@ -123,7 +170,7 @@ pub(super) fn pending(policy: &PackagePolicy) -> Option<&Map<String, Value>> {
 pub(super) enum Settled {
     /// The package lane's own answer, whose receipt the package request's
     /// artifact names.
-    Package(Packaged),
+    Package(Box<Packaged>),
     /// The leg the tool policy decided, which the tool lane answers and
     /// records against the tool call's own artifact, with the post-claim
     /// evidence on that receipt.
@@ -150,6 +197,9 @@ pub(super) fn settled(
     let route = match decided {
         Decided::Tool(leg) => return Ok(Settled::Tool { leg, append }),
         Decided::Package(route) => route,
+        // The revalidation decides on the rows this claim already spent, so a
+        // route that would claim again is one the proxy never answers with.
+        Decided::ClaimPackage => return Err(PACKAGE_POSTCLAIM_FAILED),
     };
     let mut outcome = package_lane::answered(&route, tool, server, policy, binding)?;
     outcome
@@ -157,11 +207,11 @@ pub(super) fn settled(
         .ok_or(PACKAGE_POSTCLAIM_FAILED)?
         .evidence
         .extend(append);
-    Ok(Settled::Package(Packaged {
+    Ok(Settled::Package(Box::new(Packaged {
         artifact,
         workspace: workspace.to_owned(),
         outcome,
-    }))
+    })))
 }
 
 #[cfg(test)]

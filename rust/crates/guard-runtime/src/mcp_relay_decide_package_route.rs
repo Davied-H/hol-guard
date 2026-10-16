@@ -47,8 +47,6 @@ pub(super) const PACKAGE_QUEUE: &str = "mcp_relay_package_queue";
 /// The observe answer named a forward this port cannot read the observed
 /// requests out of.
 pub(super) const PACKAGE_OBSERVE: &str = "mcp_relay_package_observe";
-/// The tool or the package policy holds a saved approval the forward spends.
-pub(super) const PACKAGE_PENDING_CLAIM: &str = "mcp_relay_package_pending_claim";
 /// An answer naming a kind this port does not know, which the proxy raises
 /// `native_mcp_proxy_decision_{precheck,compose}_unknown` for.
 pub(super) const PACKAGE_ROUTE_UNKNOWN: &str = "mcp_relay_package_route_unknown";
@@ -104,6 +102,13 @@ pub(super) enum ToolLeg {
 pub(super) enum Decided {
     Package(PackageRoute),
     Tool(ToolLeg),
+    /// The forward both policies agree on, where at least one of them left a
+    /// saved approval the forward spends. The proxy claims those rows and
+    /// revalidates before it answers, so this is not an answer and carries no
+    /// action: what the call does is decided again after the claim, from the
+    /// resolutions the claimed store reports
+    /// (`mcp_relay_decide_package_spend.rs`).
+    ClaimPackage,
 }
 
 /// `package_precheck`. `None` is the proxy's `proceed`: the call goes on to
@@ -167,7 +172,7 @@ pub(super) fn compose(
                     .ok_or(PACKAGE_ROUTE_UNKNOWN)?
                     .to_owned(),
             })),
-            Some(true) => Err(PACKAGE_PENDING_CLAIM),
+            Some(true) => Ok(Decided::ClaimPackage),
             None => Err(PACKAGE_ROUTE_UNKNOWN),
         },
         _ => Err(PACKAGE_ROUTE_UNKNOWN),

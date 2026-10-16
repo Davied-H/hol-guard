@@ -41,6 +41,7 @@ use serde_json::{Map, Value};
 use super::package_answer;
 use super::package_archive;
 use super::package_ask;
+use super::package_claim;
 use super::package_observe;
 use super::package_policy::PackagePolicy;
 use super::package_receipt;
@@ -65,6 +66,10 @@ pub(super) enum PackageOutcome {
         observed: package_observe::Observed,
     },
     ToolLeg(ToolLeg),
+    /// A forward with a saved approval still to spend. The lane decides
+    /// nothing further: the caller holds the rows and raises the claim whose
+    /// spend decides the call again on the claimed store.
+    ClaimPackage(Box<package_claim::ClaimLeg>),
 }
 
 impl PackageOutcome {
@@ -76,7 +81,7 @@ impl PackageOutcome {
             Self::Answered(answer)
             | Self::AskPackage(answer)
             | Self::ObservePackage { answer, .. } => Some(answer),
-            Self::ToolLeg(_) => None,
+            Self::ToolLeg(_) | Self::ClaimPackage(_) => None,
         }
     }
 }
@@ -151,6 +156,9 @@ where
     match package_route::compose(mode, &authority, &policy)? {
         Decided::Package(route) => answered(&route, tool, server, &policy, binding),
         Decided::Tool(leg) => Ok(PackageOutcome::ToolLeg(leg)),
+        Decided::ClaimPackage => Ok(PackageOutcome::ClaimPackage(Box::new(
+            package_claim::claim_leg(&authority, &policy),
+        ))),
     }
 }
 

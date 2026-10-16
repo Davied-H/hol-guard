@@ -53,8 +53,8 @@
 
 use super::store::{self, STORE_UNREADABLE};
 use super::{
-    admit, ask, encode, package, queue, resolve, settle, Answer, ClaimContext, Claimed, Resolved,
-    Routed, ASK_MODE, IDENTITY_FAILED,
+    admit, ask, encode, package, package_spend, queue, resolve, settle, Answer, ClaimContext,
+    Claimed, HeldClaim, Resolved, Routed, ASK_MODE, IDENTITY_FAILED,
 };
 use crate::approval_proof_op::{
     fresh_tool_approval, lookup_preserves_claim, postclaim_review_authorized, Disposition,
@@ -95,7 +95,12 @@ pub(crate) fn claim(
         .mcp_relay_claims()
         .take(&request.ticket, started)
         .ok_or(CLAIM_UNKNOWN)
-        .and_then(|context| spend(request, &context, policy_store, started));
+        .and_then(|held| match held {
+            HeldClaim::Tool(context) => spend(request, &context, policy_store, started),
+            HeldClaim::Package(context) => {
+                package_spend::spend_package(request, &context, policy_store, started)
+            }
+        });
     encode(answer)
 }
 

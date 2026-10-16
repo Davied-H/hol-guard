@@ -92,13 +92,18 @@ fn leg(edit: impl FnOnce(&mut McpRelayDecideRequestV1)) -> Result<Packaged, &'st
     let view = view();
     let identity = identity(&request, &view, CONTROL.to_owned()).expect("the identity is built");
     let subject = subject::subject(&request, &identity, &view).expect("the subject is built");
-    decide_package_leg(
+    let inputs = package_inputs(
         &request,
         &view,
         None,
         CONTROL,
         &identity,
         &intent(),
+        request.package_evaluation.as_ref(),
+    )?;
+    decide_package_leg(
+        &request,
+        inputs,
         &subject,
         QueueBinding {
             blocked_request_mode: Some("safe-alternative"),
