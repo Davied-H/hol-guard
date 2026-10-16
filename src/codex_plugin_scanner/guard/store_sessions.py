@@ -285,10 +285,6 @@ class StoreSessionsMixin:
         )
         return None if row is None else _guard_attachment_row(row)
 
-    def get_guard_client_attachment(self, client_id: str) -> dict[str, object] | None:
-        row = self._native_store_call("get_guard_client_attachment", {"client_id": client_id})
-        return None if row is None else _guard_attachment_row(row)
-
     def list_guard_client_attachments(
         self,
         *,
