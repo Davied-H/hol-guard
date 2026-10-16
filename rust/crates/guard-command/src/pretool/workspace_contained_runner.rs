@@ -56,8 +56,8 @@ pub(super) fn installed_tools(model: &CanonicalCommandV1, workspace: &Path) -> O
         }
         let npx = segment.executable.as_deref() == Some("npx");
         let tool = arguments.iter().find(|argument| {
-            !RUNNER_OPTIONS.contains(&argument.as_str())
-                && !(npx && NPX_PROMPT_OPTIONS.contains(&argument.as_str()))
+            !(RUNNER_OPTIONS.contains(&argument.as_str())
+                || npx && NPX_PROMPT_OPTIONS.contains(&argument.as_str()))
         })?;
         let bare = !tool.starts_with(['.', '-'])
             && tool

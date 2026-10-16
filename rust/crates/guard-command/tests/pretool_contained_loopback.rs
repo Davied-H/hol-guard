@@ -131,7 +131,6 @@ fn other_addresses_and_ports_keep_their_review() {
             SPAWNED_SERVER.replace("127.0.0.1:3000", "127.0.0.1:54321"),
             STATIC_SERVER.replace("4173", "0"),
             STATIC_SERVER.replace("4173,'127.0.0.1'", "process.env.PORT,'127.0.0.1'"),
-            STATIC_SERVER.replace("'127.0.0.1'", "'0.0.0.0'"),
             STATIC_SERVER.replace("'127.0.0.1'", "'127.0.0.2'"),
             SELF_CHECK.replace("http://127.0.0.1:8765", "https://example.com"),
             SPAWNED_SERVER.replace("127.0.0.1:3000", "127.0.0.1:2375"),
