@@ -6,6 +6,12 @@ take, and the bridge posts the rest to the daemon, so one case's answers are
 split between the daemon's route metrics and the resident's direct-answer
 counters. Both are the native resident route. Anything the daemon routed
 elsewhere, and any answer neither source accounts for, is not.
+
+An observed case carries the observer's transition probe, which only the daemon
+can answer, so the direct-answer term is zero for every case the Gauntlet runs
+today. It stays in the reconciliation because the counters are read from the
+live resident either way: a non-zero or malformed reading must reach the judge
+rather than be assumed absent.
 """
 
 from __future__ import annotations

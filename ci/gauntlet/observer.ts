@@ -83,6 +83,13 @@ type Probe = { operation_id: string; request_id: string };
 // The hook payload with this observation's probe added, for whichever lane
 // carries it. The probe only asks Guard to echo the native receipt it already
 // produced; the reviewed hook is unchanged.
+//
+// The probe carries a request identity only the daemon assigns, so a resident
+// defers every probed payload (`HookDirectDefer::TransitionProbe`) and the
+// answer comes from the daemon behind the same bridge. That is what makes the
+// receipt correlatable, and it is why `resident_direct_answers` reads zero on
+// this lane: the bridge transport is covered, the resident's in-process answer
+// is not. Covering that one needs a probe the resident can echo.
 function probedPayload(payload: string): { text: string; request: JsonRecord; probe: Probe } {
   const request = JSON.parse(payload) as JsonRecord;
   if (!request || typeof request !== "object" || Array.isArray(request)) throw new Error("invalid hook request");
