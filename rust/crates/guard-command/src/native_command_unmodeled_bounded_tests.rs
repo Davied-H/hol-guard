@@ -1,0 +1,83 @@
+//! Two shapes that name the programs they run: a search path the command
+//! sets for one call, and an `xargs` that names its program.
+use super::tests::{controls, decision, github};
+use super::xargs_names_its_program;
+
+const FAILED: &str = "native_command_extension_evaluation_failed";
+
+#[test]
+fn a_search_path_the_command_sets_is_reviewable() {
+    let controls = controls(github("enabled", None), false);
+    for command in [
+        "PATH=./node_modules/.bin:$PATH tsc --noEmit",
+        "PATH=node_modules/.bin:$PATH eslint src --max-warnings 0",
+    ] {
+        let (action, code) = decision(&controls, command);
+        assert_ne!(code, FAILED, "{command}");
+        assert_eq!(action, "review", "{command}: {code}");
+    }
+}
+
+#[test]
+fn an_xargs_that_names_its_program_is_reviewable() {
+    let controls = controls(github("enabled", None), false);
+    for command in [
+        "xargs rm -f < list.txt",
+        "xargs -0 -n 20 rm -f < list.txt",
+        "find . -name '*.log' -print0 | xargs -0 rm -f",
+    ] {
+        let (action, code) = decision(&controls, command);
+        assert_ne!(code, FAILED, "{command}");
+        assert_eq!(action, "review", "{command}: {code}");
+    }
+}
+
+#[test]
+fn an_xargs_that_names_no_program_stays_unreadable() {
+    let controls = controls(github("enabled", None), false);
+    // With no operand `xargs` runs `echo`, and with its program fed in from
+    // somewhere else the command names nothing to own it.
+    for command in [
+        "xargs < list.txt",
+        "xargs -I {} < list.txt",
+        "xargs sh -c 'rm -rf \"$1\"' _ < list.txt",
+        // The boundary this keeps: a substitution still runs whatever it
+        // prints, so `eval \"$(curl ...)\"` cannot be read from the text.
+        "eval \"$(direnv hook bash)\"",
+    ] {
+        assert_eq!(decision(&controls, command).1, FAILED, "{command}");
+    }
+}
+
+#[test]
+fn xargs_options_are_read_past_to_its_program() {
+    for bounded in [
+        "xargs rm",
+        "xargs -0 rm -f",
+        "xargs -n 20 rm",
+        "xargs -n20 rm",
+        "xargs -I{} cp {} /tmp",
+        "xargs --max-args=3 rm",
+        "xargs -- rm -f",
+        "cat list.txt | xargs -P 4 -I {} mv {} archive/",
+    ] {
+        assert!(xargs_names_its_program(bounded), "{bounded}");
+    }
+    for unbounded in [
+        "xargs",
+        "xargs -0",
+        // The value of `-I` is not the program.
+        "xargs -I {}",
+        "xargs --max-args 3",
+        // A long option this does not know may take the next word.
+        "xargs --future-option rm",
+        // Programs this cannot read from the text.
+        "xargs sh -c 'rm $0'",
+        "xargs $tool",
+        "xargs bin/*",
+        // Every `xargs` in the text has to name its program.
+        "cat list.txt | xargs rm -f && cat more.txt | xargs",
+    ] {
+        assert!(!xargs_names_its_program(unbounded), "{unbounded}");
+    }
+}

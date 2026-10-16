@@ -9,16 +9,23 @@
 //! programs the text names, or that cannot be recognized by name, and never
 //! less than review.
 //!
+//! A search path the command sets for one call, as `PATH=./node_modules/.bin:$PATH
+//! tsc --noEmit` does, is read the same way. The parser models it exactly and
+//! the matchers still cannot bind it, and review is already the pre-tool
+//! answer for an overridden path, so it takes the same floor rather than an
+//! evaluation failure that leaves no approval to give.
+//!
 //! Everything that could hide a program or move data keeps the evaluation
 //! failure: wrappers, nested executors, command substitution, redirects other
 //! than one input heredoc or to a literal path, redirects after a program
-//! that makes links, `PATH` overrides, interpreters and program names built
-//! from expansions or globs, as do signed or managed policy and global
-//! lockdown.
+//! that makes links, interpreters and program names built from expansions or
+//! globs, as do signed or managed policy and global lockdown.
 //!
 //! An interpreter is unbounded unless it is the whole command and the program
 //! it runs, inline or fed on standard input, was read; it then runs only that
-//! program, as it would run a script file.
+//! program, as it would run a script file. `xargs` is the exception that
+//! names its program in the text: standard input supplies arguments, not the
+//! program, so `xargs rm -f < list.txt` owns what `rm` owns.
 
 use std::collections::BTreeSet;
 use std::time::Instant;
@@ -33,9 +40,12 @@ use crate::CanonicalCommandV1;
 mod link_makers;
 #[path = "native_command_unmodeled_shapes.rs"]
 mod shapes;
+#[path = "native_command_unmodeled_xargs.rs"]
+mod xargs;
 use link_makers::creates_links;
 use shapes::{data_heredocs, without_lookups, without_plain_awk};
 pub(crate) use shapes::{python_is_builtin_only, python_stdin};
+use xargs::xargs_names_its_program;
 
 /// Compatibility owners recognize these programs without a catalog matcher.
 const COMPATIBILITY_EXECUTABLES: &[(&str, &[&str])] = &[
@@ -202,10 +212,12 @@ impl CompiledNativeCommandControls {
         for source in sourced.iter().flatten() {
             named.extend(named_words(source));
         }
-        if INTERPRETERS
-            .iter()
-            .any(|name| interpreted.contains(*name) && !(sourced_resolved && *name == "source"))
-        {
+        let xargs_bounded = xargs_names_its_program(shell);
+        if INTERPRETERS.iter().any(|name| {
+            interpreted.contains(*name)
+                && !(sourced_resolved && *name == "source")
+                && !(xargs_bounded && *name == "xargs")
+        }) {
             // A program read from a file names the tools it may launch
             // outside the command text, so it counts toward the owners.
             match crate::pretool::sole_program_sources(command, context) {
@@ -278,7 +290,18 @@ impl CompiledNativeCommandControls {
 /// with nothing in the shell text that substitutes or overrides `PATH` and no
 /// redirect except to a literal path.
 fn reviewable_structure(command: &CanonicalCommandV1) -> bool {
-    if command.path_overridden || command.confidence != "uncertain" {
+    // A search path the command sets is the one shape the parser reads
+    // exactly and the matchers still cannot bind. `PATH=./node_modules/.bin:$PATH
+    // tsc --noEmit` is a whole, plain command whose program the text names,
+    // and the pre-tool path already answers an overridden path with review.
+    // Taking the same floor here keeps that answer, where the evaluation
+    // failure left no approval to give at all.
+    if command.path_overridden {
+        return command.confidence == "exact"
+            && command.uncertainty_reason.is_none()
+            && command.wrapper_chain.is_empty();
+    }
+    if command.confidence != "uncertain" {
         return false;
     }
     match command.uncertainty_reason.as_deref() {
@@ -772,3 +795,7 @@ mod tests;
 #[cfg(test)]
 #[path = "native_command_unmodeled_sourced_tests.rs"]
 mod sourced_tests;
+
+#[cfg(test)]
+#[path = "native_command_unmodeled_bounded_tests.rs"]
+mod bounded_tests;
