@@ -259,15 +259,49 @@ def test_supported_cli_pretool_worker_exception_is_fail_safe(
     assert output["permissionDecision"] == "deny"
 
 
-def test_supported_cli_pretool_worker_exception_is_reported(
+def test_supported_cli_pretool_worker_exception_is_recorded_in_the_guard_log(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class BrokenWorker:
+        def __init__(self, *, store: object, **_kwargs: object) -> None:
+            del store
+            del _kwargs
+
+        def review_http_payload(self, **_kwargs: object) -> dict[str, object]:
+            raise RuntimeError("worker fixture failure")
+
+    monkeypatch.setattr(commands_hook_native_authority, "HookWorker", BrokenWorker)
+    guard_home = tmp_path / "guard-home"
+    response = commands_hook_native_authority.try_native_hook_authority(
+        payload={"hook_event_name": "PreToolUse", "tool_input": {"url": "https://example.test"}},
+        harness="codex",
+        home_dir=tmp_path / "home",
+        guard_home=guard_home,
+        workspace=tmp_path / "workspace",
+        store=GuardStore(guard_home),
+    )
+
+    assert isinstance(response, dict)
+    assert response["reason_code"] == "native_hook_worker_exception"
+    record = json.loads((guard_home / "logs" / "daemon.log").read_text(encoding="utf-8").splitlines()[-1])
+    assert record["event"] == "native_hook_worker_exception"
+    assert record["detail"] == "harness=codex event=PreToolUse"
+    assert "worker fixture failure" in record["exception"]
+    # The wire response stays free of local detail; the log carries it.
+    assert "worker fixture failure" not in json.dumps(response)
+
+
+def test_supported_cli_pretool_worker_exception_points_stderr_at_the_guard_log(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """A denied tool call the operator cannot explain is a defect of its own.
 
-    The wire document is a fixed deny with no detail, so the underlying error
-    has to reach the log or it is unrecoverable in the field.
+    The wire document is a fixed deny with no detail, so a bounded line names
+    the failure and points at the Guard log. Hook stderr can reach the
+    harness, so the exception message and traceback stay out of it.
     """
 
     class BrokenWorker:
@@ -292,9 +326,10 @@ def test_supported_cli_pretool_worker_exception_is_reported(
     assert records, "the swallowed exception left no trace"
     message = records[0].getMessage()
     assert "RuntimeError" in message
-    assert "worker fixture failure" in message
     assert "claude-code" in message
-    assert records[0].exc_info is not None
+    assert "Guard daemon log" in message
+    assert "worker fixture failure" not in message
+    assert records[0].exc_info is None
 
 
 def test_cli_frames_raw_payload_before_harness_normalization(

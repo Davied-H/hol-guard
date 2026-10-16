@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import argparse
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
+from contextlib import suppress
 from functools import wraps
 from pathlib import Path
 from typing import Any, TextIO
 
 from ..adapters.base import HarnessContext
 from ..config import GuardConfig
+from ..daemon.diagnostics import DaemonDiagnostics
 from ..daemon.hook_availability_policy import availability_harness_response
 from ..daemon.hook_request_parsing import runtime_hook_event_name
 from ..daemon.hook_worker import HookWorker
@@ -22,6 +24,29 @@ from .commands_hook_native_availability import _native_unavailable_exit_code
 from .commands_support_interaction import _emit
 
 _NATIVE_RECEIPT_DRAIN_TIMEOUT_SECONDS = 0.25
+_DIAGNOSTIC_DRAIN_TIMEOUT_SECONDS = 0.25
+
+
+def _record_native_hook_exception(guard_home: Path, *, harness: str, event_name: str) -> None:
+    """Write the swallowed hook exception to Guard's own log.
+
+    The fail-closed response deliberately carries no detail: it travels the
+    harness wire and would leak local paths. Without this the operator sees a
+    deny with no stderr, no reason beyond the generic message, and nothing in
+    any log to explain it. Diagnostics never change the returned verdict, so
+    every failure here is suppressed. Call this from inside the ``except``
+    block, where ``sys.exc_info()`` still holds the exception.
+    """
+
+    with suppress(Exception):
+        diagnostics = DaemonDiagnostics(guard_home, start_worker=False, rotate=False)
+        try:
+            diagnostics.record_exception(
+                "native_hook_worker_exception",
+                detail=f"harness={harness} event={event_name}",
+            )
+        finally:
+            diagnostics.close(timeout_seconds=_DIAGNOSTIC_DRAIN_TIMEOUT_SECONDS)
 
 
 def try_native_hook_authority(
@@ -63,7 +88,12 @@ def try_native_hook_authority(
             workspace=workspace,
         )
     except Exception as error:
-        _log_worker_exception(error, harness=harness, payload=payload)
+        _record_native_hook_exception(
+            guard_home,
+            harness=harness,
+            event_name=runtime_hook_event_name(payload),
+        )
+        _log_worker_exception(error, harness=harness)
         return availability_harness_response(
             payload,
             harness=harness,
@@ -87,24 +117,23 @@ def try_native_hook_authority(
             _ = evidence_writer.stop(timeout_seconds=_NATIVE_RECEIPT_DRAIN_TIMEOUT_SECONDS)
 
 
-def _log_worker_exception(error: BaseException, *, harness: str, payload: Mapping[str, object]) -> None:
-    """Record why native authority could not answer before denying.
+def _log_worker_exception(error: BaseException, *, harness: str) -> None:
+    """Point the operator at the Guard log before denying.
 
     The harness wire document is a fixed deny that deliberately carries no
-    detail, so without this the operator sees a blocked tool call and has
-    nothing to go on. The exception goes to the logger rather than the
-    response: stderr is diagnostic, the decision on stdout is unchanged, and
-    no path or payload content crosses to the harness.
+    detail. The full exception and traceback go to Guard's own log through
+    ``_record_native_hook_exception``; this line only names the failure class
+    so the operator knows where to look. Hook stderr can reach the harness, so
+    no exception message, traceback, path or payload-derived value is logged
+    here, and a failing log handler never changes the returned verdict.
     """
 
-    logging.getLogger(__name__).warning(
-        "HOL Guard native hook authority failed for %s %s: %s: %s",
-        harness,
-        runtime_hook_event_name(payload),
-        type(error).__name__,
-        error,
-        exc_info=True,
-    )
+    with suppress(Exception):
+        logging.getLogger(__name__).warning(
+            "HOL Guard native hook authority failed for %s (%s); details are in the Guard daemon log",
+            harness,
+            type(error).__name__,
+        )
 
 
 def _one_adapter_scope(route: Callable[..., int]) -> Callable[..., int]:
@@ -192,7 +221,12 @@ def route_native_hook(
         # (per-harness deny code, recording-only allows keep 0).
         return _native_unavailable_exit_code(args, native_result, runtime_hook_event_name(payload))
     except Exception as error:
-        _log_worker_exception(error, harness=args.harness, payload=payload)
+        _record_native_hook_exception(
+            context.guard_home,
+            harness=args.harness,
+            event_name=runtime_hook_event_name(payload),
+        )
+        _log_worker_exception(error, harness=args.harness)
         response = availability_harness_response(
             payload,
             harness=args.harness,
