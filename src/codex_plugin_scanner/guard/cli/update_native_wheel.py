@@ -156,6 +156,9 @@ def _manual_installer_prefix(installer: str) -> str:
     executable = sys.executable or "python"
     if any(character.isspace() for character in executable):
         executable = f'"{executable}"'
+        if os.name == "nt" and installer != "uv":
+            # PowerShell reads a leading quoted string as an expression, so it needs the call operator.
+            executable = f"& {executable}"
     if installer == "uv":
         return f"uv pip install --python {executable}"
     return f"{executable} -m pip install"

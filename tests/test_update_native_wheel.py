@@ -1036,9 +1036,17 @@ def test_native_wheel_plan_reinstalls_without_dependencies_only_for_the_installe
 
 def test_manual_install_command_targets_the_python_running_guard(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(native.sys, "executable", "/opt/guard venv/bin/python")
+    monkeypatch.setattr(native.os, "name", "posix")
 
     assert native._manual_installer_prefix("pip") == '"/opt/guard venv/bin/python" -m pip install'
     assert native._manual_installer_prefix("uv") == 'uv pip install --python "/opt/guard venv/bin/python"'
     assert native.manual_install_command(STABLE, tags=[WINDOWS_ARM], installer="uv").startswith(  # type: ignore[union-attr]
         'uv pip install --python "/opt/guard venv/bin/python" --reinstall-package hol-guard --no-deps "'
     )
+
+
+def test_manual_install_command_runs_a_quoted_interpreter_in_powershell(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(native.sys, "executable", r"C:\Users\Jane Doe\venv\Scripts\python.exe")
+    monkeypatch.setattr(native.os, "name", "nt")
+
+    assert native._manual_installer_prefix("pip") == r'& "C:\Users\Jane Doe\venv\Scripts\python.exe" -m pip install'
