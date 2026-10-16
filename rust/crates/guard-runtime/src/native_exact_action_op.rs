@@ -151,3 +151,7 @@ fn decide(
 #[cfg(test)]
 #[path = "native_exact_action_op_tests.rs"]
 mod tests;
+
+#[cfg(all(test, windows))]
+#[path = "native_exact_action_op/windows_tests.rs"]
+mod windows_tests;
