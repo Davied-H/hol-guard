@@ -5,18 +5,22 @@ from __future__ import annotations
 import os
 import shlex
 import stat
+import sys
 from collections.abc import Callable, Sequence
 from dataclasses import replace
 from pathlib import Path
 
+from ..native_restricted_pytest import decode_native_plan, restricted_native
 from .package_evidence_common import read_json_with_integrity
 from .restricted_node_test import nearest_project_root, prepare_restricted_node_test
 from .restricted_pytest_model import (
     NODE_BUILD_OUTPUT_PROFILE_VERSION,
     NODE_TOOL_READ_ONLY_PROFILE_VERSION,
+    PYTEST_SANDBOX_UNAVAILABLE_REASON_CODE,
     RestrictedPytestError,
     RestrictedPytestPlan,
 )
+from .restricted_pytest_sandbox import _run_backend_process
 from .restricted_pytest_validation import _normalized_command, _path_is_within
 from .restricted_vite_output import config_bundle_directory, declared_vite_output
 from .restricted_vitest import run_restricted_node_plan
@@ -132,6 +136,56 @@ def validate_build_output_root(path: Path, *, workspace: Path, cwd: Path | None 
                 )
 
 
+def _vite_output(args: Sequence[str], *, workspace: Path, cwd: Path) -> Path:
+    """The build's last `--outDir`, else the config's literal one, else `dist`."""
+    output_name = None
+    for index, value in enumerate(args):
+        if value.startswith("--outDir="):
+            output_name = value.removeprefix("--outDir=")
+        elif value == "--outDir":
+            if index + 1 >= len(args):
+                raise RestrictedPytestError("node_build_invalid_output", "Missing output directory.")
+            output_name = args[index + 1]
+    explicit_config = any(value in {"-c", "--config"} or value.startswith("--config=") for value in args)
+    declared = None if output_name or explicit_config else declared_vite_output(cwd, workspace)
+    output = declared or cwd / (output_name or "dist")
+    validate_build_output_root(output, workspace=workspace, cwd=None if declared is None else cwd)
+    return output
+
+
+def _prepare_windows_build(
+    name: str,
+    args: Sequence[str],
+    runtime_args: Sequence[str],
+    expected_entry: Path | None,
+    *,
+    workspace: Path,
+    cwd: Path,
+) -> RestrictedPytestPlan:
+    """Windows stages the build in an AppContainer; the resident resolves Node and Vite.
+
+    The private copy is writable, so Vite bundles its config in place and no
+    config loader or bundle directory is added.
+    """
+    if name != "vite":
+        raise RestrictedPytestError(
+            PYTEST_SANDBOX_UNAVAILABLE_REASON_CODE, "Only Vite builds run contained on Windows."
+        )
+    result = restricted_native(
+        "prepare_node_build",
+        {
+            "workspace": workspace,
+            "cwd": cwd,
+            "runtime_arguments": list(runtime_args),
+            "arguments": list(args),
+            "expected_entry": None if expected_entry is None else expected_entry.as_posix(),
+        },
+        dict,
+    )
+    plan = decode_native_plan(result, (NODE_BUILD_OUTPUT_PROFILE_VERSION,))
+    return replace(plan, output_roots=(_vite_output(args, workspace=plan.workspace, cwd=plan.cwd),))
+
+
 def prepare_restricted_node_tool(
     command: Sequence[str], *, workspace: Path, cwd: Path | None = None
 ) -> RestrictedPytestPlan:
@@ -152,6 +206,10 @@ def prepare_restricted_node_tool(
         if len(args) != 2 or args[0] != "run" or args[1] not in {"lint", "typecheck", "build"}:
             raise RestrictedPytestError(
                 "node_tool_invalid_command", "Only direct lint/typecheck scripts are supported."
+            )
+        if sys.platform == "win32":
+            raise RestrictedPytestError(
+                PYTEST_SANDBOX_UNAVAILABLE_REASON_CODE, "Package scripts do not run contained on Windows yet."
             )
         package = nearest_project_root(cwd or workspace, workspace, "package.json")
         manifest, _digest = read_json_with_integrity(package / "package.json")
@@ -202,22 +260,14 @@ def prepare_restricted_node_tool(
         for token in args
     ):
         raise RestrictedPytestError("node_tool_invalid_command", "The lint/typecheck input has write or shell effects.")
+    if sys.platform == "win32":
+        return _prepare_windows_build(
+            name, args, runtime_args, expected_entry, workspace=workspace, cwd=cwd or workspace
+        )
     base = prepare_restricted_node_test(["node", "--test"], workspace=workspace, cwd=cwd)
     output_roots = ()
     if name == "vite":
-        output_name = None
-        for index, value in enumerate(args):
-            if value.startswith("--outDir="):
-                output_name = value.removeprefix("--outDir=")
-            elif value == "--outDir":
-                if index + 1 >= len(args):
-                    raise RestrictedPytestError("node_build_invalid_output", "Missing output directory.")
-                output_name = args[index + 1]
-        explicit_config = any(value in {"-c", "--config"} or value.startswith("--config=") for value in args)
-        declared = None if output_name or explicit_config else declared_vite_output(base.cwd, base.workspace)
-        output = declared or base.cwd / (output_name or "dist")
-        validate_build_output_root(output, workspace=base.workspace, cwd=None if declared is None else base.cwd)
-        output_roots = (output,)
+        output_roots = (_vite_output(args, workspace=base.workspace, cwd=base.cwd),)
     try:
         modules = nearest_project_root(base.cwd, base.workspace, "node_modules/" + _ENTRIES[name]) / "node_modules"
         entry = (modules / _ENTRIES[name]).resolve(strict=True)
@@ -257,6 +307,8 @@ def run_restricted_node_tool(
     authorize_capability: Callable[[tuple[str, ...]], None] | None = None,
     merge_stderr: bool = False,
 ) -> int:
+    if plan.backend == "windows-appcontainer":
+        return _run_windows_node_build(plan, timeout_seconds=timeout_seconds, merge_stderr=merge_stderr)
     for root in plan.output_roots:
         # Vite creates this directory itself; a sandbox grant needs it first.
         if root.name == ".vite-temp":
@@ -266,4 +318,34 @@ def run_restricted_node_tool(
         timeout_seconds=timeout_seconds,
         authorize_capability=authorize_capability,
         merge_stderr=merge_stderr,
+    )
+
+
+def _run_windows_node_build(plan: RestrictedPytestPlan, *, timeout_seconds: int, merge_stderr: bool) -> int:
+    """The native runner stages the build and publishes only the output roots."""
+    if (
+        sys.platform != "win32"
+        or plan.profile_version != NODE_BUILD_OUTPUT_PROFILE_VERSION
+        or not plan.output_roots
+        or not 0 < timeout_seconds <= 86400
+    ):
+        raise RestrictedPytestError("node_tool_invalid_command", "Unexpected protected build plan.")
+    outputs = [option for root in plan.output_roots for option in ("--output", str(root))]
+    argv = [
+        str(plan.backend_executable),
+        "contained-readonly-windows",
+        "--profile",
+        NODE_BUILD_OUTPUT_PROFILE_VERSION,
+        "--workspace",
+        str(plan.workspace),
+        "--cwd",
+        str(plan.cwd),
+        "--timeout-seconds",
+        str(timeout_seconds),
+        *outputs,
+        "--",
+        *plan.command,
+    ]
+    return _run_backend_process(
+        argv, env=os.environ, timeout_seconds=timeout_seconds, cwd=plan.cwd, merge_stderr=merge_stderr
     )

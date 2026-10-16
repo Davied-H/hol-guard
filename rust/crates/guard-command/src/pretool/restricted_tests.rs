@@ -355,7 +355,19 @@ pub(super) fn readonly_test_reason(model: &CanonicalCommandV1) -> Option<&'stati
         }
         _ => (executable, arguments),
     };
-    let build = match super::executable_basename(executable) {
+    // The Windows build sink names the resolved `node.exe` image itself.
+    let build_name = super::executable_basename(executable);
+    let build_name = match build_name.len().checked_sub(4) {
+        Some(stem)
+            if cfg!(windows)
+                && build_name.is_char_boundary(stem)
+                && build_name[stem..].eq_ignore_ascii_case(".exe") =>
+        {
+            &build_name[..stem]
+        }
+        _ => build_name,
+    };
+    let build = match build_name {
         "bun" | "npm" | "pnpm" => {
             matches!(arguments, [run, task] if run == "run" && task == "build")
         }

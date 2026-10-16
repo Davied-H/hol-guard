@@ -53,6 +53,7 @@ struct SecurityCapabilities {
 
 mod app_container;
 pub use app_container::AppContainer;
+mod publish;
 pub(crate) mod readonly;
 
 /// Builds and releases the activation context of a DLL's embedded manifest

@@ -791,15 +791,21 @@ fn evaluate_envelope(
             },
         )
     });
-    // macOS runs every credential-filtering profile. Windows runs only the
-    // Python profile, in an AppContainer, for harnesses whose shell runs the
-    // POSIX-quoted sink: Claude Code (Git Bash) and the Pi family (a bash
-    // implementation). Only harnesses that rewrite into the contained sink get
-    // the receipt; others would see a bare deny.
+    // macOS runs every credential-filtering profile. Windows runs the Python
+    // profile and the Vite build profile, in an AppContainer, for harnesses
+    // whose shell runs the POSIX-quoted sink: Claude Code (Git Bash) and the
+    // Pi family (a bash implementation). Only harnesses that rewrite into the
+    // contained sink get the receipt; others would see a bare deny.
     if (cfg!(target_os = "macos")
         || (cfg!(windows)
             && matches!(harness, "claude-code" | "omp" | "oh-my-pi" | "pi")
-            && contained_test_reason == Some("native_python_eval_readonly_containment_required")))
+            && matches!(
+                contained_test_reason,
+                Some(
+                    "native_python_eval_readonly_containment_required"
+                        | "native_node_build_output_containment_required"
+                )
+            )))
         && event == "PreToolUse"
         && matches!(
             harness,

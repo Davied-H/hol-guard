@@ -623,6 +623,8 @@ mod supply_chain_egress;
 mod supply_chain_eval_seams;
 mod totp;
 #[cfg(windows)]
+mod windows_node_build;
+#[cfg(windows)]
 mod windows_readonly;
 mod workspace_inventory_files;
 mod workspace_inventory_op;

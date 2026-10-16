@@ -540,7 +540,7 @@ fn build_requires_bounded_outputs_and_never_direct_execution() {
 }
 
 #[test]
-fn windows_contains_only_python_runs_from_posix_shell_harnesses() {
+fn windows_contains_python_runs_only_from_posix_shell_harnesses() {
     for harness in ["claude-code", "omp", "pi"] {
         let contained = classify(harness, "python3 test_calc.py");
         assert_eq!(contained.decision, "deny", "{harness}");
@@ -578,4 +578,65 @@ fn windows_contains_only_python_runs_from_posix_shell_harnesses() {
             );
         }
     }
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_contains_direct_vite_builds_of_a_flat_install() {
+    let root = std::env::temp_dir().join(format!("hg-vite-build-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let app = root.join("dashboard");
+    std::fs::create_dir_all(app.join("node_modules/vite/bin")).unwrap();
+    std::fs::create_dir_all(app.join("node_modules/.bin")).unwrap();
+    std::fs::write(app.join("package.json"), r#"{"scripts":{"build":"vite build"}}"#).unwrap();
+    std::fs::write(app.join("node_modules/vite/bin/vite.js"), "").unwrap();
+    std::fs::write(app.join("node_modules/.bin/vite"), "").unwrap();
+    let workspace = root.to_str().unwrap();
+    let classify_in = |harness: &str, command: &str, cwd: &str| {
+        evaluate_pre_tool_envelope_with_context(
+            harness,
+            "PreToolUse",
+            &json!({"tool_name":"bash","tool_input":{"command":command}}),
+            None,
+            None,
+            Some(r"C:\Users\tester"),
+            Some(cwd),
+        )
+    };
+    let entry = app
+        .join("node_modules/vite/bin/vite.js")
+        .to_string_lossy()
+        .replace('\\', "/");
+    let resolved = format!(r"'C:\Program Files\nodejs\node.exe' {entry} build");
+    for harness in ["claude-code", "omp", "pi"] {
+        for (command, cwd) in [
+            (
+                "cd dashboard && ./node_modules/.bin/vite build 2>&1 | tail -15",
+                workspace,
+            ),
+            ("npx vite build", app.to_str().unwrap()),
+            (resolved.as_str(), app.to_str().unwrap()),
+        ] {
+            let result = classify_in(harness, command, cwd);
+            assert_eq!(result.minimum_action, "sandbox-required", "{harness} {command}");
+            assert_eq!(
+                result.reason_code, "native_node_build_output_containment_required",
+                "{harness} {command}"
+            );
+        }
+    }
+    let app_dir = app.to_str().unwrap();
+    for (harness, command) in [
+        ("codex", "npx vite build"),
+        ("omp", "npm run build"),
+        ("omp", "npx vite build --outDir ../elsewhere"),
+    ] {
+        let result = classify_in(harness, command, app_dir);
+        assert_ne!(result.minimum_action, "sandbox-required", "{harness} {command}");
+    }
+    // A pnpm store links packages across directories and is not staged.
+    std::fs::create_dir(app.join("node_modules/.pnpm")).unwrap();
+    let pnpm = classify_in("omp", "npx vite build", app_dir);
+    assert_ne!(pnpm.minimum_action, "sandbox-required");
+    let _ = std::fs::remove_dir_all(&root);
 }
