@@ -92,6 +92,10 @@ struct Graph<'a> {
     /// Code `site` runs before the script: `.pth` files, the modules they
     /// import, and `sitecustomize`/`usercustomize`.
     startup: BTreeMap<String, String>,
+    /// Each startup shim's functions that load a package by name.
+    shim_loaders: Vec<(String, BTreeSet<String>)>,
+    /// Each startup source and `.pth` import line, as names it uses.
+    startup_code: Vec<(String, String)>,
     standard: BTreeSet<String>,
     listings: BTreeMap<String, Vec<String>>,
     queue: VecDeque<String>,
@@ -333,6 +337,8 @@ pub(super) fn python_script(
         modules: BTreeMap::new(),
         bytecode: BTreeMap::new(),
         startup: BTreeMap::new(),
+        shim_loaders: Vec::new(),
+        startup_code: Vec::new(),
         standard: BTreeSet::new(),
         listings: BTreeMap::new(),
         queue: VecDeque::new(),

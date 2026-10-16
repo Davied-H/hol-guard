@@ -32,7 +32,7 @@ fn pattern(cell: &'static OnceLock<Regex>, source: &str) -> &'static Regex {
 /// Names that evaluate strings, reach the import system or interpreter
 /// internals, start or replace processes, load native code, or load tests
 /// by name. Matched against code, with literal bodies and comments blanked.
-fn forbidden() -> &'static Regex {
+pub(super) fn forbidden() -> &'static Regex {
     static CELL: OnceLock<Regex> = OnceLock::new();
     pattern(
         &CELL,

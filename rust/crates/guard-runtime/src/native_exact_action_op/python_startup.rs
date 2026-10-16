@@ -5,17 +5,17 @@
 //! library the proof cannot place keeps the launch once-only.
 
 use std::io::Read;
-use std::sync::OnceLock;
 
-use regex::{Captures, Regex};
+use regex::Captures;
 use serde_json::Value;
 
 use super::super::fs_path;
 use super::super::python_modules::{REFUSED_MODULES, STANDARD_MODULES};
-use super::super::python_source::{imports_in, readable, scan, Import};
+use super::super::python_source::{readable, scan};
 use super::super::reasons::{Proof, MUTABLE_LAUNCHER};
 use super::{Graph, COMPILED_SUFFIXES};
 use layout::Layout;
+use shim::{literal, literal_import, references, top, uses, SHIMMED, SHIMS};
 
 /// A site directory can hold thousands of installed packages.
 const MAX_SITE_LISTING: usize = 65_536;
@@ -53,140 +53,6 @@ pub(super) fn runs_in_place(source: &std::fs::Metadata, pyc: &str) -> bool {
     }
 }
 
-/// Meta-path shims that virtualenv, uv and setuptools install through a
-/// `.pth` file. Their finders use import machinery the scan refuses, but they
-/// only redirect the `SHIMMED` packages. They are bound by content when no
-/// name in them can load code the proof does not bind, and what they import
-/// by name is bound as the graph binds any startup import.
-const SHIMS: [&str; 2] = ["_virtualenv", "_distutils_hack"];
-const SHIMMED: [&str; 3] = ["distutils", "setuptools", "pip"];
-/// What a shim may read or set attributes on by name: itself, its own
-/// classes, and the loader it wraps.
-const SHIM_TARGETS: [&str; 3] = ["self", "cls", "spec.loader"];
-
-fn pattern(cell: &'static OnceLock<Regex>, source: &str) -> &'static Regex {
-    cell.get_or_init(|| Regex::new(source).expect("static pattern"))
-}
-
-/// `__import__('name')` with a literal name, as `.pth` import lines write it.
-fn literal_import() -> &'static Regex {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    pattern(
-        &CELL,
-        r#"__import__\(\s*(?:'([A-Za-z_][\w.]*)'|"([A-Za-z_][\w.]*)")\s*\)"#,
-    )
-}
-
-/// `import_module('name')` with a literal name.
-fn literal_import_module() -> &'static Regex {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    pattern(
-        &CELL,
-        r#"\bimport_module\(\s*(?:'([A-Za-z_][\w.]*)'|"([A-Za-z_][\w.]*)")\s*\)"#,
-    )
-}
-
-/// Names that evaluate strings, read or write files, start programs, or
-/// load a module from a name or path the text does not spell out. Matched as words
-/// against code with literal bodies and comments blanked, so a reference is
-/// refused as well as a call.
-fn shim_refused() -> &'static Regex {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    pattern(
-        &CELL,
-        concat!(
-            r"\b(?:exec|eval|compile|execfile|__import__|open|read_text|read_bytes|loads|system|popen",
-            r"|import_module|exec_module|load_module|load_source|spec_from_file_location|module_from_spec",
-            r"|get_code|source_to_code|run_path|run_module|runsource|runcode|runpy|zipimport|pkgutil",
-            r"|SourceFileLoader|SourcelessFileLoader|ExtensionFileLoader|FunctionType|CodeType",
-            r"|getattr|setattr|delattr|globals|vars|builtins|attrgetter|methodcaller",
-            r"|rename|renames|unlink|rmtree|symlink|symlink_to|hardlink_to|link|truncate|ftruncate",
-            r"|makedirs|mkdir|copyfile|copytree|copy2|move|write|writelines|write_text|write_bytes",
-            r"|writestr|FileIO|mmap|chmod|chown|utime|extractall|unpack_archive",
-            r"|subprocess|ctypes|marshal|pickle|codecs)\b|\bos\s*\.\s*replace\b",
-        ),
-    )
-}
-
-fn method_definition() -> &'static Regex {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    pattern(&CELL, r"\bdef[ \t]+\w+")
-}
-
-/// A shim's own loader hooks, which wrap the loader it found.
-fn own_loader_hook() -> &'static Regex {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    pattern(&CELL, r"\bself\.(?:exec_module|load_module)\b")
-}
-
-fn class_name() -> &'static Regex {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    pattern(&CELL, r"(?m)^[ \t]*class[ \t]+(\w+)")
-}
-
-fn attribute_by_name() -> &'static Regex {
-    static CELL: OnceLock<Regex> = OnceLock::new();
-    pattern(&CELL, r"\b(?:getattr|setattr)\(\s*([\w.]+)\s*,")
-}
-
-fn literal(captures: &Captures) -> String {
-    captures
-        .get(1)
-        .or_else(|| captures.get(2))
-        .map_or("", |m| m.as_str())
-        .to_owned()
-}
-
-fn top(name: &str) -> &str {
-    name.split('.').next().unwrap_or_default()
-}
-
-/// The imports a shim makes, or `None` when a name in it could load code
-/// the proof does not bind: a string evaluation, a file read, an
-/// `import_module` of anything but a package the shim redirects, or an
-/// attribute read or set by name on anything but the shim's own classes and
-/// the loader it wraps.
-fn shim_imports(text: &str) -> Option<Vec<Import>> {
-    let mut imports = Vec::new();
-    let text = literal_import().replace_all(text, |captures: &Captures| {
-        imports.push(Import {
-            level: 0,
-            module: literal(captures),
-            names: Vec::new(),
-        });
-        "_imported_"
-    });
-    let mut redirected = true;
-    let text = literal_import_module().replace_all(&text, |captures: &Captures| {
-        let name = literal(captures);
-        redirected &= SHIMMED.contains(&top(&name)) || STANDARD_MODULES.contains(&top(&name));
-        "_imported_"
-    });
-    if !redirected {
-        return None;
-    }
-    let code = readable(&text)?;
-    let code = method_definition().replace_all(&code, "def _");
-    let code = own_loader_hook().replace_all(&code, "self._");
-    let classes: Vec<String> = class_name()
-        .captures_iter(&code)
-        .map(|captures| captures[1].to_owned())
-        .collect();
-    let code = attribute_by_name().replace_all(&code, |captures: &Captures| {
-        let target = &captures[1];
-        if SHIM_TARGETS.contains(&target) || classes.iter().any(|name| name == target) {
-            "_attr_(".to_owned()
-        } else {
-            captures[0].to_owned()
-        }
-    });
-    if shim_refused().is_match(&code) {
-        return None;
-    }
-    imports.extend(imports_in(&code)?);
-    Some(imports)
-}
-
 impl Graph<'_> {
     fn bind_startup(&mut self, path: &str) -> Proof<Vec<u8>> {
         let (digest, bytes) = self.digest(path)?;
@@ -212,12 +78,17 @@ impl Graph<'_> {
         let text = String::from_utf8(bytes).map_err(|_| MUTABLE_LAUNCHER)?;
         let text = text.trim_start_matches('\u{feff}');
         let imports = if shim {
-            shim_imports(text).ok_or(MUTABLE_LAUNCHER)?
+            let found = shim::shim(text).ok_or(MUTABLE_LAUNCHER)?;
+            self.shim_loaders.push((path.to_owned(), found.loaders));
+            self.startup_code.push((path.to_owned(), found.code));
+            found.imports
         } else {
             let scanned = scan(text).ok_or(MUTABLE_LAUNCHER)?;
             if scanned.writes {
                 return Err(MUTABLE_LAUNCHER);
             }
+            let code = readable(text).ok_or(MUTABLE_LAUNCHER)?;
+            self.startup_code.push((path.to_owned(), references(&code)));
             scanned.imports
         };
         for import in &imports {
@@ -326,6 +197,8 @@ impl Graph<'_> {
                 if scanned.writes {
                     return Err(MUTABLE_LAUNCHER);
                 }
+                let code = readable(&rewritten).ok_or(MUTABLE_LAUNCHER)?;
+                self.startup_code.push((path.to_owned(), references(&code)));
                 for name in named {
                     self.bind_import(sites, &name, &[])?;
                 }
@@ -398,6 +271,15 @@ impl Graph<'_> {
         for directory in layout.library.iter().chain(&path_directories) {
             self.add_customize(&path_directories, directory)?;
         }
+        // Only the shim itself may call a function that loads a package.
+        let called = self.shim_loaders.iter().any(|(path, loaders)| {
+            self.startup_code
+                .iter()
+                .any(|(other, code)| other != path && loaders.iter().any(|name| uses(code, name)))
+        });
+        if called {
+            return Err(MUTABLE_LAUNCHER);
+        }
         // A shim redirects these packages, so a local copy is not what runs.
         let shimmed = self.startup.keys().any(|path| {
             SHIMS.iter().any(|shim| {
@@ -439,3 +321,5 @@ impl Graph<'_> {
 
 #[path = "python_layout.rs"]
 mod layout;
+#[path = "python_shim.rs"]
+mod shim;

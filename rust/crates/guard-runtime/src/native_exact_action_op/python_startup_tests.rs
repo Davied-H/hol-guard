@@ -148,11 +148,36 @@ fn a_virtualenv_shim_is_bound_by_content() {
     project.write(&format!("{SITE}/_virtualenv.pth"), "import _virtualenv\n");
 
     project.write("tool.py", "print(1)\n");
+    // A function may load a redirected package; code that runs on import
+    // binds what it loads.
+    let loader =
+        "import importlib\ndef load():\n    importlib.import_module('setuptools._distutils')\n";
+    let method = "def spec_for(self, name):\n    return 'spec_for_{name}'.format(**locals())\n";
+    project.write(
+        &format!("{SITE}/_virtualenv.py"),
+        &format!("{shim}{loader}{method}"),
+    );
+    assert!(bind(&project, &["tool.py"], &[]).is_ok());
     project.write(
         &format!("{SITE}/_virtualenv.py"),
         &format!("{shim}import importlib\nimportlib.import_module('setuptools._distutils')\n"),
     );
-    assert!(bind(&project, &["tool.py"], &[]).is_ok());
+    assert_eq!(bind(&project, &["tool.py"], &[]), Err("mutable_launcher"));
+    project.write(&format!("{SITE}/setuptools/__init__.py"), "");
+    project.write(&format!("{SITE}/setuptools/_distutils.py"), "X = 1\n");
+    let bound = bind(&project, &["tool.py"], &[]).unwrap();
+    assert!(startup_paths(&bound).contains(&format!("{site}/setuptools/_distutils.py")));
+    // Nothing but the shim may call a loader.
+    project.write(
+        &format!("{SITE}/_virtualenv.py"),
+        &format!("{shim}{loader}"),
+    );
+    project.write(
+        &format!("{SITE}/_virtualenv.pth"),
+        "import _virtualenv; _virtualenv.load()\n",
+    );
+    assert_eq!(bind(&project, &["tool.py"], &[]), Err("mutable_launcher"));
+    project.write(&format!("{SITE}/_virtualenv.pth"), "import _virtualenv\n");
     // Names that could load code the proof does not bind.
     for text in [
         format!("{shim}open('x').read()\n"),
@@ -164,6 +189,14 @@ fn a_virtualenv_shim_is_bound_by_content() {
         format!("{shim}import builtins\n"),
         format!("{shim}getattr(sys, 'modules')\n"),
         format!("{shim}import os\nos.rename('a.py', 'b.py')\n"),
+        format!("{shim}import os\nos.execv('/bin/sh', ['sh'])\n"),
+        format!("{shim}sys.path.insert(0, 'payload')\n"),
+        format!("{shim}names = locals()\n"),
+        format!("{shim}import importlib\ndef load():\n    importlib.import_module('payload')\n"),
+        format!("{shim}import importlib\ndef load():\n    importlib.import_module('setuptools')\nload()\n"),
+        format!(
+            "{shim}import importlib\nclass Finder:\n    def find_spec(self, name, path, target=None):\n        return self.load()\n    def load(self):\n        importlib.import_module('setuptools')\n"
+        ),
     ] {
         project.write(&format!("{SITE}/_virtualenv.py"), &text);
         assert_eq!(
