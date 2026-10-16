@@ -44,6 +44,9 @@ fn forbidden() -> &'static Regex {
             r"|\b(?:system|popen|startfile|fork|forkpty|posix_spawnp?|spawn[lv]p?e?|exec[lv]p?e?|create_subprocess_\w+)\b",
             r"|\b(?:load_extension|enable_load_extension)\b|\blogging\s*\.\s*config\b",
             r"|\b(?:discover|loadTestsFromName|loadTestsFromNames)\b|\bmodule\s*=\s*None\b",
+            // Annotation helpers evaluate strings, which a script can build at run time.
+            r"|\b(?:get_type_hints|ForwardRef|evaluate_forward_ref|_evaluate|get_annotations|call_annotate_function|call_evaluate_function)\b",
+            r"|\bCGIHTTPRequestHandler\b",
         ),
     )
 }
@@ -54,55 +57,9 @@ fn forbidden_dunder() -> &'static Regex {
     static CELL: OnceLock<Regex> = OnceLock::new();
     pattern(
         &CELL,
-        r"__(?:builtins|dict|class|subclasses|globals|code|closure|func|self|loader|spec|path|bases|base|mro|getattribute|reduce|reduce_ex|setstate|import)__",
+        r"__(?:builtins|dict|class|subclasses|globals|code|closure|func|self|loader|spec|path|bases|base|mro|getattribute|reduce|reduce_ex|setstate|import|annotations|annotate)__",
     )
 }
-
-/// Standard modules that load or evaluate code, start processes, or
-/// deserialize objects. Importing one keeps a launch once-only.
-pub(super) const REFUSED_MODULES: &[&str] = &[
-    "antigravity",
-    "bdb",
-    "builtins",
-    "cProfile",
-    "code",
-    "codeop",
-    "compileall",
-    "ctypes",
-    "doctest",
-    "ensurepip",
-    "gc",
-    "idlelib",
-    "imp",
-    "importlib",
-    "inspect",
-    "marshal",
-    "modulefinder",
-    "multiprocessing",
-    "nt",
-    "pdb",
-    "pickle",
-    "pickletools",
-    "pkgutil",
-    "posix",
-    "profile",
-    "pty",
-    "py_compile",
-    "pydoc",
-    "runpy",
-    "shelve",
-    "site",
-    "subprocess",
-    "timeit",
-    "tkinter",
-    "trace",
-    "turtle",
-    "turtledemo",
-    "venv",
-    "webbrowser",
-    "zipapp",
-    "zipimport",
-];
 
 fn writes_files() -> &'static Regex {
     static CELL: OnceLock<Regex> = OnceLock::new();
@@ -110,7 +67,9 @@ fn writes_files() -> &'static Regex {
         &CELL,
         concat!(
             r"\bopen\s*\(|\.\s*write(?:_text|_bytes|lines)?\s*\(|\bos\s*\.\s*replace\s*\(",
-            r"|\b(?:rename|renames|remove|unlink|rmtree|copy|copy2|copyfile|copytree|move|symlink|symlink_to|hardlink_to|link|truncate|makedirs|mkdir|touch|extractall|unpack_archive)\s*\(",
+            r"|\b(?:rename|renames|remove|unlink|rmtree|copy|copy2|copyfile|copytree|move|symlink|symlink_to|hardlink_to|link|truncate|makedirs|mkdir|touch|extract|extractall|unpack_archive|writestr)\s*\(",
+            // Writable handles and mappings that change a file without `open`.
+            r"|\b(?:FileIO|mmap|pwrite|pwritev|writev|ftruncate|sendfile|copy_file_range|splice|chmod|lchmod|chown|lchown|utime|mkfifo|mknod)\b",
         ),
     )
 }
@@ -422,6 +381,11 @@ mod tests {
             "x = f'{1 # comment\n}'\n",
             "x = t'{y}'\n",
             "import json\nimport\n",
+            "import typing\nhints = typing.get_type_hints(Row)\n",
+            "from typing import ForwardRef\n",
+            "value = typing.evaluate_forward_ref(ref)\n",
+            "hints = Row.__annotations__\n",
+            "hints = Row.__annotate__(1)\n",
         ] {
             assert!(scan(source).is_none(), "{source}");
         }
@@ -451,6 +415,12 @@ mod tests {
                 .writes
         );
         assert!(scan("Path('x').write_text('y')\n").unwrap().writes);
+        assert!(
+            scan("import io, mmap\nhandle = io.FileIO('helpers.py', 'r+')\nview = mmap.mmap(handle.fileno(), 0)\nview[0:1] = b'#'\n")
+                .unwrap()
+                .writes
+        );
+        assert!(scan("os.ftruncate(fd, 0)\n").unwrap().writes);
         assert!(
             !scan("# open( the door\nprint('shutil.rmtree(x)')\ntext = text.replace('a', 'b')\n")
                 .unwrap()

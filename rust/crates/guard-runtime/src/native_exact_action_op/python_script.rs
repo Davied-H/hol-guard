@@ -19,8 +19,10 @@ use serde_json::{json, Value};
 
 use super::context::Ctx;
 use super::fs_path;
-use super::python_source::{scan, Import, REFUSED_MODULES};
+use super::python_modules::{REFUSED_MODULES, STANDARD_MODULES};
+use super::python_source::{scan, Import};
 use super::reasons::{Proof, MUTABLE_LAUNCHER, SENSITIVE_PATH};
+use startup::runs_in_place;
 
 /// Single-letter options that run the script without loading other code.
 /// `I` and `P` also keep the script's directory off the module path.
@@ -47,178 +49,34 @@ const MAX_MODULE_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_TOTAL_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_LISTING: usize = 4096;
 
-/// Standard modules a script may import by name (`sys.stdlib_module_names`,
-/// public names). An import the script's directory does not shadow resolves
-/// to the interpreter's own copy.
-const STANDARD_MODULES: &[&str] = &[
-    "__future__",
-    "abc",
-    "annotationlib",
-    "argparse",
-    "array",
-    "ast",
-    "asyncio",
-    "atexit",
-    "base64",
-    "binascii",
-    "bisect",
-    "bz2",
-    "calendar",
-    "cmath",
-    "cmd",
-    "codecs",
-    "collections",
-    "colorsys",
-    "compression",
-    "concurrent",
-    "configparser",
-    "contextlib",
-    "contextvars",
-    "copy",
-    "copyreg",
-    "csv",
-    "curses",
-    "dataclasses",
-    "datetime",
-    "dbm",
-    "decimal",
-    "difflib",
-    "dis",
-    "email",
-    "encodings",
-    "enum",
-    "errno",
-    "faulthandler",
-    "fcntl",
-    "filecmp",
-    "fileinput",
-    "fnmatch",
-    "fractions",
-    "ftplib",
-    "functools",
-    "genericpath",
-    "getopt",
-    "getpass",
-    "gettext",
-    "glob",
-    "graphlib",
-    "grp",
-    "gzip",
-    "hashlib",
-    "heapq",
-    "hmac",
-    "html",
-    "http",
-    "imaplib",
-    "io",
-    "ipaddress",
-    "itertools",
-    "json",
-    "keyword",
-    "linecache",
-    "locale",
-    "logging",
-    "lzma",
-    "mailbox",
-    "math",
-    "mimetypes",
-    "mmap",
-    "msvcrt",
-    "netrc",
-    "ntpath",
-    "nturl2path",
-    "numbers",
-    "opcode",
-    "operator",
-    "optparse",
-    "os",
-    "pathlib",
-    "platform",
-    "plistlib",
-    "poplib",
-    "posixpath",
-    "pprint",
-    "pstats",
-    "pwd",
-    "pyclbr",
-    "pyexpat",
-    "queue",
-    "quopri",
-    "random",
-    "re",
-    "readline",
-    "reprlib",
-    "resource",
-    "rlcompleter",
-    "sched",
-    "secrets",
-    "select",
-    "selectors",
-    "shlex",
-    "shutil",
-    "signal",
-    "smtplib",
-    "socket",
-    "socketserver",
-    "sqlite3",
-    "sre_compile",
-    "sre_constants",
-    "sre_parse",
-    "ssl",
-    "stat",
-    "statistics",
-    "string",
-    "stringprep",
-    "struct",
-    "symtable",
-    "sys",
-    "sysconfig",
-    "syslog",
-    "tabnanny",
-    "tarfile",
-    "tempfile",
-    "termios",
-    "textwrap",
-    "this",
-    "threading",
-    "time",
-    "token",
-    "tokenize",
-    "tomllib",
-    "traceback",
-    "tracemalloc",
-    "tty",
-    "types",
-    "typing",
-    "unicodedata",
-    "unittest",
-    "urllib",
-    "uuid",
-    "warnings",
-    "wave",
-    "weakref",
-    "winreg",
-    "winsound",
-    "wsgiref",
-    "xml",
-    "xmlrpc",
-    "zipfile",
-    "zlib",
-    "zoneinfo",
-];
+/// What the options before the script change about module lookup.
+#[derive(Default)]
+struct Options {
+    /// `-E` or `-I`: every `PYTHON*` variable is ignored.
+    ignore_environment: bool,
+    /// `-I` or `-P`: the script's directory is not on the module path.
+    safe_path: bool,
+    /// `-S`: the `site` module does not run.
+    no_site: bool,
+    /// `-s` or `-I`: the user site directory is not read.
+    no_user_site: bool,
+}
 
-/// The script and whether the script's directory is on the module path, or
-/// `None` for an option that loads other code or reads the program elsewhere.
-fn script_argument(arguments: &[String]) -> Option<(&str, bool)> {
-    let mut script_directory = true;
+/// The script and the options before it, or `None` for an option that loads
+/// other code or reads the program elsewhere.
+fn script_argument(arguments: &[String]) -> Option<(&str, Options)> {
+    let mut options = Options::default();
     for argument in arguments {
         let Some(flags) = argument.strip_prefix('-') else {
-            return Some((argument, script_directory));
+            return Some((argument, options));
         };
         if flags.is_empty() || !flags.chars().all(|flag| INERT_FLAGS.contains(flag)) {
             return None;
         }
-        script_directory &= !flags.contains(['I', 'P']);
+        options.ignore_environment |= flags.contains(['E', 'I']);
+        options.safe_path |= flags.contains(['I', 'P']);
+        options.no_site |= flags.contains('S');
+        options.no_user_site |= flags.contains(['I', 's']);
     }
     None
 }
@@ -231,6 +89,9 @@ struct Graph<'a> {
     script_directory: bool,
     modules: BTreeMap<String, String>,
     bytecode: BTreeMap<String, String>,
+    /// Code `site` runs before the script: `.pth` files, the modules they
+    /// import, and `sitecustomize`/`usercustomize`.
+    startup: BTreeMap<String, String>,
     standard: BTreeSet<String>,
     listings: BTreeMap<String, Vec<String>>,
     queue: VecDeque<String>,
@@ -259,6 +120,10 @@ impl Graph<'_> {
     }
 
     fn listing(&mut self, directory: &str) -> Proof<&Vec<String>> {
+        self.listing_within(directory, MAX_LISTING)
+    }
+
+    fn listing_within(&mut self, directory: &str, limit: usize) -> Proof<&Vec<String>> {
         if !self.listings.contains_key(directory) {
             self.ctx.check()?;
             let mut names = Vec::new();
@@ -266,7 +131,7 @@ impl Graph<'_> {
                 for entry in entries {
                     let name = entry.map_err(|_| MUTABLE_LAUNCHER)?.file_name();
                     names.push(name.into_string().map_err(|_| MUTABLE_LAUNCHER)?);
-                    if names.len() > MAX_LISTING {
+                    if names.len() > limit {
                         return Err(MUTABLE_LAUNCHER);
                     }
                 }
@@ -315,29 +180,44 @@ impl Graph<'_> {
         if self.modules.len() + self.queue.len() >= MAX_MODULES {
             return Err(MUTABLE_LAUNCHER);
         }
-        let stem = fs_path::name(&path)
+        self.add_bytecode(&path)?;
+        self.queue.push_back(path);
+        Ok(())
+    }
+
+    /// Bind each cached `.pyc` the import system would run in place of the
+    /// source at `path`. A stale timestamp file is skipped: Python ignores it
+    /// and writes a fresh one, so binding it would only change the identity.
+    fn add_bytecode(&mut self, path: &str) -> Proof<()> {
+        let stem = fs_path::name(path)
             .strip_suffix(".py")
             .ok_or(MUTABLE_LAUNCHER)?
             .to_owned();
-        let cache = fs_path::join(&fs_path::parent(&path), "__pycache__");
-        if fs_path::is_dir(&cache) {
-            let cached: Vec<String> = self
-                .listing(&cache)?
-                .iter()
-                .filter(|entry| {
-                    entry
-                        .strip_prefix(stem.as_str())
-                        .is_some_and(|rest| rest.starts_with('.') && rest.ends_with(".pyc"))
-                })
-                .cloned()
-                .collect();
-            for entry in cached {
-                let file = fs_path::join(&cache, &entry);
+        let cache = fs_path::join(&fs_path::parent(path), "__pycache__");
+        if !fs_path::is_dir(&cache) {
+            return Ok(());
+        }
+        let cached: Vec<String> = self
+            .listing(&cache)?
+            .iter()
+            .filter(|entry| {
+                entry
+                    .strip_prefix(stem.as_str())
+                    .is_some_and(|rest| rest.starts_with('.') && rest.ends_with(".pyc"))
+            })
+            .cloned()
+            .collect();
+        if cached.is_empty() {
+            return Ok(());
+        }
+        let source = std::fs::metadata(path).map_err(|_| MUTABLE_LAUNCHER)?;
+        for entry in cached {
+            let file = fs_path::join(&cache, &entry);
+            if runs_in_place(&source, &file) {
                 let (digest, _) = self.digest(&file)?;
                 self.bytecode.insert(file, digest);
             }
         }
-        self.queue.push_back(path);
         Ok(())
     }
 
@@ -403,9 +283,14 @@ impl Graph<'_> {
 }
 
 /// The bound module graph of `python <script>`, or the reason it stays
-/// once-only.
-pub(super) fn python_script(arguments: &[String], cwd: &str, ctx: &Ctx) -> Proof<Value> {
-    let mut script_directory = true;
+/// once-only. `executable` is the interpreter's verified launch identity.
+pub(super) fn python_script(
+    arguments: &[String],
+    cwd: &str,
+    ctx: &Ctx,
+    executable: &Value,
+) -> Proof<Value> {
+    let (script, mut options) = script_argument(arguments).ok_or(MUTABLE_LAUNCHER)?;
     for (name, value) in ctx.env {
         if value.is_empty() {
             continue;
@@ -416,11 +301,16 @@ pub(super) fn python_script(arguments: &[String], cwd: &str, ctx: &Ctx) -> Proof
         {
             return Err(MUTABLE_LAUNCHER);
         }
+        if options.ignore_environment {
+            continue;
+        }
         if name.eq_ignore_ascii_case("PYTHONSAFEPATH") {
-            script_directory = false;
+            options.safe_path = true;
+        }
+        if name.eq_ignore_ascii_case("PYTHONNOUSERSITE") {
+            options.no_user_site = true;
         }
     }
-    let (script, on_path) = script_argument(arguments).ok_or(MUTABLE_LAUNCHER)?;
     let candidate = if fs_path::is_abs(script) {
         script.to_owned()
     } else {
@@ -436,10 +326,13 @@ pub(super) fn python_script(arguments: &[String], cwd: &str, ctx: &Ctx) -> Proof
     let mut graph = Graph {
         ctx,
         cwd,
+        // CPython puts the real path's directory first on the module path,
+        // so a symlinked script imports beside its target, not the link.
         root: fs_path::parent(&resolved),
-        script_directory: script_directory && on_path,
+        script_directory: !options.safe_path,
         modules: BTreeMap::new(),
         bytecode: BTreeMap::new(),
+        startup: BTreeMap::new(),
         standard: BTreeSet::new(),
         listings: BTreeMap::new(),
         queue: VecDeque::new(),
@@ -463,6 +356,9 @@ pub(super) fn python_script(arguments: &[String], cwd: &str, ctx: &Ctx) -> Proof
     if writes && graph.modules.len() > 1 {
         return Err(MUTABLE_LAUNCHER);
     }
+    if !options.no_site {
+        graph.add_startup(executable, !options.no_user_site)?;
+    }
     let entries = |map: &BTreeMap<String, String>| -> Vec<Value> {
         map.iter()
             .map(|(path, digest)| json!({"path": path, "sha256": digest}))
@@ -472,9 +368,13 @@ pub(super) fn python_script(arguments: &[String], cwd: &str, ctx: &Ctx) -> Proof
         "script": resolved,
         "modules": entries(&graph.modules),
         "bytecode": entries(&graph.bytecode),
+        "startup": entries(&graph.startup),
         "standard": graph.standard.into_iter().collect::<Vec<_>>(),
     }))
 }
+
+#[path = "python_startup.rs"]
+mod startup;
 
 #[cfg(all(test, unix))]
 #[path = "python_script_tests.rs"]

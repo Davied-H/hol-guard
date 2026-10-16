@@ -201,9 +201,10 @@ fn segment_launch(
         );
     }
     if is_python_launcher(name) && !compound {
-        let script = python_script(arguments, cwd, ctx)?;
+        let identity = reusable_identity()?;
+        let script = python_script(arguments, cwd, ctx, &identity["executable"])?;
         return Ok(
-            json!({"kind": "python-script", "identity": reusable_identity()?, "script": script, "operands": operands}),
+            json!({"kind": "python-script", "identity": identity, "script": script, "operands": operands}),
         );
     }
     if loads_unbound_code(name, arguments) {

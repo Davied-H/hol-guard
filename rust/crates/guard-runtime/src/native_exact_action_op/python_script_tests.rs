@@ -1,13 +1,22 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 
 use super::super::context::{Ctx, Engines, LocalExecution};
 use super::super::launch::launch_identity;
 use super::python_script;
+
+/// The interpreter a project's `py` directory holds, launched as `name`.
+fn interpreter(cwd: &str, name: &str) -> Value {
+    json!({
+        "file_format": "native",
+        "launch_path": format!("{cwd}/py/bin/{name}"),
+        "path": format!("{cwd}/py/bin/python3.12"),
+    })
+}
 
 struct Fixed;
 
@@ -16,11 +25,12 @@ impl Engines for Fixed {
         &self,
         executable: &str,
         args: &[String],
-        _cwd: &str,
+        cwd: &str,
         _home: Option<&str>,
         _env: &BTreeMap<String, String>,
     ) -> Value {
-        json!({"executable": executable, "args": args})
+        let name = Path::new(executable).file_name().unwrap().to_str().unwrap();
+        json!({"executable": interpreter(cwd, name), "args": args})
     }
 
     fn launch_reusable(&self, _identity: &Value) -> bool {
@@ -39,7 +49,8 @@ impl Engines for Fixed {
 }
 
 /// A project below the target directory: macOS `$TMPDIR` resolves under
-/// `/private/var`, which the sensitive-path screen rejects.
+/// `/private/var`, which the sensitive-path screen rejects. It holds an
+/// interpreter installation in `py` and an empty home in `home`.
 struct Project(PathBuf);
 
 impl Project {
@@ -53,17 +64,30 @@ impl Project {
                 NEXT.fetch_add(1, Ordering::Relaxed)
             ));
         std::fs::create_dir_all(&root).unwrap();
-        Self(root.canonicalize().unwrap())
+        let project = Self(root.canonicalize().unwrap());
+        project.write("py/bin/python3.12", "");
+        project.write("py/lib/python3.12/os.py", "");
+        std::fs::create_dir_all(project.0.join(SITE)).unwrap();
+        std::fs::create_dir_all(project.0.join("home")).unwrap();
+        project
     }
 
     fn write(&self, relative: &str, text: &str) {
+        self.write_bytes(relative, text.as_bytes());
+    }
+
+    fn write_bytes(&self, relative: &str, bytes: &[u8]) {
         let path = self.0.join(relative);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(path, text).unwrap();
+        std::fs::write(path, bytes).unwrap();
     }
 
     fn cwd(&self) -> &str {
         self.0.to_str().unwrap()
+    }
+
+    fn home(&self) -> String {
+        format!("{}/home", self.cwd())
     }
 }
 
@@ -73,30 +97,54 @@ impl Drop for Project {
     }
 }
 
+const SITE: &str = "py/lib/python3.12/site-packages";
+
 fn bind(project: &Project, args: &[&str], env: &[(&str, &str)]) -> Result<Value, &'static str> {
+    bind_with(project, args, env, &interpreter(project.cwd(), "python3"))
+}
+
+fn bind_with(
+    project: &Project,
+    args: &[&str],
+    env: &[(&str, &str)],
+    executable: &Value,
+) -> Result<Value, &'static str> {
     let env: BTreeMap<String, String> = env
         .iter()
         .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
         .collect();
+    let home = project.home();
     let ctx = Ctx {
-        home: None,
+        home: Some(&home),
         env: &env,
         deadline: Instant::now() + Duration::from_secs(10),
         engines: &Fixed,
     };
     let args: Vec<String> = args.iter().map(|arg| (*arg).to_owned()).collect();
-    python_script(&args, project.cwd(), &ctx)
+    python_script(&args, project.cwd(), &ctx, executable)
 }
 
 fn launch(project: &Project, command: &str) -> Result<Value, &'static str> {
     let env = BTreeMap::new();
+    let home = project.home();
     let ctx = Ctx {
-        home: None,
+        home: Some(&home),
         env: &env,
         deadline: Instant::now() + Duration::from_secs(10),
         engines: &Fixed,
     };
     launch_identity(command, project.cwd(), &ctx)
+}
+
+/// A 16-byte `.pyc` header with `flags`, then the source's modification
+/// second and size for a timestamp file.
+fn pyc(flags: u32, seconds: u32, size: u32, body: &[u8]) -> Vec<u8> {
+    let mut bytes = Vec::from(*b"\xcb\r\r\n");
+    for word in [flags, seconds, size] {
+        bytes.extend(word.to_le_bytes());
+    }
+    bytes.extend(body);
+    bytes
 }
 
 fn report_project() -> Project {
@@ -158,16 +206,36 @@ fn a_script_binds_its_local_modules_by_content_and_standard_modules_by_name() {
 }
 
 #[test]
-fn cached_bytecode_beside_a_local_module_is_bound() {
+fn bytecode_python_runs_in_place_of_a_local_module_is_bound() {
     let project = report_project();
     let before = bind(&project, &["scripts/report.py"], &[]).unwrap();
     assert_eq!(before["bytecode"], json!([]));
-    project.write("scripts/__pycache__/helpers.cpython-312.pyc", "one");
-    let cached = bind(&project, &["scripts/report.py"], &[]).unwrap();
-    assert_eq!(cached["bytecode"].as_array().unwrap().len(), 1);
-    project.write("scripts/__pycache__/helpers.cpython-312.pyc", "two");
+    let source = std::fs::metadata(project.0.join("scripts/helpers.py")).unwrap();
+    let seconds = source
+        .modified()
+        .unwrap()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as u32;
+    let size = source.len() as u32;
+    let cached = "scripts/__pycache__/helpers.cpython-312.pyc";
+
+    // Python skips a short file and a stale timestamp, and writes a fresh one.
+    project.write(cached, "one");
+    assert_eq!(bind(&project, &["scripts/report.py"], &[]).unwrap(), before);
+    project.write_bytes(cached, &pyc(0, seconds.wrapping_add(1), size, b"one"));
+    assert_eq!(bind(&project, &["scripts/report.py"], &[]).unwrap(), before);
+
+    project.write_bytes(cached, &pyc(0, seconds, size, b"one"));
+    let current = bind(&project, &["scripts/report.py"], &[]).unwrap();
+    assert_eq!(current["bytecode"].as_array().unwrap().len(), 1);
+    project.write_bytes(cached, &pyc(0, seconds, size, b"two"));
     let replaced = bind(&project, &["scripts/report.py"], &[]).unwrap();
-    assert_ne!(replaced["bytecode"], cached["bytecode"]);
+    assert_ne!(replaced["bytecode"], current["bytecode"]);
+    project.write_bytes(cached, &pyc(1, 0, 0, b"two"));
+    let hashed = bind(&project, &["scripts/report.py"], &[]).unwrap();
+    assert_eq!(hashed["bytecode"].as_array().unwrap().len(), 1);
+    assert_ne!(hashed["bytecode"], replaced["bytecode"]);
 }
 
 #[test]
@@ -182,6 +250,34 @@ fn a_module_beside_the_script_shadows_the_standard_one() {
     let isolated = bind(&project, &["-I", "tool.py"], &[]).unwrap();
     assert_eq!(module_paths(&isolated).len(), 1);
     assert_eq!(isolated["standard"], json!(["json"]));
+    // `PYTHONSAFEPATH` does the same, unless `-E` makes Python ignore it.
+    let safe = bind(&project, &["tool.py"], &[("PYTHONSAFEPATH", "1")]).unwrap();
+    assert_eq!(safe["standard"], json!(["json"]));
+    let ignored = bind(&project, &["-E", "tool.py"], &[("PYTHONSAFEPATH", "1")]).unwrap();
+    assert_eq!(module_paths(&ignored).len(), 2);
+    assert_eq!(ignored["standard"], json!([]));
+}
+
+#[test]
+fn a_symlinked_script_imports_beside_its_target() {
+    let project = Project::new();
+    let root = project.cwd();
+    project.write("real/tool.py", "import json\nprint(json.dumps(1))\n");
+    project.write("real/json.py", "def dumps(value):\n    return str(value)\n");
+    project.write(
+        "link/json.py",
+        "def dumps(value):\n    return repr(value)\n",
+    );
+    std::os::unix::fs::symlink("../real/tool.py", project.0.join("link/run.py")).unwrap();
+    let bound = bind(&project, &["link/run.py"], &[]).unwrap();
+    assert_eq!(bound["script"], format!("{root}/real/tool.py"));
+    assert_eq!(
+        module_paths(&bound),
+        [
+            format!("{root}/real/json.py"),
+            format!("{root}/real/tool.py")
+        ]
+    );
 }
 
 #[test]
@@ -298,3 +394,6 @@ fn only_a_single_python_launch_gets_a_script_identity() {
         Err("compound_command")
     );
 }
+
+#[path = "python_startup_tests.rs"]
+mod startup;
