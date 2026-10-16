@@ -11,14 +11,17 @@
 //! takes an already-resolved [`ManagedNetworkPolicy`].
 
 use std::collections::BTreeMap;
+use std::ffi::OsStr;
 use std::io::Read;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::egress_caller::{EgressPolicy, EgressProxy};
+use crate::egress_caller::{EgressPolicy, EgressProxy, EgressProxyCredentials, EgressTrust};
+use crate::egress_proxy_credentials::load_proxy_credentials;
 use crate::restricted_archive_transport::PUBLIC_REGISTRIES;
 
 /// `platform_system_proxies` runs one short-lived probe; past this it is a
@@ -26,6 +29,10 @@ use crate::restricted_archive_transport::PUBLIC_REGISTRIES;
 const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 /// A proxy configuration larger than this is malformed, not a configuration.
 const MAX_PROBE_OUTPUT_BYTES: usize = 64 * 1024;
+/// `export_managed_trust_roots` bounds the export at 1024 roots.
+const MAX_TRUST_ROOTS: usize = 1024;
+/// Those roots bounded at 16 KiB each, with PEM armour over the DER.
+const MAX_TRUST_BUNDLE_BYTES: usize = MAX_TRUST_ROOTS * 24 * 1024;
 
 /// `ProxyMode` (mdm/contracts.py).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -45,6 +52,15 @@ pub struct ManagedNetworkPolicy {
     pub proxy_mode: ProxyMode,
     pub proxy_url: Option<String>,
     pub ca_bundle_path: Option<PathBuf>,
+    /// The managed trust roots, as a PEM bundle.
+    ///
+    /// `build_managed_ssl_context` adds the administrator's CA to the public
+    /// and platform roots, and `export_managed_trust_roots`
+    /// (mdm/network_trust.py:100) materialises that whole set for a native TLS
+    /// stack. ureq verifies against one root set rather than an additive
+    /// store, so a managed CA is honoured only together with this bundle:
+    /// pinning the CA alone would silently drop public and platform trust.
+    pub trust_roots_path: Option<PathBuf>,
     pub allow_public_registries: bool,
 }
 
@@ -56,6 +72,7 @@ impl ManagedNetworkPolicy {
             proxy_mode: ProxyMode::System,
             proxy_url: None,
             ca_bundle_path: None,
+            trust_roots_path: None,
             allow_public_registries: true,
         }
     }
@@ -181,7 +198,7 @@ pub fn platform_system_proxies() -> BTreeMap<String, String> {
 
 #[cfg(target_os = "macos")]
 fn system_proxies() -> BTreeMap<String, String> {
-    match probe_output("/usr/sbin/scutil", &["--proxy"]) {
+    match probe_text(OsStr::new("/usr/sbin/scutil"), &["--proxy"]) {
         Some(stdout) => parse_scutil_proxies(&stdout),
         None => BTreeMap::new(),
     }
@@ -192,25 +209,45 @@ fn system_proxies() -> BTreeMap<String, String> {
 /// registry API into the runtime.
 #[cfg(windows)]
 fn system_proxies() -> BTreeMap<String, String> {
+    let Some(reg) = reg_executable() else {
+        return BTreeMap::new();
+    };
     for hive in ["HKCU", "HKLM"] {
         let key = format!(r"{hive}\Software\Microsoft\Windows\CurrentVersion\Internet Settings");
-        let Some(stdout) = probe_output("reg.exe", &["query", key.as_str()]) else {
+        let Some(stdout) = probe_text(reg.as_os_str(), &["query", key.as_str()]) else {
             continue;
         };
         let values = parse_reg_values(&stdout);
         let enabled = values
             .get("proxyenable")
-            .and_then(|value| parse_reg_dword(value))
+            .and_then(|value| parse_reg_dword(&value.data))
             .is_some_and(|flag| flag != 0);
-        let Some(server) = values.get("proxyserver") else {
+        // `winreg` hands back a `str` only for the string kinds, and the
+        // Python port requires one: a `ProxyServer` stored as a DWORD is not
+        // a proxy configuration and the next hive is read instead.
+        let Some(server) = values.get("proxyserver").and_then(RegValue::string) else {
             continue;
         };
-        if !enabled || server.is_empty() {
+        if !enabled {
             continue;
         }
+        // An enabled hive with a string `ProxyServer` settles the answer even
+        // when that string is empty - `platform_system_proxies` breaks out of
+        // the hive loop there too, and the empty address is then refused as
+        // `managed_system_proxy_invalid` rather than quietly becoming HKLM's.
         return parse_windows_proxy_server(server);
     }
     BTreeMap::new()
+}
+
+/// `reg.exe` out of `%SystemRoot%\System32`, never off the search path: a read
+/// of managed configuration must not run whatever `reg.exe` happens to sit
+/// earlier on `PATH`. Without it there is no answer, which is "no proxy".
+#[cfg(windows)]
+fn reg_executable() -> Option<PathBuf> {
+    let root = std::env::var_os("SystemRoot")?;
+    let path = PathBuf::from(root).join(r"System32\reg.exe");
+    (path.is_absolute() && path.is_file()).then_some(path)
 }
 
 #[cfg(not(any(target_os = "macos", windows)))]
@@ -258,9 +295,26 @@ fn parse_scutil_proxies(stdout: &str) -> BTreeMap<String, String> {
     proxies
 }
 
+/// One `reg query` value: its data and the kind it was stored under, because
+/// `winreg` hands the Python port a `str` only for the string kinds and the
+/// port requires one.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub struct RegValue {
+    pub kind: String,
+    pub data: String,
+}
+
+impl RegValue {
+    /// The data when the value is string-typed - `isinstance(candidate, str)`.
+    #[cfg_attr(not(windows), allow(dead_code))]
+    fn string(&self) -> Option<&str> {
+        matches!(self.kind.as_str(), "REG_SZ" | "REG_EXPAND_SZ").then_some(self.data.as_str())
+    }
+}
+
 /// `reg query` prints `    Name    REG_TYPE    data` under the key's header.
 #[cfg_attr(not(windows), allow(dead_code))]
-fn parse_reg_values(stdout: &str) -> BTreeMap<String, String> {
+fn parse_reg_values(stdout: &str) -> BTreeMap<String, RegValue> {
     let mut values = BTreeMap::new();
     for line in stdout.lines() {
         let mut fields = line.trim().split_whitespace();
@@ -271,7 +325,13 @@ fn parse_reg_values(stdout: &str) -> BTreeMap<String, String> {
             continue;
         }
         let data = fields.collect::<Vec<_>>().join(" ");
-        values.insert(name.to_ascii_lowercase(), data);
+        values.insert(
+            name.to_ascii_lowercase(),
+            RegValue {
+                kind: kind.to_owned(),
+                data,
+            },
+        );
     }
     values
 }
@@ -310,9 +370,17 @@ fn parse_windows_proxy_server(server: &str) -> BTreeMap<String, String> {
 }
 
 /// `subprocess.run([...], capture_output=True, timeout=5)`; `None` stands for
-/// the `OSError`/`TimeoutExpired` the Python port treats as "no proxy".
-#[cfg_attr(not(any(target_os = "macos", windows)), allow(dead_code))]
-fn probe_output(program: &str, args: &[&str]) -> Option<String> {
+/// the `OSError`/`TimeoutExpired`/non-zero exit the Python ports treat as "no
+/// answer".
+///
+/// At most `limit + 1` bytes are read, so a caller can tell a bounded answer
+/// from one that overran its own bound: the proxy probes treat an overrun as
+/// "no proxy", the credential store treats it as a malformed record.
+#[cfg_attr(
+    not(any(target_os = "macos", target_os = "linux", windows)),
+    allow(dead_code)
+)]
+pub(crate) fn probe_output(program: &OsStr, args: &[&str], limit: usize) -> Option<Vec<u8>> {
     let mut child = Command::new(program)
         .args(args)
         .stdin(Stdio::null())
@@ -326,7 +394,7 @@ fn probe_output(program: &str, args: &[&str]) -> Option<String> {
         let mut buffer = Vec::new();
         let read = stdout
             .by_ref()
-            .take(MAX_PROBE_OUTPUT_BYTES as u64 + 1)
+            .take(limit as u64 + 1)
             .read_to_end(&mut buffer);
         let _ = sender.send(read.ok().map(|_| buffer));
     });
@@ -350,9 +418,15 @@ fn probe_output(program: &str, args: &[&str]) -> Option<String> {
     if !status.success() {
         return None;
     }
-    let buffer = receiver
+    receiver
         .recv_timeout(deadline.saturating_duration_since(Instant::now()))
-        .ok()??;
+        .ok()?
+}
+
+/// One bounded probe of OS configuration, as text; an overrun is "no answer".
+#[cfg_attr(not(any(target_os = "macos", windows)), allow(dead_code))]
+fn probe_text(program: &OsStr, args: &[&str]) -> Option<String> {
+    let buffer = probe_output(program, args, MAX_PROBE_OUTPUT_BYTES)?;
     if buffer.len() > MAX_PROBE_OUTPUT_BYTES {
         return None;
     }
@@ -363,16 +437,31 @@ fn probe_output(program: &str, args: &[&str]) -> Option<String> {
 pub struct ManagedEgressPolicy {
     allow_public_registries: bool,
     proxies: BTreeMap<String, String>,
+    credentials: BTreeMap<String, EgressProxyCredentials>,
+    trust: EgressTrust,
 }
 
 impl ManagedEgressPolicy {
-    /// `Err(code)` is a policy that cannot be honoured — a mode/URL mismatch
-    /// or an unusable proxy — which must fail the evaluation closed rather
-    /// than fall back to a direct connection.
+    /// `Err(code)` is a policy that cannot be honoured — a mode/URL mismatch,
+    /// an unusable proxy, a malformed credential record or a managed CA with
+    /// no exported trust roots — which must fail the evaluation closed rather
+    /// than fall back to a direct connection or to default trust.
     pub fn resolve(policy: &ManagedNetworkPolicy) -> Result<Self, &'static str> {
+        let proxies = proxy_map(policy)?;
+        let mut credentials = BTreeMap::new();
+        for proxy in proxies.values() {
+            if credentials.contains_key(proxy) {
+                continue;
+            }
+            if let Some(found) = load_proxy_credentials(proxy)? {
+                credentials.insert(proxy.clone(), found);
+            }
+        }
         Ok(Self {
             allow_public_registries: policy.allow_public_registries,
-            proxies: proxy_map(policy)?,
+            proxies,
+            credentials,
+            trust: managed_trust(policy)?,
         })
     }
 
@@ -380,6 +469,41 @@ impl ManagedEgressPolicy {
     pub fn proxies(&self) -> &BTreeMap<String, String> {
         &self.proxies
     }
+}
+
+/// The trust anchors a resolved policy verifies every exchange against.
+fn managed_trust(policy: &ManagedNetworkPolicy) -> Result<EgressTrust, &'static str> {
+    let Some(path) = policy.trust_roots_path.as_ref() else {
+        // Honouring the administrator's CA on its own would mean verifying
+        // against that CA alone, so an unexported managed CA fails closed
+        // instead of exchanging under narrower - or wider - trust than the
+        // policy describes.
+        return match policy.ca_bundle_path {
+            Some(_) => Err("managed_trust_roots_required"),
+            None => Ok(EgressTrust::Default),
+        };
+    };
+    let bundle = std::fs::read(path).map_err(|_| "managed_trust_roots_invalid")?;
+    if bundle.len() > MAX_TRUST_BUNDLE_BYTES {
+        return Err("managed_trust_roots_invalid");
+    }
+    let mut roots = Vec::new();
+    for item in ureq::tls::parse_pem(&bundle) {
+        match item {
+            Ok(ureq::tls::PemItem::Certificate(certificate)) => roots.push(certificate),
+            // A key or anything else in the bundle is not an anchor; the
+            // export writes certificates alone.
+            Ok(_) => continue,
+            Err(_) => return Err("managed_trust_roots_invalid"),
+        }
+        if roots.len() > MAX_TRUST_ROOTS {
+            return Err("managed_trust_roots_invalid");
+        }
+    }
+    if roots.is_empty() {
+        return Err("managed_trust_roots_invalid");
+    }
+    Ok(EgressTrust::Roots(Arc::new(roots)))
 }
 
 impl EgressPolicy for ManagedEgressPolicy {
@@ -402,9 +526,16 @@ impl EgressPolicy for ManagedEgressPolicy {
         // an invitation to read the environment: `session.trust_env` is false
         // whenever a managed policy applies.
         match self.proxies.get(&scheme) {
-            Some(proxy) => EgressProxy::Url(proxy.clone()),
+            Some(proxy) => EgressProxy::Url {
+                url: proxy.clone(),
+                credentials: self.credentials.get(proxy).cloned(),
+            },
             None => EgressProxy::Direct,
         }
+    }
+
+    fn trust(&self) -> EgressTrust {
+        self.trust.clone()
     }
 }
 

@@ -3,13 +3,15 @@
 //! the destination refusal.
 
 use super::*;
-use crate::egress_caller::{EgressPolicy, EgressProxy, UnmanagedEgressPolicy};
+use crate::egress_caller::{EgressPolicy, EgressProxy, EgressTrust, UnmanagedEgressPolicy};
+use base64::{engine::general_purpose::STANDARD, Engine};
 
 fn explicit(url: &str) -> ManagedNetworkPolicy {
     ManagedNetworkPolicy {
         proxy_mode: ProxyMode::Explicit,
         proxy_url: Some(url.to_owned()),
         ca_bundle_path: None,
+        trust_roots_path: None,
         allow_public_registries: true,
     }
 }
@@ -166,15 +168,18 @@ fn registry_values_and_dwords_parse() {
     );
     let values = parse_reg_values(stdout);
     assert_eq!(
-        values.get("proxyserver").map(String::as_str),
+        values.get("proxyserver").and_then(RegValue::string),
         Some("proxy.example:8080")
     );
+    // A `ProxyServer` stored as a DWORD is not the `str` the Python port
+    // requires, so it is not a proxy configuration at all.
+    assert_eq!(values.get("autodetect").and_then(RegValue::string), None);
     assert_eq!(
-        parse_reg_dword(values.get("proxyenable").expect("present")),
+        parse_reg_dword(&values.get("proxyenable").expect("present").data),
         Some(1)
     );
     assert_eq!(
-        parse_reg_dword(values.get("autodetect").expect("present")),
+        parse_reg_dword(&values.get("autodetect").expect("present").data),
         Some(0)
     );
     assert_eq!(parse_reg_dword("12"), Some(12));
@@ -209,6 +214,7 @@ fn managed_policy_refuses_public_registries_when_disabled() {
         proxy_mode: ProxyMode::None,
         proxy_url: None,
         ca_bundle_path: None,
+        trust_roots_path: None,
         allow_public_registries: false,
     })
     .expect("resolved");
@@ -262,7 +268,8 @@ fn managed_policy_selects_the_scheme_proxy_and_never_the_environment() {
         ManagedEgressPolicy::resolve(&explicit("https://proxy.example:8443")).expect("resolved");
     assert!(matches!(
         policy.proxy("https://registry.npmjs.org/left-pad"),
-        EgressProxy::Url(url) if url == "https://proxy.example:8443"
+        EgressProxy::Url { url, credentials }
+            if url == "https://proxy.example:8443" && credentials.is_none()
     ));
     let direct = ManagedEgressPolicy::resolve(&ManagedNetworkPolicy {
         proxy_mode: ProxyMode::None,
@@ -281,4 +288,73 @@ fn an_unmanaged_caller_keeps_the_environment_proxy() {
         UnmanagedEgressPolicy.proxy("https://registry.npmjs.org/left-pad"),
         EgressProxy::Environment
     ));
+}
+
+/// A PEM certificate section; `parse_pem` recognises the section and keeps its
+/// bytes, so a root set can be exercised without a certificate authority.
+fn pem_bundle(count: usize) -> String {
+    let mut bundle = String::new();
+    for index in 0..count {
+        let der = format!("root-{index}");
+        bundle.push_str("-----BEGIN CERTIFICATE-----\n");
+        bundle.push_str(&STANDARD.encode(der.as_bytes()));
+        bundle.push_str("\n-----END CERTIFICATE-----\n");
+    }
+    bundle
+}
+
+fn bundle_file(tag: &str, contents: &str) -> PathBuf {
+    let path = std::env::temp_dir().join(format!("egress-trust-{tag}-{}.pem", std::process::id()));
+    std::fs::write(&path, contents).expect("bundle");
+    path
+}
+
+#[test]
+fn a_managed_ca_without_the_exported_roots_fails_closed() {
+    // Honouring the administrator's CA alone would verify against that CA and
+    // nothing else, so the policy refuses to resolve rather than exchange
+    // under trust it cannot reproduce.
+    let refused = ManagedEgressPolicy::resolve(&ManagedNetworkPolicy {
+        ca_bundle_path: Some(PathBuf::from("/etc/hol-guard/private-ca.pem")),
+        ..ManagedNetworkPolicy::unmanaged_default()
+    });
+    assert!(matches!(refused, Err("managed_trust_roots_required")));
+    // With no managed CA the TLS stack's own roots verify.
+    let unmanaged =
+        ManagedEgressPolicy::resolve(&ManagedNetworkPolicy::unmanaged_default()).expect("resolved");
+    assert!(matches!(unmanaged.trust(), EgressTrust::Default));
+}
+
+#[test]
+fn the_exported_bundle_is_the_whole_root_set() {
+    let path = bundle_file("exported", &pem_bundle(3));
+    let policy = ManagedEgressPolicy::resolve(&ManagedNetworkPolicy {
+        ca_bundle_path: Some(PathBuf::from("/etc/hol-guard/private-ca.pem")),
+        trust_roots_path: Some(path.clone()),
+        ..ManagedNetworkPolicy::unmanaged_default()
+    })
+    .expect("resolved");
+    let EgressTrust::Roots(roots) = policy.trust() else {
+        panic!("managed roots");
+    };
+    assert_eq!(roots.len(), 3);
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+fn an_unusable_exported_bundle_fails_closed() {
+    let missing = std::env::temp_dir().join("egress-trust-missing.pem");
+    let _ = std::fs::remove_file(&missing);
+    for path in [missing, bundle_file("empty", "no certificates here\n")] {
+        let refused = ManagedEgressPolicy::resolve(&ManagedNetworkPolicy {
+            trust_roots_path: Some(path.clone()),
+            ..ManagedNetworkPolicy::unmanaged_default()
+        });
+        assert!(
+            matches!(refused, Err("managed_trust_roots_invalid")),
+            "{}",
+            path.display()
+        );
+        let _ = std::fs::remove_file(&path);
+    }
 }
