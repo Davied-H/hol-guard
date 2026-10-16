@@ -43,8 +43,18 @@ pub(crate) fn parse_plist(bytes: &[u8]) -> PlistResult<Value> {
 
 fn parse_xml(bytes: &[u8]) -> PlistResult<Value> {
     let text = std::str::from_utf8(bytes).map_err(|_| "managed policy is not valid UTF-8")?;
-    let document =
-        roxmltree::Document::parse(text).map_err(|_| "managed policy is not a valid plist")?;
+    // Every XML property list Apple's tools write opens with the PropertyList
+    // DOCTYPE, so refusing a document type declaration would refuse the
+    // serialisation itself. The declaration is parsed and otherwise unused:
+    // the parser resolves no external entity, reads no file and opens no
+    // connection, and a reference it cannot resolve from the document itself
+    // fails the parse rather than expanding to anything.
+    let options = roxmltree::ParsingOptions {
+        allow_dtd: true,
+        ..roxmltree::ParsingOptions::default()
+    };
+    let document = roxmltree::Document::parse_with_options(text, options)
+        .map_err(|_| "managed policy is not a valid plist")?;
     let root = document.root_element();
     if root.tag_name().name() != "plist" {
         return refuse("managed policy is not a plist document");

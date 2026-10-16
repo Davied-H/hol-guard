@@ -182,3 +182,21 @@ fn nesting_past_the_bound_is_refused() {
         "managed policy plist nests too deeply"
     );
 }
+
+#[test]
+fn a_profile_that_points_at_a_local_file_reads_nothing_from_it() {
+    // The DOCTYPE an XML profile carries is accepted, so this is the document
+    // that has to stay refused: an entity the parser would have to fetch to
+    // resolve is never fetched, and never expands into the policy either.
+    let document = concat!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+        "<!DOCTYPE plist [<!ENTITY leak SYSTEM \"file:///etc/passwd\">]>\n",
+        "<plist version=\"1.0\"><dict><key>schemaVersion</key>",
+        "<string>&leak;</string></dict></plist>",
+    );
+
+    assert_eq!(
+        parse_plist(document.as_bytes()).expect_err("refused"),
+        "managed policy is not a valid plist"
+    );
+}
