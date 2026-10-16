@@ -92,6 +92,8 @@ pub(super) struct Findings {
     pub(super) network: bool,
     /// Names a credential store by path.
     pub(super) credential_store: bool,
+    /// The program's source and the local modules read with it.
+    pub(super) sources: Vec<String>,
 }
 
 /// What each script this command launches does, one entry per program whose
@@ -125,11 +127,14 @@ fn structure(
         .then_some((structured.normalized_text, structured.segments))
 }
 
-/// Whether the command is one interpreter launch, with no wrapper or
-/// environment prefix, whose inline source or program fed on standard input
-/// this scan read. The interpreter then runs only that program, as it would
-/// run a script file.
-pub(crate) fn reads_sole_program(model: &CanonicalCommandV1, context: PathContext<'_>) -> bool {
+/// The sources of the program, when the command is one interpreter launch,
+/// with no wrapper or environment prefix, whose inline source or program fed
+/// on standard input this scan read. The interpreter then runs only that
+/// program, as it would run a script file.
+pub(crate) fn sole_program_sources(
+    model: &CanonicalCommandV1,
+    context: PathContext<'_>,
+) -> Option<Vec<String>> {
     let sole = model.wrapper_chain.is_empty()
         && !model.path_overridden
         && structure(model, context).is_some_and(|(_, segments)| {
@@ -138,7 +143,13 @@ pub(crate) fn reads_sole_program(model: &CanonicalCommandV1, context: PathContex
                     && segment.environment_names.is_empty()
                     && !segment.path_overridden)
         });
-    sole && assess_programs(model, context, false).len() == 1
+    if !sole {
+        return None;
+    }
+    match <[Findings; 1]>::try_from(assess_programs(model, context, false)) {
+        Ok([only]) => Some(only.sources),
+        Err(_) => None,
+    }
 }
 
 /// `assess`, leaving out script files when `scripts` is false.
@@ -211,14 +222,15 @@ fn assess_programs(
             continue;
         };
         let mut found = Findings::default();
-        for source in sources {
-            let code = code_lines(language, &source);
+        for source in &sources {
+            let code = code_lines(language, source);
             found.network |= match language {
                 Language::Python => PYTHON_NETWORK.is_match(&code),
                 Language::Node => NODE_NETWORK.is_match(&code),
             };
             found.credential_store |= CREDENTIAL_STORE.is_match(&code);
         }
+        found.sources = sources;
         findings.push(found);
     }
     findings
@@ -363,7 +375,8 @@ fn read_graph(language: Language, entry: Entry) -> Option<Vec<String>> {
         if let (Some(root), Some(directory)) = (root.as_deref(), directory.as_deref()) {
             let imports = match language {
                 Language::Node => node_imports(&source, directory),
-                Language::Python => python_imports(&source, root, directory),
+                // Statements after a `;` import too.
+                Language::Python => python_imports(&code_lines(language, &source), root, directory),
             };
             for import in imports {
                 if seen.len() >= MAX_FILES {
@@ -535,12 +548,34 @@ fn code_lines(language: Language, source: &str) -> String {
             .map_or(line.len(), |(at, _)| at);
         // `python -c 'import os; import socket'` puts statements on one line.
         match language {
-            Language::Python => code.push_str(&line[..end].replace(';', "\n")),
+            Language::Python => code.push_str(&split_statements(&line[..end])),
             Language::Node => code.push_str(&line[..end]),
         }
         code.push('\n');
     }
     code
+}
+
+/// A Python line with each `;` outside a string literal starting a new line.
+fn split_statements(line: &str) -> String {
+    let mut split = String::with_capacity(line.len());
+    let (mut quote, mut escaped) = (None, false);
+    for character in line.chars() {
+        match quote {
+            Some(_) if escaped => escaped = false,
+            Some(_) if character == '\\' => escaped = true,
+            Some(open) if character == open => quote = None,
+            Some(_) => {}
+            None if matches!(character, '\'' | '"') => quote = Some(character),
+            None if character == ';' => {
+                split.push('\n');
+                continue;
+            }
+            None => {}
+        }
+        split.push(character);
+    }
+    split
 }
 
 fn extension(path: &Path) -> String {

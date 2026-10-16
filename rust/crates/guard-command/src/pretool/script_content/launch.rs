@@ -6,6 +6,18 @@ use std::path::Path;
 use super::{extension, Language, NODE_EXTENSIONS, NODE_VALUE_OPTIONS, PYTHON_VALUE_OPTIONS};
 use crate::CommandSegmentV1;
 
+/// `deno eval` options that take the next word as their value.
+const DENO_EVAL_VALUE_OPTIONS: &[&str] = &[
+    "--ext",
+    "--import-map",
+    "--config",
+    "-c",
+    "--location",
+    "--seed",
+    "--cert",
+    "--lock",
+];
+
 /// The program an interpreter runs.
 pub(super) enum Program<'a> {
     Script(&'a str),
@@ -53,8 +65,17 @@ fn interpreter_program<'a>(
         return Some((Language::Python, program));
     }
     let arguments = match (name, arguments) {
-        ("deno", [eval, source, ..]) if eval == "eval" => {
-            return Some((Language::Node, Program::Inline(source)));
+        ("deno", [eval, rest @ ..]) if eval == "eval" => {
+            let mut words = rest.iter();
+            while let Some(word) = words.next() {
+                if !word.starts_with('-') {
+                    return Some((Language::Node, Program::Inline(word)));
+                }
+                if DENO_EVAL_VALUE_OPTIONS.contains(&word.as_str()) {
+                    words.next();
+                }
+            }
+            return None;
         }
         ("bun" | "deno", [run, rest @ ..]) if run == "run" => rest,
         ("node" | "nodejs" | "bun" | "tsx", rest) => rest,
@@ -157,14 +178,19 @@ impl Stdin {
                 .filter(|heredoc| owns(heredoc.operator_start))
                 .map(|heredoc| Fed::Text(heredoc.body.clone())),
         );
-        fed.extend(
-            self.redirects
-                .iter()
-                .filter(|redirect| owns(redirect.start))
-                .filter(|redirect| matches!(redirect.operator.as_str(), "<" | "0<"))
-                .filter_map(|redirect| plain_path(&redirect.target))
-                .map(Fed::File),
-        );
+        // Any input redirect the scan cannot read leaves the source unknown,
+        // since the last one wins.
+        for redirect in self
+            .redirects
+            .iter()
+            .filter(|redirect| owns(redirect.start))
+        {
+            match redirect.operator.as_str() {
+                "<" | "0<" => fed.push(Fed::File(plain_path(&redirect.target)?)),
+                "<<<" | "0<<<" | "<&" | "0<&" | "<>" | "0<>" => return None,
+                _ => {}
+            }
+        }
         if segment.pipeline_index > 0 {
             let feeder = segments.iter().find(|prior| {
                 prior.execution_context == segment.execution_context
@@ -176,6 +202,9 @@ impl Stdin {
                 .is_some_and(|value| super::super::executable_basename(value) == "cat");
             match feeder.arguments.as_slice() {
                 [file] if is_cat => fed.push(Fed::File(plain_path(file)?)),
+                [separator, file] if is_cat && separator == "--" => {
+                    fed.push(Fed::File(plain_path(file)?))
+                }
                 _ => return None,
             }
         }

@@ -169,12 +169,17 @@ impl CompiledNativeCommandControls {
         if shell.contains("$'")
             || shell.contains("$\"")
             || synthesizes_program(&unquoted_literal(shell))
-            || (INTERPRETERS.iter().any(|name| interpreted.contains(*name))
-                && !crate::pretool::reads_sole_program(command, context))
         {
             return None;
         }
-        let named = named_words(text);
+        let mut named = named_words(text);
+        if INTERPRETERS.iter().any(|name| interpreted.contains(*name)) {
+            // A program read from a file names the tools it may launch
+            // outside the command text, so it counts toward the owners.
+            for source in crate::pretool::sole_program_sources(command, context)? {
+                named.extend(named_words(&source));
+            }
+        }
         let mut floor = "review";
         for (index, extension) in self.program.extensions.iter().enumerate() {
             if !self.active_extensions.contains(&extension.extension_id) {
