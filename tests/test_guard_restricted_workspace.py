@@ -182,6 +182,32 @@ def test_a_plan_that_differs_from_the_authorized_command_is_rejected(
     assert started == []
 
 
+def test_a_read_grant_is_one_canonical_script_the_command_names(tmp_path: Path) -> None:
+    (tmp_path / "scratch").mkdir()
+    script = (tmp_path / "scratch" / "check.py").resolve()
+    script.write_text("print(1)\n", encoding="utf-8")
+    link = tmp_path / "scratch" / "link.py"
+    link.symlink_to(script)
+    text = f"python3 {script}"
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    accepted = workspace_sink._validated_plan(
+        plan(workspace, text, read_only_roots=[str(script)]), text, workspace
+    )
+    assert accepted["read_only_roots"] == [str(script)]
+    for roots in (
+        [str(script.parent)],
+        [str(link)],
+        ["check.py"],
+        [str(tmp_path / "scratch" / "missing.py")],
+        [str(tmp_path / "scratch" / "other.py")],
+        str(script),
+        [3],
+    ):
+        with pytest.raises(RestrictedPytestError):
+            workspace_sink._validated_plan(plan(workspace, text, read_only_roots=roots), text, workspace)
+
+
 @pytest.fixture(autouse=True)
 def macos_host(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(workspace_sink, "_host_backend", lambda: "macos-seatbelt")

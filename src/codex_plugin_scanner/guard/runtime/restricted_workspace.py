@@ -39,6 +39,7 @@ WORKSPACE_WRITE_DENIAL_NOTE = (
     "such as Git configuration, and there is no network or home access. Keep files the command "
     "writes inside the workspace or $TMPDIR and run it again."
 )
+_SCRIPT_SUFFIXES = frozenset({".py", ".js", ".mjs", ".cjs", ".jsx", ".ts", ".mts", ".cts", ".tsx"})
 _PLAN_FIELDS = frozenset(
     {
         "profile_version",
@@ -131,11 +132,35 @@ def _validated_plan(plan: object, command: str, workspace: Path, *, publish: boo
         )
         or Path(str(plan["workspace"])) != workspace.resolve(strict=True)
         or plan["allowed_executables"] != []
-        or plan["read_only_roots"] != []
+        or not _read_grants(plan["read_only_roots"], command)
         or not (plan["linked_git"] is None or _linked_git(plan["linked_git"]))
     ):
         raise _reject("The workspace sandbox plan does not match the authorized command.")
     return plan
+
+
+def _read_grants(value: object, command: str) -> bool:
+    """Read grants are scripts outside the workspace that the command names.
+
+    Each is one absolute, canonical, regular file; the native plan derived it
+    from the command, so a grant whose name the command does not carry is not
+    one the plan can have earned.
+    """
+    if not isinstance(value, list):
+        return False
+    for item in value:
+        if not isinstance(item, str) or not item.startswith("/") or "\0" in item:
+            return False
+        path = Path(item)
+        if (
+            path.is_symlink()
+            or not path.is_file()
+            or path.resolve() != path
+            or path.name not in command
+            or path.suffix not in _SCRIPT_SUFFIXES
+        ):
+            return False
+    return True
 
 
 def _linked_git(value: object) -> dict[str, str] | None:
@@ -268,6 +293,7 @@ def run_workspace_contained(
         raise _reject("Invalid workspace sandbox plan.")
     sandbox_argv = [str(item) for item in sandbox_command]
     exec_roots = _plan_paths(plan["exec_roots"])
+    read_files = _plan_paths(plan["read_only_roots"])
     write_denials = _plan_paths(plan["write_denials"])
     with tempfile.TemporaryDirectory(prefix="hol-guard-workspace-") as temporary_directory:
         private_root = Path(temporary_directory).resolve()
@@ -300,6 +326,7 @@ def run_workspace_contained(
                     workspace=workspace,
                     private_root=private_root,
                     exec_roots=exec_roots,
+                    read_files=read_files,
                     write_denials=write_denials,
                     command=argv_to_run,
                     env=launch_env,
@@ -314,7 +341,7 @@ def run_workspace_contained(
                     "cwd": cwd,
                     "private_root": private_root,
                     "allowed_executables": [],
-                    "read_only_roots": [],
+                    "read_only_roots": read_files,
                     "output_roots": [],
                     "exec_roots": exec_roots,
                     "write_denials": write_denials,
@@ -439,6 +466,7 @@ def _run_overlay(
     workspace: Path,
     private_root: Path,
     exec_roots: list[Path],
+    read_files: list[Path],
     write_denials: list[Path],
     command: list[str],
     env: Mapping[str, str],
@@ -469,6 +497,7 @@ def _run_overlay(
                 "upper": upper,
                 "work": work,
                 "exec_roots": exec_roots,
+                "read_files": read_files,
                 "command": command,
                 **({**linked, "shared_work": overlay_root / "shared" / "work"} if linked else {}),
             },

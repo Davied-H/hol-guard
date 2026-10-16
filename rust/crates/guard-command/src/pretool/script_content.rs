@@ -41,7 +41,7 @@ const NODE_VALUE_OPTIONS: &[&str] = &[
 const PYTHON_VALUE_OPTIONS: &[&str] = &["-W", "-X", "--check-hash-based-pycs"];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Language {
+pub(in crate::pretool) enum Language {
     Python,
     Node,
 }
@@ -141,6 +141,25 @@ pub(super) fn exfiltrates(model: &CanonicalCommandV1, context: PathContext<'_>) 
         .any(|found| found.network && found.credential_store)
 }
 
+/// Whether the script at `path` stands alone and does neither of the things
+/// the sandbox cannot serve: it imports no local module (a sibling outside the
+/// workspace would be unreadable there), uses no network client, and names no
+/// credential store. An unreadable, oversized or non-UTF-8 script is not clean.
+pub(in crate::pretool) fn standalone_clean(language: Language, path: &Path) -> bool {
+    let Some(sources) = read_graph(language, path.to_path_buf()) else {
+        return false;
+    };
+    let [source] = sources.as_slice() else {
+        return false;
+    };
+    let code = code_lines(language, source);
+    let network = match language {
+        Language::Python => PYTHON_NETWORK.is_match(&code),
+        Language::Node => NODE_NETWORK.is_match(&code),
+    };
+    !network && !CREDENTIAL_STORE.is_match(&code)
+}
+
 /// Keeps the review of a command whose script uses the network: the sandbox
 /// withholds it, so the script would only fail there.
 pub(super) fn keeps_network_review(
@@ -159,7 +178,9 @@ pub(super) fn keeps_network_review(
     true
 }
 
-fn launched_script(segment: &crate::CommandSegmentV1) -> Option<(Language, &str)> {
+pub(in crate::pretool) fn launched_script(
+    segment: &crate::CommandSegmentV1,
+) -> Option<(Language, &str)> {
     let name = super::executable_basename(segment.executable.as_deref()?);
     let name = name.strip_suffix(".exe").unwrap_or(name);
     let arguments = segment.arguments.as_slice();
