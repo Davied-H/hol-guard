@@ -33,6 +33,7 @@ import argparse
 import hashlib
 import json
 import re
+import shlex
 import sys
 from collections import Counter
 from pathlib import Path
@@ -51,6 +52,9 @@ _GITHUB_REPO = re.compile(
     r"(github\.com[/:]|\brepos/|--repo[= ]|-R )[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?(?=\.git\b|[/\s'\"]|$)"
 )
 _TEMP = re.compile(r"(?:/private)?/tmp/[A-Za-z0-9._-]+")
+# Job, run and check-run identifiers, and commit hashes that start with a digit.
+_LONG_NUMBER = re.compile(r"(?<![\w.])\d{7,}(?![\w.])")
+_DIGIT_HASH = re.compile(r"(?<![\w.])(?=[0-9a-f]*[a-f])\d[0-9a-f]{6,39}(?![\w.])")
 
 
 def scrub(text: str, owners: list[str]) -> str:
@@ -59,6 +63,8 @@ def scrub(text: str, owners: list[str]) -> str:
     text = _PROJECT.sub("${WORKTREE}", text)
     text = _TEMP.sub("${PRIVATE_TMP}", text)
     text = _GITHUB_REPO.sub(r"\1o/r", text)
+    text = _LONG_NUMBER.sub(lambda match: ("1234567890" * 5)[: len(match.group(0))], text)
+    text = _DIGIT_HASH.sub(lambda match: ("c9cf0af96c" * 4)[: len(match.group(0))], text)
     for owner in owners:
         text = re.sub(re.escape(owner) + r"/[A-Za-z0-9._-]+", "o/r", text, flags=re.IGNORECASE)
         text = re.sub(re.escape(owner), "o", text, flags=re.IGNORECASE)
@@ -76,45 +82,223 @@ def scrub_value(value: Any, owners: list[str]) -> Any:
 
 
 # --- read-only classification -------------------------------------------------------------------
+#
+# The classifier fails closed. A segment reads only when its verb is known and every option on it
+# is one this table names as a read. An unknown verb, subcommand or option makes the row a non-read,
+# so a spelling nobody listed can never turn a write into an ``expect: allow`` case.
 
-READ_VERBS = {
-    "ls", "cat", "head", "tail", "wc", "rg", "grep", "egrep", "find", "stat", "file", "du", "df",
-    "which", "type", "pwd", "echo", "printf", "tree", "sort", "uniq", "cut", "basename", "dirname",
-    "realpath", "date", "awk", "column", "jq", "yq", "diff", "comm", "tr", "nl", "xxd", "shasum",
-    "sha256sum", "readlink", "env", "locale", "uname", "whoami", "hostname", "sleep", "true", "false",
+# Verbs with no option that writes a file, changes the system or runs another program.
+PLAIN_READS = {
+    "ls",
+    "cat",
+    "head",
+    "tail",
+    "wc",
+    "grep",
+    "egrep",
+    "fgrep",
+    "stat",
+    "du",
+    "df",
+    "which",
+    "type",
+    "pwd",
+    "echo",
+    "printf",
+    "cut",
+    "basename",
+    "dirname",
+    "realpath",
+    "readlink",
+    "column",
+    "comm",
+    "tr",
+    "nl",
+    "shasum",
+    "sha256sum",
+    "uname",
+    "whoami",
+    "true",
+    "false",
+    "sleep",
+    "diff",
+    "jq",
 }
-# Subcommand-gated tools: only these subcommands read.
-SUB_READ: dict[str, set[str]] = {
-    "git": {"log", "status", "diff", "show", "branch", "rev-parse", "rev-list", "describe", "blame",
-            "cat-file", "ls-files", "ls-tree", "shortlog", "config", "remote", "worktree", "tag",
-            "stash", "reflog", "for-each-ref", "symbolic-ref", "merge-base", "count-objects", "grep"},
-    "gh": {"pr", "issue", "api", "run", "repo", "release", "workflow", "auth", "search", "label"},
-    "docker": {"ps", "images", "logs", "inspect", "version", "info", "stats"},
-    "npm": {"ls", "view", "outdated", "config"},
+# Verbs whose options must each match a named read option.
+OPTION_READS: dict[str, re.Pattern[str]] = {
+    "rg": re.compile(
+        r"-[A-Za-z0-9]+|--(?:files|files-with-matches|files-without-match|count|line-number|"
+        r"ignore-case|smart-case|fixed-strings|word-regexp|hidden|no-ignore|no-heading|heading|"
+        r"with-filename|no-filename|follow|json|invert-match|only-matching|multiline|"
+        r"(?:glob|iglob|type|type-not|max-count|max-depth|context|before-context|after-context|"
+        r"regexp|sort|sortr)(?:=.*)?)"
+    ),
+    "sort": re.compile(
+        r"-[bdfghinMrRsuV]+|-[kt].*|--(?:numeric-sort|reverse|unique|ignore-case|"
+        r"human-numeric-sort|version-sort|(?:key|field-separator)=.*)"
+    ),
+    "uniq": re.compile(r"-[cdiu]+|--(?:count|repeated|ignore-case|unique)"),
 }
-# A read subcommand still writes when one of these words follows it.
-GIT_WRITE_ARGUMENT = {
-    "worktree": {"add", "remove", "prune", "move", "repair"},
-    "config": {"--global", "--system", "--local", "--unset", "--add", "--replace-all"},
-    "stash": {"push", "pop", "apply", "drop", "clear", "save", "branch", "store", "create"},
-    "tag": {"-d", "-a", "-f", "--delete", "-s", "-m"},
-    "remote": {"add", "remove", "rm", "rename", "set-url", "prune", "update", "set-head"},
-    "branch": {"-d", "-D", "-m", "-M", "-f", "--delete", "--move", "--force", "--set-upstream-to"},
+# ``uniq IN OUT`` writes OUT, so it may name one input at most.
+MAX_OPERANDS = {"uniq": 1, "cd": 1}
+
+FIND_FLAGS = {"-L", "-H", "-P", "-E", "-x", "-s"}
+FIND_TESTS = {
+    "-print",
+    "-print0",
+    "-prune",
+    "-not",
+    "-o",
+    "-a",
+    "-or",
+    "-and",
+    "!",
+    "(",
+    ")",
+    "-empty",
+    "-follow",
+    "-depth",
+    "-xdev",
+    "-ls",
+    "-true",
+    "-false",
+    "-nouser",
+    "-nogroup",
+    "-readable",
 }
-GH_WRITE = re.compile(
-    r"\b(create|edit|merge|close|reopen|comment|review|delete|rerun|cancel|dispatch|upload|login"
-    r"|logout|token|set|add|remove|mutation)\b"
-    r"|(^|\s)(-X|--method)\s+(POST|PUT|PATCH|DELETE)|(^|\s)(-f|-F|--field|--raw-field)\s"
+FIND_TESTS_WITH_ARGUMENT = {
+    "-name",
+    "-iname",
+    "-path",
+    "-ipath",
+    "-wholename",
+    "-iwholename",
+    "-type",
+    "-maxdepth",
+    "-mindepth",
+    "-newer",
+    "-newermt",
+    "-newerct",
+    "-newerat",
+    "-mtime",
+    "-mmin",
+    "-atime",
+    "-amin",
+    "-ctime",
+    "-cmin",
+    "-size",
+    "-perm",
+    "-user",
+    "-group",
+    "-regex",
+    "-iregex",
+    "-links",
+    "-lname",
+    "-ilname",
+    "-uid",
+    "-gid",
+}
+
+GIT_GLOBAL_WITH_ARGUMENT = {"-C"}
+GIT_GLOBAL = re.compile(r"--no-pager|--git-dir=.+|--work-tree=.+|--no-optional-locks|-P")
+_LOG_OPTIONS = (
+    r"-\d+|-n\d*|-p|--oneline|--all|--stat|--shortstat|--numstat|--name-only|--name-status|"
+    r"--graph|--decorate|--no-decorate|--follow|--reverse|--no-merges|--merges|--first-parent|"
+    r"--abbrev-commit|--no-color|--date=\S+|--(?:format|pretty|since|until|after|before|author|"
+    r"grep|max-count|skip|abbrev)=.+|--"
 )
-# Anything that plainly changes state, exfiltrates, or runs code is dropped outright.
-BANNED = re.compile(
-    r"(^|[;&|]\s*)(rm|mv|cp|mkdir|touch|chmod|chown|ln|kill|pkill|killall|install|curl|wget|ssh|scp"
-    r"|rsync|nc|dd|tee|sudo|su|open|osascript|launchctl|systemctl|brew|pip|pip3|apt|apt-get|yum|dnf"
-    r"|npm|bun|pnpm|yarn|uv|uvx|cargo|rustc|go|make|cmake|docker|kubectl|helm|terraform|aws|gcloud"
-    r"|az|sed|perl|ruby|php|psql|mysql|sqlite3|redis-cli|mongo|eval|exec|source|\.)\b"
+# Per subcommand: the options that read, and how many operands it may take (None for any).
+GIT_READS: dict[str, tuple[re.Pattern[str], int | None]] = {
+    "status": (
+        re.compile(
+            r"-[sbu]+|--short|--branch|--porcelain(?:=v[12])?|--ignored|"
+            r"--untracked-files(?:=\w+)?|--long|-v|--"
+        ),
+        None,
+    ),
+    "log": (re.compile(_LOG_OPTIONS), None),
+    "show": (re.compile(_LOG_OPTIONS), None),
+    "diff": (
+        re.compile(
+            r"--stat|--cached|--staged|--check|--name-only|--name-status|--numstat|"
+            r"--shortstat|--no-color|-U\d+|--unified=\d+|--"
+        ),
+        None,
+    ),
+    "rev-parse": (
+        re.compile(
+            r"--(?:short(?:=\d+)?|abbrev-ref|show-toplevel|git-dir|"
+            r"git-common-dir|is-inside-work-tree|verify|quiet|absolute-git-dir|"
+            r"symbolic-full-name)|-q"
+        ),
+        None,
+    ),
+    "rev-list": (re.compile(r"--count|--all|--max-count=\d+|-n\d*|--left-right|--"), None),
+    "merge-base": (re.compile(r"--is-ancestor|--all|--fork-point|--octopus"), None),
+    "describe": (re.compile(r"--tags|--always|--long|--exact-match|--abbrev=\d+"), None),
+    "cat-file": (re.compile(r"-[pets]"), 2),
+    "ls-files": (
+        re.compile(
+            r"-[cdmoisz]+|--(?:cached|deleted|modified|others|stage|"
+            r"exclude-standard|error-unmatch|full-name)|--"
+        ),
+        None,
+    ),
+    "ls-tree": (re.compile(r"-[rdtlz]+|--(?:name-only|full-tree|full-name|long)"), None),
+    "shortlog": (re.compile(r"-[sne]+|--(?:summary|numbered|email|all)"), None),
+    "for-each-ref": (re.compile(r"--(?:format|sort|count|contains|merged|points-at)=.+"), None),
+    "symbolic-ref": (re.compile(r"--short|-q|--quiet"), 1),
+    "count-objects": (re.compile(r"-[vH]+"), 0),
+    "grep": (
+        re.compile(
+            r"-[lLnicewEFIhHvz]+|--(?:cached|untracked|no-index|count|"
+            r"files-with-matches|line-number|ignore-case|word-regexp)|-e|--"
+        ),
+        None,
+    ),
+    "branch": (
+        re.compile(
+            r"-[arv]+|-vv|--(?:list|show-current|all|remotes|verbose)|"
+            r"--(?:merged|no-merged|contains|format|sort)(?:=.+)?"
+        ),
+        0,
+    ),
+    "config": (
+        re.compile(
+            r"--(?:get|get-all|list|show-origin|show-scope|null|global|local|"
+            r"system)|-l|-z"
+        ),
+        1,
+    ),
+    "blame": (re.compile(r"-L\S*|-[wsle]+|--porcelain|--line-porcelain"), None),
+}
+# Subcommands that read only in one listed form: ``git stash`` alone pushes a stash.
+GIT_READ_FORMS: dict[str, dict[str, re.Pattern[str]]] = {
+    "stash": {"list": re.compile(r"--oneline|-\d+"), "show": re.compile(r"--stat|-p|--name-only")},
+    "worktree": {"list": re.compile(r"--porcelain|-v|--verbose")},
+    "remote": {"": re.compile(r"-v|--verbose"), "get-url": re.compile(r"--all")},
+    "tag": {"": re.compile(r"-l|--list|-n\d*|--(?:sort|contains|merged|points-at)=.+")},
+    "reflog": {"": re.compile(_LOG_OPTIONS), "show": re.compile(_LOG_OPTIONS)},
+}
+
+GH_READS = {
+    "pr": {"view", "list", "diff", "checks", "status"},
+    "issue": {"view", "list", "status"},
+    "run": {"view", "list"},
+    "release": {"view", "list"},
+    "workflow": {"view", "list"},
+    "repo": {"view", "list"},
+    "label": {"list"},
+    "auth": {"status"},
+}
+GH_OPTIONS = re.compile(
+    r"--(?:json|jq|repo|limit|state|author|label|branch|head|base|search|template|job|attempt|"
+    r"comments|log|log-failed|name-only|patch|required|exit-status|verbose)(?:=.+)?|-[qRLsbtc]"
 )
-REDIRECT_WRITE = re.compile(r"(?<![0-9>])>(?!&)|>>")
-HARMLESS_REDIRECT = re.compile(r"2>&1|&>|> */dev/null")
+GH_API_OPTIONS = re.compile(r"--paginate|--slurp|--jq(?:=.+)?|-q|-i|--include")
+
+REDIRECT_WRITE = re.compile(r">|<<")
+HARMLESS_REDIRECT = re.compile(r"(?<!\S)(?:\d?>&\d|&?\d?>\s*/dev/null)(?![^\s;&|])")
 SECRET = re.compile(
     r"\b(secret|password|passwd|token|credential|apikey|api_key|private[-_]key|id_rsa|keychain)\b"
     r"|\.env\b|/\.ssh|/\.aws|/\.gnupg",
@@ -126,60 +310,123 @@ MAX_SEGMENTS = 6
 
 
 def segments(command: str) -> list[str]:
-    return [part.strip() for part in re.split(r"&&|\|\||;|\|", command) if part.strip()]
+    return [part.strip() for part in re.split(r"&&|\|\||;|\||&|\n", command) if part.strip()]
 
 
-def _git_reads(words: list[str]) -> bool:
-    flat = words[1:]
-    if flat and flat[0] == "-C":
-        flat = flat[2:]
-    subcommand = next((word for word in flat if not word.startswith("-")), "")
-    if subcommand not in SUB_READ["git"]:
-        return False
-    after = flat[flat.index(subcommand) + 1:] if subcommand in flat else []
-    if set(after) & GIT_WRITE_ARGUMENT.get(subcommand, set()):
-        return False
-    bare = [word for word in after if not word.startswith("-")]
-    if subcommand == "branch" and bare:
-        # Listing branches reads; a bare name after the subcommand creates one.
-        return False
-    if subcommand == "config" and len(bare) > 1:
-        # `git config a.b` reads; a second bare word is the value it writes.
-        return False
+def _options_read(words: list[str], allowed: re.Pattern[str], max_operands: int | None) -> bool:
+    operands = 0
+    for word in words:
+        if word.startswith("-") and word != "-":
+            if not allowed.fullmatch(word):
+                return False
+        else:
+            operands += 1
+    return max_operands is None or operands <= max_operands
+
+
+def _find_reads(words: list[str]) -> bool:
+    rest = words[1:]
+    while rest and rest[0] in FIND_FLAGS:
+        rest = rest[1:]
+    index = 0
+    while index < len(rest):
+        word = rest[index]
+        if word in FIND_TESTS_WITH_ARGUMENT:
+            index += 2
+            continue
+        if (word.startswith("-") or word in {"!", "(", ")"}) and word not in FIND_TESTS:
+            return False
+        index += 1
     return True
 
 
+def _git_reads(words: list[str]) -> bool:
+    rest = words[1:]
+    while rest and rest[0].startswith("-"):
+        if rest[0] in GIT_GLOBAL_WITH_ARGUMENT and len(rest) > 1:
+            rest = rest[2:]
+        elif GIT_GLOBAL.fullmatch(rest[0]):
+            rest = rest[1:]
+        else:
+            return False
+    if not rest:
+        return False
+    subcommand, after = rest[0], rest[1:]
+    if subcommand in GIT_READS:
+        allowed, max_operands = GIT_READS[subcommand]
+        return _options_read(after, allowed, max_operands)
+    forms = GIT_READ_FORMS.get(subcommand)
+    if forms is None:
+        return False
+    operands = [word for word in after if not word.startswith("-")]
+    form = operands[0] if operands and operands[0] in forms else ""
+    if form not in forms:
+        return False
+    if form:
+        after = after[after.index(form) + 1 :]
+    elif operands and not (subcommand == "tag" and {"-l", "--list"} & set(after)):
+        # ``git tag NAME`` creates a tag; any other operand is not a listed read form.
+        return False
+    return _options_read(after, forms[form], None)
+
+
+def _gh_reads(words: list[str]) -> bool:
+    if len(words) < 3:
+        return False
+    group, action, after = words[1], words[2], words[3:]
+    if group == "api":
+        endpoint = [word for word in words[2:] if not word.startswith("-")]
+        # Only the ``--jq``/``-q`` filter takes a value; any other operand is a second endpoint.
+        operands = 0
+        skip = False
+        for word in words[2:]:
+            if skip:
+                skip = False
+                continue
+            if word.startswith("-"):
+                if not GH_API_OPTIONS.fullmatch(word):
+                    return False
+                skip = word in {"-q", "--jq"}
+            else:
+                operands += 1
+        return operands == 1 and not endpoint[0].lstrip("/").startswith("graphql")
+    if action not in GH_READS.get(group, set()):
+        return False
+    return _options_read(after, GH_OPTIONS, None)
+
+
 def reads(segment: str) -> bool:
-    words = segment.split()
+    try:
+        words = shlex.split(segment)
+    except ValueError:
+        return False
     if not words:
         return False
     verb = words[0]
-    if verb == "cd" or verb in READ_VERBS:
+    if verb == "cd":
+        return len(words) <= 2 and not any(word.startswith("-") for word in words[1:])
+    if verb in PLAIN_READS:
         return True
-    if verb not in SUB_READ:
-        return False
+    if verb in OPTION_READS:
+        return _options_read(words[1:], OPTION_READS[verb], MAX_OPERANDS.get(verb))
+    if verb == "find":
+        return _find_reads(words)
     if verb == "git":
         return _git_reads(words)
-    rest = [word for word in words[1:] if not word.startswith("-")]
-    subcommand = rest[0] if rest else ""
     if verb == "gh":
-        return subcommand in SUB_READ["gh"] and not GH_WRITE.search(segment)
-    return subcommand in SUB_READ[verb]
+        return _gh_reads(words)
+    return False
 
 
 def reads_only(command: str) -> bool:
-    """Whether every segment of ``command`` is an unambiguous read."""
+    """Whether every segment of ``command`` is a proven read."""
     if SECRET.search(command) or EMAIL.search(command) or SUBSHELL.search(command):
         return False
-    # A write can hide in an earlier segment that only feeds the reader its body.
-    if re.search(r"mutation|--input", command):
+    cleaned = HARMLESS_REDIRECT.sub(" ", command)
+    if REDIRECT_WRITE.search(cleaned):
         return False
-    if REDIRECT_WRITE.search(HARMLESS_REDIRECT.sub("", command)):
-        return False
-    parts = segments(command)
+    parts = segments(cleaned)
     if not parts or len(parts) > MAX_SEGMENTS:
-        return False
-    if any(BANNED.search(part) for part in parts):
         return False
     return all(reads(part) for part in parts)
 
@@ -189,43 +436,248 @@ def reads_only(command: str) -> bool:
 WORD = re.compile(r"[A-Za-z][\w.+-]{2,}")
 GENERIC = {
     # shell and tool verbs
-    "git", "grep", "cat", "head", "tail", "find", "echo", "ls", "which", "file", "diff", "sort",
-    "uniq", "wc", "awk", "jq", "env", "printf", "stat", "node", "bun", "tsx", "npm", "npx", "uv",
-    "python", "python3", "pytest", "gh", "rg", "sed", "cut", "tr", "basename", "dirname", "realpath",
-    "du", "df", "date", "xargs", "comm", "nl", "readlink", "true", "false", "sleep", "docker",
+    "git",
+    "grep",
+    "cat",
+    "head",
+    "tail",
+    "find",
+    "echo",
+    "ls",
+    "which",
+    "file",
+    "diff",
+    "sort",
+    "uniq",
+    "wc",
+    "awk",
+    "jq",
+    "env",
+    "printf",
+    "stat",
+    "node",
+    "bun",
+    "tsx",
+    "npm",
+    "npx",
+    "uv",
+    "python",
+    "python3",
+    "pytest",
+    "gh",
+    "rg",
+    "sed",
+    "cut",
+    "tr",
+    "basename",
+    "dirname",
+    "realpath",
+    "du",
+    "df",
+    "date",
+    "xargs",
+    "comm",
+    "nl",
+    "readlink",
+    "true",
+    "false",
+    "sleep",
+    "docker",
     # common flags and subcommands spelled as words
-    "status", "log", "show", "branch", "config", "remote", "worktree", "stash", "rev-parse",
-    "rev-list", "merge-base", "is-ancestor", "ls-tree", "ls-files", "show-current", "show-origin",
-    "for-each-ref", "symbolic-ref", "describe", "blame", "reflog", "shortlog", "cat-file",
-    "count-objects", "api", "repos", "runs", "jobs", "actions", "check-runs", "annotations",
-    "paginate", "list", "get", "check", "install", "global", "source", "type", "tags", "ref",
-    "oneline", "porcelain", "short", "cached", "name-only", "iname", "maxdepth", "include",
-    "exclude", "glob", "files-with-matches", "rln", "newermt", "git-dir", "work-tree", "no-pager",
-    "null", "dev", "not", "path", "name", "all", "main", "HEAD", "FETCH_HEAD", "json", "yaml",
-    "html", "jsx", "mjs", "enum", "def", "export", "function", "sub", "the", "opt", "bin", "var",
-    "tmp", "org", "files", "tools", "system", "setting", "settings", "content", "object.sha",
-    "owner", "user.name", "user.email", "gpg.format", "attr", "versions", "work", "home", "page",
-    "test", "tests", "tests__", "src", "lib", "app", "apps", "e2e", "scripts", "docs", "plans",
-    "references", "skills", "logs", "coverage", "out", "dist", "build", "target", "node_modules",
-    "public", "assets", "crates", "packages", "components", "pages", "fixtures", "contracts",
-    "workers", "worktrees", "harness", "catalog", "protection", "billing", "points",
+    "status",
+    "log",
+    "show",
+    "branch",
+    "config",
+    "remote",
+    "worktree",
+    "stash",
+    "rev-parse",
+    "rev-list",
+    "merge-base",
+    "is-ancestor",
+    "ls-tree",
+    "ls-files",
+    "show-current",
+    "show-origin",
+    "for-each-ref",
+    "symbolic-ref",
+    "describe",
+    "blame",
+    "reflog",
+    "shortlog",
+    "cat-file",
+    "count-objects",
+    "api",
+    "repos",
+    "runs",
+    "jobs",
+    "actions",
+    "check-runs",
+    "annotations",
+    "paginate",
+    "list",
+    "get",
+    "check",
+    "install",
+    "global",
+    "source",
+    "type",
+    "tags",
+    "ref",
+    "oneline",
+    "porcelain",
+    "short",
+    "cached",
+    "name-only",
+    "iname",
+    "maxdepth",
+    "include",
+    "exclude",
+    "glob",
+    "files-with-matches",
+    "rln",
+    "newermt",
+    "git-dir",
+    "work-tree",
+    "no-pager",
+    "null",
+    "dev",
+    "not",
+    "path",
+    "name",
+    "all",
+    "main",
+    "HEAD",
+    "FETCH_HEAD",
+    "json",
+    "yaml",
+    "html",
+    "jsx",
+    "mjs",
+    "enum",
+    "def",
+    "export",
+    "function",
+    "sub",
+    "the",
+    "opt",
+    "bin",
+    "var",
+    "tmp",
+    "org",
+    "files",
+    "tools",
+    "system",
+    "setting",
+    "settings",
+    "content",
+    "object.sha",
+    "owner",
+    "user.name",
+    "user.email",
+    "gpg.format",
+    "attr",
+    "versions",
+    "work",
+    "home",
+    "page",
+    "test",
+    "tests",
+    "tests__",
+    "src",
+    "lib",
+    "app",
+    "apps",
+    "e2e",
+    "scripts",
+    "docs",
+    "plans",
+    "references",
+    "skills",
+    "logs",
+    "coverage",
+    "out",
+    "dist",
+    "build",
+    "target",
+    "node_modules",
+    "public",
+    "assets",
+    "crates",
+    "packages",
+    "components",
+    "pages",
+    "fixtures",
+    "contracts",
+    "workers",
+    "worktrees",
+    "harness",
+    "catalog",
+    "protection",
+    "billing",
+    "points",
     # fixture substitution tokens
-    "HOME", "WORKTREE", "PRIVATE_TMP", "ORG", "ORG_WT", "PARENT", "SCRATCH", "GAUNTLET_ROOT",
-    "TMP_ORG", "TMP_ORG_WT", "TMP_REMOTE",
+    "HOME",
+    "WORKTREE",
+    "PRIVATE_TMP",
+    "ORG",
+    "ORG_WT",
+    "PARENT",
+    "SCRATCH",
+    "GAUNTLET_ROOT",
+    "TMP_ORG",
+    "TMP_ORG_WT",
+    "TMP_REMOTE",
     # generic filenames the gate already uses
-    "package.json", "package-lock.json", "tsconfig.json", "README.md", "Cargo.toml", "Cargo.lock",
-    "pyproject.toml", "uv.lock", "Makefile", "index.ts", "index.js", "main.py", "conftest.py",
-    "settings.json", "config.toml", "zshrc", "gitconfig", "vitest", "VITEST", "postgresql",
+    "package.json",
+    "package-lock.json",
+    "tsconfig.json",
+    "README.md",
+    "Cargo.toml",
+    "Cargo.lock",
+    "pyproject.toml",
+    "uv.lock",
+    "Makefile",
+    "index.ts",
+    "index.js",
+    "main.py",
+    "conftest.py",
+    "settings.json",
+    "config.toml",
+    "zshrc",
+    "gitconfig",
+    "vitest",
+    "VITEST",
+    "postgresql",
     # public tool and vendor names
-    "codex", "claude", "guard", "hol-guard", "homebrew", "nvm", "doctl", "github",
-    "hashgraph-online", "stripe", "ga4", "posthog",
+    "codex",
+    "claude",
+    "guard",
+    "hol-guard",
+    "homebrew",
+    "nvm",
+    "doctl",
+    "github",
+    "hashgraph-online",
+    "stripe",
+    "ga4",
+    "posthog",
 }
 PROJECTS = ("service-api", "app-portal", "web-client", "report-lane", "other-project", "acme-plain")
 FEATURES = ("report-lane", "order-intake", "usage-rollup", "signup-funnel", "audit-trail")
 EXTENSIONS = {
-    "sh": "run-checks.sh", "py": "collect.py", "ts": "index.ts", "tsx": "panel.tsx",
-    "md": "notes.md", "json": "report.json", "toml": "config.toml", "lock": "deploy.lock",
-    "d": "deploy.lock.d", "git": "other-project.git", "sql": "schema.sql",
+    "sh": "run-checks.sh",
+    "py": "collect.py",
+    "ts": "index.ts",
+    "tsx": "panel.tsx",
+    "md": "notes.md",
+    "json": "report.json",
+    "toml": "config.toml",
+    "lock": "deploy.lock",
+    "d": "deploy.lock.d",
+    "git": "other-project.git",
+    "sql": "schema.sql",
 }
 
 
@@ -256,7 +708,8 @@ def rename(word: str) -> str:
 def rename_names(text: str, table: dict[str, str]) -> str:
     """Substitute whole identifier words only.
 
-    Operators, flags, quoting and redirections survive byte for byte, so the command keeps the
+    A token that starts with ``-`` is an option or a short-flag bundle and is never touched, so
+    operators, flags, quoting and redirections survive byte for byte and the command keeps the
     exact shape the gate measures.
     """
 
@@ -266,7 +719,17 @@ def rename_names(text: str, table: dict[str, str]) -> str:
             return word
         return table.setdefault(word, rename(word))
 
-    return WORD.sub(replace, text)
+    return "".join(token if token.startswith("-") else WORD.sub(replace, token) for token in re.split(r"(\s+)", text))
+
+
+def option_names(text: str) -> bool:
+    """Whether an option token carries a name that renaming would have replaced."""
+    return any(
+        word not in GENERIC
+        for token in text.split()
+        if token.startswith("-") and "=" in token
+        for word in WORD.findall(token.partition("=")[2])
+    )
 
 
 def rename_value(value: Any, table: dict[str, str]) -> Any:
@@ -291,14 +754,19 @@ def load_rows(path: Path) -> list[dict[str, Any]]:
     return [row for row in data if isinstance(row, dict)]
 
 
-def existing_commands(path: Path) -> set[str]:
-    """Commands the gate already covers, so a mined row does not duplicate one."""
+def existing_commands(path: Path) -> set[tuple[str, str]]:
+    """(harness, command) pairs the gate already covers, so a mined row does not duplicate one.
+
+    The gate replays each harness separately, so a command covered for one harness is still
+    uncovered for every other.
+    """
     fixture = json.loads(path.read_text(encoding="utf-8"))
-    found: set[str] = set()
+    found: set[tuple[str, str]] = set()
     for case in fixture.get("cases", []):
         command = case.get("tool_input", {}).get("command")
         if isinstance(command, str):
-            found.add(command.strip())
+            for harness in case.get("harnesses", []):
+                found.add((harness, command.strip()))
     return found
 
 
@@ -319,11 +787,49 @@ def payload_of(row: dict[str, Any], owners: list[str]) -> tuple[str, dict[str, A
 
 
 def verb_of(command: str) -> str:
-    """The command's own name, skipping the directory change that so often precedes it."""
-    words = [word for word in command.split() if re.fullmatch(r"[A-Za-z][\w-]*", word)]
-    while words and words[0] == "cd":
-        words = words[1:]
-    return words[0].lower() if words else "shell"
+    """The command's own name, skipping any ``cd <dir>`` segment that precedes it."""
+    for part in segments(command):
+        words = part.split()
+        if words and words[0] != "cd" and re.fullmatch(r"[A-Za-z][\w-]*", words[0]):
+            return words[0].lower()
+    return "shell"
+
+
+def to_case(
+    row: dict[str, Any],
+    owners: list[str],
+    table: dict[str, str] | None = None,
+    keep_unclassified: bool = False,
+) -> dict[str, Any] | None:
+    """A gate case for ``row`` without its id, or None when the row is not a proven read.
+
+    Classification runs on the scrubbed command before renaming, because a stand-in name could
+    hide the subcommand that writes. The observed reason code is carried as
+    ``observed_reason_code`` for the reasons sidecar and is not written into the fixture.
+    """
+    found = payload_of(row, owners)
+    if found is None:
+        return None
+    kind, payload = found
+    payload = scrub_value(payload, owners)
+    command = payload.get("command", "")
+    if kind == "shell" and not keep_unclassified and (not reads_only(command) or option_names(command)):
+        return None
+    verb = verb_of(command) if kind == "shell" else kind
+    harness = str(row.get("harness") or (row.get("harnesses") or ["omp"])[0])
+    case: dict[str, Any] = {
+        "verb": verb,
+        "fix_area": "git" if verb == "git" else kind,
+        "harnesses": [harness],
+        "tool": kind,
+        "tool_input": rename_value(payload, {} if table is None else table),
+        "cwd": "worktree",
+        "expect": "allow",
+    }
+    reason = row.get("reason_code") or row.get("observed_reason_code")
+    if reason:
+        case["observed_reason_code"] = scrub(str(reason), owners)
+    return case
 
 
 def main() -> int:
@@ -346,36 +852,23 @@ def main() -> int:
     reasons: dict[str, str] = {}
     seen: set[str] = set()
     for row in load_rows(args.rows):
-        found = payload_of(row, args.owner)
-        if found is None:
+        case = to_case(row, args.owner, table, args.keep_unclassified)
+        if case is None:
             continue
-        kind, payload = found
-        # Classify before renaming: a stand-in name would hide the subcommand that writes.
-        payload = scrub_value(payload, args.owner)
-        command = payload.get("command", "")
-        if kind == "shell" and not args.keep_unclassified and not reads_only(command):
-            continue
-        signature = json.dumps(payload, sort_keys=True)
-        if signature in seen or command.strip() in covered:
+        # Deduplicate on the final, renamed payload: two originals that rename alike are one case.
+        harness = case["harnesses"][0]
+        signature = json.dumps([harness, case["tool"], case["tool_input"]], sort_keys=True)
+        command = case["tool_input"].get("command", "")
+        if signature in seen or (harness, command.strip()) in covered:
             continue
         seen.add(signature)
-        verb = verb_of(command) if kind == "shell" else kind
-        payload = rename_value(payload, table)
-        harness = str(row.get("harness") or (row.get("harnesses") or ["omp"])[0])
+        verb = case.pop("verb")
+        reason = case.pop("observed_reason_code", None)
         counts[verb] += 1
         identity = f"observed-{verb}-{counts[verb]:02d}"
-        cases.append({
-            "id": identity,
-            "fix_area": "git" if verb == "git" else kind,
-            "harnesses": [harness],
-            "tool": kind,
-            "tool_input": payload,
-            "cwd": "worktree",
-            "expect": "allow",
-        })
-        reason = row.get("reason_code") or row.get("observed_reason_code")
+        cases.append({"id": identity, **case})
         if reason:
-            reasons[identity] = scrub(str(reason), args.owner)
+            reasons[identity] = reason
 
     json.dump(cases, sys.stdout, indent=2, ensure_ascii=False)
     sys.stdout.write("\n")

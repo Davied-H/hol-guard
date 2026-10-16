@@ -21,9 +21,7 @@
     "observed-git-18@zcode": "native_command_review_required",
     "observed-git-20@zcode": "native_command_review_required",
     "observed-git-21@omp": "native_command_review_required",
-    "observed-git-24@zcode": "native_command_review_required",
     "observed-git-25@zcode": "native_command_review_required",
-    "observed-git-26@zcode": "native_command_review_required",
     "observed-git-27@codex": "native_command_review_required",
     "observed-git-28@omp": "native_command_review_required",
     "observed-grep-01@zcode": "native_command_review_required",
@@ -10054,7 +10052,7 @@
       ],
       "tool": "shell",
       "tool_input": {
-        "command": "gh api repos/example-org/service-api/actions/jobs/115473298819/logs 2>&1 | grep -A 6 \"Diff in\" | head -40"
+        "command": "gh api repos/example-org/service-api/actions/jobs/123456789012/logs 2>&1 | grep -A 6 \"Diff in\" | head -40"
       },
       "cwd": "org_app",
       "expect": "allow"
@@ -12810,7 +12808,7 @@
       ],
       "tool": "shell",
       "tool_input": {
-        "command": "gh api repos/o/r/actions/jobs/115481239214/logs 2>&1 | tail -30"
+        "command": "gh api repos/o/r/actions/jobs/123456789012/logs 2>&1 | tail -30"
       },
       "cwd": "worktree",
       "expect": "allow"
@@ -12868,7 +12866,7 @@
       "expect": "allow"
     },
     {
-      "id": "observed-sub-01",
+      "id": "observed-ls-37",
       "fix_area": "shell",
       "harnesses": [
         "codex"
@@ -12888,7 +12886,7 @@
       ],
       "tool": "shell",
       "tool_input": {
-        "command": "cd ${WORKTREE} && git log --oneline -5 && git show --stat 28c9cf0af9 | head -30"
+        "command": "cd ${WORKTREE} && git log --oneline -5 && git show --stat c9cf0af96c | head -30"
       },
       "cwd": "worktree",
       "expect": "allow"
@@ -13005,7 +13003,7 @@
       ],
       "tool": "shell",
       "tool_input": {
-        "command": "gh api \"repos/o/r/check-runs/115481239214/annotations\" --paginate 2>&1 | head -40"
+        "command": "gh api \"repos/o/r/check-runs/123456789012/annotations\" --paginate 2>&1 | head -40"
       },
       "cwd": "worktree",
       "expect": "allow"
@@ -13188,19 +13186,6 @@
       "tool": "shell",
       "tool_input": {
         "command": "ls ${HOME}/.report-lane/web-client/"
-      },
-      "cwd": "worktree",
-      "expect": "allow"
-    },
-    {
-      "id": "observed-file-01",
-      "fix_area": "shell",
-      "harnesses": [
-        "omp"
-      ],
-      "tool": "shell",
-      "tool_input": {
-        "command": "file /opt/homebrew/bin/doctl"
       },
       "cwd": "worktree",
       "expect": "allow"
@@ -13434,7 +13419,7 @@
       ],
       "tool": "shell",
       "tool_input": {
-        "command": "gh api repos/o/r/actions/jobs/115473298819/logs 2>&1 | grep -A 6 \"service-api in\" | head -40"
+        "command": "gh api repos/o/r/actions/jobs/123456789012/logs 2>&1 | grep -A 6 \"service-api in\" | head -40"
       },
       "cwd": "worktree",
       "expect": "allow"
@@ -14155,19 +14140,6 @@
       "expect": "allow"
     },
     {
-      "id": "observed-rg-22",
-      "fix_area": "shell",
-      "harnesses": [
-        "zcode"
-      ],
-      "tool": "shell",
-      "tool_input": {
-        "command": "rg -ln \"read_workspace_record\" ${WORKTREE}"
-      },
-      "cwd": "worktree",
-      "expect": "allow"
-    },
-    {
       "id": "observed-rg-23",
       "fix_area": "shell",
       "harnesses": [
@@ -14324,19 +14296,6 @@
       "expect": "allow"
     },
     {
-      "id": "observed-git-24",
-      "fix_area": "git",
-      "harnesses": [
-        "zcode"
-      ],
-      "tool": "shell",
-      "tool_input": {
-        "command": "git --git-dir=${WORKTREE}/.git/worktrees/usage-rollup --work-tree=${WORKTREE} status --short"
-      },
-      "cwd": "worktree",
-      "expect": "allow"
-    },
-    {
       "id": "observed-cat-06",
       "fix_area": "shell",
       "harnesses": [
@@ -14371,19 +14330,6 @@
       "tool": "shell",
       "tool_input": {
         "command": "git -C ${WORKTREE}/signup-funnel branch --show-current"
-      },
-      "cwd": "worktree",
-      "expect": "allow"
-    },
-    {
-      "id": "observed-git-26",
-      "fix_area": "git",
-      "harnesses": [
-        "zcode"
-      ],
-      "tool": "shell",
-      "tool_input": {
-        "command": "git --git-dir=${PRIVATE_TMP}/remote/other-project.git log --oneline -12"
       },
       "cwd": "worktree",
       "expect": "allow"
@@ -14610,20 +14556,7 @@
       "expect": "allow"
     },
     {
-      "id": "observed-grep-29",
-      "fix_area": "shell",
-      "harnesses": [
-        "zcode"
-      ],
-      "tool": "shell",
-      "tool_input": {
-        "command": "grep -rln \"usage-rollup\" app src"
-      },
-      "cwd": "worktree",
-      "expect": "allow"
-    },
-    {
-      "id": "observed-tests-01",
+      "id": "observed-ls-38",
       "fix_area": "shell",
       "harnesses": [
         "codex"
@@ -14760,7 +14693,7 @@
       ],
       "tool": "shell",
       "tool_input": {
-        "command": "grep -acme-plain \"protection by app\" ${WORKTREE}/service-api/src ${WORKTREE}/service-api/e2e 2>/dev/null | head -20; echo ---; grep -acme-plain \"other-project the web-client setting\" ${WORKTREE}/service-api/src | head -10"
+        "command": "grep -rin \"protection by app\" ${WORKTREE}/service-api/src ${WORKTREE}/service-api/e2e 2>/dev/null | head -20; echo ---; grep -rin \"other-project the web-client setting\" ${WORKTREE}/service-api/src | head -10"
       },
       "cwd": "worktree",
       "expect": "allow"
@@ -14812,9 +14745,7 @@
     "observed-git-18@zcode": "unassigned",
     "observed-git-20@zcode": "unassigned",
     "observed-git-21@omp": "unassigned",
-    "observed-git-24@zcode": "unassigned",
     "observed-git-25@zcode": "unassigned",
-    "observed-git-26@zcode": "unassigned",
     "observed-git-27@codex": "unassigned",
     "observed-git-28@omp": "unassigned",
     "observed-grep-01@zcode": "unassigned",
