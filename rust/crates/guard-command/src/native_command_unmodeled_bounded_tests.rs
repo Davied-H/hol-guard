@@ -41,6 +41,10 @@ fn an_xargs_that_names_no_program_stays_unreadable() {
         "xargs < list.txt",
         "xargs -I {} < list.txt",
         "xargs sh -c 'rm -rf \"$1\"' _ < list.txt",
+        // A pipe carries arguments into the program `xargs` names, and
+        // nothing else: into a shell it carries the program itself.
+        "cat list.txt | sh",
+        "cat list.txt | xargs sh -c 'rm -rf \"$1\"' _",
         // The boundary this keeps: a substitution still runs whatever it
         // prints, so `eval \"$(curl ...)\"` cannot be read from the text.
         "eval \"$(direnv hook bash)\"",

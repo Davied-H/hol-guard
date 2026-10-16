@@ -310,7 +310,14 @@ fn reviewable_structure(command: &CanonicalCommandV1) -> bool {
             && command.wrapper_chain.is_empty();
     }
     if command.confidence != "uncertain" {
-        return false;
+        // `cat list.txt | xargs -0 rm -f` parses exactly, and the pipe only
+        // carries arguments into a program the text names. The matchers not
+        // binding `xargs` was the whole reason it was refused outright, with
+        // no approval left to give it.
+        return command.confidence == "exact"
+            && command.uncertainty_reason.is_none()
+            && command.wrapper_chain.is_empty()
+            && named_xargs_pipeline(&command.normalized_text);
     }
     match command.uncertainty_reason.as_deref() {
         // Backgrounding runs the same programs the foreground text names, so
