@@ -23,6 +23,15 @@ decides the manager a command names. This runs in the daemon, whose own
 parse here binds it. A record naming none is dropped: the resident parsed that
 call with no search path at all, and ``_resident_environment`` has no way to
 ask for the same.
+
+A request the package policy wants reviewed is answered by the proxy's bound
+blocked-request mode. Under ``safe-alternative`` the resident blocks it in
+place, and its record carries the receipt redaction level the silent inbox row
+is written with, as a relayed tool call's does. It is recorded as
+``_queue_package_approval_response`` records that branch: the
+``policy-safe-alternative`` block receipt against the package artifact, with
+the risk categories of the call projected with it, and then the inbox row
+``record_unprompted_review`` leaves.
 """
 
 from __future__ import annotations
@@ -36,8 +45,11 @@ from .mcp_relay_evidence_drain import (
     _BLOCK_SOURCE,
     _FORWARD_ACTIONS,
     _RELAY_HARNESSES,
+    _SAFE_ALTERNATIVE_SOURCE,
     _decision,
     _ordered_params,
+    _record_unprompted_review,
+    _redaction_level,
 )
 
 MCP_PACKAGE_CALL_EVIDENCE_KIND = "mcp_package_call"
@@ -71,6 +83,9 @@ _PACKAGE_KEYS = frozenset(
     }
 )
 _POLICY_WORKSPACE_KEY = "policy_workspace"
+# The silent inbox row, present only on a safe-alternative block's record.
+_REVIEW_KEY = "review"
+_OPTIONAL_KEYS = frozenset({_REVIEW_KEY})
 
 
 def is_mcp_relay_package_evidence(record: object) -> bool:
@@ -85,7 +100,7 @@ def record_mcp_relay_package_evidence(store: object, guard_home: Path, record: o
     from ..proxy.runtime_mcp_projection import McpCallProjector
     from ..tool_decision_evidence import tool_decision_scanner_evidence
 
-    if not isinstance(record, Mapping) or set(record) != _RECORD_KEYS:
+    if not isinstance(record, Mapping) or set(record) - _OPTIONAL_KEYS != _RECORD_KEYS:
         return False
     harness, outcome = record["harness"], record["outcome"]
     source, policy_action = record["decision_source"], record["policy_action"]
@@ -102,13 +117,22 @@ def record_mcp_relay_package_evidence(store: object, guard_home: Path, record: o
         or params.get("name") != tool_name
     ):
         return False
+    # Only a queued request carries its inbox row, and it must.
+    reviewed = _REVIEW_KEY in record
+    redaction_level = _redaction_level(record[_REVIEW_KEY]) if reviewed else None
+    if reviewed and redaction_level is None:
+        return False
     forwarded = outcome == "forward"
     if forwarded:
         # The proxy forwards under the action it permitted the call with, and
         # records the receipt under that same action.
-        if policy_action not in _FORWARD_ACTIONS or source != f"policy-{policy_action}":
+        if reviewed or policy_action not in _FORWARD_ACTIONS or source != f"policy-{policy_action}":
             return False
-    elif outcome != "block" or policy_action in _FORWARD_ACTIONS or source != _BLOCK_SOURCE:
+    elif (
+        outcome != "block"
+        or policy_action in _FORWARD_ACTIONS
+        or source != (_SAFE_ALTERNATIVE_SOURCE if reviewed else _BLOCK_SOURCE)
+    ):
         return False
     facts = _package_facts(package, forwarded=forwarded)
     if facts is None:
@@ -133,6 +157,15 @@ def record_mcp_relay_package_evidence(store: object, guard_home: Path, record: o
         # another one is not that request's receipt.
         if artifact is None or artifact.artifact_id != facts["artifact_id"]:
             return False
+        scanner_evidence = (*tool_decision_scanner_evidence(decision), *facts["evidence"])
+        # `_queue_approval_center_response` projects a queued call with its
+        # artifact; `_record_package_{block,forward}` project it without one.
+        projector = McpCallProjector(guard_home)
+        projection = (
+            projector.project(tool_name, ordered, artifact)
+            if redaction_level is not None
+            else projector.project(tool_name, ordered)
+        )
         recorded: dict[str, Any] = {
             "store": store,
             "artifact": artifact,
@@ -140,13 +173,13 @@ def record_mcp_relay_package_evidence(store: object, guard_home: Path, record: o
             "decision_source": source,
             "now": datetime.now(timezone.utc).isoformat(),
             "signals": facts["signals"],
-            "arguments": McpCallProjector(guard_home).project(tool_name, ordered).safe_arguments,
-            "additional_scanner_evidence": (
-                *tool_decision_scanner_evidence(decision),
-                *facts["evidence"],
-            ),
+            "arguments": projection.safe_arguments,
+            "additional_scanner_evidence": scanner_evidence,
             "policy_action": policy_action,
         }
+        if redaction_level is not None:
+            # Only that projection carries risk categories to record.
+            recorded["risk_categories"] = projection.risk_categories
         if forwarded:
             # `_record_package_forward`: the allow receipt alone, since the
             # relay never spends a saved approval and so remembers nothing.
@@ -157,8 +190,22 @@ def record_mcp_relay_package_evidence(store: object, guard_home: Path, record: o
             )
         else:
             # `_record_package_block`: no risk categories and no policy
-            # workspace, as the proxy writes it.
+            # workspace, as the proxy writes it. A queued request is recorded
+            # by `_queue_approval_center_response` instead, which projects the
+            # call with its artifact and so does carry risk categories.
             block_tool_call(**recorded)
+        if redaction_level is not None:
+            # After the receipt, as the proxy writes it.
+            _record_unprompted_review(
+                store,
+                artifact,
+                facts["artifact_hash"],
+                projection,
+                facts["signals"],
+                policy_action=policy_action,
+                scanner_evidence=scanner_evidence,
+                redaction_level=redaction_level,
+            )
     except Exception:
         # A record the proxy could not have written is dropped, never guessed.
         return False

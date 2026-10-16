@@ -11,8 +11,10 @@
 //! The relay answers only the legs that stop or forward a call on what it has
 //! already read. Three defer:
 //!
-//! * a queued package request, because `_queue_package_approval_response`
-//!   writes a package-shaped approval row the relay does not yet shape;
+//! * a queued package request under the `ask` blocked-request mode, because
+//!   `_queue_package_approval_response` then writes a package-shaped approval
+//!   row the relay does not yet shape. Under `safe-alternative` the same leg
+//!   blocks in place, which the lane answers;
 //! * an observed forward, because the proxy queues the observed requests it
 //!   would have blocked before it forwards;
 //! * a forward whose policies left a saved approval pending, which is the
@@ -39,7 +41,7 @@ use super::package_policy::PackagePolicy;
 use crate::mcp_tool_policy_decision::Decision;
 
 /// The call needs the package-shaped approval request
-/// `_queue_package_approval_response` writes.
+/// `_queue_package_approval_response` writes under the `ask` mode.
 pub(super) const PACKAGE_QUEUE: &str = "mcp_relay_package_queue";
 /// `mode = "observe"`: the forward comes with the observed approval requests
 /// the proxy queues first.
@@ -65,6 +67,10 @@ pub(super) enum PackageRoute {
     StoredPackageBlock,
     /// `_terminal_package_response`: the package policy itself stops the call.
     TerminalPackage { policy_action: String },
+    /// `_queue_package_approval_response`: the package policy wants this
+    /// request reviewed. The blocked-request mode decides what that is, and
+    /// the lane answers only the `safe-alternative` block.
+    QueuePackage { policy_action: String },
     /// `_record_package_forward`: neither policy stops the call and no saved
     /// approval is pending.
     Forward { policy_action: String },
@@ -111,7 +117,9 @@ pub(super) fn precheck(
         "terminal" => Ok(Some(PackageRoute::TerminalPackage {
             policy_action: answered_action(&answer)?,
         })),
-        "queue" => Err(PACKAGE_QUEUE),
+        "queue" => Ok(Some(PackageRoute::QueuePackage {
+            policy_action: answered_action(&answer)?,
+        })),
         _ => Err(PACKAGE_ROUTE_UNKNOWN),
     }
 }
@@ -139,7 +147,9 @@ pub(super) fn compose(
         "queue_tool" => Ok(Decided::Tool(ToolLeg::Queue {
             policy_action: answered_action(&answer)?,
         })),
-        "queue_package" => Err(PACKAGE_QUEUE),
+        "queue_package" => Ok(Decided::Package(PackageRoute::QueuePackage {
+            policy_action: answered_action(&answer)?,
+        })),
         "observe_forward" => Err(PACKAGE_OBSERVE),
         "proceed" => match answer.get("pending_claims").and_then(Value::as_bool) {
             Some(false) => Ok(Decided::Package(PackageRoute::Forward {
@@ -198,9 +208,9 @@ fn kind(answer: &Value) -> Result<&str, &'static str> {
         .ok_or(PACKAGE_ROUTE_UNKNOWN)
 }
 
-/// The action a terminal answer carries, which the proxy passes to the
-/// response it renders. Both answers compose it from a `GuardAction`, so the
-/// text is one of that enum's.
+/// The action a terminal or queued answer carries, which the proxy passes to
+/// the response it renders. Both answers compose it from a `GuardAction`, so
+/// the text is one of that enum's.
 fn answered_action(answer: &Value) -> Result<String, &'static str> {
     answer
         .get("policy_action")

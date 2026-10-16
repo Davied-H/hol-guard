@@ -7,7 +7,7 @@ from typing import Any, ClassVar
 import pytest
 
 from codex_plugin_scanner.guard import mcp_tool_calls, native_mcp_tool_call_identity
-from codex_plugin_scanner.guard.daemon import hook_direct_evidence_drain
+from codex_plugin_scanner.guard.daemon import hook_direct_evidence_drain, mcp_relay_package_evidence_drain
 from codex_plugin_scanner.guard.daemon.mcp_relay_package_evidence_drain import (
     is_mcp_relay_package_evidence,
     record_mcp_relay_package_evidence,
@@ -79,14 +79,19 @@ def _record(**fields: object) -> dict[str, object]:
 
 
 class _Projector:
-    projected: ClassVar[list[tuple[str, object]]] = []
+    projected: ClassVar[list[tuple[str, object, object]]] = []
 
     def __init__(self, guard_home: Path) -> None:
         self.guard_home = guard_home
 
-    def project(self, tool_name: str, params: object) -> SimpleNamespace:
-        _Projector.projected.append((tool_name, params))
-        return SimpleNamespace(safe_arguments={"safe": True})
+    def project(self, tool_name: str, params: object, artifact: object = None) -> SimpleNamespace:
+        _Projector.projected.append((tool_name, params, artifact))
+        # The proxy projects a call with its artifact to carry risk
+        # categories; a projection without one carries none.
+        return SimpleNamespace(
+            safe_arguments={"safe": True, "artifact": artifact is not None},
+            risk_categories=["supply-chain"] if artifact is not None else [],
+        )
 
 
 @pytest.fixture
@@ -147,12 +152,12 @@ def test_a_forward_is_recorded_against_the_package_artifact(
     assert recorded["policy_workspace"] == WORKSPACE
     # The evaluation's reason signals, not the tool decision's.
     assert recorded["signals"] == ("left-pad has an advisory",)
-    assert recorded["arguments"] == {"safe": True}
+    assert recorded["arguments"] == {"safe": True, "artifact": False}
     assert recorded["additional_scanner_evidence"] == tuple(EVIDENCE)
     # `_record_package_forward` passes no risk categories of its own.
     assert "risk_categories" not in recorded
-    [(tool_name, params)] = _Projector.projected
-    assert tool_name == "shell"
+    [(tool_name, params, artifact)] = _Projector.projected
+    assert tool_name == "shell" and artifact is None
     # The host's own key order, which the proxy projects the call from.
     assert isinstance(params, dict) and list(params["arguments"]) == ["cwd", "command"]
 
@@ -198,6 +203,123 @@ def test_a_block_is_recorded_without_a_policy_workspace(
     # `_record_package_block` binds no workspace and no risk categories.
     assert "policy_workspace" not in recorded
     assert "risk_categories" not in recorded
+
+
+def _reviewed(**fields: object) -> dict[str, object]:
+    """The record a request blocked in place under `safe-alternative` leaves."""
+
+    package = _package()
+    del package["policy_workspace"]
+    queued: dict[str, object] = {
+        "outcome": "block",
+        "decision_source": "policy-safe-alternative",
+        "policy_action": "review",
+        "decision": _decision("review"),
+        "package": package,
+        "review": {"redaction_level": "partial"},
+    }
+    queued.update(fields)
+    return _record(**queued)
+
+
+@pytest.fixture
+def reviews(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
+    """The inbox rows the drain writes after a queued request's receipt."""
+
+    written: list[dict[str, Any]] = []
+
+    def record_review(
+        store: object,
+        artifact: object,
+        artifact_hash: str,
+        projection: object,
+        signals: object,
+        **kwargs: object,
+    ) -> None:
+        written.append(
+            {
+                "store": store,
+                "artifact": artifact,
+                "artifact_hash": artifact_hash,
+                "projection": projection,
+                "signals": signals,
+                **kwargs,
+            }
+        )
+
+    monkeypatch.setattr(mcp_relay_package_evidence_drain, "_record_unprompted_review", record_review)
+    return written
+
+
+def test_a_queued_request_is_blocked_in_place_and_left_in_the_inbox(
+    tmp_path: Path,
+    calls: list[tuple[str, dict[str, Any]]],
+    parsed: dict[str, Any],
+    reviews: list[dict[str, Any]],
+) -> None:
+    store = object()
+
+    assert record_mcp_relay_package_evidence(store, tmp_path, _reviewed())
+
+    [(kind, recorded)] = calls
+    assert kind == "block"
+    assert recorded["decision_source"] == "policy-safe-alternative"
+    assert recorded["policy_action"] == "review"
+    # `_queue_approval_center_response` projects the call with its artifact,
+    # so the receipt carries that projection's risk categories and arguments.
+    assert recorded["risk_categories"] == ["supply-chain"]
+    assert recorded["arguments"] == {"safe": True, "artifact": True}
+    assert "policy_workspace" not in recorded
+    # The inbox row follows the receipt, written with the bound level.
+    [review] = reviews
+    assert review["store"] is store
+    assert review["artifact"] is recorded["artifact"]
+    assert review["artifact_hash"] == TOKEN
+    assert review["signals"] == ("left-pad has an advisory",)
+    assert review["policy_action"] == "review"
+    assert review["redaction_level"] == "partial"
+    assert review["scanner_evidence"] == recorded["additional_scanner_evidence"]
+    assert review["projection"].risk_categories == ["supply-chain"]
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        # A level the proxy never writes a receipt with.
+        {"review": {"redaction_level": "summary"}},
+        {"review": {"redaction_level": None}},
+        # The row is the level alone.
+        {"review": {"redaction_level": "full", "extra": True}},
+        {"review": "full"},
+        # Only the safe-alternative branch leaves a row.
+        {"decision_source": "policy-block", "policy_action": "block"},
+    ],
+)
+def test_an_inbox_row_the_proxy_could_not_have_written_is_dropped(
+    tmp_path: Path,
+    calls: list[tuple[str, dict[str, Any]]],
+    parsed: dict[str, Any],
+    reviews: list[dict[str, Any]],
+    fields: dict[str, object],
+) -> None:
+    assert not record_mcp_relay_package_evidence(object(), tmp_path, _reviewed(**fields))
+    assert calls == [] and reviews == []
+
+
+def test_a_receipt_recorded_without_its_inbox_row_is_dropped(
+    tmp_path: Path,
+    calls: list[tuple[str, dict[str, Any]]],
+    parsed: dict[str, Any],
+    reviews: list[dict[str, Any]],
+) -> None:
+    # A block the lane answers through the queue route always leaves the row.
+    record = _reviewed()
+    del record["review"]
+
+    assert not record_mcp_relay_package_evidence(object(), tmp_path, record)
+    # A forward never leaves one.
+    assert not record_mcp_relay_package_evidence(object(), tmp_path, _record(review={"redaction_level": "full"}))
+    assert calls == [] and reviews == []
 
 
 def test_a_record_naming_another_package_is_dropped(

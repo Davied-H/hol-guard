@@ -523,6 +523,12 @@ fn resolve(
             &identity,
             intent,
             &subject,
+            // The queue route of the package lane is answered by the same
+            // bound mode and redaction level the tool lane's queue route is.
+            package_lane::QueueBinding {
+                blocked_request_mode: binding.review.blocked_request_mode.as_deref(),
+                redaction_level: view.receipt_redaction_level.as_deref(),
+            },
         )?),
         None => None,
     };

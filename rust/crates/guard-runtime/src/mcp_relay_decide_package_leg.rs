@@ -29,7 +29,7 @@ use guard_command::package_intent_common::{
 };
 use guard_contracts::{McpToolCallIdentityPayloadV1, McpToolPolicySubjectV1};
 
-use super::package_lane::{self, PackageOutcome};
+use super::package_lane::{self, PackageOutcome, QueueBinding};
 use super::package_policy::{self, ProcessFacts};
 use super::store::Saved;
 use super::view::HarnessView;
@@ -64,6 +64,7 @@ pub(super) fn decide_package_leg(
     identity: &McpToolCallIdentityPayloadV1,
     intent: &PackageIntent,
     subject: &McpToolPolicySubjectV1,
+    binding: QueueBinding<'_>,
 ) -> Result<Packaged, &'static str> {
     let evaluation = request
         .package_evaluation
@@ -107,6 +108,7 @@ pub(super) fn decide_package_leg(
         &request.build.tool_name,
         &request.build.server_name,
         &resolved,
+        binding,
         // The proxy's second resolution, which reads the store the decide
         // path still holds open: the fresh tool authority, then the fresh
         // package policy.

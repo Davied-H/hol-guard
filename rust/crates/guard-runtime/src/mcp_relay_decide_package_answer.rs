@@ -2,7 +2,8 @@
 //!
 //! Port of the package lane's own response renderers in `runtime_mcp.py`:
 //! `_stored_package_block_response` (:2450), `_terminal_package_response`
-//! (:2352) and the receipt side of `_record_package_forward` (:2025). The legs
+//! (:2352), the `safe-alternative` half of `_queue_package_approval_response`
+//! (:2157) and the receipt side of `_record_package_forward` (:2025). The legs
 //! the tool policy decides are rendered by the plain tool-policy responses, so
 //! they are a `ToolLeg` the caller answers through the tool lane and never
 //! reach this module.
@@ -12,10 +13,11 @@
 //! holds its evidence for the drain to record, which is how every other route
 //! in this lane already answers.
 
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 
 use super::package_policy::PackagePolicy;
 use super::package_route::PackageRoute;
+use super::queue;
 
 /// `block_tool_call(decision_source="policy-block")`, which every stopped
 /// package call records under.
@@ -23,12 +25,24 @@ pub(super) const BLOCK_SOURCE: &str = "policy-block";
 
 /// The message and payload a stopped call answers with, carrying the
 /// evaluation the lane settled on as the proxy's `supplyChainEvaluation`.
+///
+/// `signals` are the receipt signals of this route, which the queued leg also
+/// writes into its guidance text.
 pub(super) fn block(
     route: &PackageRoute,
     tool: &str,
     server: &str,
     policy: &PackagePolicy,
+    signals: &[String],
 ) -> Option<(String, Value)> {
+    // The queued leg is answered by `_queue_approval_center_response`, which
+    // renders the plain tool-call guidance and the not-forwarded payload, and
+    // only then has the package evaluation written over it.
+    if let PackageRoute::QueuePackage { .. } = route {
+        let (message, mut data) = queue::safe_alternative_block(tool, server, signals);
+        data["supplyChainEvaluation"] = queued_evaluation(policy, &message);
+        return Some((message, data));
+    }
     let message = match route {
         PackageRoute::StoredPackageBlock => format!(
             "HOL Guard blocked package install request {tool} from {server}. This exact request \
@@ -44,7 +58,7 @@ pub(super) fn block(
                 )
             }
         }
-        PackageRoute::Forward { .. } => return None,
+        PackageRoute::QueuePackage { .. } | PackageRoute::Forward { .. } => return None,
     };
     Some((
         message,
@@ -56,12 +70,41 @@ pub(super) fn block(
     ))
 }
 
+/// The evaluation a queued request is answered with: the one the lane settled
+/// on, restated as the block the agent was actually given, with the guidance
+/// text as its own next step.
+fn queued_evaluation(policy: &PackagePolicy, message: &str) -> Value {
+    let mut evaluation = policy.evaluation.clone();
+    evaluation.insert("decision".to_owned(), json!("block"));
+    evaluation.insert("policy_action".to_owned(), json!("block"));
+    let mut user_copy = evaluation
+        .get("user_copy")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_else(Map::new);
+    user_copy.insert("title".to_owned(), json!("Package request blocked"));
+    user_copy.insert(
+        "summary".to_owned(),
+        policy
+            .evaluation
+            .get("risk_summary")
+            .cloned()
+            .unwrap_or_else(|| json!("")),
+    );
+    user_copy.insert("dashboard_url".to_owned(), Value::Null);
+    user_copy.insert("next_step".to_owned(), json!(message));
+    user_copy.insert("harness_message".to_owned(), json!(message));
+    evaluation.insert("user_copy".to_owned(), Value::Object(user_copy));
+    Value::Object(evaluation)
+}
+
 /// The action the answer reports, which a stored block always states as
 /// `block` and a terminal leg takes from the composed policy.
 pub(super) fn policy_action(route: &PackageRoute) -> &str {
     match route {
         PackageRoute::StoredPackageBlock => "block",
         PackageRoute::TerminalPackage { policy_action }
+        | PackageRoute::QueuePackage { policy_action }
         | PackageRoute::Forward { policy_action } => policy_action,
     }
 }
@@ -73,6 +116,9 @@ pub(super) fn policy_action(route: &PackageRoute) -> &str {
 pub(super) fn decision_source(route: &PackageRoute) -> String {
     match route {
         PackageRoute::Forward { policy_action } => format!("policy-{policy_action}"),
+        // The queued leg is recorded by the tool lane's own queue response,
+        // against the package artifact it was asked with.
+        PackageRoute::QueuePackage { .. } => queue::SAFE_ALTERNATIVE_SOURCE.to_owned(),
         _ => BLOCK_SOURCE.to_owned(),
     }
 }
@@ -85,14 +131,35 @@ pub(super) fn decision_label(route: &PackageRoute) -> String {
         PackageRoute::TerminalPackage { policy_action } => {
             format!("terminal-package-{policy_action}")
         }
+        PackageRoute::QueuePackage { .. } => "safe-alternative".to_owned(),
         PackageRoute::Forward { policy_action } => format!("package-{policy_action}"),
     }
 }
 
-/// The receipt signals both the block and the allow record: each reason's
-/// message, its code when it carries no message, and an empty string when it
-/// carries neither, in the order the evaluation reported them.
-pub(super) fn reason_signals(policy: &PackagePolicy) -> Vec<String> {
+/// The signals this route's receipt records, and the queued leg's guidance
+/// text states. `_queue_package_approval_response` leads the queued leg's
+/// with the evaluation's own risk summary; every other route records the
+/// reason signals alone.
+pub(super) fn signals(route: &PackageRoute, policy: &PackagePolicy) -> Vec<String> {
+    let reasons = reason_signals(policy);
+    match route {
+        PackageRoute::QueuePackage { .. } => {
+            let summary = policy
+                .evaluation
+                .get("risk_summary")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned();
+            std::iter::once(summary).chain(reasons).collect()
+        }
+        _ => reasons,
+    }
+}
+
+/// The reason signals of the evaluation: each reason's message, its code when
+/// it carries no message, and an empty string when it carries neither, in the
+/// order the evaluation reported them.
+fn reason_signals(policy: &PackagePolicy) -> Vec<String> {
     policy
         .evaluation
         .get("reasons")

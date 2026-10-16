@@ -71,12 +71,18 @@ fn the_precheck_stops_a_terminal_package_policy() {
 }
 
 #[test]
-fn the_precheck_hands_back_a_call_that_needs_an_approval_request() {
-    // `_queue_package_approval_response` either writes the request row or
-    // answers with the approval-center block naming one, so the relay cannot
-    // answer this leg at all.
+fn the_precheck_queues_a_call_the_package_policy_wants_reviewed() {
+    // `_queue_package_approval_response` renders this leg; which of its two
+    // branches it takes is the blocked-request mode's to decide, not the
+    // route's.
     for action in ["review", "require-reapproval"] {
-        assert_eq!(precheck("enforce", &policy(action)), Err(PACKAGE_QUEUE));
+        assert_eq!(
+            precheck("enforce", &policy(action)),
+            Ok(Some(PackageRoute::QueuePackage {
+                policy_action: action.to_owned(),
+            })),
+            "{action}",
+        );
     }
 }
 
@@ -149,12 +155,12 @@ fn the_composition_stops_the_call_under_the_most_restrictive_terminal_action() {
 }
 
 #[test]
-fn the_composition_hands_back_a_queued_package_request() {
-    // Only `queue_package` defers: it needs the package-shaped approval row
-    // `_queue_package_approval_response` writes.
+fn the_composition_queues_a_package_request_the_tool_policy_permitted() {
     assert_eq!(
         compose("enforce", &tool(GuardAction::Allow), &policy("review")),
-        Err(PACKAGE_QUEUE),
+        Ok(Decided::Package(PackageRoute::QueuePackage {
+            policy_action: "review".to_owned(),
+        })),
     );
 }
 

@@ -13,6 +13,15 @@ use crate::mcp_tool_policy_decision::Current;
 const TOOL: &str = "install_package";
 const SERVER: &str = "registry";
 
+/// The blocked-request mode a queued request is answered under, with the
+/// receipt redaction level the silent inbox row is written with.
+fn bound(blocked_request_mode: &'static str) -> QueueBinding<'static> {
+    QueueBinding {
+        blocked_request_mode: Some(blocked_request_mode),
+        redaction_level: Some("full"),
+    }
+}
+
 /// A resolved package policy whose evaluation settled on `policy_action` and
 /// reported `reasons`.
 fn policy(policy_action: &str, reasons: Value) -> PackagePolicy {
@@ -20,6 +29,14 @@ fn policy(policy_action: &str, reasons: Value) -> PackagePolicy {
     evaluation.insert("policy_action".to_owned(), json!(policy_action));
     evaluation.insert("decision".to_owned(), json!(policy_action));
     evaluation.insert("reasons".to_owned(), reasons);
+    evaluation.insert(
+        "risk_summary".to_owned(),
+        json!("left-pad was published yesterday"),
+    );
+    evaluation.insert(
+        "user_copy".to_owned(),
+        json!({"title": "Package request needs review", "dashboard_url": "https://hol.org/guard"}),
+    );
     PackagePolicy {
         evaluation,
         current_action: GuardAction::Review,
@@ -59,10 +76,17 @@ fn a_call_the_precheck_stops_is_never_re_resolved() {
     let asked = Cell::new(false);
     let saved_block = policy("allow", json!([{"code": "saved_package_block"}]));
     let answer = answered(
-        decide_package("enforce", TOOL, SERVER, &saved_block, || {
-            asked.set(true);
-            Ok((tool(GuardAction::Allow), policy("allow", json!([]))))
-        })
+        decide_package(
+            "enforce",
+            TOOL,
+            SERVER,
+            &saved_block,
+            bound("safe-alternative"),
+            || {
+                asked.set(true);
+                Ok((tool(GuardAction::Allow), policy("allow", json!([]))))
+            },
+        )
         .expect("the precheck answers the call"),
     );
     assert!(
@@ -87,12 +111,19 @@ fn a_call_the_precheck_stops_is_never_re_resolved() {
 #[test]
 fn a_forwarded_call_answers_from_the_re_resolved_policy() {
     let answer = answered(
-        decide_package("enforce", TOOL, SERVER, &policy("allow", json!([])), || {
-            Ok((
-                tool(GuardAction::Warn),
-                policy("allow", json!([{"message": "left-pad is newly published"}])),
-            ))
-        })
+        decide_package(
+            "enforce",
+            TOOL,
+            SERVER,
+            &policy("allow", json!([])),
+            bound("safe-alternative"),
+            || {
+                Ok((
+                    tool(GuardAction::Warn),
+                    policy("allow", json!([{"message": "left-pad is newly published"}])),
+                ))
+            },
+        )
         .expect("neither policy stops the call"),
     );
     assert_eq!(answer.block, None);
@@ -109,9 +140,14 @@ fn a_forwarded_call_answers_from_the_re_resolved_policy() {
 #[test]
 fn a_composed_terminal_answers_as_the_package_response() {
     let answer = answered(
-        decide_package("enforce", TOOL, SERVER, &policy("allow", json!([])), || {
-            Ok((tool(GuardAction::Block), policy("allow", json!([]))))
-        })
+        decide_package(
+            "enforce",
+            TOOL,
+            SERVER,
+            &policy("allow", json!([])),
+            bound("safe-alternative"),
+            || Ok((tool(GuardAction::Block), policy("allow", json!([])))),
+        )
         .expect("the composition stops the call"),
     );
     let (message, data) = answer.block.expect("a stopped call answers with a block");
@@ -124,27 +160,137 @@ fn a_composed_terminal_answers_as_the_package_response() {
 }
 
 #[test]
-fn a_leg_the_relay_cannot_answer_defers_from_either_resolution() {
-    // The precheck's queue: the proxy writes the approval request for it.
+fn a_queued_request_blocks_in_place_under_safe_alternative() {
+    let reviewed = policy(
+        "review",
+        json!([{"message": "left-pad is newly published"}]),
+    );
+    let answer = answered(
+        decide_package(
+            "enforce",
+            TOOL,
+            SERVER,
+            &reviewed,
+            bound("safe-alternative"),
+            || panic!("a queued precheck re-resolves nothing"),
+        )
+        .expect("the precheck queues the request"),
+    );
+    let (message, data) = answer.block.expect("a queued request answers with a block");
+    assert!(
+        message.contains("HOL Guard blocked tool call install_package from registry."),
+        "{message}"
+    );
+    // The guidance names the risk summary before the reasons, as the proxy's
+    // own signals do.
+    assert!(
+        message.contains("left-pad was published yesterday left-pad is newly published"),
+        "{message}"
+    );
+    assert_eq!(data["transportOutcome"], json!("not-forwarded"));
+    assert_eq!(data["guardPolicyAction"], json!("block"));
+    assert_eq!(data["approvalRequests"], json!([]));
+    // The evaluation is restated as the block the agent was actually given.
+    let evaluation = &data["supplyChainEvaluation"];
+    assert_eq!(evaluation["decision"], json!("block"));
+    assert_eq!(evaluation["policy_action"], json!("block"));
+    assert_eq!(
+        evaluation["user_copy"]["title"],
+        json!("Package request blocked")
+    );
+    assert_eq!(
+        evaluation["user_copy"]["summary"],
+        json!("left-pad was published yesterday")
+    );
+    assert_eq!(evaluation["user_copy"]["dashboard_url"], Value::Null);
+    assert_eq!(evaluation["user_copy"]["next_step"], json!(message));
+    assert_eq!(evaluation["user_copy"]["harness_message"], json!(message));
+    // The receipt is the queue route's, recorded under the action the policy
+    // settled on rather than the `block` the agent was answered with.
+    assert_eq!(answer.decision_source, queue::SAFE_ALTERNATIVE_SOURCE);
+    assert_eq!(answer.decision, "safe-alternative");
+    assert_eq!(answer.policy_action, "review");
+    assert_eq!(answer.redaction_level.as_deref(), Some("full"));
+    assert_eq!(
+        answer.signals,
+        vec![
+            "left-pad was published yesterday".to_owned(),
+            "left-pad is newly published".to_owned(),
+        ],
+    );
+}
+
+#[test]
+fn the_composed_queue_blocks_in_place_on_the_re_resolved_policy() {
+    let answer = answered(
+        decide_package(
+            "enforce",
+            TOOL,
+            SERVER,
+            &policy("allow", json!([])),
+            bound("safe-alternative"),
+            || Ok((tool(GuardAction::Allow), policy("review", json!([])))),
+        )
+        .expect("the composition queues the request"),
+    );
+    assert!(answer.block.is_some(), "a queued request is stopped");
+    assert_eq!(answer.decision_source, queue::SAFE_ALTERNATIVE_SOURCE);
+    assert_eq!(answer.policy_action, "review");
+    assert_eq!(answer.redaction_level.as_deref(), Some("full"));
+}
+
+#[test]
+fn a_queued_request_defers_under_every_other_blocked_request_mode() {
+    // `ask`: the proxy writes the package-shaped approval request for it.
     assert_eq!(
         decide_package(
             "enforce",
             TOOL,
             SERVER,
             &policy("review", json!([])),
-            || { panic!("a queued precheck re-resolves nothing") }
+            bound("ask"),
+            || panic!("a queued precheck re-resolves nothing"),
         )
         .err(),
         Some(package_route::PACKAGE_QUEUE),
     );
     // The composition's, once the fresh package policy asks for approval.
     assert_eq!(
-        decide_package("enforce", TOOL, SERVER, &policy("allow", json!([])), || Ok(
-            (tool(GuardAction::Allow), policy("review", json!([])),)
-        ))
+        decide_package(
+            "enforce",
+            TOOL,
+            SERVER,
+            &policy("allow", json!([])),
+            bound("ask"),
+            || Ok((tool(GuardAction::Allow), policy("review", json!([])))),
+        )
         .err(),
         Some(package_route::PACKAGE_QUEUE),
     );
+    // A binding whose configs left no mode or no redaction level at all.
+    for binding in [
+        QueueBinding {
+            blocked_request_mode: None,
+            redaction_level: Some("full"),
+        },
+        QueueBinding {
+            blocked_request_mode: Some("safe-alternative"),
+            redaction_level: None,
+        },
+    ] {
+        assert_eq!(
+            decide_package(
+                "enforce",
+                TOOL,
+                SERVER,
+                &policy("review", json!([])),
+                binding,
+                || panic!("a queued precheck re-resolves nothing"),
+            )
+            .err(),
+            Some(package_route::PACKAGE_QUEUE),
+        );
+    }
 }
 
 #[test]
@@ -153,9 +299,14 @@ fn a_leg_the_tool_policy_decided_is_named_for_the_tool_lane() {
     // the plain tool-policy responses, so the lane hands them back rather than
     // rendering a package answer and its `mcp_package_call` receipt.
     assert_eq!(
-        decide_package("enforce", TOOL, SERVER, &policy("allow", json!([])), || Ok(
-            (tool(GuardAction::Review), policy("allow", json!([])))
-        )),
+        decide_package(
+            "enforce",
+            TOOL,
+            SERVER,
+            &policy("allow", json!([])),
+            bound("safe-alternative"),
+            || Ok((tool(GuardAction::Review), policy("allow", json!([]))))
+        ),
         Ok(PackageOutcome::ToolLeg(ToolLeg::Queue {
             policy_action: "review".to_owned(),
         })),
@@ -163,15 +314,25 @@ fn a_leg_the_tool_policy_decided_is_named_for_the_tool_lane() {
     let mut blocked = tool(GuardAction::Allow);
     blocked.saved_action = Some(GuardAction::Block);
     assert_eq!(
-        decide_package("enforce", TOOL, SERVER, &policy("allow", json!([])), || Ok(
-            (blocked, policy("allow", json!([])))
-        )),
+        decide_package(
+            "enforce",
+            TOOL,
+            SERVER,
+            &policy("allow", json!([])),
+            bound("safe-alternative"),
+            || Ok((blocked, policy("allow", json!([]))))
+        ),
         Ok(PackageOutcome::ToolLeg(ToolLeg::StoredBlock)),
     );
     assert_eq!(
-        decide_package("observe", TOOL, SERVER, &policy("allow", json!([])), || Ok(
-            (tool(GuardAction::Block), policy("allow", json!([])))
-        )),
+        decide_package(
+            "observe",
+            TOOL,
+            SERVER,
+            &policy("allow", json!([])),
+            bound("safe-alternative"),
+            || Ok((tool(GuardAction::Block), policy("allow", json!([]))))
+        ),
         Ok(PackageOutcome::ToolLeg(ToolLeg::Terminal {
             policy_action: "block".to_owned(),
         })),
@@ -186,6 +347,7 @@ fn a_second_resolution_the_caller_could_not_read_defers_the_call() {
             TOOL,
             SERVER,
             &policy("allow", json!([])),
+            bound("safe-alternative"),
             || Err("mcp_relay_store_unreadable")
         )
         .err(),

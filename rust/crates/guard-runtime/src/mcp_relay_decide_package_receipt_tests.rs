@@ -87,6 +87,7 @@ fn answer(block: Option<(String, Value)>, policy_action: &str) -> PackageAnswer 
         artifact_hash: "guard-approval-context:v1:abc".to_owned(),
         evaluation,
         evidence: vec![json!({"kind": "package_execution_context"})],
+        redaction_level: None,
     }
 }
 
@@ -168,6 +169,35 @@ fn a_stopped_package_call_records_no_policy_workspace() {
         record["package"]["artifact_hash"],
         json!(answer.artifact_hash)
     );
+}
+
+#[test]
+fn a_queued_package_request_records_the_inbox_row_it_leaves() {
+    // Only the safe-alternative queue route carries a redaction level, and
+    // the drain writes `record_unprompted_review` from it.
+    let mut queued = answer(Some(("blocked".to_owned(), json!({}))), "review");
+    queued.redaction_level = Some("partial".to_owned());
+    let reviewed = record(
+        &request(),
+        &json!({}),
+        &decision(),
+        &artifact(),
+        "/work",
+        &queued,
+    )
+    .expect("the record is built");
+    assert_eq!(reviewed["review"], json!({"redaction_level": "partial"}));
+    // Every other route leaves none, and the drain rejects a row on one.
+    let forwarded = record(
+        &request(),
+        &json!({}),
+        &decision(),
+        &artifact(),
+        "/work",
+        &answer(None, "warn"),
+    )
+    .expect("the record is built");
+    assert_eq!(forwarded.get("review"), None);
 }
 
 /// The gate parses with no `PATH` when the request carries none, and the

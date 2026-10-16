@@ -14,6 +14,13 @@
 //! precheck did not answer, exactly as the proxy re-resolves nothing for a call
 //! its precheck stopped.
 //!
+//! A queued package request is answered by the blocked-request mode the
+//! call's configs bound. Under `safe-alternative` the proxy blocks it in place
+//! and leaves the silent inbox row, so the lane answers it and carries the
+//! bound receipt redaction level for the drain to write that row with. Under
+//! `ask` it defers, because the package-shaped approval row the proxy then
+//! writes is not one the relay shapes.
+//!
 //! Not every leg of this lane is a package answer. The three the tool policy
 //! decides — `_stored_tool_block_response`, `_terminal_tool_response` and
 //! `_queue_approval_center_response` — are the plain tool-policy responses the
@@ -28,6 +35,7 @@ use super::package_answer;
 use super::package_policy::PackagePolicy;
 use super::package_receipt;
 use super::package_route::{self, Decided, PackageRoute, ToolLeg};
+use super::queue;
 use crate::mcp_tool_policy_decision::Decision;
 
 /// What one decided package call leaves the caller: the lane's own answer, or
@@ -64,6 +72,18 @@ pub(super) struct PackageAnswer {
     pub(super) evaluation: Map<String, Value>,
     /// The package half of the receipt's scanner evidence.
     pub(super) evidence: Vec<Value>,
+    /// The receipt redaction level the silent inbox row is written with,
+    /// which only the queued leg leaves.
+    pub(super) redaction_level: Option<String>,
+}
+
+/// The review binding one queued package request is answered under: the
+/// blocked-request mode the call's configs agree on, and the receipt
+/// redaction level bound with it.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct QueueBinding<'a> {
+    pub(super) blocked_request_mode: Option<&'a str>,
+    pub(super) redaction_level: Option<&'a str>,
 }
 
 /// Decide one relayed package call. `re_resolve` is the proxy's second
@@ -74,6 +94,7 @@ pub(super) fn decide_package<F>(
     tool: &str,
     server: &str,
     resolved: &PackagePolicy,
+    binding: QueueBinding<'_>,
     re_resolve: F,
 ) -> Result<PackageOutcome, &'static str>
 where
@@ -83,13 +104,13 @@ where
         // The precheck answers on the package policy alone, so every leg it
         // decides is this lane's own.
         return Ok(PackageOutcome::Answered(answered(
-            &route, tool, server, resolved,
-        )));
+            &route, tool, server, resolved, binding,
+        )?));
     }
     let (authority, policy) = re_resolve()?;
     Ok(match package_route::compose(mode, &authority, &policy)? {
         Decided::Package(route) => {
-            PackageOutcome::Answered(answered(&route, tool, server, &policy))
+            PackageOutcome::Answered(answered(&route, tool, server, &policy, binding)?)
         }
         Decided::Tool(leg) => PackageOutcome::ToolLeg(leg),
     })
@@ -101,17 +122,35 @@ fn answered(
     tool: &str,
     server: &str,
     policy: &PackagePolicy,
-) -> PackageAnswer {
-    PackageAnswer {
-        block: package_answer::block(route, tool, server, policy),
+    binding: QueueBinding<'_>,
+) -> Result<PackageAnswer, &'static str> {
+    let redaction_level = match route {
+        PackageRoute::QueuePackage { .. } => Some(queued_redaction_level(binding)?),
+        _ => None,
+    };
+    let signals = package_answer::signals(route, policy);
+    Ok(PackageAnswer {
+        block: package_answer::block(route, tool, server, policy, &signals),
         policy_action: package_answer::policy_action(route).to_owned(),
         decision_source: package_answer::decision_source(route),
         decision: package_answer::decision_label(route),
-        signals: package_answer::reason_signals(policy),
+        signals,
         policy_workspace: policy.policy_workspace.clone(),
         artifact_hash: policy.artifact_hash.clone(),
         evaluation: policy.evaluation.clone(),
         evidence: package_receipt::evidence(policy),
+        redaction_level,
+    })
+}
+
+/// `_queue_package_approval_response` by the bound blocked-request mode. Under
+/// `safe-alternative` the request is blocked in place and the inbox row is
+/// written with the bound receipt redaction level; `ask` defers, because the
+/// package-shaped approval row it writes instead is not one the relay shapes.
+fn queued_redaction_level(binding: QueueBinding<'_>) -> Result<String, &'static str> {
+    match (binding.blocked_request_mode, binding.redaction_level) {
+        (Some(queue::SAFE_ALTERNATIVE_MODE), Some(level)) => Ok(level.to_owned()),
+        _ => Err(package_route::PACKAGE_QUEUE),
     }
 }
 

@@ -27,7 +27,7 @@ use crate::mcp_tool_policy_decision::Decision;
 use serde_json::{json, Value};
 
 /// `blocked_request_mode`, under which the queue route blocks in place.
-const SAFE_ALTERNATIVE_MODE: &str = "safe-alternative";
+pub(super) const SAFE_ALTERNATIVE_MODE: &str = "safe-alternative";
 /// The decision source `_queue_approval_center_response` records.
 pub(super) const SAFE_ALTERNATIVE_SOURCE: &str = "policy-safe-alternative";
 /// The one fact the relay gathers itself, by raising the client's prompt.

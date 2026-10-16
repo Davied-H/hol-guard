@@ -26,6 +26,11 @@
 //! The evidence is the package half only. The tool half is
 //! `tool_decision_scanner_evidence` of the decision the record already carries,
 //! which the drain derives for every relayed call.
+//!
+//! A request the package policy queued under the `safe-alternative`
+//! blocked-request mode also leaves the silent inbox row
+//! `_queue_approval_center_response` writes, so its record carries the receipt
+//! redaction level that row is written with, as a relayed tool call's does.
 
 use serde_json::{json, Map, Value};
 
@@ -91,7 +96,7 @@ pub(super) fn record(
     if forwarded {
         package["policy_workspace"] = json!(answer.policy_workspace);
     }
-    Ok(json!({
+    let mut record = json!({
         "kind": PACKAGE_CALL_EVIDENCE_KIND,
         "harness": request.build.harness,
         "outcome": if forwarded { "forward" } else { "block" },
@@ -104,7 +109,13 @@ pub(super) fn record(
         "identity": identity,
         "decision": decision.to_value(),
         "package": package,
-    }))
+    });
+    // The silent inbox row the drain writes after a queued request's block
+    // receipt, which only the queued leg leaves.
+    if let Some(level) = &answer.redaction_level {
+        record["review"] = json!({"redaction_level": level});
+    }
+    Ok(record)
 }
 
 #[cfg(test)]
