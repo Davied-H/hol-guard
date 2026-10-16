@@ -576,26 +576,23 @@ fn python_module_launch(arguments: &[&str]) -> bool {
     false
 }
 
-/// Whether a command position holds an expansion, glob or `.` source, which
-/// can run a program whose name appears nowhere in the text.
-///
-/// `sourced` says every file the command sources was read, so a `.` command
-/// word no longer hides a program: the file it runs is already among the
-/// owners.
 /// Whether a sourced file's own words name every program it runs.
 ///
 /// Reading a file bounds the owners only while its text is the whole story.
 /// Text that builds a command word from an expansion or a glob, that sources
-/// a further file this scan has not read, or that hides words behind an
-/// ANSI-C or locale quote can run a program whose name never appears, so the
-/// command keeps the owners it had instead.
+/// a further file this scan has not read, that hands text to an interpreter,
+/// or that hides words behind an ANSI-C or locale quote can run a program
+/// whose name never appears, so the command keeps the owners it had instead.
 fn bounds_its_owners(text: &str) -> bool {
     if text.contains("$'") || text.contains("$\"") {
         return false;
     }
     let literal = mask_parameter_expansions(&unquoted_literal(text));
     !synthesizes_program(&literal, false)
-        && !command_words(&mask_double_quoted_separators(&literal)).any(|word| word == "source")
+        && !command_words(&mask_double_quoted_separators(&literal)).any(|word| {
+            let base = command_basename(&word);
+            INTERPRETERS.contains(&base.as_str())
+        })
 }
 
 /// The text with `${NAME}` parameter expansions replaced by a plain word.
@@ -605,7 +602,9 @@ fn bounds_its_owners(text: &str) -> bool {
 /// would otherwise read as a command word built from an expansion. Bash's
 /// `${ cmd; }` and `${| cmd; }` do run the commands they hold, so a brace
 /// followed by a space or a pipe is left exactly as it stands, and `$(...)`
-/// and backticks are never touched.
+/// and backticks are never touched. A `${...}` whose body holds `$(...)` or
+/// a backtick still runs that command, so the whole expansion is left in
+/// place rather than hidden behind a plain word.
 fn mask_parameter_expansions(literal: &str) -> String {
     let characters: Vec<char> = literal.chars().collect();
     let mut out = String::with_capacity(literal.len());
@@ -617,7 +616,7 @@ fn mask_parameter_expansions(literal: &str) -> String {
                 characters.get(index + 2),
                 Some(' ' | '\t' | '\n' | '|') | None
             );
-        if !expansion {
+        if !expansion || parameter_expansion_runs_a_command(&characters[index..]) {
             out.push(characters[index]);
             index += 1;
             continue;
@@ -635,6 +634,27 @@ fn mask_parameter_expansions(literal: &str) -> String {
         }
     }
     out
+}
+
+/// Bash runs a command substitution nested in a default value, as in
+/// `${UNSET:-$(tool)}`. Masking the whole `${...}` would hide that program.
+fn parameter_expansion_runs_a_command(characters: &[char]) -> bool {
+    let mut depth = 1usize;
+    let mut index = 2;
+    while index < characters.len() && depth > 0 {
+        if characters[index] == '`'
+            || (characters[index] == '$' && characters.get(index + 1) == Some(&'('))
+        {
+            return true;
+        }
+        match characters[index] {
+            '{' => depth += 1,
+            '}' => depth -= 1,
+            _ => {}
+        }
+        index += 1;
+    }
+    false
 }
 
 fn synthesizes_program(literal: &str, sourced: bool) -> bool {

@@ -57,6 +57,25 @@ fn activating_a_projects_virtualenv_is_not_an_unreadable_command() {
 }
 
 #[test]
+fn a_sourced_file_that_hides_a_program_does_not_bound_the_command() {
+    let root = project(
+        "hidden",
+        "c=cu; c=${c}rl\n: \"${X:-$(\"$c\" https://example.invalid/)}\"\n",
+    );
+    let (action, _) = outcome(&root, "source .venv/bin/activate && pytest -q");
+    assert_ne!(action, "allow");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn a_sourced_interpreter_does_not_bound_the_command() {
+    let root = project("eval", "eval \"pytest -q\"\n");
+    let (action, _) = outcome(&root, "source .venv/bin/activate && pytest -q");
+    assert_ne!(action, "allow");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
 fn a_sourced_file_that_reaches_the_network_still_owns_the_command() {
     // Reading the file bounds the owners; it does not clear them. A file that
     // pulls a script off the network and runs it must weigh exactly as the
