@@ -472,7 +472,9 @@ def test_the_safety_guide_install_reaches_the_evaluator_and_settles(
 
     guide = (Path(package_review.__file__).parents[1] / "agent-safety-guidance.md").read_text(encoding="utf-8")
     command = "npm install --ignore-scripts"
-    assert f"`{command}`" in " ".join(guide.split())
+    # The npm ci form is proven by the Rust lockfile install tests.
+    for named in (command, "npm ci --ignore-scripts"):
+        assert f"`{named}`" in " ".join(guide.split())
     seen: list[list[str]] = []
     monkeypatch.setattr(package_review.os, "name", "posix")
     monkeypatch.setattr(package_review, "verified_npm_version", lambda *_args, **_kwargs: "11.6.2")

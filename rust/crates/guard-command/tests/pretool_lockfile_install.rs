@@ -206,12 +206,11 @@ fn frozen_script_free_installs_from_registry_lockfiles_proceed() {
 }
 
 /// The managed safety guide tells agents to install from a committed lockfile
-/// with this exact command, so it must stay one this proof lets continue.
+/// with this exact command (`tests/test_native_package_review.py` checks that
+/// the guide still names it), so it must stay one this proof lets continue.
 #[test]
 fn the_safety_guide_lockfile_install_proceeds() {
-    let guide = include_str!("../../../../src/codex_plugin_scanner/guard/agent-safety-guidance.md");
     let command = "npm ci --ignore-scripts";
-    assert!(guide.contains(&format!("`{command}`")), "{command}");
     let lab = Lab::new();
     let npm = lab.project(
         "npm",
