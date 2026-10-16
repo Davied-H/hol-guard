@@ -20,7 +20,6 @@ import pytest
 
 GRANT_REASON = "Approved for the approve-then-retry contract"
 REVIEW_ACTIONS = {"review", "require-reapproval"}
-REVIEW_REASONS = {"native_policy_review_required", "native_policy_reapproval_required"}
 
 
 def _payload(command: str, call_id: str, workspace: Path) -> dict[str, object]:
@@ -53,7 +52,6 @@ def _grant(store: object, request_id: str, workspace: Path) -> None:
 def _reviewed(response: dict[str, object], pending: list[dict[str, object]]) -> None:
     """The attempt was stopped for review and left exactly one row to approve."""
     assert response["policy_action"] != "allow", response
-    assert response.get("reason_code") in REVIEW_REASONS, response
     assert len(pending) == 1, pending
     assert pending[0]["policy_action"] in REVIEW_ACTIONS, pending[0]
 

@@ -18,7 +18,7 @@ from ci.gauntlet.approval_retry import (
 )
 from ci.gauntlet.approval_retry import (
     GRANT_REASON,
-    REVIEW_REASONS,
+    is_review_reason,
     is_review_row,
     retry_assessment,
     write_review_config,
@@ -112,6 +112,7 @@ def _grants(*targets: str, errors: list | None = None) -> dict:
     return {
         "granted": [{"request_id": f"req-{index}", "target": target} for index, target in enumerate(targets)],
         "errors": errors or [],
+        "poll_errors": [],
         "sweeps": 3,
         "scope": "artifact",
         "persist_policy": False,
@@ -259,6 +260,110 @@ def _lane_scenario() -> Scenario:
     return load_catalog(APPROVAL_RETRY_CATALOG)[0]
 
 
+@pytest.mark.parametrize(
+    ("reason_code", "expected"),
+    [
+        ("native_policy_review_required", True),
+        ("native_policy_reapproval_required", True),
+        # An ordinary git command raises the resident's own execution-context floor, so the
+        # lane cannot assume the configured policy floor is what stopped the attempt.
+        ("native_git_execution_context_review", True),
+        ("native_command_review_required", True),
+        ("native_review_user_block", False),
+        ("native_policy_block", False),
+        ("native_allow", False),
+    ],
+)
+def test_every_review_floor_counts_as_a_reviewed_attempt(reason_code: str, expected: bool):
+    assert is_review_reason(reason_code) is expected
+
+
+def test_a_git_floor_review_is_judged_like_a_policy_floor_review():
+    case = {
+        "approval_grants": _grants("git status --short"),
+        "guard_decisions": [
+            _decision("git status --short", "deny", "native_git_execution_context_review"),
+            _decision("git status --short", "allow", "native_git_execution_context_review"),
+        ],
+    }
+    assert retry_assessment(case)[0] == "pass"
+
+
+def test_other_git_work_the_review_floor_stops_is_not_a_repeat_approval():
+    """The floor reviews every command, so an agent orienting itself also gets granted."""
+    case = {
+        "approval_grants": _grants("git rev-parse --show-toplevel", "git status --short", "git diff --stat"),
+        "guard_decisions": [
+            _decision("git rev-parse --show-toplevel", "deny"),
+            _decision("git status --short", "deny"),
+            _decision("git status --short", "allow"),
+            _decision("git diff --stat", "deny"),
+        ],
+    }
+    outcome, reason = retry_assessment(case)
+    assert outcome == "pass", reason
+
+
+def test_repeat_approvals_are_counted_per_action_amid_other_granted_work():
+    """Two grants for the retried action fail even when unrelated git work was granted too."""
+    case = {
+        "approval_grants": _grants("git diff --stat", "git status --short", "git status --porcelain"),
+        "guard_decisions": [
+            _decision("git diff --stat", "deny"),
+            _decision("git status --short", "deny"),
+            _decision("git status --porcelain", "deny"),
+            _decision("git status --porcelain", "allow"),
+        ],
+    }
+    outcome, reason = retry_assessment(case)
+    assert outcome == "fail"
+    assert "approve the same action 2 times" in reason
+
+
+def test_an_action_the_agent_abandoned_is_not_judged_as_its_retry():
+    """The agent stopped on one command and never came back to it, so nothing was retried."""
+    case = {
+        "approval_grants": _grants("git status --short"),
+        "guard_decisions": [_decision("git status --short", "deny"), _decision("ls -la", "allow", "native_allow")],
+    }
+    assert retry_assessment(case)[0] == "not-exercised"
+
+
+def test_a_poll_that_could_not_read_the_queue_does_not_fail_the_case():
+    """A closing daemon breaks a sweep's listing; the grants it already made still stand."""
+    case = {
+        "approval_grants": {**_grants("git status --short"), "poll_errors": ["OperationalError"]},
+        "guard_decisions": [_decision("git status --short", "deny"), _decision("git status --short", "allow")],
+    }
+    assert retry_assessment(case)[0] == "pass"
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("git status --short", ("git", "status")),
+        ("git status --porcelain", ("git", "status")),
+        ("git diff --stat", ("git", "diff")),
+        ("git 'status'", ("git", "status")),
+        ("git status 'unterminated", ("git", "status")),
+    ],
+)
+def test_the_action_key_is_the_program_and_subcommand(command: str, expected: tuple):
+    from ci.gauntlet.approval_retry import action_key
+
+    assert action_key(command) == expected
+
+
+def test_every_lane_scenario_resolves_a_fixture_directory_name():
+    """run_harness_case names the fixture before its try block, so an unknown id crashes."""
+    from ci.gauntlet.fixtures import scenario_fixture_name
+
+    names = {scenario.id: scenario_fixture_name(scenario.id) for scenario in load_catalog(APPROVAL_RETRY_CATALOG)}
+    assert len(set(names.values())) == len(names)
+    core = {scenario.id: scenario_fixture_name(scenario.id) for scenario in load_catalog()}
+    assert not set(core.values()) & set(names.values())
+
+
 def test_the_judge_routes_the_lane_to_its_own_oracle():
     """The generic allow path fails any stop and any approval row, so it cannot judge this lane."""
     assessment = assess_harness_case(_lane_scenario(), _lane_case())
@@ -295,7 +400,7 @@ def test_a_lane_run_with_no_tool_call_is_not_exercised():
 
 def test_the_grant_reason_names_the_lane_not_the_product():
     assert "Gauntlet" in GRANT_REASON
-    assert REVIEW_REASON in REVIEW_REASONS
+    assert is_review_reason(REVIEW_REASON)
 
 
 def test_the_lane_refuses_the_omp_runner(capsys: pytest.CaptureFixture[str]):
