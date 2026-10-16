@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 
 from codex_plugin_scanner.guard.daemon.server import GuardDaemonServer
 from codex_plugin_scanner.guard.runtime.command_activity_contract import (
@@ -28,14 +28,7 @@ from codex_plugin_scanner.guard.runtime.effect_contract import EffectKind
 from codex_plugin_scanner.guard.runtime.extension_evidence import EvidenceSeverity, ExtensionRuleIdentity
 from codex_plugin_scanner.guard.store import GuardStore
 
-# Suites that assert this exact day stay pinned. The daemon list only keeps
-# ninety days, so those routes pass recent_fixture_day() instead.
 _FIXTURE_OCCURRED_ON = date(2026, 7, 18)
-
-
-def recent_fixture_day() -> date:
-    """A UTC day inside the daemon's ninety-day list window and never in the future."""
-    return datetime.now(timezone.utc).date() - timedelta(days=1)
 
 
 def evidence(
@@ -85,6 +78,17 @@ def evidence(
         effect_claims=frozenset({EffectKind.REMOTE_STATE_MUTATION}),
     )
     return CommandActivityEvidence(activity, (match,))
+
+
+def recent_day() -> date:
+    """Today in UTC.
+
+    Activity rows age out of the retention window and are pruned when a daemon
+    starts, so anything a live daemon has to read back is seeded on a day that
+    is still inside it rather than on the fixed fixture day.
+    """
+
+    return datetime.now(timezone.utc).date()
 
 
 def seed(store: GuardStore, *, occurred_on: date = _FIXTURE_OCCURRED_ON) -> None:
