@@ -390,7 +390,7 @@ fn authority() -> ResidentRelayAuthority {
 }
 
 /// A session whose client offers no inline prompt and raised none.
-fn no_prompt() -> Value {
+pub(super) fn no_prompt() -> Value {
     json!({"available": false, "answer": null})
 }
 

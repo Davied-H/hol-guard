@@ -334,7 +334,9 @@ impl RelayAuthority for ResidentRelayAuthority {
                     Some(data),
                 ))
             }
-            Some(Reply::Claim { .. }) | None => no_decision,
+            // The decision the claim settles was already made, so a second
+            // claim and a prompt are both answers this exchange cannot take.
+            Some(Reply::Claim { .. }) | Some(Reply::Elicit { .. }) | None => no_decision,
         }
     }
 
