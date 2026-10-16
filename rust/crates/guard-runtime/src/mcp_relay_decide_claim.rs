@@ -67,7 +67,7 @@ use crate::policy_store::PolicySnapshotStore;
 use guard_contracts::{ClaimEvidenceBindingV1, McpToolPostclaimQueryV1};
 use guard_policy_snapshot::policy_integrity::is_remote_policy_source;
 use rusqlite::{Connection, OpenFlags};
-use serde_json::Value;
+use serde_json::{Map, Value};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -121,25 +121,7 @@ fn spend(
     }
     let (state, key) = store::published_integrity(&admitted.binding)?;
     let pending = &context.claimed.pending;
-    // `_claim_integrity_evidence` for the one pending row.
-    let source = pending.get("source").and_then(Value::as_str);
-    if source == Some("policy-bundle") {
-        return Err(CLAIM_BUNDLE);
-    }
-    let local_once = pending
-        .get("approval_id")
-        .and_then(Value::as_str)
-        .is_some_and(|id| !id.is_empty());
-    let policy = !local_once && source.is_some() && !is_remote_policy_source(source);
-    let key_bytes: &[u8] = &key.key;
-    let evidence = ClaimEvidence {
-        integrity_state: policy.then_some(&state),
-        integrity_key: policy.then_some(key_bytes),
-        integrity_key_id: policy.then_some(key.key_id.as_str()),
-        local_once_key: local_once.then_some(key_bytes),
-        local_once_key_id: local_once.then_some(key.key_id.as_str()),
-        policy_bundle_identities: None,
-    };
+    let evidence = integrity_evidence(&[pending], &state, key)?;
     // `claim_evidence_binding(connection, bundle=False)`.
     let binding = ClaimEvidenceBindingV1::default();
     let connection = open_for_claim(&request.guard_home)?;
@@ -199,8 +181,50 @@ fn unchanged<S, B>(held: (&str, &Arc<S>, &Arc<B>), now: (&str, &Arc<S>, &Arc<B>)
     held.0 == now.0 && Arc::ptr_eq(held.1, now.1) && Arc::ptr_eq(held.2, now.2)
 }
 
+/// `_claim_integrity_evidence` (`store_policy.py:1395`) for the rows one claim
+/// spends: the local-once key when any row is a one-shot approval, and the
+/// published integrity state and key when any row is local saved policy.
+///
+/// A `policy-bundle` row defers the whole claim, as the tool lane's does: the
+/// resident derives no bundle identities, so a claim that needs them has no
+/// evidence to offer.
+pub(super) fn integrity_evidence<'a>(
+    pendings: &[&Map<String, Value>],
+    state: &'a Value,
+    key: &'a crate::policy_store::policy_store_direct_lane::DirectLaneIntegrityKey,
+) -> Result<ClaimEvidence<'a>, &'static str> {
+    fn source(pending: &Map<String, Value>) -> Option<&str> {
+        pending.get("source").and_then(Value::as_str)
+    }
+    fn one_shot(pending: &Map<String, Value>) -> bool {
+        pending
+            .get("approval_id")
+            .and_then(Value::as_str)
+            .is_some_and(|id| !id.is_empty())
+    }
+    if pendings
+        .iter()
+        .any(|pending| source(pending) == Some("policy-bundle"))
+    {
+        return Err(CLAIM_BUNDLE);
+    }
+    let local_once = pendings.iter().copied().any(one_shot);
+    let policy = pendings.iter().any(|pending| {
+        !one_shot(pending) && source(pending).is_some() && !is_remote_policy_source(source(pending))
+    });
+    let key_bytes: &[u8] = &key.key;
+    Ok(ClaimEvidence {
+        integrity_state: policy.then_some(state),
+        integrity_key: policy.then_some(key_bytes),
+        integrity_key_id: policy.then_some(key.key_id.as_str()),
+        local_once_key: local_once.then_some(key_bytes),
+        local_once_key_id: local_once.then_some(key.key_id.as_str()),
+        policy_bundle_identities: None,
+    })
+}
+
 /// The store, writable, at a schema the resident reads.
-fn open_for_claim(guard_home: &str) -> Result<Connection, &'static str> {
+pub(super) fn open_for_claim(guard_home: &str) -> Result<Connection, &'static str> {
     let connection = Connection::open_with_flags(
         Path::new(guard_home).join(STORE_FILE_NAME),
         OpenFlags::SQLITE_OPEN_READ_WRITE,
