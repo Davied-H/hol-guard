@@ -25,6 +25,7 @@ from .approval_gate import ApprovalGateGrant, ApprovalGateInput, require_approva
 from .approval_once_eligibility import requires_local_once_approval
 from .approval_resolution import require_resolvable_approval_request
 from .approval_scope_support import (
+    RETRY_CANNOT_REUSE_APPROVAL,
     IneligibleApprovalScopeError,
     apply_scope_surfaces,
     package_request_portable_workspace_scope,
@@ -310,37 +311,52 @@ def queue_blocked_approvals(
     }
     payloads: list[dict[str, object]] = []
     # One store write per item keeps the former order: each request is
-    # written, announced and read back before the next one is written.
+    # written, read back and announced before the next one is written.
     # The resident derives the request's surfaces, incident copy and
     # continuation snapshot; Python keeps the notices.
-    for item in reviewable:
-        artifact = artifacts.get(str(item["artifact_id"]))
-        queued, error = store.queue_blocked_approvals(
-            {
-                "harness": detection.harness,
-                "items": [item],
-                "artifacts": {} if artifact is None else {artifact.artifact_id: _queue_artifact(artifact)},
-                "approval_center_url": approval_center_url,
-                "now": timestamp,
-                "prompt_shown": prompt_shown,
-                "redaction_level": redaction_level,
-                "guard_version": _current_guard_version(),
-                "cwd": cwd,
-                "continuation": continuation,
-            }
-        )
-        for entry in queued:
-            request_id = str(entry["request_id"])
-            if notify:
-                notice = cast(dict[str, str], entry["notice"])
-                _notify_pending_approval(store=store, request=_QueuedNotice(**notice))
-            request_payload = store.get_approval_request(request_id)
-            if request_payload is None:
-                raise RuntimeError(f"Persisted approval request not found: {request_id}")
-            payloads.append(request_payload)
-        if error is not None:
-            raise error
+    try:
+        for item in reviewable:
+            artifact = artifacts.get(str(item["artifact_id"]))
+            queued, error = store.queue_blocked_approvals(
+                {
+                    "harness": detection.harness,
+                    "items": [item],
+                    "artifacts": {} if artifact is None else {artifact.artifact_id: _queue_artifact(artifact)},
+                    "approval_center_url": approval_center_url,
+                    "now": timestamp,
+                    "prompt_shown": prompt_shown,
+                    "redaction_level": redaction_level,
+                    "guard_version": _current_guard_version(),
+                    "cwd": cwd,
+                    "continuation": continuation,
+                }
+            )
+            for entry in queued:
+                request_id = str(entry["request_id"])
+                # Read back before announcing, so a failed notice still leaves
+                # the persisted request in the partial result.
+                request_payload = store.get_approval_request(request_id)
+                if request_payload is None:
+                    raise RuntimeError(f"Persisted approval request not found: {request_id}")
+                payloads.append(request_payload)
+                if notify:
+                    notice = cast(dict[str, str], entry["notice"])
+                    _notify_pending_approval(store=store, request=_QueuedNotice(**notice))
+            if error is not None:
+                raise error
+    except Exception as failure:
+        # Requests written before the failure stay queued, so a caller that
+        # keeps the deny can still point the user at them.
+        failure.queued_approvals = payloads  # pyright: ignore[reportAttributeAccessIssue]
+        raise
     return payloads
+
+
+def approvals_queued_before(error: BaseException) -> list[dict[str, object]]:
+    """Requests a failed ``queue_blocked_approvals`` call had already persisted."""
+
+    queued = getattr(error, "queued_approvals", None)
+    return list(queued) if isinstance(queued, list) else []
 
 
 def _needs_review(item: Mapping[str, object]) -> bool:
@@ -703,6 +719,7 @@ def apply_approval_resolution(
             resolved_at,
             persisted_rule=persisted_rule,
             local_once_fallback=local_once_fallback,
+            retry_cannot_reuse_approval=RETRY_CANNOT_REUSE_APPROVAL in contract.restrictions,
         )
         issue_github_workflow_capability_for_resolution(store, request_id, resolved_at)
         result.update(scope_payload_for_request(request, contract))
@@ -745,6 +762,7 @@ def apply_approval_resolution(
         resolved_at,
         persisted_rule=persisted_rule,
         local_once_fallback=local_once_fallback,
+        retry_cannot_reuse_approval=RETRY_CANNOT_REUSE_APPROVAL in contract.restrictions,
     )
     issue_github_workflow_capability_for_resolution(store, request_id, resolved_at)
     updated.update(scope_payload_for_request(request, contract))
@@ -860,6 +878,7 @@ def _record_resolution_event(
     *,
     persisted_rule: bool,
     local_once_fallback: bool = False,
+    retry_cannot_reuse_approval: bool = False,
 ) -> None:
     store.add_event(
         "approval.resolved",
@@ -898,6 +917,9 @@ def _record_resolution_event(
         action=action,
         scope=scope,
         resolved_at=resolved_at,
+        # Only a saved rule lets an unbound native retry run; a one-time
+        # approval of it leaves the action blocked.
+        retry_blocked=action == "allow" and not persisted_rule and retry_cannot_reuse_approval,
     )
 
 
@@ -908,6 +930,7 @@ def _enqueue_memory_decision_for_resolution(
     action: str,
     scope: str,
     resolved_at: str,
+    retry_blocked: bool = False,
 ) -> None:
     """Feed the local-to-cloud memory candidate pipeline for this decision.
 
@@ -926,6 +949,7 @@ def _enqueue_memory_decision_for_resolution(
         action=action,
         scope=scope,
         resolved_at=resolved_at,
+        retry_blocked=retry_blocked,
     )
 
 

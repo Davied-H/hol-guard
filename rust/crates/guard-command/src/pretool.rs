@@ -69,6 +69,7 @@ mod git_ref_listings;
 mod git_rev_list;
 mod git_search_text;
 mod repo_create_reason;
+mod root_removal;
 use git_reads::safe_git_arguments;
 mod git_helper_context;
 mod git_local_writes;
@@ -93,6 +94,7 @@ mod trailing_group;
 mod trusted_location;
 pub(crate) use git_routes::{git_dir_route_within_scope, git_route_within_workspace};
 mod apply_patch_writes;
+mod data_heredocs;
 mod lockfile_install;
 mod omp_hashline_writes;
 mod pipe_attacks;
@@ -108,6 +110,7 @@ mod safe_links;
 pub(crate) mod safe_reads;
 mod safe_scalar;
 mod safe_writes;
+mod script_content;
 mod search;
 mod search_scope;
 mod search_scope_filter;
@@ -145,6 +148,7 @@ pub use generic::evaluate_pre_tool_envelope_with_extensions;
 pub use generic::{bounded_task_metadata_output, evaluate_pre_tool_envelope};
 pub use git_push::{install_git_push_verdict, GitPushRequest, GitPushVerdict};
 pub use safe_scalar::PsqlEnvironment;
+pub(crate) use script_content::sole_program_sources;
 pub(crate) use segment_proof::{benign_command_segments, without_stderr_merge};
 pub(crate) use worktree_add::new_checkout_route;
 pub(crate) use worktree_add::verified_leading_cd;
@@ -493,11 +497,7 @@ fn pathspec_magic_path(value: &str) -> &str {
 
 fn destructive_command(value: &str) -> bool {
     let lowered = normalized_haystack(value);
-    let rm_force = lowered.contains("rm -rf") || lowered.contains("rm -fr");
-    let rm_root = [" /", " -- /", " $home", " ~", " --/"]
-        .iter()
-        .any(|needle| lowered.contains(needle));
-    if rm_force && rm_root {
+    if root_removal::removes_a_root(&lowered) {
         return true;
     }
     let basename_tokens: Vec<&str> = lowered
@@ -706,6 +706,14 @@ fn evaluate_single_command(
             "HOL Guard blocked a local script that combines credential access with outbound posting.",
         ));
     }
+    if script_content::exfiltrates(&model, context) {
+        return Ok(pretool_decision(
+            model,
+            "block",
+            "native_secret_exfiltration",
+            "HOL Guard blocked a script that reads a credential store and uses the network.",
+        ));
+    }
     if exact_safe_command_with_context(&model, false, context)
         && model.segments.iter().all(|segment| {
             segment
@@ -838,7 +846,7 @@ fn evaluate_single_command(
         ));
     }
     if git_search_text::sensitive_beyond_patterns(
-        normalized,
+        &data_heredocs::without_data_bodies(normalized),
         git_search_text::command_without_patterns(&model),
     ) || secret_aliases::names_secret_alias(&model, context)
     {

@@ -33,6 +33,21 @@ def _reject_json_constant(constant: str) -> object:
     raise ValueError(f"non-finite JSON constant: {constant}")
 
 
+class _JsonObject(dict[str, object]):
+    """A parsed object that remembers the values a repeated key replaced."""
+
+    dropped: list[object]
+
+
+def _keep_last_duplicate(pairs: list[tuple[str, object]]) -> _JsonObject:
+    # The resident's serde_json keeps the last value of a repeated key, as
+    # ``json.loads`` does, but it still parses the values it drops. Keep them
+    # so a value it would refuse cannot hide behind a later key.
+    state = _JsonObject(pairs)
+    state.dropped = [value for _key, value in pairs] if len(state) != len(pairs) else []
+    return state
+
+
 def _native_accepts(value: object, depth: int = 0) -> bool:
     """Mirror what the resident's JSON parser rejects but ``json.loads`` allows.
 
@@ -45,7 +60,8 @@ def _native_accepts(value: object, depth: int = 0) -> bool:
     if isinstance(value, dict | list):
         if depth + 1 >= _NATIVE_JSON_DEPTH_LIMIT:
             return False
-        items = [*value.keys(), *value.values()] if isinstance(value, dict) else value
+        dropped = getattr(value, "dropped", ())
+        items = [*value.keys(), *value.values(), *dropped] if isinstance(value, dict) else value
         return all(_native_accepts(item, depth + 1) for item in items)
     return True
 
@@ -55,13 +71,18 @@ def _posture_from_state_file(state_path: Path) -> dict[str, object]:
 
     The gate is on when ``enabled`` or ``fail_closed`` is true. An unreadable or
     malformed file, including JSON the resident's stricter parser refuses, makes
-    the resident fail closed; this view reports it as unknown rather than guessing.
+    the resident fail closed; this view reports it as unknown rather than
+    guessing. A repeated key keeps its last value, as in the resident.
     """
 
     if not state_path.is_file():
         return _not_set()
     try:
-        state = json.loads(state_path.read_text(encoding="utf-8"), parse_constant=_reject_json_constant)
+        state = json.loads(
+            state_path.read_text(encoding="utf-8"),
+            parse_constant=_reject_json_constant,
+            object_pairs_hook=_keep_last_duplicate,
+        )
     except (OSError, UnicodeDecodeError, ValueError, RecursionError):
         return {"status": "unknown"}
     if not isinstance(state, dict) or not _native_accepts(state):

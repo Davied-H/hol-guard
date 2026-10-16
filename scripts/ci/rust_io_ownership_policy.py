@@ -301,6 +301,7 @@ _PERSISTENCE_PATH_PREFIXES: Final = (
     "src/codex_plugin_scanner/guard/guard_home_state.py",
     "src/codex_plugin_scanner/guard/store_base.py",
     "src/codex_plugin_scanner/guard/store_mcp_catalog.py",
+    "src/codex_plugin_scanner/guard/store_storage_gate.py",
 )
 _PRESENTATION_PATHS: Final = frozenset(
     {
@@ -380,7 +381,6 @@ _PENDING_AUTHORITY_PATHS: Final = frozenset(
         "src/codex_plugin_scanner/guard/runtime/direct_typescript_diagnostics.py",
         "src/codex_plugin_scanner/guard/runtime/direct_vitest.py",
         "src/codex_plugin_scanner/guard/runtime/effect_decision.py",
-        "src/codex_plugin_scanner/guard/runtime/embedded_script_evidence.py",
         "src/codex_plugin_scanner/guard/runtime/extension_contribution.py",
         "src/codex_plugin_scanner/guard/runtime/extension_control_runtime.py",
         "src/codex_plugin_scanner/guard/runtime/extension_trust.py",
@@ -404,8 +404,6 @@ _PENDING_AUTHORITY_PATHS: Final = frozenset(
         "src/codex_plugin_scanner/guard/runtime/package_intent_common.py",
         "src/codex_plugin_scanner/guard/runtime/package_intent_parser.py",
         "src/codex_plugin_scanner/guard/runtime/package_json_scripts.py",
-        "src/codex_plugin_scanner/guard/runtime/routine_local_node.py",
-        "src/codex_plugin_scanner/guard/runtime/routine_node_identity.py",
         "src/codex_plugin_scanner/guard/runtime/runner.py",
         "src/codex_plugin_scanner/guard/runtime/secret_file_request_services/benign_requests.py",
         "src/codex_plugin_scanner/guard/runtime/secret_file_request_services/developer_inspection.py",
@@ -421,7 +419,6 @@ _PENDING_AUTHORITY_PATHS: Final = frozenset(
         "src/codex_plugin_scanner/guard/runtime/workspace_path_guard.py",
         "src/codex_plugin_scanner/guard/shims.py",
         "src/codex_plugin_scanner/guard/trusted_local_tools.py",
-        "src/codex_plugin_scanner/guard/trusted_package_tools.py",
     }
 )
 _PERSISTENCE_ONLY_PATHS: Final[frozenset[str]] = frozenset()

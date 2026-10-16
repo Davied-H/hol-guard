@@ -84,6 +84,9 @@ pub use contributed_mcp_url::normalized_remote_mcp_url;
 mod data_flow;
 pub mod dep_map;
 pub mod effect_decision;
+mod embedded_script_evidence;
+#[cfg(test)]
+mod embedded_script_evidence_tests;
 mod env_wrapper;
 mod executable_flag_contract;
 pub mod extension_control;
@@ -115,6 +118,7 @@ mod launch_identity_common;
 pub mod launch_identity_environment;
 #[cfg(windows)]
 mod launch_identity_windows;
+pub mod local_tool_eligibility;
 pub mod mcp_arguments;
 pub mod mcp_launch_environment;
 pub mod mcp_runtime_evidence;
