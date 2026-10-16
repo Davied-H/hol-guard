@@ -22,6 +22,7 @@ struct SavedApprovalStore {
     decision: Option<Value>,
     claim_succeeds: bool,
     claimed: RefCell<Vec<(Value, String)>>,
+    looked_up: RefCell<Vec<(String, String, Option<String>, String)>>,
 }
 
 impl SupplyChainStore for SavedApprovalStore {
@@ -60,14 +61,20 @@ impl SupplyChainStore for SavedApprovalStore {
     }
     fn resolve_policy_decision_lookup(
         &self,
-        _harness: &str,
-        _artifact_id: &str,
-        _artifact_hash: Option<&str>,
-        _workspace: &str,
+        harness: &str,
+        artifact_id: &str,
+        artifact_hash: Option<&str>,
+        workspace: &str,
         _publisher: Option<&str>,
         _now: &str,
         _consume_one_shot: bool,
     ) -> PolicyDecisionLookup {
+        self.looked_up.borrow_mut().push((
+            harness.to_string(),
+            artifact_id.to_string(),
+            artifact_hash.map(str::to_string),
+            workspace.to_string(),
+        ));
         PolicyDecisionLookup {
             decision: self.decision.clone(),
             ignored_local_integrity: None,
@@ -231,17 +238,26 @@ fn evaluation() -> PackageRequestEvaluation {
 
 const NOW: &str = "2026-01-01T00:00:00+00:00";
 
-/// The evaluation the override resolves, and the rows the store was asked to
-/// claim while resolving it.
-fn resolve_with_claim(
+/// One lookup the store was asked for: harness, artifact id, artifact hash and
+/// workspace identity.
+type RecordedLookup = (String, String, Option<String>, String);
+
+/// The evaluation the override resolves, the rows the store was asked to claim
+/// while resolving it, and the lookups it was asked for.
+fn resolve_recording(
     decision: Option<Value>,
     claim_succeeds: bool,
-) -> (PackageRequestEvaluation, Vec<(Value, String)>) {
+) -> (
+    PackageRequestEvaluation,
+    Vec<(Value, String)>,
+    Vec<RecordedLookup>,
+) {
     let store = SavedApprovalStore {
         home: PathBuf::from("/tmp/guard-home"),
         decision,
         claim_succeeds,
         claimed: RefCell::new(Vec::new()),
+        looked_up: RefCell::new(Vec::new()),
     };
     let seams = Seams;
     let resolved = apply_stored_package_policy_override(
@@ -260,6 +276,15 @@ fn resolve_with_claim(
         &seams,
     );
     let claimed = store.claimed.borrow().clone();
+    let looked_up = store.looked_up.borrow().clone();
+    (resolved, claimed, looked_up)
+}
+
+fn resolve_with_claim(
+    decision: Option<Value>,
+    claim_succeeds: bool,
+) -> (PackageRequestEvaluation, Vec<(Value, String)>) {
+    let (resolved, claimed, _) = resolve_recording(decision, claim_succeeds);
     (resolved, claimed)
 }
 
@@ -357,4 +382,26 @@ fn a_saved_row_recording_another_action_is_not_claimed_as_an_approval() {
         "artifact_hash": ARTIFACT_HASH,
     })));
     assert_eq!(unchanged.value.get("saved_approval_applied"), None);
+}
+
+#[test]
+fn the_saved_row_is_looked_up_under_the_artifacts_harness_and_workspace_identity() {
+    let row = json!({
+        "decision_id": 7,
+        "action": "allow",
+        "artifact_hash": ARTIFACT_HASH,
+    });
+    let (_, _, lookups) = resolve_recording(Some(row), true);
+    let (harness, artifact_id, artifact_hash, workspace) =
+        lookups.first().expect("the store was asked for a lookup");
+    assert_eq!(harness, "codex");
+    assert_eq!(artifact_id, "codex:package-request:npm:left-pad");
+    assert_eq!(artifact_hash.as_deref(), Some(ARTIFACT_HASH));
+    // The lookup is scoped by the runtime workspace identity a package
+    // approval is saved under, never by the workspace path.
+    assert_ne!(workspace, "/tmp/proj");
+    assert!(
+        workspace.starts_with("package-request-workspace"),
+        "{workspace}"
+    );
 }

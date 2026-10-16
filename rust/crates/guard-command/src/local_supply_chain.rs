@@ -3184,7 +3184,6 @@ pub(crate) fn stored_package_policy_is_stale_policy_bundle_family(
 
 /// `.local_supply_chain._package_policy_workspace_candidates` (:2620-2637).
 /// Returns the ordered runtime workspace candidates for stored overrides.
-#[allow(dead_code)]
 fn package_policy_workspace_candidates(
     artifact: &GuardArtifact,
     artifact_hash: &str,
@@ -5283,7 +5282,6 @@ fn build_package_execution_context(
 
 /// `approval_scope_support.package_request_runtime_workspace_scope` —
 /// return the only workspace identity valid for a package-policy lookup.
-#[allow(dead_code)]
 fn package_request_runtime_workspace_scope(
     artifact_id: Option<&str>,
     artifact_hash: Option<&str>,
@@ -5543,59 +5541,72 @@ fn resolve_stored_package_policy_override(
     artifact_hash: &str,
     workspace_dir: &Path,
     now: &str,
-    _execution_context: Option<&PackageExecutionContext>,
+    execution_context: Option<&PackageExecutionContext>,
     _current_action: Option<&Value>,
     claim_saved_approval: bool,
     _intent_parser: &dyn PackageIntentParserApi,
     _eval_api: &dyn PackageEvalApi,
-    _paths_api: &dyn PathSupportApi,
+    paths_api: &dyn PathSupportApi,
     approval_context_api: &dyn ApprovalContextApi,
 ) -> StoredPackagePolicyResolution {
-    // Look up the saved approval for this artifact.
-    let lookup = store.resolve_policy_decision_lookup(
-        &artifact.artifact_id,
-        artifact.artifact_id.as_str(),
-        Some(artifact_hash),
-        workspace_dir.to_string_lossy().as_ref(),
-        artifact.publisher.as_deref(),
-        now,
-        false,
+    let unchanged = || StoredPackagePolicyResolution {
+        evaluation: evaluation.clone(),
+        claim_disposition: None,
+    };
+    // `native_package_policy_resolve._hydrate` — probe the workspace
+    // identities a package-policy lookup may answer for, in order, and take
+    // the first saved decision. The only valid identity is the runtime
+    // workspace scope token, never the workspace path itself.
+    let workspaces = package_policy_workspace_candidates(
+        artifact,
+        artifact_hash,
+        workspace_dir,
+        execution_context,
+        paths_api,
     );
-    let Some(saved) = lookup.decision else {
-        return StoredPackagePolicyResolution {
-            evaluation: evaluation.clone(),
-            claim_disposition: None,
-        };
+    let mut saved_decision: Option<Value> = None;
+    for workspace in &workspaces {
+        let lookup = store.resolve_policy_decision_lookup(
+            &artifact.harness,
+            artifact.artifact_id.as_str(),
+            Some(artifact_hash),
+            workspace,
+            artifact.publisher.as_deref(),
+            now,
+            false,
+        );
+        // A row whose local integrity did not verify stops the probe: Python
+        // hands that case to the daemon authority, which this lane has no seam
+        // for, so the review verdict stands rather than a row being reused on
+        // unverified integrity.
+        if lookup.ignored_local_integrity.is_some() {
+            return unchanged();
+        }
+        if lookup.decision.is_some() {
+            saved_decision = lookup.decision;
+            break;
+        }
+    }
+    let Some(saved) = saved_decision else {
+        return unchanged();
     };
     if !claim_saved_approval {
-        return StoredPackagePolicyResolution {
-            evaluation: evaluation.clone(),
-            claim_disposition: None,
-        };
+        return unchanged();
     }
     // Attempt to claim the saved approval — verify artifact-hash match and
     // freshness via the approval_context seam.
     let decision_id = saved.get("decision_id").and_then(Value::as_i64);
     let Some(did) = decision_id else {
-        return StoredPackagePolicyResolution {
-            evaluation: evaluation.clone(),
-            claim_disposition: None,
-        };
+        return unchanged();
     };
     // Only a saved allow is reused. A row recording any other action is read
     // by the saved-policy lanes that own it, never claimed as an approval.
     if saved.get("action").and_then(Value::as_str) != Some("allow") {
-        return StoredPackagePolicyResolution {
-            evaluation: evaluation.clone(),
-            claim_disposition: None,
-        };
+        return unchanged();
     }
     let saved_hash = saved.get("artifact_hash").and_then(Value::as_str);
     if saved_hash != Some(artifact_hash) {
-        return StoredPackagePolicyResolution {
-            evaluation: evaluation.clone(),
-            claim_disposition: None,
-        };
+        return unchanged();
     }
     // Check freshness — expiry, approval-context token, etc.
     if approval_context_api
@@ -5605,10 +5616,7 @@ fn resolve_stored_package_policy_override(
         )
         .is_some()
     {
-        return StoredPackagePolicyResolution {
-            evaluation: evaluation.clone(),
-            claim_disposition: None,
-        };
+        return unchanged();
     }
     // The disposition the row reports is the store's, and only the two values
     // the caller's vocabulary carries: a single-use row reads as `consumed`,
@@ -5622,10 +5630,7 @@ fn resolve_stored_package_policy_override(
     // single-use row, or the row no longer stands — leaves the review verdict
     // the package lane settled, so an unclaimed row is never read as approved.
     if !store.claim_approval_reuse_decision(&saved, now) {
-        return StoredPackagePolicyResolution {
-            evaluation: evaluation.clone(),
-            claim_disposition: None,
-        };
+        return unchanged();
     }
     // Apply the saved approval — rewrite decision fields.
     let claimed = evaluation.with_fields(&[

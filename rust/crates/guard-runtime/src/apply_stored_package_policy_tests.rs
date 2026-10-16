@@ -3,19 +3,12 @@ use rusqlite::Connection;
 use serde_json::{json, Value};
 use std::path::PathBuf;
 
-/// Minimal `guard.db` carrying only the tables the override reads.
+/// The real `guard.db` schema the shared decision lookup and the claim read:
+/// the override resolves saved decisions through the lookup op, which selects
+/// the full policy row and stamps the authority revision a claim compares, so
+/// a reduced schema no longer exercises the override's own path.
 fn seed_store(home: &std::path::Path) {
-    let conn = Connection::open(home.join("guard.db")).unwrap();
-    conn.execute_batch(
-        "CREATE TABLE policy_decisions (
-           decision_id INTEGER PRIMARY KEY, scope TEXT, artifact_id TEXT,
-           harness TEXT, artifact_hash TEXT, publisher TEXT, workspace TEXT,
-           decision TEXT, updated_at TEXT, occurred_at TEXT,
-           approval_context_token TEXT, expires_at TEXT, claim_nonce TEXT,
-           decision_hash TEXT
-        );",
-    )
-    .unwrap();
+    crate::policy_decision_lookup_op::tests::seed_store(&home.join("guard.db"));
 }
 
 fn temp_home(tag: &str) -> PathBuf {
@@ -125,23 +118,20 @@ fn schema_mismatch_returns_error_result() {
     let _ = std::fs::remove_dir_all(&home);
 }
 
-/// The columns the resident store's decision lookup projects, which the
-/// override reads to name and claim the saved approval.
-fn seed_decision_row(home: &std::path::Path) {
+/// A saved allow the lookup answers with and a claim can take: an artifact-scope
+/// row from a remote policy source, whose integrity the claim treats as
+/// protected without local key material, so the claim turns on the authority
+/// revision and the row identity alone.
+fn seed_saved_allow(home: &std::path::Path) {
     let conn = Connection::open(home.join("guard.db")).unwrap();
-    conn.execute_batch(
-        "CREATE TABLE policy_decisions (
-           decision_id INTEGER PRIMARY KEY, harness TEXT, scope TEXT,
-           artifact_id TEXT, artifact_hash TEXT, workspace TEXT, publisher TEXT,
-           action TEXT, reason TEXT, owner TEXT, source TEXT, expires_at TEXT,
-           policy_document_schema_version TEXT, policy_document_id TEXT,
-           policy_document_digest TEXT, policy_rule_id TEXT,
-           policy_provenance_json TEXT, updated_at TEXT
-        );
-         INSERT INTO policy_decisions
-           (decision_id, harness, scope, artifact_id, artifact_hash, action, updated_at)
-         VALUES (11, 'claude', 'workspace', 'command:install', 'deadbeef', 'allow',
-                 '2026-10-06T00:00:00Z');",
+    conn.execute(
+        "insert into policy_decisions
+           (decision_id, harness, scope, artifact_id, action, artifact_hash,
+            source, created_at, updated_at)
+         values (11, 'claude', 'artifact', 'command:install', 'allow', 'deadbeef',
+                 'cloud-signed-memory', '2026-10-01T00:00:00+00:00',
+                 '2026-10-01T00:00:00+00:00')",
+        [],
     )
     .unwrap();
 }
@@ -149,13 +139,14 @@ fn seed_decision_row(home: &std::path::Path) {
 #[test]
 fn the_resident_lookup_reports_the_saved_decision_identifier() {
     let home = temp_home("decision-id");
-    seed_decision_row(&home);
+    seed_store(&home);
+    seed_saved_allow(&home);
     let store = ResidentSupplyChainStore::new(&home.join("guard.db"), &home);
     let lookup = store.resolve_policy_decision_lookup(
         "claude",
         "command:install",
         Some("deadbeef"),
-        home.to_string_lossy().as_ref(),
+        "package-request-workspace:v2:unused",
         None,
         "2026-10-06T00:00:00Z",
         false,
@@ -166,5 +157,33 @@ fn the_resident_lookup_reports_the_saved_decision_identifier() {
     assert_eq!(decision["decision_id"], json!(11));
     assert_eq!(decision["action"], json!("allow"));
     assert_eq!(decision["artifact_hash"], json!("deadbeef"));
+    // The revision the claim compares against the store's current one. A
+    // decision resolved without it can never be claimed, so a saved allow
+    // would never be applied.
+    assert_eq!(decision["_approval_authority_revision"], json!(5));
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn a_saved_allow_is_claimed_and_applied_to_the_evaluation() {
+    let home = temp_home("claimed");
+    seed_store(&home);
+    seed_saved_allow(&home);
+    let mut request = request_for(&home);
+    request.claim_saved_approval = true;
+    // The package lane settled on review; a claimed approval is only visible
+    // when the evaluation did not already carry an allow.
+    let mut evaluation = base_evaluation();
+    evaluation["decision"] = json!("review");
+    evaluation["policy_action"] = json!("review");
+    request.evaluation = evaluation;
+    let bytes = evaluate_apply_stored_package_policy(&request).unwrap();
+    let result: ApplyStoredPackagePolicyResultV1 = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(result.status, "ok");
+    let payload = result.payload.unwrap();
+    assert_eq!(payload["decision"], json!("allow"));
+    assert_eq!(payload["policy_action"], json!("allow"));
+    assert_eq!(payload["saved_approval_applied"], json!(true));
+    assert_eq!(payload["saved_approval_decision_id"], json!(11));
     let _ = std::fs::remove_dir_all(&home);
 }
