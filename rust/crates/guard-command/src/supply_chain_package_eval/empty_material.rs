@@ -126,6 +126,15 @@ pub(crate) fn hold_unresolved_package_cwd(
         reason_map.insert("source".to_string(), Value::String("guard-local".into()));
         result.reasons.push(reason_map);
     }
+    for package in &mut result.packages {
+        let current = package
+            .get("decision")
+            .and_then(Value::as_str)
+            .unwrap_or("allow");
+        if decision_rank(current) < decision_rank("ask") {
+            package.insert("decision".to_string(), Value::String("ask".into()));
+        }
+    }
     if decision_rank(&result.decision) >= decision_rank("ask") {
         return result;
     }

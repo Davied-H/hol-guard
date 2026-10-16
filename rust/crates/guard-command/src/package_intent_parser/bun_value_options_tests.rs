@@ -230,6 +230,16 @@ fn held(
     evaluation.decision = decision.to_string();
     evaluation.policy_action = decision.to_string();
     evaluation.reasons.clear();
+    let mut package = serde_json::Map::new();
+    package.insert(
+        "name".to_string(),
+        serde_json::Value::String("left-pad".into()),
+    );
+    package.insert(
+        "decision".to_string(),
+        serde_json::Value::String(decision.into()),
+    );
+    evaluation.packages.push(package);
     crate::supply_chain_package_eval::hold_unresolved_package_cwd(artifact, evaluation)
 }
 
@@ -266,10 +276,23 @@ fn bun_add_outside_the_workspace_keeps_the_package_and_stays_in_review() {
     let raised = held(&artifact, "allow");
     assert_eq!(raised.decision, "ask");
     assert_ne!(raised.policy_action, "allow");
+    assert_eq!(raised.packages[0]["decision"], "ask");
     assert!(raised.reasons.iter().any(|reason| {
         reason.get("code").and_then(|value| value.as_str()) == Some("package_cwd_unresolved")
     }));
-    assert_eq!(held(&artifact, "block").decision, "block");
+    let monitored = held(&artifact, "monitor");
+    assert_eq!(monitored.decision, "ask");
+    assert_eq!(monitored.packages[0]["decision"], "ask");
+    assert_eq!(
+        monitored
+            .to_cache_dict()
+            .get("decision")
+            .and_then(|value| value.as_str()),
+        Some("ask")
+    );
+    let blocked = held(&artifact, "block");
+    assert_eq!(blocked.decision, "block");
+    assert_eq!(blocked.packages[0]["decision"], "block");
 }
 
 #[test]
