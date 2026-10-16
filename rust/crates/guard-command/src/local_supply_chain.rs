@@ -5600,15 +5600,14 @@ fn resolve_stored_package_policy_override(
         };
     }
     // Apply the saved approval — rewrite decision fields.
-    let eval_mut = evaluation.clone();
-    eval_mut.with_fields(&[
+    let claimed = evaluation.with_fields(&[
         ("decision", json!("allow")),
         ("policy_action", json!("allow")),
         ("saved_approval_applied", Value::Bool(true)),
         ("saved_approval_decision_id", json!(did)),
     ]);
     StoredPackagePolicyResolution {
-        evaluation: eval_mut,
+        evaluation: claimed,
         claim_disposition: Some("claimed".to_string()),
     }
 }
