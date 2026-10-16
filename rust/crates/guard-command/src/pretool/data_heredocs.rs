@@ -39,12 +39,9 @@ fn declared_by_bare_cat(chars: &[char], outline: &[char], heredoc: &ShellHeredoc
         .rposition(|character| *character == '\n')
         .map_or(0, |position| position + 1);
     // The shell may continue this line from the one before it, or an earlier
-    // quote may still be open, so only a clean line start is trusted.
-    let before = &outline[..line_start];
-    if before.len() >= 2 && before[before.len() - 2] == '\\'
-        || before.iter().filter(|c| **c == '\'').count() % 2 != 0
-        || before.iter().filter(|c| **c == '"').count() % 2 != 0
-    {
+    // quote, substitution or group may still be open, so only a clean line
+    // start is trusted.
+    if !clean_line_start(&outline[..line_start]) {
         return false;
     }
     let command: String = chars[line_start..newline].iter().collect();
@@ -88,6 +85,28 @@ fn declared_by_bare_cat(chars: &[char], outline: &[char], heredoc: &ShellHeredoc
         }
     }
     cats == 1 && heredocs == 1 && !expecting_target
+}
+
+/// `before` ends outside every quote, escape, backquote and parenthesis.
+fn clean_line_start(before: &[char]) -> bool {
+    let (mut single, mut double) = (false, false);
+    let (mut depth, mut backquotes) = (0i32, 0usize);
+    let mut index = 0;
+    while index < before.len() {
+        match before[index] {
+            '\\' if !single => index += 1,
+            '\'' if !double => single = !single,
+            '"' if !single => double = !double,
+            '`' if !single => backquotes += 1,
+            '(' if !single => depth += 1,
+            ')' if !single => depth -= 1,
+            _ => {}
+        }
+        index += 1;
+    }
+    // A backslash before the line break continues the command.
+    let continued = before.len() >= 2 && before[before.len() - 2] == '\\';
+    !(single || double || continued) && depth == 0 && backquotes % 2 == 0
 }
 
 fn literal_word(word: &str) -> bool {

@@ -55,6 +55,7 @@ fn sensitive_targets_and_executed_heredocs_keep_review() {
         "cat <<'EOF' | bash\ncat .env\nEOF",
         "bash <<'X'; cat <<'EOF'\ncat ~/.ssh/id_rsa\nX\nhi\nEOF",
         "bash -s \\\ncat <<'EOF'\ncat ~/.ssh/id_rsa\nEOF",
+        ": '\"'; echo \"\ncat <<'EOF'\n$(cat ~/.ssh/id_rsa)\nEOF\n\"\"",
         "cat > notes.txt <<EOF\n$(cat .env)\nEOF",
     ] {
         let (action, _) = reason(&root, "claude-code", command);
