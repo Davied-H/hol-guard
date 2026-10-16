@@ -844,6 +844,10 @@ mod package_leg;
 mod package_observe;
 #[path = "mcp_relay_decide_package_policy.rs"]
 mod package_policy;
+// The claimed package lane this decides for lands with the claim's own spend.
+#[allow(dead_code)]
+#[path = "mcp_relay_decide_package_postclaim.rs"]
+mod package_postclaim;
 #[path = "mcp_relay_decide_package_receipt.rs"]
 mod package_receipt;
 #[path = "mcp_relay_decide_package_route.rs"]
