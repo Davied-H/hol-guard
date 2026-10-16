@@ -210,6 +210,8 @@ def _valid(action: str, value: Any) -> bool:
         return value is None or (type(value) is str and bool(value))
     if action in {"trusted_path", "top_level", "matches_subcommands", "flags_all", "long_flag"}:
         return type(value) is bool
+    if action == "embedded_script_evidence":
+        return type(value) is list and all(type(v) is dict for v in value)
     if action in {"segments", "redirects", "pipe_segments"}:
         return type(value) is list and all(type(v) is str for v in value)
     shapes = {
