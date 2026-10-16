@@ -135,19 +135,21 @@ fn safe_value(value: &str) -> bool {
         })
 }
 
-/// A glob pattern that stands for the names it matches.
+/// A glob pattern that names paths under a directory the pattern itself spells
+/// out, such as `src/*.ts` or `packages/*/`.
 ///
-/// The matches all begin with the pattern's own literal text, so a pattern
-/// written against the directory the command already runs in can only name
-/// paths inside it. Unrolling the loop over the pattern itself therefore puts
-/// the same directory in front of the ordinary proofs as the names it expands
-/// into, and a pattern that matches nothing is the word the shell passes on.
-/// A pattern that starts with a metacharacter is not this form: it can match
-/// a name beginning with `-`, which the body's program reads as an option
-/// rather than as a path.
+/// Every name such a pattern matches begins with that directory, so unrolling
+/// the loop over the pattern puts the same directory in front of the ordinary
+/// path proofs as the names it expands into, and a pattern that matches
+/// nothing is the word the shell passes on. A pattern with no directory in it
+/// is a bare word that need not be a path at all — `for id in PRRT_example*`
+/// walks identifiers the shell never expands — so it keeps its review. So does
+/// a pattern that starts with a metacharacter: it can match a name beginning
+/// with `-`, which the body's program reads as an option rather than as a path.
 fn pattern_value(value: &str) -> bool {
     value.len() <= MAX_WORD_BYTES
         && value.contains(['*', '?', '['])
+        && value.contains('/')
         && value.starts_with(|c: char| c.is_ascii_alphanumeric() || matches!(c, '_' | '.'))
         // `..` reaches above that directory, so the matches would sit outside it.
         && !value.split('/').any(|segment| segment == "..")
