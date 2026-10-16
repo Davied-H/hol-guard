@@ -129,9 +129,9 @@ class StorePortableProjectMemoryMixin:
     ) -> dict[str, Any] | None:
         """Peek saved decisions for several ``(artifact_id, artifact_hash)`` probes in one resident call.
 
-        Each probe composes its direct, exact-command and memory ids most
-        restrictive (with the portable Git workspace); across probes a strictly
-        more severe decision wins. Nothing is consumed. The first probe names
+        The resident expands each probe's direct id with its exact-command and
+        memory ids and composes them most restrictive (with the portable Git
+        workspace); across probes a strictly more severe decision wins. Nothing is consumed. The first probe names
         the current action: the resident also checks a saved allow's context
         token against its hash, explains a miss, and composes the reuse verdict
         for ``current_action``. Returns ``decision``, ``ignored_local_integrity``,
@@ -142,22 +142,10 @@ class StorePortableProjectMemoryMixin:
         evidence = self.policy_lookup_evidence()
         if evidence.degraded_trust_status is not None:
             return None
-        groups: list[dict[str, object]] = []
-        for artifact_id, artifact_hash in probes:
-            exact_ids, memory_id = memory_lookup_candidates(
-                harness,
-                artifact_id,
-                memory_command=memory_command,
-                memory_artifact_type=memory_artifact_type,
-                memory_artifact_name=memory_artifact_name,
-                guard_home=Path(self.guard_home),
-            )
-            groups.append(
-                {
-                    "artifact_hash": artifact_hash,
-                    "candidate_artifact_ids": [artifact_id, *exact_ids, *([memory_id] if memory_id else [])],
-                }
-            )
+        groups = [
+            {"artifact_hash": artifact_hash, "candidate_artifact_ids": [artifact_id]}
+            for artifact_id, artifact_hash in probes
+        ]
         request = self.policy_decision_lookup_request(
             evidence,
             harness=harness,
@@ -172,6 +160,12 @@ class StorePortableProjectMemoryMixin:
             "portable_workspace": self._portable_project_workspace(workspace),
             "groups": groups,
             "reuse": {"current_action": current_action, "approval_context_inputs": dict(approval_context_inputs)},
+            "memory": {
+                "command": memory_command,
+                "artifact_type": memory_artifact_type,
+                "artifact_name": memory_artifact_name,
+                "harness": harness,
+            },
         }
         return self.send_policy_decision_lookup(request)
 

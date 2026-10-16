@@ -106,6 +106,21 @@ pub struct PolicyLookupProbeGroupsV1 {
     /// `groups` (which is then empty).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runtime: Option<RuntimeSavedLookupV1>,
+    /// Remembered-decision inputs. With them each group names only its direct
+    /// id, and the resident appends that id's exact-command and memory-pattern
+    /// candidates.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory: Option<PolicyLookupMemoryV1>,
+}
+
+/// The fields a remembered decision is fingerprinted from.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PolicyLookupMemoryV1 {
+    pub command: Option<String>,
+    pub artifact_type: Option<String>,
+    pub artifact_name: Option<String>,
+    pub harness: Option<String>,
 }
 
 /// The saved-decision read of a runtime hook evaluation: the current and the
