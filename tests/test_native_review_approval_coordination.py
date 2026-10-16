@@ -605,3 +605,45 @@ def test_environment_and_command_lists_never_reuse_python_side_approval(
     second = worker.review_http_payload(**kwargs)
     assert second["policy_action"] == "block"
     assert second.get("approval_reuse_status") != "accepted"
+
+
+def test_windows_zcode_python_review_is_one_approval_that_lets_the_retry_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Z Code has no Windows sink command, so its Python review is approved once and then runs."""
+
+    edge = _edge("zcode", action_type="command")
+    result = edge["result"]
+    assert isinstance(result, dict)
+    result["reason_code"] = "native_command_review_required"
+    worker, store = _worker(tmp_path, monkeypatch, edge)
+    payload = {
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"command": "python3 test_calc.py"},
+    }
+    kwargs = {
+        "payload": payload,
+        "params": {},
+        "default_harness": "zcode",
+        "home_dir": tmp_path / "home",
+        "guard_home": tmp_path / "guard-home",
+        "workspace": tmp_path / "workspace",
+    }
+    first = worker.review_http_payload(**kwargs)
+    request_id = first.get("approval_request_id")
+    assert isinstance(request_id, str)
+    assert len(store.list_approval_requests(status="pending")) == 1
+    assert store.resolve_harness_native_approval_request(
+        request_id,
+        reason="zcode accepted the native review",
+        resolved_at=datetime.now(timezone.utc).isoformat(),
+        expected_harness="zcode",
+    )
+    second = worker.review_http_payload(**kwargs)
+    hook_output = second["hookSpecificOutput"]
+    assert isinstance(hook_output, dict)
+    assert hook_output["permissionDecision"] == "allow"
+    assert store.list_approval_requests(status="pending") == []
+    worker.close()
