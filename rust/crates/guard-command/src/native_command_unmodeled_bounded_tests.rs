@@ -6,6 +6,63 @@ use super::xargs::{xargs_input_is_named, xargs_names_its_program};
 const FAILED: &str = "native_command_extension_evaluation_failed";
 
 #[test]
+fn debug_redirect_xargs_decision() {
+    let controls = controls(github("enabled", None), false);
+    let command = "xargs rm < list.txt; 2>/dev/null xargs gh pr merge";
+    let result = crate::pretool::evaluate_pre_tool_envelope_with_extensions(
+        "zcode",
+        "PreToolUse",
+        &serde_json::json!({"tool_name": "Bash", "tool_input": {"command": command}}),
+        Some(&controls),
+        None,
+    );
+    let error = result
+        .command_extensions
+        .as_ref()
+        .map(|extensions| extensions.evaluation_error.clone());
+    let looked = super::shapes::without_lookups(command);
+    let shell = super::shapes::without_plain_awk(
+        &super::shapes::data_heredocs(&looked)
+            .map(|(shell, _)| shell)
+            .unwrap_or_else(|| super::shell_text(&looked).to_owned()),
+    );
+    let projected = crate::pretool::generic::workspace_redirects::project(command);
+    let parsed = projected.as_deref().and_then(|text| {
+        crate::parse_command(&crate::CommandModelRequestV1 {
+            command: text.to_owned(),
+            dialect: "posix".to_owned(),
+            transport: "shell_string".to_owned(),
+            extraction_provenance: "agent".to_owned(),
+        })
+        .ok()
+    });
+    let shape = parsed.as_ref().map(|model| {
+        let segs: Vec<String> = model
+            .segments
+            .iter()
+            .map(|segment| {
+                format!(
+                    "{}:{:?}:{:?}",
+                    segment.text, segment.executable, segment.arguments
+                )
+            })
+            .collect();
+        format!(
+            "conf={} uncertainty={:?} segs={segs:?}",
+            model.confidence, model.uncertainty_reason
+        )
+    });
+    assert!(
+        false,
+        "action={} code={} eval_err={error:?} shell={shell:?} input={} programs={:?} projected={projected:?} shape={shape:?}",
+        result.minimum_action,
+        result.reason_code,
+        xargs_input_is_named(&shell),
+        super::xargs::xargs_programs(&shell)
+    );
+}
+
+#[test]
 fn an_xargs_that_names_its_program_is_reviewable() {
     let controls = controls(github("enabled", None), false);
     // A redirect into `xargs` is judged by the redirect proof, which does not
@@ -33,6 +90,11 @@ fn an_xargs_into_a_programs_own_extension_stays_unreadable() {
         "xargs gh pr merge 17 --squash < list.txt",
         "cat list.txt | xargs gh pr close",
         "xargs -n 1 gh pr close",
+        // A prefix option or a leading redirect is not the command, so the
+        // `xargs` after it still names `gh`.
+        "cat list.txt | xargs rm; time -p xargs gh pr merge < list.txt",
+        "xargs rm < list.txt; 2>/dev/null xargs gh pr merge",
+        "cat list.txt | xargs rm; command -p xargs gh pr close",
     ] {
         assert_eq!(decision(&controls, command).1, FAILED, "{command}");
     }
@@ -75,6 +137,9 @@ fn xargs_options_are_read_past_to_its_program() {
         "xargs -J rm evil",
         "xargs --max-args=3 rm",
         "xargs -- rm -f",
+        "time -p xargs rm",
+        "command -p xargs rm",
+        "2>/dev/null xargs rm",
         "cat list.txt | xargs -P 4 -I {} mv {} archive/",
     ] {
         assert!(xargs_names_its_program(bounded), "{bounded}");
@@ -112,6 +177,18 @@ fn xargs_options_are_read_past_to_its_program() {
         "xargs bin/*",
         // The word is an argument of `echo`, not an `xargs` invocation.
         "echo xargs rm",
+        // An option this does not read past still hides the `xargs`.
+        "time --portability xargs rm",
+        "command -v xargs rm",
+        "cat list.txt | xargs rm; time --foo xargs gh",
+        // A wrapper this does not read past runs the `xargs` behind it, so
+        // another piece's bounded `xargs` cannot speak for the whole text.
+        "cat list.txt | xargs rm; env xargs gh pr merge",
+        "cat list.txt | xargs rm; sudo xargs gh pr close",
+        "cat list.txt | xargs rm; timeout 5 xargs gh pr merge",
+        "cat list.txt | xargs rm; stdbuf -o0 xargs gh pr close",
+        // The operand of an `xargs` is itself an unbounded `xargs`.
+        "xargs xargs < list.txt",
         // Every `xargs` in the text has to name its program.
         "cat list.txt | xargs rm -f && cat more.txt | xargs",
     ] {
@@ -130,6 +207,8 @@ fn an_xargs_without_a_named_input_stays_unreadable() {
         "xargs rm -f < list.txt",
         "xargs -a list.txt rm -f",
         "xargs --arg-file=list.txt rm -f",
+        "time -p cat list.txt | xargs rm",
+        "time -p xargs rm < list.txt",
     ] {
         assert!(xargs_input_is_named(named), "{named}");
     }
@@ -141,6 +220,8 @@ fn an_xargs_without_a_named_input_stays_unreadable() {
         "xargs rm -rf < /dev/fd/0",
         "xargs rm -rf < /proc/self/fd/0",
         "xargs rm 2<list.txt",
+        "cat list.txt | xargs rm; time -p xargs gh",
+        "xargs rm < list.txt; 2>/dev/null xargs gh",
         "xargs -a - rm",
         "xargs -a /dev/stdin rm",
         "xargs --arg-file=- rm",
@@ -150,6 +231,10 @@ fn an_xargs_without_a_named_input_stays_unreadable() {
         "test -f list.txt || xargs rm -f",
         // Every `xargs` in the text needs its own input.
         "cat list.txt | xargs rm -f && xargs rm -rf BUILD",
+        // A wrapper this does not read past still runs an `xargs` on the
+        // caller's standard input.
+        "cat list.txt | xargs rm; env xargs gh pr merge",
+        "cat list.txt | xargs rm; sudo xargs gh pr close",
     ] {
         assert!(!xargs_input_is_named(unnamed), "{unnamed}");
     }

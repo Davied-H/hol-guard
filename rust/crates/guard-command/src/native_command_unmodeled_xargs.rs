@@ -49,7 +49,12 @@ pub(super) fn xargs_input_is_named(shell: &str) -> bool {
             // The right side of a `||` follows an empty stage, not a pipe.
             let piped = stage > 0 && !stages[stage - 1].trim().is_empty();
             let words: Vec<&str> = text.split_whitespace().collect();
-            // Only the word in command position. `echo xargs rm` names `echo`.
+            // `echo xargs rm` names `echo`. An option or redirect this does
+            // not read past can still hide an `xargs`, and that one stays
+            // unread rather than skipped.
+            if hides_xargs(&words) {
+                return false;
+            }
             let Some(index) = command_index(&words) else {
                 continue;
             };
@@ -158,7 +163,12 @@ pub(super) fn xargs_programs(shell: &str) -> Option<BTreeSet<String>> {
     // group's own words are read in the same piece anyway.
     for piece in shell.split(['\n', ';', '&', '|', '(', ')', '`']) {
         let words: Vec<&str> = piece.split_whitespace().collect();
-        // Only the word in command position. `echo xargs rm` names `echo`.
+        // `echo xargs rm` names `echo`. An option or redirect this does not
+        // read past can still hide an `xargs`, and that one stays unread
+        // rather than skipped.
+        if hides_xargs(&words) {
+            return None;
+        }
         let Some(index) = command_index(&words) else {
             continue;
         };
@@ -185,10 +195,28 @@ const COMMAND_PREFIXES: &[&str] = &[
 
 fn command_index(words: &[&str]) -> Option<usize> {
     let mut index = 0;
+    let mut option_of: Option<&str> = None;
     while index < words.len() {
         let word = words[index];
         if COMMAND_PREFIXES.contains(&word) {
+            option_of = matches!(word, "time" | "command").then_some(word);
             index += 1;
+            continue;
+        }
+        // `time -p` and `command -p` take the command that follows. `-v`
+        // does not: it prints a path.
+        if option_of.is_some_and(|name| matches!((name, word), ("time" | "command", "-p"))) {
+            option_of = None;
+            index += 1;
+            continue;
+        }
+        option_of = None;
+        if let Some(span) = leading_redirect_span(word) {
+            let next = index + span;
+            if next > words.len() {
+                return None;
+            }
+            index = next;
             continue;
         }
         if let Some((name, _)) = word.split_once('=') {
@@ -205,6 +233,42 @@ fn command_index(words: &[&str]) -> Option<usize> {
         return Some(index);
     }
     None
+}
+
+/// An `xargs` in the piece that is not the word this reads as its command.
+///
+/// `command_index` knows a fixed set of prefix words, so an unrecognized one
+/// — a wrapper such as `env`, `sudo` or `timeout`, an option it does not read
+/// past, or a redirect — would otherwise leave the `xargs` behind it unread
+/// while another piece's `xargs` made the text look bounded. Every such piece
+/// stays unreadable instead, including `echo xargs rm`, whose word is only an
+/// argument, and `xargs xargs`, whose operand is itself unbounded.
+fn hides_xargs(words: &[&str]) -> bool {
+    let command = command_index(words);
+    words
+        .iter()
+        .enumerate()
+        .any(|(index, word)| Some(index) != command && command_basename(word) == "xargs")
+}
+
+/// How many words a leading redirect occupies. A bare operator takes the
+/// next word as its target. A quoted argument that contains `<` is not one.
+fn leading_redirect_span(word: &str) -> Option<usize> {
+    if word.starts_with(['\'', '"']) {
+        return None;
+    }
+    let digits = word
+        .bytes()
+        .take_while(|byte| byte.is_ascii_digit())
+        .count();
+    let rest = word.get(digits..)?;
+    if !rest.starts_with(['<', '>']) {
+        return None;
+    }
+    let operator_only = rest
+        .bytes()
+        .all(|byte| matches!(byte, b'<' | b'>' | b'&' | b'|'));
+    Some(if operator_only { 2 } else { 1 })
 }
 
 /// The operand `xargs` runs, read past its own options.

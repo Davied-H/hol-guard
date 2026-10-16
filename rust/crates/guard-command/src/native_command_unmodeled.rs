@@ -228,6 +228,12 @@ impl CompiledNativeCommandControls {
                 && !(sourced_resolved && *name == "source")
                 && !(xargs_bounded && *name == "xargs")
         }) {
+            // An `xargs` whose operands are not in the text is not bounded by
+            // reading a script file. `2>/dev/null xargs gh` still takes its
+            // arguments from the caller.
+            if interpreted.contains("xargs") && !xargs_bounded {
+                return None;
+            }
             // A program read from a file names the tools it may launch
             // outside the command text, so it counts toward the owners.
             match crate::pretool::sole_program_sources(command, context) {
