@@ -27,8 +27,14 @@ use super::runner_bin::{runner_local_bin, LOCAL_BIN_RUNNERS};
 const MAX_COMPOUND_SEGMENTS: usize = 8;
 
 /// The launch identity of a command, or the once-only reason it has none.
+///
+/// On Windows every launch stays once-only: the command is parsed as POSIX
+/// shell, and the git, interpreter and runner proofs bind POSIX layouts
+/// (`/etc/gitconfig`, `bin/`, `site-packages`) that do not pin what `cmd.exe`
+/// or PowerShell would load. Some branches (runner shims, `cd` segments) do not
+/// consult the engine's reusability check, so the refusal sits here.
 pub(super) fn launch_identity(command: &str, cwd: &str, ctx: &Ctx) -> Proof<Value> {
-    if command.trim().is_empty() {
+    if cfg!(windows) || command.trim().is_empty() {
         return Err(UNPROVEN_LAUNCH);
     }
     ctx.check()?;

@@ -9,6 +9,8 @@
 mod binding;
 pub(crate) mod context;
 mod fs_path;
+#[cfg(windows)]
+mod fs_path_windows;
 mod git_config;
 mod git_identity;
 mod launch;
