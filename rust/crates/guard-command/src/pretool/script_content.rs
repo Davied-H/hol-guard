@@ -557,7 +557,13 @@ fn code_lines(language: Language, source: &str) -> String {
 }
 
 /// A Python line with each `;` outside a string literal starting a new line.
+/// A line whose strings this cannot follow, with a triple quote, an f-string
+/// field or a string left open, splits at every `;`, which only finds more.
 fn split_statements(line: &str) -> String {
+    let everywhere = || line.replace(';', "\n");
+    if line.contains("\"\"\"") || line.contains("'''") || line.contains('{') {
+        return everywhere();
+    }
     let mut split = String::with_capacity(line.len());
     let (mut quote, mut escaped) = (None, false);
     for character in line.chars() {
@@ -574,6 +580,9 @@ fn split_statements(line: &str) -> String {
             None => {}
         }
         split.push(character);
+    }
+    if quote.is_some() {
+        return everywhere();
     }
     split
 }

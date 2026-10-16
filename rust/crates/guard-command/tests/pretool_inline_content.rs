@@ -105,6 +105,7 @@ fn inline_and_stdin_programs_that_use_the_network_keep_their_review() {
             "python3 -c 'import os; import socket'",
             "python3 -c 'from uploader import send; send([])'",
             "python3 -c 'import sys; from uploader import send; send([])'",
+            "python3 - <<'EOF'\nx = \"\"\"\n\"\"\"; import requests; requests.get('https://example.invalid')\nEOF",
             "python3 - <<'EOF'\nimport requests\nrequests.get('https://example.invalid')\nEOF",
             "node - < scripts/status.js",
             "cat scripts/sync.py | python3 -",

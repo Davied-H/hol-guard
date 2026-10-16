@@ -16,6 +16,8 @@ const DENO_EVAL_VALUE_OPTIONS: &[&str] = &[
     "--seed",
     "--cert",
     "--lock",
+    "-L",
+    "--log-level",
 ];
 
 /// The program an interpreter runs.
