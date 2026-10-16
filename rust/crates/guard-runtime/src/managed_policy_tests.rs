@@ -416,7 +416,7 @@ fn a_policy_bundle_keyring_is_rebuilt_as_the_canonical_payload() {
         "policyBundleKeyring": {
             "contractVersion": crate::policy_bundle_keys::KEYRING_CONTRACT_VERSION,
             "purpose": crate::policy_bundle_keys::KEY_PURPOSE,
-            "workspaceId": " workspace-1 ",
+            "workspaceId": "workspace-1",
             "keys": [],
         },
     }));
@@ -433,17 +433,22 @@ fn a_policy_bundle_keyring_is_rebuilt_as_the_canonical_payload() {
         refuse(json!({"policyBundleKeyring": {"keys": []}})),
         "policyBundleKeyring is invalid"
     );
-    assert_eq!(
-        refuse(json!({
-            "policyBundleKeyring": {
-                "contractVersion": crate::policy_bundle_keys::KEYRING_CONTRACT_VERSION,
-                "purpose": crate::policy_bundle_keys::KEY_PURPOSE,
-                "workspaceId": "   ",
-                "keys": [],
-            },
-        })),
-        "policyBundleKeyring is invalid"
-    );
+    // The keyring contract takes the workspace id as stored, so padding is
+    // refused rather than trimmed: a trimmed id would verify bundles under a
+    // workspace the document does not name.
+    for workspace_id in [json!(" workspace-1 "), json!("   "), json!(1)] {
+        assert_eq!(
+            refuse(json!({
+                "policyBundleKeyring": {
+                    "contractVersion": crate::policy_bundle_keys::KEYRING_CONTRACT_VERSION,
+                    "purpose": crate::policy_bundle_keys::KEY_PURPOSE,
+                    "workspaceId": workspace_id,
+                    "keys": [],
+                },
+            })),
+            "policyBundleKeyring is invalid"
+        );
+    }
 }
 
 #[test]
