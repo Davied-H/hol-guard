@@ -5,7 +5,9 @@
 #[path = "read_path_git.rs"]
 mod read_path_git;
 
-pub(in crate::pretool) use read_path_git::{git_config_document, git_ref_document, worktree_gitfile};
+pub(in crate::pretool) use read_path_git::{
+    git_config_document, git_ref_document, worktree_gitfile,
+};
 
 /// A root the caller named, canonical and in the spelling these proofs
 /// compare in: Windows' verbatim `\\?\` prefix removed, as every other
