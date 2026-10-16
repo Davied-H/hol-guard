@@ -376,7 +376,11 @@ def install_native_payload(wheel: Path, *, package_root: Path | None = None) -> 
                 for row in csv.reader(io.StringIO(archive.read(record_name).decode("utf-8")))
                 if len(row) >= 2
             }
-            members = [name for name in names if name.startswith(_NATIVE_PAYLOAD_PREFIX) and not name.endswith("/")]
+            # The runtime goes last: Guard treats it as present once the executable exists.
+            members = sorted(
+                (name for name in names if name.startswith(_NATIVE_PAYLOAD_PREFIX) and not name.endswith("/")),
+                key=lambda name: name.rsplit("/", 1)[-1].startswith("hol-guard-runtime"),
+            )
             if not members:
                 raise NativeWheelError("native_wheel_payload_invalid")
             records: list[list[str]] = []
