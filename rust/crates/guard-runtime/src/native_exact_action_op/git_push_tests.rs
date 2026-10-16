@@ -254,6 +254,13 @@ fn config_that_makes_a_push_run_another_program_fails_closed() {
         ("work/.git/config", "[push]\n\tgpgSign = true\n"),
         ("work/.git/config", "[submodule]\n\trecurse = true\n"),
         ("work/.git/config", "[core]\n\tpager = less\n"),
+        ("work/.git/config", "[push]\n\tfollowTags = true\n"),
+        ("work/.git/config", "[push]\n\tfollowTags\n"),
+        ("home/.gitconfig", "[push]\n\tfollowtags = yes\n"),
+        (
+            "work/.git/config",
+            "[push]\n\tpushOption = merge_request.create\n",
+        ),
     ] {
         let repo = Repo::new();
         repo.append(path, text);
@@ -266,9 +273,13 @@ fn config_that_makes_a_push_run_another_program_fails_closed() {
     let repo = Repo::new();
     repo.append(
         "work/.git/config",
-        "[push]\n\trecurseSubmodules = no\n\tgpgSign = false\n",
+        "[push]\n\trecurseSubmodules = no\n\tgpgSign = false\n\tfollowTags = false\n",
     );
     assert!(repo.state("git push origin dev").is_ok());
+    // An included file is config like any other.
+    repo.write("home/.gitconfig-push", "[push]\n\tfollowTags = true\n");
+    repo.append("home/.gitconfig", "[include]\n\tpath = ~/.gitconfig-push\n");
+    assert_eq!(repo.state("git push origin dev"), Err(GIT_HELPER_CONFIG));
 }
 
 #[test]
@@ -575,4 +586,99 @@ fn a_linked_worktree_pins_its_own_refs() {
         &format!("{}\n", "4".repeat(40)),
     );
     assert_ne!(state("git push origin HEAD:feature").unwrap(), retargeted);
+}
+
+/// Runs the real `git` with no system, global or environment config.
+fn real_git(directory: &Path, home: &Path, arguments: &[&str]) -> String {
+    let mut command = std::process::Command::new("git");
+    for name in [
+        "GIT_DIR",
+        "GIT_WORK_TREE",
+        "GIT_INDEX_FILE",
+        "GIT_COMMON_DIR",
+        "GIT_NAMESPACE",
+        "GIT_CONFIG",
+        "GIT_CONFIG_GLOBAL",
+        "GIT_CONFIG_COUNT",
+        "GIT_CONFIG_PARAMETERS",
+        "XDG_CONFIG_HOME",
+    ] {
+        command.env_remove(name);
+    }
+    let output = command
+        .args(arguments)
+        .current_dir(directory)
+        .env("HOME", home)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_AUTHOR_NAME", "t")
+        .env("GIT_AUTHOR_EMAIL", "t@example.invalid")
+        .env("GIT_COMMITTER_NAME", "t")
+        .env("GIT_COMMITTER_EMAIL", "t@example.invalid")
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "git {arguments:?}: {output:?}");
+    String::from_utf8_lossy(&output.stdout).into_owned()
+}
+
+#[test]
+fn a_tag_created_after_approval_is_never_sent_under_the_approval() {
+    // The reviewer's sequence: approve `git push origin dev`, create an
+    // annotated tag, retry the identical push.
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let (home, work, bare) = (root.join("home"), root.join("work"), root.join("bare.git"));
+    for path in [&home, &work, &bare] {
+        fs::create_dir_all(path).unwrap();
+    }
+    real_git(&bare, &home, &["init", "-q", "--bare"]);
+    real_git(&work, &home, &["init", "-q", "-b", "dev"]);
+    fs::write(work.join("app.txt"), "one\n").unwrap();
+    real_git(&work, &home, &["add", "app.txt"]);
+    real_git(&work, &home, &["commit", "-q", "-m", "one"]);
+    real_git(
+        &work,
+        &home,
+        &[
+            "remote",
+            "add",
+            "origin",
+            "ssh://git@example.invalid/app.git",
+        ],
+    );
+    // A local remote shows what the same push would send, without ssh.
+    real_git(&work, &home, &["remote", "add", "probe", &str_path(&bare)]);
+    real_git(&work, &home, &["push", "-q", "probe", "dev"]);
+    let engines = Fake {
+        root: str_path(&root),
+        unreusable: None,
+    };
+    let env = BTreeMap::new();
+    let home_text = str_path(&home);
+    let state = || {
+        let ctx = Ctx {
+            home: Some(&home_text),
+            env: &env,
+            deadline: Instant::now() + Duration::from_secs(10),
+            engines: &engines,
+        };
+        push_state("git push origin dev", &str_path(&work), &ctx)
+    };
+    let sent = || {
+        real_git(
+            &work,
+            &home,
+            &["push", "--dry-run", "--porcelain", "probe", "dev"],
+        )
+    };
+
+    // Without followTags git does not send the new tag, so the binding may stay.
+    let approved = state().unwrap();
+    real_git(&work, &home, &["tag", "-a", "v1", "-m", "tag"]);
+    assert!(!sent().contains("refs/tags/v1"));
+    assert_eq!(state().unwrap(), approved);
+
+    // With followTags the identical push sends it, so no approval binds it.
+    real_git(&work, &home, &["config", "push.followTags", "true"]);
+    assert!(sent().contains("refs/tags/v1"));
+    assert_eq!(state(), Err(GIT_HELPER_CONFIG));
 }

@@ -465,8 +465,13 @@ impl PushFacts {
             }
             // A rewritten URL could name another transport than the one checked.
             "url" => matches!(name, "insteadof" | "pushinsteadof"),
-            // Submodule pushes run hooks this digest never reads; signing runs gpg.
-            "push" => matches!(name, "recursesubmodules" | "gpgsign") && !is_false(value),
+            // Submodule pushes run hooks this digest never reads; signing runs
+            // gpg; followed tags add refs beyond the named refspecs, which
+            // `ref_state` never pins; push options reach the remote's hooks.
+            "push" => {
+                (matches!(name, "recursesubmodules" | "gpgsign" | "followtags") && !is_false(value))
+                    || name == "pushoption"
+            }
             "submodule" => name == "recurse" && subsection.is_empty() && !is_false(value),
             _ => false,
         };
