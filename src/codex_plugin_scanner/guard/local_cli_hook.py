@@ -1,79 +1,114 @@
-"""Hook-time observation and grant application for unlisted CLIs."""
+"""Unlisted CLI observation and grants: one resident call records and decides, Python presents."""
 
 from __future__ import annotations
 
+import os
+import sqlite3
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
+from uuid import uuid4
 
-from .local_cli_trust import matching_local_cli_grant, utc_now
+from . import store_storage_gate
 from .models import GuardAction
-from .native_local_cli_identity import LocalCliIdentityUnavailableError, track_local_cli_identity_failures
-from .runtime.custom_extension_suggestion import observation_path_class
-from .runtime.local_cli_identity import identify_unlisted_cli_identities
-from .runtime.package_json_scripts import identify_package_json_scripts, recognize_package_json_scripts
+from .native_context import _canonical_request_sha256, ensure_resident_prerequisite
+from .native_execution import _resident_request
+from .sqlite_tuning import sqlite_connect_timeout_seconds
+
+if TYPE_CHECKING:
+    from .store import GuardStore
+
+LOCAL_CLI_HOOK_FEATURE = "local-cli-hook-v1"
+_RESULT_SCHEMA = "guard-local-cli-hook-result.v1"
+_STORE_FAILED = "native_local_cli_hook_store_failed"
+_GRANT_ACTIONS = frozenset({"allow", "block", "review"})
 
 
-def observe_unlisted_cli(
+def local_cli_grant_action(
     *,
-    store: object,
-    command: str,
+    store: GuardStore,
+    command: str | None,
     cwd: Path,
     home_dir: Path | None,
-) -> None:
-    with track_local_cli_identity_failures() as failures:
-        package_identity = identify_package_json_scripts(command, cwd=cwd, home_dir=home_dir)
-        identities = (
-            (package_identity,)
-            if package_identity is not None
-            else identify_unlisted_cli_identities(command, cwd=cwd, home_dir=home_dir)
-        )
-    # A failed derivation can mistake a script for a plain binary; record nothing.
-    if failures or not identities:
-        return
-    recorder = getattr(store, "record_local_cli_observation", None)
-    if not callable(recorder):
-        return
-    for identity in identities:
-        recorder(
-            identity,
-            seen_at=utc_now(),
-            source_path=(
-                identity.source_path
-                if package_identity is not None
-                else identity.path_class or observation_path_class(identity.source_path)
-            ),
-            surface="package-scripts" if package_identity is not None else "cli",
-        )
-    if package_identity is not None:
-        discovery = recognize_package_json_scripts(command, cwd=cwd, home_dir=home_dir or cwd)
-        replace_commands = getattr(store, "replace_local_cli_commands", None)
-        if discovery is not None and callable(replace_commands):
-            replace_commands(discovery.identity.cli_id, discovery.commands)
+    current_action: GuardAction,
+    grant_allowed: bool,
+) -> GuardAction:
+    """Record the CLI the command launches and refine the action with its grant."""
+
+    if command is None:
+        return current_action
+    action = native_local_cli_hook(
+        store, command=command, cwd=cwd, home_dir=home_dir, current_action=current_action, grant_allowed=grant_allowed
+    )
+    if action is not None:
+        return action
+    return unverified_local_cli_action(store, current_action) if grant_allowed else current_action
 
 
-def apply_local_cli_grant(
+def observe_unlisted_cli(*, store: GuardStore, command: str, cwd: Path, home_dir: Path | None) -> None:
+    """Record the CLIs a command launches without consulting any grant."""
+
+    native_local_cli_hook(
+        store, command=command, cwd=cwd, home_dir=home_dir, current_action="allow", grant_allowed=False
+    )
+
+
+def native_local_cli_hook(
+    store: GuardStore,
     *,
-    store: object,
     command: str,
     cwd: Path,
     home_dir: Path | None,
     current_action: GuardAction,
-) -> GuardAction:
-    try:
-        matched = matching_local_cli_grant(
-            store=store,
-            command=command,
-            cwd=cwd,
-            home_dir=home_dir,
-            current_action=current_action,
+    grant_allowed: bool,
+) -> GuardAction | None:
+    """Return the resident's action, or ``None`` without a bound answer; a store failure raises."""
+
+    request: dict[str, object] = {
+        "schema": "guard-local-cli-hook-request.v1",
+        "request_id": f"local-cli-hook-{uuid4().hex}",
+        "store_path": str(store.path),
+        "guard_home": str(store.guard_home),
+        "source": store.guard_source,
+        "busy_timeout_ms": max(1, int(sqlite_connect_timeout_seconds() * 1000)),
+        "command": command,
+        "cwd": str(cwd),
+        "home_dir": None if home_dir is None else str(home_dir),
+        "user_home": str(Path.home()),
+        "env": dict(os.environ),
+        "current_action": current_action,
+        "grant_allowed": grant_allowed,
+    }
+    digest = "sha256:" + _canonical_request_sha256(request)
+    if not ensure_resident_prerequisite(store.guard_home):
+        return None
+    with store_storage_gate.hold_storage_gate(store.guard_home, exclusive=False):
+        response = _resident_request(
+            operation="local_cli_hook",
+            request=request,
+            guard_home=store.guard_home,
+            timeout_seconds=10.0,
+            required_feature=LOCAL_CLI_HOOK_FEATURE,
+            response_schema=_RESULT_SCHEMA,
         )
-    except LocalCliIdentityUnavailableError:
-        return unverified_local_cli_action(store, current_action)
-    if matched is None:
-        return current_action
-    _identity, state = matched
-    if state == "allowed":
-        return "allow"
-    return "block"
+    # The resident may have written the store, as a store call would.
+    store._repair_store_permissions()
+    if (
+        response is None
+        or response.get("schema") != _RESULT_SCHEMA
+        or response.get("request_id") != request["request_id"]
+        or response.get("request_sha256") != digest
+    ):
+        return None
+    status, code, payload = response.get("status"), response.get("code"), response.get("payload")
+    if status == "error" and code == _STORE_FAILED:
+        raise sqlite3.DatabaseError(_STORE_FAILED)
+    if status != "ok" or code != "ok" or not isinstance(payload, dict) or set(payload) != {"action"}:
+        return None
+    action = payload["action"]
+    # Only a grant can change the action, and only to allow, block or review.
+    if action != current_action and action not in _GRANT_ACTIONS:
+        return None
+    return cast(GuardAction, action)
 
 
 def unverified_local_cli_action(store: object, current_action: GuardAction) -> GuardAction:
