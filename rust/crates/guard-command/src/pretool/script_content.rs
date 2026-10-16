@@ -55,6 +55,14 @@ static PYTHON_NETWORK: LazyLock<Regex> = LazyLock::new(|| {
     ))
     .unwrap()
 });
+/// Stream and server calls that open a socket without importing a client.
+static PYTHON_ASYNC_NETWORK: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\b(?:open_connection|open_unix_connection|start_server|start_unix_server|create_connection|create_datagram_endpoint|create_server|create_unix_connection|create_unix_server)\b").unwrap()
+});
+
+fn python_network(code: &str) -> bool {
+    PYTHON_NETWORK.is_match(code) || PYTHON_ASYNC_NETWORK.is_match(code)
+}
 static NODE_NETWORK: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r#"(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\s*\(\s*)["'](?:node:)?(?:https?|http2|net|tls|dgram|dns|undici|axios|node-fetch|got|ky|ws|superagent|request|socket\.io-client|ssh2|nodemailer|ftp|basic-ftp|pg|mysql2?|mongodb|ioredis|redis|openai|googleapis|google-auth-library|aws-sdk|octokit|stripe|@google-cloud/[^"']*|@google-analytics/[^"']*|@aws-sdk/[^"']*|@anthropic-ai/[^"']*|@octokit/[^"']*|@slack/[^"']*)(?:["']|/[^"']*["'])|\bfetch\s*\(|\bXMLHttpRequest\b|\bnew\s+WebSocket\b|\bEventSource\b|\bsendBeacon\b|\bBun\s*\.\s*connect\b|\bDeno\s*\.\s*connect\b"#,
@@ -123,7 +131,7 @@ pub(super) fn assess(model: &CanonicalCommandV1, context: PathContext<'_>) -> Ve
         for source in sources {
             let code = code_lines(language, &source);
             found.network |= match language {
-                Language::Python => PYTHON_NETWORK.is_match(&code),
+                Language::Python => python_network(&code),
                 Language::Node => NODE_NETWORK.is_match(&code),
             };
             found.credential_store |= CREDENTIAL_STORE.is_match(&code);
@@ -154,7 +162,7 @@ pub(in crate::pretool) fn standalone_clean(language: Language, path: &Path) -> b
     };
     let code = code_lines(language, source);
     let network = match language {
-        Language::Python => PYTHON_NETWORK.is_match(&code),
+        Language::Python => python_network(&code),
         Language::Node => NODE_NETWORK.is_match(&code),
     };
     !network && !CREDENTIAL_STORE.is_match(&code)

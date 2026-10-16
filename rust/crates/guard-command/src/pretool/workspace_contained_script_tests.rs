@@ -93,7 +93,11 @@ fn network_credential_and_module_scripts_are_not_granted() {
     let module = scratch.write("scratch/main.py", "import helper\nhelper.run()\n");
     scratch.write("scratch/helper.py", "def run():\n    pass\n");
     let fetch = scratch.write("scratch/fetch.mjs", "await fetch('https://x.invalid');\n");
-    for path in [network, keys, module] {
+    let stream = scratch.write(
+        "scratch/stream.py",
+        "import asyncio\nasyncio.run(asyncio.open_connection('h', 1))\n",
+    );
+    for path in [network, keys, module, stream] {
         assert_eq!(
             scratch.grant(&format!("python3 {}", path.display())),
             None,

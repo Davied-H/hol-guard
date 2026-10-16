@@ -232,6 +232,10 @@ pub(crate) fn command_shape(
             return None;
         }
         if let Some((_, path)) = script {
+            // One script only: a second grant would let the first read it.
+            if read_files.first().is_some_and(|first| *first != path) {
+                return None;
+            }
             if !read_files.contains(&path) {
                 read_files.push(path);
             }

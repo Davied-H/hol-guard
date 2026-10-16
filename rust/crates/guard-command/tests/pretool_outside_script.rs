@@ -212,3 +212,16 @@ fn node_scratch_scripts_in_every_extension_run_contained_alone() {
         assert_ne!(result.decision, "allow", "{name}");
     }
 }
+
+#[test]
+fn two_scratch_scripts_in_one_command_keep_their_review() {
+    let fixture = Fixture::new();
+    let one = fixture.write("one.py", "print(1)\n");
+    let two = fixture.write("two.py", "print(2)\n");
+    let result = fixture.classify(
+        "omp",
+        &format!("python3 {}; python3 {}", one.display(), two.display()),
+    );
+    assert_ne!(result.reason_code, CONTAINED);
+    assert_ne!(result.decision, "allow");
+}

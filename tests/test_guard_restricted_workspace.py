@@ -191,9 +191,7 @@ def test_a_read_grant_is_one_canonical_script_the_command_names(tmp_path: Path) 
     text = f"python3 {script}"
     workspace = tmp_path / "ws"
     workspace.mkdir()
-    accepted = workspace_sink._validated_plan(
-        plan(workspace, text, read_only_roots=[str(script)]), text, workspace
-    )
+    accepted = workspace_sink._validated_plan(plan(workspace, text, read_only_roots=[str(script)]), text, workspace)
     assert accepted["read_only_roots"] == [str(script)]
     for roots in (
         [str(script.parent)],
@@ -480,3 +478,16 @@ def test_a_cd_below_a_sibling_root_without_a_workspace_receipt_never_runs_there(
                 home_dir=home,
             )
     assert ran == []
+
+
+def test_read_grants_need_a_launched_single_canonical_script(tmp_path: Path) -> None:
+    from codex_plugin_scanner.guard.runtime.restricted_workspace_grants import read_grants_valid
+
+    root = tmp_path.resolve()
+    upper = root / "Build.JS"
+    good = root / "good.py"
+    upper.write_text("x")
+    good.write_text("x")
+    assert read_grants_valid([str(upper)], f"node {upper}")
+    assert not read_grants_valid([str(good)], f"python3 {root}/other/good.py")
+    assert not read_grants_valid([str(good), str(upper)], f"node {upper}; python3 {good}")
