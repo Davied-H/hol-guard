@@ -590,7 +590,7 @@ fn bounds_its_owners(text: &str) -> bool {
     let literal = mask_parameter_expansions(&unquoted_literal(text));
     !synthesizes_program(&literal, false)
         && !command_words(&mask_double_quoted_separators(&literal)).any(|word| {
-            let base = command_basename(&word);
+            let base = command_basename(word);
             INTERPRETERS.contains(&base.as_str())
         })
 }
