@@ -41,7 +41,6 @@ fn code_site_runs_before_the_script_is_bound() {
         startup_paths(&bound),
         [
             format!("{site}/_distutils_hack/__init__.py"),
-            format!("{site}/_distutils_hack/override.py"),
             format!("{site}/distutils-precedence.pth"),
             format!("{site}/extra.pth"),
             format!("{site}/extra/sitecustomize.py"),
@@ -61,6 +60,91 @@ fn code_site_runs_before_the_script_is_bound() {
         bind(&project, &["-S", "tool.py"], &[]).unwrap()["startup"],
         json!([])
     );
+}
+
+#[test]
+fn startup_sources_bind_what_they_import() {
+    let project = Project::new();
+    let site = format!("{}/{SITE}", project.cwd());
+    project.write("tool.py", "print(1)\n");
+    project.write(&format!("{SITE}/sitecustomize.py"), "import helper\n");
+    project.write(&format!("{SITE}/helper.py"), "X = 1\n");
+    project.write(&format!("{SITE}/hook.pth"), "import pkg.sub\n");
+    project.write(&format!("{SITE}/pkg/__init__.py"), "");
+    project.write(
+        &format!("{SITE}/pkg/sub/__init__.py"),
+        "from . import leaf\n",
+    );
+    project.write(&format!("{SITE}/pkg/sub/leaf.py"), "");
+    let bound = bind(&project, &["tool.py"], &[]).unwrap();
+    assert_eq!(
+        startup_paths(&bound),
+        [
+            format!("{site}/helper.py"),
+            format!("{site}/hook.pth"),
+            format!("{site}/pkg/__init__.py"),
+            format!("{site}/pkg/sub/__init__.py"),
+            format!("{site}/pkg/sub/leaf.py"),
+            format!("{site}/sitecustomize.py"),
+        ]
+    );
+    project.write(&format!("{SITE}/helper.py"), "X = 2\n");
+    let edited = bind(&project, &["tool.py"], &[]).unwrap();
+    assert_ne!(edited["startup"], bound["startup"]);
+
+    // Startup code that evaluates or writes is not bound by its text.
+    for text in [
+        "exec(open('x').read())\n",
+        "open('x', 'w').write('')\n",
+        "import missing\n",
+    ] {
+        project.write(&format!("{SITE}/sitecustomize.py"), text);
+        assert_eq!(
+            bind(&project, &["tool.py"], &[]),
+            Err("mutable_launcher"),
+            "{text}"
+        );
+    }
+}
+
+#[test]
+fn a_virtualenv_shim_is_bound_by_content() {
+    let project = Project::new();
+    let site = format!("{}/{SITE}", project.cwd());
+    project.write("tool.py", "print(1)\n");
+    project.write(&format!("{SITE}/_virtualenv.pth"), "import _virtualenv\n");
+    let shim = "import os\nimport sys\n\n_DISTUTILS_PATCH = 'distutils.dist', 'setuptools.dist'\n\nclass _Finder:\n    def find_spec(self, fullname, path, target=None):\n        if fullname in _DISTUTILS_PATCH:\n            from importlib.util import find_spec\n            spec = find_spec(fullname, path)\n            return getattr(spec, 'loader', None) and spec\n\nsys.meta_path.insert(0, _Finder())\n";
+    project.write(&format!("{SITE}/_virtualenv.py"), shim);
+    let bound = bind(&project, &["tool.py"], &[]).unwrap();
+    assert_eq!(
+        startup_paths(&bound),
+        [
+            format!("{site}/_virtualenv.pth"),
+            format!("{site}/_virtualenv.py"),
+        ]
+    );
+
+    // The shim redirects distutils, so a local copy is not what runs.
+    project.write("tool.py", "import distutils\n");
+    project.write("distutils.py", "");
+    assert_eq!(bind(&project, &["tool.py"], &[]), Err("mutable_launcher"));
+    project.write(&format!("{SITE}/_virtualenv.pth"), "# off\n");
+    assert!(bind(&project, &["tool.py"], &[]).is_ok());
+    project.write(&format!("{SITE}/_virtualenv.pth"), "import _virtualenv\n");
+
+    project.write("tool.py", "print(1)\n");
+    for text in [
+        format!("{shim}open('x').read()\n"),
+        format!("{shim}import subprocess\n"),
+        format!("{shim}__import__('helper')\n"),
+    ] {
+        project.write(&format!("{SITE}/_virtualenv.py"), &text);
+        assert_eq!(
+            bind(&project, &["tool.py"], &[]),
+            Err("mutable_launcher"),
+            "{text}"
+        );
+    }
 }
 
 #[test]

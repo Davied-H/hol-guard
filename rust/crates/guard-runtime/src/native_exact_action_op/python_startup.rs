@@ -15,11 +15,11 @@ use super::super::python_modules::{REFUSED_MODULES, STANDARD_MODULES};
 use super::super::python_source::scan;
 use super::super::reasons::{Proof, MUTABLE_LAUNCHER};
 use super::{Graph, COMPILED_SUFFIXES};
+use layout::Layout;
 
 /// A site directory can hold thousands of installed packages.
 const MAX_SITE_LISTING: usize = 65_536;
 const MAX_STARTUP_FILES: usize = 256;
-const MAX_CONFIG_BYTES: u64 = 64 * 1024;
 const CUSTOMIZE: [&str; 2] = ["sitecustomize", "usercustomize"];
 
 /// Whether the import system runs the cached bytecode at `pyc` in place of a
@@ -53,6 +53,13 @@ pub(super) fn runs_in_place(source: &std::fs::Metadata, pyc: &str) -> bool {
     }
 }
 
+/// Meta-path shims that virtualenv, uv and setuptools install through a
+/// `.pth` file. Their finders use import machinery the scan refuses, but they
+/// only redirect the `SHIMMED` packages. They are bound by content when they
+/// evaluate no strings, read no files and import only standard modules.
+const SHIMS: [&str; 2] = ["_virtualenv", "_distutils_hack"];
+const SHIMMED: [&str; 3] = ["distutils", "setuptools", "pip"];
+
 /// `__import__('name')` with a literal name, as `.pth` import lines write it.
 fn literal_import() -> &'static Regex {
     static CELL: OnceLock<Regex> = OnceLock::new();
@@ -62,165 +69,59 @@ fn literal_import() -> &'static Regex {
     })
 }
 
-/// Where an interpreter's `site` module looks.
-struct Layout {
-    /// Standard-library directories, ahead of every site directory.
-    library: Vec<String>,
-    /// Site directories in the order `site` adds them.
-    site: Vec<String>,
-}
-
-/// Directories below `parent` whose names start with `prefix`.
-fn entries_with_prefix(parent: &str, prefix: &str) -> Proof<Vec<String>> {
-    let Ok(entries) = std::fs::read_dir(parent) else {
-        return Ok(Vec::new());
-    };
-    let mut found = Vec::new();
-    for entry in entries {
-        let name = entry.map_err(|_| MUTABLE_LAUNCHER)?.file_name();
-        let name = name.into_string().map_err(|_| MUTABLE_LAUNCHER)?;
-        if name.starts_with(prefix) {
-            found.push(fs_path::join(parent, &name));
-        }
-        if found.len() > MAX_STARTUP_FILES {
-            return Err(MUTABLE_LAUNCHER);
-        }
-    }
-    found.sort();
-    Ok(found)
-}
-
-/// The installation prefix: the nearest ancestor of `start` holding a
-/// `lib/python3.*/os.py` standard library, as CPython's path search finds it.
-fn prefix_from(start: &str) -> Proof<Option<String>> {
-    let mut directory = fs_path::norm(start);
-    loop {
-        for library in entries_with_prefix(&fs_path::join(&directory, "lib"), "python3")? {
-            if fs_path::is_file(&fs_path::join(&library, "os.py")) {
-                return Ok(Some(directory));
-            }
-        }
-        let parent = fs_path::parent(&directory);
-        if parent == directory {
-            return Ok(None);
-        }
-        directory = parent;
-    }
-}
-
-/// `key = value` settings of a virtual environment's `pyvenv.cfg`.
-fn venv_setting(config: &str, key: &str) -> Option<String> {
-    config.lines().find_map(|line| {
-        let (name, value) = line.split_once('=')?;
-        name.trim()
-            .eq_ignore_ascii_case(key)
-            .then(|| value.trim().to_owned())
+/// Calls that evaluate strings, read files or start programs.
+fn shim_refused() -> &'static Regex {
+    static CELL: OnceLock<Regex> = OnceLock::new();
+    CELL.get_or_init(|| {
+        Regex::new(concat!(
+            r"\b(?:exec|eval|compile|execfile|__import__|open|read_text|read_bytes|loads|load_source|run_path|run_module|system|popen)\s*\(",
+            r"|\b(?:subprocess|ctypes|marshal|pickle|codecs)\b",
+        ))
+        .expect("static pattern")
     })
 }
 
-impl Layout {
-    fn of(executable: &Value, user_site: bool, home: Option<&str>) -> Proof<Self> {
-        let text = |key: &str| executable.get(key).and_then(Value::as_str);
-        if text("file_format") != Some("native") {
-            return Err(MUTABLE_LAUNCHER);
-        }
-        let launch = text("launch_path")
-            .filter(|path| fs_path::is_abs(path))
-            .ok_or(MUTABLE_LAUNCHER)?;
-        let real = text("path")
-            .filter(|path| fs_path::is_abs(path))
-            .ok_or(MUTABLE_LAUNCHER)?;
-        // `pyvenv.cfg` beside the launched (not resolved) interpreter, or one
-        // directory up, makes a virtual environment.
-        let bin = fs_path::parent(launch);
-        let venv = [bin.clone(), fs_path::parent(&bin)]
-            .into_iter()
-            .find(|directory| fs_path::is_file(&fs_path::join(directory, "pyvenv.cfg")));
-        let (prefix, include_base) = match &venv {
-            Some(venv) => {
-                let config =
-                    fs_path::read_bounded(&fs_path::join(venv, "pyvenv.cfg"), MAX_CONFIG_BYTES)
-                        .and_then(|bytes| String::from_utf8(bytes).ok())
-                        .ok_or(MUTABLE_LAUNCHER)?;
-                let base = venv_setting(&config, "home")
-                    .filter(|path| fs_path::is_abs(path))
-                    .ok_or(MUTABLE_LAUNCHER)?;
-                let mut prefix = None;
-                if let Some(base_real) =
-                    fs_path::resolve_strict(&fs_path::join(&base, &fs_path::name(launch)))
-                {
-                    prefix = prefix_from(&fs_path::parent(&base_real))?;
-                }
-                if prefix.is_none() {
-                    prefix = prefix_from(&base)?;
-                }
-                let include = venv_setting(&config, "include-system-site-packages")
-                    .is_some_and(|value| value.eq_ignore_ascii_case("true"));
-                (prefix, include)
-            }
-            None => (prefix_from(&fs_path::parent(real))?, true),
-        };
-        let prefix = prefix.ok_or(MUTABLE_LAUNCHER)?;
-        let mut layout = Layout {
-            library: Vec::new(),
-            site: Vec::new(),
-        };
-        for lib in ["lib", "lib64"] {
-            for library in entries_with_prefix(&fs_path::join(&prefix, lib), "python3")? {
-                if fs_path::name(&library).ends_with(".zip") {
-                    // A zipped standard library is searched before the site directories.
-                    return Err(MUTABLE_LAUNCHER);
-                }
-                layout.library.push(fs_path::join(&library, "lib-dynload"));
-                layout.library.push(library);
-            }
-        }
-        if let Some(venv) = &venv {
-            for lib in ["lib", "lib64"] {
-                for library in entries_with_prefix(&fs_path::join(venv, lib), "python3")? {
-                    layout.site.push(fs_path::join(&library, "site-packages"));
-                }
-            }
-        }
-        if include_base {
-            let mut roots = vec![prefix.clone()];
-            if prefix == "/usr" {
-                roots.push("/usr/local".to_owned());
-            }
-            for root in roots {
-                for lib in ["lib", "lib64"] {
-                    for library in entries_with_prefix(&fs_path::join(&root, lib), "python3")? {
-                        layout.site.push(fs_path::join(&library, "site-packages"));
-                        layout.site.push(fs_path::join(&library, "dist-packages"));
-                    }
-                }
-            }
-            if prefix.contains(".framework/") {
-                for version in entries_with_prefix("/Library/Python", "3")? {
-                    layout.site.push(fs_path::join(&version, "site-packages"));
-                }
-            }
-        }
-        if user_site && include_base {
-            let home = home
-                .filter(|path| fs_path::is_abs(path))
-                .ok_or(MUTABLE_LAUNCHER)?;
-            for library in entries_with_prefix(&fs_path::join(home, ".local/lib"), "python3")? {
-                layout.site.push(fs_path::join(&library, "site-packages"));
-            }
-            for version in entries_with_prefix(&fs_path::join(home, "Library/Python"), "3")? {
-                layout
-                    .site
-                    .push(fs_path::join(&version, "lib/python/site-packages"));
-            }
-        }
-        layout
-            .library
-            .retain(|directory| fs_path::is_dir(directory));
-        layout.site.retain(|directory| fs_path::is_dir(directory));
-        layout.site.dedup();
-        Ok(layout)
-    }
+/// Each import statement, at any indentation.
+fn any_import() -> &'static Regex {
+    static CELL: OnceLock<Regex> = OnceLock::new();
+    CELL.get_or_init(|| {
+        Regex::new(r"(?m)^[ \t]*(?:from[ \t]+(\S+)[ \t]+import\b|import[ \t]+([^#\n;]+))")
+            .expect("static pattern")
+    })
+}
+
+fn top(name: &str) -> &str {
+    name.split('.').next().unwrap_or_default()
+}
+
+/// Whether a shim's source evaluates no strings, reads no files, and imports
+/// only standard modules, `importlib` and the shims themselves.
+fn plain_shim(text: &str) -> bool {
+    let allowed = |name: &str| {
+        let name = top(name);
+        STANDARD_MODULES.contains(&name) || name == "importlib" || SHIMS.contains(&name)
+    };
+    let mut plain = true;
+    let rewritten = literal_import().replace_all(text, |captures: &regex::Captures| {
+        let name = captures
+            .get(1)
+            .or_else(|| captures.get(2))
+            .map_or("", |m| m.as_str());
+        plain &= allowed(name);
+        "_imported_"
+    });
+    plain
+        && !shim_refused().is_match(&rewritten)
+        && any_import().captures_iter(&rewritten).all(|captures| {
+            let names = captures
+                .get(1)
+                .or_else(|| captures.get(2))
+                .map_or("", |m| m.as_str());
+            names.split(',').all(|name| {
+                let name = name.split_whitespace().next().unwrap_or_default();
+                !name.is_empty() && allowed(name)
+            })
+        })
 }
 
 impl Graph<'_> {
@@ -236,38 +137,101 @@ impl Graph<'_> {
         Ok(bytes)
     }
 
-    /// Bind a module a `.pth` line imports: a standard module by name, or
-    /// the first site directory's source module or package files.
-    fn bind_imported(&mut self, sites: &[String], name: &str) -> Proof<()> {
-        let top = name.split('.').next().unwrap_or_default();
-        if REFUSED_MODULES.contains(&top) {
+    /// Bind a startup source and what it imports from `sites`, as the graph
+    /// binds a script's modules. Source the scan cannot read, that writes
+    /// files, or that imports code the proof cannot bind keeps the launch
+    /// once-only.
+    fn bind_source(&mut self, sites: &[String], path: &str, shim: bool) -> Proof<()> {
+        if self.startup.contains_key(path) {
+            return Ok(());
+        }
+        let bytes = self.bind_startup(path)?;
+        let text = String::from_utf8(bytes).map_err(|_| MUTABLE_LAUNCHER)?;
+        let text = text.trim_start_matches('\u{feff}');
+        if shim {
+            return if plain_shim(text) {
+                Ok(())
+            } else {
+                Err(MUTABLE_LAUNCHER)
+            };
+        }
+        let scanned = scan(text).ok_or(MUTABLE_LAUNCHER)?;
+        if scanned.writes {
             return Err(MUTABLE_LAUNCHER);
         }
-        if STANDARD_MODULES.contains(&top) {
+        for import in &scanned.imports {
+            if import.level == 0 {
+                self.bind_import(sites, &import.module, &import.names)?;
+                continue;
+            }
+            let mut directory = fs_path::parent(path);
+            for _ in 1..import.level {
+                directory = fs_path::parent(&directory);
+            }
+            if !sites
+                .iter()
+                .any(|site| fs_path::is_inside(&directory, site))
+            {
+                return Err(MUTABLE_LAUNCHER);
+            }
+            let parts: Vec<&str> = import
+                .module
+                .split('.')
+                .filter(|part| !part.is_empty())
+                .collect();
+            self.bind_parts(sites, directory, &parts, &import.names, false)?;
+        }
+        Ok(())
+    }
+
+    /// Bind an absolute import: a standard module by name, or the module in
+    /// the first site directory that holds it.
+    fn bind_import(&mut self, sites: &[String], module: &str, names: &[String]) -> Proof<()> {
+        let name = top(module);
+        if REFUSED_MODULES.contains(&name) {
+            return Err(MUTABLE_LAUNCHER);
+        }
+        if STANDARD_MODULES.contains(&name) {
             return Ok(());
         }
+        let parts: Vec<&str> = module.split('.').collect();
         for site in sites {
-            let Some(source) = self.find(site, top)? else {
-                continue;
-            };
-            if fs_path::name(&source) != "__init__.py" {
-                return self.bind_startup(&source).map(drop);
+            if self.find(site, name)?.is_some() {
+                return self.bind_parts(sites, site.clone(), &parts, names, SHIMS.contains(&name));
             }
-            let package = fs_path::parent(&source);
-            let entries = self.listing(&package)?.clone();
-            for entry in entries {
-                let suffix = entry.rsplit('.').next().unwrap_or_default();
-                if COMPILED_SUFFIXES.contains(&suffix) {
-                    return Err(MUTABLE_LAUNCHER);
-                }
-                let path = fs_path::join(&package, &entry);
-                if entry.ends_with(".py") && fs_path::is_file(&path) {
-                    self.bind_startup(&path)?;
-                }
-            }
-            return Ok(());
         }
         Err(MUTABLE_LAUNCHER)
+    }
+
+    /// Bind the `__init__.py` of each package `parts` walks through below
+    /// `directory`, the module it ends at, and any submodule a `from` import
+    /// takes by name.
+    fn bind_parts(
+        &mut self,
+        sites: &[String],
+        mut directory: String,
+        parts: &[&str],
+        names: &[String],
+        shim: bool,
+    ) -> Proof<()> {
+        for (index, part) in parts.iter().enumerate() {
+            let source = self.find(&directory, part)?.ok_or(MUTABLE_LAUNCHER)?;
+            self.bind_source(sites, &source, shim)?;
+            if fs_path::name(&source) != "__init__.py" {
+                return if index + 1 == parts.len() {
+                    Ok(())
+                } else {
+                    Err(MUTABLE_LAUNCHER)
+                };
+            }
+            directory = fs_path::parent(&source);
+        }
+        for name in names {
+            if let Some(source) = self.find(&directory, name)? {
+                self.bind_source(sites, &source, shim)?;
+            }
+        }
+        Ok(())
     }
 
     /// Bind a `.pth` file and what its lines run; returns the directories its
@@ -289,28 +253,27 @@ impl Graph<'_> {
                 continue;
             }
             if line.starts_with("import ") || line.starts_with("import\t") {
-                let mut names = Vec::new();
+                let mut literal = Vec::new();
                 let rewritten = literal_import().replace_all(line, |captures: &regex::Captures| {
                     let name = captures
                         .get(1)
                         .or_else(|| captures.get(2))
                         .map_or("", |m| m.as_str());
-                    names.push(name.to_owned());
+                    literal.push(name.to_owned());
                     "_imported_"
                 });
                 let scanned = scan(&rewritten).ok_or(MUTABLE_LAUNCHER)?;
-                names.extend(scanned.imports.into_iter().map(|import| {
+                if scanned.writes {
+                    return Err(MUTABLE_LAUNCHER);
+                }
+                for name in literal {
+                    self.bind_import(sites, &name, &[])?;
+                }
+                for import in &scanned.imports {
                     if import.level > 0 {
-                        String::new()
-                    } else {
-                        import.module
-                    }
-                }));
-                for name in names {
-                    if name.is_empty() {
                         return Err(MUTABLE_LAUNCHER);
                     }
-                    self.bind_imported(sites, &name)?;
+                    self.bind_import(sites, &import.module, &import.names)?;
                 }
                 continue;
             }
@@ -324,7 +287,7 @@ impl Graph<'_> {
 
     /// Bind a `sitecustomize` or `usercustomize` source in `directory`; any
     /// other form of either keeps the launch once-only.
-    fn add_customize(&mut self, directory: &str) -> Proof<()> {
+    fn add_customize(&mut self, sites: &[String], directory: &str) -> Proof<()> {
         let found: Vec<String> = self
             .listing_within(directory, MAX_SITE_LISTING)?
             .iter()
@@ -346,7 +309,7 @@ impl Graph<'_> {
             if !source || !fs_path::is_file(&path) {
                 return Err(MUTABLE_LAUNCHER);
             }
-            self.bind_startup(&path)?;
+            self.bind_source(sites, &path, false)?;
         }
         Ok(())
     }
@@ -373,7 +336,22 @@ impl Graph<'_> {
             }
         }
         for directory in layout.library.iter().chain(&path_directories) {
-            self.add_customize(directory)?;
+            self.add_customize(&path_directories, directory)?;
+        }
+        // A shim redirects these packages, so a local copy is not what runs.
+        let shimmed = self.startup.keys().any(|path| {
+            SHIMS.iter().any(|shim| {
+                path.ends_with(&format!("/{shim}.py")) || path.contains(&format!("/{shim}/"))
+            })
+        });
+        if shimmed
+            && self.modules.keys().any(|path| {
+                SHIMMED.iter().any(|name| {
+                    path.ends_with(&format!("/{name}.py")) || path.contains(&format!("/{name}/"))
+                })
+            })
+        {
+            return Err(MUTABLE_LAUNCHER);
         }
         let standard: Vec<String> = self.standard.iter().cloned().collect();
         for directory in &path_directories {
@@ -398,3 +376,6 @@ impl Graph<'_> {
         Ok(())
     }
 }
+
+#[path = "python_layout.rs"]
+mod layout;
