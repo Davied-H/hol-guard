@@ -122,15 +122,13 @@ fn short_option(
     let Some(body) = word.strip_prefix('-').filter(|body| !body.is_empty()) else {
         return false;
     };
-    let bytes = body.as_bytes();
-    let mut index = 0;
-    while index < bytes.len() {
-        let letter = bytes[index] as char;
-        index += 1;
+    let mut rest = body;
+    while let Some(letter) = rest.chars().next() {
+        rest = &rest[letter.len_utf8()..];
         if "0txrp".contains(letter) {
             continue;
         }
-        let attached = &body[index..];
+        let attached = rest;
         let value = if !attached.is_empty() {
             Some(attached.to_owned())
         } else if "eil".contains(letter) {

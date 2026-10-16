@@ -32,6 +32,10 @@ fn an_xargs_that_names_no_program_stays_unreadable() {
         // nothing else: into a shell it carries the program itself.
         "cat list.txt | sh",
         "cat list.txt | xargs sh -c 'rm -rf \"$1\"' _",
+        // An assignment or `export` still hides the program that runs, even
+        // when the pipe ends in an `xargs` that names one.
+        "LD_PRELOAD=./x.so find . | xargs rm -f",
+        "export PATH=./evil; ls | xargs rm",
         // The boundary this keeps: a substitution still runs whatever it
         // prints, so `eval \"$(curl ...)\"` cannot be read from the text.
         "eval \"$(direnv hook bash)\"",
@@ -74,6 +78,9 @@ fn xargs_options_are_read_past_to_its_program() {
         "xargs -0n 3 sh -c 'rm'",
         "xargs -J {} {}",
         "xargs -Z rm",
+        // A non-ASCII short option is not a letter this reader knows, and
+        // slicing it by bytes would panic inside the character.
+        "xargs -é rm",
         "xargs --max-args 3",
         // A long option this does not know may take the next word.
         "xargs --future-option rm",

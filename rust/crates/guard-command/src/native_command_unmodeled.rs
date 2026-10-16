@@ -284,9 +284,11 @@ impl CompiledNativeCommandControls {
 /// A pipeline whose only data movement is a pipe into an `xargs` that names
 /// the program it runs. A pipe into a shell, `curl url | sh`, is not one.
 fn named_xargs_pipeline(text: &str) -> bool {
+    let literal = unquoted_literal(text);
     text.contains("xargs")
         && xargs_names_its_program(text)
         && !text.contains(['<', '>', '`', '$', '\n'])
+        && !moves_data(&literal)
 }
 
 /// Loops and conditionals, or one heredoc that only feeds standard input,
