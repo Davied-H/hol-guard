@@ -108,9 +108,15 @@ pub(super) fn rejudge(
     let allowed = |body: &str| {
         evaluate(&super::payload_with_command(payload, &command, body)).minimum_action == "allow"
     };
+    let opened = inert::project(&command, allowed);
     // A fresh `mktemp -d` directory expanded later in its `&&` chain is
-    // judged as `$TMPDIR`, which holds it; only a sandbox launch counts.
-    if let Some(expanded) = inert::temp_cd::expanded(&command) {
+    // judged as `$TMPDIR`, which holds it; only a sandbox launch counts, and
+    // only once `opened` found each substitution allowed on its own.
+    if let Some(expanded) = opened
+        .is_some()
+        .then(|| inert::temp_cd::expanded(&command))
+        .flatten()
+    {
         let projected = evaluate(&super::payload_with_command(payload, &command, &expanded));
         if projected.minimum_action == "sandbox-required"
             && launches_as_judged(&projected, &command, context)
@@ -118,7 +124,6 @@ pub(super) fn rejudge(
             return projected;
         }
     }
-    let opened = inert::project(&command, allowed);
     let unopened = opened.as_deref().unwrap_or(&command);
     let directory = context.cwd.and_then(|cwd| pwd::project(unopened, cwd));
     let base = directory.as_deref().unwrap_or(unopened);

@@ -158,6 +158,8 @@ fn a_fresh_temporary_directory_reused_unsafely_stays_out_of_the_sandbox() {
         "tmp=$(mktemp -d) && tmp=/etc && python3 todo.py --file \"$tmp/t.json\" list",
         "tmp=$(mktemp -d) && python3 todo.py --file \"${tmp:-/etc}/t.json\" list",
         "tmp=$(mktemp -d) && cd \"$tmp\" && python3 todo.py list > ../../x",
+        // `mktemp -dq` needs review as a command of its own.
+        "tmp=$(mktemp -dq) && python3 todo.py --file \"$tmp/t.json\" list",
     ] {
         let result = evaluate(&home, &project, command);
         assert_ne!(
