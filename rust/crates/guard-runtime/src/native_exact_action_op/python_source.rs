@@ -129,7 +129,7 @@ fn opens_for_writing(code: &str, source: &str) -> bool {
             if argument.starts_with('*') {
                 return true;
             }
-            if let Some((name, value)) = argument.split_once('=') {
+            if let Some((name, _)) = argument.split_once('=') {
                 let name = name.trim();
                 if name
                     .bytes()
