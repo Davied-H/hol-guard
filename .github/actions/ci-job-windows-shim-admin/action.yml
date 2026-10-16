@@ -29,9 +29,9 @@ runs:
     - uses: ./.github/actions/setup-rust
       with:
         # Distinct cache writers preserve complete dependencies for each
-        # matrix child. Seed existing trustworthy Windows caches on first run.
+        # matrix child. The job's test debug profile also keys these caches;
+        # full-debug native-wheel artifacts cannot seed this profile.
         cache-key: windows-shim-${{ inputs.shim-gate }}
-        cache-fallback-key: native-wheel
     - name: Replay the recorded Windows shim vectors
       if: inputs.shim-gate == 'vectors'
       shell: pwsh

@@ -167,7 +167,7 @@ def test_windows_shim_admin_lane_replays_vectors_and_runs_the_native_op() -> Non
 
     rust = next(step for step in steps if step.get("uses") == "./.github/actions/setup-rust")
     assert rust["with"]["cache-key"] == "windows-shim-${{ inputs.shim-gate }}"
-    assert rust["with"]["cache-fallback-key"] == "native-wheel"
+    assert "cache-fallback-key" not in rust["with"]
     vector = next(step for step in steps if step.get("name") == "Replay the recorded Windows shim vectors")
     native_op = next(
         step for step in steps if step.get("name") == "Install and report shims through the native op on Windows"
