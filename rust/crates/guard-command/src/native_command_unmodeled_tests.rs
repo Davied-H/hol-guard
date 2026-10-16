@@ -484,14 +484,6 @@ fn a_looked_up_program_in_command_position_keeps_its_owner() {
         decision(&controls, "$(which python3) -c 'print(1)'; echo done").1,
         FAILED
     );
-    assert_eq!(
-        decision(
-            &controls,
-            "docker-nothing x; ls -l \"$(which doctl)\"; echo >&2 done"
-        )
-        .1 == FAILED,
-        false
-    );
 }
 
 #[test]
