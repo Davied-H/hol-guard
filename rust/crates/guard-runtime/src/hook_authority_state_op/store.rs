@@ -34,6 +34,17 @@ impl Env<'_> {
         );
     }
 
+    /// Deletes every key in one statement; `false` when the statement fails.
+    pub(super) fn delete_all(&self, state_keys: &[String]) -> bool {
+        let placeholders = vec!["?"; state_keys.len()].join(",");
+        self.connection
+            .execute(
+                &format!("delete from sync_state where state_key in ({placeholders})"),
+                rusqlite::params_from_iter(state_keys),
+            )
+            .is_ok()
+    }
+
     pub(super) fn add_event(&self, name: &str, payload: &Value) {
         let Some(text) = dumps_default(payload) else {
             return;
