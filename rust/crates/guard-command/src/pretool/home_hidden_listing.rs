@@ -3,12 +3,15 @@
 //!
 //! A listing prints entry names and metadata, never file content, so a
 //! dot-directory that stores no credentials, and its visible subdirectories,
-//! are as safe to list as the home directory itself. `~/.codex` and
-//! `~/.claude` keep their logins in known files that content reads still
-//! refuse, so their names list too. Credential, key, wallet, browser-profile,
-//! other agent-login and Guard state stores keep their review at any depth, and so do the stores that live below `~/.config` and
-//! `~/.local/share` (`~/.config/gh`). Callers must bound the listing to the
-//! directory's own entries: a recursive listing of `~/.config` prints the
+//! are as safe to list as the home directory itself. A harness home is one of
+//! them: `~/.codex`, `~/.claude`, `~/.zcode`, `~/.omp` and the rest keep their
+//! login in a file of its own, whose content a read still refuses, so the
+//! names beside it list like any other. What a listing must not print is the
+//! names a credential, key, wallet or browser-profile store keeps, because
+//! those name the accounts, hosts and keys themselves; those stores keep
+//! their review at any depth, and so do the ones that live below `~/.config`
+//! and `~/.local/share` (`~/.config/gh`). Callers must bound the listing to
+//! the directory's own entries: a recursive listing of `~/.config` prints the
 //! names inside `~/.config/gh` and keeps its review.
 
 use std::path::{Component, Path, PathBuf};
@@ -37,16 +40,9 @@ pub(super) const CREDENTIAL_STORE_NAMES: [&str; 18] = [
     ".vault-token",
 ];
 
-/// Harness directories that share skills, rules or Git hooks rather than an
-/// agent login. Every other harness directory (`~/.gemini`, `~/.omp`,
-/// `~/.copilot`) may hold login tokens under names Guard does not know, so it
-/// keeps review.
-const HARNESS_SHARED_NAMES: [&str; 5] = [".agent", ".agents", ".clinerules", ".githooks", ".husky"];
-
-/// Harness homes whose login and secret-bearing config live in files the
-/// credential and hidden-name screens already refuse to read
-/// (`auth.json`, `.credentials.json`, `config.toml`, `settings.json`).
-/// Listing them prints plan, memory and session names, never a secret.
+/// Harness homes a repository carries as its own agent state. In the home
+/// directory they list like any other dot-directory; inside a checkout their
+/// entry names are the session's own state, which the repository screen keeps.
 pub(super) const HARNESS_HOME_NAMES: [&str; 2] = [".claude", ".codex"];
 
 /// Credential, password-manager, keyring, browser-profile and agent-login
@@ -160,18 +156,7 @@ fn clears_store_screen(path: &Path) -> bool {
         let config_child =
             parent == Some(".config") || (parent == Some("share") && grandparent == Some(".local"));
         CREDENTIAL_STORE_NAMES.contains(&name.as_str())
-            || (harness_login_store(name) && !names[index + 1..].iter().any(|n| n == "plugins"))
             || name.starts_with(".env")
             || (config_child && NESTED_CREDENTIAL_STORE_NAMES.contains(&name.as_str()))
     })
-}
-
-/// A harness directory other than the shared skill and hook trees. Its
-/// `plugins` subtree (`~/.zcode/cli/plugins/cache`) holds installed plugin
-/// code rather than the login, so listings below it are screened like any
-/// other dot-directory.
-fn harness_login_store(name: &str) -> bool {
-    crate::harness_config_names::HARNESS_DIRECTORIES.contains(&name)
-        && !HARNESS_SHARED_NAMES.contains(&name)
-        && !HARNESS_HOME_NAMES.contains(&name)
 }
