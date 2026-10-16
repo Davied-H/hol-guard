@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from pathlib import Path
 from typing import Any
 
 from .action_lattice import guard_action_severity
@@ -16,7 +15,7 @@ from .project_identity import (
     resolve_portable_project_identity,
 )
 from .store_base import PolicyDecisionLookupResult
-from .store_policy import _DEGRADED_AUTHORITY_REVISION, _most_restrictive_policy_lookup, memory_lookup_candidates
+from .store_policy import _DEGRADED_AUTHORITY_REVISION, _most_restrictive_policy_lookup
 from .store_policy import POLICY_DECISION_LOOKUP_FEATURE as _LOOKUP
 from .store_policy import RUNTIME_SAVED_REUSE_FEATURE as _SAVED_REUSE
 
