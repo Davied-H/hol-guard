@@ -222,19 +222,22 @@ def assess_claude(home: Path, expectation: dict[str, Any]) -> dict[str, Any]:
 
 
 def assess_codex(home: Path, expectation: dict[str, Any]) -> dict[str, Any]:
-    """Guard's Codex hooks live in ``config.toml`` now, with ``hooks.json`` as history.
+    """Guard's Codex hooks live in ``config.toml``. ``hooks.json`` is history.
 
-    Recent builds migrate ``~/.codex/hooks.json`` into ``~/.codex/config.toml``,
-    so a missing ``hooks.json`` is not by itself a defect. The lane requires
-    Guard entries in either file and records which one carried them.
+    A current install migrates ``~/.codex/hooks.json`` into ``config.toml`` and
+    Codex runs the TOML. A handler that remains only in the JSON is not the
+    configuration Codex executes, so it cannot satisfy registration. A missing
+    JSON file is not a defect. The aged pass still reads it for leftovers.
     """
 
-    candidates = [home / expectation["config"]]
+    primary = home / expectation["config"]
+    candidates = [primary]
     alternate = expectation.get("alternate_config")
-    if alternate:
+    if isinstance(alternate, str) and alternate:
         candidates.append(home / alternate)
     carriers: dict[str, int] = {}
     dangling: dict[str, list[str]] = {}
+    legacy_only: list[str] = []
     for path in candidates:
         config = read_config(path)
         hooks = config.get(expectation["hooks_key"]) if isinstance(config, dict) else None
@@ -246,16 +249,24 @@ def assess_codex(home: Path, expectation: dict[str, Any]) -> dict[str, Any]:
             count += len(live)
             if missing:
                 dangling.setdefault(str(path), []).extend(missing)
-        if count:
+        if not count:
+            continue
+        if path == primary:
             carriers[str(path)] = count
+        else:
+            legacy_only.append(str(path))
     minimum = int(expectation.get("minimum_guard_entries", 1))
     total = sum(carriers.values())
     failures: list[str] = []
     if total < minimum:
-        spelled = " or ".join(str(path) for path in candidates)
         unreachable = sorted({command for commands in dangling.values() for command in commands})
-        note = f"; {', '.join(unreachable)} is registered but not on this machine" if unreachable else ""
-        failures.append(f"{spelled}: {total} Guard hook entries, expected at least {minimum}{note}")
+        notes: list[str] = []
+        if unreachable:
+            notes.append(f"{', '.join(unreachable)} is registered but not on this machine")
+        if legacy_only:
+            notes.append(f"a leftover handler in {', '.join(legacy_only)} is not the file Codex runs")
+        suffix = f"; {'; '.join(notes)}" if notes else ""
+        failures.append(f"{primary}: {total} Guard hook entries, expected at least {minimum}{suffix}")
     return {
         "config": [str(path) for path in candidates],
         "carriers": carriers,

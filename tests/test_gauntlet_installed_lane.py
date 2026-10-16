@@ -265,6 +265,30 @@ def test_a_handler_naming_a_command_this_machine_lacks_is_not_registration(tmp_p
     assert any(STALE_COMMAND in failure for failure in assessment["failures"])
 
 
+def test_a_legacy_codex_hook_does_not_stand_in_for_config_toml(tmp_path: Path) -> None:
+    """Codex runs config.toml. A leftover hooks.json is not that file."""
+
+    expectation = load_contract()["harnesses"]["codex"]
+    command = tmp_path / "bin" / "hol-guard"
+    command.parent.mkdir(parents=True)
+    command.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    command.chmod(command.stat().st_mode | stat.S_IEXEC)
+    legacy = tmp_path / expectation["alternate_config"]
+    legacy.parent.mkdir(parents=True, exist_ok=True)
+    handler = {
+        "matcher": "Bash",
+        "hooks": [{"type": "command", "command": str(command), "args": ["hook"]}],
+    }
+    legacy.write_text(
+        json.dumps({expectation["hooks_key"]: {expectation["replay_event"]: [handler]}}),
+        encoding="utf-8",
+    )
+    assessment = assess_harness(tmp_path, "codex", expectation)
+    assert assessment["registered"] is False
+    assert assessment["carriers"] == {}
+    assert any("not the file Codex runs" in failure for failure in assessment["failures"])
+
+
 def test_an_extension_the_harness_never_loads_is_not_registration(tmp_path: Path) -> None:
     """Oh My Pi runs the extensions its settings list, not the files on disk."""
 

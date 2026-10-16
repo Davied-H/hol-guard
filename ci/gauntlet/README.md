@@ -366,7 +366,7 @@ python -m ci.gauntlet installed \
 
 - **Registration is read from the harness, not from the install report.** The lane runs the
   shipped `install` command as a subprocess into a lane-owned HOME, then opens
-  `.claude/settings.json`, `.codex/config.toml` (or the pre-migration `.codex/hooks.json`) and the
+  `.claude/settings.json`, `.codex/config.toml`, and the
   Oh My Pi extension files and looks for Guard's own handlers. The expectations live in
   `installed_contract.json`, which is the lane's, not the product's: asserting against a shipped
   contract would let an emptied one pass. A build that reports a successful install and registers

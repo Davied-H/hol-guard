@@ -79,9 +79,6 @@ def harness_pass(
     if expectation.get("replay") and not failures:
         config = read_config(home / expectation["config"]) or {}
         argv = registered_argv(home, expectation, config)
-        alternate = expectation.get("alternate_config")
-        if argv is None and alternate:
-            argv = registered_argv(home, expectation, read_config(home / alternate) or {})
         if argv is None:
             failures.append(f"{harness}: registration carries no runnable hook argv to replay")
         else:
