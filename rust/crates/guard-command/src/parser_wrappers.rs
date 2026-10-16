@@ -40,9 +40,10 @@ pub(super) fn unwrap_wrappers(
         if wrappers.len() + prefixes == 4 {
             return Err("command_wrapper_limit_exceeded");
         }
+        let clock = trusted_timeout(&tokens[index]);
         let wrapper = executable_basename(&tokens[index]);
         index += 1;
-        if wrapper == "timeout" {
+        if clock {
             prefixes += 1;
             if tokens.get(index).is_some_and(|value| value == "--") {
                 index += 1;
@@ -123,6 +124,15 @@ fn transparent_prefix(tokens: &[String], index: usize) -> Option<(usize, Vec<Str
     let program = tokens.get(next)?;
     (!program.is_empty() && !program.starts_with('-') && assignment_name(program).is_none())
         .then_some((next, names))
+}
+
+/// Whether this word is the system clock rather than a file that happens to
+/// be named for it. The shell resolves a bare `timeout` on `PATH`, and the
+/// two system paths name the same program; `./timeout`, `bin/timeout` and
+/// `/tmp/timeout` are whatever that file holds, so they stay wrappers and
+/// keep the command under review.
+fn trusted_timeout(token: &str) -> bool {
+    matches!(token, "timeout" | "/usr/bin/timeout" | "/bin/timeout")
 }
 
 /// A duration `timeout` reads: a number of seconds, or one carrying an `s`,

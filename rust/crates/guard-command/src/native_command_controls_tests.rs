@@ -232,6 +232,23 @@ fn timeout_wrapper_parsing_is_bounded_and_preserves_inner_commands() {
     .unwrap();
     assert_eq!(elevated.wrapper_chain, ["sudo"]);
     assert_eq!(action("timeout 30 sudo pwd"), action("sudo pwd"));
+    // A `timeout` spelled as a path is whatever that file holds, so it stays
+    // a wrapper and the command it carries keeps its approval.
+    for command in [
+        "./timeout 30 pwd",
+        "bin/timeout 30 pwd",
+        "/tmp/timeout 30 pwd",
+    ] {
+        let model = crate::parse_command(&crate::CommandModelRequestV1 {
+            command: command.into(),
+            dialect: "posix".into(),
+            transport: "shell_string".into(),
+            extraction_provenance: "guard-shell".into(),
+        })
+        .unwrap();
+        assert_eq!(model.wrapper_chain, ["timeout"], "{command}");
+        assert_ne!(action(command), action("pwd"), "{command}");
+    }
     for command in [
         "timeout --kill-after=1 5 pwd",
         "timeout -s KILL 5 pwd",
