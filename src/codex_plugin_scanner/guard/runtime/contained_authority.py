@@ -9,12 +9,14 @@ from collections.abc import Callable, Mapping
 # That process starts its own policy publisher and waits for the resident to
 # acknowledge the snapshot, so a loaded host can leave it without an answer
 # for a moment. These reason codes say the runtime never reached a decision;
-# they are not a verdict on the command.
+# they are not a verdict on the command. A missing resident edge answers
+# PreToolUse with native_pre_tool_unavailable.
 AUTHORITY_UNAVAILABLE_REASONS = frozenset(
     {
         "native_hook_worker_exception",
         "native_hook_worker_unavailable",
         "native_hook_render_unavailable",
+        "native_pre_tool_unavailable",
     }
 )
 _SETTLE_ATTEMPTS = 3
@@ -30,7 +32,7 @@ def settled_authority(
     authorize: Callable[[dict[str, object]], object],
     payload: dict[str, object],
     *,
-    pause: Callable[[float], None] = time.sleep,
+    pause: Callable[[float], None] | None = None,
 ) -> object:
     """The live decision for `payload`, re-asked while the runtime cannot answer.
 
@@ -39,10 +41,11 @@ def settled_authority(
     itself asked to run contained. A real decision is deterministic and
     arrives on the first ask; only an unavailable runtime is asked again.
     """
+    wait = time.sleep if pause is None else pause
     response = authorize(payload)
     for _ in range(_SETTLE_ATTEMPTS - 1):
         if not authority_unavailable(response):
             return response
-        pause(_SETTLE_PAUSE_SECONDS)
+        wait(_SETTLE_PAUSE_SECONDS)
         response = authorize(payload)
     return response
