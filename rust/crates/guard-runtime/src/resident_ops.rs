@@ -353,6 +353,9 @@ pub(crate) fn evaluate_resident_bytes(
             ResidentOperationV1::ArtifactRisk(request) => {
                 crate::artifact_risk_op::evaluate_artifact_risk_request(&request)
             }
+            ResidentOperationV1::LocalToolEligibility(request) => {
+                crate::local_tool_eligibility_op::evaluate_local_tool_eligibility_request(&request)
+            }
             ResidentOperationV1::ShellHelpers(request) => {
                 crate::shell_helpers_op::evaluate(&request)
             }

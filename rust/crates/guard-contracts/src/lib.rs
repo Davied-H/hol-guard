@@ -84,6 +84,8 @@ mod local_cli_grant;
 pub use local_cli_grant::*;
 mod artifact_risk;
 pub use artifact_risk::*;
+mod local_tool_eligibility;
+pub use local_tool_eligibility::*;
 mod contributed_mcp_decision;
 pub use contributed_mcp_decision::*;
 mod local_mcp_grant;

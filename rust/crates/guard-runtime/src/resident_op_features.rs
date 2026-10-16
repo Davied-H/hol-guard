@@ -50,6 +50,7 @@ pub(crate) const RESIDENT_OP_FEATURES: &[&str] = &[
     guard_contracts::LOCAL_CLI_GRANT_FEATURE,
     guard_contracts::LOCAL_CLI_HOOK_FEATURE,
     guard_contracts::ARTIFACT_RISK_FEATURE,
+    guard_contracts::LOCAL_TOOL_ELIGIBILITY_FEATURE,
     guard_contracts::APPROVAL_PROOF_FEATURE,
     guard_contracts::CURSOR_OBSERVER_PROOF_FEATURE,
     guard_contracts::HOOK_AUTHORITY_STATE_FEATURE,

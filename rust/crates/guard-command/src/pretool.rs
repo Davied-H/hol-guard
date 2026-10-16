@@ -69,6 +69,7 @@ mod git_ref_listings;
 mod git_rev_list;
 mod git_search_text;
 mod repo_create_reason;
+mod root_removal;
 use git_reads::safe_git_arguments;
 mod git_helper_context;
 mod git_local_writes;
@@ -93,6 +94,7 @@ mod trailing_group;
 mod trusted_location;
 pub(crate) use git_routes::{git_dir_route_within_scope, git_route_within_workspace};
 mod apply_patch_writes;
+mod data_heredocs;
 mod lockfile_install;
 mod omp_hashline_writes;
 mod pipe_attacks;
@@ -494,11 +496,7 @@ fn pathspec_magic_path(value: &str) -> &str {
 
 fn destructive_command(value: &str) -> bool {
     let lowered = normalized_haystack(value);
-    let rm_force = lowered.contains("rm -rf") || lowered.contains("rm -fr");
-    let rm_root = [" /", " -- /", " $home", " ~", " --/"]
-        .iter()
-        .any(|needle| lowered.contains(needle));
-    if rm_force && rm_root {
+    if root_removal::removes_a_root(&lowered) {
         return true;
     }
     let basename_tokens: Vec<&str> = lowered
@@ -847,7 +845,7 @@ fn evaluate_single_command(
         ));
     }
     if git_search_text::sensitive_beyond_patterns(
-        normalized,
+        &data_heredocs::without_data_bodies(normalized),
         git_search_text::command_without_patterns(&model),
     ) || secret_aliases::names_secret_alias(&model, context)
     {
