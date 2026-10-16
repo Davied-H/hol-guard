@@ -25,6 +25,12 @@ pub const POLICY_DECISION_LOOKUP_FEATURE: &str = "policy-decision-lookup-v1";
 /// Capability advertised when a runtime saved-decision read also composes the
 /// runtime hook's `saved_reuse` verdict (`RuntimeSavedLookupV1::reuse`).
 pub const RUNTIME_SAVED_REUSE_FEATURE: &str = "runtime-saved-reuse-v1";
+/// Capability advertised when the resident expands a probe group's direct id
+/// into its exact-command and memory-pattern candidates
+/// (`PolicyLookupProbeGroupsV1::memory`). A caller that sends `memory` sends
+/// unexpanded groups with it, and the probe-groups contract denies unknown
+/// fields, so a runtime without this capability must not be sent either.
+pub const POLICY_LOOKUP_MEMORY_FEATURE: &str = "policy-decision-lookup-memory-v1";
 
 /// Largest canonical request serialization the op will accept.
 pub const POLICY_DECISION_LOOKUP_MAX_BYTES: usize = 512 * 1024;

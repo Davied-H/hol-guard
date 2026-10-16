@@ -17,6 +17,7 @@ from .project_identity import (
 from .store_base import PolicyDecisionLookupResult
 from .store_policy import _DEGRADED_AUTHORITY_REVISION, _most_restrictive_policy_lookup
 from .store_policy import POLICY_DECISION_LOOKUP_FEATURE as _LOOKUP
+from .store_policy import POLICY_LOOKUP_MEMORY_FEATURE as _MEMORY
 from .store_policy import RUNTIME_SAVED_REUSE_FEATURE as _SAVED_REUSE
 
 _PROJECT_IDENTITY_CACHE_MAX_ITEMS = 128
@@ -166,7 +167,12 @@ class StorePortableProjectMemoryMixin:
                 "harness": harness,
             },
         }
-        return self.send_policy_decision_lookup(request)
+        # Gated on the expansion capability, not the lookup's: the groups above
+        # carry only their direct id, so a runtime that does not expand them
+        # would answer a narrower question than the hook asked, and the
+        # probe-groups contract would reject the ``memory`` field anyway. The
+        # named missing capability says that; a serde error would not.
+        return self.send_policy_decision_lookup(request, required_feature=_MEMORY)
 
     def resolve_runtime_saved_decision(
         self,

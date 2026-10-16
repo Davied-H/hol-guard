@@ -23,7 +23,7 @@ import pytest
 from codex_plugin_scanner.guard.cli import commands_hook_native_generic
 from codex_plugin_scanner.guard.runtime.approval_reuse import _decision_from_native_payload
 from codex_plugin_scanner.guard.store import GuardStore
-from codex_plugin_scanner.guard.store_policy import PolicyLookupEvidence
+from codex_plugin_scanner.guard.store_policy import POLICY_LOOKUP_MEMORY_FEATURE, PolicyLookupEvidence
 
 _FIXTURE = (
     Path(__file__).parents[1]
@@ -55,8 +55,9 @@ def test_generic_saved_decision_ships_recorded_groups(vector, monkeypatch, tmp_p
     )
     requests: list[dict[str, object]] = []
 
-    def send(_store: GuardStore, request: dict[str, object]) -> dict[str, Any]:
+    def send(_store: GuardStore, request: dict[str, object], *, required_feature: str = "") -> dict[str, Any]:
         requests.append(request)
+        assert required_feature == POLICY_LOOKUP_MEMORY_FEATURE
         return {
             **vector["expected"],
             "reuse": _REUSE,
@@ -152,3 +153,49 @@ def test_generic_saved_decision_ships_recorded_groups(vector, monkeypatch, tmp_p
     assert (decision, ignored) == (vector["expected"]["decision"], vector["expected"]["ignored_local_integrity"])
     assert reuse == _decision_from_native_payload(_REUSE)
     assert saved_present is True
+
+
+def test_a_runtime_without_the_expansion_capability_is_never_sent_unexpanded_groups(monkeypatch, tmp_path):
+    """The lookup capability alone does not qualify a runtime for this request.
+
+    The groups carry only their direct id now, so a runtime that cannot expand
+    them would answer a narrower question than the hook asked — and its
+    probe-groups contract denies unknown fields, so the ``memory`` inputs it
+    would have to expand from are what it rejects. Gating on the expansion
+    capability keeps the request from being sent at all, and names the missing
+    capability instead of a serde failure inside the answer.
+    """
+
+    from codex_plugin_scanner.guard import store_policy
+
+    requested: list[str] = []
+
+    def resident_request(*, required_feature: str, **_kwargs: object) -> dict[str, object] | None:
+        requested.append(required_feature)
+        # A runtime from before the expansion advertises the lookup and no more.
+        return None
+
+    monkeypatch.setattr(store_policy, "_resident_request", resident_request)
+    monkeypatch.setattr(
+        GuardStore,
+        "policy_lookup_evidence",
+        lambda _store, **_kwargs: PolicyLookupEvidence(
+            now="2026-01-01T00:00:00Z", integrity_state={}, degraded_trust_status=None
+        ),
+    )
+    monkeypatch.setattr(GuardStore, "_portable_project_workspace", staticmethod(lambda _workspace: None))
+
+    with pytest.raises(ValueError, match="native_policy_decision_lookup_unavailable"):
+        GuardStore(tmp_path / "home").peek_saved_decision_groups(
+            "claude-code",
+            [("artifact", None)],
+            workspace=None,
+            publisher=None,
+            runtime_exact_match_context=None,
+            memory_command="echo",
+            memory_artifact_type="unknown-artifact",
+            memory_artifact_name="Bash",
+            current_action="review",
+            approval_context_inputs={},
+        )
+    assert requested == [POLICY_LOOKUP_MEMORY_FEATURE]
