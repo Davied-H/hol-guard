@@ -151,7 +151,12 @@ fn the_request_names_the_home_the_store_and_the_parsed_intent() {
 
     assert_eq!(request.schema, PACKAGE_AUTHORITY_REQUEST_SCHEMA);
     assert_eq!(request.guard_home, "/home/dev/.hol-guard");
-    assert_eq!(request.store_path, "/home/dev/.hol-guard/guard.db");
+    let store = Path::new("/home/dev/.hol-guard").join(STORE_FILE);
+    assert_eq!(
+        Path::new(&request.store_path),
+        store.as_path(),
+        "the store is named beside the home, in the host's own spelling"
+    );
     assert_eq!(request.workspace_dir.as_deref(), Some("/home/dev/app"));
     assert_eq!(
         request
