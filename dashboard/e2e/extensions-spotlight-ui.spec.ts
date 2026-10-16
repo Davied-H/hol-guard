@@ -165,7 +165,14 @@ test.describe("extensions spotlight", () => {
     await expect(slot.getByRole("link", { name: /Get this spot · from \$199\/mo/ })).toBeVisible();
     // Live inventory, exactly as the server stated it for this product.
     await expect(slot).toContainText("3 of 4 open.");
-    await expect(slot.getByRole("link", { name: "Claim it free" })).toBeVisible();
+    // The free path keeps the campaign tag and reports its own surface, so
+    // the two asks stay apart in attribution.
+    const shelfClaim = slot.getByRole("link", { name: "Claim it free" });
+    await expect(shelfClaim).toBeVisible();
+    await expect(shelfClaim).toHaveAttribute(
+      "href",
+      /intent=extension-promotion.*placement=extensions_header.*action=claim/,
+    );
 
     // With nothing sold, the in-feed ask runs too: it is a different product
     // with its own inventory, and a maker scrolling the list must see it.
@@ -173,7 +180,12 @@ test.describe("extensions spotlight", () => {
     await expect(inFeed).toHaveCount(1);
     await expect(inFeed).toContainText("2 of 6 open.");
     await expect(inFeed.getByRole("link", { name: /Get this spot · from \$49\/mo/ })).toBeVisible();
-    await expect(inFeed.getByRole("link", { name: "Claim it free" })).toBeVisible();
+    const feedClaim = inFeed.getByRole("link", { name: "Claim it free" });
+    await expect(feedClaim).toBeVisible();
+    await expect(feedClaim).toHaveAttribute(
+      "href",
+      /intent=extension-promotion.*placement=extensions_feed.*action=claim/,
+    );
 
     await expectRendersAtBothSizes(page, async () => {
       await expect(spotlight).toBeVisible();

@@ -7062,11 +7062,11 @@ function parseDiscoveryProjection(value) {
     policyAllowed: record2.policyAllowed
   };
 }
-function advertiseUrl(placement, extensionId, intent) {
+function advertiseUrl(placement, extensionId, action) {
   const url = new URL(GUARD_DISCOVERY_CLOUD_ORIGIN + GUARD_DISCOVERY_ADVERTISE_PATH);
   url.searchParams.set("placement", placement);
-  if (intent) {
-    url.searchParams.set("intent", intent);
+  if (action) {
+    url.searchParams.set("action", action);
   }
   return url.toString();
 }
@@ -7344,13 +7344,15 @@ function buildSpotlight(input) {
   for (const catalog of input.catalog) {
     add({ catalog, placement: null, featured: false, basis: "starter", reason: null });
   }
-  const organic = cards.filter((card) => card.basis !== "paid");
   return {
     cards,
     lead: paidCount > 0 ? "paid" : cards.some((card) => card.basis === "activity") ? "activity" : "starter",
-    vacant: paidCount === 0,
-    allActive: organic.length > 0 && organic.every((card) => isActive(card.catalog))
+    vacant: paidCount === 0
   };
+}
+function allCardsActive(cards, isActive) {
+  const organic = cards.filter((card) => card.basis !== "paid");
+  return organic.length > 0 && organic.every((card) => isActive(card.catalog));
 }
 function spotlightHeading(lead, allActive = false) {
   if (lead === "paid") {
@@ -7402,11 +7404,12 @@ function slotStartingPrice(offers, products) {
   }
 }
 function slotInventory(offers, products) {
-  const known = forProducts(offers, products).filter((offer) => offer.availability !== "unknown");
-  if (known.length === 0) return null;
+  const relevant = forProducts(offers, products);
+  if (relevant.length === 0) return null;
   let open = 0;
   let total = 0;
-  for (const offer of known) {
+  for (const offer of relevant) {
+    if (offer.availability === "unknown") return null;
     if (offer.openSlots === null || offer.totalSlots === null) return null;
     open += offer.openSlots;
     total += offer.totalSlots;
@@ -7575,7 +7578,7 @@ function VacantSlotCard(props) {
             "a",
             {
               className: "guard-discover-cta",
-              href: advertiseUrl("extensions_feed"),
+              href: advertiseUrl("extensions_header"),
               target: "_blank",
               rel: "noopener noreferrer",
               referrerPolicy: "no-referrer",
@@ -7585,7 +7588,7 @@ function VacantSlotCard(props) {
               ]
             }
           ),
-          /* @__PURE__ */ jsxRuntimeExports.jsx(SlotFreePath, { soldOut })
+          /* @__PURE__ */ jsxRuntimeExports.jsx(SlotFreePath, { placement: "extensions_header", soldOut })
         ] })
       ]
     }
@@ -7602,7 +7605,7 @@ function SlotFreePath(props) {
       "a",
       {
         className: "font-semibold text-brand-blue hover:underline",
-        href: advertiseUrl("extensions_feed", void 0, "claim"),
+        href: advertiseUrl(props.placement, void 0, "claim"),
         target: "_blank",
         rel: "noopener noreferrer",
         referrerPolicy: "no-referrer",
@@ -7643,10 +7646,10 @@ function ExtensionsSpotlight(props) {
   const slot = slotState({ status: props.status, offers: props.offers, products: SHELF_SLOT_PRODUCTS });
   const price = reactExports.useMemo(() => slotStartingPrice(props.offers, SHELF_SLOT_PRODUCTS), [props.offers]);
   const inventory = reactExports.useMemo(() => slotInventoryLabel(props.offers, SHELF_SLOT_PRODUCTS), [props.offers]);
-  const heading = spotlightHeading(spotlight.lead, spotlight.allActive);
   const waiting = !props.settled || props.status === "loading";
   const showSlot = spotlight.vacant && slot === "open";
   const cards = showSlot ? spotlight.cards.slice(0, SPOTLIGHT_CELL_COUNT - 1) : spotlight.cards;
+  const heading = spotlightHeading(spotlight.lead, allCardsActive(cards, isExtensionActive));
   if (props.catalogExtensions.length === 0) return null;
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { className: "mt-6", "aria-labelledby": "extensions-spotlight-heading", "data-testid": "extensions-spotlight", children: [
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col gap-1", children: [
@@ -7713,7 +7716,7 @@ function CatalogSlotRow(props) {
           props.inventory
         ] }) : null
       ] }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx(SlotFreePath, {})
+      /* @__PURE__ */ jsxRuntimeExports.jsx(SlotFreePath, { placement: "extensions_feed" })
     ] }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs(
       "a",

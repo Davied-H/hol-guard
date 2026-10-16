@@ -170,13 +170,16 @@ export function advertiseUrl(
   placement: "extensions_feed" | "extensions_header",
   extensionId?: string,
   // "claim" is the free path for a maker whose extension is already in the
-  // built-in catalog; it buys nothing and is labeled that way.
-  intent?: "buy" | "claim",
+  // built-in catalog; it buys nothing and is labeled that way. It travels
+  // under its own key: "intent" already carries the campaign the advertise
+  // page uses to recognize Guard traffic, and overwriting it would strand
+  // every one of these links outside that campaign.
+  action?: "buy" | "claim",
 ): string {
   const url = new URL(GUARD_DISCOVERY_CLOUD_ORIGIN + GUARD_DISCOVERY_ADVERTISE_PATH);
   url.searchParams.set("placement", placement);
-  if (intent) {
-    url.searchParams.set("intent", intent);
+  if (action) {
+    url.searchParams.set("action", action);
   }
   if (extensionId) {
     // Only an explicitly chosen extension id ever leaves the device.

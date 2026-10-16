@@ -14,6 +14,7 @@ import {
   type JoinedDiscoveryCard,
 } from "./extensions-discover-model";
 import {
+  allCardsActive,
   buildSpotlight,
   protectionLine,
   ruleCountLabel,
@@ -219,7 +220,7 @@ function VacantSlotCard(props: {
       <div className="mt-auto pt-5">
         <a
           className="guard-discover-cta"
-          href={advertiseUrl("extensions_feed")}
+          href={advertiseUrl("extensions_header")}
           target="_blank"
           rel="noopener noreferrer"
           referrerPolicy="no-referrer"
@@ -227,7 +228,7 @@ function VacantSlotCard(props: {
           {soldOut ? "See the schedule" : props.price ? `Get this spot · from ${props.price}/mo` : "Get this spot"}
           <HiMiniArrowTopRightOnSquare className="size-4" aria-hidden="true" />
         </a>
-        <SlotFreePath soldOut={soldOut} />
+        <SlotFreePath placement="extensions_header" soldOut={soldOut} />
       </div>
     </article>
   );
@@ -238,7 +239,7 @@ function VacantSlotCard(props: {
  * already in the built-in catalog claims their entry instead of buying it,
  * and a maker who is not in it yet submits the extension the usual way.
  */
-function SlotFreePath(props: { soldOut?: boolean }) {
+function SlotFreePath(props: { placement: "extensions_feed" | "extensions_header"; soldOut?: boolean }) {
   if (props.soldOut) {
     return <p className="mt-3 text-xs text-brand-dark/50">Checkout always shows the live quote before payment.</p>;
   }
@@ -247,7 +248,7 @@ function SlotFreePath(props: { soldOut?: boolean }) {
       Already listed?{" "}
       <a
         className="font-semibold text-brand-blue hover:underline"
-        href={advertiseUrl("extensions_feed", undefined, "claim")}
+        href={advertiseUrl(props.placement, undefined, "claim")}
         target="_blank"
         rel="noopener noreferrer"
         referrerPolicy="no-referrer"
@@ -306,7 +307,6 @@ export function ExtensionsSpotlight(props: {
   const slot = slotState({ status: props.status, offers: props.offers, products: SHELF_SLOT_PRODUCTS });
   const price = useMemo(() => slotStartingPrice(props.offers, SHELF_SLOT_PRODUCTS), [props.offers]);
   const inventory = useMemo(() => slotInventoryLabel(props.offers, SHELF_SLOT_PRODUCTS), [props.offers]);
-  const heading = spotlightHeading(spotlight.lead, spotlight.allActive);
 
   // The shelf would otherwise flip heading and contents as the feed and the
   // activity query land a moment apart; hold one skeleton until both settle.
@@ -316,6 +316,9 @@ export function ExtensionsSpotlight(props: {
   // offers it: a sold-out claim beside organic cards contradicts itself.
   const showSlot = spotlight.vacant && slot === "open";
   const cards = showSlot ? spotlight.cards.slice(0, SPOTLIGHT_CELL_COUNT - 1) : spotlight.cards;
+  // Read the heading off the cards that survive that slice: a card the slot
+  // pushed out of view must not decide what the shelf claims about this device.
+  const heading = spotlightHeading(spotlight.lead, allCardsActive(cards, isExtensionActive));
 
   if (props.catalogExtensions.length === 0) return null;
 
@@ -415,7 +418,7 @@ export function CatalogSlotRow(props: { price: string | null; inventory: string 
           Position is all they buy.
           {props.inventory ? <span className="font-semibold text-brand-dark"> {props.inventory}</span> : null}
         </p>
-        <SlotFreePath />
+        <SlotFreePath placement="extensions_feed" />
       </div>
       <a
         className="guard-discover-cta shrink-0"

@@ -114,11 +114,6 @@ export interface Spotlight {
   lead: SpotlightBasis;
   /** True when no card was paid for, so the vacant cell is worth showing. */
   vacant: boolean;
-  /**
-   * True when every organic card on the shelf is already protecting this
-   * device. The shelf then stops reading like a to-do list and says so.
-   */
-  allActive: boolean;
 }
 
 function commandsCheckedLabel(count: number): string {
@@ -183,13 +178,24 @@ export function buildSpotlight(input: {
     add({ catalog, placement: null, featured: false, basis: "starter", reason: null });
   }
 
-  const organic = cards.filter((card) => card.basis !== "paid");
   return {
     cards,
     lead: paidCount > 0 ? "paid" : (cards.some((card) => card.basis === "activity") ? "activity" : "starter"),
     vacant: paidCount === 0,
-    allActive: organic.length > 0 && organic.every((card) => isActive(card.catalog)),
   };
+}
+
+/**
+ * True when every organic card on the shelf is already protecting this device.
+ * Takes the cards that will actually render - an open slot replaces the last
+ * cell, and a card nobody sees must not decide what the heading claims.
+ */
+export function allCardsActive(
+  cards: readonly SpotlightCard[],
+  isActive: (extension: ExtensionCatalogSummary) => boolean,
+): boolean {
+  const organic = cards.filter((card) => card.basis !== "paid");
+  return organic.length > 0 && organic.every((card) => isActive(card.catalog));
 }
 
 export interface SpotlightHeading {
@@ -281,18 +287,22 @@ export function slotStartingPrice(
 
 /**
  * How many of these spots are still for sale, summed over the products that
- * buy this placement. Returns null unless every open product the server sent
- * carried a slot pair: a partial answer would read as a complete one.
+ * buy this placement. Returns null unless every product the server sent for
+ * this placement carried a slot pair: a partial answer would read as a
+ * complete one.
  */
 export function slotInventory(
   offers: readonly DiscoveryOffer[],
   products: readonly DiscoveryProduct[],
 ): { open: number; total: number } | null {
-  const known = forProducts(offers, products).filter((offer) => offer.availability !== "unknown");
-  if (known.length === 0) return null;
+  const relevant = forProducts(offers, products);
+  if (relevant.length === 0) return null;
   let open = 0;
   let total = 0;
-  for (const offer of known) {
+  for (const offer of relevant) {
+    // One unknown product makes the sum a guess about the rest, so the whole
+    // count goes away rather than quoting capacity we were never told about.
+    if (offer.availability === "unknown") return null;
     if (offer.openSlots === null || offer.totalSlots === null) return null;
     open += offer.openSlots;
     total += offer.totalSlots;

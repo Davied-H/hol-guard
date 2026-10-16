@@ -117,7 +117,10 @@ assert.equal(sponsoredCardLabel(true), "Sponsored · Featured");
   // The free path for a maker already in the catalog is the same link with a
   // declared intent; it still carries nothing about this device.
   const claim = advertiseUrl("extensions_feed", undefined, "claim");
-  assert.ok(claim.includes("intent=claim"));
+  // The claim path travels beside the campaign tag, never over it.
+  assert.ok(claim.includes("action=claim"));
+  assert.ok(claim.includes("intent=extension-promotion"));
+  assert.ok(claim.includes("placement=extensions_feed"));
   assert.ok(!claim.includes("extension="));
 }
 

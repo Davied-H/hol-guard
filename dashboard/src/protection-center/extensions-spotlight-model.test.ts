@@ -8,6 +8,7 @@ import {
   protectionLine,
   ruleCountLabel,
   SHELF_SLOT_PRODUCTS,
+  allCardsActive,
   slotInventoryLabel,
   slotStartingPrice,
   slotState,
@@ -264,6 +265,18 @@ const CATALOG = [
     ),
     null,
   );
+  // One unknown product beside a counted one hides capacity the sum would
+  // not include, so the pair reports nothing rather than an undercount.
+  assert.equal(
+    slotInventoryLabel(
+      [
+        offer({ product: "always", openSlots: 1, totalSlots: 2 }),
+        offer({ product: "time_slot", availability: "unknown", indicativeAmountCents: null, currency: null }),
+      ],
+      SHELF_SLOT_PRODUCTS,
+    ),
+    null,
+  );
   assert.equal(slotInventoryLabel([], CATALOG_SLOT_PRODUCTS), null);
   // A sold-out product still reports honestly rather than going silent.
   assert.equal(
@@ -307,8 +320,19 @@ const CATALOG = [
     isActive: (extension) => !off.has(extension.extension_id),
   });
   assert.equal(spotlight.cards[0]?.catalog.extension_id, "command.cloud.aws");
-  assert.equal(spotlight.allActive, false);
-  assert.equal(spotlightHeading(spotlight.lead, spotlight.allActive).title, "Good places to start");
+  assert.equal(allCardsActive(spotlight.cards, (extension) => !off.has(extension.extension_id)), false);
+  assert.equal(
+    spotlightHeading(spotlight.lead, allCardsActive(spotlight.cards, (extension) => !off.has(extension.extension_id)))
+      .title,
+    "Good places to start",
+  );
+  // The open slot drops the last cell, so the heading reads the cells that
+  // are left: a card still off behind the slot never reaches the screen and
+  // must not keep the shelf asking.
+  const hidden = spotlight.cards[2]?.catalog.extension_id;
+  const onExceptHidden = (extension: ExtensionCatalogSummary) => extension.extension_id !== hidden;
+  assert.equal(allCardsActive(spotlight.cards, onExceptHidden), false);
+  assert.equal(allCardsActive(spotlight.cards.slice(0, 2), onExceptHidden), true);
 }
 
 // Every starter already on: the shelf says so instead of asking again.
@@ -320,8 +344,8 @@ const CATALOG = [
     catalog: CATALOG,
     isActive: () => true,
   });
-  assert.equal(spotlight.allActive, true);
-  const heading = spotlightHeading(spotlight.lead, spotlight.allActive);
+  assert.equal(allCardsActive(spotlight.cards, () => true), true);
+  const heading = spotlightHeading(spotlight.lead, allCardsActive(spotlight.cards, () => true));
   assert.equal(heading.title, "Already covering the basics");
   assert.match(heading.basis, /Not a ranking/);
 }
@@ -336,8 +360,8 @@ const CATALOG = [
     isActive: () => true,
   });
   assert.equal(spotlight.lead, "paid");
-  assert.equal(spotlight.allActive, true);
-  assert.equal(spotlightHeading(spotlight.lead, spotlight.allActive).title, "Featured by their makers");
+  assert.equal(allCardsActive(spotlight.cards, () => true), true);
+  assert.equal(spotlightHeading(spotlight.lead, allCardsActive(spotlight.cards, () => true)).title, "Featured by their makers");
 }
 
 console.log("extensions-spotlight-model tests passed");
