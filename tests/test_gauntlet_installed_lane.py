@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import stat
+import sys
 from pathlib import Path
 
 import pytest
@@ -23,8 +24,15 @@ from ci.gauntlet.installed_registration import (
     install_harness,
     load_contract,
 )
-from ci.gauntlet.installed_replay import handler_argv
-from ci.gauntlet.installed_runtime import SCRIPT, SHIM, InstalledRuntimeError, classify, resolve_runtime
+from ci.gauntlet.installed_replay import handler_argv, replay_case
+from ci.gauntlet.installed_runtime import (
+    FROZEN_ONEDIR,
+    SCRIPT,
+    SHIM,
+    InstalledRuntimeError,
+    classify,
+    resolve_runtime,
+)
 from ci.gauntlet.installed_store import STALE_COMMAND
 
 HARNESSES = ["claude-code"]
@@ -200,6 +208,102 @@ def test_a_stale_handler_left_by_an_older_build_fails_the_aged_pass(tmp_path: Pa
     aged = evidence["aged_store"]
     assert aged["passed"] is False
     assert any(STALE_COMMAND in failure for failure in aged["stale_handlers"])
+
+
+def test_a_pip_console_script_is_refused_even_with_no_interpreter_on_path(tmp_path: Path) -> None:
+    """pip writes an absolute shebang, which the kernel resolves without PATH.
+
+    Such a script answers `--version` with an empty PATH exactly as a frozen
+    bundle does, so an empty-PATH answer alone cannot tell the two apart. The
+    shebang can: it hands the file to a language runtime that is not there.
+    """
+
+    script = tmp_path / "hol-guard"
+    script.write_text(f"#!{sys.executable}\nprint('hol-guard 0.0.0-stub')\n", encoding="utf-8")
+    script.chmod(script.stat().st_mode | stat.S_IEXEC)
+    assert classify(script)[0] == SCRIPT
+    with pytest.raises(InstalledRuntimeError, match="console script"):
+        resolve_runtime(script, require_frozen=True)
+
+
+def test_a_onedir_launcher_without_its_sealed_runtime_stays_a_onedir(tmp_path: Path) -> None:
+    """A damaged onedir must be refused by name, not read as a onefile.
+
+    Classifying it by what the bundle still contains would call it a onefile
+    and skip the very artifacts this lane exists to check.
+    """
+
+    bundle = tmp_path / "bundle"
+    (bundle / "_internal").mkdir(parents=True)
+    runtime = bundle / "hol-guard"
+    # A launcher that still answers, so the refusal comes from the empty bundle
+    # rather than from the executable failing to run at all.
+    runtime.write_text("#!/bin/sh\necho 'hol-guard 9.9.9'\n", encoding="utf-8")
+    runtime.chmod(runtime.stat().st_mode | stat.S_IEXEC)
+    kind, bundled = classify(runtime)
+    assert kind == FROZEN_ONEDIR
+    assert bundled is None
+    with pytest.raises(InstalledRuntimeError, match="is missing"):
+        resolve_runtime(runtime, require_frozen=True)
+
+
+def test_a_handler_naming_a_command_this_machine_lacks_is_not_registration(tmp_path: Path) -> None:
+    """A hook entry the harness could never run is not proof Guard is installed."""
+
+    expectation = load_contract()["harnesses"]["claude-code"]
+    settings = tmp_path / expectation["config"]
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    handler = {
+        "matcher": "Bash",
+        "hooks": [{"type": "command", "command": STALE_COMMAND, "args": ["hook"]}],
+    }
+    hooks = {event: [handler] for event in expectation["required_events"]}
+    settings.write_text(json.dumps({expectation["hooks_key"]: hooks}), encoding="utf-8")
+    assessment = assess_harness(tmp_path, "claude-code", expectation)
+    assert assessment["registered"] is False
+    assert assessment["dangling"]
+    assert any(STALE_COMMAND in failure for failure in assessment["failures"])
+
+
+def test_an_extension_the_harness_never_loads_is_not_registration(tmp_path: Path) -> None:
+    """Oh My Pi runs the extensions its settings list, not the files on disk."""
+
+    expectation = load_contract()["harnesses"]["omp"]
+    loaded_by = expectation["loaded_by"]
+    for relative in expectation["required_files"]:
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("export default {};\n", encoding="utf-8")
+    settings = tmp_path / loaded_by["config"]
+    settings.parent.mkdir(parents=True, exist_ok=True)
+    settings.write_text(json.dumps({loaded_by["list_key"]: []}), encoding="utf-8")
+    unloaded = assess_harness(tmp_path, "omp", expectation)
+    assert unloaded["registered"] is False
+    assert any("does not load" in failure for failure in unloaded["failures"])
+
+    # The agent resolves a relative entry against its own settings directory.
+    relative = Path(loaded_by["file"]).name
+    settings.write_text(json.dumps({loaded_by["list_key"]: [f"extensions/{relative}"]}), encoding="utf-8")
+    loaded = assess_harness(tmp_path, "omp", expectation)
+    assert loaded["registered"] is True
+
+
+def test_a_hook_that_falls_over_on_an_attack_payload_is_not_a_denial(tmp_path: Path) -> None:
+    """A crash denies nothing: the harness is left with no answer to act on."""
+
+    hook = tmp_path / "crashing-hook"
+    hook.write_text("#!/bin/sh\ncat >/dev/null\nexit 1\n", encoding="utf-8")
+    hook.chmod(hook.stat().st_mode | stat.S_IEXEC)
+    case = {"id": "crashing", "expect": "not-allow", "payload": {"tool_name": "Bash"}}
+    result = replay_case(
+        [str(hook)],
+        case,
+        home=tmp_path,
+        guard_home=tmp_path / "guard",
+        workspace=tmp_path,
+        repeat=2,
+    )
+    assert any("never answered an attack payload" in failure for failure in result["failures"])
 
 
 def test_the_contract_is_the_lanes_own_and_covers_every_claude_event() -> None:

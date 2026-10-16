@@ -14,13 +14,20 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .installed_registration import guard_handlers
-from .installed_replay import handler_argv
+from .installed_registration import guard_handlers, handler_argv, read_config
 
 #: A path an older build could plausibly have registered and that no longer
 #: exists. If the install joins rather than prunes, this stays behind and the
 #: harness ends up calling a command that is not there.
 STALE_COMMAND = "/opt/hol-guard-previous/bin/hol-guard"
+
+#: The marker Guard puts in its own Claude hook argv, spelled here rather than
+#: imported so the lane keeps its own copy of what a previous build wrote. A
+#: handler without it is a third-party hook that Guard must leave alone, so
+#: ageing a home with one would demand a removal the product rightly refuses.
+CLAUDE_DAEMON_HOOK_MARKER = "HOL_GUARD_CLAUDE_DAEMON_HOOK"
+#: The subcommand that marker travels with in a previous build's registration.
+CLAUDE_HOOK_BRIDGE_COMMAND = "claude-hook-bridge"
 
 
 def age_home(home: Path) -> dict[str, Any]:
@@ -38,7 +45,16 @@ def age_home(home: Path) -> dict[str, Any]:
                 {
                     "matcher": "Bash",
                     "hooks": [
-                        {"type": "command", "command": STALE_COMMAND, "args": ["hook", "--harness", "claude-code"]}
+                        {
+                            "type": "command",
+                            "command": STALE_COMMAND,
+                            "args": [
+                                CLAUDE_HOOK_BRIDGE_COMMAND,
+                                CLAUDE_DAEMON_HOOK_MARKER,
+                                json.dumps({"state_path": str(home / ".hol-guard" / "daemon-state.json")}),
+                            ],
+                            "timeout": 30,
+                        }
                     ],
                 }
             )
@@ -74,12 +90,10 @@ def stale_handlers(home: Path, relative_paths: list[str]) -> list[str]:
     found: list[str] = []
     for relative in relative_paths:
         path = home / relative
-        if not path.exists() or path.suffix != ".json":
-            continue
-        try:
-            config = json.loads(path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            continue
+        # Codex's active file is TOML, and a reinstall folds the legacy JSON
+        # into it. Reading only JSON would leave the migrated handler — the one
+        # the harness would actually run — unexamined.
+        config = read_config(path)
         hooks = config.get("hooks") if isinstance(config, dict) else None
         if not isinstance(hooks, dict):
             continue
@@ -106,4 +120,11 @@ def assess_aged(home: Path, relative_paths: list[str], registration: list[dict[s
     }
 
 
-__all__ = ["STALE_COMMAND", "age_home", "assess_aged", "stale_handlers"]
+__all__ = [
+    "CLAUDE_DAEMON_HOOK_MARKER",
+    "CLAUDE_HOOK_BRIDGE_COMMAND",
+    "STALE_COMMAND",
+    "age_home",
+    "assess_aged",
+    "stale_handlers",
+]

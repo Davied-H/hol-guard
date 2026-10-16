@@ -125,7 +125,16 @@ def aged_pass(
         for harness in harnesses
     ]
     registration = [assess_harness(home, harness, contract["harnesses"][harness]) for harness in harnesses]
-    relative_paths = [contract["harnesses"][harness]["config"] for harness in harnesses]
+    relative_paths: list[str] = []
+    for harness in harnesses:
+        expectation = contract["harnesses"][harness]
+        relative_paths.append(expectation["config"])
+        # Codex keeps a legacy hooks.json beside config.toml. Ageing writes the
+        # stale handler there, and a reinstall may leave it or fold it into the
+        # TOML. Checking only the primary file misses whichever one survived.
+        alternate = expectation.get("alternate_config")
+        if isinstance(alternate, str) and alternate:
+            relative_paths.append(alternate)
     assessment = assess_aged(home, relative_paths, registration)
     assessment["first_install"] = [entry["exit_code"] for entry in first]
     assessment["second_install"] = [entry["exit_code"] for entry in second]

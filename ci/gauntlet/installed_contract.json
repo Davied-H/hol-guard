@@ -32,6 +32,11 @@
         ".omp/agent/settings.json",
         ".omp/agent/extensions/hol-guard.ts"
       ],
+      "loaded_by": {
+        "config": ".omp/agent/settings.json",
+        "list_key": "extensions",
+        "file": ".omp/agent/extensions/hol-guard.ts"
+      },
       "replay": false,
       "replay_gap": "The Oh My Pi extension is TypeScript loaded by the agent runtime, so the lane cannot drive it from a registered argv the way it drives the Claude and Codex bridges. Registration is asserted; determinism for this harness still needs a live Oh My Pi."
     }

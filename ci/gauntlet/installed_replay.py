@@ -10,45 +10,25 @@ any disagreement between runs as a failure of the build rather than noise.
 from __future__ import annotations
 
 import json
-import shlex
 import subprocess
 from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from .installed_registration import guard_handlers
+from .installed_registration import guard_handlers, handler_argv
 from .installed_runtime import isolated_environment
 
 #: Decisions that let the tool call through untouched.
 ALLOW_DECISIONS = {"allow", "allow_original", "approve", "quiet"}
 
+#: Outcomes that are not decisions at all: the hook crashed, hung, or printed
+#: something this lane could not read as a verdict. For ordinary work these
+#: already fail the allow expectation; for an attack payload they would
+#: otherwise pass by default, scoring a hook that falls over on the dangerous
+#: input as protection.
+NON_ANSWERS = {"timeout", "no-envelope", "unknown"}
+
 _REPLAY_TIMEOUT = 120.0
-
-
-def handler_argv(handler: dict[str, Any]) -> list[str]:
-    """The exact argv a harness would run for one Guard hook handler.
-
-    A handler records its command either as an argv list or as a single shell
-    command line, which is what Codex writes and runs through a shell. Taking
-    the string whole would make the entire quoted line one filename, so it is
-    split the way the harness's own shell would split it.
-    """
-
-    command = handler.get("command")
-    argv: list[str] = []
-    if isinstance(command, list):
-        argv.extend(str(part) for part in command)
-    elif isinstance(command, str):
-        try:
-            argv.extend(shlex.split(command))
-        except ValueError:
-            # Unbalanced quoting: no argv the harness could run either, so
-            # report nothing rather than a command line this lane invented.
-            return []
-    arguments = handler.get("args")
-    if isinstance(arguments, list):
-        argv.extend(str(argument) for argument in arguments)
-    return argv
 
 
 def registered_argv(home: Path, expectation: dict[str, Any], config: dict[str, Any]) -> list[str] | None:
@@ -167,8 +147,15 @@ def replay_case(
     allowed = [run["decision"] in ALLOW_DECISIONS for run in runs]
     if case["expect"] == "allow" and not all(allowed):
         failures.append(f"{case['id']}: ordinary work was not allowed quietly ({runs[0]['decision']})")
-    if case["expect"] == "not-allow" and any(allowed):
-        failures.append(f"{case['id']}: an attack payload was allowed")
+    if case["expect"] == "not-allow":
+        if any(allowed):
+            failures.append(f"{case['id']}: an attack payload was allowed")
+        unanswered = sorted({run["decision"] for run in runs if run["decision"] in NON_ANSWERS})
+        if unanswered:
+            failures.append(
+                f"{case['id']}: the hook never answered an attack payload ({', '.join(unanswered)}); "
+                "a crash or a hang is not a denial"
+            )
     return {
         "id": case["id"],
         "expect": case["expect"],
@@ -207,6 +194,7 @@ def replay_harness(
 
 __all__ = [
     "ALLOW_DECISIONS",
+    "NON_ANSWERS",
     "fill",
     "handler_argv",
     "registered_argv",

@@ -11,6 +11,8 @@ that registers nothing fails even if it reports success.
 from __future__ import annotations
 
 import json
+import shlex
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -130,6 +132,52 @@ def guard_handlers(group: object) -> list[dict[str, Any]]:
     return found
 
 
+def handler_argv(handler: dict[str, Any]) -> list[str]:
+    """The exact argv a harness would run for one Guard hook handler.
+
+    A handler records its command either as an argv list or as a single shell
+    command line, which is what Codex writes and runs through a shell. Taking
+    the string whole would make the entire quoted line one filename, so it is
+    split the way the harness's own shell would split it.
+    """
+
+    command = handler.get("command")
+    argv: list[str] = []
+    if isinstance(command, list):
+        argv.extend(str(part) for part in command)
+    elif isinstance(command, str):
+        try:
+            argv.extend(shlex.split(command))
+        except ValueError:
+            # Unbalanced quoting: no argv the harness could run either, so
+            # report nothing rather than a command line this lane invented.
+            return []
+    arguments = handler.get("args")
+    if isinstance(arguments, list):
+        argv.extend(str(argument) for argument in arguments)
+    return argv
+
+
+def runnable_handlers(handlers: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[str]]:
+    """Split registered handlers into the ones this machine could run and the rest.
+
+    A hook entry naming a command that is not on the machine is not proof that
+    Guard is registered: the harness would call it and get nothing. The aged
+    pass writes exactly such an entry, so counting it would let a reinstall
+    that registered nothing pass on the strength of the lane's own fixture.
+    """
+
+    live: list[dict[str, Any]] = []
+    dangling: list[str] = []
+    for handler in handlers:
+        argv = handler_argv(handler)
+        if argv and not Path(argv[0]).exists() and shutil.which(argv[0]) is None:
+            dangling.append(argv[0])
+            continue
+        live.append(handler)
+    return live, dangling
+
+
 def read_config(path: Path) -> dict[str, Any] | None:
     if not path.exists():
         return None
@@ -155,15 +203,20 @@ def assess_claude(home: Path, expectation: dict[str, Any]) -> dict[str, Any]:
     hooks = hooks if isinstance(hooks, dict) else {}
     events: dict[str, int] = {}
     failures: list[str] = []
+    dangling: dict[str, list[str]] = {}
     for event in expectation["required_events"]:
-        handlers = guard_handlers(hooks.get(event))
+        handlers, missing = runnable_handlers(guard_handlers(hooks.get(event)))
         events[event] = len(handlers)
+        if missing:
+            dangling[event] = missing
         if not handlers:
-            failures.append(f"{config_path}: hook event {event} carries no Guard handler")
+            spelled = f" ({missing[0]} is not on this machine)" if missing else ""
+            failures.append(f"{config_path}: hook event {event} carries no Guard handler{spelled}")
     return {
         "config": str(config_path),
         "config_present": config is not None,
         "events": events,
+        "dangling": dangling,
         "failures": failures,
     }
 
@@ -181,12 +234,18 @@ def assess_codex(home: Path, expectation: dict[str, Any]) -> dict[str, Any]:
     if alternate:
         candidates.append(home / alternate)
     carriers: dict[str, int] = {}
+    dangling: dict[str, list[str]] = {}
     for path in candidates:
         config = read_config(path)
         hooks = config.get(expectation["hooks_key"]) if isinstance(config, dict) else None
         if not isinstance(hooks, dict):
             continue
-        count = sum(len(guard_handlers(group)) for group in hooks.values())
+        count = 0
+        for group in hooks.values():
+            live, missing = runnable_handlers(guard_handlers(group))
+            count += len(live)
+            if missing:
+                dangling.setdefault(str(path), []).extend(missing)
         if count:
             carriers[str(path)] = count
     minimum = int(expectation.get("minimum_guard_entries", 1))
@@ -194,10 +253,13 @@ def assess_codex(home: Path, expectation: dict[str, Any]) -> dict[str, Any]:
     failures: list[str] = []
     if total < minimum:
         spelled = " or ".join(str(path) for path in candidates)
-        failures.append(f"{spelled}: {total} Guard hook entries, expected at least {minimum}")
+        unreachable = sorted({command for commands in dangling.values() for command in commands})
+        note = f"; {', '.join(unreachable)} is registered but not on this machine" if unreachable else ""
+        failures.append(f"{spelled}: {total} Guard hook entries, expected at least {minimum}{note}")
     return {
         "config": [str(path) for path in candidates],
         "carriers": carriers,
+        "dangling": dangling,
         "entries": total,
         "failures": failures,
     }
@@ -213,7 +275,45 @@ def assess_files(home: Path, expectation: dict[str, Any]) -> dict[str, Any]:
         present[relative] = path.exists()
         if not path.exists():
             failures.append(f"{path}: Guard did not install this file")
-    return {"files": present, "failures": failures, "replay_gap": expectation.get("replay_gap")}
+    loaded = _assess_loaded_by(home, expectation.get("loaded_by"))
+    failures.extend(loaded["failures"])
+    return {
+        "files": present,
+        "loaded_by": loaded,
+        "failures": failures,
+        "replay_gap": expectation.get("replay_gap"),
+    }
+
+
+def _assess_loaded_by(home: Path, loaded_by: object) -> dict[str, Any]:
+    """Check that the harness's settings actually load the file Guard installed.
+
+    An installed extension the agent never loads protects nothing, and file
+    existence alone cannot tell the two apart. Oh My Pi records the extensions
+    it loads as a list of paths in its settings, so the lane reads that list
+    and resolves each entry the way the agent would.
+    """
+
+    if not isinstance(loaded_by, dict):
+        return {"checked": False, "failures": []}
+    settings_path = home / str(loaded_by["config"])
+    extension = (home / str(loaded_by["file"])).resolve()
+    config = read_config(settings_path)
+    listed = config.get(str(loaded_by["list_key"])) if isinstance(config, dict) else None
+    entries = [item for item in listed if isinstance(item, str)] if isinstance(listed, list) else []
+    resolved = [Path(item).expanduser() for item in entries]
+    resolved = [item if item.is_absolute() else settings_path.parent / item for item in resolved]
+    referenced = any(candidate.resolve() == extension for candidate in resolved)
+    failures: list[str] = []
+    if not referenced:
+        failures.append(f"{settings_path}: {loaded_by['list_key']} does not load {extension}")
+    return {
+        "checked": True,
+        "config": str(settings_path),
+        "entries": entries,
+        "referenced": referenced,
+        "failures": failures,
+    }
 
 
 def assess_harness(home: Path, harness: str, expectation: dict[str, Any]) -> dict[str, Any]:
@@ -236,7 +336,9 @@ __all__ = [
     "assess_files",
     "assess_harness",
     "guard_handlers",
+    "handler_argv",
     "install_harness",
     "load_contract",
     "read_config",
+    "runnable_handlers",
 ]

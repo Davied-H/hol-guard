@@ -73,20 +73,53 @@ def classify(path: Path) -> tuple[str, Path | None]:
     """
 
     internal = path.parent / ONEDIR_INTERNAL
-    bundled = internal / BUNDLED_NATIVE_RUNTIME
-    if internal.is_dir() and bundled.exists():
-        return FROZEN_ONEDIR, bundled
-    if _is_text_script(path):
+    if internal.is_dir():
+        # The layout, not its contents, says which bundle this is. A onedir
+        # launcher whose sealed runtime went missing is a damaged onedir, and
+        # calling it a onefile would skip the very artifacts this lane exists
+        # to check: `resolve_runtime` refuses it by name instead.
+        bundled = internal / BUNDLED_NATIVE_RUNTIME
+        return FROZEN_ONEDIR, (bundled if bundled.exists() else None)
+    if _shebang(path) is not None:
         return SCRIPT, None
     return FROZEN_ONEFILE, None
 
 
-def _is_text_script(path: Path) -> bool:
+def _shebang(path: Path) -> str | None:
+    """The interpreter line of a text script, or ``None`` for a binary."""
+
     try:
-        head = path.open("rb").read(2)
+        with path.open("rb") as handle:
+            if handle.read(2) != b"#!":
+                return None
+            line = handle.readline(512)
     except OSError:
+        return None
+    return line.decode("utf-8", "replace").strip()
+
+
+def _needs_an_interpreter(path: Path) -> bool:
+    """Whether the script's own shebang hands it to a language runtime.
+
+    pip writes console scripts with an absolute shebang onto the installing
+    environment's interpreter, which the kernel resolves without consulting
+    ``PATH``. Such a script answers ``--version`` with an empty ``PATH`` and
+    would otherwise be reclassified as a shim onto a frozen bundle, which is
+    exactly the substitution ``--require-frozen`` exists to refuse. The
+    Desktop wrapper chain this lane does accept is ``/bin/sh``.
+    """
+
+    shebang = _shebang(path)
+    if shebang is None:
         return False
-    return head == b"#!"
+    # `_shebang` already consumed the `#!`, so this line is the interpreter.
+    words = shebang.split()
+    if not words:
+        return False
+    interpreter = Path(words[0]).name
+    if interpreter == "env" and len(words) > 1:
+        interpreter = Path(words[1]).name
+    return not interpreter.startswith(("sh", "bash", "dash", "zsh", "ksh"))
 
 
 def probe_version(path: Path, *, environment: dict[str, str] | None = None) -> str:
@@ -146,14 +179,18 @@ def resolve_runtime(path: Path, *, require_frozen: bool) -> InstalledRuntime:
     resolved = Path(path).expanduser()
     if not resolved.is_absolute():
         located = shutil.which(str(resolved))
-        resolved = Path(located) if located else resolved.resolve()
+        # `shutil.which` hands back a path that names a directory unchanged, so
+        # a relative `--runtime` can survive this. The lane runs the executable
+        # with the case workspace as its working directory, where a path
+        # relative to the caller's own directory no longer names anything.
+        resolved = (Path(located) if located else resolved).resolve()
     if not resolved.exists():
         raise InstalledRuntimeError(f"no executable at {resolved}")
     if not os.access(resolved, os.X_OK):
         raise InstalledRuntimeError(f"{resolved} is not executable")
     kind, native_runtime = classify(resolved)
     interpreter_free = prove_interpreter_free(resolved)
-    if kind == SCRIPT and interpreter_free:
+    if kind == SCRIPT and interpreter_free and not _needs_an_interpreter(resolved):
         # The Desktop install is reached through two `/bin/sh` wrappers, the
         # second of which computes the bundle path from `current.json` at run
         # time. Reading the first wrapper's bytes says "console script" about a
@@ -171,9 +208,15 @@ def resolve_runtime(path: Path, *, require_frozen: bool) -> InstalledRuntime:
             "a wheel console script cannot stand in for the shipped bundle"
         )
     if kind == FROZEN_ONEDIR:
-        manifest = resolved.parent / ONEDIR_INTERNAL / BUNDLED_NATIVE_MANIFEST
-        if not manifest.exists():
-            raise InstalledRuntimeError(f"frozen bundle at {resolved} carries no sealed native manifest at {manifest}")
+        internal = resolved.parent / ONEDIR_INTERNAL
+        missing = [
+            internal / relative
+            for relative in (BUNDLED_NATIVE_RUNTIME, BUNDLED_NATIVE_MANIFEST)
+            if not (internal / relative).exists()
+        ]
+        if missing:
+            spelled = ", ".join(str(path) for path in missing)
+            raise InstalledRuntimeError(f"the onedir bundle at {resolved} is missing {spelled}")
     return InstalledRuntime(
         path=resolved,
         kind=kind,
