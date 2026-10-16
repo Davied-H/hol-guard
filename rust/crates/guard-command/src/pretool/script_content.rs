@@ -311,7 +311,11 @@ fn assess_programs(
         // A script file the sandbox runs from the workspace may earn the
         // loopback grant too; one fed on standard input does not.
         let workspace_script = match &entry {
-            Entry::File(path) => script_file && loopback::in_working_directory(path, context),
+            Entry::File(path) => {
+                script_file
+                    && loopback::in_working_directory(path, context)
+                    && !loopback::may_rewrite(&segments[..index])
+            }
             Entry::Text { .. } => false,
         };
         let Some((sources, complete)) = read_graph(language, entry) else {

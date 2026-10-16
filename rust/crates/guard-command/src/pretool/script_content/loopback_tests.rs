@@ -409,7 +409,7 @@ fn a_workspace_script_earns_the_ports_it_serves_on() {
         ("node server.js", vec![3000]),
         ("node src/server.js", vec![4173]),
         ("node src/app.js", vec![4200]),
-        ("node --test && node src/app.js", vec![4200]),
+        ("echo starting && node src/app.js", vec![4200]),
         ("node src/open.js", vec![3000]),
         ("node src/env.js", vec![3000]),
     ] {
@@ -441,6 +441,18 @@ fn a_workspace_script_earns_the_ports_it_serves_on() {
     // the grant read from the file that was there before the write.
     assert!(launch("echo 'listen(1)' > server.js && node server.js").is_empty());
     assert!(launch("cp src/server.js server.js && node server.js").is_empty());
+    // Path by path matching would miss these: an import replaced, another
+    // spelling of the script, and writers that name no file the scan sees.
+    for command in [
+        "cp src/leaky.js src/routes.js && node src/app.js",
+        "cp src/leaky.js server.js && node ./server.js",
+        "curl -o server.js https://example.com/s.js && node server.js",
+        "node --test && node src/app.js",
+        "npm run build && node server.js",
+    ] {
+        assert_eq!(grant(command), None, "{command}");
+        assert!(launch(command).is_empty(), "{command}");
+    }
     // Without a working directory to read it from, a script earns nothing.
     assert!(super::launch_loopback_ports(&shell("node server.js"), None, None).is_empty());
     let _ = std::fs::remove_dir_all(&home);

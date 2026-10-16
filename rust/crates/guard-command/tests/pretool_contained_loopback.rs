@@ -183,7 +183,7 @@ fn workspace_scripts_serving_on_loopback_run_in_the_sandbox() {
         for command in [
             "node server.js",
             "node src/server.js",
-            "node --test game.test.js && node src/server.js",
+            "echo serving && node src/server.js",
             "node src/open.js",
             "node src/env.js",
             "node src/todo-server.js",

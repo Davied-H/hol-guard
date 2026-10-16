@@ -343,12 +343,7 @@ pub(crate) fn launch_loopback_ports(
                 if moved && !Path::new(script).is_absolute() {
                     continue;
                 }
-                // An earlier segment can replace the file this scan reads, and
-                // the replacement would run with the grant from the old text.
-                if model.segments[..index]
-                    .iter()
-                    .any(|prior| replaces_script(script, prior))
-                {
+                if may_rewrite(&model.segments[..index]) {
                     return Vec::new();
                 }
                 match script_ports(script, context) {
@@ -366,37 +361,34 @@ pub(crate) fn launch_loopback_ports(
     ports.into_iter().collect()
 }
 
-/// Whether `prior` can replace `script` before the launch reads it.
-fn replaces_script(script: &str, prior: &crate::CommandSegmentV1) -> bool {
-    let mentions = prior.arguments.iter().any(|argument| argument == script)
-        || prior.text.split_whitespace().any(|word| {
-            let word = word.trim_matches(['\'', '"', ';']);
-            word == script || word.ends_with(&format!("/{script}"))
-        });
-    if !mentions {
-        return false;
-    }
-    if prior.text.contains('>') {
-        return true;
-    }
-    let name = super::super::executable_basename(prior.executable.as_deref().unwrap_or_default());
-    matches!(
-        name,
-        "cp" | "mv"
-            | "tee"
-            | "dd"
-            | "install"
-            | "ln"
-            | "truncate"
-            | "rm"
-            | "touch"
-            | "sed"
-            | "perl"
-    ) || (matches!(name, "node" | "python" | "python3" | "bun")
-        && prior
-            .arguments
-            .iter()
-            .any(|argument| argument == "-e" || argument == "--eval" || argument == "-c"))
+/// Whether a segment run before a workspace script could change any file
+/// the script loads: anything but a read-only command, or a redirection. The
+/// grant is read from the files as they are now, so a script that one of
+/// these replaces, or one of its imports, would run under a grant read from
+/// other text. Matching the writes path by path cannot cover every spelling,
+/// import or writer, so any such segment withholds the grant.
+pub(super) fn may_rewrite(prior: &[crate::CommandSegmentV1]) -> bool {
+    prior.iter().any(|segment| {
+        segment.text.contains('>')
+            || !segment.executable.as_deref().is_some_and(|value| {
+                matches!(
+                    super::super::executable_basename(value),
+                    "echo"
+                        | "printf"
+                        | "true"
+                        | ":"
+                        | "pwd"
+                        | "ls"
+                        | "cat"
+                        | "sleep"
+                        | "test"
+                        | "["
+                        | "cd"
+                        | "pushd"
+                        | "popd"
+                )
+            })
+    })
 }
 
 /// What the Node script file `script` needs from the network, read the way
