@@ -14303,6 +14303,7 @@ function bulkApproveConsequenceCopyForSelection(actionCount, retryBlockedActionC
   return `Guard will record your decision for ${actionCount} ${actionCount === 1 ? "action" : "actions"} once and won't remember it. ${blocked} Mass approval skips opening each request, so an unexpected action is harder to catch.`;
 }
 const APPROVAL_RETRY_BLOCKED_OVERRIDE = "approval-approved-retry-blocked";
+const APPROVAL_LEFT_STOPPED_LABEL = "Approved, still stopped";
 function approvalLeftActionStopped(receipt) {
   return receipt.user_override === APPROVAL_RETRY_BLOCKED_OVERRIDE;
 }
@@ -22610,7 +22611,7 @@ function DecisionBadge({ decision, userOverride = null }) {
   if (approvalLeftActionStopped({ user_override: userOverride })) {
     return /* @__PURE__ */ jsxRuntimeExports.jsxs(Badge, { tone: "attention", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx(HiMiniNoSymbol, { className: "h-3 w-3", "aria-hidden": "true" }),
-      "Approved, still stopped"
+      APPROVAL_LEFT_STOPPED_LABEL
     ] });
   }
   const presentation = guardActionPresentation(decision);
@@ -23184,6 +23185,7 @@ function NextSafeCommandHint({ receipt }) {
 }
 function EvidenceTimeline({ receipt }) {
   const action = guardActionPresentation(receipt.policy_decision);
+  const stopped = approvalLeftActionStopped(receipt);
   const events = [
     {
       label: "Action received",
@@ -23191,9 +23193,9 @@ function EvidenceTimeline({ receipt }) {
       icon: "start"
     },
     {
-      label: action.label,
+      label: stopped ? APPROVAL_LEFT_STOPPED_LABEL : action.label,
       time: receipt.timestamp,
-      icon: action.disposition
+      icon: stopped ? "blocked" : action.disposition
     }
   ];
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { children: [
@@ -23331,7 +23333,7 @@ function EvidenceActionDetail({
             ] }),
             /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs text-slate-700", children: receipt.diff_summary })
           ] }),
-          guardActionPresentation(receipt.policy_decision).disposition !== "allowed" && /* @__PURE__ */ jsxRuntimeExports.jsx(NextSafeCommandHint, { receipt }),
+          (guardActionPresentation(receipt.policy_decision).disposition !== "allowed" || approvalLeftActionStopped(receipt)) && /* @__PURE__ */ jsxRuntimeExports.jsx(NextSafeCommandHint, { receipt }),
           /* @__PURE__ */ jsxRuntimeExports.jsx(ScannerEvidenceSection$1, { signals }),
           /* @__PURE__ */ jsxRuntimeExports.jsx(EvidenceTimeline, { receipt }),
           /* @__PURE__ */ jsxRuntimeExports.jsx(TechnicalSection, { receipt }),

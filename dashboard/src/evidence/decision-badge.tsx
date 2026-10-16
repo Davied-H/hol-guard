@@ -6,7 +6,7 @@ import {
 } from "react-icons/hi2";
 import { Badge } from "../approval-center-primitives";
 import { guardActionPresentation } from "../guard-action";
-import { approvalLeftActionStopped } from "./approval-outcome";
+import { APPROVAL_LEFT_STOPPED_LABEL, approvalLeftActionStopped } from "./approval-outcome";
 
 interface DecisionBadgeProps {
   decision: string;
@@ -19,7 +19,7 @@ export function DecisionBadge({ decision, userOverride = null }: DecisionBadgePr
     return (
       <Badge tone="attention">
         <HiMiniNoSymbol className="h-3 w-3" aria-hidden="true" />
-        Approved, still stopped
+        {APPROVAL_LEFT_STOPPED_LABEL}
       </Badge>
     );
   }

@@ -9,7 +9,7 @@ import { APPROVAL_RETRY_BLOCKED_OVERRIDE } from "./evidence/approval-outcome";
 import { computeMetrics } from "./evidence/evidence-metrics";
 import { filterByDecision } from "./evidence/evidence-filters";
 import { plainEnglishDescription } from "./evidence/plain-english";
-import { nextSafeStep } from "./evidence/evidence-action-detail";
+import { EvidenceActionDetail, nextSafeStep } from "./evidence/evidence-action-detail";
 import { pastDecisionVerb } from "./review-states";
 
 const NOW = new Date();
@@ -122,6 +122,13 @@ assert.ok(stoppedDescription.includes("stayed stopped"), "the description names 
 assert.ok(!stoppedDescription.includes("allowed it"), "the description does not claim the action was allowed");
 assert.ok(nextSafeStep(stoppedApproval)?.includes("Always allow exact action"), "the next step names what can let it run");
 assert.equal(buildRecentProtectionCopy(stoppedApproval), "Codex stayed stopped on tool after a one-time approval");
+const stoppedDetail = renderToStaticMarkup(
+  createElement(EvidenceActionDetail, { receipt: stoppedApproval, onClose: () => undefined }),
+);
+const stoppedTimeline = stoppedDetail.slice(stoppedDetail.indexOf('aria-label="Evidence timeline"'));
+assert.ok(stoppedTimeline.includes("Approved, still stopped"), "the detail timeline says the action stayed stopped");
+assert.ok(!stoppedTimeline.includes(`>${expectedLabels.allow}<`), "the detail timeline does not call it allowed");
+assert.ok(stoppedDetail.includes("Next safe step"), "the detail panel shows the next step for a stopped approval");
 assert.ok(
   plainEnglishDescription({ ...receipt("allow"), user_override: "approval-approved" }).includes("You reviewed and allowed it."),
   "an approval that let the action run keeps the reviewed-and-allowed copy",

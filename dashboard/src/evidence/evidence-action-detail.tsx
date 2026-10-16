@@ -20,7 +20,7 @@ import { plainEnglishDescription, resolveActionTitle, resolveActionType, resolve
 import { detectCategory, getCategoryInfo } from "./categories";
 import { SectionLabel } from "../approval-center-primitives";
 import { DecisionBadge } from "./decision-badge";
-import { approvalLeftActionStopped } from "./approval-outcome";
+import { APPROVAL_LEFT_STOPPED_LABEL, approvalLeftActionStopped } from "./approval-outcome";
 import { LoggedActionPanel } from "../logged-action-panel";
 import { guardActionPresentation } from "../guard-action";
 
@@ -248,6 +248,8 @@ function NextSafeCommandHint({ receipt }: { receipt: GuardReceipt }) {
 
 function EvidenceTimeline({ receipt }: { receipt: GuardReceipt }) {
   const action = guardActionPresentation(receipt.policy_decision);
+  // A one-time approval the retry could not reuse records an allow, but the action stayed stopped.
+  const stopped = approvalLeftActionStopped(receipt);
   const events = [
     {
       label: "Action received",
@@ -255,9 +257,9 @@ function EvidenceTimeline({ receipt }: { receipt: GuardReceipt }) {
       icon: "start",
     },
     {
-      label: action.label,
+      label: stopped ? APPROVAL_LEFT_STOPPED_LABEL : action.label,
       time: receipt.timestamp,
-      icon: action.disposition,
+      icon: stopped ? "blocked" : action.disposition,
     },
   ];
   return (
@@ -427,9 +429,8 @@ export function EvidenceActionDetail({
           </div>
         )}
 
-        {guardActionPresentation(receipt.policy_decision).disposition !== "allowed" && (
-          <NextSafeCommandHint receipt={receipt} />
-        )}
+        {(guardActionPresentation(receipt.policy_decision).disposition !== "allowed" ||
+          approvalLeftActionStopped(receipt)) && <NextSafeCommandHint receipt={receipt} />}
 
         <ScannerEvidenceSection signals={signals} />
 
