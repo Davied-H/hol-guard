@@ -473,11 +473,20 @@ fn read_graph(language: Language, entry: Entry) -> Option<(Vec<String>, bool)> {
     while let Some((source, directory)) = next.take() {
         total += source.len();
         if let (Some(root), Some(directory)) = (root.as_deref(), directory.as_deref()) {
-            let imports = match language {
+            let (imports, imports_complete) = match language {
                 Language::Node => node_imports(&source, directory),
                 // Statements after a `;` import too.
-                Language::Python => python_imports(&code_lines(language, &source), root, directory),
+                Language::Python => (
+                    python_imports(&code_lines(language, &source), root, directory),
+                    true,
+                ),
             };
+            // A relative import that does not resolve is code this scan never
+            // read. Leaving `complete` set would still grant that program the
+            // loopback ports named in the file it did read.
+            if !imports_complete {
+                complete = false;
+            }
             for import in imports {
                 if seen.len() >= MAX_FILES {
                     complete = false;
@@ -487,6 +496,10 @@ fn read_graph(language: Language, entry: Entry) -> Option<(Vec<String>, bool)> {
                     queue.push_back(import);
                 }
             }
+        } else if language == Language::Node && NODE_RELATIVE.is_match(&source) {
+            // `cd sub && node -e "require('./x.js')"` has no directory left to
+            // resolve that import against. The imported file is unread.
+            complete = false;
         }
         sources.push(source);
         while let Some(path) = queue.pop_front() {
@@ -507,12 +520,21 @@ fn read_text(path: &Path) -> Option<String> {
         .and_then(|read| String::from_utf8(read.bytes).ok())
 }
 
-fn node_imports(source: &str, directory: &Path) -> Vec<PathBuf> {
-    NODE_RELATIVE
-        .captures_iter(source)
-        .filter_map(|capture| node_module(&directory.join(&capture[1])))
-        .filter_map(|path| std::fs::canonicalize(path).ok())
-        .collect()
+/// Local files a Node source imports, and whether every relative specifier
+/// resolved to a file. One that does not is left unread, so the graph is not
+/// complete.
+fn node_imports(source: &str, directory: &Path) -> (Vec<PathBuf>, bool) {
+    let mut complete = true;
+    let mut imports = Vec::new();
+    for capture in NODE_RELATIVE.captures_iter(source) {
+        match node_module(&directory.join(&capture[1]))
+            .and_then(|path| std::fs::canonicalize(path).ok())
+        {
+            Some(path) => imports.push(path),
+            None => complete = false,
+        }
+    }
+    (imports, complete)
 }
 
 /// The file Node loads for a relative specifier: the path itself, the path

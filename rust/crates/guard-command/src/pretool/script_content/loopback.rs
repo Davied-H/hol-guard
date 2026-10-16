@@ -62,12 +62,14 @@ static FETCH_LITERAL: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"^fetch\s*\(\s*["'`]http://(?:127\.0\.0\.1|localhost):[0-9]{1,5}[/?#"'`]"#)
         .unwrap()
 });
-/// Code built at run time: `eval`, `Function`, and `require` or `import`
-/// of a name that is not a literal. Matched on the string-masked source, so a
-/// literal specifier still reads as an opening quote.
+/// Code built at run time. A direct `eval(` or `Function(` is not the only
+/// shape: `(0, eval)(...)`, `eval?.(...)`, `const F = Function`, and
+/// `[].constructor` reach the same constructors. `require` or `import` of a
+/// name that is not a literal is the same problem. Matched on the
+/// string-masked source, so a literal specifier still reads as an opening quote.
 static DYNAMIC_CODE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        r#"\beval\s*\(|\bFunction\s*\(|\b(?:require|import)\s*\(\s*[^"'`\s]|\bprocess\s*\.\s*binding\b"#,
+        r#"\beval\b|\bFunction\b|\.\s*constructor\b|\b(?:require|import)\s*\(\s*[^"'`\s]|\bprocess\s*\.\s*binding\b"#,
     )
     .unwrap()
 });

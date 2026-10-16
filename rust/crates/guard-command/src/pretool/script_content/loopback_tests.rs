@@ -61,6 +61,10 @@ fn other_network_use_keeps_the_review() {
         "await fetch('http://127.0.0.1:10252/healthz')",
         // Code evaluated at run time, which this scan cannot follow.
         "await fetch('http://127.0.0.1:3000/'); eval(\"require('node:net').connect(3000, '127.0.0.1')\")",
+        "await fetch('http://127.0.0.1:3000/'); (0, eval)('1')",
+        "await fetch('http://127.0.0.1:3000/'); eval?.('1')",
+        "const F = Function; F('return 1')(); await fetch('http://127.0.0.1:3000/')",
+        "[].constructor.constructor('return 1')(); await fetch('http://127.0.0.1:3000/')",
         "await fetch('http://127.0.0.1:3000/'); new Function('return 1')()",
         "const name = 'node:net'; require(name); await fetch('http://127.0.0.1:3000/')",
         "require('node:vm'); await fetch('http://127.0.0.1:3000/')",
@@ -179,5 +183,44 @@ fn a_dev_port_in_the_daemon_range_follows_the_daemon_state() {
     assert_eq!(node_loopback_ports(&vite, home_dir), set(&[5173]));
     std::fs::write(guard.join("daemon-state.json"), r#"{"port": 5173}"#).unwrap();
     assert_eq!(node_loopback_ports(&vite, home_dir), None, "daemon on 5173");
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
+fn an_unread_relative_import_does_not_receive_the_loopback_grant() {
+    let home = std::env::temp_dir().join(format!("script-loopback-import-{}", std::process::id()));
+    let project = home.join("project");
+    std::fs::create_dir_all(&project).unwrap();
+    let home_dir = home.to_str().unwrap().to_owned();
+    let cwd = project.to_str().unwrap().to_owned();
+    let context = crate::pretool::PathContext {
+        home_dir: Some(home_dir.as_str()),
+        cwd: Some(cwd.as_str()),
+        ..crate::pretool::PathContext::default()
+    };
+    let grant = |command: &str| {
+        let model = crate::parse_command(&crate::CommandModelRequestV1 {
+            command: command.to_owned(),
+            dialect: "posix".into(),
+            transport: "shell_string".into(),
+            extraction_provenance: "pre-tool-generic".into(),
+        })
+        .unwrap();
+        super::super::assess(&model, context)
+            .into_iter()
+            .find_map(|found| found.loopback)
+    };
+    assert_eq!(
+        grant("node -e \"fetch('http://127.0.0.1:3000/')\""),
+        set(&[3000])
+    );
+    assert_eq!(
+        grant("node -e \"require('./missing.js'); fetch('http://127.0.0.1:3000/')\""),
+        None
+    );
+    assert_eq!(
+        grant("cd sub && node -e \"require('./x.js'); fetch('http://127.0.0.1:3000/')\""),
+        None
+    );
     let _ = std::fs::remove_dir_all(&home);
 }
