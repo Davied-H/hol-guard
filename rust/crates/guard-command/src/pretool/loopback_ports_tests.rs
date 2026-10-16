@@ -33,7 +33,9 @@ fn conventional_dev_ports_are_reachable() {
 #[test]
 fn other_ports_admin_ports_and_the_daemon_range_are_not() {
     let home = home("other", None);
-    for port in [22, 2375, 7392, 8001, 9000, 54321, 4781, 5173, 5780] {
+    for port in [
+        22, 2375, 4001, 7392, 8001, 8086, 9000, 9200, 10249, 54321, 4781, 5173, 5780,
+    ] {
         assert!(!dev_server_port(port, &ADMIN, home.0.to_str()), "{port}");
     }
 }

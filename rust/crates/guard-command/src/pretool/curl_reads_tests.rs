@@ -132,6 +132,11 @@ fn local_admin_ports_and_other_loopback_spellings_stay_reviewed() {
         "curl http://127.0.0.1:9229/json/list",
         "curl http://localhost:10250/pods",
         "curl http://localhost:2019/config/",
+        // Data and node APIs off the dev-server list.
+        "curl http://127.0.0.1:9200/_search",
+        "curl http://127.0.0.1:4001/v2/keys",
+        "curl http://localhost:10249/metrics",
+        "curl http://localhost:8086/query?q=SHOW+DATABASES",
         // Guard's daemon: its default port, a fixed one and an ephemeral one.
         "curl -s http://127.0.0.1:4781/v1/requests?status=pending",
         "curl -s http://127.0.0.1:7392/v1/requests?status=pending",

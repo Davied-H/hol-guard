@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 /// (`3000`-`3010`), Jekyll and Phoenix (`4000`), Vite preview (`4173`,
 /// `4174`), Angular (`4200`), Astro (`4321`), Flask (`5000`), Vite
 /// (`5173`-`5180`), Live Server (`5500`), Storybook (`6006`), Django and
-/// `http.server` (`8000`-`8010`), alternate HTTP (`8080`-`8090`) and
+/// `http.server` (`8000`-`8010`), alternate HTTP (`8080`, `8081`) and
 /// Wrangler (`8787`).
 const DEV_SERVER_PORTS: [(u16, u16); 16] = [
     (80, 80),
@@ -33,7 +33,7 @@ const DEV_SERVER_PORTS: [(u16, u16); 16] = [
     (5500, 5500),
     (6006, 6006),
     (8000, 8010),
-    (8080, 8090),
+    (8080, 8081),
     (8443, 8443),
     (8787, 8787),
 ];
