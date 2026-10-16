@@ -317,7 +317,7 @@ impl RegValue {
 fn parse_reg_values(stdout: &str) -> BTreeMap<String, RegValue> {
     let mut values = BTreeMap::new();
     for line in stdout.lines() {
-        let mut fields = line.trim().split_whitespace();
+        let mut fields = line.split_whitespace();
         let (Some(name), Some(kind)) = (fields.next(), fields.next()) else {
             continue;
         };

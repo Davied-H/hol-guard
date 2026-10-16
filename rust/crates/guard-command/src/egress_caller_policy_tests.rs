@@ -143,7 +143,7 @@ fn scutil_output_yields_the_enabled_schemes_only() {
         proxies.get("http").map(String::as_str),
         Some("http://proxy.example:3128")
     );
-    assert!(proxies.get("https").is_none());
+    assert!(!proxies.contains_key("https"));
 }
 
 #[test]
@@ -205,7 +205,7 @@ fn windows_proxy_server_covers_both_shapes() {
         per_scheme.get("https").map(String::as_str),
         Some("http://secure.example:443")
     );
-    assert!(per_scheme.get("ftp").is_none());
+    assert!(!per_scheme.contains_key("ftp"));
 }
 
 #[test]
