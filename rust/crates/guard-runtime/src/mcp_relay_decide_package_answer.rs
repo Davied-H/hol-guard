@@ -11,10 +11,6 @@
 //! holds its evidence for the drain to record, which is how every other route
 //! in this lane already answers.
 
-// The decide path reads this with the rest of the native package lane; until
-// it does, only the tests below render a package answer.
-#![allow(dead_code)]
-
 use serde_json::{json, Value};
 
 use super::package_policy::PackagePolicy;

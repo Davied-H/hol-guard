@@ -31,10 +31,6 @@
 //! never asked for, because a relayed call resolves read-only: `claim_saved_approval`
 //! is false, so a saved approval is reported, never consumed.
 
-// The decide path reads this with the rest of the native package lane; until it
-// does, only the tests below resolve a stored policy.
-#![allow(dead_code)]
-
 use super::store::{Probe, Saved};
 use super::view::HarnessView;
 use crate::context_digest::python_strip;
@@ -119,6 +115,10 @@ pub(super) struct PackagePolicy {
     pub(super) execution_context: PackageExecutionContext,
     /// The saved row the resolution accepted, when it reused one.
     pub(super) reused_decision: Option<Value>,
+    /// What the lookup would have done with the saved row. A relayed call
+    /// resolves read-only and never claims one, so nothing reads it; it is
+    /// kept because the resolution the proxy reports carries it.
+    #[allow(dead_code)]
     pub(super) claim_disposition: Option<String>,
 }
 

@@ -14,10 +14,6 @@
 //! precheck did not answer, exactly as the proxy re-resolves nothing for a call
 //! its precheck stopped.
 
-// The decide path reads this with the rest of the native package lane; until
-// it does, only the tests below decide a package call.
-#![allow(dead_code)]
-
 use serde_json::{Map, Value};
 
 use super::package_answer;
@@ -37,7 +33,9 @@ pub(super) struct PackageAnswer {
     pub(super) policy_action: String,
     /// `decision_source` the receipt records.
     pub(super) decision_source: String,
-    /// The `decision` the proxy's event names.
+    /// The `decision` the proxy's event names. The receipt records the tool
+    /// decision itself, so only the event the relay does not emit reads this.
+    #[allow(dead_code)]
     pub(super) decision: String,
     /// The receipt signals, one per reason the evaluation reported.
     pub(super) signals: Vec<String>,

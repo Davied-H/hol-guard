@@ -21,10 +21,6 @@
 //! `tool_decision_scanner_evidence` of the decision the record already carries,
 //! which the drain derives for every relayed call.
 
-// The decide path reads this with the rest of the native package lane; until
-// it does, only the tests below record a package call.
-#![allow(dead_code)]
-
 use serde_json::{json, Map, Value};
 
 use super::package_lane::PackageAnswer;

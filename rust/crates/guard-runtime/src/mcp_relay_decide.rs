@@ -7,14 +7,20 @@
 //! the publisher's ACK holds, a harness the binding's MCP view covers, and a
 //! store whose saved lookups the resident reads as the proxy would: none at
 //! all, or only local rows the daemon's published integrity key verifies (see
-//! `mcp_relay_decide_store.rs` and `mcp_relay_decide_saved.rs`), for a call
-//! the package parser finds no intent in (`mcp_relay_decide_package.rs`).
+//! `mcp_relay_decide_store.rs` and `mcp_relay_decide_saved.rs`).
 //! Such a call is forwarded (an allow or warn) or blocked (a terminal or
 //! stored block). A block's evidence is queued for the daemon's drain first.
 //! The proxy records a forward only after the child answered it, so a
 //! forward's evidence is held under a ticket the relay commits once the child
 //! responded; a forward the relay never completes (a catalog boundary change,
 //! a lost answer) leaves no allow receipt.
+//!
+//! A call that installs or runs a package goes through the package lane
+//! instead (`mcp_relay_decide_package.rs`), which decides it from an
+//! evaluation the relay cannot perform inside one round trip: the first decide
+//! of such a call answers `evaluate`, and the relay sends the same call again
+//! with the evaluation attached (`mcp_relay_decide_package_leg.rs`). Its
+//! receipt is the package request's own (`mcp_relay_decide_package_receipt.rs`).
 //!
 //! A call the proxy forwards only after claiming its saved allow or one-shot
 //! approval is held for the relay to claim (see `mcp_relay_decide_claim.rs`).
@@ -35,6 +41,7 @@ use crate::mcp_tool_policy_decision::Decision;
 use crate::policy_enforcement::AdmittedPolicySnapshot;
 use crate::policy_store::policy_store_direct_lane::DirectLaneBinding;
 use crate::policy_store::PolicySnapshotStore;
+use guard_command::package_intent_common::PackageIntent;
 use guard_contracts::{
     McpToolArgumentsV1, McpToolCallBuildV1, McpToolCallHashInputV1, McpToolCallIdentityPayloadV1,
     McpToolPolicyProxyInputV1,
@@ -42,6 +49,7 @@ use guard_contracts::{
 use rusqlite::Connection;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
@@ -64,6 +72,10 @@ const IDENTITY_FAILED: &str = "mcp_relay_identity_failed";
 const POLICY_NEED: &str = "mcp_relay_policy_need";
 const ROUTE_UNSUPPORTED: &str = "mcp_relay_route_unsupported";
 const EVIDENCE_FULL: &str = "mcp_relay_evidence_full";
+/// Every defer the package lane answers with, which is what hands a server to
+/// the proxy. The gate's workspace check is not one of them: it fires before
+/// an intent is known, for a call that may carry no package request at all.
+const PACKAGE_DEFER_PREFIX: &str = "mcp_relay_package";
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -83,9 +95,18 @@ pub(crate) struct McpRelayDecideRequestV1 {
     #[serde(default)]
     pub(crate) path: Option<String>,
     pub(crate) launcher_home: String,
-    /// The proxy's working directory, which a queued approval row records.
+    /// The proxy's working directory, which a queued approval row records and
+    /// a package call's execution context is bound to.
     #[serde(default)]
     pub(crate) cwd: Option<String>,
+    /// The proxy's `os.environ`, which only a package call's execution context
+    /// is built from (`_resident_environment`).
+    #[serde(default)]
+    pub(crate) environment: BTreeMap<String, String>,
+    /// The supply-chain evaluation of this call's package request, which the
+    /// relay performs and sends with the second decide of the same call.
+    #[serde(default)]
+    pub(crate) package_evaluation: Option<Map<String, Value>>,
     pub(crate) catalog_state: String,
     /// The `tools/call` params, which the daemon projects into evidence.
     pub(crate) params: Value,
@@ -125,6 +146,9 @@ enum Answer {
     Elicit {
         params: Value,
     },
+    /// Evaluate this call's package request and decide the call again with the
+    /// evaluation attached.
+    Evaluate,
 }
 
 /// The lane admission one decision was made under.
@@ -215,10 +239,9 @@ pub(crate) fn evaluate(
     policy_store: &PolicySnapshotStore,
 ) -> Result<Vec<u8>, String> {
     let answer = decide(&request, policy_store);
-    if matches!(
-        answer,
-        Err(package::PACKAGE_INTENT | package::PACKAGE_AMBIGUOUS)
-    ) {
+    // Every package-lane defer, from the gate's own to the lane's, so a server
+    // whose package call the relay could not answer goes to the proxy whole.
+    if matches!(&answer, Err(reason) if reason.starts_with(PACKAGE_DEFER_PREFIX)) {
         mark_package_server(&request, policy_store);
     }
     encode(answer)
@@ -253,6 +276,7 @@ fn encode(answer: Result<Answer, &'static str>) -> Result<Vec<u8>, String> {
         Ok(Answer::Elicit { params }) => {
             json!({"schema": RESULT_SCHEMA, "outcome": "elicit", "params": params})
         }
+        Ok(Answer::Evaluate) => json!({"schema": RESULT_SCHEMA, "outcome": "evaluate"}),
         Ok(Answer::Block { message, data }) => json!({
             "schema": RESULT_SCHEMA,
             "outcome": "block",
@@ -269,6 +293,14 @@ fn decide(
     policy_store: &PolicySnapshotStore,
 ) -> Result<Answer, &'static str> {
     let admitted = admit(request, policy_store)?;
+    let intent = package::package_gate(request)?;
+    // The package lane decides from an evaluation whose archive and registry
+    // rounds the relay performs, which no single round trip can hold. So the
+    // first decide of a package call asks for it, and the relay decides the
+    // same call again with the evaluation attached.
+    if intent.is_some() && request.package_evaluation.is_none() {
+        return Ok(Answer::Evaluate);
+    }
     let connection = store::open(Path::new(&request.guard_home))?;
     // One read snapshot for the store checks and every lookup they gate, so a
     // row or state the daemon commits between them cannot slip past.
@@ -277,8 +309,15 @@ fn decide(
         .map(Connection::unchecked_transaction)
         .transpose()
         .map_err(|_| store::STORE_UNREADABLE)?;
-    let mut resolved = resolve(request, &admitted, connection.as_deref())?;
+    let (mut resolved, packaged) =
+        resolve(request, &admitted, connection.as_deref(), intent.as_ref())?;
     drop(snapshot);
+    // A package call is answered by its own lane, under the package policy and
+    // the tool authority together, so none of the tool-only route below runs
+    // for it.
+    if let Some(packaged) = packaged {
+        return settle_package(request, &resolved, &packaged, policy_store);
+    }
     let asks = admitted.binding.review.blocked_request_mode.as_deref() == Some(ASK_MODE);
     let proxy = crate::mcp_tool_policy_proxy::proxy_payload(
         &McpToolPolicyProxyInputV1 {
@@ -430,14 +469,16 @@ fn admit(
     })
 }
 
-/// Pass the package check, build the identity and run the tool policy,
-/// reading saved lookups on `connection`, held in one transaction.
+/// Build the identity and run the tool policy, reading saved lookups on
+/// `connection`, held in one transaction. A call the gate found a package
+/// intent in also resolves its package leg, on that same snapshot: the lane's
+/// second resolution reads the store again, so it belongs inside it.
 fn resolve(
     request: &McpRelayDecideRequestV1,
     admitted: &Admitted,
     connection: Option<&Connection>,
-) -> Result<Resolved, &'static str> {
-    package::package_gate(request)?;
+    intent: Option<&PackageIntent>,
+) -> Result<(Resolved, Option<package_leg::Packaged>), &'static str> {
     let binding = &admitted.binding;
     let control_digest = binding
         .exact_action_control_digest
@@ -453,15 +494,30 @@ fn resolve(
         )?,
         None => None,
     };
-    let identity = identity(request, &view, control_digest)?;
+    let identity = identity(request, &view, control_digest.clone())?;
     let subject = subject::subject(request, &identity, &view)?;
     let decision = run_policy(&subject, saved.as_ref())?;
-    Ok(Resolved {
-        identity,
-        decision,
-        mode: view.mode,
-        redaction_level: view.receipt_redaction_level,
-    })
+    let packaged = match intent {
+        Some(intent) => Some(package_leg::decide_package_leg(
+            request,
+            &view,
+            saved.as_ref(),
+            &control_digest,
+            &identity,
+            intent,
+            &subject,
+        )?),
+        None => None,
+    };
+    Ok((
+        Resolved {
+            identity,
+            decision,
+            mode: view.mode,
+            redaction_level: view.receipt_redaction_level,
+        },
+        packaged,
+    ))
 }
 
 /// Answer a forward or block route and queue or hold its evidence; a claimed
@@ -603,6 +659,38 @@ fn settle(
     }
 }
 
+/// Answer one decided package call and queue the receipt the drain writes it
+/// from: the package request's own, not the tool call's.
+fn settle_package(
+    request: &McpRelayDecideRequestV1,
+    resolved: &Resolved,
+    packaged: &package_leg::Packaged,
+    policy_store: &PolicySnapshotStore,
+) -> Result<Answer, &'static str> {
+    let identity = serde_json::to_value(&resolved.identity).map_err(|_| IDENTITY_FAILED)?;
+    let evidence = package_receipt::record(
+        request,
+        &identity,
+        &resolved.decision,
+        &packaged.artifact,
+        &packaged.workspace,
+        &packaged.answer,
+    )?;
+    match packaged.answer.block.clone() {
+        // As for a tool call, the relay commits the ticket once the child
+        // answered the forward.
+        None => policy_store
+            .mcp_relay_pending()
+            .hold(evidence, Instant::now())
+            .map(|ticket| Answer::Forward { ticket })
+            .ok_or(EVIDENCE_FULL),
+        Some((message, data)) if policy_store.direct_evidence().offer(evidence) => {
+            Ok(Answer::Block { message, data })
+        }
+        Some(_) => Err(EVIDENCE_FULL),
+    }
+}
+
 /// `Path.resolve(strict=True)` of a directory, as the lane settles it.
 fn settled_directory(candidate: &str) -> Result<String, &'static str> {
     let resolved = std::fs::canonicalize(Path::new(candidate)).map_err(|_| WORKSPACE_INVALID)?;
@@ -660,6 +748,8 @@ mod package_answer;
 mod package_config;
 #[path = "mcp_relay_decide_package_lane.rs"]
 mod package_lane;
+#[path = "mcp_relay_decide_package_leg.rs"]
+mod package_leg;
 #[path = "mcp_relay_decide_package_policy.rs"]
 mod package_policy;
 #[path = "mcp_relay_decide_package_receipt.rs"]

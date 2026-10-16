@@ -21,8 +21,8 @@
 //! queue (2674-2684), with its evidence queued or held. Every other outcome
 //! rolls the claim back and defers, so the call is answered "no native
 //! decision" with the approval unspent: a declined claim (which the proxy
-//! queues for re-approval, 2570-2582), a package intent the fresh resolve now
-//! finds (which the proxy sends through its package policy), and any lane,
+//! queues for re-approval, 2570-2582), a package intent the gate now finds
+//! (which the proxy sends through its package policy), and any lane,
 //! store, policy or evidence failure.
 //!
 //! A post-claim re-approval spends the claim, as the proxy's does, and then
@@ -53,8 +53,8 @@
 
 use super::store::{self, STORE_UNREADABLE};
 use super::{
-    admit, ask, encode, queue, resolve, settle, Answer, ClaimContext, Claimed, Resolved, Routed,
-    ASK_MODE, IDENTITY_FAILED,
+    admit, ask, encode, package, queue, resolve, settle, Answer, ClaimContext, Claimed, Resolved,
+    Routed, ASK_MODE, IDENTITY_FAILED,
 };
 use crate::approval_proof_op::{
     fresh_tool_approval, lookup_preserves_claim, postclaim_review_authorized, Disposition,
@@ -223,15 +223,21 @@ fn after_claim(
     policy_store: &PolicySnapshotStore,
     started: Instant,
 ) -> Result<Spent, &'static str> {
+    // A claim is held only for a call the package gate found no intent in, so
+    // a call it now reads as a package request rolls the claim back rather
+    // than answering it off the tool policy alone.
+    if package::package_gate(&context.request)?.is_some() {
+        return Err(package::PACKAGE_CLAIMED);
+    }
     // The fresh resolve only reads, as on the decision's read-only snapshot.
     connection
         .execute_batch("PRAGMA query_only = ON")
         .map_err(|_| STORE_UNREADABLE)?;
-    let fresh = resolve(&context.request, &context.admitted, Some(connection));
+    let fresh = resolve(&context.request, &context.admitted, Some(connection), None);
     connection
         .execute_batch("PRAGMA query_only = OFF")
         .map_err(|_| STORE_UNREADABLE)?;
-    let fresh = fresh?;
+    let (fresh, _) = fresh?;
     let (routed, append) = postclaim(&context.claimed, &fresh)?;
     let routed = match routed {
         // `_queue_approval_center_response`, straight to the queue: the

@@ -22,10 +22,6 @@
 //! A kind neither answer names is the proxy's `NativeMcpProxyDecisionError`;
 //! here it defers, because a relayed call never guesses at a verdict.
 
-// The decide path reads this with the rest of the native package lane; until
-// it does, only the tests below route a package call.
-#![allow(dead_code)]
-
 use guard_contracts::{McpPackageComposeQueryV1, McpPackageFactsV1, McpPackagePrecheckQueryV1};
 use serde_json::Value;
 
