@@ -6,7 +6,7 @@
 //! name. An installed package, a module that loads code by a computed name,
 //! evaluates strings, starts processes or reaches the import system keeps
 //! the launch once-only, as do a graph that writes files and imports a local
-//! module, an option or environment variable that loads other code or moves
+//! module or has the script's directory on the module path, an option or environment variable that loads other code or moves
 //! module lookup, and a compiled or extension module beside a source module.
 //! The scan (`python_source`) is lexical and errs toward refusal: a refused
 //! launch keeps today's approve-once behaviour.
@@ -26,7 +26,7 @@ use startup::runs_in_place;
 
 /// Single-letter options that run the script without loading other code.
 /// `I` and `P` also keep the script's directory off the module path.
-const INERT_FLAGS: &str = "bBdEIOPqsSuvx";
+const INERT_FLAGS: &str = "bBdEIOPqsSuv";
 /// Variables that load code, move module lookup or bytecode, or make the
 /// interpreter read more code after the script.
 const LOADER_ENVIRONMENT: [&str; 11] = [
@@ -42,6 +42,9 @@ const LOADER_ENVIRONMENT: [&str; 11] = [
     "PYTHONBREAKPOINT",
     "PYTHONCASEOK",
 ];
+/// Standard submodules that evaluate configuration text or import the
+/// names it holds (`logging.config`, `unittest.mock`'s `patch`).
+const REFUSED_SUBMODULES: [(&str, &str); 2] = [("logging", "config"), ("unittest", "mock")];
 /// Suffixes the import system loads before (or instead of) a `.py` source.
 const COMPILED_SUFFIXES: [&str; 4] = ["so", "pyd", "pyc", "pyo"];
 const MAX_MODULES: usize = 64;
@@ -269,7 +272,12 @@ impl Graph<'_> {
             return self.add_local(&directory, &parts, &import.names);
         }
         let top = *parts.first().ok_or(MUTABLE_LAUNCHER)?;
-        if REFUSED_MODULES.contains(&top) {
+        let refused_submodule = REFUSED_SUBMODULES.iter().any(|(package, module)| {
+            top == *package
+                && (parts.get(1) == Some(module)
+                    || (parts.len() == 1 && import.names.iter().any(|name| name == module)))
+        });
+        if REFUSED_MODULES.contains(&top) || refused_submodule {
             return Err(MUTABLE_LAUNCHER);
         }
         if self.script_directory {
@@ -358,8 +366,9 @@ pub(super) fn python_script(
         }
     }
     // A local module is bound as it was before launch; a graph that can
-    // write files could replace one before it is imported.
-    if writes && graph.modules.len() > 1 {
+    // write files could replace one before it is imported, or create one
+    // beside the script that shadows a standard module.
+    if writes && (graph.modules.len() > 1 || graph.script_directory) {
         return Err(MUTABLE_LAUNCHER);
     }
     if !options.no_site {

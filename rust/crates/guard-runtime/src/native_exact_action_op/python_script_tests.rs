@@ -232,6 +232,10 @@ fn bytecode_python_runs_in_place_of_a_local_module_is_bound() {
     project.write_bytes(cached, &pyc(0, seconds, size, b"two"));
     let replaced = bind(&project, &["scripts/report.py"], &[]).unwrap();
     assert_ne!(replaced["bytecode"], current["bytecode"]);
+    // Bit 1 alone still marks a timestamp file.
+    project.write_bytes(cached, &pyc(2, seconds, size, b"two"));
+    let flagged = bind(&project, &["scripts/report.py"], &[]).unwrap();
+    assert_eq!(flagged["bytecode"].as_array().unwrap().len(), 1);
     project.write_bytes(cached, &pyc(1, 0, 0, b"two"));
     let hashed = bind(&project, &["scripts/report.py"], &[]).unwrap();
     assert_eq!(hashed["bytecode"].as_array().unwrap().len(), 1);
@@ -287,7 +291,16 @@ fn a_single_file_script_that_writes_files_is_bound() {
         "gen.py",
         "import json\nfrom pathlib import Path\n\nPath('out').mkdir(exist_ok=True)\nwith open('out/data.json', 'w') as handle:\n    json.dump({'ok': True}, handle)\n",
     );
-    assert!(bind(&project, &["gen.py"], &[]).is_ok());
+    // A script whose directory is on the module path could create a module
+    // there that shadows a standard one.
+    assert_eq!(bind(&project, &["gen.py"], &[]), Err("mutable_launcher"));
+    assert!(bind(&project, &["-P", "gen.py"], &[]).is_ok());
+    // Reading files is not writing them.
+    project.write(
+        "read.py",
+        "import json\nfrom pathlib import Path\n\nwith open('in.json') as a, open('in.json', 'rb') as b, Path('x').open(encoding='utf-8') as c:\n    print(json.load(a), b.read(), c.read())\n",
+    );
+    assert!(bind(&project, &["read.py"], &[]).is_ok());
 }
 
 #[test]
@@ -342,6 +355,18 @@ fn code_the_graph_cannot_bind_keeps_the_launch_once_only() {
             vec!["t.py"],
         ),
         (vec![("t.py", "print(1)\n")], vec!["-c", "print(1)"]),
+        // `-x` skips the first line, so a literal the scan reads becomes code.
+        (
+            vec![(
+                "t.py",
+                "s = \"\"\"\nexec(open('payload').read())\n#\"\"\"\n",
+            )],
+            vec!["-x", "t.py"],
+        ),
+        (vec![("t.py", "from logging import config\n")], vec!["t.py"]),
+        (vec![("t.py", "import logging.config\n")], vec!["t.py"]),
+        (vec![("t.py", "from unittest import mock\n")], vec!["t.py"]),
+        (vec![("t.py", "import unittest.mock as m\n")], vec!["t.py"]),
         (vec![("t.py", "print(1)\n")], vec!["-m", "t"]),
         (vec![("t.py", "print(1)\n")], vec!["-W", "error", "t.py"]),
         (vec![("t.py", "print(1)\n")], vec!["-X", "dev", "t.py"]),

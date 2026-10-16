@@ -42,7 +42,9 @@ pub(super) fn forbidden() -> &'static Regex {
             r"|\bsys\s*\.\s*(?:modules|path|meta_path|path_hooks|path_importer_cache|settrace|setprofile|addaudithook|_getframe)\b",
             r"|\b(?:_getframe|f_globals|f_locals|f_builtins|CodeType|FunctionType|attrgetter|methodcaller)\b",
             r"|\b(?:system|popen|startfile|fork|forkpty|posix_spawnp?|spawn[lv]p?e?|exec[lv]p?e?|create_subprocess_\w+)\b",
-            r"|\b(?:load_extension|enable_load_extension)\b|\blogging\s*\.\s*config\b",
+            r"|\b(?:load_extension|enable_load_extension)\b|\blogging\s*\.\s*config\b|\bunittest\s*\.\s*mock\b",
+            // `warnings` imports the category a filter string names.
+            r"|\b(?:_setoption|_getcategory)\b",
             r"|\b(?:discover|loadTestsFromName|loadTestsFromNames)\b|\bmodule\s*=\s*None\b",
             // Annotation helpers evaluate strings, which a script can build at run time.
             r"|\b(?:get_type_hints|ForwardRef|evaluate_forward_ref|_evaluate|get_annotations|call_annotate_function|call_evaluate_function)\b",
@@ -66,12 +68,85 @@ fn writes_files() -> &'static Regex {
     pattern(
         &CELL,
         concat!(
-            r"\bopen\s*\(|\.\s*write(?:_text|_bytes|lines)?\s*\(|\bos\s*\.\s*replace\s*\(",
+            r"\.\s*write(?:_text|_bytes|lines)?\s*\(|\bos\s*\.\s*replace\s*\(",
             r"|\b(?:rename|renames|remove|unlink|rmtree|copy|copy2|copyfile|copytree|move|symlink|symlink_to|hardlink_to|link|truncate|makedirs|mkdir|touch|extract|extractall|unpack_archive|writestr)\s*\(",
             // Writable handles and mappings that change a file without `open`.
             r"|\b(?:FileIO|mmap|pwrite|pwritev|writev|ftruncate|sendfile|copy_file_range|splice|chmod|lchmod|chown|lchown|utime|mkfifo|mknod)\b",
         ),
     )
+}
+
+fn open_call() -> &'static Regex {
+    static CELL: OnceLock<Regex> = OnceLock::new();
+    pattern(&CELL, r"(\.\s*)?\bopen\s*\(")
+}
+
+/// A mode literal that opens a file only for reading.
+fn reading_mode() -> &'static Regex {
+    static CELL: OnceLock<Regex> = OnceLock::new();
+    pattern(&CELL, r#"^(?:'[rbtU]+'|"[rbtU]+")$"#)
+}
+
+/// Whether some `open` call in `code` (with `source` its unblanked text) can
+/// write: every mode it passes must be a literal that only reads. A function
+/// `open` takes the path first; a method (`Path.open`, `gzip.open`) may take
+/// the mode first, so each of its arguments must be such a literal.
+fn opens_for_writing(code: &str, source: &str) -> bool {
+    open_call().captures_iter(code).any(|captures| {
+        let method = captures.get(1).is_some();
+        let start = captures.get(0).map_or(0, |found| found.end());
+        let mut depth = 0usize;
+        let mut arguments = Vec::new();
+        let mut from = start;
+        let mut closed = false;
+        for (offset, byte) in code[start..].bytes().enumerate() {
+            let at = start + offset;
+            match byte {
+                b'(' | b'[' | b'{' => depth += 1,
+                b')' | b']' | b'}' if depth > 0 => depth -= 1,
+                b')' => {
+                    arguments.push(from..at);
+                    closed = true;
+                    break;
+                }
+                b',' if depth == 0 => {
+                    arguments.push(from..at);
+                    from = at + 1;
+                }
+                _ => {}
+            }
+        }
+        if !closed {
+            return true;
+        }
+        let mut positional = 0usize;
+        arguments.into_iter().any(|range| {
+            let argument = code[range.clone()].trim();
+            let text = source[range].trim();
+            if argument.is_empty() {
+                return false;
+            }
+            if argument.starts_with('*') {
+                return true;
+            }
+            if let Some((name, value)) = argument.split_once('=') {
+                let name = name.trim();
+                if name
+                    .bytes()
+                    .all(|byte| byte == b'_' || byte.is_ascii_alphanumeric())
+                {
+                    let value = text.split_once('=').map_or("", |(_, value)| value.trim());
+                    return match name {
+                        "mode" => !reading_mode().is_match(value),
+                        "opener" | "flags" => true,
+                        _ => false,
+                    };
+                }
+            }
+            positional += 1;
+            (method || positional > 1) && !reading_mode().is_match(text)
+        })
+    })
 }
 
 fn from_statement() -> &'static Regex {
@@ -272,7 +347,7 @@ pub(super) fn scan(source: &str) -> Option<Scan> {
     }
     Some(Scan {
         imports: imports_in(&code)?,
-        writes: writes_files().is_match(&code),
+        writes: writes_files().is_match(&code) || opens_for_writing(&code, source),
     })
 }
 
@@ -332,116 +407,5 @@ pub(super) fn imports_in(code: &str) -> Option<Vec<Import>> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::scan;
-
-    fn modules(source: &str) -> Vec<String> {
-        let mut found: Vec<String> = scan(source)
-            .expect("readable")
-            .imports
-            .into_iter()
-            .map(|import| {
-                format!(
-                    "{}{}:{}",
-                    ".".repeat(import.level),
-                    import.module,
-                    import.names.join(",")
-                )
-            })
-            .collect();
-        found.sort();
-        found
-    }
-
-    #[test]
-    fn imports_are_read_in_every_statement_form() {
-        let source = "#!/usr/bin/env python3\n# -*- coding: utf-8 -*-\n\"\"\"Report on the file system; eval nothing.\"\"\"\nfrom __future__ import annotations\nimport json, os.path as osp\nfrom pathlib import Path\nfrom .helpers import (\n    total,  # sum\n    mean as average,\n)\nimport re\n\ndef main():\n    try:\n        import csv\n    except ImportError as error:\n        raise SystemExit(1) from error\n    pattern = re.compile(r'\\d+')\n    rows = {'a': 1}\n    print(f\"{rows['a']:>4} {{literal}} {osp.sep}\", json.dumps(rows), Path, total, average, pattern, csv)\n\nif __name__ == '__main__':\n    main()\n";
-        assert_eq!(
-            modules(source),
-            [
-                ".helpers:total,mean",
-                "__future__:annotations",
-                "csv:",
-                "json:",
-                "os.path:",
-                "pathlib:Path",
-                "re:",
-            ]
-        );
-        assert!(!scan(source).unwrap().writes);
-    }
-
-    #[test]
-    fn code_the_imports_do_not_name_is_refused() {
-        for source in [
-            "exec(open('x.py').read())\n",
-            "eval('1')\n",
-            "code = compile('1', 'x', 'eval')\n",
-            "m = __import__('os')\n",
-            "f = getattr(os, 'sys' + 'tem')\n",
-            "os.system('ls')\n",
-            "from os import system\n",
-            "from os import *\n",
-            "os.execv('/bin/sh', ['sh'])\n",
-            "sys.path.insert(0, 'plugins')\n",
-            "x = ().__class__.__bases__[0].__subclasses__()\n",
-            "print('{0.__class__}'.format(1))\n",
-            "print(f'{os.popen(\"id\").read()}')\n",
-            "frame = sys._getframe(1)\n",
-            "# -*- coding: rot13 -*-\nimport os\n",
-            "x = 1 + \\\n  2\n",
-            "\u{ff45}\u{ff58}\u{ff45}\u{ff43}('1')\n",
-            "print(f'{\u{ff45}\u{ff58}\u{ff45}\u{ff43}(1)}')\n",
-            "s = 'unterminated\n",
-            "# note\rimport hidden\n",
-            "x = f\"{d[\"k\"]}\"\nimport hidden\n",
-            "x = f'{1 # comment\n}'\n",
-            "x = t'{y}'\n",
-            "import json\nimport\n",
-            "import typing\nhints = typing.get_type_hints(Row)\n",
-            "from typing import ForwardRef\n",
-            "value = typing.evaluate_forward_ref(ref)\n",
-            "hints = Row.__annotations__\n",
-            "hints = Row.__annotate__(1)\n",
-        ] {
-            assert!(scan(source).is_none(), "{source}");
-        }
-    }
-
-    #[test]
-    fn ordinary_text_is_readable() {
-        for source in [
-            "pattern = re.compile(r'[a-z]+')\nvalue = ast.literal_eval('[1]')\n",
-            "print('caf\u{e9} \u{2014} done')\n# r\u{e9}sum\u{e9}: the system will evaluate this\n",
-            "cursor.execute('select 1')\n",
-            "raise ValueError('bad') from None\n",
-            "def gen():\n    yield from range(3)\n",
-            "print(f\"\u{2713} {count} files\")\r\n",
-            "message = f'{name!r:>10}'\n",
-            "parser.add_argument('--out', help='where to write')\ntext = text.replace('a', 'b')\n",
-        ] {
-            assert!(scan(source).is_some(), "{source}");
-        }
-    }
-
-    #[test]
-    fn writes_are_seen_in_code_only() {
-        assert!(
-            scan("with open('out.json', 'w') as f:\n    f.write('{}')\n")
-                .unwrap()
-                .writes
-        );
-        assert!(scan("Path('x').write_text('y')\n").unwrap().writes);
-        assert!(
-            scan("import io, mmap\nhandle = io.FileIO('helpers.py', 'r+')\nview = mmap.mmap(handle.fileno(), 0)\nview[0:1] = b'#'\n")
-                .unwrap()
-                .writes
-        );
-        assert!(scan("os.ftruncate(fd, 0)\n").unwrap().writes);
-        assert!(
-            !scan("# open( the door\nprint('shutil.rmtree(x)')\ntext = text.replace('a', 'b')\n")
-                .unwrap()
-                .writes
-        );
-    }
-}
+#[path = "python_source_tests.rs"]
+mod tests;

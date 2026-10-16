@@ -37,8 +37,9 @@ pub(super) fn runs_in_place(source: &std::fs::Metadata, pyc: &str) -> bool {
     let word = |at: usize| {
         u32::from_le_bytes([header[at], header[at + 1], header[at + 2], header[at + 3]])
     };
+    // Python reads bit 0 as hash-based and ignores bit 1 otherwise.
     match word(4) {
-        0 => {
+        0 | 2 => {
             let Some(seconds) = source
                 .modified()
                 .ok()
