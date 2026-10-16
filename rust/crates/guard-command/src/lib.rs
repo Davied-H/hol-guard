@@ -25,6 +25,7 @@ pub mod command_action_risk_classes;
 mod command_ascii_comparison;
 mod command_candidate_common;
 mod command_common_cli_matchers;
+mod compound_artifact;
 pub mod cursor_shell_command;
 pub mod policy_document;
 pub use codex_output_entry::{review_codex_tool_output, ToolOutputOutcome};
@@ -324,6 +325,7 @@ pub mod shell_secret_reads;
 mod shell_structure;
 pub mod source_cli;
 pub mod typescript_launch_evidence;
+mod unmodeled_shell_artifact;
 
 pub mod package_context_environment;
 

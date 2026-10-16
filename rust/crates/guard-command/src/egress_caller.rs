@@ -41,6 +41,18 @@ const INLINE_BUDGET_BYTES: usize = 64 * 1024;
 const REDIRECT_STATUSES: [u16; 5] = [301, 302, 303, 307, 308];
 /// A credential or cookie must never ride along to a redirect target.
 const CREDENTIAL_HEADERS: [&str; 4] = ["authorization", "dpop", "cookie", "proxy-authorization"];
+/// The request headers that may follow a hop to another origin. A header the
+/// resident set for its destination is not sent to a host that destination
+/// redirected to, so a bespoke credential header cannot be harvested by a
+/// redirect.
+const CROSS_ORIGIN_HEADERS: [&str; 6] = [
+    "accept",
+    "accept-encoding",
+    "accept-language",
+    "if-modified-since",
+    "if-none-match",
+    "user-agent",
+];
 
 /// How much of a managed policy's refusal code is reported.
 pub(crate) const POLICY_CODE_MAX_CHARS: usize = 128;
@@ -322,6 +334,7 @@ fn fetch(need: &EgressNeedV1, policy: &dyn EgressPolicy) -> Fetched {
         need.max_redirects,
     );
     let deadline = Instant::now() + Duration::from_secs_f64(MAX_EXCHANGE_SECONDS);
+    let origin = origin_of(&url);
     let mut hops = 0u32;
     loop {
         if !matches!(scheme_of(&url).as_deref(), Some("http") | Some("https")) {
@@ -332,11 +345,13 @@ fn fetch(need: &EgressNeedV1, policy: &dyn EgressPolicy) -> Fetched {
                 code: policy_code(&code),
             });
         }
+        let cross_origin = hops > 0 && origin_of(&url) != origin;
         let response = match exchange(
             need,
             &url,
             body.clone(),
             deadline,
+            cross_origin,
             &policy.proxy(&url),
             &policy.trust(),
         ) {
@@ -403,11 +418,15 @@ struct Exchange {
 }
 
 /// One request, with no redirect followed by the transport.
+///
+/// `cross_origin` says the hop left the origin the need addressed, so only the
+/// headers in [`CROSS_ORIGIN_HEADERS`] are carried over.
 fn exchange(
     need: &EgressNeedV1,
     url: &str,
     body: Option<Vec<u8>>,
     deadline: Instant,
+    cross_origin: bool,
     proxy: &EgressProxy,
     trust: &EgressTrust,
 ) -> Result<Exchange, Box<EgressOutcomeV1>> {
@@ -415,7 +434,7 @@ fn exchange(
     if remaining.is_zero() {
         return Err(Box::new(EgressOutcomeV1::Timeout));
     }
-    let per_read = Duration::from_secs_f64(need.timeout_seconds.clamp(0.5, MAX_EXCHANGE_SECONDS));
+    let per_read = Duration::from_secs_f64(per_read_seconds(need.timeout_seconds));
     let builder = ureq::config::Config::builder()
         .timeout_global(Some(remaining))
         .timeout_connect(Some(per_read.min(remaining)))
@@ -457,6 +476,9 @@ fn exchange(
         .method(need.method.to_uppercase().as_str())
         .uri(url);
     for (name, value) in &need.headers {
+        if cross_origin && !carries_across_origins(name) {
+            continue;
+        }
         builder = builder.header(name.as_str(), value.as_str());
     }
     let request = builder
@@ -570,36 +592,42 @@ fn redirect_target(current: &str, location: &str) -> Option<String> {
     Some(target)
 }
 
-/// Resolve `location` against `current`: absolute, root-relative, or relative
-/// to the current path.
+/// Resolve `location` against `current` the way `urllib.parse.urljoin` does:
+/// absolute, protocol-relative, root-relative, query-only or relative to the
+/// current path, with `.` and `..` segments removed.
 fn join_url(current: &str, location: &str) -> Option<String> {
     let location = location.trim();
     if location.is_empty() || location.contains(['\r', '\n', ' ']) {
         return None;
     }
-    if scheme_of(location).is_some() {
-        return Some(location.to_owned());
+    let mut target = url::Url::parse(current).ok()?.join(location).ok()?;
+    // A fragment is never put on the wire, and each hop is its own request.
+    target.set_fragment(None);
+    Some(target.into())
+}
+
+/// The scheme, host and port a URL addresses, for comparing two hops.
+fn origin_of(url: &str) -> Option<String> {
+    Some(url::Url::parse(url).ok()?.origin().ascii_serialization())
+}
+
+/// Whether a request header the resident set may follow a hop that leaves the
+/// origin the need addressed. Anything else — a registry token in a bespoke
+/// header, say — stays with the origin it was addressed to.
+fn carries_across_origins(name: &str) -> bool {
+    CROSS_ORIGIN_HEADERS.contains(&name.to_ascii_lowercase().as_str())
+}
+
+/// The connect and per-read bound for one exchange: the timeout the resident
+/// asked for, never widened, capped by the wall-clock bound. A value that is
+/// not a usable duration falls back to that cap, which the deadline in
+/// [`fetch`] still bounds.
+fn per_read_seconds(requested: f64) -> f64 {
+    if requested.is_finite() && requested > 0.0 {
+        requested.min(MAX_EXCHANGE_SECONDS)
+    } else {
+        MAX_EXCHANGE_SECONDS
     }
-    let scheme = scheme_of(current)?;
-    let rest = current.strip_prefix(&format!("{scheme}://"))?;
-    let authority = rest.split(['/', '?', '#']).next().unwrap_or(rest);
-    if authority.is_empty() {
-        return None;
-    }
-    if let Some(path) = location.strip_prefix('/') {
-        return Some(format!("{scheme}://{authority}/{path}"));
-    }
-    let path = rest
-        .strip_prefix(authority)
-        .unwrap_or("")
-        .split(['?', '#'])
-        .next()
-        .unwrap_or("");
-    let directory = match path.rfind('/') {
-        Some(index) => &path[..=index],
-        None => "/",
-    };
-    Some(format!("{scheme}://{authority}{directory}{location}"))
 }
 
 /// The lowercase scheme of an absolute URL.
