@@ -5,6 +5,8 @@ use std::path::Path;
 
 #[path = "workspace_contained_cwd.rs"]
 mod cwd;
+#[path = "workspace_contained_glob.rs"]
+mod glob;
 
 #[cfg(unix)]
 fn linked_file(path: &Path, workspace: &Path) -> bool {
@@ -78,13 +80,13 @@ pub(super) fn unbounded_linked_writes(model: &CanonicalCommandV1, workspace: &Pa
 }
 
 fn mutates_linked_destination(name: &str, arguments: &[String], workspace: &Path) -> bool {
-    if arguments.iter().any(|value| {
-        value
-            .chars()
-            .any(|c| matches!(c, '*' | '?' | '[' | ']' | '$' | '\u{60}' | '{' | '}'))
-    }) {
+    // The shell expands a pattern before the command runs, so the entries it
+    // names are the writes to weigh. An expansion this scan cannot read
+    // leaves the destinations unknown.
+    let Some(arguments) = glob::expand_arguments(arguments, workspace) else {
         return true;
-    }
+    };
+    let arguments = arguments.as_slice();
     match name {
         "cp" => copy_targets(arguments, workspace).unwrap_or(true),
         "touch" => touch_targets(arguments)
@@ -332,6 +334,13 @@ mod tests {
             ("cd sub | touch linked", true),
             ("cp -R tree destination", true),
             ("cp -R tree new-directory", false),
+            // A pattern weighs the entries the shell expands it into: the
+            // copy out of `sub` lands on a hard link, the one out of `tree`
+            // writes a directory that is not there yet, and a pattern that
+            // matches nothing reaches `cp` as the pattern itself.
+            ("cp -f sub/* destination", true),
+            ("cp -R tree/* new-directory", false),
+            ("cp -R missing/* destination", true),
         ] {
             let model = crate::parse_command(&crate::CommandModelRequestV1 {
                 command: command.into(),
