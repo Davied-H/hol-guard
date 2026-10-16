@@ -41,6 +41,14 @@ const REDIRECT_STATUSES: [u16; 5] = [301, 302, 303, 307, 308];
 /// A credential or cookie must never ride along to a redirect target.
 const CREDENTIAL_HEADERS: [&str; 4] = ["authorization", "dpop", "cookie", "proxy-authorization"];
 
+/// How much of a managed policy's refusal code is reported.
+pub(crate) const POLICY_CODE_MAX_CHARS: usize = 128;
+
+/// What an archive need is told when the managed policy refuses its
+/// destination, whether it is refused here or at the bound transport's hop.
+pub(crate) const ARCHIVE_POLICY_REFUSAL_MESSAGE: &str =
+    "External archive destination is refused by the managed network policy.";
+
 /// The managed network policy the caller performs exchanges under.
 pub trait EgressPolicy {
     /// `Err(code)` refuses the destination; the code reaches the resident as
@@ -149,13 +157,20 @@ impl<'a> EgressFulfilment<'a> {
             std::thread::sleep(Duration::from_secs_f64(delay));
         }
         let outcome = if need.class == "archive" {
-            match self.archives.as_mut() {
-                Some(archives) => archives.fulfil(need),
-                // A caller that has not wired archive acquisition reports the
-                // refusal; the resident never dials out for the blob itself.
-                None => EgressOutcomeV1::ArchiveFailure {
-                    code: "external_archive_download_unavailable".to_owned(),
-                    message: "External archive acquisition is unavailable.".to_owned(),
+            // The archive path answers through a separate acquisition seam, so
+            // the destination is screened here as well: a caller cannot reach
+            // a host the managed policy refuses by routing it as an archive.
+            match self.policy.validate(&need.url) {
+                Err(code) => archive_refusal(&code),
+                Ok(()) => match self.archives.as_mut() {
+                    Some(archives) => archives.fulfil(need),
+                    // A caller that has not wired archive acquisition reports
+                    // the refusal; the resident never dials out for the blob
+                    // itself.
+                    None => EgressOutcomeV1::ArchiveFailure {
+                        code: "external_archive_download_unavailable".to_owned(),
+                        message: "External archive acquisition is unavailable.".to_owned(),
+                    },
                 },
             }
         } else {
@@ -277,9 +292,9 @@ fn fetch(need: &EgressNeedV1, policy: &dyn EgressPolicy) -> Fetched {
             return Fetched::Outcome(blocked("egress_scheme_not_allowed"));
         }
         if let Err(code) = policy.validate(&url) {
-            let mut code = code;
-            code.truncate(128);
-            return Fetched::Outcome(EgressOutcomeV1::Blocked { code });
+            return Fetched::Outcome(EgressOutcomeV1::Blocked {
+                code: policy_code(&code),
+            });
         }
         let response = match exchange(need, &url, body.clone(), deadline, &policy.proxy(&url)) {
             Ok(response) => response,
@@ -397,6 +412,25 @@ fn map_error(error: ureq::Error) -> EgressOutcomeV1 {
         ureq::Error::BodyExceedsLimit(_) => error_outcome("response too large"),
         ureq::Error::HostNotFound => error_outcome("host not found"),
         _ => error_outcome("transport"),
+    }
+}
+
+/// The refusal an archive need gets when the managed policy denies its
+/// destination, reported in the archive shape the resident expects.
+fn archive_refusal(code: &str) -> EgressOutcomeV1 {
+    EgressOutcomeV1::ArchiveFailure {
+        code: policy_code(code),
+        message: ARCHIVE_POLICY_REFUSAL_MESSAGE.to_owned(),
+    }
+}
+
+/// A refusal code from the managed policy, bounded so a policy cannot put an
+/// unbounded string into an answer. Cut on a character boundary: the code is
+/// reported, not parsed as bytes.
+pub(crate) fn policy_code(code: &str) -> String {
+    match code.char_indices().nth(POLICY_CODE_MAX_CHARS) {
+        Some((end, _)) => code[..end].to_owned(),
+        None => code.to_owned(),
     }
 }
 
