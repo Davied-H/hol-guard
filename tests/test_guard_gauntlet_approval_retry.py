@@ -338,6 +338,23 @@ def test_a_poll_that_could_not_read_the_queue_does_not_fail_the_case():
     assert retry_assessment(case)[0] == "pass"
 
 
+def test_a_later_action_approved_twice_fails_even_when_an_earlier_one_passed():
+    """One action getting through says nothing about another the operator re-approved."""
+    case = {
+        "approval_grants": _grants("git status --short", "git diff --stat", "git diff --stat"),
+        "guard_decisions": [
+            _decision("git status --short", "deny"),
+            _decision("git status --short", "allow"),
+            _decision("git diff --stat", "deny"),
+            _decision("git diff --stat", "deny"),
+            _decision("git diff --stat", "allow"),
+        ],
+    }
+    outcome, reason = retry_assessment(case)
+    assert outcome == "fail"
+    assert "approve the same action 2 times" in reason
+
+
 @pytest.mark.parametrize(
     ("command", "expected"),
     [
@@ -346,6 +363,12 @@ def test_a_poll_that_could_not_read_the_queue_does_not_fail_the_case():
         ("git diff --stat", ("git", "diff")),
         ("git 'status'", ("git", "status")),
         ("git status 'unterminated", ("git", "status")),
+        # A retry that adds an option still names the action that was approved.
+        ("git -C /tmp/repo status --short", ("git", "status")),
+        ("git --no-pager log -1", ("git", "log")),
+        ("git -c core.pager=cat diff", ("git", "diff")),
+        ("git", ("git",)),
+        ("", ()),
     ],
 )
 def test_the_action_key_is_the_program_and_subcommand(command: str, expected: tuple):

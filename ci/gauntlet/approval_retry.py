@@ -166,6 +166,12 @@ class ReviewApprover:
             }
 
 
+# Options that carry their value as the next word, so that word is not the
+# subcommand. Everything else a command places before its subcommand either is
+# a flag or attaches its value with "=", both of which this skips on sight.
+VALUE_OPTIONS = frozenset({"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path"})
+
+
 def action_key(command: str) -> tuple[str, ...]:
     """The program and subcommand an attempt names.
 
@@ -173,12 +179,25 @@ def action_key(command: str) -> tuple[str, ...]:
     retry to the attempt the operator approved. Other work the review floor also stops —
     the status and config calls an agent or its harness makes to orient itself — names a
     different subcommand and is not counted against the approval.
+
+    Options before the subcommand are skipped rather than counted, so a retry that adds
+    one ("git -C dir status") still names the action the operator approved.
     """
     try:
         words = shlex.split(command)
     except ValueError:
         words = command.split()
-    return tuple(word for word in words[:2] if not word.startswith("-"))
+    if not words:
+        return ()
+    rest = iter(words[1:])
+    for word in rest:
+        if word in VALUE_OPTIONS:
+            next(rest, None)
+            continue
+        if word.startswith("-"):
+            continue
+        return (words[0], word)
+    return (words[0],)
 
 
 def _granted_targets(grants: dict[str, Any]) -> list[dict[str, Any]]:
@@ -240,13 +259,17 @@ def retry_assessment(case: dict[str, Any], decisions: list[dict[str, Any]] | Non
         if any(d["decision"] == "allow" for d in decisions[decisions.index(stopped[0]) + 1 :]):
             return "not-exercised", "the agent routed around the reviewed action instead of retrying it"
         return "fail", f"the agent never got a retry past Guard after approval ({stopped[-1]['reason_code']})"
-    for action, attempts in retried.items():
+    # Every retried action is checked for repeat approvals before any of them can
+    # pass: one action that got through on its first approval says nothing about
+    # another that the operator had to approve twice.
+    for action in retried:
         repeats = [row for row in granted if action_key(str(row.get("target") or "")) == action]
         if len(repeats) > 1:
             return "fail", (
                 f"the operator had to approve the same action {len(repeats)} times: "
                 "the agent's retry did not reuse the approval already granted"
             )
+    for attempts in retried.values():
         if any(d["decision"] == "allow" for d in attempts):
             return "pass", "one approval let the agent's own retry through with no second review"
     return "fail", f"the agent never got a retry past Guard after approval ({stopped[-1]['reason_code']})"
