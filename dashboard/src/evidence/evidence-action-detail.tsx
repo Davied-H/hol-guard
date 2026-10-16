@@ -20,6 +20,7 @@ import { plainEnglishDescription, resolveActionTitle, resolveActionType, resolve
 import { detectCategory, getCategoryInfo } from "./categories";
 import { SectionLabel } from "../approval-center-primitives";
 import { DecisionBadge } from "./decision-badge";
+import { approvalLeftActionStopped } from "./approval-outcome";
 import { LoggedActionPanel } from "../logged-action-panel";
 import { guardActionPresentation } from "../guard-action";
 
@@ -204,6 +205,9 @@ function DetailRow({ label, value, mono }: DetailRowProps) {
 }
 
 export function nextSafeStep(receipt: GuardReceipt): string | null {
+  if (approvalLeftActionStopped(receipt)) {
+    return "A one-time approval cannot let the agent run this command. Run it yourself, or approve the next request with \"Always allow exact action\" when that option is offered.";
+  }
   const action = guardActionPresentation(receipt.policy_decision).action;
   if (action === "block") {
     return "This action is blocked. Review the governing policy or choose a safer alternative; it cannot be approved from the review queue.";
@@ -361,7 +365,7 @@ export function EvidenceActionDetail({
 
       <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
         <div className="flex flex-wrap items-center gap-2">
-          <DecisionBadge decision={receipt.policy_decision} />
+          <DecisionBadge decision={receipt.policy_decision} userOverride={receipt.user_override} />
           <span className="text-xs text-slate-500">
             {harnessDisplayName(receipt.harness)}
           </span>

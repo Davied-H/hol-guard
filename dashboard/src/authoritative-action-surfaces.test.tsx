@@ -5,6 +5,7 @@ import type { GuardAction, GuardReceipt } from "./guard-types";
 import { GUARD_ACTIONS } from "./guard-types";
 import { buildDailyStory, buildRecentProtectionCopy } from "./home-dashboard";
 import { DecisionBadge } from "./evidence/decision-badge";
+import { APPROVAL_RETRY_BLOCKED_OVERRIDE } from "./evidence/approval-outcome";
 import { computeMetrics } from "./evidence/evidence-metrics";
 import { filterByDecision } from "./evidence/evidence-filters";
 import { plainEnglishDescription } from "./evidence/plain-english";
@@ -106,5 +107,24 @@ const story = buildDailyStory(receipts, 0);
 assert.ok(story?.body.includes("allowed 2 actions"), "Home story counts allow and warn as allowed");
 assert.ok(story?.body.includes("blocked 1"), "Home story counts the block disposition");
 assert.ok(story?.body.includes("sent 3 for review"), "Home story reports all review dispositions");
+
+// #3844: a one-time approval the agent's retry could not reuse is recorded as an
+// allow decision, but the action never ran, so no surface may call it allowed.
+const stoppedApproval: GuardReceipt = { ...receipt("allow"), user_override: APPROVAL_RETRY_BLOCKED_OVERRIDE };
+const stoppedBadge = renderToStaticMarkup(
+  createElement(DecisionBadge, { decision: "allow", userOverride: APPROVAL_RETRY_BLOCKED_OVERRIDE }),
+);
+assert.ok(stoppedBadge.includes("Approved, still stopped"), "the badge says the approved action stayed stopped");
+assert.ok(!stoppedBadge.includes(expectedLabels.allow), "the badge does not call it allowed");
+const stoppedDescription = plainEnglishDescription(stoppedApproval);
+assert.ok(stoppedDescription.startsWith("Codex tried to"), "the description does not say the action ran");
+assert.ok(stoppedDescription.includes("stayed stopped"), "the description names the outcome");
+assert.ok(!stoppedDescription.includes("allowed it"), "the description does not claim the action was allowed");
+assert.ok(nextSafeStep(stoppedApproval)?.includes("Always allow exact action"), "the next step names what can let it run");
+assert.equal(buildRecentProtectionCopy(stoppedApproval), "Codex stayed stopped on tool after a one-time approval");
+assert.ok(
+  plainEnglishDescription({ ...receipt("allow"), user_override: "approval-approved" }).includes("You reviewed and allowed it."),
+  "an approval that let the action run keeps the reviewed-and-allowed copy",
+);
 
 console.log("authoritative-action-surfaces.test.tsx: all tests passed");
