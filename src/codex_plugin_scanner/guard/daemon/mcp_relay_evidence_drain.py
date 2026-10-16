@@ -112,6 +112,7 @@ def record_mcp_relay_evidence(store: object, guard_home: Path, record: object) -
     tool_name, params = record["tool_name"], record["params"]
     if (
         record["kind"] != MCP_TOOL_CALL_EVIDENCE_KIND
+        or not isinstance(harness, str)
         or harness not in _RELAY_HARNESSES
         or not isinstance(source, str)
         or not isinstance(policy_action, str)
@@ -218,10 +219,16 @@ def _queued_approval(approval: object) -> _QueuedApproval | None:
         or not all(isinstance(notice, dict) and set(notice) == _NOTICE_KEYS for notice in notices)
     ):
         return None
-    urls = [approval["approval_center_url"], approval["review_url"], approval["request_id"]]
-    if not all(isinstance(value, str) and value for value in urls):
+    center = approval["approval_center_url"]
+    review_url = approval["review_url"]
+    request_id = approval["request_id"]
+    if (
+        not isinstance(center, str)
+        or not isinstance(review_url, str)
+        or not isinstance(request_id, str)
+        or not (center and review_url and request_id)
+    ):
         return None
-    center, review_url, request_id = urls
     return _QueuedApproval(
         approval_center_url=center,
         review_url=review_url,
