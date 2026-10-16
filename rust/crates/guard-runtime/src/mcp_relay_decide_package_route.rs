@@ -176,7 +176,7 @@ pub(super) fn compose(
 
 /// `package_facts`: the decision-relevant facts of one resolved package
 /// policy.
-fn package_facts(policy: &PackagePolicy) -> Result<McpPackageFactsV1, &'static str> {
+pub(super) fn package_facts(policy: &PackagePolicy) -> Result<McpPackageFactsV1, &'static str> {
     Ok(McpPackageFactsV1 {
         saved_policy_blocks: saved_policy_blocks(policy),
         current_action: Some(policy.current_action.as_str().to_owned()),

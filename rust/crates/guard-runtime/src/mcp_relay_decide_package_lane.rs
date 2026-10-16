@@ -67,6 +67,20 @@ pub(super) enum PackageOutcome {
     ToolLeg(ToolLeg),
 }
 
+impl PackageOutcome {
+    /// The answer this outcome carries, for a caller with evidence to append
+    /// to the receipt it is recorded with; a leg the tool lane answers carries
+    /// none.
+    pub(super) fn answer_mut(&mut self) -> Option<&mut PackageAnswer> {
+        match self {
+            Self::Answered(answer)
+            | Self::AskPackage(answer)
+            | Self::ObservePackage { answer, .. } => Some(answer),
+            Self::ToolLeg(_) => None,
+        }
+    }
+}
+
 /// One answered package call: what the client is told, and what the receipt the
 /// drain writes records for it.
 #[derive(Debug, Clone, PartialEq)]
@@ -141,7 +155,7 @@ where
 }
 
 /// The answer and the receipt facts of one decided package route.
-fn answered(
+pub(super) fn answered(
     route: &PackageRoute,
     tool: &str,
     server: &str,

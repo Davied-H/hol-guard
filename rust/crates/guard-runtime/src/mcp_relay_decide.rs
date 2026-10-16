@@ -834,6 +834,10 @@ mod package_answer;
 mod package_archive;
 #[path = "mcp_relay_decide_package_ask.rs"]
 mod package_ask;
+// What the claimed package lane composes; its spend lands with the claim.
+#[allow(dead_code)]
+#[path = "mcp_relay_decide_package_claim.rs"]
+mod package_claim;
 #[path = "mcp_relay_decide_package_config.rs"]
 mod package_config;
 #[path = "mcp_relay_decide_package_lane.rs"]
