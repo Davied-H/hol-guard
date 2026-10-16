@@ -40,6 +40,18 @@ fn other_network_use_keeps_the_review() {
         "await fetch('http://127.0.0.1:2375/containers/json')",
         "await fetch('http://localhost:4781/approve')",
         "require('node:http').createServer().listen(9229, '127.0.0.1')",
+        // Local data stores and brokers: the grant is raw TCP for the whole
+        // contained tree, so a spawned child could speak their own protocol.
+        "await fetch('http://127.0.0.1:5432/')",
+        "await fetch('http://localhost:3306/')",
+        "await fetch('http://127.0.0.1:27018/')",
+        "await fetch('http://127.0.0.1:9092/')",
+        // Every port a kube control-plane component binds, not only the three
+        // this list used to name.
+        "await fetch('http://127.0.0.1:10252/healthz')",
+        // Registered service ports as a class.
+        "await fetch('http://127.0.0.1:631/')",
+        "await fetch('http://localhost:22/')",
         // Hosts other than loopback.
         "await fetch('https://example.com/')",
         "await fetch('http://example.com:80/')",

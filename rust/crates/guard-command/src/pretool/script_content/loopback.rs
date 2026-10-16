@@ -17,13 +17,35 @@ use regex::Regex;
 use super::launch::{launched_program, Program};
 use super::{code_lines, python_network, Language, CREDENTIAL_STORE, NODE_NETWORK};
 
-/// Loopback services an HTTP request could command: container and cluster
+/// Loopback services this grant must never reach: container and cluster
 /// control planes, service meshes, debuggers, Guard's own approval center,
-/// and data stores that accept local clients without credentials.
+/// message brokers, and data stores that accept local clients without
+/// credentials.
+///
+/// The sandbox opens a granted port to the whole process tree as raw outbound
+/// TCP, not as HTTP, so the question each port answers is "could something
+/// under this command speak that service's protocol", not "could an HTTP
+/// request drive it". A smoke test fetching a page it just built reaches none
+/// of them.
 const ADMIN_PORTS: &[u16] = &[
-    2019, 2375, 2376, 2379, 2380, 4243, 4646, 4781, 5984, 6379, 6443, 8001, 8200, 8500, 9200, 9222,
-    9229, 10248, 10250, 10255, 11211, 15000, 27017,
+    1433, 1521, 2019, 2181, 2375, 2376, 2379, 2380, 3306, 4001, 4243, 4646, 4781, 5432, 5433, 5672,
+    5984, 6379, 6380, 6443, 7474, 7687, 8001, 8086, 8123, 8200, 8500, 9042, 9092, 9200, 9222, 9229,
+    9300, 11211, 15000, 15672, 26257, 33060,
 ];
+/// Services whose components bind a whole block of loopback ports.
+const ADMIN_PORT_RANGES: &[std::ops::RangeInclusive<u16>] = &[10248..=10256, 27017..=27019];
+
+/// Whether the workspace sandbox may open `port` to the contained tree.
+///
+/// Ports below 1024 are refused as a class rather than listed: every one of
+/// them belongs to a registered service, and a dev server an agent starts to
+/// smoke-test its own page binds none of them without privilege it does not
+/// have here.
+fn grantable(port: u16) -> bool {
+    port >= 1024
+        && !ADMIN_PORTS.contains(&port)
+        && !ADMIN_PORT_RANGES.iter().any(|range| range.contains(&port))
+}
 
 /// HTTP module members that open no connection of their own.
 const HTTP_MEMBERS: &[&str] = &["createServer", "STATUS_CODES", "METHODS"];
@@ -132,10 +154,7 @@ pub(super) fn node_loopback_ports(code: &str) -> Option<BTreeSet<u16>> {
         let port = LOOPBACK_LISTEN.captures(&code[found.start()..])?;
         ports.insert(port[1].parse::<u16>().ok()?);
     }
-    ports
-        .iter()
-        .all(|port| *port != 0 && !ADMIN_PORTS.contains(port))
-        .then_some(ports)
+    ports.iter().copied().all(grantable).then_some(ports)
 }
 
 /// Whether every use of the HTTP module bound to `name`, besides its
