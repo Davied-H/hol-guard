@@ -98,6 +98,7 @@ mod omp_hashline_writes;
 mod pipe_attacks;
 mod pure_expression;
 mod read_paths;
+mod data_heredocs;
 mod source_reads;
 use source_reads::{plain_source_code_path, sensitive_command_input, source_file_read_segment};
 mod recursive_copy;
@@ -847,7 +848,7 @@ fn evaluate_single_command(
         ));
     }
     if git_search_text::sensitive_beyond_patterns(
-        normalized,
+        &data_heredocs::without_data_bodies(normalized),
         git_search_text::command_without_patterns(&model),
     ) || secret_aliases::names_secret_alias(&model, context)
     {

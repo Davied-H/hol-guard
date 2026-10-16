@@ -1,0 +1,88 @@
+//! A quoted heredoc fed to a bare `cat` is file content, never a command or a
+//! path the shell reads. Words in that content, such as `process.env` in a
+//! generated source file, are not a sensitive access. The declaring line stays
+//! in the text, so a sensitive redirect target is still seen.
+
+use crate::shell_structure::{extract_heredocs, mask_heredoc_bodies, ShellHeredoc};
+
+/// `text` with the body of each data heredoc blanked, or `text` unchanged when
+/// it has none.
+pub(super) fn without_data_bodies(text: &str) -> String {
+    if !text.contains("<<") {
+        return text.to_owned();
+    }
+    let heredocs = extract_heredocs(text);
+    if heredocs.is_empty() {
+        return text.to_owned();
+    }
+    let chars: Vec<char> = text.chars().collect();
+    let data: Vec<ShellHeredoc> = heredocs
+        .into_iter()
+        .filter(|heredoc| heredoc.quoted && declared_by_bare_cat(&chars, heredoc))
+        .collect();
+    mask_heredoc_bodies(text, &data)
+}
+
+/// The heredoc's declaring line is `cat`, an optional literal output redirect
+/// and the heredoc operator, and nothing else, after any chain separator.
+fn declared_by_bare_cat(chars: &[char], heredoc: &ShellHeredoc) -> bool {
+    let Some(newline) = heredoc.body_start.checked_sub(1) else {
+        return false;
+    };
+    if chars.get(newline) != Some(&'\n') {
+        return false;
+    }
+    let line_start = chars[..newline]
+        .iter()
+        .rposition(|character| *character == '\n')
+        .map_or(0, |position| position + 1);
+    let line: String = chars[line_start..newline].iter().collect();
+    let command = ["&&", "||", ";"]
+        .iter()
+        .filter_map(|separator| line.rfind(separator).map(|at| at + separator.len()))
+        .max()
+        .map_or(line.as_str(), |at| &line[at..]);
+    let mut heredocs = 0;
+    let mut cats = 0;
+    let mut expecting_target = false;
+    for token in command.split_whitespace() {
+        if expecting_target {
+            if !literal_word(token) {
+                return false;
+            }
+            expecting_target = false;
+        } else if token == "cat" {
+            cats += 1;
+        } else if matches!(token, ">" | ">>") {
+            expecting_target = true;
+        } else if let Some(target) = token
+            .strip_prefix(">>")
+            .or_else(|| token.strip_prefix('>'))
+            .filter(|target| !target.is_empty())
+        {
+            if !literal_word(target) {
+                return false;
+            }
+        } else if let Some(delimiter) = token
+            .strip_prefix("<<-")
+            .or_else(|| token.strip_prefix("<<"))
+            .filter(|delimiter| !delimiter.is_empty())
+        {
+            if !delimiter.starts_with(['\'', '"']) {
+                return false;
+            }
+            heredocs += 1;
+        } else {
+            return false;
+        }
+    }
+    cats == 1 && heredocs == 1 && !expecting_target
+}
+
+fn literal_word(word: &str) -> bool {
+    !word.is_empty()
+        && !word.starts_with(['&', '-', '<', '>'])
+        && !word.contains([
+            '$', '`', '(', ')', '|', '&', ';', '<', '>', '\'', '"', '\\', '*', '?',
+        ])
+}
