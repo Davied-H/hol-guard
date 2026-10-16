@@ -3,7 +3,7 @@
 //! must never reach one, whatever spelling, folder or index layout hides it.
 
 use super::launch::{git_repository, launch, put};
-use super::{cmd, shell, Tree};
+use super::{cmd, exact_action_token, json, query, shell, Tree};
 
 const LFS_CONFIG: &str = "[filter \"lfs\"]\n\tclean = git-lfs clean -- %f\n\tsmudge = git-lfs smudge -- %f\n\tprocess = git-lfs filter-process\n\trequired = true\n";
 
@@ -144,5 +144,101 @@ fn split_indexes_fail_closed() {
             .to_string_lossy()
             .starts_with("sharedindex.")));
     assert_eq!(shell(&tree, "git status"), Err("unproven_launch"));
-    assert!(shell(&tree, "git log -1").is_ok());
+    assert_eq!(shell(&tree, "git log -1"), Err("unproven_launch"));
+}
+
+/// `git status` run from `ws\\src`.
+fn status_in_src(tree: &Tree) -> Result<String, &'static str> {
+    let cwd = tree.path("ws\\src");
+    exact_action_token(&query(tree, "Bash", Some("git status"), json!(null), &cwd))
+}
+
+#[test]
+fn only_a_plain_repository_layout_is_reusable() {
+    let tree = Tree::new();
+    git_repository(&tree);
+    let commit = "git -c user.name=t -c user.email=t@t commit -q --allow-empty -m t";
+    cmd(&tree.ws(), commit);
+    cmd(&tree.ws(), "git worktree add -q wt");
+    assert!(shell(&tree, "cd wt && git status").is_ok());
+    // Git skips a `.git` folder that is no repository and keeps walking up.
+    std::fs::create_dir(tree.path("ws\\src\\.git")).unwrap();
+    assert_eq!(status_in_src(&tree), Err("unproven_launch"));
+    std::fs::remove_dir(tree.path("ws\\src\\.git")).unwrap();
+    // Git takes a folder shaped like a bare repository before any parent.
+    put(&tree, "ws\\src\\HEAD", "ref: refs/heads/main\n");
+    std::fs::create_dir_all(tree.path("ws\\src\\objects")).unwrap();
+    assert_eq!(status_in_src(&tree), Err("unproven_launch"));
+    assert!(shell(&tree, "git status").is_ok());
+    std::fs::remove_file(tree.path("ws\\src\\HEAD")).unwrap();
+    assert!(status_in_src(&tree).is_ok());
+    // A `commondir` sends config and hooks to a folder no digest read.
+    put(&tree, "ws\\.git\\commondir", "../outside\n");
+    assert_eq!(shell(&tree, "git status"), Err("unproven_launch"));
+    std::fs::remove_file(tree.path("ws\\.git\\commondir")).unwrap();
+    // The index proof reads only the SHA-1 layout.
+    tree.write(
+        "ws\\.git\\config",
+        "[core]\n\trepositoryformatversion = 1\n[extensions]\n\tobjectformat = sha256\n",
+    );
+    assert_eq!(shell(&tree, "git log -1"), Err("git_helper_config"));
+}
+
+#[test]
+fn submodules_stay_one_time() {
+    // Git runs a child git in each populated submodule, with config, hooks
+    // and attributes no digest read.
+    let tree = Tree::new();
+    git_repository(&tree);
+    assert!(shell(&tree, "git status").is_ok());
+    assert_eq!(
+        shell(&tree, "git status --ignore-submodules"),
+        Err("git_helper_config")
+    );
+    let gitlink = "160000,1111111111111111111111111111111111111111,sub";
+    cmd(
+        &tree.ws(),
+        &format!("git update-index --add --cacheinfo {gitlink}"),
+    );
+    assert_eq!(cmd(&tree.ws(), "git ls-files"), "sub");
+    for command in ["git status", "git diff", "git log -1"] {
+        assert_eq!(shell(&tree, command), Err("git_helper_config"), "{command}");
+    }
+}
+
+#[test]
+fn index_names_a_skipped_folder_may_hide_in_stay_one_time() {
+    let tree = Tree::new();
+    git_repository(&tree);
+    tree.write("ws\\.git\\config", LFS_CONFIG);
+    let blob = cmd(&tree.ws(), "git hash-object -w src/main.rs");
+    // Windows opens each of these as a path inside `node_modules`, or folds
+    // its case beyond ASCII. Git for Windows itself refuses to index a
+    // trailing dot or space, so those are checked only when it takes them.
+    for name in [
+        "NODE_M~1/x.js",
+        "node_modules./x.js",
+        "node_modules /x.js",
+        "src/caf\u{e9}.rs",
+    ] {
+        let add = format!("git update-index --add --cacheinfo 100644,{blob},\"{name}\"");
+        cmd(&tree.ws(), &add);
+        let indexed = cmd(&tree.ws(), "git ls-files").lines().count();
+        if name.contains("modules") && indexed == 0 {
+            continue;
+        }
+        assert_eq!(indexed, 1, "{name}");
+        assert!(shell(&tree, "git status").is_ok(), "{name}");
+        put(&tree, "ws\\node_modules\\pkg\\index.js", "\n");
+        assert_eq!(
+            shell(&tree, "git status"),
+            Err("git_helper_config"),
+            "{name}"
+        );
+        std::fs::remove_dir_all(tree.path("ws\\node_modules")).unwrap();
+        cmd(
+            &tree.ws(),
+            &format!("git update-index --force-remove \"{name}\""),
+        );
+    }
 }
