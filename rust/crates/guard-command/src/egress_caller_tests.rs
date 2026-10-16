@@ -274,3 +274,84 @@ fn a_location_resolves_against_the_current_url() {
         Some("https://a.example/x".to_owned())
     );
 }
+
+#[test]
+fn a_location_resolves_the_shapes_urljoin_accepts() {
+    // Protocol-relative: the host changes, the scheme is kept.
+    assert_eq!(
+        redirect_target("https://a.example/one/two", "//cdn.example/pkg"),
+        Some("https://cdn.example/pkg".to_owned())
+    );
+    // Query-only: the current path is kept.
+    assert_eq!(
+        redirect_target("https://a.example/one/two", "?page=2"),
+        Some("https://a.example/one/two?page=2".to_owned())
+    );
+    // Dot segments are removed rather than sent.
+    assert_eq!(
+        redirect_target("https://a.example/one/two/three", "../four"),
+        Some("https://a.example/one/four".to_owned())
+    );
+    assert_eq!(
+        redirect_target("https://a.example/one/two", "./five"),
+        Some("https://a.example/one/five".to_owned())
+    );
+    // A fragment belongs to the client, not the request.
+    assert_eq!(
+        redirect_target("https://a.example/one", "/six#anchor"),
+        Some("https://a.example/six".to_owned())
+    );
+    assert_eq!(redirect_target("https://a.example/one", "   "), None);
+}
+
+#[test]
+fn a_bespoke_header_stops_at_the_origin_it_was_addressed_to() {
+    let spool = spool_dir("cross-origin");
+    let (other, other_seen, _other_hits) = serve(vec![ok("{}")]);
+    let (base, base_seen, _base_hits) = serve(vec![moved(&format!("{other}/moved"))]);
+    let mut asked = need(&format!("{base}/start"));
+    asked.max_redirects = 2;
+    asked
+        .headers
+        .insert("X-Api-Key".to_owned(), "secret".to_owned());
+    asked
+        .headers
+        .insert("Accept".to_owned(), "application/json".to_owned());
+    let supplied = fulfil(&[asked.clone()], &spool);
+    assert!(
+        matches!(&supplied[0].outcome, EgressOutcomeV1::Response { status, .. } if *status == 200),
+        "{:?}",
+        supplied[0].outcome
+    );
+    let first = base_seen.lock().expect("lock")[0].to_ascii_lowercase();
+    assert!(first.contains("x-api-key: secret"), "{first}");
+    let hop = other_seen.lock().expect("lock")[0].to_ascii_lowercase();
+    assert!(!hop.contains("x-api-key"), "{hop}");
+    assert!(hop.contains("accept: application/json"), "{hop}");
+
+    // The same hop inside the origin keeps every header.
+    let (base, base_seen, _hits) = serve(vec![moved("/moved"), ok("{}")]);
+    let mut asked = need(&format!("{base}/start"));
+    asked.max_redirects = 2;
+    asked
+        .headers
+        .insert("X-Api-Key".to_owned(), "secret".to_owned());
+    let supplied = fulfil(&[asked], &spool);
+    assert!(
+        matches!(&supplied[0].outcome, EgressOutcomeV1::Response { status, .. } if *status == 200),
+        "{:?}",
+        supplied[0].outcome
+    );
+    let second = base_seen.lock().expect("lock")[1].to_ascii_lowercase();
+    assert!(second.contains("x-api-key: secret"), "{second}");
+}
+
+#[test]
+fn the_per_read_bound_is_never_widened() {
+    assert_eq!(per_read_seconds(0.1), 0.1);
+    assert_eq!(per_read_seconds(5.0), 5.0);
+    assert_eq!(per_read_seconds(600.0), MAX_EXCHANGE_SECONDS);
+    assert_eq!(per_read_seconds(0.0), MAX_EXCHANGE_SECONDS);
+    assert_eq!(per_read_seconds(-1.0), MAX_EXCHANGE_SECONDS);
+    assert_eq!(per_read_seconds(f64::NAN), MAX_EXCHANGE_SECONDS);
+}
