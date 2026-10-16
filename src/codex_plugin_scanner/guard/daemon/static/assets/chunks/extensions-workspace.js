@@ -1,4 +1,4 @@
-import { bj as fetchLocalCliApi, r as reactExports, bk as fetchExtensionCatalog, bl as normalizeExtensionCatalogSummary, bm as normalizeExtensionPermission, bn as ExtensionControlProtocolError, bo as ExtensionControlApiError, bp as normalizeExtensionCatalogItem, bq as guardApiCacheScope, br as fetchExtensionCatalogV2Api, bs as localPermissionDraftState, bt as setLocalPermissionDraftState, bu as newExtensionPolicyDraftIdentity, bv as extensionPolicyDraftIsDirty, bw as setLocalPermissionDraftStates, bx as buildExtensionPolicyDraftMutation, by as previewExtensionMutation, bz as isCurrentExtensionPolicyDraft, bA as applyExtensionMutation, bB as fetchEffectiveExtensionControls, bC as fetchExtensionControlHistory, j as jsxRuntimeExports, F as HiMiniSparkles, s as HiMiniCheckCircle, bD as HiMiniNoSymbol, ay as HiMiniLockClosed, R as HiMiniExclamationTriangle, aG as isApprovalProofSubmitDisabled, I as HiMiniXMark, aF as ApprovalProofFieldInputs, bE as useResolvedApprovalGate, aE as HiMiniArrowPath, y as HiMiniShieldCheck, bF as HiMiniInformationCircle, aH as buildApprovalProofCredentials, bG as GenIcon, T as HiMiniBolt, bH as HiMiniGlobeAlt, bI as HiMiniCube, M as HiMiniCloud, bJ as HiMiniServerStack, b as HiMiniCommandLine, bK as HiMiniFolder, bL as FaWindows, bM as FaAws, c as HiMiniChevronRight, K as HiMiniChevronDown, bN as approvalProofRecentlySatisfied, bO as isBulkApproveGateReady, bP as HiMiniArrowLeft, bQ as HiMiniPlus, bR as startGuardCloudConnect, bS as HiMiniArrowTopRightOnSquare, bT as fetchExtensionControlApi, ap as HiMiniClipboardDocumentCheck, aq as HiMiniClipboard, as as ApprovalProofModal, b2 as guardAwareHref, b0 as HiMiniMagnifyingGlass, aA as HiMiniAdjustmentsHorizontal, bU as HiMiniCheck, a$ as WorkspacePageHeader, bV as fetchExtensionDiscoveryApi, bW as acknowledgeDegradedExtensionControlAuthority, bX as recoverExtensionControlAuthority } from "../guard-dashboard.js";
+import { bk as fetchLocalCliApi, r as reactExports, bl as fetchExtensionCatalog, bm as normalizeExtensionCatalogSummary, bn as normalizeExtensionPermission, bo as ExtensionControlProtocolError, bp as ExtensionControlApiError, bq as normalizeExtensionCatalogItem, br as guardApiCacheScope, bs as fetchExtensionCatalogV2Api, bt as localPermissionDraftState, bu as setLocalPermissionDraftState, bv as newExtensionPolicyDraftIdentity, bw as extensionPolicyDraftIsDirty, bx as setLocalPermissionDraftStates, by as buildExtensionPolicyDraftMutation, bz as previewExtensionMutation, bA as isCurrentExtensionPolicyDraft, bB as applyExtensionMutation, bC as fetchEffectiveExtensionControls, bD as fetchExtensionControlHistory, j as jsxRuntimeExports, I as HiMiniSparkles, s as HiMiniCheckCircle, bE as HiMiniNoSymbol, az as HiMiniLockClosed, T as HiMiniExclamationTriangle, aH as isApprovalProofSubmitDisabled, J as HiMiniXMark, aG as ApprovalProofFieldInputs, bF as useResolvedApprovalGate, aF as HiMiniArrowPath, y as HiMiniShieldCheck, bG as HiMiniInformationCircle, aI as buildApprovalProofCredentials, bH as GenIcon, U as HiMiniBolt, bI as HiMiniGlobeAlt, bJ as HiMiniCube, N as HiMiniCloud, bK as HiMiniServerStack, b as HiMiniCommandLine, bL as HiMiniFolder, bM as FaWindows, bN as FaAws, c as HiMiniChevronRight, L as HiMiniChevronDown, bO as approvalProofRecentlySatisfied, bP as isBulkApproveGateReady, bQ as HiMiniArrowLeft, bR as HiMiniPlus, bS as startGuardCloudConnect, bT as HiMiniArrowTopRightOnSquare, bU as fetchExtensionControlApi, aq as HiMiniClipboardDocumentCheck, ar as HiMiniClipboard, at as ApprovalProofModal, bV as fetchExtensionDiscoveryApi, bW as HiMiniArrowRight, bX as HiMiniClock, d as createCommandActivityClient, f as fetchCommandActivityApi, b3 as guardAwareHref, b1 as HiMiniMagnifyingGlass, aB as HiMiniAdjustmentsHorizontal, bY as HiMiniCheck, b0 as WorkspacePageHeader, bZ as HiMiniFunnel, b_ as acknowledgeDegradedExtensionControlAuthority, b$ as recoverExtensionControlAuthority } from "../guard-dashboard.js";
 import { u as useConfirmDialog } from "./confirm-dialog.js";
 const EXTENSION_ID_PATTERN = /^command\.[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
 const RULE_ID_PATTERN = /^command\.[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
@@ -3553,7 +3553,8 @@ function decisionBadgeClasses(result) {
   return "border-red-200 bg-red-50 text-red-800";
 }
 function ProtectionModuleRow(props) {
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { type: "button", onClick: props.onOpen, className: `${EXTENSION_ROW_CLASS} motion-reduce:transition-none`, children: [
+  const meta = rowTrustMeta(props.ruleCount, props.permissionCount, props.publisher);
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { type: "button", onClick: props.onOpen, className: `${EXTENSION_ROW_CLASS} group motion-reduce:transition-none`, children: [
     /* @__PURE__ */ jsxRuntimeExports.jsx(
       ExtensionBrandMark,
       {
@@ -3576,10 +3577,38 @@ function ProtectionModuleRow(props) {
         props.badge ? /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "rounded-full border border-brand-blue/30 bg-brand-blue/5 px-2 py-0.5 text-[11px] font-semibold text-brand-dark", "data-testid": "custom-extension-badge", children: props.badge }) : null
       ] }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "mt-0.5 block truncate text-sm text-brand-dark/70", children: props.behavior }),
+      meta ? /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "mt-1 block truncate font-mono text-[11px] text-brand-dark/50", "data-testid": "extension-row-meta", children: meta }) : null,
       props.actionLabel ? /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "mt-1 block text-sm font-semibold text-brand-blue", children: props.actionLabel }) : null
     ] }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx(HiMiniChevronRight, { className: "size-5 shrink-0 text-brand-dark/35", "aria-hidden": "true" })
+    props.state ? /* @__PURE__ */ jsxRuntimeExports.jsx(ExtensionStatePill, { state: props.state }) : null,
+    /* @__PURE__ */ jsxRuntimeExports.jsx(HiMiniChevronRight, { className: "size-5 shrink-0 text-brand-dark/35 transition-transform duration-150 group-hover:translate-x-0.5 motion-reduce:transition-none", "aria-hidden": "true" })
   ] });
+}
+const STATE_PILL = {
+  Allowed: { label: "On", tone: "safe", description: "Guard allows this tool" },
+  Blocked: { label: "Off", tone: "neutral", description: "Guard blocks this tool" },
+  Required: { label: "Always on", tone: "info", description: "Guard needs this tool to protect the device" },
+  Managed: { label: "Policy", tone: "info", description: "Your organization sets this tool" },
+  Lockdown: { label: "Locked", tone: "danger", description: "Lockdown blocks every tool" },
+  Unavailable: { label: "Paused", tone: "attention", description: "Protection is not running, so this setting is not enforced" }
+};
+function extensionStatePillLabel(state) {
+  return STATE_PILL[state].label;
+}
+function ExtensionStatePill({ state }) {
+  const pill = STATE_PILL[state];
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "guard-state-pill shrink-0", "data-tone": pill.tone, "data-testid": "extension-state-pill", title: pill.description, children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "guard-state-pill-dot", "aria-hidden": "true" }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "sr-only", children: "Status: " }),
+    pill.label
+  ] });
+}
+function rowTrustMeta(ruleCount, permissionCount, publisher) {
+  const parts = [];
+  if (ruleCount && ruleCount > 0) parts.push(`${ruleCount} ${ruleCount === 1 ? "rule" : "rules"}`);
+  if (permissionCount && permissionCount > 0) parts.push(`${permissionCount} ${permissionCount === 1 ? "permission" : "permissions"}`);
+  if (publisher && publisher.trim()) parts.push(`by ${publisher.trim()}`);
+  return parts.join(" · ");
 }
 function TechnicalDetails(props) {
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("details", { className: `${EXTENSION_PANEL_CLASS}`, "data-testid": props.testId, children: [
@@ -7028,133 +7057,62 @@ function joinDiscoveryPlacements(placements, catalogExtensions, nowMs) {
   }
   return { featured, sponsored };
 }
-function chooseStableCard(entries, currentId, visitSeed) {
-  if (entries.length === 0) return null;
-  const current = entries.find((entry) => entry.placement.publicPlacementId === currentId);
-  if (current) return current;
-  const index = Math.floor(visitSeed * entries.length) % entries.length;
-  return entries[index];
-}
-function chooseSponsoredCard(entries, currentId, visitSeed, featuredExtensionId) {
-  const candidates = entries.filter((entry) => entry.placement.extensionId !== featuredExtensionId);
-  return chooseStableCard(candidates, currentId, visitSeed);
-}
-function shouldShowPurchasePrompt(input) {
-  return input.status === "ready" && input.joined.featured.length === 0 && input.joined.sponsored.length === 0 && input.sponsoredOffer?.availability === "open" && input.organicCount >= MIN_ORGANIC_ROWS_BEFORE_IN_FEED;
-}
 function sponsoredCardLabel(featured) {
   return featured ? "Sponsored · Featured" : "Sponsored";
 }
+function featuredWindowLabel(placement) {
+  if (placement.product !== "time_slot") return null;
+  const ends = Date.parse(placement.endsAt);
+  if (!Number.isFinite(ends)) return null;
+  return `Featured until ${new Date(ends).toLocaleTimeString(void 0, { hour: "numeric", minute: "2-digit" })}`;
+}
+function orderFeaturedFirst(extensions, featuredIds) {
+  if (featuredIds.size === 0) return [...extensions];
+  return [
+    ...extensions.filter((extension) => featuredIds.has(extension.extension_id)),
+    ...extensions.filter((extension) => !featuredIds.has(extension.extension_id))
+  ];
+}
 const DISCOVERY_REFRESH_MS = 1e4;
-function SponsoredCard(props) {
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs(
-    "article",
-    {
-      "data-testid": props.featured ? "discovery-featured-card" : "discovery-sponsored-card",
-      "data-sponsored-placement-id": props.placement.publicPlacementId,
-      className: "flex items-start gap-3 rounded-2xl border border-brand-blue/15 bg-white px-4 py-3",
-      children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { "aria-hidden": "true", className: "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-blue/10 text-sm font-bold text-brand-blue", children: props.catalog.name.slice(0, 1).toUpperCase() }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "min-w-0 flex-1", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap items-center gap-2", children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { className: "truncate text-sm font-semibold text-brand-dark", children: props.catalog.name }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600", "data-sponsored-label": true, children: sponsoredCardLabel(props.featured) })
-          ] }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-1 line-clamp-2 text-sm leading-5 text-brand-dark/70", children: props.placement.creative.body }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-1 text-xs text-brand-dark/45", children: "Paid placement. Your protection settings are unchanged." })
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx(
-          "button",
-          {
-            type: "button",
-            className: "guard-extensions-chip shrink-0",
-            onClick: () => props.onOpen(props.catalog),
-            children: "View extension"
-          }
-        )
-      ]
-    }
-  );
-}
-function OrganicRow(props) {
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs(
-    "button",
-    {
-      type: "button",
-      className: "flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue",
-      onClick: () => props.onOpen(props.extension),
-      children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "min-w-0", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "block truncate text-sm font-medium text-brand-dark", children: props.extension.name }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "block truncate text-xs text-brand-dark/55", children: props.extension.extension_id })
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { "aria-hidden": "true", className: "text-brand-dark/30", children: "›" })
-      ]
-    }
-  );
-}
-function ExtensionsDiscover(props) {
+function useDiscoveryFeed(active, fetchPlacements) {
   const [status, setStatus] = reactExports.useState("loading");
   const [projection, setProjection] = reactExports.useState(null);
-  const [visitSeed] = reactExports.useState(() => Math.random());
-  const selectedFeatured = reactExports.useRef(null);
-  const selectedSponsored = reactExports.useRef(null);
   const requestGeneration = reactExports.useRef(0);
-  const fetchRef = reactExports.useRef(props.fetchPlacements);
-  fetchRef.current = props.fetchPlacements;
+  const fetchRef = reactExports.useRef(fetchPlacements);
+  fetchRef.current = fetchPlacements;
   const load = reactExports.useCallback(async () => {
     const generation = requestGeneration.current + 1;
     requestGeneration.current = generation;
     const current = () => generation === requestGeneration.current;
+    const fail = (next) => {
+      setStatus(next);
+      setProjection(null);
+    };
     try {
       const response = await fetchRef.current();
       if (!current()) return;
-      if (response.status === 403) {
-        setStatus("opt-out");
-        return;
-      }
+      if (response.status === 403) return fail("opt-out");
       if (response.status === 501 || response.status === 503 || response.status === 429) {
         const body = await response.json().catch(() => null);
         if (!current()) return;
         const code = body && typeof body.error === "string" ? body.error : null;
-        setStatus(code === "rate_limited" || response.status === 429 ? "rate-limited" : "unavailable");
-        setProjection(null);
-        return;
+        return fail(code === "rate_limited" || response.status === 429 ? "rate-limited" : "unavailable");
       }
-      if (!response.ok) {
-        setStatus("unavailable");
-        setProjection(null);
-        return;
-      }
+      if (!response.ok) return fail("unavailable");
       const parsed = parseDiscoveryProjection(await response.json().catch(() => null));
       if (!current()) return;
-      if (!parsed) {
-        setStatus("unavailable");
-        setProjection(null);
-        return;
-      }
-      if (!parsed.policyAllowed) {
-        setStatus("opt-out");
-        setProjection(null);
-        return;
-      }
-      if (parsed.snapshot.state !== "ready" || !parsed.snapshot.enabled) {
-        setStatus("unavailable");
-        setProjection(null);
-        return;
-      }
+      if (!parsed) return fail("unavailable");
+      if (!parsed.policyAllowed) return fail("opt-out");
+      if (parsed.snapshot.state !== "ready" || !parsed.snapshot.enabled) return fail("unavailable");
       setProjection(parsed);
       setStatus("ready");
     } catch {
-      if (!current()) return;
-      setStatus("offline");
-      setProjection(null);
+      if (current()) fail("offline");
     }
   }, []);
   reactExports.useEffect(() => {
-    if (!props.active) return;
+    if (!active) return;
     let stopped = false;
-    let timer = 0;
     const tick = () => {
       if (stopped || document.hidden) return;
       void load();
@@ -7163,7 +7121,7 @@ function ExtensionsDiscover(props) {
       if (!document.hidden) tick();
     };
     tick();
-    timer = window.setInterval(tick, DISCOVERY_REFRESH_MS);
+    const timer = window.setInterval(tick, DISCOVERY_REFRESH_MS);
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
       stopped = true;
@@ -7171,121 +7129,410 @@ function ExtensionsDiscover(props) {
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [props.active, load]);
-  const joined = reactExports.useMemo(
+  }, [active, load]);
+  return { status, projection };
+}
+function useJoinedDiscovery(feed, catalogExtensions) {
+  return reactExports.useMemo(
     () => joinDiscoveryPlacements(
-      status === "ready" && projection ? projection.snapshot.placements : [],
-      props.catalogExtensions,
+      feed.status === "ready" && feed.projection ? feed.projection.snapshot.placements : [],
+      catalogExtensions,
       Date.now()
     ),
-    [projection, props.catalogExtensions, status]
+    [catalogExtensions, feed.projection, feed.status]
   );
-  const featured = reactExports.useMemo(
-    () => chooseStableCard(joined.featured, selectedFeatured.current, visitSeed),
-    [joined.featured, visitSeed]
-  );
-  reactExports.useEffect(() => {
-    selectedFeatured.current = featured ? featured.placement.publicPlacementId : null;
-  }, [featured]);
-  const sponsored = reactExports.useMemo(() => {
-    if (props.catalogExtensions.length < MIN_ORGANIC_ROWS_BEFORE_IN_FEED) return null;
-    return chooseSponsoredCard(
-      joined.sponsored,
-      selectedSponsored.current,
-      visitSeed,
-      featured?.placement.extensionId ?? null
-    );
-  }, [featured, joined.sponsored, props.catalogExtensions.length, visitSeed]);
-  reactExports.useEffect(() => {
-    if (props.catalogExtensions.length < MIN_ORGANIC_ROWS_BEFORE_IN_FEED) return;
-    selectedSponsored.current = sponsored ? sponsored.placement.publicPlacementId : null;
-  }, [props.catalogExtensions.length, sponsored]);
-  const sponsoredOffer = projection?.snapshot.offers.find(
-    (offer) => offer.product === "sponsored"
-  ) ?? null;
-  const showPurchasePrompt = shouldShowPurchasePrompt({
-    status,
-    joined,
-    sponsoredOffer,
-    organicCount: props.catalogExtensions.length
+}
+const VIEWABLE_RATIO = 0.5;
+const VIEWABLE_DWELL_MS = 1e3;
+let measurementRefused = false;
+const tokens = /* @__PURE__ */ new Map();
+const recorded = /* @__PURE__ */ new WeakMap();
+function postJson(path, body) {
+  return fetchExtensionDiscoveryApi(path, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body)
   });
-  const organicRows = props.catalogExtensions;
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { "data-testid": "extensions-discover", "aria-label": "Discover extensions", children: [
-    /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm text-brand-dark/60", children: "Online discovery. Sponsored placements do not change protection." }),
-    featured ? /* @__PURE__ */ jsxRuntimeExports.jsx("section", { className: "mt-4", "aria-label": "Featured discovery", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
-      SponsoredCard,
-      {
-        placement: featured.placement,
-        catalog: featured.catalog,
-        featured: true,
-        onOpen: props.onOpenExtension
+}
+function renderToken(placement, surface, snapshotId) {
+  const key = `${placement.publicPlacementId}:${placement.creativeVersion}:${surface}`;
+  const existing = tokens.get(key);
+  if (existing) return existing;
+  const pending = (async () => {
+    if (measurementRefused || typeof crypto?.randomUUID !== "function") return null;
+    try {
+      const response = await postJson("/v1/discovery/extensions/renders", {
+        snapshotId,
+        publicPlacementId: placement.publicPlacementId,
+        creativeVersion: placement.creativeVersion,
+        surface,
+        renderNonce: crypto.randomUUID()
+      });
+      if (!response.ok) {
+        measurementRefused = true;
+        return null;
       }
-    ) }) : null,
-    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "mt-6 space-y-1", children: organicRows.slice(0, MIN_ORGANIC_ROWS_BEFORE_IN_FEED).map((extension) => /* @__PURE__ */ jsxRuntimeExports.jsx(OrganicRow, { extension, onOpen: props.onOpenExtension }, extension.extension_id)) }),
-    sponsored ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "mt-2", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
-      SponsoredCard,
-      {
-        placement: sponsored.placement,
-        catalog: sponsored.catalog,
-        featured: false,
-        onOpen: props.onOpenExtension
+      const body = await response.json().catch(() => null);
+      return typeof body?.token === "string" ? body.token : null;
+    } catch {
+      measurementRefused = true;
+      return null;
+    }
+  })();
+  tokens.set(key, pending);
+  return pending;
+}
+async function sendEvent(token, kind) {
+  const kinds = recorded.get(token) ?? /* @__PURE__ */ new Set();
+  recorded.set(token, kinds);
+  if (kind !== "detail_open" && kinds.has(kind)) return;
+  kinds.add(kind);
+  const value = await token;
+  if (!value || measurementRefused) return;
+  try {
+    await postJson("/v1/discovery/extensions/events", { events: [{ token: value, kind }] });
+  } catch {
+  }
+}
+function useDiscoveryMeasurement(target, snapshotId, placement, surface) {
+  const tokenRef = reactExports.useRef(null);
+  const latest = reactExports.useRef({ snapshotId, placement });
+  latest.current = { snapshotId, placement };
+  const measurable = snapshotId !== null;
+  reactExports.useEffect(() => {
+    const { snapshotId: snapshot, placement: current } = latest.current;
+    if (!snapshot) return;
+    const token = renderToken(current, surface, snapshot);
+    tokenRef.current = token;
+    void sendEvent(token, "served");
+    const element = target.current;
+    if (!element || typeof IntersectionObserver !== "function") return;
+    let dwell = 0;
+    const observer = new IntersectionObserver((entries) => {
+      const visible = entries.some((entry) => entry.intersectionRatio >= VIEWABLE_RATIO);
+      if (visible && !dwell) {
+        dwell = window.setTimeout(() => {
+          void sendEvent(token, "viewable");
+          observer.disconnect();
+        }, VIEWABLE_DWELL_MS);
+      } else if (!visible && dwell) {
+        window.clearTimeout(dwell);
+        dwell = 0;
       }
-    ) }) : showPurchasePrompt ? /* @__PURE__ */ jsxRuntimeExports.jsxs(
-      "aside",
-      {
-        "data-testid": "discovery-purchase-prompt",
-        className: "mt-2 rounded-2xl border border-dashed border-brand-blue/25 bg-brand-blue/[0.03] px-4 py-3",
-        children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm font-medium text-brand-dark", children: "This discovery space is available." }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-1 text-xs leading-5 text-brand-dark/60", children: "Promote a verified extension you own to reach developers exploring extensions here and on hol.org. The checkout shows the live server quote before any payment." }),
+    }, { threshold: [0, VIEWABLE_RATIO] });
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+      if (dwell) window.clearTimeout(dwell);
+    };
+  }, [measurable, placement.publicPlacementId, placement.creativeVersion, surface, target]);
+  return () => {
+    if (tokenRef.current) void sendEvent(tokenRef.current, "detail_open");
+  };
+}
+const SPOTLIGHT_CELL_COUNT = 3;
+const SPOTLIGHT_ACTIVITY_DAYS = 30;
+const STARTER_SPOTLIGHT_IDS = [
+  "command.git",
+  "command.container-runtime",
+  "command.cloud.aws",
+  "command.package.node",
+  "command.kubernetes-operations",
+  "command.remote.ssh",
+  "command.github",
+  "command.package.python",
+  "command.database.postgresql",
+  "command.filesystem"
+];
+function commandsCheckedLabel(count) {
+  return `${count.toLocaleString()} ${count === 1 ? "command" : "commands"} checked here`;
+}
+function buildSpotlight(input) {
+  const cards = [];
+  const taken = /* @__PURE__ */ new Set();
+  const add = (card) => {
+    if (cards.length >= SPOTLIGHT_CELL_COUNT) return;
+    if (taken.has(card.catalog.extension_id)) return;
+    taken.add(card.catalog.extension_id);
+    cards.push(card);
+  };
+  for (const entry of input.featured) {
+    add({ catalog: entry.catalog, placement: entry.placement, featured: true, basis: "paid", reason: null });
+  }
+  for (const entry of input.sponsored) {
+    add({ catalog: entry.catalog, placement: entry.placement, featured: false, basis: "paid", reason: null });
+  }
+  const paidCount = cards.length;
+  const catalogById = new Map(input.catalog.map((extension) => [extension.extension_id, extension]));
+  const ranked = [...input.activity].filter((bucket) => bucket.count > 0 && catalogById.has(bucket.extensionId)).sort((left, right) => right.count - left.count || left.extensionId.localeCompare(right.extensionId));
+  for (const bucket of ranked) {
+    const catalog = catalogById.get(bucket.extensionId);
+    if (!catalog) continue;
+    add({ catalog, placement: null, featured: false, basis: "activity", reason: commandsCheckedLabel(bucket.count) });
+  }
+  for (const extensionId of STARTER_SPOTLIGHT_IDS) {
+    const catalog = catalogById.get(extensionId);
+    if (!catalog) continue;
+    add({ catalog, placement: null, featured: false, basis: "starter", reason: null });
+  }
+  for (const catalog of input.catalog) {
+    add({ catalog, placement: null, featured: false, basis: "starter", reason: null });
+  }
+  return {
+    cards,
+    lead: paidCount > 0 ? "paid" : cards.some((card) => card.basis === "activity") ? "activity" : "starter",
+    vacant: paidCount === 0
+  };
+}
+function spotlightHeading(lead) {
+  if (lead === "paid") {
+    return {
+      title: "Featured by their makers",
+      basis: "Paid placements are labeled. They change position here, never your protection."
+    };
+  }
+  if (lead === "activity") {
+    return {
+      title: "Busiest tools on this device",
+      basis: `Counted from Guard's own decisions over the last ${SPOTLIGHT_ACTIVITY_DAYS} days.`
+    };
+  }
+  return {
+    title: "Good places to start",
+    basis: "A starting selection from the built-in catalog. Not a ranking or a popularity measure."
+  };
+}
+const SHELF_SLOT_PRODUCTS = ["always", "time_slot"];
+const CATALOG_SLOT_PRODUCTS = ["sponsored"];
+function forProducts(offers, products) {
+  return offers.filter((offer) => products.includes(offer.product));
+}
+function slotState(input) {
+  if (input.status !== "ready") return "hidden";
+  const known = forProducts(input.offers, input.products).filter((offer) => offer.availability !== "unknown");
+  if (known.length === 0) return "hidden";
+  return known.some((offer) => offer.availability === "open") ? "open" : "sold-out";
+}
+function slotStartingPrice(offers, products) {
+  const amounts = forProducts(offers, products).filter((offer) => offer.availability === "open" && offer.indicativeAmountCents !== null && offer.currency).map((offer) => ({ cents: offer.indicativeAmountCents, currency: offer.currency })).sort((left, right) => left.cents - right.cents);
+  const cheapest = amounts[0];
+  if (!cheapest) return null;
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: cheapest.currency.toUpperCase(),
+      maximumFractionDigits: cheapest.cents % 100 === 0 ? 0 : 2
+    }).format(cheapest.cents / 100);
+  } catch {
+    return null;
+  }
+}
+function spotlightActivityFromDimensions(buckets) {
+  return buckets.filter((bucket) => typeof bucket.value === "string" && Number.isFinite(bucket.count)).map((bucket) => ({ extensionId: bucket.value, count: Math.max(0, Math.trunc(bucket.count)) }));
+}
+function SponsorLine(props) {
+  const brand = props.placement.creative.brandName?.trim();
+  const window2 = featuredWindowLabel(props.placement);
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap items-center gap-x-2 gap-y-1", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "guard-sponsor-label guard-sponsor-label-inverse", "data-sponsored-label": true, children: sponsoredCardLabel(props.featured) }),
+    brand ? /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-xs text-white/70", children: [
+      "Paid for by ",
+      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-semibold text-white", children: brand })
+    ] }) : null,
+    window2 ? /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "inline-flex items-center gap-1 text-xs text-white/70", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx(HiMiniClock, { className: "size-3.5", "aria-hidden": "true" }),
+      window2
+    ] }) : null
+  ] });
+}
+function PaidSpotlightCard(props) {
+  const ref = reactExports.useRef(null);
+  const recordOpen = useDiscoveryMeasurement(
+    ref,
+    props.snapshotId,
+    props.placement,
+    props.card.featured ? "extensions_featured" : "extensions_feed"
+  );
+  const { catalog } = props.card;
+  const headline = props.placement.creative.headline?.trim() || catalog.name;
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs(
+    "article",
+    {
+      ref,
+      className: "guard-spotlight-card guard-spotlight-card-paid",
+      "data-testid": props.card.featured ? "discovery-featured-card" : "discovery-sponsored-card",
+      "data-sponsored-placement-id": props.placement.publicPlacementId,
+      children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-start gap-3", children: [
           /* @__PURE__ */ jsxRuntimeExports.jsx(
+            ExtensionBrandMark,
+            {
+              extension_id: catalog.extension_id,
+              name: catalog.name,
+              executables: catalog.executables,
+              ecosystem_ids: catalog.ecosystem_ids,
+              size: "md"
+            }
+          ),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "min-w-0 flex-1", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx(SponsorLine, { placement: props.placement, featured: props.card.featured }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { className: "mt-2 text-balance text-lg font-semibold leading-snug tracking-tight text-white", children: headline }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-0.5 text-xs font-medium text-white/60", children: catalog.name })
+          ] })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-3 line-clamp-3 text-sm leading-6 text-white/85", children: props.placement.creative.body }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-auto pt-5", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs(
+            "button",
+            {
+              type: "button",
+              className: "guard-discover-cta guard-discover-cta-inverse",
+              onClick: () => {
+                recordOpen();
+                props.onOpen(catalog);
+              },
+              children: [
+                "View extension",
+                /* @__PURE__ */ jsxRuntimeExports.jsx(HiMiniArrowRight, { className: "size-4", "aria-hidden": "true" })
+              ]
+            }
+          ),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-3 text-xs text-white/55", children: "Paid placement. Your protection settings are unchanged." })
+        ] })
+      ]
+    }
+  );
+}
+function OrganicSpotlightCard(props) {
+  const { catalog, reason, basis } = props.card;
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("article", { className: "guard-spotlight-card", "data-testid": "spotlight-organic-card", "data-basis": basis, children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-start gap-3", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx(
+        ExtensionBrandMark,
+        {
+          extension_id: catalog.extension_id,
+          name: catalog.name,
+          executables: catalog.executables,
+          ecosystem_ids: catalog.ecosystem_ids,
+          size: "md"
+        }
+      ),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "min-w-0 flex-1", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { className: "text-base font-semibold leading-snug tracking-tight text-brand-dark", children: catalog.name }),
+        reason ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-1 font-mono text-xs tabular-nums text-brand-dark/55", children: reason }) : /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-1 text-xs text-brand-dark/55", children: "Built-in coverage, ready to review" })
+      ] })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-3 line-clamp-3 text-sm leading-6 text-brand-dark/75", children: catalog.description }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "mt-auto pt-5", children: /* @__PURE__ */ jsxRuntimeExports.jsxs("button", { type: "button", className: "guard-discover-cta", onClick: () => props.onOpen(catalog), children: [
+      "Review protection",
+      /* @__PURE__ */ jsxRuntimeExports.jsx(HiMiniArrowRight, { className: "size-4", "aria-hidden": "true" })
+    ] }) })
+  ] });
+}
+function VacantSlotCard(props) {
+  const soldOut = props.state === "sold-out";
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs(
+    "article",
+    {
+      className: "guard-spotlight-card guard-spotlight-slot",
+      "data-testid": "spotlight-slot-card",
+      "data-state": props.state,
+      "aria-labelledby": "spotlight-slot-heading",
+      children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-start gap-3", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "guard-spotlight-slot-mark", "aria-hidden": "true", children: /* @__PURE__ */ jsxRuntimeExports.jsx(HiMiniPlus, { className: "size-5" }) }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "min-w-0 flex-1", children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-xs font-semibold uppercase tracking-[0.14em] text-brand-blue", children: soldOut ? "Fully booked" : "This slot is open" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { id: "spotlight-slot-heading", className: "mt-2 text-base font-semibold leading-snug tracking-tight text-brand-dark", children: soldOut ? "Every placement here is taken." : "Put your extension in this spot." })
+          ] })
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-3 text-sm leading-6 text-brand-dark/75", children: soldOut ? "Windows free up as placements end. See the schedule to book the next one." : "Developers land here before they open anything else. Placements are labeled Sponsored, carry your own headline, and never change anyone’s protection." }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-auto pt-5", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsxs(
             "a",
             {
-              className: "guard-extensions-chip mt-2 inline-flex",
+              className: "guard-discover-cta",
               href: advertiseUrl("extensions_feed"),
               target: "_blank",
               rel: "noopener noreferrer",
               referrerPolicy: "no-referrer",
-              children: "Sponsor this placement"
+              children: [
+                soldOut ? "See the schedule" : props.price ? `Get this spot · from ${props.price}/mo` : "Get this spot",
+                /* @__PURE__ */ jsxRuntimeExports.jsx(HiMiniArrowTopRightOnSquare, { className: "size-4", "aria-hidden": "true" })
+              ]
             }
-          )
-        ]
-      }
-    ) : null,
-    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "mt-6 space-y-1", children: organicRows.slice(MIN_ORGANIC_ROWS_BEFORE_IN_FEED).map((extension) => /* @__PURE__ */ jsxRuntimeExports.jsx(OrganicRow, { extension, onOpen: props.onOpenExtension }, extension.extension_id)) }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx(DiscoveryStatusRow, { status, sponsoredAvailability: sponsoredOffer?.availability ?? null })
+          ),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-3 text-xs text-brand-dark/50", children: soldOut ? "Checkout always shows the live quote before payment." : /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+            "Built an extension and not listed yet?",
+            " ",
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "a",
+              {
+                className: "font-semibold text-brand-blue hover:underline",
+                href: "https://github.com/hashgraph-online/hol-guard/blob/main/CONTRIBUTING.md",
+                target: "_blank",
+                rel: "noopener noreferrer",
+                referrerPolicy: "no-referrer",
+                children: "Submit it free"
+              }
+            ),
+            "."
+          ] }) })
+        ] })
+      ]
+    }
+  );
+}
+function SpotlightSkeleton() {
+  return /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "guard-spotlight-grid mt-5", "aria-hidden": "true", children: [0, 1, 2].map((cell) => /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "guard-spotlight-card guard-spotlight-skeleton" }, cell)) });
+}
+function ExtensionsSpotlight(props) {
+  const spotlight = reactExports.useMemo(
+    () => buildSpotlight({
+      featured: props.featured,
+      sponsored: props.sponsored,
+      activity: props.activity,
+      catalog: props.catalogExtensions
+    }),
+    [props.activity, props.catalogExtensions, props.featured, props.sponsored]
+  );
+  const slot = slotState({ status: props.status, offers: props.offers, products: SHELF_SLOT_PRODUCTS });
+  const price = reactExports.useMemo(() => slotStartingPrice(props.offers, SHELF_SLOT_PRODUCTS), [props.offers]);
+  const heading = spotlightHeading(spotlight.lead);
+  const waiting = !props.settled || props.status === "loading";
+  const showSlot = spotlight.vacant && slot === "open";
+  const cards = showSlot ? spotlight.cards.slice(0, SPOTLIGHT_CELL_COUNT - 1) : spotlight.cards;
+  if (props.catalogExtensions.length === 0) return null;
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { className: "mt-6", "aria-labelledby": "extensions-spotlight-heading", "data-testid": "extensions-spotlight", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col gap-1", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { id: "extensions-spotlight-heading", className: "text-xl font-semibold tracking-tight text-brand-dark", children: waiting ? "Extensions to look at" : heading.title }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "max-w-[72ch] text-sm leading-6 text-brand-dark/60", "data-testid": "spotlight-basis", children: waiting ? " " : heading.basis })
+    ] }),
+    waiting ? /* @__PURE__ */ jsxRuntimeExports.jsx(SpotlightSkeleton, {}) : /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "guard-spotlight-grid mt-5", children: [
+      cards.map((card) => card.placement ? /* @__PURE__ */ jsxRuntimeExports.jsx(
+        PaidSpotlightCard,
+        {
+          card,
+          placement: card.placement,
+          snapshotId: props.snapshotId,
+          onOpen: props.onOpenExtension
+        },
+        card.catalog.extension_id
+      ) : /* @__PURE__ */ jsxRuntimeExports.jsx(OrganicSpotlightCard, { card, onOpen: props.onOpenExtension }, card.catalog.extension_id)),
+      showSlot ? /* @__PURE__ */ jsxRuntimeExports.jsx(VacantSlotCard, { state: slot, price }) : null
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx(SpotlightStatusLine, { status: props.status })
   ] });
 }
-function DiscoveryStatusRow(props) {
+function SpotlightStatusLine(props) {
+  if (props.status === "loading") return null;
   if (props.status === "ready") {
-    if (props.sponsoredAvailability === "sold_out") {
-      return /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "mt-6 text-xs text-brand-dark/45", "data-testid": "discovery-status-sold-out", children: [
-        "Sponsored inventory is currently full.",
-        " ",
-        /* @__PURE__ */ jsxRuntimeExports.jsx(
-          "a",
-          {
-            className: "font-semibold text-brand-blue hover:underline",
-            href: advertiseUrl("extensions_header"),
-            target: "_blank",
-            rel: "noopener noreferrer",
-            referrerPolicy: "no-referrer",
-            children: "View availability and other placements"
-          }
-        ),
-        " ",
-        "on hol.org for open windows and products."
-      ] });
-    }
-    return /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-6 text-xs text-brand-dark/45", "data-testid": "discovery-status-ready", role: "status", children: "Sponsored placements, when present, are labeled and never change protection." });
+    return /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-4 text-xs text-brand-dark/45", "data-testid": "discovery-status-ready", children: "Sponsored placements, when present, are labeled and never change protection." });
   }
   if (props.status === "opt-out") {
-    return /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-6 text-xs text-brand-dark/45", "data-testid": "discovery-status-optout", children: "Sponsored discovery is turned off for this device. Extension management is unaffected." });
+    return /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-4 text-xs text-brand-dark/45", "data-testid": "discovery-status-optout", children: "Sponsored discovery is turned off for this device. Extension management is unaffected." });
   }
-  if (props.status === "loading") {
-    return /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-6 text-xs text-brand-dark/45", role: "status", children: "Checking discovery availability…" });
-  }
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "mt-6 text-xs text-brand-dark/45", "data-testid": `discovery-status-${props.status}`, children: [
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { className: "mt-4 text-xs text-brand-dark/45", "data-testid": `discovery-status-${props.status}`, children: [
     "Sponsored placements are not available right now.",
     " ",
     /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -7300,6 +7547,49 @@ function DiscoveryStatusRow(props) {
       }
     )
   ] });
+}
+function CatalogSlotRow(props) {
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "guard-catalog-slot-row", "data-testid": "catalog-slot-row", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "guard-spotlight-slot-mark", "aria-hidden": "true", children: /* @__PURE__ */ jsxRuntimeExports.jsx(HiMiniPlus, { className: "size-5" }) }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "min-w-0 flex-[1_1_16rem]", children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm font-semibold text-brand-dark", children: "Your extension could be listed here." }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-0.5 text-sm leading-6 text-brand-dark/65", children: "A sponsored listing keeps its real protection state and its Sponsored label. Position is all it buys." })
+    ] }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs(
+      "a",
+      {
+        className: "guard-discover-cta shrink-0",
+        href: advertiseUrl("extensions_feed"),
+        target: "_blank",
+        rel: "noopener noreferrer",
+        referrerPolicy: "no-referrer",
+        children: [
+          props.price ? `Get a listing · from ${props.price}/mo` : "Get a listing",
+          /* @__PURE__ */ jsxRuntimeExports.jsx(HiMiniArrowTopRightOnSquare, { className: "size-4", "aria-hidden": "true" })
+        ]
+      }
+    )
+  ] });
+}
+const TOP_LIMIT = 12;
+function useExtensionPopularity(active) {
+  const [state, setState] = reactExports.useState({ counts: [], settled: false });
+  reactExports.useEffect(() => {
+    if (!active) return;
+    const controller = new AbortController();
+    const client = createCommandActivityClient(fetchCommandActivityApi);
+    void client.fetchAnalytics(
+      { days: SPOTLIGHT_ACTIVITY_DAYS, top_limit: TOP_LIMIT, dimension: null, dimension_value: null },
+      controller.signal
+    ).then((analytics) => {
+      if (controller.signal.aborted) return;
+      setState({ counts: spotlightActivityFromDimensions(analytics.dimensions.extension), settled: true });
+    }).catch(() => {
+      if (!controller.signal.aborted) setState({ counts: [], settled: true });
+    });
+    return () => controller.abort();
+  }, [active]);
+  return state;
 }
 const digest = (value) => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
 const record = (value) => Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -8781,13 +9071,18 @@ function CatalogExtensionRow(props) {
   }, [props]);
   const source = extensionProtectionSource(props.effective, props.extension);
   const cloudSource = source === "Synced from Guard Cloud" || source.startsWith("Managed by ");
+  const state = extensionStateLabel(props.effective, props.extension);
   return /* @__PURE__ */ jsxRuntimeExports.jsx(
     ProtectionModuleRow,
     {
       extensionId: props.extension.extension_id,
       name: extensionDisplayName(props.extension.name),
       description: props.extension.description,
-      behavior: catalogRowSecondLine(props.extension, extensionStateLabel(props.effective, props.extension)),
+      behavior: catalogRowSecondLine(props.extension, state),
+      state,
+      ruleCount: props.extension.rule_count,
+      permissionCount: props.extension.permission_count,
+      publisher: props.extension.publisher?.displayName,
       required: props.extension.required,
       mcp: props.extension.surface === "mcp",
       external: props.extension.trust_class === "external",
@@ -8796,6 +9091,46 @@ function CatalogExtensionRow(props) {
       executables: props.extension.executables,
       ecosystemIds: props.extension.ecosystem_ids,
       onOpen: handleOpen
+    }
+  );
+}
+function PaidCatalogRow(props) {
+  const ref = reactExports.useRef(null);
+  const featured = props.entry.placement.product !== "sponsored";
+  const recordOpen = useDiscoveryMeasurement(
+    ref,
+    props.snapshotId,
+    props.entry.placement,
+    featured ? "extensions_featured" : "extensions_feed"
+  );
+  const { onOpen } = props;
+  const open = reactExports.useCallback((extension) => {
+    recordOpen();
+    onOpen(extension);
+  }, [onOpen, recordOpen]);
+  const { placement } = props.entry;
+  const brand = placement.creative.brandName?.trim();
+  const headline = placement.creative.headline?.trim();
+  const window2 = featuredWindowLabel(placement);
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs(
+    "div",
+    {
+      ref,
+      className: "guard-featured-row",
+      "data-testid": "catalog-featured-row",
+      "data-sponsored-placement-id": placement.publicPlacementId,
+      children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap items-center gap-x-2 gap-y-1 px-4 pt-3", children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "guard-sponsor-label", "data-sponsored-label": true, children: sponsoredCardLabel(featured) }),
+          brand ? /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-xs text-brand-dark/60", children: [
+            "Paid for by ",
+            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-semibold text-brand-dark", children: brand })
+          ] }) : null,
+          window2 ? /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-xs text-brand-dark/60", children: window2 }) : null,
+          headline ? /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "basis-full text-sm font-medium text-brand-dark/80", children: headline }) : null
+        ] }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(CatalogExtensionRow, { extension: props.entry.catalog, effective: props.effective, onOpen: open })
+      ]
     }
   );
 }
@@ -8815,14 +9150,54 @@ function ConnectorDiscoveryControl(props) {
   ] });
 }
 function CatalogFilterEmpty(props) {
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-6 rounded-2xl border border-[rgba(63,65,116,0.12)] bg-white px-4 py-6", children: [
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-6 flex flex-col items-start gap-1 rounded-2xl border border-dashed border-[rgba(63,65,116,0.2)] bg-white px-5 py-8 sm:items-center sm:text-center", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "mb-2 grid size-10 place-items-center rounded-full bg-brand-blue/10 text-brand-blue", "aria-hidden": "true", children: /* @__PURE__ */ jsxRuntimeExports.jsx(HiMiniFunnel, { className: "size-5" }) }),
     /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "text-sm font-semibold text-brand-dark", children: "No extensions match these filters." }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "mt-1 text-sm leading-6 text-brand-dark/70", children: "Remove a filter or start over to see the full catalog again." }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", className: "guard-extensions-chip mt-3", onClick: props.onClear, children: "Clear filters" })
+    /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "max-w-[46ch] text-sm leading-6 text-brand-dark/70", children: "Remove a filter or start over to see the full catalog again." }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", className: "guard-extensions-chip mt-1", onClick: props.onClear, children: "Clear filters" })
+  ] });
+}
+const POSTURE_ORDER = ["Allowed", "Required", "Managed", "Blocked", "Lockdown", "Unavailable"];
+function CatalogPostureSummary(props) {
+  const { counts, external } = reactExports.useMemo(() => {
+    const tally = /* @__PURE__ */ new Map();
+    let externalCount = 0;
+    for (const extension of props.extensions) {
+      const state = extensionStateLabel(props.effective, extension);
+      tally.set(state, (tally.get(state) ?? 0) + 1);
+      if (extension.trust_class === "external") externalCount += 1;
+    }
+    return { counts: POSTURE_ORDER.flatMap((state) => tally.get(state) ? [{ state, count: tally.get(state) ?? 0 }] : []), external: externalCount };
+  }, [props.effective, props.extensions]);
+  const total = props.extensions.length;
+  if (total === 0) return null;
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-4 rounded-2xl border border-[rgba(63,65,116,0.1)] bg-white px-4 py-3", "data-testid": "catalog-posture-summary", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "guard-posture-bar", role: "img", "aria-label": counts.map(({ state, count }) => `${count} ${extensionStatePillLabel(state).toLowerCase()}`).join(", "), children: counts.map(({ state, count }) => /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "guard-posture-segment", "data-state": state, style: { flexGrow: count } }, state)) }),
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("ul", { className: "mt-3 flex flex-wrap items-center gap-x-4 gap-y-2", "aria-label": "Catalog status", children: [
+      counts.map(({ state, count }) => /* @__PURE__ */ jsxRuntimeExports.jsxs("li", { className: "inline-flex items-center gap-1.5 text-sm text-brand-dark/75", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx(ExtensionStatePill, { state }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-semibold tabular-nums text-brand-dark", children: count })
+      ] }, state)),
+      external > 0 ? /* @__PURE__ */ jsxRuntimeExports.jsxs("li", { className: "inline-flex items-center gap-1.5 text-sm text-brand-dark/70 sm:ml-auto", children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx(HiMiniGlobeAlt, { className: "size-4 text-brand-dark/45", "aria-hidden": "true" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-semibold tabular-nums text-brand-dark", children: external }),
+          " from outside the built-ins"
+        ] })
+      ] }) : null
+    ] })
   ] });
 }
 function ExtensionsOverview(props) {
-  const [workspaceView, setWorkspaceView] = reactExports.useState("manage");
+  const fetchPlacements = reactExports.useCallback(
+    () => fetchExtensionDiscoveryApi("/v1/discovery/extensions/placements"),
+    []
+  );
+  const discoveryFeed = useDiscoveryFeed(props.active, fetchPlacements);
+  const joinedDiscovery = useJoinedDiscovery(discoveryFeed, props.catalogExtensions);
+  const discoverySnapshotId = discoveryFeed.projection?.snapshot.snapshotId || null;
+  const discoveryOffers = discoveryFeed.projection?.snapshot.offers ?? [];
+  const popularity = useExtensionPopularity(props.active);
   const [query, setQuery] = reactExports.useState("");
   const discoveryStarted = reactExports.useRef(false);
   const reloadConnections = reactExports.useRef(props.onReloadConnections);
@@ -8922,6 +9297,35 @@ function ExtensionsOverview(props) {
     () => filterCatalogExtensions(props.catalogExtensions, filters),
     [filters, props.catalogExtensions]
   );
+  const paidById = reactExports.useMemo(
+    () => new Map(
+      // Featured last so it wins a collision: one extension can hold both a
+      // featured and a sponsored placement, and the row must disclose and
+      // measure the stronger one it is actually ranked for.
+      [...joinedDiscovery.sponsored, ...joinedDiscovery.featured].map((entry) => [entry.placement.extensionId, entry])
+    ),
+    [joinedDiscovery.featured, joinedDiscovery.sponsored]
+  );
+  const orderedCatalog = reactExports.useMemo(() => {
+    const visibleIds = new Set(visibleCatalog.map((extension) => extension.extension_id));
+    const featuredVisible = joinedDiscovery.featured.map((entry) => entry.catalog).filter((extension) => visibleIds.has(extension.extension_id));
+    const featuredIds = new Set(joinedDiscovery.featured.map((entry) => entry.placement.extensionId));
+    const sponsoredIds = new Set(
+      joinedDiscovery.sponsored.map((entry) => entry.placement.extensionId).filter((extensionId) => !featuredIds.has(extensionId))
+    );
+    const rest = orderFeaturedFirst(
+      visibleCatalog.filter((extension) => !featuredIds.has(extension.extension_id)),
+      sponsoredIds
+    );
+    return [...featuredVisible, ...rest];
+  }, [joinedDiscovery.featured, joinedDiscovery.sponsored, visibleCatalog]);
+  const paidPresent = joinedDiscovery.featured.length + joinedDiscovery.sponsored.length > 0;
+  const catalogSlotOpen = paidPresent && !searching && !filtering && visibleCatalog.length >= MIN_ORGANIC_ROWS_BEFORE_IN_FEED && slotState({ status: discoveryFeed.status, offers: discoveryOffers, products: CATALOG_SLOT_PRODUCTS }) === "open";
+  const catalogSlotPrice = reactExports.useMemo(
+    () => slotStartingPrice(discoveryOffers, CATALOG_SLOT_PRODUCTS),
+    [discoveryOffers]
+  );
+  const catalogSlotIndex = Math.min(6, Math.max(1, orderedCatalog.length - 1));
   const handleClearFilters = reactExports.useCallback(() => {
     setFilters(EMPTY_CATALOG_FILTERS);
   }, []);
@@ -8941,12 +9345,6 @@ function ExtensionsOverview(props) {
         eyebrow: "On this device",
         title: PROTECTION_TERMS.pageTitle,
         description: "Choose an Extension to review its permissions and effective protection.",
-        tabs: [
-          { value: "manage", label: "Manage" },
-          { value: "discover", label: "Discover" }
-        ],
-        activeTab: workspaceView,
-        onTabChange: setWorkspaceView,
         actions: /* @__PURE__ */ jsxRuntimeExports.jsx(
           "a",
           {
@@ -8961,15 +9359,7 @@ function ExtensionsOverview(props) {
         )
       }
     ),
-    workspaceView === "discover" ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "mt-4", "data-testid": "extensions-discover-panel", children: /* @__PURE__ */ jsxRuntimeExports.jsx(
-      ExtensionsDiscover,
-      {
-        active: props.active && workspaceView === "discover",
-        catalogExtensions: visibleCatalog,
-        onOpenExtension: props.onOpenExtension,
-        fetchPlacements: () => fetchExtensionDiscoveryApi("/v1/discovery/extensions/placements")
-      }
-    ) }) : /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { "data-testid": "extensions-manage-panel", children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { "data-testid": "extensions-surface", children: [
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "mt-6", children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx(
           ProtectionStatusHero,
@@ -8983,6 +9373,20 @@ function ExtensionsOverview(props) {
       props.mutationError ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "mt-4", children: /* @__PURE__ */ jsxRuntimeExports.jsx(InlineError, { message: props.mutationError }) }) : null,
       props.localCliError ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "mt-4", children: /* @__PURE__ */ jsxRuntimeExports.jsx(InlineError, { message: props.localCliError }) }) : null,
       props.localCliNotice ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { role: "status", className: "mt-4 rounded-xl border border-brand-blue/20 bg-brand-blue/5 p-3 text-sm text-brand-dark", children: props.localCliNotice }) : null,
+      searching ? null : /* @__PURE__ */ jsxRuntimeExports.jsx(
+        ExtensionsSpotlight,
+        {
+          catalogExtensions: props.catalogExtensions,
+          featured: joinedDiscovery.featured,
+          sponsored: joinedDiscovery.sponsored,
+          activity: popularity.counts,
+          offers: discoveryOffers,
+          status: discoveryFeed.status,
+          snapshotId: discoverySnapshotId,
+          settled: popularity.settled,
+          onOpenExtension: props.onOpenExtension
+        }
+      ),
       /* @__PURE__ */ jsxRuntimeExports.jsx(
         "div",
         {
@@ -9057,15 +9461,33 @@ function ExtensionsOverview(props) {
             ] }),
             /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "flex flex-wrap items-center gap-3", children: /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "text-sm text-brand-dark/70", "data-testid": "catalog-tool-count", "aria-live": "polite", children: catalogFilterCountCopy(visibleCatalog.length, props.catalogExtensions.length, filtering) }) })
           ] }),
-          visibleCatalog.length ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "mt-4", children: visibleCatalog.map((extension) => /* @__PURE__ */ jsxRuntimeExports.jsx(
-            CatalogExtensionRow,
-            {
-              extension,
-              effective: props.effective,
-              onOpen: props.onOpenExtension
-            },
-            extension.extension_id
-          )) }) : /* @__PURE__ */ jsxRuntimeExports.jsx(CatalogFilterEmpty, { onClear: handleClearFilters })
+          !filtering ? /* @__PURE__ */ jsxRuntimeExports.jsx(CatalogPostureSummary, { extensions: props.catalogExtensions, effective: props.effective }) : null,
+          visibleCatalog.length ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "mt-4", children: orderedCatalog.map((extension, index) => {
+            const paid = paidById.get(extension.extension_id);
+            const row = paid ? /* @__PURE__ */ jsxRuntimeExports.jsx(
+              PaidCatalogRow,
+              {
+                entry: paid,
+                snapshotId: discoverySnapshotId,
+                effective: props.effective,
+                onOpen: props.onOpenExtension
+              },
+              extension.extension_id
+            ) : /* @__PURE__ */ jsxRuntimeExports.jsx(
+              CatalogExtensionRow,
+              {
+                extension,
+                effective: props.effective,
+                onOpen: props.onOpenExtension
+              },
+              extension.extension_id
+            );
+            if (!catalogSlotOpen || index !== catalogSlotIndex) return row;
+            return /* @__PURE__ */ jsxRuntimeExports.jsxs(reactExports.Fragment, { children: [
+              /* @__PURE__ */ jsxRuntimeExports.jsx(CatalogSlotRow, { price: catalogSlotPrice }),
+              row
+            ] }, extension.extension_id);
+          }) }) : /* @__PURE__ */ jsxRuntimeExports.jsx(CatalogFilterEmpty, { onClear: handleClearFilters })
         ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsx(CodexHostConnectors, { inventory: props.hostInventory }),
         /* @__PURE__ */ jsxRuntimeExports.jsx(LocalSkillsWorkspace, {})

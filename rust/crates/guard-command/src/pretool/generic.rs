@@ -259,7 +259,7 @@ pub fn evaluate_pre_tool_envelope_with_execution_context(
             .as_deref()
             .is_some_and(open_quote::leaves_quote_open)
         {
-            result.reason = "HOL Guard blocked this command because it leaves a quote open, so the shell cannot run it as written. Close or remove the stray quote and run it again.".into();
+            result.reason = "HOL Guard blocked this command because it has a shell syntax error: it leaves a quote open, so the shell cannot run it as written. Close or remove the stray quote and run it again.".into();
         }
     }
     result
@@ -578,7 +578,7 @@ fn evaluate_envelope(
             evaluate_pre_tool_with_execution_context(
                 &CommandModelRequestV1 {
                     command: command.to_owned(),
-                    dialect: "posix".to_owned(),
+                    dialect: tools::command_dialect(signals.tool_name.as_deref()).to_owned(),
                     transport: "shell_string".to_owned(),
                     extraction_provenance: "pre-tool-generic".to_owned(),
                 },
@@ -627,7 +627,7 @@ fn evaluate_envelope(
             ),
             "allow",
             "native_exact_safe_file_write",
-            "The Rust authority proved every file this patch adds or updates is an ordinary workspace file that clears sensitive-path checks.",
+            "The Rust authority proved every file this patch adds or updates is an ordinary file in the verified workspace, a registered worktree, the verified user home, or a private user-owned temporary directory and clears sensitive-path checks.",
         )
     } else if let Some(edit) = omp_hashline_edit {
         let action = generic_action(
@@ -792,12 +792,14 @@ fn evaluate_envelope(
         )
     });
     // macOS runs every credential-filtering profile. Windows runs only the
-    // Python profile, in an AppContainer, for Claude Code, whose Git Bash shell
-    // runs the POSIX-quoted sink. Only harnesses that rewrite into the contained
-    // sink get the receipt; others would see a bare deny.
+    // Python profile, in an AppContainer, for harnesses whose shell runs a
+    // sink command written for it: Claude Code (Git Bash) and the Pi family (a
+    // bash implementation) take the POSIX-quoted one, Codex a PowerShell one.
+    // Only harnesses that rewrite into the contained sink get the receipt;
+    // others would see a bare deny.
     if (cfg!(target_os = "macos")
         || (cfg!(windows)
-            && harness == "claude-code"
+            && matches!(harness, "claude-code" | "codex" | "omp" | "oh-my-pi" | "pi")
             && contained_test_reason == Some("native_python_eval_readonly_containment_required")))
         && event == "PreToolUse"
         && matches!(
@@ -855,6 +857,19 @@ fn evaluate_envelope(
                     })
         })
         && contained_test_reason.is_some()
+        // Inline source that needs the network would only fail in a sandbox
+        // that withholds it; it keeps its review.
+        && command_model.is_none_or(|model| {
+            !super::script_content::inline_uses_network(
+                model,
+                signals.command.as_deref(),
+                super::PathContext {
+                    home_dir,
+                    cwd,
+                    ..context
+                },
+            )
+        })
     {
         result.minimum_action = "sandbox-required".into();
         result.policy_action = "sandbox-required".into();

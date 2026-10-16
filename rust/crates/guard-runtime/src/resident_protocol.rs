@@ -16,19 +16,21 @@ use guard_contracts::{
     DataFlowAnalyzeRequestV1, GitExecutionSafetyRequestV1, GithubCliClassifyRequestV1,
     GuardHookEnvelopeV2, GuardStoreRequestV1, HookAdapterRequestV1, HookArtifactComposeRequestV1,
     HookAuthorityStateRequestV1, HookDecisionRequestV1, LocalCliGrantRequestV1,
-    LocalMcpGrantRequestV1, McpProxyDecisionRequestV1, McpRuntimeEvidenceRequestV1,
-    McpStdioProbeRequestV1, McpStdioSessionCloseRequestV1, McpStdioSessionOpenRequestV1,
-    McpStdioSessionRecvRequestV1, McpStdioSessionSendRequestV1, McpToolCallIdentityRequestV1,
-    McpToolEvidenceRequestV1, McpToolPolicyDecideRequestV1, NativeExactActionRequestV1,
-    NativeHookRequestV1, PackageAdvisoryIdsRequestV1, PackageApprovalHashRequestV1,
-    PackageAuditProjectionRequestV1, PackageAuthorityDecideRequestV1, PackageContextBuildRequestV1,
+    LocalCliHookRequestV1, LocalMcpGrantRequestV1, LocalToolEligibilityRequestV1,
+    McpProxyDecisionRequestV1, McpRuntimeEvidenceRequestV1, McpStdioProbeRequestV1,
+    McpStdioSessionCloseRequestV1, McpStdioSessionOpenRequestV1, McpStdioSessionRecvRequestV1,
+    McpStdioSessionSendRequestV1, McpToolCallIdentityRequestV1, McpToolEvidenceRequestV1,
+    McpToolPolicyDecideRequestV1, NativeExactActionRequestV1, NativeHookRequestV1,
+    PackageAdvisoryIdsRequestV1, PackageApprovalHashRequestV1, PackageAuditProjectionRequestV1,
+    PackageAuthorityDecideRequestV1, PackageContextBuildRequestV1,
     PackageEvaluationComposeRequestV1, PackageIntentParseRequestV1, PackagePolicyResolveRequestV1,
-    PackagePostureRequestV1, PolicyBundleAuthorityRequestV1, PolicyDecisionLookupRequestV1,
-    PolicyIntegrityRowsRequestV1, PromptAnalyzeRequestV1, ProtectRequestRequestV1,
-    RequestContextRequestV1, RunnerAuthorityRequestV1, RuntimeCapabilitiesV1,
-    RuntimeDetectorRunRequestV1, ShimAdminRequestV2, SkillDirectoryIdentityRequestV1,
-    SupplyChainEvalRequestV1, WorkspaceInventoryRequestV1, MAX_NATIVE_RESPONSE_BYTES,
-    NATIVE_APPROVAL_ERROR_CODES, NATIVE_PROTOCOL_VERSION, NATIVE_RESIDENT_LIFECYCLE_ERROR_CODES,
+    PackagePostureRequestV1, PackageProtectFinalizeRequestV1, PolicyBundleAuthorityRequestV1,
+    PolicyDecisionLookupRequestV1, PolicyIntegrityRowsRequestV1, PromptAnalyzeRequestV1,
+    ProtectRequestRequestV1, RequestContextRequestV1, RunnerAuthorityRequestV1,
+    RuntimeCapabilitiesV1, RuntimeDetectorRunRequestV1, ShimAdminRequestV2,
+    SkillDirectoryIdentityRequestV1, SupplyChainEvalRequestV1, WorkspaceInventoryRequestV1,
+    MAX_NATIVE_RESPONSE_BYTES, NATIVE_APPROVAL_ERROR_CODES, NATIVE_PROTOCOL_VERSION,
+    NATIVE_RESIDENT_LIFECYCLE_ERROR_CODES,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -124,14 +126,11 @@ pub(crate) fn capabilities() -> RuntimeCapabilitiesV1 {
         // this path on Windows, where the module is not compiled.
         #[cfg(unix)]
         features.push(crate::binding_capture_op::BINDING_CAPTURE_FEATURE.into());
-        // The native SessionStart lane execs its Python fallback, so it is
-        // compiled and advertised on unix only.
-        #[cfg(unix)]
-        features.push(crate::claude_session_start::SESSION_START_FEATURE.into());
         // The relay runs its MCP server in its own process group, so it is
         // advertised on unix only.
         features.push(crate::mcp_relay::RELAY_FEATURE.into());
     }
+    features.push(crate::claude_session_start::SESSION_START_FEATURE.into());
     features.push(crate::claude_hook_bridge::BRIDGE_FEATURE.into());
     features.push(crate::codex_hook_bridge::BRIDGE_FEATURE.into());
     features.push(crate::bounded_hook_bridge::BRIDGE_FEATURE.into());
@@ -222,6 +221,7 @@ pub(crate) enum ResidentOperationV1 {
     PackageEvaluationCompose(PackageEvaluationComposeRequestV1),
     PackageApprovalHash(PackageApprovalHashRequestV1),
     PackagePolicyResolve(PackagePolicyResolveRequestV1),
+    PackageProtectFinalize(PackageProtectFinalizeRequestV1),
     PackagePosture(PackagePostureRequestV1),
     PackageAuditProjection(PackageAuditProjectionRequestV1),
     WorkspaceInventory(WorkspaceInventoryRequestV1),
@@ -234,6 +234,8 @@ pub(crate) enum ResidentOperationV1 {
     RuntimeDetectorRun(RuntimeDetectorRunRequestV1),
     RunnerAuthority(RunnerAuthorityRequestV1),
     LocalCliGrantDecide(LocalCliGrantRequestV1),
+    LocalCliHook(LocalCliHookRequestV1),
+    LocalToolEligibility(LocalToolEligibilityRequestV1),
     ShellHelpers(crate::shell_helpers_op::ShellHelpersRequest),
     ApprovalProofDecide(ApprovalProofRequestV1),
     CursorObserverProof(CursorObserverProofRequestV1),

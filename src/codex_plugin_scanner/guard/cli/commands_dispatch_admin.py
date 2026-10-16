@@ -214,7 +214,11 @@ def _run_guard_policy_action_command(
         approval_gate_grant = None
         if _policy_write_requires_approval_gate(store, action=args.policy_action, scope=args.scope):
             gate_input = (
-                prompt_for_approval_gate(store.guard_home, use_cooldown=True)
+                prompt_for_approval_gate(
+                    store.guard_home,
+                    use_cooldown=True,
+                    strict=str(args.scope) == "global",
+                )
                 if _policy_write_needs_approval_gate(store, action=args.policy_action, scope=args.scope)
                 else None
             )
@@ -276,7 +280,10 @@ def _run_guard_doctor_command(
         guidance = macos_notification_guidance(result.notifier_path) if result.platform == "Darwin" else None
         _emit(
             "doctor",
-            {"desktop_notifications": desktop_notification_setup_payload(result, guidance=guidance)},
+            {
+                "desktop_notifications": desktop_notification_setup_payload(result, guidance=guidance),
+                "approval_gate": approval_gate_posture(guard_home, passive=True),
+            },
             getattr(args, "json", False),
         )
         return 0
@@ -297,7 +304,11 @@ def _run_guard_doctor_command(
             }
             for c in HARNESS_CONTRACTS
         ]
-        _emit("doctor", {"harnesses": contracts_payload}, getattr(args, "json", False))
+        _emit(
+            "doctor",
+            {"harnesses": contracts_payload, "approval_gate": approval_gate_posture(guard_home, passive=True)},
+            getattr(args, "json", False),
+        )
         return 0
     if args.harness:
         adapter = get_adapter(args.harness)
@@ -389,11 +400,20 @@ def _run_guard_doctor_command(
     with nullcontext() if args.harness else without_command_probes():
         payload["aibom"] = build_aibom_status_payload(store, context, generated_at=_now())
     from ..harness_posture import harness_posture_summary
+    from ..protection_coverage import protection_is_in_effect
     from ..protection_posture import protection_status_fields
 
     payload.update(protection_status_fields(posture=config.protection_posture, mode=config.mode))
+    # A doctor run that reports a broken or partial registration must not also
+    # report the posture as though something were applying it. Judge the one
+    # harness this run inspected, or every harness the global run detected.
+    adapter_rows = payload.get("adapters")
+    payload["protection_in_effect"] = protection_is_in_effect(
+        adapter_rows if isinstance(adapter_rows, list) else [payload]
+    )
     payload.update(harness_posture_summary(config))
-    payload["approval_gate"] = approval_gate_posture(guard_home)
+    # Doctor stays passive: read the gate state file, never the native resident.
+    payload["approval_gate"] = approval_gate_posture(guard_home, passive=True)
     _emit("doctor", payload, getattr(args, "json", False))
     return 0
 

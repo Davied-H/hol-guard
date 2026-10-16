@@ -84,6 +84,9 @@ pub use contributed_mcp_url::normalized_remote_mcp_url;
 mod data_flow;
 pub mod dep_map;
 pub mod effect_decision;
+mod embedded_script_evidence;
+#[cfg(test)]
+mod embedded_script_evidence_tests;
 mod env_wrapper;
 mod executable_flag_contract;
 pub mod extension_control;
@@ -115,6 +118,7 @@ mod launch_identity_common;
 pub mod launch_identity_environment;
 #[cfg(windows)]
 mod launch_identity_windows;
+pub mod local_tool_eligibility;
 pub mod mcp_arguments;
 pub mod mcp_launch_environment;
 pub mod mcp_runtime_evidence;
@@ -436,8 +440,9 @@ fn parse_command_unbound(request: &CommandModelRequestV1) -> Result<CanonicalCom
     if posix.confidence == "exact" && powershell_command::names_powershell_effect(&posix.segments) {
         return Ok(parse_explicit_powershell(request, raw));
     }
-    // Otherwise retry only input that POSIX cannot prove.
-    if posix.confidence != "exact"
+    // Otherwise retry input that POSIX cannot prove, or where it only saw a
+    // read-only cmdlet as an unknown word. Either keeps POSIX if PowerShell fails.
+    if (posix.confidence != "exact" || powershell_command::names_powershell_benign(&posix.segments))
         && raw.chars().count() <= MAX_COMMAND_BYTES
         && raw.len() <= MAX_COMMAND_BYTES
     {

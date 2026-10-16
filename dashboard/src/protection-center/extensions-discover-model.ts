@@ -147,47 +147,26 @@ export function joinDiscoveryPlacements(
   return { featured, sponsored };
 }
 
-/**
- * Visit-stable selection: keep the current card while it is still present;
- * otherwise pick deterministically from the visit seed. A valid visible card
- * is never reshuffled by polling (UX-07).
- */
-export function chooseStableCard(
-  entries: readonly JoinedDiscoveryCard[],
-  currentId: string | null,
-  visitSeed: number,
-): JoinedDiscoveryCard | null {
-  if (entries.length === 0) return null;
-  const current = entries.find((entry) => entry.placement.publicPlacementId === currentId);
-  if (current) return current;
-  const index = Math.floor(visitSeed * entries.length) % entries.length;
-  return entries[index];
-}
-
-export function chooseSponsoredCard(
-  entries: readonly JoinedDiscoveryCard[],
-  currentId: string | null,
-  visitSeed: number,
-  featuredExtensionId: string | null,
-): JoinedDiscoveryCard | null {
-  const candidates = entries.filter((entry) => entry.placement.extensionId !== featuredExtensionId);
-  return chooseStableCard(candidates, currentId, visitSeed);
-}
-
-/** One compact prompt only when the feed is ready, empty, and authoritatively open. */
-export function shouldShowPurchasePrompt(input: {
-  status: DiscoveryFeedStatus;
-  joined: { featured: JoinedDiscoveryCard[]; sponsored: JoinedDiscoveryCard[] };
-  sponsoredOffer: DiscoveryOffer | null;
-  organicCount: number;
-}): boolean {
-  return input.status === "ready"
-    && input.joined.featured.length === 0
-    && input.joined.sponsored.length === 0
-    && input.sponsoredOffer?.availability === "open"
-    && input.organicCount >= MIN_ORGANIC_ROWS_BEFORE_IN_FEED;
-}
-
 export function sponsoredCardLabel(featured: boolean): string {
   return featured ? "Sponsored · Featured" : "Sponsored";
+}
+
+/** A time-window feature says when it ends; an all-day feature says nothing. */
+export function featuredWindowLabel(placement: DiscoveryPlacement): string | null {
+  if (placement.product !== "time_slot") return null;
+  const ends = Date.parse(placement.endsAt);
+  if (!Number.isFinite(ends)) return null;
+  return `Featured until ${new Date(ends).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}`;
+}
+
+/** Featured extensions lead the list; everything else keeps catalog order. */
+export function orderFeaturedFirst<T extends { extension_id: string }>(
+  extensions: readonly T[],
+  featuredIds: ReadonlySet<string>,
+): T[] {
+  if (featuredIds.size === 0) return [...extensions];
+  return [
+    ...extensions.filter((extension) => featuredIds.has(extension.extension_id)),
+    ...extensions.filter((extension) => !featuredIds.has(extension.extension_id)),
+  ];
 }

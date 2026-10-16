@@ -7,7 +7,9 @@
 //! literals of scalar literals, or the SDK's `await read(literal_path)` helper,
 //! plus `display`/`log`, `const`/`let` bindings,
 //! `Promise.all`, `JSON.stringify`, `.text` and `.length`. Every extracted call is then
-//! evaluated as the equivalent standalone tool; any non-allow reviews the
+//! evaluated as the equivalent standalone tool, through the same entry point
+//! a direct call takes, so a bridged `bash` call's `cwd` is resolved exactly
+//! as the direct `bash` tool's; any non-allow reviews the
 //! whole program, except a bridged `bash` call that would run under Guard
 //! containment on its own, since the bridge re-hooks it. Everything else,
 //! including comments, templates with interpolation, operators, other identifiers and other languages, is
@@ -23,6 +25,8 @@ use serde_json::{json, Map, Value};
 
 #[path = "generic_omp_eval_parser.rs"]
 mod parser;
+#[path = "generic_omp_eval_pure.rs"]
+mod pure;
 #[path = "generic_omp_eval_tokens.rs"]
 mod tokens;
 use parser::{parse_program, parse_python, Call, Lit};
@@ -58,10 +62,16 @@ fn standalone_payload(call: &Call, context: &OmpContext<'_>) -> Option<Value> {
                     }
                 }
                 if call.tool == "bash" && key == "cwd" {
-                    if text != "." {
+                    // `.` is the session directory everywhere. Oh My Pi's
+                    // bridge hands any other `cwd` to the same `bash` tool,
+                    // whose standalone proof resolves it; other harnesses
+                    // have no such argument to model.
+                    if text == "." {
+                        continue;
+                    }
+                    if context.harness != "omp" {
                         return None;
                     }
-                    continue;
                 }
                 input.insert(key.clone(), Value::String(text.clone()));
             }
@@ -111,7 +121,25 @@ pub(super) fn evaluate(
     }
     let code = input.get("code")?.as_str()?;
     let calls = if language == "py" {
-        parse_python(code)?
+        match parse_python(code) {
+            Some(calls) => calls,
+            None if pure::pure_python(code) => {
+                return Some(generic_result(
+                    generic_action(
+                        context.harness,
+                        context.event,
+                        PreToolActionTypeV1::Harness,
+                        PreToolOperationV1::Read,
+                        true,
+                        false,
+                    ),
+                    "allow",
+                    "native_omp_eval_pure_compute",
+                    "The Rust authority read this eval program and found only in-memory computation: no files, processes, network or environment.",
+                ));
+            }
+            None => return None,
+        }
     } else {
         parse_program(code)?
     };
@@ -119,7 +147,9 @@ pub(super) fn evaluate(
     for call in &calls {
         let inner = standalone_payload(call, context)?;
         ran_shell |= call.tool == "bash";
-        let result = crate::pretool::generic::evaluate_envelope(
+        // The entry point a direct call takes, so the bridged call gets the
+        // same `cwd` resolution and compound re-judging as that call.
+        let result = crate::pretool::generic::evaluate_pre_tool_envelope_with_execution_context(
             context.harness,
             context.event,
             &inner,
@@ -127,7 +157,6 @@ pub(super) fn evaluate(
             context.deadline,
             context.path,
             context.execution_environment,
-            true,
         );
         if result.action.sensitive_target
             || (result.minimum_action != "allow" && !contained_bash(call, &result))
