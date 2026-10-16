@@ -86,10 +86,50 @@ fn bodies_files_credentials_and_routing_stay_reviewed() {
 }
 
 #[test]
-fn local_and_reserved_destinations_stay_reviewed() {
+fn local_dev_server_reads_are_proven() {
     for command in [
         "curl http://localhost:3000/",
         "curl http://127.0.0.1/",
+        "curl -fsS http://127.0.0.1:4173/game.js",
+        "curl -sI https://localhost:8443/health",
+        "curl -s -o /dev/null -w '%{http_code}' http://LOCALHOST:5173/",
+        "curl -s --url http://127.0.0.1:8080/api/items?page=2",
+    ] {
+        assert!(proven(command), "{command}");
+    }
+}
+
+#[test]
+fn local_admin_ports_and_other_loopback_spellings_stay_reviewed() {
+    for command in [
+        "curl http://127.0.0.1:2375/containers/json",
+        "curl http://localhost:2376/info",
+        "curl http://127.0.0.1:2379/v2/keys",
+        "curl http://localhost:6443/api",
+        "curl http://127.0.0.1:8001/api/v1/secrets",
+        "curl http://127.0.0.1:8200/v1/secret/data/app",
+        "curl http://localhost:8500/v1/kv/?recurse",
+        "curl http://127.0.0.1:9222/json",
+        "curl http://127.0.0.1:9229/json/list",
+        "curl http://localhost:10250/pods",
+        "curl http://localhost:2019/config/",
+        "curl http://127.0.0.2:3000/",
+        "curl http://localhost.:3000/",
+        "curl http://app.localhost:3000/",
+        "curl http://user@localhost:3000/",
+        "curl -L http://127.0.0.1:3000/",
+        "curl -X POST http://localhost:3000/api/items",
+        "curl -d x=1 http://localhost:3000/api/items",
+        "curl http://localhost:3000/?token=x",
+        "curl localhost:3000/",
+    ] {
+        assert!(!proven(command), "{command}");
+    }
+}
+
+#[test]
+fn local_and_reserved_destinations_stay_reviewed() {
+    for command in [
         "curl http://[::1]/",
         "curl http://[fd00::1]/",
         "curl http://169.254.169.254/latest/meta-data/",
