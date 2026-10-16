@@ -76,6 +76,72 @@ const DESTRUCTIVE_EXECUTABLES: &[&str] = &[
     "ftp",
 ];
 
+/// Windows shells, script hosts, installers and the system binaries that run
+/// code or commands named elsewhere (scheduled tasks, registry, downloads).
+/// They are consulted on Windows only.
+const WINDOWS_LAUNCHERS: &[&str] = &[
+    "cmd",
+    "powershell",
+    "powershell_ise",
+    "pwsh",
+    "wscript",
+    "cscript",
+    "mshta",
+    "rundll32",
+    "regsvr32",
+    "msiexec",
+    "wsl",
+    "wslhost",
+    "git-bash",
+    "mintty",
+    "busybox",
+    "wt",
+    "py",
+    "pyw",
+    "msbuild",
+    "csc",
+    "vbc",
+    "jsc",
+    "installutil",
+    "regasm",
+    "regsvcs",
+    "winget",
+    "choco",
+    "scoop",
+    "nuget",
+    "psexec",
+    "psexec64",
+    "schtasks",
+    "at",
+    "reg",
+    "regedit",
+    "certutil",
+    "bitsadmin",
+    "conhost",
+    "explorer",
+    "start",
+    "runas",
+    "forfiles",
+    "wmic",
+    "cmstp",
+    "msdt",
+    "pcalua",
+    "hh",
+    "control",
+    "odbcconf",
+    "mavinject",
+    "msxsl",
+];
+
+/// Windows commands that delete, overwrite, change access or system state,
+/// or reach the network. They are consulted on Windows only.
+const WINDOWS_DESTRUCTIVE: &[&str] = &[
+    "del", "erase", "rd", "move", "ren", "rename", "copy", "robocopy", "xcopy", "format",
+    "diskpart", "cipher", "sdelete", "takeown", "icacls", "cacls", "attrib", "taskkill", "tskill",
+    "shutdown", "setx", "cmdkey", "bcdedit", "vssadmin", "wbadmin", "wevtutil", "netsh", "net",
+    "net1", "sc", "mklink", "fsutil", "compact",
+];
+
 const FILE_BACKED_PROGRAM_COMMANDS: &[&str] = &["sed", "grep", "egrep", "fgrep", "rg"];
 const FIND_EXEC_OPTIONS: &[&str] = &["-exec", "-execdir", "-ok", "-okdir"];
 
@@ -87,6 +153,7 @@ const DIRECT_REUSABLE_COMMANDS: &[&str] = &[
 
 pub(super) fn is_destructive(name: &str) -> bool {
     DESTRUCTIVE_EXECUTABLES.contains(&name)
+        || (cfg!(windows) && WINDOWS_DESTRUCTIVE.contains(&name))
 }
 
 pub(super) fn is_direct_reusable(name: &str) -> bool {
@@ -107,7 +174,9 @@ pub(super) fn is_python_launcher(name: &str) -> bool {
 }
 
 pub(super) fn is_mutable_launcher(name: &str) -> bool {
-    is_code_launcher(name) || EXTRA_MUTABLE_LAUNCHERS.contains(&name)
+    is_code_launcher(name)
+        || EXTRA_MUTABLE_LAUNCHERS.contains(&name)
+        || (cfg!(windows) && WINDOWS_LAUNCHERS.contains(&name))
 }
 
 /// `_loads_unbound_code`.

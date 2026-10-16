@@ -8,7 +8,7 @@
 
 use std::collections::BTreeMap;
 use std::os::windows::process::CommandExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -246,24 +246,5 @@ fn windows_paths_outside_the_workspace_are_broad() {
     }
 }
 
-#[test]
-fn windows_launches_stay_one_time() {
-    // The launch identity of a Windows executable is never reusable yet
-    // (`launch_identity_stub.rs`), so a shell "Always" stays a one-time allow.
-    let tree = Tree::new();
-    let system = std::env::var("SystemRoot").unwrap();
-    let where_exe = PathBuf::from(system).join("System32").join("where.exe");
-    assert!(where_exe.is_file());
-    for command in [
-        "where.exe where",
-        "where where",
-        "git status",
-        "cd src && where where",
-    ] {
-        let reason = shell(&tree, command);
-        assert!(
-            matches!(reason, Err("unproven_launch" | "compound_command")),
-            "{command}: {reason:?}"
-        );
-    }
-}
+#[path = "windows_launch_tests.rs"]
+mod launch;

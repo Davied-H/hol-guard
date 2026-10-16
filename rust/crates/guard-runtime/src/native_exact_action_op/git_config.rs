@@ -9,6 +9,8 @@ use serde_json::Value;
 
 use super::context::Ctx;
 use super::fs_path;
+#[cfg(windows)]
+use super::git_windows::{config_reference_is_pinned, user_config_roots};
 use super::reasons::{Proof, GIT_HELPER_CONFIG, UNPROVEN_LAUNCH};
 
 const MAX_CONFIG_BYTES: u64 = 1_048_576;
@@ -19,6 +21,10 @@ const MAX_ATTRIBUTE_DIRECTORIES: usize = 20_000;
 const SIGNATURE_PLACEHOLDER: &str = "%G";
 const GIT_HELPER_ENVIRONMENT: [&str; 3] = ["GIT_EXTERNAL_DIFF", "GIT_PAGER", "GIT_ATTR_SOURCE"];
 const CONFIG_NAMES: [&str; 4] = ["config", "config.worktree", ".gitconfig", "gitconfig"];
+/// The text converter the Git for Windows system config names for its own
+/// attributes: a fixed script in the install.
+#[cfg(windows)]
+const ASTEXTPLAIN: (&str, &str) = ("astextplain", "astextplain");
 /// The filter driver `git lfs install` writes: its program is fixed.
 const LFS_FILTER: [(&str, &str); 4] = [
     ("clean", "git-lfs clean -- %f"),
@@ -53,6 +59,9 @@ fn include_path() -> &'static Regex {
 }
 
 fn injects_git_helper(name: &str, value: &str) -> bool {
+    // Windows variable names are case-insensitive.
+    let upper = name.to_ascii_uppercase();
+    let name = if cfg!(windows) { upper.as_str() } else { name };
     // GIT_CONFIG_NOSYSTEM only drops a config file, and `cat` is the no-op pager.
     if name == "GIT_CONFIG_NOSYSTEM" || (name == "GIT_PAGER" && value == "cat") {
         return false;
@@ -78,7 +87,13 @@ fn config_path(value: &str, config_file: &str, home: Option<&str>) -> String {
 }
 
 /// The ordered, de-duplicated config and attribute candidates.
-fn candidates(root: &str, git_dir: &str, common_dir: &str, ctx: &Ctx) -> Vec<String> {
+fn candidates(
+    root: &str,
+    git_dir: &str,
+    common_dir: &str,
+    system: &[String],
+    ctx: &Ctx,
+) -> Proof<Vec<String>> {
     let mut found = vec![
         fs_path::join(common_dir, "config"),
         fs_path::join(git_dir, "config"),
@@ -86,29 +101,32 @@ fn candidates(root: &str, git_dir: &str, common_dir: &str, ctx: &Ctx) -> Vec<Str
         fs_path::join(common_dir, "info/attributes"),
         fs_path::join(git_dir, "info/attributes"),
         fs_path::join(root, ".gitattributes"),
-        ctx.engines.system_git_config(),
     ];
-    let mut bases: Vec<String> = Vec::new();
-    if let Some(xdg) = ctx
-        .env
-        .get("XDG_CONFIG_HOME")
-        .filter(|value| !value.is_empty())
-    {
-        bases.push(fs_path::norm(xdg));
-    }
-    if let Some(home) = ctx.home {
-        bases.push(fs_path::join(home, ".config"));
-    }
+    found.extend(system.iter().cloned());
+    let (xdg, homes) = user_config_roots(ctx)?;
+    let mut bases: Vec<String> = xdg.into_iter().collect();
+    bases.extend(homes.iter().map(|home| fs_path::join(home, ".config")));
     for base in bases {
         found.push(fs_path::join(&base, "git/config"));
         found.push(fs_path::join(&base, "git/attributes"));
     }
-    if let Some(home) = ctx.home {
+    for home in &homes {
         found.push(fs_path::join(home, ".gitconfig"));
     }
     let mut seen = BTreeSet::new();
     found.retain(|path| seen.insert(path.clone()));
-    found
+    Ok(found)
+}
+
+/// `XDG_CONFIG_HOME` and the home git reads user config from.
+#[cfg(not(windows))]
+fn user_config_roots(ctx: &Ctx) -> Proof<(Option<String>, Vec<String>)> {
+    let xdg = ctx
+        .env
+        .get("XDG_CONFIG_HOME")
+        .filter(|value| !value.is_empty())
+        .map(|value| fs_path::norm(value));
+    Ok((xdg, ctx.home.map(str::to_owned).into_iter().collect()))
 }
 
 /// `_git_config_digest`: fails closed when the environment or any config file
@@ -117,6 +135,7 @@ pub(super) fn git_config_digest(
     root: &str,
     git_dir: &str,
     common_dir: &str,
+    system: &[String],
     ctx: &Ctx,
 ) -> Proof<String> {
     if ctx
@@ -126,7 +145,7 @@ pub(super) fn git_config_digest(
     {
         return Err(GIT_HELPER_CONFIG);
     }
-    let candidates = candidates(root, git_dir, common_dir, ctx);
+    let candidates = candidates(root, git_dir, common_dir, system, ctx)?;
     let configs: BTreeSet<String> = candidates
         .iter()
         .filter(|path| is_config_name(path))
@@ -141,7 +160,9 @@ pub(super) fn git_config_digest(
         if seen.contains_key(&path) {
             continue;
         }
-        if seen.len() >= MAX_CONFIG_FILES {
+        // A Windows path that is not drive-rooted is never probed, so it
+        // would read as absent whatever git opens for it.
+        if seen.len() >= MAX_CONFIG_FILES || (cfg!(windows) && !fs_path::is_abs(&path)) {
             return Err(UNPROVEN_LAUNCH);
         }
         if !fs_path::is_file(&path) {
@@ -175,6 +196,9 @@ pub(super) fn git_config_digest(
         .into_iter()
         .filter(|dir| visited_hooks.insert(dir.clone()))
     {
+        if cfg!(windows) && !fs_path::is_abs(&hooks_dir) {
+            return Err(UNPROVEN_LAUNCH);
+        }
         seen.extend(hook_digests(&hooks_dir)?);
     }
     seen.extend(nested_attribute_digests(root, ctx)?);
@@ -335,6 +359,18 @@ fn scan_key(
         .trim_matches('"');
     if section == "filter" && subsection == "lfs" && LFS_FILTER.contains(&(name.as_str(), value)) {
         return Ok(());
+    }
+    #[cfg(windows)]
+    if section == "diff" && name == "textconv" && (subsection, value) == ASTEXTPLAIN {
+        return Ok(());
+    }
+    #[cfg(windows)]
+    if matches!(
+        (section, name.as_str()),
+        ("core", "hookspath") | ("include" | "includeif", "path")
+    ) && !config_reference_is_pinned(value)
+    {
+        return Err(GIT_HELPER_CONFIG);
     }
     if section == "core" && name == "hookspath" {
         // Hashing the directory binds the hooks git would run from it.
