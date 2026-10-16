@@ -203,10 +203,18 @@ pub(crate) fn evaluate(
     }
     let controls = controls(body.control_snapshot.as_ref())?;
     let facts = &body.facts;
+    // The unmodeled-shell recognizers prove git hooks against the account's
+    // passwd home, as the shell and developer inspection ops do, so a
+    // redirected `HOME` cannot stand in for it.
+    let account_home = if body.query == "unmodeled_shell_artifact" {
+        crate::edge_git_push::account_home()
+    } else {
+        Some(facts.caller_home.clone())
+    };
     let inspection = CodexToolOutputFactsV1 {
         process_cwd: facts.cwd.clone(),
         home: facts.home_dir.clone(),
-        account_home: Some(facts.caller_home.clone()),
+        account_home,
         groups: facts.groups.clone(),
         environment: facts.environment.clone(),
         git_executable: body.git_executable.clone(),
