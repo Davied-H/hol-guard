@@ -179,3 +179,36 @@ fn hidden_linked_and_multi_file_scripts_keep_their_review() {
         assert_ne!(result.decision, "allow", "{command}");
     }
 }
+
+#[test]
+fn node_scratch_scripts_in_every_extension_run_contained_alone() {
+    let fixture = Fixture::new();
+    fixture.write("dep.js", "module.exports = 1;\n");
+    for (name, source) in [
+        ("a.js", "console.log(1);\n"),
+        (
+            "b.cjs",
+            "const fs = require('node:fs');\nconsole.log(fs.existsSync('.'));\n",
+        ),
+        (
+            "c.mjs",
+            "import path from 'node:path';\nconsole.log(path.sep);\n",
+        ),
+    ] {
+        let script = fixture.write(name, source);
+        let result = fixture.classify("omp", &format!("node {}", script.display()));
+        assert_ne!(result.decision, "allow", "{name}");
+        if cfg!(target_os = "macos") {
+            assert_eq!(result.reason_code, CONTAINED, "{name}");
+        }
+    }
+    for (name, source) in [
+        ("d.js", "const dep = require('./dep.js');\n"),
+        ("e.cjs", "require('https').get('https://x.invalid');\n"),
+    ] {
+        let script = fixture.write(name, source);
+        let result = fixture.classify("omp", &format!("node {}", script.display()));
+        assert_ne!(result.reason_code, CONTAINED, "{name}");
+        assert_ne!(result.decision, "allow", "{name}");
+    }
+}
