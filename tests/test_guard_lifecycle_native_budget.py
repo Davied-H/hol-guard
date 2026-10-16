@@ -14,6 +14,7 @@ import hashlib
 import json
 import time
 from argparse import Namespace
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +35,23 @@ _FEATURES = (
     "native-resident-lifecycle-v1",
     "context-digest-v1",
 )
+
+
+@pytest.fixture(autouse=True)
+def _own_budget() -> Iterator[None]:
+    """Keep each test's floor to itself.
+
+    A real dispatch binds the floor and leaves it bound: the process exits
+    after one command, and the next command rebinds its own. Pytest is the one
+    process that keeps going, so without this a routing test here would widen
+    the budget every later test in the shard measures.
+    """
+
+    token = native_context._BOUND_TIMEOUT_FLOOR.set(None)
+    try:
+        yield
+    finally:
+        native_context._BOUND_TIMEOUT_FLOOR.reset(token)
 
 
 def _status() -> NativeRuntimeStatus:
