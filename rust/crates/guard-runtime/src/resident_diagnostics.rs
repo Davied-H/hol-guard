@@ -141,9 +141,11 @@ enum PhaseOutput {
     ManagedFile(Option<SyncSender<PhaseLine>>),
 }
 
-fn spawn_managed_writer(mut file: ManagedPhaseFile) -> Option<SyncSender<PhaseLine>> {
+fn spawn_managed_writer(
+    mut file: ManagedPhaseFile,
+) -> Option<(SyncSender<PhaseLine>, std::thread::JoinHandle<()>)> {
     let (sender, receiver) = mpsc::sync_channel::<PhaseLine>(MANAGED_PHASE_QUEUE_LINES);
-    std::thread::Builder::new()
+    let writer = std::thread::Builder::new()
         .name("hol-guard-phase-sink".to_owned())
         .spawn(move || {
             // Ends when the resident retires the sink (every sender dropped)
@@ -156,22 +158,34 @@ fn spawn_managed_writer(mut file: ManagedPhaseFile) -> Option<SyncSender<PhaseLi
             }
         })
         .ok()?;
-    Some(sender)
+    Some((sender, writer))
 }
 
 static PHASE_OUTPUT: LazyLock<Mutex<PhaseOutput>> =
     LazyLock::new(|| Mutex::new(PhaseOutput::HelperStderr));
 
-pub(crate) struct ManagedPhaseLifetime;
+pub(crate) struct ManagedPhaseLifetime {
+    writer: Option<std::thread::JoinHandle<()>>,
+}
 
 impl Drop for ManagedPhaseLifetime {
     fn drop(&mut self) {
+        // Drop the only sender under the mutex; the guard is a temporary, so
+        // the mutex is released before the join below. Request threads use
+        // the sender only while holding the mutex and never clone it, so no
+        // emit can enqueue after this point.
         *PHASE_OUTPUT
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = PhaseOutput::ManagedFile(None);
-        // Keep the capped file after retirement for a client's timeout tail.
-        // Dropping the queue lets the writer flush queued lines and close the
-        // resident's descriptor; ownership ends here.
+        // The writer then appends the lines it already accepted and closes the
+        // descriptor before the join returns, so the file is released while
+        // this resident still holds the owner lock (which drops after this
+        // guard). A successor resident cannot truncate under a live writer.
+        // Retirement is not a request path, so an unbounded join is acceptable
+        // here: the queue is bounded and each append is one small write.
+        if let Some(writer) = self.writer.take() {
+            let _ = writer.join();
+        }
     }
 }
 
@@ -188,10 +202,13 @@ pub(crate) fn install_managed_sink(
     if matches!(*sink, PhaseOutput::ManagedFile(Some(_))) {
         return None;
     }
-    let sender = ManagedPhaseFile::open(state_base, owner).and_then(spawn_managed_writer);
-    let lifetime = sender.as_ref().map(|_| ManagedPhaseLifetime);
+    let (sender, writer) = ManagedPhaseFile::open(state_base, owner)
+        .and_then(spawn_managed_writer)
+        .unzip();
     *sink = PhaseOutput::ManagedFile(sender);
-    lifetime
+    writer.map(|writer| ManagedPhaseLifetime {
+        writer: Some(writer),
+    })
 }
 
 #[derive(Clone, Copy)]
