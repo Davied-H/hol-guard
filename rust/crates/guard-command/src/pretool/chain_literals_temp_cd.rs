@@ -67,6 +67,12 @@ pub(crate) fn project(command: &str) -> Option<String> {
     Some(projected)
 }
 
+/// The projection when it reads a later expansion of the fresh directory as
+/// `$TMPDIR`; the raw command never names `TMPDIR`, or `project` refuses it.
+pub(crate) fn expanded(command: &str) -> Option<String> {
+    project(command).filter(|projected| projected.contains("TMPDIR"))
+}
+
 /// Words that run code later, bind a variable by an operand name or change
 /// directory, which would let a later expansion name something other than
 /// the fresh directory.

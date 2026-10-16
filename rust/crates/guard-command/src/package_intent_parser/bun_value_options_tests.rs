@@ -82,6 +82,7 @@ impl Drop for TempTree {
     }
 }
 
+#[cfg(unix)]
 fn lockfile_digest(
     workspace: &std::path::Path,
     home: &std::path::Path,
@@ -121,6 +122,7 @@ fn lockfile_digest(
         .clone()
 }
 
+#[cfg(unix)]
 #[test]
 fn bun_cwd_lockfile_inside_the_workspace_is_the_one_that_is_hashed() {
     let tree = TempTree::new();
