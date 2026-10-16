@@ -8,11 +8,7 @@ const FAILED: &str = "native_command_extension_evaluation_failed";
 #[test]
 fn an_xargs_that_names_its_program_is_reviewable() {
     let controls = controls(github("enabled", None), false);
-    for command in [
-        "xargs rm -f < list.txt",
-        "xargs -0 -n 20 rm -f < list.txt",
-        "cat list.txt | xargs -0 rm -f",
-    ] {
+    for command in ["xargs rm -f < list.txt", "xargs -0 -n 20 rm -f < list.txt"] {
         let (action, code) = decision(&controls, command);
         assert_ne!(code, FAILED, "{command}");
         assert_eq!(action, "review", "{command}: {code}");

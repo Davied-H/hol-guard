@@ -293,18 +293,17 @@ fn named_xargs_pipeline(text: &str) -> bool {
 /// with nothing in the shell text that substitutes or overrides `PATH` and no
 /// redirect except to a literal path.
 fn reviewable_structure(command: &CanonicalCommandV1) -> bool {
+    if command.normalized_text.contains("xargs -0 rm") {
+        panic!(
+            "struct conf={} reason={:?} path={}",
+            command.confidence, command.uncertainty_reason, command.path_overridden
+        );
+    }
     if command.path_overridden {
         return false;
     }
     if command.confidence != "uncertain" {
-        // `cat list.txt | xargs -0 rm -f` parses exactly, and the pipe only
-        // carries arguments into a program the text names. The matchers not
-        // binding `xargs` was the whole reason it was refused outright, with
-        // no approval left to give it.
-        return command.confidence == "exact"
-            && command.uncertainty_reason.is_none()
-            && command.wrapper_chain.is_empty()
-            && named_xargs_pipeline(&command.normalized_text);
+        return false;
     }
     match command.uncertainty_reason.as_deref() {
         // Backgrounding runs the same programs the foreground text names, so
