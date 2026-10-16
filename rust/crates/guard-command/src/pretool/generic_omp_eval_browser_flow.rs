@@ -3,8 +3,9 @@
 //! counted retry loops, `try`/`catch`, `if (!NAME) throw Error('...')`, and a
 //! `TAB.run(async ({page}) => {...})` body limited to modeled `page` calls.
 
-use super::lex::{loopback_url, Token, RESERVED};
+use super::lex::{Token, RESERVED};
 use super::Parser;
+use crate::pretool::curl_reads::loopback_url;
 
 impl Parser {
     /// Whether `name` may be bound: not reserved, not the run callback's
@@ -18,12 +19,21 @@ impl Parser {
             && !self.unset.contains(name)
     }
 
+    /// Whether `url` reaches a local dev server under the same port and
+    /// secret rules as a loopback `curl` read. Unlike the isolated browser,
+    /// `fetch` runs in the eval host, and `page.goto` can hand the page's
+    /// markup back through `page.content()`.
+    fn dev_server_url(&self, url: &str) -> bool {
+        loopback_url(url, self.home_dir.as_deref())
+    }
+
     /// `fetch('LOOPBACK_URL')`, optionally with `{method: 'GET'}`, after its
     /// `await`.
     pub(super) fn fetch_call(&mut self) -> Option<()> {
         self.keyword("fetch")?;
         self.punct('(')?;
-        if !loopback_url(&self.string()?) {
+        let url = self.string()?;
+        if !self.dev_server_url(&url) {
             return None;
         }
         if self.eat_punct(',') {
@@ -251,7 +261,8 @@ impl Parser {
                 self.string()?;
             }
             "goto" => {
-                if !loopback_url(&self.string()?) {
+                let url = self.string()?;
+                if !self.dev_server_url(&url) {
                     return None;
                 }
                 if self.eat_punct(',') {

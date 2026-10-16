@@ -39,7 +39,7 @@ fn observed_dev_server_checks_are_accepted() {
         "const tab = browser.tab('t'); display(await tab.evaluate(() => { const items = document.querySelectorAll('li'); return items.length >= 1 && items[0].textContent === 'a'; }));",
         "const tab = await browser.open({url: 'http://127.0.0.1:5173/', viewport: {width: 800, height: 600}, wait_until: 'load'});\nawait tab.fill('#name', 'Ada');\nawait tab.evaluate(async (n) => { const el = document.querySelector('#out'); return el ? el.textContent + n : null; }, 2);\nconsole.log(await tab.console({level: 'error'}));\nawait tab.goto('http://localhost:5173/about');\nawait tab.scroll(0, -200);\nawait tab.close()",
     ] {
-        assert!(loopback_browser_program(code), "{code}");
+        assert!(loopback_browser_program(code, None), "{code}");
     }
 }
 
@@ -53,7 +53,7 @@ fn visibility_checks_pauses_and_negated_reads_are_accepted() {
         "const tab=await browser.open({name:'sky-hop-smoke2',url:'http://127.0.0.1:4173/'}); await tab.press('Space'); await new Promise(r=>setTimeout(r,100)); console.log('overlay hidden after flap',!(await tab.isVisible('.overlay')),'errors',await tab.errors()); await tab.close();",
         "const tab = browser.tab('t'); await new Promise((resolve) => setTimeout(resolve, 250)); display(await tab.count('li'), await tab.attr('#start', 'disabled'), !!(await tab.isEnabled('#start')), await tab.isChecked('#mute'));",
     ] {
-        assert!(loopback_browser_program(code), "{code}");
+        assert!(loopback_browser_program(code, None), "{code}");
     }
 }
 
@@ -124,7 +124,7 @@ fn other_hosts_options_and_node_code_stay_reviewed() {
         "display('no browser');",
         "",
     ] {
-        assert!(!loopback_browser_program(code), "{code}");
+        assert!(!loopback_browser_program(code, None), "{code}");
     }
 }
 
@@ -138,9 +138,9 @@ fn local_server_waits_and_page_runs_are_accepted() {
         SERVER_WAIT,
         PAGE_RUN,
         "const r = await fetch('http://127.0.0.1:8080/health', {method: 'GET'}); display(r.ok, await r.json());",
-        "const tab = browser.tab('t'); await tab.run(async ({page}) => { await page.goto('http://localhost:5173/'); await page.waitForSelector('#app', {timeout: 5000}); await page.hover('#a'); return await page.title(); });",
+        "const tab = browser.tab('t'); await tab.run(async ({page}) => { await page.goto('http://localhost:4173/'); await page.waitForSelector('#app', {timeout: 5000}); await page.hover('#a'); return await page.title(); });",
     ] {
-        assert!(loopback_browser_program(code), "{code}");
+        assert!(loopback_browser_program(code, None), "{code}");
     }
 }
 
@@ -161,6 +161,23 @@ fn other_requests_and_page_methods_stay_reviewed() {
             "Error(process.env.HOME)",
         ),
         (SERVER_WAIT, "let r; ", ""),
+        (
+            SERVER_WAIT,
+            "localhost:3000/api",
+            "127.0.0.1:2375/containers",
+        ),
+        (SERVER_WAIT, "localhost:3000/api", "localhost:9229/json"),
+        (SERVER_WAIT, "localhost:3000/api", "localhost:4781/api"),
+        (
+            SERVER_WAIT,
+            "/todos",
+            "/todos?k=0123456789abcdef0123456789abcdef01234567",
+        ),
+        (
+            PAGE_RUN,
+            "page.click('#game')",
+            "page.goto('http://127.0.0.1:9222/json')",
+        ),
         (SERVER_WAIT, "i<20", "i<n"),
         (
             PAGE_RUN,
@@ -186,7 +203,7 @@ fn other_requests_and_page_methods_stay_reviewed() {
     ] {
         let code = base.replacen(from, to, 1);
         assert_ne!(code, base, "{from}");
-        assert!(!loopback_browser_program(&code), "{code}");
+        assert!(!loopback_browser_program(&code, None), "{code}");
     }
     for code in [
         "let r; break; r = await fetch('http://localhost:3000/');",
@@ -198,6 +215,6 @@ fn other_requests_and_page_methods_stay_reviewed() {
         "const page = 1; await fetch('http://localhost:3000/');",
         "const tab = browser.tab('t'); await page.click('#a');",
     ] {
-        assert!(!loopback_browser_program(code), "{code}");
+        assert!(!loopback_browser_program(code, None), "{code}");
     }
 }

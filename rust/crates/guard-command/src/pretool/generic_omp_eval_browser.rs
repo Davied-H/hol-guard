@@ -61,6 +61,9 @@ struct Parser {
     loops: usize,
     in_run: bool,
     browser_calls: usize,
+    /// Locates the Guard daemon's state file, so its port stays unreachable
+    /// from `fetch` and `page.goto`.
+    home_dir: Option<String>,
 }
 
 impl Parser {
@@ -467,7 +470,7 @@ impl Parser {
 
 /// Whether `code` is a JavaScript program that only drives the isolated
 /// browser against loopback pages and displays what it reads.
-pub(super) fn loopback_browser_program(code: &str) -> bool {
+pub(super) fn loopback_browser_program(code: &str, home_dir: Option<&str>) -> bool {
     if code.len() > MAX_CODE_BYTES {
         return false;
     }
@@ -476,6 +479,7 @@ pub(super) fn loopback_browser_program(code: &str) -> bool {
     };
     Parser {
         tokens,
+        home_dir: home_dir.map(str::to_owned),
         ..Parser::default()
     }
     .program()
