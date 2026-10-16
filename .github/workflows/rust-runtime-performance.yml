@@ -44,6 +44,12 @@ jobs:
             echo "SCCACHE_IGNORE_SERVER_IO_ERROR=1"
           } >> "$GITHUB_ENV"
       - uses: ./.github/actions/setup-bubblewrap
+      - name: Provision the primary CI test linker
+        run: |
+          if ! command -v ld.lld >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends lld
+          fi
       - name: Compare both profiles on identical source and execute every runtime test
         env:
           PROFILE_ORDER: ${{ matrix.order }}

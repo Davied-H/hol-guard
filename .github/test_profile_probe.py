@@ -31,12 +31,13 @@ try:
     for level in order:
         target.rename(scratch / f"target-before-profile-{level}")
         shutil.copytree(seed, target, symlinks=True)
-        env = {**os.environ, "CARGO_PROFILE_TEST_OPT_LEVEL": level}
+        env = dict(os.environ)
+        overrides = ["--config", "profile.test.package.guard-command.opt-level=0"] if level == "0" else []
         build_started = time.monotonic()
         listing = scratch / f"profile-{level}-inventory.json"
         with listing.open("w") as output:
             subprocess.run(
-                [*command, "list", *source_args, "--message-format", "json"],
+                [*command, "list", *source_args, *overrides, "--message-format", "json"],
                 env=env,
                 stdout=output,
                 check=True,
@@ -59,6 +60,7 @@ try:
                 *command,
                 "run",
                 *source_args,
+                *overrides,
                 "--profile",
                 "ci",
                 "--test-threads",
@@ -76,6 +78,7 @@ try:
             "test_seconds": round(time.monotonic() - test_started, 3),
             "test_inventory": len(inventory),
             "all_tests_passed": True,
+            "cargo_overrides": overrides,
         }
         print(json.dumps({"profile": level, **result["profiles"][level]}), flush=True)
     result["same_test_inventory"] = True
