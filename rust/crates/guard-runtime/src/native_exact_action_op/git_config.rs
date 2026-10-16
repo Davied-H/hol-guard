@@ -9,7 +9,6 @@ use serde_json::Value;
 
 use super::context::Ctx;
 use super::fs_path;
-use super::git_push::PushFacts;
 #[cfg(windows)]
 use super::git_windows::{config_reference_is_pinned, helpers_stay_idle, user_config_roots};
 use super::reasons::{Proof, GIT_HELPER_CONFIG, UNPROVEN_LAUNCH};
@@ -80,7 +79,6 @@ pub(super) struct Found {
     /// Worktree folders (lowercase, `/`-separated, with a trailing `/`; the
     /// root as empty) whose attribute files the walk never read.
     pub(super) unwalked: Vec<String>,
-    pub(super) push: PushFacts,
 }
 
 impl Found {
@@ -196,31 +194,6 @@ pub(super) fn git_config_digest(
     invocation: &[String],
     ctx: &Ctx,
 ) -> Proof<String> {
-    scan_repository(root, git_dir, common_dir, system, invocation, ctx).map(|(digest, _)| digest)
-}
-
-/// The same digest for a `git push`, with the push facts its config holds.
-#[cfg_attr(windows, allow(dead_code))]
-pub(super) fn git_push_config(
-    root: &str,
-    git_dir: &str,
-    common_dir: &str,
-    system: &[String],
-    ctx: &Ctx,
-) -> Proof<(String, PushFacts)> {
-    let (digest, mut found) = scan_repository(root, git_dir, common_dir, system, &[], ctx)?;
-    found.push.hook_dirs = found.hook_dirs;
-    Ok((digest, found.push))
-}
-
-fn scan_repository(
-    root: &str,
-    git_dir: &str,
-    common_dir: &str,
-    system: &[String],
-    invocation: &[String],
-    ctx: &Ctx,
-) -> Proof<(String, Found)> {
     if ctx
         .env
         .iter()
@@ -281,7 +254,6 @@ fn scan_repository(
             return Err(UNPROVEN_LAUNCH);
         }
         seen.extend(hook_digests(&hooks_dir)?);
-        found.hook_dirs.push(hooks_dir);
     }
     seen.extend(nested_attribute_digests(root, &mut found, ctx)?);
     #[cfg(windows)]
@@ -295,7 +267,7 @@ fn scan_repository(
         .collect();
     let mut encoded = Vec::new();
     write_canonical_json(&Value::Array(pairs), &mut encoded).map_err(|_| UNPROVEN_LAUNCH)?;
-    Ok((fs_path::sha256_hex(&encoded), found))
+    Ok(fs_path::sha256_hex(&encoded))
 }
 
 /// Hash every installed hook script; git can run one for read-only commands.
@@ -460,7 +432,6 @@ fn scan_key(
         .get(2)
         .map_or("", |value| value.as_str())
         .trim_matches('"');
-    found.push.record(section, subsection, &name, value);
     if section == "filter" && subsection == "lfs" && LFS_FILTER.contains(&(name.as_str(), value)) {
         found.lfs_filter = true;
         return Ok(());

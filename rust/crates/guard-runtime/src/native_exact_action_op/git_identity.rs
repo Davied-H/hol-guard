@@ -145,7 +145,7 @@ fn directory(value: &str, cwd: &str) -> Proof<String> {
 }
 
 /// `(worktree root, git dir, common dir)` of the repository containing `start`.
-pub(super) fn repository(start: &str) -> Proof<(String, String, String)> {
+fn repository(start: &str) -> Proof<(String, String, String)> {
     let mut directories = vec![fs_path::norm(start)];
     directories.extend(fs_path::parents(start));
     for dir in directories {

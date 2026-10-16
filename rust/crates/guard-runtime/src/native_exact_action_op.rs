@@ -54,7 +54,7 @@ use guard_contracts::{
 };
 
 use crate::package_authority_op::request_digest_with_limit;
-use context::{Ctx, Engines, ResidentEngines};
+use context::{Engines, ResidentEngines};
 
 pub(crate) fn evaluate_native_exact_action_request(
     request: &NativeExactActionRequestV1,
@@ -93,29 +93,20 @@ pub(crate) fn exact_action_token(query: &NativeExactActionQueryV1) -> Result<Str
 }
 
 /// The review identity the daemon binds an approve-once retry of `query` to
-/// (`native_review_binding`), for a resident caller that holds the query.
+/// (`native_review_binding`), for a resident caller that holds the query and
+/// the hook's stamped `guard_execution_environment`.
 pub(crate) fn review_binding_for(
     query: &NativeExactActionQueryV1,
     receipt: Option<&serde_json::Value>,
-) -> Option<String> {
-    review_binding_with(query, receipt, &ResidentEngines)
-}
-
-fn review_binding_with(
-    query: &NativeExactActionQueryV1,
-    receipt: Option<&serde_json::Value>,
-    engines: &dyn Engines,
+    execution_environment: Option<&serde_json::Value>,
 ) -> Option<String> {
     let NativeExactActionQueryV1::ExactAction {
         harness,
         command,
         payload_cwd,
         workspace,
-        home_dir,
-        environment,
         facts,
         policy_binding,
-        budget_ms,
         ..
     } = query
     else {
@@ -126,10 +117,7 @@ fn review_binding_with(
             command.as_deref(),
             payload_cwd.as_deref(),
             workspace.as_deref(),
-            home_dir.as_deref(),
-            environment,
-            *budget_ms,
-            engines,
+            execution_environment,
         )
     };
     binding::review_binding(
@@ -148,27 +136,17 @@ fn review_binding_with(
 }
 
 /// The launcher state a one-time approval of `command` binds to: only a plain
-/// `git push` has one (`git_push`). It needs the home and environment the
-/// action launches in, so a query without them binds no launcher.
+/// `git push origin <branch>` has one (`git_push`). It is proved in the
+/// agent's own stamped environment, so a request without one binds none.
 fn launcher_reuse(
     command: Option<&str>,
     payload_cwd: Option<&str>,
     workspace: Option<&str>,
-    home_dir: Option<&str>,
-    environment: &std::collections::BTreeMap<String, String>,
-    budget_ms: u64,
-    engines: &dyn Engines,
+    execution_environment: Option<&serde_json::Value>,
 ) -> Option<reuse_shape::Reuse> {
     let text = command?;
     let cwd = token::launch_cwd(payload_cwd, workspace)?;
-    let budget = Duration::from_millis(budget_ms.min(NATIVE_EXACT_ACTION_MAX_BUDGET_MS));
-    let ctx = Ctx {
-        home: home_dir,
-        env: environment,
-        deadline: Instant::now() + budget,
-        engines,
-    };
-    git_push::push_state(text, &cwd, &ctx)
+    git_push::push_state(text, &cwd, execution_environment)
         .ok()
         .map(reuse_shape::Reuse::Launcher)
 }
@@ -190,9 +168,7 @@ fn decide(
             receipt,
             policy_binding,
             workspace,
-            home_dir,
-            environment,
-            budget_ms,
+            execution_environment,
         } => NativeExactActionPayloadV1::ReviewBinding {
             binding: binding::review_binding(
                 harness,
@@ -207,10 +183,7 @@ fn decide(
                         command.as_deref(),
                         cwd.as_deref(),
                         workspace.as_deref(),
-                        home_dir.as_deref(),
-                        environment.as_ref()?,
-                        (*budget_ms)?,
-                        engines,
+                        execution_environment.as_ref(),
                     )
                 },
             ),
