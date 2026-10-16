@@ -219,7 +219,9 @@ fn store_call(
         args,
     })
     .map(|_| ())
-    .map_err(|_| STORE_FAILED)
+    // The store's own code keeps the SQLite failure class, so the caller can
+    // recover a corrupt store as it would after a store call.
+    .map_err(|error| error.code())
 }
 
 fn now_micros() -> Option<i64> {

@@ -41,9 +41,15 @@ def _reply(
     return calls
 
 
-def _ask(tmp_path: Path, action: str = "review", *, grant_allowed: bool = True) -> object:
+def _ask(
+    tmp_path: Path, action: str = "review", *, grant_allowed: bool = True, recovered: list[object] | None = None
+) -> object:
     store = SimpleNamespace(
-        path=tmp_path / "guard.db", guard_home=tmp_path, guard_source="local", _repair_store_permissions=lambda: None
+        path=tmp_path / "guard.db",
+        guard_home=tmp_path,
+        guard_source="local",
+        _repair_store_permissions=lambda: None,
+        _recover_fatal_sqlite_store=(recovered if recovered is not None else []).append,
     )
     return client.native_local_cli_hook(
         store,
@@ -75,6 +81,7 @@ def test_presents_the_resident_action(monkeypatch: pytest.MonkeyPatch, tmp_path:
         {"payload": {"action": "allow"}, "prerequisite": False},
         {"payload": {"action": "warn"}},
         {"payload": {"action": "allow", "extra": True}},
+        {"payload": {"action": ["allow"]}},
         {"status": "error", "code": "native_local_cli_hook_path_invalid"},
     ],
 )
@@ -84,8 +91,29 @@ def test_no_bound_answer_is_none(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     assert _ask(tmp_path) is None
 
 
-def test_store_failure_raises_like_the_store_call(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    _reply(monkeypatch, status="error", code="native_local_cli_hook_store_failed")
+def test_store_failure_recovers_and_raises_like_the_store_call(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _reply(monkeypatch, status="error", code="native_guard_store_sqlite_corrupt")
+    recovered: list[object] = []
 
-    with pytest.raises(sqlite3.DatabaseError):
+    with pytest.raises(sqlite3.DatabaseError) as raised:
+        _ask(tmp_path, recovered=recovered)
+
+    assert recovered == [raised.value]
+    assert getattr(raised.value, "sqlite_errorcode", None) == 11
+
+
+def test_spent_operation_deadline_raises_before_the_call(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    calls = _reply(monkeypatch, payload={"action": "allow"})
+    monkeypatch.setattr(client, "sqlite_operation_deadline_monotonic", lambda: 0.0)
+
+    with pytest.raises(TimeoutError):
         _ask(tmp_path)
+    assert calls == []
+
+
+def test_large_environment_fits_the_request(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    calls = _reply(monkeypatch, payload={"action": "allow"})
+
+    _ask(tmp_path)
+
+    assert calls[0]["max_request_bytes"] == 2 * 1024 * 1024
