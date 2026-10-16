@@ -14,6 +14,7 @@ from ..store import GuardStore
 from .install_commands import apply_managed_install
 from .managed_install_context import managed_install_context as _managed_install_context
 from .update_commands import _current_version, _installer_kind
+from .update_retirement import retire_native_resident_for_home
 
 
 def run_guard_self_uninstall(
@@ -72,6 +73,16 @@ def run_guard_self_uninstall(
     except (OSError, RuntimeError) as error:
         daemon_cleanup = {"retired_pids": [], "retired_count": 0, "error": _clean_output(str(error))}
         notes.append(f"Could not stop every Guard daemon before uninstall: {error}")
+
+    # The native resident is its own long-lived process, so retiring the Python
+    # daemons leaves it running. It also holds the runtime executable open,
+    # which on Windows keeps that file from being removed at all.
+    native_resident_retired = retire_native_resident_for_home(context.guard_home)
+    daemon_cleanup["native_resident_retired"] = native_resident_retired
+    if not native_resident_retired:
+        notes.append(
+            "Could not stop the Guard native runtime before uninstall; it may keep running until the machine restarts."
+        )
 
     for managed_install in managed_installs:
         harness = str(managed_install.get("harness") or "").strip()

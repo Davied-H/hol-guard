@@ -241,3 +241,88 @@ def test_self_uninstall_catches_managed_install_context_resolution_errors(
     assert payload["status"] == "failed"
     assert str(payload["message"]).startswith("HOL Guard removal stopped at harness codex")
     assert payload["error"] == "bad workspace"
+
+
+def _stub_removal(monkeypatch: pytest.MonkeyPatch, context: HarnessContext) -> None:
+    """Take every removal step except native retirement out of the way."""
+
+    monkeypatch.setattr(uninstall_commands, "_current_version", lambda: "2.0.764")
+    monkeypatch.setattr(uninstall_commands, "_installer_kind", lambda: "pipx")
+    monkeypatch.setattr(uninstall_commands, "package_shim_status", lambda _context: {"installed_managers": []})
+    monkeypatch.setattr(uninstall_commands, "retire_all_guard_daemons_for_home", lambda _guard_home: [])
+    monkeypatch.setattr(
+        uninstall_commands,
+        "remove_guard_profile_blocks",
+        lambda _context: {"changed": False, "changed_paths": [], "removed_paths": []},
+    )
+    monkeypatch.setattr(
+        uninstall_commands,
+        "uninstall_package_shims",
+        lambda _context, managers=None: {
+            "removed_managers": list(managers or ()),
+            "removed_paths": [],
+            "remaining_managers": [],
+            "manifest_path": str(context.guard_home / "package-shims" / "manifest.json"),
+            "shim_dir": str(context.guard_home / "package-shims" / "bin"),
+        },
+    )
+    monkeypatch.setattr(
+        uninstall_commands.subprocess,
+        "run",
+        lambda command, **kwargs: subprocess.CompletedProcess(command, 0, stdout="removed", stderr=""),
+    )
+
+
+def test_self_uninstall_retires_the_native_resident(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A Windows tester found `hol-guard-runtime.exe` still running afterwards.
+
+    Retiring the Python daemons leaves the native resident alone, and the
+    resident holds the runtime executable open, so on Windows the file cannot
+    even be deleted while it lives.
+    """
+
+    context = _context(tmp_path)
+    store = GuardStore(context.guard_home)
+    _stub_removal(monkeypatch, context)
+    retired: list[Path] = []
+
+    def retire(guard_home: Path) -> bool:
+        retired.append(guard_home)
+        return True
+
+    monkeypatch.setattr(uninstall_commands, "retire_native_resident_for_home", retire)
+
+    payload, exit_code = uninstall_commands.run_guard_self_uninstall(
+        dry_run=False,
+        context=context,
+        store=store,
+        now="2026-06-18T00:00:00Z",
+    )
+
+    assert exit_code == 0
+    assert retired == [context.guard_home]
+    assert payload["daemon_cleanup"]["native_resident_retired"] is True
+
+
+def test_self_uninstall_reports_a_native_resident_it_could_not_stop(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    context = _context(tmp_path)
+    store = GuardStore(context.guard_home)
+    _stub_removal(monkeypatch, context)
+    monkeypatch.setattr(uninstall_commands, "retire_native_resident_for_home", lambda _guard_home: False)
+
+    payload, exit_code = uninstall_commands.run_guard_self_uninstall(
+        dry_run=False,
+        context=context,
+        store=store,
+        now="2026-06-18T00:00:00Z",
+    )
+
+    assert exit_code == 0
+    assert payload["daemon_cleanup"]["native_resident_retired"] is False
+    assert any("Could not stop the Guard native runtime" in note for note in payload["notes"])
