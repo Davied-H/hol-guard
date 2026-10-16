@@ -233,9 +233,11 @@ fn timeout_wrapper_parsing_is_bounded_and_preserves_inner_commands() {
     assert_eq!(elevated.wrapper_chain, ["sudo"]);
     assert_eq!(action("timeout 30 sudo pwd"), action("sudo pwd"));
     // A `timeout` spelled as a path is whatever that file holds, so it stays
-    // a wrapper and the command it carries keeps its approval.
+    // a wrapper and the command it carries keeps its approval. The duration
+    // is still the clock's operand: the executable is the program it names.
     for command in [
         "./timeout 30 pwd",
+        "./timeout -- 30 pwd",
         "bin/timeout 30 pwd",
         "/tmp/timeout 30 pwd",
     ] {
@@ -246,9 +248,41 @@ fn timeout_wrapper_parsing_is_bounded_and_preserves_inner_commands() {
             extraction_provenance: "guard-shell".into(),
         })
         .unwrap();
+        assert_eq!(model.confidence, "exact", "{command}");
         assert_eq!(model.wrapper_chain, ["timeout"], "{command}");
+        assert_eq!(
+            model.segments[0].executable.as_deref(),
+            Some("pwd"),
+            "{command}"
+        );
+        assert!(model.segments[0].arguments.is_empty(), "{command}");
         assert_ne!(action(command), action("pwd"), "{command}");
     }
+    let removed = "./timeout 30 rm -rf /var/lib/data";
+    let model = crate::parse_command(&crate::CommandModelRequestV1 {
+        command: removed.into(),
+        dialect: "posix".into(),
+        transport: "shell_string".into(),
+        extraction_provenance: "guard-shell".into(),
+    })
+    .unwrap();
+    assert_eq!(model.wrapper_chain, ["timeout"]);
+    assert_eq!(model.segments[0].executable.as_deref(), Some("rm"));
+    assert_eq!(
+        model.segments[0].arguments,
+        ["-rf".to_owned(), "/var/lib/data".to_owned()]
+    );
+    let factors = crate::command_critical_floors::command_critical_floor_factors(
+        &crate::canonical_command::CanonicalCommand::from_v1(&model),
+        None,
+        &[],
+    );
+    assert!(
+        factors
+            .iter()
+            .any(|factor| factor.reason_code == "critical.destructive-filesystem"),
+        "{factors:?}"
+    );
     for command in [
         "timeout --kill-after=1 5 pwd",
         "timeout -s KILL 5 pwd",

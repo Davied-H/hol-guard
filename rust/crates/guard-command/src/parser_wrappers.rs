@@ -8,8 +8,10 @@ use crate::{assignment_name, executable_basename, CommandSegmentV1, RawSegment};
 /// A bare `timeout 30 pytest -q` runs the program this text already names,
 /// as this user and in this directory, and signals that one child when the
 /// clock runs out: it bounds how long the work may take, not what it may do,
-/// so it leaves no wrapper behind. `command` and `time` run the next word as
-/// the program.
+/// so it leaves no wrapper behind. `./timeout` and `bin/timeout` are not that
+/// clock. They stay in the wrapper chain, and the duration is still skipped
+/// so the program they name stays the executable. `command` and `time` run
+/// the next word as the program.
 /// `env` does that only when every assignment is inert; those names join
 /// `environment_names`. A non-inert name leaves `env` as the executable.
 /// Any option on a prefix leaves it as the executable, which keeps
@@ -43,8 +45,12 @@ pub(super) fn unwrap_wrappers(
         let clock = trusted_timeout(&tokens[index]);
         let wrapper = executable_basename(&tokens[index]);
         index += 1;
-        if clock {
-            prefixes += 1;
+        if wrapper == "timeout" {
+            if clock {
+                prefixes += 1;
+            } else {
+                wrappers.push(wrapper.to_owned());
+            }
             if tokens.get(index).is_some_and(|value| value == "--") {
                 index += 1;
             }
