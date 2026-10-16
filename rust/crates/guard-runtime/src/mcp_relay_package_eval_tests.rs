@@ -294,6 +294,40 @@ fn a_policy_this_caller_cannot_honour_does_not_settle_a_round_that_needs_the_net
 }
 
 #[test]
+fn a_machine_whose_registry_policy_is_unread_does_not_settle_a_round_that_needs_the_network() {
+    // Windows keeps the administrator's policy in the registry, which this
+    // runtime does not read, so a proxy, CA, or public-registry rule set there
+    // is invisible to this caller. The exchange is refused rather than
+    // performed under the unmanaged default.
+    let needs = vec![need("https://registry.npmjs.org/left-pad")];
+    let mut resident = ScriptedResident::new(vec![(
+        EGRESS_REQUIRED_CODE,
+        Some(serde_json::to_value(EgressRequiredV1 { needs }).expect("needs")),
+    )]);
+    let registry = ManagedPolicySource {
+        system: MachineSystem::Windows,
+        policy_path: None,
+        write_cache: false,
+        machine_root: None,
+    };
+
+    let refused = evaluate_package_request(
+        &facts("/home/dev/.hol-guard", Some("/home/dev/app")),
+        &intent("npm install left-pad"),
+        false,
+        &registry,
+        &mut resident,
+    )
+    .expect_err("an unread registry authority exchanges nothing");
+
+    assert_eq!(
+        refused.reason(),
+        CallerEgressFulfilment::policy_unhonoured(),
+        "the caller refused, rather than exchanging under default trust"
+    );
+}
+
+#[test]
 fn an_answer_asking_for_a_saved_policy_row_is_not_a_verdict() {
     let root = TempDir::new().expect("tempdir");
     let mut resident = ScriptedResident::new(vec![(
