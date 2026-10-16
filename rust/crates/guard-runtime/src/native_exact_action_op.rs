@@ -9,15 +9,28 @@
 mod binding;
 pub(crate) mod context;
 mod fs_path;
+#[cfg(windows)]
+mod fs_path_windows;
 mod git_config;
 mod git_identity;
+#[cfg(windows)]
+mod git_windows;
 mod launch;
+#[cfg(windows)]
+mod launch_windows;
 mod launcher_sets;
+// Windows launches refuse interpreters (`launch.rs`), so these POSIX
+// module-graph proofs are unreached there.
+#[cfg_attr(windows, allow(dead_code))]
 mod node_script;
+#[cfg_attr(windows, allow(dead_code))]
 mod node_source;
 mod operands;
+#[cfg_attr(windows, allow(dead_code))]
 mod python_modules;
+#[cfg_attr(windows, allow(dead_code))]
 mod python_script;
+#[cfg_attr(windows, allow(dead_code))]
 mod python_source;
 mod reasons;
 mod reuse_shape;
@@ -151,3 +164,7 @@ fn decide(
 #[cfg(test)]
 #[path = "native_exact_action_op_tests.rs"]
 mod tests;
+
+#[cfg(all(test, windows))]
+#[path = "native_exact_action_op/windows_tests.rs"]
+mod windows_tests;

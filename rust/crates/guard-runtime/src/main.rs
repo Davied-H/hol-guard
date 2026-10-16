@@ -459,6 +459,7 @@ mod mcp_relay_host;
 mod mcp_relay_lane;
 mod mcp_relay_launch;
 mod mcp_relay_order;
+mod mcp_relay_package_eval;
 mod mcp_relay_pending;
 mod mcp_relay_ready;
 mod mcp_relay_resident;
@@ -621,10 +622,13 @@ mod strict_json;
 #[cfg(test)]
 mod supply_chain_cloud_vectors_tests;
 mod supply_chain_egress;
+mod supply_chain_eval_caller;
 mod supply_chain_eval_rounds;
 mod supply_chain_eval_seams;
 mod supply_chain_eval_transport;
 mod totp;
+#[cfg(windows)]
+mod windows_node_build;
 #[cfg(windows)]
 mod windows_readonly;
 mod workspace_inventory_files;

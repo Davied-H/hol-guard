@@ -27,8 +27,8 @@ pub use windows::ManagedChild;
 #[cfg(windows)]
 pub use windows::{
     attach_suspended_process, capture_managed_child, capture_owned_child, capture_pipes,
-    CaptureCommand, CapturePipes, CapturedOutput, ChildJobGuard, ChildTree, InheritWindow,
-    ResourceLimits, CHILD_TREE_CREATION_FLAGS,
+    disinherit_standard_handles, CaptureCommand, CapturePipes, CapturedOutput, ChildJobGuard,
+    ChildTree, InheritWindow, ResourceLimits, CHILD_TREE_CREATION_FLAGS,
 };
 
 #[cfg(windows)]
@@ -47,7 +47,7 @@ pub use windows::{
 pub use drives::local_drive_letters;
 
 #[cfg(windows)]
-pub use known_folders::trusted_install_roots;
+pub use known_folders::{trusted_install_roots, windows_directory};
 
 #[cfg(windows)]
 pub use secure_storage::{
