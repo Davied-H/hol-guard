@@ -60,6 +60,7 @@ fn browser_driving_and_module_attribute_chains_are_reviewed() {
     }
     for code in [
         "import shlex\nshlex.os.system('id')",
+        "from shlex import os as o\no.execvp('sh', ['sh', '-c', 'id'])",
         "import typing\ntyping.sys.modules['os'].system('id')",
         "import collections\ncollections._sys.exit(0)",
         "import dataclasses\ndataclasses.sys.modules['os'].system('id')",

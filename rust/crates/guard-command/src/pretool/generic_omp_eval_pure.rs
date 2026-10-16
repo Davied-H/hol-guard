@@ -114,6 +114,34 @@ const REFUSED_ATTRIBUTES: &[&str] = &[
     "itemgetter",
 ];
 
+/// Modules a safe module may re-export that reach files or the interpreter.
+const REEXPORTED_MODULES: &[&str] = &[
+    "inspect",
+    "types",
+    "io",
+    "pkgutil",
+    "runpy",
+    "code",
+    "pdb",
+    "traceback",
+    "linecache",
+    "tempfile",
+    "shutil",
+    "glob",
+    "fileinput",
+    "pickle",
+    "marshal",
+    "tokenize",
+    "posixpath",
+    "ntpath",
+    "genericpath",
+    "threading",
+    "multiprocessing",
+    "signal",
+    "gc",
+    "warnings",
+];
+
 const KEYWORDS: &[&str] = &[
     "False", "None", "True", "and", "as", "assert", "break", "class", "continue", "def", "elif",
     "else", "except", "finally", "for", "from", "if", "import", "in", "is", "lambda", "not", "or",
@@ -367,6 +395,14 @@ fn imports_ok(code: &str, modules: &mut HashSet<String>) -> Option<String> {
             for name in names.split(',') {
                 let mut parts = name.split_whitespace();
                 let first = parts.next()?;
+                // A safe module can re-export `os`, `sys` and their kin.
+                if first.starts_with('_')
+                    || REFUSED_NAMES.contains(&first)
+                    || REFUSED_ATTRIBUTES.contains(&first)
+                    || REEXPORTED_MODULES.contains(&first)
+                {
+                    return None;
+                }
                 let alias = match (parts.next(), parts.next()) {
                     (None, None) => first,
                     (Some("as"), Some(alias)) => alias,
@@ -473,6 +509,9 @@ mod tests {
             "print(read('a'))",
             "print(f'{1+1}')",
             "import shlex\nshlex.os.system('x')",
+            "from shlex import os as o\no.execvp('sh', ['sh'])",
+            "from typing import sys as s\nprint(s)",
+            "from dataclasses import inspect as i\nprint(i)",
             "import typing\ntyping.sys.modules['os']",
             "import collections\ncollections._sys.exit(0)",
             "import shlex\nprint('{0.os}'.format(shlex))",
