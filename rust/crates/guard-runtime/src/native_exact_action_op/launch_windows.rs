@@ -85,17 +85,19 @@ pub(super) fn env_value<'a>(
 }
 
 /// Inside a Program Files directory as the system reports it, never as the
-/// requesting environment spells it.
+/// requesting environment spells it; a spelling that could leave the root
+/// (`C:\Program Files\..\Users`) is never inside.
 pub(super) fn under_install_root(path: &str) -> bool {
-    guard_runtime_windows_process::trusted_install_roots()
-        .iter()
-        .filter_map(|root| root.to_str())
-        .map(|root| root.trim_end_matches('\\'))
-        .any(|root| {
-            path.get(..root.len())
-                .is_some_and(|prefix| prefix.eq_ignore_ascii_case(root))
-                && path[root.len()..].starts_with('\\')
-        })
+    fs_path::is_literal(path)
+        && guard_runtime_windows_process::trusted_install_roots()
+            .iter()
+            .filter_map(|root| root.to_str())
+            .map(|root| root.trim_end_matches('\\'))
+            .any(|root| {
+                path.get(..root.len())
+                    .is_some_and(|prefix| prefix.eq_ignore_ascii_case(root))
+                    && path[root.len()..].starts_with('\\')
+            })
 }
 
 /// The lowercased file stem of the bound image.
@@ -197,19 +199,23 @@ fn search_path_dlls(budget: &mut Budget, ctx: &Ctx) -> Proof<BTreeMap<String, St
     let mut found = BTreeMap::new();
     for entry in path.split(';').map(str::to_owned).chain(homes) {
         ctx.check()?;
-        let entry = entry.trim_end_matches(['\\', '/']);
-        let system = SYSTEM_PATH_DIRS
-            .iter()
-            .any(|dir| fs_path::join(&windows, dir).eq_ignore_ascii_case(entry));
-        if entry.is_empty() || system || under_install_root(entry) {
+        if entry.is_empty() {
             continue;
         }
-        if entry.contains('"') || !fs_path::is_abs(entry) {
+        if entry.contains('"') || !fs_path::is_abs(&entry) {
             return Err(UNPROVEN_LAUNCH);
         }
-        if fs_path::is_dir(entry) {
-            found.extend(bound_files(entry, None, &[".dll"], budget, ctx)?);
-        } else if std::fs::symlink_metadata(entry).is_ok() {
+        // Compare where the entry leads, never how it is spelled.
+        let entry = fs_path::resolve(&entry).ok_or(UNPROVEN_LAUNCH)?;
+        let system = SYSTEM_PATH_DIRS
+            .iter()
+            .any(|dir| fs_path::join(&windows, dir).eq_ignore_ascii_case(&entry));
+        if system || under_install_root(&entry) {
+            continue;
+        }
+        if fs_path::is_dir(&entry) {
+            found.extend(bound_files(&entry, None, &[".dll"], budget, ctx)?);
+        } else if std::fs::symlink_metadata(&entry).is_ok() {
             return Err(UNPROVEN_LAUNCH);
         }
     }

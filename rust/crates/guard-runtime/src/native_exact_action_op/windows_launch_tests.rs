@@ -11,9 +11,9 @@ use serde_json::json;
 use super::super::exact_action_token;
 use super::{cmd, query, shell, Tree};
 
-type Edit<'a> = &'a dyn Fn(&mut String, &mut String, &mut BTreeMap<String, String>);
+pub(super) type Edit<'a> = &'a dyn Fn(&mut String, &mut String, &mut BTreeMap<String, String>);
 
-fn launch(tree: &Tree, command: &str, edit: Edit) -> Result<String, &'static str> {
+pub(super) fn launch(tree: &Tree, command: &str, edit: Edit) -> Result<String, &'static str> {
     let mut request = query(tree, "Bash", Some(command), json!(null), &tree.ws());
     if let NativeExactActionQueryV1::ExactAction {
         harness,
@@ -38,7 +38,7 @@ fn where_exe() -> PathBuf {
 }
 
 /// `text` at `relative` under the tree, creating its directory.
-fn put(tree: &Tree, relative: &str, text: &str) {
+pub(super) fn put(tree: &Tree, relative: &str, text: &str) {
     let path = PathBuf::from(tree.path(relative));
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(path, text).unwrap();
@@ -51,7 +51,7 @@ fn image(tree: &Tree, relative: &str) {
     std::fs::copy(where_exe(), path).unwrap();
 }
 
-fn git_repository(tree: &Tree) {
+pub(super) fn git_repository(tree: &Tree) {
     cmd(&tree.ws(), "git init -q");
     assert!(PathBuf::from(tree.path("ws\\.git")).is_dir());
 }
@@ -306,56 +306,6 @@ fn git_helpers_on_windows_stay_one_time() {
     assert_eq!(exact_action_token(&request), Err("unproven_launch"));
 }
 
-const LFS_CONFIG: &str = "[filter \"lfs\"]\n\tclean = git-lfs clean -- %f\n\tsmudge = git-lfs smudge -- %f\n\tprocess = git-lfs filter-process\n\trequired = true\n";
-
-#[test]
-fn git_path_helpers_never_run_on_reuse() {
-    // Git for Windows finds `astextplain` and `git-lfs` on `PATH`, `~/bin`
-    // first, so a reused git must not reach either.
-    let tree = Tree::new();
-    git_repository(&tree);
-    tree.write(
-        "ws\\.git\\config",
-        "[diff \"astextplain\"]\n\ttextconv = astextplain\n",
-    );
-    for command in [
-        "git diff",
-        "git show",
-        "git log -p",
-        "git log --stat",
-        "git status -v",
-    ] {
-        assert_eq!(shell(&tree, command), Err("git_helper_config"), "{command}");
-    }
-    for command in [
-        "git diff --no-textconv",
-        "git status",
-        "git log -1 --oneline",
-    ] {
-        assert!(shell(&tree, command).is_ok(), "{command}");
-    }
-    tree.write("ws\\.git\\config", LFS_CONFIG);
-    assert!(shell(&tree, "git status").is_ok());
-    // NTFS opens a nested `.GitAttributes` for git's `.gitattributes`.
-    put(&tree, "ws\\src\\.GitAttributes", "*.bin filter=lfs\n");
-    assert_eq!(shell(&tree, "git status"), Err("git_helper_config"));
-    std::fs::remove_file(tree.path("ws\\src\\.GitAttributes")).unwrap();
-    tree.write("ws\\.gitattributes", "*.bin filter=lfs -text\n");
-    assert_eq!(shell(&tree, "git status"), Err("git_helper_config"));
-    assert!(shell(&tree, "git log -1").is_ok());
-    // An indexed `.gitattributes` missing from the worktree is read from
-    // the index, which no digest binds.
-    cmd(&tree.ws(), "git add .gitattributes");
-    std::fs::remove_file(tree.path("ws\\.gitattributes")).unwrap();
-    assert_eq!(shell(&tree, "git status"), Err("git_helper_config"));
-    for name in ["GIT_DIR", "git_work_tree", "GIT_EXEC_PATH"] {
-        let reason = launch(&tree, "git log -1", &|_, _, env| {
-            env.insert(name.to_owned(), tree.ws());
-        });
-        assert_eq!(reason, Err("git_helper_config"), "{name}");
-    }
-}
-
 #[test]
 fn dlls_the_search_path_reaches_are_bound() {
     let tree = Tree::new();
@@ -376,6 +326,15 @@ fn dlls_the_search_path_reaches_are_bound() {
     for (before, after) in clean.iter().zip(&planted) {
         assert_ne!(before, after);
     }
+    // A spelling that only starts inside Program Files is bound by where it
+    // leads.
+    let program_files = std::env::var("ProgramFiles").unwrap();
+    let detour = format!("{program_files}\\..{}", &tools[2..]);
+    let through = |tree: &Tree| launch(tree, "git status", &|_, _, env| prepend_path(env, &detour));
+    let before = through(&tree);
+    put(&tree, "tools\\detour.dll", "MZ planted");
+    assert!(before.is_ok());
+    assert_ne!(before, through(&tree));
     let git = shell(&tree, "git status");
     put(&tree, "home\\bin\\version.dll", "MZ planted");
     assert_ne!(git, shell(&tree, "git status"));

@@ -70,6 +70,9 @@ pub(super) struct Found {
     pub(super) lfs_filter: bool,
     pub(super) astextplain: bool,
     pub(super) attributes_name_lfs: bool,
+    /// Worktree folders (lowercase, `/`-separated, with a trailing `/`; the
+    /// root as empty) whose attribute files the walk never read.
+    pub(super) unwalked: Vec<String>,
 }
 
 impl Found {
@@ -79,6 +82,23 @@ impl Found {
         self.attributes_name_lfs |= data
             .windows(3)
             .any(|window| window.eq_ignore_ascii_case(b"lfs"));
+    }
+
+    fn skipped(&mut self, root: &str, directory: &str) {
+        let relative = directory.strip_prefix(root).filter(|rest| {
+            rest.is_empty() || rest.starts_with(['\\', '/']) || root.ends_with(['\\', '/'])
+        });
+        let mut prefix = relative
+            .unwrap_or_default()
+            .trim_start_matches(['\\', '/'])
+            .replace('\\', "/")
+            .to_ascii_lowercase();
+        if relative.is_none() {
+            prefix.clear();
+        } else if !prefix.is_empty() {
+            prefix.push('/');
+        }
+        self.unwalked.push(prefix);
     }
 }
 
@@ -288,20 +308,28 @@ fn nested_attribute_digests(
     let mut pending = vec![root.to_owned()];
     while let Some(current) = pending.pop() {
         ctx.check()?;
-        // An unreadable directory is skipped, as `os.walk` does.
+        // An unreadable directory is skipped, as `os.walk` does; git still
+        // reads attributes there for tracked paths, so it is recorded.
         let Ok(entries) = std::fs::read_dir(&current) else {
+            found.skipped(root, &current);
             continue;
         };
         let mut has_attributes = false;
-        for entry in entries.flatten() {
+        for entry in entries {
             // A huge directory must not outlive the request budget.
             ctx.check()?;
+            let Ok(entry) = entry else {
+                found.skipped(root, &current);
+                continue;
+            };
             let name = entry.file_name().to_string_lossy().into_owned();
             let path = fs_path::join(&current, &name);
             if fs_path::is_dir(&path) {
                 let is_link = entry.file_type().is_ok_and(|kind| kind.is_symlink());
                 if name != ".git" && name != "node_modules" && !is_cache_tree(&path) && !is_link {
                     pending.push(path);
+                } else {
+                    found.skipped(root, &path);
                 }
             } else if name == ".gitattributes"
                 || (cfg!(windows) && name.eq_ignore_ascii_case(".gitattributes"))
@@ -398,6 +426,12 @@ fn scan_key(
     if section == "filter" && subsection == "lfs" && LFS_FILTER.contains(&(name.as_str(), value)) {
         found.lfs_filter = true;
         return Ok(());
+    }
+    // Attributes from a tree (`attr.tree`) are objects no digest reads, and
+    // they could route a path to the LFS filter.
+    #[cfg(windows)]
+    if section == "attr" && name == "tree" {
+        return Err(GIT_HELPER_CONFIG);
     }
     #[cfg(windows)]
     if section == "diff" && name == "textconv" && (subsection, value) == ASTEXTPLAIN {

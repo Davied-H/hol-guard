@@ -80,12 +80,14 @@ pub(super) fn git_readonly_identity(
         return Err(MUTABLE_LAUNCHER);
     }
     let (root, git_dir, common_dir) = repository(&target)?;
+    let invocation = &arguments[index..];
+    let config_digest = git_config_digest(&root, &git_dir, &common_dir, system, invocation, ctx)?;
     Ok(json!({
         "kind": "git-readonly",
         "subcommand": subcommand,
         "target": target,
         "repository": root,
-        "config_digest": git_config_digest(&root, &git_dir, &common_dir, system, &arguments[index..], ctx)?,
+        "config_digest": config_digest,
     }))
 }
 

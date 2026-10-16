@@ -270,5 +270,7 @@ fn windows_paths_outside_the_workspace_are_broad() {
     }
 }
 
+#[path = "windows_git_tests.rs"]
+mod git;
 #[path = "windows_launch_tests.rs"]
 mod launch;

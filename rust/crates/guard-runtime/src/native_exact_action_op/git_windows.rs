@@ -15,8 +15,7 @@ use super::reasons::{Proof, GIT_HELPER_CONFIG, UNPROVEN_LAUNCH};
 /// The MSYS2 environments a Git for Windows install ships its tools under.
 const ARCH_DIRS: [&str; 3] = ["mingw64", "mingw32", "clangarm64"];
 /// `git log` options that print no diff, so no text converter runs.
-const PLAIN_LOG_OPTIONS: [&str; 9] = [
-    "--",
+const PLAIN_LOG_OPTIONS: [&str; 8] = [
     "--oneline",
     "--graph",
     "--decorate",
@@ -27,6 +26,24 @@ const PLAIN_LOG_OPTIONS: [&str; 9] = [
     "--first-parent",
 ];
 const PLAIN_LOG_PREFIXES: [&str; 3] = ["--max-count=", "--format=", "--pretty="];
+/// `git status` options that leave the verbose diff off. Status takes any
+/// unique abbreviation (`--verb`), so only these exact spellings count.
+const PLAIN_STATUS_OPTIONS: [&str; 14] = [
+    "--short",
+    "--branch",
+    "--porcelain",
+    "--porcelain=v1",
+    "--porcelain=v2",
+    "--long",
+    "--show-stash",
+    "--null",
+    "--ignored",
+    "--renames",
+    "--no-renames",
+    "--untracked-files=no",
+    "--untracked-files=normal",
+    "--untracked-files=all",
+];
 /// Subcommands that hash worktree files, which runs the clean filter.
 const WORKTREE_READERS: [&str; 3] = ["status", "diff", "ls-files"];
 const MAX_INDEX_BYTES: u64 = 64 * 1024 * 1024;
@@ -130,9 +147,9 @@ pub(super) fn path_helpers_stay_idle(
     if found.astextplain && may_textconv(subcommand, rest) {
         return Err(GIT_HELPER_CONFIG);
     }
-    if found.lfs_filter
-        && WORKTREE_READERS.contains(&subcommand.as_str())
-        && (found.attributes_name_lfs || index_supplies_attributes(root, git_dir)?)
+    let hashes_worktree = found.lfs_filter && WORKTREE_READERS.contains(&subcommand.as_str());
+    if hashes_worktree
+        && (found.attributes_name_lfs || index_supplies_attributes(root, git_dir, &found.unwalked)?)
     {
         return Err(GIT_HELPER_CONFIG);
     }
@@ -141,15 +158,27 @@ pub(super) fn path_helpers_stay_idle(
 
 /// Whether a read-only invocation can print a diff, which text-converts.
 fn may_textconv(subcommand: &str, rest: &[String]) -> bool {
-    if rest.iter().any(|argument| argument == "--no-textconv") {
-        return false;
-    }
-    let mut options = rest.iter().filter(|argument| argument.starts_with('-'));
+    // Options end at `--`; every argument past it is a path.
+    let end = rest
+        .iter()
+        .position(|argument| argument == "--")
+        .unwrap_or(rest.len());
+    let options = || {
+        rest[..end]
+            .iter()
+            .filter(|argument| argument.starts_with('-'))
+    };
+    // The last textconv toggle wins (`--no-textconv --textconv` converts).
+    let no_textconv = options()
+        .rfind(|option| option.starts_with("--textc") || option.starts_with("--no-textc"))
+        .is_some_and(|option| option == "--no-textconv");
     match subcommand {
-        "status" => options.any(|option| {
-            option == "--verbose" || (!option.starts_with("--") && option.contains('v'))
+        "status" => !options().all(|option| {
+            PLAIN_STATUS_OPTIONS.contains(&option.as_str())
+                || (!option.starts_with("--") && !option.contains('v'))
         }),
-        "log" => !options.all(|option| {
+        "log" if no_textconv => false,
+        "log" => !options().all(|option| {
             PLAIN_LOG_OPTIONS.contains(&option.as_str())
                 || PLAIN_LOG_PREFIXES
                     .iter()
@@ -157,15 +186,16 @@ fn may_textconv(subcommand: &str, rest: &[String]) -> bool {
                 || (option.len() > 1 && option[1..].bytes().all(|byte| byte.is_ascii_digit()))
         }),
         "rev-parse" | "ls-files" | "branch" | "remote" | "worktree" => false,
-        _ => true,
+        _ => !no_textconv,
     }
 }
 
-/// Whether git could take attributes from the index: it reads an indexed
-/// `.gitattributes` there when the worktree copy is missing or the entry is
-/// sparse, and the digest binds only worktree files. An index this parser
-/// cannot read (version 4, SHA-256, damaged) fails closed.
-fn index_supplies_attributes(root: &str, git_dir: &str) -> Proof<bool> {
+/// Whether git could take attributes the digest never read: from an indexed
+/// `.gitattributes` whose worktree copy is missing or skip-worktree, or from
+/// one inside a folder the attribute walk skipped (`unwalked`) that holds a
+/// tracked path. An index this parser cannot read (version 4, SHA-256, a
+/// split or sparse index, damaged) fails closed.
+fn index_supplies_attributes(root: &str, git_dir: &str, unwalked: &[String]) -> Proof<bool> {
     let path = fs_path::join(git_dir, "index");
     if !fs_path::is_file(&path) {
         return Ok(false);
@@ -198,12 +228,32 @@ fn index_supplies_attributes(root: &str, git_dir: &str) -> Proof<bool> {
         let name =
             std::str::from_utf8(&data[start..start + length]).map_err(|_| UNPROVEN_LAUNCH)?;
         let name = name.to_ascii_lowercase();
-        if (name == ".gitattributes" || name.ends_with("/.gitattributes"))
-            && (extended || !fs_path::is_file(&fs_path::join(root, &name)))
+        let attributes = (name == ".gitattributes" || name.ends_with("/.gitattributes"))
+            && (extended || !fs_path::is_file(&fs_path::join(root, &name)));
+        if attributes
+            || unwalked
+                .iter()
+                .any(|prefix| name.starts_with(prefix.as_str()))
         {
             return Ok(true);
         }
         at += (start - at + length + 8) & !7;
     }
-    Ok(false)
+    // Extensions follow, then the SHA-1. A split (`link`) or sparse (`sdir`)
+    // index keeps entries elsewhere; like every extension git must not
+    // ignore, its signature starts lowercase.
+    let end = data.len().checked_sub(20).ok_or(UNPROVEN_LAUNCH)?;
+    while at < end {
+        let optional = data.get(at).is_some_and(u8::is_ascii_uppercase);
+        let size = usize::try_from(word(at + 4)?).map_err(|_| UNPROVEN_LAUNCH)?;
+        at = at
+            .checked_add(8)
+            .and_then(|body| body.checked_add(size))
+            .filter(|next| optional && *next <= end)
+            .ok_or(UNPROVEN_LAUNCH)?;
+    }
+    match at == end {
+        true => Ok(false),
+        false => Err(UNPROVEN_LAUNCH),
+    }
 }
