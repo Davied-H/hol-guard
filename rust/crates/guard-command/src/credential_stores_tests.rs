@@ -27,6 +27,8 @@ fn credential_stores_are_named() {
         "srv/app/certs/bundle.p12",
         "users/o/.gnupg/pubring.kbx",
         "users/o/.password-store/github.gpg",
+        "users/o/cascadeprojects/app/.git/config",
+        "tmp$(rm/~/.ssh)",
     ] {
         assert!(credential_store_path(&parts(path)), "{path}");
     }

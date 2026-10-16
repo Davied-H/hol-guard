@@ -275,19 +275,21 @@ pub(crate) fn read_only_lookup_target_is_safe(
     {
         return false;
     }
-    // A credential store is a credential store wherever it sits, and the dot in
-    // front of an ordinary configuration directory is not a secret: reading
-    // `~/.claude/settings.json` or listing `~/.codex/plans` is the same work as
-    // reading a file in the checkout.
     if lowered
         .iter()
         .any(|part| SOURCE_INSPECTION_SENSITIVE_PARTS.contains(&part.as_str()))
-        || credential_store_path(&lowered)
     {
         return false;
     }
     if target_is_known_skill_doc_path(stripped, home_dir) {
         return true;
+    }
+    // The dot in front of a directory says it is out of the way, not that it
+    // holds a secret: reading `~/.claude/settings.json` or listing
+    // `~/.codex/plans` is the same work as reading a file in the checkout.
+    // What stays behind review is the credential stores, which are named.
+    if lowered.iter().any(|part| part.starts_with('.')) && credential_store_path(&lowered) {
+        return false;
     }
     if lowered
         .iter()

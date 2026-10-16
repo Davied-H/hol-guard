@@ -75,12 +75,22 @@ const CREDENTIAL_PAIRS: &[&str] = &[
     ".config/gh",
     ".config/hub",
     ".config/op",
+    ".git/config",
     ".local/share/keyrings",
     "library/keychains",
 ];
 
+/// A component read without the shell punctuation that can ride along with
+/// it: `~/.ssh)` closes a substitution and still names the same directory.
+fn bare(part: &str) -> &str {
+    part.trim_matches(|character: char| {
+        !character.is_ascii_alphanumeric() && !matches!(character, '.' | '_' | '-')
+    })
+}
+
 /// Whether this already-lowered path component names a credential store.
-pub fn credential_store_part(part: &str) -> bool {
+pub fn credential_store_part(raw: &str) -> bool {
+    let part = bare(raw);
     CREDENTIAL_PARTS.contains(&part)
         || CREDENTIAL_PREFIXES
             .iter()
@@ -97,7 +107,11 @@ pub fn credential_store_path(parts: &[String]) -> bool {
     if parts.iter().any(|part| credential_store_part(part)) {
         return true;
     }
-    let joined = parts.join("/");
+    let joined = parts
+        .iter()
+        .map(|part| bare(part))
+        .collect::<Vec<&str>>()
+        .join("/");
     CREDENTIAL_PAIRS.iter().any(|pair| {
         joined == *pair
             || joined.starts_with(&format!("{pair}/"))
