@@ -34,12 +34,12 @@ fn loopback_servers_and_fetches_name_their_ports() {
     assert_eq!(ports(SELF_CHECK), set(&[8765]));
     assert_eq!(ports(SPAWNED_SERVER), set(&[3000]));
     assert_eq!(
-        ports("const response = await fetch('http://localhost:5500/');\nconsole.log(response.status);\n"),
-        set(&[5500])
+        ports("const response = await fetch('http://localhost:3001/');\nconsole.log(response.status);\n"),
+        set(&[3001])
     );
     assert_eq!(
-        ports("import { createServer } from 'node:http';\ncreateServer((q, r) => r.end('ok')).listen(5500, 'localhost');\n"),
-        set(&[5500])
+        ports("import { createServer } from 'node:http';\ncreateServer((q, r) => r.end('ok')).listen(3001, 'localhost');\n"),
+        set(&[3001])
     );
 }
 
@@ -146,9 +146,9 @@ fn the_sandbox_reads_the_ports_from_the_command_it_runs() {
     );
     assert_eq!(
         inline_loopback_ports(&shell(
-            "node -e \"fetch('http://127.0.0.1:3000/')\" && node -e \"fetch('http://localhost:5500/')\""
+            "node -e \"fetch('http://127.0.0.1:3000/')\" && node -e \"fetch('http://localhost:3001/')\""
         )),
-        vec![3000, 5500]
+        vec![3000, 3001]
     );
     for text in [
         "node --test",

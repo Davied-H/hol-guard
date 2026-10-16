@@ -24,7 +24,7 @@ fn home(name: &str, state: Option<&str>) -> Home {
 fn conventional_dev_ports_are_reachable() {
     let home = home("dev", None);
     for port in [
-        80, 443, 3000, 3010, 4173, 4200, 5000, 6006, 8000, 8080, 8443, 8787,
+        80, 443, 3000, 3010, 4173, 4200, 6006, 8000, 8080, 8443, 8765, 8787,
     ] {
         assert!(dev_server_port(port, &ADMIN, home.0.to_str()), "{port}");
     }
@@ -44,6 +44,8 @@ fn other_ports_admin_ports_and_the_daemon_range_are_not() {
 fn the_daemon_state_decides_a_dev_port_inside_its_range() {
     let elsewhere = home("elsewhere", Some(r#"{"port": 4781, "pid": 1}"#));
     assert!(dev_server_port(5173, &ADMIN, elsewhere.0.to_str()));
+    assert!(dev_server_port(5000, &ADMIN, elsewhere.0.to_str()));
+    assert!(dev_server_port(5500, &ADMIN, elsewhere.0.to_str()));
     let here = home("here", Some(r#"{"port": 5173}"#));
     assert!(!dev_server_port(5173, &ADMIN, here.0.to_str()));
     let ephemeral = home("ephemeral", Some(r#"{"port": 3000}"#));
