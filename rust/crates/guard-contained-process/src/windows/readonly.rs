@@ -18,7 +18,8 @@
 //! to load until one exists. The runner builds those contexts beforehand for
 //! the installation's and the snapshot's binaries; this parses manifests only
 //! and runs no module code. Granting `registryRead` instead would also expose
-//! the user's HKCU hive, including persisted environment variables.
+//! the user's HKCU hive, including persisted environment variables, so only a
+//! build run, whose Node runtime cannot start Winsock without it, requests it.
 use super::AppContainer;
 use crate::bound_fs::{self, Directory};
 use crate::{CapturedOutput, Isolation, PinnedCommand};
@@ -112,8 +113,9 @@ pub fn run_readonly_snapshot(run: ReadonlySnapshotRun<'_>) -> io::Result<Capture
     let mut suffix = [0u8; 12];
     getrandom::fill(&mut suffix).map_err(io::Error::other)?;
     let name = format!("hol-guard-ro-{}", hex::encode(suffix));
-    let container = AppContainer::create(&name)?;
+    let mut container = AppContainer::create(&name)?;
     if run.build.is_some() {
+        container.allow_registry_read()?;
         // Granted while empty, so every copied object inherits write access.
         container.grant(&snapshot, true, true)?;
     }

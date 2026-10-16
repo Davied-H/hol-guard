@@ -228,10 +228,16 @@ fn capture_native(
         pipes.child_stdout.as_raw_handle() as HANDLE,
         pipes.child_stderr.as_raw_handle() as HANDLE,
     ];
+    let mut granted = container
+        .filter(|container| !container.registry_read.is_null())
+        .map(|container| winapi::um::winnt::SID_AND_ATTRIBUTES {
+            Sid: container.registry_read,
+            Attributes: winapi::um::winnt::SE_GROUP_ENABLED,
+        });
     let mut capabilities = SecurityCapabilities {
         app_container_sid: container.map_or(null_mut(), |container| container.sid),
-        capabilities: null_mut(),
-        capability_count: 0,
+        capabilities: granted.as_mut().map_or(null_mut(), |granted| granted),
+        capability_count: u32::from(granted.is_some()),
         reserved: 0,
     };
     let mut lpac = ALL_APPLICATION_PACKAGES_OPT_OUT;

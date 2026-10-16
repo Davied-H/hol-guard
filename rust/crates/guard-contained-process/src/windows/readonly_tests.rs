@@ -389,6 +389,58 @@ fn failed_build_publishes_nothing() {
     assert!(!workspace.join("dist").exists());
 }
 
+/// A build run reads the registry so Node can start Winsock, but it still has
+/// no network capability, so even a loopback connection fails.
+#[test]
+fn build_network_is_unavailable() {
+    let Some(node) = node_on_path() else {
+        eprintln!("skipped: no node.exe on PATH");
+        return;
+    };
+    let (_directory, workspace) = workspace();
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let script = format!(
+        "require('fs').mkdirSync('dist');\
+        const done = (result) => {{ console.log(result); process.exit(0); }};\
+        const socket = require('net').connect({port}, '127.0.0.1');\
+        socket.setTimeout(2000, () => done('denied'));\
+        socket.on('connect', () => done('connected'));\
+        socket.on('error', () => done('denied'));"
+    );
+    let arguments = [OsString::from("-e"), OsString::from(script)];
+    let environment: Vec<(OsString, OsString)> = std::env::var_os("SystemRoot")
+        .map(|value| ("SystemRoot".into(), value))
+        .into_iter()
+        .collect();
+    let withhold = |_: &Path| false;
+    let outputs = [PathBuf::from("dist")];
+    let cancel = AtomicBool::new(false);
+    let output = run_readonly_snapshot(ReadonlySnapshotRun {
+        workspace: &workspace,
+        cwd: &workspace,
+        executable: &node,
+        arguments: &arguments,
+        environment: &environment,
+        withhold: &withhold,
+        max_entries: 100,
+        max_bytes: 1024 * 1024,
+        output_cap: 64 * 1024,
+        deadline: Instant::now() + Duration::from_secs(120),
+        cancel: &cancel,
+        job_limits: Default::default(),
+        build: Some(build_limits(&[], &outputs, &withhold)),
+    })
+    .unwrap();
+    assert_eq!(
+        output.exit_code,
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "denied");
+}
+
 #[test]
 fn publish_refuses_a_staged_link() {
     let (_directory, workspace) = workspace();
