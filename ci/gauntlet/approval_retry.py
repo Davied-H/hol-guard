@@ -25,6 +25,8 @@ CATALOG = Path(__file__).with_name("approval_retry.json")
 # key, and artifact_actions keys on payload identities a bash command never carries.
 REVIEW_CONFIG = 'mode = "enforce"\nsubprocess_action = "review"\n'
 # The reasons a configured floor raises, from the runtime's policy_override_reason().
+# Under the default blocked_request_mode the response's own policy_action reads "block"
+# even for a review, so the reason code is the only reliable mark of a reviewed row.
 REVIEW_REASONS = frozenset({"native_policy_review_required", "native_policy_reapproval_required"})
 # Reviewing every command also reviews whatever the agent runs to orient itself. The lane
 # judges only the rows for the task's own reviewed action, named by this substring.

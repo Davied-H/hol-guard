@@ -5,6 +5,11 @@ level: a reviewed command, one grant through the approval UI's own resolution
 code, then the agent's retry. The identical retry reuses the grant. A reworded
 retry does not, which is hashgraph-online/hol-guard#3837 — this test records that
 behaviour rather than asserting it is desirable.
+
+Under the default ``blocked_request_mode = "safe-alternative"`` a review is
+rendered to the agent as a plain block with ``prompted`` false, so the response's
+``policy_action`` cannot tell a review from a hard block. The queued inbox row
+is the signal, and these assertions use it.
 """
 
 from __future__ import annotations
@@ -14,6 +19,8 @@ from pathlib import Path
 import pytest
 
 GRANT_REASON = "Approved for the approve-then-retry contract"
+REVIEW_ACTIONS = {"review", "require-reapproval"}
+REVIEW_REASONS = {"native_policy_review_required", "native_policy_reapproval_required"}
 
 
 def _payload(command: str, call_id: str, workspace: Path) -> dict[str, object]:
@@ -43,6 +50,14 @@ def _grant(store: object, request_id: str, workspace: Path) -> None:
     )
 
 
+def _reviewed(response: dict[str, object], pending: list[dict[str, object]]) -> None:
+    """The attempt was stopped for review and left exactly one row to approve."""
+    assert response["policy_action"] != "allow", response
+    assert response.get("reason_code") in REVIEW_REASONS, response
+    assert len(pending) == 1, pending
+    assert pending[0]["policy_action"] in REVIEW_ACTIONS, pending[0]
+
+
 def test_one_approval_carries_the_identical_shell_retry_but_not_a_reworded_one(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, native_approval_reuse_runtime: Path
 ) -> None:
@@ -68,9 +83,8 @@ def test_one_approval_carries_the_identical_shell_retry_but_not_a_reworded_one(
     )
     try:
         first = worker.review_http_payload(payload=_payload("git status --short", "first", workspace), **kwargs)
-        assert first["policy_action"] in {"review", "require-reapproval"}, first
         pending = store.list_approval_requests(status="pending")
-        assert len(pending) == 1, pending
+        _reviewed(first, pending)
         _grant(store, pending[0]["request_id"], workspace)
 
         identical = worker.review_http_payload(payload=_payload("git status --short", "retry", workspace), **kwargs)
@@ -79,7 +93,6 @@ def test_one_approval_carries_the_identical_shell_retry_but_not_a_reworded_one(
 
         # Same intent, the model's own wording. Today this needs a second approval.
         reworded = worker.review_http_payload(payload=_payload("git status --porcelain", "reword", workspace), **kwargs)
-        assert reworded["policy_action"] in {"review", "require-reapproval"}, reworded
-        assert len(store.list_approval_requests(status="pending")) == 1
+        _reviewed(reworded, store.list_approval_requests(status="pending"))
     finally:
         worker.close()
