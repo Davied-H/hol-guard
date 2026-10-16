@@ -39,9 +39,9 @@ const CREDENTIAL_PARTS: &[&str] = &[
     ".thunderbird",
     ".vault-token",
     "auth.json",
-    "gcloud",
     "keychains",
     "keyrings",
+    "oauth_creds.json",
 ];
 
 /// Component prefixes: `.env.local` and `credentials.toml` are the same store
@@ -73,6 +73,7 @@ const CREDENTIAL_PAIRS: &[&str] = &[
     ".config/doctl",
     ".config/gcloud",
     ".config/gh",
+    ".config/github-copilot",
     ".config/hub",
     ".config/op",
     ".git/config",
@@ -91,10 +92,13 @@ fn bare(part: &str) -> &str {
 /// Whether this already-lowered path component names a credential store.
 pub fn credential_store_part(raw: &str) -> bool {
     let part = bare(raw);
+    let undotted = part.strip_prefix('.').unwrap_or(part);
     CREDENTIAL_PARTS.contains(&part)
-        || CREDENTIAL_PREFIXES
-            .iter()
-            .any(|prefix| part == *prefix || part.starts_with(&format!("{prefix}.")))
+        || CREDENTIAL_PREFIXES.iter().any(|prefix| {
+            [part, undotted].iter().any(|candidate| {
+                *candidate == *prefix || candidate.starts_with(&format!("{prefix}."))
+            })
+        })
         || CREDENTIAL_SUFFIXES
             .iter()
             .any(|suffix| part.ends_with(suffix))

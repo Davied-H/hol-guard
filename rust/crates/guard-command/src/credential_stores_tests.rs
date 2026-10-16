@@ -28,6 +28,9 @@ fn credential_stores_are_named() {
         "users/o/.gnupg/pubring.kbx",
         "users/o/.password-store/github.gpg",
         "users/o/cascadeprojects/app/.git/config",
+        "users/o/.claude/.credentials.json",
+        "users/o/.gemini/oauth_creds.json",
+        "users/o/.config/github-copilot/apps.json",
         "tmp$(rm/~/.ssh)",
     ] {
         assert!(credential_store_path(&parts(path)), "{path}");
@@ -49,6 +52,7 @@ fn ordinary_hidden_configuration_is_not_a_credential_store() {
         "users/o/.nvmrc",
         "users/o/.config/nvim/init.lua",
         "users/o/.local/share/fonts",
+        "users/o/cascadeprojects/app/src/gcloud/settings.json",
     ] {
         assert!(!credential_store_path(&parts(path)), "{path}");
     }
@@ -61,6 +65,7 @@ fn a_store_is_recognised_by_its_own_name() {
         ".env.local",
         "credentials",
         "credentials.toml",
+        ".credentials.json",
         "id_rsa.pub",
     ] {
         assert!(credential_store_part(part), "{part}");
