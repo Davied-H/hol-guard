@@ -16,6 +16,8 @@ mod launcher_sets;
 mod node_script;
 mod node_source;
 mod operands;
+mod python_script;
+mod python_source;
 mod reasons;
 pub(crate) mod runner_bin;
 mod token;
