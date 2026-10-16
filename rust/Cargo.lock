@@ -672,6 +672,7 @@ dependencies = [
  "guard-command-build",
  "guard-contracts",
  "guard-runtime-windows-process",
+ "guard-scanner",
  "guard-secure-fs",
  "hex",
  "idna",
