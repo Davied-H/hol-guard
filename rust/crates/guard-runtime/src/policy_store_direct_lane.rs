@@ -26,6 +26,20 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, Instant};
 use zeroize::Zeroizing;
 
+/// What one store has settled about the publisher's ACK.
+#[derive(Default)]
+pub(crate) struct DirectLaneAckWait {
+    /// The newest generation whose settle wait a hook has already claimed, so
+    /// only that hook waits and every other hook defers straight away.
+    pub(crate) claimed: AtomicU64,
+    /// A settle budget, in milliseconds, that replaces the shipped one, or
+    /// zero for the shipped one. Tests that race an ACK into that window
+    /// widen it: a stalled runner can close the window before the racing
+    /// write lands, and the settled wait then reads as a mismatch.
+    #[cfg(test)]
+    pub(crate) settle_override_ms: AtomicU64,
+}
+
 /// The ACK lives in its own directory so that writing, renewing or unlinking
 /// it never changes the state directory identity the publisher fences on.
 pub(crate) const DIRECT_LANE_ACK_DIRECTORY: &str = "direct-lane";
@@ -37,26 +51,8 @@ const DIRECT_LANE_ACK_MAX_LEASE_MS: u64 = 120_000;
 /// How long a hook waits for the ACK of a snapshot the resident has already
 /// bound. The publisher writes the ACK as soon as the resident accepts the
 /// push, so this covers one ACK write, not a publish.
-const DIRECT_LANE_ACK_SETTLE_MS: u64 = 100;
+const DIRECT_LANE_ACK_SETTLE: Duration = Duration::from_millis(100);
 const DIRECT_LANE_ACK_SETTLE_POLL: Duration = Duration::from_millis(5);
-
-#[cfg(test)]
-thread_local! {
-    /// Only a test moves its own settle wait off the hook budget.
-    static DIRECT_LANE_ACK_SETTLE_OVERRIDE_MS: std::cell::Cell<u64> =
-        const { std::cell::Cell::new(DIRECT_LANE_ACK_SETTLE_MS) };
-}
-
-/// How long that re-read lasts. Tests that land the ACK from another thread
-/// widen it on their own thread, so a host too loaded to schedule that thread
-/// inside a hook's budget cannot turn the race they describe into a failure.
-fn direct_lane_ack_settle() -> Duration {
-    #[cfg(test)]
-    let millis = DIRECT_LANE_ACK_SETTLE_OVERRIDE_MS.with(std::cell::Cell::get);
-    #[cfg(not(test))]
-    let millis = DIRECT_LANE_ACK_SETTLE_MS;
-    Duration::from_millis(millis)
-}
 
 pub(crate) struct DirectLaneBinding {
     generation: u64,
@@ -348,13 +344,14 @@ impl PolicySnapshotStore {
         if ack.generation >= generation
             || !live_publisher_ack(&ack)
             || self
-                .direct_lane_ack_wait_claimed
+                .direct_lane_ack_wait
+                .claimed
                 .fetch_max(generation, Ordering::AcqRel)
                 >= generation
         {
             return Ok((ack, false));
         }
-        let deadline = Instant::now() + direct_lane_ack_settle();
+        let deadline = Instant::now() + self.direct_lane_ack_settle();
         loop {
             let now = Instant::now();
             if now >= deadline {
@@ -366,6 +363,22 @@ impl PolicySnapshotStore {
                 return Ok((ack, true));
             }
         }
+    }
+
+    /// How long this store's next hook waits for the ACK of the snapshot it is
+    /// bound to.
+    fn direct_lane_ack_settle(&self) -> Duration {
+        #[cfg(test)]
+        {
+            let widened = self
+                .direct_lane_ack_wait
+                .settle_override_ms
+                .load(Ordering::Acquire);
+            if widened > 0 {
+                return Duration::from_millis(widened);
+            }
+        }
+        DIRECT_LANE_ACK_SETTLE
     }
 
     fn read_direct_lane_ack(&self) -> Result<DirectLaneAckV1, DirectLaneDefer> {
