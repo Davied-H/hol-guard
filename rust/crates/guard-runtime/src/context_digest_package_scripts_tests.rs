@@ -82,7 +82,7 @@ fn package_json_scripts_match_python_vectors() {
             .as_str()
             .expect("command")
             .replace(ROOT_TOKEN, host_spelling(&path_text(&root)));
-        let got = package_json_scripts(&command, &cwd, &home).expect("no native error");
+        let got = package_json_scripts(&command, &cwd, home).expect("no native error");
         let got = got.map(|found| {
             assert_eq!(
                 found.identity,
