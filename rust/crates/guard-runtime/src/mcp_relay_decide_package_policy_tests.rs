@@ -66,7 +66,10 @@ fn evaluation() -> Map<String, Value> {
         "packages": [{"name": "left-pad", "ecosystem": "npm"}],
         "policy_action": "review",
         "policy_version": "1",
-        "reasons": ["package request"],
+        // Every reason the package lane settles is a mapping, which the
+        // resolution's strict parse requires and whose first entry carries the
+        // reuse evidence a saved approval adds.
+        "reasons": [{"code": "package_request"}],
     })
     .as_object()
     .expect("object")
@@ -259,4 +262,40 @@ fn the_metadata_the_context_binds_is_read_by_type() {
     assert_eq!(facts.flags, vec!["--force".to_owned()]);
     assert!(facts.manifest_paths.is_empty());
     assert!(facts.lockfile_paths.is_empty());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_malformed_cached_bundle_defers_rather_than_dropping_the_feed_binding() {
+    let (home, connection) = home("pkg-policy-feed-malformed");
+    connection
+        .execute_batch(
+            "create table guard_supply_chain_bundle_cache (workspace_id text primary key,
+               response_json text not null, cached_at text not null);",
+        )
+        .unwrap();
+    sync_state(
+        &connection,
+        "oauth_local_credentials",
+        &json!({"workspace_id": "ws-1"}).to_string(),
+    );
+    connection
+        .execute(
+            "insert into guard_supply_chain_bundle_cache (workspace_id, response_json, cached_at)
+             values (?1, ?2, ?3)",
+            params!["ws-1", "{not json", "2026-01-01T00:00:00+00:00"],
+        )
+        .unwrap();
+
+    // `get_supply_chain_bundle` raises on this row, so a context token composed
+    // without the feed snapshot is not the one the proxy would bind.
+    assert_eq!(resolve(&home, &evaluation()).err(), Some(RESOLVE_FAILED));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_malformed_credential_payload_defers() {
+    let (home, connection) = home("pkg-policy-credentials-malformed");
+    sync_state(&connection, "oauth_local_credentials", "{not json");
+    assert_eq!(resolve(&home, &evaluation()).err(), Some(RESOLVE_FAILED));
 }

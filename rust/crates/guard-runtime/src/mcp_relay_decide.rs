@@ -658,6 +658,8 @@ mod package;
 mod package_config;
 #[path = "mcp_relay_decide_package_policy.rs"]
 mod package_policy;
+#[path = "mcp_relay_decide_package_snapshot.rs"]
+mod package_snapshot;
 #[path = "mcp_relay_decide_policy.rs"]
 mod policy;
 use policy::run_policy;
