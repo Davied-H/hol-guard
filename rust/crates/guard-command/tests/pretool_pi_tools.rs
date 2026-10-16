@@ -157,18 +157,18 @@ fn omp_only_tools_stay_reviewed_for_pi() {
 }
 
 #[test]
-fn omp_learn_writes_a_plain_project_lesson() {
-    // What the note may carry is bounded in pretool_omp_learn; a lesson about
-    // this project is the ordinary call and never stops the run.
+fn omp_learn_stays_reviewed_before_it_runs() {
+    // guard-runtime releases a `learn` result after execution because this
+    // review means a person approved the call. Revisit that before allowing it here.
     let f = fixture("omp-learn");
     for input in [
         json!({"memory": "Run the project tests with cargo test before pushing."}),
         json!({"memory": "Run the project tests before pushing.", "context": "Code review turn"}),
     ] {
         let result = run(&f, "omp", "learn", input.clone());
-        assert_eq!(result.minimum_action, "allow", "{input}");
+        assert_eq!(result.minimum_action, "review", "{input}");
         assert_eq!(
-            result.reason_code, "native_omp_learn_memory_note",
+            result.reason_code, "native_pre_tool_unknown_review",
             "{input}"
         );
     }

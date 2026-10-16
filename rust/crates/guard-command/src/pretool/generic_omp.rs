@@ -98,10 +98,11 @@ pub(super) fn bounded_delegation_metadata(payload: &Value) -> bool {
 }
 
 /// `learn` stores one memory note and returns the store's acknowledgement.
-/// A note this reads as plain was allowed outright; a note it does not read
-/// that way ran only because a person approved it. Either way the result has
-/// nothing left to approve, and withholding it would leave Oh My Pi without
-/// the acknowledgement for a call that already happened.
+/// Its PreToolUse stays an unknown-tool review, so under enforce the call has
+/// run only after a person approved it, and the result it returns has nothing
+/// left to approve. Withholding it would leave Oh My Pi without the
+/// acknowledgement for a call that already happened. The note shapes this
+/// covers are named in `generic_omp_learn`.
 fn learn_input(input: &Map<String, Value>) -> bool {
     learn::note_input(input)
 }
@@ -155,7 +156,6 @@ pub(super) fn evaluate(
                 .is_empty()
                 .then(|| delegation_result(tool, context))
         }
-        "learn" => learn::evaluate(payload, signals, context),
         "eval" => eval::evaluate(payload, signals, context),
         "edit" => todo_shaped_edit(payload, signals, context),
         "glob" | "find" | "ls" => listing(payload, signals, context),
