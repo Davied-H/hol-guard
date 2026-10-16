@@ -114,6 +114,69 @@ def _guard_hook_coordinates(
                 yield [f"{prefix}:{label}:{group_index}:{handler_index}" for prefix in prefixes], expected, handler
 
 
+def _handler_coordinates(hooks: Mapping[str, object]) -> dict[str, str]:
+    """Every command handler's ``<label>:<group>:<handler>`` coordinate and hash."""
+
+    found: dict[str, str] = {}
+    for event_name, groups in hooks.items():
+        label = codex_event_label(str(event_name))
+        if label is None or not isinstance(groups, list):
+            continue
+        for group_index, group in enumerate(groups):
+            handlers = group.get("hooks") if isinstance(group, Mapping) else None
+            if not isinstance(handlers, list):
+                continue
+            for handler_index, handler in enumerate(handlers):
+                if not isinstance(handler, Mapping):
+                    continue
+                digest = codex_command_hook_hash(str(event_name), group.get("matcher"), handler)
+                if digest is not None:
+                    found[f"{label}:{group_index}:{handler_index}"] = digest
+    return found
+
+
+def remap_hook_state(before: Mapping[str, object], hooks: dict[str, object], config_path: Path) -> None:
+    """Follow each hook's state to the coordinate its handler now occupies.
+
+    Codex keys ``[hooks.state]`` by position, so removing Guard's own groups
+    and appending their replacements after the ones Guard leaves alone moves
+    every later hook up. Another hook's state then sits on the key a Guard
+    handler has just taken, and a ``enabled = false`` a user set there in
+    ``/hooks`` switches the new Guard hook off. Neither the install nor the
+    doctor sees it, because both read that key as the Guard hook's own
+    choice: the machine looks protected and runs none of Guard's hooks.
+
+    A handler that moved carries its state with it, one that is gone leaves
+    its state behind, and a key naming no handler this function can hash is
+    left exactly as it was.
+    """
+
+    state = hooks.get("state")
+    if not isinstance(state, dict) or not state:
+        return
+    was = _handler_coordinates(before)
+    now = _handler_coordinates(hooks)
+    prefixes = tuple(dict.fromkeys((str(_resolved(config_path)), str(config_path))))
+    kept: dict[str, object] = {}
+    moves: list[tuple[str, object]] = []
+    for key, entry in state.items():
+        prefix = next((value for value in prefixes if key.startswith(f"{value}:")), None)
+        coordinate = key[len(prefix) + 1 :] if prefix is not None else None
+        digest = was.get(coordinate) if coordinate is not None else None
+        if digest is None or now.get(coordinate) == digest:
+            kept[key] = entry
+            continue
+        moved = [name for name, value in now.items() if value == digest]
+        # Only an unambiguous move can carry the user's choice with it. A
+        # handler that is gone, or that now matches several coordinates,
+        # leaves its state behind rather than landing on the wrong hook.
+        if len(moved) == 1:
+            moves.append((f"{prefix}:{moved[0]}", entry))
+    for key, entry in moves:
+        kept.setdefault(key, entry)
+    hooks["state"] = kept
+
+
 def stale_guard_hook_coordinates(payload: Mapping[str, object], config_path: Path) -> list[str]:
     """Return state keys of Guard-managed hooks whose stored trust is missing or stale."""
 
@@ -161,7 +224,11 @@ def record_guard_hook_trust(payload: dict[str, object], config_path: Path) -> li
         if existing is not None and existing.get("enabled") is False:
             continue
         entry: dict[str, object] = {**existing} if existing is not None else {}
-        if entry.get("trusted_hash") == expected:
+        # An alias key answers whether the user switched the hook off, but
+        # Codex reads trust under the canonical path alone: a hash recorded
+        # only under the alias leaves the hook untrusted and silently skipped.
+        canonical = state_map.get(key)
+        if isinstance(canonical, Mapping) and canonical.get("trusted_hash") == expected:
             continue
         entry["trusted_hash"] = expected
         state_map[key] = entry

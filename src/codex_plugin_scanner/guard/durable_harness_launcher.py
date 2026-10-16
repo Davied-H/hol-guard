@@ -117,7 +117,11 @@ def build_windows_script(executable: str, posix_path: Path, *, source: str | Non
         return "\r\n".join(("@echo off", "setlocal DisableDelayedExpansion", f"{command_line} %*", ""))
     # A .cmd returns the errorlevel of its last command, and the Python shim it
     # calls is the last command, so the harness sees the hook's own exit code.
-    return "\r\n".join(("@echo off", f'"{executable}" "{posix_path}" %*', "exit /b %ERRORLEVEL%", ""))
+    # `exit /b` without a number returns the status of the command above it.
+    # Writing `%ERRORLEVEL%` there would expand an inherited environment
+    # variable of that name instead, and a launching shell that exports
+    # ERRORLEVEL=0 would report every denied hook to the harness as success.
+    return "\r\n".join(("@echo off", f'"{executable}" "{posix_path}" %*', "exit /b", ""))
 
 
 def _cmd_quote_fixed_argument(value: str) -> str:

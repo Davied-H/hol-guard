@@ -18,6 +18,7 @@ from codex_plugin_scanner.guard.codex_config import dump_toml
 from codex_plugin_scanner.guard.codex_hook_trust import (
     codex_command_hook_hash,
     record_guard_hook_trust,
+    remap_hook_state,
     stale_guard_hook_coordinates,
 )
 
@@ -142,3 +143,85 @@ def test_the_recorded_trust_survives_the_config_file_round_trip(tmp_path: Path) 
     reloaded = tomllib.loads(config.read_text(encoding="utf-8"))
 
     assert stale_guard_hook_coordinates(reloaded, config) == []
+
+
+def test_a_hash_under_the_symlink_alias_still_writes_the_canonical_key(tmp_path: Path) -> None:
+    """Codex reads trust under the canonical path and nowhere else.
+
+    A config reached through a symlink gives the recorder two aliases for the
+    same hook. Accepting a match under the alias while leaving the canonical
+    key absent left the hook untrusted, so Codex skipped it in silence.
+    """
+
+    real = tmp_path / "real"
+    real.mkdir()
+    config_file = real / "config.toml"
+    config_file.touch()
+    link = tmp_path / "link"
+    link.symlink_to(real)
+    config = link / "config.toml"
+    payload = _payload()
+    expected = codex_command_hook_hash("PreToolUse", "Bash", _guard_handler())
+    alias = f"{config}:pre_tool_use:0:0"
+    payload["hooks"]["state"] = {alias: {"trusted_hash": expected}}
+
+    record_guard_hook_trust(payload, config)
+
+    canonical = f"{config.resolve()}:pre_tool_use:0:0"
+    assert canonical != alias
+    assert _state(payload)[canonical]["trusted_hash"] == expected
+    assert stale_guard_hook_coordinates(payload, config) == []
+
+
+def test_state_follows_a_hook_that_the_install_moved(tmp_path: Path) -> None:
+    """Reinstall appends Guard's groups after the ones it leaves alone.
+
+    The foreign group that used to sit at index 0 is now at index 1, and the
+    disabled choice its owner made must move with it rather than stay on the
+    key a Guard handler has just taken.
+    """
+
+    config = tmp_path / "config.toml"
+    foreign = {"matcher": "Bash", "hooks": [{"type": "command", "command": FOREIGN_COMMAND, "timeout": 30}]}
+    guard = {"matcher": "Bash", "hooks": [_guard_handler()]}
+    before = {"PreToolUse": [foreign]}
+    hooks: dict[str, Any] = {
+        "PreToolUse": [guard, foreign],
+        "state": {f"{config.resolve()}:pre_tool_use:0:0": {"enabled": False}},
+    }
+
+    remap_hook_state(before, hooks, config)
+
+    assert hooks["state"] == {f"{config.resolve()}:pre_tool_use:1:0": {"enabled": False}}
+
+    payload = {"hooks": hooks}
+    recorded = record_guard_hook_trust(payload, config)
+
+    assert recorded == [f"{config.resolve()}:pre_tool_use:0:0"]
+    assert stale_guard_hook_coordinates(payload, config) == []
+
+
+def test_state_for_a_hook_the_install_removed_is_dropped(tmp_path: Path) -> None:
+    config = tmp_path / "config.toml"
+    gone = {"matcher": "Bash", "hooks": [{"type": "command", "command": FOREIGN_COMMAND, "timeout": 30}]}
+    hooks: dict[str, Any] = {
+        "PreToolUse": [{"matcher": "Bash", "hooks": [_guard_handler()]}],
+        "state": {f"{config.resolve()}:pre_tool_use:0:0": {"enabled": False}},
+    }
+
+    remap_hook_state({"PreToolUse": [gone]}, hooks, config)
+
+    assert hooks["state"] == {}
+
+
+def test_state_that_names_no_known_handler_is_left_alone(tmp_path: Path) -> None:
+    config = tmp_path / "config.toml"
+    other = f"{tmp_path / 'elsewhere.toml'}:pre_tool_use:0:0"
+    hooks: dict[str, Any] = {
+        "PreToolUse": [{"matcher": "Bash", "hooks": [_guard_handler()]}],
+        "state": {other: {"enabled": False}},
+    }
+
+    remap_hook_state({"PreToolUse": [{"matcher": "Bash", "hooks": [_guard_handler()]}]}, hooks, config)
+
+    assert hooks["state"] == {other: {"enabled": False}}

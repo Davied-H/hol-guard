@@ -82,6 +82,7 @@ from ..codex_hook_trust import (
     apply_codex_hook_trust_doctor,
     codex_hook_trust_stale,
     record_guard_hook_trust,
+    remap_hook_state,
 )
 from ..codex_install_transaction import codex_install_transaction
 from ..config import MAX_APPROVAL_WAIT_TIMEOUT_SECONDS, load_guard_config, resolve_guard_home
@@ -1922,6 +1923,7 @@ class CodexHarnessAdapter(HarnessAdapter):
         hooks = payload.get("hooks")
         if not isinstance(hooks, dict):
             hooks = {}
+        before = deepcopy(hooks)
         cleaned_hooks, _ = _remove_manifest_bound_hook_events(hooks, owned_bindings)
         legacy_bindings = _current_install_legacy_bindings(context, cleaned_hooks)
         cleaned_hooks, _ = _remove_manifest_bound_hook_events(cleaned_hooks, legacy_bindings)
@@ -1930,6 +1932,11 @@ class CodexHarnessAdapter(HarnessAdapter):
             _managed_hook_groups(context),
             current_guard_home=context.guard_home,
         )
+        # Hook state is keyed by position, so the groups just rewritten moved
+        # the keys of the hooks Guard leaves alone. Each one follows its
+        # handler before trust is read, or another hook's disabled choice
+        # lands on a Guard hook and switches it off unseen.
+        remap_hook_state(before, cleaned_hooks, config_path)
         payload["hooks"] = cleaned_hooks
         # Codex skips a hook it has no trusted hash for, and says nothing while
         # it does, so an install that stops here leaves the machine unprotected

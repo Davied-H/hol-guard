@@ -180,9 +180,17 @@ def test_the_posix_launcher_still_replaces_itself(tmp_path: Path) -> None:
 
 
 def test_the_plain_windows_launcher_reports_the_hooks_exit_code(tmp_path: Path) -> None:
+    """`exit /b` alone returns the status of the command above it.
+
+    `exit /b %ERRORLEVEL%` expands an environment variable of that name when
+    the launching shell exports one, so a shell with `ERRORLEVEL=0` set would
+    hand the harness a success for every hook Guard denied.
+    """
+
     posix_path = tmp_path / "guard-codex"
     posix_path.write_text("#!/usr/bin/env python3\n", encoding="utf-8")
 
     script = build_windows_script("python.exe", posix_path)
 
-    assert script.endswith("exit /b %ERRORLEVEL%\r\n")
+    assert script.endswith("exit /b\r\n")
+    assert "%ERRORLEVEL%" not in script
