@@ -11,9 +11,17 @@
 //! becomes a plain name with no path, glob or option meaning. Literal text
 //! around a substitution stays in place for the sensitive-path screens.
 //! Anything else returns `None`, so the substitution stays opaque.
+//!
+//! That holds while the value is read as a whole word. A word that also
+//! carries a pattern character is not projected at all: the stand-in's own
+//! spelling decides what the pattern matches, so a proof that walks the
+//! projected pattern would answer for a different set of files than the
+//! shell's. `rg TODO -g "$(date +%Y)*"` projects to a pattern matching
+//! nothing while the real one matches every name beginning with the year,
+//! `2026-prod.env` among them.
 
 use super::MAX_COMMAND_CHARS;
-use crate::shell_structure::extract_command_substitution_spans;
+use crate::shell_structure::{extract_command_substitution_spans, ShellCommandSubstitution};
 
 /// Absent root of the temporary-path stand-in.
 const TEMPORARY_ROOT: &str = "/hol-guard-substituted";
@@ -54,7 +62,7 @@ pub(super) fn project(command: &str, allowed: impl Fn(&str) -> bool) -> Option<S
             "dollar" => ("$(", ")"),
             _ => ("`", "`"),
         };
-        if substitution.start < cursor {
+        if substitution.start < cursor || patterned_word(&chars, substitution) {
             return None;
         }
         let text: String = chars
@@ -89,6 +97,29 @@ pub(super) fn project(command: &str, allowed: impl Fn(&str) -> bool) -> Option<S
         return None;
     }
     judged.into_iter().all(allowed).then_some(out)
+}
+
+/// Whether the shell word holding `substitution` also carries a pattern
+/// character.
+///
+/// The stand-in stands for the value, not for the set of names the value
+/// would match. A proof that walks the projected pattern walks the stand-in's
+/// spelling, so it answers for files the shell would never reach and misses
+/// the ones it would. Word boundaries here are whitespace: quoting does not
+/// matter, because the patterns that reach a tool as an argument (`rg -g`,
+/// `find -name`) are the quoted ones.
+fn patterned_word(chars: &[char], substitution: &ShellCommandSubstitution) -> bool {
+    let start = chars[..substitution.start.min(chars.len())]
+        .iter()
+        .rposition(|c| c.is_ascii_whitespace())
+        .map_or(0, |at| at + 1);
+    let end = chars
+        .get(substitution.end..)
+        .and_then(|rest| rest.iter().position(|c| c.is_ascii_whitespace()))
+        .map_or(chars.len(), |at| substitution.end + at);
+    chars[start..end]
+        .iter()
+        .any(|c| matches!(c, '*' | '?' | '[' | '{'))
 }
 
 /// The stand-in for a substitution body that is one simple value-producing

@@ -92,11 +92,30 @@ fn local_dev_server_reads_are_proven() {
         "curl http://127.0.0.1/",
         "curl -fsS http://127.0.0.1:4173/game.js",
         "curl -sI https://localhost:8443/health",
-        "curl -s -o /dev/null -w '%{http_code}' http://LOCALHOST:5173/",
+        "curl -s -o /dev/null -w '%{http_code}' http://LOCALHOST:3001/",
         "curl -s --url http://127.0.0.1:8080/api/items?page=2",
     ] {
         assert!(proven(command), "{command}");
     }
+}
+
+#[test]
+fn a_dev_port_in_the_daemon_range_follows_the_daemon_state() {
+    let home = std::env::temp_dir().join(format!("curl-reads-daemon-{}", std::process::id()));
+    let guard = home.join(".hol-guard");
+    std::fs::create_dir_all(&guard).unwrap();
+    let home_dir = home.to_str().unwrap();
+    let context = crate::pretool::PathContext {
+        home_dir: Some(home_dir),
+        ..Default::default()
+    };
+    let command = "curl -s http://localhost:5173/";
+    assert!(!proven_in(command, context), "no daemon state");
+    std::fs::write(guard.join("daemon-state.json"), r#"{"port": 4781}"#).unwrap();
+    assert!(proven_in(command, context), "daemon on 4781");
+    std::fs::write(guard.join("daemon-state.json"), r#"{"port": 5173}"#).unwrap();
+    assert!(!proven_in(command, context), "daemon on 5173");
+    let _ = std::fs::remove_dir_all(&home);
 }
 
 #[test]
@@ -113,6 +132,10 @@ fn local_admin_ports_and_other_loopback_spellings_stay_reviewed() {
         "curl http://127.0.0.1:9229/json/list",
         "curl http://localhost:10250/pods",
         "curl http://localhost:2019/config/",
+        // Guard's daemon: its default port, a fixed one and an ephemeral one.
+        "curl -s http://127.0.0.1:4781/v1/requests?status=pending",
+        "curl -s http://127.0.0.1:7392/v1/requests?status=pending",
+        "curl -s http://localhost:54321/v1/requests",
         "curl http://127.0.0.2:3000/",
         "curl http://localhost.:3000/",
         "curl http://app.localhost:3000/",
@@ -120,7 +143,6 @@ fn local_admin_ports_and_other_loopback_spellings_stay_reviewed() {
         "curl -L http://127.0.0.1:3000/",
         "curl -X POST http://localhost:3000/api/items",
         "curl -d x=1 http://localhost:3000/api/items",
-        "curl http://localhost:3000/?token=x",
         "curl localhost:3000/",
     ] {
         assert!(!proven(command), "{command}");

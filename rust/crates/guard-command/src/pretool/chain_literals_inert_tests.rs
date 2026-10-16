@@ -123,3 +123,27 @@ fn each_value_producer_is_judged_once_as_its_own_command() {
         None
     );
 }
+
+#[test]
+fn a_substitution_beside_a_pattern_character_stays_opaque() {
+    for command in [
+        // The shell globs `2026*`; the projection would glob the stand-in's
+        // own spelling and prove the wrong set of files.
+        "rg TODO -g \"$(date +%Y)*\"",
+        "rg TODO -g '*$(date +%Y)'",
+        "find . -name \"$(date +%F)?.log\"",
+        "ls $(mktemp -d)/*",
+        "ls [a-z]$(date +%Y)",
+        "cat build-$(date +%F).{log,txt}",
+        // A bracket expression is a pattern too, wherever the word sits.
+        "rg -g \"$(date +%Y)[0-9]\" TODO",
+    ] {
+        assert_eq!(projected(command), None, "{command}");
+    }
+    // A pattern elsewhere in the command leaves the substitution's own word
+    // whole, so it still projects.
+    assert_eq!(
+        projected("cd \"$(mktemp -d)\" && rg TODO -g '*.rs'").as_deref(),
+        Some(format!("cd \"{TEMPORARY_VALUE}\" && rg TODO -g '*.rs'").as_str())
+    );
+}

@@ -8,9 +8,11 @@
 //! config, carries credentials, routes through a proxy or socket, or writes a
 //! file other than a scratch file keeps the normal review path.
 //!
-//! A read of a dev server on `127.0.0.1` or `localhost` is proven too, except
-//! on the ports of local services that answer a plain GET with credentials,
-//! cluster state or a debugger ([`LOCAL_ADMIN_PORTS`]). Private, link-local
+//! A read of a dev server on `127.0.0.1` or `localhost` is proven too, on a
+//! conventional dev-server port ([`super::loopback_ports`]) that neither
+//! Guard's daemon nor a local service answering a plain GET with
+//! credentials, cluster state or a debugger ([`LOCAL_ADMIN_PORTS`]) may
+//! listen on. Private, link-local
 //! and metadata addresses, other loopback spellings, rebinding names and
 //! names under reserved test suffixes stay reviewed: those resolve to local
 //! services rather than public content. The response body and headers reach
@@ -37,9 +39,15 @@ const RESERVED_SUFFIXES: [&str; 4] = [".test", ".invalid", ".example", ".localho
 /// catalogs (`8200`, `8500`), proxy admin APIs (`2019`, `15000`), and the
 /// Chrome and Node inspectors (`9222`, `9229`). A GET to any of them can read
 /// secrets or drive another process.
-const LOCAL_ADMIN_PORTS: [u16; 17] = [
-    2019, 2375, 2376, 2379, 2380, 4243, 4646, 6443, 8001, 8200, 8500, 9222, 9229, 10248, 10250,
-    10255, 15000,
+///
+/// This list subtracts from the dev-server ports, which is what a loopback
+/// read is allowed on in the first place: a port no framework conventionally
+/// binds is already unreachable here without being named. It is written out
+/// whole, the kubelet block included, so the list keeps saying what it means
+/// if the dev-server ranges ever widen onto one of these.
+const LOCAL_ADMIN_PORTS: [u16; 23] = [
+    2019, 2375, 2376, 2379, 2380, 4243, 4646, 6443, 8001, 8200, 8500, 9222, 9229, 10248, 10249,
+    10250, 10251, 10252, 10253, 10254, 10255, 10256, 15000,
 ];
 
 /// Flags that change only presentation, failure handling or transport version.
@@ -117,7 +125,7 @@ pub(super) fn safe_curl_segment(
             continue;
         }
         if !options || !argument.starts_with('-') || argument == "-" {
-            if !readable_url(argument) {
+            if !readable_url(argument, context) {
                 return false;
             }
             urls += 1;
@@ -128,7 +136,7 @@ pub(super) fn safe_curl_segment(
             return false;
         };
         if let Some(url) = url_option(arguments, index) {
-            if !readable_url(url) {
+            if !readable_url(url, context) {
                 return false;
             }
             urls += 1;
@@ -276,13 +284,13 @@ fn safe_header(value: &str) -> bool {
         && !CREDENTIAL_TERMS.iter().any(|term| name.contains(term))
 }
 
-fn readable_url(raw: &str) -> bool {
-    public_url(raw) || loopback_url(raw)
+fn readable_url(raw: &str, context: super::PathContext<'_>) -> bool {
+    public_url(raw) || loopback_url(raw, context.home_dir)
 }
 
-/// An `http(s)` URL naming `127.0.0.1` or `localhost` itself, on a port no
-/// local admin service listens on.
-fn loopback_url(raw: &str) -> bool {
+/// An `http(s)` URL naming `127.0.0.1` or `localhost` itself, on a dev-server
+/// port that no local admin service or Guard daemon listens on.
+fn loopback_url(raw: &str, home_dir: Option<&str>) -> bool {
     if raw.contains(['{', '}', '[', ']', '\\', ' ']) {
         return false;
     }
@@ -298,9 +306,9 @@ fn loopback_url(raw: &str) -> bool {
         && matches!(url.scheme(), "http" | "https")
         && url.username().is_empty()
         && url.password().is_none()
-        && url
-            .port_or_known_default()
-            .is_some_and(|port| !LOCAL_ADMIN_PORTS.contains(&port))
+        && url.port_or_known_default().is_some_and(|port| {
+            super::loopback_ports::dev_server_port(port, &LOCAL_ADMIN_PORTS, home_dir)
+        })
         && !url_secrets::carries_secret(&url)
 }
 
