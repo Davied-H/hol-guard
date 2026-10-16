@@ -87,7 +87,7 @@ def parse_version_banner(harness: str, banner: str) -> HarnessVersion | None:
     tokens = _BANNER_TOKEN.findall(lines[0])
     if len(tokens) != 1:
         return None
-    prefix = lines[0][: lines[0].index(tokens[0])].strip().rstrip(":").strip().lower()
+    prefix = lines[0][: lines[0].index(tokens[0])].strip().rstrip(":/").strip().lower()
     suffix = lines[0][lines[0].index(tokens[0]) + len(tokens[0]) :].strip()
     if prefix not in prefixes or suffix:
         return None

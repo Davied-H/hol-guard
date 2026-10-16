@@ -127,6 +127,7 @@ class TestDiscovery:
         ("result", "state", "reason"),
         [
             ({"ok": True, "stdout": "omp 18.8.3\n"}, "observed", None),
+            ({"ok": True, "stdout": "omp/18.11.2\n"}, "observed", None),
             ({"ok": False, "timed_out": True}, "unavailable", "probe_timeout"),
             ({"ok": False, "stdout": ""}, "unavailable", "probe_failed"),
             ({"ok": True, "stdout": "omp 18.8.3 18.8.4"}, "unavailable", "banner_malformed"),
