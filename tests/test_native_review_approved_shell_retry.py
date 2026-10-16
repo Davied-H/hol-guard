@@ -173,6 +173,7 @@ def test_an_approval_carries_only_the_request_it_was_queued_for(
     # approval the operator just gave does not cover it.
     assert new_id["granted_binding"].startswith(RETRY_CONTRACT), outcomes
     assert new_id["policy_action"] != "allow", outcomes
+    assert len(new_id["requeued_bindings"]) == 1, outcomes
     assert new_id["requeued_bindings"] != [new_id["granted_binding"]], outcomes
     # Same intent, the model's own wording: a different action, so a new review.
     assert reworded["policy_action"] != "allow", outcomes
