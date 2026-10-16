@@ -2154,6 +2154,8 @@ pub(crate) fn collect_package_specs(values: &[String]) -> Vec<String> {
 pub(crate) fn collect_package_specs_with(values: &[String], value_options: &[&str]) -> Vec<String> {
     const VALUE_OPTIONS: &[&str] = &[
         "-r",
+        // `--cwd <dir>` names where the install runs, not what is installed.
+        "--cwd",
         "--extra-index-url",
         "--index-url",
         "--prefix",
@@ -2394,6 +2396,27 @@ impl LocalPackageExecutionEvidence {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn working_directory_values_are_not_package_specs() {
+        // `bun install --cwd <dir> --frozen-lockfile` restores a lockfile in
+        // <dir>; it names no package, so the directory is not one either.
+        let tokens: Vec<String> = [
+            "--cwd",
+            "/srv/project",
+            "--frozen-lockfile",
+            "--ignore-scripts",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        assert!(collect_package_specs(&tokens).is_empty());
+        let named: Vec<String> = ["--cwd", "/srv/project", "left-pad"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(collect_package_specs(&named), vec!["left-pad"]);
+    }
 
     #[test]
     fn flag_tokens_location_and_dedup() {

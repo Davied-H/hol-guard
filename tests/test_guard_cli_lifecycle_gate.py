@@ -465,3 +465,42 @@ def test_approval_prompt_tells_the_user_it_is_waiting(
     assert result is not None
     assert result.password == password
     assert "waiting for your approval password" in capsys.readouterr().err
+
+
+def test_silent_authority_names_the_runtime_install_when_the_runtime_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from codex_plugin_scanner.guard.cli import update_commands
+
+    manual = 'python -m pip install --force-reinstall --no-deps "https://example.test/hol_guard.whl"'
+    monkeypatch.setattr(
+        update_commands,
+        "bundled_native_runtime_report",
+        lambda: {"status": "missing", "bundled": False, "manual_install": manual},
+    )
+    error = ApprovalGateError("native_approval_gate_unavailable", "The native approval authority did not answer.")
+
+    explained = commands_lifecycle_gate.explain_missing_native_runtime(error)
+
+    assert explained.code == "native_approval_gate_unavailable"
+    assert manual in str(explained)
+    assert "Retry" not in str(explained)
+
+
+@pytest.mark.parametrize(
+    ("code", "report"),
+    [
+        ("native_approval_gate_unavailable", {"status": "present", "bundled": True}),
+        ("native_approval_gate_unavailable", None),
+        ("approval_gate_password_required", {"status": "missing", "manual_install": "python -m pip install x"}),
+    ],
+)
+def test_silent_authority_keeps_its_error_unless_the_runtime_is_missing(
+    monkeypatch: pytest.MonkeyPatch, code: str, report: dict[str, object] | None
+) -> None:
+    from codex_plugin_scanner.guard.cli import update_commands
+
+    monkeypatch.setattr(update_commands, "bundled_native_runtime_report", lambda: report)
+    error = ApprovalGateError(code, "original")
+
+    assert commands_lifecycle_gate.explain_missing_native_runtime(error) is error
