@@ -250,6 +250,31 @@ impl ResidentRelayAuthority {
         output.ok()
     }
 
+    /// Build the claim request one round sends.
+    fn claim_payload(
+        &self,
+        ticket: &str,
+        evaluation: Option<Map<String, Value>>,
+    ) -> Option<Vec<u8>> {
+        let facts = self.facts.as_ref()?;
+        let mut request = json!({"guard_home": facts.guard_home, "ticket": ticket});
+        if let Some(evaluation) = evaluation {
+            request
+                .as_object_mut()?
+                .insert("package_evaluation".to_string(), Value::Object(evaluation));
+        }
+        serde_json::to_vec(&json!({"operation": "mcp_relay_claim", "request": request})).ok()
+    }
+
+    /// Send one claim round to the resident that decided the call.
+    ///
+    /// Only that resident holds the claim, and a round that spends it is never
+    /// repeated: a lost answer spends nothing twice.
+    fn send_claim(&self, payload: &[u8]) -> Option<Vec<u8>> {
+        let resident = self.resident.as_ref()?;
+        send(resident, payload, Instant::now() + CLAIM_TIMEOUT).ok()
+    }
+
     /// Evaluate the package request one call carries, and build the decide
     /// request that carries the verdict back.
     ///
@@ -410,31 +435,6 @@ impl RelayAuthority for ResidentRelayAuthority {
                 no_decision()
             }
         }
-    }
-
-    /// Build the claim request one round sends.
-    fn claim_payload(
-        &self,
-        ticket: &str,
-        evaluation: Option<Map<String, Value>>,
-    ) -> Option<Vec<u8>> {
-        let facts = self.facts.as_ref()?;
-        let mut request = json!({"guard_home": facts.guard_home, "ticket": ticket});
-        if let Some(evaluation) = evaluation {
-            request
-                .as_object_mut()?
-                .insert("package_evaluation".to_string(), Value::Object(evaluation));
-        }
-        serde_json::to_vec(&json!({"operation": "mcp_relay_claim", "request": request})).ok()
-    }
-
-    /// Send one claim round to the resident that decided the call.
-    ///
-    /// Only that resident holds the claim, and a round that spends it is never
-    /// repeated: a lost answer spends nothing twice.
-    fn send_claim(&self, payload: &[u8]) -> Option<Vec<u8>> {
-        let resident = self.resident.as_ref()?;
-        send(resident, payload, Instant::now() + CLAIM_TIMEOUT).ok()
     }
 
     fn claim(&mut self, ticket: ClaimTicket) -> ToolCallVerdict {
