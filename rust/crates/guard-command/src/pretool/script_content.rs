@@ -257,7 +257,7 @@ pub(super) fn exfiltrates(model: &CanonicalCommandV1, context: PathContext<'_>) 
 /// workspace would be unreadable there), uses no network client, and names no
 /// credential store. An unreadable, oversized or non-UTF-8 script is not clean.
 pub(in crate::pretool) fn standalone_clean(language: Language, path: &Path) -> bool {
-    let Some(sources) = read_graph(language, path.to_path_buf()) else {
+    let Some(sources) = read_graph(language, Entry::File(path.to_path_buf())) else {
         return false;
     };
     let [source] = sources.as_slice() else {
