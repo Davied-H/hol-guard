@@ -281,6 +281,13 @@ PATH="$candidate/.venv/bin:$sdk/node_modules/.bin:$PATH" .venv/bin/python -m ci.
 
 A `--case` run is investigation evidence, not qualification. The candidate worktree stays under the run root until you remove it with `git worktree remove`.
 
+On a machine that also runs HOL Guard for everyday work, that Guard's package shims (`~/.hol-guard/package-shims/bin`) usually come first on `PATH`. The runner starts each agent as `bun <sdk>/…/omp … <prompt>`, so the host shim reviews that launch and can stop it before the agent starts (#4833). The case then fails as `harness-error` with zero inference rounds. Each case runs its own isolated Guard, so for Gauntlet runs only, leave the host shim directory out of `PATH` and put the real Bun directory after the SDK:
+
+```sh
+host_path=$(printf '%s' "$PATH" | tr ':' '\n' | grep -vx "$HOME/.hol-guard/package-shims/bin" | paste -sd:)
+PATH="$candidate/.venv/bin:$sdk/node_modules/.bin:$HOME/.bun/bin:$host_path" .venv/bin/python -m ci.gauntlet run ...
+```
+
 ### Luna high through an Oh My Pi ChatGPT login
 
 Oh My Pi's `openai-codex` lane uses the Responses API through an existing ChatGPT login, so the Chat Completions relay cannot reach it directly. `--native-luna-route` starts a small loopback adapter (`luna_adapter.ts`, run with Bun from the pinned SDK tree) that translates one streaming Chat Completions request into one `openai-codex/gpt-6-luna` request at `medium` thinking and streams the result back. Pass `--reasoning-effort high` for high or `low` for the opt-in A/B lane.
