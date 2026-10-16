@@ -78,7 +78,11 @@ from ..codex_hook_sources import (
 )
 from ..codex_hook_sources import strict_json_object as _strict_json_object
 from ..codex_hook_sources import strict_toml_object as _strict_toml_object
-from ..codex_hook_trust import apply_codex_hook_trust_doctor, codex_hook_trust_stale
+from ..codex_hook_trust import (
+    apply_codex_hook_trust_doctor,
+    codex_hook_trust_stale,
+    record_guard_hook_trust,
+)
 from ..codex_install_transaction import codex_install_transaction
 from ..config import MAX_APPROVAL_WAIT_TIMEOUT_SECONDS, load_guard_config, resolve_guard_home
 from ..launcher import merge_guard_launcher_env
@@ -1336,7 +1340,7 @@ class CodexHarnessAdapter(HarnessAdapter):
         features.pop("codex_hooks", None)
         features["hooks"] = True
         payload["features"] = features
-        self._install_config_hooks(payload, context, owned_bindings=bindings)
+        self._install_config_hooks(payload, context, config_path=spec.config_path, owned_bindings=bindings)
         workspace_path = context.workspace_dir / ".codex/config.toml" if context.workspace_dir is not None else None
         workspace_payload = (
             parse_toml_object(contents[workspace_path], path=workspace_path, label="Codex config file")
@@ -1551,7 +1555,7 @@ class CodexHarnessAdapter(HarnessAdapter):
         features.pop("codex_hooks", None)
         features["hooks"] = True
         hook_payload["features"] = features
-        self._install_config_hooks(hook_payload, context, owned_bindings=owned_bindings)
+        self._install_config_hooks(hook_payload, context, config_path=hook_config_path, owned_bindings=owned_bindings)
         workspace_payload = (
             read_toml_payload(context.workspace_dir / ".codex" / "config.toml")
             if context.workspace_dir is not None
@@ -1912,6 +1916,7 @@ class CodexHarnessAdapter(HarnessAdapter):
         payload: dict[str, object],
         context: HarnessContext,
         *,
+        config_path: Path,
         owned_bindings: Sequence[Mapping[str, object]] = (),
     ) -> None:
         hooks = payload.get("hooks")
@@ -1926,6 +1931,10 @@ class CodexHarnessAdapter(HarnessAdapter):
             current_guard_home=context.guard_home,
         )
         payload["hooks"] = cleaned_hooks
+        # Codex skips a hook it has no trusted hash for, and says nothing while
+        # it does, so an install that stops here leaves the machine unprotected
+        # and looks installed. Trust is recorded for the handlers just written.
+        record_guard_hook_trust(payload, config_path)
 
     @staticmethod
     def _write_authenticated_hook_config(

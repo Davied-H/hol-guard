@@ -12,7 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sys
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from pathlib import Path
 
 from .codex_hook_registration import _hook_entry_is_active, _is_live_guard_codex_hook_command
@@ -88,17 +88,13 @@ def codex_command_hook_hash(event_name: str, matcher: object, handler: Mapping[s
     return "sha256:" + hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
-def stale_guard_hook_coordinates(payload: Mapping[str, object], config_path: Path) -> list[str]:
-    """Return state keys of Guard-managed hooks whose stored trust is missing or stale."""
+def _guard_hook_coordinates(
+    hooks: Mapping[str, object], config_path: Path
+) -> Iterator[tuple[list[str], str, Mapping[str, object]]]:
+    """Yield the state keys, expected hash and handler for each live Guard hook."""
 
-    hooks = payload.get("hooks")
-    if not isinstance(hooks, Mapping):
-        return []
-    state = hooks.get("state")
-    state_map = state if isinstance(state, Mapping) else {}
     # Codex keys hook state by the canonical config path.
     prefixes = dict.fromkeys((str(_resolved(config_path)), str(config_path)))
-    stale: list[str] = []
     for event_name, groups in hooks.items():
         label = codex_event_label(str(event_name))
         if label is None or not isinstance(groups, list):
@@ -115,14 +111,64 @@ def stale_guard_hook_coordinates(payload: Mapping[str, object], config_path: Pat
                 expected = codex_command_hook_hash(str(event_name), group.get("matcher"), handler)
                 if expected is None:
                     continue
-                keys = [f"{prefix}:{label}:{group_index}:{handler_index}" for prefix in prefixes]
-                entries = [entry for key in keys if isinstance(entry := state_map.get(key), Mapping)]
-                # A handler switched off in Codex's /hooks never runs, so its trust is irrelevant.
-                if any(entry.get("enabled") is False for entry in entries):
-                    continue
-                if not any(entry.get("trusted_hash") == expected for entry in entries):
-                    stale.append(keys[0])
+                yield [f"{prefix}:{label}:{group_index}:{handler_index}" for prefix in prefixes], expected, handler
+
+
+def stale_guard_hook_coordinates(payload: Mapping[str, object], config_path: Path) -> list[str]:
+    """Return state keys of Guard-managed hooks whose stored trust is missing or stale."""
+
+    hooks = payload.get("hooks")
+    if not isinstance(hooks, Mapping):
+        return []
+    state = hooks.get("state")
+    state_map = state if isinstance(state, Mapping) else {}
+    stale: list[str] = []
+    for keys, expected, _handler in _guard_hook_coordinates(hooks, config_path):
+        entries = [entry for key in keys if isinstance(entry := state_map.get(key), Mapping)]
+        # A handler switched off in Codex's /hooks never runs, so its trust is irrelevant.
+        if any(entry.get("enabled") is False for entry in entries):
+            continue
+        if not any(entry.get("trusted_hash") == expected for entry in entries):
+            stale.append(keys[0])
     return stale
+
+
+def record_guard_hook_trust(payload: dict[str, object], config_path: Path) -> list[str]:
+    """Trust the Guard hooks this install just wrote, and return the keys recorded.
+
+    Codex runs a user-layer hook only when ``[hooks.state]`` records a trusted
+    hash for it, so hooks Guard writes without one are skipped silently and the
+    machine runs unprotected with nothing said at the time. Guard writes those
+    hook entries into the user's own config as an explicit, user-invoked
+    install, and anything able to write the hooks table can write the state
+    table beside it, so recording trust claims no authority the install did not
+    already exercise.
+
+    It stays narrow on purpose. Only Guard's own live handlers are touched,
+    only with the hash computed from the entry being written, and a handler the
+    user switched off in ``/hooks`` keeps that choice.
+    """
+
+    hooks = payload.get("hooks")
+    if not isinstance(hooks, dict):
+        return []
+    state = hooks.get("state")
+    state_map: dict[str, object] = state if isinstance(state, dict) else {}
+    recorded: list[str] = []
+    for keys, expected, _handler in _guard_hook_coordinates(hooks, config_path):
+        key = keys[0]
+        existing = next((entry for entry in (state_map.get(name) for name in keys) if isinstance(entry, Mapping)), None)
+        if existing is not None and existing.get("enabled") is False:
+            continue
+        entry: dict[str, object] = {**existing} if existing is not None else {}
+        if entry.get("trusted_hash") == expected:
+            continue
+        entry["trusted_hash"] = expected
+        state_map[key] = entry
+        recorded.append(key)
+    if recorded or isinstance(state, dict):
+        hooks["state"] = state_map
+    return recorded
 
 
 def codex_hook_trust_stale(payload: object, config_path: Path) -> bool:
