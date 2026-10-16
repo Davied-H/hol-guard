@@ -586,6 +586,17 @@ fn windows_contains_only_python_runs_from_harnesses_with_a_sink_command() {
 fn windows_contains_direct_vite_builds_of_a_flat_install() {
     let root = std::env::temp_dir().join(format!("hg-vite-build-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    // A harness reports its directory in the long, drive-letter spelling. The
+    // temporary directory can arrive as an 8.3 short name (`RUNNER~1` on CI
+    // runners), which the cd proof rightly declines as an alias.
+    let root = std::fs::canonicalize(&root).unwrap();
+    let root = std::path::PathBuf::from(
+        root.to_str()
+            .unwrap()
+            .strip_prefix(r"\\?\")
+            .expect("verbatim canonical path"),
+    );
     let app = root.join("dashboard");
     std::fs::create_dir_all(app.join("node_modules/vite/bin")).unwrap();
     std::fs::create_dir_all(app.join("node_modules/.bin")).unwrap();
