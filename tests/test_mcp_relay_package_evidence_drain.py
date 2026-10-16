@@ -23,6 +23,7 @@ ARTIFACT = SimpleNamespace(harness="codex", config_path=CONFIG_PATH, source_scop
 TOKEN = "guard-approval-context:v1:token"
 WORKSPACE = "package-request-workspace:v2:abc"
 EVIDENCE = [{"kind": "package_execution_context", "portable": True}]
+PATH = "/usr/bin:/bin"
 
 
 def _decision(action: str = "allow", **fields: object) -> dict[str, object]:
@@ -51,6 +52,7 @@ def _package(**fields: object) -> dict[str, object]:
         "artifact_id": ARTIFACT_ID,
         "artifact_hash": TOKEN,
         "workspace": "/work",
+        "path": PATH,
         "evaluation": {"decision": "warn"},
         "evidence": EVIDENCE,
         "signals": ["left-pad has an advisory"],
@@ -165,8 +167,10 @@ def test_the_artifact_is_rebuilt_from_the_recorded_call(
     # The arguments in host key order, and the command the action envelope names.
     assert list(arguments) == ["cwd", "command"]
     assert kwargs["action_envelope_command"] == COMMAND
-    # The workspace the resident decided against, not the daemon's own.
+    # The workspace and search path the resident decided against, not the
+    # daemon's own.
     assert kwargs["workspace"] == Path("/work")
+    assert kwargs["environment"] == {"PATH": PATH}
     assert kwargs["guard_home"] == tmp_path
     # The scope and config path the call's own identity states.
     assert parsed["build"] == [("codex", parsed["intent"], CONFIG_PATH, SOURCE_SCOPE)]
@@ -267,6 +271,11 @@ def test_a_record_the_proxy_could_not_have_written_is_dropped(
         lambda package: package.update(evidence=[["not", "a", "mapping"]]),
         lambda package: package.update(evaluation="warn"),
         lambda package: package.update(workspace="  "),
+        # A relay that parsed under no search path at all cannot be reproduced
+        # here, where an unbound environment means the daemon's own.
+        lambda package: package.update(path=None),
+        lambda package: package.update(path="  "),
+        lambda package: package.pop("path"),
     ],
 )
 def test_a_package_half_the_proxy_could_not_have_written_is_dropped(

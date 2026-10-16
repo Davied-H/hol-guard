@@ -17,6 +17,12 @@
 //! input the resident read — and drops the record when the rebuilt artifact is
 //! not the one this decided.
 //!
+//! That parser input includes the `PATH` the intent was resolved under, which
+//! decides the manager a command names. The drain runs in the daemon, whose
+//! own `PATH` is not the relaying proxy's, so the record carries the proxy's
+//! and the drain parses under it. A record that names none is dropped there
+//! rather than parsed under whatever the daemon happens to hold.
+//!
 //! The evidence is the package half only. The tool half is
 //! `tool_decision_scanner_evidence` of the decision the record already carries,
 //! which the drain derives for every relayed call.
@@ -58,7 +64,8 @@ pub(super) fn evidence(policy: &PackagePolicy) -> Vec<Value> {
 /// The record the drain writes one answered package call's receipt from.
 ///
 /// `artifact` is the package request's artifact and `workspace` the directory
-/// its intent was parsed against, which is what the drain rebuilds it from.
+/// its intent was parsed against, which is what the drain rebuilds it from,
+/// together with the `PATH` the gate parsed under (`package_gate`).
 pub(super) fn record(
     request: &McpRelayDecideRequestV1,
     identity: &Value,
@@ -74,6 +81,9 @@ pub(super) fn record(
         "artifact_id": artifact.artifact_id,
         "artifact_hash": answer.artifact_hash,
         "workspace": workspace,
+        // The gate reads no `PATH` out of an absent or empty one, and a drain
+        // that cannot be given that same absence drops the record instead.
+        "path": request.path.as_deref().filter(|path| !path.is_empty()),
         "evaluation": Value::Object(answer.evaluation.clone()),
         "evidence": Value::Array(answer.evidence.clone()),
         "signals": answer.signals.clone(),

@@ -16,6 +16,13 @@ carries the workspace the intent was parsed against, and the artifact is
 rebuilt here from the same parser input the resident read
 (``_package_request_artifact``). A record whose rebuilt artifact is not the one
 the resident decided is dropped, never recorded against a different package.
+
+That parser input includes the ``PATH`` the intent was resolved under, which
+decides the manager a command names. This runs in the daemon, whose own
+``PATH`` is not the relaying proxy's, so the record carries the proxy's and the
+parse here binds it. A record naming none is dropped: the resident parsed that
+call with no search path at all, and ``_resident_environment`` has no way to
+ask for the same.
 """
 
 from __future__ import annotations
@@ -49,13 +56,15 @@ _RECORD_KEYS = frozenset(
         "package",
     }
 )
-# The package facts the receipt is written from. `policy_workspace` is bound
-# only by the allow receipt, so only a forward's record carries it.
+# The package facts the receipt is written from. `path` is always stated, as
+# `null` when the relay parsed under none. `policy_workspace` is bound only by
+# the allow receipt, so only a forward's record carries it.
 _PACKAGE_KEYS = frozenset(
     {
         "artifact_id",
         "artifact_hash",
         "workspace",
+        "path",
         "evaluation",
         "evidence",
         "signals",
@@ -115,6 +124,7 @@ def record_mcp_relay_package_evidence(store: object, guard_home: Path, record: o
             tool_name=tool_name,
             arguments=ordered.get("arguments"),
             workspace=Path(facts["workspace"]),
+            path=facts["path"],
             guard_home=guard_home,
             config_path=identity.artifact.config_path,
             source_scope=identity.artifact.source_scope,
@@ -166,25 +176,28 @@ def _package_facts(package: object, *, forwarded: bool) -> dict[str, Any] | None
         return None
     artifact_id, artifact_hash = package["artifact_id"], package["artifact_hash"]
     workspace, evaluation = package["workspace"], package["evaluation"]
+    path = package["path"]
     evidence, signals = package["evidence"], package["signals"]
     policy_workspace = package.get(_POLICY_WORKSPACE_KEY)
     if (
         not isinstance(artifact_id, str)
         or not isinstance(artifact_hash, str)
         or not isinstance(workspace, str)
+        or not isinstance(path, str)
         or not isinstance(evaluation, dict)
         or not isinstance(evidence, list)
         or not all(isinstance(item, dict) for item in evidence)
         or not isinstance(signals, list)
         or not all(isinstance(item, str) for item in signals)
         or not isinstance(policy_workspace, (str, type(None)))
-        or not all(field.strip() for field in (artifact_id, artifact_hash, workspace))
+        or not all(field.strip() for field in (artifact_id, artifact_hash, workspace, path))
     ):
         return None
     return {
         "artifact_id": artifact_id,
         "artifact_hash": artifact_hash,
         "workspace": workspace,
+        "path": path,
         "evaluation": evaluation,
         "evidence": tuple(evidence),
         "signals": tuple(signals),
@@ -198,11 +211,16 @@ def _package_artifact(
     tool_name: str,
     arguments: object,
     workspace: Path,
+    path: str,
     guard_home: Path,
     config_path: str,
     source_scope: str,
 ) -> Any | None:
-    """``_package_request_artifact`` for the call the record carries."""
+    """``_package_request_artifact`` for the call the record carries.
+
+    ``path`` is the relay's own search path, bound here so the resident
+    resolves the command's manager exactly as it did for the decision.
+    """
 
     from ..proxy.runtime_mcp import _command_argument  # pyright: ignore[reportPrivateUsage]
     from ..runtime.package_intent_common import build_package_request_artifact
@@ -214,6 +232,7 @@ def _package_artifact(
         action_envelope_command=_command_argument(arguments),
         workspace=workspace,
         guard_home=guard_home,
+        environment={"PATH": path},
     )
     if intent is None:
         return None

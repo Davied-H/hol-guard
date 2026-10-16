@@ -136,8 +136,9 @@ fn a_forwarded_package_call_records_the_policy_workspace_it_ran_under() {
     let package = &record["package"];
     assert_eq!(package["artifact_id"], json!(artifact().artifact_id));
     assert_eq!(package["artifact_hash"], json!(answer.artifact_hash));
-    // The workspace the drain rebuilds the package artifact against.
+    // The workspace and `PATH` the drain rebuilds the package artifact under.
     assert_eq!(package["workspace"], json!("/work"));
+    assert_eq!(package["path"], json!("/usr/bin:/bin"));
     assert_eq!(package["evaluation"], json!({"decision": "warn"}));
     assert_eq!(package["evidence"], json!(answer.evidence));
     assert_eq!(package["signals"], json!(answer.signals));
@@ -167,6 +168,26 @@ fn a_stopped_package_call_records_no_policy_workspace() {
         record["package"]["artifact_hash"],
         json!(answer.artifact_hash)
     );
+}
+
+/// The gate parses with no `PATH` when the request carries none, and the
+/// record says so rather than leaving the drain its own.
+#[test]
+fn a_call_relayed_without_a_search_path_records_none() {
+    for path in [None, Some(String::new())] {
+        let mut request = request();
+        request.path = path.clone();
+        let record = record(
+            &request,
+            &json!({}),
+            &decision(),
+            &artifact(),
+            "/work",
+            &answer(None, "warn"),
+        )
+        .expect("the record is built");
+        assert_eq!(record["package"]["path"], Value::Null, "{path:?}");
+    }
 }
 
 #[test]
