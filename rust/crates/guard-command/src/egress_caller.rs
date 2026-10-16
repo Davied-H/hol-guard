@@ -237,7 +237,7 @@ fn fetch(need: &EgressNeedV1, policy: &dyn EgressPolicy) -> Fetched {
         }
         let response = match exchange(need, &url, body.clone(), deadline) {
             Ok(response) => response,
-            Err(outcome) => return Fetched::Outcome(outcome),
+            Err(outcome) => return Fetched::Outcome(*outcome),
         };
         if budget > 0 && REDIRECT_STATUSES.contains(&response.status) {
             if let Some(location) = response.headers.get("location") {
@@ -272,10 +272,10 @@ fn exchange(
     url: &str,
     body: Option<Vec<u8>>,
     deadline: Instant,
-) -> Result<Exchange, EgressOutcomeV1> {
+) -> Result<Exchange, Box<EgressOutcomeV1>> {
     let remaining = deadline.saturating_duration_since(Instant::now());
     if remaining.is_zero() {
-        return Err(EgressOutcomeV1::Timeout);
+        return Err(Box::new(EgressOutcomeV1::Timeout));
     }
     let per_read = Duration::from_secs_f64(need.timeout_seconds.clamp(0.5, MAX_EXCHANGE_SECONDS));
     let config = ureq::config::Config::builder()
@@ -299,8 +299,10 @@ fn exchange(
     }
     let request = builder
         .body(body.unwrap_or_default())
-        .map_err(|_| error_outcome("request"))?;
-    let mut response = agent.run(request).map_err(map_error)?;
+        .map_err(|_| Box::new(error_outcome("request")))?;
+    let mut response = agent
+        .run(request)
+        .map_err(|error| Box::new(map_error(error)))?;
     let status = response.status().as_u16();
     let mut headers = BTreeMap::new();
     for (name, value) in response.headers() {
@@ -315,7 +317,7 @@ fn exchange(
         .with_config()
         .limit(need.max_response_bytes.saturating_add(1))
         .read_to_vec()
-        .map_err(map_error)?;
+        .map_err(|error| Box::new(map_error(error)))?;
     Ok(Exchange {
         status,
         headers,
