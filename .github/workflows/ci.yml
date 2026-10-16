@@ -220,7 +220,10 @@ jobs:
       - uses: ./.github/actions/setup-bubblewrap
         if: matrix.check != 'clippy'
       - name: Archive the complete runtime test build
-        if: matrix.check == 'test-runtime-1' && steps.runtime-archive.outputs.cache-hit != 'true'
+        if: >-
+          matrix.check == 'test-runtime-1' &&
+          steps.runtime-archive.outputs.cache-hit != 'true' &&
+          github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           nextest_bin="$(python3 scripts/ci/install_nextest.py)"
           PATH="$nextest_bin:$PATH" cargo nextest archive --manifest-path rust/Cargo.toml \
