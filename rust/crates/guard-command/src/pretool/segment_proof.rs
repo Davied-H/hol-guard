@@ -387,6 +387,12 @@ pub(super) fn exact_safe_segment_with_context(
         "python" | "python3" | "node" | "nodejs" => {
             super::safe_scalar::version_probe_arguments(basename, &segment.arguments)
                 || pure_expression::safe_inline_expression(basename, &segment.arguments)
+                || (matches!(basename, "node" | "nodejs")
+                    && super::safe_scalar::node_syntax_check_arguments(
+                        &segment.arguments,
+                        segment.pipeline_index > 0,
+                        context,
+                    ))
         }
         _ => false,
     }
