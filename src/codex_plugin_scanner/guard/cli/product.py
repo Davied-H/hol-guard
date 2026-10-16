@@ -8,7 +8,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from ..adapters import get_adapter
-from ..adapters.base import HarnessContext
+from ..adapters.base import HarnessContext, _artifact_uses_guard
 from ..config import GuardConfig
 from ..consumer import detect_all
 from ..consumer.service import diff_artifact
@@ -151,6 +151,7 @@ def _summarize_harness(
     approval_flow = get_adapter(detection.harness).approval_flow(managed_install=managed_install)
     review_count = _count_review_artifacts(store, detection.artifacts, detection.harness)
     managed = bool(managed_install and managed_install.get("active"))
+    guard_registered = any(_artifact_uses_guard(artifact) for artifact in detection.artifacts)
     shim_path = None
     if managed_install is not None:
         manifest = managed_install.get("manifest")
@@ -162,6 +163,8 @@ def _summarize_harness(
         "installed": detection.installed,
         "command_available": detection.command_available,
         "artifact_count": len(detection.artifacts),
+        "artifacts_scanned": True,
+        "guard_registered": guard_registered,
         "review_count": review_count,
         "warning_count": len(detection.warnings),
         "managed": managed,
@@ -206,6 +209,7 @@ def _summarize_managed_install(install: dict[str, object], home_dir: Path) -> di
         "installed": managed,
         "command_available": managed,
         "artifact_count": 0,
+        "artifacts_scanned": False,
         "review_count": 0,
         "warning_count": warning_count,
         "managed": managed,

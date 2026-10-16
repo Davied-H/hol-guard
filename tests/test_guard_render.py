@@ -1139,3 +1139,25 @@ def test_doctor_panel_says_protection_is_not_in_effect_when_every_adapter_is_bro
 
     output = _normalize_render_output(capsys.readouterr().out)
     assert "protection: Protected (not in effect: no app has Guard hooks registered)" in output
+
+
+def test_single_harness_doctor_says_protection_is_not_in_effect_when_registration_is_broken(capsys) -> None:
+    emit_guard_payload(
+        "doctor",
+        {
+            "protection": "protected",
+            "protection_label": "Protected",
+            "protection_off": False,
+            "harness": "claude-code",
+            "installed": True,
+            "setup_status": "broken",
+            "command_available": True,
+            "warnings": [],
+        },
+        False,
+    )
+
+    output = _normalize_render_output(capsys.readouterr().out)
+    # The single-harness table wraps the detail, so the box rules sit between
+    # "hooks" and "registered". The row still has to carry the lapse.
+    assert "Protection Protected (not in effect: no app has Guard hooks" in output

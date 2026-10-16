@@ -49,3 +49,32 @@ def test_a_string_artifact_count_is_read_and_a_boolean_is_not() -> None:
     assert protection_is_in_effect([{"managed": True, "artifact_count": "6"}]) is True
     assert protection_is_in_effect([{"managed": True, "artifact_count": "none"}]) is False
     assert protection_is_in_effect([{"managed": True, "artifact_count": True}]) is False
+
+
+def test_host_artifacts_do_not_count_as_guard_registration() -> None:
+    # A managed install can still have skills or MCP servers after its hook
+    # arrays are emptied. Those artifacts keep artifact_count above zero and
+    # are not a Guard registration.
+    assert (
+        protection_is_in_effect(
+            [{"harness": "cline", "managed": True, "artifact_count": 4, "guard_registered": False}]
+        )
+        is False
+    )
+    assert (
+        protection_is_in_effect(
+            [{"harness": "cline", "managed": True, "artifact_count": 1, "guard_registered": True}]
+        )
+        is True
+    )
+
+
+def test_an_unscanned_managed_install_is_not_reported_as_a_lapse() -> None:
+    # Desktop bootstrap skips the app scan and hardcodes a zero artifact count.
+    # That placeholder is missing evidence, not an empty hook array.
+    assert (
+        protection_is_in_effect(
+            [{"harness": "codex", "managed": True, "artifact_count": 0, "artifacts_scanned": False}]
+        )
+        is True
+    )

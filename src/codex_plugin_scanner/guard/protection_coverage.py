@@ -28,17 +28,26 @@ def _artifact_count(value: object) -> int:
     return 0
 
 
-def _harness_is_enforcing(entry: Mapping[str, object]) -> bool:
-    """Judge one harness row from whichever evidence its payload carries.
+def _harness_is_enforcing(entry: Mapping[str, object]) -> bool | None:
+    """Judge one harness row, or ``None`` when the row has no coverage evidence.
 
-    Doctor rows carry ``setup_status`` straight from the adapter. Status rows
-    carry the managed flag and the artifact count instead; a managed harness with
-    no artifacts has nothing registered to run.
+    Doctor rows carry ``setup_status`` straight from the adapter. A scanned
+    status row carries ``guard_registered``, which is true only when a detected
+    artifact is a Guard hook or launcher, not merely because the host still has
+    skills or MCP servers. ``artifact_count`` remains the fallback for payloads
+    that predate that flag. A row built without scanning (``artifacts_scanned``
+    false) hardcodes a zero count and is not evidence of a lapse.
     """
 
     setup_status = entry.get("setup_status")
     if isinstance(setup_status, str) and setup_status.strip():
         return setup_status.strip() == _ENFORCING_SETUP_STATUS
+    if entry.get("artifacts_scanned") is False:
+        return None
+    if "guard_registered" in entry:
+        return bool(entry.get("managed")) and entry.get("guard_registered") is True
+    if "artifact_count" not in entry:
+        return None
     return bool(entry.get("managed")) and _artifact_count(entry.get("artifact_count")) > 0
 
 
@@ -47,13 +56,17 @@ def protection_is_in_effect(entries: Iterable[object]) -> bool:
 
     An empty sequence returns ``True``: a payload that carries no harness rows is
     missing the evidence, not proof that protection has lapsed, and a renderer
-    must not raise an alarm it cannot support.
+    must not raise an alarm it cannot support. The same holds when every row is
+    present but none of them were scanned.
     """
 
     rows = [entry for entry in entries if isinstance(entry, Mapping)]
     if not rows:
         return True
-    return any(_harness_is_enforcing(row) for row in rows)
+    judgments = [_harness_is_enforcing(row) for row in rows]
+    if any(judgment is True for judgment in judgments):
+        return True
+    return not any(judgment is False for judgment in judgments)
 
 
 __all__ = ["PROTECTION_NOT_IN_EFFECT_DETAIL", "protection_is_in_effect"]
