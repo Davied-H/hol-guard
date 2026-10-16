@@ -28,18 +28,18 @@ runs:
         save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     - name: Check for restored instrumented dependencies
       id: restored-dependencies
-      if: steps.coverage-cache.outputs.cache-hit != 'true'
       shell: bash
-      # A partial hit already restored compatible crates. Never unpack an older
-      # monolithic archive over that dependency set.
+      # Exact and partial archives can contain only tools. Never unpack an older
+      # archive over real restored instrumented dependencies.
       run: |
         restored=false
-        if [ -d rust/target ] && [ -n "$(find rust/target -type f \( -name '*.rlib' -o -name '*.rmeta' \) -print -quit)" ]; then
+        target=rust/target/llvm-cov-target
+        if [ -d "$target" ] && [ -n "$(find "$target" -type f \( -name '*.rlib' -o -name '*.rmeta' \) -print -quit)" ]; then
           restored=true
         fi
         echo "restored=$restored" >> "$GITHUB_OUTPUT"
     - name: Seed instrumented dependencies from the compatible workspace cache
-      if: steps.coverage-cache.outputs.cache-hit != 'true' && steps.restored-dependencies.outputs.restored != 'true'
+      if: steps.restored-dependencies.outputs.restored != 'true'
       uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
       with:
         workspaces: rust
