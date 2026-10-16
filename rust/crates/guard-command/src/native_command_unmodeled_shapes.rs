@@ -7,41 +7,56 @@ use super::SHELL_PREFIXES;
 /// Interpreters whose standard-input program is a heredoc this module reads.
 const HEREDOC_PYTHON: &[&str] = &["python", "python3", "python -", "python3 -"];
 
-/// Text that lets a Python program start another program, load code it
-/// computes, or reach names it builds, so its body could run any program.
-const PYTHON_LAUNCHERS: &[&str] = &[
-    "subprocess",
-    "system",
-    "popen",
-    "exec",
-    "spawn",
-    "fork",
-    "pty",
-    "ctypes",
-    "cffi",
-    "importlib",
-    "import_module",
-    "__import__",
-    "runpy",
-    "eval",
-    "compile",
+/// Text a Python program needs to reach the operating system, load code it
+/// computes, or inspect its own objects. A program with none of it and no
+/// `import` statement has only the builtins, which cannot start a program.
+const PYTHON_UNBOUNDED: &[&str] = &[
+    "__",
     "getattr",
+    "setattr",
+    "delattr",
     "globals",
-    "vars(",
-    "__dict__",
-    "__builtins__",
-    "builtins",
-    "commands",
-    "webbrowser",
-    "pdb",
-    "code.",
-    "shell",
+    "locals",
+    "vars",
+    "dir(",
+    "eval",
+    "exec",
+    "compile",
+    "breakpoint",
+    "help",
+    "license",
+    "credits",
+    "copyright",
+    "input",
+    "memoryview",
+    "type(",
 ];
+
+/// Whether a Python program reads only builtins, so it cannot start another
+/// program. An `import` keyword starts a statement, so one inside a string
+/// literal (preceded by a quote or a word) is data.
+fn python_is_builtin_only(body: &[&str]) -> bool {
+    body.iter().all(|row| {
+        if !row.is_ascii() {
+            return false;
+        }
+        let lowered = row.to_ascii_lowercase();
+        if PYTHON_UNBOUNDED.iter().any(|word| lowered.contains(word)) {
+            return false;
+        }
+        !lowered.match_indices("import").any(|(at, _)| {
+            lowered[..at]
+                .chars()
+                .next_back()
+                .is_none_or(|before| before.is_whitespace() || matches!(before, ';' | ':'))
+        })
+    })
+}
 
 /// Every heredoc in the text feeds data, and the text without them. A heredoc
 /// is data when its delimiter is quoted or its body expands nothing and it is
 /// closed. A `python` or `python3` that reads its program from one whose body
-/// cannot start a program is replaced by `true`, since it can own nothing.
+/// uses only builtins is replaced by `true`, since it can own nothing.
 /// `None` for a heredoc that feeds anything but `cat` or such a program.
 /// The flag says whether text had any.
 pub(super) fn data_heredocs(text: &str) -> Option<(String, bool)> {
@@ -85,11 +100,7 @@ pub(super) fn data_heredocs(text: &str) -> Option<(String, bool)> {
         let split = before.rfind([';', '&', '|', '(']).map_or(0, |at| at + 1);
         let (lead, command) = before.split_at(split);
         let command = command.trim();
-        let inert = HEREDOC_PYTHON.contains(&command)
-            && !body.iter().any(|row| {
-                let lowered = row.to_ascii_lowercase();
-                PYTHON_LAUNCHERS.iter().any(|word| lowered.contains(word))
-            });
+        let inert = HEREDOC_PYTHON.contains(&command) && python_is_builtin_only(&body);
         // Any other program may do more than read its input.
         if !inert && command.split_whitespace().next() != Some("cat") {
             return None;
@@ -189,11 +200,16 @@ pub(super) fn without_plain_awk(shell: &str) -> String {
             index += 1;
             continue;
         }
+        // A redirect may come before the program, so the arguments run to the
+        // next command separator.
         let end = pieces[index..]
             .iter()
-            .position(|(_, operator)| *operator)
+            .position(|(text, operator)| *operator && !text.contains(['<', '>']))
             .map_or(pieces.len(), |at| index + at);
-        let plain = pieces[index + 1..end].iter().all(|(word, _)| {
+        let plain = pieces[index + 1..end].iter().all(|(word, operator)| {
+            if *operator {
+                return true;
+            }
             let flagged = word.starts_with('-');
             if flagged {
                 return word.starts_with("-F") || word.starts_with("-v");
@@ -214,8 +230,8 @@ pub(super) fn without_plain_awk(shell: &str) -> String {
 }
 
 /// The text with each `command -v NAME` and `which NAME` lookup, in command
-/// position or as a whole substitution, replaced by a plain word: they print
-/// where a program is without running it.
+/// position or as a whole substitution, replaced by a plain word that keeps the
+/// looked-up name visible, since a substitution in command position runs it.
 pub(super) fn without_lookups(text: &str) -> String {
     let mut current = text.to_owned();
     for _ in 0..16 {
@@ -251,7 +267,7 @@ fn strip_one_lookup(text: &str) -> Option<String> {
             }
             let whole = before.ends_with("$(") && after == Some(')');
             let (from, to, filler) = if whole {
-                (before.len() - 2, end + 1, "X")
+                (before.len() - 2, end + 1, name.as_str())
             } else {
                 (at, end, "true")
             };

@@ -415,6 +415,9 @@ fn heredoc_python_edits_and_test_runs_are_reviewed_not_blocked() {
         "import subprocess\nsubprocess.run(['gh','pr','list'])",
         "import os\nos.system('gh pr list')",
         "getattr(__import__('os'), 'sys' + 'tem')('x')",
+        "import operator, os\noperator.attrgetter('sys'+'tem')(os)('g'+'h pr merge 1')",
+        "x=1; import pickle\npickle.loads(b'x')",
+        "exec('print(1)')",
     ] {
         let command = format!("python3 - <<'EOF'\n{body}\nEOF\nnpm test");
         assert_eq!(decision(&controls, &command).1, FAILED, "{command}");
@@ -464,4 +467,44 @@ fn a_shell_variable_assignment_is_not_named_an_environment_prefix() {
         reason_text(&controls, prefixed).contains("GH_HOST"),
         "{prefixed}"
     );
+}
+
+#[test]
+fn a_looked_up_program_in_command_position_keeps_its_owner() {
+    let controls = controls(
+        github("enabled", Some("command.github.permission.merge-remote")),
+        false,
+    );
+    // The lookup names the program it will run, so its extension still owns it.
+    assert_eq!(
+        decision(&controls, "\"$(command -v gh)\" pr merge 12; echo done").0,
+        "block"
+    );
+    assert_eq!(
+        decision(&controls, "$(which python3) -c 'print(1)'; echo done").1,
+        FAILED
+    );
+    assert_eq!(
+        decision(
+            &controls,
+            "docker-nothing x; ls -l \"$(which doctl)\"; echo >&2 done"
+        )
+        .1 == FAILED,
+        false
+    );
+}
+
+#[test]
+fn a_redirect_before_an_awk_program_does_not_hide_it() {
+    let controls = controls(serde_json::json!([]), false);
+    let command =
+        "doctl registry repository list-manifests r | awk > /tmp/d.txt 'BEGIN { system(\"id\") }'";
+    assert_eq!(decision(&controls, command).1, FAILED, "{command}");
+}
+
+#[test]
+fn a_substituted_setting_before_a_bare_env_is_named() {
+    let controls = controls(serde_json::json!([]), false);
+    let reason = reason_text(&controls, "SERVICE_TOKEN=$(echo x) env");
+    assert!(reason.contains("SERVICE_TOKEN"), "{reason}");
 }

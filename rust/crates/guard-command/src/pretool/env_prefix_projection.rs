@@ -592,8 +592,14 @@ pub(super) fn substituted_setting(command: &str) -> Option<String> {
     // Only a setting that a command follows reaches that command's
     // environment. A bare `n=$((n+1))` sets a shell variable.
     let mut pending: Option<String> = None;
+    let mut bare_env = false;
     for token in &tokens {
         if token.is_control {
+            // `env` with nothing after it still passes the setting on.
+            if bare_env && pending.is_some() {
+                return pending;
+            }
+            bare_env = false;
             command_start = COMMAND_SEPARATORS.contains(&token.value.as_str());
             in_prefix = false;
             pending = None;
@@ -604,8 +610,10 @@ pub(super) fn substituted_setting(command: &str) -> Option<String> {
             in_prefix = true;
         }
         if !in_prefix || token.value == "env" || token.value == "/usr/bin/env" {
+            bare_env = in_prefix;
             continue;
         }
+        bare_env = false;
         let Some((name, _)) = shell_assignment(chars.as_slice(), token) else {
             if pending.is_some() {
                 return pending;
@@ -621,6 +629,9 @@ pub(super) fn substituted_setting(command: &str) -> Option<String> {
         {
             pending = Some(name.to_owned());
         }
+    }
+    if bare_env {
+        return pending;
     }
     None
 }
