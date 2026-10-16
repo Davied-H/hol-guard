@@ -124,8 +124,9 @@ fn contain(
     {
         return Contained::Unchanged;
     }
-    // The Windows sink command is PowerShell-quoted and routed by the Python
-    // bridge; this one cannot reproduce it, and the update hint would mislead.
+    // This port cannot yet reproduce the PowerShell-quoted Windows sink
+    // command or its process lookup, so the denial stands. The Codex update
+    // hint would mislead, because the Codex version is not the obstacle.
     if cfg!(windows) {
         return Contained::Unchanged;
     }
