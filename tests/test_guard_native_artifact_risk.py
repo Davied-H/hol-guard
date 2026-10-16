@@ -246,9 +246,10 @@ def test_packed_replies_decode_to_the_full_profile(monkeypatch: pytest.MonkeyPat
     [
         "not base64",
         base64.b64encode(b"not gzip").decode("ascii"),
-        base64.b64encode(gzip.compress(b"not json")).decode("ascii"),
+        base64.b64encode(gzip.compress(b"not json", mtime=0)).decode("ascii"),
         7,
     ],
+    ids=["not-base64", "not-gzip", "not-json", "not-text"],
 )
 def test_malformed_packed_replies_raise(monkeypatch: pytest.MonkeyPatch, packed: object) -> None:
     _reply(monkeypatch, payload={"packed_json_gzip_v1": packed})
