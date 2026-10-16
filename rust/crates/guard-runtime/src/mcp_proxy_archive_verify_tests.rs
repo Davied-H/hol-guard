@@ -79,6 +79,18 @@ fn every_changed_download_is_refused() {
     symlink(&path, &link).unwrap();
     assert_eq!(verified_replacements(&[record(&link, BYTES)]), None);
 
+    let fifo = root.path().join("fifo.tgz");
+    let made = std::process::Command::new("mkfifo")
+        .arg(&fifo)
+        .status()
+        .unwrap();
+    assert!(made.success());
+    assert_eq!(verified_replacements(&[record(&fifo, BYTES)]), None);
+
+    let mut oversized = good.clone();
+    oversized.size = guard_contracts::ARCHIVE_ACQUISITION_MAX_BYTES + 1;
+    assert_eq!(verified_replacements(&[oversized]), None);
+
     let missing = root.path().join("missing.tgz");
     assert_eq!(verified_replacements(&[record(&missing, BYTES)]), None);
 

@@ -7,7 +7,7 @@ use std::fs::File;
 use std::io::{ErrorKind, Read};
 use std::path::Path;
 
-use guard_contracts::McpExternalArchiveDownloadV1;
+use guard_contracts::{McpExternalArchiveDownloadV1, ARCHIVE_ACQUISITION_MAX_BYTES};
 use sha2::{Digest, Sha256};
 
 const CHUNK_BYTES: usize = 64 * 1024;
@@ -20,6 +20,11 @@ pub(crate) fn verified_replacements(
 ) -> Option<Vec<(String, String)>> {
     let mut replacements: Vec<(String, String)> = Vec::with_capacity(downloads.len());
     for download in downloads {
+        // Acquisition never keeps a larger archive, so hashing stays bounded
+        // on the shared evaluation workers.
+        if download.size > ARCHIVE_ACQUISITION_MAX_BYTES {
+            return None;
+        }
         let file = open_verified(Path::new(&download.path), download.size)?;
         if !content_matches(file, download) {
             return None;
@@ -61,14 +66,17 @@ fn open_verified(path: &Path, size: u64) -> Option<File> {
     use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 
     let path_metadata = std::fs::symlink_metadata(path).ok()?;
+    // Never open a FIFO or device: the open itself could block a worker.
+    if !path_metadata.file_type().is_file() {
+        return None;
+    }
     let file = std::fs::OpenOptions::new()
         .read(true)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK)
         .open(path)
         .ok()?;
     let metadata = file.metadata().ok()?;
-    let verified = path_metadata.file_type().is_file()
-        && metadata.file_type().is_file()
+    let verified = metadata.file_type().is_file()
         && path_metadata.dev() == metadata.dev()
         && path_metadata.ino() == metadata.ino()
         && metadata.nlink() == 1
