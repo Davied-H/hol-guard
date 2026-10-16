@@ -129,7 +129,7 @@ def test_temp_root_reproduction_lives_outside_the_home_directory(tmp_path: Path)
     project_test.write_text(
         project_test.read_text(encoding="utf-8")
         + "\ntest('collapses punctuation', () => {\n  "
-        + PUNCTUATION_CASE
+        + PUNCTUATION_CASE.replace("'", '"').replace("equal(", "strictEqual(\n    ")
         + ";\n});\n",
         encoding="utf-8",
     )

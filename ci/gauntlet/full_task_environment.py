@@ -187,6 +187,12 @@ def _command_words(script: str) -> list[str]:
     return words
 
 
+def _assertions(source: str) -> str:
+    """Test source with quoting, spacing and strict/loose equal folded together."""
+    folded = source.replace('"', "'").replace("`", "'").replace("strictEqual", "equal")
+    return "".join(folded.split())
+
+
 def _read(path: Path) -> str:
     try:
         return path.read_text(encoding="utf-8")
@@ -233,8 +239,8 @@ def check_temp_reproduction(workspace: Path, home: Path, root: Path) -> dict[str
     project_test = blob(workspace, "HEAD", "test/slug.test.js")
     return {
         "task:fix-committed": fixed != BUGGY_SLUG.rstrip("\n") and len(git_lines(workspace, "rev-list", "HEAD")) >= 2,
-        "task:seeded-test-intact": JOIN_CASE in project_test,
-        "task:reproduction-case-ported": PUNCTUATION_CASE in project_test,
+        "task:seeded-test-intact": _assertions(JOIN_CASE) in _assertions(project_test),
+        "task:reproduction-case-ported": _assertions(PUNCTUATION_CASE) in _assertions(project_test),
         "task:reproduction-untouched": _read(repro / "slug.js") == REPRO_SOURCE
         and _read(repro / "slug.test.js") == REPRO_TEST
         and _read(repro / "package.json") == REPRO_PACKAGE,
