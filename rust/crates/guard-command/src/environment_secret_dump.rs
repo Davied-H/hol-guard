@@ -47,9 +47,13 @@ static ENV_DUMPS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
     .collect()
 });
 /// What follows `process.env` in a dotted read of one port variable, such as
-/// `PORT` or `DEV_PORT`, on lowercased text.
-static PORT_MEMBER: LazyLock<Regex> =
-    LazyLock::new(|| compile_fancy(r"^\s*\.\s*(?:[a-z0-9]+_)*port(?![a-z0-9_$])"));
+/// `PORT` or `DEV_PORT`, on text that has already been lowercased and had
+/// backslashes turned into slashes. A slash, a backslash, or a non-ASCII
+/// character continues the identifier: `PORT\u005fTOKEN` arrives as
+/// `port/u005ftoken`, and `PORTé` is still one name. Those reads stay reviewed.
+static PORT_MEMBER: LazyLock<Regex> = LazyLock::new(|| {
+    compile_fancy(r"^\s*\.\s*(?:[a-z0-9]+_)*port(?![a-z0-9_$/\\]|[^\x00-\x7f])")
+});
 static PYTHON_NAME: LazyLock<Regex> =
     LazyLock::new(|| compile_fancy(r"^pythonw?(?:\d+(?:\.\d+)*)?(?:\.exe)?$"));
 static ASSIGNMENT: LazyLock<Regex> = LazyLock::new(|| compile_fancy(r"^[A-Za-z_][A-Za-z0-9_]*=.*"));
