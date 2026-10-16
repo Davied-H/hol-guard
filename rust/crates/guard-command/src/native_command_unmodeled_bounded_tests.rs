@@ -6,63 +6,6 @@ use super::xargs::{xargs_input_is_named, xargs_names_its_program};
 const FAILED: &str = "native_command_extension_evaluation_failed";
 
 #[test]
-fn debug_redirect_xargs_decision() {
-    let controls = controls(github("enabled", None), false);
-    let command = "xargs rm < list.txt; 2>/dev/null xargs gh pr merge";
-    let result = crate::pretool::evaluate_pre_tool_envelope_with_extensions(
-        "zcode",
-        "PreToolUse",
-        &serde_json::json!({"tool_name": "Bash", "tool_input": {"command": command}}),
-        Some(&controls),
-        None,
-    );
-    let error = result
-        .command_extensions
-        .as_ref()
-        .map(|extensions| extensions.evaluation_error.clone());
-    let looked = super::shapes::without_lookups(command);
-    let shell = super::shapes::without_plain_awk(
-        &super::shapes::data_heredocs(&looked)
-            .map(|(shell, _)| shell)
-            .unwrap_or_else(|| super::shell_text(&looked).to_owned()),
-    );
-    let projected = crate::pretool::generic::workspace_redirects::project(command);
-    let parsed = projected.as_deref().and_then(|text| {
-        crate::parse_command(&crate::CommandModelRequestV1 {
-            command: text.to_owned(),
-            dialect: "posix".to_owned(),
-            transport: "shell_string".to_owned(),
-            extraction_provenance: "agent".to_owned(),
-        })
-        .ok()
-    });
-    let shape = parsed.as_ref().map(|model| {
-        let segs: Vec<String> = model
-            .segments
-            .iter()
-            .map(|segment| {
-                format!(
-                    "{}:{:?}:{:?}",
-                    segment.text, segment.executable, segment.arguments
-                )
-            })
-            .collect();
-        format!(
-            "conf={} uncertainty={:?} segs={segs:?}",
-            model.confidence, model.uncertainty_reason
-        )
-    });
-    assert!(
-        false,
-        "action={} code={} eval_err={error:?} shell={shell:?} input={} programs={:?} projected={projected:?} shape={shape:?}",
-        result.minimum_action,
-        result.reason_code,
-        xargs_input_is_named(&shell),
-        super::xargs::xargs_programs(&shell)
-    );
-}
-
-#[test]
 fn an_xargs_that_names_its_program_is_reviewable() {
     let controls = controls(github("enabled", None), false);
     // A redirect into `xargs` is judged by the redirect proof, which does not
