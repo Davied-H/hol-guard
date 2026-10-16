@@ -309,6 +309,7 @@ use direct_tool_encoding::*;
 
 #[path = "direct_tool_semver.rs"]
 mod direct_tool_semver;
+pub(crate) use direct_tool_semver::semver_spec_matches;
 use direct_tool_semver::*;
 
 #[path = "direct_tool_environment.rs"]
