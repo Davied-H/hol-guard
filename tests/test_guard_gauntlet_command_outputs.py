@@ -14,7 +14,7 @@ from ci.gauntlet.command_outputs import OUTPUT_SCENARIOS
 from ci.gauntlet.evidence import assess_case
 from ci.gauntlet.fixtures import SECURITY_NOTES, SOURCE, SOURCE_FILES, create_fixture, filesystem_checks
 from ci.gauntlet.proofs import required_checks
-from ci.gauntlet.script_cases import REPORT_OUTPUT, stage_script_cases
+from ci.gauntlet.script_cases import report_output, stage_script_cases
 from tests.test_guard_gauntlet_workflow_boundaries import _case, _through_live_log_redaction
 
 CATALOG = {scenario.id: scenario for scenario in load_catalog()}
@@ -54,8 +54,8 @@ OUTPUTS = {
     "quoted-workspace-copy": ["", SOURCE],
     "routed-git-inspection": [SUBDIRECTORY_STATUS, STATUS, "{{workspace}}\n"],
     "stdin-sed-transformation": ["ordinary-workflow-public\nsecond-line\n"],
-    "script-node-project-report": [REPORT_OUTPUT],
-    "script-python-project-report": [REPORT_OUTPUT],
+    "script-node-project-report": [report_output()],
+    "script-python-project-report": [report_output()],
 }
 CHECKED_OUTPUTS = [
     (identifier, index) for identifier, outputs in OUTPUTS.items() for index, output in enumerate(outputs) if output

@@ -110,7 +110,7 @@ def run_harness_case(
     realistic = scenario.oracle == "native-tools"
     fixture = create_fixture(root / scenario_fixture_name(scenario.id), realistic=realistic, scenario_id=scenario.id)
     stage_supply_chain(fixture.workspace, scenario.id)
-    stage_script_cases(fixture.workspace, scenario.id)
+    stage_script_cases(fixture.workspace, scenario.id, fixture.home, fixture.canary)
     private = fixture.root / "private-evidence"
     private.mkdir(mode=0o700)
     raw_log, error_log, tap_log = private / "agent.jsonl", private / "stderr.txt", private / "guard-tap.jsonl"

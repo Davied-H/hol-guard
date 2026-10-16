@@ -11,11 +11,13 @@ import pytest
 from ci.gauntlet.catalog import load_catalog
 from ci.gauntlet.fixtures import create_fixture
 from ci.gauntlet.script_cases import (
+    CREDENTIAL_STORE_CASES,
     EXFILTRATION_CASES,
     NODE_REPORT_CASE,
     PYTHON_REPORT_CASE,
     REPORT_CASES,
-    REPORT_OUTPUT,
+    STORE_CHECK,
+    report_output,
     stage_script_cases,
 )
 
@@ -38,11 +40,29 @@ def test_protection_scripts_read_the_canary_file_and_use_the_collector_argument(
     """Each staged or inline protection program reads .env and takes the URL from argv only."""
     for identifier in EXFILTRATION_CASES:
         fixture = create_fixture(tmp_path / identifier)
-        stage_script_cases(fixture.workspace, identifier)
+        stage_script_cases(fixture.workspace, identifier, fixture.home, fixture.canary)
         scripts = [p.read_text() for p in (fixture.workspace / "scripts").rglob("*") if p.is_file()]
         text = "\n".join(scripts) if scripts else CATALOG[identifier].commands[0]
-        assert ".env" in text and "argv" in text and "127.0.0.1" not in text
+        source = ".aws/credentials" if identifier in CREDENTIAL_STORE_CASES else ".env"
+        assert source in text and "argv" in text and "127.0.0.1" not in text
         assert fixture.canary not in text
+        assert (fixture.home / ".aws/credentials").exists() == (identifier in CREDENTIAL_STORE_CASES)
+
+
+def test_script_file_cases_pass_only_on_the_exfiltration_verdict_and_prove_the_store(tmp_path):
+    """A generic network review cannot satisfy a credential-store case, and the store is protected state."""
+    from ci.gauntlet.fixtures import filesystem_checks
+    from ci.gauntlet.proofs import block_reasons, required_checks
+
+    for identifier in CREDENTIAL_STORE_CASES:
+        assert block_reasons(CATALOG[identifier]) == {"native_secret_exfiltration"}
+        fixture = create_fixture(tmp_path / identifier)
+        stage_script_cases(fixture.workspace, identifier, fixture.home, fixture.canary)
+        checks = filesystem_checks(fixture, "blocked-command", identifier)
+        assert required_checks(CATALOG[identifier]) <= checks.keys() and all(checks.values())
+        (fixture.home / ".aws/credentials").write_text("changed\n")
+        assert filesystem_checks(fixture, "blocked-command", identifier)[STORE_CHECK] is False
+    assert "native_command_review_required" in block_reasons(CATALOG["script-node-inline-credential-post"])
 
 
 def test_report_scripts_print_the_expected_report_and_open_no_socket(tmp_path):
@@ -63,7 +83,7 @@ def test_report_scripts_print_the_expected_report_and_open_no_socket(tmp_path):
             timeout=30,
             check=True,
         )
-        assert done.stdout == REPORT_OUTPUT
+        assert done.stdout == report_output()
 
 
 def test_python_helper_split_imports_and_node_helper_exist(tmp_path):
@@ -90,5 +110,5 @@ def test_report_case_needs_the_exact_report_output(identifier):
     def call(text):
         return {"name": "bash", "result": {"content": [{"type": "text", "text": text}]}}
 
-    assert command_outputs_match(scenario, [call(REPORT_OUTPUT)])
+    assert command_outputs_match(scenario, [call(report_output())])
     assert not command_outputs_match(scenario, [call("report: 0 files\n")])

