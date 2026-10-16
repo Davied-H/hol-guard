@@ -745,10 +745,12 @@ def test_stable_pure_wheel_without_a_manifest_is_invalid(tmp_path: Path) -> None
 
 
 def test_manual_install_command_names_the_release_wheel_for_this_host() -> None:
+    url = sources.RELEASE_DOWNLOAD_PREFIX + f"v{STABLE}/{_wheel_name(WINDOWS_ARM, STABLE)}"
     assert native.manual_install_command(STABLE, tags=[WINDOWS_ARM]) == (
-        'python -m pip install --force-reinstall --no-deps "'
-        + sources.RELEASE_DOWNLOAD_PREFIX
-        + f'v{STABLE}/{_wheel_name(WINDOWS_ARM, STABLE)}"'
+        f'{native._manual_installer_prefix("pip")} --force-reinstall --no-deps "{url}"'
+    )
+    assert native.manual_install_command(STABLE, tags=[WINDOWS_ARM], installer="pipx") == (
+        f'pipx runpip hol-guard install --force-reinstall --no-deps "{url}"'
     )
     assert "alpha%2Fv3.43.0a1/" in str(native.manual_install_command(VERSION, tags=[LINUX]))
     assert native.manual_install_command(STABLE, tags=["manylinux_2_17_aarch64"]) is None
@@ -991,11 +993,18 @@ def test_install_stops_before_wiring_hooks_when_the_runtime_cannot_be_fetched(
 def test_wheel_reinstall_of_the_same_version_leaves_dependencies_alone(installer: str) -> None:
     wheel = Path("hol_guard-3.41.0-py3-none-win_arm64.whl")
 
-    reinstall = update_commands._update_command(installer, wheel_path=wheel, wheel_reinstall=True)
+    flags = update_commands._wheel_install_flags("3.41.0", "3.41.0", native_repair=True)
+    reinstall = update_commands._update_command(installer, wheel_path=wheel, wheel_flags=flags)
     upgrade = update_commands._update_command(installer, wheel_path=wheel)
 
     assert reinstall[-3:] == ["--force-reinstall", "--no-deps", str(wheel)]
     assert upgrade[-2:] == ["install", str(wheel)]
+
+
+def test_same_version_local_wheel_still_installs_its_dependencies() -> None:
+    assert update_commands._wheel_install_flags("3.41.0", "3.41.0", native_repair=False) == ("--force-reinstall",)
+    assert update_commands._wheel_install_flags("3.42.0", "3.41.0", native_repair=False) == ()
+    assert update_commands._wheel_install_flags(None, "3.41.0", native_repair=True) == ()
 
 
 @pytest.mark.parametrize(("current", "reinstall"), [("3.41.0", True), ("3.40.0", False)])
@@ -1023,3 +1032,13 @@ def test_native_wheel_plan_reinstalls_without_dependencies_only_for_the_installe
     assert payload["command"][-1] == "hol_guard-3.41.0-py3-none-<platform>.whl"
     assert ("--no-deps" in payload["command"]) is reinstall
     assert ("--force-reinstall" in payload["command"]) is reinstall
+
+
+def test_manual_install_command_targets_the_python_running_guard(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(native.sys, "executable", "/opt/guard venv/bin/python")
+
+    assert native._manual_installer_prefix("pip") == '"/opt/guard venv/bin/python" -m pip install'
+    assert native._manual_installer_prefix("uv") == 'uv pip install --python "/opt/guard venv/bin/python"'
+    assert native.manual_install_command(STABLE, tags=[WINDOWS_ARM], installer="uv").startswith(  # type: ignore[union-attr]
+        'uv pip install --python "/opt/guard venv/bin/python" --reinstall-package hol-guard --no-deps "'
+    )

@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import sys
 import tempfile
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -148,15 +149,33 @@ def plan_native_wheel_update(
     return None
 
 
-def manual_install_command(version: str, *, tags: Iterable[str] | None = None) -> str | None:
-    """Return the pip command that installs this host's native wheel when the download is blocked."""
+def _manual_installer_prefix(installer: str) -> str:
+    # Point the command at the environment running Guard, not whichever Python is first on PATH.
+    if installer == "pipx":
+        return "pipx runpip hol-guard install"
+    executable = sys.executable or "python"
+    if any(character.isspace() for character in executable):
+        executable = f'"{executable}"'
+    if installer == "uv":
+        return f"uv pip install --python {executable}"
+    return f"{executable} -m pip install"
+
+
+def manual_install_command(
+    version: str,
+    *,
+    tags: Iterable[str] | None = None,
+    installer: str = "pip",
+) -> str | None:
+    """Return the command that installs this host's native wheel when the download is blocked."""
 
     if SAFE_VERSION_RE.fullmatch(version) is None:
         return None
     for tag in tags if tags is not None else _platform_tags():
         if tag in PUBLISHED_PLATFORM_TAGS:
             url = release_url(version, f"hol_guard-{version}-py3-none-{tag}.whl")
-            return f'python -m pip install --force-reinstall --no-deps "{url}"'
+            reinstall = "--reinstall-package hol-guard" if installer == "uv" else "--force-reinstall"
+            return f'{_manual_installer_prefix(installer)} {reinstall} --no-deps "{url}"'
     return None
 
 
@@ -165,6 +184,7 @@ def native_runtime_payload(
     *,
     platform_supported: bool = True,
     version: str | None = None,
+    installer: str = "pip",
 ) -> dict[str, object]:
     if not runtime_missing:
         return {"status": "present", "bundled": True}
@@ -176,15 +196,21 @@ def native_runtime_payload(
             "This install has no bundled native runtime (PyPI only carries the pure wheel for this platform). "
             f"Run `{fix}` to install the native wheel from the GitHub release."
         )
-        manual = manual_install_command(version) if version is not None else None
+        manual = manual_install_command(version, installer=installer) if version is not None else None
         if manual is not None:
             payload["manual_install"] = manual
     return payload
 
 
-def failure_payload(payload: dict[str, object], error: NativeWheelError, *, version: str | None = None) -> None:
+def failure_payload(
+    payload: dict[str, object],
+    error: NativeWheelError,
+    *,
+    version: str | None = None,
+    installer: str = "pip",
+) -> None:
     message = error.message
-    manual = manual_install_command(version) if version is not None else None
+    manual = manual_install_command(version, installer=installer) if version is not None else None
     if manual is not None:
         payload["manual_install"] = manual
         message = f"{message} To install it by hand, run: {manual}"
