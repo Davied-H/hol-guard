@@ -109,6 +109,17 @@ def test_late_save_from_an_older_run_does_not_evict_the_other_generation() -> No
     assert superseded_compiler_generations(entries) == [3]
 
 
+def test_two_late_saves_of_one_environment_do_not_evict_the_other() -> None:
+    entries = [
+        _entry(1, "v0-rust-native-wheel-Linux-x64-11111111-aaaaaaaa", "2026-10-16T10:00:00Z"),
+        _entry(2, "v0-rust-native-wheel-Linux-x64-22222222-bbbbbbbb", "2026-10-16T10:05:00Z"),
+        _entry(3, "v0-rust-native-wheel-Linux-x64-22222222-cccccccc", "2026-10-16T10:10:00Z"),
+        _entry(4, "v0-rust-native-wheel-Linux-x64-33333333-dddddddd", "2026-10-16T08:00:00Z"),
+    ]
+    assert superseded_compiler_generations(entries) == [4]
+    assert superseded(entries) == [2]
+
+
 def test_never_selects_pull_request_or_unknown_entries() -> None:
     entries = [
         _entry(1, "v0-rust-ci-workspace-test-Linux-x64-6d080bc0-old", "2026-10-09T00:00:00Z", "refs/pull/1/merge"),

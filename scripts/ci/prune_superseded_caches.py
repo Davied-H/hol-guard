@@ -15,9 +15,9 @@ Rust and release-native keys also carry a compiler-environment hash ahead of
 the content suffix. A newer environment replaces that job's older caches, but
 those older keys are a different family under the suffix rule, so they stay
 until they fill the 10 GB eviction cap and push out caches the next run
-restores. The two newest saves of each job are kept: a job from an older
-commit can finish last, and its save must not be treated as the only current
-environment.
+restores. The two compiler environments whose newest save is most recent are
+kept. A job from an older commit can finish last, more than once, and those
+saves must not be treated as the only current environment.
 
 Content-addressed sccache entries have no family: each main push writes objects
 for the workspace crates it changed, and the previous objects are never read
@@ -102,13 +102,13 @@ def rust_job_name(key: str) -> str | None:
 
 
 def superseded_compiler_generations(entries: Iterable[Mapping[str, Any]]) -> list[int]:
-    """Return ids of main-branch Rust caches older than the two newest saves of their job.
+    """Return ids of main-branch Rust caches outside the two newest environments of their job.
 
     Save order is not compiler-environment order. An older run can finish after
-    a newer one and write its cache last, so the single newest ``createdAt`` is
-    not proof of the environment the next build will restore. Keeping two saves
-    leaves that late cache in place and still drops a generation neither of
-    those saves is using.
+    a newer one and write its cache last, more than once when the content
+    suffix differs, so the newest ``createdAt`` values can all belong to one
+    old environment. Environments are ordered by their newest save. The two
+    most recently saved environments stay; older environments are pruned.
     """
 
     grouped: dict[str, list[Mapping[str, Any]]] = {}
@@ -124,8 +124,19 @@ def superseded_compiler_generations(entries: Iterable[Mapping[str, Any]]) -> lis
         grouped.setdefault(job, []).append(entry)
     selected: list[int] = []
     for job_entries in grouped.values():
-        ranked = sorted(job_entries, key=lambda item: (item["createdAt"], item["id"]))
-        selected.extend(item["id"] for item in ranked[:-2])
+        by_environment: dict[str, list[Mapping[str, Any]]] = {}
+        for item in job_entries:
+            environment = str(item["key"]).rsplit("-", 2)[-2]
+            by_environment.setdefault(environment, []).append(item)
+        ranked = sorted(
+            by_environment,
+            key=lambda environment: max(
+                (item["createdAt"], item["id"]) for item in by_environment[environment]
+            ),
+            reverse=True,
+        )
+        for environment in ranked[2:]:
+            selected.extend(item["id"] for item in by_environment[environment])
     return sorted(selected)
 
 
