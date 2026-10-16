@@ -142,7 +142,7 @@ fn parse_index(bytes: &[u8]) -> Option<HashSet<Vec<u8>>> {
         } else {
             let end = name_at + bytes.get(name_at..)?.iter().position(|byte| *byte == 0)?;
             names.insert(bytes[name_at..end].to_vec());
-            at = (at + fixed + (end - name_at) + 8) & !7;
+            at += (fixed + (end - name_at) + 8) & !7;
         }
     }
     Some(names)
