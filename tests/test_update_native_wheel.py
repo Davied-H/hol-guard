@@ -870,6 +870,7 @@ def test_native_repair_only_reinstalls_the_current_stable_and_never_upgrades(
     assert exit_code == 0, payload
     assert payload["native_wheel_reason"] == "repair"
     assert payload["resulting_version"] == "3.41.0"
+    assert payload["message"] == "Installed the HOL Guard 3.41.0 native runtime from its GitHub release."
     assert Path(harness.commands[0][-1]).name == _wheel_name(WINDOWS_ARM, "3.41.0")
     assert release.requested == [sources.RELEASE_DOWNLOAD_PREFIX + f"v3.41.0/{_wheel_name(WINDOWS_ARM, '3.41.0')}"]
 
@@ -984,3 +985,41 @@ def test_install_stops_before_wiring_hooks_when_the_runtime_cannot_be_fetched(
 
     assert exit_code == 1
     assert "run pip by hand" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("installer", ["pip", "pipx"])
+def test_wheel_reinstall_of_the_same_version_leaves_dependencies_alone(installer: str) -> None:
+    wheel = Path("hol_guard-3.41.0-py3-none-win_arm64.whl")
+
+    reinstall = update_commands._update_command(installer, wheel_path=wheel, wheel_reinstall=True)
+    upgrade = update_commands._update_command(installer, wheel_path=wheel)
+
+    assert reinstall[-3:] == ["--force-reinstall", "--no-deps", str(wheel)]
+    assert upgrade[-2:] == ["install", str(wheel)]
+
+
+@pytest.mark.parametrize(("current", "reinstall"), [("3.41.0", True), ("3.40.0", False)])
+def test_native_wheel_plan_reinstalls_without_dependencies_only_for_the_installed_version(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, current: str, reinstall: bool
+) -> None:
+    package_root = tmp_path / "package"
+    package_root.mkdir()
+    (package_root / sources.NATIVE_WHEEL_MANIFEST_NAME).write_bytes(_manifest(current))
+    monkeypatch.setattr(sources, "_installed_package_root", lambda: package_root)
+    harness = UpdateHarness(
+        monkeypatch,
+        tmp_path,
+        current=current,
+        latest_alpha="3.43.0a1",
+        runtime_missing=True,
+        release=FakeRelease(_stable_release_files("3.41.0")),
+        tags=[WINDOWS_ARM],
+    )
+    monkeypatch.setattr(update_commands, "_latest_version_from_pypi", lambda: "3.41.0")
+    monkeypatch.setattr(update_commands, "_installer_kind", lambda: "pip")
+
+    payload, _exit_code = harness.run(dry_run=True, include_alpha=False)
+
+    assert payload["command"][-1] == "hol_guard-3.41.0-py3-none-<platform>.whl"
+    assert ("--no-deps" in payload["command"]) is reinstall
+    assert ("--force-reinstall" in payload["command"]) is reinstall

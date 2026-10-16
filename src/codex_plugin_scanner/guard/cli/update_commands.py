@@ -782,6 +782,14 @@ def _run_guard_update_unlocked(
             }
         )
         return payload, 1
+    wheel_version = (
+        trusted_wheel.version
+        if trusted_wheel is not None
+        else native_wheel_plan.version
+        if native_wheel_plan is not None
+        else None
+    )
+    wheel_reinstall = wheel_version is not None and _same_version(wheel_version, current_version)
     command = _update_command(
         installer,
         use_pypi=use_pypi,
@@ -789,12 +797,14 @@ def _run_guard_update_unlocked(
         wheel_path=requested_wheel_path
         if requested_wheel_path is not None or native_wheel_plan is None
         else Path(f"hol_guard-{native_wheel_plan.version}-py3-none-<platform>.whl"),
+        wheel_reinstall=wheel_reinstall,
     )
     execution_display_command = _update_command(
         installer,
         use_pypi=use_pypi,
         target_version=target_version,
         wheel_path=trusted_wheel.staged_path if trusted_wheel is not None else None,
+        wheel_reinstall=wheel_reinstall,
     )
     try:
         execution_command = update_context.build_installer_command(execution_display_command)
@@ -998,12 +1008,14 @@ def _run_guard_update_unlocked(
                     use_pypi=trusted_wheel is None,
                     target_version=target_version,
                     wheel_path=requested_wheel_path if trusted_wheel is not None else None,
+                    wheel_reinstall=wheel_reinstall,
                 )
                 pip_execution_display_command = _update_command(
                     "pip",
                     use_pypi=trusted_wheel is None,
                     target_version=target_version,
                     wheel_path=trusted_wheel.staged_path if trusted_wheel is not None else None,
+                    wheel_reinstall=wheel_reinstall,
                 )
                 try:
                     active_command = update_context.build_python_pip_command(pip_execution_display_command)
@@ -1141,6 +1153,8 @@ def _run_guard_update_unlocked(
             version_check=payload.get("version_check"),
             retry_command=stale_retry_command,
         )
+        if payload["status"] == "updated" and payload.get("native_wheel_reason") == "repair":
+            payload["message"] = f"Installed the HOL Guard {resulting_version} native runtime from its GitHub release."
     notes = _success_notes(payload)
     if notes:
         payload["notes"] = [*_payload_notes(payload), *notes]
@@ -2138,20 +2152,31 @@ def _dependency_conflict_message(installer_output: str) -> str | None:
     )
 
 
+def _same_version(left: str, right: str) -> bool:
+    try:
+        return Version(left) == Version(right)
+    except InvalidVersion:
+        return left == right
+
+
 def _update_command(
     installer: str,
     *,
     use_pypi: bool = False,
     target_version: str | None = None,
     wheel_path: Path | None = None,
+    wheel_reinstall: bool = False,
 ) -> list[str]:
     if wheel_path is not None:
         wheel = str(wheel_path)
         if installer == "uv":
             return ["uv", "tool", "install", "--force", wheel]
+        # Reinstalling the same version leaves dependencies alone, and a version change only touches the ones
+        # it needs: Windows locks the extension modules the running Guard has loaded, so pip cannot replace them.
+        flags = ["--force-reinstall", "--no-deps"] if wheel_reinstall else []
         if installer == "pipx":
-            return ["pipx", "runpip", "hol-guard", "install", "--force-reinstall", wheel]
-        return [sys.executable, "-m", "pip", "install", "--force-reinstall", wheel]
+            return ["pipx", "runpip", "hol-guard", "install", *flags, wheel]
+        return [sys.executable, "-m", "pip", "install", *flags, wheel]
     package = _hol_guard_package_spec(target_version)
     allow_prerelease = _target_version_is_prerelease(target_version)
     if use_pypi:
