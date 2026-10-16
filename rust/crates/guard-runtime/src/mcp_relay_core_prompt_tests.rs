@@ -185,3 +185,64 @@ fn only_the_initialize_hands_over_the_clients_capabilities() {
     // The initialize itself still reaches the child untouched.
     assert_eq!(relay.child.sent.first(), Some(&initialize));
 }
+
+/// Asks once for every call it sees, so a call serviced while a prompt waits
+/// raises a prompt of its own.
+#[derive(Default)]
+struct NestingAuthority {
+    asked: Vec<Value>,
+    answers: Vec<Option<Value>>,
+}
+
+impl RelayAuthority for NestingAuthority {
+    fn decide(
+        &mut self,
+        message: &Value,
+        _params: &Map<String, Value>,
+        _order: Option<&[String]>,
+        _catalog: &RelayCatalog,
+    ) -> ToolCallVerdict {
+        let id = message["id"].clone();
+        if !self.asked.contains(&id) {
+            self.asked.push(id);
+            return ToolCallVerdict::Elicit(json!({"mode": "form", "message": "approve?"}));
+        }
+        ToolCallVerdict::Respond(json!({"jsonrpc": "2.0", "id": id, "result": {}}))
+    }
+
+    fn elicited(&mut self, answer: Option<&Value>) {
+        self.answers.push(answer.cloned());
+    }
+
+    fn boundary_changed(&mut self, ticket: ForwardTicket) -> Value {
+        json!({"jsonrpc": "2.0", "id": ticket.message["id"].clone(), "boundary": true})
+    }
+
+    fn complete(&mut self, _ticket: ForwardTicket, response: Value) -> Value {
+        response
+    }
+}
+
+#[test]
+fn prompts_stop_at_the_nesting_ceiling() {
+    // A call serviced while a prompt waits can raise another prompt, and the
+    // wait of that prompt services the next call. The relay raises
+    // `MAX_NESTING` of them and decides the rest without one, so a client
+    // cannot stack waits on the relay without bound.
+    let calls: Vec<Value> = (1..=(MAX_NESTING as i64 + 8)).map(call).collect();
+    let answered = calls.len();
+    let host = FakeHost::with(calls);
+    let mut relay = relay(FakeChild::replying(), host, NestingAuthority::default());
+    assert_eq!(relay.serve(), Ok(RelayExit::HostClosed));
+    let raised = relay
+        .host
+        .sent
+        .iter()
+        .filter(|message| message["method"] == json!("elicitation/create"))
+        .count();
+    assert_eq!(raised, MAX_NESTING);
+    // Every call is still decided; the ones past the ceiling are decided with
+    // the unanswered prompt the relay never raised.
+    assert_eq!(relay.authority.answers.len(), answered);
+    assert_eq!(relay.depth, 0);
+}

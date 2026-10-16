@@ -103,7 +103,6 @@ def is_mcp_relay_evidence(record: object) -> bool:
 def record_mcp_relay_evidence(store: object, guard_home: Path, record: object) -> bool:
     """Record one relayed call as the proxy records it; ``False`` drops it."""
 
-    from ..approval_gate_types import ApprovalGateError
     from ..mcp_tool_calls import allow_tool_call, block_tool_call
     from ..native_mcp_tool_call_identity import _decode  # pyright: ignore[reportPrivateUsage]
     from ..proxy.runtime_mcp_projection import McpCallProjector
@@ -178,9 +177,10 @@ def record_mcp_relay_evidence(store: object, guard_home: Path, record: object) -
         if outcome == "forward":
             if remember is True:
                 # `_allow_and_forward` writes the remembered allow before the
-                # forward; the call already went out, so a gate that closed
-                # since costs the memory, never the receipt.
-                with contextlib.suppress(ApprovalGateError):
+                # forward; the call already went out, so a write that fails --
+                # a gate closed since, a policy store that refused it -- costs
+                # the memory, never the receipt below.
+                with contextlib.suppress(Exception):
                     allow_tool_call(remember=True, emit_runtime_evidence=False, **recorded)
             allow_tool_call(remember=False, **recorded)
         else:

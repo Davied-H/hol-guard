@@ -344,6 +344,27 @@ fn reverse_requests_nested_too_deeply_are_refused() {
 }
 
 #[test]
+fn a_reverse_request_naming_a_guard_prompt_is_refused() {
+    let host = FakeHost::default();
+    let mut relay = relay(FakeChild::default(), host, PendingNativeAuthority);
+    // The relay raises its own prompts under this id. Proxying the request
+    // would leave the client holding two live requests under one id, and each
+    // wait would take whichever answer came back first.
+    relay
+        .multiplex(request(json!("guard-elicitation-1"), "elicitation/create"))
+        .unwrap();
+    assert!(relay.host.sent.is_empty());
+    assert_eq!(
+        relay.child.sent,
+        vec![json!({
+            "jsonrpc": "2.0",
+            "id": "guard-elicitation-1",
+            "error": {"code": -32600, "message": RESERVED_ID_REFUSED},
+        })]
+    );
+}
+
+#[test]
 fn a_child_response_timeout_quarantines_the_child_and_stops() {
     let host = FakeHost::with(vec![request(json!(1), "ping"), request(json!(2), "ping")]);
     let mut relay = relay(FakeChild::default(), host, PendingNativeAuthority);

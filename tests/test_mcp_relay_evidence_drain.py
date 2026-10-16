@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, ClassVar
@@ -249,6 +250,25 @@ def test_a_closed_gate_costs_the_memory_not_the_receipt(
     def allow_tool_call(**kwargs: Any) -> None:
         if kwargs.get("remember"):
             raise ApprovalGateError("approval_gate_locked", "locked")
+        calls.append(("allow", kwargs))
+
+    monkeypatch.setattr(mcp_tool_calls, "allow_tool_call", allow_tool_call)
+
+    assert record_mcp_relay_evidence(object(), tmp_path, _record(decision_source="inline-approved", remember=True))
+
+    [(kind, recorded)] = calls
+    assert kind == "allow"
+    assert recorded["remember"] is False
+
+
+def test_a_refused_memory_write_costs_the_memory_not_the_receipt(
+    tmp_path: Path, calls: list[tuple[str, dict[str, Any]]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The call was forwarded, so no failure of the policy write loses its receipt."""
+
+    def allow_tool_call(**kwargs: Any) -> None:
+        if kwargs.get("remember"):
+            raise sqlite3.OperationalError("database is locked")
         calls.append(("allow", kwargs))
 
     monkeypatch.setattr(mcp_tool_calls, "allow_tool_call", allow_tool_call)

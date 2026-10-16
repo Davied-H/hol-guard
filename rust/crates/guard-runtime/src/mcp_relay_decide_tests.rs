@@ -143,7 +143,7 @@ fn route_defers_everything_else() {
         "policy_action": "allow",
         "remember": true,
     }));
-    assert_eq!(route(&remembered, &allow), Err(ROUTE_UNSUPPORTED));
+    assert_eq!(route(&remembered, &allow, None), Err(ROUTE_UNSUPPORTED));
     for kind in ["observe", "inline_approval", "package"] {
         assert_eq!(
             route(&proxy(json!({"kind": kind})), &allow, None),

@@ -13,9 +13,7 @@
 
 use std::time::Duration;
 
-use guard_command::mcp_stdio_session::{
-    is_notification, is_request, response_key, ResponseBuffers,
-};
+use guard_command::mcp_stdio_session::{is_request, response_key, ResponseBuffers};
 use serde_json::{json, Map, Value};
 
 use crate::mcp_relay_authority::{
@@ -28,17 +26,17 @@ use crate::mcp_relay_host::{HostLink, HostRead};
 pub(crate) const PREWRITE_QUIET: Duration = Duration::from_millis(5);
 /// Ceiling on child-response and nested client-response waits.
 const MAX_RESPONSE_TIMEOUT_SECONDS: u64 = 30;
-/// `_inline_approval_timeout_seconds` without a configured wait, which the
-/// proxy leaves uncapped: a person is reading the prompt.
-const DEFAULT_INLINE_TIMEOUT_SECONDS: u64 = 120;
 /// Reverse requests nested deeper than this are refused instead of proxied.
 const MAX_NESTING: usize = 32;
 const TIMEOUT_CODE: i64 = -32800;
 const NESTING_CODE: i64 = -32603;
+const RESERVED_ID_CODE: i64 = -32600;
 const CHILD_TIMEOUT: &str = "Guard runtime MCP proxy timed out waiting for the MCP server.";
 const CLIENT_TIMEOUT: &str = "Guard runtime MCP proxy timed out waiting for the client response.";
 const NESTING_REFUSED: &str =
     "Guard runtime MCP proxy refused a reverse request nested too deeply.";
+const RESERVED_ID_REFUSED: &str =
+    "Guard runtime MCP proxy refused a reverse request naming one of its own prompts.";
 const CHILD_EOF: &str = "Guard stdio proxy did not receive a response from the MCP server.";
 const HOST_LOST: &str =
     "Guard runtime MCP proxy lost the client while waiting for a server response.";
@@ -83,16 +81,6 @@ pub(crate) fn child_response_timeout(configured_seconds: i64) -> Duration {
         .map_or(MAX_RESPONSE_TIMEOUT_SECONDS, |seconds| {
             seconds.min(MAX_RESPONSE_TIMEOUT_SECONDS)
         });
-    Duration::from_secs(seconds)
-}
-
-/// `_inline_approval_timeout_seconds` from `approval_wait_timeout_seconds`.
-/// The proxy caps no inline prompt, so neither does the relay.
-pub(crate) fn inline_approval_timeout(configured_seconds: i64) -> Duration {
-    let seconds = u64::try_from(configured_seconds)
-        .ok()
-        .filter(|seconds| *seconds > 0)
-        .unwrap_or(DEFAULT_INLINE_TIMEOUT_SECONDS);
     Duration::from_secs(seconds)
 }
 
@@ -289,9 +277,9 @@ impl<C: ChildLink, H: HostLink, A: RelayAuthority> Relay<C, H, A> {
                 ToolCallVerdict::Elicit(_) if asked => {
                     Ok(Some(no_decision_response(message.get("id"), &params)))
                 }
-                ToolCallVerdict::Elicit(prompt) => {
+                ToolCallVerdict::Elicit(ask) => {
                     asked = true;
-                    let answer = self.elicit(prompt)?;
+                    let answer = self.elicit(ask)?;
                     // The drain the next decide opens runs before the answer
                     // is handed over, so no call it services takes this one.
                     if self.drain(Duration::ZERO).is_err() {
@@ -302,57 +290,6 @@ impl<C: ChildLink, H: HostLink, A: RelayAuthority> Relay<C, H, A> {
                     continue;
                 }
             };
-        }
-    }
-
-    /// `_inline_approval_request` and `_request_inline_approval`: raise the
-    /// prompt on the host under an id this session counts, and wait for the
-    /// client's answer. `Ok(None)` is a prompt the client never answered.
-    fn elicit(&mut self, params: Value) -> Result<Option<Value>, String> {
-        self.prompts += 1;
-        let id = Value::String(format!("guard-elicitation-{}", self.prompts));
-        let request = json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "method": "elicitation/create",
-            "params": params,
-        });
-        self.host.send(&request)?;
-        self.await_prompt_response(&id)
-    }
-
-    /// The inline prompt's response loop, which services the client's other
-    /// traffic as `_request_inline_approval` does. A timeout and a client
-    /// that closed its stream are both answers the proxy makes up itself.
-    fn await_prompt_response(&mut self, id: &Value) -> Result<Option<Value>, String> {
-        let id = Some(id);
-        loop {
-            if let Some(response) = live_id(id).and_then(|id| self.client_responses.pop(id)) {
-                return Ok(Some(response));
-            }
-            let (message, order) = match self.host.next(Some(self.inline_timeout)) {
-                HostRead::Message(message, order) => (message, order),
-                HostRead::Timeout | HostRead::Eof => return Ok(None),
-                HostRead::Invalid(reason) => return Err(reason.to_owned()),
-            };
-            if same_id(message.get("id"), id) && !is_request(&message) {
-                return Ok(Some(message));
-            }
-            if is_notification(&message) {
-                self.child.send(&message)?;
-                continue;
-            }
-            if !is_request(&message) {
-                if live_id(message.get("id")).is_some() {
-                    self.client_responses.buffer(message);
-                }
-                continue;
-            }
-            if let Some(response) = self.handle(message, order.as_deref())? {
-                let sent = self.host.send(&response);
-                self.authority.settle();
-                sent?;
-            }
         }
     }
 
@@ -484,65 +421,15 @@ impl<C: ChildLink, H: HostLink, A: RelayAuthority> Relay<C, H, A> {
         }
         self.host.send(&frame)
     }
-
-    /// `_proxy_child_request`: a reverse request from the child.
-    fn proxy_child_request(&mut self, request: Value) -> Result<(), String> {
-        let id = request.get("id").cloned();
-        if self.depth >= MAX_NESTING {
-            let refusal = json!({
-                "jsonrpc": "2.0",
-                "id": id.unwrap_or(Value::Null),
-                "error": {"code": NESTING_CODE, "message": NESTING_REFUSED},
-            });
-            return self.child.send(&refusal);
-        }
-        self.host.send(&request)?;
-        self.depth += 1;
-        let outcome = self.await_client_response(id.as_ref());
-        self.depth -= 1;
-        outcome
-    }
-
-    fn await_client_response(&mut self, id: Option<&Value>) -> Result<(), String> {
-        loop {
-            if let Some(response) = live_id(id).and_then(|id| self.client_responses.pop(id)) {
-                return self.child.send(&response);
-            }
-            let (message, order) = match self.host.next(Some(self.timeout)) {
-                HostRead::Message(message, order) => (message, order),
-                HostRead::Timeout => {
-                    let timeout = timeout_response(
-                        id,
-                        "nested_client_response",
-                        self.timeout,
-                        CLIENT_TIMEOUT,
-                    );
-                    return self.child.send(&timeout);
-                }
-                HostRead::Eof => return Err(HOST_LOST.to_owned()),
-                HostRead::Invalid(reason) => return Err(reason.to_owned()),
-            };
-            if same_id(message.get("id"), id) && !is_request(&message) {
-                return self.child.send(&message);
-            }
-            if is_notification(&message) {
-                self.child.send(&message)?;
-                continue;
-            }
-            if !is_request(&message) {
-                if live_id(message.get("id")).is_some() {
-                    self.client_responses.buffer(message);
-                }
-                continue;
-            }
-            if let Some(response) = self.handle(message, order.as_deref())? {
-                let sent = self.host.send(&response);
-                self.authority.settle();
-                sent?;
-            }
-        }
-    }
 }
+
+#[path = "mcp_relay_core_prompt.rs"]
+mod prompt;
+
+#[path = "mcp_relay_core_reverse.rs"]
+mod reverse;
+
+pub(crate) use prompt::inline_approval_timeout;
 
 #[cfg(test)]
 #[path = "mcp_relay_core_tests.rs"]
