@@ -52,15 +52,29 @@ static NO_EGRESS_POLICY: NoEgressPolicy = NoEgressPolicy;
 /// `resolved_network_policy(None)` (mdm/network_transport.py:61): the machine's
 /// network policy, or the unmanaged default where no machine policy applies.
 ///
-/// A profile that is present but unreadable is not an unmanaged machine, so the
-/// floor stands in for it. The floor's network section is the unmanaged default
-/// — a machine whose administrator named no proxy, CA or registry rule is not
-/// handed one — so this resolves the same policy either way, and reads it
-/// through the floor so it cannot silently diverge from one that does differ.
-pub(crate) fn caller_network_policy(managed: &ManagedPolicySource) -> ManagedNetworkPolicy {
-    effective_managed_policy(&load_managed_policy(managed))
+/// A profile that is present but did not load is not an unmanaged machine. The
+/// floor that stands in for it locks settings, and its network section is the
+/// unmanaged default, so reading that section would exchange under no proxy,
+/// CA, or registry rule the unreadable profile may have required. That load
+/// refuses the network instead.
+///
+/// A machine whose authority this runtime cannot read at all is the exception.
+/// Every Windows machine reports that status, because the registry is the
+/// authority and this runtime does not read it yet, so refusing there would
+/// refuse every Windows evaluation — including the unmanaged machines Python
+/// reads the registry on and reports as having no policy. Such a machine
+/// exchanges under the unmanaged default until the registry is read natively,
+/// which is no weaker than the Python path it replaces.
+pub(crate) fn caller_network_policy(
+    managed: &ManagedPolicySource,
+) -> Result<ManagedNetworkPolicy, &'static str> {
+    let state = load_managed_policy(managed);
+    if state.status.fails_closed() && !state.authority_unreadable() {
+        return Err(POLICY_UNHONOURED);
+    }
+    Ok(effective_managed_policy(&state)
         .map(|policy| policy.network)
-        .unwrap_or_else(ManagedNetworkPolicy::unmanaged_default)
+        .unwrap_or_else(ManagedNetworkPolicy::unmanaged_default))
 }
 
 /// `private_spool_dir` (native_supply_chain_egress.py:358): an owner-only
@@ -144,7 +158,7 @@ impl<'a> CallerEgressFulfilment<'a> {
     pub(crate) fn resolve_policy(
         managed: &ManagedPolicySource,
     ) -> Result<ManagedEgressPolicy, &'static str> {
-        ManagedEgressPolicy::resolve(&caller_network_policy(managed))
+        ManagedEgressPolicy::resolve(&caller_network_policy(managed)?)
     }
 
     /// The refusal reason for a policy that did not resolve.

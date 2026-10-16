@@ -66,7 +66,7 @@ fn need(url: &str) -> EgressNeedV1 {
 fn a_machine_with_no_policy_exchanges_under_the_unmanaged_default() {
     let root = TempDir::new().expect("tempdir");
 
-    let policy = caller_network_policy(&rooted(&root));
+    let policy = caller_network_policy(&rooted(&root)).expect("an absent profile is unmanaged");
 
     assert_eq!(policy, ManagedNetworkPolicy::unmanaged_default());
 }
@@ -83,12 +83,66 @@ fn the_administrators_network_policy_is_the_one_the_caller_exchanges_under() {
     });
     fs::write(&path, serde_json::to_vec(&document).expect("document")).expect("write");
 
-    let policy = caller_network_policy(&explicit(&path));
+    let policy = caller_network_policy(&explicit(&path)).expect("the profile loaded");
 
     assert!(
         !policy.allow_public_registries,
         "the administrator's registry rule reaches the caller"
     );
+}
+
+#[test]
+fn a_profile_that_did_not_load_refuses_the_network() {
+    let root = TempDir::new().expect("tempdir");
+    let invalid = root.path().join("policy.json");
+    fs::write(&invalid, b"{").expect("write");
+    assert_eq!(
+        CallerEgressFulfilment::resolve_policy(&explicit(&invalid)),
+        Err(CallerEgressFulfilment::policy_unhonoured()),
+        "an invalid profile is not the unmanaged network"
+    );
+
+    let tampered = ManagedPolicySource {
+        system: MachineSystem::Other,
+        policy_path: None,
+        write_cache: false,
+        machine_root: Some(root.path().to_path_buf()),
+    };
+    let native = root.path().join("etc/hol-guard/managed-policy.json");
+    fs::create_dir_all(native.parent().expect("parent")).expect("parents");
+    fs::write(
+        &native,
+        json!({
+            "schemaVersion": POLICY_SCHEMA_VERSION,
+            "settings": {"mode": "enforce"},
+            "network": {"allowPublicRegistries": false},
+        })
+        .to_string(),
+    )
+    .expect("write");
+    assert_eq!(
+        CallerEgressFulfilment::resolve_policy(&tampered),
+        Err(CallerEgressFulfilment::policy_unhonoured()),
+        "a profile this machine does not own is not the unmanaged network"
+    );
+}
+
+#[test]
+fn a_machine_whose_authority_this_runtime_cannot_read_still_exchanges() {
+    // Every Windows machine reports an unreadable authority, because the
+    // registry is the authority and this runtime does not read it yet. Refusing
+    // here would refuse every Windows evaluation, managed or not, where the
+    // Python path reads the registry and exchanges under what it finds.
+    let registry = ManagedPolicySource {
+        system: MachineSystem::Windows,
+        policy_path: None,
+        write_cache: false,
+        machine_root: None,
+    };
+
+    let policy = caller_network_policy(&registry).expect("an unread authority is not a refusal");
+
+    assert_eq!(policy, ManagedNetworkPolicy::unmanaged_default());
 }
 
 #[test]
