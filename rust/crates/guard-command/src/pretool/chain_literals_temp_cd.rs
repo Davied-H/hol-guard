@@ -67,25 +67,51 @@ pub(crate) fn project(command: &str) -> Option<String> {
     Some(projected)
 }
 
-/// Words that set variables without naming them or change directory, which
-/// would let a later expansion name something other than the fresh directory.
+/// Words that run code later, bind a variable by an operand name or change
+/// directory, which would let a later expansion name something other than
+/// the fresh directory.
 #[cfg_attr(not(unix), allow(dead_code))]
-const UNTRACKED_WORDS: [&str; 6] = [".", "source", "eval", "cd", "pushd", "popd"];
+const UNTRACKED_WORDS: [&str; 22] = [
+    ".",
+    "source",
+    "eval",
+    "trap",
+    "alias",
+    "cd",
+    "pushd",
+    "popd",
+    "read",
+    "printf",
+    "declare",
+    "typeset",
+    "local",
+    "export",
+    "readonly",
+    "unset",
+    "mapfile",
+    "readarray",
+    "getopts",
+    "let",
+    "wait",
+    "coproc",
+];
 
 /// `projected` with each later `$NAME` or `${NAME}` written as `$TMPDIR` or
 /// `${TMPDIR}`, when `NAME=VALUE` is a bare assignment that starts the
-/// command and the only other mentions of the name are those expansions,
-/// outside single quotes. Every later list item must follow `&&`: the
-/// assignment's status is the substitution's, so an expansion runs only once
-/// `mktemp` made the directory. A `;`, `||`, `&`, line break, backtick,
-/// subshell or untracked word returns `None`. `$TMPDIR` holds the fresh
+/// command, every later list item follows `&&`, and the only expansions are
+/// those of the name outside single quotes. The assignment's status is the
+/// substitution's, so each expansion runs in the same shell once `mktemp`
+/// made the directory. Any `;`, `|`, `&`, line break, backtick, backslash,
+/// subshell, untracked word, other expansion, or mention of the name that
+/// quote removal would form, returns `None`. `$TMPDIR` holds the fresh
 /// directory, so the sandbox shape judges the expansion no narrower than the
 /// shell runs it.
 #[cfg_attr(not(unix), allow(dead_code))]
 fn expanded_privately(projected: &str, name: &str) -> Option<String> {
     let head = projected.trim_start_matches([' ', '\t']);
+    let dequoted = projected.replace(['\'', '"', '\\'], "");
     if !head.strip_prefix(name)?.starts_with('=')
-        || projected
+        || dequoted
             .split_whitespace()
             .any(|word| UNTRACKED_WORDS.contains(&word))
     {
@@ -99,55 +125,35 @@ fn expanded_privately(projected: &str, name: &str) -> Option<String> {
             .position(|c| !ident(c))
             .map_or(chars.len(), |at| from + at)
     };
-    let (mut single, mut double, mut assignments, mut expansions) = (false, false, 0usize, 0usize);
+    let (mut single, mut double, mut expansions) = (false, false, 0usize);
     let mut out = String::with_capacity(projected.len() + 16);
     let mut index = 0usize;
     while let Some(&current) = chars.get(index) {
         let quoted = single || double;
         match current {
-            '\n' | '`' if !single => return None,
-            '\\' if !single => {
-                out.extend(chars.get(index..index + 2)?);
-                index += 2;
-                continue;
-            }
+            '\n' | '`' => return None,
+            '\\' if !single => return None,
             '\'' if !double => single = !single,
             '"' if !single => double = !double,
-            ';' | '(' | ')' if !quoted => return None,
-            '&' | '|' if !quoted => {
-                let doubled = chars.get(index + 1) == Some(&current);
-                if doubled != (current == '&') {
+            ';' | '(' | ')' | '|' if !quoted => return None,
+            '&' if !quoted => {
+                if chars.get(index + 1) != Some(&'&') {
                     return None;
                 }
-                if doubled {
-                    out.push(current);
-                    index += 1;
-                }
+                out.push(current);
+                index += 1;
             }
             '$' if !single => {
                 let braced = chars.get(index + 1) == Some(&'{');
                 let from = index + 1 + usize::from(braced);
                 let end = word_end(from);
-                if chars[from..end].iter().collect::<String>() == name {
-                    if braced && chars.get(end) != Some(&'}') {
-                        return None;
-                    }
-                    out.push_str(if braced { "${TMPDIR" } else { "$TMPDIR" });
-                    expansions += 1;
-                    index = end;
-                    continue;
+                if chars[from..end].iter().collect::<String>() != name
+                    || (braced && chars.get(end) != Some(&'}'))
+                {
+                    return None;
                 }
-            }
-            c if ident(&c) && (index == 0 || !ident(&chars[index - 1])) => {
-                let end = word_end(index);
-                let word: String = chars[index..end].iter().collect();
-                if word == name {
-                    if assignments > 0 || quoted || chars.get(end) != Some(&'=') {
-                        return None;
-                    }
-                    assignments += 1;
-                }
-                out.push_str(&word);
+                out.push_str(if braced { "${TMPDIR" } else { "$TMPDIR" });
+                expansions += 1;
                 index = end;
                 continue;
             }
@@ -156,7 +162,13 @@ fn expanded_privately(projected: &str, name: &str) -> Option<String> {
         out.push(current);
         index += 1;
     }
-    (assignments == 1 && expansions > 0 && !single && !double).then_some(out)
+    // Quote removal forms each name the shell binds or expands, so the name
+    // appears there only as the assignment and those expansions.
+    let mentions = dequoted
+        .split(|c: char| !(c == '_' || c.is_ascii_alphanumeric()))
+        .filter(|word| *word == name)
+        .count();
+    (mentions == 1 + expansions && expansions > 0 && !single && !double).then_some(out)
 }
 
 /// Whether a `cd` operand is the stand-in for a fresh private temporary

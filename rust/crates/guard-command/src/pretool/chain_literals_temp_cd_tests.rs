@@ -338,8 +338,8 @@ fn a_fresh_directory_expanded_after_an_and_chain_reads_as_the_private_temp() {
             format!("tmp={t} && python3 todo.py --file \"$TMPDIR/tasks.json\" add \"Test task\" && python3 todo.py --file \"$TMPDIR/tasks.json\" list && python3 todo.py --file \"$TMPDIR/tasks.json\" done 1 && python3 todo.py --file \"$TMPDIR/tasks.json\" delete 1 && python3 todo.py --file \"$TMPDIR/tasks.json\" list"),
         ),
         (
-            "D=\"$(mktemp -d)\" && node src/cli.js --out ${D}/o.json | tail -3".to_owned(),
-            format!("D=\"{t}\" && node src/cli.js --out ${{TMPDIR}}/o.json | tail -3"),
+            "D=\"$(mktemp -d)\" && node src/cli.js --out ${D}/o.json".to_owned(),
+            format!("D=\"{t}\" && node src/cli.js --out ${{TMPDIR}}/o.json"),
         ),
     ] {
         assert_eq!(project(&command).as_deref(), Some(expected.as_str()), "{command}");
@@ -366,6 +366,18 @@ fn a_fresh_directory_expanded_outside_a_failing_chain_stays_opaque() {
         "tmp=$(mktemp -d) && echo '$tmp' && ls \"$tmp\"",
         "tmp=$(mktemp -d) && echo \\$tmp && ls \"$tmp\"",
         "tmp=$(mktemp -d) && rm -rf \"$tmp/../x\"",
+        // A pipeline runs the assignment in a subshell.
+        "tmp=$(mktemp -d) | cat \"$tmp/etc/passwd\"",
+        "tmp=$(mktemp -d) && ls | cat \"$tmp/x\"",
+        // Quote removal forms the name, or another expansion builds it.
+        "tmp=$(mktemp -d) && read t\\mp && cat \"$tmp/x\"",
+        "tmp=$(mktemp -d) && unset t'mp' && cat \"$tmp/x\"",
+        "tmp=$(mktemp -d) && \"tmp\"=/etc && cat \"$tmp/x\"",
+        "tmp=$(mktemp -d) && t''mp=/etc && cat \"$tmp/x\"",
+        "tmp=$(mktemp -d) && x=t && un''set ${x}mp && cat \"$tmp/x\"",
+        "tmp=$(mktemp -d) && cat \"$HOME/$tmp\"",
+        "tmp=$(mktemp -d) && trap 'rm -rf /' EXIT && cat \"$tmp/x\"",
+        "tmp=$(mktemp -d) && printf -v other x && cat \"$tmp/x\"",
         // Words that set or move without naming the variable.
         "tmp=$(mktemp -d) && eval x && ls \"$tmp\"",
         "tmp=$(mktemp -d) && source ./env && ls \"$tmp\"",
