@@ -312,6 +312,13 @@ fn reviewable_structure(command: &CanonicalCommandV1) -> bool {
                 || literal_redirects_only(&command.normalized_text)
                 || named_xargs_pipeline(&command.normalized_text)
         }
+        // `cat list.txt | xargs -0 rm -f` is a nested executor because `xargs`
+        // is one, and the pipe carries arguments into the program the text
+        // names. `find -exec`, `eval`, and `xargs sh` stay an evaluation
+        // failure: those do not name a bounded program.
+        Some("nested_command_executor_not_yet_supported") => {
+            named_xargs_pipeline(&command.normalized_text)
+        }
         Some("command_redirect_not_yet_supported") => {
             let text = without_lookups(&command.normalized_text);
             input_heredoc(&text)
