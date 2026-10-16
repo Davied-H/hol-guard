@@ -197,7 +197,13 @@ fn plan(input: &Value) -> Result<Value, RestrictedPytestError> {
         }
     }
     let staged = dependencies(&workspace, &cwd)?;
-    if staged_entry(&entry, &staged, &cwd.strip_prefix(&workspace).unwrap_or(&cwd)).is_none() {
+    if staged_entry(
+        &entry,
+        &staged,
+        cwd.strip_prefix(&workspace).unwrap_or(&cwd),
+    )
+    .is_none()
+    {
         return Err(unavailable());
     }
     let backend = std::env::current_exe()

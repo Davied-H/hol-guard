@@ -92,7 +92,8 @@ fn resolved(
     {
         return None;
     }
-    let modules = nearest(&directory, &session, "node_modules/vite/bin/vite.js").join("node_modules");
+    let modules =
+        nearest(&directory, &session, "node_modules/vite/bin/vite.js").join("node_modules");
     let installed = std::fs::canonicalize(modules).ok()?;
     let flat = [".modules.yaml", ".pnpm"]
         .iter()

@@ -588,7 +588,11 @@ fn windows_contains_direct_vite_builds_of_a_flat_install() {
     let app = root.join("dashboard");
     std::fs::create_dir_all(app.join("node_modules/vite/bin")).unwrap();
     std::fs::create_dir_all(app.join("node_modules/.bin")).unwrap();
-    std::fs::write(app.join("package.json"), r#"{"scripts":{"build":"vite build"}}"#).unwrap();
+    std::fs::write(
+        app.join("package.json"),
+        r#"{"scripts":{"build":"vite build"}}"#,
+    )
+    .unwrap();
     std::fs::write(app.join("node_modules/vite/bin/vite.js"), "").unwrap();
     std::fs::write(app.join("node_modules/.bin/vite"), "").unwrap();
     let workspace = root.to_str().unwrap();
@@ -618,7 +622,10 @@ fn windows_contains_direct_vite_builds_of_a_flat_install() {
             (resolved.as_str(), app.to_str().unwrap()),
         ] {
             let result = classify_in(harness, command, cwd);
-            assert_eq!(result.minimum_action, "sandbox-required", "{harness} {command}");
+            assert_eq!(
+                result.minimum_action, "sandbox-required",
+                "{harness} {command}"
+            );
             assert_eq!(
                 result.reason_code, "native_node_build_output_containment_required",
                 "{harness} {command}"
@@ -632,7 +639,10 @@ fn windows_contains_direct_vite_builds_of_a_flat_install() {
         ("omp", "npx vite build --outDir ../elsewhere"),
     ] {
         let result = classify_in(harness, command, app_dir);
-        assert_ne!(result.minimum_action, "sandbox-required", "{harness} {command}");
+        assert_ne!(
+            result.minimum_action, "sandbox-required",
+            "{harness} {command}"
+        );
     }
     // A pnpm store links packages across directories and is not staged.
     std::fs::create_dir(app.join("node_modules/.pnpm")).unwrap();

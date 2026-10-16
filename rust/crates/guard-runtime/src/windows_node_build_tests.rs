@@ -20,7 +20,11 @@ fn project() -> (tempfile::TempDir, PathBuf, PathBuf) {
     fs::write(app.join("package.json"), "{}").unwrap();
     fs::write(app.join(".env"), "TOKEN=fixture").unwrap();
     fs::write(app.join("node_modules/vite/bin/vite.js"), VITE_STUB).unwrap();
-    fs::write(app.join("node_modules/vite/.npmrc"), "//registry/:_authToken=x").unwrap();
+    fs::write(
+        app.join("node_modules/vite/.npmrc"),
+        "//registry/:_authToken=x",
+    )
+    .unwrap();
     (directory, workspace, app)
 }
 
@@ -80,7 +84,10 @@ fn dependencies_are_listed_from_the_run_directory_up() {
                 app.join("node_modules"),
                 PathBuf::from("dashboard").join("node_modules")
             ),
-            (workspace.join("node_modules"), PathBuf::from("node_modules")),
+            (
+                workspace.join("node_modules"),
+                PathBuf::from("node_modules")
+            ),
         ]
     );
     let entry = app.join("node_modules/vite/bin/vite.js");
@@ -88,7 +95,10 @@ fn dependencies_are_listed_from_the_run_directory_up() {
         staged_entry(&entry, &found, Path::new("dashboard")),
         Some(PathBuf::from(r"..\dashboard\node_modules\vite\bin\vite.js"))
     );
-    assert_eq!(staged_entry(&app.join(".env"), &found, Path::new("dashboard")), None);
+    assert_eq!(
+        staged_entry(&app.join(".env"), &found, Path::new("dashboard")),
+        None
+    );
 }
 
 #[test]
@@ -107,7 +117,10 @@ fn outputs_stay_inside_the_workspace() {
     );
     assert_eq!(output_location(&workspace, &workspace), None);
     assert_eq!(output_location(&app.join(".."), &workspace), None);
-    assert_eq!(output_location(&workspace.parent().unwrap().join("dist"), &workspace), None);
+    assert_eq!(
+        output_location(&workspace.parent().unwrap().join("dist"), &workspace),
+        None
+    );
 }
 
 #[test]
@@ -115,7 +128,12 @@ fn plan_names_the_first_node_and_the_local_vite() {
     let (_directory, workspace, app) = project();
     let tools = tempfile::tempdir().unwrap();
     let node = canonical(&fake_node(tools.path())).unwrap();
-    let response = plan_for(&workspace, &app, tools.path(), Some("node_modules/vite/bin/vite.js"));
+    let response = plan_for(
+        &workspace,
+        &app,
+        tools.path(),
+        Some("node_modules/vite/bin/vite.js"),
+    );
     let value = &response["value"];
     assert_eq!(value["profile_version"], PROFILE, "{response}");
     assert_eq!(value["backend"], BACKEND);

@@ -331,7 +331,10 @@ fn build_run_publishes_only_declared_output() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "false false");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout).trim(),
+        "false false"
+    );
     assert_eq!(
         fs::read_to_string(workspace.join("dist").join("assets").join("out.js")).unwrap(),
         "dependency-sentinel"

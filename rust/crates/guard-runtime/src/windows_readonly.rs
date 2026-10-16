@@ -410,7 +410,10 @@ fn launch(arguments: &[String]) -> Result<i32, RestrictedPytestError> {
     let cancel = AtomicBool::new(false);
     if let Some(build) = &launch.build {
         if build.outputs.iter().any(|output| withhold(output)) {
-            return Err(error(INVALID, "Build output must not be a withheld directory."));
+            return Err(error(
+                INVALID,
+                "Build output must not be a withheld directory.",
+            ));
         }
     }
     let build = launch

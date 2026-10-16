@@ -166,12 +166,7 @@ pub fn run_readonly_snapshot(run: ReadonlySnapshotRun<'_>) -> io::Result<Capture
         staged_search_path(&mut environment, &executable);
     }
     let arguments: Vec<&OsStr> = run.arguments.iter().map(OsString::as_os_str).collect();
-    let command = PinnedCommand::new(
-        &executable,
-        &arguments,
-        &snapshot.join(&cwd),
-        &environment,
-    )?;
+    let command = PinnedCommand::new(&executable, &arguments, &snapshot.join(&cwd), &environment)?;
     let output = command.capture(
         &[],
         run.output_cap,
