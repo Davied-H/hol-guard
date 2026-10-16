@@ -1,0 +1,198 @@
+import { expect, test, type Page } from "@playwright/test";
+
+import { catalog, extension, initialize, mount } from "./extension-control-fixtures";
+
+/**
+ * The Extensions surface sells placement without ever lying about inventory.
+ * These scenarios pin the three states a maker and a device owner can land in:
+ * nothing sold (local activity leads, the open slot is offered at the exact
+ * size a buyer gets), placement sold (paid cards lead and stay labeled), and
+ * the single collapsed surface that replaced the old tab pair.
+ */
+
+const STARTER_IDS = [
+  "command.git",
+  "command.container-runtime",
+  "command.cloud.aws",
+  "command.package.node",
+  "command.kubernetes-operations",
+  "command.remote.ssh",
+  "command.github",
+  "command.package.python",
+  "command.database.postgresql",
+  "command.filesystem",
+];
+
+function wideCatalog() {
+  return { ...catalog(), extensions: STARTER_IDS.map((id) => extension(id, "")) };
+}
+
+function placement(id: string, product: "always" | "sponsored", brandName: string) {
+  return {
+    publicPlacementId: `placement-${id}`,
+    extensionId: id,
+    product,
+    slotIndex: 0,
+    windowIndex: null,
+    startsAt: "2026-01-01T00:00:00Z",
+    endsAt: "2099-01-01T00:00:00Z",
+    creativeVersion: "1",
+    creative: { headline: `${brandName} headline`, body: "Paid creative body copy.", brandName },
+  };
+}
+
+function projection(options: { placements?: unknown[]; availability?: "open" | "sold_out" | "unknown" } = {}) {
+  return {
+    remainingLeaseMs: 600_000,
+    policyAllowed: true,
+    snapshot: {
+      schemaVersion: "guard.extensions.discovery.v1",
+      snapshotId: "snapshot-e2e",
+      state: "ready",
+      enabled: true,
+      reasonCode: null,
+      generatedAt: "2026-01-01T00:00:00Z",
+      leaseExpiresAt: "2099-01-01T00:00:00Z",
+      placements: options.placements ?? [],
+      offers: [
+        {
+          product: "sponsored",
+          availability: options.availability ?? "open",
+          indicativeAmountCents: 4900,
+          currency: "USD",
+          checkedAt: "2026-01-01T00:00:00Z",
+          quoteRequired: true,
+        },
+      ],
+    },
+  };
+}
+
+/** Registered after mount so it wins over the fixture's `**\/v1\/**` catch-all. */
+async function routeDiscovery(page: Page, body: unknown) {
+  await page.route("**/v1/discovery/extensions/**", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify(body),
+  }));
+}
+
+async function routeAnalytics(page: Page, buckets: { value: string; count: number }[]) {
+  await page.route("**/v1/command-activity/analytics**", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({
+      schema_version: "guard.command-activity-api.v1",
+      window: { from: "2025-12-02", through: "2026-01-01", days: 30 },
+      scope: { dimension: null, dimension_value: null },
+      commands_checked: buckets.reduce((total, bucket) => total + bucket.count, 0),
+      trend: [],
+      dimensions: {
+        harness: [], extension: buckets, rule: [], disposition: [],
+        execution_status: [], prompt_status: [], proof_level: [], latency: [],
+      },
+      dimension_breakdowns_scope: "global",
+      feedback: [],
+      health: { status: "healthy", dropped_events: 0, persistence_errors: 0, last_error_class: null, last_error_at: null },
+    }),
+  }));
+}
+
+async function expectRendersAtBothSizes(page: Page, check: () => Promise<void>) {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await check();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await check();
+  const horizontal = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(horizontal).toBeLessThanOrEqual(1);
+  await page.setViewportSize({ width: 1280, height: 800 });
+}
+
+test.describe("extensions spotlight", () => {
+  test("empty paid inventory leads with local activity and offers the open slot", async ({ page }) => {
+    await mount(page, { catalog: wideCatalog() });
+    await routeDiscovery(page, projection());
+    await routeAnalytics(page, [
+      { value: "command.cloud.aws", count: 184 },
+      { value: "command.git", count: 97 },
+    ]);
+    await initialize(page);
+
+    const spotlight = page.getByTestId("extensions-spotlight");
+    await expect(spotlight).toBeVisible();
+    await expect(spotlight.getByRole("heading", { name: "Busiest tools on this device" })).toBeVisible();
+    await expect(page.getByTestId("spotlight-basis")).toContainText("Counted from Guard's own decisions");
+    // No sad empty state: the shelf is full, and nothing claims a popularity rank.
+    await expect(page.getByTestId("spotlight-organic-card")).toHaveCount(2);
+    await expect(page.getByTestId("discovery-featured-card")).toHaveCount(0);
+
+    const slot = page.getByTestId("spotlight-slot-card");
+    await expect(slot).toHaveAttribute("data-state", "open");
+    await expect(slot).toContainText("This slot is open");
+    await expect(slot.getByRole("link", { name: /Get this spot · from \$49\/mo/ })).toBeVisible();
+    // Vacant shelf must not also run the in-feed ask.
+    await expect(page.getByTestId("catalog-slot-row")).toHaveCount(0);
+
+    await expectRendersAtBothSizes(page, async () => {
+      await expect(spotlight).toBeVisible();
+      await expect(slot).toBeVisible();
+    });
+  });
+
+  test("a fresh device falls back to the starter set without inventing metrics", async ({ page }) => {
+    await mount(page, { catalog: wideCatalog() });
+    await routeDiscovery(page, projection({ availability: "unknown" }));
+    await routeAnalytics(page, []);
+    await initialize(page);
+
+    await expect(page.getByRole("heading", { name: "Good places to start" })).toBeVisible();
+    await expect(page.getByTestId("spotlight-basis")).toContainText("Not a ranking or a popularity measure");
+    await expect(page.getByTestId("spotlight-organic-card")).toHaveCount(3);
+    await expect(page.getByTestId("spotlight-organic-card").first()).toHaveAttribute("data-basis", "starter");
+    // Availability the server could not confirm never becomes a sales pitch.
+    await expect(page.getByTestId("spotlight-slot-card")).toHaveCount(0);
+  });
+
+  test("sold placement leads the shelf, stays labeled, and opens the in-feed ask", async ({ page }) => {
+    await mount(page, { catalog: wideCatalog() });
+    await routeDiscovery(page, projection({
+      placements: [
+        placement("command.cloud.aws", "always", "Northwind Tools"),
+        placement("command.github", "sponsored", "Harbor Labs"),
+      ],
+    }));
+    await routeAnalytics(page, [{ value: "command.git", count: 41 }]);
+    await initialize(page);
+
+    const featured = page.getByTestId("discovery-featured-card");
+    await expect(featured).toHaveCount(1);
+    await expect(featured).toContainText("Northwind Tools");
+    await expect(featured).toContainText("Paid placement. Your protection settings are unchanged.");
+    await expect(page.getByTestId("discovery-sponsored-card")).toContainText("Harbor Labs");
+    await expect(page.getByRole("heading", { name: "Featured by their makers" })).toBeVisible();
+    // With inventory proven to exist, the one inline ask appears in the list.
+    const inFeed = page.getByTestId("catalog-slot-row");
+    await expect(inFeed).toHaveCount(1);
+    await expect(inFeed).toContainText("Position is all it buys.");
+
+    await expectRendersAtBothSizes(page, async () => {
+      await expect(featured).toBeVisible();
+      await expect(inFeed).toBeVisible();
+    });
+  });
+
+  test("one surface: no tab strip, and searching hides the shelf", async ({ page }) => {
+    await mount(page, { catalog: wideCatalog() });
+    await routeDiscovery(page, projection());
+    await routeAnalytics(page, [{ value: "command.git", count: 12 }]);
+    await initialize(page);
+
+    await expect(page.getByTestId("extensions-surface")).toBeVisible();
+    await expect(page.getByRole("tablist")).toHaveCount(0);
+    await expect(page.getByTestId("extensions-spotlight")).toBeVisible();
+
+    await page.getByRole("searchbox").first().fill("github");
+    await expect(page.getByTestId("extensions-spotlight")).toHaveCount(0);
+    await expect(page.getByTestId("catalog-slot-row")).toHaveCount(0);
+  });
+});
