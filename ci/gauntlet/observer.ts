@@ -216,8 +216,8 @@ function observeBridge(child: BridgeChild): void {
     if (stdout.length <= 8_388_608) stdout += String(chunk);
   });
   const dropBridge = (code: unknown) => {
-    // Not a Guard observation. The judge skips observer_error rows, and the
-    // extension retries the bridge before it posts to the daemon itself.
+    // The extension discards this child and retries. public_observations
+    // drops bridge_no_reply before the row can become a Guard observation.
     record({
       observer_error: true,
       transport: "pi-hook-bridge",
