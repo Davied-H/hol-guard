@@ -15,6 +15,7 @@ use crate::benign_request_api::{
 use crate::codex_output_env::Ctx;
 use crate::command_evaluation::CommandDecisionFloor;
 use crate::command_model::{parse_shell_command, CanonicalCommand};
+use crate::compound_artifact::compound_artifact;
 use crate::hook_adapter_value::OValue;
 use crate::sfrs_dispatcher::{extract_sensitive_tool_action_request, ExtractInputs};
 use crate::sfrs_dispatcher_request::{NativeEvaluationView, ToolActionRequestMatch};
@@ -46,6 +47,7 @@ pub const QUERIES: &[&str] = &[
     "read_only_lookup_target_is_safe",
     "benign_github_shell",
     "unmodeled_shell_artifact",
+    "compound_artifact",
 ];
 
 /// Answer one query. `controls` is the extension-control snapshot the
@@ -138,6 +140,7 @@ pub fn evaluate(
             ))
         }
         "unmodeled_shell_artifact" => unmodeled_shell_artifact(input, ctx),
+        "compound_artifact" => compound_artifact(input, cwd, home, ctx),
         _ => Err("native_sensitive_request_query_unknown"),
     }
 }
