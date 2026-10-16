@@ -13036,6 +13036,150 @@
       },
       "cwd": "worktree",
       "expect": "allow"
+    },
+    {
+      "id": "observed-ls-lockfile-probe-mixed",
+      "fix_area": "read",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "ls ${HOME}/other-project/*.lock* ${HOME}/other-project/package-lock.json ${HOME}/other-project/pnpm-lock.yaml 2>/dev/null"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "observed-rg-filtered-pipeline",
+      "fix_area": "read",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "rg -n \"report\" ${HOME}/other-project/src/report.ts | rg -v \"window\" | head -10"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "observed-grep-extract-sort-uniq",
+      "fix_area": "read",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "grep -oE \"^[a-z]+\" ${HOME}/other-project/notes.md | sort -u | head -40"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "observed-ls-two-dirs-separated",
+      "fix_area": "read",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "ls -la ${HOME}/other-project/ 2>/dev/null; echo \"---\"; ls -la ${HOME}/acme-plain/ 2>/dev/null"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "observed-cd-sibling-read-package",
+      "fix_area": "read",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "cd ${HOME}/other-project && grep -E '\"(name|version)\"' package.json | head -10; node --version; which bun 2>&1"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "observed-grep-piped-to-sed-ranges",
+      "fix_area": "read",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "grep -n \"export\" ${HOME}/other-project/src/report.ts | sed -n '1,12p;28,40p'"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "observed-ls-find-pid-then-pgrep",
+      "fix_area": "read",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "ls ${HOME}/other-project | head -6; find ${HOME}/other-project -maxdepth 1 -name \"*.pid\" 2>/dev/null; pgrep -fl postgres | head -4"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "observed-find-three-roots-named",
+      "fix_area": "read",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "find ${HOME}/.agents ${HOME}/other-project ${HOME}/acme-plain -maxdepth 4 -type d -name \"*src*\" 2>/dev/null"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
+    },
+    {
+      "id": "observed-rg-files-with-matches",
+      "fix_area": "read",
+      "harnesses": [
+        "claude-code",
+        "codex",
+        "omp",
+        "zcode"
+      ],
+      "tool": "shell",
+      "tool_input": {
+        "command": "rg -rn --files-with-matches \"report\" ${HOME}/other-project/src"
+      },
+      "cwd": "worktree",
+      "expect": "allow"
     }
   ],
   "pending_pr": {
