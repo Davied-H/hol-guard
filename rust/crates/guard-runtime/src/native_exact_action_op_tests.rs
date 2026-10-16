@@ -383,6 +383,74 @@ fn wire_reply_is_bound_to_the_request() {
     );
 }
 
+fn binding_for(receipt_fields: Value, policy_binding: Value) -> Option<String> {
+    let mut request = binding_request("guard-native-exact-action-request.v1");
+    for (key, value) in receipt_fields.as_object().unwrap() {
+        request["query"]["receipt"][key] = value.clone();
+    }
+    request["query"]["policy_binding"] = policy_binding;
+    let reply = resident(&request);
+    assert_eq!(reply["status"], "ok", "{reply}");
+    reply["payload"]["binding"].as_str().map(str::to_owned)
+}
+
+#[test]
+fn a_policy_republish_does_not_change_the_binding_of_the_same_intent() {
+    // #4955: request_digest hashes the policy snapshot; the intent digest does not.
+    let intent = "cd".repeat(32);
+    let before = binding_for(
+        json!({"request_digest": "ab".repeat(32), "execution_intent_digest": intent}),
+        json!({"state": "unbound"}),
+    );
+    let after = binding_for(
+        json!({"request_digest": "ef".repeat(32), "execution_intent_digest": intent}),
+        json!({"state": "unbound"}),
+    );
+    assert_eq!(before, after);
+    assert_eq!(
+        before.as_deref(),
+        Some(format!("native-review-v4:{intent}:ask:review:review:r").as_str())
+    );
+    let other_intent = binding_for(
+        json!({"request_digest": "ab".repeat(32), "execution_intent_digest": "12".repeat(32)}),
+        json!({"state": "unbound"}),
+    );
+    assert_ne!(before, other_intent);
+}
+
+#[test]
+fn a_malformed_intent_digest_has_no_binding() {
+    for malformed in [json!("not-a-digest"), json!("AB".repeat(32)), json!(7)] {
+        assert_eq!(
+            binding_for(
+                json!({"execution_intent_digest": malformed}),
+                json!({"state": "unbound"})
+            ),
+            None
+        );
+    }
+}
+
+#[test]
+fn the_policy_suffix_ignores_the_snapshot_digest_but_not_the_rules() {
+    let intent = json!({"execution_intent_digest": "cd".repeat(32)});
+    let bound = |policy_digest: &str, rule_digest: &str| {
+        json!({"state": "bound", "value": {
+            "schema": "guard-native-review-policy-binding.v1",
+            "policy_digest": policy_digest,
+            "rule_digest": rule_digest,
+            "runtime_identity": "runtime-1",
+            "command_extensions": {"uncertainty_count": 0}
+        }})
+    };
+    let first = binding_for(intent.clone(), bound(&"1".repeat(64), &"a".repeat(64)));
+    let republished = binding_for(intent.clone(), bound(&"2".repeat(64), &"a".repeat(64)));
+    let new_rules = binding_for(intent, bound(&"2".repeat(64), &"b".repeat(64)));
+    assert!(first.is_some());
+    assert_eq!(first, republished);
+    assert_ne!(first, new_rules);
+}
+
 #[test]
 fn wire_schema_mismatch_is_an_error_without_payload() {
     let reply = resident(&binding_request("guard-native-exact-action-request.v0"));

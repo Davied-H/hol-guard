@@ -161,14 +161,17 @@ fn omp_learn_writes_a_plain_project_lesson() {
     // What the note may carry is bounded in pretool_omp_learn; a lesson about
     // this project is the ordinary call and never stops the run.
     let f = fixture("omp-learn");
-    let result = run(
-        &f,
-        "omp",
-        "learn",
+    for input in [
         json!({"memory": "Run the project tests with cargo test before pushing."}),
-    );
-    assert_eq!(result.minimum_action, "allow");
-    assert_eq!(result.reason_code, "native_omp_learn_memory_note");
+        json!({"memory": "Run the project tests before pushing.", "context": "Code review turn"}),
+    ] {
+        let result = run(&f, "omp", "learn", input.clone());
+        assert_eq!(result.minimum_action, "allow", "{input}");
+        assert_eq!(
+            result.reason_code, "native_omp_learn_memory_note",
+            "{input}"
+        );
+    }
 }
 
 #[test]

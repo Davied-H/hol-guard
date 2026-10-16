@@ -223,6 +223,36 @@ pub(super) fn page_token(tokens: &[Token], index: usize) -> bool {
     }
 }
 
+/// The position after `new Promise(r => setTimeout(r, MS))` starting at
+/// `start`: a pause whose timer callback is the promise's own resolver.
+pub(super) fn timer_pause(tokens: &[Token], start: usize) -> Option<usize> {
+    let rest = tokens.get(start..)?;
+    let word = |i: usize, w: &str| matches!(rest.get(i), Some(Token::Ident(n)) if n == w);
+    if !(word(0, "new") && word(1, "Promise") && rest.get(2) == Some(&Token::Punct('('))) {
+        return None;
+    }
+    let (param, at) = match (rest.get(3), rest.get(4), rest.get(5)) {
+        (Some(Token::Punct('(')), Some(Token::Ident(p)), Some(Token::Punct(')'))) => (p, 6),
+        (Some(Token::Ident(p)), _, _) => (p, 4),
+        _ => return None,
+    };
+    if RESERVED.contains(&param.as_str()) || param == "setTimeout" {
+        return None;
+    }
+    let tail = [
+        Token::Punct('='),
+        Token::Punct('>'),
+        Token::Ident("setTimeout".to_owned()),
+        Token::Punct('('),
+        Token::Ident(param.clone()),
+        Token::Punct(','),
+        Token::Num,
+        Token::Punct(')'),
+        Token::Punct(')'),
+    ];
+    (rest.get(at..at + tail.len())? == tail).then_some(start + at + tail.len())
+}
+
 /// Tab methods that read or reset the page when called with no arguments.
 pub(super) const NO_ARGUMENT_METHODS: &[&str] = &[
     "title",

@@ -155,6 +155,32 @@ def enforce_lifecycle_gate(
     )
 
 
+def explain_missing_native_runtime(error: ApprovalGateError) -> ApprovalGateError:
+    """Name the way out when the authority is silent because this install has no native runtime.
+
+    The gate still fails closed; the message only replaces "retry", which cannot succeed, with the
+    command that installs the runtime outside Guard.
+    """
+
+    if error.code != "native_approval_gate_unavailable":
+        return error
+    try:
+        from .update_commands import bundled_native_runtime_report
+
+        report = bundled_native_runtime_report()
+    except Exception:
+        return error
+    manual = report.get("manual_install") if report is not None and report.get("status") == "missing" else None
+    if not isinstance(manual, str):
+        return error
+    return ApprovalGateError(
+        error.code,
+        "This install has no native runtime, so the native approval authority cannot answer. "
+        f"Install the runtime with `{manual}`, then run the command again.",
+        status=error.status,
+    )
+
+
 def lifecycle_authority_home(
     target_home: Path,
     *,
