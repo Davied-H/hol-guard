@@ -205,6 +205,12 @@ fn anchor_binds_every_source_field_of_the_approved_request() {
         path: "/usr/bin:/bin".into(),
         environment_names: vec!["PATH".into()],
         environment_digest: "8".repeat(64),
+        home: None,
+        git_pager_disabled: false,
+        pager_disabled: false,
+        xdg_config_home: None,
+        git_config_no_system: false,
+        library_search_paths: Default::default(),
     });
     assert_ne!(anchor(&environment, &published), baseline);
 }
