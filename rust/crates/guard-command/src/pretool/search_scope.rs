@@ -88,6 +88,36 @@ pub(super) fn claude_grep_directory_scope_proven(
         && walk_scope(&root, &filter, Ignores::Ripgrep, false, &mut None).is_ok()
 }
 
+/// Shell `rg` with `-g` inclusions the name screen cannot clear, such as
+/// `*.md` or `README*`: true when below each directory root no sensitive
+/// file matches one of them. ripgrep searches such a file even when it is
+/// hidden or ignored, and the walk inspects every one. The other globs were
+/// screened already and can only add safe files or remove some. A root that
+/// is a regular file was screened as a path, and ripgrep reads it whatever
+/// the globs say.
+pub(super) fn rg_glob_scope_proven(
+    roots: &[&str],
+    globs: &[&str],
+    home_dir: Option<&str>,
+    cwd: Option<&str>,
+) -> bool {
+    let Some(filter) = SearchFilter::from_rg_inclusions(globs) else {
+        return false;
+    };
+    roots.iter().all(
+        |target| match verified_directory_root(target, home_dir, cwd) {
+            Some(root) => {
+                !super::read_paths::inside_agent_state_tree(&root, home_dir)
+                    && walk_scope(&root, &filter, Ignores::Ripgrep, false, &mut None).is_ok()
+            }
+            None => cwd.is_some_and(|cwd| {
+                std::fs::symlink_metadata(Path::new(cwd).join(target))
+                    .is_ok_and(|metadata| metadata.is_file())
+            }),
+        },
+    )
+}
+
 /// True when a Claude `Glob` returns only names under a verified directory
 /// whose whole reachable tree holds no sensitive file. The pattern must stay
 /// inside that directory: relative, no `..`, no alternation or escapes.
@@ -415,6 +445,24 @@ fn sensitive_scope_file(path: &Path) -> bool {
         || guard_secure_fs::credential_named_path(path)
 }
 
+/// Whether a link out of the walked root can only ever contribute its own
+/// name to a names-only listing.
+///
+/// A listing names paths it reaches, so a link to a directory is what lets one
+/// out: walking it would spell out entries that live outside the root. A link
+/// whose target is a regular file reaches no entries at all, so the only name
+/// it can produce is the link's own, which is inside the root already. Every
+/// Python project has one: `.venv/bin/python` points at the base interpreter,
+/// and refusing it would review a recursive listing in any such checkout.
+///
+/// The target's own name is still held to the sensitive screens, so a link
+/// that stands in for a credential file keeps the review.
+fn single_outside_name(path: &Path, target: Option<&Path>) -> bool {
+    target.is_some_and(|target| {
+        target.is_file() && !sensitive_scope_file(path) && !sensitive_scope_file(target)
+    })
+}
+
 struct PendingDirectory {
     path: PathBuf,
     depth: usize,
@@ -532,7 +580,11 @@ fn walk_scope_with(
                     // A link the ignore rules skip is never walked.
                     let skipped =
                         ignores != Ignores::None && link_ignored(&tiers, &path, target.as_deref())?;
-                    if escapes && !skipped && !target.as_deref().is_some_and(outside_link) {
+                    if escapes
+                        && !skipped
+                        && !single_outside_name(&path, target.as_deref())
+                        && !target.as_deref().is_some_and(outside_link)
+                    {
                         return Err(ScopeUnproven);
                     }
                 } else if sensitive_scope_file(&path)

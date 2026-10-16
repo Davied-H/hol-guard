@@ -34,6 +34,7 @@ pub(crate) mod docker_reads;
 mod docker_start;
 mod doctl_reads;
 pub(crate) mod kubectl_reads;
+mod loopback_ports;
 pub(crate) mod port_probes;
 mod workspace_contained;
 #[cfg(unix)]
@@ -149,6 +150,8 @@ pub use generic::evaluate_pre_tool_envelope_with_extensions;
 pub use generic::{bounded_task_metadata_output, evaluate_pre_tool_envelope};
 pub use git_push::{install_git_push_verdict, GitPushRequest, GitPushVerdict};
 pub use safe_scalar::PsqlEnvironment;
+#[cfg_attr(not(unix), allow(unused_imports))]
+pub(crate) use script_content::inline_loopback_ports;
 pub(crate) use script_content::{sole_program_sources, sourced_program_sources};
 pub(crate) use segment_proof::{benign_command_segments, without_stderr_merge};
 pub(crate) use worktree_add::new_checkout_route;
