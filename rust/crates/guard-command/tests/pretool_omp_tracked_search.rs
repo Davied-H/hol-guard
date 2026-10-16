@@ -144,8 +144,9 @@ fn credential_shaped_values_untracked_files_and_stores_keep_review() {
 fn glob_names_ignore_sensitive_names_and_named_pipes() {
     let f = fixture();
     repository(&f, "app", &[("src/a.sh", "true\n")], &[(".env", PLAIN)]);
-    let pipe = std::ffi::CString::new(f.home.join("app/dev.pipe").to_str().unwrap()).unwrap();
-    assert_eq!(unsafe { libc::mkfifo(pipe.as_ptr(), 0o600) }, 0);
+    let pipe = f.home.join("app/dev.pipe");
+    let made = Command::new("mkfifo").arg(&pipe).status().unwrap();
+    assert!(made.success());
     for path in [".", "**/*.sh", "**/*"] {
         let result = omp(&f, "app", "glob", json!({"path": path}));
         assert!(allowed(&result), "{path}: {}", result.reason_code);
