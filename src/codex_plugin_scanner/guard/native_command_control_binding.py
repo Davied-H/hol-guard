@@ -58,7 +58,7 @@ def _program_path() -> Path:
 
 
 def load_native_command_program_metadata() -> NativeCommandProgramMetadata:
-    """Capture at most 4 MiB and cache validation by these exact bytes.
+    """Capture at most 6 MiB and cache validation by these exact bytes.
 
     Metadata-only cache keys could miss equal-sized file replacement on a
     filesystem with weak timestamp semantics. At most two captured immutable
