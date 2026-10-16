@@ -8,10 +8,11 @@
 //! tool the package parser reads as a shell (`_SHELL_TOOL_NAMES`), a tool
 //! whose input schema declares a key the proxy reads as the command
 //! (`_command_argument`), and a Composio tool. A schema that composes its
-//! properties elsewhere - behind `$ref`, `allOf`, `anyOf`, `oneOf` or a
-//! conditional branch - declares them where the `properties` object cannot be
-//! read, and counts as a tool the proxy decides: the host fills the schema it
-//! resolved, so such a tool does carry the command argument it declares.
+//! properties elsewhere - behind a reference, `allOf`, `anyOf`, `oneOf`, a
+//! conditional branch, a dependent subschema or a property name given as a
+//! pattern - declares them where the `properties` object cannot be read, and
+//! counts as a tool the proxy decides: the host fills the schema it resolved,
+//! so such a tool does carry the command argument it declares.
 //!
 //! The relay learns a catalog only after it started the server, so the
 //! resident remembers each server's catalog for later sessions:
@@ -48,7 +49,19 @@ const COMMAND_KEYS: [&str; 4] = ["command", "cmd", "shell_command", "shellComman
 const SCHEMA_KEYS: [&str; 2] = ["inputSchema", "input_schema"];
 /// Schema keywords whose subschemas declare properties of the same object, so
 /// a command argument the tool declares is not in its `properties`.
-const COMPOSED_KEYS: [&str; 6] = ["$ref", "allOf", "anyOf", "oneOf", "then", "else"];
+const COMPOSED_KEYS: [&str; 11] = [
+    "$ref",
+    "$dynamicRef",
+    "$recursiveRef",
+    "allOf",
+    "anyOf",
+    "oneOf",
+    "then",
+    "else",
+    "dependentSchemas",
+    "dependencies",
+    "patternProperties",
+];
 
 /// The server a session runs, as the relay and the proxy both name it.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

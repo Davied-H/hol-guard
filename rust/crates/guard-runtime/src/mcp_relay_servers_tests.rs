@@ -77,6 +77,20 @@ fn shell_composio_command_and_nameless_tools_are_decided_by_the_proxy() {
         json!({"name": "run", "input_schema": {"properties": {"path": {}}, "oneOf": []}}),
         json!({"name": "run", "inputSchema": {"if": {}, "then": {}}}),
         json!({"name": "run", "inputSchema": {"if": {}, "else": {}}}),
+        json!({"name": "run", "inputSchema": {"$dynamicRef": "#run"}}),
+        json!({"name": "run", "inputSchema": {"$recursiveRef": "#"}}),
+        json!({
+            "name": "run",
+            "inputSchema": {
+                "properties": {"path": {}},
+                "dependentSchemas": {"path": {"properties": {"command": {}}}}
+            }
+        }),
+        json!({
+            "name": "run",
+            "input_schema": {"properties": {"path": {}}, "dependencies": {"path": ["command"]}}
+        }),
+        json!({"name": "run", "inputSchema": {"patternProperties": {"^comm": {}}}}),
         json!({"description": "no name"}),
         json!({"name": 7}),
     ] {
