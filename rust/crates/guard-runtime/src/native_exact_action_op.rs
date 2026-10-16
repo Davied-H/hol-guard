@@ -17,6 +17,8 @@ mod fs_path_windows;
 mod git_config;
 #[cfg_attr(windows, allow(dead_code))]
 mod git_identity;
+#[cfg_attr(windows, allow(dead_code))]
+mod git_push;
 #[cfg(windows)]
 #[allow(dead_code)]
 mod git_windows;
@@ -52,7 +54,7 @@ use guard_contracts::{
 };
 
 use crate::package_authority_op::request_digest_with_limit;
-use context::{Engines, ResidentEngines};
+use context::{Ctx, Engines, ResidentEngines};
 
 pub(crate) fn evaluate_native_exact_action_request(
     request: &NativeExactActionRequestV1,
@@ -96,17 +98,44 @@ pub(crate) fn review_binding_for(
     query: &NativeExactActionQueryV1,
     receipt: Option<&serde_json::Value>,
 ) -> Option<String> {
+    review_binding_with(query, receipt, &ResidentEngines)
+}
+
+fn review_binding_with(
+    query: &NativeExactActionQueryV1,
+    receipt: Option<&serde_json::Value>,
+    engines: &dyn Engines,
+) -> Option<String> {
     let NativeExactActionQueryV1::ExactAction {
         harness,
         command,
         payload_cwd,
         workspace,
+        home_dir,
+        environment,
         facts,
         policy_binding,
+        budget_ms,
         ..
     } = query
     else {
         return None;
+    };
+    // Only this query carries the home and environment the launcher's
+    // files resolve against; the bare review-binding query never binds one.
+    let launcher = || {
+        let text = command.as_deref()?;
+        let cwd = token::launch_cwd(payload_cwd.as_deref(), workspace.as_deref())?;
+        let budget = Duration::from_millis((*budget_ms).min(NATIVE_EXACT_ACTION_MAX_BUDGET_MS));
+        let ctx = Ctx {
+            home: home_dir.as_deref(),
+            env: environment,
+            deadline: Instant::now() + budget,
+            engines,
+        };
+        git_push::push_state(text, &cwd, &ctx)
+            .ok()
+            .map(reuse_shape::Reuse::Launcher)
     };
     binding::review_binding(
         harness,
@@ -119,6 +148,7 @@ pub(crate) fn review_binding_for(
         facts,
         receipt,
         policy_binding,
+        launcher,
     )
 }
 
@@ -147,6 +177,7 @@ fn decide(
                 facts,
                 receipt.as_ref(),
                 policy_binding,
+                || None,
             ),
         },
         NativeExactActionQueryV1::ExactAction { budget_ms, .. } => {

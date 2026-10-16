@@ -103,6 +103,8 @@ fn receipt_version_is_one(receipt: &Value) -> bool {
 }
 
 /// `_native_review_binding`: bind a retry to Rust-owned request and decision evidence.
+/// `launcher` is asked only for a command whose payload alone cannot bind it.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn review_binding(
     harness: &str,
     command: Option<&str>,
@@ -111,12 +113,13 @@ pub(super) fn review_binding(
     facts: &NativeReviewFactsV1,
     receipt: Option<&Value>,
     policy_binding: &NativePolicyBindingV1,
+    launcher: impl FnOnce() -> Option<Reuse>,
 ) -> Option<String> {
     if facts.action_type.as_deref() == Some("package") {
         return None;
     }
     let reuse = match command {
-        Some(text) => payload_reuse(text, cwd)?,
+        Some(text) => payload_reuse(text, cwd).or_else(launcher)?,
         None => Reuse::Argv,
     };
     let receipt = receipt.filter(|value| value.is_object())?;

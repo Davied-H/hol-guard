@@ -48,6 +48,11 @@ pub(crate) trait Engines {
     fn system_git_config(&self) -> String {
         "/etc/gitconfig".to_owned()
     }
+    /// The machine-wide ssh client config; its `ssh_config.d` folder is beside it.
+    #[cfg_attr(windows, allow(dead_code))]
+    fn system_ssh_config(&self) -> String {
+        "/etc/ssh/ssh_config".to_owned()
+    }
     /// The local executions of `command`; `None` when it has no package intent.
     fn local_executions(
         &self,
