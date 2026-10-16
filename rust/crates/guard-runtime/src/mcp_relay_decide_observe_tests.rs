@@ -134,6 +134,7 @@ fn an_observed_review_forwards_as_allow_with_the_observe_mode_item() {
         Routed::Forward {
             source: "policy-observe".to_owned(),
             policy_action: "allow".to_owned(),
+            remember: false,
         }
     );
     assert_eq!(
@@ -166,6 +167,7 @@ fn a_permitted_observed_action_forwards_as_itself_with_no_evidence() {
         Routed::Forward {
             source: "policy-observe".to_owned(),
             policy_action: "warn".to_owned(),
+            remember: false,
         }
     );
     assert_eq!(append, None);

@@ -19,7 +19,7 @@ use guard_command::mcp_stdio_session::{
 use serde_json::{json, Map, Value};
 
 use crate::mcp_relay_authority::{
-    sync_failed_response, ClaimTicket, RelayAuthority, ToolCallVerdict,
+    no_decision_response, sync_failed_response, ClaimTicket, RelayAuthority, ToolCallVerdict,
 };
 use crate::mcp_relay_catalog::{cursor_fact, CatalogSnapshot, RelayCatalog};
 use crate::mcp_relay_host::{HostLink, HostRead};
@@ -28,6 +28,9 @@ use crate::mcp_relay_host::{HostLink, HostRead};
 pub(crate) const PREWRITE_QUIET: Duration = Duration::from_millis(5);
 /// Ceiling on child-response and nested client-response waits.
 const MAX_RESPONSE_TIMEOUT_SECONDS: u64 = 30;
+/// `_inline_approval_timeout_seconds` without a configured wait, which the
+/// proxy leaves uncapped: a person is reading the prompt.
+const DEFAULT_INLINE_TIMEOUT_SECONDS: u64 = 120;
 /// Reverse requests nested deeper than this are refused instead of proxied.
 const MAX_NESTING: usize = 32;
 const TIMEOUT_CODE: i64 = -32800;
@@ -80,6 +83,16 @@ pub(crate) fn child_response_timeout(configured_seconds: i64) -> Duration {
         .map_or(MAX_RESPONSE_TIMEOUT_SECONDS, |seconds| {
             seconds.min(MAX_RESPONSE_TIMEOUT_SECONDS)
         });
+    Duration::from_secs(seconds)
+}
+
+/// `_inline_approval_timeout_seconds` from `approval_wait_timeout_seconds`.
+/// The proxy caps no inline prompt, so neither does the relay.
+pub(crate) fn inline_approval_timeout(configured_seconds: i64) -> Duration {
+    let seconds = u64::try_from(configured_seconds)
+        .ok()
+        .filter(|seconds| *seconds > 0)
+        .unwrap_or(DEFAULT_INLINE_TIMEOUT_SECONDS);
     Duration::from_secs(seconds)
 }
 
@@ -154,6 +167,10 @@ pub(crate) struct Relay<C, H, A> {
     child_responses: ResponseBuffers,
     client_responses: ResponseBuffers,
     timeout: Duration,
+    /// How long one inline approval prompt waits for the client's answer.
+    inline_timeout: Duration,
+    /// `_inline_prompt_counter`, which names the prompts of this session.
+    prompts: u64,
     depth: usize,
     /// A listing was captured since the catalog was last reported.
     report_due: bool,
@@ -163,7 +180,13 @@ pub(crate) struct Relay<C, H, A> {
 }
 
 impl<C: ChildLink, H: HostLink, A: RelayAuthority> Relay<C, H, A> {
-    pub(crate) fn new(child: C, host: H, authority: A, timeout: Duration) -> Self {
+    pub(crate) fn new(
+        child: C,
+        host: H,
+        authority: A,
+        timeout: Duration,
+        inline_timeout: Duration,
+    ) -> Self {
         Self {
             child,
             host,
@@ -172,6 +195,8 @@ impl<C: ChildLink, H: HostLink, A: RelayAuthority> Relay<C, H, A> {
             child_responses: ResponseBuffers::default(),
             client_responses: ResponseBuffers::default(),
             timeout,
+            inline_timeout,
+            prompts: 0,
             depth: 0,
             report_due: false,
             reported: None,
@@ -225,29 +250,109 @@ impl<C: ChildLink, H: HostLink, A: RelayAuthority> Relay<C, H, A> {
             _ => None,
         };
         let Some(params) = call_params else {
+            if method(&message) == Some("initialize") {
+                // `_record_client_capabilities`, which reads the client's
+                // `elicitation` capability before the session carries traffic.
+                self.authority.client_capabilities(message.get("params"));
+            }
             return self.forward_request(&message).map(Some);
         };
-        if self.drain(Duration::ZERO).is_err() {
-            self.catalog.poison();
-            return Ok(Some(sync_failed_response(message.get("id"), &params)));
-        }
-        let verdict = match self
-            .authority
-            .decide(&message, &params, order, &self.catalog)
-        {
-            ToolCallVerdict::Claim(ticket) => self.claim(ticket),
-            verdict => verdict,
-        };
-        match verdict {
-            ToolCallVerdict::Respond(response) => Ok(Some(response)),
-            ToolCallVerdict::Forward(ticket) => match self
-                .forward_guarded(&ticket.message, &ticket.expected)?
+        let mut asked = false;
+        loop {
+            // A resumed call drained before it took the prompt's answer, so
+            // draining again here would hand the answer to a nested call.
+            if !asked && self.drain(Duration::ZERO).is_err() {
+                self.catalog.poison();
+                return Ok(Some(sync_failed_response(message.get("id"), &params)));
+            }
+            let verdict = match self
+                .authority
+                .decide(&message, &params, order, &self.catalog)
             {
-                Guarded::Response(response) => Ok(Some(self.authority.complete(ticket, response))),
-                Guarded::BoundaryChanged => Ok(Some(self.authority.boundary_changed(ticket))),
-            },
-            // A claim answers with a respond or a forward, never a claim.
-            ToolCallVerdict::Claim(ticket) => Ok(Some(ticket.no_decision())),
+                ToolCallVerdict::Claim(ticket) => self.claim(ticket),
+                verdict => verdict,
+            };
+            return match verdict {
+                ToolCallVerdict::Respond(response) => Ok(Some(response)),
+                ToolCallVerdict::Forward(ticket) => match self
+                    .forward_guarded(&ticket.message, &ticket.expected)?
+                {
+                    Guarded::Response(response) => {
+                        Ok(Some(self.authority.complete(ticket, response)))
+                    }
+                    Guarded::BoundaryChanged => Ok(Some(self.authority.boundary_changed(ticket))),
+                },
+                // A claim answers with a respond or a forward, never a claim.
+                ToolCallVerdict::Claim(ticket) => Ok(Some(ticket.no_decision())),
+                // One prompt per call: the answer is a fact of this call, and
+                // an authority that asks for a second one decided nothing.
+                ToolCallVerdict::Elicit(_) if asked => {
+                    Ok(Some(no_decision_response(message.get("id"), &params)))
+                }
+                ToolCallVerdict::Elicit(prompt) => {
+                    asked = true;
+                    let answer = self.elicit(prompt)?;
+                    // The drain the next decide opens runs before the answer
+                    // is handed over, so no call it services takes this one.
+                    if self.drain(Duration::ZERO).is_err() {
+                        self.catalog.poison();
+                        return Ok(Some(sync_failed_response(message.get("id"), &params)));
+                    }
+                    self.authority.elicited(answer.as_ref());
+                    continue;
+                }
+            };
+        }
+    }
+
+    /// `_inline_approval_request` and `_request_inline_approval`: raise the
+    /// prompt on the host under an id this session counts, and wait for the
+    /// client's answer. `Ok(None)` is a prompt the client never answered.
+    fn elicit(&mut self, params: Value) -> Result<Option<Value>, String> {
+        self.prompts += 1;
+        let id = Value::String(format!("guard-elicitation-{}", self.prompts));
+        let request = json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": "elicitation/create",
+            "params": params,
+        });
+        self.host.send(&request)?;
+        self.await_prompt_response(&id)
+    }
+
+    /// The inline prompt's response loop, which services the client's other
+    /// traffic as `_request_inline_approval` does. A timeout and a client
+    /// that closed its stream are both answers the proxy makes up itself.
+    fn await_prompt_response(&mut self, id: &Value) -> Result<Option<Value>, String> {
+        let id = Some(id);
+        loop {
+            if let Some(response) = live_id(id).and_then(|id| self.client_responses.pop(id)) {
+                return Ok(Some(response));
+            }
+            let (message, order) = match self.host.next(Some(self.inline_timeout)) {
+                HostRead::Message(message, order) => (message, order),
+                HostRead::Timeout | HostRead::Eof => return Ok(None),
+                HostRead::Invalid(reason) => return Err(reason.to_owned()),
+            };
+            if same_id(message.get("id"), id) && !is_request(&message) {
+                return Ok(Some(message));
+            }
+            if is_notification(&message) {
+                self.child.send(&message)?;
+                continue;
+            }
+            if !is_request(&message) {
+                if live_id(message.get("id")).is_some() {
+                    self.client_responses.buffer(message);
+                }
+                continue;
+            }
+            if let Some(response) = self.handle(message, order.as_deref())? {
+                let sent = self.host.send(&response);
+                self.authority.settle();
+                sent?;
+            }
         }
     }
 

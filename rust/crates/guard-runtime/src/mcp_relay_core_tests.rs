@@ -6,6 +6,7 @@ use super::*;
 use crate::mcp_relay_authority::PendingNativeAuthority;
 
 const TIMEOUT: Duration = Duration::from_secs(30);
+const INLINE_TIMEOUT: Duration = Duration::from_secs(120);
 
 enum Step {
     Frame(Value),
@@ -116,7 +117,7 @@ fn relay<A: RelayAuthority>(
     host: FakeHost,
     authority: A,
 ) -> Relay<FakeChild, FakeHost, A> {
-    Relay::new(child, host, authority, TIMEOUT)
+    Relay::new(child, host, authority, TIMEOUT, INLINE_TIMEOUT)
 }
 
 #[test]
@@ -383,3 +384,6 @@ fn an_invalid_host_stream_is_fatal() {
 
 #[path = "mcp_relay_core_call_tests.rs"]
 mod tools_call;
+
+#[path = "mcp_relay_core_prompt_tests.rs"]
+mod inline_prompt;
