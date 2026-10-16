@@ -124,6 +124,16 @@ pub(super) fn sibling_project_root(
         })
 }
 
+/// Whether the verified cd `target` lies in the canonical `root`. Windows
+/// reports the target in the harness's drive spelling, which the directory
+/// proof checked exactly; compare its canonical (`\\?\`) form there.
+fn within(target: &std::path::Path, root: &std::path::Path) -> bool {
+    if cfg!(windows) {
+        return std::fs::canonicalize(target).is_ok_and(|target| target.starts_with(root));
+    }
+    target.starts_with(root)
+}
+
 /// Whether the sink peels a relative leading `cd` into the workspace: only on
 /// Windows, and only when `&&` joins it to the next command
 /// (`peel_contained_wrapper`).
@@ -164,7 +174,7 @@ pub(super) fn sink_peels_leading_cd(
         return false;
     };
     let target = std::path::PathBuf::from(target);
-    let inside = target.starts_with(&cwd);
+    let inside = within(&target, &cwd);
     let operand = first.arguments.first().map_or("", String::as_str);
     let relative = !operand.starts_with(['/', '~']);
     let sequenced = model.segments.get(1).is_some_and(|next| {
@@ -201,7 +211,7 @@ pub(super) fn contained_core(
         let target = super::segment_proof::verified_cwd_compound_context(model, context)?;
         let workspace = std::fs::canonicalize(context.cwd?).ok()?;
         let target = std::path::Path::new(&target);
-        let inside = target.starts_with(&workspace);
+        let inside = within(target, &workspace);
         let sibling = sibling_project_root(target, context.home_dir?);
         if !inside && sibling.is_none() {
             return None;
