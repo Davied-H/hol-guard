@@ -1048,5 +1048,14 @@ def test_manual_install_command_targets_the_python_running_guard(monkeypatch: py
 def test_manual_install_command_runs_a_quoted_interpreter_in_powershell(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(native.sys, "executable", r"C:\Users\Jane Doe\venv\Scripts\python.exe")
     monkeypatch.setattr(native.os, "name", "nt")
+    monkeypatch.setattr(native, "_windows_short_path", lambda path: path)
 
     assert native._manual_installer_prefix("pip") == r'& "C:\Users\Jane Doe\venv\Scripts\python.exe" -m pip install'
+
+
+def test_manual_install_command_prefers_the_windows_short_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(native.sys, "executable", r"C:\Users\Jane Doe\venv\Scripts\python.exe")
+    monkeypatch.setattr(native.os, "name", "nt")
+    monkeypatch.setattr(native, "_windows_short_path", lambda _path: r"C:\Users\JANEDO~1\venv\Scripts\python.exe")
+
+    assert native._manual_installer_prefix("pip") == r"C:\Users\JANEDO~1\venv\Scripts\python.exe -m pip install"

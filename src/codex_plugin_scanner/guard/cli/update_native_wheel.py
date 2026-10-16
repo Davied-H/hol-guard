@@ -149,15 +149,29 @@ def plan_native_wheel_update(
     return None
 
 
+def _windows_short_path(path: str) -> str:
+    try:
+        import ctypes
+
+        buffer = ctypes.create_unicode_buffer(32768)
+        length = ctypes.windll.kernel32.GetShortPathNameW(path, buffer, len(buffer))  # type: ignore[attr-defined]
+    except (AttributeError, OSError):
+        return path
+    return buffer.value if 0 < length < len(buffer) else path
+
+
 def _manual_installer_prefix(installer: str) -> str:
     # Point the command at the environment running Guard, not whichever Python is first on PATH.
     if installer == "pipx":
         return "pipx runpip hol-guard install"
     executable = sys.executable or "python"
+    if any(character.isspace() for character in executable) and os.name == "nt":
+        # The 8.3 short path has no spaces, so the command pastes into PowerShell, cmd.exe and Git Bash alike.
+        executable = _windows_short_path(executable)
     if any(character.isspace() for character in executable):
         executable = f'"{executable}"'
         if os.name == "nt" and installer != "uv":
-            # PowerShell reads a leading quoted string as an expression, so it needs the call operator.
+            # Without a short path, PowerShell (the default Windows shell) needs the call operator.
             executable = f"& {executable}"
     if installer == "uv":
         return f"uv pip install --python {executable}"
