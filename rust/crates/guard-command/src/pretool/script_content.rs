@@ -314,7 +314,7 @@ fn assess_programs(
             Entry::File(path) => {
                 script_file
                     && loopback::in_working_directory(path, context)
-                    && !loopback::may_rewrite(&segments[..index])
+                    && !loopback::may_rewrite(segments, index)
             }
             Entry::Text { .. } => false,
         };

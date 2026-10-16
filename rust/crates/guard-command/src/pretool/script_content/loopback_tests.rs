@@ -449,6 +449,8 @@ fn a_workspace_script_earns_the_ports_it_serves_on() {
         "curl -o server.js https://example.com/s.js && node server.js",
         "node --test && node src/app.js",
         "npm run build && node server.js",
+        "node src/app.js & cp src/leaky.js src/routes.js",
+        "node src/app.js | cp src/leaky.js src/routes.js",
     ] {
         assert_eq!(grant(command), None, "{command}");
         assert!(launch(command).is_empty(), "{command}");

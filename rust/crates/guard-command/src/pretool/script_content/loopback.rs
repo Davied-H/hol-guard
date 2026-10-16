@@ -343,7 +343,7 @@ pub(crate) fn launch_loopback_ports(
                 if moved && !Path::new(script).is_absolute() {
                     continue;
                 }
-                if may_rewrite(&model.segments[..index]) {
+                if may_rewrite(&model.segments, index) {
                     return Vec::new();
                 }
                 match script_ports(script, context) {
@@ -361,34 +361,40 @@ pub(crate) fn launch_loopback_ports(
     ports.into_iter().collect()
 }
 
-/// Whether a segment run before a workspace script could change any file
-/// the script loads: anything but a read-only command, or a redirection. The
+/// Whether any segment but the launch at `launch` could change a file the
+/// script loads: anything but a read-only command, or a redirection. An
+/// earlier segment runs first, and a later one may run alongside the launch
+/// (after `&` or in its pipeline) while Node still loads lazy imports. The
 /// grant is read from the files as they are now, so a script that one of
 /// these replaces, or one of its imports, would run under a grant read from
 /// other text. Matching the writes path by path cannot cover every spelling,
 /// import or writer, so any such segment withholds the grant.
-pub(super) fn may_rewrite(prior: &[crate::CommandSegmentV1]) -> bool {
-    prior.iter().any(|segment| {
-        segment.text.contains('>')
-            || !segment.executable.as_deref().is_some_and(|value| {
-                matches!(
-                    super::super::executable_basename(value),
-                    "echo"
-                        | "printf"
-                        | "true"
-                        | ":"
-                        | "pwd"
-                        | "ls"
-                        | "cat"
-                        | "sleep"
-                        | "test"
-                        | "["
-                        | "cd"
-                        | "pushd"
-                        | "popd"
-                )
-            })
-    })
+pub(super) fn may_rewrite(segments: &[crate::CommandSegmentV1], launch: usize) -> bool {
+    segments
+        .iter()
+        .enumerate()
+        .filter(|(other, _)| *other != launch)
+        .any(|(_, segment)| {
+            segment.text.contains('>')
+                || !segment.executable.as_deref().is_some_and(|value| {
+                    matches!(
+                        super::super::executable_basename(value),
+                        "echo"
+                            | "printf"
+                            | "true"
+                            | ":"
+                            | "pwd"
+                            | "ls"
+                            | "cat"
+                            | "sleep"
+                            | "test"
+                            | "["
+                            | "cd"
+                            | "pushd"
+                            | "popd"
+                    )
+                })
+        })
 }
 
 /// What the Node script file `script` needs from the network, read the way
