@@ -6,7 +6,7 @@ use flate2::read::GzDecoder;
 use guard_contracts::PolicyLookupProbeGroupsV1;
 use serde_json::{json, Value};
 
-use super::{compose_groups, with_current_token, with_memory_candidates};
+use super::{compose_each, compose_groups, with_current_token, with_memory_candidates};
 use crate::memory_pattern::{verdict, MemoryRequest};
 
 const VECTORS: &[u8] = include_bytes!("../tests/fixtures/generic_saved_decision_vectors.json.gz");
@@ -167,4 +167,30 @@ fn memory_inputs_append_each_direct_ids_remembered_candidates() {
         .candidate_artifact_ids
         .push("extra".to_owned());
     assert!(with_memory_candidates(&two_ids).is_err());
+}
+
+#[test]
+fn a_group_composes_its_full_lookup_result_most_restrictive() {
+    let groups: PolicyLookupProbeGroupsV1 = serde_json::from_value(json!({
+        "groups": [{"artifact_hash": "h", "candidate_artifact_ids": ["direct", "remembered"]}],
+    }))
+    .unwrap();
+    let probe = |id: &str, _: &str, _: Option<&str>| {
+        Ok(json!({
+            "decision": if id == "remembered" { json!({"action": "block", "artifact_id": id}) } else { json!({"action": "allow", "artifact_id": id}) },
+            "ignored_local_integrity": null,
+            "trust_status": {"trusted": true},
+            "authority_revision": 7,
+        }))
+    };
+    let composed = compose_each(&groups, None, probe).unwrap();
+    assert_eq!(
+        composed,
+        vec![json!({
+            "decision": {"action": "block", "artifact_id": "remembered", "_approval_authority_revision": 7},
+            "ignored_local_integrity": null,
+            "trust_status": {"trusted": true},
+            "authority_revision": 7,
+        })]
+    );
 }
