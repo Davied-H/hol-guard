@@ -129,8 +129,14 @@ pub(super) fn review_binding(
     {
         return None;
     }
-    let request_digest = receipt.get("request_digest").and_then(Value::as_str)?;
-    if !digest_pattern().is_match(request_digest) {
+    // The anchor, not `request_digest`: the request identity folds in the
+    // snapshot generation and digest, which move on a republish that changed
+    // nothing this verdict depends on. A receipt without one stays unbound,
+    // so the retry is reviewed again rather than matched on weaker evidence.
+    let anchor_digest = receipt
+        .get("review_anchor_digest")
+        .and_then(Value::as_str)?;
+    if !digest_pattern().is_match(anchor_digest) {
         return None;
     }
     let decision = facts.decision.as_deref().unwrap_or("");
@@ -150,7 +156,7 @@ pub(super) fn review_binding(
     {
         return None;
     }
-    let identity = format!("native-review-v4:{request_digest}:{}", tokens.join(":"));
+    let identity = format!("native-review-v4:{anchor_digest}:{}", tokens.join(":"));
     let mut encoded = match policy_binding {
         NativePolicyBindingV1::Invalid => return None,
         NativePolicyBindingV1::Unbound => Vec::new(),

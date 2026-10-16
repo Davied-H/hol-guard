@@ -359,7 +359,8 @@ fn binding_request(schema: &str) -> Value {
             "receipt": {
                 "schema": "guard-native-hook-decision-receipt.v1", "version": 1, "authority": "rust",
                 "harness": "codex", "event_name": "PreToolUse", "workspace_bound": true,
-                "request_digest": "ab".repeat(32), "decision": "ask", "policy_action": "review", "reason_code": "r"
+                "request_digest": "ab".repeat(32), "review_anchor_digest": "cd".repeat(32),
+                "decision": "ask", "policy_action": "review", "reason_code": "r"
             },
             "policy_binding": {"state": "unbound"}
         }
@@ -379,8 +380,45 @@ fn wire_reply_is_bound_to_the_request() {
     let binding = reply["payload"]["binding"].as_str().unwrap();
     assert_eq!(
         binding,
-        format!("native-review-v4:{}:ask:review:review:r", "ab".repeat(32))
+        format!("native-review-v4:{}:ask:review:review:r", "cd".repeat(32))
     );
+}
+
+/// The retry the user already approved must still match after the publisher
+/// republishes the snapshot. `request_digest` folds in the generation and the
+/// snapshot digest, which both move on a republish that decided nothing; the
+/// anchor does not, so the binding stays put.
+#[test]
+fn wire_reply_binding_survives_a_republished_request_digest() {
+    let mut republished = binding_request("guard-native-exact-action-request.v1");
+    republished["query"]["receipt"]["request_digest"] = json!("ef".repeat(32));
+    let binding = resident(&republished)["payload"]["binding"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(
+        binding,
+        format!("native-review-v4:{}:ask:review:review:r", "cd".repeat(32))
+    );
+}
+
+/// A receipt the runtime never anchored produces no binding at all, so the
+/// retry is reviewed again rather than matched on weaker evidence.
+#[test]
+fn wire_reply_is_unbound_without_a_review_anchor() {
+    for anchor in [None, Some(json!("short")), Some(json!(7))] {
+        let mut request = binding_request("guard-native-exact-action-request.v1");
+        let receipt = request["query"]["receipt"].as_object_mut().unwrap();
+        match anchor {
+            Some(ref value) => {
+                receipt.insert("review_anchor_digest".to_owned(), value.clone());
+            }
+            None => {
+                receipt.remove("review_anchor_digest");
+            }
+        }
+        assert!(resident(&request)["payload"]["binding"].is_null());
+    }
 }
 
 #[test]
