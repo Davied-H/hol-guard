@@ -251,13 +251,20 @@ impl CompiledNativeCommandControls {
                 continue;
             }
             // Reading an `xargs` through to the program it names leaves the
-            // operands standard input supplies unread. Where an extension owns
-            // that program its rules judge arguments this text does not hold,
-            // so the read-through cannot stand in for them and the evaluation
-            // failure stays. `xargs rm -f < list.txt`, whose program no
-            // extension owns, keeps the review the read-through gives it.
-            if let (Some(programs), Some(names)) = (&xargs_programs, &extension_names) {
-                if !names.is_disjoint(programs) {
+            // operands standard input supplies unread. A contributed
+            // extension models one tool's own arguments -- which hosted zone
+            // `aws route53 delete-hosted-zone` removes, which record
+            // `agi-memory delete --hard` erases -- so where it may own the
+            // program named there, its rules judge text this command does not
+            // hold and the evaluation failure stays. The built-in owners of
+            // `rm`, `git` and the system tools model those programs
+            // themselves, and `xargs rm -f < list.txt` keeps the review floor
+            // they give it.
+            if let Some(programs) = &xargs_programs {
+                let may_own = extension_names
+                    .as_ref()
+                    .is_none_or(|names| names.is_empty() || !names.is_disjoint(programs));
+                if !extension.required && may_own {
                     return None;
                 }
             }
