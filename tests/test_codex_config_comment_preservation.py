@@ -111,6 +111,49 @@ def test_an_integer_standing_in_for_a_boolean_is_corrected() -> None:
     assert tomllib.loads(rendered)["features"]["hooks"] is True
 
 
+_GUARD_GROUP_BEFORE_THE_USER = """\
+[[hooks.PreToolUse]]
+# Guard group.
+matcher = "Bash"
+
+  [[hooks.PreToolUse.hooks]]
+  type = "command"
+  command = "guard-hook"
+
+[[hooks.PreToolUse]]
+# My own hook. Hands off.
+matcher = "Bash"
+
+  [[hooks.PreToolUse.hooks]]
+  type = "command"
+  command = "echo mine"   # keep this spelling
+"""
+
+
+def test_reordering_hook_groups_does_not_move_the_users_comments() -> None:
+    """Install drops Guard's group and appends it, so positions swap.
+
+    Matching by index writes the user's group into Guard's old table. The
+    user's comment then sits on Guard's command and is deleted with that
+    table on uninstall, while the readback still sees the right values.
+    """
+
+    payload = {
+        "hooks": {
+            "PreToolUse": [
+                {"matcher": "Bash", "hooks": [{"type": "command", "command": "echo mine"}]},
+                {"matcher": "Bash", "hooks": [{"type": "command", "command": "guard-hook"}]},
+            ]
+        }
+    }
+    rendered = dump_toml(payload, original=_GUARD_GROUP_BEFORE_THE_USER)
+    user_comment = rendered.index("# My own hook. Hands off.")
+    user_command = rendered.index('command = "echo mine"   # keep this spelling')
+    guard_comment = rendered.index("# Guard group.")
+    guard_command = rendered.index('command = "guard-hook"')
+    assert user_comment < user_command < guard_comment < guard_command
+
+
 def test_a_user_owned_hook_group_keeps_its_comments_through_install_and_uninstall(tmp_path: Path, monkeypatch) -> None:
     """Guard adds and removes its own group; the array holds the user's too.
 

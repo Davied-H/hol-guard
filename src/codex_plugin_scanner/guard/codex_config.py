@@ -112,30 +112,51 @@ def _apply_payload(table: dict[str, object], payload: dict[str, object]) -> None
 
 
 def _apply_array(existing: list[object], replacement: list[object]) -> None:
-    """Make one parsed array match ``replacement`` element by element.
+    """Make one parsed array match ``replacement`` without moving comments.
 
-    An event's hooks are an array of tables holding Guard's group next to the
-    user's own. Assigning the whole array back would rewrite every group in it,
-    so adding or removing Guard's one group would cost the comments and
-    spelling inside groups Guard never touched.
+    Hook groups are not stable by position. Install drops Guard's group and
+    appends it at the end, so an index match writes the user's group into
+    Guard's old table. The user's comments then sit on Guard's values and
+    leave with them on uninstall. An element that already has the wanted value
+    keeps its parsed item, wherever it sits. Only an element that changed is
+    edited in place.
     """
 
-    for index, item in enumerate(replacement):
-        if index >= len(existing):
-            existing.append(item)
+    current_items = list(existing)
+    unwrapped = [_unwrap(item) for item in current_items]
+    used: set[int] = set()
+    kept: list[object | None] = []
+    for item in replacement:
+        match = next(
+            (index for index, current in enumerate(unwrapped) if index not in used and _same_value(current, item)),
+            None,
+        )
+        if match is None:
+            kept.append(None)
             continue
-        current = existing[index]
-        if isinstance(item, dict) and isinstance(current, dict):
-            _apply_payload(current, item)  # pyright: ignore[reportUnknownArgumentType]
+        used.add(match)
+        kept.append(current_items[match])
+    leftovers = [current_items[index] for index in range(len(current_items)) if index not in used]
+    rebuilt: list[object] = []
+    leftover_index = 0
+    for item, kept_item in zip(replacement, kept, strict=True):
+        if kept_item is not None:
+            rebuilt.append(kept_item)
             continue
-        if isinstance(item, list) and isinstance(current, list):
-            _apply_array(current, item)  # pyright: ignore[reportUnknownArgumentType]
-            continue
-        if _same_value(_unwrap(current), item):
-            continue
-        existing[index] = item
-    while len(existing) > len(replacement):
-        del existing[len(existing) - 1]
+        if leftover_index < len(leftovers):
+            current = leftovers[leftover_index]
+            leftover_index += 1
+            if isinstance(item, dict) and isinstance(current, dict):
+                _apply_payload(current, item)  # pyright: ignore[reportUnknownArgumentType]
+                rebuilt.append(current)
+                continue
+            if isinstance(item, list) and isinstance(current, list):
+                _apply_array(current, item)  # pyright: ignore[reportUnknownArgumentType]
+                rebuilt.append(current)
+                continue
+        rebuilt.append(item)
+    existing.clear()
+    existing.extend(rebuilt)
 
 
 def _same_value(left: object, right: object) -> bool:
