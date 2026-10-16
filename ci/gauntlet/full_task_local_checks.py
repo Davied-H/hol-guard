@@ -16,8 +16,9 @@ import subprocess
 from collections.abc import Callable
 from html.parser import HTMLParser
 from pathlib import Path
+from typing import Any
 
-from .full_task_git import blob, git_lines, tree
+from .full_task_git import blob, blob_sha256, git_lines, tree
 
 JS_SUFFIXES = (".js", ".mjs", ".cjs", ".ts", ".jsx", ".tsx")
 APP_SUFFIXES = (*JS_SUFFIXES, ".html", ".py", ".vue", ".svelte")
@@ -34,12 +35,58 @@ _NPM_PLACEHOLDER = "no test specified"
 GENERATED = frozenset({"__pycache__", ".pytest_cache", "node_modules", ".DS_Store"})
 TODO_ADD = ("add", "create", "new")
 TODO_FINISH = ("done", "complete", "toggle", "remove", "delete")
-_COMMENTS = re.compile(r"/\*.*?\*/|//[^\n]*|(?m:#[^\n]*$)", re.S)
+# Operations written inline rather than as named functions: a REST route, an event handler that
+# creates, completes or drops an item. They read lowercased code with comments already removed.
+_TODO_ADD_CODE = re.compile(r"""\bmethod\s*===?\s*['"]post['"]|\.post\s*\(\s*['"`]/""")
+_TODO_FINISH_CODE = re.compile(
+    r"""\bmethod\s*===?\s*['"](?:patch|put|delete)['"]|\.(?:patch|put|delete)\s*\(\s*['"`]/"""
+    r"""|\.(?:completed|done)\s*=(?!=)|\b(?:completed|done)\s*:\s*(?!(?:false|boolean|bool)\b)[\w$!]"""
+    r"""|\.splice\s*\(|\.filter\s*\(\s*\(?\s*([\w$]+)\s*\)?\s*=>\s*\1\.id\s*!=="""
+)
+# Gravity is named, or is a velocity that accumulates every step, as in ``bird.velocity += 1250 * dt``.
+_GRAVITY = re.compile(r"gravity|\b(?:[\w$]*velocity[\w$]*|vel[xy]?|vy|dy)\s*\+=")
+# Node child-process calls; a committed script named among their arguments is exercised by the test.
+_JS_SPAWN = re.compile(r"\b(?:spawn|spawnSync|fork|exec|execSync|execFile|execFileSync)\s*\(([^;]{0,400})")
+_JS_PATH_LITERAL = re.compile(r"""['"`]((?:\.{1,2}/)?[\w./-]+\.[cm]?[jt]sx?)['"`]""")
 
 
-def _code(text: str) -> str:
-    """Lowercased source with line and block comments removed, so a comment is not proof of behavior."""
-    return _COMMENTS.sub(" ", text).lower()
+def _code(text: str, hash_comments: bool = False) -> str:
+    """Lowercased source with comments removed, so a comment is not proof of behavior.
+
+    Quoted text is kept, so ``'http://localhost'`` or ``'#list'`` is not mistaken for a comment.
+    ``#`` starts a comment only for Python and shell (``hash_comments``); in JavaScript it is a
+    selector, a private field or part of a string. Single and double quotes end at a newline, so
+    a stray apostrophe in markup cannot hide more than its own line.
+    """
+    out: list[str] = []
+    index, size, quote = 0, len(text), ""
+    while index < size:
+        char = text[index]
+        if quote:
+            if char == "\\" and index + 1 < size:
+                out.append(text[index : index + 2])
+                index += 2
+                continue
+            if char == quote or (char == "\n" and quote != "`"):
+                quote = ""
+            out.append(char)
+            index += 1
+        elif char in "'\"`":
+            quote = char
+            out.append(char)
+            index += 1
+        elif (hash_comments and char == "#") or (not hash_comments and text.startswith("//", index)):
+            end = text.find("\n", index)
+            index = size if end < 0 else end
+            out.append(" ")
+        elif not hash_comments and text.startswith("/*", index):
+            end = text.find("*/", index + 2)
+            index = size if end < 0 else end + 2
+            out.append(" ")
+        else:
+            out.append(char)
+            index += 1
+    return "".join(out).lower()
 
 
 def _defines(text: str, words: tuple[str, ...]) -> bool:
@@ -52,14 +99,31 @@ def _defines(text: str, words: tuple[str, ...]) -> bool:
     )
 
 
+def _todo_add(text: str) -> bool:
+    return _defines(text, TODO_ADD) or _TODO_ADD_CODE.search(text) is not None
+
+
+def _todo_finish(text: str) -> bool:
+    return _defines(text, TODO_FINISH) or _TODO_FINISH_CODE.search(text) is not None
+
+
 def _todo_operations(text: str) -> bool:
-    """Code that defines both an add-like and a finish-like operation."""
-    return _defines(text, TODO_ADD) and _defines(text, TODO_FINISH)
+    """Code that adds an item and completes or removes one, by named function, handler or route."""
+    return _todo_add(text) and _todo_finish(text)
+
+
+def _game_facts(text: str) -> dict[str, bool]:
+    return {
+        "gravity": _GRAVITY.search(text) is not None,
+        "flap": "flap" in text,
+        "pipe": "pipe" in text,
+        "defines-function": _defines(text, ("",)),
+    }
 
 
 def _game_logic(text: str) -> bool:
-    """Code that names gravity, flapping and pipes and defines a function."""
-    return all(word in text for word in ("gravity", "flap", "pipe")) and _defines(text, ("",))
+    """Code with gravity, flapping and pipes that defines a function."""
+    return all(_game_facts(text).values())
 
 
 class _InlineScripts(HTMLParser):
@@ -182,27 +246,42 @@ def python_test_evidence(
         }
         for source, source_text in sources.items():
             modules = {part.lower() for part in Path(source).with_suffix("").parts if part != "__init__"}
-            if modules & imported and accept(_code(source_text)):
+            if modules & imported and accept(_code(source_text, hash_comments=True)):
                 return text, True
     return text, False
+
+
+def _js_test_targets(test: str, text: str, sources: set[str]) -> dict[str, list[str]]:
+    """Committed sources a JS test imports by relative path, or runs as a child process by path.
+
+    A spawned script is resolved against the test's directory and the repository root, where the
+    test runner starts. A test that defines no ``test``/``it`` case reaches nothing.
+    """
+    found: dict[str, list[str]] = {"imports": [], "spawns": []}
+    if not re.search(r"\b(test|it)\s*\(", text):
+        return found
+    for target in _JS_IMPORT.findall(text):
+        resolved = posixpath.normpath(posixpath.join(posixpath.dirname(test), target))
+        candidates = {resolved, *(resolved + suffix for suffix in JS_SUFFIXES), resolved + "/index.js"}
+        found["imports"].extend(sorted(candidates & sources))
+    for arguments in _JS_SPAWN.findall(text):
+        for target in _JS_PATH_LITERAL.findall(arguments):
+            bases = (posixpath.dirname(test), "")
+            candidates = {posixpath.normpath(posixpath.join(base, target)) for base in bases}
+            found["spawns"].extend(sorted(candidates & sources))
+    return found
 
 
 def _js_tests_import_source(
     workspace: Path, files: list[str], accept: Callable[[str], bool] = lambda _text: True
 ) -> bool:
-    """A committed JS test imports a committed non-test module, by a relative path, whose code ``accept`` approves."""
-    committed = set(files)
+    """A committed JS test imports, or runs by path, a committed non-test module whose code ``accept`` approves."""
     sources = {name for name in files if name.endswith(JS_SUFFIXES) and not _JS_TEST.search(name)}
     for test in (name for name in files if name.endswith(JS_SUFFIXES) and _JS_TEST.search(name)):
-        text = blob(workspace, "HEAD", test)
-        if not re.search(r"\b(test|it)\s*\(", text):
-            continue
-        for target in _JS_IMPORT.findall(text):
-            resolved = posixpath.normpath(posixpath.join(posixpath.dirname(test), target))
-            candidates = {resolved, *(resolved + suffix for suffix in JS_SUFFIXES), resolved + "/index.js"}
-            for source in candidates & sources & committed:
-                if accept(_code(blob(workspace, "HEAD", source))):
-                    return True
+        targets = _js_test_targets(test, blob(workspace, "HEAD", test), sources)
+        for source in {*targets["imports"], *targets["spawns"]}:
+            if accept(_code(blob(workspace, "HEAD", source))):
+                return True
     return False
 
 
@@ -257,14 +336,46 @@ def todo_local_checks(workspace: Path, home: Path) -> dict[str, bool]:
     files = tree(workspace, "HEAD")
     python_text, python_tests = python_test_evidence(workspace, files, _todo_operations)
     sources = [name for name in files if name.endswith(APP_SUFFIXES) and not _JS_TEST.search(name)]
-    text = "\n".join(blob(workspace, "HEAD", name) for name in sources if not name.endswith(".py")).lower()
-    text += "\n" + python_text
+    script = "\n".join(blob(workspace, "HEAD", name) for name in sources if not name.endswith(".py"))
+    text = script.lower() + "\n" + python_text
+    code = _code(script) + "\n" + _code(python_text, hash_comments=True)
     return {
-        "task:committed-app-source": "todo" in text and _todo_operations(_code(text)),
+        "task:committed-app-source": "todo" in text and _todo_operations(code),
         "task:committed-tests": python_tests or _js_tests_import_source(workspace, files, _todo_operations),
         "task:tests-pass": _ran_python_tests(workspace, home) or _ran_node_tests(workspace, home),
         "task:committed-clean": clean,
     }
+
+
+def committed_evidence(workspace: Path, task_id: str) -> dict[str, Any]:
+    """What the checks read, without file contents, so a failed case can be diagnosed later.
+
+    Every committed file is listed by path and SHA-256. For the local app tasks each committed
+    source also carries the facts its predicates use, and each JS test the committed sources it
+    imports or runs.
+    """
+    files = tree(workspace, "HEAD")
+    evidence: dict[str, Any] = {
+        "committed_files": [{"path": name, "sha256": blob_sha256(workspace, "HEAD", name)} for name in files]
+    }
+    if task_id not in LOCAL_APP_CHECKS:
+        return evidence
+    sources = {name for name in files if name.endswith(JS_SUFFIXES) and not _JS_TEST.search(name)}
+    facts: dict[str, dict[str, Any]] = {}
+    for name in (name for name in files if name.endswith(APP_SUFFIXES)):
+        raw = blob(workspace, "HEAD", name)
+        if name.endswith(JS_SUFFIXES) and _JS_TEST.search(name):
+            facts[name] = _js_test_targets(name, raw, sources)
+            continue
+        code = _code(raw, hash_comments=name.endswith(".py"))
+        if task_id == "flappy-bird-game":
+            loop = re.search(r"requestanimationframe\s*\(|setinterval\s*\(", code) is not None
+            facts[name] = {**_game_facts(code), "loop": loop}
+        else:
+            todo = "todo" in raw.lower()
+            facts[name] = {"todo": todo, "todo-add": _todo_add(code), "todo-finish": _todo_finish(code)}
+    evidence["files"] = facts
+    return evidence
 
 
 LOCAL_APP_CHECKS = {"flappy-bird-game": flappy_bird_checks, "todo-app-local": todo_local_checks}
