@@ -232,6 +232,28 @@ fn an_answer_carrying_more_than_a_result_is_recorded_as_unbound() {
     assert_eq!(state.resident_failures, 1);
 }
 
+/// A resident that answers nothing but unbound results is a resident the
+/// circuit has to be able to open on, so the round is recorded once the answer
+/// has been read rather than when it arrives.
+#[test]
+fn a_run_of_unbound_answers_reaches_the_circuit() {
+    let home = "/tmp/guard-eval-unbound-run";
+    let mut body = result_body();
+    body["decision"] = json!("allow");
+    let answers = vec![answer(body.clone()), answer(body.clone()), answer(body)];
+    let mut lane = ScriptedLane::new(Some("digest-unbound-run"), answers);
+    let mut transport = ResidentEvalTransport::new(&mut lane, Path::new(home));
+
+    for _ in 0..3 {
+        assert!(transport.evaluate(&request()).is_none());
+    }
+
+    let state = health("digest-unbound-run", home);
+    assert_eq!(state.resident_failures, 3);
+    assert_eq!(state.consecutive_failures, 3);
+    assert_eq!(state.state, "circuit_open");
+}
+
 #[test]
 fn a_round_that_tore_the_lane_down_is_recorded_against_the_runtime_it_went_to() {
     let home = "/tmp/guard-eval-torn";

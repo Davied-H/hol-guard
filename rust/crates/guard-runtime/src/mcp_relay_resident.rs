@@ -237,9 +237,14 @@ impl ResidentRelayAuthority {
                 return None;
             }
         }
-        let output = send(&fresh, payload, deadline).ok()?;
+        // The fresh resident is held whether or not its send landed: it is the
+        // one this round went to, so it is the one a caller reading the lane's
+        // runtime records the round against. A send that failed because the
+        // resident is gone fails the same way on the next call, which
+        // rediscovers from there.
+        let output = send(&fresh, payload, deadline);
         self.resident = Some(fresh);
-        Some(output)
+        output.ok()
     }
 }
 

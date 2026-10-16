@@ -143,9 +143,6 @@ impl SupplyChainEvalTransport for ResidentEvalTransport<'_> {
             // this is not a runtime failure and not a verdict either.
             return None;
         }
-        // An answer arrived on the lane, which is what the lane's health is
-        // about; whether it reads as a result is recorded next.
-        self.record(sent_to, None);
         // The result DTO refuses a field it does not know, exactly as Python
         // refuses keys outside `_RESULT_KEYS`: an answer carrying the result
         // schema and something else is a resident failure, recorded here so
@@ -155,8 +152,16 @@ impl SupplyChainEvalTransport for ResidentEvalTransport<'_> {
         // with a duplicate-refusing hook, and that check only matters against
         // whoever writes the answer bytes - here, the resident that authenticated
         // on the direct lane and could simply answer `status: "ok"` instead.
+        //
+        // The round is recorded once the answer has been read, not when it
+        // arrives: a success recorded first would clear the consecutive count
+        // that an unbound answer then raises, and a resident answering nothing
+        // but unbound results would never reach the circuit's threshold.
         match serde_json::from_value::<SupplyChainEvalResultV1>(decoded) {
-            Ok(result) => Some(result),
+            Ok(result) => {
+                self.record(sent_to, None);
+                Some(result)
+            }
             Err(_) => {
                 self.record(sent_to, Some(REASON_UNBOUND));
                 None
