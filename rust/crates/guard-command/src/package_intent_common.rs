@@ -2408,12 +2408,15 @@ mod tests {
         .iter()
         .map(|s| s.to_string())
         .collect();
-        assert!(collect_package_specs(&tokens).is_empty());
+        assert!(collect_package_specs_with(&tokens, BUN_VALUE_OPTIONS).is_empty());
         let named: Vec<String> = ["--cwd", "/srv/project", "left-pad"]
             .iter()
             .map(|s| s.to_string())
             .collect();
-        assert_eq!(collect_package_specs(&named), vec!["left-pad"]);
+        assert_eq!(
+            collect_package_specs_with(&named, BUN_VALUE_OPTIONS),
+            vec!["left-pad"]
+        );
     }
 
     #[test]
