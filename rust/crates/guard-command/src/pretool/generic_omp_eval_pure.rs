@@ -177,6 +177,8 @@ fn skeleton(code: &str) -> Option<String> {
             {
                 return None;
             }
+            // The prefix belongs to the string, not to a name.
+            out.truncate(out.len() - prefix.len());
             let triple = chars.get(i + 1) == Some(&c) && chars.get(i + 2) == Some(&c);
             i += if triple { 3 } else { 1 };
             loop {
