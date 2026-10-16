@@ -293,7 +293,8 @@ fn resolve_recording(
         &seams,
         &seams,
         &seams,
-    );
+    )
+    .evaluation;
     let claimed = store.claimed.borrow().clone();
     let looked_up = store.looked_up.borrow().clone();
     (resolved, claimed, looked_up)
@@ -386,7 +387,7 @@ fn a_failed_lookup_keeps_the_review_and_records_its_code() {
         events: RefCell::new(Vec::new()),
     };
     let seams = Seams;
-    let resolved = apply_stored_package_policy_override(
+    let applied = apply_stored_package_policy_override(
         &evaluation(),
         &store,
         &artifact(),
@@ -401,9 +402,14 @@ fn a_failed_lookup_keeps_the_review_and_records_its_code() {
         &seams,
         &seams,
     );
+    let resolved = &applied.evaluation;
     assert!(store.claimed.borrow().is_empty());
     assert_eq!(resolved.policy_action().as_deref(), Some("review"));
     assert_eq!(resolved.value.get("saved_approval_applied"), None);
+    assert_eq!(
+        applied.lookup_error.as_deref(),
+        Some("native_policy_decision_lookup_query_failed")
+    );
     assert_eq!(
         store.events.borrow().as_slice(),
         [(

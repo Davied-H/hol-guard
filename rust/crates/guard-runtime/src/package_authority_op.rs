@@ -2783,7 +2783,7 @@ pub(crate) fn evaluate_apply_stored_package_policy(
         value: request.evaluation.clone(),
     };
     let workspace_dir = PathBuf::from(&request.workspace_dir);
-    let result = apply_stored_package_policy_override(
+    let applied = apply_stored_package_policy_override(
         &evaluation,
         &store,
         &artifact,
@@ -2803,8 +2803,8 @@ pub(crate) fn evaluate_apply_stored_package_policy(
         request_id: request.request_id.clone(),
         request_sha256,
         status: "ok".to_string(),
-        code: "ok".to_string(),
-        payload: Some(result.value),
+        code: applied.lookup_error.unwrap_or_else(|| "ok".to_string()),
+        payload: Some(applied.evaluation.value),
     };
     crate::encode_response(&payload)
 }

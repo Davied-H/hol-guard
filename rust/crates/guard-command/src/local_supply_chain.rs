@@ -4772,7 +4772,8 @@ fn final_package_protect_authority(
             eval_api,
             paths_api,
             approval_context_api,
-        );
+        )
+        .evaluation;
         if ppo::evaluation_uses_saved_package_approval(&refreshed_saved_policy.value) {
             return Ok((current, refreshed_saved_policy));
         }
@@ -4889,7 +4890,8 @@ fn final_package_protect_authority(
         eval_api,
         paths_api,
         approval_context_api,
-    );
+    )
+    .evaluation;
     if ppo::evaluation_uses_saved_package_approval(&resolved.value) {
         let reuse = evaluate_approval_reuse(
             &current.current_action.clone().unwrap_or(Value::Null),
@@ -5531,6 +5533,7 @@ fn compose_current_package_policy_action(
 struct StoredPackagePolicyResolution {
     evaluation: PackageRequestEvaluation,
     claim_disposition: Option<String>,
+    lookup_error: Option<String>,
 }
 
 /// `_resolve_stored_package_policy_override` — attempt to claim a saved
@@ -5555,6 +5558,7 @@ fn resolve_stored_package_policy_override(
     let unchanged = || StoredPackagePolicyResolution {
         evaluation: evaluation.clone(),
         claim_disposition: None,
+        lookup_error: None,
     };
     // `native_package_policy_resolve._hydrate` — probe the workspace
     // identities a package-policy lookup may answer for, in order, and take
@@ -5580,13 +5584,19 @@ fn resolve_stored_package_policy_override(
         );
         if let Some(code) = lookup.error.as_deref() {
             // A store failure is not an empty lookup. The review verdict
-            // stands, and the code is recorded so the two can be told apart.
+            // stands. The event is written when the store can take it; the
+            // code is also returned, because this same store may be unable
+            // to record the event.
             store.add_event(
                 "package_policy_lookup_failed",
                 &json!({ "code": code }),
                 now,
             );
-            return unchanged();
+            return StoredPackagePolicyResolution {
+                evaluation: evaluation.clone(),
+                claim_disposition: None,
+                lookup_error: Some(code.to_string()),
+            };
         }
         // A row whose local integrity did not verify stops the probe: Python
         // hands that case to the daemon authority, which this lane has no seam
@@ -5655,7 +5665,15 @@ fn resolve_stored_package_policy_override(
     StoredPackagePolicyResolution {
         evaluation: claimed,
         claim_disposition: disposition,
+        lookup_error: None,
     }
+}
+
+/// A stored package-policy override. `lookup_error` is set when the lookup
+/// could not run; `evaluation` is then the review verdict unchanged.
+pub struct AppliedStoredPackagePolicy {
+    pub evaluation: PackageRequestEvaluation,
+    pub lookup_error: Option<String>,
 }
 
 /// `_apply_stored_package_policy_override` — claim the saved approval when the
@@ -5675,8 +5693,8 @@ pub fn apply_stored_package_policy_override(
     eval_api: &dyn PackageEvalApi,
     paths_api: &dyn PathSupportApi,
     approval_context_api: &dyn ApprovalContextApi,
-) -> PackageRequestEvaluation {
-    resolve_stored_package_policy_override(
+) -> AppliedStoredPackagePolicy {
+    let resolved = resolve_stored_package_policy_override(
         evaluation,
         store,
         artifact,
@@ -5690,8 +5708,11 @@ pub fn apply_stored_package_policy_override(
         eval_api,
         paths_api,
         approval_context_api,
-    )
-    .evaluation
+    );
+    AppliedStoredPackagePolicy {
+        evaluation: resolved.evaluation,
+        lookup_error: resolved.lookup_error,
+    }
 }
 
 // ---------------------------------------------------------------------------
