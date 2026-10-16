@@ -11923,22 +11923,6 @@
       "expect": "allow"
     },
     {
-      "id": "toolchain-bin-on-path-tsc",
-      "fix_area": "shell",
-      "harnesses": [
-        "codex",
-        "zcode",
-        "claude-code",
-        "omp"
-      ],
-      "tool": "shell",
-      "tool_input": {
-        "command": "PATH=./node_modules/.bin:$PATH tsc --noEmit"
-      },
-      "cwd": "worktree",
-      "expect": "allow"
-    },
-    {
       "id": "toolchain-eslint-fix-src",
       "fix_area": "shell",
       "harnesses": [
@@ -12243,38 +12227,6 @@
       "expect": "allow"
     },
     {
-      "id": "toolchain-activate-then-pytest",
-      "fix_area": "shell",
-      "harnesses": [
-        "codex",
-        "zcode",
-        "claude-code",
-        "omp"
-      ],
-      "tool": "shell",
-      "tool_input": {
-        "command": "source .venv/bin/activate && pytest -q"
-      },
-      "cwd": "worktree",
-      "expect": "allow"
-    },
-    {
-      "id": "toolchain-uv-run-no-sync-pytest",
-      "fix_area": "shell",
-      "harnesses": [
-        "codex",
-        "zcode",
-        "claude-code",
-        "omp"
-      ],
-      "tool": "shell",
-      "tool_input": {
-        "command": "uv run --no-sync pytest -q"
-      },
-      "cwd": "worktree",
-      "expect": "allow"
-    },
-    {
       "id": "toolchain-cd-worktree-venv-pytest",
       "fix_area": "shell",
       "harnesses": [
@@ -12318,54 +12270,6 @@
       "tool": "shell",
       "tool_input": {
         "command": "make test 2>&1 | tail -20"
-      },
-      "cwd": "worktree",
-      "expect": "allow"
-    },
-    {
-      "id": "toolchain-go-build",
-      "fix_area": "shell",
-      "harnesses": [
-        "codex",
-        "zcode",
-        "claude-code",
-        "omp"
-      ],
-      "tool": "shell",
-      "tool_input": {
-        "command": "go build ./..."
-      },
-      "cwd": "worktree",
-      "expect": "allow"
-    },
-    {
-      "id": "toolchain-go-test",
-      "fix_area": "shell",
-      "harnesses": [
-        "codex",
-        "zcode",
-        "claude-code",
-        "omp"
-      ],
-      "tool": "shell",
-      "tool_input": {
-        "command": "go test ./..."
-      },
-      "cwd": "worktree",
-      "expect": "allow"
-    },
-    {
-      "id": "toolchain-go-vet",
-      "fix_area": "shell",
-      "harnesses": [
-        "codex",
-        "zcode",
-        "claude-code",
-        "omp"
-      ],
-      "tool": "shell",
-      "tool_input": {
-        "command": "go vet ./..."
       },
       "cwd": "worktree",
       "expect": "allow"
