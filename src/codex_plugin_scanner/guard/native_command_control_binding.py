@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 
 NATIVE_COMMAND_CONTROL_BINDING_SCHEMA = "guard.native-command-control-binding.v1"
 _PROGRAM_DOMAIN = b"hol-guard.native-command-program.v1\0"
-_MAX_PROGRAM_BYTES = 4 * 1024 * 1024
+_MAX_PROGRAM_BYTES = 6 * 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)
