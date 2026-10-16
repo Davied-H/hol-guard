@@ -372,6 +372,8 @@ _VERDICT = {
         ("allow", False, False, True, {"policy_action": "allow"}),
         # Only a claimed approval may be reused.
         ("block", False, False, True, {"reasons": [{"code": "saved_package_approval"}]}),
+        # ...including one the reply leaves in place from the base evaluation.
+        ("block", False, False, True, {}),
     ),
 )
 def test_package_protect_finalize_rejects_replies_breaking_request_invariants(
@@ -383,7 +385,11 @@ def test_package_protect_finalize_rejects_replies_breaking_request_invariants(
     with_current: bool,
     patch: dict[str, object],
 ) -> None:
-    blocked = _PackageEvaluation(policy_action="block", decision="block")
+    blocked = _PackageEvaluation(
+        policy_action="block",
+        decision="block",
+        reasons=({"code": "saved_package_approval"},) if not patch else (),
+    )
     initial = SimpleNamespace(
         artifact=SimpleNamespace(artifact_id="package:npm:left-pad"), artifact_hash="hash", evaluation=blocked
     )

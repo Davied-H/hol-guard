@@ -167,7 +167,7 @@ def _check_reply(
     if (claim_failure is not None or current.observe_mode) and effective != current.current_action:
         raise NativePackageProtectFinalizeError("Native package protect finalize changed a fixed current action")
     reasons = patch.get("reasons", base.reasons)
-    reuses_saved = isinstance(reasons, list) and any(
+    reuses_saved = isinstance(reasons, (list, tuple)) and any(
         isinstance(reason, Mapping) and reason.get("code") == "saved_package_approval" for reason in reasons
     )
     # A failed claim keeps the saved-approval reason it was refused for, but
