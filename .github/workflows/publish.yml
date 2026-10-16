@@ -632,7 +632,6 @@ jobs:
           HOL_GUARD_PACKAGE_VERSION: ${{ steps.version.outputs.version }}
           # Content-addressed reuse survives fresh-checkout mtimes. Only trusted
           # main pushes may write; pull requests and dispatches are read-only.
-          RUSTC_WRAPPER: sccache
           RUSTC_WORKSPACE_WRAPPER: sccache
           SCCACHE_GHA_ENABLED: 'on'
           SCCACHE_GHA_VERSION: release-source-compiler-v1
