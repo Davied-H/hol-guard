@@ -48,6 +48,13 @@ pub trait EgressPolicy {
     fn validate(&self, url: &str) -> Result<(), String>;
 }
 
+/// External archives the caller acquires for the resident, when it has that
+/// wired. An archive need is not an HTTP exchange: the caller downloads the
+/// blob under bounded acquisition and inspects it offline.
+pub trait ArchiveEgress {
+    fn fulfil(&mut self, need: &EgressNeedV1) -> EgressOutcomeV1;
+}
+
 /// No managed network policy applies. Only correct where the caller has
 /// established that: a machine with a managed policy document refuses
 /// destinations this allows.
@@ -63,19 +70,35 @@ impl EgressPolicy for UnmanagedEgressPolicy {
 pub struct EgressFulfilment<'a> {
     spool_dir: PathBuf,
     policy: &'a dyn EgressPolicy,
+    archives: Option<&'a mut dyn ArchiveEgress>,
     supplied: Vec<EgressSuppliedV1>,
     inline_used: usize,
     spool_count: u32,
 }
 
 impl<'a> EgressFulfilment<'a> {
+    /// A caller that cannot acquire external archives; archive needs report
+    /// that acquisition is unavailable.
     pub fn new(spool_dir: &Path, policy: &'a dyn EgressPolicy) -> Self {
         Self {
             spool_dir: spool_dir.to_path_buf(),
             policy,
+            archives: None,
             supplied: Vec::new(),
             inline_used: 0,
             spool_count: 0,
+        }
+    }
+
+    /// A caller that also performs the external-archive needs.
+    pub fn with_archives(
+        spool_dir: &Path,
+        policy: &'a dyn EgressPolicy,
+        archives: &'a mut dyn ArchiveEgress,
+    ) -> Self {
+        Self {
+            archives: Some(archives),
+            ..Self::new(spool_dir, policy)
         }
     }
 
@@ -106,11 +129,14 @@ impl<'a> EgressFulfilment<'a> {
             std::thread::sleep(Duration::from_secs_f64(delay));
         }
         let outcome = if need.class == "archive" {
-            // The archive classes are acquired and inspected elsewhere; a
-            // caller that has not wired that reports the refusal.
-            EgressOutcomeV1::ArchiveFailure {
-                code: "external_archive_download_unavailable".to_owned(),
-                message: "External archive acquisition is unavailable.".to_owned(),
+            match self.archives.as_mut() {
+                Some(archives) => archives.fulfil(need),
+                // A caller that has not wired archive acquisition reports the
+                // refusal; the resident never dials out for the blob itself.
+                None => EgressOutcomeV1::ArchiveFailure {
+                    code: "external_archive_download_unavailable".to_owned(),
+                    message: "External archive acquisition is unavailable.".to_owned(),
+                },
             }
         } else {
             self.http(need)
