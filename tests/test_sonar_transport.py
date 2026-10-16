@@ -47,6 +47,25 @@ def test_persistent_transport_failure_has_three_attempts_within_one_budget(clock
     assert [call.args[0] for call in clock[1].call_args_list] == [0.25, 0.75]
 
 
+def test_reset_while_reading_closes_response_before_retry(clock):
+    client = SonarClient("test-only-token")
+    client.opener = Mock()
+    response = Mock()
+    response.__enter__ = Mock(return_value=response)
+    response.__exit__ = Mock(return_value=False)
+    response.read.side_effect = ConnectionResetError()
+
+    def recover(*_args, **_kwargs):
+        if client.opener.open.call_count == 1:
+            return response
+        response.__exit__.assert_called_once()
+        return io.BytesIO(b'{"projectStatus":{"status":"OK"}}')
+
+    client.opener.open.side_effect = recover
+    assert client.gate("analysis-id") == {"status": "OK"}
+    assert client.opener.open.call_count == 2
+
+
 def test_deadline_prevents_an_extra_attempt(clock):
     client = SonarClient("test-only-token", timeout=0.1)
     client.opener = Mock()
