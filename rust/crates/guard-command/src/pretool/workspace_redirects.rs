@@ -216,7 +216,7 @@ pub(super) fn contained(
     let stripped = project(command)?;
     // Removing an input redirect drops the program it feeds, so a program
     // that needs the network keeps the review of the text as sent.
-    if super::script_content::text_uses_network(command, context) {
+    if crate::pretool::script_content::text_uses_network(command, context) {
         return None;
     }
     let direct = super::redirect_projection::project(command, context);
