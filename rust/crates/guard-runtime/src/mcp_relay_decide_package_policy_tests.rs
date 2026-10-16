@@ -100,12 +100,24 @@ fn home(tag: &str) -> (std::path::PathBuf, Connection) {
     (home, connection)
 }
 
+/// The directory the relaying process reports, as `resolve(strict=False)`
+/// leaves it, so the scope token the package lane probes resolves under it
+/// rather than deferring on a directory Python would rewrite.
+fn process_cwd(home: &Path) -> String {
+    std::fs::canonicalize(home)
+        .expect("the home exists")
+        .to_str()
+        .expect("the path is text")
+        .to_owned()
+}
+
 /// What the relay resolves for the package call, on the read-only snapshot.
 fn resolve(home: &Path, evaluation: &Map<String, Value>) -> Result<PackagePolicy, &'static str> {
     let connection = store::open(home)?.expect("store");
     let saved = store::saved(&connection, &binding(), home.to_str().unwrap(), HARNESS)?
         .expect("saved rows");
     let environment = environment();
+    let cwd = process_cwd(home);
     package_policy(
         &saved,
         &view(),
@@ -115,7 +127,7 @@ fn resolve(home: &Path, evaluation: &Map<String, Value>) -> Result<PackagePolicy
         home.to_str().unwrap(),
         &ProcessFacts {
             environment: &environment,
-            cwd: home.to_str().unwrap(),
+            cwd: &cwd,
             home: "/home/dev",
         },
     )

@@ -148,7 +148,13 @@ pub(super) fn package_policy(
         Some(&artifact.artifact_type),
         &execution_context,
     );
-    let facts = hydrate(saved, artifact, &artifact_hash, policy_workspace.as_deref())?;
+    let facts = hydrate(
+        saved,
+        artifact,
+        &artifact_hash,
+        policy_workspace.as_deref(),
+        process.cwd,
+    )?;
     let request = PackagePolicyResolveRequestV1 {
         schema: PACKAGE_AUTHORITY_REQUEST_SCHEMA.to_owned(),
         request_id: REQUEST_ID.to_owned(),
@@ -230,22 +236,20 @@ fn hydrate(
     artifact: &GuardArtifact,
     artifact_hash: &str,
     policy_workspace: Option<&str>,
+    process_cwd: &str,
 ) -> Result<Facts, &'static str> {
     let mut decision: Option<Value> = None;
     let mut ignored_integrity = false;
     // `policy_workspaces` is the one runtime identity or none at all.
-    for workspace in policy_workspace {
-        let lookup = saved.package_candidate(&probe(artifact, artifact_hash, workspace))?;
+    if let Some(workspace) = policy_workspace {
+        let lookup =
+            saved.package_candidate(&probe(artifact, artifact_hash, workspace), process_cwd)?;
         let found = lookup.get("decision").cloned().unwrap_or(Value::Null);
         ignored_integrity = lookup
             .get("ignored_local_integrity")
             .is_some_and(|ignored| !ignored.is_null());
         if found.is_object() {
             decision = Some(found);
-            break;
-        }
-        if ignored_integrity {
-            break;
         }
     }
     if decision.is_none() && ignored_integrity {
@@ -265,14 +269,17 @@ fn hydrate(
         diagnosed_reason: None,
         diagnosed_stored_hash: None,
     };
-    if facts.decision.is_none() {
-        for workspace in policy_workspace {
-            let (reason, stored) = saved.diagnosed(&probe(artifact, artifact_hash, workspace))?;
-            if let Some(reason) = reason.as_str() {
-                facts.diagnosed_reason = Some(reason.to_owned());
-                facts.diagnosed_stored_hash = stored.as_str().map(str::to_owned);
-                break;
-            }
+    // The miss is explained over the same one identity the lookup read.
+    let diagnose = facts
+        .decision
+        .is_none()
+        .then_some(policy_workspace)
+        .flatten();
+    if let Some(workspace) = diagnose {
+        let (reason, stored) = saved.diagnosed(&probe(artifact, artifact_hash, workspace))?;
+        if let Some(reason) = reason.as_str() {
+            facts.diagnosed_reason = Some(reason.to_owned());
+            facts.diagnosed_stored_hash = stored.as_str().map(str::to_owned);
         }
     }
     Ok(facts)

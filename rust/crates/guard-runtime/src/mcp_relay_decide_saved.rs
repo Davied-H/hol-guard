@@ -23,7 +23,7 @@ use crate::context_digest::python_strip;
 use crate::mcp_tool_policy_lookup::{most_restrictive, without_permission_elevation};
 use crate::memory_pattern::{verdict, MemoryRequest};
 use crate::policy_decision_lookup_op::evaluate_non_consuming;
-use crate::project_identity::{portable_workspace, PortableIdentity};
+use crate::project_identity::{portable_workspace, resolve_relative, PortableIdentity};
 use guard_contracts::{ApprovalReuseDiagnosticRequestV1, APPROVAL_REUSE_DIAGNOSTIC_REQUEST_SCHEMA};
 use serde_json::{json, Value};
 
@@ -151,8 +151,24 @@ impl Saved<'_> {
     /// the resident sent. The portable identity is resolved here, as
     /// `resolve_policy_decision_lookup` resolves it for every lookup it
     /// answers, so a caller cannot read the local row alone by mistake.
-    pub(super) fn package_candidate(&self, probe: &Probe<'_>) -> Result<Value, &'static str> {
-        let identity = self.portable_identity(probe.workspace)?;
+    ///
+    /// The package lane probes a scope token rather than a directory, and
+    /// `_workspace_path` reads such a name against the working directory of
+    /// the process that composed it, so that directory is resolved from the
+    /// facts the caller reported rather than from the resident's own.
+    pub(super) fn package_candidate(
+        &self,
+        probe: &Probe<'_>,
+        process_cwd: &str,
+    ) -> Result<Value, &'static str> {
+        let identity = match probe.workspace {
+            None => None,
+            Some(workspace) => match resolve_relative(workspace, process_cwd) {
+                PortableIdentity::Absent => None,
+                PortableIdentity::Identity(identity) => Some(identity),
+                PortableIdentity::Unknown => return Err(SAVED_PORTABLE),
+            },
+        };
         self.candidate(probe, identity.as_deref())
     }
 
