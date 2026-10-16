@@ -240,10 +240,37 @@ pub(super) fn uses_network(model: &CanonicalCommandV1, context: PathContext<'_>)
 /// Whether inline source or a program fed on standard input uses the
 /// network. A test script that imports a client usually stubs it, so script
 /// files are left to their own route.
-pub(super) fn inline_uses_network(model: &CanonicalCommandV1, context: PathContext<'_>) -> bool {
-    assess_programs(model, context, false)
-        .iter()
-        .any(|found| found.network)
+pub(super) fn inline_uses_network(
+    model: &CanonicalCommandV1,
+    command_text: Option<&str>,
+    context: PathContext<'_>,
+) -> bool {
+    let inline = |model: &CanonicalCommandV1| {
+        assess_programs(model, context, false)
+            .iter()
+            .any(|found| found.network)
+    };
+    inline(model) || sent_model(model, command_text).is_some_and(|sent| inline(&sent))
+}
+
+/// The model of the text the agent sent, when `model` is a projection of it,
+/// such as one with an input redirect removed, which loses the program that
+/// redirect feeds.
+fn sent_model(
+    model: &CanonicalCommandV1,
+    command_text: Option<&str>,
+) -> Option<CanonicalCommandV1> {
+    let text = command_text?.trim();
+    if text == model.normalized_text {
+        return None;
+    }
+    crate::parse_command(&crate::CommandModelRequestV1 {
+        command: text.to_owned(),
+        dialect: model.dialect.clone(),
+        transport: model.transport.clone(),
+        extraction_provenance: model.extraction_provenance.clone(),
+    })
+    .ok()
 }
 
 /// Keeps the review of a command whose program uses the network: the sandbox
@@ -251,9 +278,12 @@ pub(super) fn inline_uses_network(model: &CanonicalCommandV1, context: PathConte
 pub(super) fn keeps_network_review(
     result: &mut PreToolResultV1,
     model: &CanonicalCommandV1,
+    command_text: Option<&str>,
     context: PathContext<'_>,
 ) -> bool {
-    if !uses_network(model, context) {
+    if !uses_network(model, context)
+        && !sent_model(model, command_text).is_some_and(|sent| uses_network(&sent, context))
+    {
         return false;
     }
     result.reason = concat!(

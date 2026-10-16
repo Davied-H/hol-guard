@@ -861,6 +861,7 @@ fn evaluate_envelope(
         && command_model.is_none_or(|model| {
             !super::script_content::inline_uses_network(
                 model,
+                signals.command.as_deref(),
                 super::PathContext {
                     home_dir,
                     cwd,
