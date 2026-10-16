@@ -24,7 +24,7 @@ fn an_xargs_that_names_its_program_is_reviewable() {
     for command in [
         "xargs rm -f < list.txt",
         "xargs -0 -n 20 rm -f < list.txt",
-        "find . -name '*.log' -print0 | xargs -0 rm -f",
+        "cat list.txt | xargs -0 rm -f",
     ] {
         let (action, code) = decision(&controls, command);
         assert_ne!(code, FAILED, "{command}");
@@ -57,6 +57,8 @@ fn xargs_options_are_read_past_to_its_program() {
         "xargs -n 20 rm",
         "xargs -n20 rm",
         "xargs -I{} cp {} /tmp",
+        "xargs -i rm",
+        "xargs --replace mv",
         "xargs --max-args=3 rm",
         "xargs -- rm -f",
         "cat list.txt | xargs -P 4 -I {} mv {} archive/",
@@ -68,6 +70,11 @@ fn xargs_options_are_read_past_to_its_program() {
         "xargs -0",
         // The value of `-I` is not the program.
         "xargs -I {}",
+        // The program is the replacement token, so each input line names it.
+        "xargs -I{} {}",
+        "xargs -I X X",
+        "xargs -I CMD CMD --flag",
+        "cat list | xargs -I % %",
         "xargs --max-args 3",
         // A long option this does not know may take the next word.
         "xargs --future-option rm",
