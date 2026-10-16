@@ -1,12 +1,17 @@
 //! What the relay resolves for a package call, and which store defers it.
 
-use super::super::saved::tests::{binding, decide, decide_row, guard_home, sync_state, Row};
+use super::super::saved::tests::{binding, decide, guard_home};
+// The rows only a store the tests write to carries, which Windows never reaches.
+#[cfg(unix)]
+use super::super::saved::tests::{decide_row, sync_state, Row};
 use super::super::store;
 use super::*;
 
 use guard_command::package_intent_common::build_package_request_artifact;
 use guard_command::package_intent_parser::parse_package_intent;
-use rusqlite::{params, Connection};
+#[cfg(unix)]
+use rusqlite::params;
+use rusqlite::Connection;
 use std::path::Path;
 
 const HARNESS: &str = "codex";

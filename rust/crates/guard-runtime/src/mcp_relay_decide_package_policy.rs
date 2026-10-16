@@ -208,6 +208,20 @@ struct Facts {
     diagnosed_stored_hash: Option<String>,
 }
 
+/// The lookup identity the package policy probes a workspace with.
+fn probe<'a>(artifact: &'a GuardArtifact, artifact_hash: &'a str, workspace: &'a str) -> Probe<'a> {
+    Probe {
+        harness: &artifact.harness,
+        artifact_id: &artifact.artifact_id,
+        artifact_hash: Some(artifact_hash),
+        workspace: Some(workspace),
+        publisher: artifact.publisher.as_deref(),
+        // The package lookup selects on the saved row, not on an exact command
+        // match, so it binds no exact-match context.
+        exact_match_context: None,
+    }
+}
+
 /// `_hydrate` (`native_package_policy_resolve.py:70`) over the relay's own
 /// snapshot: the lookup, then either the approval-request row the decision
 /// names or the diagnostic that explains the miss.
@@ -217,21 +231,11 @@ fn hydrate(
     artifact_hash: &str,
     policy_workspace: Option<&str>,
 ) -> Result<Facts, &'static str> {
-    let probe = |workspace: &str| Probe {
-        harness: &artifact.harness,
-        artifact_id: &artifact.artifact_id,
-        artifact_hash: Some(artifact_hash),
-        workspace: Some(workspace),
-        publisher: artifact.publisher.as_deref(),
-        // The package lookup selects on the saved row, not on an exact command
-        // match, so it binds no exact-match context.
-        exact_match_context: None,
-    };
     let mut decision: Option<Value> = None;
     let mut ignored_integrity = false;
     // `policy_workspaces` is the one runtime identity or none at all.
     for workspace in policy_workspace {
-        let lookup = saved.package_candidate(&probe(workspace))?;
+        let lookup = saved.package_candidate(&probe(artifact, artifact_hash, workspace))?;
         let found = lookup.get("decision").cloned().unwrap_or(Value::Null);
         ignored_integrity = lookup
             .get("ignored_local_integrity")
@@ -263,7 +267,7 @@ fn hydrate(
     };
     if facts.decision.is_none() {
         for workspace in policy_workspace {
-            let (reason, stored) = saved.diagnosed(&probe(workspace))?;
+            let (reason, stored) = saved.diagnosed(&probe(artifact, artifact_hash, workspace))?;
             if let Some(reason) = reason.as_str() {
                 facts.diagnosed_reason = Some(reason.to_owned());
                 facts.diagnosed_stored_hash = stored.as_str().map(str::to_owned);
