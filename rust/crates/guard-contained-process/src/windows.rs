@@ -53,6 +53,7 @@ struct SecurityCapabilities {
 
 mod app_container;
 pub use app_container::AppContainer;
+mod desktop;
 mod publish;
 pub(crate) mod readonly;
 
@@ -256,6 +257,10 @@ fn capture_native(
         ));
     }
     let mut env = environment_block(&command.environment)?;
+    // Held until the child exits; see `desktop` for why a container needs it.
+    let mut desktop = container
+        .map(|container| desktop::PrivateDesktop::create(container.sid))
+        .transpose()?;
     let mut startup: STARTUPINFOEXW = unsafe { zeroed() };
     startup.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
     startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
@@ -263,6 +268,9 @@ fn capture_native(
     startup.StartupInfo.hStdOutput = handles[1];
     startup.StartupInfo.hStdError = handles[2];
     startup.lpAttributeList = attributes.storage.as_mut_ptr().cast();
+    if let Some(desktop) = desktop.as_mut() {
+        startup.StartupInfo.lpDesktop = desktop.path.as_mut_ptr();
+    }
     let mut process: PROCESS_INFORMATION = unsafe { zeroed() };
     if Instant::now() >= deadline || cancel.load(std::sync::atomic::Ordering::Acquire) {
         return Err(io::Error::new(
