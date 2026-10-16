@@ -259,7 +259,70 @@ impl PrivateRoot {
         builder.mode(0o700);
         builder.create(root.path.join("home")).ok()?;
         builder.create(root.path.join("tmp")).ok()?;
+        if let Some(home) = crate::claude_hook_bridge::home_directory() {
+            seed_safety_guide(&home, &root.path.join("home"));
+        }
         Some(root)
+    }
+}
+
+/// The largest safety guide copied into the private home.
+const MAX_SAFETY_GUIDE_BYTES: u64 = 64 * 1024;
+
+/// Copy Guard's safety guide into the private home, so the
+/// `~/.hol-support/SAFETY.md` that classification admits reads the same text
+/// inside the sandbox. Only a regular file with one link, in a real
+/// `.hol-support` directory, is copied: a link swapped in for the guide
+/// would otherwise put the file it names in reach of the sandboxed command.
+/// A guide that cannot be copied is left out and the read fails in the sandbox.
+pub(super) fn seed_safety_guide(home: &Path, private_home: &Path) {
+    use std::io::Read;
+    use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+    let directory = home.join(".hol-support");
+    let is_directory =
+        std::fs::symlink_metadata(&directory).is_ok_and(|metadata| metadata.file_type().is_dir());
+    if !is_directory {
+        return;
+    }
+    let Ok(mut file) = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(directory.join("SAFETY.md"))
+    else {
+        return;
+    };
+    let Ok(metadata) = file.metadata() else {
+        return;
+    };
+    if !metadata.file_type().is_file()
+        || metadata.nlink() != 1
+        || metadata.len() > MAX_SAFETY_GUIDE_BYTES
+    {
+        return;
+    }
+    let mut text = Vec::new();
+    if (&mut file)
+        .take(MAX_SAFETY_GUIDE_BYTES + 1)
+        .read_to_end(&mut text)
+        .is_err()
+        || text.len() as u64 > MAX_SAFETY_GUIDE_BYTES
+    {
+        return;
+    }
+    let target = private_home.join(".hol-support");
+    let mut builder = std::fs::DirBuilder::new();
+    builder.mode(0o700);
+    if builder.create(&target).is_err() {
+        return;
+    }
+    let written = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(target.join("SAFETY.md"))
+        .and_then(|mut copy| copy.write_all(&text));
+    if written.is_err() {
+        let _ = std::fs::remove_file(target.join("SAFETY.md"));
     }
 }
 
