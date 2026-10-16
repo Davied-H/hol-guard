@@ -15,6 +15,10 @@ use crate::package_intent_common::{GuardArtifact, PackageIntent};
 
 const ARTIFACT_HASH: &str = "guard-approval-context:v1:abc";
 
+/// One lookup the store answered: harness, artifact id, artifact hash and the
+/// workspace identity it was probed with.
+type LookedUpCall = (String, String, Option<String>, String);
+
 /// A store whose lookup returns the one saved row the claim reads, and whose
 /// claim answers as the caller asked, recording what it was claimed with.
 struct SavedApprovalStore {
@@ -22,7 +26,7 @@ struct SavedApprovalStore {
     decision: Option<Value>,
     claim_succeeds: bool,
     claimed: RefCell<Vec<(Value, String)>>,
-    looked_up: RefCell<Vec<(String, String, Option<String>, String)>>,
+    looked_up: RefCell<Vec<LookedUpCall>>,
 }
 
 impl SupplyChainStore for SavedApprovalStore {

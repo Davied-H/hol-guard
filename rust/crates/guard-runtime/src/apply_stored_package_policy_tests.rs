@@ -24,6 +24,21 @@ fn temp_home(tag: &str) -> PathBuf {
     home
 }
 
+/// The approval-context token a package request's artifact hash is. A plain
+/// digest is not one, and `validate_context_tokens` reads a row carrying one as
+/// changed content, so the claim would never be attempted for it.
+fn approval_context_token() -> String {
+    crate::context_digest::build_context_token(&guard_contracts::ContextDigestComponentsV1 {
+        identity: json!({"artifact_id": "command:install", "harness": "claude"}),
+        content: json!({"packages": [{"ecosystem": "npm", "package_name": "left-pad"}]}),
+        capabilities: json!({}),
+        policy: json!({}),
+        sandbox: json!({}),
+        extension_control_digest: String::new(),
+    })
+    .expect("the token is built from canonical JSON")
+}
+
 fn base_evaluation() -> Value {
     json!({
         "decision": "allow",
@@ -65,7 +80,7 @@ fn request_for(home: &std::path::Path) -> ApplyStoredPackagePolicyRequestV1 {
             "args": [],
             "metadata": {},
         }),
-        artifact_hash: "deadbeef".into(),
+        artifact_hash: approval_context_token(),
         workspace_dir: home.to_string_lossy().into_owned(),
         now: "2026-10-06T00:00:00Z".into(),
         runtime_private_metadata: None,
@@ -128,10 +143,10 @@ fn seed_saved_allow(home: &std::path::Path) {
         "insert into policy_decisions
            (decision_id, harness, scope, artifact_id, action, artifact_hash,
             source, created_at, updated_at)
-         values (11, 'claude', 'artifact', 'command:install', 'allow', 'deadbeef',
+         values (11, 'claude', 'artifact', 'command:install', 'allow', ?1,
                  'cloud-signed-memory', '2026-10-01T00:00:00+00:00',
                  '2026-10-01T00:00:00+00:00')",
-        [],
+        [approval_context_token()],
     )
     .unwrap();
 }
@@ -145,7 +160,7 @@ fn the_resident_lookup_reports_the_saved_decision_identifier() {
     let lookup = store.resolve_policy_decision_lookup(
         "claude",
         "command:install",
-        Some("deadbeef"),
+        Some(approval_context_token().as_str()),
         "package-request-workspace:v2:unused",
         None,
         "2026-10-06T00:00:00Z",
@@ -156,7 +171,7 @@ fn the_resident_lookup_reports_the_saved_decision_identifier() {
     // returns every saved approval unapplied.
     assert_eq!(decision["decision_id"], json!(11));
     assert_eq!(decision["action"], json!("allow"));
-    assert_eq!(decision["artifact_hash"], json!("deadbeef"));
+    assert_eq!(decision["artifact_hash"], json!(approval_context_token()));
     // The revision the claim compares against the store's current one. A
     // decision resolved without it can never be claimed, so a saved allow
     // would never be applied.
