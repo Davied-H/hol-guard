@@ -24,6 +24,29 @@ SCRATCH_NAME = "scratch-notes.txt"
 # /private/tmp; the evidence redacts both spellings to ``{{scratch}}``.
 TMP_ALIAS_READ_CASE = "omp-native-read-tmp-alias-worktree-file"
 SCRATCH_READ_TARGET = "{{scratch}}/notes.md"
+# Keys of the default delegated report; `files` entries are checked against the lookup path.
+REPORT_KEYS = frozenset({"summary", "report", "architecture", "files"})
+
+
+def _declared_report_keys(calls: list[dict[str, Any]], delegated: set[str]) -> frozenset[str]:
+    """Property names the parent's ``task`` call declared for its delegated result.
+
+    OMP lets the parent give each subtask (or the whole call) an ``outputSchema``; the
+    subtask's ``yield`` then reports under those names instead of the default keys.
+    """
+    keys: set[str] = set()
+    for call in calls:
+        if call["id"] in delegated or call["name"] != "task" or not isinstance(call.get("args"), dict):
+            continue
+        tasks = call["args"].get("tasks")
+        schemas = [call["args"].get("outputSchema")]
+        if isinstance(tasks, list):
+            schemas += [task.get("outputSchema") for task in tasks if isinstance(task, dict)]
+        for schema in schemas:
+            properties = schema.get("properties") if isinstance(schema, dict) else None
+            if isinstance(properties, dict):
+                keys.update(name for name in properties if isinstance(name, str))
+    return frozenset(keys - REPORT_KEYS)
 
 
 def _write_path(args: dict[str, Any]) -> str:
@@ -195,8 +218,12 @@ def native_tools_scope_error(
             if not isinstance(data, (dict, str)):
                 return "delegated result report was missing"
             if isinstance(data, dict):
-                if set(data) - {"summary", "report", "architecture", "files"}:
-                    return "delegated result report contained extra operations"
+                declared = _declared_report_keys(calls, set(delegated))
+                if set(data) - REPORT_KEYS - declared:
+                    return "delegated result report used keys outside its declared schema"
+                # A declared field carries the looked-up answer, never a list of further work.
+                if any(not isinstance(data[key], (str, int, float, bool)) for key in set(data) & declared):
+                    return "delegated result report declared a non-scalar field"
                 files = data.get("files", [])
                 if not isinstance(files, list) or any(
                     not isinstance(file, dict) or file.get("path") not in delegated_paths for file in files
