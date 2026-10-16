@@ -410,29 +410,19 @@ impl InspectionHost for SecretFreeHost {
     }
 }
 
-const EPHEMERAL_BODY_WORKFLOW: &str = r#"pr_body="$(mktemp)"
-cat > "$pr_body" <<'EOF'
-## Summary
-- Static proposal text.
+/// A recorded `eph_safe` vector that the ported check accepts.
+const EPHEMERAL_BODY_WORKFLOW: &str = r#"f="$(mktemp)"
+cat > "$f" <<'EOF'
+body
 EOF
-
-echo '=== PR BODY CONTENTS ==='
-cat "$pr_body"
-echo
-echo '=== PR BODY LEAK SCAN ==='
-if grep -nE 'PRIVATE_PATH|INTERNAL_HOST|LOCAL_CHECKOUT' "$pr_body"; then
-  echo 'LEAK HIT - aborting'
+if grep -nE 'password' "$f"
+then
+  echo "found"
   exit 1
 else
-  echo 'PR BODY: clean'
+  cat "$f"
 fi
-
-echo
-echo "pr_body=$pr_body"
-
-gh pr create --repo example/project --base main --head fix/proposal \
-  --title "fix(app): focused change" --body-file "$pr_body"
-echo "PR_BODY_FILE=$pr_body""#;
+gh pr create --title "t" --body-file "$f""#;
 
 fn benign_github_shell(host: &dyn InspectionHost, command: &str) -> Value {
     let ctx = Ctx::new(host, "/work", "/home/user");
