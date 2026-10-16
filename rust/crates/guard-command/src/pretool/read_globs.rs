@@ -121,6 +121,14 @@ fn readable_match(
     if name.starts_with('.') {
         return false;
     }
+    // A name holding whitespace is one word to the shell that expanded the
+    // pattern, but several arguments once that word passes through an
+    // unquoted expansion: `for f in src/*-n; do cat $f; done` reads
+    // `src/public -n` here and runs `cat src/public -n`. The two are not the
+    // same read, so a directory holding such a name keeps its review.
+    if name.contains(char::is_whitespace) {
+        return false;
+    }
     let extension = Path::new(name)
         .extension()
         .and_then(|extension| extension.to_str())
