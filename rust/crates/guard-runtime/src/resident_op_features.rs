@@ -36,6 +36,7 @@ pub(crate) const RESIDENT_OP_FEATURES: &[&str] = &[
     guard_contracts::PROMPT_ANALYZE_FEATURE,
     guard_contracts::DATA_FLOW_ANALYZE_FEATURE,
     guard_contracts::POLICY_DECISION_LOOKUP_FEATURE,
+    guard_contracts::RUNTIME_SAVED_REUSE_FEATURE,
     guard_command::catalog_read_model::CATALOG_READ_CAPABILITY,
     crate::discovery_placement_op::DISCOVERY_PLACEMENT_FEATURE,
     guard_contracts::GIT_EXECUTION_SAFETY_FEATURE,
