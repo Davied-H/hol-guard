@@ -745,10 +745,12 @@ def test_stable_pure_wheel_without_a_manifest_is_invalid(tmp_path: Path) -> None
 
 
 def test_manual_install_command_names_the_release_wheel_for_this_host() -> None:
+    url = sources.RELEASE_DOWNLOAD_PREFIX + f"v{STABLE}/{_wheel_name(WINDOWS_ARM, STABLE)}"
     assert native.manual_install_command(STABLE, tags=[WINDOWS_ARM]) == (
-        'python -m pip install --force-reinstall --no-deps "'
-        + sources.RELEASE_DOWNLOAD_PREFIX
-        + f'v{STABLE}/{_wheel_name(WINDOWS_ARM, STABLE)}"'
+        f'{native._manual_installer_prefix("pip")} --force-reinstall --no-deps "{url}"'
+    )
+    assert native.manual_install_command(STABLE, tags=[WINDOWS_ARM], installer="pipx") == (
+        f'pipx runpip hol-guard install --force-reinstall --no-deps "{url}"'
     )
     assert "alpha%2Fv3.43.0a1/" in str(native.manual_install_command(VERSION, tags=[LINUX]))
     assert native.manual_install_command(STABLE, tags=["manylinux_2_17_aarch64"]) is None
@@ -870,6 +872,7 @@ def test_native_repair_only_reinstalls_the_current_stable_and_never_upgrades(
     assert exit_code == 0, payload
     assert payload["native_wheel_reason"] == "repair"
     assert payload["resulting_version"] == "3.41.0"
+    assert payload["message"] == "Installed the HOL Guard 3.41.0 native runtime from its GitHub release."
     assert Path(harness.commands[0][-1]).name == _wheel_name(WINDOWS_ARM, "3.41.0")
     assert release.requested == [sources.RELEASE_DOWNLOAD_PREFIX + f"v3.41.0/{_wheel_name(WINDOWS_ARM, '3.41.0')}"]
 
@@ -984,3 +987,75 @@ def test_install_stops_before_wiring_hooks_when_the_runtime_cannot_be_fetched(
 
     assert exit_code == 1
     assert "run pip by hand" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("installer", ["pip", "pipx"])
+def test_wheel_reinstall_of_the_same_version_leaves_dependencies_alone(installer: str) -> None:
+    wheel = Path("hol_guard-3.41.0-py3-none-win_arm64.whl")
+
+    flags = update_commands._wheel_install_flags("3.41.0", "3.41.0", native_repair=True)
+    reinstall = update_commands._update_command(installer, wheel_path=wheel, wheel_flags=flags)
+    upgrade = update_commands._update_command(installer, wheel_path=wheel)
+
+    assert reinstall[-3:] == ["--force-reinstall", "--no-deps", str(wheel)]
+    assert upgrade[-2:] == ["install", str(wheel)]
+
+
+def test_same_version_local_wheel_still_installs_its_dependencies() -> None:
+    assert update_commands._wheel_install_flags("3.41.0", "3.41.0", native_repair=False) == ("--force-reinstall",)
+    assert update_commands._wheel_install_flags("3.42.0", "3.41.0", native_repair=False) == ()
+    assert update_commands._wheel_install_flags(None, "3.41.0", native_repair=True) == ()
+
+
+@pytest.mark.parametrize(("current", "reinstall"), [("3.41.0", True), ("3.40.0", False)])
+def test_native_wheel_plan_reinstalls_without_dependencies_only_for_the_installed_version(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, current: str, reinstall: bool
+) -> None:
+    package_root = tmp_path / "package"
+    package_root.mkdir()
+    (package_root / sources.NATIVE_WHEEL_MANIFEST_NAME).write_bytes(_manifest(current))
+    monkeypatch.setattr(sources, "_installed_package_root", lambda: package_root)
+    harness = UpdateHarness(
+        monkeypatch,
+        tmp_path,
+        current=current,
+        latest_alpha="3.43.0a1",
+        runtime_missing=True,
+        release=FakeRelease(_stable_release_files("3.41.0")),
+        tags=[WINDOWS_ARM],
+    )
+    monkeypatch.setattr(update_commands, "_latest_version_from_pypi", lambda: "3.41.0")
+    monkeypatch.setattr(update_commands, "_installer_kind", lambda: "pip")
+
+    payload, _exit_code = harness.run(dry_run=True, include_alpha=False)
+
+    assert payload["command"][-1] == "hol_guard-3.41.0-py3-none-<platform>.whl"
+    assert ("--no-deps" in payload["command"]) is reinstall
+    assert ("--force-reinstall" in payload["command"]) is reinstall
+
+
+def test_manual_install_command_targets_the_python_running_guard(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(native.sys, "executable", "/opt/guard venv/bin/python")
+    monkeypatch.setattr(native.os, "name", "posix")
+
+    assert native._manual_installer_prefix("pip") == '"/opt/guard venv/bin/python" -m pip install'
+    assert native._manual_installer_prefix("uv") == 'uv pip install --python "/opt/guard venv/bin/python"'
+    assert native.manual_install_command(STABLE, tags=[WINDOWS_ARM], installer="uv").startswith(  # type: ignore[union-attr]
+        'uv pip install --python "/opt/guard venv/bin/python" --reinstall-package hol-guard --no-deps "'
+    )
+
+
+def test_manual_install_command_runs_a_quoted_interpreter_in_powershell(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(native.sys, "executable", r"C:\Users\Jane Doe\venv\Scripts\python.exe")
+    monkeypatch.setattr(native.os, "name", "nt")
+    monkeypatch.setattr(native, "_windows_short_path", lambda path: path)
+
+    assert native._manual_installer_prefix("pip") == r'& "C:\Users\Jane Doe\venv\Scripts\python.exe" -m pip install'
+
+
+def test_manual_install_command_prefers_the_windows_short_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(native.sys, "executable", r"C:\Users\Jane Doe\venv\Scripts\python.exe")
+    monkeypatch.setattr(native.os, "name", "nt")
+    monkeypatch.setattr(native, "_windows_short_path", lambda _path: r"C:\Users\JANEDO~1\venv\Scripts\python.exe")
+
+    assert native._manual_installer_prefix("pip") == r"C:\Users\JANEDO~1\venv\Scripts\python.exe -m pip install"

@@ -586,6 +586,23 @@ fn windows_contains_only_python_runs_from_harnesses_with_a_sink_command() {
 fn windows_contains_direct_vite_builds_of_a_flat_install() {
     let root = std::env::temp_dir().join(format!("hg-vite-build-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    // A harness reports its directory in the long, drive-letter spelling. The
+    // temporary directory can arrive as an 8.3 short name (`RUNNER~1` on CI
+    // runners), which the cd proof rightly declines as an alias.
+    let root = std::fs::canonicalize(&root).unwrap();
+    // Canonicalization answers in the verbatim spelling: `\\?\C:\...` for a
+    // drive and `\\?\UNC\server\share\...` for a share. Dropping the prefix
+    // off the share form would leave a relative path, so give it back its
+    // leading separators, and leave a non-verbatim answer as it stands.
+    let canonical = root.to_str().unwrap();
+    let root = std::path::PathBuf::from(match canonical.strip_prefix(r"\\?\") {
+        Some(share) => match share.strip_prefix(r"UNC\") {
+            Some(share) => format!(r"\\{share}"),
+            None => share.to_owned(),
+        },
+        None => canonical.to_owned(),
+    });
     let app = root.join("dashboard");
     std::fs::create_dir_all(app.join("node_modules/vite/bin")).unwrap();
     std::fs::create_dir_all(app.join("node_modules/.bin")).unwrap();

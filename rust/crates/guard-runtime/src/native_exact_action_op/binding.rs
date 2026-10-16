@@ -102,6 +102,17 @@ fn receipt_version_is_one(receipt: &Value) -> bool {
     }
 }
 
+/// The policy binding minus `policy_digest`, which moves on every snapshot
+/// republish. `rule_digest`, `runtime_identity` and the command-extension
+/// binding still change the binding whenever the rules that decide a verdict do.
+fn verdict_policy_binding(value: &Value) -> Value {
+    let mut value = value.clone();
+    if let Some(fields) = value.as_object_mut() {
+        fields.remove("policy_digest");
+    }
+    value
+}
+
 /// `_native_review_binding`: bind a retry to Rust-owned request and decision evidence.
 /// `launcher` is asked only for a command whose payload alone cannot bind it.
 #[allow(clippy::too_many_arguments)]
@@ -136,6 +147,18 @@ pub(super) fn review_binding(
     if !digest_pattern().is_match(request_digest) {
         return None;
     }
+    // Anchor to the exact tool intent rather than the request digest, which
+    // also hashes the policy snapshot: a republish that leaves the verdict
+    // unchanged must not orphan a pending one-time approval (#4955). A receipt
+    // without an intent digest keeps the request digest; a malformed one has
+    // no binding at all.
+    let anchor = match receipt.get("execution_intent_digest") {
+        None => request_digest,
+        Some(value) => match value.as_str() {
+            Some(intent) if digest_pattern().is_match(intent) => intent,
+            _ => return None,
+        },
+    };
     let decision = facts.decision.as_deref().unwrap_or("");
     let minimum_action = facts.minimum_action.as_deref().unwrap_or("");
     let policy_action = facts.policy_action.as_deref().unwrap_or("");
@@ -153,13 +176,13 @@ pub(super) fn review_binding(
     {
         return None;
     }
-    let identity = format!("native-review-v4:{request_digest}:{}", tokens.join(":"));
+    let identity = format!("native-review-v4:{anchor}:{}", tokens.join(":"));
     let mut encoded = match policy_binding {
         NativePolicyBindingV1::Invalid => return None,
         NativePolicyBindingV1::Unbound => Vec::new(),
         NativePolicyBindingV1::Bound { value } => {
             let mut encoded = DOMAIN_PREFIX.to_vec();
-            write_canonical_json(value, &mut encoded).ok()?;
+            write_canonical_json(&verdict_policy_binding(value), &mut encoded).ok()?;
             encoded
         }
     };
