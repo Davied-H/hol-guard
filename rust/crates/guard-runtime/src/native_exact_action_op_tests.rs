@@ -461,17 +461,31 @@ fn wire_reply_falls_back_to_the_request_digest_without_an_anchor() {
     );
 }
 
-/// The anchor wins over the execution intent, which drops `guard_home` and
-/// `source_ref_external_allowed` from the source it commits to.
+/// The execution intent never anchors a binding: it drops `guard_home`,
+/// `home_dir` and `source_ref_external_allowed`, so an approval anchored to it
+/// could be consumed under another guard home. With an anchor beside it the
+/// anchor wins; alone it is ignored and the request digest is kept.
 #[test]
-fn wire_reply_prefers_the_anchor_over_the_execution_intent() {
-    let binding = binding_for(
+fn the_execution_intent_never_anchors_the_wire_reply() {
+    let beside_the_anchor = binding_for(
         json!({"execution_intent_digest": "12".repeat(32)}),
         json!({"state": "unbound"}),
     );
     assert_eq!(
-        binding.as_deref(),
+        beside_the_anchor.as_deref(),
         Some(format!("native-review-v4:{}:ask:review:review:r", "cd".repeat(32)).as_str())
+    );
+    let mut request = binding_request("guard-native-exact-action-request.v1");
+    let receipt = request["query"]["receipt"].as_object_mut().unwrap();
+    receipt.remove("review_anchor_digest");
+    receipt.insert("execution_intent_digest".into(), json!("12".repeat(32)));
+    let intent_only = resident(&request)["payload"]["binding"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(
+        intent_only,
+        format!("native-review-v4:{}:ask:review:review:r", "ab".repeat(32))
     );
 }
 

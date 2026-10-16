@@ -146,18 +146,16 @@ pub(super) fn review_binding(
     }
     // Anchor to the review anchor rather than the request digest, which also
     // hashes the policy snapshot: a republish that leaves the verdict unchanged
-    // must not orphan a pending one-time approval (#4955). The anchor is
-    // preferred over `execution_intent_digest`, which drops `guard_home` and
-    // `source_ref_external_allowed` and would let an approval be consumed under
-    // another guard home. A receipt from a runtime that anchors neither keeps
-    // the request digest, so the retry is reviewed again rather than matched on
-    // weaker evidence; a malformed digest has no binding at all.
-    let anchor = match (
-        receipt.get("review_anchor_digest"),
-        receipt.get("execution_intent_digest"),
-    ) {
-        (None, None) => request_digest,
-        (Some(value), _) | (None, Some(value)) => match value.as_str() {
+    // must not orphan a pending one-time approval (#4955). Only the review
+    // anchor is accepted. `execution_intent_digest` drops `guard_home`,
+    // `home_dir` and `source_ref_external_allowed`, so an approval anchored to
+    // it could be consumed under another guard home. A receipt that carries no
+    // review anchor keeps the request digest instead, so a republish queues the
+    // review again rather than matching it on weaker evidence; an anchor that
+    // is not a digest has no binding at all.
+    let anchor = match receipt.get("review_anchor_digest") {
+        None => request_digest,
+        Some(value) => match value.as_str() {
             Some(digest) if digest_pattern().is_match(digest) => digest,
             _ => return None,
         },
