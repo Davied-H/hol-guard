@@ -132,8 +132,27 @@ fn recorded_python_vectors_compose_identically() {
         let actual = applied(primary, findings.as_array().unwrap().len(), &reply);
         let expected_pairs = expected["metadata"].as_array().unwrap();
         assert_eq!(actual.len(), expected_pairs.len(), "{vector}");
-        for ((key, value), pair) in actual.iter().zip(expected_pairs) {
-            assert_eq!(key, pair[0].as_str().unwrap(), "{vector}");
+        // serde_json maps sort their keys, so only the keys the reply adds
+        // keep a comparable order; the primary's own keys compare by value.
+        let original = primary["metadata"].as_object().unwrap();
+        let added = |key: &str| !original.contains_key(key);
+        let actual_added: Vec<&str> = actual
+            .iter()
+            .map(|(key, _)| key.as_str())
+            .filter(|key| added(key))
+            .collect();
+        let expected_added: Vec<&str> = expected_pairs
+            .iter()
+            .map(|pair| pair[0].as_str().unwrap())
+            .filter(|key| added(key))
+            .collect();
+        assert_eq!(actual_added, expected_added, "{vector}");
+        for pair in expected_pairs {
+            let key = pair[0].as_str().unwrap();
+            let (_, value) = actual
+                .iter()
+                .find(|(seen, _)| seen == key)
+                .unwrap_or_else(|| panic!("{key} in {vector}"));
             if pair[1] == INODE_BOUND {
                 assert!(value
                     .as_str()
