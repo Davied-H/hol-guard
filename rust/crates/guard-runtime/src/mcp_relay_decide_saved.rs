@@ -147,26 +147,51 @@ impl Saved<'_> {
         }
     }
 
-    fn probe(&self, probe: &Probe<'_>) -> Result<Value, &'static str> {
+    /// One candidate for a lane that names its own probe rather than a need
+    /// the resident sent. The portable identity is resolved here, as
+    /// `resolve_policy_decision_lookup` resolves it for every lookup it
+    /// answers, so a caller cannot read the local row alone by mistake.
+    pub(super) fn package_candidate(&self, probe: &Probe<'_>) -> Result<Value, &'static str> {
+        let identity = self.portable_identity(probe.workspace)?;
+        self.candidate(probe, identity.as_deref())
+    }
+
+    pub(super) fn probe(&self, probe: &Probe<'_>) -> Result<Value, &'static str> {
         // A read the proxy would follow with an audit write fails here, on the
         // read-only snapshot, and defers the call.
         evaluate_non_consuming(&self.lookup_request(probe), self.connection)
             .map_err(|_| SAVED_LOOKUP)
     }
 
-    /// `approval_reuse_diagnostic`'s reason: the first request carries no
-    /// evidence, and the evidence the resident names follows.
+    /// `approval_reuse_diagnostic`'s reason for the selectors `need` names.
     fn diagnosis(&self, need: &Value) -> Result<Value, &'static str> {
+        self.diagnosed(&Probe {
+            harness: text(need, "harness")?,
+            artifact_id: text(need, "artifact_id")?,
+            artifact_hash: Some(text(need, "artifact_hash")?),
+            workspace: optional(need, "workspace")?,
+            publisher: optional(need, "publisher")?,
+            // The diagnostic selects on the saved row, not on an exact
+            // command match, so it reads no exact-match context.
+            exact_match_context: None,
+        })
+        .map(|(reason, _)| reason)
+    }
+
+    /// `approval_reuse_diagnostic`'s reason and the hash it found stored: the
+    /// first request carries no evidence, and the evidence the resident names
+    /// follows.
+    pub(super) fn diagnosed(&self, probe: &Probe<'_>) -> Result<(Value, Value), &'static str> {
         let mut request = ApprovalReuseDiagnosticRequestV1 {
             schema: APPROVAL_REUSE_DIAGNOSTIC_REQUEST_SCHEMA.to_owned(),
             request_id: String::new(),
             store_path: self.store_path.clone(),
             guard_home: self.guard_home.clone(),
-            harness: text(need, "harness")?.to_owned(),
-            artifact_id: text(need, "artifact_id")?.to_owned(),
-            artifact_hash: Some(text(need, "artifact_hash")?.to_owned()),
-            workspace: optional(need, "workspace")?.map(str::to_owned),
-            publisher: optional(need, "publisher")?.map(str::to_owned),
+            harness: probe.harness.to_owned(),
+            artifact_id: probe.artifact_id.to_owned(),
+            artifact_hash: probe.artifact_hash.map(str::to_owned),
+            workspace: probe.workspace.map(str::to_owned),
+            publisher: probe.publisher.map(str::to_owned),
             now: self.now.clone(),
             evidence: None,
         };
@@ -196,7 +221,7 @@ impl Saved<'_> {
         {
             return Err(SAVED_DIAGNOSTIC);
         }
-        Ok(reason.clone())
+        Ok((reason.clone(), stored.clone()))
     }
 }
 

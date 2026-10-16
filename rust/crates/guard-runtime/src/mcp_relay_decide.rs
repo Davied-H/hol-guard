@@ -656,6 +656,8 @@ mod observe;
 mod package;
 #[path = "mcp_relay_decide_package_config.rs"]
 mod package_config;
+#[path = "mcp_relay_decide_package_policy.rs"]
+mod package_policy;
 #[path = "mcp_relay_decide_policy.rs"]
 mod policy;
 use policy::run_policy;
