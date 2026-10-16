@@ -169,6 +169,22 @@ class ReviewApprover:
 VALUE_OPTIONS = frozenset({"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path"})
 
 
+def _names_a_path(word: str) -> bool:
+    """Is this operand a filesystem location rather than a subcommand?
+
+    A subcommand is a bare name the program defines. A path carries a separator, a
+    leading dot or tilde, or a suffix, and none of the subcommands this lane has to tell
+    apart ("status", "config", "run") does. Judged on the word's shape rather than on a
+    list of programs, so a program this lane has never run is read the same way.
+    """
+    return (
+        word in {".", ".."}
+        or word.startswith(("/", "./", "../", "~", "."))
+        or "/" in word
+        or "." in word
+    )
+
+
 def action_key(command: str) -> tuple[str, ...]:
     """The program and subcommand an attempt names.
 
@@ -178,7 +194,11 @@ def action_key(command: str) -> tuple[str, ...]:
     different subcommand and is not counted against the approval.
 
     Options before the subcommand are skipped rather than counted, so a retry that adds
-    one ("git -C dir status") still names the action the operator approved.
+    one ("git -C dir status") still names the action the operator approved. So is an
+    operand that names a filesystem location, because a program whose arguments are all
+    paths has no subcommand at all: "ls -la" and "ls -la ." are one action worded twice,
+    and reading the path as a subcommand would split them into two and let a second
+    approval for the same outcome pass unseen.
     """
     try:
         words = shlex.split(command)
@@ -191,7 +211,7 @@ def action_key(command: str) -> tuple[str, ...]:
         if word in VALUE_OPTIONS:
             next(rest, None)
             continue
-        if word.startswith("-"):
+        if word.startswith("-") or _names_a_path(word):
             continue
         return (words[0], word)
     return (words[0],)
