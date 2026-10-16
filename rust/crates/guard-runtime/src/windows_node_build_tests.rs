@@ -5,6 +5,8 @@ use std::fs;
 const VITE_STUB: &str = r#"const fs = require("fs");
 const path = require("path");
 const visible = (name) => fs.existsSync(path.join(process.cwd(), name));
+// Like Vite's default `emptyOutDir`.
+fs.rmSync("dist", { recursive: true, force: true });
 fs.mkdirSync("dist/assets", { recursive: true });
 fs.writeFileSync("dist/index.html", "<!doctype html>");
 fs.writeFileSync("dist/assets/app.js", "built");
