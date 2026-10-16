@@ -237,6 +237,18 @@ pub(super) fn uses_network(model: &CanonicalCommandV1, context: PathContext<'_>)
     assess(model, context).iter().any(|found| found.network)
 }
 
+/// Whether a program the POSIX shell text `command` launches uses the
+/// network, for a caller that judges a projection of the text.
+pub(super) fn text_uses_network(command: &str, context: PathContext<'_>) -> bool {
+    crate::parse_command(&crate::CommandModelRequestV1 {
+        command: command.to_owned(),
+        dialect: "posix".to_owned(),
+        transport: "shell_string".to_owned(),
+        extraction_provenance: "guard-shell".to_owned(),
+    })
+    .is_ok_and(|model| uses_network(&model, context))
+}
+
 /// Whether inline source or a program fed on standard input uses the
 /// network. A test script that imports a client usually stubs it, so script
 /// files are left to their own route.
