@@ -429,6 +429,7 @@ pub(super) fn credential_keyword_text(value: &str) -> bool {
 /// `process.env.PORT` reads no secret.
 fn sensitive_location_text(value: &str) -> bool {
     let lowered = normalized_haystack(value);
+    let lowered = crate::environment_secret_dump::without_node_port_reads(&lowered);
     let needles = [
         "/.ssh/",
         "~/.ssh",
@@ -457,7 +458,7 @@ fn sensitive_location_text(value: &str) -> bool {
     needles.iter().any(|needle| lowered.contains(needle))
         || crate::environment_secret_dump::printenv_may_print_secret(&lowered)
         || lowered.contains("os.environ")
-        || crate::environment_secret_dump::node_environment_read_beyond_ports(&lowered)
+        || lowered.contains("process.env")
 }
 
 fn sensitive_path_argument(value: &str) -> bool {

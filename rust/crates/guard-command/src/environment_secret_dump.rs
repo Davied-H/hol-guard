@@ -9,6 +9,7 @@ use crate::sfrs_shell_tokens::{
     iter_shell_command_segments, shell_segment_primary_command, split_shell_parts,
 };
 use fancy_regex::Regex;
+use std::borrow::Cow;
 use std::path::Path;
 use std::sync::LazyLock;
 
@@ -99,13 +100,27 @@ pub fn printenv_may_print_secret(text: &str) -> bool {
     })
 }
 
-/// Whether lowercased `text` reads the Node process environment other than
-/// through dotted reads of port variables (`process.env.PORT`): the whole
-/// object, a computed key, or any other variable. A port variable holds a
-/// port number, and a dev server reads it to choose where to listen.
-pub fn node_environment_read_beyond_ports(text: &str) -> bool {
-    text.match_indices("process.env")
-        .any(|(start, found)| !matches(&PORT_MEMBER, &text[start + found.len()..]).unwrap_or(false))
+/// Lowercased `text` with each dotted read of a port variable
+/// (`process.env.PORT`, `process.env.DEV_PORT`) blanked. A port variable
+/// holds a port number, which a dev server reads to choose where to listen:
+/// it names no secret, and the `.env` inside it is no dotenv file. The whole
+/// object, a computed key and every other variable are left in place.
+pub fn without_node_port_reads(text: &str) -> Cow<'_, str> {
+    let mut kept = String::new();
+    let mut copied = 0;
+    for (start, found) in text.match_indices("process.env") {
+        let read = start + found.len();
+        if let Ok(Some(member)) = PORT_MEMBER.find(&text[read..]) {
+            kept.push_str(&text[copied..start]);
+            kept.push(' ');
+            copied = read + member.end();
+        }
+    }
+    if copied == 0 {
+        return Cow::Borrowed(text);
+    }
+    kept.push_str(&text[copied..]);
+    Cow::Owned(kept)
 }
 fn script_reads_secrets(script: &str) -> Result<bool, &'static str> {
     for pattern in ENV_DUMPS.iter() {
