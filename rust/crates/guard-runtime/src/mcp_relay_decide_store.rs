@@ -8,7 +8,7 @@
 //! daemon published, which the store must still hold, protected. Remote
 //! rows need no more evidence than the proxy ships: the lookup never serves a
 //! cloud-sync or team-policy row and verifies no remote row's integrity. A
-//! policy-bundle row a lookup's own selectors reach, an integrity state other
+//! policy-bundle row this harness's lookups reach, an integrity state other
 //! than the published protected one, a newer or unknown schema, and a store it
 //! cannot read all defer the call.
 
@@ -55,9 +55,6 @@ pub(super) struct Saved<'c> {
     /// A row from a local source: only then does the proxy ship the policy
     /// key and the refreshed integrity state.
     pub(super) has_local_policy: bool,
-    /// A synced policy bundle with a policy-bundle row to keep or drop: a
-    /// lookup whose selectors reach one defers the call.
-    pub(super) bundle_rows: bool,
     pub(super) integrity_state: Value,
     pub(super) key_b64: Zeroizing<String>,
     pub(super) key_id: String,
@@ -70,19 +67,21 @@ pub(super) fn saved<'c>(
     connection: &'c Connection,
     binding: &DirectLaneBinding,
     guard_home: &str,
+    harness: &str,
 ) -> Result<Option<Saved<'c>>, &'static str> {
     let shape = Shape { connection };
     // The bundle's decision identities come from a synced, signed payload the
-    // resident does not validate. The lookup reads them only to keep a
-    // policy-bundle row, so the rows are noted here and each lookup defers
-    // the call only when its own selectors reach one.
-    let bundle_rows = shape.any(
-        "policy_decisions",
-        "select 1 from policy_decisions where source = 'policy-bundle'",
-    )? && shape.any(
-        "sync_state",
-        "select 1 from sync_state where state_key = 'policy_bundle'",
-    )?;
+    // resident does not validate. The lookup reads them only to keep or drop a
+    // policy-bundle row, and it reaches a row bound to this harness or to every
+    // harness: with none of those, the proxy's identities change nothing here.
+    if shape.bundle_row_for(harness)?
+        && shape.any(
+            "sync_state",
+            "select 1 from sync_state where state_key = 'policy_bundle'",
+        )?
+    {
+        return Err(SAVED_REMOTE);
+    }
     let has_local_policy = shape.any(
         "policy_decisions",
         &format!("select 1 from policy_decisions where source not in {REMOTE_SOURCES_SQL}"),
@@ -111,7 +110,6 @@ pub(super) fn saved<'c>(
         guard_home: guard_home.to_owned(),
         now: utc_now().ok_or(SAVED_UNVERIFIABLE)?,
         has_local_policy,
-        bundle_rows,
         integrity_state,
         key_b64: Zeroizing::new(Base64UrlUnpadded::encode_string(&key.key)),
         key_id: key.key_id.clone(),
@@ -177,6 +175,25 @@ impl Shape<'_> {
             .map_err(|_| STORE_UNREADABLE)
     }
 
+    /// Whether a `policy-bundle` row is bound to `harness` or to every
+    /// harness, the two selectors every lookup of this harness binds
+    /// (`bounded_non_consuming_policy_rows`). A row bound to another harness
+    /// is read by no lookup here, keep it or drop it.
+    fn bundle_row_for(&self, harness: &str) -> Result<bool, &'static str> {
+        if !table_exists(self.connection, "policy_decisions").map_err(|_| STORE_UNREADABLE)? {
+            return Ok(false);
+        }
+        self.connection
+            .prepare_cached(
+                "select 1 from policy_decisions where source = 'policy-bundle' \
+                 and harness in (?1, '*') limit 1",
+            )
+            .and_then(|mut statement| statement.query_row([harness], |_| Ok(())))
+            .optional()
+            .map(|found| found.is_some())
+            .map_err(|_| STORE_UNREADABLE)
+    }
+
     fn stored_integrity_state(&self) -> Result<Option<Value>, &'static str> {
         if !table_exists(self.connection, "sync_state").map_err(|_| STORE_UNREADABLE)? {
             return Ok(None);
@@ -226,23 +243,6 @@ impl Saved<'_> {
             local_once_integrity_key_id: Some(self.key_id.clone()),
             policy_bundle_decision_identities: None,
             probe_groups: None,
-        }
-    }
-
-    /// Defers the call when `probe` reads a policy-bundle row. Keeping one needs
-    /// the bundle's decision identities, which the proxy derives from the
-    /// synced payload and the resident does not: a probe that reaches one
-    /// defers the call, and a lookup that cannot say so defers it too.
-    pub(super) fn bundle_in_scope(&self, probe: &Probe<'_>) -> Result<(), &'static str> {
-        if !self.bundle_rows {
-            return Ok(());
-        }
-        match crate::policy_decision_lookup_op::policy_bundle_row_in_scope(
-            &self.lookup_request(probe),
-            self.connection,
-        ) {
-            Ok(false) => Ok(()),
-            _ => Err(SAVED_REMOTE),
         }
     }
 

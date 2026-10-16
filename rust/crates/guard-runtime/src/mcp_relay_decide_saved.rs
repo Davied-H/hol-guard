@@ -148,7 +148,6 @@ impl Saved<'_> {
     }
 
     fn probe(&self, probe: &Probe<'_>) -> Result<Value, &'static str> {
-        self.bundle_in_scope(probe)?;
         // A read the proxy would follow with an audit write fails here, on the
         // read-only snapshot, and defers the call.
         evaluate_non_consuming(&self.lookup_request(probe), self.connection)

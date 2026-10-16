@@ -154,11 +154,30 @@ fn an_unbound_view_or_harness_hands_the_session_off() {
 }
 
 #[test]
-fn a_cached_policy_bundle_leaves_the_session_to_its_calls() {
-    // A bundle row defers the calls its selectors reach, not the session.
+fn a_cached_policy_bundle_hands_off_the_harnesses_its_rows_bind() {
     let (home, connection) = guard_home("session-bundle");
     sync_state(&connection, "policy_bundle", "{}");
     decide(&connection, "artifact", "block", None, "policy-bundle");
+    let binding = decidable(store_binding());
+    assert_eq!(
+        session_decidable(&binding, home.to_str().unwrap(), "codex"),
+        Err("mcp_relay_saved_remote_policy")
+    );
+}
+
+#[test]
+fn a_bundle_bound_to_another_harness_leaves_the_session_native() {
+    // No lookup of this harness reads such a row, so the identities the proxy
+    // would keep or drop it with change nothing here.
+    let (home, connection) = guard_home("session-bundle-elsewhere");
+    sync_state(&connection, "policy_bundle", "{}");
+    decide(&connection, "artifact", "block", None, "policy-bundle");
+    connection
+        .execute(
+            "update policy_decisions set harness = 'opencode' where source = 'policy-bundle'",
+            [],
+        )
+        .unwrap();
     let binding = decidable(store_binding());
     assert_eq!(
         session_decidable(&binding, home.to_str().unwrap(), "codex"),
