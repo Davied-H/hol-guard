@@ -20,8 +20,9 @@ from .test_hook_http_deadline import open_descriptor_identities
 # drips. What this test proves is that discovery stops at the budget, not that
 # the budget is small: on a loaded runner the two healthy round trips before
 # the hook request can themselves outlast a fifth of a second, and the case
-# that expects a real answer then reads a timeout instead. The pause stays
-# comfortably longer than the budget so every slow stage still overruns it.
+# that expects a real answer then reads a timeout instead. A slow stage pauses
+# once per byte, so the shortest of them still runs several times the budget;
+# keep that product well clear of it when either value moves.
 BUDGET = 0.6
 DRIP = 0.1
 
