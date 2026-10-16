@@ -293,16 +293,7 @@ fn named_xargs_pipeline(text: &str) -> bool {
 /// with nothing in the shell text that substitutes or overrides `PATH` and no
 /// redirect except to a literal path.
 fn reviewable_structure(command: &CanonicalCommandV1) -> bool {
-    if command.normalized_text.contains("xargs -0 rm") {
-        panic!(
-            "struct conf={} reason={:?} path={}",
-            command.confidence, command.uncertainty_reason, command.path_overridden
-        );
-    }
-    if command.path_overridden {
-        return false;
-    }
-    if command.confidence != "uncertain" {
+    if command.path_overridden || command.confidence != "uncertain" {
         return false;
     }
     match command.uncertainty_reason.as_deref() {
