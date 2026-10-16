@@ -1,4 +1,4 @@
-"""Native alpha wheel selection, verification, and update wiring."""
+"""Native wheel selection, verification, and update wiring for alpha and stable releases."""
 
 from __future__ import annotations
 
@@ -10,19 +10,20 @@ import subprocess
 import tempfile
 import urllib.error
 import urllib.request
+import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
-from codex_plugin_scanner.guard.cli import update_alpha_native_wheel as native
 from codex_plugin_scanner.guard.cli import update_commands
-from codex_plugin_scanner.guard.cli.update_alpha_native_wheel import (
-    AlphaNativeWheelError,
-    download_alpha_native_wheel,
+from codex_plugin_scanner.guard.cli import update_native_wheel as native
+from codex_plugin_scanner.guard.cli.update_native_wheel import (
+    NativeWheelError,
+    download_native_wheel,
     parse_provenance_subjects,
-    plan_alpha_native_update,
+    plan_native_wheel_update,
     select_native_wheel,
 )
 from tests.update_context_test_support import (
@@ -36,7 +37,11 @@ MAC_ARM = "macosx_11_0_arm64"
 MAC_INTEL = "macosx_13_0_x86_64"
 LINUX = "manylinux_2_17_x86_64"
 WINDOWS = "win_amd64"
-WHEEL_BYTES = {platform: f"native wheel for {platform}".encode() for platform in (MAC_ARM, MAC_INTEL, LINUX, WINDOWS)}
+WINDOWS_ARM = "win_arm64"
+WHEEL_BYTES = {
+    platform: f"native wheel for {platform}".encode() for platform in (MAC_ARM, MAC_INTEL, LINUX, WINDOWS, WINDOWS_ARM)
+}
+STABLE = "3.44.0"
 
 
 def _wheel_name(platform: str, version: str = VERSION) -> str:
@@ -121,9 +126,9 @@ def test_provenance_subjects_parse_and_validate() -> None:
         b"not json",
         b"",
     ):
-        with pytest.raises(AlphaNativeWheelError) as error:
+        with pytest.raises(NativeWheelError) as error:
             parse_provenance_subjects(bad)
-        assert error.value.reason_code == "alpha_native_provenance_invalid"
+        assert error.value.reason_code == "native_wheel_provenance_invalid"
 
 
 @pytest.mark.parametrize(
@@ -146,19 +151,19 @@ def test_select_native_wheel_never_picks_the_pure_wheel_or_other_versions() -> N
     subjects = _subjects(platforms=(MAC_ARM,))
     subjects[_wheel_name(LINUX, "3.43.0a2")] = "b" * 64
 
-    with pytest.raises(AlphaNativeWheelError) as unsupported:
+    with pytest.raises(NativeWheelError) as unsupported:
         select_native_wheel(subjects, VERSION, tags=[LINUX])
-    assert unsupported.value.reason_code == "alpha_native_platform_unsupported"
+    assert unsupported.value.reason_code == "native_wheel_platform_unsupported"
 
-    with pytest.raises(AlphaNativeWheelError) as missing:
+    with pytest.raises(NativeWheelError) as missing:
         select_native_wheel(_subjects(platforms=()), VERSION, tags=[MAC_ARM])
-    assert missing.value.reason_code == "alpha_native_asset_missing"
+    assert missing.value.reason_code == "native_wheel_asset_missing"
 
 
 def test_download_verifies_digest_and_returns_private_wheel() -> None:
     release = FakeRelease(_release_files())
 
-    download = download_alpha_native_wheel(VERSION, opener=release, tags=[LINUX])
+    download = download_native_wheel(VERSION, opener=release, tags=[LINUX])
     try:
         assert download.path.name == _wheel_name(LINUX)
         assert download.path.read_bytes() == WHEEL_BYTES[LINUX]
@@ -177,10 +182,10 @@ def test_download_rejects_digest_mismatch_and_removes_the_download(
     monkeypatch.setattr(tempfile, "tempdir", str(scratch))
     release = FakeRelease(_release_files(bodies={LINUX: b"tampered"}))
 
-    with pytest.raises(AlphaNativeWheelError) as error:
-        download_alpha_native_wheel(VERSION, opener=release, tags=[LINUX])
+    with pytest.raises(NativeWheelError) as error:
+        download_native_wheel(VERSION, opener=release, tags=[LINUX])
 
-    assert error.value.reason_code == "alpha_native_digest_mismatch"
+    assert error.value.reason_code == "native_wheel_digest_mismatch"
     assert list(scratch.iterdir()) == []
 
 
@@ -189,17 +194,17 @@ def test_download_fails_closed_when_release_assets_are_gone(missing: str) -> Non
     files = _release_files()
     del files[native.provenance_name(VERSION) if missing == "provenance" else _wheel_name(LINUX)]
 
-    with pytest.raises(AlphaNativeWheelError) as error:
-        download_alpha_native_wheel(VERSION, opener=FakeRelease(files), tags=[LINUX])
+    with pytest.raises(NativeWheelError) as error:
+        download_native_wheel(VERSION, opener=FakeRelease(files), tags=[LINUX])
 
-    assert error.value.reason_code == "alpha_native_release_unavailable"
+    assert error.value.reason_code == "native_wheel_release_unavailable"
 
 
-def test_download_rejects_non_alpha_or_unsafe_versions_without_network() -> None:
+def test_download_rejects_invalid_or_unsafe_versions_without_network() -> None:
     release = FakeRelease(_release_files())
-    for version in ("3.43.0", "../3.43.0a1", "3.43.0a1/../../x"):
-        with pytest.raises(AlphaNativeWheelError):
-            download_alpha_native_wheel(version, opener=release, tags=[LINUX])
+    for version in ("not-a-version", "../3.43.0a1", "3.43.0a1/../../x"):
+        with pytest.raises(NativeWheelError):
+            download_native_wheel(version, opener=release, tags=[LINUX])
     assert release.requested == []
 
 
@@ -213,15 +218,20 @@ def test_plan_covers_upgrade_repair_and_stable() -> None:
             "platform_supported": True,
         }
         arguments.update(overrides)
-        return plan_alpha_native_update(**arguments)
+        return plan_native_wheel_update(**arguments)
 
     assert plan(include_alpha=False, target_version="3.43.0a2", runtime_missing=True) is None
-    assert plan(target_version="3.43.0a2") == native.AlphaNativePlan("3.43.0a2", "upgrade")
+    assert plan(target_version="3.43.0a2") == native.NativeWheelPlan("3.43.0a2", "upgrade")
     assert plan(target_version="3.44.0") is None
     assert plan() is None
-    assert plan(runtime_missing=True) == native.AlphaNativePlan("3.43.0a1", "repair")
+    assert plan(runtime_missing=True) == native.NativeWheelPlan("3.43.0a1", "repair")
     assert plan(runtime_missing=True, platform_supported=False) is None
-    assert plan(current_version="3.43.0", runtime_missing=True) is None
+    assert plan(current_version="3.43.0", runtime_missing=True) == native.NativeWheelPlan("3.43.0", "repair")
+    assert plan(include_alpha=False, current_version="3.43.0", target_version="3.44.0", runtime_missing=True) is None
+    assert plan(include_alpha=False, target_version="3.44.0", github_only=True) == native.NativeWheelPlan(
+        "3.44.0", "upgrade"
+    )
+    assert plan(target_version="3.44.0", github_only=True, platform_supported=False) is None
 
 
 def test_bundled_runtime_detection(tmp_path: Path) -> None:
@@ -232,11 +242,11 @@ def test_bundled_runtime_detection(tmp_path: Path) -> None:
 
 
 def test_marker_binds_only_the_recorded_digest(tmp_path: Path) -> None:
-    assert native.alpha_native_install_recorded(tmp_path, archive_sha256="a" * 64) is False
-    native.record_alpha_native_install(tmp_path, version=VERSION, sha256="a" * 64)
-    assert native.alpha_native_install_recorded(tmp_path, archive_sha256="a" * 64) is True
-    assert native.alpha_native_install_recorded(tmp_path, archive_sha256="b" * 64) is False
-    assert native.alpha_native_install_recorded(tmp_path, archive_sha256=None) is False
+    assert native.native_wheel_install_recorded(tmp_path, archive_sha256="a" * 64) is False
+    native.record_native_wheel_install(tmp_path, version=VERSION, sha256="a" * 64)
+    assert native.native_wheel_install_recorded(tmp_path, archive_sha256="a" * 64) is True
+    assert native.native_wheel_install_recorded(tmp_path, archive_sha256="b" * 64) is False
+    assert native.native_wheel_install_recorded(tmp_path, archive_sha256=None) is False
 
 
 class UpdateHarness:
@@ -294,9 +304,14 @@ class UpdateHarness:
             self.installed_wheel_bytes = wheel.read_bytes()
         return subprocess.CompletedProcess(command, 0, "installed", "")
 
-    def run(self, *, dry_run: bool = False, include_alpha: bool = True) -> tuple[dict[str, Any], int]:
+    def run(
+        self, *, dry_run: bool = False, include_alpha: bool = True, native_repair_only: bool = False
+    ) -> tuple[dict[str, Any], int]:
         return update_commands._run_guard_update_unlocked(
-            dry_run=dry_run, include_alpha=include_alpha, guard_home=self.guard_home
+            dry_run=dry_run,
+            include_alpha=include_alpha,
+            guard_home=self.guard_home,
+            native_repair_only=native_repair_only,
         )
 
 
@@ -321,7 +336,7 @@ def test_alpha_update_installs_verified_native_wheel_not_the_pypi_pin(
     assert not any(part.startswith("hol-guard==") for part in command)
     assert harness.installed_wheel_bytes == WHEEL_BYTES[LINUX]
     assert list(harness.scratch.iterdir()) == []
-    assert native.alpha_native_install_recorded(harness.guard_home, archive_sha256=_sha(WHEEL_BYTES[LINUX]))
+    assert native.native_wheel_install_recorded(harness.guard_home, archive_sha256=_sha(WHEEL_BYTES[LINUX]))
 
 
 def test_alpha_update_self_heals_pure_wheel_at_the_target_version(
@@ -408,7 +423,7 @@ def test_alpha_update_fails_closed_on_digest_mismatch_without_installing(
 
     assert exit_code == 1
     assert payload["status"] == "failed"
-    assert payload["reason_code"] == "alpha_native_digest_mismatch"
+    assert payload["reason_code"] == "native_wheel_digest_mismatch"
     assert harness.commands == []
     assert list(harness.scratch.iterdir()) == []
 
@@ -430,7 +445,7 @@ def test_alpha_update_fails_closed_without_matching_platform_asset(
     payload, exit_code = harness.run()
 
     assert exit_code == 1
-    assert payload["reason_code"] == "alpha_native_platform_unsupported"
+    assert payload["reason_code"] == "native_wheel_platform_unsupported"
     assert harness.commands == []
 
 
@@ -449,7 +464,7 @@ def test_alpha_update_fails_closed_when_the_prerelease_was_retracted(
     payload, exit_code = harness.run()
 
     assert exit_code == 1
-    assert payload["reason_code"] == "alpha_native_release_unavailable"
+    assert payload["reason_code"] == "native_wheel_release_unavailable"
     assert harness.commands == []
 
 
@@ -489,7 +504,7 @@ def test_native_wheel_install_stays_updatable_only_when_this_updater_recorded_it
         },
     )
     if recorded:
-        native.record_alpha_native_install(harness.guard_home, version=VERSION, sha256=digest)
+        native.record_native_wheel_install(harness.guard_home, version=VERSION, sha256=digest)
 
     payload, exit_code = harness.run()
 
@@ -506,7 +521,7 @@ def _recorded_native_install(
     monkeypatch: pytest.MonkeyPatch, harness: UpdateHarness, version: str = VERSION, *, runtime_missing: bool = False
 ) -> None:
     digest = _sha(WHEEL_BYTES[LINUX])
-    native.record_alpha_native_install(harness.guard_home, version=version, sha256=digest)
+    native.record_native_wheel_install(harness.guard_home, version=version, sha256=digest)
     monkeypatch.setattr(
         update_commands,
         "_direct_url_payload",
@@ -592,3 +607,315 @@ def test_status_does_not_block_a_recorded_native_alpha_install(monkeypatch: pyte
     assert recorded["auto_updatable"] is True
     assert recorded["blocked_reason"] is None
     assert unrecorded["auto_updatable"] is False
+
+
+def _manifest(version: str = STABLE, platforms: tuple[str, ...] = tuple(WHEEL_BYTES)) -> bytes:
+    wheels = {_wheel_name(platform, version): _sha(WHEEL_BYTES[platform]) for platform in platforms}
+    return json.dumps({"schema": native.NATIVE_WHEEL_MANIFEST_SCHEMA, "version": version, "wheels": wheels}).encode()
+
+
+def _pure_wheel(manifest: bytes | None) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("codex_plugin_scanner/__init__.py", "")
+        if manifest is not None:
+            archive.writestr(native.NATIVE_WHEEL_MANIFEST_MEMBER, manifest)
+    return buffer.getvalue()
+
+
+def _stable_release_files(
+    version: str = STABLE,
+    *,
+    manifest: bytes | None = None,
+    pure_url_prefix: str = "https://files.pythonhosted.org/packages/ab/cd/",
+    pure_digest: str | None = None,
+) -> dict[str, bytes]:
+    pure = _pure_wheel(manifest if manifest is not None else _manifest(version))
+    pure_name = f"hol_guard-{version}-py3-none-any.whl"
+    pypi = {
+        "urls": [
+            {
+                "filename": pure_name,
+                "url": pure_url_prefix + pure_name,
+                "digests": {"sha256": pure_digest or _sha(pure)},
+            }
+        ]
+    }
+    files = {"json": json.dumps(pypi).encode(), pure_name: pure}
+    for platform in (MAC_INTEL, WINDOWS_ARM):
+        files[_wheel_name(platform, version)] = WHEEL_BYTES[platform]
+    return files
+
+
+def test_native_wheel_manifest_parses_and_rejects_bad_documents() -> None:
+    assert native.parse_native_wheel_manifest(_manifest(), STABLE) == {
+        _wheel_name(platform, STABLE): _sha(WHEEL_BYTES[platform]) for platform in WHEEL_BYTES
+    }
+    good = json.loads(_manifest())
+    for bad in (
+        {**good, "schema": "other"},
+        {**good, "version": "3.44.1"},
+        {**good, "wheels": {}},
+        {**good, "wheels": {_wheel_name(LINUX, STABLE): "not-a-digest"}},
+        {**good, "wheels": {f"hol_guard-{STABLE}-py3-none-any.whl": "a" * 64}},
+        {**good, "wheels": {_wheel_name(LINUX, "3.44.1"): "a" * 64}},
+    ):
+        with pytest.raises(NativeWheelError) as error:
+            native.parse_native_wheel_manifest(json.dumps(bad).encode(), STABLE)
+        assert error.value.reason_code == "native_wheel_manifest_invalid"
+    with pytest.raises(NativeWheelError):
+        native.parse_native_wheel_manifest(b"not json", STABLE)
+
+
+def test_github_only_platforms_are_intel_mac_and_windows_arm() -> None:
+    assert native.github_only_platform([WINDOWS_ARM]) is True
+    assert native.github_only_platform([MAC_INTEL]) is True
+    assert native.github_only_platform([MAC_ARM, "macosx_10_9_universal2"]) is False
+    assert native.github_only_platform([LINUX]) is False
+    assert native.github_only_platform(["manylinux_2_17_aarch64"]) is False
+    assert native.native_platform_supported([WINDOWS_ARM]) is True
+
+
+def test_stable_repair_trusts_the_installed_manifest_and_uses_the_stable_tag(tmp_path: Path) -> None:
+    (tmp_path / native.NATIVE_WHEEL_MANIFEST_NAME).write_bytes(_manifest())
+    release = FakeRelease(_stable_release_files())
+
+    download = native.download_native_wheel(STABLE, opener=release, tags=[WINDOWS_ARM], package_root=tmp_path)
+    try:
+        assert download.path.read_bytes() == WHEEL_BYTES[WINDOWS_ARM]
+        assert release.requested == [native.RELEASE_DOWNLOAD_PREFIX + f"v{STABLE}/{_wheel_name(WINDOWS_ARM, STABLE)}"]
+    finally:
+        download.cleanup()
+
+
+def test_stable_upgrade_reads_digests_from_the_pypi_pure_wheel(tmp_path: Path) -> None:
+    release = FakeRelease(_stable_release_files())
+
+    download = native.download_native_wheel(STABLE, opener=release, tags=[MAC_INTEL], package_root=tmp_path)
+    try:
+        assert download.sha256 == _sha(WHEEL_BYTES[MAC_INTEL])
+        assert release.requested[0] == f"https://pypi.org/pypi/hol-guard/{STABLE}/json"
+        assert release.requested[1].startswith("https://files.pythonhosted.org/")
+        assert release.requested[2].startswith(native.RELEASE_DOWNLOAD_PREFIX + f"v{STABLE}/")
+    finally:
+        download.cleanup()
+
+
+@pytest.mark.parametrize(
+    ("files", "reason"),
+    [
+        (_stable_release_files(pure_digest="0" * 64), "native_wheel_digest_mismatch"),
+        (_stable_release_files(pure_url_prefix="https://example.com/"), "native_wheel_manifest_invalid"),
+        (_stable_release_files(manifest=b"{}"), "native_wheel_manifest_invalid"),
+        (
+            {**_stable_release_files(), _wheel_name(WINDOWS_ARM, STABLE): b"tampered"},
+            "native_wheel_digest_mismatch",
+        ),
+    ],
+)
+def test_stable_download_fails_closed_without_pypi_backed_digests(
+    tmp_path: Path, files: dict[str, bytes], reason: str
+) -> None:
+    with pytest.raises(NativeWheelError) as error:
+        native.download_native_wheel(STABLE, opener=FakeRelease(files), tags=[WINDOWS_ARM], package_root=tmp_path)
+
+    assert error.value.reason_code == reason
+
+
+def test_stable_pure_wheel_without_a_manifest_is_invalid(tmp_path: Path) -> None:
+    files = _stable_release_files()
+    pure_name = f"hol_guard-{STABLE}-py3-none-any.whl"
+    files[pure_name] = _pure_wheel(None)
+    files["json"] = json.dumps(
+        {
+            "urls": [
+                {
+                    "filename": pure_name,
+                    "url": "https://files.pythonhosted.org/p/" + pure_name,
+                    "digests": {"sha256": _sha(files[pure_name])},
+                }
+            ]
+        }
+    ).encode()
+
+    with pytest.raises(NativeWheelError) as error:
+        native.download_native_wheel(STABLE, opener=FakeRelease(files), tags=[WINDOWS_ARM], package_root=tmp_path)
+
+    assert error.value.reason_code == "native_wheel_manifest_invalid"
+
+
+def test_manual_install_command_names_the_release_wheel_for_this_host() -> None:
+    assert native.manual_install_command(STABLE, tags=[WINDOWS_ARM]) == (
+        'python -m pip install --force-reinstall --no-deps "'
+        + native.RELEASE_DOWNLOAD_PREFIX
+        + f'v{STABLE}/{_wheel_name(WINDOWS_ARM, STABLE)}"'
+    )
+    assert "alpha%2Fv3.43.0a1/" in str(native.manual_install_command(VERSION, tags=[LINUX]))
+    assert native.manual_install_command(STABLE, tags=["manylinux_2_17_aarch64"]) is None
+    assert native.manual_install_command("../x", tags=[LINUX]) is None
+
+
+def test_stable_update_on_a_github_only_platform_installs_the_release_wheel(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    release = FakeRelease(_stable_release_files("3.42.0"))
+    harness = UpdateHarness(
+        monkeypatch,
+        tmp_path,
+        current="3.41.0",
+        latest_alpha="3.43.0a1",
+        runtime_missing=False,
+        release=release,
+        tags=[WINDOWS_ARM],
+    )
+
+    payload, exit_code = harness.run(include_alpha=False)
+
+    assert exit_code == 0, payload
+    assert payload["status"] == "updated"
+    assert payload["upgrade_source"] == "github_release"
+    assert payload["release_channel"] == "stable"
+    assert Path(harness.commands[0][-1]).name == _wheel_name(WINDOWS_ARM, "3.42.0")
+    assert harness.installed_wheel_bytes == WHEEL_BYTES[WINDOWS_ARM]
+
+
+def test_stable_update_failure_prints_the_manual_install_command(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    release = FakeRelease({})
+    harness = UpdateHarness(
+        monkeypatch,
+        tmp_path,
+        current="3.41.0",
+        latest_alpha="3.43.0a1",
+        runtime_missing=False,
+        release=release,
+        tags=[WINDOWS_ARM],
+    )
+
+    payload, exit_code = harness.run(include_alpha=False)
+
+    assert exit_code == 1
+    assert payload["status"] == "failed"
+    assert harness.commands == []
+    manual = payload["manual_install"]
+    assert _wheel_name(WINDOWS_ARM, "3.42.0") in manual
+    assert manual in payload["message"]
+
+
+def test_native_repair_only_reinstalls_the_current_stable_and_never_upgrades(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    package_root = tmp_path / "package"
+    package_root.mkdir()
+    (package_root / native.NATIVE_WHEEL_MANIFEST_NAME).write_bytes(_manifest("3.41.0"))
+    monkeypatch.setattr(native, "_installed_package_root", lambda: package_root)
+    release = FakeRelease(_stable_release_files("3.41.0"))
+    harness = UpdateHarness(
+        monkeypatch,
+        tmp_path,
+        current="3.41.0",
+        latest_alpha="3.43.0a1",
+        runtime_missing=True,
+        release=release,
+        tags=[WINDOWS_ARM],
+    )
+
+    payload, exit_code = harness.run(include_alpha=False, native_repair_only=True)
+
+    assert exit_code == 0, payload
+    assert payload["native_wheel_reason"] == "repair"
+    assert payload["resulting_version"] == "3.41.0"
+    assert Path(harness.commands[0][-1]).name == _wheel_name(WINDOWS_ARM, "3.41.0")
+    assert release.requested == [native.RELEASE_DOWNLOAD_PREFIX + f"v3.41.0/{_wheel_name(WINDOWS_ARM, '3.41.0')}"]
+
+
+def test_native_repair_only_is_a_no_op_when_the_runtime_is_present(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    release = FakeRelease({})
+    harness = UpdateHarness(
+        monkeypatch,
+        tmp_path,
+        current="3.41.0",
+        latest_alpha="3.43.0a1",
+        runtime_missing=False,
+        release=release,
+        tags=[WINDOWS_ARM],
+    )
+
+    payload, exit_code = harness.run(include_alpha=False, native_repair_only=True)
+
+    assert exit_code == 0
+    assert payload["status"] == "current"
+    assert harness.commands == []
+    assert release.requested == []
+
+
+def test_runtime_repair_helper_skips_desktop_present_runtime_and_non_index_installs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(update_commands, "run_guard_update", lambda **kwargs: calls.append(kwargs) or ({}, 0))
+    monkeypatch.setattr(native, "_platform_tags", lambda: [WINDOWS_ARM])
+
+    def repair() -> object:
+        return update_commands.repair_native_runtime_if_missing(
+            context=None, store=None, workspace=None, now=None, guard_home=None
+        )
+
+    scenarios = (
+        (True, True, None),
+        (False, False, None),
+        (False, True, {"url": "file:///tmp/hol_guard.whl"}),
+    )
+    for desktop, missing, direct_url in scenarios:
+        monkeypatch.setattr(update_commands, "_is_desktop_managed_runtime", lambda value=desktop: value)
+        monkeypatch.setattr(update_commands, "bundled_native_runtime_missing", lambda value=missing: value)
+        monkeypatch.setattr(update_commands, "_direct_url_payload", lambda value=direct_url: value)
+        assert repair() is None
+    assert calls == []
+
+    monkeypatch.setattr(update_commands, "_is_desktop_managed_runtime", lambda: False)
+    monkeypatch.setattr(update_commands, "bundled_native_runtime_missing", lambda: True)
+    monkeypatch.setattr(update_commands, "_direct_url_payload", lambda: None)
+    assert repair() == ({}, 0)
+    assert calls[0]["native_repair_only"] is True
+    assert calls[0]["dry_run"] is False
+
+
+def test_doctor_report_names_the_fix_and_the_manual_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(native, "_platform_tags", lambda: [WINDOWS_ARM])
+    monkeypatch.setattr(update_commands, "_is_desktop_managed_runtime", lambda: False)
+    monkeypatch.setattr(update_commands, "bundled_native_runtime_missing", lambda: True)
+    monkeypatch.setattr(update_commands, "_current_version", lambda: STABLE)
+
+    report = update_commands.bundled_native_runtime_report()
+
+    assert report is not None
+    assert report["status"] == "missing"
+    assert report["fix"] == "hol-guard update"
+    assert _wheel_name(WINDOWS_ARM, STABLE) in str(report["manual_install"])
+    monkeypatch.setattr(update_commands, "_is_desktop_managed_runtime", lambda: True)
+    assert update_commands.bundled_native_runtime_report() is None
+
+
+def test_install_stops_before_wiring_hooks_when_the_runtime_cannot_be_fetched(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from codex_plugin_scanner.guard.adapters.base import HarnessContext
+    from codex_plugin_scanner.guard.cli import commands_dispatch_local as dispatch
+
+    failure = {"status": "failed", "reason_code": "native_wheel_download_failed", "message": "run pip by hand"}
+    monkeypatch.setattr(dispatch, "repair_native_runtime_if_missing", lambda **_kwargs: (failure, 1))
+    monkeypatch.setattr(dispatch, "_migrate_legacy_macos_secrets", lambda _store: None)
+    monkeypatch.setattr(
+        dispatch, "apply_managed_install", lambda *_args, **_kwargs: pytest.fail("hooks must not be installed")
+    )
+    context = HarnessContext(home_dir=tmp_path, workspace_dir=None, guard_home=tmp_path / "guard")
+    args = SimpleNamespace(dry_run=False, harness="codex", all=False, json=False)
+
+    exit_code = dispatch._run_guard_install_command(args, context=context, store=object())  # type: ignore[arg-type]
+
+    assert exit_code == 1
+    assert "run pip by hand" in capsys.readouterr().err
