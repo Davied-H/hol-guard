@@ -114,32 +114,175 @@ const REFUSED_ATTRIBUTES: &[&str] = &[
     "itemgetter",
 ];
 
-/// Modules a safe module may re-export that reach files or the interpreter.
-const REEXPORTED_MODULES: &[&str] = &[
-    "inspect",
-    "types",
-    "io",
-    "pkgutil",
-    "runpy",
-    "code",
-    "pdb",
-    "traceback",
-    "linecache",
-    "tempfile",
-    "shutil",
-    "glob",
-    "fileinput",
-    "pickle",
-    "marshal",
-    "tokenize",
-    "posixpath",
-    "ntpath",
-    "genericpath",
-    "threading",
-    "multiprocessing",
-    "signal",
-    "gc",
-    "warnings",
+/// The only names a safe module may hand to the program, by `module.name` or
+/// `from module import name`. A module can re-export `os`, `sys` or
+/// `builtins` under another name, so anything not listed here is refused.
+const MODULE_NAMES: &[&str] = &[
+    "Any",
+    "Callable",
+    "Counter",
+    "DOTALL",
+    "Decimal",
+    "Dict",
+    "Enum",
+    "Fraction",
+    "I",
+    "IGNORECASE",
+    "IntEnum",
+    "Iterable",
+    "Iterator",
+    "List",
+    "M",
+    "MULTILINE",
+    "Mapping",
+    "Optional",
+    "OrderedDict",
+    "S",
+    "Sequence",
+    "SequenceMatcher",
+    "Set",
+    "Template",
+    "Tuple",
+    "Union",
+    "VERBOSE",
+    "X",
+    "accumulate",
+    "add",
+    "ascii_letters",
+    "ascii_lowercase",
+    "ascii_uppercase",
+    "asdict",
+    "astuple",
+    "atan",
+    "atan2",
+    "auto",
+    "b16decode",
+    "b16encode",
+    "b64decode",
+    "b64encode",
+    "batched",
+    "bisect",
+    "bisect_left",
+    "bisect_right",
+    "blake2b",
+    "cache",
+    "category",
+    "ceil",
+    "chain",
+    "cmp_to_key",
+    "comb",
+    "combinations",
+    "compile",
+    "copy",
+    "cos",
+    "count",
+    "cycle",
+    "dataclass",
+    "date",
+    "datetime",
+    "dedent",
+    "deepcopy",
+    "defaultdict",
+    "degrees",
+    "deque",
+    "digits",
+    "dropwhile",
+    "dumps",
+    "e",
+    "escape",
+    "exp",
+    "fabs",
+    "factorial",
+    "field",
+    "fill",
+    "filter",
+    "findall",
+    "finditer",
+    "floor",
+    "fnmatch",
+    "fnmatchcase",
+    "fullmatch",
+    "gcd",
+    "get_close_matches",
+    "groupby",
+    "heapify",
+    "heappop",
+    "heappush",
+    "hexdigest",
+    "hexdigits",
+    "hypot",
+    "indent",
+    "inf",
+    "insort",
+    "isclose",
+    "islice",
+    "itemgetter",
+    "join",
+    "json",
+    "loads",
+    "log",
+    "log10",
+    "log2",
+    "lru_cache",
+    "match",
+    "md5",
+    "mean",
+    "median",
+    "mod",
+    "mode",
+    "mul",
+    "name",
+    "namedtuple",
+    "ndiff",
+    "neg",
+    "nlargest",
+    "normalize",
+    "nsmallest",
+    "pairwise",
+    "partial",
+    "permutations",
+    "pformat",
+    "pi",
+    "pow",
+    "pprint",
+    "prod",
+    "product",
+    "pstdev",
+    "punctuation",
+    "quote",
+    "radians",
+    "re",
+    "reduce",
+    "repeat",
+    "search",
+    "sha1",
+    "sha256",
+    "sha512",
+    "shorten",
+    "sin",
+    "split",
+    "sqrt",
+    "starmap",
+    "stdev",
+    "sub",
+    "subn",
+    "takewhile",
+    "tan",
+    "time",
+    "timedelta",
+    "timezone",
+    "truediv",
+    "trunc",
+    "unescape",
+    "unified_diff",
+    "urlsafe_b64decode",
+    "urlsafe_b64encode",
+    "variance",
+    "which",
+    "whitespace",
+    "wrap",
+    "wraps",
+    "zip_longest",
 ];
 
 const KEYWORDS: &[&str] = &[
@@ -304,6 +447,19 @@ fn previous_symbol(code: &str, position: usize) -> Option<char> {
     code[..position].chars().rev().find(|c| !c.is_whitespace())
 }
 
+/// Whether the attribute at `position` is read straight off an imported module.
+fn after_module(code: &str, position: usize, modules: &HashSet<String>) -> bool {
+    let before = code[..position].trim_end();
+    let Some(before) = before.strip_suffix('.') else {
+        return false;
+    };
+    let before = before.trim_end();
+    let start = before
+        .rfind(|c: char| !is_ident_char(c))
+        .map_or(0, |index| index + 1);
+    modules.contains(&before[start..]) && !before[..start].trim_end().ends_with('.')
+}
+
 fn next_symbol(code: &str, end: usize) -> Option<char> {
     code[end..].chars().find(|c| !c.is_whitespace())
 }
@@ -396,11 +552,7 @@ fn imports_ok(code: &str, modules: &mut HashSet<String>) -> Option<String> {
                 let mut parts = name.split_whitespace();
                 let first = parts.next()?;
                 // A safe module can re-export `os`, `sys` and their kin.
-                if first.starts_with('_')
-                    || REFUSED_NAMES.contains(&first)
-                    || REFUSED_ATTRIBUTES.contains(&first)
-                    || REEXPORTED_MODULES.contains(&first)
-                {
+                if !MODULE_NAMES.contains(&first) {
                     return None;
                 }
                 let alias = match (parts.next(), parts.next()) {
@@ -442,6 +594,9 @@ pub(super) fn pure_python(code: &str) -> bool {
             // An attribute can lead from a safe module to the process or
             // interpreter it imports (`shlex.os`, `typing.sys.modules`).
             if word.starts_with('_') || REFUSED_ATTRIBUTES.contains(&word) {
+                return false;
+            }
+            if after_module(&code, position, &modules) && !MODULE_NAMES.contains(&word) {
                 return false;
             }
             continue;
@@ -492,6 +647,7 @@ mod tests {
             "import shutil\nfor name in ['node', 'git']:\n    print(name, shutil.which(name))\n",
             "import re\ntext = 'a1b22'\nprint(re.findall(r'\\d+', text))\n",
             "import json\nrows = [{'a': 1}]\nprint(json.dumps(rows, indent=2))\n",
+            "import datetime\nprint(datetime.datetime.now())",
             "def total(xs):\n    return sum(x * 2 for x in xs)\nprint(total([1, 2, 3]))\n",
         ] {
             assert!(pure_python(code), "{code:?}");
@@ -509,6 +665,8 @@ mod tests {
             "print(read('a'))",
             "print(f'{1+1}')",
             "import shlex\nshlex.os.system('x')",
+            "from enum import bltns as b\nprint(b)",
+            "import enum\nprint(enum.bltns.getattr)",
             "from shlex import os as o\no.execvp('sh', ['sh'])",
             "from typing import sys as s\nprint(s)",
             "from dataclasses import inspect as i\nprint(i)",
