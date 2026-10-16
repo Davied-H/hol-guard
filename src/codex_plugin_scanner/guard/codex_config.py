@@ -81,7 +81,7 @@ def _dump_onto_original(payload: dict[str, object], original: str | bytes) -> st
     except (TOMLKitError, TypeError, ValueError):
         return None
     try:
-        if tomllib.loads(rendered) != expected:
+        if not _same_value(tomllib.loads(rendered), expected):
             return None
     except tomllib.TOMLDecodeError:
         return None
@@ -101,11 +101,62 @@ def _apply_payload(table: dict[str, object], payload: dict[str, object]) -> None
             _apply_payload(existing, value)
             continue
         replacement = _plain_value(value)
-        if key in table and _unwrap(existing) == replacement:
+        if isinstance(replacement, list) and isinstance(existing, list):
+            _apply_array(existing, replacement)  # pyright: ignore[reportUnknownArgumentType]
+            continue
+        if key in table and _same_value(_unwrap(existing), replacement):
             # The value Guard wants is already there. Assigning it anyway would
             # respell it and drop whatever comment sits on that line, so don't.
             continue
         table[key] = replacement
+
+
+def _apply_array(existing: list[object], replacement: list[object]) -> None:
+    """Make one parsed array match ``replacement`` element by element.
+
+    An event's hooks are an array of tables holding Guard's group next to the
+    user's own. Assigning the whole array back would rewrite every group in it,
+    so adding or removing Guard's one group would cost the comments and
+    spelling inside groups Guard never touched.
+    """
+
+    for index, item in enumerate(replacement):
+        if index >= len(existing):
+            existing.append(item)
+            continue
+        current = existing[index]
+        if isinstance(item, dict) and isinstance(current, dict):
+            _apply_payload(current, item)  # pyright: ignore[reportUnknownArgumentType]
+            continue
+        if isinstance(item, list) and isinstance(current, list):
+            _apply_array(current, item)  # pyright: ignore[reportUnknownArgumentType]
+            continue
+        if _same_value(_unwrap(current), item):
+            continue
+        existing[index] = item
+    while len(existing) > len(replacement):
+        del existing[len(existing) - 1]
+
+
+def _same_value(left: object, right: object) -> bool:
+    """Whether two values are the same, counting ``1`` and ``True`` as different.
+
+    Python reads ``1 == True``, ``0 == False`` and ``30 == 30.0`` as true, so a
+    plain comparison lets a user's ``hooks = 1`` stand in for the boolean Guard
+    writes: the assignment is skipped, the readback accepts the file, and Codex
+    keeps an integer where Guard's own state check looks for ``True`` and
+    reports the hooks as disabled.
+    """
+
+    if type(left) is not type(right):
+        return False
+    if isinstance(left, dict):
+        right_dict: dict[object, object] = right  # pyright: ignore[reportAssignmentType]
+        return left.keys() == right_dict.keys() and all(_same_value(left[key], right_dict[key]) for key in left)  # pyright: ignore[reportUnknownArgumentType]
+    if isinstance(left, list):
+        right_list: list[object] = right  # pyright: ignore[reportAssignmentType]
+        return len(left) == len(right_list) and all(_same_value(*pair) for pair in zip(left, right_list, strict=True))  # pyright: ignore[reportUnknownArgumentType]
+    return left == right
 
 
 def _unwrap(value: object) -> object:

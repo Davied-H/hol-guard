@@ -78,3 +78,62 @@ def test_install_and_uninstall_leave_a_hand_written_config_recognizable(tmp_path
     assert "# Which model Codex talks to. Keep this at the top." in removed
     assert "# Everything below is mine." in removed
     assert read_toml_payload(config_path).get("mcp_servers", {}).get("fixture", {}).get("command") == "node"
+
+
+_WITH_USER_HOOKS = """\
+model = "fixture"
+
+[features]
+hooks = 1   # the user wrote an integer here
+
+[[hooks.PreToolUse]]
+# My own hook. Hands off.
+matcher = "Bash"
+
+  [[hooks.PreToolUse.hooks]]
+  type = "command"
+  command = "echo mine"   # keep this spelling
+"""
+
+
+def test_an_integer_standing_in_for_a_boolean_is_corrected() -> None:
+    """`1 == True` in Python, so a plain comparison would leave the integer.
+
+    Codex reads `[features] hooks` as a boolean and Guard's own state check
+    asks whether it is `True`, so a config left holding `1` makes an installed
+    Guard report its hooks as disabled.
+    """
+
+    rendered = dump_toml({"model": "fixture", "features": {"hooks": True}}, original=_WITH_USER_HOOKS)
+
+    import tomllib
+
+    assert tomllib.loads(rendered)["features"]["hooks"] is True
+
+
+def test_a_user_owned_hook_group_keeps_its_comments_through_install_and_uninstall(tmp_path: Path, monkeypatch) -> None:
+    """Guard adds and removes its own group; the array holds the user's too.
+
+    Assigning the event's whole array back would rewrite every group in it, so
+    the comments and spelling inside a group Guard never touched would be lost
+    to an edit that has nothing to do with it.
+    """
+
+    context = _context(tmp_path, monkeypatch)
+    harness = adapter.CodexHarnessAdapter()
+    config_path = harness._target_config_path(context)
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(_WITH_USER_HOOKS, encoding="utf-8")
+
+    harness.install(context)
+    installed = config_path.read_text(encoding="utf-8")
+    assert "# My own hook. Hands off." in installed
+    assert 'command = "echo mine"   # keep this spelling' in installed
+    assert read_toml_payload(config_path)["features"]["hooks"] is True
+
+    harness.uninstall(context)
+    removed = config_path.read_text(encoding="utf-8")
+    assert "# My own hook. Hands off." in removed
+    assert 'command = "echo mine"   # keep this spelling' in removed
+    groups = read_toml_payload(config_path)["hooks"]["PreToolUse"]
+    assert [group["matcher"] for group in groups] == ["Bash"]
