@@ -1378,6 +1378,72 @@ pub(crate) fn evaluate_non_consuming(
     evaluate_in_connection(request, conn, &current_time)
 }
 
+/// Whether a `policy-bundle` row is a candidate for this request's own
+/// selectors, on an already open store. The lookup reads the bundle's
+/// decision identities only to keep such a row, so a caller without them
+/// learns here whether their absence can change a verdict.
+pub(crate) fn policy_bundle_row_in_scope(
+    request: &PolicyDecisionLookupRequestV1,
+    conn: &Connection,
+) -> Result<bool, String> {
+    let current_time = canonical_utc_timestamp(&request.now)
+        .ok_or_else(|| "native_policy_decision_lookup_invalid_now".to_owned())?;
+    let keys = derived_keys(request);
+    let rows = bounded_non_consuming_policy_rows(
+        conn,
+        request.harness.as_str(),
+        request.artifact_id.as_deref(),
+        request.artifact_hash.as_deref(),
+        keys.runtime_exact_match_key.as_deref(),
+        keys.global_runtime_exact_match_key.as_deref(),
+        keys.workspace_key.as_deref(),
+        request.workspace.as_deref(),
+        request.publisher.as_deref(),
+        keys.action_family_key.as_deref(),
+        &current_time,
+    )
+    .map_err(|_| "native_policy_decision_lookup_query_failed".to_owned())?;
+    Ok(rows
+        .iter()
+        .any(|row| row_value(row, "source").as_str() == Some(POLICY_BUNDLE_SOURCE)))
+}
+
+/// The scope selectors a lookup derives from the request's own fields.
+struct DerivedKeys {
+    workspace_key: Option<String>,
+    action_family_key: Option<String>,
+    runtime_exact_match_key: Option<String>,
+    portable_runtime_exact_match_key: Option<String>,
+    global_runtime_exact_match_key: Option<String>,
+}
+
+fn derived_keys(request: &PolicyDecisionLookupRequestV1) -> DerivedKeys {
+    let artifact_id = request.artifact_id.as_deref();
+    let artifact_hash = request.artifact_hash.as_deref();
+    let scoped = artifact_hash.is_some() && request.runtime_exact_match_context.is_some();
+    let portable_context = || {
+        runtime_tool_action_portable_match_context(request.runtime_exact_match_context.as_deref())
+    };
+    DerivedKeys {
+        workspace_key: workspace_policy_key(request.workspace.as_deref()),
+        action_family_key: artifact_family_key(artifact_id),
+        runtime_exact_match_key: artifact_hash.and_then(|_| {
+            runtime_scoped_exact_match_key(
+                artifact_id,
+                request.runtime_exact_match_context.as_deref(),
+            )
+        }),
+        portable_runtime_exact_match_key: scoped
+            .then(|| runtime_scoped_exact_match_key(artifact_id, portable_context().as_deref()))
+            .flatten(),
+        global_runtime_exact_match_key: scoped
+            .then(|| {
+                global_runtime_scoped_exact_match_key(artifact_id, portable_context().as_deref())
+            })
+            .flatten(),
+    }
+}
+
 fn evaluate_in_connection(
     request: &PolicyDecisionLookupRequestV1,
     conn: &Connection,
@@ -1389,35 +1455,13 @@ fn evaluate_in_connection(
     let workspace = request.workspace.as_deref();
     let publisher = request.publisher.as_deref();
     let consume_one_shot = request.consume_one_shot;
-    let workspace_key = workspace_policy_key(workspace);
-    let action_family_key = artifact_family_key(artifact_id);
-    let runtime_exact_match_key = artifact_hash.and_then(|_| {
-        runtime_scoped_exact_match_key(artifact_id, request.runtime_exact_match_context.as_deref())
-    });
-    let portable_runtime_exact_match_key = (artifact_hash.is_some()
-        && request.runtime_exact_match_context.is_some())
-    .then(|| {
-        runtime_scoped_exact_match_key(
-            artifact_id,
-            runtime_tool_action_portable_match_context(
-                request.runtime_exact_match_context.as_deref(),
-            )
-            .as_deref(),
-        )
-    })
-    .flatten();
-    let global_runtime_exact_match_key = (artifact_hash.is_some()
-        && request.runtime_exact_match_context.is_some())
-    .then(|| {
-        global_runtime_scoped_exact_match_key(
-            artifact_id,
-            runtime_tool_action_portable_match_context(
-                request.runtime_exact_match_context.as_deref(),
-            )
-            .as_deref(),
-        )
-    })
-    .flatten();
+    let DerivedKeys {
+        workspace_key,
+        action_family_key,
+        runtime_exact_match_key,
+        portable_runtime_exact_match_key,
+        global_runtime_exact_match_key,
+    } = derived_keys(request);
 
     let integrity_state: Value = request.integrity_state.clone().unwrap_or_else(|| json!({}));
     let integrity_key = request.integrity_key_b64.as_deref().and_then(b64url_decode);

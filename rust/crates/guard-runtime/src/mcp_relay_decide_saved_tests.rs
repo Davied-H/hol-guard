@@ -198,8 +198,23 @@ fn a_cached_bundle_defers_and_remote_rows_are_read() {
     // Without a policy-bundle row, the bundle's identities match nothing.
     assert!(read(&home, &binding(), |saved| saved.is_none()).unwrap());
     decide(&connection, "artifact", "block", None, "policy-bundle");
-    let deferred = read(&home, &binding(), |_| ()).err();
-    assert_eq!(deferred, Some("mcp_relay_saved_remote_policy"));
+    let bundled = |need: Value| {
+        read(&home, &binding(), |saved| {
+            saved.expect("bundle rows").answer(&need)
+        })
+        .unwrap()
+    };
+    // Keeping that row needs the bundle's decision identities, so the call
+    // whose own selectors reach it defers.
+    assert_eq!(
+        bundled(policy_need(ARTIFACT, None)),
+        Err("mcp_relay_saved_remote_policy")
+    );
+    // A call no policy-bundle row is a candidate for is answered here.
+    assert_eq!(
+        bundled(policy_need("codex:project:files:write", None)).unwrap()["decision"],
+        Value::Null
+    );
     // The lookup never serves a cloud-sync row, and serves a signed memory
     // row without local integrity evidence.
     let (home, connection) = guard_home("remote");
