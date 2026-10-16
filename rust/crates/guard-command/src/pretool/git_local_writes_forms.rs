@@ -210,7 +210,8 @@ fn stash_entry(value: &str) -> bool {
 }
 
 /// Whether the `git stash` at `index` starts no program its hooks do not
-/// cover. Stash pages only under its own `pager.stash` setting. `list` runs
+/// cover. Stash pages only under its own `pager.stash` setting, and the
+/// command each form runs keeps its own pager key besides. `list` runs
 /// `git log -g refs/stash`, held to the configuration proof of that log
 /// read; `show` prints the entry's diff, held to the proof of a `git diff`
 /// read; `apply` and `pop` merge the entry, which may run a configured merge
@@ -252,8 +253,20 @@ pub(super) fn stash_free(
         && match segment.arguments.get(1).map(String::as_str) {
             Some("list") => free(&["log", "-g", "--first-parent", "refs/stash"]),
             // `stash show` prints the entry's diff, so it clears under the
-            // same configuration proof a `git diff` read clears under.
-            Some("show") => free(&["diff"]),
+            // same configuration proof a `git diff` read clears under, read
+            // with the options the caller gave: `--no-ext-diff` and
+            // `--no-textconv` keep a configured driver out of the read, and a
+            // summary form runs no textconv program to begin with.
+            Some("show") => {
+                let mut arguments = vec!["diff"];
+                arguments.extend(
+                    segment.arguments[2..]
+                        .iter()
+                        .map(String::as_str)
+                        .filter(|word| word.starts_with('-')),
+                );
+                free(&arguments)
+            }
             Some("apply" | "pop") => !merge_driver && free(&["status"]),
             _ => true,
         }

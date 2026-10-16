@@ -203,6 +203,33 @@ fn stash_restores_and_identity_variables_are_local_writes() {
         assert_reviewed(&session, command);
         session.config(&["--unset-all", key]);
     }
+    // A stash read carries its own options into the proof, so the request
+    // that keeps a configured driver out of the diff keeps its answer too.
+    for (key, value, kept_out, still_reviewed) in [
+        (
+            "diff.external",
+            "sh -c id",
+            "git stash show -p --no-ext-diff",
+            "git stash show -p",
+        ),
+        (
+            "diff.ts.textconv",
+            "sh -c id",
+            "git stash show -p --no-textconv",
+            "git stash show -p",
+        ),
+        (
+            "diff.ts.textconv",
+            "sh -c id",
+            "git stash show --stat",
+            "git stash show -p",
+        ),
+    ] {
+        session.config(&[key, value]);
+        assert!(allowed(&session, kept_out), "{kept_out}");
+        assert_reviewed(&session, still_reviewed);
+        session.config(&["--unset-all", key]);
+    }
 }
 
 #[test]
