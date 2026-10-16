@@ -189,10 +189,23 @@ fn vitest_containment_never_overrides_disabled_package_permission() {
 
 #[test]
 fn timeout_wrapper_parsing_is_bounded_and_preserves_inner_commands() {
+    let action = |command: &str| {
+        crate::pretool::evaluate_pre_tool(&crate::CommandModelRequestV1 {
+            command: command.into(),
+            dialect: "posix".into(),
+            transport: "shell_string".into(),
+            extraction_provenance: "guard-shell".into(),
+        })
+        .unwrap()
+        .minimum_action
+    };
     for command in [
         "timeout 120 pwd",
         "timeout -- 120 pwd",
         "/usr/bin/timeout 120 pwd",
+        "timeout 5s pwd",
+        "timeout 1.5m pwd",
+        "timeout 2h pwd",
     ] {
         let model = crate::parse_command(&crate::CommandModelRequestV1 {
             command: command.into(),
@@ -202,22 +215,29 @@ fn timeout_wrapper_parsing_is_bounded_and_preserves_inner_commands() {
         })
         .unwrap();
         assert_eq!(model.confidence, "exact", "{command}");
-        assert_eq!(model.wrapper_chain, ["timeout"]);
+        // The clock bounds how long `pwd` runs, not what it may do, so what
+        // is left to judge is `pwd` itself.
+        assert!(model.wrapper_chain.is_empty(), "{command}");
         assert_eq!(model.segments[0].executable.as_deref(), Some("pwd"));
-        let result = crate::pretool::evaluate_pre_tool(&crate::CommandModelRequestV1 {
-            command: command.into(),
-            dialect: "posix".into(),
-            transport: "shell_string".into(),
-            extraction_provenance: "guard-shell".into(),
-        })
-        .unwrap();
-        assert_eq!(result.minimum_action, "review", "{command}");
+        assert_eq!(action(command), action("pwd"), "{command}");
     }
+    // `sudo` changes who runs the program, so it is still a wrapper, and a
+    // clock in front of it does not hide it.
+    let elevated = crate::parse_command(&crate::CommandModelRequestV1 {
+        command: "timeout 30 sudo pwd".into(),
+        dialect: "posix".into(),
+        transport: "shell_string".into(),
+        extraction_provenance: "guard-shell".into(),
+    })
+    .unwrap();
+    assert_eq!(elevated.wrapper_chain, ["sudo"]);
+    assert_eq!(action("timeout 30 sudo pwd"), action("sudo pwd"));
     for command in [
         "timeout --kill-after=1 5 pwd",
         "timeout -s KILL 5 pwd",
-        "timeout 5s pwd",
         "timeout 5",
+        "timeout 5m5s pwd",
+        "timeout .5 pwd",
         "timeout 5 sh -c 'shutdown -h now'",
         "timeout 1 timeout 1 timeout 1 timeout 1 timeout 1 pwd",
     ] {

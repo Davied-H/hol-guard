@@ -168,16 +168,6 @@ pub(crate) fn init_arguments(arguments: &[String]) -> Option<Vec<String>> {
     Some(result)
 }
 
-/// Whether the wrappers in front of the command are only `timeout`.
-///
-/// `timeout 30 pytest -q` runs the program the text already names, under a
-/// clock that signals that one child and nothing else, so the sandbox
-/// contains it exactly as it contains `pytest -q`. `sudo` is the wrapper
-/// that changes who runs it, and it keeps the command off this route.
-fn only_timeout(wrappers: &[String]) -> bool {
-    wrappers.iter().all(|wrapper| wrapper == "timeout")
-}
-
 /// Shape checks shared by classification and the launch plan. `original`,
 /// the exact text to run, is needed only to slice off a bootstrapped `git init`.
 pub(crate) fn command_shape(
@@ -187,7 +177,7 @@ pub(crate) fn command_shape(
 ) -> Option<Shape> {
     if model.confidence != "exact"
         || model.path_overridden
-        || !only_timeout(&model.wrapper_chain)
+        || !model.wrapper_chain.is_empty()
         || model.segments.is_empty()
         || !cd::stand_ins_only_entered(model)
     {
@@ -207,7 +197,7 @@ pub(crate) fn command_shape(
         }
         let executable = segment.executable.as_deref()?;
         if executable.contains('$')
-            || !only_timeout(&segment.wrapper_chain)
+            || !segment.wrapper_chain.is_empty()
             || segment.path_overridden
             // Redirecting Git's repository or configuration roots would move
             // the write-denied paths this profile relies on.

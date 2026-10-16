@@ -584,26 +584,34 @@ fn recursive_removal_runs_in_the_sandbox_only_for_ignored_or_missing_targets() {
 }
 
 /// `timeout 30 pytest -q` runs the program the text already names, under a
-/// clock that signals that one child, so the sandbox bounds it exactly as it
-/// bounds the command without the wrapper. A wrapper that changes who runs
-/// the program, or a `timeout` whose own options this parser does not read,
-/// keeps the review.
+/// clock that signals that one child, so this route reaches the same verdict
+/// it reaches for the command without the clock. `sudo` changes who runs the
+/// program and keeps the command off the route either way.
 #[test]
 fn a_timeout_clock_keeps_the_command_it_wraps_in_the_sandbox() {
     let ws = workspace("timeout-wrapper", true);
     for command in [
-        "timeout 30 python3 app.py",
-        "timeout 5s ./todo.py add x",
-        "timeout 10 git commit -m init",
-        "timeout -- 30 rm -f *.pyc",
-        "timeout 60 npm run build && git diff",
+        "python3 app.py",
+        "./todo.py add x",
+        "git commit -m init",
+        "rm -f *.pyc",
+        "npm run build && git diff",
     ] {
         assert_eq!(
-            reason("omp", command, &ws, true) == CONTAINED,
-            host(),
+            reason("omp", &format!("timeout 30 {command}"), &ws, true),
+            reason("omp", command, &ws, true),
+            "{command}"
+        );
+        assert_eq!(
+            reason("omp", &format!("timeout -- 5s {command}"), &ws, true),
+            reason("omp", command, &ws, true),
             "{command}"
         );
     }
+    assert_eq!(
+        reason("omp", "timeout 60 npm run build", &ws, true) == CONTAINED,
+        host()
+    );
     for command in [
         "timeout 30 sudo npm run build",
         "sudo timeout 30 npm run build",
