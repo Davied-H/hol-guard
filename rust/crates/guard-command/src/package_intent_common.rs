@@ -2122,12 +2122,38 @@ pub(crate) fn package_token(command_name: &str, args: &[String]) -> Option<Strin
     selected_package
 }
 
+/// `bun add`/`bun install` options that take a value (`bun install --help`).
+/// Their value is a path or setting, never a package to install.
+pub(crate) const BUN_VALUE_OPTIONS: &[&str] = &[
+    "--cwd",
+    "--cache-dir",
+    "-c",
+    "--config",
+    "--backend",
+    "--omit",
+    "--linker",
+    "-F",
+    "--filter",
+];
+
+/// yarn's `--cwd <dir>`, which it also accepts after the subcommand.
+pub(crate) const YARN_VALUE_OPTIONS: &[&str] = &["--cwd"];
+
+/// Bun or Yarn `--cwd` named a directory Guard cannot evaluate inside the
+/// workspace. An intent with this note must not take the empty-material allow.
+pub(crate) const PACKAGE_CWD_UNRESOLVED_NOTE: &str = "package_cwd_unresolved";
+
 /// `_collect_package_specs` (protect.py :828-850).
 pub(crate) fn collect_package_specs(values: &[String]) -> Vec<String> {
+    collect_package_specs_with(values, &[])
+}
+
+/// [`collect_package_specs`] for a manager whose own options also take a
+/// value. Only a manager that really reads the next token as the option's
+/// value may list it, or a package after it would go unevaluated.
+pub(crate) fn collect_package_specs_with(values: &[String], value_options: &[&str]) -> Vec<String> {
     const VALUE_OPTIONS: &[&str] = &[
         "-r",
-        // `--cwd <dir>` names where the install runs, not what is installed.
-        "--cwd",
         "--extra-index-url",
         "--index-url",
         "--prefix",
@@ -2142,7 +2168,7 @@ pub(crate) fn collect_package_specs(values: &[String]) -> Vec<String> {
             continue;
         }
         if value.starts_with('-') {
-            if VALUE_OPTIONS.contains(&value.as_str()) {
+            if VALUE_OPTIONS.contains(&value.as_str()) || value_options.contains(&value.as_str()) {
                 skip_next = true;
             }
             continue;
@@ -2382,12 +2408,15 @@ mod tests {
         .iter()
         .map(|s| s.to_string())
         .collect();
-        assert!(collect_package_specs(&tokens).is_empty());
+        assert!(collect_package_specs_with(&tokens, BUN_VALUE_OPTIONS).is_empty());
         let named: Vec<String> = ["--cwd", "/srv/project", "left-pad"]
             .iter()
             .map(|s| s.to_string())
             .collect();
-        assert_eq!(collect_package_specs(&named), vec!["left-pad"]);
+        assert_eq!(
+            collect_package_specs_with(&named, BUN_VALUE_OPTIONS),
+            vec!["left-pad"]
+        );
     }
 
     #[test]
