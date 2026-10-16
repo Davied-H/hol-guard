@@ -259,7 +259,7 @@ pub trait SupplyChainStore {
     );
     /// `store.get_approval_request(request_id)` -> dict | None
     fn get_approval_request(&self, request_id: &str) -> Option<Value>;
-    /// `store.resolve_policy_decision_lookup(...) -> (decision, ignored_local_integrity)`
+    /// `store.resolve_policy_decision_lookup(...) -> (decision, ignored_local_integrity, error)`
     #[allow(clippy::too_many_arguments)]
     fn resolve_policy_decision_lookup(
         &self,
@@ -305,6 +305,9 @@ pub trait SupplyChainStore {
 pub struct PolicyDecisionLookup {
     pub decision: Option<Value>,
     pub ignored_local_integrity: Option<Value>,
+    /// Set when the lookup could not run. Absent after a successful lookup,
+    /// including one that found no saved decision.
+    pub error: Option<String>,
 }
 
 /// `.runtime.runner` seam.
@@ -5575,6 +5578,16 @@ fn resolve_stored_package_policy_override(
             now,
             false,
         );
+        if let Some(code) = lookup.error.as_deref() {
+            // A store failure is not an empty lookup. The review verdict
+            // stands, and the code is recorded so the two can be told apart.
+            store.add_event(
+                "package_policy_lookup_failed",
+                &json!({ "code": code }),
+                now,
+            );
+            return unchanged();
+        }
         // A row whose local integrity did not verify stops the probe: Python
         // hands that case to the daemon authority, which this lane has no seam
         // for, so the review verdict stands rather than a row being reused on

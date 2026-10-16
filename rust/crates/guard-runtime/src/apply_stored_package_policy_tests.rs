@@ -180,6 +180,27 @@ fn the_resident_lookup_reports_the_saved_decision_identifier() {
 }
 
 #[test]
+fn a_store_the_lookup_cannot_query_reports_the_error_code() {
+    let home = temp_home("lookup-error");
+    let store = ResidentSupplyChainStore::new(&home.join("guard.db"), &home);
+    let lookup = store.resolve_policy_decision_lookup(
+        "claude",
+        "command:install",
+        Some("guard-approval-context:v1:missing"),
+        "package-request-workspace:v2:unused",
+        None,
+        "2026-10-06T00:00:00Z",
+        false,
+    );
+    assert!(lookup.decision.is_none());
+    assert_eq!(
+        lookup.error.as_deref(),
+        Some("native_policy_decision_lookup_query_failed")
+    );
+    let _ = std::fs::remove_dir_all(&home);
+}
+
+#[test]
 fn a_saved_allow_is_claimed_and_applied_to_the_evaluation() {
     let home = temp_home("claimed");
     seed_store(&home);
