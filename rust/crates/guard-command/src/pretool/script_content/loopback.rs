@@ -184,14 +184,18 @@ fn members_only(masked: &str, name: &str, declared: usize) -> bool {
     let Ok(word) = Regex::new(&format!(r"\b{}\b", regex::escape(name))) else {
         return false;
     };
-    word.find_iter(masked).all(|found| {
-        found.start() == declared
+    for found in word.find_iter(masked) {
+        let only_member = found.start() == declared
             // `config.http` is another object's property.
             || masked[..found.start()].trim_end().ends_with('.')
             || HTTP_MEMBER
                 .captures(&masked[found.end()..])
-                .is_some_and(|member| HTTP_MEMBERS.contains(&&member[1]))
-    })
+                .is_some_and(|member| HTTP_MEMBERS.contains(&&member[1]));
+        if !only_member {
+            return false;
+        }
+    }
+    true
 }
 
 /// `code` with the contents of each string literal blanked, byte for byte,
