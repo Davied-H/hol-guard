@@ -127,11 +127,17 @@ fn offer_slot_counts_are_optional_but_must_agree_with_availability() {
         snapshot
     };
     let counted = |open: i64, total: i64, availability: &str| {
-        sponsored(availability, json!({"openSlots": open, "totalSlots": total}))
+        sponsored(
+            availability,
+            json!({"openSlots": open, "totalSlots": total}),
+        )
     };
 
     // Counts are optional: the base snapshot carries none and still projects.
-    assert_eq!(outcome(&run(request(base_snapshot(), NOW_MS))), ("ok", None));
+    assert_eq!(
+        outcome(&run(request(base_snapshot(), NOW_MS))),
+        ("ok", None)
+    );
 
     let frame = run(request(counted(3, 4, "open"), NOW_MS));
     assert_eq!(outcome(&frame), ("ok", None));
@@ -151,7 +157,11 @@ fn offer_slot_counts_are_optional_but_must_agree_with_availability() {
         );
     }
     // More open than exist, a pool of none, and a negative count are nonsense.
-    for snapshot in [counted(5, 4, "open"), counted(0, 0, "sold_out"), counted(-1, 4, "open")] {
+    for snapshot in [
+        counted(5, 4, "open"),
+        counted(0, 0, "sold_out"),
+        counted(-1, 4, "open"),
+    ] {
         assert_eq!(
             outcome(&run(request(snapshot, NOW_MS))),
             ("error", Some("discovery_snapshot_invalid"))
@@ -160,7 +170,10 @@ fn offer_slot_counts_are_optional_but_must_agree_with_availability() {
 
     // Half a pair is malformed, not a partial answer.
     assert_eq!(
-        outcome(&run(request(sponsored("open", json!({"openSlots": 3})), NOW_MS))),
+        outcome(&run(request(
+            sponsored("open", json!({"openSlots": 3})),
+            NOW_MS
+        ))),
         ("error", Some("discovery_snapshot_invalid"))
     );
 

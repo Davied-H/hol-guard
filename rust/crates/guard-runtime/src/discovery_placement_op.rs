@@ -347,9 +347,9 @@ fn validate_offer(object: &Map<String, Value>) -> Result<(), DiscoveryError> {
     // so half a pair is a malformed snapshot rather than a partial answer.
     const OFFER_SLOT_FIELDS: [&str; 2] = ["openSlots", "totalSlots"];
     if !OFFER_FIELDS.iter().all(|key| object.contains_key(*key))
-        || !object
-            .keys()
-            .all(|key| OFFER_FIELDS.contains(&key.as_str()) || OFFER_SLOT_FIELDS.contains(&key.as_str()))
+        || !object.keys().all(|key| {
+            OFFER_FIELDS.contains(&key.as_str()) || OFFER_SLOT_FIELDS.contains(&key.as_str())
+        })
     {
         return Err(DiscoveryError::Snapshot);
     }
