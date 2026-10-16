@@ -12,13 +12,12 @@
 //! has only not prepared yet keeps the session native.
 //!
 //! The child session runs in its own process group on unix and in a
-//! kill-on-close JobObject on Windows. The relay is advertised on unix only.
+//! kill-on-close JobObject on Windows.
 
 /// `hol-guard-runtime` subcommand that runs the relay.
 pub(crate) const RELAY_COMMAND: &str = "mcp-relay";
 
-/// Capability string installers gate relay selection on; advertised on unix.
-#[cfg_attr(not(unix), allow(dead_code))]
+/// Capability string installers gate relay selection on.
 pub(crate) const RELAY_FEATURE: &str = "mcp-stdio-relay-v1";
 
 /// Run the relay; returns the process exit status.

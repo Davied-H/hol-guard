@@ -87,9 +87,7 @@ def test_an_unadvertised_relay_keeps_the_python_proxy(tmp_path: Path, advertised
 
 
 @pytest.mark.parametrize("proxy", sorted(RELAY_PROXY_COMMANDS))
-def test_an_advertised_relay_wraps_the_unchanged_python_argv(
-    tmp_path: Path, advertised: set[str], proxy: str
-) -> None:
+def test_an_advertised_relay_wraps_the_unchanged_python_argv(tmp_path: Path, advertised: set[str], proxy: str) -> None:
     advertised.add(NATIVE_MCP_RELAY_FEATURE)
     args = _python_args(tmp_path, proxy, proxy.removesuffix("-mcp-proxy"))
     command, launch_args = mcp_proxy_launch("/venv/bin/python", args)
@@ -130,7 +128,7 @@ def test_native_canary_needs_a_runtime_serving_relay_decisions(
     assert mcp_proxy_launch(sys.executable, args)[0] == str(_RUNTIME)
 
 
-def test_windows_and_frozen_builds_keep_the_python_proxy(
+def test_frozen_builds_keep_the_python_proxy_and_windows_selects_the_relay(
     tmp_path: Path, advertised: set[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     advertised.add(NATIVE_MCP_RELAY_FEATURE)
@@ -139,7 +137,7 @@ def test_windows_and_frozen_builds_keep_the_python_proxy(
     assert mcp_proxy_launch(sys.executable, args)[0] == sys.executable
     monkeypatch.delattr(mcp_relay_native.sys, "frozen")
     monkeypatch.setattr(mcp_relay_native.os, "name", "nt")
-    assert mcp_proxy_launch(sys.executable, args)[0] == sys.executable
+    assert mcp_proxy_launch(sys.executable, args)[0] == str(_RUNTIME)
 
 
 def test_shared_launcher_entry_selects_the_relay(tmp_path: Path, advertised: set[str]) -> None:
