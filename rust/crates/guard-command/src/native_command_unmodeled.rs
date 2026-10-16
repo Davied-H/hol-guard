@@ -260,7 +260,7 @@ impl CompiledNativeCommandControls {
             // `rm`, `git` and the system tools model those programs
             // themselves, and `xargs rm -f < list.txt` keeps the review floor
             // they give it.
-            if let Some(programs) = &xargs_programs {
+            if let Some(programs) = xargs_programs.as_ref().filter(|names| !names.is_empty()) {
                 let may_own = extension_names
                     .as_ref()
                     .is_none_or(|names| names.is_empty() || !names.is_disjoint(programs));
