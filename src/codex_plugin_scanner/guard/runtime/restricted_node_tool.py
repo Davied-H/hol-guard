@@ -136,6 +136,30 @@ def validate_build_output_root(path: Path, *, workspace: Path, cwd: Path | None 
                 )
 
 
+def _explicit_vite_config(args: Sequence[str], cwd: Path) -> Path | None:
+    """The last `--config` file, relative to the build's working directory."""
+
+    chosen: str | None = None
+    index = 0
+    while index < len(args):
+        value = args[index]
+        if value in {"-c", "--config"}:
+            if index + 1 >= len(args) or args[index + 1].startswith("-"):
+                raise RestrictedPytestError("node_build_invalid_output", "Missing Vite config.")
+            chosen = args[index + 1]
+            index += 2
+            continue
+        if value.startswith("--config="):
+            chosen = value.removeprefix("--config=")
+            if not chosen:
+                raise RestrictedPytestError("node_build_invalid_output", "Missing Vite config.")
+        index += 1
+    if chosen is None:
+        return None
+    path = Path(chosen)
+    return path if path.is_absolute() else cwd / path
+
+
 def _vite_output(args: Sequence[str], *, workspace: Path, cwd: Path) -> Path:
     """The build's last `--outDir`, else the config's literal one, else `dist`."""
     output_name = None
@@ -146,8 +170,14 @@ def _vite_output(args: Sequence[str], *, workspace: Path, cwd: Path) -> Path:
             if index + 1 >= len(args):
                 raise RestrictedPytestError("node_build_invalid_output", "Missing output directory.")
             output_name = args[index + 1]
-    explicit_config = any(value in {"-c", "--config"} or value.startswith("--config=") for value in args)
-    declared = None if output_name or explicit_config else declared_vite_output(cwd, workspace)
+    # `--outDir` wins. Otherwise read the config the command names, or the
+    # default vite.config.* when it names none. Skipping a named config used
+    # to grant `dist` while Vite wrote the directory that file declared.
+    declared = (
+        None
+        if output_name
+        else declared_vite_output(cwd, workspace, config=_explicit_vite_config(args, cwd))
+    )
     output = declared or cwd / (output_name or "dist")
     validate_build_output_root(output, workspace=workspace, cwd=None if declared is None else cwd)
     return output
