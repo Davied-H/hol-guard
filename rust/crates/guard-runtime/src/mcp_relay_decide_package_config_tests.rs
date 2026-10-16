@@ -177,10 +177,10 @@ fn a_view_this_cannot_read_defers_rather_than_reading_a_default() {
 
 #[test]
 fn a_risk_action_that_is_not_an_action_defers() {
-    let mut config = config();
-    config.insert("risk_actions".to_owned(), json!({"package_script": 7}));
+    let mut risk = config();
+    risk.insert("risk_actions".to_owned(), json!({"package_script": 7}));
     assert_eq!(
-        config_policy(&view(config), &artifact()).err(),
+        config_policy(&view(risk), &artifact()).err(),
         Some(CONFIG_INVALID)
     );
 
