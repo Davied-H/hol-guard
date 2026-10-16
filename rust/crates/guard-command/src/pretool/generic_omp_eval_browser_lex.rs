@@ -185,9 +185,7 @@ pub(super) fn loopback_url(url: &str) -> bool {
     {
         return false;
     }
-    let end = rest
-        .find(|c| matches!(c, '/' | '?' | '#'))
-        .unwrap_or(rest.len());
+    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
     let authority = &rest[..end];
     let (host, port) = match authority.strip_prefix("[::1]") {
         Some(port) => ("[::1]", port),
