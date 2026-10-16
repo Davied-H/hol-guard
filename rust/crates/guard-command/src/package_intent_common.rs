@@ -2154,8 +2154,6 @@ pub(crate) fn collect_package_specs(values: &[String]) -> Vec<String> {
 pub(crate) fn collect_package_specs_with(values: &[String], value_options: &[&str]) -> Vec<String> {
     const VALUE_OPTIONS: &[&str] = &[
         "-r",
-        // `--cwd <dir>` names where the install runs, not what is installed.
-        "--cwd",
         "--extra-index-url",
         "--index-url",
         "--prefix",
