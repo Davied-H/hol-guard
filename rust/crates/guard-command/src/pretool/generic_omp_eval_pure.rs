@@ -89,6 +89,31 @@ const SAFE_BUILTINS: &[&str] = &[
     "StopIteration",
 ];
 
+/// Attribute names that reach an imported process or interpreter module, or
+/// look up an attribute from text the screen cannot see.
+const REFUSED_ATTRIBUTES: &[&str] = &[
+    "os",
+    "sys",
+    "modules",
+    "system",
+    "popen",
+    "environ",
+    "subprocess",
+    "builtins",
+    "importlib",
+    "ctypes",
+    "socket",
+    "eval",
+    "exec",
+    "open",
+    "format",
+    "format_map",
+    "vformat",
+    "attrgetter",
+    "methodcaller",
+    "itemgetter",
+];
+
 const KEYWORDS: &[&str] = &[
     "False", "None", "True", "and", "as", "assert", "break", "class", "continue", "def", "elif",
     "else", "except", "finally", "for", "from", "if", "import", "in", "is", "lambda", "not", "or",
@@ -377,7 +402,15 @@ pub(super) fn pure_python(code: &str) -> bool {
     };
     let (bound, defined) = bound_names(&code);
     for (position, word) in words(&code) {
-        if previous_symbol(&code, position) == Some('.') || KEYWORDS.contains(&word) {
+        if previous_symbol(&code, position) == Some('.') {
+            // An attribute can lead from a safe module to the process or
+            // interpreter it imports (`shlex.os`, `typing.sys.modules`).
+            if word.starts_with('_') || REFUSED_ATTRIBUTES.contains(&word) {
+                return false;
+            }
+            continue;
+        }
+        if KEYWORDS.contains(&word) {
             continue;
         }
         let end = position + word.len();
@@ -439,6 +472,10 @@ mod tests {
             "print(open('/etc/passwd').read())",
             "print(read('a'))",
             "print(f'{1+1}')",
+            "import shlex\nshlex.os.system('x')",
+            "import typing\ntyping.sys.modules['os']",
+            "import collections\ncollections._sys.exit(0)",
+            "import shlex\nprint('{0.os}'.format(shlex))",
             "x = getattr(str, 'join')",
             "print(().__class__)",
             "import socket",

@@ -144,15 +144,7 @@ pub(super) fn evaluate(
         parse_program(code)?
     };
     let mut ran_shell = false;
-    let mut ran_browser = false;
     for call in &calls {
-        if let Some(options) = &call.browser {
-            if !browser_open_allowed(options, context) {
-                return None;
-            }
-            ran_browser = true;
-            continue;
-        }
         let inner = standalone_payload(call, context)?;
         ran_shell |= call.tool == "bash";
         // The entry point a direct call takes, so the bridged call gets the
@@ -172,7 +164,7 @@ pub(super) fn evaluate(
             return None;
         }
     }
-    let (action_type, operation) = if ran_shell || ran_browser {
+    let (action_type, operation) = if ran_shell {
         (PreToolActionTypeV1::Command, PreToolOperationV1::Execute)
     } else {
         (PreToolActionTypeV1::FileRead, PreToolOperationV1::Read)
@@ -196,78 +188,4 @@ fn contained_bash(call: &Call, result: &PreToolResultV1) -> bool {
         && result.minimum_action == "sandbox-required"
         && result.policy_action == "sandbox-required"
         && crate::hook_responses::contained_execution_profile(&result.reason_code).is_some()
-}
-
-/// Browsers a bridged `browser.open` may start by path.
-const KNOWN_BROWSERS: &[&str] = &[
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-    "/Applications/Chromium.app/Contents/MacOS/Chromium",
-    "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-    "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
-    "/usr/bin/google-chrome",
-    "/usr/bin/google-chrome-stable",
-    "/usr/bin/chromium",
-    "/usr/bin/chromium-browser",
-];
-const SAFE_BROWSER_ARGS: &[&str] = &[
-    "--allow-file-access-from-files",
-    "--headless",
-    "--headless=new",
-    "--disable-gpu",
-    "--no-first-run",
-];
-
-/// Whether `browser.open` options start only a known browser on a page of the
-/// workspace or the local machine. `Null` is a call that opens nothing.
-fn browser_open_allowed(options: &Value, context: &OmpContext<'_>) -> bool {
-    let Some(map) = options.as_object() else {
-        return options.is_null();
-    };
-    for (key, value) in map {
-        let ok = match key.as_str() {
-            "name" => value
-                .as_str()
-                .is_some_and(|name| !name.contains(['/', '\\'])),
-            "headed" | "allow_file_access" => value.is_boolean(),
-            "url" => value
-                .as_str()
-                .is_some_and(|url| local_page(url, context.path.cwd)),
-            "app" => value.as_object().is_some_and(|app| {
-                app.iter().all(|(key, value)| match key.as_str() {
-                    "path" => value
-                        .as_str()
-                        .is_some_and(|path| KNOWN_BROWSERS.contains(&path)),
-                    "args" => value.as_array().is_some_and(|args| {
-                        args.iter()
-                            .all(|arg| arg.as_str().is_some_and(|a| SAFE_BROWSER_ARGS.contains(&a)))
-                    }),
-                    _ => false,
-                })
-            }),
-            _ => false,
-        };
-        if !ok {
-            return false;
-        }
-    }
-    map.get("url").is_some()
-}
-
-fn local_page(url: &str, cwd: Option<&str>) -> bool {
-    if url.contains(['\\', '%']) || url.chars().any(char::is_control) {
-        return false;
-    }
-    if let Some(path) = url.strip_prefix("file://") {
-        let Some(cwd) = cwd else { return false };
-        let root = cwd.trim_end_matches('/');
-        return !root.is_empty()
-            && path.starts_with(root)
-            && path[root.len()..].starts_with('/')
-            && !path.split('/').any(|part| part == "..");
-    }
-    ["http://localhost", "http://127.0.0.1"].iter().any(|host| {
-        url.strip_prefix(host).is_some_and(|rest| {
-            rest.is_empty() || rest.starts_with([':', '/']) && !rest.contains('@')
-        })
-    })
 }
