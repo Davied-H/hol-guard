@@ -28,12 +28,14 @@ from codex_plugin_scanner.guard.runtime.effect_contract import EffectKind
 from codex_plugin_scanner.guard.runtime.extension_evidence import EvidenceSeverity, ExtensionRuleIdentity
 from codex_plugin_scanner.guard.store import GuardStore
 
-# The activity list keeps a ninety-day window, so a day written into the
-# source ages out of it and the suite starts failing on a calendar boundary
-# rather than on a change. Yesterday is always inside the window, and unlike
-# today it cannot land in the future for a run that starts before the hour
-# these activities are stamped with.
-_FIXTURE_OCCURRED_ON = date.today() - timedelta(days=1)
+# Suites that assert this exact day stay pinned. The daemon list only keeps
+# ninety days, so those routes pass recent_fixture_day() instead.
+_FIXTURE_OCCURRED_ON = date(2026, 7, 18)
+
+
+def recent_fixture_day() -> date:
+    """A UTC day inside the daemon's ninety-day list window and never in the future."""
+    return datetime.now(timezone.utc).date() - timedelta(days=1)
 
 
 def evidence(
