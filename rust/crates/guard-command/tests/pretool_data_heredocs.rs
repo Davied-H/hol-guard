@@ -53,6 +53,8 @@ fn sensitive_targets_and_executed_heredocs_keep_review() {
         "cat > ~/.zshrc <<'EOF'\nexport A=1\nEOF",
         "bash <<'EOF'\necho $process.env\ncat .env\nEOF",
         "cat <<'EOF' | bash\ncat .env\nEOF",
+        "bash <<'X'; cat <<'EOF'\ncat ~/.ssh/id_rsa\nX\nhi\nEOF",
+        "bash -s \\\ncat <<'EOF'\ncat ~/.ssh/id_rsa\nEOF",
         "cat > notes.txt <<EOF\n$(cat .env)\nEOF",
     ] {
         let (action, _) = reason(&root, "claude-code", command);

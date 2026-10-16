@@ -16,16 +16,18 @@ pub(super) fn without_data_bodies(text: &str) -> String {
         return text.to_owned();
     }
     let chars: Vec<char> = text.chars().collect();
+    // Quotes inside any heredoc body are body text, not shell syntax.
+    let outline: Vec<char> = mask_heredoc_bodies(text, &heredocs).chars().collect();
     let data: Vec<ShellHeredoc> = heredocs
         .into_iter()
-        .filter(|heredoc| heredoc.quoted && declared_by_bare_cat(&chars, heredoc))
+        .filter(|heredoc| heredoc.quoted && declared_by_bare_cat(&chars, &outline, heredoc))
         .collect();
     mask_heredoc_bodies(text, &data)
 }
 
 /// The heredoc's declaring line is `cat`, an optional literal output redirect
-/// and the heredoc operator, and nothing else, after any chain separator.
-fn declared_by_bare_cat(chars: &[char], heredoc: &ShellHeredoc) -> bool {
+/// and the heredoc operator, and nothing else.
+fn declared_by_bare_cat(chars: &[char], outline: &[char], heredoc: &ShellHeredoc) -> bool {
     let Some(newline) = heredoc.body_start.checked_sub(1) else {
         return false;
     };
@@ -36,12 +38,21 @@ fn declared_by_bare_cat(chars: &[char], heredoc: &ShellHeredoc) -> bool {
         .iter()
         .rposition(|character| *character == '\n')
         .map_or(0, |position| position + 1);
-    let line: String = chars[line_start..newline].iter().collect();
-    let command = ["&&", "||", ";"]
-        .iter()
-        .filter_map(|separator| line.rfind(separator).map(|at| at + separator.len()))
-        .max()
-        .map_or(line.as_str(), |at| &line[at..]);
+    // The shell may continue this line from the one before it, or an earlier
+    // quote may still be open, so only a clean line start is trusted.
+    let before = &outline[..line_start];
+    if before.len() >= 2 && before[before.len() - 2] == '\\'
+        || before.iter().filter(|c| **c == '\'').count() % 2 != 0
+        || before.iter().filter(|c| **c == '"').count() % 2 != 0
+    {
+        return false;
+    }
+    let command: String = chars[line_start..newline].iter().collect();
+    // The declaring line holds this one command: a chain separator leaves
+    // open which command owns the heredoc.
+    if command.contains(['&', ';', '|']) {
+        return false;
+    }
     let mut heredocs = 0;
     let mut cats = 0;
     let mut expecting_target = false;
