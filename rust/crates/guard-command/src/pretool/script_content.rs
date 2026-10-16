@@ -110,18 +110,35 @@ fn assess_programs(
     scripts: bool,
 ) -> Vec<Findings> {
     let mut findings = Vec::new();
-    if model.confidence != "exact"
-        || !read_paths::verified_path_context(context.home_dir, context.cwd)
-    {
+    if !read_paths::verified_path_context(context.home_dir, context.cwd) {
         return findings;
     }
-    let stdin = Stdin::new(model);
-    for (index, segment) in model.segments.iter().enumerate() {
+    // The command model leaves a heredoc or an input redirect uncertain; the
+    // shell structure parse reads both, so a program fed that way is read too.
+    let structured;
+    let (text, segments) = if model.confidence == "exact" {
+        (model.normalized_text.as_str(), model.segments.as_slice())
+    } else {
+        structured = crate::critical_floor_context::parse_floor_command(
+            &model.normalized_text,
+            context.cwd.map(Path::new),
+            context.home_dir.map(Path::new),
+        );
+        if structured.confidence != "exact" {
+            return findings;
+        }
+        (
+            structured.normalized_text.as_str(),
+            structured.segments.as_slice(),
+        )
+    };
+    let stdin = Stdin::new(text);
+    for (index, segment) in segments.iter().enumerate() {
         let Some((language, program, remote)) = launch::launched_program(segment) else {
             continue;
         };
         // An earlier directory change moves a relative path out of reach.
-        let moved = model.segments[..index].iter().any(|prior| {
+        let moved = segments[..index].iter().any(|prior| {
             prior.executable.as_deref().is_some_and(|value| {
                 matches!(super::executable_basename(value), "cd" | "pushd" | "popd")
             })
@@ -146,7 +163,7 @@ fn assess_programs(
                 source: source.to_owned(),
                 directory: imports_from(),
             },
-            Program::Stdin => match stdin.source(model, index) {
+            Program::Stdin => match stdin.source(segments, index) {
                 Some(Fed::Text(source)) => Entry::Text {
                     source,
                     directory: imports_from(),

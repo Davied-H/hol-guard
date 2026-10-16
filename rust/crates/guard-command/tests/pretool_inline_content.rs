@@ -110,7 +110,11 @@ fn inline_and_stdin_programs_that_use_the_network_keep_their_review() {
         ] {
             let result = fixture.classify(harness, command);
             assert_ne!(result.decision, "allow", "{harness}: {command}");
-            assert_eq!(result.minimum_action, "review", "{harness}: {command}");
+            assert_eq!(
+                result.minimum_action, "review",
+                "{harness}: {command}: {}",
+                result.reason_code
+            );
             assert_ne!(result.reason_code, EXFILTRATION, "{harness}: {command}");
         }
     }
@@ -144,8 +148,12 @@ fn programs_fed_on_standard_input_that_pair_a_credential_store_with_the_network_
             "kubectl exec -i web-0 -c app -- python3 - < collect.py",
         ] {
             let result = fixture.classify(harness, command);
+            assert_eq!(
+                result.minimum_action, "block",
+                "{harness}: {command}: {}",
+                result.reason_code
+            );
             assert_eq!(result.decision, "deny", "{harness}: {command}");
-            assert_eq!(result.minimum_action, "block", "{harness}: {command}");
             assert_eq!(result.reason_code, EXFILTRATION, "{harness}: {command}");
         }
         for command in [
@@ -177,7 +185,11 @@ fn programs_that_only_use_the_network_or_only_name_a_credential_are_not_blocked(
         "node -e 1",
     ] {
         let result = fixture.classify("omp", command);
-        assert_ne!(result.minimum_action, "block", "{command}");
+        assert_ne!(
+            result.minimum_action, "block",
+            "{command}: {}",
+            result.reason_code
+        );
         assert_ne!(result.decision, "allow", "{command}");
     }
 }

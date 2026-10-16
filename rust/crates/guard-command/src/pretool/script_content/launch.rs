@@ -4,7 +4,7 @@
 use std::path::Path;
 
 use super::{extension, Language, NODE_EXTENSIONS, NODE_VALUE_OPTIONS, PYTHON_VALUE_OPTIONS};
-use crate::CanonicalCommandV1;
+use crate::CommandSegmentV1;
 
 /// The program an interpreter runs.
 pub(super) enum Program<'a> {
@@ -22,7 +22,7 @@ pub(super) enum Fed {
 /// The interpreter a segment launches and its program, and whether it runs
 /// inside a container or pod rather than on this machine.
 pub(super) fn launched_program(
-    segment: &crate::CommandSegmentV1,
+    segment: &CommandSegmentV1,
 ) -> Option<(Language, Program<'_>, bool)> {
     let name = super::super::executable_basename(segment.executable.as_deref()?);
     let name = name.strip_suffix(".exe").unwrap_or(name);
@@ -132,8 +132,7 @@ pub(super) struct Stdin {
 }
 
 impl Stdin {
-    pub(super) fn new(model: &CanonicalCommandV1) -> Self {
-        let text = model.normalized_text.as_str();
+    pub(super) fn new(text: &str) -> Self {
         let heredocs = crate::shell_structure::extract_heredocs(text);
         let masked = crate::shell_structure::mask_heredoc_bodies(text, &heredocs);
         let redirects = crate::command_structure::extract_command_redirects(&masked, &heredocs);
@@ -145,8 +144,8 @@ impl Stdin {
 
     /// What segment `index` reads on standard input, when exactly one source
     /// feeds it.
-    pub(super) fn source(&self, model: &CanonicalCommandV1, index: usize) -> Option<Fed> {
-        let segment = &model.segments[index];
+    pub(super) fn source(&self, segments: &[CommandSegmentV1], index: usize) -> Option<Fed> {
+        let segment = &segments[index];
         if !segment.execution_context.starts_with("top") {
             return None;
         }
@@ -167,7 +166,7 @@ impl Stdin {
                 .map(Fed::File),
         );
         if segment.pipeline_index > 0 {
-            let feeder = model.segments.iter().find(|prior| {
+            let feeder = segments.iter().find(|prior| {
                 prior.execution_context == segment.execution_context
                     && prior.pipeline_index + 1 == segment.pipeline_index
             })?;
