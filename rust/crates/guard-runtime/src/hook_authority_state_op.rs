@@ -490,7 +490,7 @@ impl Env<'_> {
                 self.cursor_remove_pending(
                     required(&request.conversation_id)?,
                     required(&request.pending_key)?,
-                );
+                )?;
                 Ok(json!({}))
             }
             "cursor_record_allow" => Ok(json!({

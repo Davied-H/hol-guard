@@ -210,14 +210,31 @@ impl Env<'_> {
             })
     }
 
-    pub(super) fn cursor_remove_pending(&self, conversation_id: &str, pending_key: &str) {
-        self.delete(pending_key);
+    /// Deletes the pending state and rewrites the index without it. A failed
+    /// write is a store error, so the caller rolls the whole removal back.
+    pub(super) fn cursor_remove_pending(
+        &self,
+        conversation_id: &str,
+        pending_key: &str,
+    ) -> Result<(), &'static str> {
+        if !self.delete(pending_key) {
+            return Err(ERROR_STORE);
+        }
         let remaining: Vec<String> = self
             .load_index(&CURSOR_FAMILY, conversation_id)
             .into_iter()
             .filter(|key| key != pending_key)
             .collect();
-        self.store_index(&CURSOR_FAMILY, conversation_id, &remaining);
+        let stored = if remaining.is_empty() {
+            self.delete(&format!("{}{conversation_id}", CURSOR_FAMILY.index_prefix))
+        } else {
+            self.store_index(&CURSOR_FAMILY, conversation_id, &remaining)
+        };
+        if stored {
+            Ok(())
+        } else {
+            Err(ERROR_STORE)
+        }
     }
 
     pub(super) fn cursor_load_pending_state(

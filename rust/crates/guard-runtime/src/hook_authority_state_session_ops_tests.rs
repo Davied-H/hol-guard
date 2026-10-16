@@ -265,3 +265,54 @@ fn session_ops_match_the_op_sequences_they_replace() {
     }
     assert!(compared > 200, "only {compared} lookups compared");
 }
+
+#[test]
+fn a_failed_cursor_removal_rolls_back_both_writes() {
+    let vectors = recorded_vectors();
+    let request = HookAuthorityStateRequestV1 {
+        schema: guard_contracts::HOOK_AUTHORITY_STATE_REQUEST_SCHEMA.into(),
+        guard_home: std::env::temp_dir().to_string_lossy().into_owned(),
+        now: "2026-10-11T12:00:00.250000+00:00".into(),
+        integrity_key_b64: vectors["key_b64"].as_str().map(str::to_owned),
+        integrity_key_id: vectors["key_id"].as_str().map(str::to_owned),
+        ..Default::default()
+    };
+    let base = Base { request: &request };
+    let pending_key = format!("{CURSOR_PENDING}conv-rollback:abc");
+    let index_key = format!("{CURSOR_INDEX}conv-rollback");
+    for blocked in [&pending_key, &index_key] {
+        let (path, connection) = fresh_store("session-ops-rollback");
+        base.call(
+            &path,
+            "cursor_store_pending_state",
+            json!({ "conversation_id": "conv-rollback", "state_key": pending_key,
+                    "payload": { "conversation_id": "conv-rollback", "command": "true" } }),
+        );
+        base.call(
+            &path,
+            "cursor_append_key",
+            json!({ "conversation_id": "conv-rollback", "pending_key": pending_key }),
+        );
+        let before = owned_rows(&connection);
+        assert!(before.contains_key(&pending_key) && before.contains_key(&index_key));
+        connection
+            .execute_batch(&format!(
+                "create trigger refuse before delete on sync_state when old.state_key = '{blocked}' \
+                 begin select raise(abort, 'refused'); end;"
+            ))
+            .expect("trigger");
+        let mut removal = request.clone();
+        removal.op = "cursor_remove_pending".into();
+        removal.store_path = path.to_string_lossy().into_owned();
+        removal.conversation_id = Some("conv-rollback".into());
+        removal.pending_key = Some(pending_key.clone());
+        assert_eq!(
+            evaluate(&removal),
+            Err("native_hook_authority_state_store_unavailable"),
+            "{blocked}"
+        );
+        assert_eq!(owned_rows(&connection), before, "{blocked}");
+        drop(connection);
+        let _ = std::fs::remove_file(&path);
+    }
+}

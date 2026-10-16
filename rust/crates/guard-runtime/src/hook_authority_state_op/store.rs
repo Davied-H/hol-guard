@@ -27,11 +27,14 @@ impl Env<'_> {
         }
     }
 
-    pub(super) fn delete(&self, state_key: &str) {
-        let _ = self.connection.execute(
-            "delete from sync_state where state_key = ?1",
-            params![state_key],
-        );
+    /// `false` when the delete statement fails.
+    pub(super) fn delete(&self, state_key: &str) -> bool {
+        self.connection
+            .execute(
+                "delete from sync_state where state_key = ?1",
+                params![state_key],
+            )
+            .is_ok()
     }
 
     /// Deletes every key in one statement; `false` when the statement fails.
