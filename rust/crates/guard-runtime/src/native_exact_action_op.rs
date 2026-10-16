@@ -16,7 +16,11 @@ mod launcher_sets;
 mod node_script;
 mod node_source;
 mod operands;
+mod python_modules;
+mod python_script;
+mod python_source;
 mod reasons;
+mod reuse_shape;
 pub(crate) mod runner_bin;
 mod token;
 mod tool_target;
@@ -77,6 +81,7 @@ pub(crate) fn review_binding_for(
     let NativeExactActionQueryV1::ExactAction {
         harness,
         command,
+        payload_cwd,
         workspace,
         facts,
         policy_binding,
@@ -88,6 +93,10 @@ pub(crate) fn review_binding_for(
     binding::review_binding(
         harness,
         command.as_deref(),
+        payload_cwd
+            .as_deref()
+            .or(workspace.as_deref())
+            .map(std::path::Path::new),
         workspace.is_some(),
         facts,
         receipt,
@@ -106,6 +115,7 @@ fn decide(
         NativeExactActionQueryV1::ReviewBinding {
             harness,
             command,
+            cwd,
             workspace_bound,
             facts,
             receipt,
@@ -114,6 +124,7 @@ fn decide(
             binding: binding::review_binding(
                 harness,
                 command.as_deref(),
+                cwd.as_deref().map(std::path::Path::new),
                 *workspace_bound,
                 facts,
                 receipt.as_ref(),

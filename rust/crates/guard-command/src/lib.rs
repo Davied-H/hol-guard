@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 pub mod action_lattice;
 pub mod approval_reuse;
+pub mod artifact_risk;
 pub mod benign_request_api;
 pub mod browser_mcp_intent;
 pub mod business_gmail_plain;
@@ -24,6 +25,7 @@ pub mod command_action_risk_classes;
 mod command_ascii_comparison;
 mod command_candidate_common;
 mod command_common_cli_matchers;
+mod compound_artifact;
 pub mod cursor_shell_command;
 pub mod policy_document;
 pub use codex_output_entry::{review_codex_tool_output, ToolOutputOutcome};
@@ -84,6 +86,9 @@ pub use contributed_mcp_url::normalized_remote_mcp_url;
 mod data_flow;
 pub mod dep_map;
 pub mod effect_decision;
+mod embedded_script_evidence;
+#[cfg(test)]
+mod embedded_script_evidence_tests;
 mod env_wrapper;
 mod executable_flag_contract;
 pub mod extension_control;
@@ -115,6 +120,7 @@ mod launch_identity_common;
 pub mod launch_identity_environment;
 #[cfg(windows)]
 mod launch_identity_windows;
+pub mod local_tool_eligibility;
 pub mod mcp_arguments;
 pub mod mcp_launch_environment;
 pub mod mcp_runtime_evidence;
@@ -319,6 +325,7 @@ pub mod shell_secret_reads;
 mod shell_structure;
 pub mod source_cli;
 pub mod typescript_launch_evidence;
+mod unmodeled_shell_artifact;
 
 pub mod package_context_environment;
 
@@ -693,6 +700,10 @@ pub mod detectors;
 pub mod direct_vitest;
 mod egress_archive;
 pub mod egress_broker;
+pub mod egress_caller;
+pub mod egress_caller_archive;
+pub mod egress_caller_policy;
+pub mod egress_proxy_credentials;
 mod egress_spool;
 pub mod false_positive_rules;
 pub mod guard_sync_transport;

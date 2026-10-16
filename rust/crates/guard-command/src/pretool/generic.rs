@@ -792,20 +792,22 @@ fn evaluate_envelope(
         )
     });
     // macOS runs every credential-filtering profile. Windows runs the Python
-    // profile and the Vite build profile, in an AppContainer, for harnesses
-    // whose shell runs the POSIX-quoted sink: Claude Code (Git Bash) and the
-    // Pi family (a bash implementation). Only harnesses that rewrite into the
-    // contained sink get the receipt; others would see a bare deny.
-    if (cfg!(target_os = "macos")
-        || (cfg!(windows)
-            && matches!(harness, "claude-code" | "omp" | "oh-my-pi" | "pi")
-            && matches!(
-                contained_test_reason,
-                Some(
-                    "native_python_eval_readonly_containment_required"
-                        | "native_node_build_output_containment_required"
-                )
-            )))
+    // and Vite build profiles in an AppContainer, for harnesses whose shell
+    // runs a sink command written for it: Claude Code (Git Bash) and the Pi
+    // family (a bash implementation) take the POSIX-quoted one for both, Codex
+    // a PowerShell one for the Python profile only. Only harnesses that
+    // rewrite into the contained sink get the receipt; others would see a
+    // bare deny.
+    let windows_contained = match contained_test_reason {
+        Some("native_python_eval_readonly_containment_required") => {
+            matches!(harness, "claude-code" | "codex" | "omp" | "oh-my-pi" | "pi")
+        }
+        Some("native_node_build_output_containment_required") => {
+            matches!(harness, "claude-code" | "omp" | "oh-my-pi" | "pi")
+        }
+        _ => false,
+    };
+    if (cfg!(target_os = "macos") || (cfg!(windows) && windows_contained))
         && event == "PreToolUse"
         && matches!(
             harness,
@@ -862,6 +864,19 @@ fn evaluate_envelope(
                     })
         })
         && contained_test_reason.is_some()
+        // Inline source that needs the network would only fail in a sandbox
+        // that withholds it; it keeps its review.
+        && command_model.is_none_or(|model| {
+            !super::script_content::inline_uses_network(
+                model,
+                signals.command.as_deref(),
+                super::PathContext {
+                    home_dir,
+                    cwd,
+                    ..context
+                },
+            )
+        })
     {
         result.minimum_action = "sandbox-required".into();
         result.policy_action = "sandbox-required".into();

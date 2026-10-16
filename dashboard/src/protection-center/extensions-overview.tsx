@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { HiMiniFunnel, HiMiniGlobeAlt } from "react-icons/hi2";
 
 import {
   catalogRowSecondLine,
   extensionDisplayName,
+  extensionEffectiveState,
   extensionStateLabel,
 } from "../extension-control-center-model";
 import type { CatalogReadModel } from "../extension-catalog-v2";
@@ -11,8 +12,22 @@ import type { EffectiveExtensionControls, ExtensionCatalogSummary } from "../ext
 import { fetchExtensionDiscoveryApi } from "../guard-api";
 import { connectorWorkspaceItems, refreshCodexHostInventory, refreshMcpInventory, type LocalCliItem } from "../local-cli-api";
 import { WorkspacePageHeader } from "../workspace-page-header";
-import { ExtensionsDiscover, useDiscoveryFeed, useJoinedDiscovery } from "./extensions-discover";
-import { featuredWindowLabel, orderFeaturedFirst, sponsoredCardLabel, type JoinedDiscoveryCard } from "./extensions-discover-model";
+import { useDiscoveryFeed, useJoinedDiscovery } from "./extensions-discovery-feed";
+import {
+  featuredWindowLabel,
+  MIN_ORGANIC_ROWS_BEFORE_IN_FEED,
+  orderFeaturedFirst,
+  sponsoredCardLabel,
+  type JoinedDiscoveryCard,
+} from "./extensions-discover-model";
+import { CatalogSlotRow, ExtensionsSpotlight } from "./extensions-spotlight";
+import {
+  CATALOG_SLOT_PRODUCTS,
+  slotInventoryLabel,
+  slotStartingPrice,
+  slotState,
+} from "./extensions-spotlight-model";
+import { useExtensionPopularity } from "./use-extension-popularity";
 import { useDiscoveryMeasurement } from "./discovery-measurement";
 import { LocalSkillsWorkspace } from "./local-skills-workspace";
 import { CodexHostConnectors } from "./codex-host-connectors";
@@ -88,14 +103,20 @@ function CatalogExtensionRow(props: {
  * advertiser headline sit above the ordinary row, which keeps its real
  * protection state: payment buys position, never trust.
  */
-function FeaturedCatalogRow(props: {
+function PaidCatalogRow(props: {
   entry: JoinedDiscoveryCard;
   snapshotId: string | null;
   effective: EffectiveExtensionControls;
   onOpen: (extension: ExtensionCatalogSummary) => void;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
-  const recordOpen = useDiscoveryMeasurement(ref, props.snapshotId, props.entry.placement, "extensions_featured");
+  const featured = props.entry.placement.product !== "sponsored";
+  const recordOpen = useDiscoveryMeasurement(
+    ref,
+    props.snapshotId,
+    props.entry.placement,
+    featured ? "extensions_featured" : "extensions_feed",
+  );
   const { onOpen } = props;
   const open = useCallback((extension: ExtensionCatalogSummary) => {
     recordOpen();
@@ -113,7 +134,7 @@ function FeaturedCatalogRow(props: {
       data-sponsored-placement-id={placement.publicPlacementId}
     >
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-4 pt-3">
-        <span className="guard-sponsor-label" data-sponsored-label>{sponsoredCardLabel(true)}</span>
+        <span className="guard-sponsor-label" data-sponsored-label>{sponsoredCardLabel(featured)}</span>
         {brand ? <span className="text-xs text-brand-dark/60">Paid for by <span className="font-semibold text-brand-dark">{brand}</span></span> : null}
         {window ? <span className="text-xs text-brand-dark/60">{window}</span> : null}
         {headline ? <span className="basis-full text-sm font-medium text-brand-dark/80">{headline}</span> : null}
@@ -231,9 +252,9 @@ export function ExtensionsOverview(props: {
   onOpenLocalCli: (cliId: string) => void;
   onAddCustom: (command?: string) => void;
 }) {
-  const [workspaceView, setWorkspaceView] = useState<"manage" | "discover">("manage");
-  // One feed serves both views so featured extensions lead the Manage list
-  // too. A device that turned sponsored discovery off gets nothing back.
+  // One surface, one feed. Featured extensions lead the spotlight and the
+  // catalog list. A device that turned sponsored discovery off gets nothing
+  // back, and the page still works in full.
   const fetchPlacements = useCallback(
     () => fetchExtensionDiscoveryApi("/v1/discovery/extensions/placements"),
     [],
@@ -241,6 +262,8 @@ export function ExtensionsOverview(props: {
   const discoveryFeed = useDiscoveryFeed(props.active, fetchPlacements);
   const joinedDiscovery = useJoinedDiscovery(discoveryFeed, props.catalogExtensions);
   const discoverySnapshotId = discoveryFeed.projection?.snapshot.snapshotId || null;
+  const discoveryOffers = discoveryFeed.projection?.snapshot.offers ?? [];
+  const popularity = useExtensionPopularity(props.active);
   const [query, setQuery] = useState("");
   const discoveryStarted = useRef(false);
   const reloadConnections = useRef(props.onReloadConnections);
@@ -343,9 +366,17 @@ export function ExtensionsOverview(props: {
     () => filterCatalogExtensions(props.catalogExtensions, filters),
     [filters, props.catalogExtensions],
   );
-  const featuredById = useMemo(
-    () => new Map(joinedDiscovery.featured.map((entry) => [entry.placement.extensionId, entry])),
-    [joinedDiscovery.featured],
+  // The shelf holds three cells; paid placements beyond them must still get
+  // their labeled row, or a maker can buy a placement that renders nowhere.
+  const paidById = useMemo(
+    () => new Map(
+      // Featured last so it wins a collision: one extension can hold both a
+      // featured and a sponsored placement, and the row must disclose and
+      // measure the stronger one it is actually ranked for.
+      [...joinedDiscovery.sponsored, ...joinedDiscovery.featured]
+        .map((entry) => [entry.placement.extensionId, entry] as const),
+    ),
+    [joinedDiscovery.featured, joinedDiscovery.sponsored],
   );
   // Featured rows lead in server order (all-day before time windows).
   const orderedCatalog = useMemo(() => {
@@ -353,9 +384,49 @@ export function ExtensionsOverview(props: {
     const featuredVisible = joinedDiscovery.featured
       .map((entry) => entry.catalog)
       .filter((extension) => visibleIds.has(extension.extension_id));
-    const rest = orderFeaturedFirst(visibleCatalog, new Set(featuredById.keys())).slice(featuredVisible.length);
+    // Exclude the featured ids by identity rather than by count: slicing
+    // assumes the first N reordered entries are the featured ones, which is
+    // false as soon as a sponsored id sorts ahead of a featured one - that
+    // drops the sponsored row and renders a featured one twice.
+    const featuredIds = new Set(joinedDiscovery.featured.map((entry) => entry.placement.extensionId));
+    const sponsoredIds = new Set(
+      joinedDiscovery.sponsored
+        .map((entry) => entry.placement.extensionId)
+        .filter((extensionId) => !featuredIds.has(extensionId)),
+    );
+    const rest = orderFeaturedFirst(
+      visibleCatalog.filter((extension) => !featuredIds.has(extension.extension_id)),
+      sponsoredIds,
+    );
     return [...featuredVisible, ...rest];
-  }, [featuredById, joinedDiscovery.featured, visibleCatalog]);
+  }, [joinedDiscovery.featured, joinedDiscovery.sponsored, visibleCatalog]);
+  // Both surfaces ask, because they sell different things: the shelf cell and
+  // the in-feed listing are separate products with their own availability, and
+  // a maker who scrolls the catalog should never have to scroll back up to
+  // find out the listing is for sale. Each is still gated on its own
+  // authoritative "open".
+  const catalogSlotOpen = !searching
+    && !filtering
+    && visibleCatalog.length >= MIN_ORGANIC_ROWS_BEFORE_IN_FEED
+    && slotState({ status: discoveryFeed.status, offers: discoveryOffers, products: CATALOG_SLOT_PRODUCTS }) === "open";
+  const catalogSlotPrice = useMemo(
+    () => slotStartingPrice(discoveryOffers, CATALOG_SLOT_PRODUCTS),
+    [discoveryOffers],
+  );
+  const catalogSlotInventory = useMemo(
+    () => slotInventoryLabel(discoveryOffers, CATALOG_SLOT_PRODUCTS),
+    [discoveryOffers],
+  );
+  const catalogSlotIndex = Math.min(6, Math.max(1, orderedCatalog.length - 1));
+  // The shelf states whether each extension is protecting this device right
+  // now; it reads the same effective controls the rows below it read, and it
+  // only ever reports that state - nothing on the shelf changes protection.
+  const effective = props.effective;
+  const isExtensionActive = useCallback(
+    (extension: ExtensionCatalogSummary) => extensionEffectiveState(effective, extension) === "enabled",
+    [effective],
+  );
+
   const handleClearFilters = useCallback(() => {
     setFilters(EMPTY_CATALOG_FILTERS);
   }, []);
@@ -372,12 +443,6 @@ export function ExtensionsOverview(props: {
         eyebrow="On this device"
         title={PROTECTION_TERMS.pageTitle}
         description="Choose an Extension to review its permissions and effective protection."
-        tabs={[
-          { value: "manage", label: "Manage" },
-          { value: "discover", label: "Discover" },
-        ]}
-        activeTab={workspaceView}
-        onTabChange={setWorkspaceView}
         actions={
           <a
             className="guard-extensions-chip"
@@ -391,19 +456,7 @@ export function ExtensionsOverview(props: {
           </a>
         }
       />
-      {/* Manage stays the default view; Discover is the online spotlight.
-          Both read the same placement feed, which never changes protection. */}
-      {workspaceView === "discover" ? (
-        <div className="mt-4" data-testid="extensions-discover-panel">
-          <ExtensionsDiscover
-            catalogExtensions={props.catalogExtensions}
-            feed={discoveryFeed}
-            onOpenExtension={props.onOpenExtension}
-            onBrowseAll={() => setWorkspaceView("manage")}
-          />
-        </div>
-      ) : (
-        <div data-testid="extensions-manage-panel">
+      <div data-testid="extensions-surface">
       <div className="mt-6">
         <ProtectionStatusHero
           status={props.status}
@@ -428,6 +481,21 @@ export function ExtensionsOverview(props: {
           {props.localCliNotice}
         </p>
       ) : null}
+
+      {searching ? null : (
+        <ExtensionsSpotlight
+          catalogExtensions={props.catalogExtensions}
+          featured={joinedDiscovery.featured}
+          sponsored={joinedDiscovery.sponsored}
+          activity={popularity.counts}
+          offers={discoveryOffers}
+          status={discoveryFeed.status}
+          snapshotId={discoverySnapshotId}
+          settled={popularity.settled}
+          isExtensionActive={isExtensionActive}
+          onOpenExtension={props.onOpenExtension}
+        />
+      )}
 
       <div
         ref={filterToolbarRef}
@@ -506,12 +574,12 @@ export function ExtensionsOverview(props: {
             {!filtering ? <CatalogPostureSummary extensions={props.catalogExtensions} effective={props.effective} /> : null}
             {visibleCatalog.length ? (
               <div className="mt-4">
-                {orderedCatalog.map((extension) => {
-                  const featured = featuredById.get(extension.extension_id);
-                  return featured ? (
-                    <FeaturedCatalogRow
+                {orderedCatalog.map((extension, index) => {
+                  const paid = paidById.get(extension.extension_id);
+                  const row = paid ? (
+                    <PaidCatalogRow
                       key={extension.extension_id}
-                      entry={featured}
+                      entry={paid}
                       snapshotId={discoverySnapshotId}
                       effective={props.effective}
                       onOpen={props.onOpenExtension}
@@ -523,6 +591,13 @@ export function ExtensionsOverview(props: {
                       effective={props.effective}
                       onOpen={props.onOpenExtension}
                     />
+                  );
+                  if (!catalogSlotOpen || index !== catalogSlotIndex) return row;
+                  return (
+                    <Fragment key={extension.extension_id}>
+                      <CatalogSlotRow price={catalogSlotPrice} inventory={catalogSlotInventory} />
+                      {row}
+                    </Fragment>
                   );
                 })}
               </div>
@@ -536,9 +611,7 @@ export function ExtensionsOverview(props: {
           <LocalSkillsWorkspace />
         </>
       )}
-        </div>
-      )}
-
+      </div>
     </div>
   );
 }
