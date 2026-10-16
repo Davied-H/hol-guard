@@ -20,10 +20,11 @@
 //! it runs, inline or fed on standard input, was read; it then runs only that
 //! program, as it would run a script file. `xargs` is the exception that
 //! names its program in the text: standard input supplies arguments, not the
-//! program, so `xargs rm -f < list.txt` owns what `rm` owns. An extension
-//! that owns the program named there is not read through: its rules judge
-//! arguments standard input supplies, which this text does not hold, so those
-//! launches keep the evaluation failure.
+//! program, so `xargs rm -f < list.txt` owns what `rm` owns. An active
+//! extension with trust class `external` that owns a program named in the
+//! text is not read through, and an unknown name set fails closed: its rules
+//! judge arguments standard input supplies, which this text does not hold.
+//! A built-in owner of the program `xargs` names still supplies its floor.
 
 use std::collections::BTreeSet;
 use std::time::Instant;
@@ -212,6 +213,14 @@ impl CompiledNativeCommandControls {
         }
         let xargs_programs = xargs_programs(shell);
         let xargs_bounded = xargs_programs.is_some();
+        // `xargs_programs` is `Some` of an empty set when the text has no
+        // `xargs`, because every (nonexistent) `xargs` names a program.
+        // The refusal needs one that actually names the program it runs.
+        let xargs_names_program = shell.contains("xargs")
+            && xargs_names_its_program(shell)
+            && xargs_programs
+                .as_ref()
+                .is_some_and(|programs| !programs.is_empty());
         if INTERPRETERS.iter().any(|name| {
             interpreted.contains(*name)
                 && !(sourced_resolved && *name == "source")
@@ -234,6 +243,15 @@ impl CompiledNativeCommandControls {
                 None => return None,
             }
         }
+        // Reading the program out of an `xargs` leaves the operands standard
+        // input supplies unread. An active external command source that owns
+        // a program named here, or whose names are unknown, judges arguments
+        // this text does not hold, so the evaluation failure stays. Those
+        // extensions are inactive until enabled, and `xargs rm -f < list.txt`
+        // keeps the review its built-in owner gives it.
+        if xargs_names_program && self.external_source_names_a_program(&named) {
+            return None;
+        }
         let mut floor = "review";
         for (index, extension) in self.program.extensions.iter().enumerate() {
             if !self.active_extensions.contains(&extension.extension_id) {
@@ -250,22 +268,17 @@ impl CompiledNativeCommandControls {
             if !owns {
                 continue;
             }
-            // Reading an `xargs` through to the program it names leaves the
-            // operands standard input supplies unread. A contributed
-            // extension models one tool's own arguments -- which hosted zone
-            // `aws route53 delete-hosted-zone` removes, which record
-            // `agi-memory delete --hard` erases -- so where it may own the
-            // program named there, its rules judge text this command does not
-            // hold and the evaluation failure stays. The built-in owners of
-            // `rm`, `git` and the system tools model those programs
-            // themselves, and `xargs rm -f < list.txt` keeps the review floor
-            // they give it.
-            if let Some(programs) = xargs_programs.as_ref().filter(|names| !names.is_empty()) {
-                let may_own = extension_names
-                    .as_ref()
-                    .is_none_or(|names| names.is_empty() || !names.is_disjoint(programs));
-                if !extension.required && may_own {
-                    return None;
+            // A contributed extension with a known program list is not read
+            // through when that list includes the program `xargs` names.
+            // `gh` is one, so `xargs gh pr merge` stays an evaluation
+            // failure. An unknown or empty name set is not that list: treating
+            // it as one refused `xargs rm` along with every other unmodeled
+            // command. The required owner of `rm` still reviews it.
+            if xargs_names_program && !extension.required {
+                if let (Some(programs), Some(names)) = (&xargs_programs, &extension_names) {
+                    if !names.is_empty() && !names.is_disjoint(programs) {
+                        return None;
+                    }
                 }
             }
             if rank(self.extension_floor(index)) > rank(floor) {
@@ -273,6 +286,31 @@ impl CompiledNativeCommandControls {
             }
         }
         Some(floor)
+    }
+
+    /// An active extension with trust class `external` owns a program the
+    /// command names. An unknown name set fails closed: that extension can
+    /// match without a known program, so it is treated as owning the command.
+    fn external_source_names_a_program(&self, named: &BTreeSet<String>) -> bool {
+        self.program
+            .extensions
+            .iter()
+            .enumerate()
+            .any(|(index, extension)| {
+                if extension.trust_class != "external"
+                    || !self.active_extensions.contains(&extension.extension_id)
+                {
+                    return false;
+                }
+                let compatibility = COMPATIBILITY_EXECUTABLES
+                    .iter()
+                    .find(|(id, _)| *id == extension.extension_id)
+                    .map(|(_, executables)| *executables);
+                let extension_names = self.program.extension_names(index, compatibility);
+                extension_names
+                    .as_ref()
+                    .is_none_or(|names| names.is_empty() || !names.is_disjoint(named))
+            })
     }
 
     /// The floor the extension would apply to its strongest rule, as an
