@@ -21,6 +21,10 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use crate::managed_policy::{parse_managed_policy, ManagedPolicy};
+use crate::managed_policy_file_trust::{
+    create_restricted_directory, machine_controlled_directory_is_trusted,
+    machine_controlled_file_is_trusted, replace_restricted_file,
+};
 use crate::managed_policy_plist::parse_plist;
 
 /// `_MAX_POLICY_BYTES` (mdm/policy.py:31).
@@ -225,7 +229,7 @@ pub(crate) fn load_managed_policy(source: &ManagedPolicySource) -> ManagedPolicy
             )
         });
     }
-    if !machine_source_is_trusted(&native_path, source.system) {
+    if !machine_controlled_file_is_trusted(&native_path, source.system) {
         return ManagedPolicyState::new(
             ManagedPolicyStatus::Tampered,
             &display,
@@ -338,56 +342,6 @@ fn read_error(error: std::io::Error) -> LoadError {
     }
 }
 
-/// `_machine_policy_source_is_trusted` (mdm/policy.py:264).
-fn machine_source_is_trusted(path: &Path, system: MachineSystem) -> bool {
-    if system == MachineSystem::Windows {
-        return false;
-    }
-    if !path.is_absolute() {
-        return false;
-    }
-    posix_path_is_root_owned_and_restricted(path)
-}
-
-/// `posix_path_is_root_owned_and_restricted` (mdm/managed_file_trust.py:21).
-///
-/// Walk from the file to the filesystem root requiring a regular file at the
-/// leaf, directories above it, no symlink anywhere, root ownership throughout,
-/// and no group or world write bit on any component.
-#[cfg(unix)]
-fn posix_path_is_root_owned_and_restricted(path: &Path) -> bool {
-    use std::os::unix::fs::MetadataExt;
-
-    let mut current = path.to_path_buf();
-    loop {
-        let Ok(metadata) = fs::symlink_metadata(&current) else {
-            return false;
-        };
-        if metadata.file_type().is_symlink() {
-            return false;
-        }
-        if current == path {
-            if !metadata.is_file() {
-                return false;
-            }
-        } else if !metadata.is_dir() {
-            return false;
-        }
-        if metadata.uid() != 0 || metadata.mode() & 0o022 != 0 {
-            return false;
-        }
-        match current.parent() {
-            Some(parent) if parent != current => current = parent.to_path_buf(),
-            _ => return true,
-        }
-    }
-}
-
-#[cfg(not(unix))]
-fn posix_path_is_root_owned_and_restricted(_path: &Path) -> bool {
-    false
-}
-
 /// `_load_policy_cache` (mdm/policy.py:326). A cached policy records that the
 /// profile was removed, which is not the same as never having had one.
 fn load_cache(source: &ManagedPolicySource) -> Option<ManagedPolicyState> {
@@ -397,7 +351,7 @@ fn load_cache(source: &ManagedPolicySource) -> Option<ManagedPolicyState> {
     // A Windows cache is never trusted: its owner and DACL need native
     // security APIs, and POSIX mode bits say nothing there. Its presence still
     // records a managed state that fails closed.
-    if !machine_source_is_trusted(&path, source.system) {
+    if !machine_controlled_file_is_trusted(&path, source.system) {
         return Some(ManagedPolicyState::new(
             ManagedPolicyStatus::Tampered,
             &display,
@@ -443,18 +397,18 @@ fn write_cache(payload: &Value, source: &ManagedPolicySource) {
     if create_restricted_directory(parent).is_err() {
         return;
     }
+    // A directory another account can write is a directory another account can
+    // swap, and this runtime would be the one writing the policy that replaces
+    // it. A cache that cannot be written safely is simply not written: the next
+    // load reads the profile, and a removed profile reports no cached policy.
+    if !machine_controlled_directory_is_trusted(parent, source.system) {
+        return;
+    }
     let Ok(mut serialized) = canonical_cache_bytes(payload) else {
         return;
     };
     serialized.push(b'\n');
-    let temporary = path.with_extension("tmp");
-    if write_restricted_file(&temporary, &serialized).is_err() {
-        let _ = fs::remove_file(&temporary);
-        return;
-    }
-    if fs::rename(&temporary, &path).is_err() {
-        let _ = fs::remove_file(&temporary);
-    }
+    let _ = replace_restricted_file(&path, &serialized);
 }
 
 /// `json.dumps(payload, sort_keys=True)`, which the cache is written as. A
@@ -462,44 +416,6 @@ fn write_cache(payload: &Value, source: &ManagedPolicySource) {
 /// key-sorted form at every level.
 fn canonical_cache_bytes(payload: &Value) -> Result<Vec<u8>, serde_json::Error> {
     serde_json::to_vec(payload)
-}
-
-#[cfg(unix)]
-fn create_restricted_directory(path: &Path) -> std::io::Result<()> {
-    use std::os::unix::fs::DirBuilderExt;
-
-    if path.is_dir() {
-        return Ok(());
-    }
-    fs::DirBuilder::new()
-        .mode(0o700)
-        .recursive(true)
-        .create(path)
-}
-
-#[cfg(not(unix))]
-fn create_restricted_directory(path: &Path) -> std::io::Result<()> {
-    fs::create_dir_all(path)
-}
-
-#[cfg(unix)]
-fn write_restricted_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
-
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .mode(0o600)
-        .open(path)?;
-    file.write_all(bytes)?;
-    file.sync_all()
-}
-
-#[cfg(not(unix))]
-fn write_restricted_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    fs::write(path, bytes)
 }
 
 /// `_administrator_context` (mdm/policy.py:299).

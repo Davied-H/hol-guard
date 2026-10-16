@@ -142,11 +142,25 @@ fn xml_text(node: roxmltree::Node<'_, '_>) -> String {
 // Binary
 // ---------------------------------------------------------------------------
 
+/// How many objects one document may decode, as a multiple of the objects it
+/// actually holds. `plistlib` decodes each object once and remembers it, so a
+/// profile that shares a value reads in one pass there; this reader decodes a
+/// reference wherever it appears, and a document whose containers all point at
+/// one another describes exponentially more nodes than it holds. The bound is
+/// on the whole document rather than on one object, because the blow-up is the
+/// product of the fan-out at every level.
+const DECODE_FACTOR: usize = 8;
+/// The floor under that bound, so a small document with heavily shared strings
+/// is read rather than refused for its sharing.
+const MIN_DECODE_BUDGET: usize = 256;
+
 /// The trailer fields the object table is read through.
 struct BinaryPlist<'a> {
     bytes: &'a [u8],
     reference_size: usize,
     offsets: Vec<usize>,
+    /// How many objects are left to decode before the document is refused.
+    budget: std::cell::Cell<usize>,
 }
 
 fn parse_binary(bytes: &[u8]) -> PlistResult<Value> {
@@ -173,10 +187,15 @@ fn parse_binary(bytes: &[u8]) -> PlistResult<Value> {
         let at = table + index * offset_size;
         offsets.push(be_u64(&bytes[at..at + offset_size]) as usize);
     }
+    let budget = count
+        .saturating_mul(DECODE_FACTOR)
+        .max(MIN_DECODE_BUDGET)
+        .into();
     let plist = BinaryPlist {
         bytes,
         reference_size,
         offsets,
+        budget,
     };
     plist.object(top, 0)
 }
@@ -186,6 +205,14 @@ impl BinaryPlist<'_> {
         if depth > MAX_DEPTH {
             return refuse("managed policy plist nests too deeply");
         }
+        // The depth bound alone leaves the width unbounded: thirty arrays that
+        // each hold ten references to the next describe 10^30 nodes in a few
+        // hundred bytes. The read has to end in a refusal the fail-closed path
+        // can act on, not in a runtime that never answers.
+        let Some(left) = self.budget.get().checked_sub(1) else {
+            return refuse("managed policy plist describes too many objects");
+        };
+        self.budget.set(left);
         let start = *self
             .offsets
             .get(index)

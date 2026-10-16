@@ -200,3 +200,51 @@ fn a_profile_that_points_at_a_local_file_reads_nothing_from_it() {
         "managed policy is not a valid plist"
     );
 }
+
+/// A binary plist whose arrays each hold `width` references to the next
+/// object. Nothing about it is deep or large; every container simply points at
+/// the same object its neighbours do, which is the sharing the format exists to
+/// allow.
+fn shared_reference_chain(depth: usize, width: usize) -> Vec<u8> {
+    let mut bytes = BINARY_HEADER.to_vec();
+    let mut offsets = Vec::new();
+    for index in 0..depth {
+        offsets.push(bytes.len());
+        bytes.push(0xa0 | width as u8);
+        bytes.extend_from_slice(&vec![index as u8 + 1; width]);
+    }
+    offsets.push(bytes.len());
+    bytes.extend_from_slice(&[0x51, b'x']);
+    let table = bytes.len();
+    for offset in &offsets {
+        bytes.extend_from_slice(&(*offset as u16).to_be_bytes());
+    }
+    let mut trailer = [0u8; TRAILER_BYTES];
+    // Two-byte offsets, one-byte references, then the object count, the top
+    // object and where the offset table starts.
+    trailer[6] = 2;
+    trailer[7] = 1;
+    trailer[8..16].copy_from_slice(&(offsets.len() as u64).to_be_bytes());
+    trailer[24..32].copy_from_slice(&(table as u64).to_be_bytes());
+    bytes.extend_from_slice(&trailer);
+    bytes
+}
+
+#[test]
+fn a_document_that_describes_more_than_it_holds_is_refused_rather_than_expanded() {
+    // Within the depth bound and a few hundred bytes on disk, yet 10^24 nodes
+    // to anything that expands every reference it meets.
+    let fanned = shared_reference_chain(24, 10);
+
+    assert!(fanned.len() < 1024, "{} bytes", fanned.len());
+    assert_eq!(
+        parse_plist(&fanned).expect_err("refused"),
+        "managed policy plist describes too many objects"
+    );
+    // The same shape inside the budget still reads, so sharing itself is not
+    // what the bound refuses.
+    assert_eq!(
+        parse_plist(&shared_reference_chain(2, 2)).expect("shared references"),
+        json!([["x", "x"], ["x", "x"]])
+    );
+}
