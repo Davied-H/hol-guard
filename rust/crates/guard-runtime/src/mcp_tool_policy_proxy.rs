@@ -55,7 +55,11 @@ pub(crate) fn proxy_payload(input: &McpToolPolicyProxyInputV1, decision: &Decisi
         tool_name: input.tool_name.clone(),
         decision: tool,
         package_saved_policy_blocks: None,
-        native_prompt_allows: None,
+        // The gate only disables while the decision still has a pending
+        // approval, and it replaces the source when it does, so a caller that
+        // reads the pre-gate source may answer this here for the routes that
+        // require no pending approval.
+        native_prompt_allows: input.native_prompt_allows,
         inline_approval: None,
     });
     json!({ "gate": gate, "route": route })

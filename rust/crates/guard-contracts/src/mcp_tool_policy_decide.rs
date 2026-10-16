@@ -103,6 +103,12 @@ pub struct McpToolPolicyProxyInputV1 {
     pub asks_for_approval: bool,
     pub inline_available: bool,
     pub tool_name: String,
+    /// Whether this harness allows the call once the native prompt has been
+    /// shown, when the caller already knows that answer. Left out, the route
+    /// asks for the `native_prompt` fact as before, so an existing caller's
+    /// payload is unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_prompt_allows: Option<bool>,
 }
 
 /// Evidence for the saved-policy lookup, so the resident reads the store in
