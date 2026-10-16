@@ -17,6 +17,12 @@
 //! nowhere else, so no later word expands, rebinds or unsets it. The body of
 //! a quoted heredoc that a line of its own, `cat > PATH <<'EOF'`, only writes
 //! to a file is data the shell never expands, so a mention there is not a use.
+//!
+//! A bare assignment that starts the command may also be expanded later,
+//! `tmp=$(mktemp -d) && python3 todo.py --file "$tmp/tasks.json" list`, when
+//! every later list item follows `&&`. The assignment fails when `mktemp`
+//! does, so each `$tmp` after it holds the fresh directory, and the sandbox
+//! shape reads those expansions as `$TMPDIR`, the private directory under it.
 
 use super::super::{lex::identifier, listed, ordinary_name};
 use super::{
@@ -42,15 +48,112 @@ const LOADER_NAMES: &str = "BUNDLE_GEMFILE CLASSPATH CURL_HOME GCONV_PATH GEM_HO
 /// `..` and any mention of `TMPDIR`.
 #[cfg_attr(not(unix), allow(dead_code))]
 pub(crate) fn project(command: &str) -> Option<String> {
-    let projected = with_stand_ins(command, private_temporary_directory)?;
+    let mut projected = with_stand_ins(command, private_temporary_directory)?;
     let chars: Vec<char> = command.chars().collect();
     let (substitutions, _) = substitution_spans(command)?;
-    let accepted = substitutions.iter().all(|substitution| {
+    for substitution in &substitutions {
         let (start, end) = (substitution.start, substitution.end);
-        entered(&chars, start, end)
-            || assigned(&chars, start, end).is_some_and(|name| named_once(&projected, &name))
-    });
-    accepted.then_some(projected)
+        if entered(&chars, start, end) {
+            continue;
+        }
+        let name = assigned(&chars, start, end)?;
+        if !named_once(&projected, &name) {
+            projected = expanded_privately(&projected, &name)?;
+        }
+    }
+    Some(projected)
+}
+
+/// Words that set variables without naming them or change directory, which
+/// would let a later expansion name something other than the fresh directory.
+#[cfg_attr(not(unix), allow(dead_code))]
+const UNTRACKED_WORDS: [&str; 6] = [".", "source", "eval", "cd", "pushd", "popd"];
+
+/// `projected` with each later `$NAME` or `${NAME}` written as `$TMPDIR` or
+/// `${TMPDIR}`, when `NAME=VALUE` is a bare assignment that starts the
+/// command and the only other mentions of the name are those expansions,
+/// outside single quotes. Every later list item must follow `&&`: the
+/// assignment's status is the substitution's, so an expansion runs only once
+/// `mktemp` made the directory. A `;`, `||`, `&`, line break, backtick,
+/// subshell or untracked word returns `None`. `$TMPDIR` holds the fresh
+/// directory, so the sandbox shape judges the expansion no narrower than the
+/// shell runs it.
+#[cfg_attr(not(unix), allow(dead_code))]
+fn expanded_privately(projected: &str, name: &str) -> Option<String> {
+    let head = projected.trim_start_matches([' ', '\t']);
+    if !head.strip_prefix(name)?.starts_with('=')
+        || projected
+            .split_whitespace()
+            .any(|word| UNTRACKED_WORDS.contains(&word))
+    {
+        return None;
+    }
+    let chars: Vec<char> = projected.chars().collect();
+    let ident = |c: &char| c.is_ascii_alphanumeric() || *c == '_';
+    let word_end = |from: usize| {
+        chars[from..]
+            .iter()
+            .position(|c| !ident(c))
+            .map_or(chars.len(), |at| from + at)
+    };
+    let (mut single, mut double, mut assignments, mut expansions) = (false, false, 0usize, 0usize);
+    let mut out = String::with_capacity(projected.len() + 16);
+    let mut index = 0usize;
+    while let Some(&current) = chars.get(index) {
+        let quoted = single || double;
+        match current {
+            '\n' | '`' if !single => return None,
+            '\\' if !single => {
+                out.extend(chars.get(index..index + 2)?);
+                index += 2;
+                continue;
+            }
+            '\'' if !double => single = !single,
+            '"' if !single => double = !double,
+            ';' | '(' | ')' if !quoted => return None,
+            '&' | '|' if !quoted => {
+                let doubled = chars.get(index + 1) == Some(&current);
+                if doubled != (current == '&') {
+                    return None;
+                }
+                if doubled {
+                    out.push(current);
+                    index += 1;
+                }
+            }
+            '$' if !single => {
+                let braced = chars.get(index + 1) == Some(&'{');
+                let from = index + 1 + usize::from(braced);
+                let end = word_end(from);
+                if chars[from..end].iter().collect::<String>() == name {
+                    if braced && chars.get(end) != Some(&'}') {
+                        return None;
+                    }
+                    out.push_str(if braced { "${TMPDIR" } else { "$TMPDIR" });
+                    expansions += 1;
+                    index = end;
+                    continue;
+                }
+            }
+            c if ident(&c) && (index == 0 || !ident(&chars[index - 1])) => {
+                let end = word_end(index);
+                let word: String = chars[index..end].iter().collect();
+                if word == name {
+                    if assignments > 0 || quoted || chars.get(end) != Some(&'=') {
+                        return None;
+                    }
+                    assignments += 1;
+                }
+                out.push_str(&word);
+                index = end;
+                continue;
+            }
+            _ => {}
+        }
+        out.push(current);
+        index += 1;
+    }
+    (assignments == 1 && expansions > 0 && !single && !double).then_some(out)
 }
 
 /// Whether a `cd` operand is the stand-in for a fresh private temporary
