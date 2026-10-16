@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import re
 from collections.abc import Iterator, Mapping
@@ -135,9 +136,10 @@ def _clock_seconds(value: str) -> int | None:
         return None
     unit = _CLOCK_UNITS.get(value[-1:], 1) if value[-1:] in _CLOCK_UNITS else 1
     duration = float(number) * unit
-    # A fraction of a second is a real bound and rounds up to the smallest one
-    # this can express; only an exact zero means no bound at all.
-    return 0 if duration == 0 else max(1, round(duration))
+    # Seconds are whole here, so a fractional duration rounds up: cutting
+    # `timeout 2.1` to two would end the run before the clock it was given.
+    # Only an exact zero means no bound at all.
+    return 0 if duration == 0 else math.ceil(duration)
 
 
 def peel_timeout_clock(command: list[str]) -> tuple[list[str], int | None]:
