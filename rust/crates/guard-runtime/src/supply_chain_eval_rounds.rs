@@ -91,6 +91,7 @@ impl RoundsError {
 }
 
 /// What one settled evaluation hands back.
+#[derive(Debug)]
 pub(crate) struct SettledEvaluation {
     /// `PackageRequestEvaluation.to_dict()`, already checked for completeness.
     pub(crate) payload: Value,

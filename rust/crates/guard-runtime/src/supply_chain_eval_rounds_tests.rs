@@ -55,6 +55,7 @@ fn need(url: &str) -> EgressNeedV1 {
         url: url.to_owned(),
         headers: BTreeMap::new(),
         body: None,
+        body_sha256: String::new(),
         occurrence: 1,
         timeout_seconds: 5.0,
         max_redirects: 2,
@@ -216,6 +217,7 @@ impl CallerEgress for StubEgress {
                 class: need.class.clone(),
                 method: need.method.clone(),
                 url: need.url.clone(),
+                body_sha256: need.body_sha256.clone(),
                 occurrence: need.occurrence,
                 outcome: EgressOutcomeV1::Response {
                     status: 200,
