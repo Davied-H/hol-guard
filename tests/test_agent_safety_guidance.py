@@ -15,6 +15,7 @@ from codex_plugin_scanner.guard.agent_safety_guidance import (
     uninstall_agent_safety_guidance,
 )
 from codex_plugin_scanner.guard.cli import install_commands
+from codex_plugin_scanner.guard.daemon import hook_native_package_review
 from codex_plugin_scanner.guard.store import GuardStore
 
 
@@ -286,6 +287,11 @@ _SECRET_CARVEOUT_SAFETY_BODY = (
 ).read_text(encoding="utf-8")
 
 
+_BEFORE_SCRIPT_FREE_INSTALLS_BODY = (
+    Path(__file__).parent / "fixtures" / "agent-safety-guidance-before-script-free-installs.md"
+).read_text(encoding="utf-8")
+
+
 @pytest.mark.parametrize(
     "legacy",
     [
@@ -294,6 +300,10 @@ _SECRET_CARVEOUT_SAFETY_BODY = (
         pytest.param(
             f"<!-- HOL GUARD MANAGED SAFETY DOCUMENT v2 -->\n{_SECRET_CARVEOUT_SAFETY_BODY}",
             id="secret-carveout",
+        ),
+        pytest.param(
+            f"<!-- HOL GUARD MANAGED SAFETY DOCUMENT v2 -->\n{_BEFORE_SCRIPT_FREE_INSTALLS_BODY}",
+            id="before-script-free-installs",
         ),
     ],
 )
@@ -324,14 +334,28 @@ def test_safety_document_leaves_secret_reads_to_guard(tmp_path: Path) -> None:
     _ = install_agent_safety_guidance(home_dir)
     safety = (home_dir / ".hol-support" / "SAFETY.md").read_text(encoding="utf-8")
 
-    assert (
-        "Never read secret files, credential stores, or environment files on your own judgment."
-        in safety
-    )
+    assert "Never read secret files, credential stores, or environment files on your own judgment." in safety
     assert "unless the user explicitly authorizes" not in safety
     # The bullet must not end on an imperative to go ahead: an agent weighing
     # two sentences against each other takes the concrete one.
     assert "Run the read" not in safety
+
+
+def test_safety_document_names_the_script_free_npm_install(tmp_path: Path) -> None:
+    """Codex ran a bare `npm install` for a Vite game and met a package review.
+
+    The review is right: the install would run package install scripts. The
+    script-free forms the guide names are the ones the package review settles,
+    so an agent that follows it installs without a prompt.
+    """
+
+    home_dir = tmp_path / "home"
+    _ = install_agent_safety_guidance(home_dir)
+    safety = " ".join((home_dir / ".hol-support" / "SAFETY.md").read_text(encoding="utf-8").split())
+
+    for command in ("npm install --ignore-scripts", "npm ci --ignore-scripts"):
+        assert f"`{command}`" in safety
+        assert hook_native_package_review._FILTERED_COMMAND.fullmatch(command)
 
 
 def test_safety_document_forbids_self_approval(tmp_path: Path) -> None:
