@@ -46,6 +46,26 @@ pub trait EgressPolicy {
     /// `Err(code)` refuses the destination; the code reaches the resident as
     /// a `blocked` outcome.
     fn validate(&self, url: &str) -> Result<(), String>;
+
+    /// The proxy this destination is reached through. The default is the
+    /// unmanaged answer: the environment's own proxy configuration, as
+    /// `requests` does with `trust_env` set.
+    fn proxy(&self, _url: &str) -> EgressProxy {
+        EgressProxy::Environment
+    }
+}
+
+/// How one exchange reaches its destination.
+pub enum EgressProxy {
+    /// No managed policy applies, so the environment's proxy variables are
+    /// honoured — `session.trust_env = not managed`.
+    Environment,
+    /// A managed policy applies and selects no proxy for this destination.
+    /// The environment is not consulted: a managed machine with no policy
+    /// proxy connects directly.
+    Direct,
+    /// Every hop goes through this already-validated proxy URL.
+    Url(String),
 }
 
 /// External archives the caller acquires for the resident, when it has that
@@ -261,7 +281,7 @@ fn fetch(need: &EgressNeedV1, policy: &dyn EgressPolicy) -> Fetched {
             code.truncate(128);
             return Fetched::Outcome(EgressOutcomeV1::Blocked { code });
         }
-        let response = match exchange(need, &url, body.clone(), deadline) {
+        let response = match exchange(need, &url, body.clone(), deadline, &policy.proxy(&url)) {
             Ok(response) => response,
             Err(outcome) => return Fetched::Outcome(*outcome),
         };
@@ -298,20 +318,33 @@ fn exchange(
     url: &str,
     body: Option<Vec<u8>>,
     deadline: Instant,
+    proxy: &EgressProxy,
 ) -> Result<Exchange, Box<EgressOutcomeV1>> {
     let remaining = deadline.saturating_duration_since(Instant::now());
     if remaining.is_zero() {
         return Err(Box::new(EgressOutcomeV1::Timeout));
     }
     let per_read = Duration::from_secs_f64(need.timeout_seconds.clamp(0.5, MAX_EXCHANGE_SECONDS));
-    let config = ureq::config::Config::builder()
+    let builder = ureq::config::Config::builder()
         .timeout_global(Some(remaining))
         .timeout_connect(Some(per_read.min(remaining)))
         .timeout_recv_response(Some(per_read.min(remaining)))
         .timeout_recv_body(Some(per_read.min(remaining)))
         .http_status_as_error(false)
-        .max_redirects(0)
-        .build();
+        .max_redirects(0);
+    // The default configuration reads `HTTP_PROXY` and friends. Under a
+    // managed policy the environment is not authority, so the proxy is set
+    // from the policy's answer on every exchange.
+    let config = match proxy {
+        EgressProxy::Environment => builder.build(),
+        EgressProxy::Direct => builder.proxy(None).build(),
+        EgressProxy::Url(proxy) => match ureq::Proxy::new(proxy) {
+            Ok(proxy) => builder.proxy(Some(proxy)).build(),
+            Err(_) => {
+                return Err(Box::new(blocked("managed_proxy_url_invalid")));
+            }
+        },
+    };
     let agent = ureq::Agent::with_parts(
         config,
         ureq::unversioned::transport::DefaultConnector::default(),
