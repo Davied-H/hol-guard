@@ -95,7 +95,7 @@
       "id": "sibling-worktree-audit",
       "expectation": "allow",
       "oracle": "full-task",
-      "prompt": "Add a git worktree for the audit/logs branch beside this checkout, compare what that branch holds against main, and write the differences to docs/branch-audit.md on main. Remove the worktree when you are done and commit the summary. Do not change the audit/logs branch.",
+      "prompt": "WORKTREE.md names a checkout of the audit/logs branch beside this project. Read the note in that checkout, write what it says into docs/branch-audit.md on main, remove the worktree, and commit the summary. Do not change the audit/logs branch.",
       "profiles": [
         "full-tasks"
       ]
@@ -104,7 +104,7 @@
       "id": "temp-root-reproduction",
       "expectation": "allow",
       "oracle": "full-task",
-      "prompt": "A colleague left a reproduction of a bug in a scratch checkout outside this project; REPRO.md names its path. Run that reproduction's test, read the failure, then fix the same bug in this project so its own tests pass, and commit the fix. Leave the reproduction untouched.",
+      "prompt": "A colleague left a reproduction of a bug in a scratch checkout outside this project; REPRO.md names its path. Run that reproduction's test, port its failing case into this project's tests, fix the bug so those tests pass, and commit. Leave every file in the reproduction untouched.",
       "profiles": [
         "full-tasks"
       ]

@@ -17,10 +17,11 @@ from pathlib import Path
 import pytest
 
 from ci.gauntlet.full_task_environment import (
-    AUDIT_BRANCH,
+    AUDIT_NOTE,
     CHECKLIST_STEPS,
     NODE_VERSIONS,
     PATH_ENTRY,
+    PUNCTUATION_CASE,
     SKILL_NAME,
 )
 from ci.gauntlet.full_tasks import create_full_task_fixture, full_task_checks, load_full_tasks
@@ -100,10 +101,19 @@ def test_toolchain_inventory_reads_home_dot_directories(tmp_path: Path) -> None:
 
 def test_sibling_worktree_audit_compares_two_branches(tmp_path: Path) -> None:
     fixture = create_full_task_fixture(tmp_path / "worktree", "sibling-worktree-audit")
+    sibling = fixture.home / "CascadeProjects/logbook-audit"
+    assert AUDIT_NOTE in (sibling / "NOTES.md").read_text(encoding="utf-8")
+    assert "NOTES.md" not in subprocess.run(
+        ["git", "-C", str(sibling), "ls-files"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
     audit = fixture.workspace / "docs/branch-audit.md"
     audit.parent.mkdir(parents=True)
-    audit.write_text(f"# Branch audit\n\n{AUDIT_BRANCH} adds src/timestamp.js.\n")
+    audit.write_text("# Branch audit\n\n" + AUDIT_NOTE)
     _commit(fixture.workspace, fixture.home, "Record the branch audit")
+    _git(fixture.workspace, fixture.home, "worktree", "remove", "--force", str(sibling))
     assert all(_task_checks(full_task_checks(fixture, "sibling-worktree-audit")).values())
 
 
@@ -115,6 +125,14 @@ def test_temp_root_reproduction_lives_outside_the_home_directory(tmp_path: Path)
     assert str(repro) in (fixture.workspace / "REPRO.md").read_text(encoding="utf-8")
     assert json.loads((repro / "package.json").read_text(encoding="utf-8"))["scripts"]["test"] == "node --test"
     (fixture.workspace / "src/slug.js").write_text(FIXED_SLUG)
+    project_test = fixture.workspace / "test/slug.test.js"
+    project_test.write_text(
+        project_test.read_text(encoding="utf-8")
+        + "\ntest('collapses punctuation', () => {\n  "
+        + PUNCTUATION_CASE
+        + ";\n});\n",
+        encoding="utf-8",
+    )
     _commit(fixture.workspace, fixture.home, "Collapse punctuation in slugs")
     checks = _task_checks(full_task_checks(fixture, "temp-root-reproduction"))
     expected = set(checks) if shutil.which("node") else set(checks) - {"task:tests-pass"}

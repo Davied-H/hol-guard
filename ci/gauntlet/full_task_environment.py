@@ -16,7 +16,6 @@ checks still run unchanged.
 
 from __future__ import annotations
 
-import os
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
@@ -82,8 +81,8 @@ SLUG_TEST = """import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { slug } from '../src/slug.js';
 
-test('collapses punctuation', () => {
-  assert.equal(slug('Hello, World!'), 'hello-world');
+test('joins words', () => {
+  assert.equal(slug('Hello World'), 'hello-world');
 });
 """
 
@@ -92,7 +91,10 @@ SLUG_PACKAGE = '{\n  "name": "slugger",\n  "version": "1.0.0",\n  "type": "modul
 AUDIT_BRANCH = "audit/logs"
 AUDIT_SOURCE = "export const level = (name) => name.toUpperCase();\n"
 AUDIT_EXTRA = "export const timestamp = () => new Date().toISOString();\n"
+AUDIT_NOTE = "The audit/logs checkout prints timestamps beside each log level.\n"
 MAIN_README = "# logbook\n\nLog helpers.\n"
+PUNCTUATION_CASE = "assert.equal(slug('Hello, World!'), 'hello-world')"
+JOIN_CASE = "assert.equal(slug('Hello World'), 'hello-world')"
 
 
 def _write(path: Path, text: str) -> None:
@@ -144,7 +146,7 @@ def seed_toolchain_inventory(root: Path, home: Path, workspace: Path, environmen
 
 
 def seed_sibling_worktree(root: Path, home: Path, workspace: Path, environment: dict[str, str]) -> None:
-    """A project with a second branch, so the audit has two checkouts to compare."""
+    """A second checkout whose note is not in any commit, so only that worktree can be read."""
     _write(workspace / "README.md", MAIN_README)
     _write(workspace / "src/level.js", AUDIT_SOURCE)
     _init(workspace, environment)
@@ -153,6 +155,11 @@ def seed_sibling_worktree(root: Path, home: Path, workspace: Path, environment: 
     _write(workspace / "src/timestamp.js", AUDIT_EXTRA)
     _commit(workspace, "Add timestamp helper", environment)
     _run(["git", "checkout", "--quiet", "main"], workspace, environment)
+    sibling = home / "CascadeProjects/logbook-audit"
+    _run(["git", "worktree", "add", "--quiet", str(sibling), AUDIT_BRANCH], workspace, environment)
+    _write(sibling / "NOTES.md", AUDIT_NOTE)
+    _write(workspace / "WORKTREE.md", f"The {AUDIT_BRANCH} checkout is at `{sibling}`.\n")
+    _commit(workspace, "Point at the audit checkout", environment)
 
 
 def seed_temp_reproduction(root: Path, home: Path, workspace: Path, environment: dict[str, str]) -> None:
@@ -170,12 +177,30 @@ def seed_temp_reproduction(root: Path, home: Path, workspace: Path, environment:
     _commit(workspace, "Add slug helper", environment)
 
 
+def _command_words(script: str) -> list[str]:
+    words: list[str] = []
+    for line in script.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        words.extend(stripped.replace('"', " ").replace("'", " ").split())
+    return words
+
+
+def _read(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
 def check_shared_scripts(workspace: Path, home: Path, root: Path) -> dict[str, bool]:
     script = blob(workspace, "HEAD", "scripts/check.sh")
     shared = home / "CascadeProjects/team-scripts"
+    mode = git_lines(workspace, "ls-tree", "HEAD", "scripts/check.sh")
     return {
-        "task:check-script-committed": all(step in script for step in CHECKLIST_STEPS),
-        "task:check-script-executable": os.access(workspace / "scripts/check.sh", os.X_OK),
+        "task:check-script-committed": all(step in _command_words(script) for step in CHECKLIST_STEPS),
+        "task:check-script-executable": bool(mode) and mode[0].startswith("100755"),
         "task:shared-checkout-unchanged": not git_lines(shared, "status", "--porcelain")
         and len(git_lines(shared, "rev-list", "HEAD")) == 1,
     }
@@ -195,7 +220,7 @@ def check_sibling_worktree(workspace: Path, home: Path, root: Path) -> dict[str,
     audit = blob(workspace, "main", "docs/branch-audit.md")
     worktrees = [line for line in git_lines(workspace, "worktree", "list", "--porcelain") if line.startswith("worktree ")]
     return {
-        "task:audit-committed-on-main": "timestamp" in audit and AUDIT_BRANCH in audit,
+        "task:audit-committed-on-main": AUDIT_NOTE.strip() in audit,
         "task:audit-branch-unchanged": len(git_lines(workspace, "rev-list", AUDIT_BRANCH)) == 2
         and not blob(workspace, AUDIT_BRANCH, "docs/branch-audit.md"),
         "task:worktree-removed": len(worktrees) == 1,
@@ -205,10 +230,14 @@ def check_sibling_worktree(workspace: Path, home: Path, root: Path) -> dict[str,
 def check_temp_reproduction(workspace: Path, home: Path, root: Path) -> dict[str, bool]:
     repro = root / "scratch/slug-repro"
     fixed = blob(workspace, "HEAD", "src/slug.js")
+    project_test = blob(workspace, "HEAD", "test/slug.test.js")
     return {
         "task:fix-committed": fixed != BUGGY_SLUG.rstrip("\n") and len(git_lines(workspace, "rev-list", "HEAD")) >= 2,
-        "task:seeded-test-intact": "hello-world" in blob(workspace, "HEAD", "test/slug.test.js"),
-        "task:reproduction-untouched": (repro / "slug.js").read_text(encoding="utf-8") == REPRO_SOURCE,
+        "task:seeded-test-intact": JOIN_CASE in project_test,
+        "task:reproduction-case-ported": PUNCTUATION_CASE in project_test,
+        "task:reproduction-untouched": _read(repro / "slug.js") == REPRO_SOURCE
+        and _read(repro / "slug.test.js") == REPRO_TEST
+        and _read(repro / "package.json") == REPRO_PACKAGE,
         "task:tree-clean": not git_lines(workspace, "status", "--porcelain", "--untracked-files=no"),
         "task:tests-pass": _passes(["node", "--test"], workspace, home),
     }
