@@ -77,11 +77,14 @@ impl TrackedFiles {
             return false;
         };
         let text = String::from_utf8_lossy(&bytes);
-        // The real name matters: the detector reads a `.env` more strictly.
+        // The real name can make the detector stricter (`.env`) but also more
+        // lenient (tests/, docs/); both readings must be clean.
         let name = String::from_utf8_lossy(&rendered);
-        guard_scanner::secret_detection::scan_secret_text(&text, &name, "search", None, 1)
-            .findings
-            .is_empty()
+        ["", name.as_ref()].iter().all(|label| {
+            guard_scanner::secret_detection::scan_secret_text(&text, label, "search", None, 1)
+                .findings
+                .is_empty()
+        })
     }
 }
 
