@@ -16,6 +16,7 @@ from codex_plugin_scanner.guard.runtime.secret_file_request_services.pytest_targ
 )
 from codex_plugin_scanner.guard.runtime.secret_file_request_services.read_only_filters import (
     _read_only_lookup_filter_grep_args_are_safe,
+    _read_only_lookup_target_is_safe,
 )
 
 
@@ -64,3 +65,18 @@ def test_local_read_rejects_symlink_loop_root(tmp_path: Path) -> None:
     os.symlink(loop.name, loop)
 
     assert not _local_read_operands_resolve_safely("cat", ["target.txt"], cwd=tmp_path, root=loop)
+
+
+def test_agent_guidance_documents_keep_their_own_rule() -> None:
+    """A narrower rule owns the guidance documents, so this screen leaves them alone.
+
+    ``agent_guidance_reads`` reads the line range a ``sed -n`` was given and
+    ``target_is_known_skill_doc_path`` resolves the document on disk. Neither
+    bound is visible here, so widening the credential screen must not hand a
+    read either rule already refused a second, looser answer.
+    """
+    assert not _read_only_lookup_target_is_safe("/Users/dev/.agents/skills/release-check/SKILL.md", allow_dirs=False)
+    assert not _read_only_lookup_target_is_safe("/Users/dev/.hol-support/SAFETY.md", allow_dirs=False)
+    # Everything else below the same hidden directories keeps the widening.
+    assert _read_only_lookup_target_is_safe("/Users/dev/.agents/skills/release-check/scripts/run.sh", allow_dirs=False)
+    assert _read_only_lookup_target_is_safe("/Users/dev/.hol-support/notes.md", allow_dirs=False)

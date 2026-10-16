@@ -238,6 +238,24 @@ pub(crate) fn read_only_lookup_arg_is_redirection(arg: &str) -> bool {
     split_attached_redirection_token(arg).is_some()
 }
 
+/// Paths a narrower rule already answers, with bounds this one cannot see.
+///
+/// [`crate::sfrs_agent_guidance`] admits `sed -n '1,200p' ~/.hol-support/SAFETY.md`
+/// and refuses the same file at 501 lines, over a reversed range, or across a
+/// symlink that leaves the home directory; `target_is_known_skill_doc_path`
+/// answers a skill document the same way above. A target screen sees none of
+/// that, so where one of those rules owns the path its verdict stands rather
+/// than being given a second, looser answer here.
+fn narrow_guidance_rule_owns(lowered: &[String]) -> bool {
+    match lowered.last().map(String::as_str) {
+        Some("skill.md") => lowered
+            .windows(2)
+            .any(|pair| pair[1] == "skills" && pair[0].starts_with('.')),
+        Some("safety.md") => lowered.iter().any(|part| part == ".hol-support"),
+        _ => false,
+    }
+}
+
 /// `_read_only_lookup_target_is_safe`.
 pub(crate) fn read_only_lookup_target_is_safe(
     target: &str,
@@ -297,7 +315,7 @@ pub(crate) fn read_only_lookup_target_is_safe(
         && !hidden
             .iter()
             .all(|part| SOURCE_INSPECTION_BENIGN_DOTFILES.contains(&part.as_str()))
-        && !hidden_content_read_allowed(&lowered)
+        && !(hidden_content_read_allowed(&lowered) && !narrow_guidance_rule_owns(&lowered))
     {
         return false;
     }

@@ -41,6 +41,7 @@ fn home(name: &str) -> PathBuf {
         ".github/workflows",
         ".local/share/opencode",
         ".nvm/versions/node/v25.2.1/lib/node_modules/pkg",
+        ".hol-support",
         ".secrets",
         ".ssh",
         "work/project/.git",
@@ -49,6 +50,7 @@ fn home(name: &str) -> PathBuf {
     }
     for (path, contents) in [
         (".agents/skills/release-check/SKILL.md", "# Release\n"),
+        (".hol-support/SAFETY.md", "# Safety\n"),
         (".agents/skills/release-check/config.json", "{}\n"),
         (".agents/skills/release-check/scripts/run.sh", "#!/bin/sh\n"),
         (
@@ -147,6 +149,28 @@ fn secret_bearing_file_names_keep_review_in_benign_directories() {
         "cat ~/.secrets/service-account.json",
         "cat ~/.certs/server.pem",
         "cat ~/.envrc",
+    ] {
+        assert_ne!(action(&home, "codex", command), "allow", "{command}");
+    }
+}
+
+/// A narrower rule owns the agent guidance documents, with bounds a target
+/// screen cannot see: the line range it was asked for, and whether the path
+/// stays inside the home. Its verdict stands either way.
+#[test]
+fn agent_guidance_documents_keep_their_own_rule() {
+    let home = home("guidance");
+    assert_eq!(
+        action(
+            &home,
+            "codex",
+            "cat ~/.agents/skills/release-check/SKILL.md"
+        ),
+        "allow"
+    );
+    for command in [
+        "sed -n '1,501p' ~/.hol-support/SAFETY.md",
+        "sed -n '20,1p' ~/.hol-support/SAFETY.md",
     ] {
         assert_ne!(action(&home, "codex", command), "allow", "{command}");
     }
