@@ -250,14 +250,16 @@ fn decide(
             // that would be prompted inline is left to the Python proxy.
             inline_available: false,
             tool_name: request.build.tool_name.clone(),
-            // What `_allow_after_native_prompt` answers for this harness, so
-            // the route takes the prompt's own answer instead of naming the
-            // `native_prompt` fact the resident cannot gather.
-            native_prompt_allows: asks
-                .then(|| ask::native_prompt_allows(&request.build.harness, &resolved.decision))
-                .flatten(),
         },
         &resolved.decision,
+        // What `_allow_after_native_prompt` answers for this harness, so the
+        // route takes the prompt's own answer instead of naming the
+        // `native_prompt` fact the resident cannot gather. The proxy asks it
+        // about the decision the route names, gate and override included.
+        |tool| {
+            asks.then(|| ask::native_prompt_allows(&request.build.harness, tool))
+                .flatten()
+        },
     );
     let (proxy, downgraded) = observe::downgrade(proxy, &resolved.mode, &resolved.decision)?;
     let routed = route(&proxy, downgraded.as_ref().unwrap_or(&resolved.decision))?;
@@ -530,6 +532,8 @@ fn identity(
 
 #[path = "mcp_relay_decide_ask.rs"]
 mod ask;
+#[path = "mcp_relay_decide_ask_row.rs"]
+mod ask_row;
 #[path = "mcp_relay_decide_claim.rs"]
 mod claim;
 pub(crate) use claim::claim;

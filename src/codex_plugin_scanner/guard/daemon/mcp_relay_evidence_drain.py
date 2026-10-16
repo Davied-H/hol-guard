@@ -226,7 +226,7 @@ def _queued_approval(approval: object) -> _QueuedApproval | None:
         not isinstance(center, str)
         or not isinstance(review_url, str)
         or not isinstance(request_id, str)
-        or not (center and review_url and request_id)
+        or not all(field.strip() for field in (center, review_url, request_id))
     ):
         return None
     return _QueuedApproval(
