@@ -952,6 +952,7 @@ def _run_guard_update_unlocked(
             {
                 "status": "updated" if runtime_restored else "failed",
                 "changed": runtime_restored,
+                "return_code": 0 if runtime_restored else 1,
                 "resulting_version": current_version,
                 "native_runtime": native_runtime_payload(
                     not runtime_restored, version=current_version, installer=installer

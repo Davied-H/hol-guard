@@ -357,12 +357,42 @@ def install_native_payload(wheel: Path, *, package_root: Path | None = None) -> 
 
     The native wheel differs from the pure wheel only by ``codex_plugin_scanner/_native``, so the
     repair adds those files instead of reinstalling the package. That keeps it working on Windows,
-    where pip cannot replace the package of the running ``hol-guard.exe``. Each file is checked
-    against the wheel's RECORD, written beside its target, and moved into place; the installed
-    RECORD then lists the new files so uninstalling removes them.
+    where pip cannot replace the package of the running ``hol-guard.exe``. Every file is checked
+    against the wheel's RECORD and written beside its target before any target changes. The files
+    then move into place with the runtime last, and the installed RECORD lists them so uninstalling
+    removes them. A failure at any step removes what this call placed, so a later repair starts clean.
     """
 
     root = package_root or _bundled_runtime_candidate().parent.parent
+    payload, record_name = _read_native_payload(wheel)
+    installed_record = root.parent / record_name
+    staged: list[tuple[Path, Path]] = []
+    placed: list[Path] = []
+    try:
+        existing_record = installed_record.read_text(encoding="utf-8")
+        for relative, data, mode in payload:
+            target = root / "_native" / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            temporary = target.with_name(f".{relative}.{os.getpid()}.tmp")
+            staged.append((temporary, target))
+            temporary.write_bytes(data)
+            temporary.chmod(mode | stat.S_IRUSR | stat.S_IWUSR if mode else 0o644)
+        for temporary, target in staged:
+            os.replace(temporary, target)
+            placed.append(target)
+        _write_record(installed_record, existing_record, [row for _relative, row in _payload_rows(payload)])
+    except OSError as error:
+        for target in reversed(placed):
+            target.unlink(missing_ok=True)
+        raise NativeWheelError("native_wheel_payload_install_failed") from error
+    finally:
+        for temporary, _target in staged:
+            temporary.unlink(missing_ok=True)
+
+
+def _read_native_payload(wheel: Path) -> tuple[list[tuple[str, bytes, int]], str]:
+    """Return the verified ``_native`` files of ``wheel``, runtime last, and its RECORD name."""
+
     try:
         with zipfile.ZipFile(wheel) as archive:
             names = archive.namelist()
@@ -383,38 +413,34 @@ def install_native_payload(wheel: Path, *, package_root: Path | None = None) -> 
             )
             if not members:
                 raise NativeWheelError("native_wheel_payload_invalid")
-            records: list[list[str]] = []
+            payload: list[tuple[str, bytes, int]] = []
             for name in members:
                 relative = name[len(_NATIVE_PAYLOAD_PREFIX) :]
                 if not relative or "/" in relative or "\\" in relative or relative in {".", ".."}:
                     raise NativeWheelError("native_wheel_payload_invalid")
                 data = archive.read(name)
-                digest = "sha256=" + base64.urlsafe_b64encode(hashlib.sha256(data).digest()).rstrip(b"=").decode()
-                if hashes.get(name) != digest:
+                if hashes.get(name) != _record_digest(data):
                     raise NativeWheelError("native_wheel_payload_invalid")
-                records.append([name, digest, str(len(data))])
-                target = root / "_native" / relative
-                target.parent.mkdir(parents=True, exist_ok=True)
-                temporary = target.with_name(f".{relative}.{os.getpid()}.tmp")
-                try:
-                    temporary.write_bytes(data)
-                    mode = (archive.getinfo(name).external_attr >> 16) & 0o777
-                    temporary.chmod(mode | stat.S_IRUSR | stat.S_IWUSR if mode else 0o644)
-                    os.replace(temporary, target)
-                finally:
-                    temporary.unlink(missing_ok=True)
+                payload.append((relative, data, (archive.getinfo(name).external_attr >> 16) & 0o777))
     except (OSError, zipfile.BadZipFile, UnicodeDecodeError, csv.Error) as error:
         raise NativeWheelError("native_wheel_payload_install_failed") from error
-    _record_installed_files(root.parent / record_name, records)
+    return payload, record_name
 
 
-def _record_installed_files(record: Path, rows: list[list[str]]) -> None:
-    """Add the payload files to the installed RECORD; a missing RECORD only affects uninstall cleanup."""
+def _record_digest(data: bytes) -> str:
+    return "sha256=" + base64.urlsafe_b64encode(hashlib.sha256(data).digest()).rstrip(b"=").decode()
 
-    try:
-        existing = record.read_text(encoding="utf-8")
-    except OSError:
-        return
+
+def _payload_rows(payload: list[tuple[str, bytes, int]]) -> list[tuple[str, list[str]]]:
+    return [
+        (relative, [_NATIVE_PAYLOAD_PREFIX + relative, _record_digest(data), str(len(data))])
+        for relative, data, _mode in payload
+    ]
+
+
+def _write_record(record: Path, existing: str, rows: list[list[str]]) -> None:
+    """Add the payload files to the installed RECORD so uninstalling removes them."""
+
     listed = {row[0] for row in csv.reader(io.StringIO(existing)) if row}
     added = [row for row in rows if row[0] not in listed]
     if not added:
@@ -426,7 +452,7 @@ def _record_installed_files(record: Path, rows: list[list[str]]) -> None:
     try:
         temporary.write_text(existing + separator + buffer.getvalue(), encoding="utf-8")
         os.replace(temporary, record)
-    except OSError:
+    finally:
         temporary.unlink(missing_ok=True)
 
 

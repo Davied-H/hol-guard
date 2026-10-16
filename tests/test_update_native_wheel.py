@@ -1157,3 +1157,52 @@ def test_native_payload_rejects_files_that_do_not_match_the_record(tmp_path: Pat
 
     assert error.value.reason_code == "native_wheel_payload_invalid"
     assert not (package_root / "_native" / "hol-guard-runtime").exists()
+
+
+def test_native_payload_removes_placed_files_when_the_record_cannot_be_read(tmp_path: Path) -> None:
+    package_root = tmp_path / "site" / "codex_plugin_scanner"
+    package_root.mkdir(parents=True)
+    wheel = _native_wheel_archive(
+        tmp_path / "native.whl",
+        {
+            "codex_plugin_scanner/_native/hol-guard-runtime": b"runtime",
+            "codex_plugin_scanner/_native/runtime-manifest.json": b"{}",
+        },
+    )
+
+    with pytest.raises(NativeWheelError) as error:
+        native.install_native_payload(wheel, package_root=package_root)
+
+    assert error.value.reason_code == "native_wheel_payload_install_failed"
+    assert not (package_root / "_native" / "hol-guard-runtime").exists()
+
+
+def test_native_payload_rolls_back_when_a_later_file_cannot_move(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    site = tmp_path / "site"
+    package_root = site / "codex_plugin_scanner"
+    package_root.mkdir(parents=True)
+    (site / "hol_guard-3.41.0.dist-info").mkdir()
+    (site / "hol_guard-3.41.0.dist-info" / "RECORD").write_text("", encoding="utf-8")
+    wheel = _native_wheel_archive(
+        tmp_path / "native.whl",
+        {
+            "codex_plugin_scanner/_native/hol-guard-runtime": b"runtime",
+            "codex_plugin_scanner/_native/runtime-manifest.json": b"{}",
+        },
+    )
+    real_replace = os.replace
+
+    def replace(source: Path, target: Path) -> None:
+        if Path(target).name == "hol-guard-runtime":
+            raise PermissionError("locked")
+        real_replace(source, target)
+
+    monkeypatch.setattr(native.os, "replace", replace)
+
+    with pytest.raises(NativeWheelError):
+        native.install_native_payload(wheel, package_root=package_root)
+
+    assert list((package_root / "_native").iterdir()) == []
+    assert (site / "hol_guard-3.41.0.dist-info" / "RECORD").read_text(encoding="utf-8") == ""
