@@ -328,7 +328,14 @@ fn parse(arguments: &[String]) -> Result<Launch, RestrictedPytestError> {
         .map(|output| crate::windows_node_build::output_location(output, &workspace))
         .collect::<Option<Vec<_>>>()
         .ok_or_else(invalid)?;
-    let mut arguments: Vec<OsString> = rest[..runtime].iter().map(OsString::from).collect();
+    // Node's JavaScript realpath lstats the drive root before walking a path,
+    // which an LPAC token cannot do. The staged copy holds no links, so its
+    // module loaders resolve the same files without that realpath.
+    let mut arguments: Vec<OsString> = ["--preserve-symlinks", "--preserve-symlinks-main"]
+        .into_iter()
+        .chain(rest[..runtime].iter().map(String::as_str))
+        .map(OsString::from)
+        .collect();
     arguments.push(entry.into_os_string());
     arguments.extend(tail.iter().map(OsString::from));
     Ok(Launch {

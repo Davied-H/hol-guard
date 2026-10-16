@@ -293,7 +293,13 @@ fn build_run_publishes_only_declared_output() {
         fs.writeFileSync('cache.txt', 'not-published');\
         fs.writeFileSync('visible.txt', 'changed');\
         console.log(fs.existsSync('node_modules/.npmrc'), fs.existsSync('dist/.env'));";
-    let arguments = [OsString::from("-e"), OsString::from(script)];
+    // As the runtime launches Node: its JavaScript realpath cannot lstat the
+    // drive root from an LPAC token.
+    let arguments = [
+        OsString::from("--preserve-symlinks"),
+        OsString::from("-e"),
+        OsString::from(script),
+    ];
     let environment: Vec<(OsString, OsString)> = ["SystemRoot", "PATHEXT"]
         .iter()
         .filter_map(|name| std::env::var_os(name).map(|value| ((*name).into(), value)))
