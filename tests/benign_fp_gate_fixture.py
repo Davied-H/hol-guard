@@ -27,7 +27,10 @@ never exercises:
   a ``.venv`` holding the console scripts ``uv sync`` installs, and the
   ``Makefile``, ``go.mod`` and ``Cargo.toml`` entry points. A real checkout is
   rarely all of these at once, but each is a command shape agents run dozens of
-  times an hour, and none of them is interesting enough to review.
+  times an hour, and none of them is interesting enough to review;
+* every ``${HOME}``, ``${PRIVATE_TMP}`` and ``${WORKTREE}`` path a benign case
+  names, derived from the cases by ``tests.benign_fp_gate_paths`` so a mined case
+  reads a path that exists. Credential-looking names are never created.
 """
 
 from __future__ import annotations
@@ -46,6 +49,7 @@ import pytest
 from ci.gauntlet.fixtures import BENCH_CHECKOUT, BENCH_FILES
 from ci.gauntlet.realism_fixtures import REVIEW_NOTES, SESSION_SOURCE
 from codex_plugin_scanner.guard.adapters import codex_contained_tests
+from tests.benign_fp_gate_paths import materialise
 from tests.benign_fp_gate_projects import (
     _INSTALLED_PACKAGES,
     _NODE_PACKAGES,
@@ -431,6 +435,8 @@ def build_fixture(root: Path) -> BenignFixture:
     _git(bench, "commit", "--quiet", "-m", "bench base", home=home)
     # A leaf directly in /tmp that does not exist yet, as a throwaway checkout destination.
     scratch = Path(_system_tmp()) / f"hg-fp-scratch-{os.getpid()}-{secrets.token_hex(4)}"
+    # Paths the mined cases name under the scrubbed project stand-ins, derived from the cases themselves.
+    materialise({"HOME": home, "PRIVATE_TMP": private_tmp, "WORKTREE": worktree})
     return BenignFixture(
         root, home, parent, worktree, nested, gitlink_repo, guard_home, private_tmp, tmp_worktree, org, tmp_org, scratch
     )
