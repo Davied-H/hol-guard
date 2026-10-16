@@ -258,7 +258,12 @@ fn canonical_workspace_requirement_rejects_relative_and_parent_paths() {
     let dirs = Dirs::new("canonical");
     let relative = Path::new("ws");
     assert!(load_effective_guard_config(&dirs.home(), Some(relative), true, &[]).is_err());
-    let parent = dirs.workspace().join("..").join("ws");
+    // `join` folds `..` into a Windows verbatim path, so the step is spelled out.
+    let parent = PathBuf::from(format!(
+        "{}{sep}..{sep}ws",
+        dirs.workspace().display(),
+        sep = std::path::MAIN_SEPARATOR
+    ));
     assert!(load_effective_guard_config(&dirs.home(), Some(&parent), true, &[]).is_err());
     assert!(load_effective_guard_config(&dirs.home(), Some(&dirs.workspace()), true, &[]).is_ok());
 }
