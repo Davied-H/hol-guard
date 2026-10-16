@@ -102,7 +102,7 @@ fn a_portable_block_outranks_the_saved_allow_in_its_checkout() {
 }
 
 #[test]
-fn a_portable_row_bound_elsewhere_defers() {
+fn a_portable_row_bound_elsewhere_is_read_by_no_lookup_of_this_workspace() {
     let (home, connection) = store("portable-elsewhere");
     let checkout = directory("elsewhere", Some(REMOTE));
     let plain = directory("plain", None);
@@ -112,17 +112,36 @@ fn a_portable_row_bound_elsewhere_defers() {
         Some(&identity_of(&checkout)),
         "block",
     );
-    // A workspace with no identity reads no portable row.
+    // Every workspace selector the lookup binds is the probe's own, so a
+    // workspace with no identity of its own reads none of the checkout's
+    // rows and the local allow still answers.
     assert_eq!(
         status(&connection, &home, &plain),
-        Err(HookDirectDefer::SavedDecision)
+        Ok(Some(json!("accepted")))
     );
+    // A row under a third project's identity changes neither answer.
     let other = format!("{PORTABLE_PROJECT_IDENTITY_PREFIX}{}", "f".repeat(64));
     decide(&connection, "workspace", Some(&other), "block");
+    assert_eq!(status(&connection, &home, &checkout), Ok(None));
     assert_eq!(
-        status(&connection, &home, &checkout),
-        Err(HookDirectDefer::SavedDecision)
+        status(&connection, &home, &plain),
+        Ok(Some(json!("accepted")))
     );
+}
+
+#[test]
+fn a_workspace_that_already_names_an_identity_reads_that_identity_alone() {
+    let (home, connection) = store("portable-named");
+    let identity = format!("{PORTABLE_PROJECT_IDENTITY_PREFIX}{}", "a".repeat(64));
+    // `_portable_project_workspace` answers such a workspace with itself, so
+    // the identity's own lookup is the whole composition and no local
+    // authority is read beside it. The saved allow is a portable permission
+    // the daemon strips, so the review stands instead of being reused.
+    assert_eq!(status(&connection, &home, &identity), Ok(None));
+    // The same workspace spelled with surrounding space is the same
+    // identity: `_portable_project_workspace` strips before it compares.
+    let padded = format!("  {identity}  ");
+    assert_eq!(status(&connection, &home, &padded), Ok(None));
 }
 
 #[test]

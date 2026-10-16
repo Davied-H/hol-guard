@@ -314,7 +314,7 @@ fn directory(tag: &str, remote: Option<&str>) -> String {
 
 #[cfg(unix)]
 #[test]
-fn a_workspace_row_bound_elsewhere_defers_a_workspace_lookup() {
+fn a_workspace_row_bound_elsewhere_answers_as_a_miss() {
     let (home, connection) = guard_home("elsewhere");
     let workspace = directory("elsewhere", None);
     let other = workspace_policy_key(Some("/elsewhere")).unwrap();
@@ -333,7 +333,9 @@ fn a_workspace_row_bound_elsewhere_defers_a_workspace_lookup() {
         )
     })
     .unwrap();
-    assert_eq!(answers.0, Err(SAVED_PORTABLE));
+    // Every workspace selector the lookup binds is the probe's own, so
+    // another workspace's row is read by neither lookup.
+    assert_eq!(answers.0.unwrap()["decision"], Value::Null);
     assert!(answers.1);
 }
 
@@ -394,10 +396,13 @@ fn a_portable_row_answers_only_the_workspace_resolving_to_it() {
     .unwrap();
     // The portable block outranks the local miss, as the proxy composes it.
     assert_eq!(answers.0.unwrap()["decision"]["action"], "block");
-    for answer in [answers.1, answers.2, answers.3] {
-        assert_eq!(answer, Err("mcp_relay_saved_remote_policy"));
-    }
-    // A row under another identity defers the checkout's lookup too.
+    // Every other lookup binds its own workspace selectors, so none of them
+    // reads the row and each answers as a miss.
+    assert_eq!(answers.1.unwrap()["decision"], Value::Null);
+    assert_eq!(answers.2.unwrap()["decision"], Value::Null);
+    assert_eq!(answers.3.unwrap()["decision"], Value::Null);
+    // A row under another project's identity leaves the checkout's own
+    // answer as it was.
     let other = format!("{PORTABLE_PROJECT_IDENTITY_PREFIX}{}", "f".repeat(64));
     decide(
         &connection,
@@ -406,13 +411,47 @@ fn a_portable_row_answers_only_the_workspace_resolving_to_it() {
         Some(&other),
         "approval-gate",
     );
-    let answer = read(&home, &binding(), |saved| {
-        saved
-            .expect("saved rows")
-            .answer(&policy_need(ARTIFACT, Some(&repository)))
+    let answers = read(&home, &binding(), |saved| {
+        let saved = saved.expect("saved rows");
+        (
+            saved.answer(&policy_need(ARTIFACT, Some(&repository))),
+            saved.answer(&policy_need(ARTIFACT, Some(&plain))),
+        )
     })
     .unwrap();
-    assert_eq!(answer, Err("mcp_relay_saved_remote_policy"));
+    assert_eq!(answers.0.unwrap()["decision"]["action"], "block");
+    assert_eq!(answers.1.unwrap()["decision"], Value::Null);
+}
+
+/// `_portable_project_workspace` answers a workspace that already names a
+/// portable identity with itself, and
+/// `resolve_policy_decision_lookup` then returns that identity's
+/// restrictive-only lookup alone, with no local authority beside it.
+#[cfg(unix)]
+#[test]
+fn a_workspace_that_already_names_an_identity_reads_that_identity_alone() {
+    let (home, connection) = guard_home("portable-named");
+    let identity = format!("{PORTABLE_PROJECT_IDENTITY_PREFIX}{}", "a".repeat(64));
+    decide(
+        &connection,
+        "workspace",
+        "allow",
+        Some(&identity),
+        "approval-gate",
+    );
+    let answers = read(&home, &binding(), |saved| {
+        let saved = saved.expect("saved rows");
+        (
+            saved.answer(&policy_need(ARTIFACT, Some(&identity))),
+            saved.answer(&policy_need(ARTIFACT, Some(&format!("  {identity}  ")))),
+        )
+    })
+    .unwrap();
+    // The identity's own allow is a portable permission, which never lowers
+    // enforcement, and no local lookup carries it either.
+    assert_eq!(answers.0.unwrap()["decision"], Value::Null);
+    // The same identity, spelled with the space Python strips first.
+    assert_eq!(answers.1.unwrap()["decision"], Value::Null);
 }
 
 /// The claim's fresh resolve (`after_claim`) reads saved lookups through

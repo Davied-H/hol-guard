@@ -200,7 +200,7 @@ fn saved_response(
     let Some(has_local_policy) = store.readable(&integrity_state)? else {
         return Err(HookDirectDefer::SavedDecision);
     };
-    let identity = portable::identity(store, context.workspace)?;
+    let identity = portable::identity(context.workspace)?;
     let key_b64 = Zeroizing::new(Base64UrlUnpadded::encode_string(&key.key));
     let store_path = Path::new(context.guard_home).join(STORE_FILE_NAME);
     let request = PolicyDecisionLookupRequestV1 {
@@ -240,7 +240,10 @@ fn saved_response(
     let local = lookup(context.workspace)?;
     let lookup = match identity {
         None => local,
-        Some(identity) => portable::compose(local, lookup(&identity)?)?,
+        Some(identity) => {
+            let portable = lookup(&identity)?;
+            portable::compose(context.workspace, &identity, local, portable)?
+        }
     };
     match saved_verdict(result, &lookup, store.artifact_id, token) {
         Some((verdict, status)) => render(context.harness, &verdict, status)
