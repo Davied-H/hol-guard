@@ -233,6 +233,7 @@ class ExtensionControlAuthorityCatalogMixin:
                 retired_targets=retired_targets,
                 registry=None,
                 trigger="authority-read-backfill",
+                writer=False,
             )
             insert_catalog_migration_event(
                 connection,
@@ -389,6 +390,7 @@ class ExtensionControlAuthorityCatalogMixin:
                 retired_targets=retired_targets,
                 registry=registry,
                 trigger="catalog-migration",
+                writer=True,
             )
             insert_catalog_migration_event(
                 connection,

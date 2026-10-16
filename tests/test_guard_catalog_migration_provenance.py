@@ -18,6 +18,7 @@ import codex_plugin_scanner.version as version_module
 from codex_plugin_scanner.guard.runtime import generated_command_catalog_loader as loader_module
 from codex_plugin_scanner.guard.runtime.command_extensions import BUILT_IN_COMMAND_EXTENSION_REGISTRY
 from codex_plugin_scanner.guard.runtime.extension_control_authority import AuthorityHealth
+from codex_plugin_scanner.guard.runtime.generated_command_catalog import GeneratedCommandCatalog
 from codex_plugin_scanner.guard.runtime.generated_command_catalog_provenance import (
     catalog_provenance,
     version_ordinal,
@@ -76,6 +77,7 @@ def test_the_migration_event_says_which_install_wrote_the_catalog(
     assert isinstance(provenance, dict)
     assert provenance["trigger"] == "catalog-migration"
     assert provenance["guard_version"] == version_module.__version__
+    assert provenance["writer_version"] == version_module.__version__
     assert provenance["extension_count"] == len(BUILT_IN_COMMAND_EXTENSION_REGISTRY.extensions)
     assert provenance["program_digest"] == BUILT_IN_COMMAND_EXTENSION_REGISTRY.program_digest
     assert provenance["frozen"] is False
@@ -203,3 +205,61 @@ def test_version_ordinal_reads_the_leading_numbers(version: str, expected: tuple
 def test_an_older_release_orders_below_a_newer_prerelease() -> None:
     assert version_ordinal("3.36.0") < version_ordinal("3.46.0")
     assert version_ordinal("3.47.0a2") > version_ordinal("3.46.0")
+
+
+def test_a_backfilled_event_names_no_writer_and_judges_no_downgrade(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A reader that finds an unrecorded migration did not perform it.
+
+    Stamping its own version as the writer makes an old revision look like the
+    newest install's work: the next migration is then measured against a version
+    that never wrote anything, which invents downgrades and hides real ones.
+    """
+
+    monkeypatch.setattr(version_module, "__version__", "3.36.0")
+    store = _migrate_to_built_in(tmp_path, monkeypatch)
+    with store._connect() as connection:  # pyright: ignore[reportPrivateUsage]
+        connection.execute("delete from guard_events where event_name = ?", (MIGRATED_EVENT,))
+    monkeypatch.setattr(version_module, "__version__", "3.46.0")
+
+    store.read_extension_control_authority_for_registry(BUILT_IN_COMMAND_EXTENSION_REGISTRY)
+
+    backfilled = _events(store, MIGRATED_EVENT)[-1]["provenance"]
+    assert isinstance(backfilled, dict)
+    assert backfilled["trigger"] == "authority-read-backfill"
+    assert backfilled["guard_version"] == "3.46.0"
+    assert "writer_version" not in backfilled
+    # 3.40.0 is older than the reader and newer than the install that actually
+    # migrated the store, so a writer version taken from the backfill would be
+    # reported as a downgrade that never happened.
+    monkeypatch.setattr(version_module, "__version__", "3.40.0")
+    store.read_extension_control_authority_for_registry(_description_only_catalog_variant())
+    assert _events(store, REGRESSED_EVENT) == []
+
+
+def test_a_catalog_built_in_memory_is_not_attributed_to_the_packaged_resource() -> None:
+    """Equal digests mean equal contents, not a shared origin.
+
+    The resource root names the file this process loaded; a caller holding its
+    own catalog object did not come from there, and recording that root would
+    put another install's name on the revision.
+    """
+
+    built_in = BUILT_IN_COMMAND_EXTENSION_REGISTRY
+    twin = GeneratedCommandCatalog(
+        built_in.extensions,
+        catalog_digest=built_in.catalog_digest,
+        program_digest=built_in.program_digest,
+        source_digest=built_in.source_digest,
+        implementation_digest=built_in.implementation_digest,
+    )
+    assert twin.catalog_digest == built_in.catalog_digest
+
+    provenance = catalog_provenance(catalog_digest=twin.catalog_digest, catalog=twin, trigger="probe")
+
+    assert provenance["install_kind"] == "in-process"
+    assert provenance["resource_root_digest"] is None
+    assert catalog_provenance(catalog_digest=built_in.catalog_digest, catalog=built_in, trigger="probe")[
+        "install_kind"
+    ] not in {"in-process", "unattributed"}

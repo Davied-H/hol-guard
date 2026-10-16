@@ -49,6 +49,11 @@ def _recorded_writer_version(connection: sqlite3.Connection, catalog_digest: str
     Returns None for a store whose events predate provenance, which is the
     normal case on an upgrade: the first migration after this ships has nothing
     to compare against and is not reported as a regression.
+
+    Only an event written by the install performing that migration carries a
+    writer version. An event backfilled by a later reader describes a revision
+    it found rather than one it wrote, and reading the reader's version as the
+    writer's would invent a downgrade on the next migration, or hide one.
     """
 
     rows = connection.execute(
@@ -61,7 +66,7 @@ def _recorded_writer_version(connection: sqlite3.Connection, catalog_digest: str
             continue
         provenance = recorded.get("provenance")
         if isinstance(provenance, dict):
-            version = provenance.get("guard_version")
+            version = provenance.get("writer_version")
             if isinstance(version, str) and version:
                 return version
     return None
@@ -79,7 +84,7 @@ def _regression(
     previous_version = _recorded_writer_version(connection, previous_catalog_digest)
     if previous_version is None:
         return None
-    writer_version = provenance.get("guard_version")
+    writer_version = provenance.get("writer_version")
     if not isinstance(writer_version, str):
         return None
     if version_ordinal(writer_version) >= version_ordinal(previous_version):
@@ -103,10 +108,17 @@ def build_catalog_migration_payload(
     retired_targets: tuple[str, ...],
     registry: CommandSafetyExtensionRegistry | None,
     trigger: str,
+    writer: bool,
 ) -> tuple[str, dict[str, Any] | None]:
-    """Build the migration event, and the regression record if there is one."""
+    """Build the migration event, and the regression record if there is one.
 
-    provenance = catalog_provenance(catalog_digest=catalog_digest, catalog=registry, trigger=trigger)
+    ``writer`` says whether this process is the one moving the store to
+    ``catalog_digest``. A backfilled event describes a revision an earlier
+    install wrote, so it names no writer and claims no regression: the record
+    stays, and the comparison waits for a migration that can be attributed.
+    """
+
+    provenance = catalog_provenance(catalog_digest=catalog_digest, catalog=registry, trigger=trigger, writer=writer)
     regression = _regression(
         connection,
         previous_catalog_digest=previous_catalog_digest,

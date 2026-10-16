@@ -82,6 +82,7 @@ def catalog_provenance(
     catalog_digest: str,
     catalog: GeneratedCommandCatalog | None = None,
     trigger: str,
+    writer: bool = False,
 ) -> dict[str, object]:
     """Describe the catalog being written and the process doing the writing.
 
@@ -90,6 +91,14 @@ def catalog_provenance(
     caller without the catalog object in hand passes the digest alone; the
     process-wide catalog describes it only when the two agree, so one install's
     record is never attributed to another's resource.
+
+    ``guard_version`` is the process that recorded this, which is not always the
+    install that produced the revision: a store can be read long after another
+    Guard migrated it, and the reader backfills the missing event. Only a caller
+    that is itself performing the migration passes ``writer``, and only then is
+    ``writer_version`` recorded. A reader stamping its own version there would
+    make an old revision look like the newest install's work, and the downgrade
+    check reading it back would then miss the regression it exists to catch.
     """
 
     from ...version import __version__
@@ -102,6 +111,8 @@ def catalog_provenance(
         "frozen": _frozen(),
         "resource_root_digest": None,
     }
+    if writer:
+        provenance["writer_version"] = __version__
     built_in = BUILT_IN_COMMAND_EXTENSION_REGISTRY
     source = catalog if catalog is not None else (built_in if built_in.catalog_digest == catalog_digest else None)
     if source is None:
@@ -114,7 +125,12 @@ def catalog_provenance(
     provenance["source_digest"] = source.source_digest
     provenance["implementation_digest"] = source.implementation_digest
     resource_path = resolved_catalog_resource()
-    if resource_path is None or source.catalog_digest != built_in.catalog_digest:
+    # The resource root names the file this process loaded its own catalog from,
+    # so only this process's own catalog may be attributed to it. A caller that
+    # built a catalog in memory can hold one that hashes the same without the
+    # packaged resource having anything to do with it, and recording that root
+    # would name an install that never wrote the revision.
+    if resource_path is None or source is not built_in:
         provenance["install_kind"] = "in-process" if resource_path else "unresolved"
         return provenance
     provenance["install_kind"] = _install_kind(resource_path)
