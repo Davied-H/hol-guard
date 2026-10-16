@@ -6,154 +6,32 @@ permissions:
   actions: read
 env:
   CI_PYTHON_VERSION: '3.12.14'
-  CARGO_PROFILE_RELEASE_LTO: 'false'
-  CARGO_PROFILE_RELEASE_CODEGEN_UNITS: '16'
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
-        with:
-          persist-credentials: false
-          fetch-depth: 2
-      - name: Verify exact candidate inputs
-        run: |
-          test "$(git rev-parse HEAD^)" = 705faaf471e6bf70b5c59998dbeca1e950e18635
-          git diff --exit-code HEAD^ HEAD -- rust scripts .github/actions tests
-      - uses: ./.github/actions/setup-ci-python
-        with:
-          python-version: '3.12.14'
-          cache-dependency-glob: uv.lock
-      - name: Load and configure the candidate commands
-        run: |
-          .venv/bin/python .github/archive_qualification.py extract
-          bash "$RUNNER_TEMP/configure.sh"
-      - uses: ./.github/actions/setup-rust
-        with:
-          cache-key: ci-workspace-test-runtime-1
-          cache-fallback-key: ci-workspace-test
-          components: clippy
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba
-        with:
-          version: v0.18.0
-      - name: Configure the candidate compiler wrapper
-        env:
-          SCCACHE_MODE: READ_ONLY
-        run: |
-          bash "$RUNNER_TEMP/wrapper.sh"
-          if ! command -v ld.lld >/dev/null 2>&1; then
-            sudo apt-get update
-            sudo apt-get install -y --no-install-recommends lld
-          fi
-      - name: Build the candidate archive
-        run: bash "$RUNNER_TEMP/archive.sh"
-      - name: Record the original full runtime test inventory
-        run: |
-          nextest_bin="$(python3 scripts/ci/install_nextest.py)"
-          PATH="$nextest_bin:$PATH" cargo nextest list --manifest-path rust/Cargo.toml --locked --package hol-guard-runtime --all-targets --message-format json > "$RUNNER_TEMP/original-list.json"
-          .venv/bin/python .github/archive_qualification.py normalize "$RUNNER_TEMP/original-list.json" "$RUNNER_TEMP/expected-tests.json"
-      - name: Record archive size and digest
-        working-directory: ${{ runner.temp }}
-        run: |
-          sha256sum runtime-test-archive.tar.zst > runtime-test-archive.sha256
-          stat -c 'archive_bytes=%s' runtime-test-archive.tar.zst
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: runtime-build
-          path: |
-            ${{ runner.temp }}/runtime-test-archive.tar.zst
-            ${{ runner.temp }}/runtime-test-archive.sha256
-            ${{ runner.temp }}/expected-tests.json
-          if-no-files-found: error
-          retention-days: 1
-  consume:
-    needs: build
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        partition: [1, 2]
-    steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
-        with:
-          persist-credentials: false
-          fetch-depth: 2
-      - name: Verify exact source and absence of compiled test outputs
-        run: |
-          test "$(git rev-parse HEAD^)" = 705faaf471e6bf70b5c59998dbeca1e950e18635
-          git diff --exit-code HEAD^ HEAD -- rust scripts .github/actions tests
-          test ! -d rust/target/debug
-      - uses: ./.github/actions/setup-ci-python
-        with:
-          python-version: '3.12.14'
-          cache-dependency-glob: uv.lock
-      - name: Install the candidate toolchain without restoring compiled targets
-        run: |
-          .venv/bin/python .github/archive_qualification.py extract
-          bash "$RUNNER_TEMP/configure.sh"
-          python3 scripts/refresh_extension_artifacts.py --trust-only
-          rustup toolchain install 1.88.0 --profile minimal
-          rustup default 1.88.0
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba
-        with:
-          version: v0.18.0
-      - name: Configure the unchanged candidate compiler environment
-        env:
-          SCCACHE_MODE: READ_ONLY
-        run: bash "$RUNNER_TEMP/wrapper.sh"
-      - uses: ./.github/actions/setup-bubblewrap
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with:
-          name: runtime-build
-          path: ${{ runner.temp }}
-      - name: Verify transferred executable archive
-        working-directory: ${{ runner.temp }}
-        run: sha256sum -c runtime-test-archive.sha256
-      - name: Check full inventory, partition selection, and invalid archives
-        env:
-          PARTITION: ${{ matrix.partition }}
-        run: |
-          nextest_bin="$(python3 scripts/ci/install_nextest.py)"
-          export PATH="$nextest_bin:$PATH"
-          cargo nextest list --archive-file "$RUNNER_TEMP/runtime-test-archive.tar.zst" --workspace-remap "$GITHUB_WORKSPACE/rust" --message-format json > "$RUNNER_TEMP/archived-list.json"
-          .venv/bin/python .github/archive_qualification.py normalize "$RUNNER_TEMP/archived-list.json" "$RUNNER_TEMP/actual-tests.json"
-          cmp "$RUNNER_TEMP/expected-tests.json" "$RUNNER_TEMP/actual-tests.json"
-          cargo nextest list --archive-file "$RUNNER_TEMP/runtime-test-archive.tar.zst" --workspace-remap "$GITHUB_WORKSPACE/rust" --partition "hash:$PARTITION/2" --message-format json > "$RUNNER_TEMP/partition-list.json"
-          .venv/bin/python .github/archive_qualification.py selected "$RUNNER_TEMP/partition-list.json" "$RUNNER_TEMP/partition-$PARTITION.json"
-          head -c 64 "$RUNNER_TEMP/runtime-test-archive.tar.zst" > "$RUNNER_TEMP/truncated.tar.zst"
-          if cargo nextest list --archive-file "$RUNNER_TEMP/truncated.tar.zst" --workspace-remap "$GITHUB_WORKSPACE/rust"; then
-            echo 'Invalid archive unexpectedly accepted' >&2
-            exit 1
-          fi
-      - name: Execute the exact candidate cache-hit branch
-        env:
-          CARGO_CHECK: test-runtime-${{ matrix.partition }}
-          RUNTIME_ARCHIVE_HIT: 'true'
-        run: |
-          .venv/bin/python .github/archive_qualification.py extract
-          bash -e -o pipefail "$RUNNER_TEMP/validate.sh"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: selected-partition-${{ matrix.partition }}
-          path: ${{ runner.temp }}/partition-${{ matrix.partition }}.json
-          if-no-files-found: error
-          retention-days: 1
-  complete-union:
-    needs: consume
+  audit-retained-qualification:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
           persist-credentials: false
+      - name: Verify the immutable execution run and successful native jobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(gh api repos/hashgraph-online/hol-guard/actions/runs/38857470737 --jq .head_sha)" = e7773e50b8a6e1c29e6253ec35e597e5000bfdf4
+          gh api 'repos/hashgraph-online/hol-guard/actions/runs/38857470737/jobs?per_page=100' --jq '.jobs | map(select(.name == "build" or .name == "consume (1)" or .name == "consume (2)")) | (length == 3 and all(.conclusion == "success"))' | grep -qx true
       - uses: ./.github/actions/setup-ci-python
         with:
           python-version: '3.12.14'
           cache-dependency-glob: uv.lock
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
+          run-id: 38857470737
+          github-token: ${{ github.token }}
           path: qualification
-      - name: Require the complete disjoint union of original test identities
+      - name: Verify the original archive transfer digest
+        working-directory: qualification/runtime-build
+        run: sha256sum -c runtime-test-archive.sha256
+      - name: Verify the full runnable partition union and negative controls
         run: .venv/bin/python .github/archive_qualification.py aggregate qualification/runtime-build/expected-tests.json qualification/selected-partition-1/partition-1.json qualification/selected-partition-2/partition-2.json

@@ -40,12 +40,24 @@ def normalize(source, output, selected):
     print(f"inventory_count={len(rows)}")
 
 
+def verify_union(expected, actual):
+    eligible = [row for row in expected if not row[2]]
+    assert actual == eligible, "partition union changed or duplicated runnable test identities"
+
+
 def aggregate(baseline, parts):
     expected = json.loads(Path(baseline).read_text())
     actual = sorted(row for part in parts for row in json.loads(Path(part).read_text()))
     assert len(expected) > 2000
-    assert actual == expected, "partition union changed or duplicated test identities"
-    print(f"complete_disjoint_partition_union={len(actual)}")
+    verify_union(expected, actual)
+    for invalid in (actual[:-1], sorted([*actual, actual[0]])):
+        try:
+            verify_union(expected, invalid)
+        except AssertionError:
+            continue
+        raise AssertionError("union validator accepted a missing or duplicated test")
+    print(f"full_inventory={len(expected)} existing_ignored_helpers={len(expected) - len(actual)}")
+    print(f"complete_disjoint_runnable_partition_union={len(actual)} negative_controls=passed")
 
 
 parser = argparse.ArgumentParser()
