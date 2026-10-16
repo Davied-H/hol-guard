@@ -451,7 +451,17 @@ fn package_script_payload(lane: &Lane) -> Value {
 
 #[test]
 fn custom_rules_still_answer_a_command_that_launches_no_local_cli() {
-    let rules = allowing_lane("cli-rules", json!({ "local_cli_block_rules": true }));
+    // A home that exists, as on a real host: macOS treats a workspace below the
+    // user's private temporary directory as the user's own only when the
+    // declared home exists and shares that directory's owner.
+    let home = std::env::temp_dir().join(format!("hook-direct-home-{}", std::process::id()));
+    fs::create_dir_all(&home).unwrap();
+    let home = home.to_str().unwrap();
+    let rules = allowing_lane(
+        "cli-rules",
+        json!({ "local_cli_block_rules": true, "home_dir": home }),
+    );
+    let run = |lane: &Lane, payload| run_as(lane, "codex", Some(home), payload);
     // `pwd` launches no local CLI, so no custom rule can block it.
     assert_eq!(run(&rules, allowed_payload(&rules))["outcome"], "answer");
     // The edge reviews a launch it cannot prove benign, so the daemon
