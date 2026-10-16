@@ -215,6 +215,7 @@ fn other_requests_and_page_methods_stay_reviewed() {
     for code in [
         "let r; break; r = await fetch('http://localhost:3000/');",
         "s = await fetch('http://localhost:3000/');",
+        "for (let a=0;a<100;a++){ for (let b=0;b<100;b++){ await fetch('http://localhost:3000/') } }",
         "const r = await fetch('http://localhost:3000/'); display(r.headers);",
         "const r = await fetch('http://localhost:3000/'); const t = await r.arrayBuffer(); display(t);",
         "const r = await fetch('http://localhost:3000/'); for (let i=0;i<3;i++){ require('fs') }",

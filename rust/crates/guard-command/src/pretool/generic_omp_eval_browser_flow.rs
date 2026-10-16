@@ -153,8 +153,12 @@ impl Parser {
     }
 
     /// `for (let I = A; I < B; I++) { ... }` after `for`, with integer
-    /// bounds at most [`MAX_LOOP_COUNT`] apart.
+    /// bounds at most [`MAX_LOOP_COUNT`] apart, never inside another loop.
     pub(super) fn for_loop(&mut self) -> Option<()> {
+        // A retry loop never needs nesting, which would multiply the bound.
+        if self.loops > 0 {
+            return None;
+        }
         self.punct('(')?;
         self.keyword("let")?;
         let index = self.ident()?;
