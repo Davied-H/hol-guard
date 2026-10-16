@@ -42,7 +42,8 @@ const PYTHON_LAUNCHERS: &[&str] = &[
 /// is data when its delimiter is quoted or its body expands nothing and it is
 /// closed. A `python` or `python3` that reads its program from one whose body
 /// cannot start a program is replaced by `true`, since it can own nothing.
-/// `None` for any other heredoc. The flag says whether text had any.
+/// `None` for a heredoc that feeds anything but `cat` or such a program.
+/// The flag says whether text had any.
 pub(super) fn data_heredocs(text: &str) -> Option<(String, bool)> {
     if !text.contains("<<") {
         return Some((text.to_owned(), false));
@@ -89,6 +90,10 @@ pub(super) fn data_heredocs(text: &str) -> Option<(String, bool)> {
                 let lowered = row.to_ascii_lowercase();
                 PYTHON_LAUNCHERS.iter().any(|word| lowered.contains(word))
             });
+        // Any other program may do more than read its input.
+        if !inert && command.split_whitespace().next() != Some("cat") {
+            return None;
+        }
         let command = if inert { "true" } else { command };
         out.push(format!("{lead}{command}{rest}"));
     }
