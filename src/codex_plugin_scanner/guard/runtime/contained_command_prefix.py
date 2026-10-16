@@ -122,7 +122,9 @@ def _clock_seconds(value: str) -> int | None:
 
     A number of seconds, or one carrying an `s`, `m`, `h` or `d` unit, with an
     optional fraction. Anything else is not a duration, so the word after it is
-    not the program and the command is not peeled.
+    not the program and the command is not peeled. A duration of zero turns
+    `timeout` off, and this answers `0` for it: the prefix is still peeled, and
+    the run it names is left unbounded rather than cut to a second.
     """
     number = value[:-1] if value[-1:] in _CLOCK_UNITS else value
     whole, _, fraction = number.partition(".")
@@ -132,11 +134,17 @@ def _clock_seconds(value: str) -> int | None:
     if fraction and not set(fraction) <= digits:
         return None
     unit = _CLOCK_UNITS.get(value[-1:], 1) if value[-1:] in _CLOCK_UNITS else 1
-    return max(1, round(float(number) * unit))
+    duration = float(number) * unit
+    # A fraction of a second is a real bound and rounds up to the smallest one
+    # this can express; only an exact zero means no bound at all.
+    return 0 if duration == 0 else max(1, round(duration))
 
 
 def peel_timeout_clock(command: list[str]) -> tuple[list[str], int | None]:
     """Peel a system `timeout <duration>` prefix and report its seconds.
+
+    The seconds are ``None`` when nothing bounds the run: either no prefix was
+    peeled, or every peeled clock was the zero that turns `timeout` off.
 
     Native authority reads that clock through to the program it bounds, because
     it limits how long the work may take and not what it may do. The contained
@@ -157,7 +165,8 @@ def peel_timeout_clock(command: list[str]) -> tuple[list[str], int | None]:
         program = rest[1]
         if clock is None or not program or program.startswith("-") or _assignment_word(program):
             break
-        seconds = clock if seconds is None else min(seconds, clock)
+        if clock:
+            seconds = clock if seconds is None else min(seconds, clock)
         command = rest[1:]
     return command, seconds
 

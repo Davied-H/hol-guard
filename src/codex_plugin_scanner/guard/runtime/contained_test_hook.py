@@ -399,9 +399,10 @@ def run_authorized_contained_test(
         # Native authority reads a system `timeout` through to the program it
         # bounds, so the planners below are handed that program. The clock
         # still bounds this run: it only ever shortens the deadline.
-        command, clock = peel_timeout_clock(command)
+        timed, clock = peel_timeout_clock(command)
+        if timed != command:
+            command, _ = _split_command_prefix(timed)
         if clock is not None:
-            command, _ = _split_command_prefix(command)
             timeout_seconds = min(timeout_seconds, clock)
         package_test = is_package_test(command)
         if package_test:

@@ -47,3 +47,19 @@ def test_anything_that_is_not_that_clock_stays_in_the_command() -> None:
         ["pytest", "-q"],
     ]:
         assert peel_timeout_clock(list(command)) == (command, None), command
+
+
+def test_a_zero_duration_peels_without_bounding_the_run() -> None:
+    """`timeout 0` turns the clock off, so the peel must not invent one."""
+    for command in [
+        ["timeout", "0", "pytest", "-q"],
+        ["timeout", "0.0", "pytest", "-q"],
+        ["timeout", "0s", "pytest", "-q"],
+        ["timeout", "0m", "pytest", "-q"],
+    ]:
+        assert peel_timeout_clock(list(command)) == (["pytest", "-q"], None), command
+    # A fraction of a second is a real bound and keeps the smallest one.
+    assert peel_timeout_clock(["timeout", "0.4", "pytest"]) == (["pytest"], 1)
+    # An unbounded wrapper never loosens the clock inside it, or the reverse.
+    assert peel_timeout_clock(["timeout", "0", "timeout", "20", "pytest"]) == (["pytest"], 20)
+    assert peel_timeout_clock(["timeout", "20", "timeout", "0", "pytest"]) == (["pytest"], 20)
