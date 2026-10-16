@@ -3765,7 +3765,10 @@ class GuardDaemonServer:
                 reason = f"{type(error).__name__}: {error}"
                 if reason != reported_failure:
                     reported_failure = reason
-                    _LOGGER.warning("Headless cloud sync could not complete: %s", reason)
+                    if isinstance(error, NativeGuardStoreUnavailable):
+                        _LOGGER.warning("Headless cloud sync could not complete: %s", reason)
+                    else:
+                        _LOGGER.exception("Headless cloud sync could not complete: %s", reason)
                 status = ""
             else:
                 reported_failure = None

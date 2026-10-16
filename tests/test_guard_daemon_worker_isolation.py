@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 from pathlib import Path
 
@@ -154,3 +155,39 @@ def test_headless_refresh_survives_a_store_outage(tmp_path: Path, monkeypatch: p
         assert daemon._headless_cloud_sync_thread.is_alive()
     finally:
         daemon.stop()
+
+
+@pytest.mark.daemon_headless_refresh
+def test_headless_refresh_keeps_the_traceback_of_an_unexpected_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    store = GuardStore(tmp_path / "guard-home")
+    attempts: list[int] = []
+    synced = threading.Event()
+
+    def _failing_then_synced(*, store: GuardStore) -> dict[str, object]:
+        del store
+        attempts.append(len(attempts))
+        if len(attempts) == 1:
+            raise RuntimeError("summary persistence failed")
+        synced.set()
+        return {"status": "synced"}
+
+    patch_daemon_global(monkeypatch, "_run_headless_cloud_sync", _failing_then_synced)
+    daemon = guard_daemon_module.GuardDaemonServer(store, host="127.0.0.1", port=0, idle_timeout_seconds=60)
+    daemon._headless_cloud_sync_interval_seconds = 0.05
+    daemon._headless_cloud_sync_backoff_seconds = 0.05
+
+    with caplog.at_level(logging.WARNING, logger="codex_plugin_scanner.guard.daemon.server"):
+        daemon.start()
+        try:
+            assert synced.wait(timeout=5)
+        finally:
+            daemon.stop()
+
+    unexpected = [record for record in caplog.records if "summary persistence failed" in record.message]
+    assert unexpected
+    assert unexpected[0].exc_info is not None
+    assert unexpected[0].exc_info[0] is RuntimeError
