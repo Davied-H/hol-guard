@@ -6,6 +6,7 @@ import base64
 import hashlib
 import io
 import json
+import os
 import subprocess
 import tempfile
 import urllib.error
@@ -13,7 +14,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -867,13 +868,23 @@ def test_native_repair_only_reinstalls_the_current_stable_and_never_upgrades(
         tags=[WINDOWS_ARM],
     )
 
+    installed: list[str] = []
+
+    def install_payload(wheel: Path) -> None:
+        installed.append(wheel.name)
+        monkeypatch.setattr(update_commands, "bundled_native_runtime_missing", lambda: False)
+
+    monkeypatch.setattr(update_commands, "install_native_payload", install_payload)
+
     payload, exit_code = harness.run(include_alpha=False, native_repair_only=True)
 
     assert exit_code == 0, payload
     assert payload["native_wheel_reason"] == "repair"
+    assert payload["status"] == "updated"
     assert payload["resulting_version"] == "3.41.0"
-    assert payload["message"] == "Installed the HOL Guard 3.41.0 native runtime from its GitHub release."
-    assert Path(harness.commands[0][-1]).name == _wheel_name(WINDOWS_ARM, "3.41.0")
+    assert installed == [_wheel_name(WINDOWS_ARM, "3.41.0")]
+    # The running package is never reinstalled; only its runtime files are added.
+    assert harness.commands == []
     assert release.requested == [sources.RELEASE_DOWNLOAD_PREFIX + f"v3.41.0/{_wheel_name(WINDOWS_ARM, '3.41.0')}"]
 
 
@@ -1059,3 +1070,139 @@ def test_manual_install_command_prefers_the_windows_short_path(monkeypatch: pyte
     monkeypatch.setattr(native, "_windows_short_path", lambda _path: r"C:\Users\JANEDO~1\venv\Scripts\python.exe")
 
     assert native._manual_installer_prefix("pip") == r"C:\Users\JANEDO~1\venv\Scripts\python.exe -m pip install"
+
+
+def test_native_repair_leaves_dependencies_alone_after_downloading_the_wheel(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    package_root = tmp_path / "package"
+    package_root.mkdir()
+    (package_root / sources.NATIVE_WHEEL_MANIFEST_NAME).write_bytes(_manifest("3.41.0"))
+    monkeypatch.setattr(sources, "_installed_package_root", lambda: package_root)
+    harness = UpdateHarness(
+        monkeypatch,
+        tmp_path,
+        current="3.41.0",
+        latest_alpha="3.43.0a1",
+        runtime_missing=True,
+        release=FakeRelease(_stable_release_files("3.41.0")),
+        tags=[WINDOWS_ARM],
+    )
+    monkeypatch.setattr(update_commands, "_latest_version_from_pypi", lambda: "3.41.0")
+    monkeypatch.setattr(update_commands, "_installer_kind", lambda: "pip")
+
+    payload, _exit_code = harness.run(include_alpha=False)
+
+    command = cast(list[str], payload["command"])
+    assert command[-1].endswith("-win_arm64.whl")
+    assert command[-3:-1] == ["--force-reinstall", "--no-deps"]
+
+
+def _native_wheel_archive(
+    path: Path, files: dict[str, bytes], *, record_override: dict[str, str] | None = None
+) -> Path:
+    rows = []
+    with zipfile.ZipFile(path, "w") as archive:
+        for name, data in files.items():
+            info = zipfile.ZipInfo(name)
+            info.external_attr = (0o755 if name.endswith("hol-guard-runtime") else 0o644) << 16
+            archive.writestr(info, data)
+            digest = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).rstrip(b"=").decode()
+            rows.append(f"{name},{(record_override or {}).get(name, 'sha256=' + digest)},{len(data)}")
+        rows.append("hol_guard-3.41.0.dist-info/RECORD,,")
+        archive.writestr("hol_guard-3.41.0.dist-info/RECORD", "\n".join(rows) + "\n")
+    return path
+
+
+def test_native_payload_adds_runtime_files_and_records_them(tmp_path: Path) -> None:
+    site = tmp_path / "site"
+    package_root = site / "codex_plugin_scanner"
+    package_root.mkdir(parents=True)
+    dist_info = site / "hol_guard-3.41.0.dist-info"
+    dist_info.mkdir()
+    (dist_info / "RECORD").write_text("codex_plugin_scanner/__init__.py,sha256=x,1\n", encoding="utf-8")
+    wheel = _native_wheel_archive(
+        tmp_path / "native.whl",
+        {
+            "codex_plugin_scanner/__init__.py": b"changed",
+            "codex_plugin_scanner/_native/hol-guard-runtime": b"runtime",
+            "codex_plugin_scanner/_native/runtime-manifest.json": b"{}",
+        },
+    )
+
+    native.install_native_payload(wheel, package_root=package_root)
+
+    runtime = package_root / "_native" / "hol-guard-runtime"
+    assert runtime.read_bytes() == b"runtime"
+    if os.name != "nt":
+        assert runtime.stat().st_mode & 0o111
+    # Files outside _native are left to the installed package.
+    assert not (package_root / "__init__.py").exists()
+    record = (dist_info / "RECORD").read_text(encoding="utf-8")
+    assert "codex_plugin_scanner/_native/hol-guard-runtime,sha256=" in record
+    assert record.startswith("codex_plugin_scanner/__init__.py,sha256=x,1\n")
+
+
+def test_native_payload_rejects_files_that_do_not_match_the_record(tmp_path: Path) -> None:
+    package_root = tmp_path / "site" / "codex_plugin_scanner"
+    package_root.mkdir(parents=True)
+    wheel = _native_wheel_archive(
+        tmp_path / "native.whl",
+        {"codex_plugin_scanner/_native/hol-guard-runtime": b"runtime"},
+        record_override={"codex_plugin_scanner/_native/hol-guard-runtime": "sha256=wrong"},
+    )
+
+    with pytest.raises(NativeWheelError) as error:
+        native.install_native_payload(wheel, package_root=package_root)
+
+    assert error.value.reason_code == "native_wheel_payload_invalid"
+    assert not (package_root / "_native" / "hol-guard-runtime").exists()
+
+
+def test_native_payload_removes_placed_files_when_the_record_cannot_be_read(tmp_path: Path) -> None:
+    package_root = tmp_path / "site" / "codex_plugin_scanner"
+    package_root.mkdir(parents=True)
+    wheel = _native_wheel_archive(
+        tmp_path / "native.whl",
+        {
+            "codex_plugin_scanner/_native/hol-guard-runtime": b"runtime",
+            "codex_plugin_scanner/_native/runtime-manifest.json": b"{}",
+        },
+    )
+
+    with pytest.raises(NativeWheelError) as error:
+        native.install_native_payload(wheel, package_root=package_root)
+
+    assert error.value.reason_code == "native_wheel_payload_install_failed"
+    assert not (package_root / "_native" / "hol-guard-runtime").exists()
+
+
+def test_native_payload_rolls_back_when_a_later_file_cannot_move(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    site = tmp_path / "site"
+    package_root = site / "codex_plugin_scanner"
+    package_root.mkdir(parents=True)
+    (site / "hol_guard-3.41.0.dist-info").mkdir()
+    (site / "hol_guard-3.41.0.dist-info" / "RECORD").write_text("", encoding="utf-8")
+    wheel = _native_wheel_archive(
+        tmp_path / "native.whl",
+        {
+            "codex_plugin_scanner/_native/hol-guard-runtime": b"runtime",
+            "codex_plugin_scanner/_native/runtime-manifest.json": b"{}",
+        },
+    )
+    real_replace = os.replace
+
+    def replace(source: Path, target: Path) -> None:
+        if Path(target).name == "hol-guard-runtime":
+            raise PermissionError("locked")
+        real_replace(source, target)
+
+    monkeypatch.setattr(native.os, "replace", replace)
+
+    with pytest.raises(NativeWheelError):
+        native.install_native_payload(wheel, package_root=package_root)
+
+    assert list((package_root / "_native").iterdir()) == []
+    assert (site / "hol_guard-3.41.0.dist-info" / "RECORD").read_text(encoding="utf-8") == ""

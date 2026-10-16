@@ -7,6 +7,8 @@
 
 #[path = "generic_omp_eval.rs"]
 mod eval;
+#[path = "generic_omp_learn.rs"]
+mod learn;
 #[path = "generic_omp_yield.rs"]
 mod yield_report;
 
@@ -97,19 +99,12 @@ pub(super) fn bounded_delegation_metadata(payload: &Value) -> bool {
 
 /// `learn` stores one memory note and returns the store's acknowledgement.
 /// Its PreToolUse stays an unknown-tool review, so under enforce the call has
-/// run only after a person approved it. Without this, that approved call's
-/// result is withheld with nothing left to approve. The tool's schema has an
-/// optional string `context` beside `memory` (`src/tools/learn.ts`), which
-/// current Oh My Pi sends; any other field keeps the normal output path.
+/// run only after a person approved it, and the result it returns has nothing
+/// left to approve. Withholding it would leave Oh My Pi without the
+/// acknowledgement for a call that already happened. The note shapes this
+/// covers are named in `generic_omp_learn`.
 fn learn_input(input: &Map<String, Value>) -> bool {
-    input
-        .keys()
-        .all(|key| matches!(key.as_str(), "memory" | "context"))
-        && input.get("context").is_none_or(Value::is_string)
-        && input
-            .get("memory")
-            .and_then(Value::as_str)
-            .is_some_and(|memory| !memory.trim().is_empty())
+    learn::note_input(input)
 }
 
 /// `Some` only when a bounded proof applies; `None` keeps the normal path.
