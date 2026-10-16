@@ -159,6 +159,22 @@ pub(crate) trait SavedPolicyReader {
 /// (`request_id`, `now`, `egress_supplied`, `egress_spool_dir`,
 /// `saved_policy_probe`) are this function's to set.
 pub(crate) fn evaluate_rounds(
+    request: SupplyChainEvalRequestV1,
+    transport: &mut dyn SupplyChainEvalTransport,
+    egress: &mut dyn CallerEgress,
+    probe: Option<&mut dyn SavedPolicyReader>,
+) -> Result<SettledEvaluation, RoundsError> {
+    let settled = settle(request, transport, egress, probe);
+    if settled.is_err() {
+        // Python discards the retained blobs from its exit stack on every
+        // failed exit. A verified archive nobody claimed must not outlive the
+        // evaluation it was downloaded for: claiming nothing removes the pool.
+        let _ = egress.claim_archives(None);
+    }
+    settled
+}
+
+fn settle(
     mut request: SupplyChainEvalRequestV1,
     transport: &mut dyn SupplyChainEvalTransport,
     egress: &mut dyn CallerEgress,

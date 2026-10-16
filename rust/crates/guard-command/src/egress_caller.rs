@@ -213,12 +213,11 @@ impl<'a> EgressFulfilment<'a> {
         let descriptors = descriptors.unwrap_or(&nothing);
         match self.archives.as_mut() {
             Some(archives) => archives.claim(descriptors),
-            None => match descriptors.as_array() {
-                Some(named) if !named.is_empty() => {
-                    Err(crate::egress_caller_archive::UNHELD_ARCHIVE)
-                }
-                _ => Ok(Vec::new()),
-            },
+            // Python's `elif descriptors:` refuses any truthy descriptor here,
+            // not just a non-empty list: a malformed container still names
+            // blobs this caller never held.
+            None if truthy(descriptors) => Err(crate::egress_caller_archive::UNHELD_ARCHIVE),
+            None => Ok(Vec::new()),
         }
     }
 
@@ -681,6 +680,18 @@ fn scheme_of(url: &str) -> Option<String> {
         return None;
     }
     Some(scheme.to_ascii_lowercase())
+}
+
+/// CPython's truth value for a decoded JSON value.
+fn truthy(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::Null => false,
+        serde_json::Value::Bool(flag) => *flag,
+        serde_json::Value::Number(number) => number.as_f64() != Some(0.0),
+        serde_json::Value::String(text) => !text.is_empty(),
+        serde_json::Value::Array(items) => !items.is_empty(),
+        serde_json::Value::Object(fields) => !fields.is_empty(),
+    }
 }
 
 fn inline_text(body: &[u8]) -> Option<String> {

@@ -567,6 +567,24 @@ fn a_caller_that_retains_nothing_claims_nothing() {
 }
 
 #[test]
+fn a_failed_evaluation_releases_what_it_retained() {
+    let mut incomplete = complete_payload();
+    incomplete
+        .as_object_mut()
+        .expect("object")
+        .remove("user_copy");
+    let mut transport = ScriptedTransport::new(vec![Answer::ok("ok", Some(incomplete))]);
+    let mut egress = StubEgress::new();
+    let mut retaining = request();
+    retaining.retain_external_archive_blob = true;
+    let error = evaluate_rounds(retaining, &mut transport, &mut egress, None).expect_err("partial");
+    assert_eq!(error, RoundsError::ResidentFailure("payload_invalid"));
+    // Claiming nothing is how the caller discards a verified blob no answer
+    // ever bound, the way Python's exit stack discards it on a failed exit.
+    assert_eq!(egress.claimed, vec![None]);
+}
+
+#[test]
 fn each_round_carries_its_own_request_id() {
     let mut transport = ScriptedTransport::new(vec![
         Answer::egress(&["https://registry.npmjs.org/left-pad"]),
