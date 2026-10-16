@@ -226,6 +226,17 @@ fn an_unverifiable_vite_config_output_does_not_take_the_build_receipt() {
     if cfg!(target_os = "macos") {
         assert_eq!(literal.reason_code, NODE_BUILD);
     }
+    std::fs::create_dir_all(project.join("site")).unwrap();
+    std::fs::write(project.join("site/LOGO.PNG"), "").unwrap();
+    let cased = classify(&project, "omp", "npm run build");
+    assert_ne!(cased.decision, "allow");
+    if cfg!(target_os = "macos") {
+        assert_eq!(cased.reason_code, NODE_BUILD);
+    }
+    std::fs::write(project.join("site/.js"), "").unwrap();
+    let bare_suffix = classify(&project, "omp", "npm run build");
+    assert_ne!(bare_suffix.decision, "allow");
+    assert_ne!(bare_suffix.reason_code, NODE_BUILD);
     std::fs::create_dir_all(project.join("server")).unwrap();
     std::fs::write(project.join("server/package.json"), "{}\n").unwrap();
     std::fs::write(

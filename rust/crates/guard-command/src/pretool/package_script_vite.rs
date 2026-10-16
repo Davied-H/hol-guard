@@ -128,68 +128,81 @@ fn declared_output_is_admissible(output: &Path, directory: &Path, workspace: &Pa
 
 fn built_assets_only(output: &Path) -> bool {
     const ASSETS: &[&str] = &[
-        ".avif",
-        ".br",
-        ".css",
-        ".eot",
-        ".gif",
-        ".gz",
-        ".htm",
-        ".html",
-        ".ico",
-        ".jpeg",
-        ".jpg",
-        ".js",
-        ".json",
-        ".map",
-        ".mjs",
-        ".mp3",
-        ".mp4",
-        ".otf",
-        ".png",
-        ".svg",
-        ".ttf",
-        ".txt",
-        ".wasm",
-        ".wav",
-        ".webm",
-        ".webmanifest",
-        ".webp",
-        ".woff",
-        ".woff2",
-        ".xml",
+        "avif",
+        "br",
+        "css",
+        "eot",
+        "gif",
+        "gz",
+        "htm",
+        "html",
+        "ico",
+        "jpeg",
+        "jpg",
+        "js",
+        "json",
+        "map",
+        "mjs",
+        "mp3",
+        "mp4",
+        "otf",
+        "png",
+        "svg",
+        "ttf",
+        "txt",
+        "wasm",
+        "wav",
+        "webm",
+        "webmanifest",
+        "webp",
+        "woff",
+        "woff2",
+        "xml",
     ];
     if !output.exists() {
         return true;
     }
     let mut visited = 0usize;
-    let Ok(entries) = std::fs::read_dir(output) else {
-        return false;
-    };
-    for entry in entries.flatten() {
-        visited += 1;
-        if visited > 20_000 {
-            return false;
-        }
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        if name == "package.json" {
-            return false;
-        }
-        let Ok(metadata) = entry.metadata() else {
+    let mut pending = vec![output.to_path_buf()];
+    while let Some(dir) = pending.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
             return false;
         };
-        if metadata.is_dir() {
-            if !built_assets_only(&entry.path()) {
+        for entry in entries {
+            let Ok(entry) = entry else {
+                return false;
+            };
+            let Ok(kind) = entry.file_type() else {
+                return false;
+            };
+            // `os.walk(..., followlinks=False)` lists a link to a directory as a
+            // directory and does not descend. A link to a file is a file.
+            if kind.is_dir() {
+                pending.push(entry.path());
+                continue;
+            }
+            if kind.is_symlink() && entry.path().is_dir() {
+                continue;
+            }
+            visited += 1;
+            if visited > 20_000 {
                 return false;
             }
-            continue;
-        }
-        if name != ".gitkeep"
-            && name != ".DS_Store"
-            && !ASSETS.iter().any(|suffix| name.ends_with(suffix))
-        {
-            return false;
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if name == "package.json" {
+                return false;
+            }
+            if name == ".gitkeep" || name == ".DS_Store" {
+                continue;
+            }
+            let Some(extension) = Path::new(name.as_ref()).extension() else {
+                return false;
+            };
+            let extension = extension.to_string_lossy().to_lowercase();
+            if !ASSETS.contains(&extension.as_str()) {
+                return false;
+            }
         }
     }
     true
