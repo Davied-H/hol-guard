@@ -66,8 +66,9 @@ def local_tasks(selected_ids: list[str] | None = None) -> list[Scenario]:
 def unreviewed_calls(harness: str, calls: list[dict[str, Any]], rows: list[dict[str, Any]]) -> list[str]:
     """Tool calls that ran without a native PreToolUse receipt from Guard.
 
-    Claude's hook payload carries the transcript's tool_use id, so each shell call binds to its
-    own review. Codex ids differ between its stream and its hooks, so its hooked calls are
+    Claude's hook payload carries the transcript's tool_use id, so each hooked call (shell, Read,
+    Write, Edit; Guard's PreToolUse matcher covers all four) binds to its own review.
+    Codex ids differ between its stream and its hooks, so its hooked calls are
     matched by count, as the core harness judge does.
     """
     reviewed = [
@@ -80,7 +81,7 @@ def unreviewed_calls(harness: str, calls: list[dict[str, Any]], rows: list[dict[
     hooked = [call for call in calls if call.get("tool") in _HOOKED_TOOLS]
     if harness == "claude-code":
         ids = {(row.get("payload") or {}).get("tool_use_id") for row in reviewed}
-        return [call["id"] for call in hooked if call["tool"] == "bash" and call["id"] not in ids]
+        return [call["id"] for call in hooked if call["id"] not in ids]
     return [call["id"] for call in hooked[len(reviewed) :]]
 
 
@@ -268,7 +269,7 @@ def run_harness_full_tasks(
 ) -> dict[str, Any]:
     """Run the selected local tasks one at a time and write the false-positive report."""
     if harness not in FULL_TASK_HARNESSES:
-        raise ValueError("full tasks support --harness omp, claude-code or codex")
+        raise ValueError("the local full-task harness runner supports --harness claude-code or codex")
     if mode not in MODES:
         raise ValueError("full-task mode must be discover or enforce")
     selected = local_tasks(selected_ids)

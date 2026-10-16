@@ -13,6 +13,7 @@ import os
 import posixpath
 import re
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 
 from .full_task_git import blob, git_lines, tree
@@ -32,6 +33,51 @@ _NPM_PLACEHOLDER = "no test specified"
 GENERATED = frozenset({"__pycache__", ".pytest_cache", "node_modules", ".DS_Store"})
 TODO_ADD = ("add", "create", "new")
 TODO_FINISH = ("done", "complete", "toggle", "remove", "delete")
+_COMMENTS = re.compile(r"/\*.*?\*/|//[^\n]*|(?m:#[^\n]*$)", re.S)
+
+
+def _code(text: str) -> str:
+    """Lowercased source with line and block comments removed, so a comment is not proof of behavior."""
+    return _COMMENTS.sub(" ", text).lower()
+
+
+def _defines(text: str, words: tuple[str, ...]) -> bool:
+    """The code defines a function or method whose name contains one of ``words``."""
+    names = "|".join(words)
+    return bool(
+        re.search(rf"\b(?:def|function|func|fn|fun)\s+[\w$]*(?:{names})[\w$]*\s*\(", text)
+        or re.search(rf"[\w$]*(?:{names})[\w$]*\s*[:=]\s*(?:async\s+)?(?:function\b|\([^)]*\)\s*=>|[\w$]+\s*=>)", text)
+        or re.search(rf"^\s*(?:async\s+|static\s+)*[\w$]*(?:{names})[\w$]*\s*\([^)]*\)\s*\{{", text, re.M)
+    )
+
+
+def _todo_operations(text: str) -> bool:
+    """Code that defines both an add-like and a finish-like operation."""
+    return _defines(text, TODO_ADD) and _defines(text, TODO_FINISH)
+
+
+def _game_logic(text: str) -> bool:
+    """Code that names gravity, flapping and pipes and defines a function."""
+    return all(word in text for word in ("gravity", "flap", "pipe")) and _defines(text, ("",))
+
+
+def _parses_as_js(text: str, home: Path) -> bool:
+    """Node accepts the script as an ES module or as CommonJS."""
+    for flags in (["--input-type=module"], ["--input-type=commonjs"]):
+        try:
+            result = subprocess.run(
+                ["node", *flags, "--check", "-"],
+                input=text,
+                env={"PATH": os.environ.get("PATH", ""), "HOME": str(home)},
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return False
+        if result.returncode == 0:
+            return True
+    return False
 
 
 def _output(command: list[str], cwd: Path, home: Path) -> str | None:
@@ -74,28 +120,46 @@ def _ran_node_tests(workspace: Path, home: Path) -> bool:
     return False
 
 
-def python_test_evidence(workspace: Path, files: list[str]) -> tuple[str, bool]:
-    """Committed non-test Python source text, and whether committed tests import one of its modules.
+def _python_test(name: str) -> bool:
+    """A pytest- or unittest-discoverable test file: ``test*.py`` or ``*_test.py``."""
+    base = Path(name)
+    return name.endswith(".py") and (base.name.startswith("test") or base.stem.endswith("_test"))
 
-    Imports count with dotted paths such as ``tempconv.core`` or ``src.tempconv``.
+
+def python_test_evidence(
+    workspace: Path, files: list[str], accept: Callable[[str], bool] = lambda _text: True
+) -> tuple[str, bool]:
+    """Committed non-test Python source text, and whether one committed test file both defines tests and
+    imports a committed source module whose code ``accept`` approves.
+
+    Imports count with dotted paths such as ``tempconv.core`` or ``src.tempconv``. Each test file
+    must carry both the tests and the import; evidence split across files does not count.
     """
-    sources = [name for name in files if name.endswith(".py") and not Path(name).name.startswith("test")]
-    tests = [name for name in files if name.endswith(".py") and Path(name).name.startswith("test")]
-    text = "\n".join(blob(workspace, "HEAD", name) for name in sources).lower()
-    test_text = "\n".join(blob(workspace, "HEAD", name) for name in tests).lower()
-    modules = {part.lower() for name in sources for part in Path(name).with_suffix("").parts if part != "__init__"}
-    imported = {
-        segment
-        for statement in re.findall(r"^\s*(?:from\s+([\w.]+)|import\s+([\w., ]+))", test_text, re.MULTILINE)
-        for path in "".join(statement).split(",")
-        for segment in path.split(" as ")[0].strip().split(".")
+    sources = {
+        name: blob(workspace, "HEAD", name).lower() for name in files if name.endswith(".py") and not _python_test(name)
     }
-    has_tests = "def test" in test_text or "testcase" in test_text
-    return text, has_tests and bool(modules & imported)
+    text = "\n".join(sources.values())
+    for name in (name for name in files if _python_test(name)):
+        test_text = blob(workspace, "HEAD", name).lower()
+        if not ("def test" in test_text or "testcase" in test_text):
+            continue
+        imported = {
+            segment
+            for statement in re.findall(r"^\s*(?:from\s+([\w.]+)|import\s+([\w., ]+))", test_text, re.MULTILINE)
+            for path in "".join(statement).split(",")
+            for segment in path.split(" as ")[0].strip().split(".")
+        }
+        for source, source_text in sources.items():
+            modules = {part.lower() for part in Path(source).with_suffix("").parts if part != "__init__"}
+            if modules & imported and accept(_code(source_text)):
+                return text, True
+    return text, False
 
 
-def _js_tests_import_source(workspace: Path, files: list[str]) -> bool:
-    """A committed JS test imports a committed non-test module by a relative path."""
+def _js_tests_import_source(
+    workspace: Path, files: list[str], accept: Callable[[str], bool] = lambda _text: True
+) -> bool:
+    """A committed JS test imports a committed non-test module, by a relative path, whose code ``accept`` approves."""
     committed = set(files)
     sources = {name for name in files if name.endswith(JS_SUFFIXES) and not _JS_TEST.search(name)}
     for test in (name for name in files if name.endswith(JS_SUFFIXES) and _JS_TEST.search(name)):
@@ -105,8 +169,9 @@ def _js_tests_import_source(workspace: Path, files: list[str]) -> bool:
         for target in _JS_IMPORT.findall(text):
             resolved = posixpath.normpath(posixpath.join(posixpath.dirname(test), target))
             candidates = {resolved, *(resolved + suffix for suffix in JS_SUFFIXES), resolved + "/index.js"}
-            if candidates & sources & committed:
-                return True
+            for source in candidates & sources & committed:
+                if accept(_code(blob(workspace, "HEAD", source))):
+                    return True
     return False
 
 
@@ -130,12 +195,26 @@ def flappy_bird_checks(workspace: Path, home: Path) -> dict[str, bool]:
         blob(workspace, "HEAD", name) for name in files if name.endswith(JS_SUFFIXES) and not _JS_TEST.search(name)
     )
     game = (pages + "\n" + scripts).lower()
+    inline = re.findall(r"<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>", pages, re.S | re.I)
+    plain = [
+        blob(workspace, "HEAD", name)
+        for name in files
+        if name.endswith((".js", ".mjs", ".cjs")) and not _JS_TEST.search(name)
+    ]
+    # TypeScript and JSX need a compiler Node does not ship; their text is judged without a parse.
+    typed = [
+        blob(workspace, "HEAD", name)
+        for name in files
+        if name.endswith((".ts", ".tsx", ".jsx")) and not _JS_TEST.search(name)
+    ]
+    parsed = [text for text in plain + inline if _parses_as_js(text, home)] + typed
+    code = _code("\n".join(parsed))
+    loop = re.search(r"requestanimationframe\s*\(|setinterval\s*\(", code) is not None
     return {
         "task:committed-html-canvas": bool(pages)
         and ("<canvas" in pages.lower() or "createelement('canvas')" in game or 'createelement("canvas")' in game),
-        "task:committed-game-loop": "requestanimationframe" in game
-        and all(word in game for word in ("gravity", "flap", "pipe")),
-        "task:committed-tests": _js_tests_import_source(workspace, files),
+        "task:committed-game-loop": loop and _game_logic(code),
+        "task:committed-tests": _js_tests_import_source(workspace, files, _game_logic),
         "task:tests-pass": _ran_node_tests(workspace, home),
         "task:committed-clean": clean,
     }
@@ -145,15 +224,13 @@ def todo_local_checks(workspace: Path, home: Path) -> dict[str, bool]:
     """A committed todo app in any common language, with committed passing tests that import it."""
     clean = committed_clean(workspace)
     files = tree(workspace, "HEAD")
-    python_text, python_tests = python_test_evidence(workspace, files)
+    python_text, python_tests = python_test_evidence(workspace, files, _todo_operations)
     sources = [name for name in files if name.endswith(APP_SUFFIXES) and not _JS_TEST.search(name)]
     text = "\n".join(blob(workspace, "HEAD", name) for name in sources if not name.endswith(".py")).lower()
     text += "\n" + python_text
     return {
-        "task:committed-app-source": "todo" in text
-        and any(word in text for word in TODO_ADD)
-        and any(word in text for word in TODO_FINISH),
-        "task:committed-tests": python_tests or _js_tests_import_source(workspace, files),
+        "task:committed-app-source": "todo" in text and _todo_operations(_code(text)),
+        "task:committed-tests": python_tests or _js_tests_import_source(workspace, files, _todo_operations),
         "task:tests-pass": _ran_python_tests(workspace, home) or _ran_node_tests(workspace, home),
         "task:committed-clean": clean,
     }

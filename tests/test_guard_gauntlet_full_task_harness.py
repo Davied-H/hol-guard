@@ -190,6 +190,8 @@ def test_unreviewed_calls_binds_claude_ids_and_counts_codex_calls() -> None:
     rows = [_tap("PreToolUse", "allow", tool_use_id="t1")]
     calls = [{"id": "t1", "tool": "bash"}, {"id": "t2", "tool": "bash"}, {"id": "g", "tool": "Glob"}]
     assert unreviewed_calls("claude-code", calls, rows) == ["t2"]
+    files = [{"id": f"f{n}", "tool": tool} for n, tool in enumerate(("read", "write", "edit"))]
+    assert unreviewed_calls("claude-code", files + calls[:1], rows) == ["f0", "f1", "f2"]
     assert unreviewed_calls("codex", [{"id": "i1", "tool": "bash"}], rows) == []
     assert unreviewed_calls("codex", [{"id": "i1", "tool": "bash"}, {"id": "i2", "tool": "edit"}], rows) == ["i2"]
 
@@ -297,3 +299,62 @@ def test_cli_runs_local_full_tasks_through_a_harness(monkeypatch, capsys, harnes
     assert code == 0
     assert seen["harness"] == harness and seen["mode"] == mode and seen["selected_ids"] == ["flappy-bird-game"]
     assert seen["model_timeout"] == 900
+
+
+def test_flappy_bird_keywords_without_real_code_fail(tmp_path: Path) -> None:
+    fixture = create_full_task_fixture(tmp_path / "task-01", "flappy-bird-game")
+    fluff = "// requestAnimationFrame gravity flap pipe\nfunction broken( {\n"
+    _commit(
+        fixture,
+        {
+            "index.html": "<canvas></canvas><script src=game.js></script>",
+            "game.js": fluff,
+            "other.js": "export function add(a, b) { return a + b; }\n",
+            "other.test.js": (
+                "import { test } from 'node:test';\nimport { add } from './other.js';\ntest('x', () => add(1, 2));\n"
+            ),
+        },
+    )
+    checks = full_task_checks(fixture, "flappy-bird-game")
+    assert not checks["task:committed-game-loop"] and not checks["task:committed-tests"]
+
+
+def test_todo_comment_only_source_and_unrelated_module_fail(tmp_path: Path) -> None:
+    fixture = create_full_task_fixture(tmp_path / "task-01", "todo-app-local")
+    _commit(
+        fixture,
+        {
+            "todo.py": "# todo: add and complete items\n",
+            "test_todo.py": "import todo\n\ndef test_x():\n    assert True\n",
+        },
+    )
+    checks = full_task_checks(fixture, "todo-app-local")
+    assert not checks["task:committed-app-source"] and not checks["task:committed-tests"]
+
+
+def test_todo_suffix_named_test_file_counts(tmp_path: Path) -> None:
+    fixture = create_full_task_fixture(tmp_path / "task-01", "todo-app-local")
+    _commit(fixture, {"todo.py": TODO_SOURCE, "tests/todo_test.py": TODO_TEST})
+    checks = full_task_checks(fixture, "todo-app-local")
+    assert checks["task:committed-tests"] and checks["task:committed-app-source"]
+
+
+def test_todo_import_and_tests_split_across_files_fail(tmp_path: Path) -> None:
+    fixture = create_full_task_fixture(tmp_path / "task-01", "todo-app-local")
+    _commit(
+        fixture,
+        {
+            "todo.py": TODO_SOURCE,
+            "test_import.py": "from todo import TodoList\n",
+            "test_other.py": "def test_nothing():\n    assert True\n",
+        },
+    )
+    assert not full_task_checks(fixture, "todo-app-local")["task:committed-tests"]
+
+
+def test_runner_rejects_unsupported_harness_with_accurate_message() -> None:
+    from ci.gauntlet.full_task_harness import run_harness_full_tasks
+
+    with pytest.raises(ValueError, match="claude-code or codex") as raised:
+        run_harness_full_tasks(harness="omp", expected_source_sha="x", output=Path("unused"), mode="enforce")
+    assert "omp" not in str(raised.value)
