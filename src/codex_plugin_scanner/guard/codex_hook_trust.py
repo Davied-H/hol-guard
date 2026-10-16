@@ -195,7 +195,7 @@ def remap_hook_state(before: Mapping[str, object], hooks: dict[str, object], con
         prefix = next((value for value in prefixes if key.startswith(f"{value}:")), None)
         coordinate = key[len(prefix) + 1 :] if prefix is not None else None
         digest = was.get(coordinate) if coordinate is not None else None
-        if digest is None or now.get(coordinate) == digest:
+        if coordinate is None or digest is None or now.get(coordinate) == digest:
             kept[key] = entry
             continue
         moved = [name for name, value in now.items() if value == digest]
