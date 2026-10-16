@@ -231,11 +231,13 @@ fn request_matches_the_decide_wire_shape() {
     let facts = facts();
     let catalog = RelayCatalog::default();
     let call = params(json!({"name": "read", "arguments": {"path": "a.txt"}}));
-    let (payload, expected) = decide_request(&facts, &call, None, &catalog, &no_prompt()).unwrap();
+    let (request, expected) = decide_request(&facts, &call, None, &catalog, &no_prompt()).unwrap();
     assert_eq!(expected, catalog.snapshot());
-    let payload: Value = serde_json::from_slice(&payload).unwrap();
+    // The bytes the resident reads wrap the same request in its operation.
+    let payload: Value =
+        serde_json::from_slice(&request::decide_payload(&request).unwrap()).unwrap();
     assert_eq!(payload["operation"], json!("mcp_relay_decide"));
-    let request = payload["request"].clone();
+    assert_eq!(payload["request"], request);
     assert_eq!(
         request["build"]["tool"],
         json!({"kind": "catalog", "entry": null})
@@ -302,6 +304,12 @@ fn replies_map_to_forward_or_block() {
         Some(Reply::Elicit {
             params: json!({"mode": "form"}),
         })
+    );
+    // The package evaluation the relay performs before the call is decided.
+    let evaluate = json!({"schema": RESULT_SCHEMA, "outcome": "evaluate"});
+    assert_eq!(
+        reply(&serde_json::to_vec(&evaluate).unwrap()),
+        Some(Reply::Evaluate)
     );
     let claim = json!({"schema": RESULT_SCHEMA, "outcome": "claim", "ticket": "claim-1:1"});
     let held = Some(Reply::Claim {
@@ -435,13 +443,55 @@ fn the_request_carries_the_prompt_the_relay_owns() {
     let catalog = RelayCatalog::default();
     let call = params(json!({"name": "read", "arguments": {"path": "a.txt"}}));
     let inline = json!({"available": true, "answer": "denied"});
-    let (payload, _) = decide_request(&facts, &call, None, &catalog, &inline).unwrap();
-    let payload: Value = serde_json::from_slice(&payload).unwrap();
-    assert_eq!(payload["request"]["inline"], inline);
-    let decoded: McpRelayDecideRequestV1 =
-        serde_json::from_value(payload["request"].clone()).unwrap();
+    let (request, _) = decide_request(&facts, &call, None, &catalog, &inline).unwrap();
+    assert_eq!(request["inline"], inline);
+    let decoded: McpRelayDecideRequestV1 = serde_json::from_value(request).unwrap();
     assert!(decoded.inline.available);
     assert_eq!(decoded.inline.answer, Some(InlineReply::Denied));
+}
+
+#[test]
+fn the_second_send_carries_the_evaluation_and_nothing_else_new() {
+    let facts = facts();
+    let catalog = RelayCatalog::default();
+    let call = params(json!({"name": "bash", "arguments": {"command": "npm install left-pad"}}));
+    let (request, _) = decide_request(&facts, &call, None, &catalog, &no_prompt()).unwrap();
+    let environment: Map<String, Value> = [("PATH".to_owned(), json!("/usr/bin"))]
+        .into_iter()
+        .collect();
+    let evaluation: Map<String, Value> = [("decision".to_owned(), json!("allow"))]
+        .into_iter()
+        .collect();
+    let payload = request::evaluated_request(&request, environment, evaluation).unwrap();
+    let payload: Value = serde_json::from_slice(&payload).unwrap();
+    assert_eq!(payload["operation"], json!("mcp_relay_decide"));
+    let sent = payload["request"].as_object().unwrap().clone();
+    assert_eq!(sent["environment"], json!({"PATH": "/usr/bin"}));
+    assert_eq!(sent["package_evaluation"], json!({"decision": "allow"}));
+    // Every other field is the request the first send carried, so the two
+    // decides of one call are the same call.
+    let mut first = sent;
+    first.remove("environment");
+    first.remove("package_evaluation");
+    assert_eq!(Value::Object(first), request);
+    // The resident reads the environment and the evaluation as optional, so
+    // the first send omits both.
+    let decoded: McpRelayDecideRequestV1 = serde_json::from_value(request).unwrap();
+    assert!(decoded.environment.is_empty());
+    assert!(decoded.package_evaluation.is_none());
+}
+
+/// The process the relay runs in reports its own environment, which the
+/// execution context a package policy digests is built from.
+#[test]
+fn the_relaying_process_reports_its_environment() {
+    // A host with a variable this process cannot read as UTF-8 is one the
+    // proxy could not have sent either, and reports nothing at all.
+    let Some(environment) = request::process_environment() else {
+        return;
+    };
+    let path = std::env::var("PATH").unwrap();
+    assert_eq!(environment.get("PATH"), Some(&json!(path)));
 }
 
 fn result(id: i64) -> Value {

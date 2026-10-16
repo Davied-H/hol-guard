@@ -34,6 +34,7 @@ use std::time::{Duration, Instant};
 use serde_json::{json, Map, Value};
 
 use crate::claude_hook_bridge_http::remaining;
+use crate::managed_policy_load::ManagedPolicySource;
 use crate::mcp_relay_args::RelayArgs;
 use crate::mcp_relay_authority::{
     blocked_response, no_decision_response, tool_name, ClaimTicket, ForwardTicket, RelayAuthority,
@@ -42,8 +43,10 @@ use crate::mcp_relay_authority::{
 use crate::mcp_relay_catalog::{CatalogSnapshot, RelayCatalog};
 use crate::mcp_relay_decide::inline::Reply as InlineReply;
 use crate::mcp_relay_launch::Launch;
+use crate::mcp_relay_package_eval::{evaluate_package_request, PackageEvalFacts};
 use crate::mcp_relay_pending::COMMIT_RESULT_SCHEMA;
 use crate::resident_state::ResidentState;
+use crate::supply_chain_eval_transport::ResidentEvalTransport;
 
 const STATE_DIRECTORY: &str = "native-runtime";
 const RESULT_SCHEMA: &str = "guard-mcp-relay-decide-result.v1";
@@ -246,6 +249,47 @@ impl ResidentRelayAuthority {
         self.resident = Some(fresh);
         output.ok()
     }
+
+    /// Evaluate the package request one call carries, and build the decide
+    /// request that carries the verdict back.
+    ///
+    /// The evaluation travels on the lane the decision travels on, and its
+    /// rounds are requests like any other (`ResidentLane`). An evaluation that
+    /// settles on no verdict, a call whose intent this process does not read
+    /// and an environment the proxy could not have sent all leave the call
+    /// undecided, which fails it closed.
+    fn evaluated(&mut self, request: &Value) -> Option<Vec<u8>> {
+        let intent = crate::mcp_relay_decide::relayed_package_intent(request.clone())?;
+        let environment = request::process_environment()?;
+        let session = self.facts.as_ref()?;
+        let guard_home = session.guard_home.clone();
+        let workspace = session.workspace.clone();
+        let harness = session.harness.clone();
+        let source_scope = session.source_scope.clone();
+        let config_path = session.config_path.clone();
+        let facts = PackageEvalFacts {
+            guard_home: &guard_home,
+            workspace: workspace.as_deref(),
+            harness: &harness,
+            source_scope: &source_scope,
+            config_path: &config_path,
+        };
+        let home = PathBuf::from(&guard_home);
+        let mut transport = ResidentEvalTransport::new(self, &home);
+        // The proxy authorizes the external-archive network only for the
+        // evaluation it runs after a claim (`runtime_mcp.py:1832`), and a
+        // relayed package call is never answered from a claim.
+        let settled = evaluate_package_request(
+            &facts,
+            &intent,
+            false,
+            &ManagedPolicySource::native(),
+            &mut transport,
+        )
+        .ok()?;
+        let evaluation = settled.payload.as_object()?.clone();
+        request::evaluated_request(request, environment, evaluation)
+    }
 }
 
 /// A package evaluation borrows the same lane a decision travels on: the
@@ -284,8 +328,12 @@ impl RelayAuthority for ResidentRelayAuthority {
             "available": self.inline_available,
             "answer": self.inline_answer.take(),
         });
-        let Some((message, payload, expected)) = prepare(facts, message, order, catalog, &inline)
+        let Some((message, request, expected)) = prepare(facts, message, order, catalog, &inline)
         else {
+            defer::note(defer::REQUEST_UNSENDABLE);
+            return no_decision();
+        };
+        let Some(payload) = request::decide_payload(&request) else {
             defer::note(defer::REQUEST_UNSENDABLE);
             return no_decision();
         };
@@ -293,6 +341,17 @@ impl RelayAuthority for ResidentRelayAuthority {
         self.warm_up();
         let mut output = self.exchange(&guard_home, &payload);
         if reply_of(output.as_deref()).is_none() && self.rekick(output.as_deref()) {
+            output = self.exchange(&guard_home, &payload);
+        }
+        // A package call is decided from an evaluation whose archive and
+        // registry rounds this relay performs, which the decide round trip
+        // cannot hold. The resident asks for it once and the same call is sent
+        // again with it attached.
+        if matches!(reply_of(output.as_deref()), Some(Reply::Evaluate)) {
+            let Some(payload) = self.evaluated(&request) else {
+                defer::note(defer::PACKAGE_UNEVALUATED);
+                return no_decision();
+            };
             output = self.exchange(&guard_home, &payload);
         }
         match output.as_deref().and_then(reply) {
@@ -313,6 +372,12 @@ impl RelayAuthority for ResidentRelayAuthority {
                 Some(&message),
                 Some(data),
             )),
+            // The evaluation travels with the second send, so a second request
+            // for one is an answer this exchange cannot take.
+            Some(Reply::Evaluate) => {
+                defer::note(defer::PACKAGE_UNDECIDED);
+                no_decision()
+            }
             None => {
                 defer::note(&defer::reply_cause(output.as_deref()));
                 no_decision()
@@ -356,8 +421,13 @@ impl RelayAuthority for ResidentRelayAuthority {
                 ))
             }
             // The decision the claim settles was already made, so a second
-            // claim and a prompt are both answers this exchange cannot take.
-            Some(Reply::Claim { .. }) | Some(Reply::Elicit { .. }) | None => no_decision,
+            // claim, a prompt and an evaluation are all answers this exchange
+            // cannot take. A claim is held only for a call with no package
+            // intent, which the resident's own gate refuses after the claim.
+            Some(Reply::Claim { .. })
+            | Some(Reply::Elicit { .. })
+            | Some(Reply::Evaluate)
+            | None => no_decision,
         }
     }
 
@@ -419,11 +489,11 @@ fn prepare(
     order: Option<&[String]>,
     catalog: &RelayCatalog,
     inline: &Value,
-) -> Option<(Value, Vec<u8>, CatalogSnapshot)> {
+) -> Option<(Value, Value, CatalogSnapshot)> {
     let frame = python_canonical(message).filter(|frame| frame.get("id") == message.get("id"))?;
     let call = frame.get("params")?.as_object()?;
-    let (payload, expected) = decide_request(facts, call, order, catalog, inline)?;
-    Some((frame, payload, expected))
+    let (request, expected) = decide_request(facts, call, order, catalog, inline)?;
+    Some((frame, request, expected))
 }
 
 /// How the resident answered one commit.
@@ -459,6 +529,9 @@ enum Reply {
     Elicit {
         params: Value,
     },
+    /// Evaluate the package request this call carries, then decide it again
+    /// with the evaluation attached.
+    Evaluate,
 }
 
 fn reply_of(output: Option<&[u8]>) -> Option<Reply> {
@@ -480,6 +553,7 @@ fn reply(output: &[u8]) -> Option<Reply> {
     match result.get("outcome")?.as_str()? {
         "forward" => Some(Reply::Forward { ticket: ticket()? }),
         "claim" => Some(Reply::Claim { ticket: ticket()? }),
+        "evaluate" => Some(Reply::Evaluate),
         "elicit" => Some(Reply::Elicit {
             params: result
                 .get("params")

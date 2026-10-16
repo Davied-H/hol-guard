@@ -247,6 +247,18 @@ pub(crate) fn evaluate(
     encode(answer)
 }
 
+/// The package request one decide request carries, as this gate reads it.
+///
+/// The relay parses the intent of the call it is evaluating in process, from
+/// the request it sent. `PackageIntent` is not wire-serializable, so the two
+/// halves each parse the same inputs rather than shipping one to the other
+/// (`mcp_relay_decide_package.rs`). A request this gate refuses carries no
+/// intent for the relay either, so the call is evaluated by neither.
+pub(crate) fn relayed_package_intent(request: Value) -> Option<PackageIntent> {
+    let request: McpRelayDecideRequestV1 = serde_json::from_value(request).ok()?;
+    package::package_gate(&request).ok().flatten()
+}
+
 /// Hand later sessions of a server whose call went to the package policy to
 /// the proxy, which decides such calls (`mcp_relay_servers.rs`).
 fn mark_package_server(request: &McpRelayDecideRequestV1, policy_store: &PolicySnapshotStore) {

@@ -5,7 +5,13 @@ use serde_json::json;
 
 /// A decide request for `tool` with `arguments` in the relay's wire form.
 fn request(tool: &str, arguments: Value) -> McpRelayDecideRequestV1 {
-    serde_json::from_value(json!({
+    serde_json::from_value(wire(tool, arguments)).unwrap()
+}
+
+/// The same request as the relay sends it, which the relay's own gate reads
+/// back to evaluate the call.
+fn wire(tool: &str, arguments: Value) -> Value {
+    json!({
         "guard_home": "/guard",
         "hash_workspace": "/work",
         "build": {
@@ -26,8 +32,7 @@ fn request(tool: &str, arguments: Value) -> McpRelayDecideRequestV1 {
         "launcher_home": "/home/user",
         "catalog_state": "present",
         "params": {"name": tool},
-    }))
-    .unwrap()
+    })
 }
 
 fn mapping(entries: Value) -> Value {
@@ -90,6 +95,25 @@ fn a_package_intent_is_the_gate_s_answer() {
             "{tool} {arguments}"
         );
     }
+}
+
+/// The relay evaluates the request it sent, so both halves of one call read
+/// the same intent out of the same gate.
+#[test]
+fn the_relay_reads_the_same_intent_out_of_the_request_it_sent() {
+    let intent = |tool, arguments| {
+        crate::mcp_relay_decide::relayed_package_intent(wire(tool, arguments)).is_some()
+    };
+    let install = mapping(json!([["command", "npm install left-pad"]]));
+    assert!(intent("bash", install));
+    assert!(!intent("bash", mapping(json!([["command", "ls -la"]]))));
+    // A request the gate refuses carries no intent for the relay either.
+    let separated = mapping(json!([["command", "\u{1c}npm install left-pad"]]));
+    assert!(!intent("read", separated));
+    // Nor does one this process cannot read as a decide request at all.
+    assert!(
+        crate::mcp_relay_decide::relayed_package_intent(json!({"guard_home": "/guard"})).is_none()
+    );
 }
 
 #[test]
