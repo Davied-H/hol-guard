@@ -46,6 +46,10 @@ mod session {
     }
 
     pub(super) fn run(python_argv: &[String]) -> i32 {
+        // The host reads this relay's stdio to EOF, so no child the relay
+        // starts (a detached daemon launch included) may hold it open.
+        #[cfg(windows)]
+        guard_runtime_windows_process::disinherit_standard_handles();
         let args = match parse(python_argv) {
             Ok(args) => args,
             Err(reason) => return fail(&reason, 2),

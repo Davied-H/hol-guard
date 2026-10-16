@@ -19,8 +19,10 @@ import pytest
 
 _STDIN = b""
 _FAKE_PROXY = """import json, os, sys
-record = {{"argv": sys.argv[1:], "env": dict(os.environ), "stdin": sys.stdin.buffer.read().hex()}}
-name = "ensure" if "daemon" in sys.argv[1:] else "proxy"
+# Run as a module, the fake reports the interpreter arguments the relay passed.
+argv = sys.orig_argv[1:] if __spec__ is not None else sys.argv[1:]
+record = {{"argv": argv, "env": dict(os.environ), "stdin": sys.stdin.buffer.read().hex()}}
+name = "ensure" if "daemon" in argv else "proxy"
 with open(os.path.join({log!r}, name + ".json"), "w", encoding="utf-8") as handle:
     json.dump(record, handle)
 """
@@ -33,19 +35,24 @@ def _runtime() -> Path:
     return Path(binary).resolve()
 
 
-def _fake_python(root: Path, source: str) -> Path:
-    """An executable standing in for the proxy's interpreter, running ``source``."""
+def _fake_python(root: Path, source: str) -> tuple[Path, dict[str, str]]:
+    """The interpreter the proxy argv names, and the environment that fakes the proxy.
 
-    script = root / "fake_python.py"
-    script.write_text(source, encoding="utf-8")
+    On Windows the relay starts the daemon ensure detached, where a ``.cmd``
+    launcher never runs, so the real interpreter imports a fake
+    ``codex_plugin_scanner.cli`` from ``PYTHONPATH`` instead.
+    """
+
     if os.name == "nt":
-        launcher = root / "python.cmd"
-        launcher.write_text(f'@"{sys.executable}" "{script}" %*\r\n', encoding="utf-8")
-        return launcher
+        package = root / "fake-proxy" / "codex_plugin_scanner"
+        package.mkdir(parents=True)
+        (package / "__init__.py").write_text("", encoding="utf-8")
+        (package / "cli.py").write_text(source, encoding="utf-8")
+        return Path(sys.executable), {"PYTHONPATH": str(package.parent)}
     launcher = root / "python"
     launcher.write_text(f"#!{sys.executable}\n" + source, encoding="utf-8")
     launcher.chmod(0o700)
-    return launcher
+    return launcher, {}
 
 
 def _environment(home: Path) -> dict[str, str]:
@@ -77,7 +84,7 @@ def test_a_down_daemon_keeps_the_session_native_and_starts_one_ensure(tmp_path: 
     log, guard_home, workspace = tmp_path / "log", tmp_path / "guard-home", tmp_path / "workspace"
     for directory in (log, guard_home, workspace):
         directory.mkdir(mode=0o700)
-    fake = _fake_python(tmp_path, _FAKE_PROXY.format(log=str(log)))
+    fake, fake_env = _fake_python(tmp_path, _FAKE_PROXY.format(log=str(log)))
     proxy_args = [
         "-m",
         "codex_plugin_scanner.cli",
@@ -97,7 +104,7 @@ def test_a_down_daemon_keeps_the_session_native_and_starts_one_ensure(tmp_path: 
         # An interpreter reading an empty stdin exits at once, like cat.
         sys.executable if os.name == "nt" else "/bin/cat",
     ]
-    env = _environment(tmp_path)
+    env = {**_environment(tmp_path), **fake_env}
     completed = subprocess.run(
         [str(runtime), "mcp-relay", str(fake), *proxy_args],
         input=_STDIN,
