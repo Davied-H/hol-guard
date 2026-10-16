@@ -136,6 +136,7 @@ pub mod pretool_package_directory_flags;
 pub mod pretool_package_script_routes;
 pub mod pretool_parent_relative_writes;
 pub mod pretool_pi_tools;
+pub mod pretool_private_temp_cd;
 pub mod pretool_private_temporary_workspace;
 pub mod pretool_process_probe_chains;
 pub mod pretool_prompt_negation_scope;
