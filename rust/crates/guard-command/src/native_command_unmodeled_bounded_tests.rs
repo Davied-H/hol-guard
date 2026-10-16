@@ -58,6 +58,7 @@ fn xargs_options_are_read_past_to_its_program() {
         "xargs -n20 rm",
         "xargs -I{} cp {} /tmp",
         "xargs -i rm",
+        "xargs -J rm evil",
         "xargs --replace mv",
         "xargs --max-args=3 rm",
         "xargs -- rm -f",
@@ -75,6 +76,13 @@ fn xargs_options_are_read_past_to_its_program() {
         "xargs -I X X",
         "xargs -I CMD CMD --flag",
         "cat list | xargs -I % %",
+        // A clustered short option still carries `-I`, and `-J` takes the
+        // replacement rather than the program.
+        "xargs -0I{} {}",
+        "xargs -tI X X",
+        "xargs -0n 3 sh -c 'rm'",
+        "xargs -J {} {}",
+        "xargs -Z rm",
         "xargs --max-args 3",
         // A long option this does not know may take the next word.
         "xargs --future-option rm",

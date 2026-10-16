@@ -68,31 +68,34 @@ fn xargs_operand(rest: &[&str]) -> bool {
         if !word.starts_with('-') {
             return named_program(word, replace.as_deref());
         }
-        if let Some(token) = attached_replacement(word) {
-            replace = Some(token);
+        if let Some(token) = word
+            .strip_prefix("--replace=")
+            .filter(|token| !token.is_empty())
+        {
+            replace = Some(token.to_owned());
             continue;
         }
-        if *word == "-i" || *word == "--replace" {
+        if *word == "--replace" {
             replace = Some("{}".to_owned());
             continue;
         }
-        // `--max-args=3` carries its own value.
-        if word.contains('=') {
-            continue;
-        }
-        if XARGS_VALUE_OPTIONS.contains(word) {
-            let Some(value) = words.next() else {
-                return false;
-            };
-            if *word == "-I" {
-                replace = Some((*value).to_owned());
-            }
-            continue;
-        }
-        // A long option this does not know may take the next word, which
-        // would then be read as the program. A short one such as `-0` or
-        // `-n3` carries whatever value it has itself.
         if word.starts_with("--") {
+            // `--max-args=3` carries its own value. An unknown long option
+            // may take the next word, which would then be read as the program.
+            if word.contains('=') {
+                continue;
+            }
+            if XARGS_VALUE_OPTIONS.contains(word) {
+                if words.next().is_none() {
+                    return false;
+                }
+                continue;
+            }
+            return false;
+        }
+        // Short options cluster, so `-0I{}` is `-0` and `-I{}`, and an
+        // unknown letter may take the next word as its value.
+        if !short_option(word, &mut words, &mut replace) {
             return false;
         }
     }
@@ -107,21 +110,45 @@ fn redirect(word: &str) -> bool {
     word.contains(['<', '>'])
 }
 
-/// The replacement token carried on the option itself: `-I{}`, `-iCMD`,
-/// `--replace=X`. A bare `-I`, `-i` or `--replace` is not one of these.
-fn attached_replacement(word: &str) -> Option<String> {
-    if let Some(token) = word
-        .strip_prefix("--replace=")
-        .filter(|token| !token.is_empty())
-    {
-        return Some(token.to_owned());
-    }
-    for prefix in ["-I", "-i"] {
-        if let Some(token) = word.strip_prefix(prefix).filter(|token| !token.is_empty()) {
-            return Some(token.to_owned());
+/// One short-option word, clustered the way getopt reads it. `I`, `i` and
+/// `J` record their replacement token. An unknown letter takes a value this
+/// does not know how to skip, so the program after it is not one this text
+/// has identified.
+fn short_option(
+    word: &str,
+    words: &mut std::slice::Iter<&str>,
+    replace: &mut Option<String>,
+) -> bool {
+    let Some(body) = word.strip_prefix('-').filter(|body| !body.is_empty()) else {
+        return false;
+    };
+    let bytes = body.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        let letter = bytes[index] as char;
+        index += 1;
+        if "0txrp".contains(letter) {
+            continue;
         }
+        let attached = &body[index..];
+        let value = if !attached.is_empty() {
+            Some(attached.to_owned())
+        } else if "eil".contains(letter) {
+            None
+        } else if "aEILnPsdJ".contains(letter) {
+            match words.next() {
+                Some(value) => Some((*value).to_owned()),
+                None => return false,
+            }
+        } else {
+            return false;
+        };
+        if matches!(letter, 'I' | 'i' | 'J') {
+            *replace = Some(value.unwrap_or_else(|| "{}".to_owned()));
+        }
+        return true;
     }
-    None
+    true
 }
 
 fn named_program(word: &str, replace: Option<&str>) -> bool {
