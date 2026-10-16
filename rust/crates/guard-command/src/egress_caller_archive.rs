@@ -28,11 +28,14 @@ use crate::archive_inspection::{
     DEFAULT_MAX_MEMBER_BYTES, DEFAULT_MAX_MEMORY_BYTES, DEFAULT_MAX_NESTED_ARCHIVES,
     DEFAULT_MAX_PATH_DEPTH,
 };
-use crate::egress_caller::ArchiveEgress;
+use crate::egress_caller::{
+    policy_code, ArchiveEgress, EgressPolicy, ARCHIVE_POLICY_REFUSAL_MESSAGE,
+};
 use crate::local_supply_chain::stable_digest_hex;
 use crate::restricted_archive::{
-    download_restricted_archive, DnsResolver, PinnedHttpsTransport, RestrictedArchiveDownload,
-    RestrictedArchiveDownloadResult,
+    download_restricted_archive, CanonicalDestination, DnsResolver, PinnedHttpsTransport,
+    ReadableResponse, RestrictedArchiveDownload, RestrictedArchiveDownloadResult,
+    RestrictedDownloadError,
 };
 
 /// Time kept back for the inspection worker parent's termination grace.
@@ -73,9 +76,14 @@ pub trait ArchiveInspectApi {
 }
 
 /// Acquisition through the pinned transport under the managed network policy.
+///
+/// The policy is not advisory here: it is bound to the transport, so the
+/// destination and every redirect are validated before DNS or a socket, the
+/// same answer the caller's HTTP needs get.
 pub struct NativeArchiveDownload<'a> {
     pub resolver: &'a dyn DnsResolver,
     pub transport: &'a dyn PinnedHttpsTransport,
+    pub policy: &'a (dyn EgressPolicy + Send + Sync),
 }
 
 impl ArchiveDownloadApi for NativeArchiveDownload<'_> {
@@ -87,6 +95,10 @@ impl ArchiveDownloadApi for NativeArchiveDownload<'_> {
         timeout_seconds: f64,
         temp_dir: Option<&Path>,
     ) -> RestrictedArchiveDownloadResult {
+        let bound = PolicyBoundTransport {
+            inner: self.transport,
+            policy: self.policy,
+        };
         download_restricted_archive(
             url,
             max_bytes,
@@ -94,8 +106,43 @@ impl ArchiveDownloadApi for NativeArchiveDownload<'_> {
             timeout_seconds,
             temp_dir,
             self.resolver,
-            self.transport,
+            &bound,
         )
+    }
+}
+
+/// A pinned transport bound to the caller's managed network policy.
+///
+/// `download_restricted_archive` validates every hop through the transport, so
+/// a destination the policy refuses never reaches DNS, and a redirect cannot
+/// carry the download to a host the policy would have refused.
+pub struct PolicyBoundTransport<'a> {
+    pub inner: &'a dyn PinnedHttpsTransport,
+    pub policy: &'a (dyn EgressPolicy + Send + Sync),
+}
+
+impl PinnedHttpsTransport for PolicyBoundTransport<'_> {
+    fn validate_destination(
+        &self,
+        destination: &CanonicalDestination,
+    ) -> Result<(), RestrictedDownloadError> {
+        if let Err(code) = self.policy.validate(&destination.url) {
+            return Err(RestrictedDownloadError::new(
+                &policy_code(&code),
+                ARCHIVE_POLICY_REFUSAL_MESSAGE,
+            ));
+        }
+        self.inner.validate_destination(destination)
+    }
+
+    fn open_pinned_https_response(
+        &self,
+        destination: &CanonicalDestination,
+        address: &str,
+        deadline: Instant,
+    ) -> Result<Box<dyn ReadableResponse>, RestrictedDownloadError> {
+        self.inner
+            .open_pinned_https_response(destination, address, deadline)
     }
 }
 

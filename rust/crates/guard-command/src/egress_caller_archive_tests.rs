@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use serde_json::json;
 
-use crate::egress_caller::{EgressFulfilment, UnmanagedEgressPolicy};
+use crate::egress_caller::{EgressFulfilment, EgressPolicy, UnmanagedEgressPolicy};
 use crate::restricted_archive::RestrictedArchiveFailure;
 
 const SHA: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
@@ -329,6 +329,61 @@ fn an_uninspected_archive_reports_no_verdict_and_leaves_the_scratch_empty() {
     assert!(downloads.calls()[0].2);
     assert!(!downloads.path(0).exists());
     assert_eq!(std::fs::read_dir(&scratch_dir).expect("scratch").count(), 0);
+}
+
+#[test]
+fn a_destination_the_policy_refuses_is_never_downloaded() {
+    struct Refusing;
+    impl EgressPolicy for Refusing {
+        fn validate(&self, _url: &str) -> Result<(), String> {
+            Err("managed_public_registry_disabled".to_owned())
+        }
+    }
+    let downloads = Downloads::new("policy-refused");
+    let inspections = Inspections::new("clean");
+    let mut archives =
+        ArchiveFulfilment::new(&scratch("policy-refused"), false, &downloads, &inspections);
+    let spool = scratch("policy-refused-spool");
+    let mut caller = EgressFulfilment::with_archives(&spool, &Refusing, &mut archives);
+    caller
+        .fulfil(&[need("https://registry.npmjs.org/pkg.tgz", Some(spec(30.0)))])
+        .expect("fulfil");
+    assert!(
+        matches!(&caller.supplied()[0].outcome, EgressOutcomeV1::ArchiveFailure { code, .. }
+            if code == "managed_public_registry_disabled"),
+        "{:?}",
+        caller.supplied()[0].outcome
+    );
+    // The refusal lands before acquisition, so nothing was fetched.
+    assert!(downloads.calls().is_empty());
+
+    // The same policy bound to the transport refuses the destination before DNS,
+    // so a caller that does reach acquisition cannot route around it.
+    struct NeverOpens;
+    impl PinnedHttpsTransport for NeverOpens {
+        fn open_pinned_https_response(
+            &self,
+            _destination: &CanonicalDestination,
+            _address: &str,
+            _deadline: std::time::Instant,
+        ) -> Result<Box<dyn ReadableResponse>, RestrictedDownloadError> {
+            panic!("a refused destination must never be opened");
+        }
+    }
+    let bound = PolicyBoundTransport {
+        inner: &NeverOpens,
+        policy: &Refusing,
+    };
+    let refused = bound
+        .validate_destination(&CanonicalDestination {
+            url: "https://registry.npmjs.org/pkg.tgz".to_owned(),
+            hostname: "registry.npmjs.org".to_owned(),
+            port: 443,
+            request_target: "/pkg.tgz".to_owned(),
+            host_header: "registry.npmjs.org".to_owned(),
+        })
+        .expect_err("refused");
+    assert_eq!(refused.code, "managed_public_registry_disabled");
 }
 
 #[test]
