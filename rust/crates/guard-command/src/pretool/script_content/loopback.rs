@@ -11,7 +11,7 @@
 //! a dynamic host or port, an administrative port or a credential store keeps
 //! the review.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::LazyLock;
 
@@ -59,9 +59,11 @@ const HTTP_MEMBERS: &[&str] = &["createServer", "STATUS_CODES", "METHODS"];
 
 static URL: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\b[A-Za-z][A-Za-z0-9+.\-]*://").unwrap());
-/// A loopback URL whose authority ends at its literal port.
+/// A loopback URL whose authority ends at its literal port, or names no port,
+/// as the base `new URL(request.url, "http://localhost")` parses against.
+/// Only a named port is granted; `fetch` must name one.
 static LOOPBACK_URL: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"^http://(?:127\.0\.0\.1|localhost):([0-9]{1,5})(?:[/?#"'`]|$)"#).unwrap()
+    Regex::new(r#"^http://(?:127\.0\.0\.1|localhost)(?::([0-9]{1,5}))?(?:[/?#"'`]|$)"#).unwrap()
 });
 static FETCH_LITERAL: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"^fetch\s*\(\s*["'`]http://(?:127\.0\.0\.1|localhost):[0-9]{1,5}[/?#"'`]"#)
@@ -81,29 +83,19 @@ static DYNAMIC_CODE: LazyLock<Regex> = LazyLock::new(|| {
 static VM_MODULE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"["'`](?:node:)?vm["'`]"#).unwrap());
 static LISTEN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\.\s*listen\s*\(").unwrap());
-/// `.listen(port)`, `.listen(port, callback)` or `.listen(port, host)` with
-/// a loopback or wildcard host literal. The port is a literal, a name
-/// [`PORT_CONSTANT`] binds, or `process.env.NAME || <literal>` (or `??`),
-/// which earns only the literal: the sandbox refuses any other port, so an
-/// override fails to bind. A callback named by a bare identifier is checked
-/// against [`STRING_BINDING`], so a host held in a variable keeps the review.
+/// What may follow a `.listen(` port argument: the end of the call, a
+/// callback, or a loopback or wildcard host literal. The port itself is read
+/// by `port_expressions::literal_port` or names a bound port. A callback
+/// named by a bare identifier is checked against [`STRING_BINDING`], so a
+/// host held in a variable keeps the review.
 ///
 /// The host is not what keeps the server local. On macOS a Seatbelt
 /// `localhost` inbound rule matches every local address, so the grant bounds
 /// the port, not the interface; outbound stays limited to this host. On
 /// Linux the sandbox has a private loopback.
-static LOOPBACK_LISTEN: LazyLock<Regex> = LazyLock::new(|| {
+static LISTEN_REST: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        r#"^\.\s*listen\s*\(\s*(?:process\.env\.[A-Za-z_][A-Za-z0-9_]*\s*(?:\|\||\?\?)\s*([0-9]{1,5})|([0-9]{1,5})|([A-Za-z_][A-Za-z0-9_]*))\s*(?:\)|,\s*(?:(?:"(?:127\.0\.0\.1|localhost|0\.0\.0\.0|::)"|'(?:127\.0\.0\.1|localhost|0\.0\.0\.0|::)')\s*[,)]|function\b|async\b|\(|([A-Za-z_$][A-Za-z0-9_$]*)\s*[,)]))"#,
-    )
-    .unwrap()
-});
-/// `const PORT = 3000`, or `const PORT = process.env.PORT || 3000` (or `??`):
-/// a name bound to a literal port, and nothing more. Only the literal is
-/// granted.
-static PORT_CONSTANT: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"(?m)\bconst\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?:process\.env\.[A-Za-z_][A-Za-z0-9_]*\s*(?:\|\||\?\?)\s*)?([0-9]{1,5})[ \t]*(?:[;,]|$)",
+        r#"^\s*(?:\)|,\s*(?:(?:"(?:127\.0\.0\.1|localhost|0\.0\.0\.0|::)"|'(?:127\.0\.0\.1|localhost|0\.0\.0\.0|::)')\s*[,)]|function\b|async\b|\(|([A-Za-z_$][A-Za-z0-9_$]*)\s*[,)]))"#,
     )
     .unwrap()
 });
@@ -112,13 +104,6 @@ static PORT_CONSTANT: LazyLock<Regex> = LazyLock::new(|| {
 static STRING_BINDING: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*["'`]"#).unwrap()
 });
-/// Every declaration of a name, any of which may rebind or shadow it.
-static DECLARATION: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\b(?:const|let|var|function|class)\s+([A-Za-z_][A-Za-z0-9_]*)\b").unwrap()
-});
-/// `${PORT}` in a template literal.
-static TEMPLATE_NAME: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\$\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}").unwrap());
 static MODULE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"["'](?:node:)?([^"']+)["']"#).unwrap());
 /// `const http = require("node:http")` or `import http from "node:http"`.
@@ -144,13 +129,11 @@ static REQUIRED_SERVER: LazyLock<Regex> =
 /// dropped) listens and fetches on, when that is all of its network use;
 /// `None` for anything else.
 pub(super) fn node_loopback_ports(code: &str, home_dir: Option<&str>) -> Option<BTreeSet<u16>> {
-    let constants = port_constants(code);
-    // `${PORT}` naming a port constant reads as the literal it is bound to.
-    let expanded = TEMPLATE_NAME.replace_all(code, |name: &regex::Captures| {
-        constants
-            .get(&name[1])
-            .map_or_else(|| name[0].to_owned(), u16::to_string)
-    });
+    let constants = mask_strings(code)
+        .map(|masked| port_expressions::port_constants(&masked))
+        .unwrap_or_default();
+    // `${PORT}` or `${process.env.PORT ?? 3000}` reads as its literal port.
+    let expanded = port_expressions::expand_templates(code, &constants);
     let code: &str = &expanded;
     // Any other template expansion is code the string mask below would hide.
     if code.contains("${") || CREDENTIAL_STORE.is_match(code) {
@@ -224,46 +207,29 @@ pub(super) fn node_loopback_ports(code: &str, home_dir: Option<&str>) -> Option<
         .collect();
     let mut ports = BTreeSet::new();
     for found in URL.find_iter(code) {
-        let port = LOOPBACK_URL.captures(&code[found.start()..])?;
-        ports.insert(port[1].parse::<u16>().ok()?);
+        let url = LOOPBACK_URL.captures(&code[found.start()..])?;
+        if let Some(port) = url.get(1) {
+            ports.insert(port.as_str().parse::<u16>().ok()?);
+        }
     }
     for found in LISTEN.find_iter(&masked) {
-        let listen = LOOPBACK_LISTEN.captures(&code[found.start()..])?;
-        if let Some(callback) = listen.get(4) {
+        let argument = port_expressions::expression(&masked[found.end()..]);
+        let port = match port_expressions::literal_port(argument) {
+            Some(port) => port,
+            None => *constants.get(argument.trim())?,
+        };
+        let listen = LISTEN_REST.captures(&code[found.end() + argument.len()..])?;
+        if let Some(callback) = listen.get(1) {
             if strings.contains(callback.as_str()) {
                 return None;
             }
         }
-        let port = match listen.get(1).or_else(|| listen.get(2)) {
-            Some(literal) => literal.as_str().parse::<u16>().ok()?,
-            None => *constants.get(&listen[3])?,
-        };
         ports.insert(port);
     }
     ports
         .iter()
         .all(|port| grantable(*port, home_dir))
         .then_some(ports)
-}
-
-/// The names `code` binds to a literal port with `const` and declares nowhere
-/// else. Strings are masked first, so a declaration spelled inside one is not
-/// read. A name the program rebinds or shadows is left out, so a `listen` on
-/// it keeps the review; any port read here is still held to [`grantable`].
-fn port_constants(code: &str) -> BTreeMap<String, u16> {
-    let Some(masked) = mask_strings(code) else {
-        return BTreeMap::new();
-    };
-    let mut declared = BTreeMap::<&str, usize>::new();
-    for declaration in DECLARATION.captures_iter(&masked) {
-        let name = declaration.get(1).map_or("", |name| name.as_str());
-        *declared.entry(name).or_default() += 1;
-    }
-    PORT_CONSTANT
-        .captures_iter(&masked)
-        .filter(|constant| declared.get(&constant[1]) == Some(&1))
-        .filter_map(|constant| Some((constant[1].to_owned(), constant[2].parse().ok()?)))
-        .collect()
 }
 
 /// Whether every use of the HTTP module bound to `name`, besides its
@@ -435,6 +401,9 @@ pub(super) fn program_ports(sources: &[String], home_dir: Option<&str>) -> Optio
         .then(|| node_loopback_ports(&code_lines(Language::Node, first), home_dir))
         .flatten()
 }
+
+#[path = "loopback_ports.rs"]
+mod port_expressions;
 
 #[cfg(test)]
 #[path = "loopback_tests.rs"]

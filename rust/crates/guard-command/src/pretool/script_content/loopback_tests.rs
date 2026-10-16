@@ -88,7 +88,6 @@ fn other_network_use_keeps_the_review() {
         "const http = require('http');\nhttp.createServer().listen(0, '127.0.0.1');\n",
         "const http = require('http');\nhttp.createServer().listen(process.env.PORT, '127.0.0.1');\n",
         "const http = require('http');\nhttp.createServer().listen(process.env.PORT);\n",
-        "const http = require('http');\nhttp.createServer().listen(Number(process.env.PORT) || 3000);\n",
         "const http = require('http');\nhttp.createServer().listen(process.env.PORT || '3000');\n",
         "const http = require('http');\nhttp.createServer().listen(process.env.PORT || 3000 + 1);\n",
         "const http = require('http');\nhttp.createServer().listen(process.env.PORT || 9229);\n",
@@ -251,6 +250,18 @@ fn a_port_constant_reads_as_its_literal() {
         "const http = require('http');\nconst PORT = process.env.PORT ?? 3000;\nhttp.createServer().listen(PORT);\n",
         "const http = require('http');\nhttp.createServer().listen(process.env.PORT || 3000, () => console.log('up'));\n",
         "const http = require('http');\nhttp.createServer().listen(process.env.DEV_PORT ?? 3000, 'localhost');\n",
+        "const http = require('http');\nconst PORT = Number(process.env.PORT || 3000);\nhttp.createServer().listen(PORT, '127.0.0.1');\n",
+        "const http = require('http');\nhttp.createServer().listen(Number(process.env.PORT) || 3000);\n",
+        "const http = require('http');\nhttp.createServer().listen(Number(process.env.PORT ?? 3000));\n",
+        "const http = require('http');\nconst port = parseInt(process.env.PORT, 10) || 3000;\nhttp.createServer().listen(port);\n",
+        "const http = require('http');\nconst PORT = process.env.PORT || process.env.DEV_PORT || 3000;\nhttp.createServer().listen(PORT);\n",
+        // A parameter or destructuring default.
+        "const http = require('http');\nfunction start(port = Number(process.env.PORT ?? 3000)) { return http.createServer().listen(port); }\n",
+        "const http = require('http');\nconst start = ({ port = 3000 } = {}) => http.createServer().listen(port);\n",
+        // A template expansion that reads as the same port.
+        "const http = require('http');\nhttp.createServer().listen(process.env.PORT ?? 3000, () => console.log(`http://localhost:${process.env.PORT ?? 3000}`));\n",
+        // A loopback base URL with no port, as request URLs are parsed.
+        "const http = require('http');\nhttp.createServer((q, r) => r.end(new URL(q.url, 'http://localhost').pathname)).listen(3000);\n",
     ] {
         assert_eq!(ports(source), set(&[3000]), "{source}");
     }
@@ -258,7 +269,16 @@ fn a_port_constant_reads_as_its_literal() {
         // A port taken from the environment or argv without a literal fallback.
         "const http = require('http');\nconst PORT = process.env.PORT;\nhttp.createServer().listen(PORT, '127.0.0.1');\n",
         "const http = require('http');\nconst PORT = Number(process.env.PORT);\nhttp.createServer().listen(PORT, '127.0.0.1');\n",
-        "const http = require('http');\nconst PORT = Number(process.env.PORT || 3000);\nhttp.createServer().listen(PORT, '127.0.0.1');\n",
+        "const http = require('http');\nconst PORT = parseInt(process.env.PORT);\nhttp.createServer().listen(PORT, '127.0.0.1');\n",
+        "const http = require('http');\nconst PORT = Number(process.env.PORT || '3000');\nhttp.createServer().listen(PORT);\n",
+        "const http = require('http');\nhttp.createServer().listen(Number(process.env.PORT) + 1 || 3000);\n",
+        "const http = require('http');\nhttp.createServer().listen(Number(process.argv[2]) || 3000);\n",
+        // A parameter default bound twice, or also assigned.
+        "const http = require('http');\nfunction a(port = 3000) {}\nfunction b(port = 3001) { http.createServer().listen(port); }\n",
+        "const http = require('http');\nfunction start(port = 3000) { port = 9229; http.createServer().listen(port); }\n",
+        "const http = require('http');\nfunction start(port = 3000) { let port; http.createServer().listen(port); }\n",
+        // A loopback URL with no port is no grant for `fetch`.
+        "await fetch('http://localhost/')",
         "const http = require('http');\nconst PORT = process.env.PORT || 9229;\nhttp.createServer().listen(PORT);\n",
         "const http = require('http');\nconst PORT = Number(process.argv[2]);\nhttp.createServer().listen(PORT, '127.0.0.1');\n",
         // A binding that is not a constant literal, or is declared again.
@@ -278,6 +298,15 @@ fn a_port_constant_reads_as_its_literal() {
     ] {
         assert_eq!(ports(source), None, "{source}");
     }
+}
+
+/// The server a model wrote for a todo app: a parameter default read from the
+/// environment, a portless base URL and an expanded template.
+const TODO_SERVER: &str = "import { createServer } from 'node:http';\nimport { readFile } from 'node:fs/promises';\nimport { extname, resolve, sep } from 'node:path';\nimport { fileURLToPath } from 'node:url';\n\nconst root = resolve(fileURLToPath(new URL('..', import.meta.url)));\nconst types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8' };\n\nexport function startServer(port = Number(process.env.PORT ?? 3000)) {\n  const server = createServer(async (request, response) => {\n    try {\n      const pathname = decodeURIComponent(new URL(request.url, 'http://localhost').pathname);\n      const relative = pathname === '/' ? 'index.html' : pathname.slice(1);\n      const file = resolve(root, relative);\n      if (!file.startsWith(root + sep)) throw new Error('Not found');\n      const body = await readFile(file);\n      response.writeHead(200, { 'content-type': types[extname(file)] ?? 'application/octet-stream' });\n      response.end(body);\n    } catch {\n      response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });\n      response.end('Not found');\n    }\n  });\n  return server.listen(port);\n}\n\nif (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {\n  startServer().on('listening', () => console.log(`Todo app listening on http://localhost:${process.env.PORT ?? 3000}`));\n}\n";
+
+#[test]
+fn a_server_reading_its_port_from_the_environment_earns_the_fallback() {
+    assert_eq!(ports(TODO_SERVER), set(&[3000]));
 }
 
 /// A server with no host, or a wildcard one, earns its port too: on macOS
