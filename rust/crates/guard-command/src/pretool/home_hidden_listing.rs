@@ -10,68 +10,14 @@
 //! `~/.local/share` (`~/.config/gh`). Callers must bound the listing to the
 //! directory's own entries: a recursive listing of `~/.config` prints the
 //! names inside `~/.config/gh` and keeps its review.
+//!
+//! The store lists themselves live in [`crate::credential_store_names`], so the
+//! content screen that `cat` and `rg` go through refuses the same directories.
 
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
-/// Hidden directories that hold credentials, keys, wallets, browser profiles
-/// or Guard's own state. Their entry names alone reveal which accounts, hosts
-/// and keys exist.
-pub(super) const CREDENTIAL_STORE_NAMES: [&str; 18] = [
-    ".aws",
-    ".azure",
-    ".bitcoin",
-    ".docker",
-    ".electrum",
-    ".ethereum",
-    ".gcloud",
-    ".gnupg",
-    ".hol-guard",
-    ".kube",
-    ".mozilla",
-    ".password-store",
-    ".pki",
-    ".ssh",
-    ".terraform",
-    ".terraform.d",
-    ".thunderbird",
-    ".vault-token",
-];
-
-/// Harness directories that share skills, rules or Git hooks rather than an
-/// agent login. Every other harness directory (`~/.gemini`, `~/.omp`,
-/// `~/.copilot`) may hold login tokens under names Guard does not know, so it
-/// keeps review.
-const HARNESS_SHARED_NAMES: [&str; 5] = [".agent", ".agents", ".clinerules", ".githooks", ".husky"];
-
-/// Harness homes whose login and secret-bearing config live in files the
-/// credential and hidden-name screens already refuse to read
-/// (`auth.json`, `.credentials.json`, `config.toml`, `settings.json`).
-/// Listing them prints plan, memory and session names, never a secret.
-pub(super) const HARNESS_HOME_NAMES: [&str; 2] = [".claude", ".codex"];
-
-/// Credential, password-manager, keyring, browser-profile and agent-login
-/// stores kept directly below `~/.config` or `~/.local/share`. A tool whose
-/// directory holds only fixed-name config files (`~/.config/doctl/config.yaml`,
-/// with its tokens inside the file) is not listed: its entry names reveal no
-/// account, host or key, and content reads of the file stay guarded.
-const NESTED_CREDENTIAL_STORE_NAMES: [&str; 16] = [
-    "1password",
-    "bravesoftware",
-    "chromium",
-    "gcloud",
-    "gh",
-    "github-copilot",
-    "gnupg",
-    "google-chrome",
-    "gopass",
-    "hub",
-    "keyrings",
-    "microsoft-edge",
-    "op",
-    "opencode",
-    "password-store",
-    "solana",
-];
+use crate::credential_store_names::clears_store_screen;
+pub(super) use crate::credential_store_names::{CREDENTIAL_STORE_NAMES, HARNESS_HOME_NAMES};
 
 /// Whether `value` names an existing directory below a hidden component of
 /// the home directory that is not, and is not inside, a credential store.
@@ -142,36 +88,4 @@ fn expanded(value: &str, home_dir: Option<&str>, cwd: Option<&str>) -> Option<Pa
         Path::new(&root).join(value)
     };
     Some(path.components().collect())
-}
-
-/// No component below the home directory is a credential store, and no
-/// store sits directly below `.config` or `.local/share` on the way.
-fn clears_store_screen(path: &Path) -> bool {
-    let names: Vec<String> = path
-        .components()
-        .filter_map(|component| match component {
-            Component::Normal(name) => Some(name.to_string_lossy().to_ascii_lowercase()),
-            _ => None,
-        })
-        .collect();
-    !names.iter().enumerate().any(|(index, name)| {
-        let parent = index.checked_sub(1).map(|at| names[at].as_str());
-        let grandparent = index.checked_sub(2).map(|at| names[at].as_str());
-        let config_child =
-            parent == Some(".config") || (parent == Some("share") && grandparent == Some(".local"));
-        CREDENTIAL_STORE_NAMES.contains(&name.as_str())
-            || (harness_login_store(name) && !names[index + 1..].iter().any(|n| n == "plugins"))
-            || name.starts_with(".env")
-            || (config_child && NESTED_CREDENTIAL_STORE_NAMES.contains(&name.as_str()))
-    })
-}
-
-/// A harness directory other than the shared skill and hook trees. Its
-/// `plugins` subtree (`~/.zcode/cli/plugins/cache`) holds installed plugin
-/// code rather than the login, so listings below it are screened like any
-/// other dot-directory.
-fn harness_login_store(name: &str) -> bool {
-    crate::harness_config_names::HARNESS_DIRECTORIES.contains(&name)
-        && !HARNESS_SHARED_NAMES.contains(&name)
-        && !HARNESS_HOME_NAMES.contains(&name)
 }

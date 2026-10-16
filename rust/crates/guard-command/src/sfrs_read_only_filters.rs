@@ -11,6 +11,7 @@ use fancy_regex::Regex as FancyRegex;
 use crate::codex_output_args::sed_script_is_bounded_print;
 use crate::codex_output_env::Ctx;
 use crate::codex_output_py::{py_strip, PyPath};
+use crate::credential_store_names::hidden_content_read_allowed;
 use crate::false_positive_rules::{
     target_is_known_skill_doc_path, SOURCE_INSPECTION_BENIGN_DOTFILES,
     SOURCE_INSPECTION_EXTENSIONS, SOURCE_INSPECTION_PARTS, SOURCE_INSPECTION_SENSITIVE_PARTS,
@@ -283,6 +284,11 @@ pub(crate) fn read_only_lookup_target_is_safe(
     if target_is_known_skill_doc_path(stripped, home_dir) {
         return true;
     }
+    // A hidden component used to end the lookup on its own, which is why an
+    // ordinary `ls ~/.nvm/versions/node/v25.2.1/lib` collected a review nobody
+    // answered. What a hidden component has to clear is the credential screen,
+    // not the fact of being hidden: the stores the listing screen refuses, and
+    // the file names a token is normally written under.
     let hidden: Vec<&String> = lowered
         .iter()
         .filter(|part| part.starts_with('.'))
@@ -291,6 +297,7 @@ pub(crate) fn read_only_lookup_target_is_safe(
         && !hidden
             .iter()
             .all(|part| SOURCE_INSPECTION_BENIGN_DOTFILES.contains(&part.as_str()))
+        && !hidden_content_read_allowed(&lowered)
     {
         return false;
     }
