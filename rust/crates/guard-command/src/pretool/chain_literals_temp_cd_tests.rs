@@ -355,6 +355,9 @@ fn a_fresh_directory_expanded_outside_a_failing_chain_stays_opaque() {
         "tmp=$(mktemp -d) &&\npython3 todo.py --file \"$tmp/t.json\" list",
         "tmp=$(mktemp -d) & python3 todo.py --file \"$tmp/t.json\" list",
         "export tmp=$(mktemp -d) && python3 todo.py --file \"$tmp/t.json\" list",
+        // Programs read the upper-case temporary names from the environment.
+        "TMP=$(mktemp -d) && python3 todo.py --file \"$TMP/t.json\" list",
+        "export TEMP=$(mktemp -d); ls",
         "ls && tmp=$(mktemp -d) && python3 todo.py --file \"$tmp/t.json\" list",
         // A rebound, defaulted, quoted or escaped name.
         "tmp=$(mktemp -d) && tmp=/etc && rm -rf \"$tmp\"",

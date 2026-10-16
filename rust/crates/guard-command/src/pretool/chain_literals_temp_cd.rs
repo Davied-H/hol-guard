@@ -41,6 +41,9 @@ const LOADER_NAMES: &str = "BUNDLE_GEMFILE CLASSPATH CURL_HOME GCONV_PATH GEM_HO
     GRADLE_OPTS JDK_JAVA_OPTIONS LOCPATH MAVEN_OPTS NLSPATH PKG_CONFIG_PATH TEMP TEMPDIR TMP \
     WGETRC _JAVA_OPTIONS";
 
+/// The temporary-directory names in `LOADER_NAMES`.
+const TEMPORARY_NAMES: [&str; 3] = ["TEMP", "TEMPDIR", "TMP"];
+
 /// The raw command with each substitution written as the temporary stand-in;
 /// `None` unless every substitution is a private temporary directory that is
 /// the whole operand of a `cd` or `pushd`, or the value of a private
@@ -297,9 +300,19 @@ fn suffix_length(text: &str) -> usize {
 }
 
 /// A name the shared chain-literal screen treats as ordinary that is no
-/// loader, search-path or temporary-directory name either.
+/// loader, search-path or temporary-directory name either. Programs read
+/// only the upper-case temporary-directory names from the environment, so a
+/// shell variable such as `tmp` is ordinary.
 fn assignable(name: &str) -> bool {
-    identifier(name) && ordinary_name(name) && !listed(LOADER_NAMES, &name.to_ascii_uppercase())
+    let upper = name.to_ascii_uppercase();
+    let temporary = TEMPORARY_NAMES.contains(&upper.as_str());
+    identifier(name)
+        && ordinary_name(name)
+        && if temporary {
+            name != upper
+        } else {
+            !listed(LOADER_NAMES, &upper)
+        }
 }
 
 /// Whether `text` names `name` exactly once as a whole word, so nothing else
