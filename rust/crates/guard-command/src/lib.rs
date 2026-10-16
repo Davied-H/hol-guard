@@ -694,6 +694,9 @@ pub mod contained_execution;
 #[cfg(unix)]
 pub mod contained_runner;
 pub mod credential_patterns;
+pub mod credential_stores;
+#[cfg(test)]
+mod credential_stores_tests;
 pub mod data_flow_rules;
 pub mod decisions;
 pub mod detectors;

@@ -11,9 +11,10 @@ use fancy_regex::Regex as FancyRegex;
 use crate::codex_output_args::sed_script_is_bounded_print;
 use crate::codex_output_env::Ctx;
 use crate::codex_output_py::{py_strip, PyPath};
+use crate::credential_stores::credential_store_path;
 use crate::false_positive_rules::{
-    target_is_known_skill_doc_path, SOURCE_INSPECTION_BENIGN_DOTFILES,
-    SOURCE_INSPECTION_EXTENSIONS, SOURCE_INSPECTION_PARTS, SOURCE_INSPECTION_SENSITIVE_PARTS,
+    target_is_known_skill_doc_path, SOURCE_INSPECTION_EXTENSIONS, SOURCE_INSPECTION_PARTS,
+    SOURCE_INSPECTION_SENSITIVE_PARTS,
 };
 use crate::hook_adapter_pytext::compile_fancy;
 use crate::sfrs_search_filters::{
@@ -274,25 +275,19 @@ pub(crate) fn read_only_lookup_target_is_safe(
     {
         return false;
     }
+    // A credential store is a credential store wherever it sits, and the dot in
+    // front of an ordinary configuration directory is not a secret: reading
+    // `~/.claude/settings.json` or listing `~/.codex/plans` is the same work as
+    // reading a file in the checkout.
     if lowered
         .iter()
         .any(|part| SOURCE_INSPECTION_SENSITIVE_PARTS.contains(&part.as_str()))
+        || credential_store_path(&lowered)
     {
         return false;
     }
     if target_is_known_skill_doc_path(stripped, home_dir) {
         return true;
-    }
-    let hidden: Vec<&String> = lowered
-        .iter()
-        .filter(|part| part.starts_with('.'))
-        .collect();
-    if !hidden.is_empty()
-        && !hidden
-            .iter()
-            .all(|part| SOURCE_INSPECTION_BENIGN_DOTFILES.contains(&part.as_str()))
-    {
-        return false;
     }
     if lowered
         .iter()

@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::codex_output_env::Ctx;
 use crate::codex_output_fs as pyfs;
 use crate::codex_output_py::{py_strip, strip_quotes, PyPath};
+use crate::credential_stores::credential_store_path;
 use crate::false_positive_rules::{
     target_is_known_skill_doc_path, KNOWN_SKILL_DOC_ROOT_SUFFIXES,
     SOURCE_INSPECTION_BENIGN_DOTFILES, SOURCE_INSPECTION_EXTENSIONS, SOURCE_INSPECTION_PARTS,
@@ -68,10 +69,10 @@ pub(crate) fn hidden_parts_are_allowed_source(parts: &[String]) -> bool {
     if hidden.is_empty() || hidden.iter().all(|part| is_benign_source_dotfile(part)) {
         return true;
     }
-    let workflow = parts
-        .windows(2)
-        .any(|pair| pair[0] == ".github" && pair[1] == "workflows");
-    workflow && hidden == [".github"]
+    // Hidden directories hold an agent's own configuration as often as they
+    // hold a secret. The credential stores are named, and a path that reaches
+    // none of them reads like any other source path.
+    !credential_store_path(parts)
 }
 
 /// `SourcePathDecision`; `resolved_path` is set on every allow.
