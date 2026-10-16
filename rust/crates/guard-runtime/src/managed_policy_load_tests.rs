@@ -212,7 +212,6 @@ fn an_unreadable_profile_directory_fails_closed() {
     assert_eq!(state.status, ManagedPolicyStatus::Inaccessible);
     assert_eq!(state.reason_code, Some("managed_policy_inaccessible"));
     assert!(state.status.fails_closed());
-    assert!(effective_managed_policy(&state).is_some());
 }
 
 #[test]

@@ -23,9 +23,8 @@ use guard_secure_fs::read_stable;
 use serde_json::{Map, Value};
 
 use crate::guard_config_managed::{apply_managed_policy, ManagedInput};
-use crate::managed_policy_load::{
-    effective_managed_policy, load_managed_policy, ManagedPolicySource,
-};
+use crate::managed_policy_floor::effective_managed_policy;
+use crate::managed_policy_load::{load_managed_policy, ManagedPolicySource};
 
 pub(crate) const HOME_CONFIG_FILENAME: &str = "config.toml";
 pub(crate) const WORKSPACE_CONFIG_FILENAMES: [&str; 2] =
