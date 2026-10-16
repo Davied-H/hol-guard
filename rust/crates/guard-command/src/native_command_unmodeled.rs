@@ -20,7 +20,9 @@
 //! it runs, inline or fed on standard input, was read; it then runs only that
 //! program, as it would run a script file. `xargs` is the exception that
 //! names its program in the text: standard input supplies arguments, not the
-//! program, so `xargs rm -f < list.txt` owns what `rm` owns. An active
+//! program, so `cat list.txt | xargs rm -f` owns what `rm` owns. A literal
+//! input redirect is not read yet, so `xargs rm -f < list.txt` stays an
+//! evaluation failure. An active
 //! extension with trust class `external` that owns a program named in the
 //! text is not read through, and an unknown name set fails closed: its rules
 //! judge arguments standard input supplies, which this text does not hold.
@@ -261,8 +263,9 @@ impl CompiledNativeCommandControls {
         // input supplies unread. An active external command source that owns
         // a program named here, or whose names are unknown, judges arguments
         // this text does not hold, so the evaluation failure stays. Those
-        // extensions are inactive until enabled, and `xargs rm -f < list.txt`
-        // keeps the review its built-in owner gives it.
+        // extensions are inactive until enabled. A pipe such as
+        // `cat list.txt | xargs rm -f` keeps the review its built-in owner
+        // gives it. A literal input redirect is not read yet.
         if xargs_names_program && self.external_source_names_a_program(&named) {
             return None;
         }
