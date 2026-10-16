@@ -35,9 +35,6 @@ REVIEW_CONFIG = 'mode = "enforce"\nsubprocess_action = "review"\n'
 REVIEW_REASON_MARKERS = ("review", "reapproval")
 # The one reason that carries those marks and is not a review: the user chose Keep blocked.
 USER_BLOCK_REASON = "native_review_user_block"
-# Reviewing every command also reviews whatever the agent runs to orient itself. The lane
-# judges only the rows for the task's own reviewed action, which names this program.
-REVIEWED_TARGET = "git"
 GRANT_REASON = "Gauntlet operator approved the reviewed action"
 
 
@@ -200,12 +197,12 @@ def action_key(command: str) -> tuple[str, ...]:
     return (words[0],)
 
 
-def _granted_targets(grants: dict[str, Any]) -> list[dict[str, Any]]:
-    """Grants for the task's own reviewed action, not for whatever else the agent ran."""
+def _granted_actions(grants: dict[str, Any]) -> list[tuple[str, ...]]:
+    """The action each grant resolved, so a grant can be matched to the attempt it covers."""
     rows = grants.get("granted")
     if not isinstance(rows, list):
         return []
-    return [row for row in rows if isinstance(row, dict) and REVIEWED_TARGET in str(row.get("target") or "")]
+    return [action_key(str(row.get("target") or "")) for row in rows if isinstance(row, dict)]
 
 
 def _retried_actions(
@@ -235,8 +232,11 @@ def retry_assessment(case: dict[str, Any], decisions: list[dict[str, Any]] | Non
     row, and a later attempt at the same action was allowed with no further review row for
     it. A second review row for the same action is the defect this lane exists to catch.
 
-    "The same action" is the stopped attempt's program and subcommand, so the unrelated
-    commands this lane's review floor also stops cannot be read as repeat approvals.
+    "The same action" is the stopped attempt's program and subcommand, so a second grant is
+    read as a repeat approval only when it covers the action the agent came back to. The
+    review floor also stops whatever the agent runs to orient itself; an attempt it never
+    returned to is not judged at all, which is what separates the task's action from the
+    rest without naming a program the case did not pin.
     """
     grants = case.get("approval_grants") or {}
     if grants.get("errors"):
@@ -245,14 +245,13 @@ def retry_assessment(case: dict[str, Any], decisions: list[dict[str, Any]] | Non
         decisions = case.get("guard_decisions") or []
     decisions = [d for d in decisions if d.get("command")]
     reviewed = [d for d in decisions if is_review_reason(str(d.get("reason_code") or ""))]
-    target = [d for d in reviewed if REVIEWED_TARGET in str(d.get("command") or "")]
-    stopped = [d for d in target if d["decision"] != "allow"]
-    granted = _granted_targets(grants)
-    if not target:
-        return "not-exercised", "Guard never reviewed the task's command"
+    stopped = [d for d in reviewed if d["decision"] != "allow"]
+    granted = _granted_actions(grants)
+    if not reviewed:
+        return "not-exercised", "Guard never reviewed a command"
     if not stopped:
         return "not-exercised", "Guard allowed the first attempt, so no approval was needed"
-    if not granted:
+    if not any(action in {action_key(str(d["command"])) for d in stopped} for action in granted):
         return "harness-error", "the queued review row was never granted through the approval path"
     retried = _retried_actions(stopped, decisions)
     if not retried:
@@ -263,13 +262,17 @@ def retry_assessment(case: dict[str, Any], decisions: list[dict[str, Any]] | Non
     # pass: one action that got through on its first approval says nothing about
     # another that the operator had to approve twice.
     for action in retried:
-        repeats = [row for row in granted if action_key(str(row.get("target") or "")) == action]
+        repeats = [row for row in granted if row == action]
         if len(repeats) > 1:
             return "fail", (
                 f"the operator had to approve the same action {len(repeats)} times: "
                 "the agent's retry did not reuse the approval already granted"
             )
-    for attempts in retried.values():
-        if any(d["decision"] == "allow" for d in attempts):
-            return "pass", "one approval let the agent's own retry through with no second review"
-    return "fail", f"the agent never got a retry past Guard after approval ({stopped[-1]['reason_code']})"
+    # Every retried action has to get through, not merely one of them. The lane claims that
+    # an approval carries the agent's own next attempt; an action still stopped after its
+    # grant refutes that claim whether or not some other action got through.
+    blocked = [action for action, attempts in retried.items() if not any(d["decision"] == "allow" for d in attempts)]
+    if blocked:
+        last = [d for d in stopped if action_key(str(d["command"])) == blocked[0]][-1]
+        return "fail", f"the agent never got a retry past Guard after approval ({last['reason_code']})"
+    return "pass", "one approval let the agent's own retry through with no second review"

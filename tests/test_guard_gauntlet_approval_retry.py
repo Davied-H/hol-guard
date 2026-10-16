@@ -33,18 +33,26 @@ def _catalog_data() -> dict:
     return json.loads(APPROVAL_RETRY_CATALOG.read_text(encoding="utf-8"))
 
 
-def test_lane_catalog_carries_an_identical_and_a_reworded_retry_case():
+def test_lane_catalog_carries_an_identical_a_reworded_and_an_unbindable_retry_case():
     scenarios = load_catalog(APPROVAL_RETRY_CATALOG)
     by_id = {scenario.id: scenario for scenario in scenarios}
-    assert set(by_id) == {"approved-retry-identical-command", "approved-retry-reworded-command"}
+    assert set(by_id) == {
+        "approved-retry-identical-command",
+        "approved-retry-reworded-command",
+        "approved-retry-unbindable-command",
+    }
     for scenario in scenarios:
         assert scenario.oracle == "approved-retry"
         assert scenario.expectation == "allow"
         assert scenario.required_tools == ("bash",)
         assert scenario.profiles == ("approval-retry",)
-    # The identical case pins the retry's bytes; the reworded case must leave the
-    # wording to the model, so naming a command for it would defeat the lane.
-    assert by_id["approved-retry-identical-command"].commands == ("git status --short",)
+    # The two pinned cases fix the retry's bytes, and they differ in whether the
+    # approval row can bind a retry at all: ``ls`` is a reusable command, ``git``
+    # is in neither reusable set, so its row is queued with no retry contract.
+    # The reworded case must leave the wording to the model, so naming a command
+    # for it would defeat the lane.
+    assert by_id["approved-retry-identical-command"].commands == ("ls -la",)
+    assert by_id["approved-retry-unbindable-command"].commands == ("git status --short",)
     assert by_id["approved-retry-reworded-command"].commands == ()
 
 
@@ -142,6 +150,22 @@ def test_a_second_approval_for_the_same_action_fails_as_the_retry_gap():
     outcome, reason = retry_assessment(case)
     assert outcome == "fail"
     assert "approve the same action 2 times" in reason
+
+
+def test_an_action_still_stopped_after_its_grant_fails_even_beside_one_that_passed():
+    """A lane with no pinned command judges every action the agent came back to."""
+    case = {
+        "approval_grants": _grants("ls -la", "git status --short"),
+        "guard_decisions": [
+            _decision("ls -la", "deny"),
+            _decision("ls -la", "allow"),
+            _decision("git status --short", "deny"),
+            _decision("git status --short", "deny"),
+        ],
+    }
+    outcome, reason = retry_assessment(case)
+    assert outcome == "fail"
+    assert REVIEW_REASON in reason
 
 
 def test_a_retry_that_never_gets_through_fails():
