@@ -25,6 +25,7 @@ from typing import BinaryIO
 
 from ..group_write_trust import writable_only_by_owner
 from ..runtime.extension_control_limits import MAX_NATIVE_COMMAND_PROGRAM_BYTES
+
 _MAX_REQUEST_BYTES = 8 * 1024 * 1024
 _MAX_OUTPUT_BYTES = 64 * 1024 * 1024
 _MAX_MANIFEST_BYTES = 64 * 1024
