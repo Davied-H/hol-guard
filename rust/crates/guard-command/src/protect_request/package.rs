@@ -129,8 +129,10 @@ pub(super) fn package_target(
 }
 
 pub(super) fn collect_package_specs(values: &[String]) -> Vec<String> {
-    const VALUE_OPTIONS: [&str; 6] = [
+    const VALUE_OPTIONS: [&str; 7] = [
         "-r",
+        // `--cwd <dir>` names where the install runs, not what is installed.
+        "--cwd",
         "--extra-index-url",
         "--index-url",
         "--prefix",
