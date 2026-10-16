@@ -36,6 +36,7 @@ from ..strict_json_pairs import unique_json_object
 DISCOVERY_ROLLOUT_ENV = "HOL_GUARD_DISCOVERY"
 DISCOVERY_UNAVAILABLE = "discovery_capability_unavailable"
 DISCOVERY_TRANSPORT_FAILED = "discovery_transport_failed"
+DISCOVERY_OPTED_OUT = "discovery_opted_out"
 
 # Fixed upstream: production callers can select neither host nor path.
 DISCOVERY_CLOUD_ORIGIN = "https://hol.org"
@@ -392,6 +393,7 @@ __all__ = [
     "DISCOVERY_REQUEST_SCHEMA",
     "DISCOVERY_RESULT_SCHEMA",
     "DISCOVERY_ROLLOUT_ENV",
+    "DISCOVERY_OPTED_OUT",
     "DISCOVERY_TRANSPORT_FAILED",
     "DISCOVERY_UNAVAILABLE",
     "MAX_DISCOVERY_REQUEST_BYTES",

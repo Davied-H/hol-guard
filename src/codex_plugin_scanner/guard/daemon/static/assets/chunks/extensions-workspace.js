@@ -7562,6 +7562,7 @@ function VacantSlotCard(props) {
       className: "guard-spotlight-card guard-spotlight-slot",
       "data-testid": "spotlight-slot-card",
       "data-state": props.state,
+      "data-full": props.full ? "true" : void 0,
       "aria-labelledby": "spotlight-slot-heading",
       children: [
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex items-start gap-3", children: [
@@ -7691,7 +7692,8 @@ function ExtensionsSpotlight(props) {
         {
           state: slot === "open" ? "open" : "unconfirmed",
           price,
-          inventory
+          inventory,
+          full: cards.length >= SPOTLIGHT_CELL_COUNT
         }
       ) : null
     ] }),

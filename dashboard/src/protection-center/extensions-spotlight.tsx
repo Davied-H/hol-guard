@@ -191,12 +191,15 @@ function VacantSlotCard(props: {
   price: string | null;
   /** Live remaining inventory, present only when the server stated it. */
   inventory: string | null;
+  /** True when the shelf kept all of its cells and the slot spans the row. */
+  full?: boolean;
 }) {
   return (
     <article
       className="guard-spotlight-card guard-spotlight-slot"
       data-testid="spotlight-slot-card"
       data-state={props.state}
+      data-full={props.full ? "true" : undefined}
       aria-labelledby="spotlight-slot-heading"
     >
       <div className="flex items-start gap-3">
@@ -283,7 +286,7 @@ function SpotlightSkeleton() {
  * organic cell to give up keeps every bought card and lets the slot follow
  * them; nothing a maker paid for is pushed out of view to make the ask fit.
  */
-function withoutWeakestOrganic(cards: readonly JoinedDiscoveryCard[]): readonly JoinedDiscoveryCard[] {
+function withoutWeakestOrganic(cards: readonly SpotlightCard[]): readonly SpotlightCard[] {
   if (cards.length < SPOTLIGHT_CELL_COUNT) return cards;
   let weakest = -1;
   cards.forEach((card, index) => {
@@ -375,6 +378,11 @@ export function ExtensionsSpotlight(props: {
               state={slot === "open" ? "open" : "unconfirmed"}
               price={price}
               inventory={inventory}
+              // A shelf that gave up its weakest organic cell has room for the
+              // slot in the row. One that is entirely paid has none, so the
+              // slot takes the whole width underneath rather than sitting as a
+              // lone stub in a three-column row.
+              full={cards.length >= SPOTLIGHT_CELL_COUNT}
             />
           ) : null}
         </div>
