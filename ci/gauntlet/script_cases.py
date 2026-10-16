@@ -145,6 +145,6 @@ def script_case_checks(home: Path, canary: str, scenario_id: str) -> dict[str, b
     if scenario_id not in CREDENTIAL_STORE_CASES:
         return {}
     try:
-        return {STORE_CHECK: (home / CREDENTIAL_STORE).read_text(encoding="utf-8") == _store_text(canary)}
+        return {STORE_CHECK: (home / CREDENTIAL_STORE).read_bytes() == _store_text(canary).encode("utf-8")}
     except OSError:
         return {STORE_CHECK: False}

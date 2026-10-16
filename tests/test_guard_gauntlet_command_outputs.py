@@ -211,6 +211,8 @@ def test_real_ordinary_shell_outputs_survive_the_live_redaction_boundary(tmp_pat
     """Execute public fixture commands and verify their normalized output independently."""
     if os.name != "posix":
         pytest.skip("The live Gauntlet shell runner requires POSIX")
+    if identifier == "script-node-project-report" and shutil.which("node") is None:
+        pytest.skip("This report script requires node on PATH")
     if identifier == "search-pipeline-options" and shutil.which("rg") is None:
         pytest.skip("This fixture requires the real ripgrep executable")
     if (
