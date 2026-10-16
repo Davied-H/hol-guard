@@ -57,11 +57,10 @@ jobs:
           cargo +"$toolchain" llvm-cov clean --workspace
           failed=0
           # Preserve every failure, including when later samples succeed.
-          for sample in {1..12}; do
+          for sample in {1..3}; do
             echo "Metadata diagnostic sample $sample"
             if ! cargo +"$toolchain" llvm-cov nextest --locked --package guard-command --test integration \
               --profile ci --test-threads 4 --retries 0 --no-fail-fast --no-report \
-              -E 'test(pretool_grep_repository_metadata::legacy_remote_definitions_are_screened)' \
               --failure-output immediate; then
               failed=1
             fi

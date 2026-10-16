@@ -68,6 +68,7 @@ fn safe_git_directory(root: &Path) -> bool {
             return false;
         };
         if depth > 0 && !safe_git_descendant(&path, root, &metadata) {
+            eprintln!("metadata diagnostic rejected descendant: {:?}", path.strip_prefix(root));
             return false;
         }
         if metadata.is_dir() {
