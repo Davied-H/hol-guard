@@ -165,7 +165,6 @@ pub mod pretool;
 mod runtime_read_paths;
 pub mod secret_path_probe;
 pub mod sensitive_request;
-mod unmodeled_shell_artifact;
 mod sfrs_agent_guidance;
 mod sfrs_benign_reads;
 mod sfrs_benign_tool_action;
@@ -325,6 +324,7 @@ pub mod shell_secret_reads;
 mod shell_structure;
 pub mod source_cli;
 pub mod typescript_launch_evidence;
+mod unmodeled_shell_artifact;
 
 pub mod package_context_environment;
 
