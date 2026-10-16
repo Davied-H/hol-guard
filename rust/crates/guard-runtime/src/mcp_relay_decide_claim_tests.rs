@@ -146,6 +146,7 @@ fn an_unknown_or_spent_ticket_defers() {
     let request = McpRelayClaimRequestV1 {
         guard_home: root.to_string_lossy().into_owned(),
         ticket: "claim-0-0-0:1".to_owned(),
+        package_evaluation: None,
     };
     let answer: Value = serde_json::from_slice(&claim(&request, &store).unwrap()).unwrap();
     assert_eq!(answer["outcome"], "defer");
