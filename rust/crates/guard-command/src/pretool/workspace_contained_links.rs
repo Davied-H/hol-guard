@@ -65,6 +65,20 @@ pub(super) fn unbounded_linked_writes(model: &CanonicalCommandV1, workspace: &Pa
     let Some(locations) = cwd::locations(model, workspace) else {
         return true;
     };
+    // A command that changes how the shell expands a pattern changes which
+    // entries the copy receives. `shopt -s dotglob` adds the hidden names
+    // this expansion leaves out, `GLOBIGNORE` takes names away, and either
+    // can put a file in front of the copy that the scan never weighed.
+    if model.segments.iter().any(expands_patterns_differently)
+        && model.segments.iter().any(|segment| {
+            segment
+                .arguments
+                .iter()
+                .any(|argument| glob::pattern(argument))
+        })
+    {
+        return true;
+    }
     model
         .segments
         .iter()
@@ -75,21 +89,48 @@ pub(super) fn unbounded_linked_writes(model: &CanonicalCommandV1, workspace: &Pa
             );
             locations
                 .iter()
-                .any(|cwd| mutates_linked_destination(name, &segment.arguments, cwd))
+                .any(|cwd| mutates_linked_destination(name, &segment.arguments, &segment.text, cwd))
         })
 }
 
-fn mutates_linked_destination(name: &str, arguments: &[String], workspace: &Path) -> bool {
+fn expands_patterns_differently(segment: &crate::CommandSegmentV1) -> bool {
+    let name = super::super::executable_basename(segment.executable.as_deref().unwrap_or_default());
+    name == "shopt"
+        || segment.text.contains("GLOBIGNORE")
+        || (name == "set"
+            && segment
+                .arguments
+                .iter()
+                .any(|argument| argument == "-o" || argument == "+o"))
+}
+
+fn mutates_linked_destination(
+    name: &str,
+    arguments: &[String],
+    text: &str,
+    workspace: &Path,
+) -> bool {
+    if !matches!(name, "cp" | "touch") {
+        return false;
+    }
+    // Quoting is spent by the time an argument reaches here, so `cp src "dest/*"`
+    // and `cp src dest/*` arrive the same. One names a file the shell leaves
+    // alone and the other names whatever the directory holds, and a command
+    // carrying either quote or an escape no longer says which it is.
+    if arguments.iter().any(|argument| glob::pattern(argument)) && text.contains(['\'', '"', '\\'])
+    {
+        return true;
+    }
     // The shell expands a pattern before the command runs, so the entries it
     // names are the writes to weigh. An expansion this scan cannot read
     // leaves the destinations unknown.
-    let Some(arguments) = glob::expand_arguments(arguments, workspace) else {
+    let Some(expanded) = glob::expand_arguments(arguments, workspace) else {
         return true;
     };
-    let arguments = arguments.as_slice();
+    let expanded = expanded.as_slice();
     match name {
-        "cp" => copy_targets(arguments, workspace).unwrap_or(true),
-        "touch" => touch_targets(arguments)
+        "cp" => copy_targets(arguments, expanded, workspace).unwrap_or(true),
+        "touch" => touch_targets(expanded)
             .map(|targets| {
                 targets
                     .iter()
@@ -133,11 +174,22 @@ fn touch_targets(arguments: &[String]) -> Option<Vec<&str>> {
     (!targets.is_empty()).then_some(targets)
 }
 
-fn copy_targets(arguments: &[String], workspace: &Path) -> Option<bool> {
-    let mut paths = Vec::new();
-    let mut target_directory = None;
-    let mut recursive = false;
-    let mut no_target_directory = false;
+/// What `cp` reads from its arguments: the operands, an explicit target
+/// directory, and the two options that decide how the operands are read.
+struct Copy<'a> {
+    paths: Vec<&'a str>,
+    target_directory: Option<&'a str>,
+    recursive: bool,
+    no_target_directory: bool,
+}
+
+fn parse_copy(arguments: &[String]) -> Option<Copy<'_>> {
+    let mut parsed = Copy {
+        paths: Vec::new(),
+        target_directory: None,
+        recursive: false,
+        no_target_directory: false,
+    };
     let mut options = true;
     let mut args = arguments.iter();
     while let Some(arg) = args.next() {
@@ -148,13 +200,13 @@ fn copy_targets(arguments: &[String], workspace: &Path) -> Option<bool> {
         if options && arg.starts_with('-') {
             match arg.as_str() {
                 "-t" | "--target-directory" => {
-                    target_directory = Some(args.next()?.as_str());
+                    parsed.target_directory = Some(args.next()?.as_str());
                 }
                 "-S" | "--suffix" => {
                     args.next()?;
                 }
-                "-T" | "--no-target-directory" => no_target_directory = true,
-                "--recursive" | "--archive" => recursive = true,
+                "-T" | "--no-target-directory" => parsed.no_target_directory = true,
+                "--recursive" | "--archive" => parsed.recursive = true,
                 "--force"
                 | "--interactive"
                 | "--no-clobber"
@@ -164,7 +216,7 @@ fn copy_targets(arguments: &[String], workspace: &Path) -> Option<bool> {
                 | "--no-dereference"
                 | "--remove-destination" => {}
                 value if value.starts_with("--target-directory=") => {
-                    target_directory = Some(value.strip_prefix("--target-directory=")?);
+                    parsed.target_directory = Some(value.strip_prefix("--target-directory=")?);
                 }
                 value if value.starts_with("--preserve=") || value.starts_with("--suffix=") => {}
                 value
@@ -173,14 +225,35 @@ fn copy_targets(arguments: &[String], workspace: &Path) -> Option<bool> {
                         && value.len() > 1
                         && value[1..].chars().all(|c| "afHiLnPpRrvXbuc".contains(c)) =>
                 {
-                    recursive |= value[1..].chars().any(|c| "aRr".contains(c));
+                    parsed.recursive |= value[1..].chars().any(|c| "aRr".contains(c));
                 }
                 _ => return None,
             }
         } else {
-            paths.push(arg.as_str());
+            parsed.paths.push(arg.as_str());
         }
     }
+    Some(parsed)
+}
+
+fn copy_targets(arguments: &[String], expanded: &[String], workspace: &Path) -> Option<bool> {
+    // The last operand is the destination, and a pattern there leaves which
+    // entry that is to the shell's collation order rather than to the order
+    // the entries were read in. The copy would then write a file this scan
+    // weighed as a source.
+    let unexpanded = parse_copy(arguments)?;
+    let named = unexpanded
+        .target_directory
+        .or_else(|| unexpanded.paths.last().copied())?;
+    if glob::pattern(named) {
+        return Some(true);
+    }
+    let Copy {
+        mut paths,
+        target_directory,
+        recursive,
+        no_target_directory,
+    } = parse_copy(expanded)?;
     let destination = if let Some(directory) = target_directory {
         if no_target_directory {
             return None;
@@ -271,6 +344,11 @@ mod tests {
         std::fs::write(workspace.join("source"), b"ordinary").unwrap();
         std::fs::write(workspace.join("second"), b"ordinary").unwrap();
         std::fs::create_dir(workspace.join("destination")).unwrap();
+        // Bytewise, `Zlink` sorts before `alink`; a UTF-8 locale's collation
+        // puts them the other way round.
+        std::fs::create_dir(workspace.join("plain")).unwrap();
+        std::fs::write(workspace.join("plain/alink"), b"ordinary").unwrap();
+        std::fs::hard_link(workspace.join("protected"), workspace.join("plain/Zlink")).unwrap();
         std::fs::hard_link(
             workspace.join("protected"),
             workspace.join("destination/source"),
@@ -297,9 +375,13 @@ mod tests {
             ("echo", vec!["linked"], false),
         ] {
             let args = args.into_iter().map(str::to_owned).collect::<Vec<_>>();
-            assert_eq!(mutates_linked_destination(name, &args, workspace), expected);
+            let text = format!("{name} {}", args.join(" "));
+            assert_eq!(
+                mutates_linked_destination(name, &args, &text, workspace),
+                expected
+            );
             let model = crate::parse_command(&crate::CommandModelRequestV1 {
-                command: format!("{name} {}", args.join(" ")),
+                command: text.clone(),
                 dialect: "posix".into(),
                 transport: "shell_string".into(),
                 extraction_provenance: "pre-tool-generic".into(),
@@ -341,6 +423,16 @@ mod tests {
             ("cp -f sub/* destination", true),
             ("cp -R tree/* new-directory", false),
             ("cp -R missing/* destination", true),
+            // A pattern naming the destination leaves which entry that is to
+            // the shell's collation order, not to the order these were read
+            // in. A pattern naming sources is read here instead.
+            ("cp -f source plain/[aZ]link", true),
+            ("cp -f plain/[aZ]link destination", false),
+            // Quoting is gone by the time the arguments are weighed, so a
+            // pattern beside a quote could be the name of one file.
+            ("cp -R tree/* \"new-directory\"", true),
+            // `dotglob` hands the copy the hidden names this leaves out.
+            ("shopt -s dotglob && cp -R tree/* new-directory", true),
         ] {
             let model = crate::parse_command(&crate::CommandModelRequestV1 {
                 command: command.into(),
@@ -384,8 +476,9 @@ mod tests {
             ("cp", vec!["source", "alias/plain"]),
         ] {
             let owned = args.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>();
+            let text = format!("{name} {}", args.join(" "));
             assert!(
-                mutates_linked_destination(name, &owned, &workspace),
+                mutates_linked_destination(name, &owned, &text, &workspace),
                 "{name} {args:?}"
             );
             let model = crate::parse_command(&crate::CommandModelRequestV1 {

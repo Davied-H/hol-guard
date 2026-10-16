@@ -10,6 +10,13 @@ use std::path::Path;
 /// the small edit workspace containment is for.
 const MAX_MATCHES: usize = 512;
 
+/// How many directory entries one argument's expansion may read. The match
+/// limit above counts only the names a pattern keeps, and a pattern that
+/// keeps none still reads every name beside it. A workspace directory can
+/// hold far more entries than that, and the answer is wanted before the
+/// command runs.
+const MAX_INSPECTED: usize = 4096;
+
 /// Characters a pattern may hold. Anything else the shell rewrites — a
 /// variable, a command substitution, a brace list or an escape — leaves this
 /// scan reading text the command never receives.
@@ -20,7 +27,7 @@ fn expandable(value: &str) -> bool {
 }
 
 /// Whether the shell expands `value` by reading a directory.
-fn pattern(value: &str) -> bool {
+pub(super) fn pattern(value: &str) -> bool {
     value.chars().any(|c| matches!(c, '*' | '?' | '['))
 }
 
@@ -62,11 +69,12 @@ pub(super) fn expand_arguments(arguments: &[String], root: &Path) -> Option<Vec<
 fn expand(pattern: &str, root: &Path) -> Option<Vec<String>> {
     let directories_only = pattern.ends_with('/');
     let mut matches = vec![String::new()];
+    let mut inspected = 0;
     for component in pattern.trim_end_matches('/').split('/') {
         if component.is_empty() || component == "." || component == ".." {
             return None;
         }
-        matches = step(component, &matches, root)?;
+        matches = step(component, &matches, root, &mut inspected)?;
         if matches.len() > MAX_MATCHES {
             return None;
         }
@@ -87,7 +95,12 @@ fn expand(pattern: &str, root: &Path) -> Option<Vec<String>> {
 }
 
 /// Every name one component matches under the directories matched so far.
-fn step(component: &str, prefixes: &[String], root: &Path) -> Option<Vec<String>> {
+fn step(
+    component: &str,
+    prefixes: &[String],
+    root: &Path,
+    inspected: &mut usize,
+) -> Option<Vec<String>> {
     if !self::pattern(component) {
         return Some(
             prefixes
@@ -110,6 +123,10 @@ fn step(component: &str, prefixes: &[String], root: &Path) -> Option<Vec<String>
             continue;
         }
         for entry in std::fs::read_dir(&directory).ok()? {
+            *inspected += 1;
+            if *inspected > MAX_INSPECTED {
+                return None;
+            }
             let entry = entry.ok()?;
             let name = entry.file_name();
             let name = name.to_str()?;
@@ -134,49 +151,82 @@ fn join(prefix: &str, name: &str) -> String {
 }
 
 /// Whether one path component matches one entry name. `*` and `?` stop at the
-/// separator because each component is matched on its own, and a bracket the
-/// pattern never closes leaves the match unknown.
+/// separator because each component is matched on its own. A bracket this
+/// does not model matches no name at all, which leaves the expansion empty
+/// and so declines.
 fn matches_component(pattern: &str, name: &str) -> bool {
-    glob_match(
-        &pattern.chars().collect::<Vec<char>>(),
-        &name.chars().collect::<Vec<char>>(),
-    )
-    .unwrap_or(false)
-}
-
-fn glob_match(pattern: &[char], name: &[char]) -> Option<bool> {
-    let Some(&current) = pattern.first() else {
-        return Some(name.is_empty());
-    };
-    match current {
-        '*' => {
-            for taken in 0..=name.len() {
-                if glob_match(&pattern[1..], &name[taken..])? {
-                    return Some(true);
-                }
-            }
-            Some(false)
-        }
-        '?' => match name.split_first() {
-            Some((_, rest)) => glob_match(&pattern[1..], rest),
-            None => Some(false),
-        },
-        '[' => {
-            let (set, rest) = bracket(pattern)?;
-            match name.split_first() {
-                Some((first, name)) if in_set(&set, *first) => glob_match(rest, name),
-                _ => Some(false),
-            }
-        }
-        literal => match name.split_first() {
-            Some((first, rest)) if *first == literal => glob_match(&pattern[1..], rest),
-            _ => Some(false),
-        },
+    let pattern: Vec<char> = pattern.chars().collect();
+    if !brackets_modeled(&pattern) {
+        return false;
     }
+    glob_match(&pattern, &name.chars().collect::<Vec<char>>())
 }
 
-/// The characters a bracket expression holds, and the pattern after it.
-fn bracket(pattern: &[char]) -> Option<(Vec<char>, &[char])> {
+/// Whether every bracket expression in the pattern is one this reads.
+fn brackets_modeled(pattern: &[char]) -> bool {
+    let mut index = 0;
+    while index < pattern.len() {
+        if pattern[index] != '[' {
+            index += 1;
+            continue;
+        }
+        match bracket(&pattern[index..]) {
+            Some((_, length)) => index += length,
+            None => return false,
+        }
+    }
+    true
+}
+
+/// Matches left to right, returning to the last `*` on a mismatch rather than
+/// recursing. Each return hands that `*` one more character of the name, so
+/// the work is bounded by the two lengths instead of by the number of ways
+/// several stars could divide the name between them.
+fn glob_match(pattern: &[char], name: &[char]) -> bool {
+    let (mut index, mut at) = (0, 0);
+    // Where the last `*` stands, and how much of the name it has taken.
+    let mut star: Option<(usize, usize)> = None;
+    while at < name.len() {
+        let matched = match pattern.get(index) {
+            Some('*') => {
+                star = Some((index, at));
+                index += 1;
+                continue;
+            }
+            Some('?') => true,
+            Some('[') => match bracket(&pattern[index..]) {
+                Some((set, length)) if in_set(&set, name[at]) => {
+                    index += length;
+                    at += 1;
+                    continue;
+                }
+                _ => false,
+            },
+            Some(&literal) => literal == name[at],
+            None => false,
+        };
+        if matched {
+            index += 1;
+            at += 1;
+            continue;
+        }
+        let Some((star_index, taken)) = star else {
+            return false;
+        };
+        star = Some((star_index, taken + 1));
+        index = star_index + 1;
+        at = taken + 1;
+    }
+    pattern[index..].iter().all(|&current| current == '*')
+}
+
+/// The characters a bracket expression holds, and how much of the pattern it
+/// spans. `None` for a bracket this does not read: one the pattern never
+/// closes, a POSIX class, collating symbol or equivalence class, whose
+/// members are not the characters written between the brackets, or a range,
+/// whose members the shell takes from the locale's collation order rather
+/// than from the two characters' own order.
+fn bracket(pattern: &[char]) -> Option<(Vec<char>, usize)> {
     let mut index = 1;
     if matches!(pattern.get(index), Some('!' | '^')) {
         index += 1;
@@ -186,29 +236,26 @@ fn bracket(pattern: &[char]) -> Option<(Vec<char>, &[char])> {
         index += 1;
     }
     while pattern.get(index).is_some_and(|c| *c != ']') {
+        if pattern[index] == '[' && matches!(pattern.get(index + 1), Some(':' | '.' | '=')) {
+            return None;
+        }
+        if pattern[index] == '-' && !matches!(pattern.get(index + 1), Some(']') | None) {
+            return None;
+        }
         index += 1;
     }
     if pattern.get(index) != Some(&']') {
         return None;
     }
-    Some((pattern[..=index].to_vec(), &pattern[index + 1..]))
+    Some((pattern[..=index].to_vec(), index + 1))
 }
 
+/// Whether the set names this character. Every member is written out, since
+/// `bracket` declines the forms that are not.
 fn in_set(set: &[char], value: char) -> bool {
     let negated = matches!(set.get(1), Some('!' | '^'));
     let body = &set[1 + usize::from(negated)..set.len() - 1];
-    let mut index = 0;
-    let mut found = false;
-    while index < body.len() {
-        if body.get(index + 1) == Some(&'-') && index + 2 < body.len() {
-            found |= body[index] <= value && value <= body[index + 2];
-            index += 3;
-            continue;
-        }
-        found |= body[index] == value;
-        index += 1;
-    }
-    found != negated
+    body.contains(&value) != negated
 }
 
 #[cfg(all(test, unix))]
@@ -238,6 +285,10 @@ mod tests {
             std::fs::write(root.join("src").join(name), b"x").unwrap();
         }
         std::fs::write(root.join("src/.hidden"), b"x").unwrap();
+        // A digit class and a name the unclosed reading of it would match.
+        std::fs::create_dir(root.join("classes")).unwrap();
+        std::fs::write(root.join("classes/5"), b"x").unwrap();
+        std::fs::write(root.join("classes/d]"), b"x").unwrap();
         Workspace(root)
     }
 
@@ -285,6 +336,11 @@ mod tests {
             expand_arguments(&arguments(&["src/*/", "dist"]), &root.0),
             Some(arguments(&["src/nested/", "dist"]))
         );
+        // Several stars in one component still match what the shell matches.
+        assert_eq!(
+            expand_arguments(&arguments(&["src/*a*s", "dist"]), &root.0),
+            Some(arguments(&["src/a.ts", "dist"]))
+        );
     }
 
     #[test]
@@ -306,6 +362,15 @@ mod tests {
             "src/../*",
             // A bracket the pattern never closes.
             "src/[ab.ts",
+            // A character class, whose members are not the characters
+            // written between the brackets. Reading it as a plain set would
+            // match `classes/d]` while the shell matches `classes/5`.
+            "classes/[[:digit:]]",
+            // A range's members come from the locale's collation order.
+            "classes/[0-9]",
+            // Stars enough to make a backtracking matcher count the ways
+            // they could divide a name, against a suffix no name carries.
+            "src/*a*a*a*a*a*a*a*a*a*a*a*a*a*a*a*a*.zz",
         ] {
             assert_eq!(
                 expand_arguments(&arguments(&[argument, "dist"]), &root.0),
@@ -316,6 +381,23 @@ mod tests {
         assert_eq!(
             expand_arguments(&arguments(&["src", "dist"]), &root.0),
             Some(arguments(&["src", "dist"]))
+        );
+    }
+
+    #[test]
+    fn a_pattern_that_reads_too_many_entries_stays_unknown() {
+        // The match limit counts the names a pattern keeps. One that keeps
+        // none still reads the whole directory, and the answer is wanted
+        // before the command runs.
+        let root = workspace();
+        let wide = root.0.join("wide");
+        std::fs::create_dir(&wide).unwrap();
+        for index in 0..=MAX_INSPECTED {
+            std::fs::write(wide.join(format!("f{index}")), b"x").unwrap();
+        }
+        assert_eq!(
+            expand_arguments(&arguments(&["wide/*.none", "dist"]), &root.0),
+            None
         );
     }
 
