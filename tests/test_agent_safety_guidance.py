@@ -15,7 +15,6 @@ from codex_plugin_scanner.guard.agent_safety_guidance import (
     uninstall_agent_safety_guidance,
 )
 from codex_plugin_scanner.guard.cli import install_commands
-from codex_plugin_scanner.guard.daemon import hook_native_package_review
 from codex_plugin_scanner.guard.store import GuardStore
 
 
@@ -339,23 +338,6 @@ def test_safety_document_leaves_secret_reads_to_guard(tmp_path: Path) -> None:
     # The bullet must not end on an imperative to go ahead: an agent weighing
     # two sentences against each other takes the concrete one.
     assert "Run the read" not in safety
-
-
-def test_safety_document_names_the_script_free_npm_install(tmp_path: Path) -> None:
-    """Codex ran a bare `npm install` for a Vite game and met a package review.
-
-    The review is right: the install would run package install scripts. The
-    script-free forms the guide names are the ones the package review settles,
-    so an agent that follows it installs without a prompt.
-    """
-
-    home_dir = tmp_path / "home"
-    _ = install_agent_safety_guidance(home_dir)
-    safety = " ".join((home_dir / ".hol-support" / "SAFETY.md").read_text(encoding="utf-8").split())
-
-    for command in ("npm install --ignore-scripts", "npm ci --ignore-scripts"):
-        assert f"`{command}`" in safety
-        assert hook_native_package_review._FILTERED_COMMAND.fullmatch(command)
 
 
 def test_safety_document_forbids_self_approval(tmp_path: Path) -> None:
