@@ -62,6 +62,7 @@ pub(super) struct PackageClaimed {
 /// The lane sees both resolutions and nothing else; the artifact identities
 /// the revalidation is held to belong to the decision the caller settles, so
 /// it is the caller that completes this into a `PackageClaimed`.
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct ClaimLeg {
     tool: Option<Map<String, Value>>,
     tool_disposition: Option<Disposition>,

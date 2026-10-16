@@ -9,10 +9,12 @@
 //! `mcp_unbound` block.
 //!
 //! The relay never reaches the bound branch. It authorizes the external-archive
-//! network only for the evaluation it runs after a claim, and a relayed package
-//! call is never answered from a claim, so it evaluates with
-//! `retain_external_archive_blob: false` (`mcp_relay_package_eval.rs`) and holds
-//! no verified blob to bind to. Python in that same state asks
+//! network only for the evaluation it runs after a claim, and both evaluations
+//! ask for `retain_external_archive_blob: false` (`mcp_relay_package_eval.rs`),
+//! so neither holds a verified blob to bind to. A post-claim evaluation that
+//! retained one is refused on the relay's own lane
+//! (`mcp_relay_resident.rs`), since this process has no path to the proxy's
+//! binding. Python in that same state asks
 //! `native_external_archive_bind` for the empty binding with
 //! `requires_binding=True`, which answers `unbound`, and the forward becomes the
 //! block. This module is that one reachable branch: which evaluations demand the

@@ -106,6 +106,9 @@ where
     let key = match decided {
         Decided::Tool(_) => "tool_evidence_append",
         Decided::Package(_) => "package_evidence_append",
+        // The revalidation decides on the rows this claim already spent, so a
+        // route that would claim them again is one it never answers with.
+        Decided::ClaimPackage => return Err(PACKAGE_POSTCLAIM_FAILED),
     };
     let append = reply[key]
         .as_array()

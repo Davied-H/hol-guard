@@ -147,9 +147,13 @@ enum Answer {
     Elicit {
         params: Value,
     },
-    /// Evaluate this call's package request and decide the call again with the
-    /// evaluation attached.
-    Evaluate,
+    /// Evaluate this call's package request and ask again with the evaluation
+    /// attached. A decide answers with no ticket and is decided again; a claim
+    /// answers with the ticket its rows are held against again, which the
+    /// second claim of the same call spends.
+    Evaluate {
+        ticket: Option<String>,
+    },
 }
 
 /// The lane admission one decision was made under.
@@ -350,7 +354,12 @@ fn encode(answer: Result<Answer, &'static str>) -> Result<Vec<u8>, String> {
         Ok(Answer::Elicit { params }) => {
             json!({"schema": RESULT_SCHEMA, "outcome": "elicit", "params": params})
         }
-        Ok(Answer::Evaluate) => json!({"schema": RESULT_SCHEMA, "outcome": "evaluate"}),
+        Ok(Answer::Evaluate { ticket }) => match ticket {
+            Some(ticket) => {
+                json!({"schema": RESULT_SCHEMA, "outcome": "evaluate", "ticket": ticket})
+            }
+            None => json!({"schema": RESULT_SCHEMA, "outcome": "evaluate"}),
+        },
         Ok(Answer::Block { message, data }) => json!({
             "schema": RESULT_SCHEMA,
             "outcome": "block",
@@ -373,7 +382,7 @@ fn decide(
     // first decide of a package call asks for it, and the relay decides the
     // same call again with the evaluation attached.
     if intent.is_some() && request.package_evaluation.is_none() {
-        return Ok(Answer::Evaluate);
+        return Ok(Answer::Evaluate { ticket: None });
     }
     let connection = store::open(Path::new(&request.guard_home))?;
     // One read snapshot for the store checks and every lookup they gate, so a

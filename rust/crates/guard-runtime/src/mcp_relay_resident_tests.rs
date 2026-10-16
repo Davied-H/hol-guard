@@ -309,7 +309,16 @@ fn replies_map_to_forward_or_block() {
     let evaluate = json!({"schema": RESULT_SCHEMA, "outcome": "evaluate"});
     assert_eq!(
         reply(&serde_json::to_vec(&evaluate).unwrap()),
-        Some(Reply::Evaluate)
+        Some(Reply::Evaluate { ticket: None })
+    );
+    // The one a claim asks for carries the ticket its rows are held against
+    // again, which the second claim spends.
+    let postclaim = json!({"schema": RESULT_SCHEMA, "outcome": "evaluate", "ticket": "claim-1:2"});
+    assert_eq!(
+        reply(&serde_json::to_vec(&postclaim).unwrap()),
+        Some(Reply::Evaluate {
+            ticket: Some("claim-1:2".to_owned())
+        })
     );
     let claim = json!({"schema": RESULT_SCHEMA, "outcome": "claim", "ticket": "claim-1:1"});
     let held = Some(Reply::Claim {
@@ -357,6 +366,7 @@ fn without_a_resident_every_call_is_blocked() {
         message: message.clone(),
         expected: catalog.snapshot(),
         claim: "claim-1:1".to_owned(),
+        request: json!(null),
     };
     assert_eq!(unbound.claim(ticket), expected);
     let mut unreachable = ResidentRelayAuthority {

@@ -60,6 +60,9 @@ fn answered(outcome: PackageOutcome) -> PackageAnswer {
         | PackageOutcome::AskPackage(answer)
         | PackageOutcome::ObservePackage { answer, .. } => answer,
         PackageOutcome::ToolLeg(leg) => panic!("the package lane answers this leg: {leg:?}"),
+        PackageOutcome::ClaimPackage(leg) => {
+            panic!("the caller claims this forward's rows: {leg:?}")
+        }
     }
 }
 

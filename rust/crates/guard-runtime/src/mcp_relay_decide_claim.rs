@@ -98,7 +98,7 @@ pub(crate) fn claim(
         .and_then(|held| match held {
             HeldClaim::Tool(context) => spend(request, &context, policy_store, started),
             HeldClaim::Package(context) => {
-                package_spend::spend_package(request, &context, policy_store, started)
+                package_spend::spend_package(request, context, policy_store, started)
             }
         });
     encode(answer)

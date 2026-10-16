@@ -37,7 +37,8 @@ use super::package_route::ToolLeg;
 use super::store::{self, STORE_UNREADABLE};
 use super::{
     admit, ask, package, package_lane, package_leg, package_postclaim, queue, settle,
-    settle_package, Answer, Legged, PackageClaimContext, PackageLeg, Resolved, Routed, ASK_MODE,
+    settle_package, Answer, HeldClaim, Legged, PackageClaimContext, PackageLeg, Resolved, Routed,
+    ASK_MODE, EVIDENCE_FULL,
 };
 use crate::claim_reuse::claim_approval_reuse_decisions_then;
 use crate::claim_reuse_binding::evidence_is_bound;
@@ -53,8 +54,6 @@ use std::time::Instant;
 const PACKAGE_CLAIM_UNKNOWN: &str = "mcp_relay_package_claim_unknown";
 /// The lane admission is no longer the one the decision was made under.
 const PACKAGE_CLAIM_AUTHORITY_CHANGED: &str = "mcp_relay_package_claim_authority_changed";
-/// The claim carries no post-claim evaluation to re-resolve the policy from.
-const PACKAGE_CLAIM_EVALUATION_ABSENT: &str = "mcp_relay_package_claim_evaluation_absent";
 /// The gate no longer reads the claimed call as a package request.
 const PACKAGE_CLAIM_INTENT_LOST: &str = "mcp_relay_package_claim_intent_lost";
 /// Neither policy left a row, so there is nothing for this claim to spend.
@@ -70,17 +69,29 @@ const PACKAGE_CLAIM_RERESOLVE: &str = "mcp_relay_package_claim_reresolve_failed"
 /// Spend one held package claim and answer the call.
 pub(super) fn spend_package(
     request: &McpRelayClaimRequestV1,
-    context: &PackageClaimContext,
+    context: PackageClaimContext,
     policy_store: &PolicySnapshotStore,
     started: Instant,
 ) -> Result<Answer, &'static str> {
     if request.guard_home != context.request.guard_home {
         return Err(PACKAGE_CLAIM_UNKNOWN);
     }
-    let evaluation = request
-        .package_evaluation
-        .as_ref()
-        .ok_or(PACKAGE_CLAIM_EVALUATION_ABSENT)?;
+    // The policy this claim is spent against is resolved from the post-claim
+    // evaluation, whose archive and registry rounds the relay performs with
+    // the external archive network authorized (`runtime_mcp.py:1832`). No
+    // round trip can hold them, so the rows are held again and the relay
+    // sends the same claim back with the evaluation attached. Nothing is
+    // claimed and nothing is written until it does.
+    let Some(evaluation) = request.package_evaluation.as_ref() else {
+        return policy_store
+            .mcp_relay_claims()
+            .hold(HeldClaim::Package(context), Instant::now())
+            .map(|ticket| Answer::Evaluate {
+                ticket: Some(ticket),
+            })
+            .ok_or(EVIDENCE_FULL);
+    };
+    let context = &context;
     // The lane admission must be the one the decision was made under: any
     // republished snapshot or binding defers before anything is claimed.
     let admitted = admit(&context.request, policy_store)?;
