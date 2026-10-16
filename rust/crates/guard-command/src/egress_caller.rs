@@ -129,6 +129,17 @@ pub struct EgressProxyCredentials {
 /// blob under bounded acquisition and inspects it offline.
 pub trait ArchiveEgress {
     fn fulfil(&mut self, need: &EgressNeedV1) -> EgressOutcomeV1;
+
+    /// Hand over the retained blobs the resident's answer names and remove
+    /// every other blob this acquisition holds.
+    ///
+    /// An answer that names a blob the caller does not hold is a protocol
+    /// failure, not an empty claim: nothing may launch against bytes nobody
+    /// inspected.
+    fn claim(
+        &mut self,
+        descriptors: &serde_json::Value,
+    ) -> Result<Vec<crate::restricted_archive::RestrictedArchiveDownload>, &'static str>;
 }
 
 /// No managed network policy applies. Only correct where the caller has
@@ -181,6 +192,34 @@ impl<'a> EgressFulfilment<'a> {
     /// Every outcome the next request must carry, in the order asked.
     pub fn supplied(&self) -> &[EgressSuppliedV1] {
         &self.supplied
+    }
+
+    /// Where a spooled body is written, which the next request must name so
+    /// the resident reads the body from the same directory.
+    pub fn spool_dir(&self) -> &Path {
+        &self.spool_dir
+    }
+
+    /// The retained archive blobs the resident's answer names.
+    ///
+    /// A caller with no archive acquisition wired holds nothing, so an answer
+    /// that names a blob is the same protocol failure as one that names a blob
+    /// an acquisition never retained.
+    pub fn claim_archives(
+        &mut self,
+        descriptors: Option<&serde_json::Value>,
+    ) -> Result<Vec<crate::restricted_archive::RestrictedArchiveDownload>, &'static str> {
+        let nothing = serde_json::Value::Null;
+        let descriptors = descriptors.unwrap_or(&nothing);
+        match self.archives.as_mut() {
+            Some(archives) => archives.claim(descriptors),
+            None => match descriptors.as_array() {
+                Some(named) if !named.is_empty() => {
+                    Err(crate::egress_caller_archive::UNHELD_ARCHIVE)
+                }
+                _ => Ok(Vec::new()),
+            },
+        }
     }
 
     /// Perform one answer's needs. The resident replays the whole evaluation
