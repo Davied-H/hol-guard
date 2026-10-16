@@ -4288,8 +4288,7 @@ pub fn build_supply_chain_explain_payload(
 }
 
 /// `_package_evaluation_requires_external_archive_binding` (:1263-1285).
-#[allow(dead_code)]
-fn package_evaluation_requires_external_archive_binding(
+pub fn package_evaluation_requires_external_archive_binding(
     evaluation: &PackageRequestEvaluation,
 ) -> bool {
     let source_hashes = evaluation.external_archive_source_hashes();

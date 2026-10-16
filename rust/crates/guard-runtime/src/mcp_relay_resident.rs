@@ -287,6 +287,19 @@ impl ResidentRelayAuthority {
             &mut transport,
         )
         .ok()?;
+        // So it retains no verified archive, and the decide path binds none:
+        // an evaluation that demands the binding is answered as the refusal
+        // (`mcp_relay_decide_package_archive.rs`). A retained blob would make
+        // that answer wrong, and this process has no path to the proxy's
+        // binding, so the call fails closed instead.
+        if !settled.retained_archives.is_empty() {
+            // `_cleanup_external_archive_downloads` (`runtime_mcp.py:1795`):
+            // whatever answers the call, no staged blob outlives it.
+            for archive in &settled.retained_archives {
+                archive.cleanup();
+            }
+            return None;
+        }
         let evaluation = settled.payload.as_object()?.clone();
         request::evaluated_request(request, environment, evaluation)
     }

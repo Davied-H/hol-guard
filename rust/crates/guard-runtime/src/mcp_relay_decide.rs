@@ -817,6 +817,8 @@ mod observe;
 mod package;
 #[path = "mcp_relay_decide_package_answer.rs"]
 mod package_answer;
+#[path = "mcp_relay_decide_package_archive.rs"]
+mod package_archive;
 #[path = "mcp_relay_decide_package_ask.rs"]
 mod package_ask;
 #[path = "mcp_relay_decide_package_config.rs"]

@@ -22,6 +22,12 @@
 //! which the caller performs because the write reads the store this lane does
 //! not hold (`mcp_relay_decide_package_ask.rs`).
 //!
+//! A forward is answered rather than forwarded when its evaluation only
+//! permits a request bound to the external archives it verified. The relay
+//! retains no verified blob, so that binding is refused and the call takes the
+//! terminal block the proxy answers a refused binding with
+//! (`mcp_relay_decide_package_archive.rs`).
+//!
 //! Not every leg of this lane is a package answer. The three the tool policy
 //! decides — `_stored_tool_block_response`, `_terminal_tool_response` and
 //! `_queue_approval_center_response` — are the plain tool-policy responses the
@@ -33,6 +39,7 @@
 use serde_json::{Map, Value};
 
 use super::package_answer;
+use super::package_archive;
 use super::package_ask;
 use super::package_policy::PackagePolicy;
 use super::package_receipt;
@@ -142,6 +149,22 @@ fn answered(
         redaction_level: None,
         approval: None,
     };
+    if let PackageRoute::Forward { .. } = route {
+        if package_archive::requires_binding(&policy.evaluation) {
+            // `_bound_external_archive_mcp_request` (`runtime_mcp.py:1747`): a
+            // forward whose evaluation resolved a package from an external
+            // tarball is bound to the blobs that evaluation verified before it
+            // is written to the child. The relay retains no blob, so the
+            // binding is refused and the call is the terminal `mcp_unbound`
+            // block (`:1755`). The replacement route is not a forward, so the
+            // answer it is rendered from settles here.
+            let refused = package_archive::unbound(policy)?;
+            let blocked = PackageRoute::TerminalPackage {
+                policy_action: "block".to_owned(),
+            };
+            return answered(&blocked, tool, server, &refused, binding);
+        }
+    }
     if let PackageRoute::QueuePackage { .. } = route {
         if binding.blocked_request_mode == Some(ASK_MODE) {
             // The row, the block and the approval surface are the caller's,

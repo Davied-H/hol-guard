@@ -378,3 +378,46 @@ fn a_second_resolution_the_caller_could_not_read_defers_the_call() {
         Some("mcp_relay_store_unreadable"),
     );
 }
+
+#[test]
+fn a_forward_the_relay_cannot_bind_to_its_archives_is_blocked_instead() {
+    let mut demanding = policy("allow", json!([]));
+    demanding.evaluation.insert(
+        "external_archive_source_hashes".to_owned(),
+        json!(["0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"]),
+    );
+    let answer = answered(
+        decide_package(
+            "enforce",
+            TOOL,
+            SERVER,
+            &policy("allow", json!([])),
+            bound("safe-alternative"),
+            || Ok((tool(GuardAction::Allow), demanding)),
+        )
+        .expect("the refused binding answers the call"),
+    );
+    let (message, data) = answer.block.expect("the call is not forwarded");
+    assert_eq!(
+        message,
+        "HOL Guard blocked package install request install_package from registry."
+    );
+    assert_eq!(answer.policy_action, "block");
+    assert_eq!(answer.decision, "terminal-package-block");
+    assert_eq!(answer.decision_source, package_answer::BLOCK_SOURCE);
+    // The evaluation the agent is given is the override's, and the receipt
+    // records its reason.
+    let evaluation = &data["supplyChainEvaluation"];
+    assert_eq!(evaluation["decision"], json!("block"));
+    assert_eq!(
+        evaluation["reasons"][0]["code"],
+        json!("external_archive_digest_mismatch")
+    );
+    assert_eq!(
+        answer.signals,
+        vec![
+            "The inspected external archive changed or was absent from the forwarded request."
+                .to_owned()
+        ],
+    );
+}
