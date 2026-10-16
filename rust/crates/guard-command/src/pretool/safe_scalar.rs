@@ -210,6 +210,10 @@ pub(super) fn node_syntax_check_arguments(
     context: super::PathContext<'_>,
 ) -> bool {
     let check = |flag: &String| matches!(flag.as_str(), "--check" | "-c");
+    // An inherited `NODE_OPTIONS=--require` or loader path also runs code.
+    if !context.npm_config_inert {
+        return false;
+    }
     match arguments {
         [flag] => piped_input && check(flag),
         [flag, target] => {

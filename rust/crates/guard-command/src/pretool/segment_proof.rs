@@ -113,7 +113,12 @@ pub(crate) fn benign_command_segments(
                         | "file"
                         | "npm"
                         | "jq"
-                );
+                )
+                // A file operand prints a source line on a syntax error, so it
+                // gets the same session proof as `cat`.
+                || (matches!(basename, "node" | "nodejs")
+                    && segment.arguments.len() == 2
+                    && matches!(segment.arguments[0].as_str(), "--check" | "-c"));
             let ls_has_explicit_target = basename != "ls" || {
                 let mut skip_next = false;
                 let mut found = false;
