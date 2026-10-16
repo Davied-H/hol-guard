@@ -245,13 +245,34 @@ fn a_proxy_url_is_an_https_origin_without_credentials() {
         "network.proxyUrl must be an absolute HTTPS proxy origin"
     );
     // A bracketed IPv6 authority with a port is a proxy origin; an unclosed
-    // one is not a URL at all.
+    // one is not a URL at all. The text inside the brackets has to be an
+    // address urlsplit would accept, not merely a balanced pair.
     assert!(parse_managed_policy(&document(json!({
         "network": {"proxyMode": "explicit", "proxyUrl": "https://[2001:db8::1]:8443/"},
     })))
     .is_ok());
+    assert!(parse_managed_policy(&document(json!({
+        "network": {"proxyMode": "explicit", "proxyUrl": "https://[v1.future]/"},
+    })))
+    .is_ok());
+    assert!(parse_managed_policy(&document(json!({
+        "network": {"proxyMode": "explicit", "proxyUrl": "https://[::1%eth0]/"},
+    })))
+    .is_ok());
     assert_eq!(
         bad("https://[2001:db8::1:8443"),
+        "network.proxyUrl must be an absolute HTTPS URL"
+    );
+    assert_eq!(
+        bad("https://[not-an-ip]/"),
+        "network.proxyUrl must be an absolute HTTPS URL"
+    );
+    assert_eq!(
+        bad("https://[192.0.2.1]/"),
+        "network.proxyUrl must be an absolute HTTPS URL"
+    );
+    assert_eq!(
+        bad("https://[::1]extra/"),
         "network.proxyUrl must be an absolute HTTPS URL"
     );
 }

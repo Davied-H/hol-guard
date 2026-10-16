@@ -62,7 +62,9 @@ const THUMBPRINT_CHARS: usize = 40;
 
 /// `base64.b64decode(..., validate=True)`: the standard alphabet, canonical
 /// padding required, and — as CPython does — a final character whose unused
-/// bits are not zero still decodes.
+/// bits are not zero still decodes. Since 3.11, `validate=True` is
+/// `a2b_base64(..., strict_mode=True)`, which rejects surplus `=` that an
+/// older non-strict decoder ignored.
 const PYTHON_BASE64: GeneralPurpose = GeneralPurpose::new(
     &alphabet::STANDARD,
     GeneralPurposeConfig::new()
@@ -592,10 +594,10 @@ impl<'a> UrlSplit<'a> {
             }
             None => ("", rest),
         };
-        if netloc.contains('[') && !netloc.contains(']') {
-            return None;
-        }
-        if netloc.contains(']') && !netloc.contains('[') {
+        // CPython raises ValueError unless a bracketed authority is an IPv6
+        // address or an IPvFuture (`v` + hex + `.` + rest). Balanced brackets
+        // alone would accept `https://[not-an-ip]/`, which urlsplit refuses.
+        if !bracketed_authority_ok(netloc) {
             return None;
         }
         let path = remainder.split(['?', '#']).next().unwrap_or(remainder);
@@ -652,6 +654,57 @@ impl<'a> UrlSplit<'a> {
             _ => Err(()),
         }
     }
+}
+
+/// `urllib.parse.urlsplit`'s bracket check. `false` is its `ValueError`.
+fn bracketed_authority_ok(netloc: &str) -> bool {
+    let open = netloc.contains('[');
+    let close = netloc.contains(']');
+    if open != close {
+        return false;
+    }
+    if !open {
+        return true;
+    }
+    let hostinfo = match netloc.rsplit_once('@') {
+        Some((_, hostinfo)) => hostinfo,
+        None => netloc,
+    };
+    let Some((before, rest)) = hostinfo.split_once('[') else {
+        return false;
+    };
+    if !before.is_empty() {
+        return false;
+    }
+    let Some((hostname, after)) = rest.split_once(']') else {
+        return false;
+    };
+    if hostname.contains('[') || after.contains('[') || after.contains(']') {
+        return false;
+    }
+    if !after.is_empty() && !after.starts_with(':') {
+        return false;
+    }
+    bracketed_host_ok(hostname)
+}
+
+/// `_check_bracketed_host`: IPvFuture, or an IPv6 address. An IPv4 literal in
+/// brackets is a `ValueError`, and so is an empty zone id (`::1%`).
+fn bracketed_host_ok(hostname: &str) -> bool {
+    if let Some(rest) = hostname.strip_prefix('v') {
+        let Some((hex, tail)) = rest.split_once('.') else {
+            return false;
+        };
+        return !hex.is_empty()
+            && !tail.is_empty()
+            && hex.bytes().all(|byte| byte.is_ascii_hexdigit());
+    }
+    let address = match hostname.split_once('%') {
+        Some((address, zone)) if !zone.is_empty() => address,
+        Some(_) => return false,
+        None => hostname,
+    };
+    address.parse::<std::net::Ipv6Addr>().is_ok()
 }
 
 /// A scheme urlsplit recognises: a letter followed by letters, digits, `+`,
