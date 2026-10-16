@@ -130,7 +130,7 @@ def _verify_compiler(path: Path, manifest: Mapping[str, object]) -> bytes:
     if os.name != "nt":
         compiler_stat = path.stat()
         mode = stat.S_IMODE(compiler_stat.st_mode)
-        if not writable_only_by_owner(compiler_stat, os.getuid()):
+        if not writable_only_by_owner(compiler_stat, os.getuid(), path):
             raise NativeSourceCompilerError("source compiler is group/world writable")
         if not mode & stat.S_IXUSR:
             raise NativeSourceCompilerError("source compiler is not owner-executable")

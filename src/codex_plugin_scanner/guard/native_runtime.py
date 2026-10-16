@@ -154,7 +154,7 @@ def _manifest_for_bundled_identity(
             return None, "native_manifest_invalid"
         if metadata.st_size <= 0 or metadata.st_size > _MAX_MANIFEST_BYTES:
             return None, "native_manifest_invalid"
-        if os.name != "nt" and not _trusted_owner_and_mode(metadata):
+        if os.name != "nt" and not _trusted_owner_and_mode(metadata, manifest_path):
             return None, "native_manifest_invalid"
         payload = json.loads(manifest_path.read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -188,7 +188,7 @@ def _restore_bundled_runtime_execute_bit(path: Path) -> None:
         mode = stat.S_IMODE(metadata.st_mode)
         if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode) or mode & stat.S_IXUSR:
             return
-        if not _trusted_owner_and_mode(metadata):
+        if not _trusted_owner_and_mode(metadata, path):
             return
         path.chmod(mode | 0o111)
     except (OSError, RuntimeError, ValueError):
