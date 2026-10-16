@@ -225,3 +225,46 @@ def test_state_that_names_no_known_handler_is_left_alone(tmp_path: Path) -> None
     remap_hook_state({"PreToolUse": [{"matcher": "Bash", "hooks": [_guard_handler()]}]}, hooks, config)
 
     assert hooks["state"] == {other: {"enabled": False}}
+
+
+def test_an_upgrade_keeps_a_guard_hook_the_user_switched_off(tmp_path: Path) -> None:
+    """An upgrade rewrites Guard's own handler, so its hash never matches.
+
+    The command path carries the version, and the hash is built from it, so
+    nothing in the new config hashes to what the old state knew. Dropping the
+    entry would let ``record_guard_hook_trust`` trust the hook as if it were
+    newly installed and switch a hook the user turned off back on.
+    """
+
+    config = tmp_path / "config.toml"
+    upgraded = {"type": "command", "command": "/opt/guard/1.3.0/hol-guard-codex-hook --harness codex", "timeout": 30}
+    before = {"PreToolUse": [{"matcher": "Bash", "hooks": [_guard_handler()]}]}
+    hooks: dict[str, Any] = {
+        "PreToolUse": [{"matcher": "Bash", "hooks": [upgraded]}],
+        "state": {f"{config.resolve()}:pre_tool_use:0:0": {"enabled": False, "trusted_hash": "stale"}},
+    }
+
+    remap_hook_state(before, hooks, config)
+
+    # The stale trust goes; the user's choice stays.
+    assert hooks["state"] == {f"{config.resolve()}:pre_tool_use:0:0": {"enabled": False}}
+
+    payload = {"hooks": hooks}
+    assert record_guard_hook_trust(payload, config) == []
+    assert _state(payload)[f"{config.resolve()}:pre_tool_use:0:0"] == {"enabled": False}
+
+
+def test_an_upgrade_that_leaves_two_guard_hooks_on_one_event_drops_the_state(tmp_path: Path) -> None:
+    """Only an unambiguous replacement may carry the choice."""
+
+    config = tmp_path / "config.toml"
+    upgraded = {"type": "command", "command": "/opt/guard/1.3.0/hol-guard-codex-hook --harness codex", "timeout": 30}
+    before = {"PreToolUse": [{"matcher": "Bash", "hooks": [_guard_handler()]}]}
+    hooks: dict[str, Any] = {
+        "PreToolUse": [{"matcher": "Bash", "hooks": [upgraded]}, {"matcher": "Write", "hooks": [upgraded]}],
+        "state": {f"{config.resolve()}:pre_tool_use:0:0": {"enabled": False}},
+    }
+
+    remap_hook_state(before, hooks, config)
+
+    assert hooks["state"] == {}

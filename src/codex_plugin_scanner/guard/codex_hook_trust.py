@@ -135,6 +135,28 @@ def _handler_coordinates(hooks: Mapping[str, object]) -> dict[str, str]:
     return found
 
 
+def _guard_coordinates(hooks: Mapping[str, object]) -> dict[str, str]:
+    """Each Guard handler's ``<label>:<group>:<handler>`` coordinate, by event label.
+
+    Unlike :func:`_guard_hook_coordinates` this does not skip a handler a user
+    switched off: that choice is exactly what the remap has to carry.
+    """
+
+    found: dict[str, str] = {}
+    for event_name, groups in hooks.items():
+        label = codex_event_label(str(event_name))
+        if label is None or not isinstance(groups, list):
+            continue
+        for group_index, group in enumerate(groups):
+            handlers = group.get("hooks") if isinstance(group, Mapping) else None
+            if not isinstance(handlers, list):
+                continue
+            for handler_index, handler in enumerate(handlers):
+                if isinstance(handler, Mapping) and _is_guard_handler(handler):
+                    found[f"{label}:{group_index}:{handler_index}"] = label
+    return found
+
+
 def remap_hook_state(before: Mapping[str, object], hooks: dict[str, object], config_path: Path) -> None:
     """Follow each hook's state to the coordinate its handler now occupies.
 
@@ -149,6 +171,14 @@ def remap_hook_state(before: Mapping[str, object], hooks: dict[str, object], con
     A handler that moved carries its state with it, one that is gone leaves
     its state behind, and a key naming no handler this function can hash is
     left exactly as it was.
+
+    An upgrade rewrites Guard's own handler, and the command path, status
+    message, timeout and matcher all feed its hash, so the replacement matches
+    no hash the old state knew. That is still the same hook to the user, and a
+    dropped ``enabled = false`` would be re-trusted as a fresh install and
+    switch a hook the user turned off back on. So a Guard handler replaced by
+    exactly one Guard handler on the same event hands over that one choice,
+    without the stale trust the install records again anyway.
     """
 
     state = hooks.get("state")
@@ -156,6 +186,8 @@ def remap_hook_state(before: Mapping[str, object], hooks: dict[str, object], con
         return
     was = _handler_coordinates(before)
     now = _handler_coordinates(hooks)
+    was_guard = _guard_coordinates(before)
+    now_guard = _guard_coordinates(hooks)
     prefixes = tuple(dict.fromkeys((str(_resolved(config_path)), str(config_path))))
     kept: dict[str, object] = {}
     moves: list[tuple[str, object]] = []
@@ -172,6 +204,15 @@ def remap_hook_state(before: Mapping[str, object], hooks: dict[str, object], con
         # leaves its state behind rather than landing on the wrong hook.
         if len(moved) == 1:
             moves.append((f"{prefix}:{moved[0]}", entry))
+            continue
+        if moved or coordinate not in was_guard or not isinstance(entry, Mapping):
+            continue
+        if entry.get("enabled") is not False:
+            continue
+        label = was_guard[coordinate]
+        targets = [name for name, event in now_guard.items() if event == label]
+        if len(targets) == 1:
+            moves.append((f"{prefix}:{targets[0]}", {"enabled": False}))
     for key, entry in moves:
         kept.setdefault(key, entry)
     hooks["state"] = kept
