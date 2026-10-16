@@ -80,6 +80,17 @@ def evidence(
     return CommandActivityEvidence(activity, (match,))
 
 
+def recent_day() -> date:
+    """Today in UTC.
+
+    Activity rows age out of the retention window and are pruned when a daemon
+    starts, so anything a live daemon has to read back is seeded on a day that
+    is still inside it rather than on the fixed fixture day.
+    """
+
+    return datetime.now(timezone.utc).date()
+
+
 def seed(store: GuardStore, *, occurred_on: date = _FIXTURE_OCCURRED_ON) -> None:
     for index in range(3):
         store.record_command_activity(
