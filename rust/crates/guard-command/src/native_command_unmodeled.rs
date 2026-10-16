@@ -15,6 +15,10 @@
 //! that makes links, `PATH` overrides, interpreters and program names built
 //! from expansions or globs, as do signed or managed policy and global
 //! lockdown.
+//!
+//! An interpreter is unbounded unless it is the whole command and the program
+//! it runs, inline or fed on standard input, was read; it then runs only that
+//! program, as it would run a script file.
 
 use std::collections::BTreeSet;
 use std::time::Instant;
@@ -131,7 +135,7 @@ impl CompiledNativeCommandControls {
             environment,
         ) {
             Err(error) if UNMODELED_ERRORS.contains(&error) => self
-                .unmodeled_floor(command)
+                .unmodeled_floor(command, context)
                 .map(|floor| (NativeCommandObservationBatchV1::default(), Some(floor)))
                 .ok_or(error),
             observed => observed.map(|batch| (batch, None)),
@@ -141,7 +145,11 @@ impl CompiledNativeCommandControls {
     /// The strongest floor of every active extension that could own part of
     /// the command, and never less than review. `None` keeps the evaluation
     /// failure.
-    fn unmodeled_floor(&self, command: &CanonicalCommandV1) -> Option<&'static str> {
+    fn unmodeled_floor(
+        &self,
+        command: &CanonicalCommandV1,
+        context: crate::pretool::PathContext<'_>,
+    ) -> Option<&'static str> {
         if self.global_block
             || self.binding.managed_revision != 0
             || self
@@ -161,7 +169,8 @@ impl CompiledNativeCommandControls {
         if shell.contains("$'")
             || shell.contains("$\"")
             || synthesizes_program(&unquoted_literal(shell))
-            || INTERPRETERS.iter().any(|name| interpreted.contains(*name))
+            || (INTERPRETERS.iter().any(|name| interpreted.contains(*name))
+                && !crate::pretool::reads_sole_program(command, context))
         {
             return None;
         }

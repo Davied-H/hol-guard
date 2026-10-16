@@ -103,6 +103,44 @@ pub(super) fn assess(model: &CanonicalCommandV1, context: PathContext<'_>) -> Ve
     assess_programs(model, context, true)
 }
 
+/// The command's text and segments, in a verified path context. The command
+/// model leaves a heredoc or an input redirect uncertain; the shell structure
+/// parse reads both, so a program fed that way is read too.
+fn structure(
+    model: &CanonicalCommandV1,
+    context: PathContext<'_>,
+) -> Option<(String, Vec<crate::CommandSegmentV1>)> {
+    if !read_paths::verified_path_context(context.home_dir, context.cwd) {
+        return None;
+    }
+    if model.confidence == "exact" {
+        return Some((model.normalized_text.clone(), model.segments.clone()));
+    }
+    let structured = crate::critical_floor_context::parse_floor_command(
+        &model.normalized_text,
+        context.cwd.map(Path::new),
+        context.home_dir.map(Path::new),
+    );
+    (structured.confidence == "exact" && structured.wrapper_chain.is_empty())
+        .then_some((structured.normalized_text, structured.segments))
+}
+
+/// Whether the command is one interpreter launch, with no wrapper or
+/// environment prefix, whose inline source or program fed on standard input
+/// this scan read. The interpreter then runs only that program, as it would
+/// run a script file.
+pub(crate) fn reads_sole_program(model: &CanonicalCommandV1, context: PathContext<'_>) -> bool {
+    let sole = model.wrapper_chain.is_empty()
+        && !model.path_overridden
+        && structure(model, context).is_some_and(|(_, segments)| {
+            matches!(segments.as_slice(), [segment]
+                if segment.wrapper_chain.is_empty()
+                    && segment.environment_names.is_empty()
+                    && !segment.path_overridden)
+        });
+    sole && assess_programs(model, context, false).len() == 1
+}
+
 /// `assess`, leaving out script files when `scripts` is false.
 fn assess_programs(
     model: &CanonicalCommandV1,
@@ -110,29 +148,11 @@ fn assess_programs(
     scripts: bool,
 ) -> Vec<Findings> {
     let mut findings = Vec::new();
-    if !read_paths::verified_path_context(context.home_dir, context.cwd) {
+    let Some((text, segments)) = structure(model, context) else {
         return findings;
-    }
-    // The command model leaves a heredoc or an input redirect uncertain; the
-    // shell structure parse reads both, so a program fed that way is read too.
-    let structured;
-    let (text, segments) = if model.confidence == "exact" {
-        (model.normalized_text.as_str(), model.segments.as_slice())
-    } else {
-        structured = crate::critical_floor_context::parse_floor_command(
-            &model.normalized_text,
-            context.cwd.map(Path::new),
-            context.home_dir.map(Path::new),
-        );
-        if structured.confidence != "exact" {
-            return findings;
-        }
-        (
-            structured.normalized_text.as_str(),
-            structured.segments.as_slice(),
-        )
     };
-    let stdin = Stdin::new(text);
+    let segments = segments.as_slice();
+    let stdin = Stdin::new(&text);
     for (index, segment) in segments.iter().enumerate() {
         let Some((language, program, remote)) = launch::launched_program(segment) else {
             continue;
