@@ -138,18 +138,6 @@ pub(crate) fn with_current_token(
     Ok(resolved)
 }
 
-/// Probe every group and return `{decision, ignored_local_integrity}`.
-pub(crate) fn compose_groups<F>(
-    groups: &PolicyLookupProbeGroupsV1,
-    workspace: Option<&str>,
-    probe: F,
-) -> Result<Value, String>
-where
-    F: FnMut(&str, &str, Option<&str>) -> Result<Value, String>,
-{
-    Ok(most_severe_group(&compose_each(groups, workspace, probe)?))
-}
-
 /// Each group's candidates composed most restrictive, in group order.
 fn compose_each<F>(
     groups: &PolicyLookupProbeGroupsV1,

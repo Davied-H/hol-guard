@@ -6,7 +6,7 @@ use flate2::read::GzDecoder;
 use guard_contracts::PolicyLookupProbeGroupsV1;
 use serde_json::{json, Value};
 
-use super::{compose_each, compose_groups, with_current_token, with_memory_candidates};
+use super::{compose_each, most_severe_group, with_current_token, with_memory_candidates};
 use crate::memory_pattern::{verdict, MemoryRequest};
 
 const VECTORS: &[u8] = include_bytes!("../tests/fixtures/generic_saved_decision_vectors.json.gz");
@@ -44,7 +44,7 @@ fn recorded_generic_saved_decisions_replay() {
         .unwrap_or_else(|error| panic!("{name}: {error}"));
         let table = &case["table"];
         let is_degraded = case["degraded"].as_bool().unwrap();
-        let actual = compose_groups(&groups, case["workspace"].as_str(), |id, hash, at| {
+        let composed = compose_each(&groups, case["workspace"].as_str(), |id, hash, at| {
             if is_degraded {
                 return Ok(degraded());
             }
@@ -55,7 +55,7 @@ fn recorded_generic_saved_decisions_replay() {
                 .ok_or_else(|| format!("{name}: missing probe {key}"))
         })
         .unwrap_or_else(|error| panic!("{name}: {error}"));
-        assert_eq!(actual, case["expected"], "{name}");
+        assert_eq!(most_severe_group(&composed), case["expected"], "{name}");
     }
 }
 
@@ -63,17 +63,17 @@ fn recorded_generic_saved_decisions_replay() {
 fn group_and_candidate_counts_are_bounded() {
     let probe = |_: &str, _: &str, _: Option<&str>| Ok(degraded());
     let empty: PolicyLookupProbeGroupsV1 = serde_json::from_value(json!({"groups": []})).unwrap();
-    assert!(compose_groups(&empty, None, probe).is_err());
+    assert!(compose_each(&empty, None, probe).is_err());
     let no_ids: PolicyLookupProbeGroupsV1 = serde_json::from_value(json!({
         "groups": [{"artifact_hash": "h", "candidate_artifact_ids": []}],
     }))
     .unwrap();
-    assert!(compose_groups(&no_ids, None, probe).is_err());
+    assert!(compose_each(&no_ids, None, probe).is_err());
     let many: PolicyLookupProbeGroupsV1 = serde_json::from_value(json!({
         "groups": vec![json!({"artifact_hash": "h", "candidate_artifact_ids": ["a"]}); 5],
     }))
     .unwrap();
-    assert!(compose_groups(&many, None, probe).is_err());
+    assert!(compose_each(&many, None, probe).is_err());
 }
 
 #[test]
