@@ -84,7 +84,10 @@ class DaemonDiagnostics:
         self._thread: threading.Thread | None = None
         try:
             _secure_directory(self.log_directory)
-            cleanup_expired_daemon_logs(self.log_directory)
+            # The long-running daemon owns retention. A one-shot hook must not
+            # scan and unlink rotated logs on the fail-closed path.
+            if rotate:
+                cleanup_expired_daemon_logs(self.log_directory)
             if self.log_path.is_symlink():
                 raise OSError("daemon diagnostic log cannot be a symbolic link")
             # The long-running daemon owns midnight rotation. A one-shot CLI
@@ -144,10 +147,9 @@ class DaemonDiagnostics:
                 return self._thread is None or not self._thread.is_alive()
             self._closed = True
             if self._thread is None:
-                # Directory cleanup and a stalled write must not hold the
-                # fail-closed hook response. The drain is daemon-threaded so
-                # the timeout is a real bound, and a fast disk still finishes
-                # before close returns.
+                # A stalled write must not hold the fail-closed hook response.
+                # The drain is daemon-threaded so the timeout bounds that write,
+                # and a fast disk still finishes before close returns.
                 drained = threading.Thread(
                     target=self._finish_pending,
                     daemon=True,
