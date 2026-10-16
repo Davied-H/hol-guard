@@ -22,6 +22,7 @@ use serde_json::{Map, Value};
 
 use super::package_answer;
 use super::package_policy::PackagePolicy;
+use super::package_receipt;
 use super::package_route::{self, PackageRoute};
 use crate::mcp_tool_policy_decision::Decision;
 
@@ -47,6 +48,8 @@ pub(super) struct PackageAnswer {
     pub(super) artifact_hash: String,
     /// The evaluation the lane settled on, as the answer reported it.
     pub(super) evaluation: Map<String, Value>,
+    /// The package half of the receipt's scanner evidence.
+    pub(super) evidence: Vec<Value>,
 }
 
 /// Decide one relayed package call. `re_resolve` is the proxy's second
@@ -86,6 +89,7 @@ fn answered(
         policy_workspace: policy.policy_workspace.clone(),
         artifact_hash: policy.artifact_hash.clone(),
         evaluation: policy.evaluation.clone(),
+        evidence: package_receipt::evidence(policy),
     }
 }
 

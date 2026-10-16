@@ -662,6 +662,8 @@ mod package_config;
 mod package_lane;
 #[path = "mcp_relay_decide_package_policy.rs"]
 mod package_policy;
+#[path = "mcp_relay_decide_package_receipt.rs"]
+mod package_receipt;
 #[path = "mcp_relay_decide_package_route.rs"]
 mod package_route;
 #[path = "mcp_relay_decide_policy.rs"]
