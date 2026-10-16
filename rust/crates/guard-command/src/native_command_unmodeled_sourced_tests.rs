@@ -68,6 +68,34 @@ fn a_sourced_file_that_reaches_the_network_still_owns_the_command() {
 }
 
 #[test]
+fn an_external_program_named_source_is_not_the_shell_builtin() {
+    // `./source` is a path the shell executes as an ordinary program. Reading
+    // the file it is handed says nothing about what that program does.
+    let root = project("external", ACTIVATE);
+    std::fs::write(root.join("project").join("payload"), "echo ok\n").unwrap();
+    let (action, _) = outcome(&root, "./source ./payload && pytest -q");
+    assert_ne!(action, "allow");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn a_sourced_file_that_hides_what_it_runs_keeps_the_command_unowned() {
+    // Reading a file bounds the owners only while its words are the whole
+    // story. These each run a program whose name the file never spells.
+    for text in [
+        "source ./nested\n",
+        ". ./nested\n",
+        "command_name=curl\n\"$command_name\" https://example.invalid/\n",
+        "$'\\x63url' https://example.invalid/\n",
+    ] {
+        let root = project("hidden", text);
+        let (action, _) = outcome(&root, "source .venv/bin/activate && pytest -q");
+        assert_ne!(action, "allow", "{text}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}
+
+#[test]
 fn a_file_this_scan_cannot_read_keeps_the_command_unowned() {
     // An unreadable file must not buy a bounded owner set it has not earned:
     // a name searched on PATH, a path outside the workspace, and a file that
@@ -82,4 +110,14 @@ fn a_file_this_scan_cannot_read_keeps_the_command_unowned() {
         assert_ne!(action, "allow", "{command}");
     }
     let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn a_parameter_expansion_is_a_value_but_a_brace_command_still_runs() {
+    assert!(super::bounds_its_owners(
+        "PATH=\"${HOME}/bin:$PATH\"\nexport PATH\n"
+    ));
+    assert!(!super::bounds_its_owners(
+        "${ curl https://example.invalid/; }\n"
+    ));
 }

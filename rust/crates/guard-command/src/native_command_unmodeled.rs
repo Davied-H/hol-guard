@@ -186,6 +186,7 @@ impl CompiledNativeCommandControls {
         let sources_files = interpreted.contains("source") || interpreted.contains(".");
         let sourced = if sources_files {
             crate::pretool::sourced_program_sources(command, context)
+                .filter(|texts| texts.iter().all(|text| bounds_its_owners(text)))
         } else {
             Some(Vec::new())
         };
@@ -480,6 +481,61 @@ fn joined_quotes(text: &str) -> String {
 /// `sourced` says every file the command sources was read, so a `.` command
 /// word no longer hides a program: the file it runs is already among the
 /// owners.
+/// Whether a sourced file's own words name every program it runs.
+///
+/// Reading a file bounds the owners only while its text is the whole story.
+/// Text that builds a command word from an expansion or a glob, that sources
+/// a further file this scan has not read, or that hides words behind an
+/// ANSI-C or locale quote can run a program whose name never appears, so the
+/// command keeps the owners it had instead.
+fn bounds_its_owners(text: &str) -> bool {
+    if text.contains("$'") || text.contains("$\"") {
+        return false;
+    }
+    let literal = mask_parameter_expansions(&unquoted_literal(text));
+    !synthesizes_program(&literal, false)
+        && !command_words(&mask_double_quoted_separators(&literal)).any(|word| word == "source")
+}
+
+/// The text with `${NAME}` parameter expansions replaced by a plain word.
+///
+/// The shell expands those to a value rather than running them, and a script
+/// is full of them: `${BASH_SOURCE[0]:-$0}` inside a command substitution
+/// would otherwise read as a command word built from an expansion. Bash's
+/// `${ cmd; }` and `${| cmd; }` do run the commands they hold, so a brace
+/// followed by a space or a pipe is left exactly as it stands, and `$(...)`
+/// and backticks are never touched.
+fn mask_parameter_expansions(literal: &str) -> String {
+    let characters: Vec<char> = literal.chars().collect();
+    let mut out = String::with_capacity(literal.len());
+    let mut index = 0;
+    while index < characters.len() {
+        let expansion = characters[index] == '$'
+            && characters.get(index + 1) == Some(&'{')
+            && !matches!(
+                characters.get(index + 2),
+                Some(' ' | '\t' | '\n' | '|') | None
+            );
+        if !expansion {
+            out.push(characters[index]);
+            index += 1;
+            continue;
+        }
+        out.push('x');
+        index += 2;
+        let mut depth = 1usize;
+        while index < characters.len() && depth > 0 {
+            match characters[index] {
+                '{' => depth += 1,
+                '}' => depth -= 1,
+                _ => {}
+            }
+            index += 1;
+        }
+    }
+    out
+}
+
 fn synthesizes_program(literal: &str, sourced: bool) -> bool {
     let masked = mask_double_quoted_separators(literal);
     let mut words = command_words(&masked).filter(|word| !is_assignment(word));

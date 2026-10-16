@@ -165,19 +165,28 @@ pub(crate) fn sole_program_sources(
 ///
 /// Sourcing runs a file's words in the shell that reads it, so the file names
 /// the programs the command can run, exactly as a script file names the ones
-/// an interpreter runs. `None` means at least one sourced file could not be
-/// read, so the command keeps the owners it had: an unreadable file must not
-/// buy a bounded owner set it has not earned.
+/// an interpreter runs. `None` means the command sources something this scan
+/// did not read, so it keeps the owners it had: a file that was never read
+/// must not buy a bounded owner set it has not earned. A command whose words
+/// name sourcing but whose segments hold no `source` builtin reads the same
+/// way, because the word belongs to something this scan has not modelled.
 pub(crate) fn sourced_program_sources(
     model: &CanonicalCommandV1,
     context: PathContext<'_>,
 ) -> Option<Vec<String>> {
     let (_, segments) = structure(model, context)?;
     let mut sources = Vec::new();
+    let mut sourcing = false;
     for (index, segment) in segments.iter().enumerate() {
-        let Some(target) = sourced_file(segment) else {
+        if !sources_a_file(segment) {
             continue;
-        };
+        }
+        sourcing = true;
+        // The shape of the segment decides whether the file is knowable at
+        // all: a bare name the shell searches on `PATH`, a target an
+        // expansion or a glob builds, and a wrapper or environment prefix
+        // each leave the file unknown, and an unknown file is unread.
+        let target = sourced_file(segment)?;
         // An earlier directory change moves a relative path out of reach.
         let moved = segments[..index].iter().any(|prior| {
             prior.executable.as_deref().is_some_and(|value| {
@@ -189,14 +198,23 @@ pub(crate) fn sourced_program_sources(
         }
         sources.push(read_text(&resolve(target, context)?)?);
     }
-    Some(sources)
+    sourcing.then_some(sources)
+}
+
+/// Whether the segment runs the shell's `source` builtin, whatever file it
+/// names. A path-qualified `./source` is an ordinary external program whose
+/// behaviour this scan does not know, not the builtin.
+fn sources_a_file(segment: &crate::CommandSegmentV1) -> bool {
+    segment
+        .executable
+        .as_deref()
+        .is_some_and(|value| value == "." || value == "source")
 }
 
 /// The file a `source FILE` or `. FILE` segment runs, when the shell reads it
 /// from a path it was given rather than searching `PATH`.
 fn sourced_file(segment: &crate::CommandSegmentV1) -> Option<&str> {
-    let executable = segment.executable.as_deref()?;
-    if executable != "." && super::executable_basename(executable) != "source" {
+    if !sources_a_file(segment) {
         return None;
     }
     if !segment.wrapper_chain.is_empty()
