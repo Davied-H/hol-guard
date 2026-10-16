@@ -892,7 +892,7 @@
       "required_tools": [
         "learn"
       ],
-      "prompt": "I want three things written into your project memory so later sessions have them. Use the learn tool three times, once per lesson, each with its own memory text: that the TypeScript sources live under {{workspace}}/src, that the project is built before it is tested, and that README.md describes the fixture layout. Add a short context note to the second one. Then tell me what you recorded."
+      "prompt": "I want three things written into your project memory so later sessions have them. Use the learn tool three times, once per lesson, each with its own memory text: that the TypeScript sources live in the src directory, that the project is built before it is tested, and that README.md describes the fixture layout. Add a short context note to the second one. Then tell me what you recorded."
     },
     {
       "id": "omp-learn-memory-carries-a-standing-instruction",

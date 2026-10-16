@@ -1,13 +1,17 @@
 //! Oh My Pi's `learn` writes one note into the agent's memory bank. The note
 //! is prose the model wrote for itself, so no two calls carry the same text:
 //! an exact-action approval can never be reused, and under review every call
-//! stops the run again. What the note may carry is bounded instead. A plain
-//! note into this project's own bank is allowed; a note holding a secret, an
-//! instruction aimed at the harness or at Guard, a destination to send
-//! something to, or a command shaped to be run later keeps its review under a
-//! reason of its own. So does a global note, which reaches every project's
-//! recall, and a call that also mints a skill file, which is a file write with
-//! its own proof.
+//! stops the run again. What the note may carry is bounded instead, and the
+//! bound is drawn so that only inert prose passes it: a note into this
+//! project's own bank is allowed when it reads as a lesson and nothing else.
+//! A note holding a secret, an instruction a later run would follow, a
+//! destination to send something to, or a command shaped to be run later keeps
+//! its review under a reason of its own, because the agent reads its own bank
+//! back at the top of every later run. So does a global note, which reaches
+//! every project's recall, and a call that also mints a skill file, which is a
+//! file write with its own proof. Nothing here turns a review into a block or
+//! a block into a review: a note this cannot read as a plain lesson keeps
+//! exactly the review it has today.
 
 use crate::pretool::generic::extract::{note_intent, GenericSignals};
 use crate::pretool::generic::result::{generic_action, generic_result};
@@ -15,6 +19,9 @@ use guard_contracts::{PreToolActionTypeV1, PreToolOperationV1, PreToolResultV1};
 use serde_json::{Map, Value};
 
 use super::{strict_tool_input, OmpContext};
+
+#[path = "generic_omp_learn_prose.rs"]
+mod prose;
 
 /// A note longer than this is not the lesson the tool is for, and the readers
 /// below are bounded by it.
@@ -103,7 +110,8 @@ fn read_note(input: &Map<String, Value>) -> Option<Reading> {
     let lesson = !note_intent(&written)
         && written.iter().all(|text| {
             text.is_empty()
-                || (!crate::pretool::curl_reads::url_secrets::text_carries_secret(text)
+                || (prose::inert_prose(text)
+                    && !crate::pretool::curl_reads::url_secrets::text_carries_secret(text)
                     && guard_scanner::secret_detection::scan_secret_text(
                         text, "", "memory", None, 1,
                     )
