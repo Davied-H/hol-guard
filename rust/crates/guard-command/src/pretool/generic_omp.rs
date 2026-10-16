@@ -7,6 +7,8 @@
 
 #[path = "generic_omp_eval.rs"]
 mod eval;
+#[path = "generic_omp_learn.rs"]
+mod learn;
 #[path = "generic_omp_yield.rs"]
 mod yield_report;
 
@@ -96,15 +98,12 @@ pub(super) fn bounded_delegation_metadata(payload: &Value) -> bool {
 }
 
 /// `learn` stores one memory note and returns the store's acknowledgement.
-/// Its PreToolUse stays an unknown-tool review, so under enforce the call has
-/// run only after a person approved it. Without this, that approved call's
-/// result is withheld with nothing left to approve.
+/// A note this reads as plain was allowed outright; a note it does not read
+/// that way ran only because a person approved it. Either way the result has
+/// nothing left to approve, and withholding it would leave Oh My Pi without
+/// the acknowledgement for a call that already happened.
 fn learn_input(input: &Map<String, Value>) -> bool {
-    input.len() == 1
-        && input
-            .get("memory")
-            .and_then(Value::as_str)
-            .is_some_and(|memory| !memory.trim().is_empty())
+    learn::note_input(input)
 }
 
 /// `Some` only when a bounded proof applies; `None` keeps the normal path.
@@ -156,6 +155,7 @@ pub(super) fn evaluate(
                 .is_empty()
                 .then(|| delegation_result(tool, context))
         }
+        "learn" => learn::evaluate(payload, signals, context),
         "eval" => eval::evaluate(payload, signals, context),
         "edit" => todo_shaped_edit(payload, signals, context),
         "glob" | "find" | "ls" => listing(payload, signals, context),

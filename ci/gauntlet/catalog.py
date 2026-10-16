@@ -122,6 +122,7 @@ def load_catalog_data(data: object) -> tuple[Scenario, ...]:
             "blocked-command",
             "blocked-extension",
             "blocked-package",
+            "blocked-memory-note",
             "native-tools",
             "full-task",
         }:
@@ -133,6 +134,8 @@ def load_catalog_data(data: object) -> tuple[Scenario, ...]:
             raise ValueError("single-attempt cases require one exact command")
         if scenario.oracle == "native-tools" and (scenario.expectation != "allow" or not scenario.required_tools):
             raise ValueError("native-tools cases are allow-only and must name their required tools")
+        if scenario.oracle == "blocked-memory-note" and (scenario.commands or scenario.required_tools != ("learn",)):
+            raise ValueError("memory-note protection cases drive the learn tool alone")
         if scenario.oracle == "full-task" and (
             scenario.expectation != "allow" or scenario.commands or "core" in scenario.profiles
         ):

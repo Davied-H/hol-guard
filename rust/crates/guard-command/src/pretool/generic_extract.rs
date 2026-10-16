@@ -322,6 +322,18 @@ use prompt::{
     prompt_injection_intent, prompt_sensitive_text, subprocess_prompt_intent,
 };
 
+/// What a stored note must not carry. A memory the agent writes is read back
+/// into a later run, so the readings a prompt gets are the readings it needs:
+/// the same patterns, over the note's own text rather than a `prompt` field.
+pub(super) fn note_intent(values: &[String]) -> bool {
+    guard_bypass_prompt(values)
+        || prompt_injection_intent(values)
+        || exfil_prompt_intent(values)
+        || destructive_prompt_intent(values)
+        || subprocess_prompt_intent(values)
+        || values.iter().any(|value| prompt_sensitive_text(value))
+}
+
 #[path = "generic_nested_json.rs"]
 mod nested_json;
 pub(super) use nested_json::parse_strict_nested_json;

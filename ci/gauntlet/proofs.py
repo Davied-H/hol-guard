@@ -31,6 +31,7 @@ BLOCK_REASONS = frozenset(
         "native_policy_blocked",
         "native_policy_review_required",
         "native_business_context_unavailable",
+        "native_omp_learn_memory_sensitive",
     }
 )
 

@@ -216,6 +216,20 @@ fn omp_learn_acknowledgement_is_released_without_lowering_output_floors() {
             &input, harness
         ));
     }
+    // Oh My Pi sends the optional `context` beside the memory, and a note that
+    // ran still has an acknowledgement to return.
+    for tool_input in [
+        json!({"memory": "note", "context": "Learned while fixing the shelf."}),
+        json!({"memory": "note", "scope": "project"}),
+        json!({"memory": "note", "context": concat!("ghp_", "0123456789abcdefghijklmnopqrstuvwxyzA")}),
+    ] {
+        let mut changed = input.clone();
+        changed["tool_input"] = tool_input.clone();
+        assert!(
+            guard_command::pretool::bounded_task_metadata_output(&changed, "omp"),
+            "{tool_input}"
+        );
+    }
     for tool_input in [
         json!({"memory": "note", "scope": "global"}),
         json!({"memory": ["note"]}),
