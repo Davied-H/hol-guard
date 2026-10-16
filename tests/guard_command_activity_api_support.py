@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from codex_plugin_scanner.guard.daemon.server import GuardDaemonServer
 from codex_plugin_scanner.guard.runtime.command_activity_contract import (
@@ -28,7 +28,12 @@ from codex_plugin_scanner.guard.runtime.effect_contract import EffectKind
 from codex_plugin_scanner.guard.runtime.extension_evidence import EvidenceSeverity, ExtensionRuleIdentity
 from codex_plugin_scanner.guard.store import GuardStore
 
-_FIXTURE_OCCURRED_ON = date(2026, 7, 18)
+# The activity list keeps a ninety-day window, so a day written into the
+# source ages out of it and the suite starts failing on a calendar boundary
+# rather than on a change. Yesterday is always inside the window, and unlike
+# today it cannot land in the future for a run that starts before the hour
+# these activities are stamped with.
+_FIXTURE_OCCURRED_ON = date.today() - timedelta(days=1)
 
 
 def evidence(
