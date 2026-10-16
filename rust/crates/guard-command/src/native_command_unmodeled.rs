@@ -216,9 +216,7 @@ impl CompiledNativeCommandControls {
         // operands. A bare one takes the caller's standard input, so the
         // arguments it hands the program are not in this text.
         let xargs_bounded = xargs_programs.is_some() && xargs_input_is_named(shell);
-        // `xargs_programs` is `Some` of an empty set when the text has no
-        // `xargs`, because every (nonexistent) `xargs` names a program.
-        // The refusal needs one that actually names the program it runs.
+        // No command-position `xargs` is `None`, not an empty program set.
         let xargs_names_program = shell.contains("xargs")
             && xargs_bounded
             && xargs_names_its_program(shell)

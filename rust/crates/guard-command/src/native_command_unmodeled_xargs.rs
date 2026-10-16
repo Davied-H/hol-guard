@@ -49,11 +49,14 @@ pub(super) fn xargs_input_is_named(shell: &str) -> bool {
             // The right side of a `||` follows an empty stage, not a pipe.
             let piped = stage > 0 && !stages[stage - 1].trim().is_empty();
             let words: Vec<&str> = text.split_whitespace().collect();
-            for (index, word) in words.iter().enumerate() {
-                if command_basename(word) == "xargs" && !input_is_named(piped, &words[index + 1..])
-                {
-                    return false;
-                }
+            // Only the word in command position. `echo xargs rm` names `echo`.
+            let Some(index) = command_index(&words) else {
+                continue;
+            };
+            if command_basename(words[index]) == "xargs"
+                && !input_is_named(piped, &words[index + 1..])
+            {
+                return false;
             }
         }
     }
@@ -61,41 +64,147 @@ pub(super) fn xargs_input_is_named(shell: &str) -> bool {
 }
 
 /// The input source one `xargs` names, read from the words after it.
+///
+/// A quoted argument that happens to contain `<` is not a redirect, and a
+/// redirect or `-a` file that is the caller's own standard input still does
+/// not put the operands in the text.
 fn input_is_named(piped: bool, rest: &[&str]) -> bool {
-    if piped || rest.iter().any(|word| word.contains('<')) {
+    if piped {
         return true;
     }
-    // Only the options `xargs` itself reads, so a program's own `-a` is not
-    // mistaken for an argument file.
-    rest.iter()
-        .take_while(|word| word.starts_with('-'))
-        .any(|word| {
-            word.starts_with("--arg-file")
-                || (!word.starts_with("--") && word.trim_start_matches('-').starts_with('a'))
-        })
+    let mut saw_redirect = false;
+    let mut named_file = false;
+    for (index, word) in rest.iter().enumerate() {
+        let Some(target) = redirect_target(word, rest.get(index + 1).copied()) else {
+            continue;
+        };
+        saw_redirect = true;
+        if !target.is_empty() && !caller_stdin(target) {
+            named_file = true;
+        }
+    }
+    if saw_redirect {
+        return named_file;
+    }
+    arg_file_is_named(rest)
+}
+
+/// An unquoted input redirect's target. A heredoc or here-string counts as
+/// named: its body is in the text. An empty target is the next word.
+fn redirect_target<'a>(word: &'a str, next: Option<&'a str>) -> Option<&'a str> {
+    // A leading descriptor other than stdin is not where `xargs` reads
+    // operands. `2<list.txt` only redirects diagnostics.
+    let digits = word
+        .bytes()
+        .take_while(|byte| byte.is_ascii_digit())
+        .count();
+    if digits > 0 && &word[..digits] != "0" {
+        return None;
+    }
+    let rest = &word[digits..];
+    let target = rest.strip_prefix('<')?;
+    if target.starts_with('<') {
+        return Some("heredoc");
+    }
+    if target.is_empty() {
+        return Some(next.unwrap_or(""));
+    }
+    Some(target)
+}
+
+fn caller_stdin(target: &str) -> bool {
+    matches!(
+        target,
+        "-" | "&0" | "/dev/stdin" | "/dev/fd/0" | "/proc/self/fd/0"
+    )
+}
+
+/// `-a` / `--arg-file` on `xargs` itself, before the program word.
+fn arg_file_is_named(rest: &[&str]) -> bool {
+    let mut index = 0;
+    while index < rest.len() && rest[index].starts_with('-') && rest[index] != "--" {
+        if let Some(target) = arg_file_target(rest[index], rest.get(index + 1).copied()) {
+            return !target.is_empty() && !caller_stdin(target);
+        }
+        index += 1;
+    }
+    false
+}
+
+fn arg_file_target<'a>(word: &'a str, next: Option<&'a str>) -> Option<&'a str> {
+    if let Some(target) = word.strip_prefix("--arg-file=") {
+        return Some(target);
+    }
+    if word == "--arg-file" {
+        return Some(next.unwrap_or(""));
+    }
+    let body = word
+        .strip_prefix('-')
+        .filter(|body| !body.is_empty() && !body.starts_with('-'))?;
+    let rest = body.strip_prefix('a')?;
+    if rest.is_empty() {
+        Some(next.unwrap_or(""))
+    } else {
+        Some(rest)
+    }
 }
 
 /// The programs every `xargs` in the text names, by basename, or `None` when
 /// one of them names none.
 pub(super) fn xargs_programs(shell: &str) -> Option<BTreeSet<String>> {
     let mut programs = BTreeSet::new();
+    let mut found = false;
     // Braces stay: `-I {}` is how a replacement is written, and a `{ ...; }`
     // group's own words are read in the same piece anyway.
     for piece in shell.split(['\n', ';', '&', '|', '(', ')', '`']) {
         let words: Vec<&str> = piece.split_whitespace().collect();
-        for (index, word) in words.iter().enumerate() {
-            if command_basename(word) == "xargs" {
-                let program = command_basename(xargs_operand(&words[index + 1..])?);
-                // A `.cmd` launcher runs the program it is named for, the way
-                // `command_basename` already reads a `.exe` suffix.
-                if let Some(stem) = program.strip_suffix(".cmd") {
-                    programs.insert(stem.to_owned());
-                }
-                programs.insert(program);
+        // Only the word in command position. `echo xargs rm` names `echo`.
+        let Some(index) = command_index(&words) else {
+            continue;
+        };
+        if command_basename(words[index]) != "xargs" {
+            continue;
+        }
+        found = true;
+        let program = command_basename(xargs_operand(&words[index + 1..])?);
+        // A `.cmd` launcher runs the program it is named for, the way
+        // `command_basename` already reads a `.exe` suffix.
+        if let Some(stem) = program.strip_suffix(".cmd") {
+            programs.insert(stem.to_owned());
+        }
+        programs.insert(program);
+    }
+    found.then_some(programs)
+}
+
+/// Words that may precede the command in a piece without being it.
+const COMMAND_PREFIXES: &[&str] = &[
+    "{", "do", "then", "else", "elif", "while", "until", "if", "!", "time", "command", "builtin",
+    "nohup",
+];
+
+fn command_index(words: &[&str]) -> Option<usize> {
+    let mut index = 0;
+    while index < words.len() {
+        let word = words[index];
+        if COMMAND_PREFIXES.contains(&word) {
+            index += 1;
+            continue;
+        }
+        if let Some((name, _)) = word.split_once('=') {
+            if !name.is_empty()
+                && !name.starts_with('-')
+                && name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+            {
+                index += 1;
+                continue;
             }
         }
+        return Some(index);
     }
-    Some(programs)
+    None
 }
 
 /// The operand `xargs` runs, read past its own options.

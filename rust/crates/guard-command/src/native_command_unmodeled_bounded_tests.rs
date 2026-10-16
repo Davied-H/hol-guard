@@ -110,6 +110,8 @@ fn xargs_options_are_read_past_to_its_program() {
         "xargs sh -c 'rm $0'",
         "xargs $tool",
         "xargs bin/*",
+        // The word is an argument of `echo`, not an `xargs` invocation.
+        "echo xargs rm",
         // Every `xargs` in the text has to name its program.
         "cat list.txt | xargs rm -f && cat more.txt | xargs",
     ] {
@@ -133,6 +135,15 @@ fn an_xargs_without_a_named_input_stays_unreadable() {
     }
     for unnamed in [
         "xargs rm -rf BUILD",
+        "xargs rm -rf '<tmp>'",
+        "xargs rm -rf < /dev/stdin",
+        "xargs rm -rf <&0",
+        "xargs rm -rf < /dev/fd/0",
+        "xargs rm -rf < /proc/self/fd/0",
+        "xargs rm 2<list.txt",
+        "xargs -a - rm",
+        "xargs -a /dev/stdin rm",
+        "xargs --arg-file=- rm",
         "xargs -0 rm -f",
         "xargs grep -a pattern",
         // The right side of a `||` follows no pipe.
