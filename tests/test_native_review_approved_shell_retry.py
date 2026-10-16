@@ -2,21 +2,28 @@
 
 The approve-then-retry path is the Gauntlet's ``approved-retry`` lane at
 product level: a reviewed command, one grant through the approval UI's own
-resolution code, then the agent's retry. The grant is fenced to the reviewed
-request, so what the retry may change decides whether it gets through.
+resolution code, then the agent's retry. A grant is fenced to the reviewed
+request by the ``native-review-v4:`` contract the row is queued with, so what
+the retry may change — and whether the row carries a contract at all — decides
+whether the agent gets through.
 
-Three retries, all after a grant the operator just gave:
+Four rounds, each with its own command and its own grant:
 
-* the identical request, same transport id: allowed, the approval is reused;
+* the identical request under the same ``tool_use_id``: allowed, the approval
+  is reused, which is the contract working as intended;
 * the identical command under a fresh ``tool_use_id``, which is what a real
   Claude Code retry sends, since the model emits a new tool-use block:
-  reviewed again (hashgraph-online/hol-guard#3837);
-* a reworded command: reviewed again.
+  reviewed again. ``request_payload_identity`` drops the transport call id
+  from the review anchor only for the ``pi`` and ``omp`` harnesses, so every
+  other harness anchors its approval to an id its own retry will not repeat;
+* a reworded command: reviewed again, the approval binds the exact action;
+* an ordinary ``git`` command: its row is queued with no retry contract at
+  all, because ``payload_reuse`` binds a retry only for the commands in
+  ``DIRECT_REUSABLE_COMMANDS`` and ``ARGV_BOUND_COMMANDS``, and ``git`` is in
+  neither. Approving that row cannot carry even a byte-identical retry.
 
-The last two are recorded here as today's behaviour, not as behaviour this
-test endorses. ``request_payload_identity`` drops the transport call id from
-the review anchor only for the ``pi`` and ``omp`` harnesses, so every other
-harness binds its approval to an id its own retry will not repeat.
+The last three are recorded here as today's behaviour, not as behaviour this
+test endorses; they are hashgraph-online/hol-guard#3837.
 
 Under the default ``blocked_request_mode = "safe-alternative"`` a review is
 rendered to the agent as a plain block with ``prompted`` false, so the queued
@@ -32,6 +39,7 @@ import pytest
 
 GRANT_REASON = "Approved for the approve-then-retry contract"
 REVIEW_ACTIONS = {"review", "require-reapproval"}
+RETRY_CONTRACT = "native-review-v4:"
 
 
 def _payload(command: str, use_id: str, workspace: Path) -> dict[str, object]:
@@ -103,7 +111,7 @@ def _approve_then_retry(
     }
 
 
-def test_one_approval_carries_the_identical_retry_but_not_a_new_call_id_or_rewording(
+def test_an_approval_carries_only_the_request_it_was_queued_for(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, native_approval_reuse_runtime: Path
 ) -> None:
     from codex_plugin_scanner.guard.config import update_guard_settings
@@ -128,18 +136,16 @@ def test_one_approval_carries_the_identical_retry_but_not_a_new_call_id_or_rewor
     )
     seen: set[str] = set()
     try:
-        same_id = _approve_then_retry(
-            worker, store, kwargs, workspace, seen, command="git status --short", use_id="toolu_status"
-        )
+        same_id = _approve_then_retry(worker, store, kwargs, workspace, seen, command="ls -la", use_id="toolu_ls")
         new_id = _approve_then_retry(
             worker,
             store,
             kwargs,
             workspace,
             seen,
-            command="git diff --stat",
-            use_id="toolu_diff_first",
-            retry_use_id="toolu_diff_retry",
+            command="wc -c notes.txt",
+            use_id="toolu_wc_first",
+            retry_use_id="toolu_wc_retry",
         )
         reworded = _approve_then_retry(
             worker,
@@ -147,23 +153,32 @@ def test_one_approval_carries_the_identical_retry_but_not_a_new_call_id_or_rewor
             kwargs,
             workspace,
             seen,
-            command="git log --oneline -1",
-            use_id="toolu_log",
-            retry_command="git log --format=%h -1",
+            command="cat notes.txt",
+            use_id="toolu_read",
+            retry_command="head -c 200 notes.txt",
+        )
+        unbindable = _approve_then_retry(
+            worker, store, kwargs, workspace, seen, command="git status --short", use_id="toolu_git"
         )
     finally:
         worker.close()
 
-    outcomes = {"same_call_id": same_id, "new_call_id": new_id, "reworded": reworded}
-    # The whole point of the grant: the request it was queued for runs.
+    outcomes = {"same_id": same_id, "new_id": new_id, "reworded": reworded, "unbindable": unbindable}
+    # The whole point of the grant: the request it was queued for runs, once.
+    assert same_id["granted_binding"].startswith(RETRY_CONTRACT), outcomes
     assert same_id["policy_action"] == "allow", outcomes
     assert same_id["requeued_bindings"] == [], outcomes
     # #3837: the retry the model actually sends carries a new tool-use id, and
     # the review anchor keeps that id for every harness but pi and omp, so the
     # approval the operator just gave does not cover it.
+    assert new_id["granted_binding"].startswith(RETRY_CONTRACT), outcomes
     assert new_id["policy_action"] != "allow", outcomes
-    assert len(new_id["requeued_bindings"]) == 1, outcomes
-    assert new_id["requeued_bindings"] != [same_id["granted_binding"]], outcomes
+    assert new_id["requeued_bindings"] != [new_id["granted_binding"]], outcomes
     # Same intent, the model's own wording: a different action, so a new review.
     assert reworded["policy_action"] != "allow", outcomes
     assert len(reworded["requeued_bindings"]) == 1, outcomes
+    # #3837 at its sharpest: a reviewed ``git`` command queues a row with no
+    # retry contract — its artifact hash is the bare request id — so approving
+    # it cannot carry the identical retry under the identical tool-use id.
+    assert not unbindable["granted_binding"].startswith(RETRY_CONTRACT), outcomes
+    assert unbindable["policy_action"] != "allow", outcomes
