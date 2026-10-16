@@ -33,6 +33,12 @@ pub(super) struct Shim {
     pub(super) code: String,
 }
 
+/// A function in a shim, and for a method the parameter after the first.
+struct Function {
+    name: String,
+    parameter: Option<String>,
+}
+
 fn pattern(cell: &'static OnceLock<Regex>, source: &str) -> &'static Regex {
     cell.get_or_init(|| Regex::new(source).expect("static pattern"))
 }
@@ -82,9 +88,32 @@ fn method_definition() -> &'static Regex {
     pattern(&CELL, r"\bdef[ \t]+\w+")
 }
 
+/// A function's name and, for a method, the parameter after the first.
 fn definition() -> &'static Regex {
     static CELL: OnceLock<Regex> = OnceLock::new();
-    pattern(&CELL, r"^(?:async[ \t]+)?def[ \t]+(\w+)")
+    pattern(
+        &CELL,
+        r"^(?:async[ \t]+)?def[ \t]+(\w+)(?:[ \t]*\([ \t]*\w+[ \t]*,[ \t]*(\w+))?",
+    )
+}
+
+/// An attribute read by name, which calls whatever the name selects.
+fn dispatch() -> &'static Regex {
+    static CELL: OnceLock<Regex> = OnceLock::new();
+    pattern(&CELL, r"\bgetattr\(\s*([\w.]+)\s*,\s*(\w*)")
+}
+
+/// A method name formed from a literal prefix and one name, as
+/// `name = 'spec_for_{fullname}'.format(**locals())` or its f-string form.
+fn formed_name() -> &'static Regex {
+    static CELL: OnceLock<Regex> = OnceLock::new();
+    pattern(
+        &CELL,
+        concat!(
+            r#"(?m)^[ \t]*(\w+)[ \t]*=[ \t]*(?:f['"](\w+)\{(\w+)\}['"]"#,
+            r#"|['"](\w+)\{(\w+)\}['"]\.format\(\s*\*\*locals\(\s*\)\s*\))[ \t]*$"#,
+        ),
+    )
 }
 
 /// An attribute assignment target, which names the attribute without
@@ -159,13 +188,80 @@ fn word(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || byte == b'_'
 }
 
+/// Where each whole-word `name` in `code` ends.
+fn ends<'a>(code: &'a str, name: &'a str) -> impl Iterator<Item = usize> + 'a {
+    code.match_indices(name).filter_map(|(at, _)| {
+        let before = at.checked_sub(1).map(|index| code.as_bytes()[index]);
+        let end = at + name.len();
+        let after = code.as_bytes().get(end).copied();
+        (!before.is_some_and(word) && !after.is_some_and(word)).then_some(end)
+    })
+}
+
 /// Whether `code` names `name` as a whole word.
 pub(super) fn uses(code: &str, name: &str) -> bool {
-    code.match_indices(name).any(|(at, _)| {
-        let before = at.checked_sub(1).map(|index| code.as_bytes()[index]);
-        let after = code.as_bytes().get(at + name.len()).copied();
-        !before.is_some_and(word) && !after.is_some_and(word)
+    !name.is_empty() && ends(code, name).next().is_some()
+}
+
+/// What each attribute read by name on the shim or its classes in a
+/// function can call: the prefix of the method names it can form, or `None`
+/// when it can form any name.
+fn reach(lines: &[(&str, &str)], function: &Function, classes: &[String]) -> Vec<Option<String>> {
+    let body: String = lines.iter().map(|(code, _)| format!("{code}\n")).collect();
+    dispatch()
+        .captures_iter(&body)
+        .filter(|captures| {
+            let target = &captures[1];
+            matches!(target, "self" | "cls") || classes.iter().any(|name| name == target)
+        })
+        .map(|captures| prefix(&captures[2], lines, &body, function.parameter.as_deref()))
+        .collect()
+}
+
+/// The literal prefix of the method name `variable` holds, when the method
+/// sets it once from the module name the import system called it for and
+/// only reads that name.
+fn prefix(
+    variable: &str,
+    lines: &[(&str, &str)],
+    body: &str,
+    parameter: Option<&str>,
+) -> Option<String> {
+    let parameter = parameter?;
+    if variable.is_empty() || ends(body, variable).count() != 2 {
+        return None;
+    }
+    if ends(body, parameter).any(|end| !matches!(body.as_bytes().get(end), Some(b'.' | b'}'))) {
+        return None;
+    }
+    lines.iter().find_map(|(code, source)| {
+        // The assignment must be code, not text inside a literal.
+        let assigned = code.trim_start().strip_prefix(variable)?;
+        if !assigned.trim_start().starts_with('=') {
+            return None;
+        }
+        let captures = formed_name().captures(source)?;
+        let (prefix, field) = match (captures.get(2), captures.get(4)) {
+            (Some(prefix), _) => (prefix, captures.get(3)?),
+            (_, Some(prefix)) => (prefix, captures.get(5)?),
+            _ => return None,
+        };
+        (&captures[1] == variable && field.as_str() == parameter)
+            .then(|| prefix.as_str().to_owned())
     })
+}
+
+/// Whether a read that forms names after `prefix` can call `loader`. A
+/// method named for a redirected package runs only when that package is
+/// imported, and the script graph refuses importing one from a site
+/// directory or beside the script.
+fn reachable(prefix: &Option<String>, loader: &str) -> bool {
+    match prefix {
+        None => true,
+        Some(prefix) => loader
+            .strip_prefix(prefix.as_str())
+            .is_some_and(|rest| !SHIMMED.contains(&rest)),
+    }
 }
 
 /// `code` without the names a definition or an attribute assignment
@@ -182,7 +278,7 @@ pub(super) fn references(code: &str) -> String {
 /// Only brackets continue a line; `code` has no line continuations, and a
 /// replacement field's closing brace is the only bracket literal blanking
 /// leaves unpaired, so depth stops at zero rather than below.
-fn layout(code: &str) -> Option<(Vec<Option<usize>>, Vec<String>)> {
+fn layout(code: &str) -> Option<(Vec<Option<usize>>, Vec<Function>)> {
     let mut owners = Vec::new();
     let mut functions = Vec::new();
     let mut scopes: Vec<(usize, Option<usize>)> = Vec::new();
@@ -200,7 +296,10 @@ fn layout(code: &str) -> Option<(Vec<Option<usize>>, Vec<String>)> {
             }
             owner = scopes.iter().rev().find_map(|(_, function)| *function);
             let function = definition().captures(statement).map(|captures| {
-                functions.push(captures[1].to_owned());
+                functions.push(Function {
+                    name: captures[1].to_owned(),
+                    parameter: captures.get(2).map(|found| found.as_str().to_owned()),
+                });
                 functions.len() - 1
             });
             scopes.push((indent, function));
@@ -244,11 +343,17 @@ pub(super) fn shim(text: &str) -> Option<Shim> {
     let text = frame_file().replace_all(&text, "_frame_file_(");
     let code = readable(&text)?;
     let (owners, functions) = layout(&code)?;
+    let classes: Vec<String> = class_name()
+        .captures_iter(&code)
+        .map(|captures| captures[1].to_owned())
+        .collect();
     let mut targets = targets.into_iter();
     let mut bodies = vec![String::new(); functions.len()];
+    let mut lines: Vec<Vec<(&str, &str)>> = vec![Vec::new(); functions.len()];
     let mut module = String::new();
     let mut loading = vec![false; functions.len()];
-    for (line, owner) in code.split('\n').zip(owners) {
+    // Blanking keeps every byte's place, so `code` and `text` lines pair up.
+    for ((line, source), owner) in code.split('\n').zip(text.split('\n')).zip(owners) {
         for _ in 0..line.matches(LAZY).count() {
             let target = targets.next()?;
             let Some(function) = owner else {
@@ -265,6 +370,9 @@ pub(super) fn shim(text: &str) -> Option<Shim> {
             }
             loading[function] = true;
         }
+        if let Some(function) = owner {
+            lines[function].push((line, source));
+        }
         let body = owner.map_or(&mut module, |function| &mut bodies[function]);
         body.push_str(line);
         body.push('\n');
@@ -274,15 +382,23 @@ pub(super) fn shim(text: &str) -> Option<Shim> {
         return None;
     }
     let bodies: Vec<String> = bodies.into_iter().map(|body| references(&body)).collect();
+    let reaches: Vec<Vec<Option<String>>> = lines
+        .iter()
+        .zip(&functions)
+        .map(|(lines, function)| reach(lines, function, &classes))
+        .collect();
     loop {
         let names: Vec<&str> = functions
             .iter()
             .zip(&loading)
-            .filter_map(|(name, loads)| loads.then_some(name.as_str()))
+            .filter_map(|(function, loads)| loads.then_some(function.name.as_str()))
             .collect();
         let mut changed = false;
-        for (loads, body) in loading.iter_mut().zip(&bodies) {
-            if !*loads && names.iter().any(|name| uses(body, name)) {
+        for ((loads, body), reach) in loading.iter_mut().zip(&bodies).zip(&reaches) {
+            let calls = names
+                .iter()
+                .any(|name| uses(body, name) || reach.iter().any(|prefix| reachable(prefix, name)));
+            if !*loads && calls {
                 *loads = true;
                 changed = true;
             }
@@ -294,7 +410,7 @@ pub(super) fn shim(text: &str) -> Option<Shim> {
     let loaders: BTreeSet<String> = functions
         .into_iter()
         .zip(loading)
-        .filter_map(|(name, loads)| loads.then_some(name))
+        .filter_map(|(function, loads)| loads.then_some(function.name))
         .collect();
     let module = references(&module);
     if loaders
@@ -311,10 +427,6 @@ pub(super) fn shim(text: &str) -> Option<Shim> {
     }
     let code = method_definition().replace_all(&code, "def _");
     let code = own_loader_hook().replace_all(&code, "self._");
-    let classes: Vec<String> = class_name()
-        .captures_iter(&code)
-        .map(|captures| captures[1].to_owned())
-        .collect();
     let code = attribute_by_name().replace_all(&code, |captures: &Captures| {
         let target = &captures[1];
         if SHIM_TARGETS.contains(&target) || classes.iter().any(|name| name == target) {
