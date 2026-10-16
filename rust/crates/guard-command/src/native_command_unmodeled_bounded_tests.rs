@@ -20,15 +20,17 @@ fn an_xargs_that_names_its_program_is_reviewable() {
 }
 
 /// Reading the program out of an `xargs` leaves the operands standard input
-/// supplies unread, so it must not turn an extension's own floor into a
-/// review. Enabling a permission accepts a review of the commands it owns, not
-/// of a launch whose arguments are not in the text.
+/// supplies unread. An extension that owns that program judges arguments this
+/// text does not hold, so the read-through does not stand in for its rules.
 #[test]
-fn an_xargs_into_an_enabled_extension_keeps_its_floor() {
+fn an_xargs_into_a_programs_own_extension_stays_unreadable() {
+    // Every permission enabled is the softest the extension gets; a disabled
+    // or default permission only holds the command higher.
     let controls = controls(github("enabled", None), false);
     for command in [
         "xargs gh pr merge 17 --squash < list.txt",
         "cat list.txt | xargs gh pr close",
+        "xargs -n 1 gh pr close",
     ] {
         assert_eq!(decision(&controls, command).1, FAILED, "{command}");
     }
@@ -69,7 +71,6 @@ fn xargs_options_are_read_past_to_its_program() {
         "xargs -I{} cp {} /tmp",
         "xargs -i rm",
         "xargs -J rm evil",
-        "xargs --replace mv",
         "xargs --max-args=3 rm",
         "xargs -- rm -f",
         "cat list.txt | xargs -P 4 -I {} mv {} archive/",
@@ -97,6 +98,10 @@ fn xargs_options_are_read_past_to_its_program() {
         // slicing it by bytes would panic inside the character.
         "xargs -é rm",
         "xargs --max-args 3",
+        // A bare `--replace` leaves it open whether the next word is its
+        // token or the program.
+        "xargs --replace mv",
+        "xargs --max-args 1 --replace ITEM mv",
         // A long option this does not know may take the next word.
         "xargs --future-option rm",
         // Programs this cannot read from the text.

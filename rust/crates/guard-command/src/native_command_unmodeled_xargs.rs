@@ -1,5 +1,6 @@
 //! Reading the program an `xargs` runs out of the command text.
 use super::{command_basename, INTERPRETERS};
+use std::collections::BTreeSet;
 
 /// `xargs` options whose value is the next word, so the word after one of
 /// these is not the program it runs.
@@ -23,7 +24,6 @@ const XARGS_VALUE_OPTIONS: &[&str] = &[
     "--max-lines",
     "--max-procs",
     "--process-slot-var",
-    "--replace",
 ];
 
 /// Whether every `xargs` in the text names the program it runs.
@@ -35,17 +35,30 @@ const XARGS_VALUE_OPTIONS: &[&str] = &[
 /// is itself an interpreter (`xargs sh -c ...`) runs whatever that reads, and
 /// one built from an expansion names nothing, so those stay unbounded.
 pub(super) fn xargs_names_its_program(shell: &str) -> bool {
+    xargs_programs(shell).is_some()
+}
+
+/// The programs every `xargs` in the text names, by basename, or `None` when
+/// one of them names none.
+pub(super) fn xargs_programs(shell: &str) -> Option<BTreeSet<String>> {
+    let mut programs = BTreeSet::new();
     // Braces stay: `-I {}` is how a replacement is written, and a `{ ...; }`
     // group's own words are read in the same piece anyway.
     for piece in shell.split(['\n', ';', '&', '|', '(', ')', '`']) {
         let words: Vec<&str> = piece.split_whitespace().collect();
         for (index, word) in words.iter().enumerate() {
-            if command_basename(word) == "xargs" && !xargs_operand(&words[index + 1..]) {
-                return false;
+            if command_basename(word) == "xargs" {
+                let program = command_basename(xargs_operand(&words[index + 1..])?);
+                // A `.cmd` launcher runs the program it is named for, the way
+                // `command_basename` already reads a `.exe` suffix.
+                if let Some(stem) = program.strip_suffix(".cmd") {
+                    programs.insert(stem.to_owned());
+                }
+                programs.insert(program);
             }
         }
     }
-    true
+    Some(programs)
 }
 
 /// The operand `xargs` runs, read past its own options.
@@ -53,7 +66,7 @@ pub(super) fn xargs_names_its_program(shell: &str) -> bool {
 /// `-I`/`-i`/`--replace` name a token that each input line replaces. When
 /// that token is the program, the program is whatever standard input holds,
 /// which this text does not name.
-fn xargs_operand(rest: &[&str]) -> bool {
+fn xargs_operand<'a>(rest: &[&'a str]) -> Option<&'a str> {
     let mut words = rest.iter();
     let mut replace: Option<String> = None;
     while let Some(word) = words.next() {
@@ -63,10 +76,10 @@ fn xargs_operand(rest: &[&str]) -> bool {
         // A redirect ends the words `xargs` itself reads, and the file it
         // names is not the program: `xargs < list.txt` runs `echo`.
         if redirect(word) {
-            return false;
+            return None;
         }
         if !word.starts_with('-') {
-            return named_program(word, replace.as_deref());
+            return named_program(word, replace.as_deref()).then_some(*word);
         }
         if let Some(token) = word
             .strip_prefix("--replace=")
@@ -75,9 +88,13 @@ fn xargs_operand(rest: &[&str]) -> bool {
             replace = Some(token.to_owned());
             continue;
         }
+        // `--replace` carries its token attached. GNU reads a bare one as the
+        // option with its default token, leaving the next word the program;
+        // an implementation that takes a separate value reads that word as
+        // the token and the one after it as the program. The text does not
+        // settle which program runs.
         if *word == "--replace" {
-            replace = Some("{}".to_owned());
-            continue;
+            return None;
         }
         if word.starts_with("--") {
             // `--max-args=3` carries its own value. An unknown long option
@@ -86,22 +103,19 @@ fn xargs_operand(rest: &[&str]) -> bool {
                 continue;
             }
             if XARGS_VALUE_OPTIONS.contains(word) {
-                if words.next().is_none() {
-                    return false;
-                }
+                words.next()?;
                 continue;
             }
-            return false;
+            return None;
         }
         // Short options cluster, so `-0I{}` is `-0` and `-I{}`, and an
         // unknown letter may take the next word as its value.
         if !short_option(word, &mut words, &mut replace) {
-            return false;
+            return None;
         }
     }
-    words
-        .next()
-        .is_some_and(|program| !redirect(program) && named_program(program, replace.as_deref()))
+    let program = words.next()?;
+    (!redirect(program) && named_program(program, replace.as_deref())).then_some(*program)
 }
 
 /// A word that redirects rather than names anything: `<`, `>`, `>>`, `2>`,

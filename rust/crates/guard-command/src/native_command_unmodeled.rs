@@ -20,7 +20,10 @@
 //! it runs, inline or fed on standard input, was read; it then runs only that
 //! program, as it would run a script file. `xargs` is the exception that
 //! names its program in the text: standard input supplies arguments, not the
-//! program, so `xargs rm -f < list.txt` owns what `rm` owns.
+//! program, so `xargs rm -f < list.txt` owns what `rm` owns. An extension
+//! that owns the program named there is not read through: its rules judge
+//! arguments standard input supplies, which this text does not hold, so those
+//! launches keep the evaluation failure.
 
 use std::collections::BTreeSet;
 use std::time::Instant;
@@ -40,7 +43,7 @@ mod xargs;
 use link_makers::creates_links;
 use shapes::{data_heredocs, without_lookups, without_plain_awk};
 pub(crate) use shapes::{python_is_builtin_only, python_stdin};
-use xargs::xargs_names_its_program;
+use xargs::{xargs_names_its_program, xargs_programs};
 
 /// Compatibility owners recognize these programs without a catalog matcher.
 const COMPATIBILITY_EXECUTABLES: &[(&str, &[&str])] = &[
@@ -207,7 +210,8 @@ impl CompiledNativeCommandControls {
         for source in sourced.iter().flatten() {
             named.extend(named_words(source));
         }
-        let xargs_bounded = xargs_names_its_program(shell);
+        let xargs_programs = xargs_programs(shell);
+        let xargs_bounded = xargs_programs.is_some();
         if INTERPRETERS.iter().any(|name| {
             interpreted.contains(*name)
                 && !(sourced_resolved && *name == "source")
@@ -231,7 +235,6 @@ impl CompiledNativeCommandControls {
             }
         }
         let mut floor = "review";
-        let mut unenabled = "review";
         for (index, extension) in self.program.extensions.iter().enumerate() {
             if !self.active_extensions.contains(&extension.extension_id) {
                 continue;
@@ -240,28 +243,27 @@ impl CompiledNativeCommandControls {
                 .iter()
                 .find(|(id, _)| *id == extension.extension_id)
                 .map(|(_, executables)| *executables);
-            let owns = self
-                .program
-                .extension_names(index, compatibility)
+            let extension_names = self.program.extension_names(index, compatibility);
+            let owns = extension_names
+                .as_ref()
                 .is_none_or(|names| names.is_empty() || !names.is_disjoint(&named));
             if !owns {
                 continue;
             }
+            // Reading an `xargs` through to the program it names leaves the
+            // operands standard input supplies unread. Where an extension owns
+            // that program its rules judge arguments this text does not hold,
+            // so the read-through cannot stand in for them and the evaluation
+            // failure stays. `xargs rm -f < list.txt`, whose program no
+            // extension owns, keeps the review the read-through gives it.
+            if let (Some(programs), Some(names)) = (&xargs_programs, &extension_names) {
+                if !names.is_disjoint(programs) {
+                    return None;
+                }
+            }
             if rank(self.extension_floor(index)) > rank(floor) {
                 floor = self.extension_floor(index);
             }
-            if rank(self.enabled_extension_floor(index, false)) > rank(unenabled) {
-                unenabled = self.enabled_extension_floor(index, false);
-            }
-        }
-        // Reading an `xargs` through to the program it names leaves the
-        // operands standard input supplies unread, so the read-through must
-        // not lower the floor an extension sets for that program. Enabling a
-        // permission accepts a review of the commands it owns, not of a launch
-        // whose arguments are not in the text: where that is the only reason
-        // the floor fell to review, the evaluation failure stands.
-        if xargs_bounded && rank(unenabled) > rank(floor) {
-            return None;
         }
         Some(floor)
     }
@@ -269,12 +271,6 @@ impl CompiledNativeCommandControls {
     /// The floor the extension would apply to its strongest rule, as an
     /// uncertain observation owned by it would take.
     fn extension_floor(&self, index: usize) -> &'static str {
-        self.enabled_extension_floor(index, true)
-    }
-
-    /// `extension_floor`, with `enabled` choosing whether an explicitly
-    /// enabled permission softens its rules to a review.
-    fn enabled_extension_floor(&self, index: usize, enabled: bool) -> &'static str {
         let extension = &self.program.extensions[index];
         if self.blocked_extensions.contains(&extension.extension_id)
             || extension
@@ -289,10 +285,9 @@ impl CompiledNativeCommandControls {
             .iter()
             .filter(|rule| rule.extension_index == index)
             .map(|rule| {
-                if enabled
-                    && self
-                        .explicitly_enabled_permissions
-                        .contains(&rule.permission_id)
+                if self
+                    .explicitly_enabled_permissions
+                    .contains(&rule.permission_id)
                 {
                     "review"
                 } else {
