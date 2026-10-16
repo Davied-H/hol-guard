@@ -29,7 +29,8 @@ const SHELL_SPECIAL_NAMES: &[&str] = &[
 ];
 
 /// The unrolled command text for a top-level `for NAME in WORD...; do BODY; done`
-/// over literal words, or `None` when the command is anything else.
+/// over literal words and glob patterns, or `None` when the command is
+/// anything else.
 pub(super) fn unroll(command: &str) -> Option<String> {
     if command
         .chars()
@@ -134,31 +135,69 @@ fn safe_value(value: &str) -> bool {
         })
 }
 
-/// Literal words up to the first unquoted `;` or newline.
+/// A glob pattern that stands for the names it matches.
+///
+/// The matches all begin with the pattern's own literal text, so a pattern
+/// written against the directory the command already runs in can only name
+/// paths inside it. Unrolling the loop over the pattern itself therefore puts
+/// the same directory in front of the ordinary proofs as the names it expands
+/// into, and a pattern that matches nothing is the word the shell passes on.
+/// A pattern that starts with a metacharacter is not this form: it can match
+/// a name beginning with `-`, which the body's program reads as an option
+/// rather than as a path.
+fn pattern_value(value: &str) -> bool {
+    value.len() <= MAX_WORD_BYTES
+        && value.contains(['*', '?', '['])
+        && value.starts_with(|c: char| c.is_ascii_alphanumeric() || matches!(c, '_' | '.'))
+        // `..` reaches above that directory, so the matches would sit outside it.
+        && !value.split('/').any(|segment| segment == "..")
+        && value.chars().all(|c| {
+            c.is_ascii_alphanumeric()
+                || matches!(
+                    c,
+                    '_' | '.' | '/' | '@' | '%' | '+' | '=' | ':' | ',' | '-' | '*' | '?' | '['
+                        | ']'
+                )
+        })
+}
+
+/// Literal words, and glob patterns, up to the first unquoted `;` or newline.
+///
+/// A quoted word is the text itself rather than a pattern, so it keeps the
+/// literal rule: writing it back out unquoted would otherwise hand the body a
+/// pattern the loop never expanded.
 fn header_words(text: &str) -> Option<(Vec<String>, &str)> {
-    let mut words = Vec::new();
+    let mut words: Vec<(String, bool)> = Vec::new();
     let mut current = String::new();
     let mut in_word = false;
+    let mut quoted = false;
     let mut chars = text.char_indices().peekable();
     while let Some((index, c)) = chars.next() {
         match c {
             ' ' | '\t' => {
                 if in_word {
-                    words.push(std::mem::take(&mut current));
+                    words.push((std::mem::take(&mut current), quoted));
                     in_word = false;
+                    quoted = false;
                 }
             }
             ';' | '\n' => {
                 if in_word {
-                    words.push(current);
+                    words.push((current, quoted));
                 }
                 return words
                     .iter()
-                    .all(|word| safe_value(word))
-                    .then(|| (words, &text[index..]));
+                    .all(|(word, quoted)| safe_value(word) || (!quoted && pattern_value(word)))
+                    .then(|| {
+                        (
+                            words.into_iter().map(|(word, _)| word).collect(),
+                            &text[index..],
+                        )
+                    });
             }
             '\'' => {
                 in_word = true;
+                quoted = true;
                 loop {
                     match chars.next()?.1 {
                         '\'' => break,
@@ -168,6 +207,7 @@ fn header_words(text: &str) -> Option<(Vec<String>, &str)> {
             }
             '"' => {
                 in_word = true;
+                quoted = true;
                 loop {
                     match chars.next()?.1 {
                         '"' => break,
@@ -176,8 +216,9 @@ fn header_words(text: &str) -> Option<(Vec<String>, &str)> {
                     }
                 }
             }
-            '$' | '`' | '\\' | '(' | ')' | '{' | '}' | '*' | '?' | '[' | ']' | '~' | '&' | '|'
-            | '<' | '>' | '#' | '!' => return None,
+            '$' | '`' | '\\' | '(' | ')' | '{' | '}' | '~' | '&' | '|' | '<' | '>' | '#' | '!' => {
+                return None
+            }
             other => {
                 in_word = true;
                 current.push(other);
