@@ -19,6 +19,21 @@ fn an_xargs_that_names_its_program_is_reviewable() {
     }
 }
 
+/// Reading the program out of an `xargs` leaves the operands standard input
+/// supplies unread, so it must not turn an extension's own floor into a
+/// review. Enabling a permission accepts a review of the commands it owns, not
+/// of a launch whose arguments are not in the text.
+#[test]
+fn an_xargs_into_an_enabled_extension_keeps_its_floor() {
+    let controls = controls(github("enabled", None), false);
+    for command in [
+        "xargs gh pr merge 17 --squash < list.txt",
+        "cat list.txt | xargs gh pr close",
+    ] {
+        assert_eq!(decision(&controls, command).1, FAILED, "{command}");
+    }
+}
+
 #[test]
 fn an_xargs_that_names_no_program_stays_unreadable() {
     let controls = controls(github("enabled", None), false);

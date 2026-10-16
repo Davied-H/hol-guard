@@ -231,6 +231,7 @@ impl CompiledNativeCommandControls {
             }
         }
         let mut floor = "review";
+        let mut unenabled = "review";
         for (index, extension) in self.program.extensions.iter().enumerate() {
             if !self.active_extensions.contains(&extension.extension_id) {
                 continue;
@@ -243,9 +244,24 @@ impl CompiledNativeCommandControls {
                 .program
                 .extension_names(index, compatibility)
                 .is_none_or(|names| names.is_empty() || !names.is_disjoint(&named));
-            if owns && rank(self.extension_floor(index)) > rank(floor) {
+            if !owns {
+                continue;
+            }
+            if rank(self.extension_floor(index)) > rank(floor) {
                 floor = self.extension_floor(index);
             }
+            if rank(self.enabled_extension_floor(index, false)) > rank(unenabled) {
+                unenabled = self.enabled_extension_floor(index, false);
+            }
+        }
+        // Reading an `xargs` through to the program it names leaves the
+        // operands standard input supplies unread, so the read-through must
+        // not lower the floor an extension sets for that program. Enabling a
+        // permission accepts a review of the commands it owns, not of a launch
+        // whose arguments are not in the text: where that is the only reason
+        // the floor fell to review, the evaluation failure stands.
+        if xargs_bounded && rank(unenabled) > rank(floor) {
+            return None;
         }
         Some(floor)
     }
@@ -253,6 +269,12 @@ impl CompiledNativeCommandControls {
     /// The floor the extension would apply to its strongest rule, as an
     /// uncertain observation owned by it would take.
     fn extension_floor(&self, index: usize) -> &'static str {
+        self.enabled_extension_floor(index, true)
+    }
+
+    /// `extension_floor`, with `enabled` choosing whether an explicitly
+    /// enabled permission softens its rules to a review.
+    fn enabled_extension_floor(&self, index: usize, enabled: bool) -> &'static str {
         let extension = &self.program.extensions[index];
         if self.blocked_extensions.contains(&extension.extension_id)
             || extension
@@ -267,9 +289,10 @@ impl CompiledNativeCommandControls {
             .iter()
             .filter(|rule| rule.extension_index == index)
             .map(|rule| {
-                if self
-                    .explicitly_enabled_permissions
-                    .contains(&rule.permission_id)
+                if enabled
+                    && self
+                        .explicitly_enabled_permissions
+                        .contains(&rule.permission_id)
                 {
                     "review"
                 } else {
