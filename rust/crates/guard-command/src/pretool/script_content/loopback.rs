@@ -343,6 +343,14 @@ pub(crate) fn launch_loopback_ports(
                 if moved && !Path::new(script).is_absolute() {
                     continue;
                 }
+                // An earlier segment can replace the file this scan reads, and
+                // the replacement would run with the grant from the old text.
+                if model.segments[..index]
+                    .iter()
+                    .any(|prior| replaces_script(script, prior))
+                {
+                    return Vec::new();
+                }
                 match script_ports(script, context) {
                     Some(found) => found,
                     None => continue,
@@ -356,6 +364,39 @@ pub(crate) fn launch_loopback_ports(
         }
     }
     ports.into_iter().collect()
+}
+
+/// Whether `prior` can replace `script` before the launch reads it.
+fn replaces_script(script: &str, prior: &crate::CommandSegmentV1) -> bool {
+    let mentions = prior.arguments.iter().any(|argument| argument == script)
+        || prior.text.split_whitespace().any(|word| {
+            let word = word.trim_matches(['\'', '"', ';']);
+            word == script || word.ends_with(&format!("/{script}"))
+        });
+    if !mentions {
+        return false;
+    }
+    if prior.text.contains('>') {
+        return true;
+    }
+    let name = super::super::executable_basename(prior.executable.as_deref().unwrap_or_default());
+    matches!(
+        name,
+        "cp" | "mv"
+            | "tee"
+            | "dd"
+            | "install"
+            | "ln"
+            | "truncate"
+            | "rm"
+            | "touch"
+            | "sed"
+            | "perl"
+    ) || (matches!(name, "node" | "python" | "python3" | "bun")
+        && prior
+            .arguments
+            .iter()
+            .any(|argument| argument == "-e" || argument == "--eval" || argument == "-c"))
 }
 
 /// What the Node script file `script` needs from the network, read the way

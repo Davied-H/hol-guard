@@ -276,6 +276,8 @@ fn a_port_constant_reads_as_its_literal() {
         // A parameter default bound twice, or also assigned.
         "const http = require('http');\nfunction a(port = 3000) {}\nfunction b(port = 3001) { http.createServer().listen(port); }\n",
         "const http = require('http');\nfunction start(port = 3000) { port = 9229; http.createServer().listen(port); }\n",
+        "const http = require('http');\nfunction start(port = 3000) { port += 1; http.createServer().listen(port); }\n",
+        "const http = require('http');\nfunction start(port = 3000) { port++; http.createServer().listen(port); }\n",
         "const http = require('http');\nfunction start(port = 3000) { let port; http.createServer().listen(port); }\n",
         // A loopback URL with no port is no grant for `fetch`.
         "await fetch('http://localhost/')",
@@ -435,6 +437,10 @@ fn a_workspace_script_earns_the_ports_it_serves_on() {
     assert!(launch("node server.js && node src/remote.js").is_empty());
     // After a directory change the relative script is not the one judged.
     assert!(launch("cd src && node server.js").is_empty());
+    // A write of the script, then the launch, would run the replacement under
+    // the grant read from the file that was there before the write.
+    assert!(launch("echo 'listen(1)' > server.js && node server.js").is_empty());
+    assert!(launch("cp src/server.js server.js && node server.js").is_empty());
     // Without a working directory to read it from, a script earns nothing.
     assert!(super::launch_loopback_ports(&shell("node server.js"), None, None).is_empty());
     let _ = std::fs::remove_dir_all(&home);

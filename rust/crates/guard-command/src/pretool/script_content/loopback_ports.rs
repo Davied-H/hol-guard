@@ -13,6 +13,13 @@ use regex::Regex;
 /// `NAME =`: a declaration, a parameter default or an assignment.
 static BINDING: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*=").unwrap());
+/// `NAME +=`, `NAME++` or `++NAME`: an update, which is another binding.
+static UPDATE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"\b([A-Za-z_][A-Za-z0-9_]*)\s*(?:[-+*/%&|^]|\*\*|<<|>>>?|&&|\|\||\?\?)=|\b([A-Za-z_][A-Za-z0-9_]*)\s*(?:\+\+|--)|(?:\+\+|--)\s*([A-Za-z_][A-Za-z0-9_]*)",
+    )
+    .unwrap()
+});
 /// Every declaration of a name, any of which may rebind or shadow it.
 static DECLARATION: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\b(?:const|let|var|function|class)\s+([A-Za-z_][A-Za-z0-9_]*)\b").unwrap()
@@ -57,6 +64,16 @@ pub(super) fn port_constants(masked: &str) -> BTreeMap<String, u16> {
                 .flatten()
                 .map(|port| (port, constant)),
         );
+    }
+    for update in UPDATE.captures_iter(masked) {
+        let Some(name) = update
+            .get(1)
+            .or_else(|| update.get(2))
+            .or_else(|| update.get(3))
+        else {
+            continue;
+        };
+        bound.entry(name.as_str()).or_default().push(None);
     }
     bound
         .into_iter()
