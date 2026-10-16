@@ -122,3 +122,30 @@ fn malformed_artifacts_are_refused() {
         );
     }
 }
+
+#[test]
+fn many_host_replies_cross_packed_and_decode_to_the_full_payload() {
+    let script = (0..4000)
+        .map(|index| format!("https://host{index}.example.com/x"))
+        .collect::<Vec<String>>()
+        .join(" ");
+    let artifact = plain_artifact(json!(["-lc", script]));
+    let expected = guard_command::artifact_risk::artifact_risk(&artifact).unwrap();
+    assert!(expected["signals"].as_array().unwrap().len() > 4000);
+    let reply = envelope(&request("many-hosts", artifact));
+    assert_eq!(reply["status"], "ok");
+    let payload = reply["payload"].as_object().unwrap();
+    assert_eq!(payload.len(), 1);
+    let packed = base64::engine::general_purpose::STANDARD
+        .decode(payload["packed_json_gzip_v1"].as_str().unwrap())
+        .unwrap();
+    let mut body = Vec::new();
+    std::io::Read::read_to_end(&mut flate2::read::GzDecoder::new(&packed[..]), &mut body).unwrap();
+    assert_eq!(serde_json::from_slice::<Value>(&body).unwrap(), expected);
+}
+
+#[test]
+fn small_replies_stay_plain() {
+    let reply = envelope(&request("plain", plain_artifact(json!(["-lc", "ls"]))));
+    assert!(reply["payload"]["signals"].is_array());
+}

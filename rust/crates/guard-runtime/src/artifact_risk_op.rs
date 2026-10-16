@@ -3,7 +3,13 @@
 //!
 //! A malformed artifact or an unavailable secret-path classification is an
 //! error reply, which the caller raises on; it never answers fewer signals.
+//! A payload over `PACK_THRESHOLD_BYTES` crosses back gzip-packed, as large
+//! requests do, so an artifact naming many hosts still fits the transport.
 
+use std::io::Write;
+
+use base64ct::{Base64, Encoding};
+use flate2::{write::GzEncoder, Compression};
 use guard_contracts::{
     ArtifactRiskRequestV1, ArtifactRiskResultV1, ARTIFACT_RISK_REQUEST_SCHEMA,
     ARTIFACT_RISK_RESULT_SCHEMA,
@@ -18,6 +24,7 @@ pub(crate) fn evaluate_artifact_risk_request(
     }
     let payload = guard_command::artifact_risk::artifact_risk(&request.artifact)
         .map_err(|code| format!("native_{code}"))?;
+    let payload = pack_large_payload(payload)?;
     crate::resident_protocol::encode_response(&ArtifactRiskResultV1 {
         schema: ARTIFACT_RISK_RESULT_SCHEMA.to_owned(),
         request_id: request.request_id.clone(),
@@ -26,6 +33,24 @@ pub(crate) fn evaluate_artifact_risk_request(
         code: "ok".to_owned(),
         payload,
     })
+}
+
+const PACK_THRESHOLD_BYTES: usize = 128 * 1024;
+
+fn pack_large_payload(payload: serde_json::Value) -> Result<serde_json::Value, String> {
+    let bytes = serde_json::to_vec(&payload)
+        .map_err(|_| "native_artifact_risk_reply_invalid".to_owned())?;
+    if bytes.len() <= PACK_THRESHOLD_BYTES {
+        return Ok(payload);
+    }
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::fast());
+    encoder
+        .write_all(&bytes)
+        .map_err(|_| "native_artifact_risk_reply_invalid".to_owned())?;
+    let packed = encoder
+        .finish()
+        .map_err(|_| "native_artifact_risk_reply_invalid".to_owned())?;
+    Ok(serde_json::json!({"packed_json_gzip_v1": Base64::encode_string(&packed)}))
 }
 
 fn request_digest(request: &ArtifactRiskRequestV1) -> Result<String, String> {

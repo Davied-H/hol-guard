@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import base64
 import copy
+import gzip
 import json
 from pathlib import Path
 
 import pytest
 
+from codex_plugin_scanner.guard import native_consumer_artifact_compose
 from codex_plugin_scanner.guard import risk as client
 from codex_plugin_scanner.guard.models import GuardArtifact
 from codex_plugin_scanner.guard.native_content_sensitivity import NativeContentSensitivityError
@@ -71,7 +74,19 @@ def _reply(
     monkeypatch.setattr(client, "_resident_request", resident)
     monkeypatch.setattr(client, "ensure_resident_prerequisite", lambda _home: prerequisite)
     monkeypatch.setattr(client, "_resolve_existing_digest_home", lambda _home: Path("guard-home"))
+    _health(monkeypatch)
     return calls
+
+
+def _health(monkeypatch: pytest.MonkeyPatch) -> list[bool]:
+    recorded: list[bool] = []
+
+    def record(_home: Path, *, healthy: bool, reason: str) -> None:
+        assert reason == "native_artifact_risk_reply_invalid"
+        recorded.append(healthy)
+
+    monkeypatch.setattr(native_consumer_artifact_compose, "record_binding_health", record)
+    return recorded
 
 
 def test_presents_every_signal_from_one_reply(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -192,3 +207,51 @@ def test_unencodable_artifacts_raise_before_any_request(monkeypatch: pytest.Monk
         client.artifact_risk_signals(_artifact(args=("-lc", "\ud800")))
 
     assert calls == []
+
+
+def test_resident_health_follows_client_validation(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = _reply(monkeypatch)
+    health = _health(monkeypatch)
+
+    client.artifact_risk_profile(_artifact())
+
+    assert calls[0]["record_success"] is False
+    assert health == [True]
+
+    _reply(monkeypatch, bind=False)
+    health = _health(monkeypatch)
+    with pytest.raises(client.NativeArtifactRiskError):
+        client.artifact_risk_profile(_artifact())
+    assert health == [False]
+
+    _reply(monkeypatch, payload={"signals": [], "signals_v2": [], "summary": ""})
+    health = _health(monkeypatch)
+    with pytest.raises(client.NativeArtifactRiskError):
+        client.artifact_risk_profile(_artifact())
+    assert health == [False]
+
+
+def test_packed_replies_decode_to_the_full_profile(monkeypatch: pytest.MonkeyPatch) -> None:
+    body = json.dumps(_PAYLOAD).encode("utf-8")
+    _reply(monkeypatch, payload={"packed_json_gzip_v1": base64.b64encode(gzip.compress(body)).decode("ascii")})
+
+    packed = client.artifact_risk_profile(_artifact())
+
+    _reply(monkeypatch)
+    assert packed == client.artifact_risk_profile(_artifact())
+
+
+@pytest.mark.parametrize(
+    "packed",
+    [
+        "not base64",
+        base64.b64encode(b"not gzip").decode("ascii"),
+        base64.b64encode(gzip.compress(b"not json")).decode("ascii"),
+        7,
+    ],
+)
+def test_malformed_packed_replies_raise(monkeypatch: pytest.MonkeyPatch, packed: object) -> None:
+    _reply(monkeypatch, payload={"packed_json_gzip_v1": packed})
+
+    with pytest.raises(client.NativeArtifactRiskError):
+        client.artifact_risk_profile(_artifact())

@@ -7,6 +7,9 @@ answer raises; it never yields fewer signals.
 
 from __future__ import annotations
 
+import base64
+import gzip
+import io
 import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -35,6 +38,7 @@ _RESULT_SCHEMA: Final = "guard-artifact-risk-result.v1"
 _TIMEOUT_SECONDS: Final = 10.0
 _LARGE_TIMEOUT_SECONDS: Final = 30.0
 _MAX_REQUEST_BYTES: Final = 6 * 1024 * 1024
+_MAX_UNPACKED_REPLY_BYTES: Final = 64 * 1024 * 1024
 _RESULT_KEYS: Final = frozenset({"schema", "request_id", "request_sha256", "status", "code", "payload"})
 _PAYLOAD_KEYS: Final = frozenset({"signals", "signals_v2", "summary"})
 # The metadata keys the derivation reads. Lists carry their ``str`` items;
@@ -135,17 +139,29 @@ def artifact_risk_profile(artifact: GuardArtifact) -> ArtifactRiskProfile:
         required_feature=ARTIFACT_RISK_FEATURE,
         response_schema=_RESULT_SCHEMA,
         max_request_bytes=_MAX_REQUEST_BYTES,
+        record_success=False,
     )
-    if (
-        response is None
-        or set(response) != _RESULT_KEYS
-        or response["request_id"] != request["request_id"]
-        or response["request_sha256"] != digest
-        or response["status"] != "ok"
-        or response["code"] != "ok"
-    ):
+    if response is None:
         raise NativeArtifactRiskError("native_artifact_risk_unavailable")
-    return _profile(response["payload"])
+    from .native_consumer_artifact_compose import record_binding_health
+
+    # Health is recorded only once the reply is bound and decodes, so a
+    # resident sending unusable answers keeps counting toward the circuit.
+    try:
+        if (
+            set(response) != _RESULT_KEYS
+            or response["request_id"] != request["request_id"]
+            or response["request_sha256"] != digest
+            or response["status"] != "ok"
+            or response["code"] != "ok"
+        ):
+            raise NativeArtifactRiskError("native_artifact_risk_unavailable")
+        profile = _profile(_unpack(response["payload"]))
+    except NativeArtifactRiskError:
+        record_binding_health(guard_home, healthy=False, reason="native_artifact_risk_reply_invalid")
+        raise
+    record_binding_health(guard_home, healthy=True, reason="native_artifact_risk_reply_invalid")
+    return profile
 
 
 def artifact_risk_signals_typed(artifact: GuardArtifact) -> tuple[GuardSignal, ...]:
@@ -201,6 +217,24 @@ def _record(item: object, fields: Mapping[str, Callable[[object], bool]], factor
     ):
         raise NativeArtifactRiskError("native_artifact_risk_reply_invalid")
     return factory(**item)
+
+
+def _unpack(payload: object) -> object:
+    """Decode a reply the resident gzip-packed because it was large."""
+
+    if not isinstance(payload, dict) or set(payload) != {"packed_json_gzip_v1"}:
+        return payload
+    packed = payload["packed_json_gzip_v1"]
+    try:
+        if not isinstance(packed, str):
+            raise ValueError("packed reply is not text")
+        with gzip.GzipFile(fileobj=io.BytesIO(base64.b64decode(packed, validate=True))) as stream:
+            body = stream.read(_MAX_UNPACKED_REPLY_BYTES + 1)
+        if len(body) > _MAX_UNPACKED_REPLY_BYTES:
+            raise ValueError("packed reply too large")
+        return json.loads(body)
+    except (ValueError, OSError, EOFError) as exc:
+        raise NativeArtifactRiskError("native_artifact_risk_reply_invalid") from exc
 
 
 def _profile(payload: object) -> ArtifactRiskProfile:
