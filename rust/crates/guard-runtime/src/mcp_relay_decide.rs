@@ -185,6 +185,43 @@ struct Resolved {
     redaction_level: Option<String>,
 }
 
+/// What one resolve does with the package request the gate found.
+enum PackageLeg<'a> {
+    /// Decide it, from the request's own evaluation: the stored policy, and
+    /// the route the lane takes over it and the tool authority together.
+    Decide(&'a PackageIntent),
+    /// Re-resolve a claimed one, from the evaluation the relay re-read the
+    /// request with after the claim: the stored policy alone, because the
+    /// route a claimed call takes is the post-claim revalidation's.
+    #[allow(dead_code)]
+    Claimed(&'a PackageIntent, &'a Map<String, Value>),
+}
+
+/// The package leg one resolve produced, for the caller that asked for it.
+enum Legged {
+    Decided(package_leg::Packaged),
+    Reresolved(package_leg::Reresolved),
+}
+
+impl Legged {
+    /// The decided leg, for the decide path that asked for a route.
+    fn decided(&self) -> Option<&package_leg::Packaged> {
+        match self {
+            Self::Decided(packaged) => Some(packaged),
+            Self::Reresolved(_) => None,
+        }
+    }
+
+    /// The re-resolution, for the claim that asked for a policy.
+    #[allow(dead_code)]
+    fn reresolved(self) -> Option<package_leg::Reresolved> {
+        match self {
+            Self::Reresolved(reresolved) => Some(reresolved),
+            Self::Decided(_) => None,
+        }
+    }
+}
+
 /// The route the proxy takes for a decided call.
 #[derive(Debug, Clone, PartialEq)]
 enum Routed {
@@ -326,14 +363,18 @@ fn decide(
         .map(Connection::unchecked_transaction)
         .transpose()
         .map_err(|_| store::STORE_UNREADABLE)?;
-    let (mut resolved, packaged) =
-        resolve(request, &admitted, connection.as_deref(), intent.as_ref())?;
+    let (mut resolved, legged) = resolve(
+        request,
+        &admitted,
+        connection.as_deref(),
+        intent.as_ref().map(PackageLeg::Decide),
+    )?;
     drop(snapshot);
     // A package call is answered by its own lane, under the package policy and
     // the tool authority together, so none of the tool-only route below runs
     // for it.
-    if let Some(packaged) = packaged {
-        return settle_package(request, &admitted, &resolved, &packaged, policy_store);
+    if let Some(packaged) = legged.as_ref().and_then(Legged::decided) {
+        return settle_package(request, &admitted, &resolved, packaged, policy_store);
     }
     let asks = admitted.binding.review.blocked_request_mode.as_deref() == Some(ASK_MODE);
     let proxy = crate::mcp_tool_policy_proxy::proxy_payload(
@@ -489,13 +530,15 @@ fn admit(
 /// Build the identity and run the tool policy, reading saved lookups on
 /// `connection`, held in one transaction. A call the gate found a package
 /// intent in also resolves its package leg, on that same snapshot: the lane's
-/// second resolution reads the store again, so it belongs inside it.
+/// second resolution reads the store again, so it belongs inside it. What
+/// that leg is depends on who asked — a route for the decide path, the policy
+/// alone for a claim that routes it by the post-claim revalidation instead.
 fn resolve(
     request: &McpRelayDecideRequestV1,
     admitted: &Admitted,
     connection: Option<&Connection>,
-    intent: Option<&PackageIntent>,
-) -> Result<(Resolved, Option<package_leg::Packaged>), &'static str> {
+    leg: Option<PackageLeg<'_>>,
+) -> Result<(Resolved, Option<Legged>), &'static str> {
     let binding = &admitted.binding;
     let control_digest = binding
         .exact_action_control_digest
@@ -514,8 +557,8 @@ fn resolve(
     let identity = identity(request, &view, control_digest.clone())?;
     let subject = subject::subject(request, &identity, &view)?;
     let decision = run_policy(&subject, saved.as_ref())?;
-    let packaged = match intent {
-        Some(intent) => Some(package_leg::decide_package_leg(
+    let packaged = match leg {
+        Some(PackageLeg::Decide(intent)) => Some(Legged::Decided(package_leg::decide_package_leg(
             request,
             &view,
             saved.as_ref(),
@@ -529,7 +572,18 @@ fn resolve(
                 blocked_request_mode: binding.review.blocked_request_mode.as_deref(),
                 redaction_level: view.receipt_redaction_level.as_deref(),
             },
-        )?),
+        )?)),
+        Some(PackageLeg::Claimed(intent, evaluation)) => {
+            Some(Legged::Reresolved(package_leg::reresolve_package_leg(
+                request,
+                &view,
+                saved.as_ref(),
+                &control_digest,
+                &identity,
+                intent,
+                evaluation,
+            )?))
+        }
         None => None,
     };
     Ok((

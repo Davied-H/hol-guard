@@ -176,6 +176,57 @@ pub(super) fn decide_package_leg(
     })
 }
 
+/// One claimed package call's re-resolution, on the store the claim holds
+/// open: the policy alone, and what the receipt it settles is written
+/// against.
+///
+/// A claimed call takes no lane route. The route it takes is the post-claim
+/// revalidation's, over this policy and the re-read tool authority together
+/// (`mcp_relay_decide_package_claim.rs`), so the lane's own second resolution
+/// — the one that would re-raise the pending claim this call is spending — is
+/// not run at all.
+#[allow(dead_code)]
+pub(super) struct Reresolved {
+    /// The package request's own artifact, rebuilt from the claimed call.
+    pub(super) artifact: GuardArtifact,
+    /// The workspace the intent was parsed against.
+    pub(super) workspace: String,
+    /// The package policy on the claimed store.
+    pub(super) policy: PackagePolicy,
+}
+
+/// Re-resolve a claimed package call.
+///
+/// `evaluation` is the one the relay re-read the request with after the
+/// claim, which is what the proxy resolves the post-claim package policy
+/// from; everything else is the claimed call's own.
+#[allow(dead_code)]
+pub(super) fn reresolve_package_leg(
+    request: &McpRelayDecideRequestV1,
+    view: &HarnessView,
+    saved: Option<&Saved<'_>>,
+    control_digest: &str,
+    identity: &McpToolCallIdentityPayloadV1,
+    intent: &PackageIntent,
+    evaluation: &Map<String, Value>,
+) -> Result<Reresolved, &'static str> {
+    let inputs = package_inputs(
+        request,
+        view,
+        saved,
+        control_digest,
+        identity,
+        intent,
+        Some(evaluation),
+    )?;
+    let policy = inputs.resolve()?;
+    Ok(Reresolved {
+        artifact: inputs.artifact,
+        workspace: inputs.workspace.to_owned(),
+        policy,
+    })
+}
+
 /// A request field the proxy sends for every package call, which a call
 /// without it is not decided from.
 fn present(field: Option<&str>) -> Result<&str, &'static str> {
