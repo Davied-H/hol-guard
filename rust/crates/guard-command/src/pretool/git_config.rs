@@ -100,27 +100,40 @@ pub(super) fn execution_free_paging(
                 executable,
                 arguments,
                 remaining,
-                &pager_operation,
+                Paging {
+                    operation: &pager_operation,
+                    stdout_piped,
+                },
                 context,
                 deadline,
                 execution_environment,
-                stdout_piped,
             )
             .unwrap_or(false),
         )
     })
 }
 
+/// How the read would page: the configuration key the pager is proved under,
+/// and whether the caller already sends stdout down a pipe, which leaves Git
+/// no terminal to page to.
+struct Paging<'a> {
+    operation: &'a str,
+    stdout_piped: bool,
+}
+
 fn probe(
     executable: &str,
     arguments: &[String],
     remaining: &[String],
-    pager_operation: &str,
+    paging: Paging<'_>,
     context: super::PathContext<'_>,
     deadline: Option<Instant>,
     execution_environment: Option<&guard_contracts::GuardExecutionEnvironmentV1>,
-    stdout_piped: bool,
 ) -> Option<bool> {
+    let Paging {
+        operation: pager_operation,
+        stdout_piped,
+    } = paging;
     let operation = remaining.first()?.as_str();
     // Configuration plus root, path and attribute inspection share this budget.
     // The caller's overall deadline remains the upper bound.
