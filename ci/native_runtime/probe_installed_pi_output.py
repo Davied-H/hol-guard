@@ -213,6 +213,11 @@ def _isolated_env(*, home: Path, python_path: Path) -> dict[str, str]:
     for key in tuple(os.environ):
         if key.startswith("HOL_GUARD_") or key.startswith("GUARD_"):
             env.pop(key, None)
+    # The bridge answers from the resident before it posts to the daemon, and
+    # the direct lane is on unless the switch reads exactly "0". This probe's
+    # route proof is the daemon's native_resident count, so the bridge child
+    # has to take the daemon path.
+    env["HOL_GUARD_PI_DIRECT_HOOK"] = "0"
     return env
 
 
