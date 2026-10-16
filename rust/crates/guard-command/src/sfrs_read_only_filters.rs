@@ -287,8 +287,10 @@ pub(crate) fn read_only_lookup_target_is_safe(
     // The dot in front of a directory says it is out of the way, not that it
     // holds a secret: reading `~/.claude/settings.json` or listing
     // `~/.codex/plans` is the same work as reading a file in the checkout.
-    // What stays behind review is the credential stores, which are named.
-    if lowered.iter().any(|part| part.starts_with('.')) && credential_store_path(&lowered) {
+    // What stays behind review is the credential stores, which are named, and
+    // a store is named whether or not the path that reaches it is hidden:
+    // `~/Library/Keychains` holds the same keys as `~/.gnupg`.
+    if credential_store_path(&lowered) {
         return false;
     }
     if lowered
