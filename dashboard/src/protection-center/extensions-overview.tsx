@@ -20,7 +20,7 @@ import {
   type JoinedDiscoveryCard,
 } from "./extensions-discover-model";
 import { CatalogSlotRow, ExtensionsSpotlight } from "./extensions-spotlight";
-import { slotStartingPrice, slotState } from "./extensions-spotlight-model";
+import { CATALOG_SLOT_PRODUCTS, slotStartingPrice, slotState } from "./extensions-spotlight-model";
 import { useExtensionPopularity } from "./use-extension-popularity";
 import { useDiscoveryMeasurement } from "./discovery-measurement";
 import { LocalSkillsWorkspace } from "./local-skills-workspace";
@@ -97,14 +97,20 @@ function CatalogExtensionRow(props: {
  * advertiser headline sit above the ordinary row, which keeps its real
  * protection state: payment buys position, never trust.
  */
-function FeaturedCatalogRow(props: {
+function PaidCatalogRow(props: {
   entry: JoinedDiscoveryCard;
   snapshotId: string | null;
   effective: EffectiveExtensionControls;
   onOpen: (extension: ExtensionCatalogSummary) => void;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
-  const recordOpen = useDiscoveryMeasurement(ref, props.snapshotId, props.entry.placement, "extensions_featured");
+  const featured = props.entry.placement.product !== "sponsored";
+  const recordOpen = useDiscoveryMeasurement(
+    ref,
+    props.snapshotId,
+    props.entry.placement,
+    featured ? "extensions_featured" : "extensions_feed",
+  );
   const { onOpen } = props;
   const open = useCallback((extension: ExtensionCatalogSummary) => {
     recordOpen();
@@ -122,7 +128,7 @@ function FeaturedCatalogRow(props: {
       data-sponsored-placement-id={placement.publicPlacementId}
     >
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-4 pt-3">
-        <span className="guard-sponsor-label" data-sponsored-label>{sponsoredCardLabel(true)}</span>
+        <span className="guard-sponsor-label" data-sponsored-label>{sponsoredCardLabel(featured)}</span>
         {brand ? <span className="text-xs text-brand-dark/60">Paid for by <span className="font-semibold text-brand-dark">{brand}</span></span> : null}
         {window ? <span className="text-xs text-brand-dark/60">{window}</span> : null}
         {headline ? <span className="basis-full text-sm font-medium text-brand-dark/80">{headline}</span> : null}
@@ -354,9 +360,14 @@ export function ExtensionsOverview(props: {
     () => filterCatalogExtensions(props.catalogExtensions, filters),
     [filters, props.catalogExtensions],
   );
-  const featuredById = useMemo(
-    () => new Map(joinedDiscovery.featured.map((entry) => [entry.placement.extensionId, entry])),
-    [joinedDiscovery.featured],
+  // The shelf holds three cells; paid placements beyond them must still get
+  // their labeled row, or a maker can buy a placement that renders nowhere.
+  const paidById = useMemo(
+    () => new Map(
+      [...joinedDiscovery.featured, ...joinedDiscovery.sponsored]
+        .map((entry) => [entry.placement.extensionId, entry] as const),
+    ),
+    [joinedDiscovery.featured, joinedDiscovery.sponsored],
   );
   // Featured rows lead in server order (all-day before time windows).
   const orderedCatalog = useMemo(() => {
@@ -364,9 +375,9 @@ export function ExtensionsOverview(props: {
     const featuredVisible = joinedDiscovery.featured
       .map((entry) => entry.catalog)
       .filter((extension) => visibleIds.has(extension.extension_id));
-    const rest = orderFeaturedFirst(visibleCatalog, new Set(featuredById.keys())).slice(featuredVisible.length);
+    const rest = orderFeaturedFirst(visibleCatalog, new Set(paidById.keys())).slice(featuredVisible.length);
     return [...featuredVisible, ...rest];
-  }, [featuredById, joinedDiscovery.featured, visibleCatalog]);
+  }, [joinedDiscovery.featured, paidById, visibleCatalog]);
   // One ask per surface. The spotlight already offers the empty cell when no
   // placement is sold, so the catalog row only appears once inventory exists
   // and a maker can see the format working beside real buyers.
@@ -375,8 +386,11 @@ export function ExtensionsOverview(props: {
     && !searching
     && !filtering
     && visibleCatalog.length >= MIN_ORGANIC_ROWS_BEFORE_IN_FEED
-    && slotState({ status: discoveryFeed.status, offers: discoveryOffers }) === "open";
-  const catalogSlotPrice = useMemo(() => slotStartingPrice(discoveryOffers), [discoveryOffers]);
+    && slotState({ status: discoveryFeed.status, offers: discoveryOffers, products: CATALOG_SLOT_PRODUCTS }) === "open";
+  const catalogSlotPrice = useMemo(
+    () => slotStartingPrice(discoveryOffers, CATALOG_SLOT_PRODUCTS),
+    [discoveryOffers],
+  );
   const catalogSlotIndex = Math.min(6, Math.max(1, orderedCatalog.length - 1));
 
   const handleClearFilters = useCallback(() => {
@@ -526,11 +540,11 @@ export function ExtensionsOverview(props: {
             {visibleCatalog.length ? (
               <div className="mt-4">
                 {orderedCatalog.map((extension, index) => {
-                  const featured = featuredById.get(extension.extension_id);
-                  const row = featured ? (
-                    <FeaturedCatalogRow
+                  const paid = paidById.get(extension.extension_id);
+                  const row = paid ? (
+                    <PaidCatalogRow
                       key={extension.extension_id}
-                      entry={featured}
+                      entry={paid}
                       snapshotId={discoverySnapshotId}
                       effective={props.effective}
                       onOpen={props.onOpenExtension}

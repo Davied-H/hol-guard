@@ -114,6 +114,12 @@ export function buildSpotlight(input: {
     if (!catalog) continue;
     add({ catalog, placement: null, featured: false, basis: "starter", reason: null });
   }
+  // A catalog need not contain any starter id - a trimmed build, a future
+  // rename - so the last resort is catalog order. A heading above an empty
+  // grid would be exactly the dead surface this shelf exists to prevent.
+  for (const catalog of input.catalog) {
+    add({ catalog, placement: null, featured: false, basis: "starter", reason: null });
+  }
 
   return {
     cards,
@@ -143,11 +149,23 @@ export function spotlightHeading(lead: SpotlightBasis): SpotlightHeading {
   }
   return {
     title: "Good places to start",
-    basis: "A fixed starter set from the built-in catalog. Not a ranking or a popularity measure.",
+    basis: "A starting selection from the built-in catalog. Not a ranking or a popularity measure.",
   };
 }
 
 export type SlotState = "open" | "sold-out" | "hidden";
+export type DiscoveryProduct = DiscoveryOffer["product"];
+
+/** The products that buy the shelf cell, and the one that buys a catalog row. */
+export const SHELF_SLOT_PRODUCTS: readonly DiscoveryProduct[] = ["always", "time_slot"];
+export const CATALOG_SLOT_PRODUCTS: readonly DiscoveryProduct[] = ["sponsored"];
+
+function forProducts(
+  offers: readonly DiscoveryOffer[],
+  products: readonly DiscoveryProduct[],
+): DiscoveryOffer[] {
+  return offers.filter((offer) => products.includes(offer.product));
+}
 
 /**
  * Whether to offer the placement for sale, and how. Vacancy is only ever
@@ -158,16 +176,23 @@ export type SlotState = "open" | "sold-out" | "hidden";
 export function slotState(input: {
   status: DiscoveryFeedStatus;
   offers: readonly DiscoveryOffer[];
+  products: readonly DiscoveryProduct[];
 }): SlotState {
   if (input.status !== "ready") return "hidden";
-  const known = input.offers.filter((offer) => offer.availability !== "unknown");
+  const known = forProducts(input.offers, input.products).filter((offer) => offer.availability !== "unknown");
   if (known.length === 0) return "hidden";
   return known.some((offer) => offer.availability === "open") ? "open" : "sold-out";
 }
 
-/** The cheapest indicative monthly price across the open products, if any. */
-export function slotStartingPrice(offers: readonly DiscoveryOffer[]): string | null {
-  const amounts = offers
+/**
+ * The cheapest indicative monthly price among the products that actually buy
+ * the placement being offered. A sponsored row never quotes a featured price.
+ */
+export function slotStartingPrice(
+  offers: readonly DiscoveryOffer[],
+  products: readonly DiscoveryProduct[],
+): string | null {
+  const amounts = forProducts(offers, products)
     .filter((offer) => offer.availability === "open" && offer.indicativeAmountCents !== null && offer.currency)
     .map((offer) => ({ cents: offer.indicativeAmountCents as number, currency: offer.currency as string }))
     .sort((left, right) => left.cents - right.cents);

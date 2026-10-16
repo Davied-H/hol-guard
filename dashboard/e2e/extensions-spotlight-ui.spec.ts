@@ -41,7 +41,13 @@ function placement(id: string, product: "always" | "sponsored", brandName: strin
   };
 }
 
-function projection(options: { placements?: unknown[]; availability?: "open" | "sold_out" | "unknown" } = {}) {
+type Availability = "open" | "sold_out" | "unknown";
+
+function offer(product: string, availability: Availability, cents: number | null) {
+  return { product, availability, indicativeAmountCents: cents, currency: "USD", checkedAt: "2026-01-01T00:00:00Z", quoteRequired: true };
+}
+
+function projection(options: { placements?: unknown[]; shelf?: Availability; listing?: Availability } = {}) {
   return {
     remainingLeaseMs: 600_000,
     policyAllowed: true,
@@ -55,14 +61,8 @@ function projection(options: { placements?: unknown[]; availability?: "open" | "
       leaseExpiresAt: "2099-01-01T00:00:00Z",
       placements: options.placements ?? [],
       offers: [
-        {
-          product: "sponsored",
-          availability: options.availability ?? "open",
-          indicativeAmountCents: 4900,
-          currency: "USD",
-          checkedAt: "2026-01-01T00:00:00Z",
-          quoteRequired: true,
-        },
+        offer("always", options.shelf ?? "open", 19_900),
+        offer("sponsored", options.listing ?? "open", 4_900),
       ],
     },
   };
@@ -129,7 +129,8 @@ test.describe("extensions spotlight", () => {
     const slot = page.getByTestId("spotlight-slot-card");
     await expect(slot).toHaveAttribute("data-state", "open");
     await expect(slot).toContainText("This slot is open");
-    await expect(slot.getByRole("link", { name: /Get this spot · from \$49\/mo/ })).toBeVisible();
+    // The shelf cell quotes the product that buys the shelf, not the cheaper listing.
+    await expect(slot.getByRole("link", { name: /Get this spot · from \$199\/mo/ })).toBeVisible();
     // Vacant shelf must not also run the in-feed ask.
     await expect(page.getByTestId("catalog-slot-row")).toHaveCount(0);
 
@@ -141,7 +142,7 @@ test.describe("extensions spotlight", () => {
 
   test("a fresh device falls back to the starter set without inventing metrics", async ({ page }) => {
     await mount(page, { catalog: wideCatalog() });
-    await routeDiscovery(page, projection({ availability: "unknown" }));
+    await routeDiscovery(page, projection({ shelf: "unknown", listing: "unknown" }));
     await routeAnalytics(page, []);
     await initialize(page);
 
@@ -174,11 +175,45 @@ test.describe("extensions spotlight", () => {
     const inFeed = page.getByTestId("catalog-slot-row");
     await expect(inFeed).toHaveCount(1);
     await expect(inFeed).toContainText("Position is all it buys.");
+    await expect(inFeed.getByRole("link", { name: /Get a listing · from \$49\/mo/ })).toBeVisible();
 
     await expectRendersAtBothSizes(page, async () => {
       await expect(featured).toBeVisible();
       await expect(inFeed).toBeVisible();
     });
+  });
+
+  test("a sold-out shelf is silent, and a sold-out listing never borrows an open price", async ({ page }) => {
+    await mount(page, { catalog: wideCatalog() });
+    await routeDiscovery(page, projection({ shelf: "sold_out", listing: "sold_out", placements: [placement("command.cloud.aws", "always", "Northwind Tools")] }));
+    await routeAnalytics(page, [{ value: "command.git", count: 41 }]);
+    await initialize(page);
+
+    await expect(page.getByTestId("discovery-featured-card")).toHaveCount(1);
+    // Nothing is for sale, so nothing asks: no cell, no row, no sold-out claim
+    // sitting beside organic cards.
+    await expect(page.getByTestId("spotlight-slot-card")).toHaveCount(0);
+    await expect(page.getByTestId("catalog-slot-row")).toHaveCount(0);
+  });
+
+  test("a sponsored placement past the shelf still gets its labeled catalog row", async ({ page }) => {
+    await mount(page, { catalog: wideCatalog() });
+    await routeDiscovery(page, projection({
+      placements: [
+        placement("command.cloud.aws", "always", "Northwind Tools"),
+        placement("command.github", "always", "Harbor Labs"),
+        placement("command.package.node", "always", "Tidewater"),
+        placement("command.remote.ssh", "sponsored", "Fourth Buyer"),
+      ],
+    }));
+    await routeAnalytics(page, []);
+    await initialize(page);
+
+    // The shelf holds three; the fourth buyer is disclosed in the catalog.
+    await expect(page.getByTestId("discovery-featured-card")).toHaveCount(3);
+    const rows = page.getByTestId("catalog-featured-row");
+    await expect(rows.filter({ hasText: "Fourth Buyer" })).toHaveCount(1);
+    await expect(rows.filter({ hasText: "Fourth Buyer" })).toContainText("Sponsored");
   });
 
   test("one surface: no tab strip, and searching hides the shelf", async ({ page }) => {

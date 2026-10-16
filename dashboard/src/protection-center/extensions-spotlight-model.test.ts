@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 
 import type { ExtensionCatalogSummary } from "../extension-controls-api";
-import type { DiscoveryOffer, DiscoveryPlacement, JoinedDiscoveryCard } from "./extensions-discover-model";
+import type { DiscoveryFeedStatus, DiscoveryOffer, DiscoveryPlacement, JoinedDiscoveryCard } from "./extensions-discover-model";
 import {
   buildSpotlight,
+  CATALOG_SLOT_PRODUCTS,
+  SHELF_SLOT_PRODUCTS,
   slotStartingPrice,
   slotState,
   spotlightActivityFromDimensions,
@@ -148,28 +150,47 @@ const CATALOG = [
 
 // Vacancy is claimed only on an authoritative open offer.
 {
-  assert.equal(slotState({ status: "ready", offers: [offer()] }), "open");
-  assert.equal(slotState({ status: "ready", offers: [offer({ availability: "sold_out" })] }), "sold-out");
-  assert.equal(slotState({ status: "ready", offers: [offer({ availability: "unknown" })] }), "hidden");
-  assert.equal(slotState({ status: "ready", offers: [] }), "hidden");
+  const shelf = (offers: DiscoveryOffer[], status: DiscoveryFeedStatus = "ready") =>
+    slotState({ status, offers, products: SHELF_SLOT_PRODUCTS });
+  assert.equal(shelf([offer({ product: "always" })]), "open");
+  assert.equal(shelf([offer({ product: "always", availability: "sold_out" })]), "sold-out");
+  assert.equal(shelf([offer({ product: "always", availability: "unknown" })]), "hidden");
+  assert.equal(shelf([]), "hidden");
   for (const status of ["loading", "unavailable", "rate-limited", "offline", "opt-out"] as const) {
-    assert.equal(slotState({ status, offers: [offer()] }), "hidden");
+    assert.equal(shelf([offer({ product: "always" })], status), "hidden");
   }
 }
 
-// The advertised price is the cheapest open offer the server actually quoted.
+// Availability never crosses products: a sold-out sponsored listing is not
+// made available by an open featured offer, and the reverse holds too.
+{
+  const offers = [
+    offer({ product: "always", availability: "open", indicativeAmountCents: 19_900 }),
+    offer({ product: "sponsored", availability: "sold_out", indicativeAmountCents: 4_900 }),
+  ];
+  assert.equal(slotState({ status: "ready", offers, products: CATALOG_SLOT_PRODUCTS }), "sold-out");
+  assert.equal(slotState({ status: "ready", offers, products: SHELF_SLOT_PRODUCTS }), "open");
+  assert.equal(slotStartingPrice(offers, CATALOG_SLOT_PRODUCTS), null);
+  assert.equal(slotStartingPrice(offers, SHELF_SLOT_PRODUCTS), "$199");
+}
+
+// The advertised price is the cheapest open offer the server quoted for the
+// products that actually buy the placement being advertised.
 {
   assert.equal(
-    slotStartingPrice([
-      offer({ product: "always", indicativeAmountCents: 19_900 }),
-      offer({ product: "sponsored", indicativeAmountCents: 4_900 }),
-    ]),
+    slotStartingPrice(
+      [
+        offer({ product: "always", indicativeAmountCents: 19_900 }),
+        offer({ product: "time_slot", indicativeAmountCents: 4_900 }),
+      ],
+      SHELF_SLOT_PRODUCTS,
+    ),
     "$49",
   );
-  assert.equal(slotStartingPrice([offer({ availability: "sold_out" })]), null);
-  assert.equal(slotStartingPrice([offer({ indicativeAmountCents: null })]), null);
-  assert.equal(slotStartingPrice([offer({ indicativeAmountCents: 4_950 })]), "$49.50");
-  assert.equal(slotStartingPrice([]), null);
+  assert.equal(slotStartingPrice([offer({ availability: "sold_out" })], CATALOG_SLOT_PRODUCTS), null);
+  assert.equal(slotStartingPrice([offer({ indicativeAmountCents: null })], CATALOG_SLOT_PRODUCTS), null);
+  assert.equal(slotStartingPrice([offer({ indicativeAmountCents: 4_950 })], CATALOG_SLOT_PRODUCTS), "$49.50");
+  assert.equal(slotStartingPrice([], CATALOG_SLOT_PRODUCTS), null);
 }
 
 // Analytics buckets arrive from a local endpoint and are still bounded here.
@@ -184,6 +205,21 @@ const CATALOG = [
       { extensionId: "command.github", count: 0 },
     ],
   );
+}
+
+// A catalog holding none of the starter ids still fills the shelf: a heading
+// over an empty grid is the dead surface this shelf exists to prevent.
+{
+  const exotic = ["command.unlisted-a", "command.unlisted-b", "command.unlisted-c", "command.unlisted-d"]
+    .map((extensionId) => catalog(extensionId));
+  const spotlight = buildSpotlight({ featured: [], sponsored: [], activity: [], catalog: exotic });
+  assert.equal(spotlight.cards.length, 3);
+  assert.equal(spotlight.lead, "starter");
+  assert.deepEqual(
+    spotlight.cards.map((card) => card.catalog.extension_id),
+    ["command.unlisted-a", "command.unlisted-b", "command.unlisted-c"],
+  );
+  assert.ok(spotlight.cards.every((card) => card.basis === "starter"));
 }
 
 console.log("extensions-spotlight-model tests passed");

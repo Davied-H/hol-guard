@@ -15,6 +15,7 @@ import {
 } from "./extensions-discover-model";
 import {
   buildSpotlight,
+  SHELF_SLOT_PRODUCTS,
   slotStartingPrice,
   slotState,
   spotlightHeading,
@@ -245,16 +246,17 @@ export function ExtensionsSpotlight(props: {
     }),
     [props.activity, props.catalogExtensions, props.featured, props.sponsored],
   );
-  const slot = slotState({ status: props.status, offers: props.offers });
-  const price = useMemo(() => slotStartingPrice(props.offers), [props.offers]);
+  const slot = slotState({ status: props.status, offers: props.offers, products: SHELF_SLOT_PRODUCTS });
+  const price = useMemo(() => slotStartingPrice(props.offers, SHELF_SLOT_PRODUCTS), [props.offers]);
   const heading = spotlightHeading(spotlight.lead);
 
   // The shelf would otherwise flip heading and contents as the feed and the
   // activity query land a moment apart; hold one skeleton until both settle.
   const waiting = !props.settled || props.status === "loading";
   // The slot replaces the weakest cell rather than adding a fourth, so the
-  // row a buyer sees is the row a buyer gets.
-  const showSlot = spotlight.vacant && slot !== "hidden";
+  // row a buyer sees is the row a buyer gets. Only an authoritative "open"
+  // offers it: a sold-out claim beside organic cards contradicts itself.
+  const showSlot = spotlight.vacant && slot === "open";
   const cards = showSlot ? spotlight.cards.slice(0, SPOTLIGHT_CELL_COUNT - 1) : spotlight.cards;
 
   if (props.catalogExtensions.length === 0) return null;
@@ -263,10 +265,10 @@ export function ExtensionsSpotlight(props: {
     <section className="mt-6" aria-labelledby="extensions-spotlight-heading" data-testid="extensions-spotlight">
       <div className="flex flex-col gap-1">
         <h2 id="extensions-spotlight-heading" className="text-xl font-semibold tracking-tight text-brand-dark">
-          {heading.title}
+          {waiting ? "Extensions to look at" : heading.title}
         </h2>
         <p className="max-w-[72ch] text-sm leading-6 text-brand-dark/60" data-testid="spotlight-basis">
-          {heading.basis}
+          {waiting ? "\u00a0" : heading.basis}
         </p>
       </div>
       {waiting ? (

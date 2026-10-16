@@ -7275,6 +7275,9 @@ function buildSpotlight(input) {
     if (!catalog) continue;
     add({ catalog, placement: null, featured: false, basis: "starter", reason: null });
   }
+  for (const catalog of input.catalog) {
+    add({ catalog, placement: null, featured: false, basis: "starter", reason: null });
+  }
   return {
     cards,
     lead: paidCount > 0 ? "paid" : cards.some((card) => card.basis === "activity") ? "activity" : "starter",
@@ -7296,17 +7299,22 @@ function spotlightHeading(lead) {
   }
   return {
     title: "Good places to start",
-    basis: "A fixed starter set from the built-in catalog. Not a ranking or a popularity measure."
+    basis: "A starting selection from the built-in catalog. Not a ranking or a popularity measure."
   };
+}
+const SHELF_SLOT_PRODUCTS = ["always", "time_slot"];
+const CATALOG_SLOT_PRODUCTS = ["sponsored"];
+function forProducts(offers, products) {
+  return offers.filter((offer) => products.includes(offer.product));
 }
 function slotState(input) {
   if (input.status !== "ready") return "hidden";
-  const known = input.offers.filter((offer) => offer.availability !== "unknown");
+  const known = forProducts(input.offers, input.products).filter((offer) => offer.availability !== "unknown");
   if (known.length === 0) return "hidden";
   return known.some((offer) => offer.availability === "open") ? "open" : "sold-out";
 }
-function slotStartingPrice(offers) {
-  const amounts = offers.filter((offer) => offer.availability === "open" && offer.indicativeAmountCents !== null && offer.currency).map((offer) => ({ cents: offer.indicativeAmountCents, currency: offer.currency })).sort((left, right) => left.cents - right.cents);
+function slotStartingPrice(offers, products) {
+  const amounts = forProducts(offers, products).filter((offer) => offer.availability === "open" && offer.indicativeAmountCents !== null && offer.currency).map((offer) => ({ cents: offer.indicativeAmountCents, currency: offer.currency })).sort((left, right) => left.cents - right.cents);
   const cheapest = amounts[0];
   if (!cheapest) return null;
   try {
@@ -7488,17 +7496,17 @@ function ExtensionsSpotlight(props) {
     }),
     [props.activity, props.catalogExtensions, props.featured, props.sponsored]
   );
-  const slot = slotState({ status: props.status, offers: props.offers });
-  const price = reactExports.useMemo(() => slotStartingPrice(props.offers), [props.offers]);
+  const slot = slotState({ status: props.status, offers: props.offers, products: SHELF_SLOT_PRODUCTS });
+  const price = reactExports.useMemo(() => slotStartingPrice(props.offers, SHELF_SLOT_PRODUCTS), [props.offers]);
   const heading = spotlightHeading(spotlight.lead);
   const waiting = !props.settled || props.status === "loading";
-  const showSlot = spotlight.vacant && slot !== "hidden";
+  const showSlot = spotlight.vacant && slot === "open";
   const cards = showSlot ? spotlight.cards.slice(0, SPOTLIGHT_CELL_COUNT - 1) : spotlight.cards;
   if (props.catalogExtensions.length === 0) return null;
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { className: "mt-6", "aria-labelledby": "extensions-spotlight-heading", "data-testid": "extensions-spotlight", children: [
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-col gap-1", children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { id: "extensions-spotlight-heading", className: "text-xl font-semibold tracking-tight text-brand-dark", children: heading.title }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "max-w-[72ch] text-sm leading-6 text-brand-dark/60", "data-testid": "spotlight-basis", children: heading.basis })
+      /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { id: "extensions-spotlight-heading", className: "text-xl font-semibold tracking-tight text-brand-dark", children: waiting ? "Extensions to look at" : heading.title }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx("p", { className: "max-w-[72ch] text-sm leading-6 text-brand-dark/60", "data-testid": "spotlight-basis", children: waiting ? " " : heading.basis })
     ] }),
     waiting ? /* @__PURE__ */ jsxRuntimeExports.jsx(SpotlightSkeleton, {}) : /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "guard-spotlight-grid mt-5", children: [
       cards.map((card) => card.placement ? /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -9086,9 +9094,15 @@ function CatalogExtensionRow(props) {
     }
   );
 }
-function FeaturedCatalogRow(props) {
+function PaidCatalogRow(props) {
   const ref = reactExports.useRef(null);
-  const recordOpen = useDiscoveryMeasurement(ref, props.snapshotId, props.entry.placement, "extensions_featured");
+  const featured = props.entry.placement.product !== "sponsored";
+  const recordOpen = useDiscoveryMeasurement(
+    ref,
+    props.snapshotId,
+    props.entry.placement,
+    featured ? "extensions_featured" : "extensions_feed"
+  );
   const { onOpen } = props;
   const open = reactExports.useCallback((extension) => {
     recordOpen();
@@ -9107,7 +9121,7 @@ function FeaturedCatalogRow(props) {
       "data-sponsored-placement-id": placement.publicPlacementId,
       children: [
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "flex flex-wrap items-center gap-x-2 gap-y-1 px-4 pt-3", children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "guard-sponsor-label", "data-sponsored-label": true, children: sponsoredCardLabel(true) }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "guard-sponsor-label", "data-sponsored-label": true, children: sponsoredCardLabel(featured) }),
           brand ? /* @__PURE__ */ jsxRuntimeExports.jsxs("span", { className: "text-xs text-brand-dark/60", children: [
             "Paid for by ",
             /* @__PURE__ */ jsxRuntimeExports.jsx("span", { className: "font-semibold text-brand-dark", children: brand })
@@ -9283,19 +9297,24 @@ function ExtensionsOverview(props) {
     () => filterCatalogExtensions(props.catalogExtensions, filters),
     [filters, props.catalogExtensions]
   );
-  const featuredById = reactExports.useMemo(
-    () => new Map(joinedDiscovery.featured.map((entry) => [entry.placement.extensionId, entry])),
-    [joinedDiscovery.featured]
+  const paidById = reactExports.useMemo(
+    () => new Map(
+      [...joinedDiscovery.featured, ...joinedDiscovery.sponsored].map((entry) => [entry.placement.extensionId, entry])
+    ),
+    [joinedDiscovery.featured, joinedDiscovery.sponsored]
   );
   const orderedCatalog = reactExports.useMemo(() => {
     const visibleIds = new Set(visibleCatalog.map((extension) => extension.extension_id));
     const featuredVisible = joinedDiscovery.featured.map((entry) => entry.catalog).filter((extension) => visibleIds.has(extension.extension_id));
-    const rest = orderFeaturedFirst(visibleCatalog, new Set(featuredById.keys())).slice(featuredVisible.length);
+    const rest = orderFeaturedFirst(visibleCatalog, new Set(paidById.keys())).slice(featuredVisible.length);
     return [...featuredVisible, ...rest];
-  }, [featuredById, joinedDiscovery.featured, visibleCatalog]);
+  }, [joinedDiscovery.featured, paidById, visibleCatalog]);
   const paidPresent = joinedDiscovery.featured.length + joinedDiscovery.sponsored.length > 0;
-  const catalogSlotOpen = paidPresent && !searching && !filtering && visibleCatalog.length >= MIN_ORGANIC_ROWS_BEFORE_IN_FEED && slotState({ status: discoveryFeed.status, offers: discoveryOffers }) === "open";
-  const catalogSlotPrice = reactExports.useMemo(() => slotStartingPrice(discoveryOffers), [discoveryOffers]);
+  const catalogSlotOpen = paidPresent && !searching && !filtering && visibleCatalog.length >= MIN_ORGANIC_ROWS_BEFORE_IN_FEED && slotState({ status: discoveryFeed.status, offers: discoveryOffers, products: CATALOG_SLOT_PRODUCTS }) === "open";
+  const catalogSlotPrice = reactExports.useMemo(
+    () => slotStartingPrice(discoveryOffers, CATALOG_SLOT_PRODUCTS),
+    [discoveryOffers]
+  );
   const catalogSlotIndex = Math.min(6, Math.max(1, orderedCatalog.length - 1));
   const handleClearFilters = reactExports.useCallback(() => {
     setFilters(EMPTY_CATALOG_FILTERS);
@@ -9434,11 +9453,11 @@ function ExtensionsOverview(props) {
           ] }),
           !filtering ? /* @__PURE__ */ jsxRuntimeExports.jsx(CatalogPostureSummary, { extensions: props.catalogExtensions, effective: props.effective }) : null,
           visibleCatalog.length ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { className: "mt-4", children: orderedCatalog.map((extension, index) => {
-            const featured = featuredById.get(extension.extension_id);
-            const row = featured ? /* @__PURE__ */ jsxRuntimeExports.jsx(
-              FeaturedCatalogRow,
+            const paid = paidById.get(extension.extension_id);
+            const row = paid ? /* @__PURE__ */ jsxRuntimeExports.jsx(
+              PaidCatalogRow,
               {
-                entry: featured,
+                entry: paid,
                 snapshotId: discoverySnapshotId,
                 effective: props.effective,
                 onOpen: props.onOpenExtension
