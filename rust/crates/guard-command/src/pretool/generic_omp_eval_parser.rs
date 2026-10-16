@@ -20,6 +20,8 @@ pub(super) struct Call {
     pub(super) tool: String,
     pub(super) args: Vec<(String, Lit)>,
     pub(super) sdk_read_helper: bool,
+    /// A `browser.*` call: `Null`, or the literal options of `browser.open`.
+    pub(super) browser: Option<Value>,
 }
 
 struct Parser {
@@ -80,6 +82,63 @@ const RESERVED: &[&str] = &[
     "prototype",
     "__proto__",
 ];
+
+/// Page-driving methods of an Oh My Pi browser tab. Navigation, file
+/// uploads and downloads are absent; each opens a path the proof cannot bound.
+const TAB_METHODS: &[&str] = &[
+    "observe",
+    "fill",
+    "click",
+    "check",
+    "uncheck",
+    "isChecked",
+    "text",
+    "count",
+    "waitFor",
+    "waitForText",
+    "screenshot",
+    "close",
+    "evaluate",
+    "type",
+    "press",
+    "hover",
+    "select",
+];
+
+/// Option names a tab method may carry. A destination such as `path` is not
+/// among them.
+const TAB_OPTION_KEYS: &[&str] = &[
+    "fullPage", "timeout", "name", "delay", "force", "exact", "visible", "state", "text",
+    "selector",
+];
+
+/// Page script that talks to another host or builds code at run time.
+fn page_script_reaches_out(script: &str) -> bool {
+    let lower = script.to_ascii_lowercase().replace("location.reload()", "");
+    [
+        "fetch",
+        "xmlhttprequest",
+        "websocket",
+        "sendbeacon",
+        "eventsource",
+        "import",
+        "eval",
+        "function",
+        "http:",
+        "https:",
+        "ftp:",
+        "window.open",
+        "location",
+        "cookie",
+        "worker",
+        "script",
+        "iframe",
+        "navigator",
+        "indexeddb",
+    ]
+    .iter()
+    .any(|needle| lower.contains(needle))
+}
 
 impl Parser {
     fn peek(&self) -> Option<&Token> {
@@ -193,6 +252,7 @@ impl Parser {
             Token::Ident(word) => match word.as_str() {
                 "await" => self.awaited(depth)?,
                 "tool" => self.tool_call(depth)?,
+                "browser" => self.browser_call()?,
                 // An un-awaited `read(...)`, as inside `Promise.all([...])`.
                 "read" => self.read_helper()?,
                 "Promise" => self.promise_all(depth)?,
@@ -204,7 +264,7 @@ impl Parser {
                     self.eat(')')?;
                 }
                 "true" | "false" | "null" => {}
-                name if self.declared.contains(name) => {}
+                name if self.declared.contains(name) => self.tab_method()?,
                 _ => return None,
             },
             Token::Str(_) | Token::Num(_) => {}
@@ -263,6 +323,8 @@ impl Parser {
     fn awaited(&mut self, depth: usize) -> Option<()> {
         match self.next()? {
             Token::Ident(word) if word == "tool" => self.tool_call(depth),
+            Token::Ident(word) if word == "browser" => self.browser_call(),
+            Token::Ident(word) if self.declared.contains(&word) => self.tab_method(),
             Token::Ident(word) if word == "read" => self.read_helper(),
             Token::Ident(word) if word == "Promise" => self.promise_all(depth),
             Token::Punct('(') => {
@@ -285,6 +347,142 @@ impl Parser {
         self.eat(')')?;
         self.calls.push(call);
         Some(())
+    }
+
+    /// `browser.open({..})`, `browser.tab("name")` and `browser.close({..})`.
+    /// The options are literals; the caller judges what `open` may start.
+    fn browser_call(&mut self) -> Option<()> {
+        self.eat('.')?;
+        let method = self.ident()?;
+        self.eat('(')?;
+        let options = match method.as_str() {
+            "open" | "close" => self.literal(0)?,
+            "tab" => match self.next()? {
+                Token::Str(name) => Value::String(name),
+                _ => return None,
+            },
+            _ => return None,
+        };
+        self.eat(')')?;
+        if self.calls.len() >= MAX_CALLS {
+            return None;
+        }
+        let browser = if method == "open" {
+            options
+        } else {
+            Value::Null
+        };
+        self.calls.push(Call {
+            tool: "browser".to_owned(),
+            args: Vec::new(),
+            sdk_read_helper: false,
+            browser: Some(browser),
+        });
+        Some(())
+    }
+
+    /// A method call on a bound name, when it is one of the page-driving
+    /// methods of a browser tab. Other `.name` accessors are left to the
+    /// caller, which accepts only `.text` and `.length`.
+    fn tab_method(&mut self) -> Option<()> {
+        let (Some(Token::Punct('.')), Some(Token::Ident(method)), Some(Token::Punct('('))) = (
+            self.tokens.get(self.pos),
+            self.tokens.get(self.pos + 1),
+            self.tokens.get(self.pos + 2),
+        ) else {
+            return Some(());
+        };
+        if !TAB_METHODS.contains(&method.as_str()) {
+            return None;
+        }
+        let method = method.clone();
+        self.pos += 3;
+        let mut args = 0;
+        while !self.at(')') {
+            let value = self.literal(0)?;
+            match &value {
+                Value::String(text)
+                    if matches!(method.as_str(), "evaluate" | "waitForFunction") =>
+                {
+                    if page_script_reaches_out(text) {
+                        return None;
+                    }
+                }
+                Value::Object(map) => {
+                    if !map
+                        .keys()
+                        .all(|key| TAB_OPTION_KEYS.contains(&key.as_str()))
+                    {
+                        return None;
+                    }
+                }
+                Value::Array(_) => return None,
+                _ => {}
+            }
+            args += 1;
+            if args > 4 {
+                return None;
+            }
+            if self.at(',') {
+                self.pos += 1;
+            } else {
+                break;
+            }
+        }
+        self.eat(')')
+    }
+
+    /// A JSON-shaped literal: string, number, boolean, `null`, array or
+    /// object with plain keys.
+    fn literal(&mut self, depth: usize) -> Option<Value> {
+        if depth > 4 {
+            return None;
+        }
+        match self.next()? {
+            Token::Str(text) => Some(Value::String(text)),
+            Token::Num(number) => Some(number),
+            Token::Ident(word) => match word.as_str() {
+                "true" => Some(json!(true)),
+                "false" => Some(json!(false)),
+                "null" => Some(Value::Null),
+                _ => None,
+            },
+            Token::Punct('[') => {
+                let mut items = Vec::new();
+                while !self.at(']') {
+                    items.push(self.literal(depth + 1)?);
+                    if self.at(',') {
+                        self.pos += 1;
+                    } else {
+                        break;
+                    }
+                }
+                self.eat(']')?;
+                Some(Value::Array(items))
+            }
+            Token::Punct('{') => {
+                let mut map = serde_json::Map::new();
+                while !self.at('}') {
+                    let key = match self.next()? {
+                        Token::Ident(key) | Token::Str(key) => key,
+                        _ => return None,
+                    };
+                    self.eat(':')?;
+                    let value = self.literal(depth + 1)?;
+                    if map.insert(key, value).is_some() {
+                        return None;
+                    }
+                    if self.at(',') {
+                        self.pos += 1;
+                    } else {
+                        break;
+                    }
+                }
+                self.eat('}')?;
+                Some(Value::Object(map))
+            }
+            _ => None,
+        }
     }
 
     fn promise_all(&mut self, depth: usize) -> Option<()> {
@@ -336,6 +534,7 @@ impl Parser {
             tool,
             args,
             sdk_read_helper: false,
+            browser: None,
         });
         Some(())
     }
@@ -374,6 +573,7 @@ fn read_helper_call(path: String) -> Option<Call> {
         tool: "read".to_owned(),
         args: vec![("path".to_owned(), Lit::Str(path))],
         sdk_read_helper: true,
+        browser: None,
     })
 }
 
