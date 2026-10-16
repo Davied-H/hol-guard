@@ -8,9 +8,8 @@ answer raises; it never yields fewer signals.
 from __future__ import annotations
 
 import base64
-import gzip
-import io
 import json
+import zlib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Final, TypeVar, get_args
@@ -228,12 +227,14 @@ def _unpack(payload: object) -> object:
     try:
         if not isinstance(packed, str):
             raise ValueError("packed reply is not text")
-        with gzip.GzipFile(fileobj=io.BytesIO(base64.b64decode(packed, validate=True))) as stream:
-            body = stream.read(_MAX_UNPACKED_REPLY_BYTES + 1)
+        decoder = zlib.decompressobj(wbits=16 + zlib.MAX_WBITS)
+        body = decoder.decompress(base64.b64decode(packed, validate=True), _MAX_UNPACKED_REPLY_BYTES + 1)
         if len(body) > _MAX_UNPACKED_REPLY_BYTES:
             raise ValueError("packed reply too large")
+        if not decoder.eof or decoder.unused_data:
+            raise ValueError("packed reply is not one complete gzip member")
         return json.loads(body)
-    except (ValueError, OSError, EOFError) as exc:
+    except (ValueError, zlib.error) as exc:
         raise NativeArtifactRiskError("native_artifact_risk_reply_invalid") from exc
 
 
