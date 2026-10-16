@@ -29,8 +29,10 @@ use guard_command::package_intent_common::{
 };
 use guard_contracts::{McpToolCallIdentityPayloadV1, McpToolPolicySubjectV1};
 
+use serde_json::{Map, Value};
+
 use super::package_lane::{self, PackageOutcome, QueueBinding};
-use super::package_policy::{self, ProcessFacts};
+use super::package_policy::{self, PackagePolicy, ProcessFacts};
 use super::store::Saved;
 use super::view::HarnessView;
 use super::{run_policy, McpRelayDecideRequestV1};
@@ -55,21 +57,55 @@ pub(super) struct Packaged {
     pub(super) outcome: PackageOutcome,
 }
 
-/// Decide the package call the gate found an intent in.
-pub(super) fn decide_package_leg(
-    request: &McpRelayDecideRequestV1,
-    view: &HarnessView,
-    saved: Option<&Saved<'_>>,
-    control_digest: &str,
+/// Everything one package call's stored policy resolves from.
+///
+/// The lane resolves it twice — once to decide the route, once more for the
+/// route that needs the fresh supply-chain answer — and a claimed call
+/// resolves it again on the claimed store, from the evaluation the relay
+/// re-read the request with. Holding the inputs keeps those resolutions the
+/// same resolution.
+pub(super) struct PackageInputs<'a, 'c> {
+    /// The package request's own artifact, which the receipt names by id.
+    pub(super) artifact: GuardArtifact,
+    /// The workspace the intent was parsed against.
+    pub(super) workspace: &'a str,
+    saved: &'a Saved<'c>,
+    view: &'a HarnessView,
+    evaluation: &'a Map<String, Value>,
+    control_digest: &'a str,
+    process: ProcessFacts<'a>,
+}
+
+impl PackageInputs<'_, '_> {
+    /// The stored package policy, resolved against the request's evaluation.
+    pub(super) fn resolve(&self) -> Result<PackagePolicy, &'static str> {
+        package_policy::package_policy(
+            self.saved,
+            self.view,
+            &self.artifact,
+            self.evaluation,
+            self.control_digest,
+            self.workspace,
+            &self.process,
+        )
+    }
+}
+
+/// Gather what the package call's policy resolves from.
+///
+/// `evaluation` is the one the policy is resolved against: the decide path
+/// passes the request's own, and a claimed call passes the one the relay
+/// re-read the request with after the claim.
+pub(super) fn package_inputs<'a, 'c>(
+    request: &'a McpRelayDecideRequestV1,
+    view: &'a HarnessView,
+    saved: Option<&'a Saved<'c>>,
+    control_digest: &'a str,
     identity: &McpToolCallIdentityPayloadV1,
     intent: &PackageIntent,
-    subject: &McpToolPolicySubjectV1,
-    binding: QueueBinding<'_>,
-) -> Result<Packaged, &'static str> {
-    let evaluation = request
-        .package_evaluation
-        .as_ref()
-        .ok_or(EVALUATION_ABSENT)?;
+    evaluation: Option<&'a Map<String, Value>>,
+) -> Result<PackageInputs<'a, 'c>, &'static str> {
+    let evaluation = evaluation.ok_or(EVALUATION_ABSENT)?;
     let workspace = present(request.workspace.as_deref())?;
     let cwd = present(request.cwd.as_deref())?;
     if request.environment.is_empty() {
@@ -86,23 +122,42 @@ pub(super) fn decide_package_leg(
         &identity.artifact.config_path,
         &identity.artifact.source_scope,
     );
-    let process = ProcessFacts {
-        environment: &request.environment,
-        cwd,
-        home: &request.launcher_home,
-    };
-    let resolve = || {
-        package_policy::package_policy(
-            saved,
-            view,
-            &artifact,
-            evaluation,
-            control_digest,
-            workspace,
-            &process,
-        )
-    };
-    let resolved = resolve()?;
+    Ok(PackageInputs {
+        artifact,
+        workspace,
+        saved,
+        view,
+        evaluation,
+        control_digest,
+        process: ProcessFacts {
+            environment: &request.environment,
+            cwd,
+            home: &request.launcher_home,
+        },
+    })
+}
+
+/// Decide the package call the gate found an intent in.
+pub(super) fn decide_package_leg(
+    request: &McpRelayDecideRequestV1,
+    view: &HarnessView,
+    saved: Option<&Saved<'_>>,
+    control_digest: &str,
+    identity: &McpToolCallIdentityPayloadV1,
+    intent: &PackageIntent,
+    subject: &McpToolPolicySubjectV1,
+    binding: QueueBinding<'_>,
+) -> Result<Packaged, &'static str> {
+    let inputs = package_inputs(
+        request,
+        view,
+        saved,
+        control_digest,
+        identity,
+        intent,
+        request.package_evaluation.as_ref(),
+    )?;
+    let resolved = inputs.resolve()?;
     let outcome = package_lane::decide_package(
         &view.mode,
         &request.build.tool_name,
@@ -112,11 +167,11 @@ pub(super) fn decide_package_leg(
         // The proxy's second resolution, which reads the store the decide
         // path still holds open: the fresh tool authority, then the fresh
         // package policy.
-        || Ok((run_policy(subject, Some(saved))?, resolve()?)),
+        || Ok((run_policy(subject, Some(inputs.saved))?, inputs.resolve()?)),
     )?;
     Ok(Packaged {
-        artifact,
-        workspace: workspace.to_owned(),
+        artifact: inputs.artifact,
+        workspace: inputs.workspace.to_owned(),
         outcome,
     })
 }
