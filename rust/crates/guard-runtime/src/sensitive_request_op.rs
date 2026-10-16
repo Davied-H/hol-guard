@@ -178,7 +178,7 @@ fn controls(
     }))
 }
 
-fn git_executable_is_bounded(value: Option<&str>) -> bool {
+fn absolute_path_is_bounded(value: Option<&str>) -> bool {
     value.is_none_or(|path| {
         !path.is_empty()
             && path.len() <= MAX_REQUEST_CONTEXT_PATH_BYTES
@@ -197,17 +197,21 @@ pub(crate) fn evaluate(
     if encoded.len() > MAX_INPUT_BYTES
         || body.query.is_empty()
         || body.query.len() > MAX_QUERY_BYTES
-        || !git_executable_is_bounded(body.git_executable.as_deref())
+        || !absolute_path_is_bounded(body.git_executable.as_deref())
     {
         return Err(INVALID);
     }
     let controls = controls(body.control_snapshot.as_ref())?;
     let facts = &body.facts;
     // The unmodeled-shell recognizers prove git hooks against the account's
-    // passwd home, as the shell and developer inspection ops do, so a
-    // redirected `HOME` cannot stand in for it.
+    // passwd home, which the caller reports as the shell and developer
+    // inspection requests do, so a redirected `HOME` cannot stand in for it.
     let account_home = if body.query == "unmodeled_shell_artifact" {
-        crate::edge_git_push::account_home()
+        match body.input.get("account_home") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(path)) if absolute_path_is_bounded(Some(path)) => Some(path.clone()),
+            Some(_) => return Err(INVALID),
+        }
     } else {
         Some(facts.caller_home.clone())
     };

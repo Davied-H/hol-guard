@@ -15,6 +15,7 @@ from dataclasses import fields, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
+from . import native_git_execution_safety
 from .native_direct_tool_context import _facts
 from .native_git_execution_safety import _environment_snapshot
 from .native_request_context import NativeRequestContextFailure, _call
@@ -330,7 +331,12 @@ def native_unmodeled_shell_artifact(
 
     result = _ask(
         "unmodeled_shell_artifact",
-        {"command_text": command_text, "workspace": _path_text(workspace), "home": str(home_dir)},
+        {
+            "command_text": command_text,
+            "workspace": _path_text(workspace),
+            "home": str(home_dir),
+            "account_home": native_git_execution_safety._account_home_directory(),
+        },
         cwd=None,
         home_dir=None,
     )
