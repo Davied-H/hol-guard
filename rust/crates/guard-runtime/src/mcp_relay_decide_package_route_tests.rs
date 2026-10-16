@@ -92,11 +92,13 @@ fn the_precheck_lets_a_permitted_or_observed_call_reach_the_composition() {
 
 #[test]
 fn the_composition_stops_a_saved_block_on_either_policy() {
+    // A saved tool block is the tool policy's own leg, rendered by
+    // `_stored_tool_block_response` against the tool artifact.
     let mut blocked = tool(GuardAction::Allow);
     blocked.saved_action = Some(GuardAction::Block);
     assert_eq!(
         compose("enforce", &blocked, &policy("allow")),
-        Ok(PackageRoute::StoredToolBlock),
+        Ok(Decided::Tool(ToolLeg::StoredBlock)),
     );
     assert_eq!(
         compose(
@@ -104,34 +106,52 @@ fn the_composition_stops_a_saved_block_on_either_policy() {
             &tool(GuardAction::Allow),
             &with_saved_block(policy("allow")),
         ),
-        Ok(PackageRoute::StoredPackageBlock),
+        Ok(Decided::Package(PackageRoute::StoredPackageBlock)),
+    );
+}
+
+#[test]
+fn the_composition_names_the_legs_the_tool_policy_decides() {
+    // `queue_tool` is the tool policy's review, which the proxy queues as it
+    // queues any other blocked tool call.
+    assert_eq!(
+        compose("enforce", &tool(GuardAction::Review), &policy("allow")),
+        Ok(Decided::Tool(ToolLeg::Queue {
+            policy_action: "review".to_owned(),
+        })),
+    );
+    // Under observe a terminal tool policy is `_terminal_tool_response`, not
+    // the package lane's own terminal.
+    assert_eq!(
+        compose("observe", &tool(GuardAction::Block), &policy("allow")),
+        Ok(Decided::Tool(ToolLeg::Terminal {
+            policy_action: "block".to_owned(),
+        })),
     );
 }
 
 #[test]
 fn the_composition_stops_the_call_under_the_most_restrictive_terminal_action() {
-    // The composed terminal is answered as the package response either way,
-    // as the proxy renders one response for the call that carries the request.
+    // In enforce the composed terminal is the package response either way: the
+    // proxy renders one response for the call that carries the request.
     assert_eq!(
         compose("enforce", &tool(GuardAction::Block), &policy("allow")),
-        Ok(PackageRoute::TerminalPackage {
+        Ok(Decided::Package(PackageRoute::TerminalPackage {
             policy_action: "block".to_owned(),
-        }),
+        })),
     );
     assert_eq!(
         compose("enforce", &tool(GuardAction::Allow), &policy("block")),
-        Ok(PackageRoute::TerminalPackage {
+        Ok(Decided::Package(PackageRoute::TerminalPackage {
             policy_action: "block".to_owned(),
-        }),
+        })),
     );
 }
 
 #[test]
-fn the_composition_hands_back_either_queue() {
-    assert_eq!(
-        compose("enforce", &tool(GuardAction::Review), &policy("allow")),
-        Err(PACKAGE_QUEUE),
-    );
+fn the_composition_hands_back_a_queued_package_request() {
+    // Only `queue_package` defers: it needs the package-shaped approval row
+    // `_queue_package_approval_response` writes.
     assert_eq!(
         compose("enforce", &tool(GuardAction::Allow), &policy("review")),
         Err(PACKAGE_QUEUE),
@@ -151,9 +171,9 @@ fn the_composition_hands_back_an_observed_forward() {
 fn the_composition_forwards_a_call_neither_policy_stops() {
     assert_eq!(
         compose("enforce", &tool(GuardAction::Warn), &policy("allow")),
-        Ok(PackageRoute::Forward {
+        Ok(Decided::Package(PackageRoute::Forward {
             policy_action: "warn".to_owned(),
-        }),
+        })),
     );
 }
 

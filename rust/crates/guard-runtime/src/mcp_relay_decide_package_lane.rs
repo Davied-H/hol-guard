@@ -13,14 +13,30 @@
 //! view the decide path already holds. The lane asks for it only once the
 //! precheck did not answer, exactly as the proxy re-resolves nothing for a call
 //! its precheck stopped.
+//!
+//! Not every leg of this lane is a package answer. The three the tool policy
+//! decides — `_stored_tool_block_response`, `_terminal_tool_response` and
+//! `_queue_approval_center_response` — are the plain tool-policy responses the
+//! proxy renders for any other call, and each records the tool call's own
+//! receipt against the tool artifact rather than the package request's. The
+//! lane names them apart so the caller routes them through the tool lane it
+//! already has, and only the package legs leave the `mcp_package_call` record.
 
 use serde_json::{Map, Value};
 
 use super::package_answer;
 use super::package_policy::PackagePolicy;
 use super::package_receipt;
-use super::package_route::{self, PackageRoute};
+use super::package_route::{self, Decided, PackageRoute, ToolLeg};
 use crate::mcp_tool_policy_decision::Decision;
+
+/// What one decided package call leaves the caller: the lane's own answer, or
+/// a leg the tool policy decided, which the tool lane answers and records.
+#[derive(Debug, Clone, PartialEq)]
+pub(super) enum PackageOutcome {
+    Answered(PackageAnswer),
+    ToolLeg(ToolLeg),
+}
 
 /// One answered package call: what the client is told, and what the receipt the
 /// drain writes records for it.
@@ -59,19 +75,27 @@ pub(super) fn decide_package<F>(
     server: &str,
     resolved: &PackagePolicy,
     re_resolve: F,
-) -> Result<PackageAnswer, &'static str>
+) -> Result<PackageOutcome, &'static str>
 where
     F: FnOnce() -> Result<(Decision, PackagePolicy), &'static str>,
 {
     if let Some(route) = package_route::precheck(mode, resolved)? {
-        return Ok(answered(&route, tool, server, resolved));
+        // The precheck answers on the package policy alone, so every leg it
+        // decides is this lane's own.
+        return Ok(PackageOutcome::Answered(answered(
+            &route, tool, server, resolved,
+        )));
     }
     let (authority, policy) = re_resolve()?;
-    let route = package_route::compose(mode, &authority, &policy)?;
-    Ok(answered(&route, tool, server, &policy))
+    Ok(match package_route::compose(mode, &authority, &policy)? {
+        Decided::Package(route) => {
+            PackageOutcome::Answered(answered(&route, tool, server, &policy))
+        }
+        Decided::Tool(leg) => PackageOutcome::ToolLeg(leg),
+    })
 }
 
-/// The answer and the receipt facts of one decided route.
+/// The answer and the receipt facts of one decided package route.
 fn answered(
     route: &PackageRoute,
     tool: &str,

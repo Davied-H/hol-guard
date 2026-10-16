@@ -84,7 +84,12 @@ fn a_fresh_block_after_the_claim_is_the_proxy_terminal() {
     let mut stored = fresh(GuardAction::Block, HASH);
     stored.decision.saved_action = Some(GuardAction::Block);
     let (routed, _) = postclaim(&claimed(Disposition::Consumed), &stored).unwrap();
-    assert_eq!(routed, Routed::StoredBlock);
+    assert_eq!(
+        routed,
+        Routed::StoredBlock {
+            package_request: false,
+        }
+    );
 }
 
 #[test]

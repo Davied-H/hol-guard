@@ -77,42 +77,6 @@ fn a_terminal_package_action_reads_as_a_block_or_a_missing_sandbox() {
 }
 
 #[test]
-fn the_tool_legs_answer_as_the_tool_policy_responses_they_are() {
-    // `_stored_tool_block_response(package_request=True)` names the request
-    // kind and reports no package evaluation, because the tool policy stopped
-    // the call.
-    let (message, data) = block(
-        &PackageRoute::StoredToolBlock,
-        TOOL,
-        SERVER,
-        &policy(json!([])),
-    )
-    .expect("a stopped call answers with a block");
-    assert_eq!(
-        message,
-        "HOL Guard blocked package tool call install_package from registry. This exact request \
-         is already blocked by authenticated saved policy."
-    );
-    assert_eq!(data.get("supplyChainEvaluation"), None);
-    assert_eq!(
-        decision_label(&PackageRoute::StoredToolBlock),
-        "block-stored-policy"
-    );
-
-    let terminal = PackageRoute::TerminalTool {
-        policy_action: "block".to_owned(),
-    };
-    let (message, data) = block(&terminal, TOOL, SERVER, &policy(json!([])))
-        .expect("a stopped call answers with a block");
-    assert_eq!(
-        message,
-        "HOL Guard blocked tool call install_package from registry."
-    );
-    assert_eq!(data.get("supplyChainEvaluation"), None);
-    assert_eq!(decision_label(&terminal), "terminal-block");
-}
-
-#[test]
 fn a_forwarded_call_answers_with_no_block_and_records_the_action_it_ran_under() {
     let route = PackageRoute::Forward {
         policy_action: "warn".to_owned(),

@@ -1,10 +1,11 @@
 //! What a relayed package call answers with once its route is decided.
 //!
-//! Port of the package lane's response renderers in `runtime_mcp.py`:
+//! Port of the package lane's own response renderers in `runtime_mcp.py`:
 //! `_stored_package_block_response` (:2450), `_terminal_package_response`
-//! (:2352), `_stored_tool_block_response` with `package_request = True`
-//! (:2400), `_terminal_tool_response` (:2276) and the receipt side of
-//! `_record_package_forward` (:2025).
+//! (:2352) and the receipt side of `_record_package_forward` (:2025). The legs
+//! the tool policy decides are rendered by the plain tool-policy responses, so
+//! they are a `ToolLeg` the caller answers through the tool lane and never
+//! reach this module.
 //!
 //! Only the text and the payload belong here. The block receipt, the allow
 //! receipt and the forwarded message itself stay with the caller: the relay
@@ -20,10 +21,8 @@ use super::package_route::PackageRoute;
 /// package call records under.
 pub(super) const BLOCK_SOURCE: &str = "policy-block";
 
-/// The message and payload a stopped call answers with. The package legs carry
-/// the evaluation the lane settled on, as the proxy's `supplyChainEvaluation`;
-/// the tool legs carry what a plain blocked tool call does, because the policy
-/// that stopped them is the tool's.
+/// The message and payload a stopped call answers with, carrying the
+/// evaluation the lane settled on as the proxy's `supplyChainEvaluation`.
 pub(super) fn block(
     route: &PackageRoute,
     tool: &str,
@@ -45,39 +44,24 @@ pub(super) fn block(
                 )
             }
         }
-        PackageRoute::StoredToolBlock => format!(
-            "HOL Guard blocked package tool call {tool} from {server}. This exact request is \
-             already blocked by authenticated saved policy."
-        ),
-        PackageRoute::TerminalTool { policy_action } => {
-            if policy_action == "block" {
-                format!("HOL Guard blocked tool call {tool} from {server}.")
-            } else {
-                format!(
-                    "HOL Guard requires an enforceable sandbox for tool call {tool} from \
-                     {server}; this runtime cannot provide one."
-                )
-            }
-        }
         PackageRoute::Forward { .. } => return None,
     };
-    let mut data = json!({
-        "approvalRequests": [],
-        "guardPolicyAction": policy_action(route),
-    });
-    if carries_evaluation(route) {
-        data["supplyChainEvaluation"] = Value::Object(policy.evaluation.clone());
-    }
-    Some((message, data))
+    Some((
+        message,
+        json!({
+            "approvalRequests": [],
+            "guardPolicyAction": policy_action(route),
+            "supplyChainEvaluation": Value::Object(policy.evaluation.clone()),
+        }),
+    ))
 }
 
 /// The action the answer reports, which a stored block always states as
 /// `block` and a terminal leg takes from the composed policy.
 pub(super) fn policy_action(route: &PackageRoute) -> &str {
     match route {
-        PackageRoute::StoredPackageBlock | PackageRoute::StoredToolBlock => "block",
+        PackageRoute::StoredPackageBlock => "block",
         PackageRoute::TerminalPackage { policy_action }
-        | PackageRoute::TerminalTool { policy_action }
         | PackageRoute::Forward { policy_action } => policy_action,
     }
 }
@@ -98,11 +82,9 @@ pub(super) fn decision_source(route: &PackageRoute) -> String {
 pub(super) fn decision_label(route: &PackageRoute) -> String {
     match route {
         PackageRoute::StoredPackageBlock => "package-block-stored".to_owned(),
-        PackageRoute::StoredToolBlock => "block-stored-policy".to_owned(),
         PackageRoute::TerminalPackage { policy_action } => {
             format!("terminal-package-{policy_action}")
         }
-        PackageRoute::TerminalTool { policy_action } => format!("terminal-{policy_action}"),
         PackageRoute::Forward { policy_action } => format!("package-{policy_action}"),
     }
 }
@@ -130,15 +112,6 @@ pub(super) fn reason_signals(policy: &PackagePolicy) -> Vec<String> {
                 .collect()
         })
         .unwrap_or_default()
-}
-
-/// Whether the answer reports the package evaluation to the caller. The tool
-/// legs do not: the proxy renders them as the tool-policy responses they are.
-fn carries_evaluation(route: &PackageRoute) -> bool {
-    matches!(
-        route,
-        PackageRoute::StoredPackageBlock | PackageRoute::TerminalPackage { .. }
-    )
 }
 
 #[cfg(test)]

@@ -326,7 +326,9 @@ fn postclaim(claimed: &Claimed, fresh: &Resolved) -> Result<(Routed, Vec<Value>)
             // A claimed saved approval is already saved policy.
             remember: false,
         },
-        Some("stored_block") => Routed::StoredBlock,
+        Some("stored_block") => Routed::StoredBlock {
+            package_request: false,
+        },
         Some("terminal") => Routed::Terminal {
             policy_action: disposition["policy_action"]
                 .as_str()

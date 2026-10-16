@@ -29,7 +29,7 @@ use guard_command::package_intent_common::{
 };
 use guard_contracts::{McpToolCallIdentityPayloadV1, McpToolPolicySubjectV1};
 
-use super::package_lane::{self, PackageAnswer};
+use super::package_lane::{self, PackageOutcome};
 use super::package_policy::{self, ProcessFacts};
 use super::store::Saved;
 use super::view::HarnessView;
@@ -50,7 +50,9 @@ pub(super) struct Packaged {
     /// The workspace the intent was parsed against, which the drain rebuilds
     /// the artifact from.
     pub(super) workspace: String,
-    pub(super) answer: PackageAnswer,
+    /// The lane's own answer, or the leg the tool policy decided and the tool
+    /// lane answers and records.
+    pub(super) outcome: PackageOutcome,
 }
 
 /// Decide the package call the gate found an intent in.
@@ -100,7 +102,7 @@ pub(super) fn decide_package_leg(
         )
     };
     let resolved = resolve()?;
-    let answer = package_lane::decide_package(
+    let outcome = package_lane::decide_package(
         &view.mode,
         &request.build.tool_name,
         &request.build.server_name,
@@ -113,7 +115,7 @@ pub(super) fn decide_package_leg(
     Ok(Packaged {
         artifact,
         workspace: workspace.to_owned(),
-        answer,
+        outcome,
     })
 }
 

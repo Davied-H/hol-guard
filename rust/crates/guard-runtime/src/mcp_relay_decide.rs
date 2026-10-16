@@ -36,6 +36,7 @@
 //! saved policy, a call that needs an inline elicitation the resident cannot
 //! raise, and any binding, lane or evidence failure.
 
+use self::package_route::ToolLeg;
 use crate::approval_proof_op::Disposition;
 use crate::mcp_tool_policy_decision::Decision;
 use crate::policy_enforcement::AdmittedPolicySnapshot;
@@ -197,7 +198,11 @@ enum Routed {
     Terminal {
         policy_action: String,
     },
-    StoredBlock,
+    /// `_stored_tool_block_response`, whose message names the call a package
+    /// tool call when the request it carries went to the package lane.
+    StoredBlock {
+        package_request: bool,
+    },
     /// Forward once the pending saved approval is claimed.
     Claim {
         source: String,
@@ -328,7 +333,7 @@ fn decide(
     // the tool authority together, so none of the tool-only route below runs
     // for it.
     if let Some(packaged) = packaged {
-        return settle_package(request, &resolved, &packaged, policy_store);
+        return settle_package(request, &admitted, &resolved, &packaged, policy_store);
     }
     let asks = admitted.binding.review.blocked_request_mode.as_deref() == Some(ASK_MODE);
     let proxy = crate::mcp_tool_policy_proxy::proxy_payload(
@@ -578,12 +583,19 @@ fn settle(
                 policy_action,
             )
         }
-        Routed::StoredBlock => (
+        Routed::StoredBlock { package_request } => (
             Some(Answer::Block {
-                message: format!(
-                    "HOL Guard blocked tool call {tool} from {server}. This exact request is \
-                     already blocked by authenticated saved policy."
-                ),
+                message: {
+                    let kind = if package_request {
+                        "package tool call"
+                    } else {
+                        "tool call"
+                    };
+                    format!(
+                        "HOL Guard blocked {kind} {tool} from {server}. This exact request is \
+                         already blocked by authenticated saved policy."
+                    )
+                },
                 data: json!({"approvalRequests": [], "guardPolicyAction": "block"}),
             }),
             "block",
@@ -671,14 +683,50 @@ fn settle(
     }
 }
 
-/// Answer one decided package call and queue the receipt the drain writes it
-/// from: the package request's own, not the tool call's.
+/// Answer one decided package call.
+///
+/// A leg the package policy decided is answered here and queues the receipt
+/// the drain writes it from: the package request's own, not the tool call's.
+/// A leg the tool policy decided is the plain tool-policy response the proxy
+/// renders for any other call, so it goes through `settle` and leaves the
+/// ordinary `mcp_tool_call` receipt against the tool artifact. The decision it
+/// is answered under is `resolved.decision`, which is the re-resolution the
+/// lane composed from: both are `run_policy` over the same subject on the
+/// snapshot this decide still holds.
 fn settle_package(
     request: &McpRelayDecideRequestV1,
+    admitted: &Admitted,
     resolved: &Resolved,
     packaged: &package_leg::Packaged,
     policy_store: &PolicySnapshotStore,
 ) -> Result<Answer, &'static str> {
+    let answer = match &packaged.outcome {
+        package_lane::PackageOutcome::Answered(answer) => answer,
+        package_lane::PackageOutcome::ToolLeg(leg) => {
+            let routed = match leg {
+                ToolLeg::StoredBlock => Routed::StoredBlock {
+                    package_request: true,
+                },
+                ToolLeg::Terminal { policy_action } => Routed::Terminal {
+                    policy_action: policy_action.clone(),
+                },
+                ToolLeg::Queue { policy_action } => {
+                    let mode = admitted.binding.review.blocked_request_mode.as_deref();
+                    match mode {
+                        Some(ASK_MODE) => {
+                            ask::queue(request, admitted, resolved, policy_action.clone())?
+                        }
+                        _ => queue::safe_alternative(
+                            mode,
+                            resolved.redaction_level.as_deref(),
+                            policy_action.clone(),
+                        )?,
+                    }
+                }
+            };
+            return settle(request, resolved, routed, None, policy_store);
+        }
+    };
     let identity = serde_json::to_value(&resolved.identity).map_err(|_| IDENTITY_FAILED)?;
     let evidence = package_receipt::record(
         request,
@@ -686,9 +734,9 @@ fn settle_package(
         &resolved.decision,
         &packaged.artifact,
         &packaged.workspace,
-        &packaged.answer,
+        answer,
     )?;
-    match packaged.answer.block.clone() {
+    match answer.block.clone() {
         // As for a tool call, the relay commits the ticket once the child
         // answered the forward.
         None => policy_store

@@ -11,13 +11,23 @@
 //! The relay answers only the legs that stop or forward a call on what it has
 //! already read. Three defer:
 //!
-//! * a queue, because the proxy either writes an approval request for it
-//!   (`_queue_package_approval_response` under `ask`) or answers it with the
-//!   approval-center block, which names a row the relay does not write;
+//! * a queued package request, because `_queue_package_approval_response`
+//!   writes a package-shaped approval row the relay does not yet shape;
 //! * an observed forward, because the proxy queues the observed requests it
 //!   would have blocked before it forwards;
 //! * a forward whose policies left a saved approval pending, which is the
 //!   claim lane's call to spend.
+//!
+//! A queued *tool* leg does not defer. `_queue_approval_center_response`
+//! answers it exactly as it answers a plain blocked tool call, so the relay
+//! takes it through the tool lane's own queue route
+//! (`mcp_relay_decide_ask.rs`, `mcp_relay_decide_queue.rs`).
+//!
+//! The composition names its legs apart for that reason. Three of them are
+//! decided by the tool policy and rendered by the plain tool-policy responses
+//! — `_stored_tool_block_response`, `_terminal_tool_response` and
+//! `_queue_approval_center_response` — against the tool call's own artifact,
+//! so they are a separate type the package answer cannot be asked for.
 //!
 //! A kind neither answer names is the proxy's `NativeMcpProxyDecisionError`;
 //! here it defers, because a relayed call never guesses at a verdict.
@@ -28,8 +38,8 @@ use serde_json::Value;
 use super::package_policy::PackagePolicy;
 use crate::mcp_tool_policy_decision::Decision;
 
-/// The call needs an approval request written or an approval-center block
-/// rendered from a row the relay does not write.
+/// The call needs the package-shaped approval request
+/// `_queue_package_approval_response` writes.
 pub(super) const PACKAGE_QUEUE: &str = "mcp_relay_package_queue";
 /// `mode = "observe"`: the forward comes with the observed approval requests
 /// the proxy queues first.
@@ -45,8 +55,9 @@ pub(super) const PACKAGE_ACTION_MISSING: &str = "mcp_relay_package_action_missin
 /// `_has_saved_package_block`: the reason code a saved block leaves.
 const SAVED_PACKAGE_BLOCK: &str = "saved_package_block";
 
-/// What the relay does with a decided package call. Each variant names the
-/// proxy response it answers with, which renders the package evaluation.
+/// What the relay does with a package call the package policy decided. Each
+/// variant names the proxy response it answers with, which renders the package
+/// evaluation and records the receipt against the package request's artifact.
 #[derive(Debug, Clone, PartialEq)]
 pub(super) enum PackageRoute {
     /// `_stored_package_block_response`: authenticated saved policy already
@@ -54,14 +65,33 @@ pub(super) enum PackageRoute {
     StoredPackageBlock,
     /// `_terminal_package_response`: the package policy itself stops the call.
     TerminalPackage { policy_action: String },
-    /// `_stored_tool_block_response` with `package_request = True`.
-    StoredToolBlock,
-    /// `_terminal_tool_response`: the tool policy stops the call carrying the
-    /// package request.
-    TerminalTool { policy_action: String },
     /// `_record_package_forward`: neither policy stops the call and no saved
     /// approval is pending.
     Forward { policy_action: String },
+}
+
+/// A leg of the package lane the tool policy decided. Each names the proxy
+/// response it takes, which is the one a call carrying no package request
+/// takes: the tool call's own artifact, the tool decision's signals and risk
+/// categories, and the `mcp_tool_call` receipt the tool lane leaves.
+#[derive(Debug, Clone, PartialEq)]
+pub(super) enum ToolLeg {
+    /// `_stored_tool_block_response` with `package_request = True`.
+    StoredBlock,
+    /// `_terminal_tool_response`: the tool policy stops the call carrying the
+    /// package request.
+    Terminal { policy_action: String },
+    /// `_queue_approval_center_response`: the tool policy wants this call
+    /// reviewed, and the proxy queues it as it queues any other tool call.
+    Queue { policy_action: String },
+}
+
+/// What the composition decided: the lane's own route, or the leg the tool
+/// policy owns and the tool lane answers.
+#[derive(Debug, Clone, PartialEq)]
+pub(super) enum Decided {
+    Package(PackageRoute),
+    Tool(ToolLeg),
 }
 
 /// `package_precheck`. `None` is the proxy's `proceed`: the call goes on to
@@ -91,31 +121,34 @@ pub(super) fn compose(
     mode: &str,
     tool: &Decision,
     policy: &PackagePolicy,
-) -> Result<PackageRoute, &'static str> {
+) -> Result<Decided, &'static str> {
     let answer = crate::mcp_proxy_package::package_compose(&McpPackageComposeQueryV1 {
         mode: mode.to_owned(),
         tool: crate::mcp_tool_policy_proxy::facts(tool),
         package: package_facts(policy)?,
     });
     match kind(&answer)? {
-        "stored_tool_block" => Ok(PackageRoute::StoredToolBlock),
-        "stored_package_block" => Ok(PackageRoute::StoredPackageBlock),
-        "terminal_tool" => Ok(PackageRoute::TerminalTool {
+        "stored_tool_block" => Ok(Decided::Tool(ToolLeg::StoredBlock)),
+        "stored_package_block" => Ok(Decided::Package(PackageRoute::StoredPackageBlock)),
+        "terminal_tool" => Ok(Decided::Tool(ToolLeg::Terminal {
             policy_action: answered_action(&answer)?,
-        }),
-        "terminal_package" => Ok(PackageRoute::TerminalPackage {
+        })),
+        "terminal_package" => Ok(Decided::Package(PackageRoute::TerminalPackage {
             policy_action: answered_action(&answer)?,
-        }),
-        "queue_tool" | "queue_package" => Err(PACKAGE_QUEUE),
+        })),
+        "queue_tool" => Ok(Decided::Tool(ToolLeg::Queue {
+            policy_action: answered_action(&answer)?,
+        })),
+        "queue_package" => Err(PACKAGE_QUEUE),
         "observe_forward" => Err(PACKAGE_OBSERVE),
         "proceed" => match answer.get("pending_claims").and_then(Value::as_bool) {
-            Some(false) => Ok(PackageRoute::Forward {
+            Some(false) => Ok(Decided::Package(PackageRoute::Forward {
                 policy_action: answer
                     .get("authoritative_action")
                     .and_then(Value::as_str)
                     .ok_or(PACKAGE_ROUTE_UNKNOWN)?
                     .to_owned(),
-            }),
+            })),
             Some(true) => Err(PACKAGE_PENDING_CLAIM),
             None => Err(PACKAGE_ROUTE_UNKNOWN),
         },

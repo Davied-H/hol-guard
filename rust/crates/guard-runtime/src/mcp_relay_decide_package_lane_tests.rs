@@ -36,6 +36,14 @@ fn policy(policy_action: &str, reasons: Value) -> PackagePolicy {
     }
 }
 
+/// The lane's own answer, for a call no tool leg decided.
+fn answered(outcome: PackageOutcome) -> PackageAnswer {
+    match outcome {
+        PackageOutcome::Answered(answer) => answer,
+        PackageOutcome::ToolLeg(leg) => panic!("the package lane answers this leg: {leg:?}"),
+    }
+}
+
 fn tool(action: GuardAction) -> Decision {
     Decision::plain(Current {
         action,
@@ -50,11 +58,13 @@ fn tool(action: GuardAction) -> Decision {
 fn a_call_the_precheck_stops_is_never_re_resolved() {
     let asked = Cell::new(false);
     let saved_block = policy("allow", json!([{"code": "saved_package_block"}]));
-    let answer = decide_package("enforce", TOOL, SERVER, &saved_block, || {
-        asked.set(true);
-        Ok((tool(GuardAction::Allow), policy("allow", json!([]))))
-    })
-    .expect("the precheck answers the call");
+    let answer = answered(
+        decide_package("enforce", TOOL, SERVER, &saved_block, || {
+            asked.set(true);
+            Ok((tool(GuardAction::Allow), policy("allow", json!([]))))
+        })
+        .expect("the precheck answers the call"),
+    );
     assert!(
         !asked.get(),
         "the proxy re-resolves nothing for a stopped call"
@@ -76,13 +86,15 @@ fn a_call_the_precheck_stops_is_never_re_resolved() {
 
 #[test]
 fn a_forwarded_call_answers_from_the_re_resolved_policy() {
-    let answer = decide_package("enforce", TOOL, SERVER, &policy("allow", json!([])), || {
-        Ok((
-            tool(GuardAction::Warn),
-            policy("allow", json!([{"message": "left-pad is newly published"}])),
-        ))
-    })
-    .expect("neither policy stops the call");
+    let answer = answered(
+        decide_package("enforce", TOOL, SERVER, &policy("allow", json!([])), || {
+            Ok((
+                tool(GuardAction::Warn),
+                policy("allow", json!([{"message": "left-pad is newly published"}])),
+            ))
+        })
+        .expect("neither policy stops the call"),
+    );
     assert_eq!(answer.block, None);
     assert_eq!(answer.policy_action, "warn");
     assert_eq!(answer.decision_source, "policy-warn");
@@ -96,10 +108,12 @@ fn a_forwarded_call_answers_from_the_re_resolved_policy() {
 
 #[test]
 fn a_composed_terminal_answers_as_the_package_response() {
-    let answer = decide_package("enforce", TOOL, SERVER, &policy("allow", json!([])), || {
-        Ok((tool(GuardAction::Block), policy("allow", json!([]))))
-    })
-    .expect("the composition stops the call");
+    let answer = answered(
+        decide_package("enforce", TOOL, SERVER, &policy("allow", json!([])), || {
+            Ok((tool(GuardAction::Block), policy("allow", json!([]))))
+        })
+        .expect("the composition stops the call"),
+    );
     let (message, data) = answer.block.expect("a stopped call answers with a block");
     assert_eq!(
         message,
@@ -123,13 +137,44 @@ fn a_leg_the_relay_cannot_answer_defers_from_either_resolution() {
         .err(),
         Some(package_route::PACKAGE_QUEUE),
     );
-    // The composition's, once the fresh tool authority asks for approval.
+    // The composition's, once the fresh package policy asks for approval.
     assert_eq!(
         decide_package("enforce", TOOL, SERVER, &policy("allow", json!([])), || Ok(
-            (tool(GuardAction::Review), policy("allow", json!([])),)
+            (tool(GuardAction::Allow), policy("review", json!([])),)
         ))
         .err(),
         Some(package_route::PACKAGE_QUEUE),
+    );
+}
+
+#[test]
+fn a_leg_the_tool_policy_decided_is_named_for_the_tool_lane() {
+    // `queue_tool`, `terminal_tool` and `stored_tool_block` are answered by
+    // the plain tool-policy responses, so the lane hands them back rather than
+    // rendering a package answer and its `mcp_package_call` receipt.
+    assert_eq!(
+        decide_package("enforce", TOOL, SERVER, &policy("allow", json!([])), || Ok(
+            (tool(GuardAction::Review), policy("allow", json!([])))
+        )),
+        Ok(PackageOutcome::ToolLeg(ToolLeg::Queue {
+            policy_action: "review".to_owned(),
+        })),
+    );
+    let mut blocked = tool(GuardAction::Allow);
+    blocked.saved_action = Some(GuardAction::Block);
+    assert_eq!(
+        decide_package("enforce", TOOL, SERVER, &policy("allow", json!([])), || Ok(
+            (blocked, policy("allow", json!([])))
+        )),
+        Ok(PackageOutcome::ToolLeg(ToolLeg::StoredBlock)),
+    );
+    assert_eq!(
+        decide_package("observe", TOOL, SERVER, &policy("allow", json!([])), || Ok(
+            (tool(GuardAction::Block), policy("allow", json!([])))
+        )),
+        Ok(PackageOutcome::ToolLeg(ToolLeg::Terminal {
+            policy_action: "block".to_owned(),
+        })),
     );
 }
 
