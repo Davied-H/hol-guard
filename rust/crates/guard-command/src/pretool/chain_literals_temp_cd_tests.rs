@@ -255,7 +255,7 @@ fn heredocs_and_continued_lines_keep_the_directory_opaque() {
         "export TODO_FILE=$(mktemp -d)/t.json\nrm -rf \"$TODO_FILE\"".to_owned(),
         "export TODO_FILE=$(mktemp -d)/t.json\nnode -e 'process.env.TODO_FILE'".to_owned(),
         // A body that names the variable may read it.
-        format!("export TODO_FILE=$(mktemp -d)/t.json\npython3 - <<'EOF'\nprint(open('TODO_FILE').read())\nEOF"),
+        "export TODO_FILE=$(mktemp -d)/t.json\npython3 - <<'EOF'\nprint(open('TODO_FILE').read())\nEOF".to_owned(),
         // A body that never closes.
         "export X=$(mktemp -d)\ncat <<'EOF'\nls".to_owned(),
         // An unquoted-heredoc substitution, even one that is a fresh directory.
