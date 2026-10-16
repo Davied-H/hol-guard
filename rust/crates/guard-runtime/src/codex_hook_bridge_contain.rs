@@ -124,6 +124,11 @@ fn contain(
     {
         return Contained::Unchanged;
     }
+    // The Windows sink command is PowerShell-quoted and routed by the Python
+    // bridge; this one cannot reproduce it, and the update hint would mislead.
+    if cfg!(windows) {
+        return Contained::Unchanged;
+    }
     if !launching_codex_applies(deadline) {
         return Contained::Hint;
     }

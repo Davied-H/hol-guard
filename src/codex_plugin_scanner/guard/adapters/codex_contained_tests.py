@@ -133,8 +133,10 @@ def is_codex_binary_name(name: str) -> bool:
     ``bun`` process is never taken for Codex.
     """
 
-    if sys.platform == "win32" and name.lower().endswith(".exe"):
-        name = name[: -len(".exe")]
+    if sys.platform == "win32":
+        name = name.lower()
+        if name.endswith(".exe"):
+            name = name[: -len(".exe")]
     prefix, separator, target = name.partition("-")
     return prefix == "codex" and (not separator or target in _RELEASE_TARGETS)
 

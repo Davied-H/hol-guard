@@ -78,9 +78,7 @@ def windows_codex_ancestor(is_codex: Callable[[str], bool], max_ancestors: int) 
             if pid <= 4:
                 return None
             path = _image_path(pid)
-            if path is None:
-                return None
-            if is_codex(path.name):
+            if path is not None and is_codex(path.name):
                 return path
             pid = parents.get(pid, 0)
     except OSError:
