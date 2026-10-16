@@ -105,18 +105,21 @@ pub(super) fn extract_network_hosts(text: &str) -> BTreeSet<String> {
     hosts
 }
 
-/// Python `finditer` spans for a matcher that answers the end of the match
-/// starting at a position.
-fn matches(chars: &[char], matcher: fn(&[char], usize) -> Option<usize>) -> Vec<(usize, usize)> {
+/// Python `finditer` spans for a matcher that answers `Ok(end)` for a match
+/// starting at a position, or `Err(next)` for the next start worth trying.
+fn matches(
+    chars: &[char],
+    matcher: fn(&[char], usize) -> Result<usize, usize>,
+) -> Vec<(usize, usize)> {
     let mut spans = Vec::new();
     let mut start = 0;
     while start < chars.len() {
         match matcher(chars, start) {
-            Some(end) => {
+            Ok(end) => {
                 spans.push((start, end));
                 start = end;
             }
-            None => start += 1,
+            Err(next) => start = next,
         }
     }
     spans
@@ -124,42 +127,94 @@ fn matches(chars: &[char], matcher: fn(&[char], usize) -> Option<usize>) -> Vec<
 
 /// `\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b` at `start`, with Python backtracking:
 /// the most label groups first, and a final label that ends at a boundary.
-fn host_match(chars: &[char], start: usize) -> Option<usize> {
+///
+/// A start inside a chain that already failed sees only a subset of the same
+/// final-label candidates, so a failure resumes after the scanned chain and the
+/// whole scan stays linear.
+fn host_match(chars: &[char], start: usize) -> Result<usize, usize> {
     if !is_label(chars[start]) || !boundary(chars, start) {
-        return None;
+        return Err(start + 1);
     }
     let mut final_label_starts = Vec::new();
     let mut position = start;
-    loop {
+    let chain_end = loop {
         let label_end = position + run(chars, position, is_label);
         if label_end == position || chars.get(label_end) != Some(&'.') {
-            break;
+            break label_end;
         }
         position = label_end + 1;
         final_label_starts.push(position);
-    }
-    final_label_starts.into_iter().rev().find_map(|label| {
-        let end = label + run(chars, label, is_letter);
-        (end - label >= 2 && boundary(chars, end)).then_some(end)
-    })
+    };
+    final_label_starts
+        .into_iter()
+        .rev()
+        .find_map(|label| {
+            let end = label + run(chars, label, is_letter);
+            (end - label >= 2 && boundary(chars, end)).then_some(end)
+        })
+        .ok_or(chain_end.max(start + 1))
 }
 
 /// `\b(?:application|...|video)/[a-z0-9!#$&^_.+-]+` at `start`.
-fn media_type_match(chars: &[char], start: usize) -> Option<usize> {
+fn media_type_match(chars: &[char], start: usize) -> Result<usize, usize> {
     if !boundary(chars, start) {
-        return None;
+        return Err(start + 1);
     }
-    MEDIA_TYPES.iter().find_map(|media_type| {
-        let slash = start + media_type.len();
-        let prefix = chars.get(start..slash)?;
-        let same = prefix
-            .iter()
-            .zip(media_type.chars())
-            .all(|(value, expected)| folded_ascii(*value) == Some(expected));
-        if !same || chars.get(slash) != Some(&'/') {
-            return None;
+    MEDIA_TYPES
+        .iter()
+        .find_map(|media_type| {
+            let slash = start + media_type.len();
+            let prefix = chars.get(start..slash)?;
+            let same = prefix
+                .iter()
+                .zip(media_type.chars())
+                .all(|(value, expected)| folded_ascii(*value) == Some(expected));
+            if !same || chars.get(slash) != Some(&'/') {
+                return None;
+            }
+            let subtype = run(chars, slash + 1, is_media_subtype);
+            (subtype > 0).then_some(slash + 1 + subtype)
+        })
+        .ok_or(start + 1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The one-step `finditer` scan the chain skip must agree with.
+    fn stepwise(chars: &[char]) -> Vec<(usize, usize)> {
+        let mut spans = Vec::new();
+        let mut start = 0;
+        while start < chars.len() {
+            match host_match(chars, start) {
+                Ok(end) => {
+                    spans.push((start, end));
+                    start = end;
+                }
+                Err(_) => start += 1,
+            }
         }
-        let subtype = run(chars, slash + 1, is_media_subtype);
-        (subtype > 0).then_some(slash + 1 + subtype)
-    })
+        spans
+    }
+
+    #[test]
+    fn skipping_a_failed_chain_keeps_finditer_spans() {
+        for text in [
+            "1.2.3.4.5 a.b.c x.y.co1.z a-b.c-d.example.com",
+            "a..b.cd e.f-g.hi.j1 see docs.rs/x and v1.2.3.dev.io",
+            "x.co-y.ab ..a.bc a.b.c.d.e.f.gh(arg) -a.b-.cd.",
+        ] {
+            let chars = text.chars().collect::<Vec<char>>();
+            assert_eq!(matches(&chars, host_match), stepwise(&chars), "{text}");
+        }
+    }
+
+    #[test]
+    fn long_failing_chains_scan_once() {
+        let chain = "1.".repeat(65_536);
+        let chars = chain.chars().collect::<Vec<char>>();
+        assert!(matches(&chars, host_match).is_empty());
+        assert!(extract_network_hosts(&"a.b1.".repeat(32_768)).is_empty());
+    }
 }
