@@ -202,7 +202,8 @@ fn a_linked_node_modules_inside_the_workspace_keeps_the_tool_route() {
 }
 
 /// A Vite config that names an output the sink cannot read stays on the
-/// generic route. A literal output keeps the build receipt.
+/// generic route. A literal output keeps the build receipt only when that
+/// directory would pass the sink's admissibility checks.
 #[test]
 fn an_unverifiable_vite_config_output_does_not_take_the_build_receipt() {
     let root = root();
@@ -225,5 +226,15 @@ fn an_unverifiable_vite_config_output_does_not_take_the_build_receipt() {
     if cfg!(target_os = "macos") {
         assert_eq!(literal.reason_code, NODE_BUILD);
     }
+    std::fs::create_dir_all(project.join("server")).unwrap();
+    std::fs::write(project.join("server/package.json"), "{}\n").unwrap();
+    std::fs::write(
+        project.join("vite.config.js"),
+        "export default { outDir: 'server/public' }\n",
+    )
+    .unwrap();
+    let through_a_package = classify(&project, "omp", "npm run build");
+    assert_ne!(through_a_package.decision, "allow");
+    assert_ne!(through_a_package.reason_code, NODE_BUILD);
     let _ = std::fs::remove_dir_all(root);
 }

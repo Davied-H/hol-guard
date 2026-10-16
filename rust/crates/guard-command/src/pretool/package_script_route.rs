@@ -32,6 +32,10 @@ use super::super::executable_basename;
 use super::super::PathContext;
 
 #[cfg(unix)]
+#[path = "package_script_vite.rs"]
+mod package_script_vite;
+
+#[cfg(unix)]
 const PACKAGE_TEST: &str = "native_package_test_readonly_containment_required";
 #[cfg(unix)]
 const NODE_TOOL: &str = "native_node_tool_readonly_containment_required";
@@ -149,61 +153,6 @@ fn direct_tool(
 }
 
 #[cfg(unix)]
-fn out_dir_patterns() -> (&'static regex::Regex, &'static regex::Regex) {
-    static MENTIONS: std::sync::LazyLock<regex::Regex> =
-        std::sync::LazyLock::new(|| regex::Regex::new(r"\boutDir\b").expect("outDir mention"));
-    static LITERAL: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
-        regex::Regex::new(
-            r#"(?x)
-            \boutDir\s*:\s*(?:
-                (?:path\.)?(?:resolve|join)\(\s*__dirname\s*,\s*['"][^'"\\$`]+['"]\s*\)
-                | ['"][^'"\\$`]+['"]
-            )
-            "#,
-        )
-        .expect("vite outDir literal")
-    });
-    (&MENTIONS, &LITERAL)
-}
-
-#[cfg(unix)]
-/// One Vite config may name a literal output. Several configs, or none, keep
-/// the default `dist`. A single config that mentions `outDir` without exactly
-/// one literal makes the sink refuse the build.
-fn vite_config_output_is_verifiable(directory: &Path) -> bool {
-    const NAMES: [&str; 6] = [
-        "vite.config.ts",
-        "vite.config.mts",
-        "vite.config.cts",
-        "vite.config.js",
-        "vite.config.mjs",
-        "vite.config.cjs",
-    ];
-    let configs: Vec<PathBuf> = NAMES
-        .iter()
-        .map(|name| directory.join(name))
-        .filter(|path| path.is_file())
-        .collect();
-    if configs.len() != 1 {
-        return true;
-    }
-    let path = &configs[0];
-    if std::fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_symlink()) {
-        return true;
-    }
-    let Ok(raw) = std::fs::read(path) else {
-        return true;
-    };
-    let text = String::from_utf8_lossy(&raw);
-    let (mentions, literal) = out_dir_patterns();
-    let mention_count = mentions.find_iter(&text).count();
-    if mention_count == 0 {
-        return true;
-    }
-    raw.len() <= 256 * 1024 && mention_count == 1 && literal.find_iter(&text).count() == 1
-}
-
-#[cfg(unix)]
 /// `prepare_restricted_node_tool`'s output rule for `vite build`: the last
 /// `--outDir <dir>` or `--outDir=<dir>` wins, and an empty one means the
 /// default. An explicit directory must pass `validate_build_output_root`
@@ -228,8 +177,9 @@ fn build_output_allowed(arguments: &[String], roots: Option<(&Path, &Path)>) -> 
         // No command-line directory: the default `dist`, or the config's
         // literal output. A config that names an output the sink cannot
         // verify must not take the narrow receipt.
-        return roots
-            .is_none_or(|(directory, _workspace)| vite_config_output_is_verifiable(directory));
+        return roots.is_none_or(|(directory, workspace)| {
+            package_script_vite::vite_config_output_is_verifiable(directory, workspace)
+        });
     };
     let output = Path::new(output);
     if output
