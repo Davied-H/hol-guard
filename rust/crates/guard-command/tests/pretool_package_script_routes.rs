@@ -45,6 +45,22 @@ fn project(root: &Path, name: &str, scripts: serde_json::Value, entries: &[&str]
     project
 }
 
+/// macOS keeps the temporary directory under `/private/var`, a screened
+/// system root these fixtures only leave through the private-temporary
+/// workspace proof, which reads the declared home to learn whose temporary
+/// directory it is. A home that does not exist has no owner, so every
+/// absolute operand under the fixture root would stay unproved there while
+/// the Linux `/tmp` root proves it without the home.
+fn home() -> &'static str {
+    static HOME: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    HOME.get_or_init(|| {
+        let home =
+            std::env::temp_dir().join(format!("guard-package-scripts-home-{}", std::process::id()));
+        std::fs::create_dir_all(&home).unwrap();
+        home.canonicalize().unwrap().to_str().unwrap().to_owned()
+    })
+}
+
 fn classify(cwd: &Path, harness: &str, command: &str) -> PreToolResultV1 {
     evaluate_pre_tool_envelope_with_context(
         harness,
@@ -52,7 +68,7 @@ fn classify(cwd: &Path, harness: &str, command: &str) -> PreToolResultV1 {
         &json!({"tool_name": "bash", "tool_input": {"command": command}}),
         None,
         None,
-        Some("/Users/nobody"),
+        Some(home()),
         cwd.to_str(),
     )
 }
