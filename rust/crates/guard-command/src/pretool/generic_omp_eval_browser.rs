@@ -18,8 +18,9 @@
 //!   it inside the page, never in the agent process. Its body may read and
 //!   compute over the DOM but not name a network, navigation, markup or code
 //!   sink, a global object, a URL, or a computed property.
+//! - `await new Promise(r => setTimeout(r, MS))`, a pause.
 //! - `display(...)`, `log(...)` and `console.log(...)` of literals, declared
-//!   names and awaited tab calls.
+//!   names and awaited tab calls, negated or read for their `.length`.
 //!
 //! Anything else (comments, `/`, template interpolation, `tab.run`, file,
 //! cookie and download helpers, other identifiers) keeps the program reviewed.
@@ -31,8 +32,10 @@ const MAX_DEPTH: usize = 12;
 
 #[path = "generic_omp_eval_browser_lex.rs"]
 mod lex;
+#[path = "generic_omp_eval_browser_page.rs"]
+mod page;
 use lex::{
-    loopback_url, page_token, tokenize, Token, NO_ARGUMENT_METHODS, OPEN_KEYS, OPTION_KEYS,
+    loopback_url, timer_pause, tokenize, Token, NO_ARGUMENT_METHODS, OPEN_KEYS, OPTION_KEYS,
     RESERVED,
 };
 
@@ -142,6 +145,10 @@ impl Parser {
                 Some(())
             }
             "await" if self.peek_ident("browser") => self.browser_open(),
+            "await" if self.peek_ident("new") => {
+                self.pos = timer_pause(&self.tokens, self.pos)?;
+                Some(())
+            }
             "await" => self.tab_call(),
             "display" | "log" => self.output_args(),
             "console" => {
@@ -286,7 +293,7 @@ impl Parser {
             "reload" | "observe" | "screenshot" | "errors" | "console" => {
                 self.options()?;
             }
-            "click" | "hover" | "text" => {
+            "click" | "hover" | "text" | "isVisible" | "isEnabled" | "isChecked" | "count" => {
                 self.string()?;
             }
             "press" | "waitForSelector" | "waitForText" => {
@@ -305,7 +312,7 @@ impl Parser {
                     }
                 }
             }
-            "fill" | "type" => {
+            "fill" | "type" | "attr" => {
                 self.string()?;
                 self.punct(',')?;
                 self.string()?;
@@ -343,68 +350,6 @@ impl Parser {
         self.punct(')')
     }
 
-    /// The arrow function `evaluate` serializes into the page, with plain
-    /// identifier parameters and a body that passes `page_token`. It must
-    /// end at the argument, so it is passed rather than called in place.
-    fn page_function(&mut self) -> Option<()> {
-        if self.peek_ident("async") {
-            self.pos += 1;
-        }
-        if self.eat_punct('(') {
-            if !self.eat_punct(')') {
-                loop {
-                    let param = self.ident()?;
-                    if RESERVED.contains(&param.as_str()) {
-                        return None;
-                    }
-                    if self.eat_punct(')') {
-                        break;
-                    }
-                    self.punct(',')?;
-                }
-            }
-        } else if RESERVED.contains(&self.ident()?.as_str()) {
-            return None;
-        }
-        self.punct('=')?;
-        self.punct('>')?;
-        let block = self.peek() == Some(&Token::Punct('{'));
-        let mut stack: Vec<char> = Vec::new();
-        loop {
-            if self.pos >= self.tokens.len() || !page_token(&self.tokens, self.pos) {
-                return None;
-            }
-            match self.peek()?.clone() {
-                Token::Punct(',' | ')') if stack.is_empty() => break,
-                Token::Punct(c @ ('(' | '[' | '{')) => {
-                    stack.push(match c {
-                        '(' => ')',
-                        '[' => ']',
-                        _ => '}',
-                    });
-                    if stack.len() > MAX_DEPTH * 4 {
-                        return None;
-                    }
-                }
-                Token::Punct(c @ (')' | ']' | '}')) => {
-                    if stack.pop() != Some(c) {
-                        return None;
-                    }
-                    self.pos += 1;
-                    if block && stack.is_empty() {
-                        // A block body ends at its brace; only the next
-                        // argument or the call's close may follow.
-                        return matches!(self.peek(), Some(Token::Punct(',' | ')'))).then_some(());
-                    }
-                    continue;
-                }
-                _ => {}
-            }
-            self.pos += 1;
-        }
-        Some(())
-    }
-
     /// A literal argument handed to the page function.
     fn literal(&mut self) -> Option<()> {
         self.enter()?;
@@ -437,8 +382,9 @@ impl Parser {
         Some(())
     }
 
-    /// A displayed value: a literal, a declared name, an awaited tab call,
-    /// or an object or array of those.
+    /// A displayed value: a literal, a declared name, an awaited tab call
+    /// (bare, negated, or parenthesized and read for its `.length`), or an
+    /// object or array of those.
     fn value(&mut self) -> Option<()> {
         self.enter()?;
         match self.peek()?.clone() {
@@ -467,6 +413,19 @@ impl Parser {
             Token::Ident(word) if word == "await" => {
                 self.pos += 1;
                 self.tab_call()?;
+            }
+            Token::Punct('!') => {
+                self.pos += 1;
+                self.value()?;
+            }
+            Token::Punct('(') => {
+                self.pos += 1;
+                self.keyword("await")?;
+                self.tab_call()?;
+                self.punct(')')?;
+                if self.eat_punct('.') {
+                    self.keyword("length")?;
+                }
             }
             Token::Ident(word) if self.values.contains(&word) => {
                 self.pos += 1;
