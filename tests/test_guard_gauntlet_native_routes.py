@@ -84,7 +84,15 @@ def test_the_resident_count_comes_from_this_harness_alone() -> None:
 
 def test_a_daemon_without_resident_counters_reports_no_direct_answers() -> None:
     assert resident_direct_answers(object()) == 0
-    assert resident_direct_answers(_Worker(_Snapshot({}), _Snapshot({"resident": {"omp": {"answer": -1}}}))) == 0
+    assert resident_direct_answers(_Worker(_Snapshot({}), _Snapshot({"resident": {}}))) == 0
+
+
+def test_a_malformed_resident_answer_is_not_treated_as_zero() -> None:
+    worker = _Worker(_Snapshot({}), _Snapshot({"resident": {"omp": {"answer": -1}}}))
+    assert resident_direct_answers(worker) == -1
+    assert native_route_error({"native_resident": 1}, resident_direct_answers(worker), 1) == (
+        "resident direct answer counts are malformed"
+    )
 
 
 def test_a_late_resident_report_is_waited_for() -> None:

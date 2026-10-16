@@ -215,16 +215,37 @@ function observeBridge(child: BridgeChild): void {
   child.stdout?.on("data", chunk => {
     if (stdout.length <= 8_388_608) stdout += String(chunk);
   });
-  child.once("close", () => {
-    // A bridge that printed no usable reply leaves the hook to the extension's
-    // own daemon request, which the `fetch` wrapper above records. Recording
-    // both would show two Guard calls for the host's one tool call.
+  const dropBridge = (code: unknown) => {
+    // Not a Guard observation. The judge skips observer_error rows, and the
+    // extension retries the bridge before it posts to the daemon itself.
+    record({
+      observer_error: true,
+      transport: "pi-hook-bridge",
+      observer_error_code: "bridge_no_reply",
+      exit_code: code,
+      elapsed_ms: elapsed(),
+    });
+  };
+  child.once("close", (code: unknown) => {
+    // Take a reply only when the extension would: the child exited 0 and the
+    // envelope status is an HTTP code. A timeout kill or any other status is
+    // discarded there, and recording it as a call would double-count the retry.
     try {
+      if (code !== 0) {
+        dropBridge(code);
+        return;
+      }
       const envelope = JSON.parse(stdout.trim());
       const status = envelope?.status;
-      if (!Number.isInteger(status) || status === 0 || typeof envelope.body !== "string") return;
+      if (!Number.isInteger(status) || status < 100 || status > 599 || typeof envelope.body !== "string") {
+        dropBridge(code);
+        return;
+      }
       const body = JSON.parse(envelope.body);
-      if (!body || typeof body !== "object" || Array.isArray(body)) return;
+      if (!body || typeof body !== "object" || Array.isArray(body)) {
+        dropBridge(code);
+        return;
+      }
       recordExchange({
         event: request.hook_event_name,
         request,
@@ -235,8 +256,7 @@ function observeBridge(child: BridgeChild): void {
         transport: "pi-hook-bridge",
       });
     } catch {
-      // Unreadable output is the same case as no output: silence here, and the
-      // recovering daemon request carries the hook.
+      dropBridge(code);
     }
   });
 }

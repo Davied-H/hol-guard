@@ -77,8 +77,15 @@ def resident_direct_answers(worker: Any, harness: str = OMP_HARNESS) -> int:
     counters = snapshot() if callable(snapshot) else None
     resident = counters.get("resident") if isinstance(counters, Mapping) else None
     answers = resident.get(harness) if isinstance(resident, Mapping) else None
-    answered = answers.get("answer", 0) if isinstance(answers, Mapping) else 0
-    return _count(answered) or 0
+    if not isinstance(answers, Mapping) or "answer" not in answers:
+        return 0
+    count = _count(answers.get("answer"))
+    # A present but unusable value must stay visible to the route judge.
+    # Coercing it to zero lets a daemon count that matches the observations
+    # pass while the resident evidence is malformed.
+    if count is None:
+        return -1
+    return count
 
 
 def await_native_routes(worker: Any, observed: int, *, timeout_seconds: float = _DRAIN_SECONDS) -> tuple[Any, int]:
