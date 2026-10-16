@@ -150,7 +150,35 @@ def run_guard_command(
     input_text: str | None = None,
     output_stream: TextIO | None = None,
 ) -> int:
-    "Execute a Guard subcommand."
+    """Execute a Guard subcommand under the digest budget it is entitled to.
+
+    Lifecycle commands install, repair or report protection: each runs once at
+    a keystroke, each pays for a cold native runtime nothing else pays for, and
+    none of them has a fallback when the answer does not arrive in time.  A
+    slow first install has to stay an install.  The floor is bound here, ahead
+    of every dispatch below, because an install reaches native authority long
+    before it resolves a guard home, and it is released here, because a process
+    that dispatches more than one command must not run enforcement on it.
+    """
+
+    if args.guard_command not in _NATIVE_LIFECYCLE_COMMANDS:
+        return _dispatch_guard_command(args, input_text=input_text, output_stream=output_stream)
+    from ..native_context_budget import bind_context_digest_lifecycle_budget, reset_context_digest_budget
+
+    token = bind_context_digest_lifecycle_budget()
+    try:
+        return _dispatch_guard_command(args, input_text=input_text, output_stream=output_stream)
+    finally:
+        reset_context_digest_budget(token)
+
+
+def _dispatch_guard_command(
+    args: argparse.Namespace,
+    *,
+    input_text: str | None = None,
+    output_stream: TextIO | None = None,
+) -> int:
+    "Route one Guard subcommand to its handler."
 
     if args.guard_command == "extensions":
         from .extension_builder_commands import run_extension_builder_command
@@ -183,16 +211,9 @@ def run_guard_command(
     # Detection runs before the consumer/protect entry points that bind the
     # digest home, so bind at the router: every enforcement subcommand below
     # resolves its context-digest calls against this deployment's resident.
-    from ..native_context import bind_context_digest_home, bind_context_digest_lifecycle_budget
+    from ..native_context import bind_context_digest_home
 
     bind_context_digest_home(guard_home)
-    # Lifecycle commands install, repair or report protection: each runs once
-    # at a keystroke, each pays for a cold native runtime nothing else pays for,
-    # and none of them has a fallback when the answer does not arrive in time.
-    # A slow first install has to stay an install.  Every other command binds
-    # the steady-state budget back, so a process that dispatches more than one
-    # keeps enforcement on the hot path's budget.
-    bind_context_digest_lifecycle_budget(args.guard_command in _NATIVE_LIFECYCLE_COMMANDS)
     workspace = _resolve_guard_workspace(
         args,
         guard_home=guard_home,

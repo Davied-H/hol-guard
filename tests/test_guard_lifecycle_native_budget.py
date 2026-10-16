@@ -20,7 +20,7 @@ from typing import Any
 
 import pytest
 
-from codex_plugin_scanner.guard import native_context
+from codex_plugin_scanner.guard import native_context, native_context_budget
 from codex_plugin_scanner.guard.cli import commands_router
 from codex_plugin_scanner.guard.native_runtime import (
     NativeRuntimeCapabilities,
@@ -41,17 +41,17 @@ _FEATURES = (
 def _own_budget() -> Iterator[None]:
     """Keep each test's floor to itself.
 
-    A real dispatch binds the floor and leaves it bound: the process exits
-    after one command, and the next command rebinds its own. Pytest is the one
-    process that keeps going, so without this a routing test here would widen
-    the budget every later test in the shard measures.
+    The dispatch resets its own floor, and these tests reset the ones they
+    bind by hand. This is the backstop for the case neither covers: a test
+    that fails part-way through leaves the floor bound, and every later test
+    in the shard then measures a budget it never asked for.
     """
 
-    token = native_context._BOUND_TIMEOUT_FLOOR.set(None)
+    token = native_context_budget._BOUND_TIMEOUT_FLOOR.set(None)
     try:
         yield
     finally:
-        native_context._BOUND_TIMEOUT_FLOOR.reset(token)
+        native_context_budget._BOUND_TIMEOUT_FLOOR.reset(token)
 
 
 def _status() -> NativeRuntimeStatus:
@@ -129,7 +129,7 @@ def test_a_lifecycle_command_gives_a_cold_runtime_room_to_answer(
     finally:
         native_context.reset_context_digest_budget(token)
 
-    assert granted[0] > native_context._LIFECYCLE_TIMEOUT_SECONDS - 0.5
+    assert granted[0] > native_context_budget._LIFECYCLE_TIMEOUT_SECONDS - 0.5
 
 
 def test_the_floor_applies_to_a_caller_that_pinned_the_steady_state_budget(
@@ -146,7 +146,7 @@ def test_the_floor_applies_to_a_caller_that_pinned_the_steady_state_budget(
     finally:
         native_context.reset_context_digest_budget(token)
 
-    assert granted[0] > native_context._LIFECYCLE_TIMEOUT_SECONDS - 0.5
+    assert granted[0] > native_context_budget._LIFECYCLE_TIMEOUT_SECONDS - 0.5
 
 
 def test_the_floor_never_shortens_a_longer_budget(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -196,7 +196,7 @@ def _route(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, command: str, handle
     monkeypatch.setattr(commands_router, "enforce_lifecycle_gate", lambda *_args, **_kwargs: None)
 
     def _handler(_args: Namespace, **_kwargs: object) -> int:
-        seen.append(native_context._BOUND_TIMEOUT_FLOOR.get())
+        seen.append(native_context_budget._BOUND_TIMEOUT_FLOOR.get())
         return 0
 
     monkeypatch.setattr(commands_router, handler_name, _handler, raising=False)
@@ -217,7 +217,7 @@ def test_a_protection_lifecycle_command_runs_under_the_longer_budget(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     assert _route(monkeypatch, tmp_path, "update", "_run_guard_update_command") == (
-        native_context._LIFECYCLE_TIMEOUT_SECONDS
+        native_context_budget._LIFECYCLE_TIMEOUT_SECONDS
     )
 
 
@@ -252,3 +252,111 @@ def test_the_install_error_names_why_native_authority_was_unavailable(monkeypatc
         )
 
     assert str(error.value) == ("native_mcp_server_identity_unavailable:native_context_digest_prerequisite_unavailable")
+
+
+def test_the_floor_is_bound_before_the_command_resolves_a_guard_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An install reaches native authority long before it has a home to bind.
+
+    Binding the floor partway down the dispatch covers only the handlers below
+    that point. Everything an install does on the way there — resolving the
+    home, standing up the store — runs on the hot path's budget, which is the
+    budget that aborted one on a cold runtime.
+    """
+
+    seen: list[float | None] = []
+
+    def _resolve(_override: object) -> Path:
+        seen.append(native_context_budget._BOUND_TIMEOUT_FLOOR.get())
+        return tmp_path / "guard-home"
+
+    monkeypatch.setattr(commands_router, "resolve_guard_home", _resolve)
+    monkeypatch.setattr(commands_router, "_resolve_guard_workspace", lambda _args, **_kwargs: None)
+    monkeypatch.setattr(commands_router, "enforce_lifecycle_gate", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(commands_router, "_run_guard_update_command", lambda _args, **_kwargs: 0, raising=False)
+
+    assert _dispatch(commands_router, "update") == 0
+    assert seen == [native_context_budget._LIFECYCLE_TIMEOUT_SECONDS]
+
+
+def test_a_command_that_fails_still_gives_the_floor_back(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A raising handler must not leave enforcement on the longer budget.
+
+    The dispatch is not the only thing in the process: a daemon and a hook
+    worker run commands one after another, and a failed install leaving its
+    floor bound widens every tool call they enforce afterwards.
+    """
+
+    monkeypatch.setattr(commands_router, "resolve_guard_home", lambda _override: tmp_path / "guard-home")
+    monkeypatch.setattr(commands_router, "_resolve_guard_workspace", lambda _args, **_kwargs: None)
+    monkeypatch.setattr(commands_router, "enforce_lifecycle_gate", lambda *_args, **_kwargs: None)
+
+    def _raise(_args: Namespace, **_kwargs: object) -> int:
+        raise RuntimeError("install failed")
+
+    monkeypatch.setattr(commands_router, "_run_guard_update_command", _raise, raising=False)
+
+    with pytest.raises(RuntimeError):
+        _dispatch(commands_router, "update")
+
+    assert native_context_budget._BOUND_TIMEOUT_FLOOR.get() is None
+
+
+def test_an_early_handler_command_never_sees_a_lifecycle_floor(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`hol-guard mcp` returns above the home resolution and stays on its budget."""
+
+    seen: list[float | None] = []
+
+    def _handler(_args: Namespace, **_kwargs: object) -> int:
+        seen.append(native_context_budget._BOUND_TIMEOUT_FLOOR.get())
+        return 0
+
+    monkeypatch.setattr(commands_router, "_run_guard_mcp_command", _handler, raising=False)
+
+    assert _dispatch(commands_router, "mcp") == 0
+    assert seen == [None]
+
+
+def _dispatch(router: Any, command: str) -> int:
+    """Run one command through the real entry point with the usual arguments."""
+
+    return router.run_guard_command(
+        Namespace(
+            guard_command=command,
+            guard_home=None,
+            home=None,
+            workspace=None,
+            grok_executable=None,
+            source="default",
+            json=True,
+        )
+    )
+
+
+def test_a_refused_identity_request_names_the_code_the_runtime_sent(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An error-status answer is not the same as no answer at all.
+
+    The runtime replied and said why. Dropping its code leaves the aborted
+    install reporting bare unavailability, which reads as a missing runtime —
+    the one thing that did not happen here.
+    """
+
+    monkeypatch.setattr(
+        native_context,
+        "native_context_digest",
+        lambda *_args, **_kwargs: {"status": "error", "code": "native_mcp_identity_request_invalid"},
+    )
+    token = native_context._LAST_DIGEST_FAILURE.set(None)
+
+    with pytest.raises(ValueError) as error:
+        mcp_protection.build_mcp_server_identity(
+            config_path="/home/tester/.codex/config.toml",
+            command="hol-guard",
+            args=(),
+            transport="stdio",
+        )
+
+    native_context._LAST_DIGEST_FAILURE.reset(token)
+
+    assert str(error.value) == "native_mcp_server_identity_unavailable:native_mcp_identity_request_invalid"

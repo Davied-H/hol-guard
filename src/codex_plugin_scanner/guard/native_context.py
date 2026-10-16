@@ -25,6 +25,11 @@ from typing import Any, TypeGuard
 
 from .directory_path_authority import canonical_guard_home_path
 from .fork_safety import forget_in_child
+from .native_context_budget import (
+    bind_context_digest_lifecycle_budget,
+    context_digest_timeout_floor,
+    reset_context_digest_budget,
+)
 from .native_resident_client import (
     native_resident_client_failure_code,
     native_resident_client_ready,
@@ -138,18 +143,6 @@ _RETRY_ALLOWANCE_MULTIPLIER = 2
 # under the default home.  Unbound calls fall back to the default resolution.
 _BOUND_GUARD_HOME: ContextVar[Path | None] = ContextVar("guard_context_digest_home", default=None)
 
-# The steady-state budget above keeps enforcement cheap because enforcement
-# runs on every tool call and can degrade.  A lifecycle command cannot: it runs
-# once, at a keystroke, and a digest it cannot get aborts the install and
-# leaves the machine unprotected.  It is also the one call that pays for a
-# never-before-run binary — a first install on Windows faults in and scans a
-# 20 MB executable that no later call pays for again, which is why a tester saw
-# an install fail on native identity and the identical second run succeed.
-# Lifecycle commands bind this floor so that spawn has room; it stays under the
-# resident's own 9 s ceiling so the retry still has a budget to carry.
-_LIFECYCLE_TIMEOUT_SECONDS = 5.0
-_BOUND_TIMEOUT_FLOOR: ContextVar[float | None] = ContextVar("guard_context_digest_timeout_floor", default=None)
-
 # ContextVars do not propagate to worker threads (the policy publisher, for
 # example, builds observed MCP identities on its own thread).  Remember the
 # most recently bound enforcement home at process level so those threads —
@@ -251,24 +244,6 @@ def bind_context_digest_home(guard_home: Path | None, *, remember: bool = True) 
 
 def reset_context_digest_home(token: Any) -> None:
     _BOUND_GUARD_HOME.reset(token)
-
-
-def bind_context_digest_lifecycle_budget(active: bool = True) -> Any:
-    """Bind the digest budget a one-shot lifecycle command runs under.
-
-    The floor applies to every digest call made under it, including the ones
-    that pin the steady-state constant themselves: a command that installs or
-    reports protection has no hot path to protect, and no fallback when the
-    answer does not arrive.  `active=False` binds the steady-state budget back,
-    so a process that dispatches more than one command cannot let a lifecycle
-    command's floor widen the next command's enforcement calls.
-    """
-
-    return _BOUND_TIMEOUT_FLOOR.set(_LIFECYCLE_TIMEOUT_SECONDS if active else None)
-
-
-def reset_context_digest_budget(token: Any) -> None:
-    _BOUND_TIMEOUT_FLOOR.reset(token)
 
 
 def context_digest_guard_home() -> Path | None:
@@ -472,7 +447,7 @@ def native_context_digest(
     _LAST_DIGEST_FAILURE.set(None)
     # A lifecycle command's floor only ever lengthens a budget, and never
     # revives a call whose caller disabled it with a non-positive one.
-    floor = _BOUND_TIMEOUT_FLOOR.get()
+    floor = context_digest_timeout_floor()
     if floor is not None and timeout_seconds > 0:
         timeout_seconds = max(timeout_seconds, floor)
     status = _native_runtime_status_memo()
@@ -957,8 +932,25 @@ def context_mcp_identity(kind: str, request: dict[str, Any]) -> dict[str, Any] |
         {"request": request},
         guard_home=_resolve_digest_home(None),
     )
-    identity = result.get(kind) if isinstance(result, dict) and result.get("status") == "ok" else None
+    if not isinstance(result, dict) or result.get("status") != "ok":
+        # The runtime answered and refused.  Its own code is the only thing
+        # that says why, and a caller with no fallback aborts an install on
+        # this; without it the person reading the error is told the identity
+        # was unavailable and nothing about the answer that said so.
+        _record_refusal(result)
+        return None
+    identity = result.get(kind)
     return identity if isinstance(identity, dict) else None
+
+
+def _record_refusal(result: object) -> None:
+    """Keep an error-status answer's own code as the failure reason."""
+
+    if not isinstance(result, dict) or _LAST_DIGEST_FAILURE.get() is not None:
+        return
+    code = result.get("code")
+    if isinstance(code, str) and code:
+        _digest_failed(code)
 
 
 _MCP_RISK_CATEGORIES = frozenset(
