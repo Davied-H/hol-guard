@@ -31,8 +31,11 @@ fn home(name: &str) -> PathBuf {
         ".agents/skills/release-check/scripts",
         ".cargo/registry/src/index.crates.io/serde-1.0.0/src",
         ".certs",
-        ".claude",
-        ".codex",
+        ".claude/projects/app",
+        ".claude/shell-snapshots",
+        ".codex/plans/order-intake",
+        ".codex/sessions/2026-10-16",
+        ".codex/skills/release-check",
         ".config/doctl",
         ".config/gcloud",
         ".config/gh",
@@ -59,7 +62,17 @@ fn home(name: &str) -> PathBuf {
         ),
         (".certs/server.pem", "-----BEGIN CERTIFICATE-----\n"),
         (".claude/.credentials.json", "{}\n"),
+        (".claude/settings.json", "{\"env\": {}}\n"),
+        (".claude/history.jsonl", "{}\n"),
+        (".claude/projects/app/7f3.jsonl", "{}\n"),
+        (
+            ".claude/shell-snapshots/snapshot-zsh.sh",
+            "export PATH=/usr/bin\n",
+        ),
         (".codex/auth.json", "{}\n"),
+        (".codex/plans/order-intake/todo.md", "# Todo\n"),
+        (".codex/sessions/2026-10-16/rollout.jsonl", "{}\n"),
+        (".codex/skills/release-check/notes.md", "# Notes\n"),
         (".config/doctl/config.yaml", "access-token: x\n"),
         (".config/gcloud/credentials.db", "x\n"),
         (".config/gh/hosts.yml", "example.com:\n"),
@@ -171,6 +184,29 @@ fn agent_guidance_documents_keep_their_own_rule() {
     for command in [
         "sed -n '1,501p' ~/.hol-support/SAFETY.md",
         "sed -n '20,1p' ~/.hol-support/SAFETY.md",
+    ] {
+        assert_ne!(action(&home, "codex", command), "allow", "{command}");
+    }
+}
+
+/// A harness home mixes the documents an agent is asked to read all day with
+/// the login and the saved conversations beside them. Reading it at its
+/// document side goes through; the rest of the home keeps review.
+#[test]
+fn a_harness_home_opens_only_at_its_document_side() {
+    let home = home("harness");
+    for command in [
+        "cat ~/.codex/skills/release-check/notes.md",
+        "cat ~/.codex/plans/order-intake/todo.md",
+        "grep -n -i guard ~/.claude/settings.json",
+    ] {
+        assert_eq!(action(&home, "codex", command), "allow", "{command}");
+    }
+    for command in [
+        "cat ~/.codex/sessions/2026-10-16/rollout.jsonl",
+        "cat ~/.claude/projects/app/7f3.jsonl",
+        "cat ~/.claude/history.jsonl",
+        "cat ~/.claude/shell-snapshots/snapshot-zsh.sh",
     ] {
         assert_ne!(action(&home, "codex", command), "allow", "{command}");
     }

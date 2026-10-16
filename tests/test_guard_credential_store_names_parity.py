@@ -15,6 +15,7 @@ import pytest
 from codex_plugin_scanner.guard.runtime.credential_store_names import (
     CREDENTIAL_STORE_NAMES,
     HARNESS_DIRECTORIES,
+    HARNESS_HOME_DOCUMENT_NAMES,
     HARNESS_HOME_NAMES,
     HARNESS_SHARED_NAMES,
     NESTED_CREDENTIAL_STORE_NAMES,
@@ -42,6 +43,7 @@ def _rust_array(source: Path, name: str) -> frozenset[str]:
         ("CREDENTIAL_STORE_NAMES", CREDENTIAL_STORE_NAMES, _RUST),
         ("HARNESS_SHARED_NAMES", HARNESS_SHARED_NAMES, _RUST),
         ("HARNESS_HOME_NAMES", HARNESS_HOME_NAMES, _RUST),
+        ("HARNESS_HOME_DOCUMENT_NAMES", HARNESS_HOME_DOCUMENT_NAMES, _RUST),
         ("NESTED_CREDENTIAL_STORE_NAMES", NESTED_CREDENTIAL_STORE_NAMES, _RUST),
         ("SECRET_BEARING_STEMS", SECRET_BEARING_STEMS, _RUST),
         ("SECRET_BEARING_SUFFIXES", frozenset(SECRET_BEARING_SUFFIXES), _RUST),
@@ -63,6 +65,11 @@ ALLOWED = [
     "/Users/dev/.cargo/registry/src/index.crates.io/serde-1.0.0/src/lib.rs",
     "/Users/dev/.zcode/cli/plugins/cache/manifest.json",
     "/Users/dev/.vscode/extensions/extensions.json",
+    # A harness home read at its document side: the notes, plans and settings
+    # an agent is asked to read all day.
+    "/Users/dev/.codex/skills/release-check/notes.md",
+    "/Users/dev/.codex/plans/order-intake/todo.md",
+    "/Users/dev/.claude/settings.json",
 ]
 
 # Every one of these returns a live credential to whoever reads it.
@@ -84,6 +91,13 @@ REFUSED = [
     "/Users/dev/.envrc",
     "/Users/dev/.certs/server.pem",
     "/Users/dev/.secrets/service-account.json",
+    # A harness home away from its document side: the login, and the saved
+    # conversations and captured environments beside it.
+    "/Users/dev/.codex/sessions/2026-10-16/rollout.jsonl",
+    "/Users/dev/.claude/projects/-u-dev-app/7f3.jsonl",
+    "/Users/dev/.claude/history.jsonl",
+    "/Users/dev/.claude/shell-snapshots/snapshot-zsh.sh",
+    "/Users/dev/.codex/skills/release-check/auth.json",
 ]
 
 
@@ -103,3 +117,9 @@ def test_a_visible_path_is_not_screened_as_hidden() -> None:
 
 def test_a_store_below_a_benign_hidden_directory_still_refuses() -> None:
     assert hidden_content_read_allowed(lowered_names("/Users/dev/.agents/skills/.ssh/id_rsa")) is False
+
+
+def test_a_harness_home_lists_its_own_entries_only_through_the_listing_screen() -> None:
+    """The home itself is the account surface, so a content read of it keeps review."""
+    assert hidden_content_read_allowed(lowered_names("/Users/dev/.codex")) is False
+    assert hidden_content_read_allowed(lowered_names("/Users/dev/.claude")) is False

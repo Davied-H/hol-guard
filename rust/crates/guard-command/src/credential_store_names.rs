@@ -174,20 +174,53 @@ pub(crate) fn secret_bearing_file_name(name: &str) -> bool {
     SECRET_BEARING_STEMS.contains(&bare.split('.').next().unwrap_or(bare))
 }
 
+/// The directories and files below a harness home that hold documents rather
+/// than an account. A harness home mixes the two: `~/.codex/skills` and
+/// `~/.claude/settings.json` are what an agent is asked to read all day, while
+/// `sessions/`, `projects/` and `shell-snapshots/` hold whole transcripts and
+/// captured environments, and the login sits in `auth.json` beside them. Naming
+/// the document side is what lets an ordinary
+/// `ls ~/.codex/plans/order-intake` through without opening the rest.
+pub(crate) const HARNESS_HOME_DOCUMENT_NAMES: [&str; 11] = [
+    "agents",
+    "agents.md",
+    "claude.md",
+    "commands",
+    "docs",
+    "plans",
+    "plugins",
+    "prompts",
+    "settings.json",
+    "settings.local.json",
+    "skills",
+];
+
+/// Whether every harness home on `lowered` is entered at its document side.
+///
+/// The home itself is refused: its entry names are the account surface. So is
+/// any child this list does not name, because a harness writes its login and
+/// its saved conversations beside the notes under names that change with the
+/// harness version.
+fn harness_home_reads_a_document(lowered: &[String]) -> bool {
+    lowered.iter().enumerate().all(|(index, name)| {
+        !HARNESS_HOME_NAMES.contains(&name.as_str())
+            || lowered
+                .get(index + 1)
+                .is_some_and(|child| HARNESS_HOME_DOCUMENT_NAMES.contains(&child.as_str()))
+    })
+}
+
 /// Whether a content read of `path` may cross its hidden components. Every
 /// hidden component must clear the store screen, and the file's own name must
-/// not be one a secret is normally written under. Harness homes are refused:
-/// their logins live beside the notes, and the harness-notes path answers the
-/// documents that are safe to read there.
+/// not be one a secret is normally written under. A harness home is entered
+/// only at its document side: its login and its saved conversations live beside
+/// the notes, so the home itself and every child outside
+/// [`HARNESS_HOME_DOCUMENT_NAMES`] keep review.
 pub(crate) fn hidden_content_read_allowed(lowered: &[String]) -> bool {
     if !lowered.iter().any(|part| part.starts_with('.')) {
         return true;
     }
-    if names_hold_credential_store(lowered)
-        || lowered
-            .iter()
-            .any(|name| HARNESS_HOME_NAMES.contains(&name.as_str()))
-    {
+    if names_hold_credential_store(lowered) || !harness_home_reads_a_document(lowered) {
         return false;
     }
     lowered

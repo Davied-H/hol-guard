@@ -185,16 +185,44 @@ def secret_bearing_file_name(name: str) -> bool:
     return bare.split(".")[0] in SECRET_BEARING_STEMS
 
 
+HARNESS_HOME_DOCUMENT_NAMES: frozenset[str] = frozenset(
+    {
+        "agents",
+        "agents.md",
+        "claude.md",
+        "commands",
+        "docs",
+        "plans",
+        "plugins",
+        "prompts",
+        "settings.json",
+        "settings.local.json",
+        "skills",
+    }
+)
+"""Directories and files below a harness home that hold documents rather than an account."""
+
+
+def _harness_home_reads_a_document(lowered: list[str]) -> bool:
+    """Whether every harness home on ``lowered`` is entered at its document side."""
+    return all(
+        name not in HARNESS_HOME_NAMES
+        or (index + 1 < len(lowered) and lowered[index + 1] in HARNESS_HOME_DOCUMENT_NAMES)
+        for index, name in enumerate(lowered)
+    )
+
+
 def hidden_content_read_allowed(lowered: list[str]) -> bool:
     """Whether a content read may cross the hidden components of ``lowered``.
 
     Every hidden component must clear the credential-store screen, and the
-    file's own name must not be one a secret is normally written under. Harness
-    homes are refused: their logins live beside the notes, and the harness-notes
-    path answers the documents that are safe to read there.
+    file's own name must not be one a secret is normally written under. A
+    harness home is entered only at its document side: its login and its saved
+    conversations live beside the notes, so the home itself and every child
+    outside ``HARNESS_HOME_DOCUMENT_NAMES`` keep review.
     """
     if not any(part.startswith(".") for part in lowered):
         return True
-    if names_hold_credential_store(lowered) or any(name in HARNESS_HOME_NAMES for name in lowered):
+    if names_hold_credential_store(lowered) or not _harness_home_reads_a_document(lowered):
         return False
     return not lowered or not secret_bearing_file_name(lowered[-1])
