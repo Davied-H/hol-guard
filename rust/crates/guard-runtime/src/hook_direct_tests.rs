@@ -451,32 +451,18 @@ fn package_script_payload(lane: &Lane) -> Value {
 
 #[test]
 fn custom_rules_still_answer_a_command_that_launches_no_local_cli() {
-    // A home that exists, as on a real host: macOS treats a workspace below the
-    // user's private temporary directory as the user's own only when the
-    // declared home exists and shares that directory's owner.
-    let home = std::env::temp_dir().join(format!("hook-direct-home-{}", std::process::id()));
-    fs::create_dir_all(&home).unwrap();
-    let home = home.to_str().unwrap();
-    let rules = allowing_lane(
-        "cli-rules",
-        json!({ "local_cli_block_rules": true, "home_dir": home }),
-    );
-    let run = |lane: &Lane, payload| run_as(lane, "codex", Some(home), payload);
+    let rules = allowing_lane("cli-rules", json!({ "local_cli_block_rules": true }));
     // `pwd` launches no local CLI, so no custom rule can block it.
     assert_eq!(run(&rules, allowed_payload(&rules))["outcome"], "answer");
     // The edge reviews a launch it cannot prove benign, so the daemon
-    // renders that verdict whether or not a rule names the CLI. On macOS the
-    // edge raises that review to contained execution, which Codex cannot
-    // run, so the lane answers the deny the daemon passes through.
-    let launched = run(&rules, package_script_payload(&rules));
-    if cfg!(target_os = "macos") {
-        assert_eq!(launched["outcome"], "answer", "{launched}");
-        let result = &launched["edge"]["result"];
-        assert_eq!(result["minimum_action"], "sandbox-required", "{launched}");
-        assert_eq!(result["decision"], "deny", "{launched}");
-    } else {
-        assert_eq!(deferred(&launched), "direct_hook_not_allow");
-    }
+    // renders that verdict whether or not a rule names the CLI. A `tsc`
+    // build script gets no narrow build receipt, and the hook carries no
+    // execution environment to prove the workspace sandbox with, so macOS
+    // keeps the review too.
+    assert_eq!(
+        deferred(&run(&rules, package_script_payload(&rules))),
+        "direct_hook_not_allow"
+    );
 }
 
 #[test]
