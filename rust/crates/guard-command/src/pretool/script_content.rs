@@ -233,7 +233,7 @@ fn assess_programs(
                 _ => continue,
             },
         };
-        let Some(sources) = read_graph(language, entry) else {
+        let Some((sources, complete)) = read_graph(language, entry) else {
             continue;
         };
         let mut found = Findings::default();
@@ -245,7 +245,7 @@ fn assess_programs(
             };
             found.credential_store |= CREDENTIAL_STORE.is_match(&code);
         }
-        if inline && language == Language::Node {
+        if inline && complete && language == Language::Node {
             found.loopback = loopback::program_ports(&sources, context.home_dir);
         }
         found.sources = sources;
@@ -267,7 +267,7 @@ pub(super) fn exfiltrates(model: &CanonicalCommandV1, context: PathContext<'_>) 
 /// workspace would be unreadable there), uses no network client, and names no
 /// credential store. An unreadable, oversized or non-UTF-8 script is not clean.
 pub(in crate::pretool) fn standalone_clean(language: Language, path: &Path) -> bool {
-    let Some(sources) = read_graph(language, Entry::File(path.to_path_buf())) else {
+    let Some((sources, _)) = read_graph(language, Entry::File(path.to_path_buf())) else {
         return false;
     };
     let [source] = sources.as_slice() else {
@@ -445,8 +445,9 @@ enum Entry {
 /// first, within the file and byte bounds, or `None` when the program itself
 /// cannot be read. A module that cannot be read, or would pass the byte
 /// bound, is left out so what the rest of the graph does still counts.
-/// Packages and the standard library are not read.
-fn read_graph(language: Language, entry: Entry) -> Option<Vec<String>> {
+/// Packages and the standard library are not read. The flag says whether
+/// every local import found was read.
+fn read_graph(language: Language, entry: Entry) -> Option<(Vec<String>, bool)> {
     let (root, mut seen, first) = match entry {
         Entry::File(path) => {
             let root = path.parent()?.to_path_buf();
@@ -467,6 +468,7 @@ fn read_graph(language: Language, entry: Entry) -> Option<Vec<String>> {
     let mut queue = VecDeque::new();
     let mut sources = Vec::new();
     let mut total = 0usize;
+    let mut complete = true;
     let mut next = Some(first);
     while let Some((source, directory)) = next.take() {
         total += source.len();
@@ -478,6 +480,7 @@ fn read_graph(language: Language, entry: Entry) -> Option<Vec<String>> {
             };
             for import in imports {
                 if seen.len() >= MAX_FILES {
+                    complete = false;
                     break;
                 }
                 if seen.insert(import.clone()) {
@@ -492,9 +495,10 @@ fn read_graph(language: Language, entry: Entry) -> Option<Vec<String>> {
                 next = Some((source, Some(directory.to_path_buf())));
                 break;
             }
+            complete = false;
         }
     }
-    Some(sources)
+    Some((sources, complete))
 }
 
 fn read_text(path: &Path) -> Option<String> {

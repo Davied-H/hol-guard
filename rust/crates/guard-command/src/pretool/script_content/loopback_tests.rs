@@ -59,6 +59,12 @@ fn other_network_use_keeps_the_review() {
         // Every port a kube control-plane component binds, not only the three
         // this list used to name.
         "await fetch('http://127.0.0.1:10252/healthz')",
+        // Code evaluated at run time, which this scan cannot follow.
+        "await fetch('http://127.0.0.1:3000/'); eval(\"require('node:net').connect(3000, '127.0.0.1')\")",
+        "await fetch('http://127.0.0.1:3000/'); new Function('return 1')()",
+        "const name = 'node:net'; require(name); await fetch('http://127.0.0.1:3000/')",
+        "require('node:vm'); await fetch('http://127.0.0.1:3000/')",
+        "const s = \"require('node:net')\"; await fetch('http://127.0.0.1:3000/')",
         // Guard's daemon on a fixed or ephemeral port, and ports no dev
         // server conventionally binds.
         "await fetch('http://127.0.0.1:7392/v1/requests?status=pending')",

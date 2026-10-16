@@ -62,6 +62,17 @@ static FETCH_LITERAL: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"^fetch\s*\(\s*["'`]http://(?:127\.0\.0\.1|localhost):[0-9]{1,5}[/?#"'`]"#)
         .unwrap()
 });
+/// Code built at run time: `eval`, `Function`, and `require` or `import`
+/// of a name that is not a literal. Matched on the string-masked source, so a
+/// literal specifier still reads as an opening quote.
+static DYNAMIC_CODE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r#"\beval\s*\(|\bFunction\s*\(|\b(?:require|import)\s*\(\s*[^"'`\s]|\bprocess\s*\.\s*binding\b"#,
+    )
+    .unwrap()
+});
+static VM_MODULE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"["'`](?:node:)?vm["'`]"#).unwrap());
 static LISTEN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\.\s*listen\s*\(").unwrap());
 static LOOPBACK_LISTEN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
@@ -96,11 +107,16 @@ pub(super) fn node_loopback_ports(code: &str, home_dir: Option<&str>) -> Option<
         return None;
     }
     let masked = mask_strings(code)?;
+    if DYNAMIC_CODE.is_match(&masked) || VM_MODULE.is_match(code) {
+        return None;
+    }
     let in_code = |at: usize| masked.as_bytes().get(at).is_some_and(|byte| *byte != b' ');
     let mut http_imports = 0usize;
     for found in NODE_NETWORK.find_iter(code) {
+        // A network API spelled inside a string is code something may
+        // evaluate, which this scan cannot follow.
         if !in_code(found.start()) {
-            continue;
+            return None;
         }
         let text = found.as_str();
         if text.starts_with("fetch") {

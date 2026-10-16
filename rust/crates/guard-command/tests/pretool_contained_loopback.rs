@@ -143,3 +143,24 @@ fn other_addresses_and_ports_keep_their_review() {
         }
     }
 }
+
+#[test]
+fn a_local_module_too_large_to_read_keeps_the_review() {
+    let fixture = Fixture::new();
+    let filler = format!("// {}\n", "x".repeat(300 * 1024));
+    std::fs::write(
+        fixture.project.join("big.js"),
+        filler + "module.exports = () => fetch('https://example.com/');\n",
+    )
+    .unwrap();
+    let command = "node -e \"require('./big.js'); fetch('http://127.0.0.1:3000/')\"";
+    for harness in ["omp", "claude-code", "codex"] {
+        let result = fixture.classify(harness, command);
+        assert_eq!(
+            result.minimum_action, "review",
+            "{harness}: {}",
+            result.reason_code
+        );
+        assert_ne!(result.reason_code, CONTAINED, "{harness}");
+    }
+}
