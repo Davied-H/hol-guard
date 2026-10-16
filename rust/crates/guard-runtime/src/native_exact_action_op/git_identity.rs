@@ -85,7 +85,7 @@ pub(super) fn git_readonly_identity(
         "subcommand": subcommand,
         "target": target,
         "repository": root,
-        "config_digest": git_config_digest(&root, &git_dir, &common_dir, system, ctx)?,
+        "config_digest": git_config_digest(&root, &git_dir, &common_dir, system, &arguments[index..], ctx)?,
     }))
 }
 

@@ -305,3 +305,118 @@ fn git_helpers_on_windows_stay_one_time() {
     }
     assert_eq!(exact_action_token(&request), Err("unproven_launch"));
 }
+
+const LFS_CONFIG: &str = "[filter \"lfs\"]\n\tclean = git-lfs clean -- %f\n\tsmudge = git-lfs smudge -- %f\n\tprocess = git-lfs filter-process\n\trequired = true\n";
+
+#[test]
+fn git_path_helpers_never_run_on_reuse() {
+    // Git for Windows finds `astextplain` and `git-lfs` on `PATH`, `~/bin`
+    // first, so a reused git must not reach either.
+    let tree = Tree::new();
+    git_repository(&tree);
+    tree.write(
+        "ws\\.git\\config",
+        "[diff \"astextplain\"]\n\ttextconv = astextplain\n",
+    );
+    for command in [
+        "git diff",
+        "git show",
+        "git log -p",
+        "git log --stat",
+        "git status -v",
+    ] {
+        assert_eq!(shell(&tree, command), Err("git_helper_config"), "{command}");
+    }
+    for command in [
+        "git diff --no-textconv",
+        "git status",
+        "git log -1 --oneline",
+    ] {
+        assert!(shell(&tree, command).is_ok(), "{command}");
+    }
+    tree.write("ws\\.git\\config", LFS_CONFIG);
+    assert!(shell(&tree, "git status").is_ok());
+    // NTFS opens a nested `.GitAttributes` for git's `.gitattributes`.
+    put(&tree, "ws\\src\\.GitAttributes", "*.bin filter=lfs\n");
+    assert_eq!(shell(&tree, "git status"), Err("git_helper_config"));
+    std::fs::remove_file(tree.path("ws\\src\\.GitAttributes")).unwrap();
+    tree.write("ws\\.gitattributes", "*.bin filter=lfs -text\n");
+    assert_eq!(shell(&tree, "git status"), Err("git_helper_config"));
+    assert!(shell(&tree, "git log -1").is_ok());
+    // An indexed `.gitattributes` missing from the worktree is read from
+    // the index, which no digest binds.
+    cmd(&tree.ws(), "git add .gitattributes");
+    std::fs::remove_file(tree.path("ws\\.gitattributes")).unwrap();
+    assert_eq!(shell(&tree, "git status"), Err("git_helper_config"));
+    for name in ["GIT_DIR", "git_work_tree", "GIT_EXEC_PATH"] {
+        let reason = launch(&tree, "git log -1", &|_, _, env| {
+            env.insert(name.to_owned(), tree.ws());
+        });
+        assert_eq!(reason, Err("git_helper_config"), "{name}");
+    }
+}
+
+#[test]
+fn dlls_the_search_path_reaches_are_bound() {
+    let tree = Tree::new();
+    git_repository(&tree);
+    image(&tree, "ws\\bin\\probe.exe");
+    put(&tree, "tools\\readme.txt", "no libraries\n");
+    let tools = tree.path("tools");
+    let commands = ["git status", "./bin/probe.exe probe"];
+    let tokens = |tree: &Tree| {
+        commands.map(|command| launch(tree, command, &|_, _, env| prepend_path(env, &tools)))
+    };
+    let clean = tokens(&tree);
+    assert!(clean.iter().all(Result::is_ok), "{clean:?}");
+    // A DLL planted where the loader search ends, or in the `~/bin` Git Bash
+    // searches first, changes the token.
+    put(&tree, "tools\\libwinpthread-1.dll", "MZ planted");
+    let planted = tokens(&tree);
+    for (before, after) in clean.iter().zip(&planted) {
+        assert_ne!(before, after);
+    }
+    let git = shell(&tree, "git status");
+    put(&tree, "home\\bin\\version.dll", "MZ planted");
+    assert_ne!(git, shell(&tree, "git status"));
+    assert!(shell(&tree, "git status").is_ok());
+    // More DLLs than the binding caps cover stay once-only.
+    for index in 0..17 {
+        put(&tree, &format!("tools\\extra{index}.dll"), "MZ planted");
+    }
+    for reason in tokens(&tree) {
+        assert_eq!(reason, Err("unproven_launch"));
+    }
+}
+
+#[test]
+fn loader_steering_and_sibling_programs_are_bound_or_refused() {
+    let tree = Tree::new();
+    git_repository(&tree);
+    image(&tree, "ws\\bin\\probe.exe");
+    for name in [
+        "COR_ENABLE_PROFILING",
+        "cor_profiler_path",
+        "CORECLR_PROFILER",
+        "DOTNET_STARTUP_HOOKS",
+        "DOTNET_ROOT(x86)",
+        "DOTNET_ADDITIONAL_DEPS",
+        "QT_PLUGIN_PATH",
+        "OPENSSL_MODULES",
+    ] {
+        for command in ["git status", "./bin/probe.exe probe"] {
+            let reason = launch(&tree, command, &|_, _, env| {
+                env.insert(name.to_owned(), "1".to_owned());
+            });
+            assert_eq!(reason, Err("unproven_launch"), "{name} {command}");
+        }
+    }
+    // .NET reads `runtimeconfig.dev.json` probing paths beside the image.
+    let probe = shell(&tree, "./bin/probe.exe probe").unwrap();
+    tree.write("ws\\bin\\probe.runtimeconfig.dev.json", "{}");
+    assert_ne!(probe, shell(&tree, "./bin/probe.exe probe").unwrap());
+    // A bare-name child launch finds the working directory's programs first.
+    let git = shell(&tree, "git status").unwrap();
+    image(&tree, "ws\\git-lfs.exe");
+    assert_ne!(git, shell(&tree, "git status").unwrap());
+}

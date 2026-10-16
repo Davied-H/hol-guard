@@ -7,9 +7,12 @@
 //! Windows loader reads beside it: the DLLs, manifests and .NET host files of
 //! the application directory, unless that directory sits under an
 //! administrator-owned install root, and the DLLs of the working directory,
-//! which the default DLL search order reaches after the system directories.
-//! Batch files, App Execution Aliases, shims and every spelling the two
-//! resolvers could read differently stay once-only.
+//! which the default DLL search order reaches after the system directories,
+//! with the executables there a bare-name child launch finds first, and the
+//! DLLs of every `PATH` directory outside the system and install roots,
+//! where the search ends. Batch
+//! files, App Execution Aliases, shims, loader-steering variables and every
+//! spelling the two resolvers could read differently stay once-only.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::ErrorKind;
@@ -29,13 +32,32 @@ const MAX_DIRECTORY_ENTRIES: usize = 4096;
 /// `PATHEXT` as `cmd.exe` defaults it, and the shortcut Cygwin-style shells
 /// also start.
 const DEFAULT_EXTENSIONS: [&str; 5] = [".com", ".exe", ".bat", ".cmd", ".lnk"];
-/// Application-directory files the loader or the .NET host reads for an image.
-const APP_DIR_SUFFIXES: [&str; 5] = [
-    ".dll",
-    ".manifest",
-    ".config",
-    ".deps.json",
-    ".runtimeconfig.json",
+/// Application-directory files the loader or the .NET host reads for an
+/// image (`.json` covers `deps`, `runtimeconfig` and `runtimeconfig.dev`).
+const APP_DIR_SUFFIXES: [&str; 3] = [".manifest", ".config", ".json"];
+/// Files the DLL search or a bare-name child launch reaches in a directory.
+const LOADED_SUFFIXES: [&str; 3] = [".dll", ".exe", ".com"];
+/// Variables that load a profiler, startup hook, plugin or provider the
+/// image itself never names (matched as uppercase prefixes).
+const LOADER_ENVIRONMENT: [&str; 8] = [
+    "COR_ENABLE_PROFILING",
+    "COR_PROFILER",
+    "CORECLR_",
+    "DOTNET_STARTUP_HOOKS",
+    "DOTNET_ROOT",
+    "DOTNET_ADDITIONAL_DEPS",
+    "QT_PLUGIN_PATH",
+    "OPENSSL_MODULES",
+];
+/// `PATH` directories inside the Windows directory that only administrators
+/// can write; any other one there (`Temp`, `System32\Tasks`) is scanned.
+const SYSTEM_PATH_DIRS: [&str; 6] = [
+    "",
+    "System32",
+    "SysWOW64",
+    "System32\\Wbem",
+    "System32\\WindowsPowerShell\\v1.0",
+    "System32\\OpenSSH",
 ];
 
 /// Whether the harness runs `tool_name` commands through a POSIX shell. Codex
@@ -108,7 +130,7 @@ pub(super) fn native_launch(
     ) else {
         return Err(UNPROVEN_LAUNCH);
     };
-    if !verified || !spelling_is_pinned(command) {
+    if !verified || !spelling_is_pinned(command) || steers_loader(ctx) {
         return Err(UNPROVEN_LAUNCH);
     }
     let image_dir = plain_file(&image, &launch_path)?;
@@ -127,21 +149,71 @@ pub(super) fn native_launch(
     let (location, app_dir) = if under_install_root(&image) {
         ("install-root", Value::Null)
     } else {
-        let files = bound_files(&image_dir, Some(&image_name), &mut budget, ctx)?;
+        let files = bound_files(
+            &image_dir,
+            Some(&image_name),
+            &LOADED_SUFFIXES,
+            &mut budget,
+            ctx,
+        )?;
         ("content-bound", json!(files))
     };
-    let cwd_dlls = bound_files(cwd, None, &mut budget, ctx)?;
+    let cwd_dlls = bound_files(cwd, None, &LOADED_SUFFIXES, &mut budget, ctx)?;
+    let path_dlls = search_path_dlls(&mut budget, ctx)?;
     identity["entrypoint"] = json!({
         "kind": "windows-native-image",
         "status": "bound-by-executable",
         "location": location,
         "app_dir": app_dir,
         "cwd_dlls": cwd_dlls,
+        "path_dlls": path_dlls,
     });
     if carries_reuse_nonce(&identity) {
         return Err(UNPROVEN_LAUNCH);
     }
     Ok(identity)
+}
+
+fn steers_loader(ctx: &Ctx) -> bool {
+    ctx.env.keys().any(|name| {
+        let name = name.to_ascii_uppercase();
+        LOADER_ENVIRONMENT
+            .iter()
+            .any(|prefix| name.starts_with(prefix))
+    })
+}
+
+/// Content digests of the DLLs in each `PATH` directory, where the loader
+/// search ends, and in each `~/bin` Git Bash puts ahead of it, outside the
+/// Windows and install roots. A missing directory binds as empty, so a DLL
+/// planted in it later changes the token; over the caps stays once-only.
+fn search_path_dlls(budget: &mut Budget, ctx: &Ctx) -> Proof<BTreeMap<String, String>> {
+    let windows = guard_runtime_windows_process::windows_directory()
+        .and_then(|path| path.to_str().map(str::to_owned))
+        .ok_or(UNPROVEN_LAUNCH)?;
+    let path = env_value(ctx.env, "PATH")?.ok_or(UNPROVEN_LAUNCH)?;
+    let (_, homes) = super::git_windows::user_config_roots(ctx)?;
+    let homes = homes.iter().map(|home| fs_path::join(home, "bin"));
+    let mut found = BTreeMap::new();
+    for entry in path.split(';').map(str::to_owned).chain(homes) {
+        ctx.check()?;
+        let entry = entry.trim_end_matches(['\\', '/']);
+        let system = SYSTEM_PATH_DIRS
+            .iter()
+            .any(|dir| fs_path::join(&windows, dir).eq_ignore_ascii_case(entry));
+        if entry.is_empty() || system || under_install_root(entry) {
+            continue;
+        }
+        if entry.contains('"') || !fs_path::is_abs(entry) {
+            return Err(UNPROVEN_LAUNCH);
+        }
+        if fs_path::is_dir(entry) {
+            found.extend(bound_files(entry, None, &[".dll"], budget, ctx)?);
+        } else if std::fs::symlink_metadata(entry).is_ok() {
+            return Err(UNPROVEN_LAUNCH);
+        }
+    }
+    Ok(found)
 }
 
 /// A spelling bash and `CreateProcessW` read as the same file: no MSYS root
@@ -289,13 +361,15 @@ struct Budget {
     bytes: u64,
 }
 
-/// Content digests of the loader inputs in `dir`: its DLLs and, for the
-/// application directory of `image_name`, its manifests, `.config` and .NET
-/// host files and each private assembly (`<name>\<name>.dll`, `.manifest`).
+/// Content digests of the loader inputs in `dir`: its files ending in
+/// `suffixes` and, for the application directory of `image_name`, its manifests,
+/// `.config` and .NET host files and each private assembly
+/// (`<name>\<name>.dll`, `.manifest`).
 /// A `<image>.local` redirection is refused.
 fn bound_files(
     dir: &str,
     image_name: Option<&str>,
+    suffixes: &[&str],
     budget: &mut Budget,
     ctx: &Ctx,
 ) -> Proof<BTreeMap<String, String>> {
@@ -332,7 +406,9 @@ fn bound_files(
             {
                 bind(&path, budget, &mut found)?;
             }
-            _ if lowered.ends_with(".dll") => bind(&path, budget, &mut found)?,
+            _ if suffixes.iter().any(|suffix| lowered.ends_with(suffix)) => {
+                bind(&path, budget, &mut found)?
+            }
             _ => {}
         }
     }

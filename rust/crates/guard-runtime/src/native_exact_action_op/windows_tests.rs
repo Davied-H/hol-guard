@@ -76,10 +76,34 @@ fn cmd(cwd: &str, line: &str) -> String {
 }
 
 fn environment() -> BTreeMap<String, String> {
-    ["PATH", "PATHEXT", "SystemRoot", "USERPROFILE"]
+    let mut env: BTreeMap<String, String> = ["PATH", "PATHEXT", "SystemRoot", "USERPROFILE"]
         .into_iter()
         .filter_map(|name| Some((name.to_owned(), std::env::var(name).ok()?)))
-        .collect()
+        .collect();
+    if let Some(path) = env.get_mut("PATH") {
+        *path = without_build_dirs(path);
+    }
+    env
+}
+
+/// Drop the toolchain and target directories cargo prepends to the test
+/// process `PATH`: their DLLs would exceed the binding caps of every launch.
+fn without_build_dirs(path: &str) -> String {
+    let exe = std::env::current_exe().unwrap();
+    let target = exe
+        .ancestors()
+        .find(|dir| dir.file_name().is_some_and(|name| name == "target"))
+        .map(|dir| dir.to_string_lossy().to_ascii_lowercase());
+    path.split(';')
+        .filter(|entry| {
+            let lowered = entry.to_ascii_lowercase();
+            !lowered.contains("\\.rustup\\")
+                && !target
+                    .as_ref()
+                    .is_some_and(|dir| lowered.starts_with(dir.as_str()))
+        })
+        .collect::<Vec<_>>()
+        .join(";")
 }
 
 fn query(

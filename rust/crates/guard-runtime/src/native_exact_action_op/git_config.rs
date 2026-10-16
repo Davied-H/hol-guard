@@ -10,7 +10,7 @@ use serde_json::Value;
 use super::context::Ctx;
 use super::fs_path;
 #[cfg(windows)]
-use super::git_windows::{config_reference_is_pinned, user_config_roots};
+use super::git_windows::{config_reference_is_pinned, path_helpers_stay_idle, user_config_roots};
 use super::reasons::{Proof, GIT_HELPER_CONFIG, UNPROVEN_LAUNCH};
 
 const MAX_CONFIG_BYTES: u64 = 1_048_576;
@@ -20,6 +20,7 @@ const MAX_HOOK_FILES: usize = 32;
 const MAX_ATTRIBUTE_DIRECTORIES: usize = 20_000;
 const SIGNATURE_PLACEHOLDER: &str = "%G";
 const GIT_HELPER_ENVIRONMENT: [&str; 3] = ["GIT_EXTERNAL_DIFF", "GIT_PAGER", "GIT_ATTR_SOURCE"];
+const GIT_LOOKUP_ENVIRONMENT: [&str; 3] = ["GIT_DIR", "GIT_WORK_TREE", "GIT_EXEC_PATH"];
 const CONFIG_NAMES: [&str; 4] = ["config", "config.worktree", ".gitconfig", "gitconfig"];
 /// The text converter the Git for Windows system config names for its own
 /// attributes: a fixed script in the install.
@@ -58,6 +59,29 @@ fn include_path() -> &'static Regex {
     PATTERN.get_or_init(|| Regex::new(r"(?i)^\s*path\s*=\s*(.+?)\s*$").expect("static pattern"))
 }
 
+/// What scanning the config and attribute files found besides their digests.
+/// Git for Windows runs `git-lfs` and `astextplain` through a `PATH` lookup
+/// whose first hit (`~/bin` in Git Bash) the digest cannot bind, so a reuse
+/// must never reach them (`git_windows::path_helpers_stay_idle`).
+#[derive(Default)]
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(super) struct Found {
+    hook_dirs: Vec<String>,
+    pub(super) lfs_filter: bool,
+    pub(super) astextplain: bool,
+    pub(super) attributes_name_lfs: bool,
+}
+
+impl Found {
+    /// An attribute file naming `lfs` anywhere (a `filter=lfs` or a macro
+    /// that sets it) could route a path to the LFS filter.
+    fn saw_attributes(&mut self, data: &[u8]) {
+        self.attributes_name_lfs |= data
+            .windows(3)
+            .any(|window| window.eq_ignore_ascii_case(b"lfs"));
+    }
+}
+
 fn injects_git_helper(name: &str, value: &str) -> bool {
     // Windows variable names are case-insensitive.
     let upper = name.to_ascii_uppercase();
@@ -66,7 +90,10 @@ fn injects_git_helper(name: &str, value: &str) -> bool {
     if name == "GIT_CONFIG_NOSYSTEM" || (name == "GIT_PAGER" && value == "cat") {
         return false;
     }
-    name.starts_with("GIT_CONFIG") || GIT_HELPER_ENVIRONMENT.contains(&name)
+    // A redirected repository or exec path names config and programs the
+    // digest never reads (`GIT_DIR` at a repository with `core.fsmonitor`).
+    let redirects = cfg!(windows) && GIT_LOOKUP_ENVIRONMENT.contains(&name);
+    name.starts_with("GIT_CONFIG") || GIT_HELPER_ENVIRONMENT.contains(&name) || redirects
 }
 
 /// Python's `Path.name in {...}` for a candidate path.
@@ -136,6 +163,7 @@ pub(super) fn git_config_digest(
     git_dir: &str,
     common_dir: &str,
     system: &[String],
+    invocation: &[String],
     ctx: &Ctx,
 ) -> Proof<String> {
     if ctx
@@ -152,7 +180,7 @@ pub(super) fn git_config_digest(
         .cloned()
         .collect();
     let mut seen: BTreeMap<String, String> = BTreeMap::new();
-    let mut hook_dirs: Vec<String> = Vec::new();
+    let mut found = Found::default();
     let mut queue: VecDeque<(String, usize)> =
         candidates.into_iter().map(|path| (path, 0)).collect();
     while let Some((path, depth)) = queue.pop_front() {
@@ -177,20 +205,18 @@ pub(super) fn git_config_digest(
         seen.insert(path.clone(), fs_path::sha256_hex(&data));
         // Included files are config whatever they are named; the rest are attributes.
         if configs.contains(&path) || depth > 0 {
-            let included = scan_config(
-                &String::from_utf8_lossy(&data),
-                &path,
-                ctx.home,
-                &mut hook_dirs,
-            )?;
+            let included =
+                scan_config(&String::from_utf8_lossy(&data), &path, ctx.home, &mut found)?;
             if !included.is_empty() && depth + 1 > MAX_INCLUDE_DEPTH {
                 return Err(UNPROVEN_LAUNCH);
             }
             queue.extend(included.into_iter().map(|target| (target, depth + 1)));
+        } else {
+            found.saw_attributes(&data);
         }
     }
     let mut hooks = vec![fs_path::join(common_dir, "hooks")];
-    hooks.extend(hook_dirs);
+    hooks.extend(std::mem::take(&mut found.hook_dirs));
     let mut visited_hooks = BTreeSet::new();
     for hooks_dir in hooks
         .into_iter()
@@ -201,7 +227,11 @@ pub(super) fn git_config_digest(
         }
         seen.extend(hook_digests(&hooks_dir)?);
     }
-    seen.extend(nested_attribute_digests(root, ctx)?);
+    seen.extend(nested_attribute_digests(root, &mut found, ctx)?);
+    #[cfg(windows)]
+    path_helpers_stay_idle(&found, invocation, root, git_dir)?;
+    #[cfg(not(windows))]
+    let _ = invocation;
     // `sorted(seen.items())` as compact JSON pairs.
     let pairs: Vec<Value> = seen
         .iter()
@@ -248,7 +278,11 @@ fn is_cache_tree(directory: &str) -> bool {
 }
 
 /// Hash every nested `.gitattributes` under the worktree (the root one is a candidate).
-fn nested_attribute_digests(root: &str, ctx: &Ctx) -> Proof<BTreeMap<String, String>> {
+fn nested_attribute_digests(
+    root: &str,
+    found: &mut Found,
+    ctx: &Ctx,
+) -> Proof<BTreeMap<String, String>> {
     let mut digests = BTreeMap::new();
     let mut visited = 0usize;
     let mut pending = vec![root.to_owned()];
@@ -269,7 +303,10 @@ fn nested_attribute_digests(root: &str, ctx: &Ctx) -> Proof<BTreeMap<String, Str
                 if name != ".git" && name != "node_modules" && !is_cache_tree(&path) && !is_link {
                     pending.push(path);
                 }
-            } else if name == ".gitattributes" {
+            } else if name == ".gitattributes"
+                || (cfg!(windows) && name.eq_ignore_ascii_case(".gitattributes"))
+            {
+                // NTFS opens `.GitAttributes` for git's `.gitattributes`.
                 has_attributes = true;
             }
         }
@@ -286,6 +323,7 @@ fn nested_attribute_digests(root: &str, ctx: &Ctx) -> Proof<BTreeMap<String, Str
             return Err(UNPROVEN_LAUNCH);
         }
         let data = fs_path::read_bounded(&path, MAX_CONFIG_BYTES).ok_or(UNPROVEN_LAUNCH)?;
+        found.saw_attributes(&data);
         digests.insert(path, fs_path::sha256_hex(&data));
     }
     Ok(digests)
@@ -309,7 +347,7 @@ fn scan_config(
     text: &str,
     config_file: &str,
     home: Option<&str>,
-    hook_dirs: &mut Vec<String>,
+    found: &mut Found,
 ) -> Proof<Vec<String>> {
     let mut included = Vec::new();
     let mut section = String::new();
@@ -333,7 +371,7 @@ fn scan_config(
             &subsection,
             config_file,
             home,
-            hook_dirs,
+            found,
             &mut included,
         )?;
     }
@@ -346,7 +384,7 @@ fn scan_key(
     subsection: &str,
     config_file: &str,
     home: Option<&str>,
-    hook_dirs: &mut Vec<String>,
+    found: &mut Found,
     included: &mut Vec<String>,
 ) -> Proof<()> {
     let Some(key) = config_key().captures(line) else {
@@ -358,10 +396,12 @@ fn scan_key(
         .map_or("", |value| value.as_str())
         .trim_matches('"');
     if section == "filter" && subsection == "lfs" && LFS_FILTER.contains(&(name.as_str(), value)) {
+        found.lfs_filter = true;
         return Ok(());
     }
     #[cfg(windows)]
     if section == "diff" && name == "textconv" && (subsection, value) == ASTEXTPLAIN {
+        found.astextplain = true;
         return Ok(());
     }
     #[cfg(windows)]
@@ -377,7 +417,7 @@ fn scan_key(
         if value.is_empty() || !(value.starts_with("~/") || fs_path::is_abs(value)) {
             return Err(GIT_HELPER_CONFIG);
         }
-        hook_dirs.push(config_path(value, config_file, home));
+        found.hook_dirs.push(config_path(value, config_file, home));
         return Ok(());
     }
     if value.contains(SIGNATURE_PLACEHOLDER) || selects_helper(section, &name) {
