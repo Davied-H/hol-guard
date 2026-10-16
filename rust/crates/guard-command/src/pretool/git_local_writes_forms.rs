@@ -1,6 +1,7 @@
 //! The argument forms of the local Git writes `git_local_writes` proves:
 //! `add`, a non-forced `rm`, `commit` with its message on the command line
-//! and a non-forced `branch` rename, plus the `stash list` read beside them.
+//! and a non-forced `branch` rename, plus the `stash list` and `stash show`
+//! reads beside them.
 
 use super::super::git_remote_config::GitConfig;
 use crate::{CanonicalCommandV1, CommandSegmentV1};
@@ -169,6 +170,37 @@ pub(super) fn stash_restore(rest: &[&str]) -> bool {
     })
 }
 
+/// `stash show` with the diff options that only choose how the entry's diff
+/// is printed, and at most one entry. The options an external or textconv
+/// driver needs (`--ext-diff`, `--textconv`) are refused, so the read runs
+/// only Git's own diff.
+pub(super) fn stash_show(rest: &[&str]) -> bool {
+    let mut entries = 0;
+    rest.iter().all(|option| match *option {
+        "-p"
+        | "-u"
+        | "--patch"
+        | "--include-untracked"
+        | "--only-untracked"
+        | "--stat"
+        | "--numstat"
+        | "--shortstat"
+        | "--name-only"
+        | "--name-status"
+        | "--summary"
+        | "--no-color"
+        | "--no-ext-diff"
+        | "--no-textconv"
+        | "-q"
+        | "--quiet" => true,
+        entry if stash_entry(entry) => {
+            entries += 1;
+            entries == 1
+        }
+        _ => false,
+    })
+}
+
 fn stash_entry(value: &str) -> bool {
     let index = value
         .strip_prefix("stash@{")
@@ -180,6 +212,7 @@ fn stash_entry(value: &str) -> bool {
 /// Whether the `git stash` at `index` starts no program its hooks do not
 /// cover. Stash pages only under its own `pager.stash` setting. `list` runs
 /// `git log -g refs/stash`, held to the configuration proof of that log
+/// read; `show` prints the entry's diff, held to the proof of a `git diff`
 /// read; `apply` and `pop` merge the entry, which may run a configured merge
 /// driver, and then run `git status`, held to the proof of that read.
 pub(super) fn stash_free(
@@ -218,6 +251,9 @@ pub(super) fn stash_free(
             .is_none_or(|values| values.iter().all(pager_off)))
         && match segment.arguments.get(1).map(String::as_str) {
             Some("list") => free(&["log", "-g", "--first-parent", "refs/stash"]),
+            // `stash show` prints the entry's diff, so it clears under the
+            // same configuration proof a `git diff` read clears under.
+            Some("show") => free(&["diff"]),
             Some("apply" | "pop") => !merge_driver && free(&["status"]),
             _ => true,
         }

@@ -142,6 +142,9 @@ fn stash_restores_and_identity_variables_are_local_writes() {
     for command in [
         "git stash list",
         "git stash list -n 5",
+        "git stash show",
+        "git stash show -p stash@{0}",
+        "git stash show --stat --name-only 1",
         "git stash apply",
         "git stash apply --index",
         "git stash pop -q 0",
@@ -157,7 +160,9 @@ fn stash_restores_and_identity_variables_are_local_writes() {
         "git stash clear",
         "git stash apply stash@{0} stash@{1}",
         "git stash list -p",
-        "git stash show -p",
+        "git stash show --ext-diff",
+        "git stash show --textconv stash@{0}",
+        "git stash show stash@{0} stash@{1}",
         "git config core.pager 'sh -c id'; git log",
         "git -c core.pager='sh -c id' log",
         "git -c core.pager='sh -c id' stash list",
@@ -175,6 +180,8 @@ fn stash_restores_and_identity_variables_are_local_writes() {
     }
     for (key, value, command) in [
         ("pager.stash", "sh -c id", "git stash list"),
+        ("pager.stash", "sh -c id", "git stash show -p"),
+        ("diff.external", "sh -c id", "git stash show -p"),
         ("pager.log", "sh -c id", "git stash list"),
         ("pager.status", "sh -c id", "git stash pop"),
         ("merge.custom.driver", "sh -c id", "git stash apply"),
