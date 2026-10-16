@@ -13,9 +13,12 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
+mod launch;
+
 use super::{read_paths, PathContext};
 use crate::CanonicalCommandV1;
 use guard_contracts::PreToolResultV1;
+use launch::{Fed, Program, Stdin};
 
 const MAX_FILE_BYTES: usize = 256 * 1024;
 const MAX_TOTAL_BYTES: usize = 1024 * 1024;
@@ -91,32 +94,83 @@ pub(super) struct Findings {
     pub(super) credential_store: bool,
 }
 
-/// What each script this command launches does, one entry per script whose
-/// source could be read.
+/// What each script this command launches does, one entry per program whose
+/// source could be read: a script file, inline source (`-c`, `-e`), or a
+/// program fed on standard input from a heredoc, a local file redirect or a
+/// `cat <file> |` pipe. A program fed to an interpreter inside a container
+/// or pod (`kubectl exec … -- node -`) is read too, without its imports.
 pub(super) fn assess(model: &CanonicalCommandV1, context: PathContext<'_>) -> Vec<Findings> {
+    assess_programs(model, context, true)
+}
+
+/// `assess`, leaving out script files when `scripts` is false.
+fn assess_programs(
+    model: &CanonicalCommandV1,
+    context: PathContext<'_>,
+    scripts: bool,
+) -> Vec<Findings> {
     let mut findings = Vec::new();
     if model.confidence != "exact"
         || !read_paths::verified_path_context(context.home_dir, context.cwd)
     {
         return findings;
     }
+    let stdin = Stdin::new(model);
     for (index, segment) in model.segments.iter().enumerate() {
-        let Some((language, script)) = launched_script(segment) else {
+        let Some((language, program, remote)) = launch::launched_program(segment) else {
             continue;
         };
-        // An earlier directory change moves a relative script out of reach.
+        // An earlier directory change moves a relative path out of reach.
         let moved = model.segments[..index].iter().any(|prior| {
             prior.executable.as_deref().is_some_and(|value| {
                 matches!(super::executable_basename(value), "cd" | "pushd" | "popd")
             })
         });
-        if moved && !Path::new(script).is_absolute() {
-            continue;
-        }
-        let Some(path) = resolve(script, context) else {
-            continue;
+        let reachable = |path: &str| !moved || Path::new(path).is_absolute();
+        // Imports resolve against the working directory for inline source,
+        // and inside the container for a remote program, so they are not read.
+        let imports_from = || {
+            (!moved && !remote)
+                .then(|| context.cwd.and_then(|cwd| std::fs::canonicalize(cwd).ok()))
+                .flatten()
         };
-        let Some(sources) = read_graph(language, path) else {
+        let entry = match program {
+            Program::Script(script) if scripts && !remote && reachable(script) => {
+                let Some(path) = resolve(script, context) else {
+                    continue;
+                };
+                Entry::File(path)
+            }
+            Program::Script(_) => continue,
+            Program::Inline(source) => Entry::Text {
+                source: source.to_owned(),
+                directory: imports_from(),
+            },
+            Program::Stdin => match stdin.source(model, index) {
+                Some(Fed::Text(source)) => Entry::Text {
+                    source,
+                    directory: imports_from(),
+                },
+                Some(Fed::File(file)) if reachable(&file) => {
+                    let Some(path) = resolve(&file, context) else {
+                        continue;
+                    };
+                    if remote {
+                        let Some(source) = read_text(&path) else {
+                            continue;
+                        };
+                        Entry::Text {
+                            source,
+                            directory: None,
+                        }
+                    } else {
+                        Entry::File(path)
+                    }
+                }
+                _ => continue,
+            },
+        };
+        let Some(sources) = read_graph(language, entry) else {
             continue;
         };
         let mut found = Findings::default();
@@ -133,22 +187,36 @@ pub(super) fn assess(model: &CanonicalCommandV1, context: PathContext<'_>) -> Ve
     findings
 }
 
-/// Whether one launched script both reads a credential store and uses the
-/// network. Two scripts that each do one of them are not paired.
+/// Whether one launched program both reads a credential store and uses the
+/// network. Two programs that each do one of them are not paired.
 pub(super) fn exfiltrates(model: &CanonicalCommandV1, context: PathContext<'_>) -> bool {
     assess(model, context)
         .iter()
         .any(|found| found.network && found.credential_store)
 }
 
-/// Keeps the review of a command whose script uses the network: the sandbox
-/// withholds it, so the script would only fail there.
+/// Whether a program this command launches uses the network.
+pub(super) fn uses_network(model: &CanonicalCommandV1, context: PathContext<'_>) -> bool {
+    assess(model, context).iter().any(|found| found.network)
+}
+
+/// Whether inline source or a program fed on standard input uses the
+/// network. A test script that imports a client usually stubs it, so script
+/// files are left to their own route.
+pub(super) fn inline_uses_network(model: &CanonicalCommandV1, context: PathContext<'_>) -> bool {
+    assess_programs(model, context, false)
+        .iter()
+        .any(|found| found.network)
+}
+
+/// Keeps the review of a command whose program uses the network: the sandbox
+/// withholds it, so the program would only fail there.
 pub(super) fn keeps_network_review(
     result: &mut PreToolResultV1,
     model: &CanonicalCommandV1,
     context: PathContext<'_>,
 ) -> bool {
-    if !assess(model, context).iter().any(|found| found.network) {
+    if !uses_network(model, context) {
         return false;
     }
     result.reason = concat!(
@@ -157,60 +225,6 @@ pub(super) fn keeps_network_review(
     )
     .into();
     true
-}
-
-fn launched_script(segment: &crate::CommandSegmentV1) -> Option<(Language, &str)> {
-    let name = super::executable_basename(segment.executable.as_deref()?);
-    let name = name.strip_suffix(".exe").unwrap_or(name);
-    let arguments = segment.arguments.as_slice();
-    let python = name.strip_prefix("python").is_some_and(|version| {
-        version
-            .split('.')
-            .all(|part| part.bytes().all(|byte| byte.is_ascii_digit()))
-    });
-    if python {
-        return first_operand(arguments, PYTHON_VALUE_OPTIONS, &["-c", "-m", "-"])
-            .map(|script| (Language::Python, script));
-    }
-    let arguments = match (name, arguments) {
-        ("bun" | "deno", [run, rest @ ..]) if run == "run" => rest,
-        ("node" | "nodejs" | "bun" | "tsx" | "deno", rest) => rest,
-        _ => return None,
-    };
-    let script = first_operand(
-        arguments,
-        NODE_VALUE_OPTIONS,
-        &["-e", "--eval", "-p", "--print", "-"],
-    )?;
-    NODE_EXTENSIONS
-        .contains(&extension(Path::new(script)).as_str())
-        .then_some((Language::Node, script))
-}
-
-/// The first argument that is not an option, unless an option that runs
-/// other code (inline source, a module, standard input) comes first.
-fn first_operand<'a>(
-    arguments: &'a [String],
-    value_options: &[&str],
-    stops: &[&str],
-) -> Option<&'a str> {
-    let mut rest = arguments.iter();
-    while let Some(argument) = rest.next() {
-        if stops.contains(&argument.as_str()) {
-            return None;
-        }
-        if argument == "--" {
-            return rest.next().map(String::as_str);
-        }
-        if value_options.contains(&argument.as_str()) {
-            rest.next()?;
-            continue;
-        }
-        if !argument.starts_with('-') {
-            return Some(argument);
-        }
-    }
-    None
 }
 
 fn resolve(script: &str, context: PathContext<'_>) -> Option<PathBuf> {
@@ -228,45 +242,75 @@ fn resolve(script: &str, context: PathContext<'_>) -> Option<PathBuf> {
         .filter(|path| path.is_file())
 }
 
-/// The script's source and that of the local modules it imports, breadth
-/// first, within the file and byte bounds, or `None` when the script itself
+enum Entry {
+    File(PathBuf),
+    /// Source with no file of its own; local imports resolve from
+    /// `directory`, or are not read without one.
+    Text {
+        source: String,
+        directory: Option<PathBuf>,
+    },
+}
+
+/// The program's source and that of the local modules it imports, breadth
+/// first, within the file and byte bounds, or `None` when the program itself
 /// cannot be read. A module that cannot be read, or would pass the byte
 /// bound, is left out so what the rest of the graph does still counts.
 /// Packages and the standard library are not read.
-fn read_graph(language: Language, entry: PathBuf) -> Option<Vec<String>> {
-    let root = entry.parent()?.to_path_buf();
-    let mut seen = BTreeSet::from([entry.clone()]);
-    let mut queue = VecDeque::from([entry.clone()]);
-    let mut sources = Vec::new();
-    let mut total = 0usize;
-    while let Some(path) = queue.pop_front() {
-        let source = guard_secure_fs::read_bounded(&path, MAX_FILE_BYTES)
-            .ok()
-            .filter(|read| total + read.bytes.len() <= MAX_TOTAL_BYTES)
-            .and_then(|read| String::from_utf8(read.bytes).ok());
-        let (Some(source), Some(directory)) = (source, path.parent()) else {
-            if path == entry {
+fn read_graph(language: Language, entry: Entry) -> Option<Vec<String>> {
+    let (root, mut seen, first) = match entry {
+        Entry::File(path) => {
+            let root = path.parent()?.to_path_buf();
+            let source = read_text(&path)?;
+            (
+                Some(root.clone()),
+                BTreeSet::from([path]),
+                (source, Some(root)),
+            )
+        }
+        Entry::Text { source, directory } => {
+            if source.len() > MAX_FILE_BYTES {
                 return None;
             }
-            continue;
-        };
+            (directory.clone(), BTreeSet::new(), (source, directory))
+        }
+    };
+    let mut queue = VecDeque::new();
+    let mut sources = Vec::new();
+    let mut total = 0usize;
+    let mut next = Some(first);
+    while let Some((source, directory)) = next.take() {
         total += source.len();
-        let directory = directory.to_path_buf();
-        let imports = match language {
-            Language::Node => node_imports(&source, &directory),
-            Language::Python => python_imports(&source, &root, &directory),
-        };
-        for import in imports {
-            if seen.len() >= MAX_FILES {
-                break;
-            }
-            if seen.insert(import.clone()) {
-                queue.push_back(import);
+        if let (Some(root), Some(directory)) = (root.as_deref(), directory.as_deref()) {
+            let imports = match language {
+                Language::Node => node_imports(&source, directory),
+                Language::Python => python_imports(&source, root, directory),
+            };
+            for import in imports {
+                if seen.len() >= MAX_FILES {
+                    break;
+                }
+                if seen.insert(import.clone()) {
+                    queue.push_back(import);
+                }
             }
         }
         sources.push(source);
+        while let Some(path) = queue.pop_front() {
+            let source = read_text(&path).filter(|source| total + source.len() <= MAX_TOTAL_BYTES);
+            if let (Some(source), Some(directory)) = (source, path.parent()) {
+                next = Some((source, Some(directory.to_path_buf())));
+                break;
+            }
+        }
     }
     Some(sources)
+}
+
+fn read_text(path: &Path) -> Option<String> {
+    guard_secure_fs::read_bounded(path, MAX_FILE_BYTES)
+        .ok()
+        .and_then(|read| String::from_utf8(read.bytes).ok())
 }
 
 fn node_imports(source: &str, directory: &Path) -> Vec<PathBuf> {
@@ -410,7 +454,11 @@ fn code_lines(language: Language, source: &str) -> String {
             .match_indices(marker)
             .find(|(at, _)| line[..*at].ends_with([' ', '\t']))
             .map_or(line.len(), |(at, _)| at);
-        code.push_str(&line[..end]);
+        // `python -c 'import os; import socket'` puts statements on one line.
+        match language {
+            Language::Python => code.push_str(&line[..end].replace(';', "\n")),
+            Language::Node => code.push_str(&line[..end]),
+        }
         code.push('\n');
     }
     code
