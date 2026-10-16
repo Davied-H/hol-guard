@@ -132,6 +132,33 @@ pub(in crate::pretool) fn home_hidden_content_read(
         && super::super::resolved_location_allowed(&canonical, home_dir, cwd, false)
 }
 
+/// The same screen for a path a caller has already resolved.
+///
+/// A structured read tool hands its target to the shared resolved-path gate
+/// rather than to a spelling screen, so the canonical path is all there is to
+/// read. That is the stronger starting point: a link has already been followed,
+/// so a name below the home directory cannot stand in for a store somewhere
+/// else. What is left is the same question the spelling screen asks, over the
+/// components the path has after the home prefix.
+pub(in crate::pretool) fn resolved_home_hidden_content_read(
+    canonical: &Path,
+    home_dir: Option<&str>,
+) -> bool {
+    let Some(raw_home) = home_dir else {
+        return false;
+    };
+    let Ok(home) = std::fs::canonicalize(raw_home) else {
+        return false;
+    };
+    let Ok(relative) = canonical.strip_prefix(&home) else {
+        return false;
+    };
+    let lowered = lowered_names(relative);
+    lowered.first().is_some_and(|first| first.starts_with('.'))
+        && hidden_content_read_allowed(&lowered)
+        && !narrow_guidance_rule_owns(&lowered)
+}
+
 fn expanded(value: &str, home_dir: Option<&str>, cwd: Option<&str>) -> Option<PathBuf> {
     let path = if value == "~" || value.starts_with("~/") || value.starts_with("~\\") {
         PathBuf::from(super::super::expand_home_read_path(value, home_dir)?)

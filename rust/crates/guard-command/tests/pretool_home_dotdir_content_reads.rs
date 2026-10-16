@@ -108,6 +108,30 @@ fn action(home: &Path, harness: &str, command: &str) -> String {
     .minimum_action
 }
 
+/// The structured read tools: Claude Code's `Read` and Oh My Pi's `read`.
+/// They never reach the shell screens, so the class rule has to sit at the
+/// resolved-path gate both families end at.
+fn native_action(home: &Path, harness: &str, tool: &str, target: &str) -> String {
+    let cwd = home.join("work/project");
+    let path = home.join(target);
+    let path = path.to_str().unwrap();
+    let input = if tool == "read" {
+        json!({"path": path})
+    } else {
+        json!({"file_path": path})
+    };
+    evaluate_pre_tool_envelope_with_context(
+        harness,
+        "PreToolUse",
+        &json!({"tool_name": tool, "tool_input": input}),
+        None,
+        None,
+        home.to_str(),
+        cwd.to_str(),
+    )
+    .minimum_action
+}
+
 #[test]
 fn ordinary_source_below_a_hidden_directory_reads() {
     let home = home("allowed");
@@ -209,5 +233,49 @@ fn a_harness_home_opens_only_at_its_document_side() {
         "cat ~/.claude/shell-snapshots/snapshot-zsh.sh",
     ] {
         assert_ne!(action(&home, "codex", command), "allow", "{command}");
+    }
+}
+
+/// A `Read` of the same file is the same read. The shell screens sit on a
+/// spelling; a structured tool hands over a path, so without the rule at the
+/// resolved gate the harnesses that read this way keep asking.
+#[test]
+fn the_native_read_tool_answers_as_the_shell_does() {
+    let home = home("native");
+    for (harness, tool) in [("claude-code", "Read"), ("omp", "read")] {
+        for target in [
+            ".agents/skills/release-check/scripts/run.sh",
+            ".github/workflows/ci.yml",
+            ".nvm/versions/node/v25.2.1/lib/node_modules/pkg/package.json",
+            ".cargo/registry/src/index.crates.io/serde-1.0.0/src/lib.rs",
+            ".codex/plans/order-intake/todo.md",
+        ] {
+            assert_eq!(
+                native_action(&home, harness, tool, target),
+                "allow",
+                "{harness} {tool} {target}"
+            );
+        }
+        for target in [
+            ".ssh/config",
+            ".config/gh/hosts.yml",
+            ".config/gcloud/credentials.db",
+            ".local/share/opencode/auth.json",
+            ".codex/auth.json",
+            ".claude/.credentials.json",
+            ".gemini/oauth_creds.json",
+            ".agents/skills/release-check/config.json",
+            ".secrets/service-account.json",
+            ".certs/server.pem",
+            ".envrc",
+            ".codex/sessions/2026-10-16/rollout.jsonl",
+            ".claude/shell-snapshots/snapshot-zsh.sh",
+        ] {
+            assert_ne!(
+                native_action(&home, harness, tool, target),
+                "allow",
+                "{harness} {tool} {target}"
+            );
+        }
     }
 }

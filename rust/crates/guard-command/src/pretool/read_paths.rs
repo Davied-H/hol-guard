@@ -12,6 +12,7 @@ mod hidden_listing;
 mod omp_json_query;
 #[path = "omp_read_targets.rs"]
 mod omp_targets;
+use hidden_listing::resolved_home_hidden_content_read;
 pub(super) use hidden_listing::{
     home_hidden_content_read, home_hidden_directory, repository_hidden_directory,
 };
@@ -256,7 +257,9 @@ pub(super) fn resolved_path_allowed_for_operation(
                     || git_config_document(canonical, cwd)
                     || worktree_gitfile(canonical)
                     || scratch::workspace_scratch_read(canonical, home_dir, cwd)))
-            || (read_only && execution_output_log(canonical, home_dir)))
+            || (read_only
+                && (execution_output_log(canonical, home_dir)
+                    || resolved_home_hidden_content_read(canonical, home_dir))))
     {
         return false;
     }
