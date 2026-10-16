@@ -56,7 +56,68 @@ pub(in crate::pretool) fn repository_inert(
     if !guarded.iter().all(|path| owned_where_shared(path, &roots)) {
         return Some(false);
     }
+    if let Some(hook) = hook.first().filter(|hook| drive_relative_root(hook)) {
+        return null_hook_inert(base, directories, hook, deadline);
+    }
     Some(hook.iter().all(|hook| hook_inert(hook)))
+}
+
+/// Git for Windows answers the hook below `core.hooksPath=/dev/null` without
+/// a drive and resolves it against the root of the directory the hook runs
+/// in: the working directory, a `-C` target, the worktree or, for a bare
+/// repository, the Git directory. Only that spelling is proven, and only
+/// while every one of those roots and every drive is local and holds no
+/// hook. Any other rooted path without a drive stays unproven.
+fn null_hook_inert(
+    base: &Command,
+    directories: &[PathBuf],
+    hook: &Path,
+    deadline: Instant,
+) -> Option<bool> {
+    let null = Path::new("/dev/null");
+    if hook.parent() != Some(null) || hook.file_name()? != "post-index-change" {
+        return None;
+    }
+    let mut directory = match base.get_current_dir() {
+        Some(directory) => directory.to_path_buf(),
+        None => std::env::current_dir().ok()?,
+    };
+    let mut roots = vec![directory.clone()];
+    let mut arguments = base.get_args();
+    while let Some(argument) = arguments.next() {
+        if argument == "-C" {
+            // Git Bash rewrites a rooted target without a drive to a
+            // directory of its own, so this probe cannot follow it.
+            let target = Path::new(arguments.next()?);
+            if drive_relative_root(target) {
+                return None;
+            }
+            directory = directory.join(target);
+            roots.push(directory.clone());
+        }
+    }
+    roots.extend_from_slice(directories);
+    roots.extend(toplevel(base, deadline)?);
+    let roots = roots.iter().map(PathBuf::as_path).collect::<Vec<_>>();
+    let hooks = ["post-index-change"];
+    Some(crate::command_compatibility::git_rooted_hooks_inert(
+        "dev\\null",
+        &hooks,
+        &roots,
+        deadline,
+    ))
+}
+
+/// The worktree a hook would run in: `Some(None)` outside any worktree.
+fn toplevel(base: &Command, deadline: Instant) -> Option<Option<PathBuf>> {
+    let mut command = super::copy_command(base)?;
+    command.args(["--no-pager", "rev-parse", "--show-toplevel"]);
+    let (status, bytes) = super::output(&mut command, deadline, PATH_LIMIT)?;
+    if !status.success() {
+        return Some(None);
+    }
+    let mut paths = absolute_lines(&bytes, 1)?;
+    paths.pop().filter(|path| path.is_absolute()).map(Some)
 }
 
 /// The absolute Git and common directories, then the `post-index-change` hook
@@ -120,24 +181,10 @@ fn absolute_lines(bytes: &[u8], count: usize) -> Option<Vec<PathBuf>> {
 
 /// A missing hook, a directory or a plain non-executable file never runs, nor
 /// does a hook path below a file (`core.hooksPath=/dev/null`).
-///
-/// Git for Windows answers a hook path below a POSIX-rooted hooks path
-/// (`/dev/null`, `/tmp/no-hooks`) without a drive and resolves it against
-/// whichever drive is current when the hook would run, so such a hook is
-/// inert only when it is inert on every drive.
 fn hook_inert(path: &Path) -> bool {
-    if drive_relative_root(path) {
-        return (b'A'..=b'Z').all(|drive| {
-            let mut anchored = std::ffi::OsString::from(format!("{}:", drive as char));
-            anchored.push(path.as_os_str());
-            hook_inert(Path::new(&anchored))
-        });
-    }
     match std::fs::symlink_metadata(path) {
         Err(error) => {
             error.kind() == std::io::ErrorKind::NotFound
-                // No such drive, or no media in the drive.
-                || cfg!(windows) && matches!(error.raw_os_error(), Some(15 | 21))
                 || path
                     .parent()
                     .and_then(|parent| std::fs::metadata(parent).ok())
