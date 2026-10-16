@@ -271,7 +271,6 @@ pub(in crate::pretool) fn standalone_clean(language: Language, path: &Path) -> b
     !network && !CREDENTIAL_STORE.is_match(&code)
 }
 
-
 /// Whether a program this command launches uses the network.
 pub(super) fn uses_network(model: &CanonicalCommandV1, context: PathContext<'_>) -> bool {
     assess(model, context).iter().any(|found| found.network)
