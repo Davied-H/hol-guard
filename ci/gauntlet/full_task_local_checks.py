@@ -14,6 +14,7 @@ import posixpath
 import re
 import subprocess
 from collections.abc import Callable
+from html.parser import HTMLParser
 from pathlib import Path
 
 from .full_task_git import blob, git_lines, tree
@@ -59,6 +60,36 @@ def _todo_operations(text: str) -> bool:
 def _game_logic(text: str) -> bool:
     """Code that names gravity, flapping and pipes and defines a function."""
     return all(word in text for word in ("gravity", "flap", "pipe")) and _defines(text, ("",))
+
+
+class _InlineScripts(HTMLParser):
+    """Collects the text of ``<script>`` elements that carry no ``src`` attribute."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.scripts: list[str] = []
+        self._open: list[str] | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag == "script" and not any(name == "src" for name, _ in attrs):
+            self._open = []
+
+    def handle_data(self, data: str) -> None:
+        if self._open is not None:
+            self._open.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "script" and self._open is not None:
+            self.scripts.append("".join(self._open))
+            self._open = None
+
+
+def inline_scripts(html: str) -> list[str]:
+    """Inline script bodies of an HTML document, tolerant of ``</script >`` and any tag case."""
+    parser = _InlineScripts()
+    parser.feed(html)
+    parser.close()
+    return parser.scripts
 
 
 def _parses_as_js(text: str, home: Path) -> bool:
@@ -195,7 +226,7 @@ def flappy_bird_checks(workspace: Path, home: Path) -> dict[str, bool]:
         blob(workspace, "HEAD", name) for name in files if name.endswith(JS_SUFFIXES) and not _JS_TEST.search(name)
     )
     game = (pages + "\n" + scripts).lower()
-    inline = re.findall(r"<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>", pages, re.S | re.I)
+    inline = inline_scripts(pages)
     plain = [
         blob(workspace, "HEAD", name)
         for name in files

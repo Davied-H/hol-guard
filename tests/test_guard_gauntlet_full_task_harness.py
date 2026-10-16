@@ -358,3 +358,10 @@ def test_runner_rejects_unsupported_harness_with_accurate_message() -> None:
     with pytest.raises(ValueError, match="claude-code or codex") as raised:
         run_harness_full_tasks(harness="omp", expected_source_sha="x", output=Path("unused"), mode="enforce")
     assert "omp" not in str(raised.value)
+
+
+def test_inline_scripts_tolerate_closer_spacing_and_case() -> None:
+    from ci.gauntlet.full_task_local_checks import inline_scripts
+
+    html = "<SCRIPT>let a = 1;</SCRIPT ><script src=x.js>ignored()</script><Script type=module>let b = 2;</SCRIPT foo>"
+    assert inline_scripts(html) == ["let a = 1;", "let b = 2;"]
