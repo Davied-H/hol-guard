@@ -13,6 +13,7 @@ from pathlib import Path
 
 from ..windows_paths import trusted_windows_local_temp
 from . import restricted_git, restricted_node_test, restricted_node_tool, restricted_vitest
+from .contained_authority import settled_authority
 from .contained_command_prefix import _assignments_applied, _peel_for_receipt, _split_command_prefix
 from .contained_run_directory import as_directory_change, as_run_root
 from .contained_wrapper import anchored_sibling_root, bounded_output, peel_contained_wrapper, sibling_project_root
@@ -28,6 +29,7 @@ from .restricted_pytest_model import (
     GIT_READ_ONLY_PROFILE_VERSION,
     NODE_BUILD_OUTPUT_PROFILE_VERSION,
     NODE_TEST_READ_ONLY_PROFILE_VERSION,
+    PYTEST_INVALID_COMMAND_REASON_CODE,
     PYTEST_READ_ONLY_PROFILE_VERSION,
     VITEST_READ_ONLY_PROFILE_VERSION,
 )
@@ -197,7 +199,7 @@ def run_authorized_contained_test(
         # Oh My Pi runs the command in its `cwd` argument. The call as issued
         # must carry the receipt; the explicit `cd` form is then authorized
         # and run by the wrapper path below.
-        receipt = authorize(payload)
+        receipt = settled_authority(authorize, payload)
         if not _contained_receipt(receipt):
             raise _reject()
         if receipt_matches(receipt):
@@ -255,14 +257,14 @@ def run_authorized_contained_test(
     except (OSError, RuntimeError, ValueError) as error:
         # Pipelines and lists the wrapper cannot peel (`| sort`, `&&`) still
         # run as issued when Rust chose the workspace sandbox for them.
-        exit_code = run_workspace(authorize(payload))
+        exit_code = run_workspace(settled_authority(authorize, payload))
         if exit_code is None:
             raise _reject() from error
         return exit_code
     if peeled is not None:
         # The wrapped original must carry the receipt; the core is then
         # re-authorized in its resolved directory by the recursive call.
-        receipt = authorize(payload)
+        receipt = settled_authority(authorize, payload)
         if not _contained_receipt(receipt):
             raise _reject()
         core, directory, output = peeled
@@ -303,7 +305,7 @@ def run_authorized_contained_test(
         return 0
 
     anchored = anchored_sibling_root(tool_input["command"], workspace=workspace, cwd=cwd, home=home_dir)
-    receipt = authorize(payload) if anchored is not None else None
+    receipt = settled_authority(authorize, payload) if anchored is not None else None
     if anchored is not None and receipt_matches(receipt) and isinstance(receipt, Mapping):
         # An absolute script in a sibling repository runs from that root, as
         # after `cd <root> &&`; any other receipt takes the paths below.
@@ -325,7 +327,7 @@ def run_authorized_contained_test(
         # Like a wrapper: the original carries the receipt, then the core is
         # authorized again and runs with the assignments exported (a dropped
         # data setting too). A workspace receipt runs the original as issued.
-        receipt = authorize(payload)
+        receipt = settled_authority(authorize, payload)
         exit_code = run_workspace(receipt)
         if exit_code is not None:
             return exit_code
@@ -373,12 +375,18 @@ def run_authorized_contained_test(
             node_test_plan = restricted_node_test.prepare_restricted_node_test(command, workspace=workspace, cwd=cwd)
         else:
             prepare_restricted_pytest(command, workspace=workspace, cwd=cwd, read_only_workspace=True)
-    except RestrictedPytestError:
+    except RestrictedPytestError as error:
         # The read-only planners reject the mutating shapes (`git add && git
         # commit`, `node -e`, `./todo.py`) that Rust sends to the workspace
         # sandbox. Only a live workspace receipt runs them; anything else fails.
-        exit_code = run_workspace(authorize(payload))
+        exit_code = run_workspace(settled_authority(authorize, payload))
         if exit_code is None:
+            if error.reason_code == PYTEST_INVALID_COMMAND_REASON_CODE:
+                # The command never named pytest; the read-only pytest planner
+                # was the last shape tried, not the shape the user ran. Its
+                # message would send them after a pytest invocation that was
+                # never there, so report the authorization that actually failed.
+                raise _reject() from error
             raise
         return exit_code
     if inline_plan is not None:
@@ -416,7 +424,7 @@ def run_authorized_contained_test(
 
     # Authorize after planning so the live decision follows every file the
     # planner read. Rust may still pick the workspace sandbox for this shape.
-    receipt = authorize(payload)
+    receipt = settled_authority(authorize, payload)
     exit_code = run_workspace(receipt)
     if exit_code is not None:
         return exit_code
