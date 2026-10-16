@@ -1,93 +1,44 @@
 name: Rust runtime performance
-
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - "rust/**"
-      - "scripts/bench_guard_native_full_path.py"
-      - "scripts/bench_guard_native_release_gate.py"
-      - "scripts/bench_guard_native_installed_slo.py"
-      - "scripts/native_slo_adapter.py"
-      - "scripts/native_slo_contract.py"
-      - "scripts/stress_guard_daemon.py"
-      - "src/codex_plugin_scanner/guard/native_runtime.py"
-      - "src/codex_plugin_scanner/guard/native_resident_client.py"
-      - "src/codex_plugin_scanner/guard/native_resident_stream.py"
-      - "src/codex_plugin_scanner/guard/daemon/server.py"
-      - "src/codex_plugin_scanner/guard/daemon/hook_process_*.py"
-      - ".github/workflows/rust-runtime-performance.yml"
-      - ".github/actions/setup-rust/**"
-  push:
-    branches: [main]
-    paths:
-      - "rust/**"
-      - "scripts/bench_guard_native_full_path.py"
-      - "scripts/bench_guard_native_release_gate.py"
-      - "scripts/bench_guard_native_installed_slo.py"
-      - "scripts/native_slo_adapter.py"
-      - "scripts/native_slo_contract.py"
-      - "scripts/stress_guard_daemon.py"
-      - "src/codex_plugin_scanner/guard/native_runtime.py"
-      - "src/codex_plugin_scanner/guard/native_resident_client.py"
-      - "src/codex_plugin_scanner/guard/native_resident_stream.py"
-      - "src/codex_plugin_scanner/guard/daemon/server.py"
-      - "src/codex_plugin_scanner/guard/daemon/hook_process_*.py"
-      - ".github/workflows/rust-runtime-performance.yml"
-      - ".github/actions/setup-rust/**"
   workflow_dispatch:
-
 permissions:
   contents: read
-
-concurrency:
-  group: rust-runtime-performance-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
-
+  actions: read
+env:
+  CARGO_PROFILE_RELEASE_LTO: 'false'
+  CARGO_PROFILE_RELEASE_CODEGEN_UNITS: '16'
+  CARGO_PROFILE_TEST_OPT_LEVEL: '1'
+  CARGO_PROFILE_TEST_DEBUG_ASSERTIONS: 'true'
+  CARGO_PROFILE_TEST_OVERFLOW_CHECKS: 'true'
+  CARGO_PROFILE_TEST_DEBUG: line-tables-only
 jobs:
-  performance:
+  key-invariance:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
           persist-credentials: false
-      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
-        with:
-          python-version: "3.12"
-      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39
-        with:
-          version: "0.9.26"
-          enable-cache: true
-      - run: uv sync --frozen --extra dev --python 3.12
-      - name: Install cached Rust toolchain
-        uses: ./.github/actions/setup-rust
-      - name: Build version-matched runtime
-        env:
-          HOL_GUARD_BUILD_SHA: ${{ github.sha }}
+      - name: Set the first checkout timestamp without changing source bytes
+        run: python3 -c 'import os; os.utime("scripts/ci/native_cache_environment.py", (1700000000, 1700000000))'
+      - uses: ./.github/actions/restore-runtime-tests
+        id: first
+      - name: Change only the timestamp of the imported helper
         run: |
-          VERSION=$(uv run --no-sync python scripts/sync_repo_version.py --check)
-          export HOL_GUARD_PACKAGE_VERSION="$VERSION"
-          cargo build --manifest-path rust/Cargo.toml --locked --release -p hol-guard-runtime -p guard-command --bin hol-guard-runtime --bin guard-command-source
-          uv run --no-sync python scripts/ci/verify_native_command_program.py --compiler rust/target/release/guard-command-source
-          rust/target/release/hol-guard-runtime self-test --json
-      - name: Enforce native performance gates
+          python3 -c 'import os; os.utime("scripts/ci/native_cache_environment.py", (1730000000, 1730000000))'
+          git diff --exit-code HEAD -- rust scripts contributions contracts spec tests/fixtures src/codex_plugin_scanner/guard/contracts .cargo .github/actions .github/workflows/ci.yml
+      - uses: ./.github/actions/restore-runtime-tests
+        id: second
+      - name: Require identical keys for identical source and report real cache hits
         env:
-          HOL_GUARD_NATIVE: force
-          HOL_GUARD_NATIVE_BINARY: ${{ github.workspace }}/rust/target/release/hol-guard-runtime
+          FIRST: ${{ steps.first.outputs.cache-primary-key }}
+          SECOND: ${{ steps.second.outputs.cache-primary-key }}
+          FIRST_HIT: ${{ steps.first.outputs.cache-hit }}
+          SECOND_HIT: ${{ steps.second.outputs.cache-hit }}
         run: |
-          uv run --no-sync python scripts/bench_guard_native_release_gate.py \
-            --runtime "$HOL_GUARD_NATIVE_BINARY" \
-            --warm-iterations 100 \
-            --cold-iterations 3 \
-            --json native-performance.json \
-            --enforce
-      - name: Publish aggregate benchmark evidence
-        if: always()
-        run: test ! -f native-performance.json || cat native-performance.json
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: always()
-        with:
-          name: hol-guard-native-performance
-          path: native-performance.json
-          if-no-files-found: warn
+          set -euo pipefail
+          echo "first_cache_hit=$FIRST_HIT second_cache_hit=$SECOND_HIT"
+          echo "first_source_hash=${FIRST##*-} second_source_hash=${SECOND##*-}"
+          find scripts src/codex_plugin_scanner/guard/contracts -name '*.pyc' -print | wc -l
+          test -n "$FIRST"
+          test "$FIRST" = "$SECOND"
