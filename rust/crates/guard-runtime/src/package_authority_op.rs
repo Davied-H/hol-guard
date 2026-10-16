@@ -1094,10 +1094,14 @@ impl SupplyChainStore for ResidentSupplyChainStore {
             policy_bundle_decision_identities: None,
             probe_groups: None,
         };
-        let Ok(payload) = crate::policy_decision_lookup_op::evaluate(&request) else {
-            // A lookup the store cannot resolve reports no saved decision, so
-            // the review verdict the caller already holds stands.
-            return PolicyDecisionLookup::default();
+        let payload = match crate::policy_decision_lookup_op::evaluate(&request) {
+            Ok(payload) => payload,
+            Err(code) => {
+                return PolicyDecisionLookup {
+                    error: Some(code),
+                    ..PolicyDecisionLookup::default()
+                };
+            }
         };
         let field = |name: &str| -> Option<Value> {
             payload.get(name).filter(|value| !value.is_null()).cloned()
@@ -1105,6 +1109,7 @@ impl SupplyChainStore for ResidentSupplyChainStore {
         PolicyDecisionLookup {
             decision: field("decision"),
             ignored_local_integrity: field("ignored_local_integrity"),
+            error: None,
         }
     }
 

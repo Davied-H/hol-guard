@@ -27,6 +27,8 @@ struct SavedApprovalStore {
     claim_succeeds: bool,
     claimed: RefCell<Vec<(Value, String)>>,
     looked_up: RefCell<Vec<LookedUpCall>>,
+    lookup_error: Option<String>,
+    events: RefCell<Vec<(String, Value, String)>>,
 }
 
 impl SupplyChainStore for SavedApprovalStore {
@@ -79,9 +81,16 @@ impl SupplyChainStore for SavedApprovalStore {
             artifact_hash.map(str::to_string),
             workspace.to_string(),
         ));
+        if let Some(code) = &self.lookup_error {
+            return PolicyDecisionLookup {
+                error: Some(code.clone()),
+                ..PolicyDecisionLookup::default()
+            };
+        }
         PolicyDecisionLookup {
             decision: self.decision.clone(),
             ignored_local_integrity: None,
+            error: None,
         }
     }
     fn approval_reuse_diagnostic(
@@ -114,7 +123,11 @@ impl SupplyChainStore for SavedApprovalStore {
     }
     fn add_receipt(&self, _receipt: &Value) {}
     fn set_receipt_action_envelope(&self, _receipt_id: &str, _metadata: &Value) {}
-    fn add_event(&self, _kind: &str, _payload: &Value, _now: &str) {}
+    fn add_event(&self, kind: &str, payload: &Value, now: &str) {
+        self.events
+            .borrow_mut()
+            .push((kind.to_string(), payload.clone(), now.to_string()));
+    }
 }
 
 /// The seams the claim path never reaches for a saved row it can read.
@@ -262,6 +275,8 @@ fn resolve_recording(
         claim_succeeds,
         claimed: RefCell::new(Vec::new()),
         looked_up: RefCell::new(Vec::new()),
+        lookup_error: None,
+        events: RefCell::new(Vec::new()),
     };
     let seams = Seams;
     let resolved = apply_stored_package_policy_override(
@@ -353,6 +368,50 @@ fn no_saved_row_leaves_the_evaluation_alone() {
     let unchanged = resolve(None);
     assert_eq!(unchanged.policy_action().as_deref(), Some("review"));
     assert_eq!(unchanged.value.get("saved_approval_applied"), None);
+}
+
+#[test]
+fn a_failed_lookup_keeps_the_review_and_records_its_code() {
+    let store = SavedApprovalStore {
+        home: PathBuf::from("/tmp/guard-home"),
+        decision: Some(json!({
+            "decision_id": 7,
+            "action": "allow",
+            "artifact_hash": ARTIFACT_HASH,
+        })),
+        claim_succeeds: true,
+        claimed: RefCell::new(Vec::new()),
+        looked_up: RefCell::new(Vec::new()),
+        lookup_error: Some("native_policy_decision_lookup_query_failed".to_string()),
+        events: RefCell::new(Vec::new()),
+    };
+    let seams = Seams;
+    let resolved = apply_stored_package_policy_override(
+        &evaluation(),
+        &store,
+        &artifact(),
+        ARTIFACT_HASH,
+        Path::new("/tmp/proj"),
+        NOW,
+        None,
+        None,
+        true,
+        &seams,
+        &seams,
+        &seams,
+        &seams,
+    );
+    assert!(store.claimed.borrow().is_empty());
+    assert_eq!(resolved.policy_action().as_deref(), Some("review"));
+    assert_eq!(resolved.value.get("saved_approval_applied"), None);
+    assert_eq!(
+        store.events.borrow().as_slice(),
+        [(
+            "package_policy_lookup_failed".to_string(),
+            json!({ "code": "native_policy_decision_lookup_query_failed" }),
+            NOW.to_string(),
+        )]
+    );
 }
 
 #[test]
