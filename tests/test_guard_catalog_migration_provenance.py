@@ -27,6 +27,7 @@ from codex_plugin_scanner.guard.store import GuardStore
 from codex_plugin_scanner.guard.store_extension_control_authority_catalog_events import (
     MIGRATED_EVENT,
     REGRESSED_EVENT,
+    build_catalog_migration_payload,
 )
 from tests.test_extension_control_clear_catalog_migration import (
     _activate_under_catalog,
@@ -263,3 +264,62 @@ def test_a_catalog_built_in_memory_is_not_attributed_to_the_packaged_resource() 
     assert catalog_provenance(catalog_digest=built_in.catalog_digest, catalog=built_in, trigger="probe")[
         "install_kind"
     ] not in {"in-process", "unattributed"}
+
+
+def _store_with_events(records: list[dict[str, object]]) -> sqlite3.Connection:
+    """A connection holding migration events in the order they were written."""
+
+    connection = sqlite3.connect(":memory:")
+    connection.row_factory = sqlite3.Row
+    connection.execute(
+        "create table guard_events (event_id integer primary key autoincrement, event_name text, payload_json text)"
+    )
+    for record in records:
+        connection.execute(
+            "insert into guard_events (event_name, payload_json) values (?, ?)",
+            (MIGRATED_EVENT, json.dumps(record)),
+        )
+    return connection
+
+
+def test_a_backfill_over_an_attributed_revision_does_not_hide_the_downgrade(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The writer is looked up by catalog, not by the last migration to it.
+
+    A store can arrive at a catalog twice: 3.47 writes it, the store moves away
+    and comes back through an event nobody could attribute. The catalog being
+    retired is still the one 3.47 produced, so an older install replacing it
+    still retires 3.47's controls. Keying the lookup on the revision instead
+    would read the backfill, find no writer, and drop the record that exists to
+    make that loss loud.
+    """
+
+    monkeypatch.setattr(version_module, "__version__", "3.45.0")
+    connection = _store_with_events(
+        [
+            {"revision": 4, "catalog_digest": "catalog-x", "provenance": {"writer_version": "3.47.0"}},
+            {"revision": 5, "catalog_digest": "catalog-y", "provenance": {"writer_version": "3.47.0"}},
+            {"revision": 6, "catalog_digest": "catalog-x", "provenance": {"trigger": "authority-read-backfill"}},
+        ]
+    )
+
+    _payload, regression = build_catalog_migration_payload(
+        connection,
+        previous_revision=6,
+        revision=7,
+        previous_catalog_digest="catalog-x",
+        catalog_digest="catalog-z",
+        layers=(),
+        retired_targets=("control-a",),
+        registry=None,
+        trigger="catalog-migration",
+        writer=True,
+    )
+
+    assert regression == {
+        "previous_writer_version": "3.47.0",
+        "writer_version": "3.45.0",
+        "retired_target_count": 1,
+        "retired_target_ids": ["control-a"],
+    }

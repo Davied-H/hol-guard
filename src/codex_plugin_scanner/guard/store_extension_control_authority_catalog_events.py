@@ -44,7 +44,14 @@ def _decode(raw: object) -> dict[str, Any] | None:
 
 
 def _recorded_writer_version(connection: sqlite3.Connection, catalog_digest: str) -> str | None:
-    """The Guard version that last migrated this store to ``catalog_digest``.
+    """The Guard version that produced the catalog ``catalog_digest`` names.
+
+    The lookup is keyed on the catalog, not on the revision that last moved the
+    store to it. A digest is its contents, so the install that wrote those
+    contents is the one whose controls a migration away from them retires, even
+    when the store arrived at that catalog again through an event nobody could
+    attribute. Keying on the revision would read that backfill, find no writer,
+    and drop the record that exists to make the loss loud.
 
     Returns None for a store whose events predate provenance, which is the
     normal case on an upgrade: the first migration after this ships has nothing
