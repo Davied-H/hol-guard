@@ -324,8 +324,14 @@ def test_safety_document_leaves_secret_reads_to_guard(tmp_path: Path) -> None:
     _ = install_agent_safety_guidance(home_dir)
     safety = (home_dir / ".hol-support" / "SAFETY.md").read_text(encoding="utf-8")
 
-    assert "Never read secret files, credential stores, or environment files." in safety
+    assert (
+        "Never read secret files, credential stores, or environment files on your own judgment."
+        in safety
+    )
     assert "unless the user explicitly authorizes" not in safety
+    # The bullet must not end on an imperative to go ahead: an agent weighing
+    # two sentences against each other takes the concrete one.
+    assert "Run the read" not in safety
 
 
 def test_safety_document_forbids_self_approval(tmp_path: Path) -> None:
