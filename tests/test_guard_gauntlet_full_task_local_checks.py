@@ -130,6 +130,21 @@ SPAWN = "import { spawn } from 'node:child_process';\n"
         ("server.test.js", SPAWN + "test('api', () => { spawn(process.execPath, ['server.js']); });\n", True),
         ("server.test.js", SPAWN + "test('api', () => { exec('node --no-warnings server.js'); });\n", True),
         (
+            "server.test.js",
+            SPAWN + "test('api', () => { spawn(process.execPath, ['-r', 'dotenv/config', 'server.js']); });\n",
+            True,
+        ),
+        (
+            "server.test.js",
+            SPAWN + "test('api', () => { exec('node --require ./setup.js server.js'); });\n",
+            True,
+        ),
+        (
+            "server.test.js",
+            SPAWN + "test('api', () => { exec('node --env-file .env server.js'); });\n",
+            True,
+        ),
+        (
             "tests/api.test.js",
             SPAWN + "test('api', () => { spawn(process.execPath, [join(__dirname, '..', 'server.js')]); });\n",
             True,
