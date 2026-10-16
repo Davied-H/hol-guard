@@ -11,9 +11,9 @@
 //! Only a flat npm or Yarn classic install is staged. A pnpm store links
 //! packages across directories, and a Plug'n'Play install has no
 //! `node_modules` to copy, so both keep the review prompt.
-use crate::windows_readonly::{BACKEND, canonical, first_on_path, workspace_and_cwd};
+use crate::windows_readonly::{canonical, first_on_path, workspace_and_cwd, BACKEND};
 use guard_command::restricted_command::RestrictedPytestError;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 

@@ -25,6 +25,7 @@ use std::path::{Path, PathBuf};
 #[cfg(unix)]
 use super::super::contained_wrapper::sibling_project_root;
 use super::super::contained_wrapper::{contained_core, package_dir};
+#[cfg(unix)]
 use super::super::executable_basename;
 use super::super::PathContext;
 
@@ -84,7 +85,7 @@ fn resolved(
     // The same name the build classification reads, so `npm.exe run build`
     // is the package script `npm run build` is and keeps the review prompt.
     if matches!(
-        super::super::program_basename(segment.executable.as_deref()?),
+        crate::program_basename(segment.executable.as_deref()?),
         "npm" | "pnpm" | "bun"
     ) && arguments.first().is_some_and(|word| word == "run")
     {
