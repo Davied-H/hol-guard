@@ -54,3 +54,168 @@ fn managers_without_a_cwd_value_still_review_the_next_word() {
     // would let a package go unevaluated.
     assert_eq!(target_names("npm install --cwd evil-pkg"), ["evil-pkg"]);
 }
+
+fn write_project(dir: &std::path::Path, manifest: &str, lock_name: &str, lock_body: &str) {
+    std::fs::create_dir_all(dir).expect("project directory");
+    std::fs::write(dir.join("package.json"), manifest).expect("manifest");
+    std::fs::write(dir.join(lock_name), lock_body).expect("lockfile");
+}
+
+struct TempTree(std::path::PathBuf);
+
+impl TempTree {
+    fn new() -> Self {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let path =
+            std::env::temp_dir().join(format!("hol-guard-bun-cwd-{nanos}-{}", std::process::id()));
+        std::fs::create_dir_all(&path).expect("temp tree");
+        Self(path)
+    }
+}
+
+impl Drop for TempTree {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+fn lockfile_digest(
+    workspace: &std::path::Path,
+    home: &std::path::Path,
+    metadata: &serde_json::Map<String, serde_json::Value>,
+) -> String {
+    use crate::package_context_build::{build_package_execution_context, BuildInput};
+    let workspace = workspace
+        .canonicalize()
+        .expect("workspace")
+        .to_string_lossy()
+        .into_owned();
+    let home = home
+        .canonicalize()
+        .expect("home")
+        .to_string_lossy()
+        .into_owned();
+    let environment = std::collections::BTreeMap::new();
+    let args = Vec::new();
+    let built = build_package_execution_context(&BuildInput {
+        workspace_dir: &workspace,
+        metadata,
+        executable: Some("bun"),
+        executable_args: &args,
+        environment: &environment,
+        process_cwd: &workspace,
+        process_home: &home,
+        process_home_env: None,
+        process_path: None,
+    })
+    .expect("package context");
+    built
+        .components
+        .iter()
+        .find(|component| component.name == "manifests_and_lockfiles")
+        .expect("lockfile component")
+        .digest
+        .clone()
+}
+
+#[test]
+fn bun_cwd_lockfile_inside_the_workspace_is_the_one_that_is_hashed() {
+    let tree = TempTree::new();
+    let workspace = tree.0.join("workspace");
+    let app = workspace.join("app");
+    write_project(&workspace, "{}\n", "bun.lock", "caller-lock\n");
+    write_project(&app, "{\"name\":\"app\"}\n", "bun.lock", "app-lock-v1\n");
+    for command in [
+        "bun install --cwd app --frozen-lockfile",
+        "bun install --cwd=app --frozen-lockfile",
+        "bun --cwd app install --frozen-lockfile",
+    ] {
+        let intent = parse_package_intent(command, Some(&workspace), None, None, None)
+            .expect("bun install intent");
+        assert!(intent.targets.is_empty(), "{command}");
+        assert_eq!(intent.lockfile_paths, ["app/bun.lock"], "{command}");
+        assert_eq!(intent.manifest_paths, ["app/package.json"], "{command}");
+        assert!(!intent
+            .notes
+            .iter()
+            .any(|note| note == PACKAGE_CWD_UNRESOLVED_NOTE));
+    }
+
+    let intent = parse_package_intent(
+        "bun install --cwd app --frozen-lockfile",
+        Some(&workspace),
+        None,
+        None,
+        None,
+    )
+    .expect("intent");
+    let artifact = build_package_request_artifact("codex", &intent, "hol-guard.toml", "project");
+    let metadata = artifact.metadata.as_object().expect("metadata");
+    let home = tree.0.join("home");
+    std::fs::create_dir_all(&home).expect("home");
+    let before = lockfile_digest(&workspace, &home, metadata);
+    std::fs::write(app.join("bun.lock"), "app-lock-tampered\n").expect("tamper");
+    let after = lockfile_digest(&workspace, &home, metadata);
+    assert_ne!(
+        before, after,
+        "the lockfile in --cwd must be part of the evaluation"
+    );
+}
+
+#[test]
+fn yarn_cwd_lockfile_is_read_from_that_directory() {
+    let tree = TempTree::new();
+    let workspace = tree.0.join("workspace");
+    let app = workspace.join("app");
+    write_project(&workspace, "{}\n", "yarn.lock", "caller\n");
+    write_project(&app, "{\"name\":\"app\"}\n", "yarn.lock", "app\n");
+    let intent = parse_package_intent(
+        "yarn add --cwd app left-pad",
+        Some(&workspace),
+        None,
+        None,
+        None,
+    )
+    .expect("yarn add intent");
+    assert_eq!(target_names("yarn add --cwd app left-pad"), ["left-pad"]);
+    assert_eq!(intent.lockfile_paths, ["app/yarn.lock"]);
+    assert_eq!(intent.manifest_paths, ["app/package.json"]);
+}
+
+#[test]
+fn bun_cwd_outside_the_workspace_is_not_an_empty_allow() {
+    let tree = TempTree::new();
+    let workspace = tree.0.join("workspace");
+    let outside = tree.0.join("outside");
+    write_project(&workspace, "{}\n", "bun.lock", "caller-lock\n");
+    write_project(
+        &outside,
+        "{\"name\":\"outside\"}\n",
+        "bun.lock",
+        "tampered-outside\n",
+    );
+    let outside = outside.canonicalize().expect("outside");
+    let command = format!("bun install --cwd {} --frozen-lockfile", outside.display());
+    let intent = parse_package_intent(&command, Some(&workspace), None, None, None)
+        .expect("outside cwd is still an install");
+    assert!(intent.targets.is_empty());
+    assert!(
+        intent.lockfile_paths.is_empty(),
+        "caller lockfile must not stand in"
+    );
+    assert!(intent.manifest_paths.is_empty());
+    assert!(intent
+        .notes
+        .iter()
+        .any(|note| note == PACKAGE_CWD_UNRESOLVED_NOTE));
+
+    let artifact = build_package_request_artifact("codex", &intent, "hol-guard.toml", "project");
+    let evaluation = crate::supply_chain_package_eval::empty_package_material_result(
+        &artifact, None, None, "intent", None,
+    );
+    assert_eq!(evaluation.decision, "ask");
+    assert_ne!(evaluation.policy_action, "allow");
+}

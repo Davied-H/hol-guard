@@ -220,6 +220,14 @@ pub(super) fn has_non_empty_string_item(value: Option<&Value>) -> bool {
     }
 }
 
+fn artifact_note_is(artifact: &GuardArtifact, note: &str) -> bool {
+    artifact
+        .metadata
+        .get("notes")
+        .and_then(Value::as_array)
+        .is_some_and(|notes| notes.iter().any(|value| value.as_str() == Some(note)))
+}
+
 /// `_artifact_has_package_material` (:780-785).
 // supply_chain_package_eval.py:780-785
 #[allow(dead_code)]
@@ -238,33 +246,57 @@ pub(super) fn artifact_has_package_material(
 // supply_chain_package_eval.py:794-827
 #[allow(clippy::too_many_arguments)]
 #[allow(dead_code)]
-pub(super) fn empty_package_material_result(
+pub(crate) fn empty_package_material_result(
     _artifact: &GuardArtifact,
     workspace_id: Option<&str>,
     bundle_meta: Option<&Map<String, Value>>,
     package_intent_hash: &str,
     workspace_fingerprint: Option<&str>,
 ) -> PackageEvalResult {
+    let unresolved_cwd = artifact_note_is(
+        _artifact,
+        crate::package_intent_common::PACKAGE_CWD_UNRESOLVED_NOTE,
+    );
     let mut reason_map = Map::new();
     reason_map.insert(
         "code".to_string(),
-        Value::String("no_package_material".into()),
+        Value::String(
+            if unresolved_cwd {
+                "package_cwd_unresolved"
+            } else {
+                "no_package_material"
+            }
+            .into(),
+        ),
     );
     reason_map.insert(
         "message".to_string(),
         Value::String(
-            "Guard found no package targets, manifests, or lockfiles to evaluate for this request."
-                .into(),
+            if unresolved_cwd {
+                "The package directory named by --cwd is outside this workspace or could not be resolved, so Guard cannot evaluate its lockfile."
+            } else {
+                "Guard found no package targets, manifests, or lockfiles to evaluate for this request."
+            }
+            .into(),
         ),
     );
     reason_map.insert("severity".to_string(), Value::String("unknown".into()));
     reason_map.insert("source".to_string(), Value::String("guard-local".into()));
     let reasons = vec![reason_map];
-    let decision = "monitor".to_string();
+    // `monitor` becomes allow. An unresolved `--cwd` must stay in review.
+    let decision = if unresolved_cwd { "ask" } else { "monitor" }.to_string();
     let policy_action = decision_to_guard_action_variant(&decision);
-    let title = "No package material".to_string();
-    let summary =
-        "Guard found no package targets, manifests, or lockfiles to evaluate.".to_string();
+    let title = if unresolved_cwd {
+        "Package directory not in workspace".to_string()
+    } else {
+        "No package material".to_string()
+    };
+    let summary = if unresolved_cwd {
+        "Guard could not evaluate the package directory named by --cwd inside this workspace."
+            .to_string()
+    } else {
+        "Guard found no package targets, manifests, or lockfiles to evaluate.".to_string()
+    };
     let enforcement = if workspace_id.is_none() {
         "free_local"
     } else {
@@ -282,9 +314,13 @@ pub(super) fn empty_package_material_result(
     let user_copy = SupplyChainUserCopy {
         title: title.clone(),
         summary: summary.clone(),
-        next_step: None,
+        next_step: unresolved_cwd.then(|| "Review this install before running it.".to_string()),
         dashboard_url: None,
-        harness_message: format!("{summary} No action needed."),
+        harness_message: if unresolved_cwd {
+            summary.clone()
+        } else {
+            format!("{summary} No action needed.")
+        },
     };
     PackageEvalResult {
         decision,

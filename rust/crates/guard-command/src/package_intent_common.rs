@@ -2139,6 +2139,10 @@ pub(crate) const BUN_VALUE_OPTIONS: &[&str] = &[
 /// yarn's `--cwd <dir>`, which it also accepts after the subcommand.
 pub(crate) const YARN_VALUE_OPTIONS: &[&str] = &["--cwd"];
 
+/// Bun or Yarn `--cwd` named a directory Guard cannot evaluate inside the
+/// workspace. An intent with this note must not take the empty-material allow.
+pub(crate) const PACKAGE_CWD_UNRESOLVED_NOTE: &str = "package_cwd_unresolved";
+
 /// `_collect_package_specs` (protect.py :828-850).
 pub(crate) fn collect_package_specs(values: &[String]) -> Vec<String> {
     collect_package_specs_with(values, &[])

@@ -99,10 +99,11 @@ pub use runtime_contracts::{
 };
 #[path = "supply_chain_package_eval/evaluation.rs"]
 mod evaluation;
+pub(crate) use evaluation::empty_package_material_result;
 use evaluation::{
     artifact_has_flag, artifact_has_package_material, cache_reusable_cloud_validation_error,
-    decision_rank, decision_to_guard_action_variant, empty_package_material_result,
-    normalize_package_name, parse_evaluation_timestamp, reason_severity, severity_rank_value,
+    decision_rank, decision_to_guard_action_variant, normalize_package_name,
+    parse_evaluation_timestamp, reason_severity, severity_rank_value,
 };
 pub use evaluation::{
     evaluate_package_request_artifact, EvaluationDraft, SavedPolicyProbe, SupplyChainEvalDeps,
