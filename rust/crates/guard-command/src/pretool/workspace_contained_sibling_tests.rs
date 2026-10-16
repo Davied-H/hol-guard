@@ -390,10 +390,6 @@ fn a_script_outside_a_sibling_repository_keeps_its_review() {
         format!("bun {}/probe.py", loose.display()),
         // An operand outside the trees the rooted sandbox can read.
         format!("python3 {} {}/probe.py", script.display(), loose.display()),
-        // A setting, a pipe or a list is not the one plain command.
-        format!("REPORT=1 python3 {}", script.display()),
-        format!("python3 {} | wc -l", script.display()),
-        format!("python3 {} && ls", script.display()),
         // A sibling path that is only an operand runs nothing from there.
         format!("rm {}", script.display()),
         format!("cat {}", script.display()),
@@ -408,15 +404,20 @@ fn a_script_outside_a_sibling_repository_keeps_its_review() {
     }
     // A relative operand names a file in the session's own checkout, which
     // the workspace sandbox already reads, so the clean script runs contained.
-    assert_eq!(
-        contained(&reason(
-            "omp",
-            &home,
-            &main,
-            &format!("python3 {} package.json", script.display())
-        )),
-        host()
-    );
+    // A setting, a pipe or a list around the clean script stays in the same
+    // read-only sandbox, so it runs contained as well.
+    for command in [
+        format!("python3 {} package.json", script.display()),
+        format!("REPORT=1 python3 {}", script.display()),
+        format!("python3 {} | wc -l", script.display()),
+        format!("python3 {} && ls", script.display()),
+    ] {
+        assert_eq!(
+            contained(&reason("omp", &home, &main, &command)),
+            host(),
+            "{command}"
+        );
+    }
     // A plain home directory or a private temporary one has no root, but a
     // clean single script there still runs as a read-only grant of that file.
     for command in [
