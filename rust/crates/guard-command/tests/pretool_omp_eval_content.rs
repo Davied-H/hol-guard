@@ -60,6 +60,9 @@ fn browser_driving_and_module_attribute_chains_are_reviewed() {
     }
     for code in [
         "import shlex\nshlex.os.system('id')",
+        "import fnmatch\nprint(fnmatch.re.enum.bltns.getattr)",
+        "import enum\nprint((enum).bltns.getattr)",
+        "import enum\nm = enum\nprint(m.bltns.getattr)",
         "from enum import bltns as b\nprint(b)",
         "import enum\nprint(enum.bltns.getattr)",
         "from shlex import os as o\no.execvp('sh', ['sh', '-c', 'id'])",

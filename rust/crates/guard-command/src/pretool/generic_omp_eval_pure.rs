@@ -218,7 +218,6 @@ const MODULE_NAMES: &[&str] = &[
     "islice",
     "itemgetter",
     "join",
-    "json",
     "loads",
     "log",
     "log10",
@@ -251,7 +250,6 @@ const MODULE_NAMES: &[&str] = &[
     "punctuation",
     "quote",
     "radians",
-    "re",
     "reduce",
     "repeat",
     "search",
@@ -447,17 +445,14 @@ fn previous_symbol(code: &str, position: usize) -> Option<char> {
     code[..position].chars().rev().find(|c| !c.is_whitespace())
 }
 
-/// Whether the attribute at `position` is read straight off an imported module.
-fn after_module(code: &str, position: usize, modules: &HashSet<String>) -> bool {
-    let before = code[..position].trim_end();
-    let Some(before) = before.strip_suffix('.') else {
+/// Whether the text at `end` reads one listed name off a module.
+fn module_member_listed(code: &str, end: usize) -> bool {
+    let Some(rest) = code[end..].trim_start().strip_prefix('.') else {
         return false;
     };
-    let before = before.trim_end();
-    let start = before
-        .rfind(|c: char| !is_ident_char(c))
-        .map_or(0, |index| index + 1);
-    modules.contains(&before[start..]) && !before[..start].trim_end().ends_with('.')
+    let rest = rest.trim_start();
+    let name: String = rest.chars().take_while(|c| is_ident_char(*c)).collect();
+    MODULE_NAMES.contains(&name.as_str())
 }
 
 fn next_symbol(code: &str, end: usize) -> Option<char> {
@@ -522,7 +517,11 @@ fn line_has_for(before: &str, line_start: usize) -> bool {
 }
 
 /// Whether the imports are all from the pure list, recording what they bind.
-fn imports_ok(code: &str, modules: &mut HashSet<String>) -> Option<String> {
+fn imports_ok(
+    code: &str,
+    modules: &mut HashSet<String>,
+    functions: &mut HashSet<String>,
+) -> Option<String> {
     let mut rest = String::new();
     for line in code.lines() {
         let trimmed = line.trim_start();
@@ -563,7 +562,7 @@ fn imports_ok(code: &str, modules: &mut HashSet<String>) -> Option<String> {
                 if !alias.chars().all(is_ident_char) || alias.is_empty() {
                     return None;
                 }
-                modules.insert(alias.to_owned());
+                functions.insert(alias.to_owned());
             }
             rest.push('\n');
         } else {
@@ -585,7 +584,8 @@ pub(super) fn pure_python(code: &str) -> bool {
         return false;
     }
     let mut modules = HashSet::new();
-    let Some(code) = imports_ok(&code, &mut modules) else {
+    let mut functions = HashSet::new();
+    let Some(code) = imports_ok(&code, &mut modules, &mut functions) else {
         return false;
     };
     let (bound, defined) = bound_names(&code);
@@ -594,9 +594,6 @@ pub(super) fn pure_python(code: &str) -> bool {
             // An attribute can lead from a safe module to the process or
             // interpreter it imports (`shlex.os`, `typing.sys.modules`).
             if word.starts_with('_') || REFUSED_ATTRIBUTES.contains(&word) {
-                return false;
-            }
-            if after_module(&code, position, &modules) && !MODULE_NAMES.contains(&word) {
                 return false;
             }
             continue;
@@ -619,7 +616,15 @@ pub(super) fn pure_python(code: &str) -> bool {
             }
             continue;
         }
-        if SAFE_BUILTINS.contains(&word) || (modules.contains(word) && word != "shutil") {
+        if modules.contains(word) {
+            // A module is only ever the receiver of a listed `module.name`:
+            // never passed, assigned, parenthesised or chained into.
+            if !module_member_listed(&code, end) {
+                return false;
+            }
+            continue;
+        }
+        if SAFE_BUILTINS.contains(&word) || functions.contains(word) {
             continue;
         }
         if defining {
@@ -627,10 +632,10 @@ pub(super) fn pure_python(code: &str) -> bool {
         }
         if is_call {
             // Only a function the program defined itself, or an imported one.
-            if !defined.contains(word) && !modules.contains(word) {
+            if !defined.contains(word) {
                 return false;
             }
-        } else if !bound.contains(word) && !modules.contains(word) {
+        } else if !bound.contains(word) {
             return false;
         }
     }
@@ -648,6 +653,7 @@ mod tests {
             "import re\ntext = 'a1b22'\nprint(re.findall(r'\\d+', text))\n",
             "import json\nrows = [{'a': 1}]\nprint(json.dumps(rows, indent=2))\n",
             "import datetime\nprint(datetime.datetime.now())",
+            "from re import sub\nprint(sub('a', 'b', 'abc'))",
             "def total(xs):\n    return sum(x * 2 for x in xs)\nprint(total([1, 2, 3]))\n",
         ] {
             assert!(pure_python(code), "{code:?}");
@@ -665,6 +671,9 @@ mod tests {
             "print(read('a'))",
             "print(f'{1+1}')",
             "import shlex\nshlex.os.system('x')",
+            "import fnmatch\nprint(fnmatch.re.enum.bltns.getattr)",
+            "import enum\nprint((enum).bltns.getattr)",
+            "import enum\nm = enum\nprint(m.bltns.getattr)",
             "from enum import bltns as b\nprint(b)",
             "import enum\nprint(enum.bltns.getattr)",
             "from shlex import os as o\no.execvp('sh', ['sh'])",
