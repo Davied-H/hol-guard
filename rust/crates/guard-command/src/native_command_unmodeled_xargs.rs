@@ -38,6 +38,43 @@ pub(super) fn xargs_names_its_program(shell: &str) -> bool {
     xargs_programs(shell).is_some()
 }
 
+/// Whether the text says where every `xargs` in it reads its operands: a pipe
+/// into it, an input redirect, or `-a`/`--arg-file`. A bare `xargs` takes the
+/// caller's standard input, which the text does not hold, so the operands it
+/// hands the program it names are unknown and it stays unbounded.
+pub(super) fn xargs_input_is_named(shell: &str) -> bool {
+    for statement in shell.split(['\n', ';', '&', '(', ')', '`']) {
+        let stages: Vec<&str> = statement.split('|').collect();
+        for (stage, text) in stages.iter().enumerate() {
+            // The right side of a `||` follows an empty stage, not a pipe.
+            let piped = stage > 0 && !stages[stage - 1].trim().is_empty();
+            let words: Vec<&str> = text.split_whitespace().collect();
+            for (index, word) in words.iter().enumerate() {
+                if command_basename(word) == "xargs" && !input_is_named(piped, &words[index + 1..])
+                {
+                    return false;
+                }
+            }
+        }
+    }
+    true
+}
+
+/// The input source one `xargs` names, read from the words after it.
+fn input_is_named(piped: bool, rest: &[&str]) -> bool {
+    if piped || rest.iter().any(|word| word.contains('<')) {
+        return true;
+    }
+    // Only the options `xargs` itself reads, so a program's own `-a` is not
+    // mistaken for an argument file.
+    rest.iter()
+        .take_while(|word| word.starts_with('-'))
+        .any(|word| {
+            word.starts_with("--arg-file")
+                || (!word.starts_with("--") && word.trim_start_matches('-').starts_with('a'))
+        })
+}
+
 /// The programs every `xargs` in the text names, by basename, or `None` when
 /// one of them names none.
 pub(super) fn xargs_programs(shell: &str) -> Option<BTreeSet<String>> {

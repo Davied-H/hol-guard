@@ -44,7 +44,7 @@ mod xargs;
 use link_makers::creates_links;
 use shapes::{data_heredocs, without_lookups, without_plain_awk};
 pub(crate) use shapes::{python_is_builtin_only, python_stdin};
-use xargs::{xargs_names_its_program, xargs_programs};
+use xargs::{xargs_input_is_named, xargs_names_its_program, xargs_programs};
 
 /// Compatibility owners recognize these programs without a catalog matcher.
 const COMPATIBILITY_EXECUTABLES: &[(&str, &[&str])] = &[
@@ -212,11 +212,15 @@ impl CompiledNativeCommandControls {
             named.extend(named_words(source));
         }
         let xargs_programs = xargs_programs(shell);
-        let xargs_bounded = xargs_programs.is_some();
+        // An `xargs` is read only when the text also says where it reads its
+        // operands. A bare one takes the caller's standard input, so the
+        // arguments it hands the program are not in this text.
+        let xargs_bounded = xargs_programs.is_some() && xargs_input_is_named(shell);
         // `xargs_programs` is `Some` of an empty set when the text has no
         // `xargs`, because every (nonexistent) `xargs` names a program.
         // The refusal needs one that actually names the program it runs.
         let xargs_names_program = shell.contains("xargs")
+            && xargs_bounded
             && xargs_names_its_program(shell)
             && xargs_programs
                 .as_ref()
@@ -350,6 +354,7 @@ fn named_xargs_pipeline(text: &str) -> bool {
     let literal = unquoted_literal(text);
     text.contains("xargs")
         && xargs_names_its_program(text)
+        && xargs_input_is_named(text)
         && !text.contains(['<', '>', '`', '$', '\n'])
         && !moves_data(&literal)
 }

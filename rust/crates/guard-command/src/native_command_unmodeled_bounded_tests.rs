@@ -1,7 +1,7 @@
 //! An `xargs` names the program it runs in the command text: standard input
 //! supplies its arguments, not its program.
 use super::tests::{controls, decision, github};
-use super::xargs_names_its_program;
+use super::xargs::{xargs_input_is_named, xargs_names_its_program};
 
 const FAILED: &str = "native_command_extension_evaluation_failed";
 
@@ -114,5 +114,32 @@ fn xargs_options_are_read_past_to_its_program() {
         "cat list.txt | xargs rm -f && cat more.txt | xargs",
     ] {
         assert!(!xargs_names_its_program(unbounded), "{unbounded}");
+    }
+}
+
+/// A bare `xargs` takes the caller's standard input, so the operands it hands
+/// the program it names are not in the text. `xargs rm -rf BUILD` deletes
+/// whatever that input holds, and the text proves nothing about it.
+#[test]
+fn an_xargs_without_a_named_input_stays_unreadable() {
+    for named in [
+        "cat list.txt | xargs -0 rm -f",
+        "find . -name '*.log' | xargs rm",
+        "xargs rm -f < list.txt",
+        "xargs -a list.txt rm -f",
+        "xargs --arg-file=list.txt rm -f",
+    ] {
+        assert!(xargs_input_is_named(named), "{named}");
+    }
+    for unnamed in [
+        "xargs rm -rf BUILD",
+        "xargs -0 rm -f",
+        "xargs grep -a pattern",
+        // The right side of a `||` follows no pipe.
+        "test -f list.txt || xargs rm -f",
+        // Every `xargs` in the text needs its own input.
+        "cat list.txt | xargs rm -f && xargs rm -rf BUILD",
+    ] {
+        assert!(!xargs_input_is_named(unnamed), "{unnamed}");
     }
 }
