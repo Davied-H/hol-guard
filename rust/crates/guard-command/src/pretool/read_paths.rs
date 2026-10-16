@@ -63,7 +63,9 @@ pub(super) fn bounded_file_read_target(
     home_dir: Option<&str>,
     cwd: Option<&str>,
 ) -> bool {
-    bounded_read_target(value, home_dir, cwd, false)
+    // A missing harness note is a shell-read exception. Structured tools come
+    // through this helper, and a missing note there stays unproved.
+    bounded_read_target_with_brackets(value, home_dir, cwd, false, false, false)
 }
 
 pub(super) fn existing_regular_read_target(

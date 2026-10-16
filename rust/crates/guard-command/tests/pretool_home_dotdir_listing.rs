@@ -327,6 +327,24 @@ fn a_harness_note_that_does_not_exist_yet_reads_as_nothing() {
 }
 
 #[test]
+fn a_structured_read_of_a_missing_note_stays_unproved() {
+    let home = memory_home("memory-structured");
+    let cwd = home.join("work/project");
+    let path = home.join(".claude/projects/no-index/memory/MEMORY.md");
+    assert!(!path.exists());
+    let result = evaluate_pre_tool_envelope_with_context(
+        "claude-code",
+        "PreToolUse",
+        &json!({"tool_name": "view", "tool_input": {"file_path": path}}),
+        None,
+        None,
+        home.to_str(),
+        cwd.to_str(),
+    );
+    assert_ne!(result.minimum_action, "allow");
+}
+
+#[test]
 fn missing_notes_outside_harness_documents_keep_review() {
     let home = memory_home("memory-missing-review");
     let memory = home.join(".claude/projects/p/memory");
