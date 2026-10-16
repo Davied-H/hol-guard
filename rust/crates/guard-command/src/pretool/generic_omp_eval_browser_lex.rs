@@ -121,6 +121,108 @@ pub(super) const RESERVED: &[&str] = &[
     "Promise",
 ];
 
+/// Names a page function may not use: requests, navigation, markup, style
+/// and element sinks that load URLs, code evaluation, property writers, and
+/// handles to the global object that would reach any of them by another name.
+const PAGE_SINKS: &[&str] = &[
+    "EventSource",
+    "Function",
+    "Image",
+    "Proxy",
+    "Reflect",
+    "SharedWorker",
+    "WebSocket",
+    "Worker",
+    "XMLHttpRequest",
+    "__proto__",
+    "action",
+    "assign",
+    "background",
+    "backgroundImage",
+    "click",
+    "constructor",
+    "contentWindow",
+    "cookie",
+    "createElement",
+    "cssText",
+    "data",
+    "defaultView",
+    "defineProperties",
+    "defineProperty",
+    "dispatchEvent",
+    "eval",
+    "fetch",
+    "formAction",
+    "frames",
+    "globalThis",
+    "history",
+    "href",
+    "import",
+    "importScripts",
+    "innerHTML",
+    "insertAdjacentHTML",
+    "insertRule",
+    "location",
+    "navigation",
+    "navigator",
+    "open",
+    "opener",
+    "outerHTML",
+    "parent",
+    "ping",
+    "postMessage",
+    "poster",
+    "prototype",
+    "requestSubmit",
+    "self",
+    "sendBeacon",
+    "serviceWorker",
+    "setAttribute",
+    "setInterval",
+    "setProperty",
+    "setPrototypeOf",
+    "setTimeout",
+    "src",
+    "srcdoc",
+    "srcset",
+    "submit",
+    "this",
+    "top",
+    "window",
+    "with",
+    "write",
+    "writeln",
+];
+
+/// Whether page-function body token `index` is allowed. Property access must
+/// be by name or by a number index, so a sink name cannot be assembled from
+/// strings, and `=` may only initialize a new local, so the function cannot
+/// write a URL into the page.
+pub(super) fn page_token(tokens: &[Token], index: usize) -> bool {
+    let at = |offset: isize| {
+        index
+            .checked_add_signed(offset)
+            .and_then(|position| tokens.get(position))
+    };
+    match &tokens[index] {
+        Token::Ident(name) => !PAGE_SINKS.contains(&name.as_str()),
+        Token::Str(text) => !text.contains("://") && !text.starts_with("//"),
+        Token::Punct('[') => {
+            !matches!(
+                at(-1),
+                Some(Token::Ident(_) | Token::Str(_) | Token::Punct(')' | ']'))
+            ) || matches!((at(1), at(2)), (Some(Token::Num), Some(Token::Punct(']'))))
+        }
+        Token::Punct('=') => {
+            matches!(at(1), Some(Token::Punct('=' | '>')))
+                || matches!(at(-1), Some(Token::Punct('=' | '!' | '<' | '>')))
+                || (matches!(at(-1), Some(Token::Ident(_)))
+                    && matches!(at(-2), Some(Token::Ident(word)) if matches!(word.as_str(), "const" | "let" | "var")))
+        }
+        _ => true,
+    }
+}
+
 /// Tab methods that read or reset the page when called with no arguments.
 pub(super) const NO_ARGUMENT_METHODS: &[&str] = &[
     "title",

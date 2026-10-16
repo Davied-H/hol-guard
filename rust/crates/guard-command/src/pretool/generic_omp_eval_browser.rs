@@ -9,21 +9,20 @@
 //!   object whose `url` is an `http(s)` loopback URL and whose other keys are
 //!   presentation options. Options that attach another browser (`app`), load
 //!   scripts or files, keep a profile, or relax TLS are not accepted.
-//! - `const|let NAME = browser.tab('name')`, a handle to a tab already in the
-//!   session. Guard reviews every `open` this module does not accept, so a tab
-//!   the agent reaches without review is a headless loopback page; a tab from
-//!   a reviewed open was approved for the agent to drive.
+//! - `const|let NAME = browser.tab('name')`, a tab already in the session.
+//!   Guard reviews every other `open`, so such a tab is a loopback page or
+//!   one the user approved for the agent to drive.
 //! - `await TAB.method(...)` for page reads and interactions with literal
 //!   arguments, `goto` only to a loopback URL, and `evaluate` with an inline
 //!   arrow function. OMP serializes that function with `String(fn)` and runs
-//!   it inside the page, so its body never runs in the agent process; the
-//!   parser only proves the function is not called in place.
+//!   it inside the page, never in the agent process. Its body may read and
+//!   compute over the DOM but not name a network, navigation, markup or code
+//!   sink, a global object, a URL, or a computed property.
 //! - `display(...)`, `log(...)` and `console.log(...)` of literals, declared
 //!   names and awaited tab calls.
 //!
-//! Comments, regular expressions and division (`/`), template interpolation,
-//! `tab.run`, file, cookie and download helpers, and every other identifier
-//! are rejected, so the whole program stays reviewed.
+//! Anything else (comments, `/`, template interpolation, `tab.run`, file,
+//! cookie and download helpers, other identifiers) keeps the program reviewed.
 
 use std::collections::HashSet;
 
@@ -32,7 +31,10 @@ const MAX_DEPTH: usize = 12;
 
 #[path = "generic_omp_eval_browser_lex.rs"]
 mod lex;
-use lex::{loopback_url, tokenize, Token, NO_ARGUMENT_METHODS, OPEN_KEYS, OPTION_KEYS, RESERVED};
+use lex::{
+    loopback_url, page_token, tokenize, Token, NO_ARGUMENT_METHODS, OPEN_KEYS, OPTION_KEYS,
+    RESERVED,
+};
 
 #[derive(Default)]
 struct Parser {
@@ -341,15 +343,10 @@ impl Parser {
         self.punct(')')
     }
 
-    /// The function `evaluate` serializes into the page: a source string or
-    /// an arrow with plain identifier parameters. Its body is only scanned
-    /// for balanced brackets; it must end at the argument, so it is passed
-    /// rather than called in the agent process.
+    /// The arrow function `evaluate` serializes into the page, with plain
+    /// identifier parameters and a body that passes `page_token`. It must
+    /// end at the argument, so it is passed rather than called in place.
     fn page_function(&mut self) -> Option<()> {
-        if matches!(self.peek(), Some(Token::Str(_))) {
-            self.pos += 1;
-            return Some(());
-        }
         if self.peek_ident("async") {
             self.pos += 1;
         }
@@ -374,6 +371,9 @@ impl Parser {
         let block = self.peek() == Some(&Token::Punct('{'));
         let mut stack: Vec<char> = Vec::new();
         loop {
+            if self.pos >= self.tokens.len() || !page_token(&self.tokens, self.pos) {
+                return None;
+            }
             match self.peek()?.clone() {
                 Token::Punct(',' | ')') if stack.is_empty() => break,
                 Token::Punct(c @ ('(' | '[' | '{')) => {
