@@ -24,6 +24,7 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
           persist-credentials: false
+          fetch-depth: 3
       - uses: ./.github/actions/restore-runtime-tests
         id: runtime-archive
       - name: Require a real exact-input main cache hit
