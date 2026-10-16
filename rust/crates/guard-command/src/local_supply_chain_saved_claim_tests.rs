@@ -1,5 +1,6 @@
 //! What a claimed saved package approval reports back to the caller.
 
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -14,10 +15,13 @@ use crate::package_intent_common::{GuardArtifact, PackageIntent};
 
 const ARTIFACT_HASH: &str = "guard-approval-context:v1:abc";
 
-/// A store whose lookup returns the one saved row the claim reads.
+/// A store whose lookup returns the one saved row the claim reads, and whose
+/// claim answers as the caller asked, recording what it was claimed with.
 struct SavedApprovalStore {
     home: PathBuf,
     decision: Option<Value>,
+    claim_succeeds: bool,
+    claimed: RefCell<Vec<(Value, String)>>,
 }
 
 impl SupplyChainStore for SavedApprovalStore {
@@ -81,10 +85,13 @@ impl SupplyChainStore for SavedApprovalStore {
         (None, None)
     }
     fn approval_reuse_claim_disposition(&self, _decision: &Value) -> Option<String> {
-        None
+        Some("retained".to_string())
     }
-    fn claim_approval_reuse_decision(&self, _decision: &Value, _now: &str) -> bool {
-        false
+    fn claim_approval_reuse_decision(&self, decision: &Value, now: &str) -> bool {
+        self.claimed
+            .borrow_mut()
+            .push((decision.clone(), now.to_string()));
+        self.claim_succeeds
     }
     fn claim_local_once_approval(
         &self,
@@ -222,19 +229,28 @@ fn evaluation() -> PackageRequestEvaluation {
     }))
 }
 
-fn resolve(decision: Option<Value>) -> PackageRequestEvaluation {
+const NOW: &str = "2026-01-01T00:00:00+00:00";
+
+/// The evaluation the override resolves, and the rows the store was asked to
+/// claim while resolving it.
+fn resolve_with_claim(
+    decision: Option<Value>,
+    claim_succeeds: bool,
+) -> (PackageRequestEvaluation, Vec<(Value, String)>) {
     let store = SavedApprovalStore {
         home: PathBuf::from("/tmp/guard-home"),
         decision,
+        claim_succeeds,
+        claimed: RefCell::new(Vec::new()),
     };
     let seams = Seams;
-    apply_stored_package_policy_override(
+    let resolved = apply_stored_package_policy_override(
         &evaluation(),
         &store,
         &artifact(),
         ARTIFACT_HASH,
         Path::new("/tmp/proj"),
-        "2026-01-01T00:00:00+00:00",
+        NOW,
         None,
         None,
         true,
@@ -242,16 +258,26 @@ fn resolve(decision: Option<Value>) -> PackageRequestEvaluation {
         &seams,
         &seams,
         &seams,
-    )
+    );
+    let claimed = store.claimed.borrow().clone();
+    (resolved, claimed)
+}
+
+fn resolve(decision: Option<Value>) -> PackageRequestEvaluation {
+    resolve_with_claim(decision, true).0
 }
 
 #[test]
 fn a_claimed_saved_approval_rewrites_the_evaluation() {
-    let claimed = resolve(Some(json!({
+    let row = json!({
         "decision_id": 7,
         "action": "allow",
         "artifact_hash": ARTIFACT_HASH,
-    })));
+    });
+    let (claimed, claims) = resolve_with_claim(Some(row.clone()), true);
+    // The row the evaluation reports as approved is the row the store was
+    // asked to claim, at the resolution's own timestamp.
+    assert_eq!(claims, vec![(row, NOW.to_string())]);
     assert_eq!(claimed.policy_action().as_deref(), Some("allow"));
     assert_eq!(claimed.decision_value(), "allow");
     assert_eq!(claimed.value["saved_approval_applied"], json!(true));
@@ -261,12 +287,34 @@ fn a_claimed_saved_approval_rewrites_the_evaluation() {
 }
 
 #[test]
-fn a_saved_row_for_another_content_hash_leaves_the_evaluation_alone() {
-    let unchanged = resolve(Some(json!({
+fn a_refused_claim_leaves_the_review_verdict_standing() {
+    let row = json!({
         "decision_id": 7,
         "action": "allow",
-        "artifact_hash": "guard-approval-context:v1:other",
-    })));
+        "artifact_hash": ARTIFACT_HASH,
+    });
+    let (unchanged, claims) = resolve_with_claim(Some(row.clone()), false);
+    assert_eq!(claims, vec![(row, NOW.to_string())]);
+    // Another caller took the single-use row, so it is not reported as an
+    // approval the way a claimed row is.
+    assert_eq!(unchanged.policy_action().as_deref(), Some("review"));
+    assert_eq!(unchanged.decision_value(), "review");
+    assert_eq!(unchanged.value.get("saved_approval_applied"), None);
+    assert_eq!(unchanged.value.get("saved_approval_decision_id"), None);
+}
+
+#[test]
+fn a_saved_row_for_another_content_hash_leaves_the_evaluation_alone() {
+    let (unchanged, claims) = resolve_with_claim(
+        Some(json!({
+            "decision_id": 7,
+            "action": "allow",
+            "artifact_hash": "guard-approval-context:v1:other",
+        })),
+        true,
+    );
+    // A row for other content is never claimed at all.
+    assert!(claims.is_empty());
     assert_eq!(unchanged.policy_action().as_deref(), Some("review"));
     assert_eq!(unchanged.value.get("saved_approval_applied"), None);
 }
@@ -281,11 +329,17 @@ fn no_saved_row_leaves_the_evaluation_alone() {
 #[test]
 fn a_saved_row_recording_another_action_is_not_claimed_as_an_approval() {
     for action in ["block", "review", "require-reapproval"] {
-        let unchanged = resolve(Some(json!({
-            "decision_id": 7,
-            "action": action,
-            "artifact_hash": ARTIFACT_HASH,
-        })));
+        let (unchanged, claims) = resolve_with_claim(
+            Some(json!({
+                "decision_id": 7,
+                "action": action,
+                "artifact_hash": ARTIFACT_HASH,
+            })),
+            true,
+        );
+        // The lanes that own a block or a review row read it themselves; the
+        // claim is never spent on one.
+        assert!(claims.is_empty(), "{action}");
         assert_eq!(
             unchanged.policy_action().as_deref(),
             Some("review"),

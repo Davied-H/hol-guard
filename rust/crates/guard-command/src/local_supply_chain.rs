@@ -5594,17 +5594,37 @@ fn resolve_stored_package_policy_override(
     if saved_hash != Some(artifact_hash) {
         return StoredPackagePolicyResolution {
             evaluation: evaluation.clone(),
-            claim_disposition: Some("artifact_hash_mismatch".to_string()),
+            claim_disposition: None,
         };
     }
     // Check freshness — expiry, approval-context token, etc.
-    if let Some(reason) = approval_context_api.approval_context_tokens_validation_reason(
-        saved.get("artifact_hash").unwrap_or(&Value::Null),
-        &Value::String(artifact_hash.to_string()),
-    ) {
+    if approval_context_api
+        .approval_context_tokens_validation_reason(
+            saved.get("artifact_hash").unwrap_or(&Value::Null),
+            &Value::String(artifact_hash.to_string()),
+        )
+        .is_some()
+    {
         return StoredPackagePolicyResolution {
             evaluation: evaluation.clone(),
-            claim_disposition: Some(reason),
+            claim_disposition: None,
+        };
+    }
+    // The disposition the row reports is the store's, and only the two values
+    // the caller's vocabulary carries: a single-use row reads as `consumed`,
+    // a durable one as `retained`.
+    let disposition = match store.approval_reuse_claim_disposition(&saved).as_deref() {
+        Some(value @ ("consumed" | "retained")) => Some(value.to_owned()),
+        _ => None,
+    };
+    // The store claims the row before the evaluation reports the approval
+    // (`_run_claim`, kind `store`). A refused claim — another caller took the
+    // single-use row, or the row no longer stands — leaves the review verdict
+    // the package lane settled, so an unclaimed row is never read as approved.
+    if !store.claim_approval_reuse_decision(&saved, now) {
+        return StoredPackagePolicyResolution {
+            evaluation: evaluation.clone(),
+            claim_disposition: None,
         };
     }
     // Apply the saved approval — rewrite decision fields.
@@ -5616,7 +5636,7 @@ fn resolve_stored_package_policy_override(
     ]);
     StoredPackagePolicyResolution {
         evaluation: claimed,
-        claim_disposition: Some("claimed".to_string()),
+        claim_disposition: disposition,
     }
 }
 
