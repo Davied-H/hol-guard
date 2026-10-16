@@ -8,6 +8,7 @@ import pytest
 from codex_plugin_scanner.guard import native_restricted_pytest as transport
 from codex_plugin_scanner.guard.adapters.zcode_contained_tests import platform_contains
 from codex_plugin_scanner.guard.runtime import restricted_node_tool
+from codex_plugin_scanner.guard.runtime.contained_wrapper import peel_contained_wrapper
 from codex_plugin_scanner.guard.runtime.restricted_pytest_model import RestrictedPytestError
 
 NODE = r"C:\Users\tester\tools\node\node.exe"
@@ -148,3 +149,20 @@ def test_windows_contains_node_builds(monkeypatch):
     monkeypatch.setattr(sys, "platform", "win32")
     assert platform_contains({"required_execution_profile": PROFILE})
     assert not platform_contains({"required_execution_profile": "node-tool-readonly-v1"})
+
+
+def test_windows_peels_a_relative_cd_into_the_workspace(monkeypatch, tmp_path):
+    app = _project(tmp_path)
+    command = "cd dashboard && ./node_modules/.bin/vite build 2>&1 | tail -15"
+    monkeypatch.setattr(sys, "platform", "win32")
+    core, directory, output = peel_contained_wrapper(command, workspace=tmp_path, cwd=tmp_path)
+    assert core == "./node_modules/.bin/vite build"
+    assert directory == app.resolve()
+    assert output is not None
+    assert (output.kind, output.count, output.merge_stderr) == ("tail", 15, True)
+    for refused in ("cd dashboard; ./node_modules/.bin/vite build", "cd .. && ./node_modules/.bin/vite build"):
+        with pytest.raises((ValueError, OSError)):
+            peel_contained_wrapper(refused, workspace=tmp_path, cwd=tmp_path)
+    monkeypatch.setattr(sys, "platform", "darwin")
+    with pytest.raises(ValueError):
+        peel_contained_wrapper(command, workspace=tmp_path, cwd=tmp_path)

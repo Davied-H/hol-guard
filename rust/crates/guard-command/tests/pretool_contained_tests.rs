@@ -596,15 +596,37 @@ fn windows_contains_direct_vite_builds_of_a_flat_install() {
     std::fs::write(app.join("node_modules/vite/bin/vite.js"), "").unwrap();
     std::fs::write(app.join("node_modules/.bin/vite"), "").unwrap();
     let workspace = root.to_str().unwrap();
+    // The hook bridge stamps an environment without CDPATH, which proves a
+    // bare `cd dashboard`.
+    let environment = guard_contracts::GuardExecutionEnvironmentV1 {
+        path: std::env::var("PATH").unwrap(),
+        environment_names: vec!["PATH".to_owned()],
+        environment_digest: "0".repeat(64),
+        home: Some(r"C:\Users\tester".to_owned()),
+        git_pager_disabled: false,
+        pager_disabled: false,
+        xdg_config_home: None,
+        git_config_no_system: false,
+        library_search_paths: Default::default(),
+    };
     let classify_in = |harness: &str, command: &str, cwd: &str| {
-        evaluate_pre_tool_envelope_with_context(
+        guard_command::pretool::evaluate_pre_tool_envelope_with_execution_context(
             harness,
             "PreToolUse",
             &json!({"tool_name":"bash","tool_input":{"command":command}}),
             None,
             None,
-            Some(r"C:\Users\tester"),
-            Some(cwd),
+            guard_command::pretool::PathContext {
+                home_dir: Some(r"C:\Users\tester"),
+                cwd: Some(cwd),
+                cdpath_unset: true,
+                rustup_override_absent: false,
+                npm_config_inert: false,
+                shell_home_matches: false,
+                ripgrep_config_absent: false,
+                psql_environment: Default::default(),
+            },
+            Some(&environment),
         )
     };
     let entry = app

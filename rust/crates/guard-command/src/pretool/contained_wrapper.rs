@@ -124,6 +124,15 @@ pub(super) fn sibling_project_root(
         })
 }
 
+/// Whether the sink peels a relative leading `cd` into the workspace: only on
+/// Windows, and only when `&&` joins it to the next command
+/// (`peel_contained_wrapper`).
+fn relative_inside_peeled(model: &CanonicalCommandV1, segments: &[CommandSegmentV1]) -> bool {
+    cfg!(windows)
+        && matches!(segments, [cd, next, ..]
+            if text(model, cd.span.end, next.span.start).as_deref() == Some("&&"))
+}
+
 #[cfg(not(unix))]
 pub(super) fn sibling_project_root(
     _target: &std::path::Path,
@@ -162,7 +171,7 @@ pub(super) fn sink_peels_leading_cd(
         text(model, first.span.end, next.span.start).is_some_and(|between| between == ";")
     });
     if inside {
-        return !relative && !sequenced;
+        return (!relative || relative_inside_peeled(model, &model.segments)) && !sequenced;
     }
     let sibling = sibling_project_root(&target, home).is_some_and(|root| root == target);
     !relative || sibling
@@ -201,11 +210,14 @@ pub(super) fn contained_core(
         // repository root outside the workspace (`peel_contained_wrapper`).
         // Any other relative target is left to the workspace sandbox, which
         // runs the text whole, instead of a receipt the sink cannot redeem.
+        // Windows has no workspace sandbox, so there the sink also peels an
+        // `&&`-joined relative cd into the workspace.
         let [spelled] = segments[0].arguments.as_slice() else {
             return None;
         };
         let anchored = spelled.starts_with('~') || std::path::Path::new(spelled).is_absolute();
-        if !anchored && (inside || sibling.as_deref() != Some(target)) {
+        let peeled_inside = inside && relative_inside_peeled(model, segments);
+        if !anchored && !peeled_inside && (inside || sibling.as_deref() != Some(target)) {
             return None;
         }
         start = 1;
