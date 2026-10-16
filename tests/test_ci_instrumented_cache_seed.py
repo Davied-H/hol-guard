@@ -27,7 +27,8 @@ def test_seed_is_read_only_profile_bound_and_only_runs_on_a_complete_miss():
     assert seed["uses"] == primary["uses"]
     assert seed["with"]["save-if"] == "false"
     assert seed["with"]["workspaces"] == primary["with"]["workspaces"] == "rust"
-    assert seed["with"]["shared-key"] == primary["with"]["shared-key"].replace("${{ inputs.partition }}-", "")
+    assert seed["with"]["shared-key"] == primary["with"]["shared-key"].replace("v2-${{ inputs.partition }}-", "")
+    assert primary["with"]["cache-on-failure"] is False
     assert seed["if"] == "steps.restored-dependencies.outputs.restored != 'true'"
     assert "if" not in probe  # Even an exact archive may contain no instrumented crates.
     assert primary["with"]["save-if"] == "${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}"

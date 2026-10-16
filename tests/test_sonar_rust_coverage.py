@@ -143,7 +143,7 @@ def test_dependency_cache_tracks_the_instrumented_build_profile() -> None:
         "hashFiles('scripts/ci/sonar_rust_profile.sh', 'scripts/ci/rust_test_compiler.sh', 'rust/Cargo.toml')"
         in cache["with"]["shared-key"]
     )
-    assert cache["with"]["cache-on-failure"] is True
+    assert cache["with"]["cache-on-failure"] is False
     assert cache["with"]["save-if"] == "${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}"
     run = next(
         step for step in action["runs"]["steps"] if step.get("name") == "Generate current-checkout Rust coverage"

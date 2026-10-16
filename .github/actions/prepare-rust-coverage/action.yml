@@ -23,8 +23,10 @@ runs:
         workspaces: rust
         # Keep group dependency sets separate so concurrent partial writers
         # cannot replace another group's cache.
-        shared-key: sonar-${{ inputs.partition }}-${{ hashFiles('scripts/ci/sonar_rust_profile.sh', 'scripts/ci/rust_test_compiler.sh', 'rust/Cargo.toml') }}
-        cache-on-failure: true
+        # This version is populated only after successful coverage generation,
+        # so failed first builds cannot leave immutable tools-only archives.
+        shared-key: sonar-v2-${{ inputs.partition }}-${{ hashFiles('scripts/ci/sonar_rust_profile.sh', 'scripts/ci/rust_test_compiler.sh', 'rust/Cargo.toml') }}
+        cache-on-failure: false
         save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     - name: Check for restored instrumented dependencies
       id: restored-dependencies
