@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import logging
 import tempfile
 from pathlib import Path
 
@@ -256,6 +257,44 @@ def test_supported_cli_pretool_worker_exception_is_fail_safe(
     output = response["hookSpecificOutput"]
     assert isinstance(output, dict)
     assert output["permissionDecision"] == "deny"
+
+
+def test_supported_cli_pretool_worker_exception_is_reported(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A denied tool call the operator cannot explain is a defect of its own.
+
+    The wire document is a fixed deny with no detail, so the underlying error
+    has to reach the log or it is unrecoverable in the field.
+    """
+
+    class BrokenWorker:
+        def __init__(self, *, store: object, **_kwargs: object) -> None:
+            del store
+            del _kwargs
+
+        def review_http_payload(self, **_kwargs: object) -> dict[str, object]:
+            raise RuntimeError("worker fixture failure")
+
+    monkeypatch.setattr(commands_hook_native_authority, "HookWorker", BrokenWorker)
+    with caplog.at_level(logging.WARNING, logger=commands_hook_native_authority.__name__):
+        commands_hook_native_authority.try_native_hook_authority(
+            payload={"hook_event_name": "PreToolUse", "tool_input": {"command": "git status"}},
+            harness="claude-code",
+            home_dir=tmp_path / "home",
+            guard_home=tmp_path / "guard-home",
+            workspace=tmp_path / "workspace",
+            store=GuardStore(tmp_path / "guard-home"),
+        )
+    records = [record for record in caplog.records if record.levelno == logging.WARNING]
+    assert records, "the swallowed exception left no trace"
+    message = records[0].getMessage()
+    assert "RuntimeError" in message
+    assert "worker fixture failure" in message
+    assert "claude-code" in message
+    assert records[0].exc_info is not None
 
 
 def test_cli_frames_raw_payload_before_harness_normalization(

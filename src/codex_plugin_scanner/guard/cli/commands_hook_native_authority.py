@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Callable
+import logging
+from collections.abc import Callable, Mapping
 from functools import wraps
 from pathlib import Path
 from typing import Any, TextIO
@@ -61,7 +62,8 @@ def try_native_hook_authority(
             guard_home=guard_home,
             workspace=workspace,
         )
-    except Exception:
+    except Exception as error:
+        _log_worker_exception(error, harness=harness, payload=payload)
         return availability_harness_response(
             payload,
             harness=harness,
@@ -83,6 +85,26 @@ def try_native_hook_authority(
             # control-plane persistence. Persistence is best effort; the
             # security result is already returned and never depends on it.
             _ = evidence_writer.stop(timeout_seconds=_NATIVE_RECEIPT_DRAIN_TIMEOUT_SECONDS)
+
+
+def _log_worker_exception(error: BaseException, *, harness: str, payload: Mapping[str, object]) -> None:
+    """Record why native authority could not answer before denying.
+
+    The harness wire document is a fixed deny that deliberately carries no
+    detail, so without this the operator sees a blocked tool call and has
+    nothing to go on. The exception goes to the logger rather than the
+    response: stderr is diagnostic, the decision on stdout is unchanged, and
+    no path or payload content crosses to the harness.
+    """
+
+    logging.getLogger(__name__).warning(
+        "HOL Guard native hook authority failed for %s %s: %s: %s",
+        harness,
+        runtime_hook_event_name(payload),
+        type(error).__name__,
+        error,
+        exc_info=True,
+    )
 
 
 def _one_adapter_scope(route: Callable[..., int]) -> Callable[..., int]:
@@ -169,7 +191,8 @@ def route_native_hook(
         # rc mirrors the emitted verdict through the harness's adapter contract
         # (per-harness deny code, recording-only allows keep 0).
         return _native_unavailable_exit_code(args, native_result, runtime_hook_event_name(payload))
-    except Exception:
+    except Exception as error:
+        _log_worker_exception(error, harness=args.harness, payload=payload)
         response = availability_harness_response(
             payload,
             harness=args.harness,
