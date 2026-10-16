@@ -116,6 +116,7 @@ def test_null_payload_is_ineligible(monkeypatch: pytest.MonkeyPatch, tmp_path: P
         {"payload": {**_PAYLOAD, "capability": ""}},
         {"payload": {**_PAYLOAD, "read_only_reason": None}},
         {"payload": {**_PAYLOAD, "trust_basis": "unverified"}},
+        {"payload": {**_PAYLOAD, "trust_basis": ["package-profile"]}},
         {"payload": {**_PAYLOAD, "indefinite_allowed": 1}},
         {"payload": {**_PAYLOAD, "trust_basis": "verified-files", "indefinite_allowed": True}},
     ],
@@ -145,3 +146,15 @@ def test_resident_failure_is_ineligible(monkeypatch: pytest.MonkeyPatch, tmp_pat
     monkeypatch.setattr(client, "_resolve_existing_digest_home", lambda _home: Path("guard-home"))
 
     assert _ask(tmp_path) is None
+
+
+def test_unknown_user_home_is_ineligible(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    calls = _reply(monkeypatch, payload=_PAYLOAD)
+
+    def no_home() -> Path:
+        raise RuntimeError("Could not determine home directory.")
+
+    monkeypatch.setattr(client.Path, "home", staticmethod(no_home))
+
+    assert _ask(tmp_path) is None
+    assert calls == []

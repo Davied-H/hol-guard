@@ -105,16 +105,16 @@ def local_tool_approval_eligibility(
     more permissive.
     """
 
-    request: dict[str, object] = {
-        "schema": _ELIGIBILITY_REQUEST_SCHEMA,
-        "request_id": f"local-tool-eligibility-{uuid4().hex}",
-        "command": command,
-        "cwd": str(cwd),
-        "home_dir": None if home_dir is None else str(home_dir),
-        "user_home": str(Path.home()),
-        "launch_env": dict(os.environ),
-    }
     try:
+        request: dict[str, object] = {
+            "schema": _ELIGIBILITY_REQUEST_SCHEMA,
+            "request_id": f"local-tool-eligibility-{uuid4().hex}",
+            "command": command,
+            "cwd": str(cwd),
+            "home_dir": None if home_dir is None else str(home_dir),
+            "user_home": str(Path.home()),
+            "launch_env": dict(os.environ),
+        }
         digest = "sha256:" + _canonical_request_sha256(request)
         guard_home = _resolve_existing_digest_home(None)
         if not ensure_resident_prerequisite(guard_home):
@@ -158,6 +158,7 @@ def _eligibility_from_payload(payload: object) -> LocalToolApprovalEligibility |
         or _nonempty_string(capability) is None
         or not isinstance(read_only_reason, str)
         or _nonempty_string(read_only_reason) is None
+        or not isinstance(trust_basis, str)
         or trust_basis not in {"verified-files", "package-profile"}
         or not isinstance(indefinite_allowed, bool)
         or (indefinite_allowed and trust_basis != "package-profile")
