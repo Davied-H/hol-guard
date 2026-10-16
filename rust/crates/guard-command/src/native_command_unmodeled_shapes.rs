@@ -36,6 +36,13 @@ const PYTHON_UNBOUNDED: &[&str] = &[
 /// program. An `import` keyword starts a statement, so one inside a string
 /// literal (preceded by a quote or a word) is data.
 fn python_is_builtin_only(body: &[&str]) -> bool {
+    // A coding declaration can re-decode the whole source into other text.
+    if body
+        .iter()
+        .any(|row| row.to_ascii_lowercase().contains("coding"))
+    {
+        return false;
+    }
     body.iter().all(|row| {
         if !row.is_ascii() {
             return false;
@@ -73,6 +80,7 @@ pub(super) fn data_heredocs(text: &str) -> Option<(String, bool)> {
         if after.starts_with('<') || before.contains(['\'', '"']) {
             return None;
         }
+        let strip_tabs = after.starts_with('-');
         let after = after.strip_prefix('-').unwrap_or(after).trim_start();
         let quoted = after.starts_with(['\'', '"']);
         let end = after[usize::from(quoted)..]
@@ -89,7 +97,14 @@ pub(super) fn data_heredocs(text: &str) -> Option<(String, bool)> {
         let mut body = Vec::new();
         loop {
             let next = lines.next()?;
-            if next.trim() == delimiter {
+            // The shell closes a heredoc only on the delimiter alone, after
+            // leading tabs for `<<-`.
+            let candidate = if strip_tabs {
+                next.trim_start_matches('\t')
+            } else {
+                next
+            };
+            if candidate == delimiter {
                 break;
             }
             body.push(next);
@@ -204,7 +219,14 @@ pub(super) fn without_plain_awk(shell: &str) -> String {
         // next command separator.
         let end = pieces[index..]
             .iter()
-            .position(|(text, operator)| *operator && !text.contains(['<', '>']))
+            .position(|(text, operator)| {
+                *operator
+                    && text
+                        .replace(">&", ">")
+                        .replace("<&", "<")
+                        .replace("&>", ">")
+                        .contains([';', '|', '&', '(', ')', '\n'])
+            })
             .map_or(pieces.len(), |at| index + at);
         let plain = pieces[index + 1..end].iter().all(|(word, operator)| {
             if *operator {

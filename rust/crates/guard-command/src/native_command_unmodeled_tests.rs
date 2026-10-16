@@ -500,3 +500,25 @@ fn a_substituted_setting_before_a_bare_env_is_named() {
     let reason = reason_text(&controls, "SERVICE_TOKEN=$(echo x) env");
     assert!(reason.contains("SERVICE_TOKEN"), "{reason}");
 }
+
+#[test]
+fn awk_ending_at_a_separator_with_a_redirect_does_not_swallow_the_next_command() {
+    let controls = controls(serde_json::json!([]), false);
+    for command in [
+        "doctl registry repository list-manifests r | awk '{print}' ;</dev/null sh evil.sh",
+        "doctl registry repository list-manifests r | awk '{print}' |>o bash x.sh",
+    ] {
+        assert_eq!(decision(&controls, command).1, FAILED, "{command}");
+    }
+}
+
+#[test]
+fn heredoc_python_with_a_coding_cookie_or_padded_terminator_keeps_the_failure() {
+    let controls = controls(serde_json::json!([]), false);
+    for command in [
+        "python3 - <<'EOF'\n# coding: utf-7\n+AF8AXw-x\nEOF\nnpm test",
+        "python3 - <<'EOF'\nprint(1)\n  EOF\nimport os\nEOF\nnpm test",
+    ] {
+        assert_eq!(decision(&controls, command).1, FAILED, "{command}");
+    }
+}

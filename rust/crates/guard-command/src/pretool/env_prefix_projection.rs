@@ -613,8 +613,8 @@ pub(super) fn substituted_setting(command: &str) -> Option<String> {
             bare_env = in_prefix;
             continue;
         }
-        bare_env = false;
         let Some((name, _)) = shell_assignment(chars.as_slice(), token) else {
+            bare_env = false;
             if pending.is_some() {
                 return pending;
             }
