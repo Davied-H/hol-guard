@@ -184,12 +184,6 @@ def _shell_segment_primary_command(segment: list[str]) -> tuple[str | None, int 
                 return None, None
             index += command_index + 1
             continue
-        if command_name == "timeout":
-            clock_tokens = _timeout_clock_tokens_consumed(segment[index + 1 :])
-            if clock_tokens is None:
-                return None, None
-            index += clock_tokens + 1
-            continue
         if command_name in _SHELL_COMMAND_WRAPPERS:
             index += 1
             while index < len(segment):
@@ -200,33 +194,6 @@ def _shell_segment_primary_command(segment: list[str]) -> tuple[str | None, int 
             continue
         return command_name, index
     return None, None
-
-
-def _timeout_clock_tokens_consumed(rest: list[str]) -> int | None:
-    """Tokens a ``timeout`` clock takes before the program it bounds.
-
-    ``timeout`` runs that program itself, so the segment is read as the
-    program's own, the same way the command model reads it. An option, a
-    second clock or a missing program leaves the program unreadable.
-    """
-
-    consumed = 1 if rest and rest[0] == "--" else 0
-    if consumed >= len(rest) or not _timeout_duration(rest[consumed]):
-        return None
-    consumed += 1
-    if consumed >= len(rest):
-        return None
-    program = rest[consumed]
-    if not program or program.startswith("-") or _SHELL_ASSIGNMENT_PATTERN.match(program):
-        return None
-    return consumed
-
-
-def _timeout_duration(value: str) -> bool:
-    number = value[:-1] if value[-1:] in {"s", "m", "h", "d"} else value
-    whole, _, fraction = number.partition(".")
-    digits = f"{whole}{fraction}"
-    return len(number) <= 10 and bool(whole) and digits.isascii() and digits.isdigit()
 
 
 def _leading_shell_redirection_tokens_consumed(segment: list[str], index: int) -> int:

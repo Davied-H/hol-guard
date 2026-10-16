@@ -137,13 +137,6 @@ pub(crate) fn shell_segment_primary_command(segment: &[String]) -> (Option<Strin
             index += command_index + 1;
             continue;
         }
-        if command_name == "timeout" {
-            let Some(consumed) = timeout_clock_tokens_consumed(&segment[index + 1..]) else {
-                return (None, None);
-            };
-            index += consumed + 1;
-            continue;
-        }
         if SHELL_COMMAND_WRAPPERS.contains(&command_name.as_str()) {
             index += 1;
             while index < segment.len() {
@@ -158,38 +151,6 @@ pub(crate) fn shell_segment_primary_command(segment: &[String]) -> (Option<Strin
         return (Some(command_name), Some(index));
     }
     (None, None)
-}
-
-/// The tokens a `timeout` clock takes before the program it bounds: an
-/// optional `--`, then the duration. `timeout` runs that program itself, so
-/// the classifier reads the segment as the program's own, the same way the
-/// command model does. Anything else after the clock — an option, a second
-/// clock, nothing at all — leaves the program unreadable from the text.
-fn timeout_clock_tokens_consumed(rest: &[String]) -> Option<usize> {
-    let mut consumed = 0;
-    if rest.first().is_some_and(|token| token == "--") {
-        consumed += 1;
-    }
-    if !rest.get(consumed).is_some_and(|value| is_duration(value)) {
-        return None;
-    }
-    consumed += 1;
-    let program = rest.get(consumed)?;
-    let readable = !program.is_empty()
-        && !program.starts_with('-')
-        && !SHELL_ASSIGNMENT_PATTERN.is_match(program).unwrap_or(false);
-    readable.then_some(consumed)
-}
-
-/// A duration `timeout` reads: seconds, or a number carrying an `s`, `m`, `h`
-/// or `d` unit, with an optional fraction.
-fn is_duration(value: &str) -> bool {
-    let number = value.strip_suffix(['s', 'm', 'h', 'd']).unwrap_or(value);
-    let (whole, fraction) = number.split_once('.').unwrap_or((number, ""));
-    number.len() <= 10
-        && !whole.is_empty()
-        && whole.bytes().all(|byte| byte.is_ascii_digit())
-        && fraction.bytes().all(|byte| byte.is_ascii_digit())
 }
 
 /// `_leading_shell_redirection_tokens_consumed`.
@@ -437,47 +398,5 @@ mod tests {
         );
         assert_eq!(wrapper_option_tokens_consumed("sudo", "-u"), 2);
         assert_eq!(wrapper_option_tokens_consumed("sudo", "-uroot"), 1);
-    }
-
-    #[test]
-    fn a_timeout_clock_reads_through_to_its_program() {
-        for (segment, name, index) in [
-            (vec!["timeout", "300", "pytest", "-q"], "pytest", 2),
-            (vec!["timeout", "5m", "npm", "run", "build"], "npm", 2),
-            (vec!["timeout", "1.5h", "make"], "make", 2),
-            (vec!["timeout", "--", "10", "git", "status"], "git", 3),
-            (vec!["timeout", "10", "sudo", "-u", "root", "id"], "id", 5),
-            (vec!["/usr/bin/timeout", "10", "curl", "host"], "curl", 2),
-        ] {
-            assert_eq!(
-                shell_segment_primary_command(&strings(&segment)),
-                (Some(name.to_owned()), Some(index)),
-                "{segment:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn a_timeout_without_a_readable_program_stays_unreadable() {
-        for segment in [
-            // The clock is missing, so the next word is the program only if
-            // this guesses at it.
-            vec!["timeout", "pytest", "-q"],
-            // Its options carry values this does not read.
-            vec!["timeout", "-s", "KILL", "300", "pytest"],
-            vec!["timeout", "--signal=KILL", "300", "pytest"],
-            // Nothing follows the clock, or what follows is not a program.
-            vec!["timeout", "300"],
-            vec!["timeout"],
-            vec!["timeout", "300", "--flag"],
-            vec!["timeout", "300", "FOO=bar"],
-            vec!["timeout", "300", ""],
-        ] {
-            assert_eq!(
-                shell_segment_primary_command(&strings(&segment)),
-                (None, None),
-                "{segment:?}"
-            );
-        }
     }
 }
