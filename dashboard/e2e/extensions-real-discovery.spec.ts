@@ -76,7 +76,15 @@ async function expectRendersAtBothSizes(page: Page, check: () => Promise<void>) 
   await page.setViewportSize({ width: 1280, height: 800 });
 }
 
+/**
+ * The recorded placements end on a real date, and the view filters them
+ * against the clock. Pinning the page clock to just after the capture keeps
+ * these scenarios deterministic without editing the projections.
+ */
+const CAPTURE_TIME = new Date("2026-10-16T09:41:00.000Z");
+
 async function open(page: Page, fixture: string) {
+  await page.clock.setFixedTime(CAPTURE_TIME);
   await mount(page, { catalog: realCatalog(), effective: effective() });
   await routeDiscovery(page, realProjection(fixture));
   await routeAnalytics(page, [{ value: "command.git", count: 41 }]);
