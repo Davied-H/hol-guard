@@ -78,7 +78,9 @@ const DESTRUCTIVE_EXECUTABLES: &[&str] = &[
 
 /// Windows shells, script hosts, installers and the system binaries that run
 /// code or commands named elsewhere (scheduled tasks, registry, downloads).
-/// They are consulted on Windows only.
+/// Git for Windows adds `winpty`, `cygstart` and the Tcl/Tk hosts (`tclsh`,
+/// `wish`, including versioned `tclsh86` / `wish86`). They are consulted on
+/// Windows only.
 const WINDOWS_LAUNCHERS: &[&str] = &[
     "cmd",
     "powershell",
@@ -95,6 +97,10 @@ const WINDOWS_LAUNCHERS: &[&str] = &[
     "git-bash",
     "mintty",
     "busybox",
+    "winpty",
+    "cygstart",
+    "tclsh",
+    "wish",
     "wt",
     "py",
     "pyw",
@@ -176,7 +182,19 @@ pub(super) fn is_python_launcher(name: &str) -> bool {
 pub(super) fn is_mutable_launcher(name: &str) -> bool {
     is_code_launcher(name)
         || EXTRA_MUTABLE_LAUNCHERS.contains(&name)
-        || (cfg!(windows) && WINDOWS_LAUNCHERS.contains(&name))
+        || (cfg!(windows) && (WINDOWS_LAUNCHERS.contains(&name) || is_tcl_wish_host(name)))
+}
+
+/// Git for Windows names its Tcl/Tk hosts `tclsh86` and `wish86` (and the
+/// threaded `tclsh86t` / `wish86t` builds). The unversioned names are in
+/// `WINDOWS_LAUNCHERS`; this matches the versioned spellings too.
+fn is_tcl_wish_host(name: &str) -> bool {
+    static PATTERN: OnceLock<Regex> = OnceLock::new();
+    PATTERN
+        .get_or_init(|| {
+            Regex::new(r"(?i)^(?:tclsh|wish)\d*(?:\.\d+)*t?(?:\.exe)?\z").expect("static pattern")
+        })
+        .is_match(name)
 }
 
 /// `_loads_unbound_code`.
@@ -237,4 +255,29 @@ pub(super) fn uses_file_backed_program(tokens: &[String]) -> bool {
         }
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_tcl_wish_host;
+
+    #[test]
+    fn git_for_windows_tcl_hosts_match_versioned_names() {
+        for name in [
+            "tclsh",
+            "tclsh86",
+            "tclsh8.6",
+            "tclsh86t",
+            "TCLSH86.EXE",
+            "wish",
+            "wish86",
+            "wish8.6",
+            "wish86.exe",
+        ] {
+            assert!(is_tcl_wish_host(name), "{name}");
+        }
+        for name in ["tcl", "wishful", "tclsh86tx", "python", "winpty"] {
+            assert!(!is_tcl_wish_host(name), "{name}");
+        }
+    }
 }

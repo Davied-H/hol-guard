@@ -20,7 +20,13 @@ const MAX_HOOK_FILES: usize = 32;
 const MAX_ATTRIBUTE_DIRECTORIES: usize = 20_000;
 const SIGNATURE_PLACEHOLDER: &str = "%G";
 const GIT_HELPER_ENVIRONMENT: [&str; 3] = ["GIT_EXTERNAL_DIFF", "GIT_PAGER", "GIT_ATTR_SOURCE"];
-const GIT_LOOKUP_ENVIRONMENT: [&str; 3] = ["GIT_DIR", "GIT_WORK_TREE", "GIT_EXEC_PATH"];
+const GIT_LOOKUP_ENVIRONMENT: [&str; 5] = [
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_EXEC_PATH",
+    "GIT_COMMON_DIR",
+    "GIT_INDEX_FILE",
+];
 const CONFIG_NAMES: [&str; 4] = ["config", "config.worktree", ".gitconfig", "gitconfig"];
 /// The text converter the Git for Windows system config names for its own
 /// attributes: a fixed script in the install.
@@ -110,8 +116,10 @@ fn injects_git_helper(name: &str, value: &str) -> bool {
     if name == "GIT_CONFIG_NOSYSTEM" || (name == "GIT_PAGER" && value == "cat") {
         return false;
     }
-    // A redirected repository or exec path names config and programs the
-    // digest never reads (`GIT_DIR` at a repository with `core.fsmonitor`).
+    // A redirected repository, common dir, index or exec path names config,
+    // hooks or attributes the digest never reads (`GIT_DIR` at a repository
+    // with `core.fsmonitor`, `GIT_COMMON_DIR` for that config, `GIT_INDEX_FILE`
+    // for indexed attributes).
     let redirects = cfg!(windows) && GIT_LOOKUP_ENVIRONMENT.contains(&name);
     name.starts_with("GIT_CONFIG") || GIT_HELPER_ENVIRONMENT.contains(&name) || redirects
 }

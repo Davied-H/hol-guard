@@ -47,7 +47,14 @@ fn git_path_helpers_never_run_on_reuse() {
     cmd(&tree.ws(), "git add .gitattributes");
     std::fs::remove_file(tree.path("ws\\.gitattributes")).unwrap();
     assert_eq!(shell(&tree, "git status"), Err("git_helper_config"));
-    for name in ["GIT_DIR", "git_work_tree", "GIT_EXEC_PATH"] {
+    assert!(shell(&tree, "git log -1").is_ok());
+    for name in [
+        "GIT_DIR",
+        "git_work_tree",
+        "GIT_EXEC_PATH",
+        "GIT_COMMON_DIR",
+        "git_index_file",
+    ] {
         let reason = launch(&tree, "git log -1", &|_, _, env| {
             env.insert(name.to_owned(), tree.ws());
         });
