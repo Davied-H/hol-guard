@@ -24,6 +24,8 @@ fn removing_a_root_is_a_hard_block() {
         "rm -rf /home/tester",
         "rm -rf /usr",
         "cd /home/tester/project && rm -rf /",
+        "cd / && rm -rf *",
+        "cd ~; rm -rf .",
     ] {
         let result = classify(command);
         assert_eq!(result.decision, "deny", "{command}");

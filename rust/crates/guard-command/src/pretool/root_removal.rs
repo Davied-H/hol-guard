@@ -25,19 +25,50 @@ const SYSTEM_DIRECTORIES: [&str; 15] = [
 ];
 
 /// Whether any command in `lowered` (lowercase text with `/` separators)
-/// runs `rm -rf` on a root.
+/// runs `rm -rf` on a root, including a relative target such as `*` or `.`
+/// after a `cd` into one.
 pub(super) fn removes_a_root(lowered: &str) -> bool {
+    let mut cwd: Option<String> = None;
     lowered
         .replace("${home}", "$home")
         .split([';', '|', '&', '\n', '(', ')', '`'])
-        .any(segment_removes_a_root)
+        .any(|segment| segment_removes_a_root(segment, &mut cwd))
 }
 
-fn segment_removes_a_root(segment: &str) -> bool {
+/// Whether `target` names a path from the root or a home rather than from
+/// the working directory.
+fn is_anchored(target: &str) -> bool {
+    target.starts_with(['/', '~'])
+        || target.starts_with("$home")
+        || matches!(target.as_bytes(), [letter, b':', ..] if letter.is_ascii_alphabetic())
+}
+
+/// The directory a `cd` or `pushd` in `words` moves to, joined to the one a
+/// previous `cd` set; `None` once it is unknown.
+fn changed_directory(words: &[String], cwd: Option<&str>) -> Option<String> {
+    let target = words[1..]
+        .iter()
+        .find(|word| !word.starts_with('-') || word.as_str() == "-");
+    match target.map(String::as_str) {
+        None => Some("~".to_owned()),
+        Some("-") => None,
+        Some(target) if is_anchored(target) => Some(target.to_owned()),
+        Some(target) => cwd.map(|directory| format!("{directory}/{target}")),
+    }
+}
+
+fn segment_removes_a_root(segment: &str, cwd: &mut Option<String>) -> bool {
     let words: Vec<String> = segment
         .split_ascii_whitespace()
         .map(|word| word.replace(['"', '\''], ""))
         .collect();
+    if words
+        .first()
+        .is_some_and(|word| matches!(executable_basename(word), "cd" | "pushd"))
+    {
+        *cwd = changed_directory(&words, cwd.as_deref());
+        return false;
+    }
     let Some(start) = words
         .iter()
         .position(|word| executable_basename(word) == "rm")
@@ -59,7 +90,14 @@ fn segment_removes_a_root(segment: &str) -> bool {
             force |= word.contains('f');
         }
     }
-    recursive && force && targets.into_iter().any(is_root_target)
+    recursive
+        && force
+        && targets.into_iter().any(|target| match cwd.as_deref() {
+            Some(directory) if !is_anchored(target) => {
+                is_root_target(&format!("{directory}/{target}"))
+            }
+            _ => is_root_target(target),
+        })
 }
 
 /// `~`, `$home`, `~user`, `/`, `/usr`, `/users/name`, `~/documents` or a
@@ -145,6 +183,12 @@ mod tests {
             "rm -rf c:/windows",
             "bash -c 'cd /tmp; rm -rf /'",
             "rm -rf build && rm -rf /etc",
+            "cd / && rm -rf *",
+            "cd ~; rm -rf .",
+            "cd /usr; rm -rf -- *",
+            "cd; rm -rf ./*",
+            "cd /users/someone/projects && rm -rf ../..",
+            "cd /usr && cd local && rm -rf *",
         ] {
             assert!(removes_a_root(command), "{command}");
         }
@@ -167,6 +211,10 @@ mod tests {
             "rm -r ~/projects",
             "rm -rf $homework",
             "echo rm -rf",
+            "cd ~/projects/app && rm -rf build",
+            "cd /users/someone/projects/app && rm -rf node_modules dist",
+            "cd build && rm -rf *",
+            "cd - && rm -rf *",
         ] {
             assert!(!removes_a_root(command), "{command}");
         }

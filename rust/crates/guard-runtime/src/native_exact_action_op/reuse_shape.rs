@@ -81,6 +81,7 @@ const KUBECTL_VERBS: &[&str] = &[
     "annotate",
     "api-resources",
     "api-versions",
+    "attach",
     "auth",
     "cluster-info",
     "cordon",
@@ -143,6 +144,10 @@ pub(super) fn shaped(tokens: &[String], cwd: Option<&Path>) -> Option<Reuse> {
     let commands = commands(tokens)?;
     let mut fed = Vec::new();
     for command in &commands {
+        // A variable can name a different file on the retry.
+        if command.words.iter().any(|word| word.contains('$')) {
+            return None;
+        }
         let (executable, arguments) = command.words.split_first()?;
         if executable.contains(['/', '\\', '=', '$']) || executable.starts_with('.') {
             return None;
@@ -161,6 +166,9 @@ pub(super) fn shaped(tokens: &[String], cwd: Option<&Path>) -> Option<Reuse> {
                 return None;
             }
         } else if !argv_bound(&name, arguments) {
+            return None;
+        }
+        if !remote_command_bound(&name, arguments, !command.reads.is_empty()) {
             return None;
         }
         if remote_stdin {
@@ -205,7 +213,8 @@ fn commands(tokens: &[String]) -> Option<Vec<Command<'_>>> {
             if token == READ_REDIRECT {
                 current.reads.push(target);
             }
-        } else if is_punctuation(token) {
+        } else if is_punctuation(token) || token.contains(['(', ')']) {
+            // Parentheses may open a subshell or a process substitution.
             return None;
         } else {
             current.words.push(token);
@@ -225,7 +234,7 @@ fn is_punctuation(token: &str) -> bool {
 fn plain_target(target: &str) -> bool {
     !target.is_empty()
         && !is_punctuation(target)
-        && !target.contains(['$', '~', '*', '?', '[', '{'])
+        && !target.contains(['$', '~', '*', '?', '[', '{', '(', ')'])
 }
 
 /// The argv-bound programs and the options that would load code instead.
@@ -237,16 +246,48 @@ fn argv_bound(name: &str, arguments: &[&str]) -> bool {
         "find" => !arguments
             .iter()
             .any(|word| FIND_RUNS_PROGRAM.contains(word)),
+        // getopt accepts any unambiguous prefix of a long option.
         "sort" => !arguments
             .iter()
-            .any(|word| word.starts_with("--compress-prog")),
+            .any(|word| long_option_prefix(word, "compress-program", 3)),
+        // Modules load from search paths outside the reviewed text.
         "jq" | "yq" => !arguments.iter().any(|word| {
-            word.starts_with("--from-file")
+            long_option_prefix(word, "from-file", 3)
+                || long_option_prefix(word, "library-path", 3)
+                || word.contains("import")
+                || word.contains("include")
                 || (word.starts_with('-') && !word.starts_with("--") && word.contains(['f', 'L']))
         }),
         "kubectl" | "oc" => kubectl_bound(arguments),
         _ => true,
     }
+}
+
+/// Whether `word` is `--<option>` abbreviated to at least `shortest` letters.
+fn long_option_prefix(word: &str, option: &str, shortest: usize) -> bool {
+    word.strip_prefix("--")
+        .and_then(|rest| rest.split('=').next())
+        .is_some_and(|name| name.len() >= shortest.min(option.len()) && option.starts_with(name))
+}
+
+/// Short kubectl flags that take no value; `-Rf` bundles `-R` and `-f`.
+const KUBECTL_BOOLEAN_SHORT: &[char] = &['A', 'R', 'i', 'q', 't', 'w'];
+
+/// Whether a bundle of short flags names a manifest or kustomization.
+fn bundles_manifest(word: &str, verb: &str) -> bool {
+    let Some(flags) = word.strip_prefix('-').filter(|rest| !rest.starts_with('-')) else {
+        return false;
+    };
+    for flag in flags.chars() {
+        if flag == 'k' || (flag == 'f' && verb != "logs") {
+            return true;
+        }
+        if !KUBECTL_BOOLEAN_SHORT.contains(&flag) && flag != 'f' {
+            // The rest of the word is this flag's value.
+            return false;
+        }
+    }
+    false
 }
 
 fn kubectl_verb<'a>(arguments: &[&'a str]) -> Option<(&'a str, usize)> {
@@ -282,9 +323,43 @@ fn kubectl_bound(arguments: &[&str]) -> bool {
         word.starts_with("--kubeconfig")
             || word.starts_with("--filename")
             || word.starts_with("--kustomize")
-            || word.starts_with("-k")
-            || (word.starts_with("-f") && verb != "logs")
+            || bundles_manifest(word, verb)
     })
+}
+
+/// The program `kubectl exec` runs in the container after `--`: one bound by
+/// its argv there, or a launcher whose whole program is the bound standard
+/// input. A script or module stored in the container could change unseen.
+fn remote_command_bound(name: &str, arguments: &[&str], fed: bool) -> bool {
+    if !matches!(name, "kubectl" | "oc")
+        || kubectl_verb(arguments).is_none_or(|(verb, _)| verb != "exec")
+    {
+        return true;
+    }
+    let Some(at) = arguments.iter().position(|word| *word == "--") else {
+        return false;
+    };
+    let Some((executable, remote)) = arguments[at + 1..].split_first() else {
+        return false;
+    };
+    if executable.contains(['/', '\\', '=', '$']) || executable.starts_with('.') {
+        return false;
+    }
+    let executable = executable.to_lowercase();
+    if is_code_launcher(&executable) {
+        return fed
+            && match remote.iter().position(|word| *word == "-") {
+                Some(stdin) => remote[..stdin]
+                    .iter()
+                    .all(|word| word.starts_with("--input-type=")),
+                None => remote.is_empty(),
+            };
+    }
+    if is_direct_reusable(&executable) {
+        super::binding::legacy_arguments_bound(&executable, remote)
+    } else {
+        argv_bound(&executable, remote)
+    }
 }
 
 /// `kubectl exec` and `kubectl attach` pass standard input to the container.
@@ -300,6 +375,11 @@ fn stdin_digest(target: &str, cwd: Option<&Path>) -> Option<String> {
     } else {
         cwd.filter(|directory| directory.is_absolute())?.join(path)
     };
+    // A FIFO or a device would block the read or never end.
+    let metadata = std::fs::metadata(&path).ok()?;
+    if !metadata.is_file() || metadata.len() > MAX_STDIN_BYTES {
+        return None;
+    }
     let mut content = Vec::new();
     File::open(&path)
         .ok()?
@@ -344,6 +424,10 @@ mod tests {
             "cat < notes.txt",
             "jq .version package.json",
             "echo done; date",
+            "kubectl -nkube-system get pods; true",
+            "kubectl exec api-0 -- ls /app",
+            "kubectl logs -f api-0 && true",
+            "sort --check a",
         ] {
             assert!(bound(command), "{command}");
         }
@@ -382,6 +466,22 @@ mod tests {
             "awk 1 a | cat",
             "ls ;",
             "; ls",
+            "kubectl delete -Rf ./manifests",
+            "kubectl delete -Rk overlays/prod",
+            "kubectl exec api-0 -- node run.mjs",
+            "kubectl exec api-0 -- sh /app/job.sh",
+            "kubectl exec api-0 -- /app/run",
+            "kubectl exec api-0 ls",
+            "cat <(sh /tmp/job.sh)",
+            "cat < (x)",
+            "(rm -rf build); ls",
+            "cat $FILE; true",
+            "sort --compress-prog=gzip a",
+            "sort --com=gzip a",
+            "jq --library-path ./lib . data.json",
+            "jq --library=./lib . data.json",
+            "jq 'import \"m\" as m; m::f' data.json",
+            "jq 'include \"m\"; .' data.json",
         ] {
             assert!(payload_reuse(command, None).is_none(), "{command}");
         }
@@ -422,6 +522,23 @@ mod tests {
         )
         .is_none());
         assert!(payload_reuse(command, Some(Path::new("relative"))).is_none());
+        std::fs::write(directory.join("input.txt"), "y\n").unwrap();
+        stdin_digest("kubectl attach -i api-0 < input.txt", &directory);
+        assert!(payload_reuse(
+            "kubectl exec -i api-0 -- node -r ./hook.js - < run.mjs",
+            Some(&directory)
+        )
+        .is_none());
+        assert!(payload_reuse(
+            "kubectl exec -i api-0 -- node run.mjs < run.mjs",
+            Some(&directory)
+        )
+        .is_none());
+        #[cfg(unix)]
+        {
+            let device = "kubectl exec -i api-0 -- node - < /dev/null";
+            assert!(payload_reuse(device, None).is_none());
+        }
         std::fs::remove_dir_all(&directory).unwrap();
     }
 }
