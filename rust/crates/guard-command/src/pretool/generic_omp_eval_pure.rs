@@ -179,11 +179,16 @@ fn skeleton(code: &str) -> Option<String> {
             }
             // The prefix belongs to the string, not to a name.
             out.truncate(out.len() - prefix.len());
+            let raw = prefix.contains(['r', 'R']);
             let triple = chars.get(i + 1) == Some(&c) && chars.get(i + 2) == Some(&c);
             i += if triple { 3 } else { 1 };
             loop {
                 let ch = *chars.get(i)?;
                 if ch == '\\' {
+                    // Escapes that decode to other bytes hide the text.
+                    if !raw && !matches!(chars.get(i + 1)?, 'n' | 't' | '\\' | '\'' | '"') {
+                        return None;
+                    }
                     i += 2;
                 } else if ch == c
                     && (!triple || (chars.get(i + 1) == Some(&c) && chars.get(i + 2) == Some(&c)))
