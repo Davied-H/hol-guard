@@ -491,3 +491,6 @@ def test_read_grants_need_a_launched_single_canonical_script(tmp_path: Path) -> 
     assert read_grants_valid([str(upper)], f"node {upper}")
     assert not read_grants_valid([str(good)], f"python3 {root}/other/good.py")
     assert not read_grants_valid([str(good), str(upper)], f"node {upper}; python3 {good}")
+    assert read_grants_valid([str(good)], f"python3 {good};echo ok")
+    assert read_grants_valid([str(good)], f"python3 {good}|head")
+    assert read_grants_valid([str(good)], f"python3 {good}>out.log")

@@ -11,8 +11,10 @@ _SCRIPT_SUFFIXES = frozenset({".py", ".js", ".mjs", ".cjs", ".jsx", ".ts", ".mts
 
 def _launched(path: Path, command: str) -> bool:
     """The command carries an absolute word that names exactly this file."""
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
     try:
-        words = shlex.split(command)
+        words = list(lexer)
     except ValueError:
         return False
     return any(word.startswith("/") and os.path.realpath(word) == str(path) for word in words)
