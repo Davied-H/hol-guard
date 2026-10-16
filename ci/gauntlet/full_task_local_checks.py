@@ -37,29 +37,38 @@ TODO_ADD = ("add", "create", "new")
 TODO_FINISH = ("done", "complete", "toggle", "remove", "delete")
 # Operations written inline rather than as named functions: a REST route, an event handler that
 # creates, completes or drops an item. They read lowercased code with comments already removed.
-_TODO_ADD_CODE = re.compile(r"""\bmethod\s*===?\s*['"]post['"]|\.post\s*\(\s*['"`]/""")
+# A route registered by path must name the items it serves; ``analytics.post('/events')`` is no todo.
+_ITEM_ROUTE = r"""\s*\(\s*['"`]/[^'"`]*(?:todo|task|item|:id)"""
+_TODO_ADD_CODE = re.compile(rf"""\bmethod\s*===?\s*['"]post['"]|\.post{_ITEM_ROUTE}""")
 _TODO_FINISH_CODE = re.compile(
-    r"""\bmethod\s*===?\s*['"](?:patch|put|delete)['"]|\.(?:patch|put|delete)\s*\(\s*['"`]/"""
-    r"""|\.(?:completed|done)\s*=(?!=)|\b(?:completed|done)\s*:\s*(?!(?:false|boolean|bool)\b)[\w$!]"""
+    rf"""\bmethod\s*===?\s*['"](?:patch|put|delete)['"]|\.(?:patch|put|delete){_ITEM_ROUTE}"""
+    r"""|\.(?:completed|done)\s*=(?!=)(?!\s*false\b)|\b(?:completed|done)\s*:\s*(?!(?:false|boolean|bool)\b)[\w$!]"""
     r"""|\.splice\s*\(|\.filter\s*\(\s*\(?\s*([\w$]+)\s*\)?\s*=>\s*\1\.id\s*!=="""
 )
 # Gravity is named, or is a velocity that accumulates every step, as in ``bird.velocity += 1250 * dt``.
 _GRAVITY = re.compile(r"gravity|\b(?:[\w$]*velocity[\w$]*|vel[xy]?|vy|dy)\s*\+=")
-# Node child-process calls; a committed script named among their arguments is exercised by the test.
+# Node child-process calls; the script such a call runs is exercised by the test.
 _JS_SPAWN = re.compile(r"\b(?:spawn|spawnSync|fork|exec|execSync|execFile|execFileSync)\s*\(([^;]{0,400})")
-_JS_PATH_LITERAL = re.compile(r"""['"`]((?:\.{1,2}/)?[\w./-]+\.[cm]?[jt]sx?)['"`]""")
+_JS_LITERAL = re.compile(r"""(['"`])([^'"`]*)\1""")
+# ``join(__dirname, '..', 'server.js')`` or ``path.resolve('src', 'server.js')`` built from literals.
+_JS_JOINED = re.compile(r"""\b(?:join|resolve)\s*\(\s*(?:[\w$.]+\s*,\s*)?((?:['"`][^'"`]*['"`]\s*,?\s*)+)\)""")
+_NODE_EVAL = frozenset({"-e", "--eval", "-p", "--print"})
+_LAUNCHERS = frozenset({"node", "nodejs"})
 
 
-def _code(text: str, hash_comments: bool = False) -> str:
-    """Lowercased source with comments removed, so a comment is not proof of behavior.
+def _uncommented(text: str, hash_comments: bool = False) -> str:
+    """Source with comments removed, so a comment is not proof of behavior.
 
-    Quoted text is kept, so ``'http://localhost'`` or ``'#list'`` is not mistaken for a comment.
-    ``#`` starts a comment only for Python and shell (``hash_comments``); in JavaScript it is a
-    selector, a private field or part of a string. Single and double quotes end at a newline, so
-    a stray apostrophe in markup cannot hide more than its own line.
+    Quoted text is kept, so ``'http://localhost'`` or ``'#list'`` is not mistaken for a comment;
+    code inside a template's ``${...}`` is still code. ``#`` starts a comment only for Python and
+    shell (``hash_comments``); in JavaScript it is a selector, a private field or part of a string.
+    Single and double quotes end at a newline, so a stray apostrophe in markup cannot hide more
+    than its own line.
     """
     out: list[str] = []
     index, size, quote = 0, len(text), ""
+    # Brace depth of each open template interpolation, innermost last.
+    templates: list[int] = []
     while index < size:
         char = text[index]
         if quote:
@@ -67,8 +76,22 @@ def _code(text: str, hash_comments: bool = False) -> str:
                 out.append(text[index : index + 2])
                 index += 2
                 continue
+            if quote == "`" and text.startswith("${", index):
+                templates.append(0)
+                quote = ""
+                out.append("${")
+                index += 2
+                continue
             if char == quote or (char == "\n" and quote != "`"):
                 quote = ""
+            out.append(char)
+            index += 1
+        elif templates and char in "{}":
+            if char == "}" and templates[-1] == 0:
+                templates.pop()
+                quote = "`"
+            else:
+                templates[-1] += 1 if char == "{" else -1
             out.append(char)
             index += 1
         elif char in "'\"`":
@@ -86,7 +109,28 @@ def _code(text: str, hash_comments: bool = False) -> str:
         else:
             out.append(char)
             index += 1
-    return "".join(out).lower()
+    return "".join(out)
+
+
+def _code(text: str, hash_comments: bool = False) -> str:
+    """Lowercased source with comments removed; see ``_uncommented``."""
+    return _uncommented(text, hash_comments).lower()
+
+
+def _spawned_script(arguments: str) -> str | None:
+    """The script a child-process call runs: the first word of its string arguments that is neither
+    the Node launcher nor a flag. Code passed with ``-e``/``-p`` runs no script.
+    """
+    arguments = _JS_JOINED.sub(
+        lambda match: "'" + posixpath.join(*(part for _, part in _JS_LITERAL.findall(match.group(1)))) + "'", arguments
+    )
+    for _, literal in _JS_LITERAL.findall(arguments):
+        for word in literal.split():
+            if word in _NODE_EVAL:
+                return None
+            if word not in _LAUNCHERS and not word.startswith("-"):
+                return word
+    return None
 
 
 def _defines(text: str, words: tuple[str, ...]) -> bool:
@@ -255,9 +299,11 @@ def _js_test_targets(test: str, text: str, sources: set[str]) -> dict[str, list[
     """Committed sources a JS test imports by relative path, or runs as a child process by path.
 
     A spawned script is resolved against the test's directory and the repository root, where the
-    test runner starts. A test that defines no ``test``/``it`` case reaches nothing.
+    test runner starts. A test that defines no ``test``/``it`` case reaches nothing, and commented
+    out code reaches nothing.
     """
     found: dict[str, list[str]] = {"imports": [], "spawns": []}
+    text = _uncommented(text)
     if not re.search(r"\b(test|it)\s*\(", text):
         return found
     for target in _JS_IMPORT.findall(text):
@@ -265,7 +311,7 @@ def _js_test_targets(test: str, text: str, sources: set[str]) -> dict[str, list[
         candidates = {resolved, *(resolved + suffix for suffix in JS_SUFFIXES), resolved + "/index.js"}
         found["imports"].extend(sorted(candidates & sources))
     for arguments in _JS_SPAWN.findall(text):
-        for target in _JS_PATH_LITERAL.findall(arguments):
+        if target := _spawned_script(arguments):
             bases = (posixpath.dirname(test), "")
             candidates = {posixpath.normpath(posixpath.join(base, target)) for base in bases}
             found["spawns"].extend(sorted(candidates & sources))
@@ -369,6 +415,9 @@ def committed_evidence(workspace: Path, task_id: str) -> dict[str, Any]:
             continue
         code = _code(raw, hash_comments=name.endswith(".py"))
         if task_id == "flappy-bird-game":
+            # Page prose is not game logic; only a page's inline scripts are.
+            if name.endswith(".html"):
+                code = _code("\n".join(inline_scripts(raw)))
             loop = re.search(r"requestanimationframe\s*\(|setinterval\s*\(", code) is not None
             facts[name] = {**_game_facts(code), "loop": loop}
         else:

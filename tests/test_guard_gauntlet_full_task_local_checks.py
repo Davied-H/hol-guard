@@ -74,6 +74,8 @@ def test_quoted_urls_and_selectors_are_code_but_comments_are_not() -> None:
     assert "http://localhost:3000" in code and "#list" in code
     assert "gravity" not in code and "flap" not in code
     assert "this.#count" in _code("class A { #count = 0; inc() { this.#count += 1; } }")
+    template = _code("const label = `${/* gravity */ count} ${'//kept'}`; // flap\n")
+    assert "gravity" not in template and "flap" not in template and "//kept" in template
     python = _code("color = '#fff'  # gravity\n", hash_comments=True)
     assert "#fff" in python and "gravity" not in python
 
@@ -105,6 +107,14 @@ def test_gravity_may_be_an_accumulating_velocity(source: str, expected: bool) ->
             False,
         ),
         ("interface Task { completed: boolean }\nexport function addTask(text) { return { text }; }\n", False),
+        (
+            "class Todo { constructor(t) { this.completed = false; } }\n"
+            "export function addTodo(t) { return new Todo(t); }\n",
+            False,
+        ),
+        # Routes must serve the items; unrelated endpoints are not todo operations.
+        ("app.post('/api/todos', add);\napp.delete('/api/todos/:id', drop);\n", True),
+        ("analytics.post('/events', send);\nsessions.delete('/sessions', end);\n", False),
     ],
 )
 def test_todo_operations_include_routes_and_inline_handlers(source: str, expected: bool) -> None:
@@ -115,16 +125,26 @@ SPAWN = "import { spawn } from 'node:child_process';\n"
 
 
 @pytest.mark.parametrize(
-    ("test_source", "expected"),
+    ("test_path", "test_source", "expected"),
     [
-        (SPAWN + "test('api', () => { spawn(process.execPath, ['server.js']); });\n", True),
-        (SPAWN + "test('api', () => { spawn(process.execPath, ['other.js']); });\n", False),
-        # A spawn outside any test case exercises nothing.
-        (SPAWN + "spawn(process.execPath, ['server.js']);\n", False),
+        ("server.test.js", SPAWN + "test('api', () => { spawn(process.execPath, ['server.js']); });\n", True),
+        ("server.test.js", SPAWN + "test('api', () => { exec('node --no-warnings server.js'); });\n", True),
+        (
+            "tests/api.test.js",
+            SPAWN + "test('api', () => { spawn(process.execPath, [join(__dirname, '..', 'server.js')]); });\n",
+            True,
+        ),
+        ("server.test.js", SPAWN + "test('api', () => { spawn(process.execPath, ['other.js']); });\n", False),
+        # A spawn outside any test case, a commented-out one, or one that evaluates code runs no server.
+        ("server.test.js", SPAWN + "spawn(process.execPath, ['server.js']);\n", False),
+        ("server.test.js", SPAWN + "test('x', () => {});\n// spawn(process.execPath, ['server.js']);\n", False),
+        ("server.test.js", SPAWN + "test('x', () => { spawn(process.execPath, ['-e', 'x', 'server.js']); });\n", False),
     ],
 )
-def test_tests_may_run_the_committed_server_as_a_child(tmp_path: Path, test_source: str, expected: bool) -> None:
-    files = {"server.js": REST_SERVER, "server.test.js": test_source}
+def test_tests_may_run_the_committed_server_as_a_child(
+    tmp_path: Path, test_path: str, test_source: str, expected: bool
+) -> None:
+    files = {"server.js": REST_SERVER, test_path: test_source}
     workspace = _commit(tmp_path / "todo", files)
     assert _js_tests_import_source(workspace, sorted(files), _todo_operations) is expected
 
@@ -143,3 +163,10 @@ def test_committed_evidence_lists_digests_and_facts_without_contents(tmp_path: P
     }
     assert "createTask" not in str(evidence)
     assert "files" not in committed_evidence(workspace, "python-cli-with-tests")
+
+
+def test_game_evidence_reads_only_a_pages_scripts(tmp_path: Path) -> None:
+    page = "<p>gravity flap pipe</p><canvas></canvas><script>function tick() {}</script>"
+    workspace = _commit(tmp_path / "game", {"index.html": page})
+    facts = committed_evidence(workspace, "flappy-bird-game")["files"]["index.html"]
+    assert facts == {"gravity": False, "flap": False, "pipe": False, "defines-function": True, "loop": False}
