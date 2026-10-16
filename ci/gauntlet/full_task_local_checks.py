@@ -51,7 +51,9 @@ _GRAVITY = re.compile(r"gravity|\b(?:[\w$]*velocity[\w$]*|vel[xy]?|vy|dy)\s*\+="
 _JS_SPAWN = re.compile(r"\b(?:spawn|spawnSync|fork|exec|execSync|execFile|execFileSync)\s*\(([^;]{0,400})")
 _JS_LITERAL = re.compile(r"""(['"`])([^'"`]*)\1""")
 # ``join(__dirname, '..', 'server.js')`` or ``path.resolve('src', 'server.js')`` built from literals.
-_JS_JOINED = re.compile(r"""\b(?:join|resolve)\s*\(\s*(?:[\w$.]+\s*,\s*)?((?:['"`][^'"`]*['"`]\s*,?\s*)+)\)""")
+_JS_JOINED = re.compile(
+    r"""\b(?:join|resolve)\s*\(\s*(?:[\w$.]+\s*,\s*)?((?:['"`][^'"`]*['"`]\s*,\s*)*['"`][^'"`]*['"`])(?:\s*,)?\s*\)"""
+)
 _NODE_EVAL = frozenset({"-e", "--eval", "-p", "--print"})
 _LAUNCHERS = frozenset({"node", "nodejs"})
 
