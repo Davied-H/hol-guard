@@ -19,6 +19,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from .codex_hook_launch_runtime import run_isolated_hook_process
+from .group_write_trust import trusted_owner_and_mode as _trusted_owner_and_mode
 from .native_binary_identity import validate_native_binary as _validate_binary
 from .native_resident_client import native_resident_client_request
 from .native_response_decoder import native_error as _native_error
@@ -62,7 +63,6 @@ from .native_runtime_values import (
     warn_legacy_hook_fast_path_once,
 )
 from .native_runtime_values import _NATIVE_RUNTIME_EXPORTS as __all__  # noqa: F401, N811
-from .owner_private_group import trusted_owner_and_mode as _trusted_owner_and_mode
 from .runtime.hook_review_types import HookReviewRequest, HookReviewResponse
 
 _NATIVE_PROTOCOL_VERSION = 1

@@ -13,9 +13,9 @@ from collections import OrderedDict
 from pathlib import Path
 
 from .file_identity import full_stat_identity
+from .group_write_trust import trusted_owner_and_mode
 from .native_binary_write_lock import open_write_locked
 from .native_runtime_values import NativeRuntimeIdentity
-from .owner_private_group import trusted_owner_and_mode
 
 _MAX_IDENTITIES = 64
 _MIN_CACHE_AGE_NS = 2_000_000_000
