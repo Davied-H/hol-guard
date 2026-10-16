@@ -400,16 +400,17 @@ def _run_guard_doctor_command(
         native_runtime_repair = repair[0] if repair is not None else None
     with nullcontext() if args.harness else without_command_probes():
         availability = doctor_native_availability()
-    payload["native_runtime"] = {
+    native_runtime: dict[str, object] = {
         "availability": availability,
         "admission": native_resident_admission_snapshot(),
         "daemon_http": daemon_admission_snapshot(),
     }
     bundled_runtime = bundled_native_runtime_report()
     if bundled_runtime is not None:
-        payload["native_runtime"]["bundled"] = bundled_runtime
+        native_runtime["bundled"] = bundled_runtime
     if native_runtime_repair is not None:
-        payload["native_runtime"]["repair"] = native_runtime_repair
+        native_runtime["repair"] = native_runtime_repair
+    payload["native_runtime"] = native_runtime
     payload["trust"] = build_trust_doctor_payload(store)
     payload["supply_chain"] = build_local_supply_chain_posture(store, config, now=_now())
     with nullcontext() if args.harness else without_command_probes():
