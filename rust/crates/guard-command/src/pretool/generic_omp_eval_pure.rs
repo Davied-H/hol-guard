@@ -10,7 +10,7 @@
 //! (files, processes, the network, the environment, f-strings that run
 //! expressions) is left to the ordinary review.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 const MAX_BYTES: usize = 16 * 1024;
 
@@ -95,6 +95,9 @@ const REFUSED_ATTRIBUTES: &[&str] = &[
     "os",
     "sys",
     "modules",
+    "types",
+    "weakref",
+    "inspect",
     "system",
     "popen",
     "environ",
@@ -445,14 +448,34 @@ fn previous_symbol(code: &str, position: usize) -> Option<char> {
     code[..position].chars().rev().find(|c| !c.is_whitespace())
 }
 
-/// Whether the text at `end` reads one listed name off a module.
-fn module_member_listed(code: &str, end: usize) -> bool {
+/// Names that are modules in some safe module and values in their own.
+fn self_named_ok(name: &str, root: &str) -> bool {
+    match name {
+        "copy" | "bisect" | "fnmatch" | "pprint" => root == name,
+        "time" | "datetime" => root == "datetime",
+        _ => true,
+    }
+}
+
+/// Whether the text at `end` reads one listed name off the module `root`.
+fn module_member_listed(code: &str, end: usize, root: &str) -> bool {
     let Some(rest) = code[end..].trim_start().strip_prefix('.') else {
         return false;
     };
     let rest = rest.trim_start();
     let name: String = rest.chars().take_while(|c| is_ident_char(*c)).collect();
-    MODULE_NAMES.contains(&name.as_str())
+    if !MODULE_NAMES.contains(&name.as_str()) || !self_named_ok(&name, root) {
+        return false;
+    }
+    // Chaining past a member is for the date classes only; any other member
+    // may be a module re-exported by another one.
+    let after = rest[name.len()..].trim_start();
+    !after.starts_with('.')
+        || (root == "datetime"
+            && matches!(
+                name.as_str(),
+                "datetime" | "date" | "timedelta" | "timezone" | "time"
+            ))
 }
 
 fn next_symbol(code: &str, end: usize) -> Option<char> {
@@ -519,7 +542,7 @@ fn line_has_for(before: &str, line_start: usize) -> bool {
 /// Whether the imports are all from the pure list, recording what they bind.
 fn imports_ok(
     code: &str,
-    modules: &mut HashSet<String>,
+    modules: &mut HashMap<String, String>,
     functions: &mut HashSet<String>,
 ) -> Option<String> {
     let mut rest = String::new();
@@ -538,7 +561,7 @@ fn imports_ok(
                 if !SAFE_MODULES.contains(&root) || !alias.chars().all(is_ident_char) {
                     return None;
                 }
-                modules.insert(alias.to_owned());
+                modules.insert(alias.to_owned(), root.to_owned());
             }
             rest.push('\n');
         } else if let Some(tail) = trimmed.strip_prefix("from ") {
@@ -551,7 +574,7 @@ fn imports_ok(
                 let mut parts = name.split_whitespace();
                 let first = parts.next()?;
                 // A safe module can re-export `os`, `sys` and their kin.
-                if !MODULE_NAMES.contains(&first) {
+                if !MODULE_NAMES.contains(&first) || !self_named_ok(first, root) {
                     return None;
                 }
                 let alias = match (parts.next(), parts.next()) {
@@ -583,7 +606,7 @@ pub(super) fn pure_python(code: &str) -> bool {
     if code.contains("__") {
         return false;
     }
-    let mut modules = HashSet::new();
+    let mut modules = HashMap::new();
     let mut functions = HashSet::new();
     let Some(code) = imports_ok(&code, &mut modules, &mut functions) else {
         return false;
@@ -611,15 +634,15 @@ pub(super) fn pure_python(code: &str) -> bool {
         if word == "shutil" {
             // Only the executable probe from a module that also holds file
             // operations.
-            if !modules.contains("shutil") || !code[end..].trim_start().starts_with(".which(") {
+            if !modules.contains_key("shutil") || !code[end..].trim_start().starts_with(".which(") {
                 return false;
             }
             continue;
         }
-        if modules.contains(word) {
+        if let Some(root) = modules.get(word) {
             // A module is only ever the receiver of a listed `module.name`:
             // never passed, assigned, parenthesised or chained into.
-            if !module_member_listed(&code, end) {
+            if !module_member_listed(&code, end, root) {
                 return false;
             }
             continue;
@@ -671,6 +694,9 @@ mod tests {
             "print(read('a'))",
             "print(f'{1+1}')",
             "import shlex\nshlex.os.system('x')",
+            "import dataclasses\nprint(dataclasses.copy.types.FunctionType)",
+            "from dataclasses import copy\nprint(copy)",
+            "import dataclasses\nt = dataclasses.copy\nprint(t)",
             "import fnmatch\nprint(fnmatch.re.enum.bltns.getattr)",
             "import enum\nprint((enum).bltns.getattr)",
             "import enum\nm = enum\nprint(m.bltns.getattr)",

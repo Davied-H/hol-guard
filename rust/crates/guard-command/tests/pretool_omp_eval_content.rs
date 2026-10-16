@@ -60,6 +60,7 @@ fn browser_driving_and_module_attribute_chains_are_reviewed() {
     }
     for code in [
         "import shlex\nshlex.os.system('id')",
+        "import dataclasses\nprint(dataclasses.copy.types.FunctionType)",
         "import fnmatch\nprint(fnmatch.re.enum.bltns.getattr)",
         "import enum\nprint((enum).bltns.getattr)",
         "import enum\nm = enum\nprint(m.bltns.getattr)",
