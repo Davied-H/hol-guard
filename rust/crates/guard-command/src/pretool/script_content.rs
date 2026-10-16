@@ -14,11 +14,14 @@ use std::sync::LazyLock;
 use regex::Regex;
 
 mod launch;
+mod loopback;
 
 use super::{read_paths, PathContext};
 use crate::CanonicalCommandV1;
 use guard_contracts::PreToolResultV1;
 use launch::{Fed, Program, Stdin};
+#[cfg_attr(not(unix), allow(unused_imports))]
+pub(crate) use loopback::inline_loopback_ports;
 
 const MAX_FILE_BYTES: usize = 256 * 1024;
 const MAX_TOTAL_BYTES: usize = 1024 * 1024;
@@ -100,6 +103,9 @@ pub(super) struct Findings {
     pub(super) network: bool,
     /// Names a credential store by path.
     pub(super) credential_store: bool,
+    /// For inline Node source whose only network use is loopback HTTP, the
+    /// literal ports the workspace sandbox grants it.
+    pub(super) loopback: Option<BTreeSet<u16>>,
     /// The program's source and the local modules read with it.
     pub(super) sources: Vec<String>,
 }
@@ -190,6 +196,7 @@ fn assess_programs(
                 .then(|| context.cwd.and_then(|cwd| std::fs::canonicalize(cwd).ok()))
                 .flatten()
         };
+        let inline = matches!(program, Program::Inline(_)) && !remote;
         let entry = match program {
             Program::Script(script) if scripts && !remote && reachable(script) => {
                 let Some(path) = resolve(script, context) else {
@@ -237,6 +244,9 @@ fn assess_programs(
                 Language::Node => NODE_NETWORK.is_match(&code),
             };
             found.credential_store |= CREDENTIAL_STORE.is_match(&code);
+        }
+        if inline && language == Language::Node {
+            found.loopback = loopback::program_ports(&sources);
         }
         found.sources = sources;
         findings.push(found);
@@ -325,16 +335,21 @@ fn sent_model(
 }
 
 /// Keeps the review of a command whose program uses the network: the sandbox
-/// withholds it, so the program would only fail there.
+/// withholds it, so the program would only fail there. Inline Node source
+/// that only serves and fetches on literal loopback ports is the exception:
+/// the sandbox grants it exactly those ports.
 pub(super) fn keeps_network_review(
     result: &mut PreToolResultV1,
     model: &CanonicalCommandV1,
     command_text: Option<&str>,
     context: PathContext<'_>,
 ) -> bool {
-    if !uses_network(model, context)
-        && !sent_model(model, command_text).is_some_and(|sent| uses_network(&sent, context))
-    {
+    let withheld = |model: &CanonicalCommandV1| {
+        assess(model, context)
+            .iter()
+            .any(|found| found.network && found.loopback.is_none())
+    };
+    if !withheld(model) && !sent_model(model, command_text).is_some_and(|sent| withheld(&sent)) {
         return false;
     }
     result.reason = concat!(
