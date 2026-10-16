@@ -4,10 +4,29 @@ from typing import Any
 
 from .input_evidence import redact_value
 
+RESUMED = {"agent_start", "turn_start", "message_start", "tool_execution_start"}
+
+
+def _terminal(event: dict[str, Any], later: list[dict[str, Any]]) -> bool:
+    """Whether an agent end finished the session.
+
+    The SDK tags an end non-terminal while a background job the model started, such as a dev
+    server, is still running, because that job's result could wake the agent again. Such an end
+    still yielded the agent's turn, and when nothing resumes after it the print-mode session is
+    disposed with the job, so it was the final settle.
+    """
+    if event.get("isTerminal") is True:
+        return True
+    return (
+        event.get("yielded") is True
+        and event.get("awaitingAsyncWork") is True
+        and not any(item.get("type") in RESUMED for item in later)
+    )
+
 
 def public_events(events: list[dict[str, Any]], replacements: dict[str, str]) -> list[dict[str, Any]]:
     selected = []
-    for event in events:
+    for index, event in enumerate(events):
         kind = event["type"]
         if kind in {"tool_execution_start", "tool_execution_end"}:
             keys = ("type", "toolCallId", "toolName", "args", "result", "isError")
@@ -28,7 +47,7 @@ def public_events(events: list[dict[str, Any]], replacements: dict[str, str]) ->
                 }
             )
         elif kind == "agent_end":
-            selected.append({"type": "agent_end", "terminal": event.get("isTerminal") is True})
+            selected.append({"type": "agent_end", "terminal": _terminal(event, events[index + 1 :])})
         elif kind in {"eval_bridge_start", "eval_bridge_end"}:
             raw = event.get("event")
             if not isinstance(raw, dict):
