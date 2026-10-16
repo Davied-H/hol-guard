@@ -364,7 +364,10 @@ export function ExtensionsOverview(props: {
   // their labeled row, or a maker can buy a placement that renders nowhere.
   const paidById = useMemo(
     () => new Map(
-      [...joinedDiscovery.featured, ...joinedDiscovery.sponsored]
+      // Featured last so it wins a collision: one extension can hold both a
+      // featured and a sponsored placement, and the row must disclose and
+      // measure the stronger one it is actually ranked for.
+      [...joinedDiscovery.sponsored, ...joinedDiscovery.featured]
         .map((entry) => [entry.placement.extensionId, entry] as const),
     ),
     [joinedDiscovery.featured, joinedDiscovery.sponsored],
@@ -375,9 +378,22 @@ export function ExtensionsOverview(props: {
     const featuredVisible = joinedDiscovery.featured
       .map((entry) => entry.catalog)
       .filter((extension) => visibleIds.has(extension.extension_id));
-    const rest = orderFeaturedFirst(visibleCatalog, new Set(paidById.keys())).slice(featuredVisible.length);
+    // Exclude the featured ids by identity rather than by count: slicing
+    // assumes the first N reordered entries are the featured ones, which is
+    // false as soon as a sponsored id sorts ahead of a featured one - that
+    // drops the sponsored row and renders a featured one twice.
+    const featuredIds = new Set(joinedDiscovery.featured.map((entry) => entry.placement.extensionId));
+    const sponsoredIds = new Set(
+      joinedDiscovery.sponsored
+        .map((entry) => entry.placement.extensionId)
+        .filter((extensionId) => !featuredIds.has(extensionId)),
+    );
+    const rest = orderFeaturedFirst(
+      visibleCatalog.filter((extension) => !featuredIds.has(extension.extension_id)),
+      sponsoredIds,
+    );
     return [...featuredVisible, ...rest];
-  }, [joinedDiscovery.featured, paidById, visibleCatalog]);
+  }, [joinedDiscovery.featured, joinedDiscovery.sponsored, visibleCatalog]);
   // One ask per surface. The spotlight already offers the empty cell when no
   // placement is sold, so the catalog row only appears once inventory exists
   // and a maker can see the format working beside real buyers.

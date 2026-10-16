@@ -216,6 +216,26 @@ test.describe("extensions spotlight", () => {
     await expect(rows.filter({ hasText: "Fourth Buyer" })).toContainText("Sponsored");
   });
 
+  test("a sponsored row ordered ahead of the featured ones is still rendered once each", async ({ page }) => {
+    await mount(page, { catalog: wideCatalog() });
+    await routeDiscovery(page, projection({
+      placements: [
+        placement("command.github", "always", "Northwind Tools"),
+        placement("command.package.node", "always", "Harbor Labs"),
+        placement("command.package.python", "always", "Tidewater"),
+        // Sorts ahead of every featured id, which is what breaks a count-based split.
+        placement("command.cloud.aws", "sponsored", "Fourth Buyer"),
+      ],
+    }));
+    await routeAnalytics(page, []);
+    await initialize(page);
+
+    const rows = page.getByTestId("catalog-featured-row");
+    await expect(rows.filter({ hasText: "Fourth Buyer" })).toHaveCount(1);
+    await expect(rows.filter({ hasText: "Tidewater" })).toHaveCount(1);
+    await expect(rows).toHaveCount(4);
+  });
+
   test("one surface: no tab strip, and searching hides the shelf", async ({ page }) => {
     await mount(page, { catalog: wideCatalog() });
     await routeDiscovery(page, projection());

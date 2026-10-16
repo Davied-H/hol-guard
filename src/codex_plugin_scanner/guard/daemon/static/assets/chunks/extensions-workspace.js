@@ -9299,16 +9299,26 @@ function ExtensionsOverview(props) {
   );
   const paidById = reactExports.useMemo(
     () => new Map(
-      [...joinedDiscovery.featured, ...joinedDiscovery.sponsored].map((entry) => [entry.placement.extensionId, entry])
+      // Featured last so it wins a collision: one extension can hold both a
+      // featured and a sponsored placement, and the row must disclose and
+      // measure the stronger one it is actually ranked for.
+      [...joinedDiscovery.sponsored, ...joinedDiscovery.featured].map((entry) => [entry.placement.extensionId, entry])
     ),
     [joinedDiscovery.featured, joinedDiscovery.sponsored]
   );
   const orderedCatalog = reactExports.useMemo(() => {
     const visibleIds = new Set(visibleCatalog.map((extension) => extension.extension_id));
     const featuredVisible = joinedDiscovery.featured.map((entry) => entry.catalog).filter((extension) => visibleIds.has(extension.extension_id));
-    const rest = orderFeaturedFirst(visibleCatalog, new Set(paidById.keys())).slice(featuredVisible.length);
+    const featuredIds = new Set(joinedDiscovery.featured.map((entry) => entry.placement.extensionId));
+    const sponsoredIds = new Set(
+      joinedDiscovery.sponsored.map((entry) => entry.placement.extensionId).filter((extensionId) => !featuredIds.has(extensionId))
+    );
+    const rest = orderFeaturedFirst(
+      visibleCatalog.filter((extension) => !featuredIds.has(extension.extension_id)),
+      sponsoredIds
+    );
     return [...featuredVisible, ...rest];
-  }, [joinedDiscovery.featured, paidById, visibleCatalog]);
+  }, [joinedDiscovery.featured, joinedDiscovery.sponsored, visibleCatalog]);
   const paidPresent = joinedDiscovery.featured.length + joinedDiscovery.sponsored.length > 0;
   const catalogSlotOpen = paidPresent && !searching && !filtering && visibleCatalog.length >= MIN_ORGANIC_ROWS_BEFORE_IN_FEED && slotState({ status: discoveryFeed.status, offers: discoveryOffers, products: CATALOG_SLOT_PRODUCTS }) === "open";
   const catalogSlotPrice = reactExports.useMemo(
