@@ -191,6 +191,10 @@ def _isolated_env(*, home: Path, python_path: Path) -> dict[str, str]:
     for key in tuple(os.environ):
         if key.startswith("HOL_GUARD_") or key.startswith("GUARD_"):
             env.pop(key, None)
+    # The bridge answers from the resident before it posts to the daemon.
+    # This probe's route proof is the daemon's native_resident count, so the
+    # bridge child has to take the daemon path.
+    env["HOL_GUARD_PI_DIRECT_HOOK"] = "0"
     return env
 
 
@@ -1371,6 +1375,9 @@ def _run_probe(*, json_path: Path | None = None) -> dict[str, Any]:
         _assert_no_positive_cli_fallback(real_log)
         real_output_evidence = _assert_real_results(real_results, cases)
         real_fetch_evidence = _assert_fetch_evidence(real_fetches, real_bridges, real_results, cases)
+        # The isolated env turns the bridge's direct answer off, so this count
+        # is one native_resident route per case rather than a resident reply
+        # the daemon never recorded.
         native_routes = _wait_for_native_route_metrics(daemon, len(cases))
         negative_home = root / "negative-home"
         negative_guard_home = root / "negative-guard-home"
