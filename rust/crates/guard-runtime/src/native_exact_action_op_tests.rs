@@ -407,15 +407,67 @@ fn a_policy_republish_does_not_change_the_binding_of_the_same_intent() {
         json!({"state": "unbound"}),
     );
     assert_eq!(before, after);
-    assert_eq!(
-        before.as_deref(),
-        Some(format!("native-review-v4:{intent}:ask:review:review:r").as_str())
+    let prefix = format!("native-review-v4:{intent}:ask:review:review:r:");
+    let suffix = before
+        .as_deref()
+        .and_then(|value| value.strip_prefix(&prefix));
+    assert!(
+        suffix.is_some_and(|digest| digest.len() == 64),
+        "{before:?}"
     );
     let other_intent = binding_for(
         json!({"request_digest": "ab".repeat(32), "execution_intent_digest": "12".repeat(32)}),
         json!({"state": "unbound"}),
     );
     assert_ne!(before, other_intent);
+}
+
+#[test]
+fn an_unbound_review_still_changes_with_its_rules_and_runtime() {
+    // Without command-extension evidence the policy binding is unbound, so the
+    // receipt's own rules and runtime are what a rule change voids.
+    let receipt = |request: &str, rules: &str, runtime: &str| {
+        json!({
+            "request_digest": request,
+            "execution_intent_digest": "cd".repeat(32),
+            "rule_digest": rules,
+            "runtime_identity": runtime,
+        })
+    };
+    let unbound = || json!({"state": "unbound"});
+    let first = binding_for(
+        receipt(&"ab".repeat(32), &"a".repeat(64), "runtime-1"),
+        unbound(),
+    );
+    assert!(first.is_some());
+    let republished = binding_for(
+        receipt(&"ef".repeat(32), &"a".repeat(64), "runtime-1"),
+        unbound(),
+    );
+    assert_eq!(first, republished);
+    let new_rules = binding_for(
+        receipt(&"ef".repeat(32), &"b".repeat(64), "runtime-1"),
+        unbound(),
+    );
+    assert_ne!(first, new_rules);
+    let new_runtime = binding_for(
+        receipt(&"ef".repeat(32), &"a".repeat(64), "runtime-2"),
+        unbound(),
+    );
+    assert_ne!(first, new_runtime);
+    // A receipt anchored on its request digest already hashes both.
+    let legacy = binding_for(json!({"rule_digest": "a".repeat(64)}), unbound());
+    assert_eq!(
+        legacy.as_deref(),
+        Some(format!("native-review-v4:{}:ask:review:review:r", "ab".repeat(32)).as_str())
+    );
+    assert_eq!(
+        binding_for(
+            json!({"execution_intent_digest": "cd".repeat(32), "rule_digest": 7}),
+            unbound()
+        ),
+        None
+    );
 }
 
 #[test]

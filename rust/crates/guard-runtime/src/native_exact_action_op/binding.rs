@@ -16,6 +16,7 @@ use crate::mcp_proxy_shlex::split_with;
 
 const RECEIPT_SCHEMA: &str = "guard-native-hook-decision-receipt.v1";
 const DOMAIN_PREFIX: &[u8] = b"hol-guard.native-review-extension-binding.v1\0";
+const RULES_DOMAIN: &[u8] = b"hol-guard.native-review-rules-binding.v1\0";
 const SHELL_PUNCTUATION: &str = ";&|<>";
 const FILE_BACKED_PROGRAM_COMMANDS: [&str; 5] = ["sed", "grep", "egrep", "fgrep", "rg"];
 
@@ -102,7 +103,19 @@ fn receipt_version_is_one(receipt: &Value) -> bool {
     }
 }
 
-/// `_native_review_binding`: bind a retry to Rust-owned request and decision evidence.
+/// The receipt's `rule_digest` and `runtime_identity`, each text or null.
+fn receipt_rules(receipt: &Value) -> Option<Value> {
+    let field = |name: &str| match receipt.get(name) {
+        None | Some(Value::Null) => Some(Value::Null),
+        Some(Value::String(text)) => Some(Value::String(text.clone())),
+        Some(_) => None,
+    };
+    Some(serde_json::json!({
+        "rule_digest": field("rule_digest")?,
+        "runtime_identity": field("runtime_identity")?,
+    }))
+}
+
 /// The policy binding minus `policy_digest`, which moves on every snapshot
 /// republish. `rule_digest`, `runtime_identity` and the command-extension
 /// binding still change the binding whenever the rules that decide a verdict do.
@@ -114,6 +127,7 @@ fn verdict_policy_binding(value: &Value) -> Value {
     value
 }
 
+/// `_native_review_binding`: bind a retry to Rust-owned request and decision evidence.
 pub(super) fn review_binding(
     harness: &str,
     command: Option<&str>,
@@ -149,10 +163,10 @@ pub(super) fn review_binding(
     // unchanged must not orphan a pending one-time approval (#4955). A receipt
     // without an intent digest keeps the request digest; a malformed one has
     // no binding at all.
-    let anchor = match receipt.get("execution_intent_digest") {
-        None => request_digest,
+    let (anchor, intent_anchored) = match receipt.get("execution_intent_digest") {
+        None => (request_digest, false),
         Some(value) => match value.as_str() {
-            Some(intent) if digest_pattern().is_match(intent) => intent,
+            Some(intent) if digest_pattern().is_match(intent) => (intent, true),
             _ => return None,
         },
     };
@@ -176,6 +190,14 @@ pub(super) fn review_binding(
     let identity = format!("native-review-v4:{anchor}:{}", tokens.join(":"));
     let mut encoded = match policy_binding {
         NativePolicyBindingV1::Invalid => return None,
+        // The intent anchor no longer hashes the policy, so the rules and
+        // runtime that judged an unbound review bind it here instead: only a
+        // republish that changes neither keeps its one-time approval.
+        NativePolicyBindingV1::Unbound if intent_anchored => {
+            let mut encoded = RULES_DOMAIN.to_vec();
+            write_canonical_json(&receipt_rules(receipt)?, &mut encoded).ok()?;
+            encoded
+        }
         NativePolicyBindingV1::Unbound => Vec::new(),
         NativePolicyBindingV1::Bound { value } => {
             let mut encoded = DOMAIN_PREFIX.to_vec();
