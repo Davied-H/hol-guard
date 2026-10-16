@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
 
 from codex_plugin_scanner.guard.adapters.base import HarnessContext
-from codex_plugin_scanner.guard.cli import uninstall_commands
+from codex_plugin_scanner.guard.cli import uninstall_commands, update_retirement
+from codex_plugin_scanner.guard.native_resident_update_lock import NativeResidentUpdateLockError
 from codex_plugin_scanner.guard.store import GuardStore
 
 
@@ -326,3 +329,135 @@ def test_self_uninstall_reports_a_native_resident_it_could_not_stop(
     assert exit_code == 0
     assert payload["daemon_cleanup"]["native_resident_retired"] is False
     assert any("Could not stop the Guard native runtime" in note for note in payload["notes"])
+
+
+def test_uninstall_holds_the_update_barrier_until_hooks_are_gone(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A hook that fires after the stop and before hook removal starts the resident again."""
+
+    context = _context(tmp_path)
+    store = GuardStore(context.guard_home)
+    store.set_managed_install("codex", True, None, {"shim_path": "guard-codex"}, "2026-06-18T00:00:00Z")
+    _stub_removal(monkeypatch, context)
+    events: list[str] = []
+
+    @contextmanager
+    def hold(_guard_home: Path, **_kwargs: object) -> Iterator[None]:
+        events.append("acquire")
+        yield
+        events.append("release")
+
+    monkeypatch.setattr(uninstall_commands, "hold_native_resident_update_lock", hold)
+    monkeypatch.setattr(uninstall_commands, "resident_stop_executable", lambda: tmp_path / "runtime")
+
+    def retire(_guard_home: Path) -> bool:
+        events.append("retire")
+        return True
+
+    monkeypatch.setattr(uninstall_commands, "retire_native_resident_for_home", retire)
+    monkeypatch.setattr(
+        uninstall_commands,
+        "_managed_install_context",
+        lambda install_context, _managed: (install_context, None),
+    )
+    monkeypatch.setattr(
+        uninstall_commands,
+        "apply_managed_install",
+        lambda *_args, **_kwargs: events.append("hooks") or {"managed_install": {"harness": "codex"}},
+    )
+
+    payload, exit_code = uninstall_commands.run_guard_self_uninstall(
+        dry_run=False,
+        context=context,
+        store=store,
+        now="2026-06-18T00:00:00Z",
+    )
+
+    assert exit_code == 0
+    assert payload["daemon_cleanup"]["native_resident_retired"] is True
+    assert events == ["acquire", "retire", "hooks", "release"]
+
+
+def test_a_busy_update_barrier_stops_uninstall_before_hooks_are_removed(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    context = _context(tmp_path)
+    store = GuardStore(context.guard_home)
+    store.set_managed_install("codex", True, None, {"shim_path": "guard-codex"}, "2026-06-18T00:00:00Z")
+    _stub_removal(monkeypatch, context)
+
+    def hold(_guard_home: Path, **_kwargs: object) -> None:
+        raise NativeResidentUpdateLockError("update_native_resident_lock_busy")
+
+    monkeypatch.setattr(uninstall_commands, "hold_native_resident_update_lock", hold)
+    monkeypatch.setattr(
+        uninstall_commands,
+        "apply_managed_install",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("hooks removed")),
+    )
+
+    payload, exit_code = uninstall_commands.run_guard_self_uninstall(
+        dry_run=False,
+        context=context,
+        store=store,
+        now="2026-06-18T00:00:00Z",
+    )
+
+    assert exit_code == 1
+    assert payload["status"] == "failed"
+    assert payload["managed_installs"] == []
+    assert any("update barrier" in note for note in payload["notes"])
+
+
+def test_a_missing_runtime_with_no_resident_state_is_already_stopped(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    missing = tmp_path / "missing-runtime"
+    monkeypatch.setattr(update_retirement, "_runtime_candidates", lambda: (missing,))
+    monkeypatch.setattr(update_retirement, "_bundled_runtime_candidate", lambda: missing)
+    monkeypatch.setattr(
+        update_retirement,
+        "retire_native_resident_for_update",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("launched")),
+    )
+
+    assert update_retirement.retire_native_resident_for_home(tmp_path / "home") is True
+
+
+def test_a_missing_runtime_with_resident_state_is_not_reported_stopped(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    home = tmp_path / "home"
+    state = home / "native-runtime" / "resident-v3-abc"
+    state.mkdir(parents=True)
+    (state / "generation-1.json").write_text("{}", encoding="utf-8")
+    missing = tmp_path / "missing-runtime"
+    monkeypatch.setattr(update_retirement, "_runtime_candidates", lambda: (missing,))
+    monkeypatch.setattr(update_retirement, "_bundled_runtime_candidate", lambda: missing)
+    monkeypatch.setattr(update_retirement.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(update_retirement, "retire_native_resident_for_update", lambda **_kwargs: False)
+
+    assert update_retirement.retire_native_resident_for_home(home) is False
+
+
+def test_a_forced_override_is_the_runtime_that_gets_stopped(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    override = tmp_path / "override-runtime"
+    override.write_bytes(b"runtime")
+    seen: list[Path] = []
+    monkeypatch.setattr(update_retirement, "_runtime_candidates", lambda: (override, tmp_path / "bundled"))
+    monkeypatch.setattr(
+        update_retirement,
+        "retire_native_resident_for_update",
+        lambda **kwargs: seen.append(kwargs["executable"]) or True,
+    )
+
+    assert update_retirement.retire_native_resident_for_home(tmp_path / "home") is True
+    assert seen == [override]

@@ -6,8 +6,8 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from ..native_resident_client import retire_native_resident_for_update
-from ..native_runtime import _bundled_runtime_candidate, _isolated_environment
+from ..native_resident_client import _state_files, retire_native_resident_for_update
+from ..native_runtime import _bundled_runtime_candidate, _isolated_environment, _runtime_candidates
 
 NATIVE_RESIDENT_RETIREMENT_ATTEMPTS = 3
 NATIVE_RESIDENT_RETIREMENT_TIMEOUT_SECONDS = 6.0
@@ -36,6 +36,20 @@ def retire_with_retry(
     return False
 
 
+def resident_stop_executable() -> Path:
+    """The runtime binary whose resident state this home would stop.
+
+    Forced native mode can point ``HOL_GUARD_NATIVE_BINARY`` at an override.
+    Stopping the bundled binary instead looks in a different resident scope, so
+    the override's resident keeps running through uninstall.
+    """
+
+    for candidate in _runtime_candidates():
+        if candidate.is_file():
+            return candidate
+    return _bundled_runtime_candidate()
+
+
 def retire_native_resident_for_home(guard_home: Path) -> bool:
     """Stop this Guard home's native resident while its runtime is still intact.
 
@@ -46,10 +60,16 @@ def retire_native_resident_for_home(guard_home: Path) -> bool:
     supposed to end it.
     """
 
+    executable = resident_stop_executable()
+    # An install with no bundled binary and no resident state has nothing to
+    # stop. Launching the missing file only produces a false "may keep running"
+    # warning after several retries.
+    if not executable.is_file() and _resident_state_absent(guard_home):
+        return True
     try:
         return retire_with_retry(
             lambda timeout_seconds: retire_native_resident_for_update(
-                executable=_bundled_runtime_candidate(),
+                executable=executable,
                 guard_home=guard_home,
                 environment=_isolated_environment(),
                 timeout_seconds=timeout_seconds,
@@ -58,4 +78,12 @@ def retire_native_resident_for_home(guard_home: Path) -> bool:
         )
     except Exception:
         # A failed preflight must leave the current installation untouched.
+        return False
+
+
+def _resident_state_absent(guard_home: Path) -> bool:
+    state_dir = guard_home.expanduser().resolve() / "native-runtime"
+    try:
+        return not _state_files(state_dir, strict=True)
+    except (OSError, RuntimeError):
         return False
