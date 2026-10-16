@@ -7,6 +7,7 @@ import subprocess
 import sys
 
 from ..adapters.base import HarnessContext
+from ..codex_install_transaction import codex_install_transaction
 from ..daemon.manager import retire_all_guard_daemons_for_home
 from ..native_resident_update_lock import NativeResidentUpdateLockError, hold_native_resident_update_lock
 from ..redaction import redact_sensitive_text
@@ -332,17 +333,36 @@ def retire_native_resident_after_last_harness(context: HarnessContext, store: Gu
     state exists, otherwise whether it stopped.
     """
 
-    installs, error = _active_managed_installs(store)
-    if installs or error is not None or _resident_state_absent(context.guard_home):
+    if _resident_kept(context, store):
         return None
     try:
-        with hold_native_resident_update_lock(
-            context.guard_home,
-            initial_executable=resident_stop_executable(),
+        # Same order as self-uninstall: the update barrier, then the install
+        # transaction. Holding both, an install cannot activate a harness
+        # between the last check and the stop.
+        with (
+            hold_native_resident_update_lock(
+                context.guard_home,
+                initial_executable=resident_stop_executable(),
+            ),
+            codex_install_transaction(
+                context.guard_home, context.guard_home / "managed", actor="managed.retire_resident"
+            ),
         ):
+            if _resident_kept(context, store):
+                return None
             return retire_native_resident_for_home(context.guard_home)
-    except NativeResidentUpdateLockError:
+    except (NativeResidentUpdateLockError, OSError, RuntimeError, TimeoutError):
         return False
+
+
+def _resident_kept(context: HarnessContext, store: GuardStore) -> bool:
+    installs, error = _active_managed_installs(store)
+    if installs or error is not None:
+        return True
+    try:
+        return _resident_state_absent(context.guard_home)
+    except (OSError, RuntimeError):
+        return True
 
 
 def _frozen_package_uninstall_unsupported() -> bool:
