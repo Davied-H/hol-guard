@@ -121,6 +121,11 @@ fn writes_are_seen_in_code_only() {
         "with open('x') as a, open('y', 'wb') as b:\n    pass\n",
         "open('x', ('w'))\n",
         "open('x'\n",
+        "Path('payload.py').replace('json.py')\n",
+        "staged.replace(target)\n",
+        "Path(a).replace(*pair)\n",
+        "Path(a).replace(\n",
+        "os.rmdir('plugins')\n",
     ] {
         assert!(scan(source).is_none_or(|found| found.writes), "{source}");
     }
@@ -132,6 +137,9 @@ fn writes_are_seen_in_code_only() {
         "Path('x').open()\n",
         "Path('x').open('r', encoding='utf-8')\n",
         "if a == b:\n    open(p if a == b else q)\n",
+        "line = line.replace('\\t', '    ', 1)\n",
+        "data = blob.replace(b'a', b'b')\n",
+        "name = str.replace(name, '-', '_')\n",
     ] {
         assert!(!scan(source).unwrap().writes, "{source}");
     }

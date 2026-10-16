@@ -69,7 +69,7 @@ fn writes_files() -> &'static Regex {
         &CELL,
         concat!(
             r"\.\s*write(?:_text|_bytes|lines)?\s*\(|\bos\s*\.\s*replace\s*\(",
-            r"|\b(?:rename|renames|remove|unlink|rmtree|copy|copy2|copyfile|copytree|move|symlink|symlink_to|hardlink_to|link|truncate|makedirs|mkdir|touch|extract|extractall|unpack_archive|writestr)\s*\(",
+            r"|\b(?:rename|renames|remove|unlink|rmtree|copy|copy2|copyfile|copytree|move|symlink|symlink_to|hardlink_to|link|truncate|makedirs|mkdir|rmdir|removedirs|touch|extract|extractall|unpack_archive|writestr)\s*\(",
             // Writable handles and mappings that change a file without `open`.
             r"|\b(?:FileIO|mmap|pwrite|pwritev|writev|ftruncate|sendfile|copy_file_range|splice|chmod|lchmod|chown|lchown|utime|mkfifo|mknod)\b",
         ),
@@ -95,30 +95,9 @@ fn opens_for_writing(code: &str, source: &str) -> bool {
     open_call().captures_iter(code).any(|captures| {
         let method = captures.get(1).is_some();
         let start = captures.get(0).map_or(0, |found| found.end());
-        let mut depth = 0usize;
-        let mut arguments = Vec::new();
-        let mut from = start;
-        let mut closed = false;
-        for (offset, byte) in code[start..].bytes().enumerate() {
-            let at = start + offset;
-            match byte {
-                b'(' | b'[' | b'{' => depth += 1,
-                b')' | b']' | b'}' if depth > 0 => depth -= 1,
-                b')' => {
-                    arguments.push(from..at);
-                    closed = true;
-                    break;
-                }
-                b',' if depth == 0 => {
-                    arguments.push(from..at);
-                    from = at + 1;
-                }
-                _ => {}
-            }
-        }
-        if !closed {
+        let Some(arguments) = call_arguments(code, start) else {
             return true;
-        }
+        };
         let mut positional = 0usize;
         arguments.into_iter().any(|range| {
             let argument = code[range.clone()].trim();
@@ -145,6 +124,51 @@ fn opens_for_writing(code: &str, source: &str) -> bool {
             }
             positional += 1;
             (method || positional > 1) && !reading_mode().is_match(text)
+        })
+    })
+}
+
+/// The byte ranges of the arguments of the call whose parentheses open just
+/// before `start`, or `None` when the call does not close.
+fn call_arguments(code: &str, start: usize) -> Option<Vec<std::ops::Range<usize>>> {
+    let mut depth = 0usize;
+    let mut arguments = Vec::new();
+    let mut from = start;
+    for (offset, byte) in code[start..].bytes().enumerate() {
+        let at = start + offset;
+        match byte {
+            b'(' | b'[' | b'{' => depth += 1,
+            b')' | b']' | b'}' if depth > 0 => depth -= 1,
+            b')' => {
+                arguments.push(from..at);
+                return Some(arguments);
+            }
+            b',' if depth == 0 => {
+                arguments.push(from..at);
+                from = at + 1;
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn replace_call() -> &'static Regex {
+    static CELL: OnceLock<Regex> = OnceLock::new();
+    pattern(&CELL, r"\.\s*replace\s*\(")
+}
+
+/// Whether some `.replace` call can move a file: `Path.replace(target)` takes
+/// one argument, where the string and bytes forms take an old and a new value.
+fn replaces_path(code: &str) -> bool {
+    replace_call().find_iter(code).any(|found| {
+        call_arguments(code, found.end()).is_none_or(|arguments| {
+            let arguments: Vec<&str> = arguments
+                .into_iter()
+                .map(|range| code[range].trim())
+                .filter(|argument| !argument.is_empty())
+                .collect();
+            arguments.len() < 2 || arguments.iter().any(|argument| argument.starts_with('*'))
         })
     })
 }
@@ -347,7 +371,9 @@ pub(super) fn scan(source: &str) -> Option<Scan> {
     }
     Some(Scan {
         imports: imports_in(&code)?,
-        writes: writes_files().is_match(&code) || opens_for_writing(&code, source),
+        writes: writes_files().is_match(&code)
+            || opens_for_writing(&code, source)
+            || replaces_path(&code),
     })
 }
 
