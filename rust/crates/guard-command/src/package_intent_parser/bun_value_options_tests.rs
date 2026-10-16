@@ -219,3 +219,95 @@ fn bun_cwd_outside_the_workspace_is_not_an_empty_allow() {
     assert_eq!(evaluation.decision, "ask");
     assert_ne!(evaluation.policy_action, "allow");
 }
+
+fn held(
+    artifact: &GuardArtifact,
+    decision: &str,
+) -> crate::supply_chain_package_eval::PackageEvalResult {
+    let mut evaluation = crate::supply_chain_package_eval::empty_package_material_result(
+        artifact, None, None, "intent", None,
+    );
+    evaluation.decision = decision.to_string();
+    evaluation.policy_action = decision.to_string();
+    evaluation.reasons.clear();
+    crate::supply_chain_package_eval::hold_unresolved_package_cwd(artifact, evaluation)
+}
+
+#[test]
+fn bun_add_outside_the_workspace_keeps_the_package_and_stays_in_review() {
+    let tree = TempTree::new();
+    let workspace = tree.0.join("workspace");
+    let outside = tree.0.join("outside");
+    write_project(&workspace, "{}\n", "bun.lock", "caller-lock\n");
+    write_project(
+        &outside,
+        "{\"name\":\"outside\"}\n",
+        "bun.lock",
+        "tampered\n",
+    );
+    let outside = outside.canonicalize().expect("outside");
+    let command = format!("bun add --cwd {} left-pad", outside.display());
+    let intent =
+        parse_package_intent(&command, Some(&workspace), None, None, None).expect("bun add intent");
+    assert_eq!(
+        intent
+            .targets
+            .iter()
+            .map(|target| target.package_name.clone().expect("named"))
+            .collect::<Vec<_>>(),
+        ["left-pad"]
+    );
+    assert!(intent.lockfile_paths.is_empty());
+    assert!(intent
+        .notes
+        .iter()
+        .any(|note| note == PACKAGE_CWD_UNRESOLVED_NOTE));
+    let artifact = build_package_request_artifact("codex", &intent, "hol-guard.toml", "project");
+    let raised = held(&artifact, "allow");
+    assert_eq!(raised.decision, "ask");
+    assert_ne!(raised.policy_action, "allow");
+    assert!(raised.reasons.iter().any(|reason| {
+        reason.get("code").and_then(|value| value.as_str()) == Some("package_cwd_unresolved")
+    }));
+    assert_eq!(held(&artifact, "block").decision, "block");
+}
+
+#[test]
+fn a_chained_install_keeps_an_unresolved_cwd_beside_the_other_lockfile() {
+    let tree = TempTree::new();
+    let workspace = tree.0.join("workspace");
+    let outside = tree.0.join("outside");
+    write_project(
+        &workspace,
+        "{}\n",
+        "package-lock.json",
+        "{\"lockfileVersion\":3}\n",
+    );
+    write_project(
+        &outside,
+        "{\"name\":\"outside\"}\n",
+        "bun.lock",
+        "tampered\n",
+    );
+    let outside = outside.canonicalize().expect("outside");
+    let command = format!(
+        "bun install --cwd {} --frozen-lockfile; npm ci",
+        outside.display()
+    );
+    let intent = parse_package_intent(&command, Some(&workspace), None, None, None)
+        .expect("chained install");
+    assert!(intent
+        .notes
+        .iter()
+        .any(|note| note == PACKAGE_CWD_UNRESOLVED_NOTE));
+    assert!(intent
+        .lockfile_paths
+        .iter()
+        .any(|path| path == "package-lock.json"));
+    assert!(intent
+        .lockfile_paths
+        .iter()
+        .all(|path| !path.contains("tampered") && path != "bun.lock"));
+    let artifact = build_package_request_artifact("codex", &intent, "hol-guard.toml", "project");
+    assert_eq!(held(&artifact, "monitor").decision, "ask");
+}

@@ -1,5 +1,5 @@
 use super::contracts::optional_string;
-use super::evaluation::decision_to_guard_action_variant;
+use super::evaluation::{decision_rank, decision_to_guard_action_variant};
 use super::{GuardArtifact, Map, PackageEvalResult, SupplyChainUserCopy, Value};
 
 use crate::package_intent_common::PACKAGE_CWD_UNRESOLVED_NOTE;
@@ -94,4 +94,49 @@ pub(crate) fn empty_package_material_result(
         external_archive_downloads: Vec::new(),
         external_archive_source_hashes: Vec::new(),
     }
+}
+
+/// An unresolved `--cwd` stays in review even when the command also names a
+/// package or another segment still has a lockfile.
+pub(crate) fn hold_unresolved_package_cwd(
+    artifact: &GuardArtifact,
+    mut result: PackageEvalResult,
+) -> PackageEvalResult {
+    if !artifact_note_is(artifact, PACKAGE_CWD_UNRESOLVED_NOTE) {
+        return result;
+    }
+    let noted = result
+        .reasons
+        .iter()
+        .any(|reason| reason.get("code").and_then(Value::as_str) == Some("package_cwd_unresolved"));
+    if !noted {
+        let mut reason_map = Map::new();
+        reason_map.insert(
+            "code".to_string(),
+            Value::String("package_cwd_unresolved".into()),
+        );
+        reason_map.insert(
+            "message".to_string(),
+            Value::String(
+                "The package directory named by --cwd is outside this workspace or could not be resolved, so Guard cannot evaluate its lockfile."
+                    .into(),
+            ),
+        );
+        reason_map.insert("severity".to_string(), Value::String("unknown".into()));
+        reason_map.insert("source".to_string(), Value::String("guard-local".into()));
+        result.reasons.push(reason_map);
+    }
+    if decision_rank(&result.decision) >= decision_rank("ask") {
+        return result;
+    }
+    result.decision = "ask".to_string();
+    result.policy_action = decision_to_guard_action_variant("ask").as_str().to_string();
+    let summary =
+        "Guard could not evaluate the package directory named by --cwd inside this workspace.";
+    result.risk_summary = summary.to_string();
+    result.user_copy.title = "Package directory not in workspace".to_string();
+    result.user_copy.summary = summary.to_string();
+    result.user_copy.next_step = Some("Review this install before running it.".to_string());
+    result.user_copy.harness_message = summary.to_string();
+    result
 }

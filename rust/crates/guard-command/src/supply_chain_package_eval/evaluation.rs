@@ -95,7 +95,7 @@ pub fn evaluate_package_request_artifact(
         retain_external_archive_blob,
     );
     match (result, error) {
-        (Some(result), _) => Ok(result),
+        (Some(result), _) => Ok(super::hold_unresolved_package_cwd(artifact, result)),
         (None, Some(error)) => Err(error),
         (None, None) => Err(EvalError::Internal(
             "evaluate_package_request_artifact: no result".into(),

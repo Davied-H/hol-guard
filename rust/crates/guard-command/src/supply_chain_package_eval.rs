@@ -101,7 +101,7 @@ pub use runtime_contracts::{
 mod empty_material;
 #[path = "supply_chain_package_eval/evaluation.rs"]
 mod evaluation;
-pub(crate) use empty_material::empty_package_material_result;
+pub(crate) use empty_material::{empty_package_material_result, hold_unresolved_package_cwd};
 use evaluation::{
     artifact_has_flag, artifact_has_package_material, cache_reusable_cloud_validation_error,
     decision_rank, decision_to_guard_action_variant, normalize_package_name,
