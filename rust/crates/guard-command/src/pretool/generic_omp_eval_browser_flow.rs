@@ -7,6 +7,9 @@ use super::lex::{Token, RESERVED};
 use super::Parser;
 use crate::pretool::curl_reads::loopback_url;
 
+/// Most passes a retry loop may make.
+const MAX_LOOP_COUNT: u32 = 100;
+
 impl Parser {
     /// Whether `name` may be bound: not reserved, not the run callback's
     /// `page`, and not already bound.
@@ -149,7 +152,8 @@ impl Parser {
         Some(())
     }
 
-    /// `for (let I = N; I < N; I++) { ... }` after `for`.
+    /// `for (let I = A; I < B; I++) { ... }` after `for`, with integer
+    /// bounds at most [`MAX_LOOP_COUNT`] apart.
     pub(super) fn for_loop(&mut self) -> Option<()> {
         self.punct('(')?;
         self.keyword("let")?;
@@ -158,11 +162,18 @@ impl Parser {
             return None;
         }
         self.punct('=')?;
-        (self.next()? == Token::Num).then_some(())?;
+        let Token::Num(Some(first)) = self.next()? else {
+            return None;
+        };
         self.punct(';')?;
         self.keyword(&index)?;
         self.punct('<')?;
-        (self.next()? == Token::Num).then_some(())?;
+        let Token::Num(Some(end)) = self.next()? else {
+            return None;
+        };
+        if end.checked_sub(first)? > MAX_LOOP_COUNT {
+            return None;
+        }
         self.punct(';')?;
         self.keyword(&index)?;
         self.punct('+')?;
@@ -279,7 +290,7 @@ impl Parser {
                     self.literal()?;
                 }
             }
-            "waitForTimeout" => (self.next()? == Token::Num).then_some(())?,
+            "waitForTimeout" => matches!(self.next()?, Token::Num(_)).then_some(())?,
             _ => return None,
         }
         self.punct(')')

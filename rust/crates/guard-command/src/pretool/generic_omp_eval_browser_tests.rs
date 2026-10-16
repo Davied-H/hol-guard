@@ -179,6 +179,13 @@ fn other_requests_and_page_methods_stay_reviewed() {
             "page.goto('http://127.0.0.1:9222/json')",
         ),
         (SERVER_WAIT, "i<20", "i<n"),
+        (SERVER_WAIT, "i<20", "i<101"),
+        (SERVER_WAIT, "i<20", "i<20.5"),
+        (
+            SERVER_WAIT,
+            "i=0;i<20",
+            "i=9007199254740992;i<9007199254740994",
+        ),
         (
             PAGE_RUN,
             "page.click('#game')",

@@ -282,7 +282,7 @@ impl Parser {
     fn scalar(&mut self) -> Option<()> {
         self.eat_punct('-');
         match self.next()? {
-            Token::Str(_) | Token::Num => Some(()),
+            Token::Str(_) | Token::Num(_) => Some(()),
             Token::Ident(word) if matches!(word.as_str(), "true" | "false" | "null") => Some(()),
             _ => None,
         }
@@ -334,7 +334,7 @@ impl Parser {
                 }
             }
             "waitFor" => {
-                if matches!(self.peek(), Some(Token::Num)) {
+                if matches!(self.peek(), Some(Token::Num(_))) {
                     self.pos += 1;
                 } else {
                     self.string()?;
