@@ -85,6 +85,52 @@ def test_windows_vite_build_is_planned_by_the_resident(windows, tmp_path, comman
     assert "--configLoader" not in plan.command
 
 
+def test_a_resolved_image_is_the_program_it_names(windows, tmp_path):
+    """Windows hands over `node.exe`, which is the program the receipt names."""
+    app = _project(tmp_path)
+    entry = "node_modules/vite/bin/vite.js"
+    for runner in (NODE, "node.exe", "node.EXE"):
+        windows.clear()
+        plan = restricted_node_tool.prepare_restricted_node_tool([runner, entry, "build"], workspace=tmp_path, cwd=app)
+        assert [operation for operation, _ in windows] == ["prepare_node_build"]
+        assert windows[0][1]["expected_entry"] == entry
+        assert windows[0][1]["arguments"] == ["build"]
+        assert plan.profile_version == PROFILE
+        assert plan.output_roots == (app / "dist",)
+
+
+def test_the_runner_outlives_the_builds_own_deadline(windows, monkeypatch, tmp_path):
+    """The runner stages a copy of the workspace and publishes the output
+    around the build, neither of which the build's deadline covers. Killing it
+    on that same number would land mid-publish."""
+    app = _project(tmp_path)
+    plan = restricted_node_tool.prepare_restricted_node_tool(["npx", "vite", "build"], workspace=tmp_path, cwd=app)
+    launched: list[tuple[list[str], int]] = []
+
+    def launch(argv, **keywords):
+        launched.append((list(argv), keywords["timeout_seconds"]))
+        return 0
+
+    monkeypatch.setattr(restricted_node_tool, "_run_backend_process", launch)
+    assert restricted_node_tool.run_restricted_node_tool(plan, timeout_seconds=600) == 0
+    argv, waited = launched[0]
+    assert argv[argv.index("--timeout-seconds") + 1] == "600"
+    assert waited > 600
+
+
+def test_a_resolved_package_manager_image_is_still_a_package_script(windows, tmp_path):
+    """`npm.exe run build` runs the same script `npm run build` does, which
+    this sink does not run on Windows. Reading the image name as an unknown
+    tool would have planned a direct build the command never asked for."""
+    app = _project(tmp_path)
+    (app / "package.json").write_text('{"scripts":{"build":"vite build"}}', encoding="utf-8")
+    for runner in (r"C:\Program Files\nodejs\npm.exe", "pnpm.exe", "bun.exe"):
+        with pytest.raises(RestrictedPytestError) as caught:
+            restricted_node_tool.prepare_restricted_node_tool([runner, "run", "build"], workspace=tmp_path, cwd=app)
+        assert caught.value.reason_code == "pytest_restricted_sandbox_unavailable"
+    assert windows == []
+
+
 @pytest.mark.parametrize(
     "command",
     [

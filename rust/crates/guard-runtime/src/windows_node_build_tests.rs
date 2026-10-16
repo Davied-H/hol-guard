@@ -33,6 +33,14 @@ fn project() -> (tempfile::TempDir, PathBuf, PathBuf) {
 fn fake_node(directory: &Path) -> PathBuf {
     let node = directory.join("node.exe");
     fs::write(&node, b"MZ fixture").unwrap();
+    // The size a real runtime carries; a launcher for another install is far
+    // smaller, and the sink reads that difference.
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&node)
+        .unwrap()
+        .set_len(MINIMUM_RUNTIME_BYTES)
+        .unwrap();
     node
 }
 
@@ -72,6 +80,47 @@ fn node_executable_must_be_a_node_image() {
     fs::create_dir_all(text.parent().unwrap()).unwrap();
     fs::write(&text, "#!/bin/sh").unwrap();
     assert!(node_executable(&text).is_err());
+}
+
+#[test]
+fn a_launcher_for_another_install_is_not_the_runtime() {
+    // What Volta, Scoop and Chocolatey put on PATH: an image named `node.exe`
+    // that reaches the real runtime through its own install. Staged on its own
+    // it has nothing to reach, so the command keeps the review prompt.
+    let directory = tempfile::tempdir().unwrap();
+    let shim = directory.path().join("node.exe");
+    fs::write(&shim, b"MZ").unwrap();
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&shim)
+        .unwrap()
+        .set_len(MINIMUM_RUNTIME_BYTES - 1)
+        .unwrap();
+    assert!(node_executable(&shim).is_err());
+}
+
+#[test]
+fn a_linked_package_is_not_staged() {
+    // `npm link` and a Yarn workspace leave a link where the package should
+    // be. The copy that stages the snapshot walks directories and files, so a
+    // build started from this install would run without that package.
+    let (_directory, workspace, app) = project();
+    let linked = workspace.join("shared");
+    fs::create_dir_all(linked.join("dist")).unwrap();
+    let placed = app.join("node_modules").join("shared");
+    if std::os::windows::fs::symlink_dir(&linked, &placed).is_err() {
+        // Linking needs a privilege this account may not hold; an account
+        // that cannot create one cannot meet one either.
+        return;
+    }
+    assert!(dependencies(&workspace, &app).is_err());
+    fs::remove_dir(&placed).unwrap();
+    assert!(dependencies(&workspace, &app).is_ok());
+    // A scoped name holds its packages one level down, where its links are.
+    let scope = app.join("node_modules").join("@acme");
+    fs::create_dir_all(&scope).unwrap();
+    std::os::windows::fs::symlink_dir(&linked, scope.join("shared")).unwrap();
+    assert!(dependencies(&workspace, &app).is_err());
 }
 
 #[test]

@@ -8,7 +8,7 @@ import stat
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import replace
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 from ..native_restricted_pytest import decode_native_plan, restricted_native
 from .package_evidence_common import read_json_with_integrity
@@ -27,6 +27,34 @@ from .restricted_vitest import run_restricted_node_plan
 from .secret_sensitivity import classify_secret_path
 
 _ENTRIES = {"eslint": "eslint/bin/eslint.js", "tsc": "typescript/bin/tsc", "vite": "vite/bin/vite.js"}
+
+# How much longer than the build's own deadline this waits for the native
+# runner. The runner counts that deadline against the build alone: staging a
+# private copy of the workspace and publishing the output roots both happen
+# outside it. Killing the runner on the same number would land in the middle of
+# publishing, with the previous output already removed and the new one half
+# written, and would leave the staged copy behind. The runner stops the build
+# itself, so this only has to outlast the copying around it.
+_WINDOWS_BUILD_GRACE_SECONDS = 120
+
+
+def _program_name(argument: str) -> str:
+    """The program the command names, without the image extension Windows adds.
+
+    A harness on Windows hands over the resolved `node.exe`, which is the
+    program `node`. The pre-tool scan reads it that way, so the sink has to
+    parse the same command the receipt was written for. Elsewhere a trailing
+    `.exe` is part of an ordinary file name and stays.
+    """
+    if sys.platform != "win32":
+        return Path(argument).name
+    name = PureWindowsPath(argument).name
+    stem, dot, extension = name.rpartition(".")
+    if dot and stem and extension.lower() == "exe":
+        # CreateProcess resolves images without regard to case, and the
+        # receipt compares the program against its lowercase spelling.
+        return stem.lower()
+    return name
 
 
 def is_local_package_entry(argument: str, package_entry: str) -> bool:
@@ -216,7 +244,7 @@ def prepare_restricted_node_tool(
     command: Sequence[str], *, workspace: Path, cwd: Path | None = None
 ) -> RestrictedPytestPlan:
     argv = _normalized_command(command)
-    name, args = Path(argv[0]).name, argv[1:]
+    name, args = _program_name(argv[0]), argv[1:]
     expected_entry = None
     runtime_args: tuple[str, ...] = ()
     if name == "bun" and args[:1] == ("x",):
@@ -373,5 +401,9 @@ def _run_windows_node_build(plan: RestrictedPytestPlan, *, timeout_seconds: int,
         *plan.command,
     ]
     return _run_backend_process(
-        argv, env=os.environ, timeout_seconds=timeout_seconds, cwd=plan.cwd, merge_stderr=merge_stderr
+        argv,
+        env=os.environ,
+        timeout_seconds=timeout_seconds + _WINDOWS_BUILD_GRACE_SECONDS,
+        cwd=plan.cwd,
+        merge_stderr=merge_stderr,
     )

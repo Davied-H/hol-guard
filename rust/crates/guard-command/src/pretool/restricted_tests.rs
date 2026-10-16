@@ -337,9 +337,11 @@ pub(super) fn readonly_test_reason(model: &CanonicalCommandV1) -> Option<&'stati
     }
     // `bun x` is Bun's spelling of `bunx`; the later proofs read it as one.
     // Bun takes `--cwd` only before `x`, so a later one is not unwrapped.
+    // Windows hands over the resolved image, `node.exe` for `node`. One name
+    // for the program keeps every route below reading the same command.
     let (executable, arguments) = match arguments {
         [wrapper, no_install, rest @ ..]
-            if super::executable_basename(executable) == "bun"
+            if crate::program_basename(executable) == "bun"
                 && wrapper == "x"
                 && no_install == "--no-install"
                 && !rest.first().is_some_and(|word| word.starts_with("--cwd")) =>
@@ -347,27 +349,15 @@ pub(super) fn readonly_test_reason(model: &CanonicalCommandV1) -> Option<&'stati
             ("bunx", rest)
         }
         [wrapper, rest @ ..]
-            if super::executable_basename(executable) == "bun"
+            if crate::program_basename(executable) == "bun"
                 && wrapper == "x"
                 && !rest.first().is_some_and(|word| word.starts_with("--cwd")) =>
         {
             ("bunx", rest)
         }
-        _ => (executable, arguments),
+        _ => (crate::program_basename(executable), arguments),
     };
-    // The Windows build sink names the resolved `node.exe` image itself.
-    let build_name = super::executable_basename(executable);
-    let build_name = match build_name.len().checked_sub(4) {
-        Some(stem)
-            if cfg!(windows)
-                && build_name.is_char_boundary(stem)
-                && build_name[stem..].eq_ignore_ascii_case(".exe") =>
-        {
-            &build_name[..stem]
-        }
-        _ => build_name,
-    };
-    let build = match build_name {
+    let build = match executable {
         "bun" | "npm" | "pnpm" => {
             matches!(arguments, [run, task] if run == "run" && task == "build")
         }
@@ -383,7 +373,7 @@ pub(super) fn readonly_test_reason(model: &CanonicalCommandV1) -> Option<&'stati
     if build {
         return Some("native_node_build_output_containment_required");
     }
-    let read_only_node_tool = match super::executable_basename(executable) {
+    let read_only_node_tool = match executable {
         "bun" | "npm" => {
             matches!(arguments, [run, task] if run == "run" && matches!(task.as_str(), "lint" | "typecheck"))
         }

@@ -11,9 +11,9 @@
 //! Only a flat npm or Yarn classic install is staged. A pnpm store links
 //! packages across directories, and a Plug'n'Play install has no
 //! `node_modules` to copy, so both keep the review prompt.
-use crate::windows_readonly::{canonical, first_on_path, workspace_and_cwd, BACKEND};
+use crate::windows_readonly::{BACKEND, canonical, first_on_path, workspace_and_cwd};
 use guard_command::restricted_command::RestrictedPytestError;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 
@@ -37,6 +37,14 @@ fn unavailable() -> RestrictedPytestError {
     )
 }
 
+/// Below this a `node.exe` is a launcher rather than the runtime. Node links
+/// V8 into one image of tens of megabytes, while Volta, Scoop and Chocolatey
+/// each put a small program named `node.exe` on `PATH` that finds the real
+/// runtime through its own install. The snapshot stages this one file, where a
+/// launcher has nothing left to find, so the build would fail inside the
+/// container instead of asking for review.
+pub(crate) const MINIMUM_RUNTIME_BYTES: u64 = 8 * 1024 * 1024;
+
 /// A `node.exe` image; the runner copies it, so it must not need its install.
 pub(crate) fn node_executable(path: &Path) -> Result<PathBuf, RestrictedPytestError> {
     let missing = || error(UNAVAILABLE, "The Node.js runtime could not be resolved.");
@@ -53,6 +61,13 @@ pub(crate) fn node_executable(path: &Path) -> Result<PathBuf, RestrictedPytestEr
         && magic == *b"MZ";
     if !named || !image {
         return Err(missing());
+    }
+    let size = std::fs::metadata(&executable).map_err(|_| missing())?.len();
+    if size < MINIMUM_RUNTIME_BYTES {
+        return Err(error(
+            UNAVAILABLE,
+            "The `node.exe` on PATH is a launcher for another Node.js install, which a protected build cannot stage.",
+        ));
     }
     Ok(executable)
 }
@@ -99,6 +114,12 @@ pub(crate) fn dependencies(
                     "A pnpm install cannot be staged for a protected build on Windows yet.",
                 ));
             }
+            if links_a_package(&target) {
+                return Err(error(
+                    UNAVAILABLE,
+                    "A linked package cannot be staged for a protected build on Windows yet.",
+                ));
+            }
             let relative = location
                 .strip_prefix(workspace)
                 .map_err(|_| unavailable())?
@@ -110,6 +131,36 @@ pub(crate) fn dependencies(
         }
     }
     Ok(found)
+}
+
+/// Whether an installed package is a link rather than a directory of its own.
+/// `npm link`, a Yarn workspace and a junction into a sibling checkout all
+/// leave a reparse point where the package should be, and the copy that stages
+/// the snapshot walks directories and files only. The build would then start
+/// with that package missing and fail inside the container, so the command
+/// keeps the review prompt instead. Scoped names hold their packages one level
+/// down, which is where their links are.
+fn links_a_package(modules: &Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(modules) else {
+        // A directory this cannot read is one the copy cannot read either.
+        return true;
+    };
+    for entry in entries.flatten() {
+        let Ok(kind) = entry.file_type() else {
+            return true;
+        };
+        if kind.is_symlink() {
+            return true;
+        }
+        let name = entry.file_name();
+        if kind.is_dir()
+            && name.to_string_lossy().starts_with('@')
+            && links_a_package(&entry.path())
+        {
+            return true;
+        }
+    }
+    false
 }
 
 /// The entry as the snapshot's run directory reaches it: the staged copy of

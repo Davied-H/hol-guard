@@ -81,8 +81,10 @@ fn resolved(
     }
     let segment = model.segments.first()?;
     let arguments = segment.arguments.as_slice();
+    // The same name the build classification reads, so `npm.exe run build`
+    // is the package script `npm run build` is and keeps the review prompt.
     if matches!(
-        executable_basename(segment.executable.as_deref()?),
+        super::super::program_basename(segment.executable.as_deref()?),
         "npm" | "pnpm" | "bun"
     ) && arguments.first().is_some_and(|word| word == "run")
     {

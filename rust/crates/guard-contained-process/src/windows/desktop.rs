@@ -121,6 +121,15 @@ impl PrivateDesktop {
         if original.is_null() || unsafe { SetProcessWindowStation(station) } == 0 {
             return Err(io::Error::last_os_error());
         }
+        // Dropping `created` closes the private station, and that fails while
+        // the process is still standing on it. Declared after `created`, this
+        // drops first and so hands the process back its own station on every
+        // path out. The explicit restoration below still runs first, so its
+        // error stays the one reported.
+        let mut restored = Restored {
+            station: original,
+            done: false,
+        };
         created.desktop = unsafe {
             CreateDesktopW(
                 desktop_name.as_ptr(),
@@ -135,10 +144,28 @@ impl PrivateDesktop {
         if unsafe { SetProcessWindowStation(original) } == 0 {
             return Err(io::Error::last_os_error());
         }
+        restored.done = true;
         if created.desktop.is_null() {
             return Err(desktop_error);
         }
         Ok(created)
+    }
+}
+
+/// The process's own window station, put back when creation returns early.
+/// Creation switches the process onto the private station so `CreateDesktopW`
+/// places the desktop there; leaving it switched would both close the user's
+/// own station out of reach and keep the private one open.
+struct Restored {
+    station: HANDLE,
+    done: bool,
+}
+
+impl Drop for Restored {
+    fn drop(&mut self) {
+        if !self.done {
+            unsafe { SetProcessWindowStation(self.station) };
+        }
     }
 }
 
