@@ -20,6 +20,29 @@ pub(super) fn execution_free(
     execution_environment: Option<&guard_contracts::GuardExecutionEnvironmentV1>,
     stdout_piped: bool,
 ) -> Option<bool> {
+    execution_free_paging(
+        executable,
+        arguments,
+        None,
+        context,
+        deadline,
+        execution_environment,
+        stdout_piped,
+    )
+}
+
+/// [`execution_free`] while paging is proved under `pager_operation` instead
+/// of the command's own name. A `stash show` diff is still a diff, but it
+/// pages under `pager.stash`.
+pub(super) fn execution_free_paging(
+    executable: &str,
+    arguments: &[String],
+    pager_operation: Option<&str>,
+    context: super::PathContext<'_>,
+    deadline: Option<Instant>,
+    execution_environment: Option<&guard_contracts::GuardExecutionEnvironmentV1>,
+    stdout_piped: bool,
+) -> Option<bool> {
     let remaining = crate::command_compatibility::git_inspection_arguments(arguments, context)?;
     let operation = remaining.first()?.as_str();
     if !matches!(
@@ -61,8 +84,11 @@ pub(super) fn execution_free(
     {
         return None;
     }
+    let pager_operation = pager_operation.unwrap_or(operation).to_owned();
+    // The memo key has no field of its own for which pager this proof uses,
+    // so the operation rides with the executable. A real executable has no NUL.
     let key = (
-        executable.to_owned(),
+        format!("{executable}\0{pager_operation}"),
         arguments.to_vec(),
         context.home_dir.map(str::to_owned),
         context.cwd.map(str::to_owned),
@@ -74,6 +100,7 @@ pub(super) fn execution_free(
                 executable,
                 arguments,
                 remaining,
+                &pager_operation,
                 context,
                 deadline,
                 execution_environment,
@@ -88,6 +115,7 @@ fn probe(
     executable: &str,
     arguments: &[String],
     remaining: &[String],
+    pager_operation: &str,
     context: super::PathContext<'_>,
     deadline: Option<Instant>,
     execution_environment: Option<&guard_contracts::GuardExecutionEnvironmentV1>,
@@ -223,7 +251,7 @@ fn probe(
         let (key, value) = record.split_once('\n')?;
         effective.insert(key, value);
     }
-    let pager_key = format!("pager.{operation}");
+    let pager_key = format!("pager.{pager_operation}");
     let pager_setting = effective.get(pager_key.as_str()).copied();
     // Like status, hash-object pages only when its own pager.* key says so;
     // config pages by default only for its listing forms.

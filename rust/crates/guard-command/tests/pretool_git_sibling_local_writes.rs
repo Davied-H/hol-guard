@@ -230,6 +230,13 @@ fn stash_restores_and_identity_variables_are_local_writes() {
         assert_reviewed(&session, still_reviewed);
         session.config(&["--unset-all", key]);
     }
+    // Stash pages under pager.stash. An unsafe pager.diff does not read the stash.
+    session.config(&["pager.diff", "sh -c id"]);
+    assert!(
+        allowed(&session, "git stash show -p"),
+        "pager.diff must not gate stash show"
+    );
+    session.config(&["--unset-all", "pager.diff"]);
 }
 
 #[test]

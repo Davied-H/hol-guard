@@ -201,6 +201,34 @@ pub(super) fn stash_show(rest: &[&str]) -> bool {
     })
 }
 
+/// `(external diff disarmed, textconv disarmed)` for a `stash show`.
+/// A summary never runs textconv; a patch does unless `--no-textconv` wins.
+pub(super) fn show_diff_drivers_disarmed(segment: &CommandSegmentV1) -> Option<(bool, bool)> {
+    if segment.arguments.first().map(String::as_str) != Some("stash")
+        || segment.arguments.get(1).map(String::as_str) != Some("show")
+    {
+        return None;
+    }
+    let mut external = false;
+    let mut textconv_flag = None;
+    let mut patch = false;
+    for flag in segment.arguments[2..]
+        .iter()
+        .map(String::as_str)
+        .filter(|word| word.starts_with('-'))
+    {
+        match flag {
+            "--no-ext-diff" => external = true,
+            "--ext-diff" => external = false,
+            "--no-textconv" => textconv_flag = Some(true),
+            "--textconv" => textconv_flag = Some(false),
+            "-p" | "-u" | "--patch" => patch = true,
+            _ => {}
+        }
+    }
+    Some((external, textconv_flag.unwrap_or(!patch)))
+}
+
 fn stash_entry(value: &str) -> bool {
     let index = value
         .strip_prefix("stash@{")
@@ -228,11 +256,12 @@ pub(super) fn stash_free(
     let stripped = super::super::segment_proof::without_stderr_merge(original);
     let segment = stripped.as_ref().unwrap_or(original);
     let stdout_piped = super::super::git_helper_context::stdout_piped(model, index);
-    let free = |arguments: &[&str]| {
+    let free = |arguments: &[&str], pager: Option<&str>| {
         let arguments: Vec<String> = arguments.iter().map(|word| (*word).to_owned()).collect();
-        super::super::git_config::execution_free(
+        super::super::git_config::execution_free_paging(
             "git",
             &arguments,
+            pager,
             context,
             deadline,
             execution_environment,
@@ -246,17 +275,18 @@ pub(super) fn stash_free(
         let key = key.to_ascii_lowercase();
         key.starts_with("merge.") && key.ends_with(".driver")
     });
-    (stdout_piped
+    let stash_pages = stdout_piped
         || effective
             .get("pager.stash")
-            .is_none_or(|values| values.iter().all(pager_off)))
+            .is_none_or(|values| values.iter().all(pager_off));
+    // `stash show` prints the entry's diff, so it clears under the same
+    // configuration proof a `git diff` read clears under, read with the
+    // options the caller gave. `--no-ext-diff` and `--no-textconv` keep a
+    // configured driver out of the read, and a summary form runs no textconv
+    // program. The diff pages under `pager.stash`, not `pager.diff`.
+    stash_pages
         && match segment.arguments.get(1).map(String::as_str) {
-            Some("list") => free(&["log", "-g", "--first-parent", "refs/stash"]),
-            // `stash show` prints the entry's diff, so it clears under the
-            // same configuration proof a `git diff` read clears under, read
-            // with the options the caller gave: `--no-ext-diff` and
-            // `--no-textconv` keep a configured driver out of the read, and a
-            // summary form runs no textconv program to begin with.
+            Some("list") => free(&["log", "-g", "--first-parent", "refs/stash"], None),
             Some("show") => {
                 let mut arguments = vec!["diff"];
                 arguments.extend(
@@ -265,9 +295,9 @@ pub(super) fn stash_free(
                         .map(String::as_str)
                         .filter(|word| word.starts_with('-')),
                 );
-                free(&arguments)
+                free(&arguments, Some("stash"))
             }
-            Some("apply" | "pop") => !merge_driver && free(&["status"]),
+            Some("apply" | "pop") => !merge_driver && free(&["status"], None),
             _ => true,
         }
 }
