@@ -45,6 +45,9 @@ pub(in crate::pretool) fn repository_inert(
         None => return super::outside_repository(base, deadline)?.then_some(true),
     };
     let (directories, hook) = paths.split_at(2);
+    if !directories.iter().all(|directory| directory.is_absolute()) {
+        return None;
+    }
     let mut guarded: Vec<PathBuf> = directories.to_vec();
     guarded.push(directories[1].join("config"));
     if let Some(parent) = hook.first().and_then(|hook| hook.parent()) {
@@ -91,7 +94,13 @@ fn temporary(base: &Command, roots: &[PathBuf]) -> bool {
         .is_none_or(|directory| roots.iter().any(|root| directory.starts_with(root)))
 }
 
-/// One absolute path per line, exactly `count` of them.
+/// A rooted path without a drive (`\dev\null`), which only Windows has.
+fn drive_relative_root(path: &Path) -> bool {
+    cfg!(windows) && path.has_root() && !path.is_absolute()
+}
+
+/// One absolute path per line, exactly `count` of them. A drive-relative
+/// root is kept for the hook path; the caller requires drives on the rest.
 fn absolute_lines(bytes: &[u8], count: usize) -> Option<Vec<PathBuf>> {
     let text = std::str::from_utf8(bytes).ok()?;
     let text = text.strip_suffix('\n').unwrap_or(text);
@@ -99,8 +108,11 @@ fn absolute_lines(bytes: &[u8], count: usize) -> Option<Vec<PathBuf>> {
         .split('\n')
         .map(|line| {
             let line = line.strip_suffix('\r').unwrap_or(line);
-            (!line.is_empty() && !line.contains(['\r', '\0']) && Path::new(line).is_absolute())
-                .then(|| PathBuf::from(line))
+            let path = Path::new(line);
+            (!line.is_empty()
+                && !line.contains(['\r', '\0'])
+                && (path.is_absolute() || drive_relative_root(path)))
+            .then(|| PathBuf::from(line))
         })
         .collect::<Option<Vec<_>>>()?;
     (paths.len() == count).then_some(paths)
@@ -108,10 +120,24 @@ fn absolute_lines(bytes: &[u8], count: usize) -> Option<Vec<PathBuf>> {
 
 /// A missing hook, a directory or a plain non-executable file never runs, nor
 /// does a hook path below a file (`core.hooksPath=/dev/null`).
+///
+/// Git for Windows answers a hook path below a POSIX-rooted hooks path
+/// (`/dev/null`, `/tmp/no-hooks`) without a drive and resolves it against
+/// whichever drive is current when the hook would run, so such a hook is
+/// inert only when it is inert on every drive.
 fn hook_inert(path: &Path) -> bool {
+    if drive_relative_root(path) {
+        return (b'A'..=b'Z').all(|drive| {
+            let mut anchored = std::ffi::OsString::from(format!("{}:", drive as char));
+            anchored.push(path.as_os_str());
+            hook_inert(Path::new(&anchored))
+        });
+    }
     match std::fs::symlink_metadata(path) {
         Err(error) => {
             error.kind() == std::io::ErrorKind::NotFound
+                // No such drive, or no media in the drive.
+                || cfg!(windows) && matches!(error.raw_os_error(), Some(15 | 21))
                 || path
                     .parent()
                     .and_then(|parent| std::fs::metadata(parent).ok())

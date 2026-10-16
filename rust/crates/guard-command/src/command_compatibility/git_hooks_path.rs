@@ -33,7 +33,22 @@ const GIT_HOOK_NAMES: &[&str] = &[
     "post-index-change",
 ];
 
+/// `/dev/null`, which switches hooks off. Git for Windows does not map it to
+/// the null device here but resolves it below the current drive, so there it
+/// switches hooks off only while no drive holds hooks below it.
+pub(super) fn null_hooks_path(value: &str) -> bool {
+    value == "/dev/null" && (!cfg!(windows) || hooks_path_names_no_hooks(value))
+}
+
 pub(super) fn hooks_path_names_no_hooks(value: &str) -> bool {
+    // Windows resolves a rooted path without a drive (`/dev/null`,
+    // `/tmp/no-hooks`) against whichever drive is current when a hook would
+    // run, so it names no hooks only when it names none below any drive.
+    let path = std::path::Path::new(value);
+    if cfg!(windows) && path.has_root() && !path.is_absolute() {
+        return (b'A'..=b'Z')
+            .all(|drive| hooks_path_names_no_hooks(&format!("{}:{value}", drive as char)));
+    }
     if value == "/dev/null" {
         return true;
     }
@@ -44,12 +59,15 @@ pub(super) fn hooks_path_names_no_hooks(value: &str) -> bool {
                 .is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound)
         });
     }
-    let path = std::path::Path::new(value);
     if !path.is_absolute() || value.starts_with('~') {
         return false;
     }
     match std::fs::symlink_metadata(path) {
-        Err(error) => error.kind() == std::io::ErrorKind::NotFound,
+        Err(error) => {
+            error.kind() == std::io::ErrorKind::NotFound
+                // No such drive, or no media in the drive.
+                || cfg!(windows) && matches!(error.raw_os_error(), Some(15 | 21))
+        }
         Ok(metadata) => {
             metadata.is_dir()
                 && std::fs::read_dir(path).is_ok_and(|mut entries| entries.next().is_none())
