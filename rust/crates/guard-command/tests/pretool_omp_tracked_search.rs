@@ -118,6 +118,8 @@ fn credential_shaped_values_untracked_files_and_stores_keep_review() {
     // A tracked file holding a credential-shaped value.
     let key = format!("AWS_ACCESS_KEY_ID={}{}\n", "AKIA", "IOSFODNN7REALKEY");
     repository(&f, "leaky", &[(".env", key.as_str())], &[]);
+    // A short password the detector flags only by the file's name.
+    repository(&f, "short", &[(".env", "PASSWORD=\"Abcdefghijkl\"\n")], &[]);
     // A tracked fixture beside an untracked `.env`.
     repository(&f, "mixed", &[(".env.example", PLAIN)], &[(".env", PLAIN)]);
     // A tracked file in a credential-store directory.
@@ -129,7 +131,7 @@ fn credential_shaped_values_untracked_files_and_stores_keep_review() {
         &[(".gitignore", ".env.local\n"), (".env", PLAIN)],
         &[(".env.local", PLAIN)],
     );
-    for cwd in ["leaky", "mixed", "stored"] {
+    for cwd in ["leaky", "short", "mixed", "stored"] {
         let input = json!({"pattern": "MODE", "path": "."});
         assert!(!allowed(&omp(&f, cwd, "grep", input)), "{cwd}");
     }

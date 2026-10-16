@@ -8,6 +8,8 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 const MAX_FILE_BYTES: u64 = 256 * 1024;
+/// Content one walk may read and scan across all of its fixtures.
+const MAX_TOTAL_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_INDEX_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_ANCESTORS: usize = 64;
 const STORE_DIRECTORIES: &[&str] = &[
@@ -17,6 +19,7 @@ const STORE_DIRECTORIES: &[&str] = &[
 #[derive(Default)]
 pub(super) struct TrackedFiles {
     indexes: HashMap<PathBuf, Option<HashSet<Vec<u8>>>>,
+    spent: u64,
 }
 
 impl TrackedFiles {
@@ -65,11 +68,18 @@ impl TrackedFiles {
         if !tracked {
             return false;
         }
+        // Past the budget the scope stays unproven and the search is reviewed.
+        self.spent += metadata.len();
+        if self.spent > MAX_TOTAL_BYTES {
+            return false;
+        }
         let Ok(bytes) = std::fs::read(path) else {
             return false;
         };
         let text = String::from_utf8_lossy(&bytes);
-        guard_scanner::secret_detection::scan_secret_text(&text, "", "search", None, 1)
+        // The real name matters: the detector reads a `.env` more strictly.
+        let name = String::from_utf8_lossy(&rendered);
+        guard_scanner::secret_detection::scan_secret_text(&text, &name, "search", None, 1)
             .findings
             .is_empty()
     }
