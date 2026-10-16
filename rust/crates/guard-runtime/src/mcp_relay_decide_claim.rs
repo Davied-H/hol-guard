@@ -163,11 +163,12 @@ fn spend(
     );
     match claimed {
         Ok(Some(Spent::Answer(answer))) => Ok(answer),
-        Ok(Some(Spent::Ask {
-            fresh,
-            prepared,
-            append,
-        })) => {
+        Ok(Some(Spent::Ask(requeue))) => {
+            let Requeue {
+                fresh,
+                prepared,
+                append,
+            } = *requeue;
             let routed = prepared.write(&context.request)?;
             settle(&context.request, &fresh, routed, Some(append), policy_store)
         }
@@ -181,11 +182,14 @@ enum Spent {
     /// An answer settled inside the claim's transaction.
     Answer(Answer),
     /// A re-approval request to write once the claim commits.
-    Ask {
-        fresh: Resolved,
-        prepared: ask::Prepared,
-        append: Vec<Value>,
-    },
+    Ask(Box<Requeue>),
+}
+
+/// The fresh call and the re-approval request a committed claim writes.
+struct Requeue {
+    fresh: Resolved,
+    prepared: ask::Prepared,
+    append: Vec<Value>,
 }
 
 /// Whether a lane admission is the very one a decision was made under: the
@@ -250,11 +254,11 @@ fn after_claim(
                 if started.elapsed() >= CLAIM_BUDGET {
                     return Err(CLAIM_LATE);
                 }
-                return Ok(Spent::Ask {
+                return Ok(Spent::Ask(Box::new(Requeue {
                     fresh,
                     prepared,
                     append,
-                });
+                })));
             }
             queue::safe_alternative(mode, fresh.redaction_level.as_deref(), policy_action)?
         }
