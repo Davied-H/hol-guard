@@ -201,7 +201,7 @@ fn an_unreadable_profile_directory_fails_closed() {
     let parent = native.parent().expect("parent");
     fs::create_dir_all(parent).expect("parent");
     let mut blocked = fs::metadata(parent).expect("metadata").permissions();
-    blocked.set_mode(0);
+    blocked.set_mode(0o000);
     fs::set_permissions(parent, blocked).expect("block");
 
     let state = load_managed_policy(&source);

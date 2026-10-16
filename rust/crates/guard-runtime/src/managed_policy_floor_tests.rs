@@ -22,7 +22,8 @@ fn authority_that_did_not_load_is_governed_by_the_floor() {
         ManagedPolicyStatus::Inaccessible,
         ManagedPolicyStatus::Tampered,
     ] {
-        let policy = effective_managed_policy(&state(status, None)).expect(status.as_str());
+        let policy = effective_managed_policy(&state(status, None))
+            .unwrap_or_else(|| panic!("{} is governed by no policy", status.as_str()));
         assert_eq!(policy, fail_closed_managed_policy());
     }
 }
